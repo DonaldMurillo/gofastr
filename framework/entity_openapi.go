@@ -32,8 +32,8 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			"data":        map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 			"total":       map[string]any{"type": "integer"},
 			"page":        map[string]any{"type": "integer"},
-			"per_page":    map[string]any{"type": "integer"},
-			"total_pages": map[string]any{"type": "integer"},
+			"perPage":    map[string]any{"type": "integer"},
+			"totalPages": map[string]any{"type": "integer"},
 		},
 	})
 
@@ -45,6 +45,19 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 
 		// Generate entity schema
 		entitySchema := openapi.FieldsToSchema(fields)
+		// Convert snake_case property names to camelCase
+		if props, ok := entitySchema["properties"].(map[string]any); ok {
+			camelProps := make(map[string]any, len(props))
+			for k, v := range props {
+				camelProps[toCamelCase(k)] = v
+			}
+			entitySchema["properties"] = camelProps
+		}
+		if reqs, ok := entitySchema["required"].([]string); ok {
+			for i, r := range reqs {
+				reqs[i] = toCamelCase(r)
+			}
+		}
 		s.AddSchema(entityName, entitySchema)
 
 		// Tag for grouping
@@ -67,7 +80,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		// Add filter parameters for each field
 		for _, f := range fields {
 			filterSchema := fieldToFilterSchema(f)
-			listOp.AddParameter("filter_"+f.Name, "query", "Filter by "+f.Name, false, filterSchema)
+			listOp.AddParameter("filter_"+toCamelCase(f.Name), "query", "Filter by "+toCamelCase(f.Name), false, filterSchema)
 		}
 
 		listOp.AddResponse(200, "List of "+entityName, listRef)

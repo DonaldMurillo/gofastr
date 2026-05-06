@@ -71,7 +71,7 @@ func seedPosts(t *testing.T, db *sql.DB, posts ...map[string]string) []string {
 		if status == "" {
 			status = "draft"
 		}
-		authorID := p["author_id"]
+		authorID := p["authorId"]
 		_, err := db.Exec("INSERT INTO posts (id, title, body, status, author_id) VALUES (?, ?, ?, ?, ?)",
 			id, title, body, status, authorID)
 		if err != nil {
@@ -549,7 +549,7 @@ func TestE2E_MultipleEntities(t *testing.T) {
 	resp = ta.Post("/comments", map[string]string{
 		"id":      "c1",
 		"body":    "Great post!",
-		"post_id": "p1",
+		"postId": "p1",
 	})
 	resp.AssertStatus(t, http.StatusCreated)
 

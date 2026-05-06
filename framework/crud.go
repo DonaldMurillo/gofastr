@@ -36,8 +36,8 @@ type ListResponse struct {
 	Data       []map[string]any `json:"data"`
 	Total      int              `json:"total"`
 	Page       int              `json:"page"`
-	PerPage    int              `json:"per_page"`
-	TotalPages int              `json:"total_pages"`
+	PerPage    int              `json:"perPage"`
+	TotalPages int              `json:"totalPages"`
 }
 
 // entityFields returns the field names for the entity.
@@ -165,6 +165,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
+		body = mapToSnakeCase(body)
 
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
@@ -228,6 +229,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
+		body = mapToSnakeCase(body)
 
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
@@ -360,7 +362,7 @@ func scanRows(rows *sql.Rows, cols []string) ([]map[string]any, error) {
 		}
 		row := make(map[string]any, len(cols))
 		for i, col := range cols {
-			row[col] = convertValue(values[i])
+			row[toCamelCase(col)] = convertValue(values[i])
 		}
 		results = append(results, row)
 	}
@@ -379,7 +381,7 @@ func scanRow(row *sql.Row, cols []string) (map[string]any, error) {
 	}
 	result := make(map[string]any, len(cols))
 	for i, col := range cols {
-		result[col] = convertValue(values[i])
+		result[toCamelCase(col)] = convertValue(values[i])
 	}
 	return result, nil
 }

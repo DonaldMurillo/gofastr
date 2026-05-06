@@ -18,7 +18,7 @@ const MaxPageSize = 100
 type CursorPage struct {
 	Data    []map[string]any `json:"data"`
 	Cursor  string           `json:"cursor"`
-	HasMore bool             `json:"has_more"`
+	HasMore bool             `json:"hasMore"`
 	Total   int              `json:"total,omitempty"`
 }
 
@@ -26,9 +26,9 @@ type CursorPage struct {
 type OffsetPage struct {
 	Data       []map[string]any `json:"data"`
 	Page       int              `json:"page"`
-	PageSize   int              `json:"page_size"`
+	PageSize   int              `json:"pageSize"`
 	Total      int              `json:"total"`
-	TotalPages int              `json:"total_pages"`
+	TotalPages int              `json:"totalPages"`
 }
 
 // cursorToken is the internal structure encoded into a cursor string.

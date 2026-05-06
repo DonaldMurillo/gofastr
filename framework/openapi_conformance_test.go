@@ -168,8 +168,8 @@ func TestE2E_Conformance_ListPosts_ResponseMatchesSpec(t *testing.T) {
 
 	specProps := schema["properties"].(map[string]any)
 
-	// Spec says there should be: data, total, page, per_page, total_pages
-	for _, field := range []string{"data", "total", "page", "per_page", "total_pages"} {
+	// Spec says there should be: data, total, page, perPage, totalPages
+	for _, field := range []string{"data", "total", "page", "perPage", "totalPages"} {
 		if _, ok := specProps[field]; !ok {
 			t.Errorf("spec missing property %q in ListResponse", field)
 		}
@@ -269,7 +269,7 @@ func TestE2E_Conformance_GetPost_ResponseMatchesSpec(t *testing.T) {
 	assertEqual(t, "post.title", "Hello", post["title"])
 	assertEqual(t, "post.body", "World", post["body"])
 	assertEqual(t, "post.status", "published", post["status"])
-	assertEqual(t, "post.author_id", "u1", post["author_id"])
+	assertEqual(t, "post.authorId", "u1", post["authorId"])
 }
 
 func TestE2E_Conformance_GetPost_NotFound(t *testing.T) {

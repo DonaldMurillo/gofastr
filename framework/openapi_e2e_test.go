@@ -137,8 +137,8 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 		{"views", "integer", "", nil},
 		{"rating", "number", "", nil},
 		{"featured", "boolean", "", nil},
-		{"published_at", "string", "date-time", nil},
-		{"author_id", "string", "uuid", map[string]any{"x-relation": "users"}},
+		{"publishedAt", "string", "date-time", nil},
+		{"authorId", "string", "uuid", map[string]any{"x-relation": "users"}},
 	}
 
 	for _, tc := range typeChecks {
@@ -548,8 +548,8 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	// Verify every field generated a schema property
 	expectedFields := []string{
 		"id", "name", "content", "count", "score", "price",
-		"active", "status", "created_at", "birth_date", "metadata",
-		"author_id", "tag_ids", "avatar", "attachment",
+		"active", "status", "createdAt", "birthDate", "metadata",
+		"authorId", "tagIds", "avatar", "attachment",
 	}
 	for _, f := range expectedFields {
 		if _, ok := props[f]; !ok {
@@ -568,8 +568,8 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 		"score":      {"number", ""},
 		"price":      {"string", "decimal"},
 		"active":     {"boolean", ""},
-		"created_at": {"string", "date-time"},
-		"birth_date": {"string", "date"},
+		"createdAt": {"string", "date-time"},
+		"birthDate": {"string", "date"},
 		"avatar":     {"string", "uri"},
 		"attachment": {"string", "binary"},
 	}
@@ -583,17 +583,17 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	}
 
 	// Relation: single → string with format uuid
-	authorProp := getNestedMap(props, "author_id")
-	assertEqual(t, "author_id type", "string", authorProp["type"])
-	assertEqual(t, "author_id format", "uuid", authorProp["format"])
-	assertEqual(t, "author_id x-relation", "users", authorProp["x-relation"])
+	authorProp := getNestedMap(props, "authorId")
+	assertEqual(t, "authorId type", "string", authorProp["type"])
+	assertEqual(t, "authorId format", "uuid", authorProp["format"])
+	assertEqual(t, "authorId x-relation", "users", authorProp["x-relation"])
 
 	// Relation: many → array
-	tagsProp := getNestedMap(props, "tag_ids")
-	assertEqual(t, "tag_ids type", "array", tagsProp["type"])
+	tagsProp := getNestedMap(props, "tagIds")
+	assertEqual(t, "tagIds type", "array", tagsProp["type"])
 	tagsItems := getNestedMap(tagsProp, "items")
-	assertEqual(t, "tag_ids items type", "string", tagsItems["type"])
-	assertEqual(t, "tag_ids items format", "uuid", tagsItems["format"])
+	assertEqual(t, "tagIds items type", "string", tagsItems["type"])
+	assertEqual(t, "tagIds items format", "uuid", tagsItems["format"])
 
 	// Name should have minLength and maxLength
 	nameProp := getNestedMap(props, "name")
