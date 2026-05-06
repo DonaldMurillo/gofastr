@@ -1,3 +1,6 @@
+# Pi internal
+.pi/
+
 # Binaries
 bin/
 *.exe
