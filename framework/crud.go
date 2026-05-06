@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -40,12 +41,21 @@ type ListResponse struct {
 	TotalPages int              `json:"totalPages"`
 }
 
-// entityFields returns the field names for the entity.
+// entityFields returns the field names for the entity, always including the primary key.
 func (ch *CrudHandler) entityFields() []string {
 	fields := ch.Entity.GetFields()
-	names := make([]string, len(fields))
-	for i, f := range fields {
-		names[i] = f.Name
+	names := make([]string, 0, len(fields)+1)
+
+	// Always include primary key
+	hasPK := false
+	for _, f := range fields {
+		if f.Name == ch.PrimaryKey {
+			hasPK = true
+		}
+		names = append(names, f.Name)
+	}
+	if !hasPK {
+		names = append([]string{ch.PrimaryKey}, names...)
 	}
 	return names
 }
@@ -167,6 +177,11 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 		body = mapToSnakeCase(body)
 
+		// Auto-generate primary key if not provided
+		if _, ok := body[ch.PrimaryKey]; !ok {
+			body[ch.PrimaryKey] = generateID()
+		}
+
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
 			w.Header().Set("Content-Type", "application/json")
@@ -181,7 +196,17 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		var cols []string
 		var vals []any
+
+		// Always include primary key (auto-generated or explicit)
+		if pkVal, ok := body[ch.PrimaryKey]; ok {
+			cols = append(cols, ch.PrimaryKey)
+			vals = append(vals, pkVal)
+		}
+
 		for _, f := range ch.Entity.GetFields() {
+			if f.Name == ch.PrimaryKey {
+				continue // already added above
+			}
 			val, ok := body[f.Name]
 			if !ok {
 				if f.Default != nil {
@@ -405,6 +430,16 @@ func writeJSONError(w http.ResponseWriter, code int, message string) {
 		"success": false,
 		"code":    code,
 	})
+}
+
+// generateID creates a new random UUID v4 string.
+func generateID() string {
+	var uuid [16]byte
+	rand.Read(uuid[:])
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
 }
 
 // compile-time check
