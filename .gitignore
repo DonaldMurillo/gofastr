@@ -1,4 +1,31 @@
-# pi agent state (auto-added)
-.pi/
-pi-agent/plugins/*
-!pi-agent/plugins/registry.json
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Codegen output
+.gofastr/
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

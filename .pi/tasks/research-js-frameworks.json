@@ -1,0 +1,25 @@
+{
+  "id": "research-js-frameworks",
+  "subject": "Research modern JS fullstack frameworks",
+  "description": "Deep dive into Next.js 15, Nuxt 4, SvelteKit 2, Remix, Astro, SolidStart, TanStack Start. Focus on: architecture patterns, routing, rendering strategies, data fetching, middleware, plugins, DX features.",
+  "activeForm": "Research modern JS fullstack frameworks",
+  "status": "pending",
+  "blocks": [
+    "compile-draft"
+  ],
+  "blockedBy": [],
+  "priority": "high",
+  "tags": [],
+  "fileRefs": [],
+  "subtasks": [],
+  "scope": "m",
+  "notes": [],
+  "history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "reason": "Created",
+      "timestamp": "2026-05-05T20:55:02.863Z"
+    }
+  ]
+}

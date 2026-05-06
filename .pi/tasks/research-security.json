@@ -1,0 +1,25 @@
+{
+  "id": "research-security",
+  "subject": "Research fullstack framework security patterns",
+  "description": "OWASP top 10, CSRF/XSS/SQLi prevention, auth patterns, CSP headers, rate limiting, input validation, secure session management, secret handling, dependency scanning. What do modern frameworks bake in?",
+  "activeForm": "Research fullstack framework security patterns",
+  "status": "pending",
+  "blocks": [
+    "compile-draft"
+  ],
+  "blockedBy": [],
+  "priority": "high",
+  "tags": [],
+  "fileRefs": [],
+  "subtasks": [],
+  "scope": "s",
+  "notes": [],
+  "history": [
+    {
+      "from": "pending",
+      "to": "pending",
+      "reason": "Created",
+      "timestamp": "2026-05-05T20:55:15.005Z"
+    }
+  ]
+}
