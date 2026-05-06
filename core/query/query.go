@@ -1,0 +1,223 @@
+package query
+
+import (
+	"fmt"
+	"strings"
+)
+
+// QueryBuilder builds a SELECT query with parameterized placeholders.
+type QueryBuilder struct {
+	table   string
+	columns []string
+	joins   []joinClause
+	wheres  []whereClause
+	orderBy []orderClause
+	limit   *int
+	offset  *int
+	args    []any
+}
+
+type joinClause struct {
+	joinType string // "JOIN" or "LEFT JOIN"
+	table    string
+	on       string
+}
+
+type whereClause struct {
+	connector string // "AND" or "OR"
+	condition string
+	args      []any
+}
+
+type orderClause struct {
+	column string
+	dir    string
+}
+
+// Select creates a new QueryBuilder selecting the given columns.
+func Select(columns ...string) *QueryBuilder {
+	return &QueryBuilder{
+		columns: columns,
+	}
+}
+
+// From sets the table to query.
+func (qb *QueryBuilder) From(table string) *QueryBuilder {
+	qb.table = table
+	return qb
+}
+
+// Where appends a WHERE condition (ANDed with previous conditions).
+func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
+	qb.wheres = append(qb.wheres, whereClause{
+		connector: "AND",
+		condition: condition,
+		args:      args,
+	})
+	qb.args = append(qb.args, args...)
+	return qb
+}
+
+// OrWhere appends a WHERE condition (ORed with previous conditions).
+func (qb *QueryBuilder) OrWhere(condition string, args ...any) *QueryBuilder {
+	qb.wheres = append(qb.wheres, whereClause{
+		connector: "OR",
+		condition: condition,
+		args:      args,
+	})
+	qb.args = append(qb.args, args...)
+	return qb
+}
+
+// Join adds an INNER JOIN clause.
+func (qb *QueryBuilder) Join(table, on string) *QueryBuilder {
+	qb.joins = append(qb.joins, joinClause{
+		joinType: "JOIN",
+		table:    table,
+		on:       on,
+	})
+	return qb
+}
+
+// LeftJoin adds a LEFT JOIN clause.
+func (qb *QueryBuilder) LeftJoin(table, on string) *QueryBuilder {
+	qb.joins = append(qb.joins, joinClause{
+		joinType: "LEFT JOIN",
+		table:    table,
+		on:       on,
+	})
+	return qb
+}
+
+// Order adds an ORDER BY clause.
+func (qb *QueryBuilder) Order(column string, dir string) *QueryBuilder {
+	qb.orderBy = append(qb.orderBy, orderClause{column: column, dir: dir})
+	return qb
+}
+
+// Limit sets the LIMIT clause.
+func (qb *QueryBuilder) Limit(n int) *QueryBuilder {
+	qb.limit = &n
+	return qb
+}
+
+// Offset sets the OFFSET clause.
+func (qb *QueryBuilder) Offset(n int) *QueryBuilder {
+	qb.offset = &n
+	return qb
+}
+
+// Cursor adds keyset/cursor-based pagination.
+// dir "forward" → WHERE field > value, dir "backward" → WHERE field < value.
+func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilder {
+	op := ">"
+	if dir == "backward" {
+		op = "<"
+	}
+	condition := fmt.Sprintf("%s %s $%d", field, op, len(qb.args)+1)
+	qb.args = append(qb.args, value)
+	qb.wheres = append(qb.wheres, whereClause{
+		connector: "AND",
+		condition: condition,
+		args:      nil, // already appended above
+	})
+	// Ensure ORDER BY the cursor field
+	qb.orderBy = append(qb.orderBy, orderClause{column: field, dir: ""})
+	return qb
+}
+
+// Build produces the final parameterized SQL and argument slice.
+func (qb *QueryBuilder) Build() (string, []any) {
+	var sb strings.Builder
+
+	// SELECT columns
+	cols := "*"
+	if len(qb.columns) > 0 {
+		cols = strings.Join(qb.columns, ", ")
+	}
+	sb.WriteString("SELECT ")
+	sb.WriteString(cols)
+
+	// FROM table
+	sb.WriteString(" FROM ")
+	sb.WriteString(qb.table)
+
+	// JOINs
+	for _, j := range qb.joins {
+		sb.WriteString(" ")
+		sb.WriteString(j.joinType)
+		sb.WriteString(" ")
+		sb.WriteString(j.table)
+		sb.WriteString(" ON ")
+		sb.WriteString(j.on)
+	}
+
+	// WHERE
+	if len(qb.wheres) > 0 {
+		sb.WriteString(" WHERE ")
+		paramIdx := 1
+		for i, w := range qb.wheres {
+			if i > 0 {
+				sb.WriteString(" ")
+				sb.WriteString(w.connector)
+				sb.WriteString(" ")
+			}
+			// Re-number placeholders in the condition
+			condition := renumberPlaceholders(w.condition, paramIdx)
+			paramIdx += len(w.args)
+			sb.WriteString(condition)
+		}
+	}
+
+	// ORDER BY
+	if len(qb.orderBy) > 0 {
+		sb.WriteString(" ORDER BY ")
+		for i, o := range qb.orderBy {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(o.column)
+			if o.dir != "" {
+				sb.WriteString(" ")
+				sb.WriteString(o.dir)
+			}
+		}
+	}
+
+	// LIMIT
+	if qb.limit != nil {
+		fmt.Fprintf(&sb, " LIMIT $%d", len(qb.args)+1)
+		qb.args = append(qb.args, *qb.limit)
+	}
+
+	// OFFSET
+	if qb.offset != nil {
+		fmt.Fprintf(&sb, " OFFSET $%d", len(qb.args)+1)
+		qb.args = append(qb.args, *qb.offset)
+	}
+
+	return sb.String(), qb.args
+}
+
+// renumberPlaceholders replaces $N placeholders in a condition string
+// with the correct sequential parameter index.
+func renumberPlaceholders(condition string, startIdx int) string {
+	var sb strings.Builder
+	i := 0
+	for i < len(condition) {
+		if condition[i] == '$' && i+1 < len(condition) && condition[i+1] >= '0' && condition[i+1] <= '9' {
+			// Found a placeholder, replace with sequential index
+			fmt.Fprintf(&sb, "$%d", startIdx)
+			startIdx++
+			// Skip the original placeholder number
+			i++
+			for i < len(condition) && condition[i] >= '0' && condition[i] <= '9' {
+				i++
+			}
+		} else {
+			sb.WriteByte(condition[i])
+			i++
+		}
+	}
+	return sb.String()
+}

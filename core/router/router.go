@@ -131,23 +131,20 @@ func (r *Router) MethodNotAllowed(handler http.Handler) {
 // underlying ServeMux. If no route matches and a custom notFound handler
 // is set, it delegates to that handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// For the root router, we need to check if a match was found.
-	// The ServeMux always returns a handler (possibly a 404 one).
-	// We detect non-matches by checking the pattern after ServeMux returns.
-	if r.parent == nil {
-		// Root router: check for custom notFound / notAllowed
-		h, pattern := r.mux.Handler(req)
-		if pattern == "" {
-			if r.notFound != nil {
-				r.notFound.ServeHTTP(w, req)
-				return
-			}
-			http.NotFound(w, req)
+	// Check if any route actually matches before delegating to mux.
+	// Go 1.22 ServeMux doesn't let us override its built-in 404.
+	_, pattern := r.mux.Handler(req)
+
+	if pattern == "" {
+		// No route matched
+		if r.notFound != nil {
+			r.notFound.ServeHTTP(w, req)
 			return
 		}
-		h.ServeHTTP(w, req)
+		r.mux.ServeHTTP(w, req)
 		return
 	}
+
 	r.mux.ServeHTTP(w, req)
 }
 
