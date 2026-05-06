@@ -23,8 +23,11 @@ type App struct {
 	MCP      *mcp.Server
 	DB       *sql.DB
 	Config   AppConfig
+	Plugins  *PluginManager
 
-	server *http.Server
+	server   *http.Server
+	events   *EventBus
+	hooks    map[string]*HookRegistry
 }
 
 // AppOption is a functional option for configuring an App.
@@ -66,6 +69,9 @@ func NewApp(opts ...AppOption) *App {
 		Router:   router.New(),
 		MCP:      mcp.NewServer(),
 		Config:   AppConfig{},
+		Plugins:  NewPluginManager(),
+		events:   NewEventBus(),
+		hooks:    make(map[string]*HookRegistry),
 	}
 
 	for _, opt := range opts {
@@ -96,6 +102,40 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 	}
 
 	return a
+}
+
+// RegisterPlugin registers a plugin with the application's plugin manager.
+// Returns the App for fluent chaining.
+func (a *App) RegisterPlugin(plugin Plugin) *App {
+	if err := a.Plugins.Register(plugin); err != nil {
+		panic(fmt.Sprintf("framework: failed to register plugin %q: %v", plugin.Name(), err))
+	}
+	return a
+}
+
+// InitPlugins initializes all registered plugins. This should be called
+// after all plugins are registered and before the server starts.
+func (a *App) InitPlugins() error {
+	return a.Plugins.InitAll(a)
+}
+
+// Events returns the application's event bus.
+func (a *App) Events() *EventBus {
+	if a.events == nil {
+		a.events = NewEventBus()
+	}
+	return a.events
+}
+
+// HookRegistry returns (or creates) the hook registry for a named entity.
+func (a *App) HookRegistry(entityName string) *HookRegistry {
+	if a.hooks == nil {
+		a.hooks = make(map[string]*HookRegistry)
+	}
+	if _, ok := a.hooks[entityName]; !ok {
+		a.hooks[entityName] = NewHookRegistry()
+	}
+	return a.hooks[entityName]
 }
 
 // Start starts the HTTP server on the given address.

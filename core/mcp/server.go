@@ -72,6 +72,12 @@ func (s *Server) getTool(name string) (Tool, bool) {
 	return t, ok
 }
 
+// ListTools returns all registered tools (handlers are nilled out for safety).
+// This is the exported version of listTools for external consumption.
+func (s *Server) ListTools() []Tool {
+	return s.listTools()
+}
+
 // listTools returns all registered tools (without handlers).
 func (s *Server) listTools() []Tool {
 	s.mu.RLock()
