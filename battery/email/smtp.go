@@ -1,0 +1,223 @@
+package email
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"net/smtp"
+	"strings"
+)
+
+// SMTPConfig holds the configuration for an SMTP sender.
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	UseTLS   bool
+}
+
+// SMTPSender sends emails via SMTP.
+type SMTPSender struct {
+	config SMTPConfig
+}
+
+// NewSMTPSender creates a new SMTPSender with the given configuration.
+func NewSMTPSender(config SMTPConfig) *SMTPSender {
+	return &SMTPSender{config: config}
+}
+
+// Validate checks that the SMTPConfig has required fields.
+func (c SMTPConfig) Validate() error {
+	if c.Host == "" {
+		return fmt.Errorf("email: smtp host is required")
+	}
+	if c.Port <= 0 || c.Port > 65535 {
+		return fmt.Errorf("email: smtp port must be between 1 and 65535")
+	}
+	return nil
+}
+
+// addr returns the host:port address string.
+func (c SMTPConfig) addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+// Send implements the Sender interface using SMTP.
+func (s *SMTPSender) Send(ctx context.Context, email Email) error {
+	if err := s.config.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrSendFailed, err)
+	}
+
+	if len(email.To) == 0 {
+		return fmt.Errorf("%w: at least one recipient is required", ErrSendFailed)
+	}
+
+	addr := s.config.addr()
+
+	// Build the email message.
+	msg, err := buildMessage(email)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrSendFailed, err)
+	}
+
+	// Collect all recipients (To + CC + BCC).
+	recipients := append(append(email.To, email.CC...), email.BCC...)
+
+	// Connect to the server.
+	var client *smtp.Client
+	if s.config.UseTLS {
+		tlsConfig := &tls.Config{
+			ServerName: s.config.Host,
+		}
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("%w: tls dial failed: %v", ErrSendFailed, err)
+		}
+		client, err = smtp.NewClient(conn, s.config.Host)
+		if err != nil {
+			return fmt.Errorf("%w: smtp client creation failed: %v", ErrSendFailed, err)
+		}
+	} else {
+		c, err := smtp.Dial(addr)
+		if err != nil {
+			return fmt.Errorf("%w: smtp dial failed: %v", ErrSendFailed, err)
+		}
+		client = c
+	}
+	defer client.Close()
+
+	// Attempt STARTTLS if not already using implicit TLS.
+	if !s.config.UseTLS {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			tlsConfig := &tls.Config{ServerName: s.config.Host}
+			if err := client.StartTLS(tlsConfig); err != nil {
+				return fmt.Errorf("%w: starttls failed: %v", ErrSendFailed, err)
+			}
+		}
+	}
+
+	// Authenticate if credentials are provided.
+	if s.config.Username != "" && s.config.Password != "" {
+		if ok, _ := client.Extension("AUTH"); ok {
+			// Try CRAM-MD5 first, then fall back to PLAIN.
+			auth := smtp.CRAMMD5Auth(s.config.Username, s.config.Password)
+			if err := client.Auth(auth); err != nil {
+				// Fall back to PLAIN auth.
+				auth = smtp.PlainAuth("", s.config.Username, s.config.Password, s.config.Host)
+				if err := client.Auth(auth); err != nil {
+					return fmt.Errorf("%w: auth failed: %v", ErrSendFailed, err)
+				}
+			}
+		}
+	}
+
+	// Set the sender.
+	if err := client.Mail(email.From); err != nil {
+		return fmt.Errorf("%w: mail from failed: %v", ErrSendFailed, err)
+	}
+
+	// Add recipients.
+	for _, rcpt := range recipients {
+		if err := client.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("%w: rcpt to failed: %v", ErrSendFailed, err)
+		}
+	}
+
+	// Send the email body.
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("%w: data failed: %v", ErrSendFailed, err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("%w: write failed: %v", ErrSendFailed, err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("%w: close failed: %v", ErrSendFailed, err)
+	}
+
+	return client.Quit()
+}
+
+// buildMessage constructs the raw email message bytes.
+func buildMessage(email Email) ([]byte, error) {
+	var buf strings.Builder
+
+	// Headers
+	buf.WriteString("From: " + email.From + "\r\n")
+	buf.WriteString("To: " + strings.Join(email.To, ", ") + "\r\n")
+	if len(email.CC) > 0 {
+		buf.WriteString("Cc: " + strings.Join(email.CC, ", ") + "\r\n")
+	}
+	buf.WriteString("Subject: " + email.Subject + "\r\n")
+
+	// Custom headers
+	for k, v := range email.Headers {
+		buf.WriteString(k + ": " + v + "\r\n")
+	}
+
+	// Determine if we need MIME multipart.
+	hasAttachments := len(email.Attachments) > 0
+	hasTextAndHTML := email.TextBody != "" && email.HTMLBody != ""
+
+	if hasAttachments || hasTextAndHTML {
+		boundary := "gofastr-boundary-12345"
+		buf.WriteString("MIME-Version: 1.0\r\n")
+		buf.WriteString("Content-Type: multipart/mixed; boundary=" + boundary + "\r\n")
+		buf.WriteString("\r\n")
+
+		// Text body part
+		if email.TextBody != "" {
+			buf.WriteString("--" + boundary + "\r\n")
+			buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+			buf.WriteString("\r\n")
+			buf.WriteString(email.TextBody + "\r\n")
+		}
+
+		// HTML body part
+		if email.HTMLBody != "" {
+			buf.WriteString("--" + boundary + "\r\n")
+			buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
+			buf.WriteString("\r\n")
+			buf.WriteString(email.HTMLBody + "\r\n")
+		}
+
+		// Attachments
+		for _, att := range email.Attachments {
+			ct := att.ContentType
+			if ct == "" {
+				ct = "application/octet-stream"
+			}
+			buf.WriteString("--" + boundary + "\r\n")
+			buf.WriteString("Content-Type: " + ct + "; name=\"" + att.Filename + "\"\r\n")
+			buf.WriteString("Content-Transfer-Encoding: base64\r\n")
+			buf.WriteString("Content-Disposition: attachment; filename=\"" + att.Filename + "\"\r\n")
+			buf.WriteString("\r\n")
+			buf.WriteString(encodeBase64(att.Content))
+			buf.WriteString("\r\n")
+		}
+
+		buf.WriteString("--" + boundary + "--\r\n")
+	} else {
+		// Simple single-part message.
+		if email.HTMLBody != "" {
+			buf.WriteString("MIME-Version: 1.0\r\n")
+			buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
+		} else {
+			buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+		}
+		buf.WriteString("\r\n")
+		if email.TextBody != "" {
+			buf.WriteString(email.TextBody)
+		} else if email.HTMLBody != "" {
+			buf.WriteString(email.HTMLBody)
+		}
+	}
+
+	return []byte(buf.String()), nil
+}
+
+// encodeBase64 wraps base64-encoded content at 76 characters per line.
+func encodeBase64(data []byte) string {
+	return b64Encode(data)
+}
