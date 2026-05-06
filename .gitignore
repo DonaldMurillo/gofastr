@@ -1,0 +1,4 @@
+# pi agent state (auto-added)
+.pi/
+pi-agent/plugins/*
+!pi-agent/plugins/registry.json
