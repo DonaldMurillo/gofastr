@@ -94,7 +94,10 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		createOp.Summary = "Create " + entityName
 		createOp.OperationID = "create_" + entityName
 		createOp.Tags = []string{entityName}
-		createOp.SetRequestBody("application/json", entitySchema, true)
+
+		// Create request body excludes the primary key (server-generated)
+		createSchema := excludeField(entitySchema, "id")
+		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, entityRef)
 		createOp.Responses[400] = map[string]any{
 			"description": "Validation error",
@@ -155,4 +158,37 @@ func fieldToFilterSchema(f schema.Field) map[string]any {
 	default:
 		return map[string]any{"type": "string"}
 	}
+}
+
+// excludeField returns a copy of an OpenAPI schema with a field removed from properties and required.
+func excludeField(schema map[string]any, fieldName string) map[string]any {
+	cp := make(map[string]any, len(schema))
+	for k, v := range schema {
+		cp[k] = v
+	}
+	if props, ok := cp["properties"].(map[string]any); ok {
+		newProps := make(map[string]any, len(props))
+		camelName := toCamelCase(fieldName)
+		for k, v := range props {
+			if k != camelName {
+				newProps[k] = v
+			}
+		}
+		cp["properties"] = newProps
+	}
+	if reqs, ok := cp["required"].([]string); ok {
+		camelName := toCamelCase(fieldName)
+		filtered := make([]string, 0, len(reqs))
+		for _, r := range reqs {
+			if r != camelName {
+				filtered = append(filtered, r)
+			}
+		}
+		if len(filtered) > 0 {
+			cp["required"] = filtered
+		} else {
+			delete(cp, "required")
+		}
+	}
+	return cp
 }

@@ -177,10 +177,9 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 		body = mapToSnakeCase(body)
 
-		// Auto-generate primary key if not provided
-		if _, ok := body[ch.PrimaryKey]; !ok {
-			body[ch.PrimaryKey] = generateID()
-		}
+		// Always auto-generate primary key — never trust client-provided IDs
+		delete(body, ch.PrimaryKey)
+		body[ch.PrimaryKey] = generateID()
 
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {

@@ -302,9 +302,8 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 		t.Fatal("spec should define 201 response for POST /posts")
 	}
 
-	// Create a post
+	// Create a post (server auto-generates ID)
 	resp := ta.Post("/posts", map[string]string{
-		"id":    "p-new",
 		"title": "New Post",
 		"body":  "Fresh content",
 	})
@@ -332,9 +331,10 @@ func TestE2E_Conformance_CreatePost_ResponseMatchesSpec(t *testing.T) {
 	assertEqual(t, "id type", "string", jsonType(created["id"]))
 	assertEqual(t, "title type", "string", jsonType(created["title"]))
 
-	// Verify DB actually has the record
+	// Verify DB actually has the record using the auto-generated ID
+	id := created["id"].(string)
 	var title string
-	err := app.DB.QueryRow("SELECT title FROM posts WHERE id = ?", "p-new").Scan(&title)
+	err := app.DB.QueryRow("SELECT title FROM posts WHERE id = ?", id).Scan(&title)
 	if err != nil {
 		t.Fatalf("DB query: %v", err)
 	}
@@ -353,10 +353,8 @@ func TestE2E_Conformance_CreatePost_Validation400(t *testing.T) {
 		t.Fatal("spec should define 400 response for POST /posts")
 	}
 
-	// Missing required "title" field
-	resp := ta.Post("/posts", map[string]string{
-		"id": "p-bad",
-	})
+	// Missing required "title" field (id is auto-generated, not required)
+	resp := ta.Post("/posts", map[string]string{})
 	resp.AssertStatus(t, http.StatusBadRequest)
 	resp.AssertBodyContains(t, "validation")
 }

@@ -110,26 +110,26 @@ func TestE2E_CRUD_CreateAndGet(t *testing.T) {
 	ta := TestHarness(t, app)
 	defer ta.Close()
 
-	// CREATE a post
+	// CREATE a post (server auto-generates ID)
 	resp := ta.Post("/posts", map[string]string{
-		"id":    "post-1",
 		"title": "Hello World",
 		"body":  "My first post",
 	})
 	resp.AssertStatus(t, http.StatusCreated)
 	resp.AssertBodyContains(t, "Hello World")
 
-	// Verify the body contains the ID
+	// Capture the auto-generated ID
 	var createResult map[string]any
 	if err := resp.JSON(&createResult); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
-	if createResult["id"] != "post-1" {
-		t.Errorf("expected id=post-1, got %v", createResult["id"])
+	id := createResult["id"].(string)
+	if id == "" {
+		t.Fatalf("expected auto-generated ID, got empty")
 	}
 
 	// GET the same post back
-	resp = ta.Get("/posts/post-1")
+	resp = ta.Get("/posts/" + id)
 	resp.AssertStatus(t, http.StatusOK)
 	resp.AssertBodyContains(t, "Hello World")
 
@@ -143,7 +143,7 @@ func TestE2E_CRUD_CreateAndGet(t *testing.T) {
 
 	// Verify data in database directly
 	var title string
-	err := db.QueryRow("SELECT title FROM posts WHERE id = ?", "post-1").Scan(&title)
+	err := db.QueryRow("SELECT title FROM posts WHERE id = ?", id).Scan(&title)
 	if err != nil {
 		t.Fatalf("direct DB query: %v", err)
 	}
@@ -731,20 +731,25 @@ func TestE2E_SoftDelete(t *testing.T) {
 	ta := TestHarness(t, app)
 	defer ta.Close()
 
-	// Create a post
+	// Create a post (server generates ID)
 	resp := ta.Post("/posts", map[string]string{
-		"id":    "p1",
 		"title": "Soft Delete Me",
 	})
 	resp.AssertStatus(t, http.StatusCreated)
 
+	var created map[string]any
+	if err := resp.JSON(&created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	id := created["id"].(string)
+
 	// Soft delete
-	resp = ta.Delete("/posts/p1")
+	resp = ta.Delete("/posts/" + id)
 	resp.AssertStatus(t, http.StatusNoContent)
 
 	// Verify deleted_at is set in DB
 	var deletedAt sql.NullString
-	err = db.QueryRow("SELECT deleted_at FROM posts WHERE id = ?", "p1").Scan(&deletedAt)
+	err = db.QueryRow("SELECT deleted_at FROM posts WHERE id = ?", id).Scan(&deletedAt)
 	if err != nil {
 		t.Fatalf("query deleted_at: %v", err)
 	}
@@ -754,7 +759,7 @@ func TestE2E_SoftDelete(t *testing.T) {
 
 	// Row still exists
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM posts WHERE id = ?", "p1").Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM posts WHERE id = ?", id).Scan(&count)
 	if count != 1 {
 		t.Errorf("expected soft-deleted row to still exist, count=%d", count)
 	}
