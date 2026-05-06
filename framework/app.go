@@ -172,6 +172,7 @@ func (a *App) HookRegistry(entityName string) *HookRegistry {
 
 // Start starts the HTTP server on the given address.
 // Registers /debug/stats endpoint for runtime diagnostics.
+// Sets the process title to the app name for visibility in ps/Activity Monitor.
 func (a *App) Start(addr string) error {
 	a.registerDebugEndpoints()
 
@@ -179,6 +180,9 @@ func (a *App) Start(addr string) error {
 	if name == "" {
 		name = "gofastr"
 	}
+
+	// Set process title so it shows in ps / Activity Monitor
+	os.Args[0] = "gofastr-" + name
 
 	// Strip leading colon for display
 	host := addr
