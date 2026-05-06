@@ -330,7 +330,7 @@ func TestTimeoutSlowHandler(t *testing.T) {
 
 func TestTimeoutContextCancelled(t *testing.T) {
 	ctxErrCh := make(chan error, 1)
-	handler := Timeout(50*time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Timeout(50 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		ctxErrCh <- r.Context().Err()
 	}))

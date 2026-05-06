@@ -11,7 +11,7 @@ import (
 type Layout func(title string, content HTML) HTML
 
 var (
-	layoutMu      sync.RWMutex
+	layoutMu       sync.RWMutex
 	layoutRegistry = make(map[string]Layout)
 )
 

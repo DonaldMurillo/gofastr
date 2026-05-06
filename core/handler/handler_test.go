@@ -29,12 +29,12 @@ type userResponse struct {
 }
 
 type combinedReq struct {
-	Name    string `json:"name"`
-	Role    string `json:"role"`
-	Page    int    `query:"page"`
-	Sort    string `query:"sort"`
-	ID      string `path:"id"`
-	XTrace  string `header:"X-Trace-ID"`
+	Name   string `json:"name"`
+	Role   string `json:"role"`
+	Page   int    `query:"page"`
+	Sort   string `query:"sort"`
+	ID     string `path:"id"`
+	XTrace string `header:"X-Trace-ID"`
 }
 
 // --- Handler tests ---
@@ -779,5 +779,5 @@ func TestGenericHandlerCompiles(t *testing.T) {
 	_ = Handler[string, int](nil)
 	_ = Handler[struct{ Name string }, struct{ OK bool }](nil)
 	_ = Handler[any, any](nil)
-	fmt.Sprintf("handlers compile with various type params")
+	_ = fmt.Sprintf("handlers compile with various type params")
 }

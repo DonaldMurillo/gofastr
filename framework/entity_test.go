@@ -36,9 +36,8 @@ func TestDefineEntityWithFields(t *testing.T) {
 
 func TestDefineEntityWithExplicitTable(t *testing.T) {
 	e := Define("User", EntityConfig{
-		Table: "app_users",
-		Fields: []schema.Field{
-		},
+		Table:  "app_users",
+		Fields: []schema.Field{},
 	})
 
 	if e.GetTable() != "app_users" {
@@ -103,10 +102,8 @@ func TestGetEntityNotFound(t *testing.T) {
 func TestDuplicateNameReturnsError(t *testing.T) {
 	reg := NewRegistry()
 
-	e1 := Define("tags", EntityConfig{
-	})
-	e2 := Define("tags", EntityConfig{
-	})
+	e1 := Define("tags", EntityConfig{})
+	e2 := Define("tags", EntityConfig{})
 
 	if err := reg.Register(e1); err != nil {
 		t.Fatalf("first register should succeed: %v", err)
@@ -119,10 +116,8 @@ func TestDuplicateNameReturnsError(t *testing.T) {
 func TestRegistryAll(t *testing.T) {
 	reg := NewRegistry()
 
-	reg.Register(Define("users", EntityConfig{
-	}))
-	reg.Register(Define("posts", EntityConfig{
-	}))
+	reg.Register(Define("users", EntityConfig{}))
+	reg.Register(Define("posts", EntityConfig{}))
 
 	all := reg.All()
 	if len(all) != 2 {
@@ -176,10 +171,7 @@ func TestAppFluentAPI(t *testing.T) {
 func TestAppFluentChaining(t *testing.T) {
 	app := NewApp()
 
-	app.Entity("users", EntityConfig{
-	}).Entity("posts", EntityConfig{
-	}).Entity("comments", EntityConfig{
-	})
+	app.Entity("users", EntityConfig{}).Entity("posts", EntityConfig{}).Entity("comments", EntityConfig{})
 
 	all := app.Registry.All()
 	if len(all) != 3 {
@@ -191,8 +183,7 @@ func TestAppWithDB(t *testing.T) {
 	app := NewApp()
 
 	// Should not panic when no DB is set
-	app.Entity("items", EntityConfig{
-	})
+	app.Entity("items", EntityConfig{})
 
 	e, _ := app.Registry.Get("items")
 	if e.DB != nil {
@@ -218,8 +209,7 @@ func TestEntityValidation(t *testing.T) {
 		{
 			name: "empty name",
 			entity: &Entity{
-				Config: EntityConfig{
-				},
+				Config: EntityConfig{},
 			},
 			wantErr: true,
 		},

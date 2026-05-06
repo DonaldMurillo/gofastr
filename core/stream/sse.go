@@ -12,10 +12,10 @@ import (
 // It automatically sets the required headers (Content-Type, Cache-Control,
 // Connection) on first write and flushes after every event.
 type SSEWriter struct {
-	w     http.ResponseWriter
-	mu    sync.Mutex
-	init  bool // true after headers have been written
-	flush http.Flusher
+	w      http.ResponseWriter
+	mu     sync.Mutex
+	init   bool // true after headers have been written
+	flush  http.Flusher
 	nextID string // queued id to emit before the next event
 }
 

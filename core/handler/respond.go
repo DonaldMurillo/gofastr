@@ -97,8 +97,8 @@ func SSEStream(w http.ResponseWriter, events <-chan SSE) {
 
 // RawBytes is a response type for raw bytes with an explicit content type.
 type RawBytes struct {
-	Data    []byte
-	CT      string // content type, e.g. "image/png"
+	Data []byte
+	CT   string // content type, e.g. "image/png"
 }
 
 func (r RawBytes) ContentType() string { return r.CT }

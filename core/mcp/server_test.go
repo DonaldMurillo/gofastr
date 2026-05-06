@@ -65,7 +65,7 @@ func TestCallTool_ValidParams(t *testing.T) {
 	})
 
 	params, _ := json.Marshal(map[string]any{
-		"name": "add",
+		"name":   "add",
 		"params": map[string]any{"a": 3, "b": 4},
 	})
 	req := Request{JSONRPC: "2.0", ID: 2, Method: "tools/call", Params: params}
@@ -366,5 +366,3 @@ func TestCallTool_HandlerError(t *testing.T) {
 
 // test key for context propagation test
 type testKey struct{}
-
-

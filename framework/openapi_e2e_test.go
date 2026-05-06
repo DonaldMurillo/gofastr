@@ -557,8 +557,8 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 		"score":      {"number", ""},
 		"price":      {"string", "decimal"},
 		"active":     {"boolean", ""},
-		"createdAt": {"string", "date-time"},
-		"birthDate": {"string", "date"},
+		"createdAt":  {"string", "date-time"},
+		"birthDate":  {"string", "date"},
 		"avatar":     {"string", "uri"},
 		"attachment": {"string", "binary"},
 	}

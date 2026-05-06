@@ -40,9 +40,9 @@ type App struct {
 	Config   AppConfig
 	Plugins  *PluginManager
 
-	server   *http.Server
-	events   *EventBus
-	hooks    map[string]*HookRegistry
+	server *http.Server
+	events *EventBus
+	hooks  map[string]*HookRegistry
 }
 
 // AppOption is a functional option for configuring an App.
@@ -224,14 +224,14 @@ func (a *App) registerDebugEndpoints() {
 			"cpuCores":   runtime.NumCPU(),
 			"goVersion":  runtime.Version(),
 			"memory": map[string]any{
-				"alloc":      formatBytes(m.Alloc),
-				"totalAlloc": formatBytes(m.TotalAlloc),
-				"sys":        formatBytes(m.Sys),
-				"heapAlloc":  formatBytes(m.HeapAlloc),
-				"heapSys":    formatBytes(m.HeapSys),
-				"heapInUse":  formatBytes(m.HeapInuse),
-				"stackInUse": formatBytes(m.StackInuse),
-				"gcCycles":   m.NumGC,
+				"alloc":       formatBytes(m.Alloc),
+				"totalAlloc":  formatBytes(m.TotalAlloc),
+				"sys":         formatBytes(m.Sys),
+				"heapAlloc":   formatBytes(m.HeapAlloc),
+				"heapSys":     formatBytes(m.HeapSys),
+				"heapInUse":   formatBytes(m.HeapInuse),
+				"stackInUse":  formatBytes(m.StackInuse),
+				"gcCycles":    m.NumGC,
 				"gcPauseLast": fmt.Sprintf("%.3fms", float64(m.PauseNs[(m.NumGC+255)%256])/1e6),
 			},
 			"entities": len(a.Registry.All()),
@@ -258,7 +258,7 @@ func formatBytes(b uint64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-func arrow() string { return "\033[33m→\033[0m" }
+func arrow() string        { return "\033[33m→\033[0m" }
 func bold(s string) string { return "\033[1m" + s + "\033[0m" }
 
 // Shutdown gracefully shuts down the HTTP server.

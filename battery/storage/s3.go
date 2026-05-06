@@ -51,10 +51,10 @@ func WithPresigner(p Presigner) S3Option {
 // S3Storage implements Storage backed by an S3-compatible object store.
 // It uses a minimal S3Client interface so no AWS SDK is imported directly.
 type S3Storage struct {
-	Bucket   string
-	Region   string
-	Endpoint string
-	Client   S3Client
+	Bucket    string
+	Region    string
+	Endpoint  string
+	Client    S3Client
 	presigner Presigner
 }
 

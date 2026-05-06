@@ -13,11 +13,11 @@ import (
 
 func TestEmailCreation(t *testing.T) {
 	email := Email{
-		From:    "sender@example.com",
-		To:      []string{"alice@example.com", "bob@example.com"},
-		CC:      []string{"cc@example.com"},
-		BCC:     []string{"bcc@example.com"},
-		Subject: "Test Subject",
+		From:     "sender@example.com",
+		To:       []string{"alice@example.com", "bob@example.com"},
+		CC:       []string{"cc@example.com"},
+		BCC:      []string{"bcc@example.com"},
+		Subject:  "Test Subject",
 		TextBody: "Hello, World!",
 		HTMLBody: "<h1>Hello, World!</h1>",
 		Attachments: []Attachment{
@@ -523,9 +523,9 @@ func TestSMTPSenderNoRecipients(t *testing.T) {
 func TestAttachmentEncoding(t *testing.T) {
 	// Test that attachments are correctly base64-encoded in the message.
 	email := Email{
-		From:    "sender@example.com",
-		To:      []string{"alice@example.com"},
-		Subject: "Test Attachments",
+		From:     "sender@example.com",
+		To:       []string{"alice@example.com"},
+		Subject:  "Test Attachments",
 		TextBody: "See attached.",
 		Attachments: []Attachment{
 			{
@@ -614,8 +614,8 @@ func TestBuildMessageCustomHeaders(t *testing.T) {
 		To:      []string{"alice@example.com"},
 		Subject: "Custom Headers",
 		Headers: map[string]string{
-			"X-Mailer":    "GoFastr",
-			"X-Priority":  "1",
+			"X-Mailer":   "GoFastr",
+			"X-Priority": "1",
 		},
 	}
 

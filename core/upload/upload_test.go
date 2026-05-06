@@ -123,9 +123,9 @@ func TestRejectDisallowedExtension(t *testing.T) {
 	storage := NewLocalStorage(dir)
 
 	cfg := Config{
-		MaxSize:      1 << 20,
-		AllowedExts:  []string{"png", "jpg"},
-		Storage:      storage,
+		MaxSize:     1 << 20,
+		AllowedExts: []string{"png", "jpg"},
+		Storage:     storage,
 	}
 
 	handler := Handler(cfg)

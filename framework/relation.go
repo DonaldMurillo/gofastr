@@ -4,10 +4,10 @@ package framework
 type RelationType int
 
 const (
-	RelHasOne    RelationType = iota // target has a FK pointing back to us
-	RelHasMany                       // target has a FK pointing back to us (many rows)
-	RelManyToOne                     // we hold a FK pointing to the target (BelongsTo)
-	RelManyToMany                    // linked through a pivot/join table
+	RelHasOne     RelationType = iota // target has a FK pointing back to us
+	RelHasMany                        // target has a FK pointing back to us (many rows)
+	RelManyToOne                      // we hold a FK pointing to the target (BelongsTo)
+	RelManyToMany                     // linked through a pivot/join table
 )
 
 // Relation describes a relationship between two entities.

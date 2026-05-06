@@ -1,0 +1,23 @@
+#!/bin/sh
+# GoFastr pre-commit hook
+# Runs formatting, vet, and tests before allowing a commit
+
+set -e
+
+echo "  → Running go fmt..."
+gofmt_output=$(gofmt -l .)
+if [ -n "$gofmt_output" ]; then
+  echo "  ✗ Files not formatted:"
+  echo "$gofmt_output"
+  echo ""
+  echo "  Run: gofmt -w ."
+  exit 1
+fi
+
+echo "  → Running go vet..."
+go vet ./...
+
+echo "  → Running tests..."
+go test -count=1 ./...
+
+echo "  ✓ All checks passed"

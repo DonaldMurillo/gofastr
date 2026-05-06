@@ -370,9 +370,9 @@ func TestFileFieldDeleteNilStorage(t *testing.T) {
 // --- Mock Storage ---
 
 type mockStorage struct {
-	savedKey    string
-	savedData   string
-	deletedKey  string
+	savedKey   string
+	savedData  string
+	deletedKey string
 }
 
 func (m *mockStorage) Save(ctx context.Context, key string, r io.Reader) error {

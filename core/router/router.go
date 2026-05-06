@@ -14,12 +14,12 @@ type Middleware func(http.Handler) http.Handler
 // It uses the Go 1.22+ ServeMux pattern syntax (e.g. "GET /users/{id}")
 // which natively supports method matching and path parameter capture.
 type Router struct {
-	mux          *http.ServeMux
-	prefix       string
-	middlewares  []Middleware
-	notFound     http.Handler
-	notAllowed   http.Handler
-	parent       *Router
+	mux         *http.ServeMux
+	prefix      string
+	middlewares []Middleware
+	notFound    http.Handler
+	notAllowed  http.Handler
+	parent      *Router
 }
 
 // New creates a new Router.

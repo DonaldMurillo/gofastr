@@ -114,9 +114,9 @@ func TestMultiplePathParams(t *testing.T) {
 
 func TestFieldToSchema(t *testing.T) {
 	tests := []struct {
-		name    string
-		field   schema.Field
-		want    map[string]any
+		name  string
+		field schema.Field
+		want  map[string]any
 	}{
 		{
 			name:  "string",

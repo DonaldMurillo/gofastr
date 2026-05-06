@@ -627,8 +627,8 @@ type routesPlugin struct {
 	name string
 }
 
-func (p *routesPlugin) Name() string         { return p.name }
-func (p *routesPlugin) Init(app *App) error  { return nil }
+func (p *routesPlugin) Name() string        { return p.name }
+func (p *routesPlugin) Init(app *App) error { return nil }
 func (p *routesPlugin) RegisterRoutes(r *router.Router) {
 	r.Get("/custom/hello", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

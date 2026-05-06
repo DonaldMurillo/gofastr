@@ -182,5 +182,3 @@ func containsDotDot(p string) bool {
 	}
 	return false
 }
-
-

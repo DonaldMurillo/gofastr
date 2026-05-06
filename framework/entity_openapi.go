@@ -29,9 +29,9 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 	s.AddSchema("ListResponse", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"data":        map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-			"total":       map[string]any{"type": "integer"},
-			"page":        map[string]any{"type": "integer"},
+			"data":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+			"total":      map[string]any{"type": "integer"},
+			"page":       map[string]any{"type": "integer"},
 			"perPage":    map[string]any{"type": "integer"},
 			"totalPages": map[string]any{"type": "integer"},
 		},

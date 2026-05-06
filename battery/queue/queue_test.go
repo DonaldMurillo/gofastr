@@ -212,7 +212,7 @@ func TestSchedulerFiresAtInterval(t *testing.T) {
 	q.Start()
 
 	sched := NewScheduler(q)
-	sched.Every(100 * time.Millisecond).Job("scheduled", json.RawMessage(`{}`)).Register()
+	sched.Every(100*time.Millisecond).Job("scheduled", json.RawMessage(`{}`)).Register()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
 	defer cancel()

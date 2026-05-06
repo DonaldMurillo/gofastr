@@ -23,9 +23,9 @@ type Request struct {
 
 // Response represents a JSON-RPC 2.0 response.
 type Response struct {
-	JSONRPC string   `json:"jsonrpc"`
-	ID      any      `json:"id"`
-	Result  any      `json:"result,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      any       `json:"id"`
+	Result  any       `json:"result,omitempty"`
 	Error   *RPCError `json:"error,omitempty"`
 }
 

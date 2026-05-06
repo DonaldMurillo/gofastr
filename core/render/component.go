@@ -9,7 +9,7 @@ type Component[T any] func(data T) HTML
 // componentRegistry stores named components. Components are any function
 // that returns HTML; callers type-assert to the concrete signature.
 var (
-	componentMu      sync.RWMutex
+	componentMu       sync.RWMutex
 	componentRegistry = make(map[string]any)
 )
 

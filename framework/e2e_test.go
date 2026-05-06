@@ -667,8 +667,8 @@ func TestE2E_MultipleEntities(t *testing.T) {
 
 	// Create a comment on that post
 	resp = ta.Post("/comments", map[string]string{
-		"id":      "c1",
-		"body":    "Great post!",
+		"id":     "c1",
+		"body":   "Great post!",
 		"postId": "p1",
 	})
 	resp.AssertStatus(t, http.StatusCreated)

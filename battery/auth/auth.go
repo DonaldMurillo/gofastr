@@ -19,8 +19,8 @@ type BasicUser struct {
 	Roles []string
 }
 
-func (u *BasicUser) GetID() string    { return u.ID }
-func (u *BasicUser) GetEmail() string { return u.Email }
+func (u *BasicUser) GetID() string      { return u.ID }
+func (u *BasicUser) GetEmail() string   { return u.Email }
 func (u *BasicUser) GetRoles() []string { return u.Roles }
 
 // Authenticator verifies credentials and returns the authenticated user.
