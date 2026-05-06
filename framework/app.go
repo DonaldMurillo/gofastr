@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/gofastr/gofastr/core/openapi"
+
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/router"
 )
@@ -111,9 +113,15 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 	}
 
 	if err := a.Registry.Register(e); err != nil {
-		// Store the error so the caller can check via a Validate() call
-		// or we panic for now — fluent APIs shouldn't silently fail
 		panic(fmt.Sprintf("framework: failed to register entity %q: %v", name, err))
+	}
+
+	// Auto-register CRUD routes if enabled (default when DB is set)
+	if (config.CRUD || a.DB != nil) && a.DB != nil {
+		handler := NewCrudHandler(e, a.DB)
+		// Apply JSON casing from app config
+		handler.JSONCase = a.JSONCasing()
+		RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
 	}
 
 	return a
@@ -171,9 +179,27 @@ func (a *App) HookRegistry(entityName string) *HookRegistry {
 }
 
 // Start starts the HTTP server on the given address.
-// Registers /debug/stats endpoint for runtime diagnostics.
+// Auto-migrates tables, registers OpenAPI/Swagger, debug stats.
 // Sets the process title to the app name for visibility in ps/Activity Monitor.
 func (a *App) Start(addr string) error {
+	// Auto-migrate all registered entities
+	if a.DB != nil {
+		if err := AutoMigrate(a.DB, a.Registry); err != nil {
+			return fmt.Errorf("auto-migrate: %w", err)
+		}
+	}
+
+	// Auto-generate and serve OpenAPI spec
+	if len(a.Registry.All()) > 0 {
+		appName := a.Config.Name
+		if appName == "" {
+			appName = "GoFastr API"
+		}
+		spec := EntityOpenAPI(a.Registry, appName, "1.0.0")
+		a.Router.Get("/openapi.json", openapi.Handler(spec))
+		a.Router.Get("/docs/", openapi.SwaggerUIHandler(spec, "/docs"))
+	}
+
 	a.registerDebugEndpoints()
 
 	name := a.Config.Name
