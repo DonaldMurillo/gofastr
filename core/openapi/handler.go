@@ -50,5 +50,7 @@ func SwaggerUIHandler(spec *Spec, basePath string) http.Handler {
 		w.Write([]byte(uiHTML))
 	})
 
-	return mux
+	// Strip the basePath prefix so internal routes (/openapi.json, /) match
+	// when mounted at a sub-path like /docs/
+	return http.StripPrefix(basePath, mux)
 }

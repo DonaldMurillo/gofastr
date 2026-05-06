@@ -344,7 +344,7 @@ func TestSwaggerUIHandler(t *testing.T) {
 	h := SwaggerUIHandler(s, "/docs")
 
 	// Spec endpoint
-	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/docs/openapi.json", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -352,7 +352,7 @@ func TestSwaggerUIHandler(t *testing.T) {
 	}
 
 	// UI page
-	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req = httptest.NewRequest(http.MethodGet, "/docs/", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
