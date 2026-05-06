@@ -113,10 +113,18 @@ func (a *App) RegisterPlugin(plugin Plugin) *App {
 	return a
 }
 
-// InitPlugins initializes all registered plugins. This should be called
-// after all plugins are registered and before the server starts.
+// InitPlugins initializes all registered plugins and calls their optional
+// interface methods (HasRoutes, HasMiddleware, HasTools, HasHooks).
+// This should be called after all plugins are registered and before the server starts.
 func (a *App) InitPlugins() error {
-	return a.Plugins.InitAll(a)
+	if err := a.Plugins.InitAll(a); err != nil {
+		return err
+	}
+	a.Plugins.RegisterRoutes(a.Router)
+	a.Plugins.RegisterMiddleware(a)
+	a.Plugins.RegisterTools(a.MCP)
+	a.Plugins.RegisterHooks(a)
+	return nil
 }
 
 // Events returns the application's event bus.

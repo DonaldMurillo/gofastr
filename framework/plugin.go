@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 
+	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/router"
 )
 
@@ -29,6 +30,11 @@ type HasHooks interface {
 	RegisterHooks(app *App)
 }
 
+// HasTools is an optional interface for plugins that register MCP tools.
+type HasTools interface {
+	RegisterTools(server *mcp.Server)
+}
+
 // PluginManager manages registered plugins.
 type PluginManager struct {
 	plugins map[string]Plugin
@@ -45,6 +51,9 @@ func NewPluginManager() *PluginManager {
 // Register adds a plugin to the manager.
 // Returns an error if a plugin with the same name is already registered.
 func (pm *PluginManager) Register(plugin Plugin) error {
+	if plugin == nil {
+		return fmt.Errorf("plugin: cannot register nil plugin")
+	}
 	name := plugin.Name()
 	if _, exists := pm.plugins[name]; exists {
 		return fmt.Errorf("plugin %q already registered", name)
@@ -108,4 +117,18 @@ func (pm *PluginManager) RegisterHooks(app *App) {
 			hp.RegisterHooks(app)
 		}
 	}
+}
+
+// RegisterTools calls RegisterTools on all plugins that implement HasTools.
+func (pm *PluginManager) RegisterTools(server *mcp.Server) {
+	for _, name := range pm.order {
+		if tp, ok := pm.plugins[name].(HasTools); ok {
+			tp.RegisterTools(server)
+		}
+	}
+}
+
+// Names returns the names of all registered plugins in registration order.
+func (pm *PluginManager) Names() []string {
+	return append([]string{}, pm.order...)
 }
