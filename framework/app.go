@@ -10,9 +10,20 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 )
 
+// JSONCase defines the casing convention for JSON keys in API responses.
+type JSONCase string
+
+const (
+	// CaseCamel outputs camelCase (default, web standard).
+	CaseCamel JSONCase = "camelCase"
+	// CaseSnake outputs snake_case (database-style).
+	CaseSnake JSONCase = "snake_case"
+)
+
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name string // application name
+	Name     string   // application name
+	JSONCase JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
 }
 
 // App is the top-level application container.
@@ -68,7 +79,7 @@ func NewApp(opts ...AppOption) *App {
 		Registry: NewRegistry(),
 		Router:   router.New(),
 		MCP:      mcp.NewServer(),
-		Config:   AppConfig{},
+		Config:   AppConfig{JSONCase: CaseCamel},
 		Plugins:  NewPluginManager(),
 		events:   NewEventBus(),
 		hooks:    make(map[string]*HookRegistry),
@@ -102,6 +113,15 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 	}
 
 	return a
+}
+
+// JSONCasing returns the configured JSON casing strategy.
+// Defaults to CaseCamel if not explicitly set.
+func (a *App) JSONCasing() JSONCase {
+	if a.Config.JSONCase == "" {
+		return CaseCamel
+	}
+	return a.Config.JSONCase
 }
 
 // RegisterPlugin registers a plugin with the application's plugin manager.

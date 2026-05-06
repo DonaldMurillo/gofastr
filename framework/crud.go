@@ -24,12 +24,19 @@ type DBExecutor interface {
 type CrudHandler struct {
 	Entity     *Entity
 	DB         DBExecutor
-	PrimaryKey string // defaults to "id"
+	PrimaryKey string   // defaults to "id"
+	JSONCase   JSONCase // casing strategy for JSON keys
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
 func NewCrudHandler(entity *Entity, db DBExecutor) *CrudHandler {
-	return &CrudHandler{Entity: entity, DB: db, PrimaryKey: "id"}
+	return &CrudHandler{Entity: entity, DB: db, PrimaryKey: "id", JSONCase: CaseCamel}
+}
+
+// WithJSONCase sets the JSON casing strategy for the handler.
+func (ch *CrudHandler) WithJSONCase(c JSONCase) *CrudHandler {
+	ch.JSONCase = c
+	return ch
 }
 
 // ListResponse is the standard JSON response for list endpoints.
@@ -58,6 +65,36 @@ func (ch *CrudHandler) entityFields() []string {
 		names = append([]string{ch.PrimaryKey}, names...)
 	}
 	return names
+}
+
+// convertKey applies the configured JSON casing to a DB column name.
+func (ch *CrudHandler) convertKey(col string) string {
+	switch ch.JSONCase {
+	case CaseSnake:
+		return col
+	default: // CaseCamel
+		return toCamelCase(col)
+	}
+}
+
+// convertMapKeys applies the configured JSON casing to all keys in a map.
+func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
+	switch ch.JSONCase {
+	case CaseSnake:
+		return m
+	default: // CaseCamel
+		return mapToCamelCase(m)
+	}
+}
+
+// unconvertMapKeys reverses the JSON casing back to DB column names (snake_case).
+func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
+	switch ch.JSONCase {
+	case CaseSnake:
+		return m
+	default: // CaseCamel
+		return mapToSnakeCase(m)
+	}
 }
 
 // entitySchema returns the schema for validation.
@@ -108,7 +145,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		results, err := scanRows(rows, cols)
+		results, err := scanRows(rows, cols, ch.convertKey)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "scan failed: "+err.Error())
 			return
@@ -150,7 +187,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		sqlStr, args := qb.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-		result, err := scanRow(row, cols)
+		result, err := scanRow(row, cols, ch.convertKey)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				writeJSONError(w, http.StatusNotFound, "not found")
@@ -175,7 +212,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
-		body = mapToSnakeCase(body)
+		body = ch.unconvertMapKeys(body)
 
 		// Always auto-generate primary key — never trust client-provided IDs
 		delete(body, ch.PrimaryKey)
@@ -226,7 +263,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		sqlStr, args := ib.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-		result, err := scanRow(row, ch.entityFields())
+		result, err := scanRow(row, ch.entityFields(), ch.convertKey)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 			return
@@ -253,7 +290,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
-		body = mapToSnakeCase(body)
+		body = ch.unconvertMapKeys(body)
 
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
@@ -292,7 +329,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		sqlStr, args := ub.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-		result, err := scanRow(row, ch.entityFields())
+		result, err := scanRow(row, ch.entityFields(), ch.convertKey)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				writeJSONError(w, http.StatusNotFound, "not found")
@@ -372,8 +409,8 @@ func parsePagination(r *http.Request) (page, perPage int) {
 	return
 }
 
-// scanRows scans all rows into a slice of maps.
-func scanRows(rows *sql.Rows, cols []string) ([]map[string]any, error) {
+// scanRows scans all rows into a slice of maps, applying keyFunc to column names.
+func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
 	var results []map[string]any
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -386,15 +423,15 @@ func scanRows(rows *sql.Rows, cols []string) ([]map[string]any, error) {
 		}
 		row := make(map[string]any, len(cols))
 		for i, col := range cols {
-			row[toCamelCase(col)] = convertValue(values[i])
+			row[keyFunc(col)] = convertValue(values[i])
 		}
 		results = append(results, row)
 	}
 	return results, nil
 }
 
-// scanRow scans a single row into a map.
-func scanRow(row *sql.Row, cols []string) (map[string]any, error) {
+// scanRow scans a single row into a map, applying keyFunc to column names.
+func scanRow(row *sql.Row, cols []string, keyFunc func(string) string) (map[string]any, error) {
 	values := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	for i := range values {
@@ -405,7 +442,7 @@ func scanRow(row *sql.Row, cols []string) (map[string]any, error) {
 	}
 	result := make(map[string]any, len(cols))
 	for i, col := range cols {
-		result[toCamelCase(col)] = convertValue(values[i])
+		result[keyFunc(col)] = convertValue(values[i])
 	}
 	return result, nil
 }
