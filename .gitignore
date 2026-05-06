@@ -29,6 +29,53 @@ bin/
 .DS_Store
 Thumbs.db
 
-# Environment
+# ---- Security: Secrets & Credentials ----
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+id_ecdsa
+id_ecdsa.pub
+*.ppk
+credentials.json
+service-account*.json
+*.kubeconfig
+.secrets/
+vault-token
+
+# ---- Security: Database ----
+*.db
+*.sqlite
+*.sqlite3
+*.sqlitedb
+
+# ---- Security: Logs ----
+*.log
+logs/
+
+# ---- Security: Backups ----
+*.bak
+*.backup
+*.old
+*.orig
+
+# ---- Security: Archives (can contain secrets) ----
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# ---- Build artifacts ----
+demo_server
+gofastr
+gofastr-*
+!gofastr/

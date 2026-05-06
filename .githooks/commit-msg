@@ -1,0 +1,57 @@
+#!/bin/sh
+# GoFastr commit-msg hook
+# Enforces conventional commit format
+
+RED='\033[31m'
+GREEN='\033[32m'
+NC='\033[0m'
+
+commit_msg_file="$1"
+commit_msg=$(head -n1 "$commit_msg_file")
+
+# Allowed types
+types="build|ci|chore|docs|feat|fix|perf|refactor|revert|style|test|security"
+
+# Pattern: type(scope)?: subject
+# Examples:
+#   feat: add user entity
+#   fix(crud): handle null values
+#   security: patch SQL injection
+pattern="^(${types})(\([a-z0-9_-]+\))?!?: .{1,100}$"
+
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+  printf "  ${RED}✗${NC} Invalid commit message format\n"
+  echo ""
+  echo "  Expected: type(scope)?: subject"
+  echo "  Got:      $commit_msg"
+  echo ""
+  echo "  Types: build, ci, chore, docs, feat, fix, perf, refactor, revert, style, test, security"
+  echo ""
+  echo "  Examples:"
+  echo "    feat: add user entity"
+  echo "    fix(crud): handle null values"
+  echo "    security: patch SQL injection"
+  echo "    docs: update README"
+  echo "    refactor(casing): simplify key conversion"
+  echo ""
+  exit 1
+fi
+
+# Check for trailing period
+if echo "$commit_msg" | grep -qE "\.$"; then
+  printf "  ${RED}✗${NC} Commit message should not end with a period\n"
+  exit 1
+fi
+
+# Check body line length (if body exists)
+if [ "$(wc -l < "$commit_msg_file")" -gt 1 ]; then
+  while IFS= read -r line; do
+    if [ ${#line} -gt 120 ]; then
+      printf "  ${RED}✗${NC} Body line too long (${#line} chars, max 120)\n"
+      echo "  $line"
+      exit 1
+    fi
+  done < "$commit_msg_file"
+fi
+
+printf "  ${GREEN}✓${NC} Commit message format valid\n"

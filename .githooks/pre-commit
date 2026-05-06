@@ -1,23 +1,116 @@
 #!/bin/sh
 # GoFastr pre-commit hook
-# Runs formatting, vet, and tests before allowing a commit
+# Security gate: formatting, secrets, vet, tests
 
 set -e
 
-echo "  → Running go fmt..."
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+NC='\033[0m'
+
+pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
+warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
+fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
+
+# ---- 1. Format check ----
+echo ""
 gofmt_output=$(gofmt -l .)
 if [ -n "$gofmt_output" ]; then
-  echo "  ✗ Files not formatted:"
+  fail "Files not formatted:"
   echo "$gofmt_output"
   echo ""
-  echo "  Run: gofmt -w ."
+  echo "  Fix: gofmt -w ."
   exit 1
 fi
+pass "Code formatted"
 
-echo "  → Running go vet..."
-go vet ./...
+# ---- 2. Secret/credential scanning ----
+echo ""
+echo "  Scanning for secrets..."
 
-echo "  → Running tests..."
-go test -count=1 ./...
+# Get staged files only (what's about to be committed)
+staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -v '^vendor/' || true)
 
-echo "  ✓ All checks passed"
+if [ -n "$staged_files" ]; then
+  # Patterns that look like secrets
+  secret_patterns="
+password[[:space:]]*[:=][[:space:]]*['\"][^'\"]{6,}['\"]
+secret[_-]?key[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]
+api[_-]?key[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]
+private[_-]?key[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]
+token[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]
+BEGIN[[:space:]]+RSA[[:space:]]+PRIVATE[[:space:]]+KEY
+BEGIN[[:space:]]+PRIVATE[[:space:]]+KEY
+BEGIN[[:space:]]+OPENSSH[[:space:]]+PRIVATE[[:space:]]+KEY
+-----BEGIN PGP-----
+AKIA[0-9A-Z]{16}
+sk_live_[0-9a-zA-Z]{24,}
+sk_test_[0-9a-zA-Z]{24,}
+ghp_[0-9a-zA-Z]{36}
+gho_[0-9a-zA-Z]{36}
+xox[boap]-[0-9a-zA-Z-]{10,}
+hooks\.slack\.com/services/T[A-Z0-9]{9,}/B[A-Z0-9]{9,}/[a-zA-Z0-9]{24}
+eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
+"
+
+  found_secrets=""
+  for file in $staged_files; do
+    if [ ! -f "$file" ]; then continue; fi
+    # Skip binary files
+    if file "$file" | grep -q "binary\|image\|data"; then continue; fi
+    # Skip go.sum (hashes look like secrets) and hook scripts (contain detection patterns)
+    case "$file" in go.sum|*.lock|.githooks/*|Makefile) continue ;; esac
+
+    for pattern in $secret_patterns; do
+      [ -z "$pattern" ] && continue
+      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null || true)
+      if [ -n "$matches" ]; then
+        found_secrets="$found_secrets\n  $file:\n$matches"
+      fi
+    done
+  done
+
+  if [ -n "$found_secrets" ]; then
+    echo ""
+    fail "POTENTIAL SECRETS DETECTED!"
+    printf "$found_secrets\n"
+    echo ""
+    echo "  If this is a false positive, use:"
+    echo "    git commit --no-verify"
+    echo ""
+    exit 1
+  fi
+fi
+pass "No secrets detected"
+
+# ---- 3. Sensitive file check ----
+echo ""
+for file in $staged_files; do
+  case "$file" in
+    *.env|*.env.*|.env|credentials*|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*)
+      fail "Sensitive file in commit: $file"
+      echo "  If intentional: git commit --no-verify"
+      exit 1
+      ;;
+  esac
+done
+pass "No sensitive files"
+
+# ---- 4. go vet (with shadow checking) ----
+echo ""
+if command -v shadow >/dev/null 2>&1; then
+  go vet -vettool=$(which shadow) ./...
+else
+  go vet ./...
+fi
+pass "go vet clean"
+
+# ---- 5. Tests ----
+echo ""
+go test -count=1 -short ./...
+pass "Tests passed"
+
+echo ""
+pass "All security checks passed"
+echo ""

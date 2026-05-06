@@ -1,0 +1,53 @@
+#!/bin/sh
+# GoFastr pre-push hook
+# Runs full test suite with race detector + vulnerability check
+
+set -e
+
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+NC='\033[0m'
+
+pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
+fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
+
+echo ""
+echo "  Pre-push security gate..."
+echo ""
+
+# ---- 1. Full test suite with race detector ----
+echo "  → Running tests with -race..."
+if go test -race -count=1 ./...; then
+  pass "Race detector clean"
+else
+  fail "Race condition detected!"
+  exit 1
+fi
+
+# ---- 2. Vulnerability check ----
+echo ""
+if command -v govulncheck >/dev/null 2>&1; then
+  echo "  → Running govulncheck..."
+  if govulncheck ./...; then
+    pass "No known vulnerabilities"
+  else
+    fail "Vulnerabilities found!"
+    echo ""
+    echo "  Install: go install golang.org/x/vuln/cmd/govulncheck@latest"
+    exit 1
+  fi
+else
+  echo "  ! govulncheck not installed (optional)"
+  echo "    Install: go install golang.org/x/vuln/cmd/govulncheck@latest"
+fi
+
+# ---- 3. Ensure no dependencies with known issues ----
+echo ""
+echo "  → Checking go.sum integrity..."
+go mod verify
+pass "Module integrity verified"
+
+echo ""
+pass "Pre-push checks passed"
+echo ""
