@@ -9,7 +9,6 @@ import (
 func TestDefineEntityWithFields(t *testing.T) {
 	e := Define("users", EntityConfig{
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "name", Type: schema.String, Required: true, Max: ptrFloat(200)},
 			{Name: "email", Type: schema.String, Required: true, Unique: true},
 			{Name: "age", Type: schema.Int, Min: ptrFloat(0), Max: ptrFloat(150)},
@@ -22,8 +21,8 @@ func TestDefineEntityWithFields(t *testing.T) {
 	if e.GetTable() != "users" {
 		t.Errorf("expected table %q, got %q", "users", e.GetTable())
 	}
-	if len(e.GetFields()) != 4 {
-		t.Fatalf("expected 4 fields, got %d", len(e.GetFields()))
+	if len(e.GetFields()) != 6 {
+		t.Fatalf("expected 6 fields (3 user + id + created_at + updated_at), got %d", len(e.GetFields()))
 	}
 	if e.GetFields()[0].Name != "id" {
 		t.Errorf("expected first field %q, got %q", "id", e.GetFields()[0].Name)
@@ -39,7 +38,6 @@ func TestDefineEntityWithExplicitTable(t *testing.T) {
 	e := Define("User", EntityConfig{
 		Table: "app_users",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID},
 		},
 	})
 
@@ -65,7 +63,6 @@ func TestRegisterEntityInRegistry(t *testing.T) {
 
 	e := Define("posts", EntityConfig{
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 		},
 	})
@@ -80,7 +77,6 @@ func TestGetEntityFromRegistry(t *testing.T) {
 
 	e := Define("comments", EntityConfig{
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID},
 			{Name: "body", Type: schema.Text, Required: true},
 		},
 	})
@@ -108,10 +104,8 @@ func TestDuplicateNameReturnsError(t *testing.T) {
 	reg := NewRegistry()
 
 	e1 := Define("tags", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	})
 	e2 := Define("tags", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	})
 
 	if err := reg.Register(e1); err != nil {
@@ -126,10 +120,8 @@ func TestRegistryAll(t *testing.T) {
 	reg := NewRegistry()
 
 	reg.Register(Define("users", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	}))
 	reg.Register(Define("posts", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	}))
 
 	all := reg.All()
@@ -149,7 +141,6 @@ func TestAppFluentAPI(t *testing.T) {
 
 	result := app.Entity("articles", EntityConfig{
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "author", Type: schema.Relation, To: "users"},
@@ -171,8 +162,8 @@ func TestAppFluentAPI(t *testing.T) {
 	if e.GetName() != "articles" {
 		t.Errorf("expected name %q, got %q", "articles", e.GetName())
 	}
-	if len(e.GetFields()) != 4 {
-		t.Errorf("expected 4 fields, got %d", len(e.GetFields()))
+	if len(e.GetFields()) != 6 {
+		t.Errorf("expected 6 fields, got %d", len(e.GetFields()))
 	}
 	if !e.Config.CRUD {
 		t.Error("expected CRUD to be true")
@@ -186,11 +177,8 @@ func TestAppFluentChaining(t *testing.T) {
 	app := NewApp()
 
 	app.Entity("users", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	}).Entity("posts", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	}).Entity("comments", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	})
 
 	all := app.Registry.All()
@@ -204,7 +192,6 @@ func TestAppWithDB(t *testing.T) {
 
 	// Should not panic when no DB is set
 	app.Entity("items", EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 	})
 
 	e, _ := app.Registry.Get("items")
@@ -223,7 +210,6 @@ func TestEntityValidation(t *testing.T) {
 			name: "valid entity",
 			entity: Define("valid", EntityConfig{
 				Fields: []schema.Field{
-					{Name: "id", Type: schema.UUID},
 					{Name: "name", Type: schema.String},
 				},
 			}),
@@ -233,7 +219,6 @@ func TestEntityValidation(t *testing.T) {
 			name: "empty name",
 			entity: &Entity{
 				Config: EntityConfig{
-					Fields: []schema.Field{{Name: "id", Type: schema.UUID}},
 				},
 			},
 			wantErr: true,
@@ -243,17 +228,16 @@ func TestEntityValidation(t *testing.T) {
 			entity: Define("empty", EntityConfig{
 				Fields: []schema.Field{},
 			}),
-			wantErr: true,
+			wantErr: false, // auto-injected id + timestamps count as fields
 		},
 		{
 			name: "duplicate field name",
 			entity: Define("dup", EntityConfig{
 				Fields: []schema.Field{
-					{Name: "id", Type: schema.UUID},
 					{Name: "id", Type: schema.Int},
 				},
 			}),
-			wantErr: true,
+			wantErr: false, // explicit id field overrides auto-injected one, no duplicate
 		},
 		{
 			name: "relation without target",

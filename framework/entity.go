@@ -44,6 +44,8 @@ type Entity struct {
 
 // Define creates a new Entity with the given name and configuration.
 // It applies defaults (Table, Timestamps=true) and stores the name.
+// It also injects system fields (id, timestamps) with AutoGenerate flags
+// unless the user has already defined them.
 func Define(name string, config EntityConfig) *Entity {
 	config.Name = name
 
@@ -55,6 +57,73 @@ func Define(name string, config EntityConfig) *Entity {
 	// Timestamps defaults to true unless explicitly set via WithTimestamps
 	if !config.timestampsSet {
 		config.Timestamps = true
+	}
+
+	// Inject id field if not already defined by user
+	hasID := false
+	for _, f := range config.Fields {
+		if f.Name == "id" {
+			hasID = true
+			break
+		}
+	}
+	if !hasID {
+		idField := schema.Field{
+			Name:         "id",
+			Type:         schema.UUID,
+			AutoGenerate: schema.AutoUUID,
+			ReadOnly:     true,
+		}
+		config.Fields = append([]schema.Field{idField}, config.Fields...)
+	}
+
+	// Inject timestamp fields if enabled and not already defined
+	if config.Timestamps {
+		hasCreatedAt := false
+		hasUpdatedAt := false
+		for _, f := range config.Fields {
+			if f.Name == "created_at" {
+				hasCreatedAt = true
+			}
+			if f.Name == "updated_at" {
+				hasUpdatedAt = true
+			}
+		}
+		if !hasCreatedAt {
+			config.Fields = append(config.Fields, schema.Field{
+				Name:         "created_at",
+				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoTimestamp,
+				ReadOnly:     true,
+			})
+		}
+		if !hasUpdatedAt {
+			config.Fields = append(config.Fields, schema.Field{
+				Name:         "updated_at",
+				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoTimestamp,
+				ReadOnly:     true,
+			})
+		}
+	}
+
+	// Inject soft delete field if enabled
+	if config.SoftDelete {
+		hasDeletedAt := false
+		for _, f := range config.Fields {
+			if f.Name == "deleted_at" {
+				hasDeletedAt = true
+			}
+		}
+		if !hasDeletedAt {
+			config.Fields = append(config.Fields, schema.Field{
+				Name:         "deleted_at",
+				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoNone,
+				ReadOnly:     true,
+				Hidden:       true,
+			})
+		}
 	}
 
 	e := &Entity{

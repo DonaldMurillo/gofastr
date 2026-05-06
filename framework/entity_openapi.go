@@ -43,8 +43,14 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		tableName := entity.GetTable()
 		fields := entity.GetFields()
 
-		// Generate entity schema
-		entitySchema := openapi.FieldsToSchema(fields)
+		// Generate entity schema (excluding hidden fields from response)
+		visibleFields := make([]schema.Field, 0, len(fields))
+		for _, f := range fields {
+			if !f.Hidden {
+				visibleFields = append(visibleFields, f)
+			}
+		}
+		entitySchema := openapi.FieldsToSchema(visibleFields)
 		// Convert snake_case property names to camelCase
 		if props, ok := entitySchema["properties"].(map[string]any); ok {
 			camelProps := make(map[string]any, len(props))
@@ -77,8 +83,8 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
 		listOp.AddParameter("sort", "query", "Sort field", false, map[string]any{"type": "string"})
 
-		// Add filter parameters for each field
-		for _, f := range fields {
+		// Add filter parameters for visible fields
+		for _, f := range visibleFields {
 			filterSchema := fieldToFilterSchema(f)
 			listOp.AddParameter("filter_"+toCamelCase(f.Name), "query", "Filter by "+toCamelCase(f.Name), false, filterSchema)
 		}
@@ -95,8 +101,8 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		createOp.OperationID = "create_" + entityName
 		createOp.Tags = []string{entityName}
 
-		// Create request body excludes the primary key (server-generated)
-		createSchema := excludeField(entitySchema, "id")
+		// Create request body excludes auto-generated and read-only fields
+		createSchema := excludeFieldsByBehavior(entitySchema, fields)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, entityRef)
 		createOp.Responses[400] = map[string]any{
@@ -120,7 +126,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		updateOp.Summary = "Update " + entityName
 		updateOp.OperationID = "update_" + entityName
 		updateOp.Tags = []string{entityName}
-		updateOp.SetRequestBody("application/json", entitySchema, false)
+		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
 		updateOp.AddResponse(200, "Updated "+entityName, entityRef)
 		updateOp.Responses[400] = map[string]any{"description": "Validation error"}
 		updateOp.Responses[404] = map[string]any{"description": entityName + " not found"}
@@ -160,27 +166,34 @@ func fieldToFilterSchema(f schema.Field) map[string]any {
 	}
 }
 
-// excludeField returns a copy of an OpenAPI schema with a field removed from properties and required.
-func excludeField(schema map[string]any, fieldName string) map[string]any {
-	cp := make(map[string]any, len(schema))
-	for k, v := range schema {
+// excludeFieldsByBehavior returns a copy of an OpenAPI schema excluding auto-generated, read-only, and hidden fields.
+func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) map[string]any {
+	cp := make(map[string]any, len(specSchema))
+	for k, v := range specSchema {
 		cp[k] = v
 	}
+
+	// Collect field names to exclude
+	exclude := make(map[string]bool)
+	for _, f := range fields {
+		if f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
+			exclude[toCamelCase(f.Name)] = true
+		}
+	}
+
 	if props, ok := cp["properties"].(map[string]any); ok {
 		newProps := make(map[string]any, len(props))
-		camelName := toCamelCase(fieldName)
 		for k, v := range props {
-			if k != camelName {
+			if !exclude[k] {
 				newProps[k] = v
 			}
 		}
 		cp["properties"] = newProps
 	}
 	if reqs, ok := cp["required"].([]string); ok {
-		camelName := toCamelCase(fieldName)
 		filtered := make([]string, 0, len(reqs))
 		for _, r := range reqs {
-			if r != camelName {
+			if !exclude[r] {
 				filtered = append(filtered, r)
 			}
 		}

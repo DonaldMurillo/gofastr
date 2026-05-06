@@ -46,7 +46,6 @@ func setupOpenAPIServer(t *testing.T) (*App, map[string]any, func()) {
 	usersEntity := Define("users", EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "email", Type: schema.String, Required: true},
 			{Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}, Default: "reader"},
@@ -57,7 +56,6 @@ func setupOpenAPIServer(t *testing.T) (*App, map[string]any, func()) {
 	postsEntity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},

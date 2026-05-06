@@ -95,7 +95,6 @@ func TestE2E_CRUD_CreateAndGet(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String, Default: "draft"},
@@ -297,7 +296,6 @@ func TestE2E_CRUD_List(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -341,7 +339,6 @@ func TestE2E_CRUD_Update(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -388,7 +385,6 @@ func TestE2E_CRUD_Delete(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -440,7 +436,6 @@ func TestE2E_CRUD_GetNotFound(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -473,7 +468,6 @@ func TestE2E_Validation_CreateMissingRequired(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
@@ -507,7 +501,6 @@ func TestE2E_Hooks_BeforeCreate(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -637,7 +630,6 @@ func TestE2E_MultipleEntities(t *testing.T) {
 	postsEntity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -650,7 +642,6 @@ func TestE2E_MultipleEntities(t *testing.T) {
 	commentsEntity := Define("comments", EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "post_id", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String},
@@ -729,7 +720,6 @@ func TestE2E_MiddlewareChain(t *testing.T) {
 	entity := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},
@@ -791,7 +781,6 @@ func TestE2E_SoftDelete(t *testing.T) {
 		Table:      "posts",
 		SoftDelete: true,
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.String},

@@ -372,7 +372,6 @@ func TestIntegrationDefineEntityRegisterRoutesHTTP(t *testing.T) {
 	app := NewApp()
 	app.Entity("posts", EntityConfig{
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
@@ -398,8 +397,8 @@ func TestIntegrationDefineEntityRegisterRoutesHTTP(t *testing.T) {
 	if e.GetName() != "posts" {
 		t.Errorf("expected entity name %q, got %q", "posts", e.GetName())
 	}
-	if len(e.GetFields()) != 3 {
-		t.Errorf("expected 3 fields, got %d", len(e.GetFields()))
+	if len(e.GetFields()) != 5 {
+		t.Errorf("expected 5 fields (2 user + id + timestamps), got %d", len(e.GetFields()))
 	}
 }
 

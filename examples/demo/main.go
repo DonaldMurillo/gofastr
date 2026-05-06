@@ -45,7 +45,6 @@ func main() {
 	usersEntity := framework.Define("users", framework.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "email", Type: schema.String, Required: true},
 			{Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}, Default: "reader"},
@@ -57,7 +56,6 @@ func main() {
 		Table:      "posts",
 		SoftDelete: true,
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
@@ -70,7 +68,6 @@ func main() {
 	commentsEntity := framework.Define("comments", framework.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text, Required: true},
 			{Name: "post_id", Type: schema.Relation, To: "posts", Required: true},
 			{Name: "author_id", Type: schema.Relation, To: "users", Required: true},

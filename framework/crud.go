@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
@@ -48,21 +49,23 @@ type ListResponse struct {
 	TotalPages int              `json:"totalPages"`
 }
 
-// entityFields returns the field names for the entity, always including the primary key.
+// entityFields returns all field names for queries (SELECT, RETURNING).
 func (ch *CrudHandler) entityFields() []string {
 	fields := ch.Entity.GetFields()
-	names := make([]string, 0, len(fields)+1)
-
-	// Always include primary key
-	hasPK := false
+	names := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Name == ch.PrimaryKey {
-			hasPK = true
-		}
 		names = append(names, f.Name)
 	}
-	if !hasPK {
-		names = append([]string{ch.PrimaryKey}, names...)
+	return names
+}
+
+// visibleFields returns field names that are not Hidden.
+func (ch *CrudHandler) visibleFields() []string {
+	var names []string
+	for _, f := range ch.Entity.GetFields() {
+		if !f.Hidden {
+			names = append(names, f.Name)
+		}
 	}
 	return names
 }
@@ -126,8 +129,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// Build data query
-		cols := ch.entityFields()
+		// Build data query — select only visible fields
+		cols := ch.visibleFields()
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		applyFiltersToQuery(qb, filters)
@@ -179,7 +182,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		cols := ch.entityFields()
+		cols := ch.visibleFields()
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		qb.Where(ch.PrimaryKey+" = $1", id)
@@ -203,6 +206,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 }
 
 // Create returns an http.HandlerFunc that creates a new entity record.
+// Auto-generated fields are populated server-side and excluded from the request body.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -214,10 +218,14 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 		body = ch.unconvertMapKeys(body)
 
-		// Always auto-generate primary key — never trust client-provided IDs
-		delete(body, ch.PrimaryKey)
-		body[ch.PrimaryKey] = generateID()
+		// Generate values for all auto-generated fields
+		for _, f := range ch.Entity.GetFields() {
+			if f.AutoGenerate != schema.AutoNone {
+				body[f.Name] = generateFieldValue(f.AutoGenerate)
+			}
+		}
 
+		// Validate only writable fields
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
 			w.Header().Set("Content-Type", "application/json")
@@ -230,19 +238,10 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return
 		}
 
+		// Build INSERT with all fields present in body
 		var cols []string
 		var vals []any
-
-		// Always include primary key (auto-generated or explicit)
-		if pkVal, ok := body[ch.PrimaryKey]; ok {
-			cols = append(cols, ch.PrimaryKey)
-			vals = append(vals, pkVal)
-		}
-
 		for _, f := range ch.Entity.GetFields() {
-			if f.Name == ch.PrimaryKey {
-				continue // already added above
-			}
 			val, ok := body[f.Name]
 			if !ok {
 				if f.Default != nil {
@@ -255,15 +254,17 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			vals = append(vals, val)
 		}
 
+		// Return only visible fields
+		visFields := ch.visibleFields()
 		ib := query.Insert(ch.Entity.GetTable()).
 			Columns(cols...).
 			Values(vals...).
-			Returning(ch.entityFields()...)
+			Returning(visFields...)
 
 		sqlStr, args := ib.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-		result, err := scanRow(row, ch.entityFields(), ch.convertKey)
+		result, err := scanRow(row, visFields, ch.convertKey)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 			return
@@ -307,7 +308,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		ub := query.Update(ch.Entity.GetTable())
 		anySet := false
 		for _, f := range ch.Entity.GetFields() {
-			if f.Name == ch.PrimaryKey {
+			if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly {
 				continue
 			}
 			val, ok := body[f.Name]
@@ -324,12 +325,13 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 
 		ub.Where(ch.PrimaryKey+" = $1", id)
-		ub.Returning(ch.entityFields()...)
+		visFields := ch.visibleFields()
+		ub.Returning(visFields...)
 
 		sqlStr, args := ub.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
 
-		result, err := scanRow(row, ch.entityFields(), ch.convertKey)
+		result, err := scanRow(row, visFields, ch.convertKey)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				writeJSONError(w, http.StatusNotFound, "not found")
@@ -468,8 +470,22 @@ func writeJSONError(w http.ResponseWriter, code int, message string) {
 	})
 }
 
-// generateID creates a new random UUID v4 string.
-func generateID() string {
+// generateFieldValue creates a value based on the auto-generation strategy.
+func generateFieldValue(strategy schema.AutoGenerate) any {
+	switch strategy {
+	case schema.AutoUUID:
+		return generateUUID()
+	case schema.AutoTimestamp:
+		return time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	case schema.AutoIncrement:
+		return 0 // placeholder — real increment handled by DB
+	default:
+		return nil
+	}
+}
+
+// generateUUID creates a new random UUID v4 string.
+func generateUUID() string {
 	var uuid [16]byte
 	rand.Read(uuid[:])
 	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4

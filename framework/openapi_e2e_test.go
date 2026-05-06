@@ -40,7 +40,6 @@ func TestE2E_OpenAPI_SpecStructure(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
@@ -50,7 +49,6 @@ func TestE2E_OpenAPI_SpecStructure(t *testing.T) {
 	comments := Define("comments", EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "post_id", Type: schema.Relation, To: "posts", Required: true},
 		},
@@ -98,7 +96,6 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "title", Type: schema.String, Required: true, Max: ptrFloat64(200)},
 			{Name: "body", Type: schema.Text},
 			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}},
@@ -173,10 +170,9 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 	for i, v := range requiredRaw {
 		required[i] = v.(string)
 	}
-	if len(required) != 2 {
-		t.Fatalf("expected 2 required fields, got %d: %v", len(required), required)
+	if len(required) != 1 {
+		t.Fatalf("expected 1 required field (title), got %d: %v", len(required), required)
 	}
-	assertContains(t, "required", required, "id")
 	assertContains(t, "required", required, "title")
 }
 
@@ -186,7 +182,6 @@ func TestE2E_OpenAPI_CRUDPaths(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
@@ -299,7 +294,6 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 		},
 	})
@@ -345,7 +339,6 @@ func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
@@ -398,7 +391,6 @@ func TestE2E_OpenAPI_MultipleEntityTagsAndPaths(t *testing.T) {
 		entity := Define(name, EntityConfig{
 			Table: name,
 			Fields: []schema.Field{
-				{Name: "id", Type: schema.String, Required: true},
 				{Name: "name", Type: schema.String, Required: true},
 			},
 		})
@@ -438,7 +430,6 @@ func TestE2E_OpenAPI_FilterParameters(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 			{Name: "views", Type: schema.Int},
 			{Name: "published", Type: schema.Bool},
@@ -488,7 +479,6 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	posts := Define("posts", EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
 		},
 	})
@@ -518,7 +508,6 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	entity := Define("everything", EntityConfig{
 		Table: "everything",
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.UUID, Required: true},
 			{Name: "name", Type: schema.String, Required: true, Min: ptrFloat64(1), Max: ptrFloat64(255)},
 			{Name: "content", Type: schema.Text},
 			{Name: "count", Type: schema.Int, Min: ptrFloat64(0)},
@@ -609,16 +598,15 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	assertEqual(t, "score minimum", float64(0), scoreProp["minimum"])
 	assertEqual(t, "score maximum", float64(100), scoreProp["maximum"])
 
-	// Required should only have id and name
+	// Required should only have name (id is auto-generated, not required)
 	requiredRaw, _ := eSchema["required"].([]any)
 	required := make([]string, len(requiredRaw))
 	for i, v := range requiredRaw {
 		required[i] = v.(string)
 	}
-	if len(required) != 2 {
-		t.Fatalf("expected 2 required, got %d: %v", len(required), required)
+	if len(required) != 1 {
+		t.Fatalf("expected 1 required, got %d: %v", len(required), required)
 	}
-	assertContains(t, "required", required, "id")
 	assertContains(t, "required", required, "name")
 }
 
