@@ -39,7 +39,7 @@ func main() {
 	db.Exec(`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c1', 'Great post!', 'p1', 'u2')`)
 	db.Exec(`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c2', 'Interesting framework', 'p2', 'u2')`)
 
-	app := framework.NewApp(framework.WithDB(db))
+	app := framework.NewApp(framework.WithDB(db), framework.WithConfig(framework.AppConfig{Name: "demo-blog"}))
 
 	// Define entities
 	usersEntity := framework.Define("users", framework.EntityConfig{
@@ -90,12 +90,7 @@ func main() {
 		http.Redirect(w, r, "/docs/", http.StatusFound)
 	}))
 
-	log.Println("GoFastr Blog API running at http://localhost:8080")
-	log.Println("  OpenAPI spec: http://localhost:8080/openapi.json")
-	log.Println("  Swagger UI:   http://localhost:8080/docs/")
-	log.Println("  Users:        http://localhost:8080/users")
-	log.Println("  Posts:        http://localhost:8080/posts")
-	log.Println("  Comments:     http://localhost:8080/comments")
+	// Start() prints PID, stats URL, and entity routes
 	if err := app.Start(":8080"); err != nil {
 		log.Fatal(err)
 	}

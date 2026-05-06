@@ -3,8 +3,12 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"runtime"
+	"time"
 
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/router"
@@ -167,13 +171,91 @@ func (a *App) HookRegistry(entityName string) *HookRegistry {
 }
 
 // Start starts the HTTP server on the given address.
+// Registers /debug/stats endpoint for runtime diagnostics.
 func (a *App) Start(addr string) error {
+	a.registerDebugEndpoints()
+
+	name := a.Config.Name
+	if name == "" {
+		name = "gofastr"
+	}
+
+	// Strip leading colon for display
+	host := addr
+	if len(host) > 0 && host[0] == ':' {
+		host = "localhost" + host
+	}
+
+	fmt.Printf("\n  %s %s server ready\n", bold("GoFastr"), name)
+	fmt.Printf("  %s PID: %d\n", arrow(), os.Getpid())
+	fmt.Printf("  %s Stats: http://%s/.debug/stats\n", arrow(), host)
+
+	// Log entity routes
+	for _, e := range a.Registry.All() {
+		fmt.Printf("  %s %-12s http://%s/%s\n", arrow(), e.GetName(), host, e.GetTable())
+	}
+
+	// Log OpenAPI
+	fmt.Printf("  %s OpenAPI:     http://%s/openapi.json\n", arrow(), host)
+	fmt.Printf("  %s Swagger UI:  http://%s/docs/\n\n", arrow(), host)
+
 	a.server = &http.Server{
 		Addr:    addr,
 		Handler: a.Router,
 	}
 	return a.server.ListenAndServe()
 }
+
+// registerDebugEndpoints adds /.debug/stats for runtime diagnostics.
+func (a *App) registerDebugEndpoints() {
+	a.Router.Get("/.debug/stats", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+
+		stats := map[string]any{
+			"app":        a.Config.Name,
+			"pid":        os.Getpid(),
+			"uptime":     time.Since(startTime).Round(time.Millisecond).String(),
+			"goroutines": runtime.NumGoroutine(),
+			"cpuCores":   runtime.NumCPU(),
+			"goVersion":  runtime.Version(),
+			"memory": map[string]any{
+				"alloc":      formatBytes(m.Alloc),
+				"totalAlloc": formatBytes(m.TotalAlloc),
+				"sys":        formatBytes(m.Sys),
+				"heapAlloc":  formatBytes(m.HeapAlloc),
+				"heapSys":    formatBytes(m.HeapSys),
+				"heapInUse":  formatBytes(m.HeapInuse),
+				"stackInUse": formatBytes(m.StackInuse),
+				"gcCycles":   m.NumGC,
+				"gcPauseLast": fmt.Sprintf("%.3fms", float64(m.PauseNs[(m.NumGC+255)%256])/1e6),
+			},
+			"entities": len(a.Registry.All()),
+			"jsonCase": string(a.JSONCasing()),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+	}))
+}
+
+var startTime = time.Now()
+
+func formatBytes(b uint64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := uint64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func arrow() string { return "\033[33m→\033[0m" }
+func bold(s string) string { return "\033[1m" + s + "\033[0m" }
 
 // Shutdown gracefully shuts down the HTTP server.
 func (a *App) Shutdown(ctx context.Context) error {
