@@ -1,570 +1,600 @@
-# GoFastr UI — Architecture Research
+# core-ui — Framework Design Document
 
-> How should we build `ui-core/` + `ui-framework/` for server-rendered HTML?
-> Same philosophy as `core/` + `framework/`: powerful primitives at the bottom, AI-fast prototyping on top.
-> **Constraint**: Built from scratch. No htmx. No existing Go template engines. No JS framework dependencies.
+> A Go-native UI framework that thinks like mobile, renders to the web, and is built for AI to author.
+> Part of GoFastr. Inspired by SwiftUI/Flutter's composability, Angular's incremental hydration, and SolidJS's fine-grained reactivity.
 
 ---
 
-## Your Proposal: Typed HTML Builder with Declarative Pages
+## Core Philosophy
 
-### Core idea
+1. **AI-authorable** — AI can generate, read, modify, and visually reason about UI code without seeing the screen.
+2. **Mobile-inspired** — Screens, widgets, layouts. Not pages and divs. Semantic hierarchy, not free-form HTML.
+3. **Accessible by default** — ARIA landmarks, roles, keyboard nav baked into primitives. You can't build inaccessible UI.
+4. **Progressive performance** — Ship CSS and JS only when needed. Preload based on user journey. Accumulate, never unload.
+5. **Go-idiomatic** — Valid Go. No new syntax. `.ui.go` convention like `_test.go`. Linter enforces the restricted subset.
 
-Extend what `core/render` already started. `HTML` type + `Tag()`/`Text()`/`Join()` are the primitives. Build `ui-core/` as a richer primitive layer (forms, tables, navigation, attribute builders). Then `ui-framework/` auto-generates pages from entity definitions.
+---
 
-### Architecture
+## Architecture Overview
 
 ```
-ui-core/          ← Rich HTML primitive library
-  html/             HTML builder (Tag, VoidTag, Attr, Attrs, Join, Raw, Text, If, Map)
-  form/             Form primitives (Input, Select, Textarea, Checkbox, Radio, Fieldset, Label, ValidationErrors)
-  table/            Table primitives (Table, Th, Td, Thead, Tbody, Pagination, SortHeaders)
-  nav/              Navigation (Navbar, Sidebar, Breadcrumbs, Tabs, Link, ActiveLink)
-  page/             Page structure (Document, Head, Meta, Script, Stylesheet, Body, Hero, Section, Grid)
-  components/       Reusable component system (Component[T], Slot, ForEach, Conditional)
-  css/              CSS utility builder (Class, Style, Responsive, DarkMode tokens)
-  js/               Minimal JS generation (Toggle, Submit, Navigate, Confirm, Validate)
-  partial/          Partial rendering (render just a component, not the full page)
-
-ui-framework/     ← Entity-aware auto-UI
-  admin/            Auto-generated admin panel from entity definitions
-  crud-pages/       List/Create/Edit/Detail/Delete pages per entity
-  forms/            Auto-generated forms from entity field schemas
-  tables/           Auto-generated data tables with sort/filter/paginate
-  dashboard/        Auto-generated dashboard from entity stats
-  layout/           Default admin layout (sidebar nav, breadcrumbs, user menu)
+┌──────────────────────────────────────────────────────────┐
+│  App                                                      │
+│  ├── DI Container (global providers, theme, config)       │
+│  ├── Router (code-based route → screen mapping)           │
+│  └── Layouts (shared chrome: nav, header, footer)         │
+│       ├── Screen [/users]         ← full page view        │
+│       ├── Screen [/users/:id]     ← full page view        │
+│       ├── Drawer [filters]        ← side panel            │
+│       ├── Sheet [cart]            ← bottom panel          │
+│       └── Dialog [confirm]        ← modal overlay         │
+│            └── Widget             ← self-contained unit   │
+│                 └── Component     ← reusable piece        │
+│                      └── Element  ← atomic (Button, etc)  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### What a page looks like
+### Hierarchy Roles
+
+| Level | Responsibility | ADA Role | Hydrates? |
+|---|---|---|---|
+| **App** | DI container, routing, theme | `<html lang>` | No |
+| **Layout** | Shared chrome (nav, header, footer) | Landmarks (banner, navigation, contentinfo) | No |
+| **Screen** | Top-level view. Renders as page, drawer, sheet, or dialog depending on context | `<main>` / `role="dialog"` / `role="region"` | On activation |
+| **Widget** | Self-contained interactive unit with own signals | `role` per widget type | On first interaction (incremental hydration) |
+| **Component** | Reusable composable piece | Semantic element | Inherits from parent |
+| **Element** | Atomic primitive — Button, Input, Text, Heading | Correct ARIA per element type | N/A (handled by parent widget) |
+
+---
+
+## Component Model
+
+### Three-part components: State, Render, Actions
+
+Every interactive unit has three things:
 
 ```go
-// ui-core level — hand-crafting with rich primitives
-func UserListPage(users []User) render.HTML {
-    return page.Document("Users",
-        nav.Breadcrumb("Home", "Users"),
-        page.Hero("User Management",
-            html.A(html.Attrs{"href": "/users/new", "class": "btn btn-primary"}, html.Text("New User")),
+// counter.ui.go — valid Go, linter enforces restricted subset
+
+// STATE — struct fields are reactive state
+type Counter struct {
+    Count int
+    Label string
+}
+
+// RENDER — describes the HTML. Semantic primitives, ADA by default.
+func (c Counter) Render() HTML {
+    return Article(nil,
+        Heading(3, c.Label),
+        Group(RoleStatus, Attrs{"aria-live": "polite"},
+            Text(fmt.Sprintf("%d", c.Count)),
         ),
-        table.DataTable(users,
-            table.Column("Name", func(u User) render.HTML { return html.Text(u.Name) }),
-            table.Column("Email", func(u User) render.HTML { return html.Text(u.Email) }),
-            table.Column("Role", func(u User) render.HTML { return badge.RoleBadge(u.Role) }),
-            table.Column("Actions", func(u User) render.HTML {
-                return html.Join(
-                    html.A(html.Attrs{"href": "/users/"+u.ID+"/edit"}, html.Text("Edit")),
-                    form.DeleteForm("/users/"+u.ID, "Delete"),
-                )
-            }),
-        ),
-    )
-}
-
-// ui-framework level — auto-generated from entity
-app.Entity("users", framework.EntityConfig{
-    Fields: []schema.Field{
-        {Name: "name", Type: schema.String, Required: true},
-        {Name: "email", Type: schema.String, Required: true, Unique: true},
-        {Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}},
-    },
-    UI: uiframework.AutoUI, // ← flips on auto admin pages
-})
-// → GET /admin/users        (list table with sort/filter/paginate)
-// → GET /admin/users/new    (create form)
-// → GET /admin/users/:id    (detail view)
-// → GET /admin/users/:id/edit (edit form)
-// → POST /admin/users       (handle create)
-// → PUT /admin/users/:id    (handle update)
-// → DELETE /admin/users/:id (handle delete)
-```
-
-### Strengths
-- ✅ Extends what you already have (`core/render`)
-- ✅ Go-idiomatic — everything is typed Go functions
-- ✅ Compile-time safe — wrong HTML structure won't compile
-- ✅ AI-friendly — easy to generate Go component functions
-- ✅ Entity system already has field definitions → forms/tables map naturally
-
-### Weaknesses
-- ⚠️ Verbose — every HTML element is a Go function call
-- ⚠️ No interactivity beyond forms (full page reloads for everything)
-- ⚠️ CSS styling needs a strategy (inline? class-based? utility-gen?)
-- ⚠️ JS interactions need to be hand-generated or minimal
-
-### Interactivity model
-Forms submit → full page reload. Links navigate → full page reload. That's it.
-Can add `js.Toggle()` for show/hide, but fundamentally server-rendered multi-page app.
-
----
-
-## Alternative 1: Virtual DOM Diff + Server-Sent Patches
-
-### Core idea
-Don't send full HTML pages. Send a *virtual DOM description* from Go, diff it on the client with a tiny runtime (~2KB JS), and apply only the patches. Think "server-as-react" but the server holds the state and computes the DOM.
-
-### Architecture
-
-```
-ui-core/
-  vdom/           Virtual DOM types (VNode, VElement, VText, VFragment, VAttribute)
-  diff/           Diff algorithm (patch list generation)
-  patch/          Patch types (Insert, Remove, Update, Reorder, SetAttr, RemoveAttr)
-  serialize/      Wire format for VDOM (compact binary or JSON)
-  mount/          Client mount point (where VDOM renders into real DOM)
-  events/         Event delegation (click, input, submit → serialized → sent to server)
-
-ui-framework/
-  stateful/       Server-side component state management (per-session VDOM tree)
-  binding/        Two-way data binding (form field changes → server state update → VDOM patch)
-  entity-ui/      Auto VDOM generation from entity definitions
-```
-
-### What it looks like
-
-```go
-// Server holds state, computes VDOM, sends patches
-func CounterPage(ctx *uicore.RenderContext) vdom.VNode {
-    count := ctx.State("count", 0) // server-side per-session state
-    
-    return vdom.Div(nil,
-        vdom.H1(nil, vdom.Text(fmt.Sprintf("Count: %d", count))),
-        vdom.Button(vdom.On("click", func(ctx *uicore.EventContext) {
-            ctx.SetState("count", count+1) // server updates state
-            ctx.Rerender() // recompute VDOM, diff, send patches
-        }), vdom.Text("+1")),
-    )
-}
-
-// Entity auto-UI: VDOM generated from schema
-app.Entity("users", framework.EntityConfig{
-    Fields: []schema.Field{...},
-    UI: uiframework.LiveUI, // live-updating VDOM admin
-})
-```
-
-### Client runtime (tiny, ~2KB)
-```javascript
-// This is the ONLY JS we ship. ~2KB minified.
-class GoFastrRuntime {
-    connect() { /* WebSocket or SSE */ }
-    applyPatch(patch) { /* DOM manipulation */ }
-    delegateEvent(event) { /* serialize & send to server */ }
-}
-```
-
-### Strengths
-- ✅ True interactivity without writing JS
-- ✅ Server is the source of truth (all state in Go)
-- ✅ Tiny client runtime (~2KB vs React's 40KB)
-- ✅ Only sends diffs → efficient after initial load
-- ✅ Feels like a SPA but server-rendered
-
-### Weaknesses
-- ⚠️ Complex to build (diff algorithm, patch serialization, event delegation)
-- ⚠️ Latency-sensitive — every interaction round-trips to server
-- ⚠️ Server memory per session (VDOM tree per connected user)
-- ⚠️ Harder to debug (diff bugs show as weird DOM states)
-- ⚠️ Offline impossible — every interaction needs server
-
----
-
-## Alternative 2: Islands Architecture with Progressive Hydration
-
-### Core idea
-Server renders full HTML pages. Sprinkle tiny "islands" of interactivity that the server can update independently via SSE/WebSocket. The page is mostly static HTML. Islands are dynamic zones identified by IDs.
-
-### Architecture
-
-```
-ui-core/
-  island/         Island primitive (named interactive zone within static HTML)
-  stream/         SSE stream per island (server can push updates to specific islands)
- hydrate/         Client hydration for islands (attach event listeners, bind to stream)
-  static/         Static HTML generation (the 90% of the page that doesn't change)
-  slot/           Slot system (holes in static HTML where islands plug in)
-
-ui-framework/
-  entity-islands/  Auto-generate islands for entity tables/forms
-  live-table/      Table island that auto-updates when data changes
-  live-form/       Form island with validation feedback
-  dashboard/       Dashboard composed of multiple islands
-```
-
-### What it looks like
-
-```go
-// Most of the page is static HTML, rendered once
-func UserPage(user User) render.HTML {
-    return page.Document(user.Name,
-        nav.Sidebar("admin"),
-        page.Section("User Details",
-            // Static content — rendered once, never updates
-            html.P(nil, html.Text("Email: "+user.Email)),
-            
-            // Island — this zone is live, server can push updates
-            island.Live("user-status", user.ID, 
-                html.Span(html.Attrs{"class": "badge"}, html.Text(user.Role)),
-            ),
-            
-            // Another island — form with live validation
-            island.Form("edit-user", "/users/"+user.ID,
-                form.Input("name", user.Name, form.Validate.Required()),
-                form.Input("email", user.Email, form.Validate.Email()),
-                form.Submit("Save"),
-            ),
+        ButtonGroup(
+            Button("Decrement", OnClick("decrement"), Secondary),
+            Button("Increment", OnClick("increment"), Primary),
         ),
     )
 }
 
-// Server pushes updates to specific islands
-app.Subscribe("user.updated", func(ctx context.Context, user User) {
-    island.Push("user-status", user.ID, func() render.HTML {
-        return html.Span(html.Attrs{"class": "badge"}, html.Text(user.Role))
+// ACTIONS — event handlers. Framework infers client vs server.
+func (c *Counter) Actions() {
+    On("increment", func() {
+        c.Count++     // pure local mutation → compiles to JS, runs in browser
     })
-})
-```
-
-### Client runtime (~1KB)
-```javascript
-// Connect to SSE stream, listen for island updates
-class GoFastrIslands {
-    connect() { new EventSource("/.islands/stream") }
-    onIslandUpdate(id, html) { document.getElementById(id).innerHTML = html }
-}
-```
-
-### Strengths
-- ✅ Best of both worlds — static HTML for most of the page, live updates where needed
-- ✅ Tiny client runtime (~1KB)
-- ✅ Works great with existing `core/render` and `core/stream` (SSE)
-- ✅ Progressive enhancement — works without JS (degrades to static)
-- ✅ Memory efficient — only track state for active islands
-- ✅ Feels natural with Go's concurrency (goroutine per island stream)
-
-### Weaknesses
-- ⚠️ Island boundaries need careful design
-- ⚠️ Cross-island communication is awkward
-- ⚠️ Initial page is full HTML (can be large for big tables)
-- ⚠️ SSE reconnection logic needed for reliability
-
----
-
-## Alternative 3: Reactive Signal Graph with Template Literals
-
-### Core idea
-Define a reactive signal graph on the server. Signals are typed values that automatically recompute dependents when changed. Templates are Go string-interpolated HTML with signal references. When a signal changes, the server recomputes the affected template and sends only the changed fragment.
-
-### Architecture
-
-```
-ui-core/
-  signal/         Reactive signal system (Signal[T], Computed[T], Effect)
-  template/       String-interpolated templates with signal bindings
-  bind/           Two-way binding helpers (form input ↔ signal)
-  fragment/       Named HTML fragments (identifiable chunks server can replace)
-  reactivity/     Dependency tracking (which signals affect which fragments)
-
-ui-framework/
-  entity-signals/  Auto-create signals from entity queries (live data)
-  reactive-table/  Table that auto-updates when underlying data changes
-  reactive-form/   Form that validates as you type
-  query-signals/   Wrap DB queries in signals (auto-refresh on interval or event)
-```
-
-### What it looks like
-
-```go
-func CounterPage() render.HTML {
-    // Declare signals
-    count := signal.New(0)
-    double := signal.Computed(func() int { return count.Get() * 2 })
-    
-    // Template with signal bindings — auto-updates when signals change
-    return template.HTML(`
-        <div>
-            <h1>Count: {{.count}}</h1>
-            <p>Double: {{.double}}</p>
-            <button data-action="increment">+1</button>
-        </div>
-    `, template.Bind{
-        "count":  count,
-        "double": double,
-    }, template.Actions{
-        "increment": func() { count.Set(count.Get() + 1) },
+    On("decrement", func() {
+        c.Count--     // pure local mutation → compiles to JS, runs in browser
     })
 }
-
-// Entity-level: wrap queries in signals
-posts := querysignal.Live("SELECT * FROM posts WHERE status = 'published'", 5*time.Second)
-// → auto-refreshes every 5s, pushes HTML fragments to connected clients
 ```
 
-### Strengths
-- ✅ Elegant mental model — reactive data flow
-- ✅ Granular updates (only re-render affected fragments)
-- ✅ Powerful for dashboards and live data views
-- ✅ Entity queries as signals is a killer feature for admin panels
+### Client vs Server Inference
 
-### Weaknesses
-- ⚠️ Signal graph complexity — cycles, memory leaks, stale computations
-- ⚠️ String-interpolated templates lose compile-time safety
-- ⚠️ "Magnetic" — once you start, everything becomes reactive (good or bad?)
-- ⚠️ Hard to debug (which signal caused this update?)
-- ⚠️ Overkill for simple CRUD pages
+The framework analyzes action handlers at build time:
 
----
-
-## Alternative 4: Declarative UI Description Language (Go DSL → HTML)
-
-### Core idea
-Don't write HTML at all. Write Go DSL that describes UI intent, not markup. The DSL compiles to optimized HTML, CSS, and minimal JS. Think "SwiftUI for the web in Go." You say *what* the UI should look like, the framework decides the HTML.
-
-### Architecture
-
-```
-ui-core/
-  dsl/            Declarative DSL types (VStack, HStack, Text, Button, List, Form, Field, Nav)
-  style/          Style system (tokens, themes, responsive rules, dark mode)
-  layout/         Layout engine (flexbox/grid generation from DSL intent)
-  render/         DSL → HTML compiler
-  action/         Action system (Navigate, Submit, Confirm, Toggle, Validate)
-  theme/          Theme engine (design tokens → CSS custom properties)
-
-ui-framework/
-  entity-dsl/     Auto-generate DSL from entity definitions
-  scaffold/       Scaffold full pages from DSL descriptions
-  preview/        Design-time preview (render DSL to HTML for dev)
-```
-
-### What it looks like
-
-```go
-func UserListPage(users []User) render.HTML {
-    return dsl.Page(
-        dsl.Title("Users"),
-        dsl.Navbar(
-            dsl.Brand("GoFastr Admin"),
-            dsl.NavItem("Dashboard", "/admin"),
-            dsl.NavItem("Users", "/admin/users", dsl.Active()),
-        ),
-        dsl.Content(
-            dsl.Header("User Management",
-                dsl.Action("New User", dsl.Navigate("/admin/users/new"), dsl.Primary()),
-            ),
-            dsl.Table(users).
-                Column("Name", dsl.Text(func(u User) string { return u.Name })).
-                Column("Email", dsl.Text(func(u User) string { return u.Email })).
-                Column("Role", dsl.Badge(func(u User) (string, string) { return u.Role, roleColor(u.Role) })).
-                Column("", dsl.Actions(
-                    dsl.Action("Edit", dsl.Navigate("/admin/users/{{.ID}}/edit")),
-                    dsl.Action("Delete", dsl.Submit("DELETE", "/admin/users/{{.ID}}"), dsl.Danger()),
-                )),
-        ),
-    )
-}
-
-// Entity auto-UI — DSL is generated from entity config
-app.Entity("users", framework.EntityConfig{
-    Fields: []schema.Field{...},
-    UI: uiframework.ScaffoldUI(uiframework.ScaffoldConfig{
-        ListColumns: []string{"name", "email", "role"},
-        SearchFields: []string{"name", "email"},
-        Filters: []string{"role"},
-    }),
-})
-```
-
-### Strengths
-- ✅ Highest abstraction — you think in UI intent, not HTML tags
-- ✅ Can generate radically different outputs (accessible HTML, mobile, CLI) from same DSL
-- ✅ Theme system is natural — same DSL, different render output
-- ✅ AI-friendly — very regular structure, easy to generate
-- ✅ Consistency enforced — all buttons look the same because there's one Button DSL
-
-### Weaknesses
-- ⚠️ Learning curve — new mental model, not "just HTML in Go"
-- ⚠️ Abstraction leak — eventually you need `<div class="something-specific">` and fight the DSL
-- ⚠️ Massive scope — building a layout engine, style system, and renderer from scratch
-- ⚠️ Debugging — inspecting DOM doesn't map cleanly back to DSL
-- ⚠️ Risk of becoming "yet another framework that fights you"
-
----
-
-## Alternative 5: Compiler-Based Typed Templates (Codegen Approach)
-
-### Core idea
-Write template files in a custom syntax (`.gfui` files). A compiler (`gofastr generate`) parses them and produces **type-safe Go code** — actual Go functions with proper types. Think Templ but purpose-built for GoFastr's entity system. Templates have first-class awareness of entities, fields, and relationships.
-
-### Architecture
-
-```
-ui-core/              ← What the generated code calls
-  html/                 Runtime HTML helpers (escape, attr, join)
-  css/                  CSS utilities (class builder, responsive, tokens)
-  js/                   JS snippet generation (progressive enhancement)
-  form/                 Form runtime (validation display, CSRF)
-  component/            Component registry (for cross-template components)
-
-ui-framework/         ← Codegen + entity integration
-  parser/              .gfui template parser
-  codegen/             .gfui → Go code generator
-  entity-pages/        Auto-generate .gfui templates from entity definitions
-  scaffold/            Full page scaffolding
-  watch/               Hot-reload: .gfui change → recompile → inject
-
-templates/            ← User writes these
-  layouts/
-    admin.gfu
-  pages/
-    user-list.gfu
-    user-form.gfu
-  components/
-    badge.gfu
-    data-table.gfu
-```
-
-### Template syntax example (`.gfui` file)
-
-```
-// user-list.gfui
-package pages
-
-import "github.com/gofastr/gofastr/framework"
-
-template UserList(users []User, page pagination.Page) html {
-    <layout:admin title="Users">
-        <nav:breadcrumb>
-            <nav:item href="/admin">Home</nav:item>
-            <nav:item active>Users</nav:item>
-        </nav:breadcrumb>
-
-        <page:header>
-            <h1>Users</h1>
-            <a href="/admin/users/new" class="btn primary">New User</a>
-        </page:header>
-
-        <ui:data-table data="{users}" page="{page}">
-            <ui:column label="Name">
-                {.Name}
-            </ui:column>
-            <ui:column label="Email">
-                {.Email}
-            </ui:column>
-            <ui:column label="Role">
-                <ui:badge variant="{roleColor(.Role)}">{.Role}</ui:badge>
-            </ui:column>
-            <ui:column label="Actions">
-                <a href="/admin/users/{.ID}/edit">Edit</a>
-                <form method="POST" action="/admin/users/{.ID}" data-confirm="Delete user?">
-                    <input type="hidden" name="_method" value="DELETE" />
-                    <button type="submit" class="btn danger">Delete</button>
-                </form>
-            </ui:column>
-        </ui:data-table>
-    </layout:admin>
-}
-```
-
-### Generated Go code (what `gofastr generate` produces)
-
-```go
-// user-list.gen.go — AUTO-GENERATED
-func UserList(users []User, page pagination.Page) render.HTML {
-    var b strings.Builder
-    b.WriteString(AdminLayout("Users", render.Join(
-        Breadcrumb(
-            BreadcrumbItem("/admin", "Home", false),
-            BreadcrumbItem("", "Users", true),
-        ),
-        // ... rest compiled to direct strings.Builder calls
-    )))
-    return render.Raw(b.String())
-}
-```
-
-### Entity auto-generation
-
-```go
-app.Entity("users", framework.EntityConfig{
-    Fields: []schema.Field{
-        {Name: "name", Type: schema.String, Required: true},
-        {Name: "email", Type: schema.String, Required: true},
-        {Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}},
-    },
-    UI: uiframework.GenerateTemplates, // generates .gfui files → Go code
-})
-// → generates templates/pages/users/list.gfu
-// → generates templates/pages/users/form.gfu
-// → generates templates/pages/users/detail.gfu
-// → user edits the .gfu files to customize
-// → gofastr generate compiles them to Go
-```
-
-### Strengths
-- ✅ Best DX for writing UI — familiar HTML-like syntax with Go type safety
-- ✅ Compile-time guaranteed — typo a field name? Compiler error.
-- ✅ Entity-aware — templates can reference entity fields with autocomplete
-- ✅ AI-friendly — AI writes .gfui templates (simpler than raw Go HTML builders)
-- ✅ Customizable — auto-generated templates are starting points, user edits them
-- ✅ Performance — generates `strings.Builder` code, zero reflection
-
-### Weaknesses
-- ⚠️ Building a parser + codegen is a significant project
-- ⚠️ Custom syntax = custom tooling (no editor support, no syntax highlighting initially)
-- ⚠️ Build step required — can't just run `go build` (need `gofastr generate` first)
-- ⚠️ Error messages can be confusing (template syntax error → which line?)
-
----
-
-## Comparison Matrix
-
-| Dimension | Your Proposal (Typed Builder) | Alt 1 (VDOM Diff) | Alt 2 (Islands) | Alt 3 (Reactive Signals) | Alt 4 (Declarative DSL) | Alt 5 (Codegen Templates) |
-|---|---|---|---|---|---|---|
-| **Build effort** | 🟢 Low (extends existing) | 🔴 Very high | 🟡 Medium | 🔴 High | 🔴 Very high | 🟡 Medium |
-| **Type safety** | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial (strings) | 🟢 Full | 🟢 Full |
-| **DX / ergonomics** | 🟡 Verbose | 🟡 Verbose | 🟢 Good | 🟢 Elegant | 🟢 High-level | 🟢 Familiar syntax |
-| **Interactivity** | 🔴 Full reloads | 🟢 Live updates | 🟢 Live islands | 🟢 Reactive | 🟡 Actions only | 🟡 Actions only |
-| **Performance** | 🟢 Fast (static HTML) | 🟡 Diff overhead | 🟢 Mostly static | 🟡 Reactivity overhead | 🟢 Static output | 🟢 Compiled output |
-| **AI-friendliness** | 🟢 Easy to generate | 🟡 Complex to generate | 🟢 Easy to generate | 🟡 Signal graph hard for AI | 🟢 Very regular | 🟢 Template syntax easy |
-| **Debuggability** | 🟢 Read the Go code | 🔴 Diff bugs | 🟢 Inspect islands | 🔴 Signal tracing | 🟡 DSL → DOM gap | 🟢 Read generated code |
-| **Fits existing core/** | 🟢 Extends render | 🟡 Needs new stream | 🟢 Uses render + stream | 🟡 New paradigm | 🔴 New paradigm | 🟢 Generates render calls |
-| **Offline-capable** | 🟢 Static HTML works | 🔴 Needs server | 🟢 Degrades gracefully | 🔴 Needs server | 🟢 Static HTML works | 🟢 Static HTML works |
-| **Customizability** | 🟢 Full control | 🟡 VDOM constraints | 🟢 Mix static + live | 🟡 Signal constraints | 🔴 DSL constraints | 🟢 Edit the templates |
-
----
-
-## My Recommendation: Hybrid — Your Proposal + Islands + Codegen
-
-The best approach combines three ideas rather than picking one:
-
-1. **`ui-core/`** = Your typed HTML builder (extend `core/render`) + **islands** for interactivity
-2. **`ui-framework/`** = Entity auto-UI (your proposal) + **optional codegen** for customization (Alt 5)
-
-### Why this combo works
-
-- **Your builder is the foundation** — `Tag()`, `Component[T]`, `Layout` already exist. Extend them.
-- **Islands solve the interactivity gap** — most pages are static HTML. Only tables and forms need live updates. Use `core/stream` (SSE) to push island updates. Tiny ~1KB client runtime.
-- **Codegen for escape hatches** — auto-generated pages work 90% of the time. When they don't, `gofastr generate ui` scaffolds Go template files you can edit freely. No custom syntax needed — it generates Go code using `ui-core` primitives.
-
-### Phased build
-
-| Phase | What | Scope |
+| Handler behavior | Inference | Runtime |
 |---|---|---|
-| **Phase 1** | Extend `core/render` into `ui-core/` (forms, tables, nav, page, components, CSS utilities) | Foundation |
-| **Phase 2** | `ui-framework/` auto-generates CRUD pages from entity definitions using `ui-core/` | Fast prototyping |
-| **Phase 3** | Add islands — live tables, form validation, dashboard widgets | Interactivity |
-| **Phase 4** | Codegen — scaffold customizable page templates from entities | Escape hatch |
+| Only reads/writes local struct fields | **Client** | Compiles to JS, runs in browser |
+| Calls `Server()` | **Hybrid** | Client action triggers server, response streams via SSE |
+| Accesses DB, network, filesystem, or injected services | **Server** | Runs as goroutine, streams updates via SSE |
+| Creates goroutines, channels, or uses `reflect` | **Compile error** | `.ui.go` linter rejects it |
 
-This gives you a working admin panel in Phase 2, interactivity in Phase 3, and full customizability in Phase 4. Each phase ships independently.
+```go
+// Example: hybrid — local state + server offload
+func (c *ProductCard) Actions() {
+    On("add-to-cart", func() {
+        c.InCart = true                         // local state → JS
+        c.Count = c.Count + 1                   // local state → JS
+        Server("add-to-cart", c.Product.ID)     // offload to server → SSE island
+    })
+}
+```
+
+### The `Server()` escape hatch
+
+When a handler needs real backend work, `Server()` marks it:
+
+```go
+Server(event string, args ...any)
+```
+
+This tells the framework:
+1. Send this event + args to the server
+2. Server runs the handler in a goroutine
+3. Server streams updated HTML back via SSE
+4. The component becomes a live island from this point forward
 
 ---
 
-## Open Questions
+## Reactive Signals
 
-1. **CSS strategy**: Utility classes (Tailwind-like generation)? Token-based theming? Inline styles? BEM? Mix?
-2. **JS boundary**: How much JS is acceptable? Islands need ~1KB. Is that the ceiling? Or do we allow progressive enhancement scripts?
-3. **Form handling**: Server-side validation + full reload? Or client-side validation + island updates?
-4. **Admin panel scope**: How much should `ui-framework/` auto-generate vs. leave to the user?
-5. **Mobile**: Responsive by default? Or mobile-first? How do layouts adapt?
-6. **Dark mode**: Token-based from day one? Or later?
-7. **Accessibility**: WCAG AA compliance for auto-generated components? First-class ARIA attributes in primitives?
-8. **Testing**: How do we test UI? Snapshot testing of rendered HTML? Visual regression?
+Fine-grained reactivity inspired by Angular signals / SolidJS.
+
+```go
+// Signal primitives
+type Signal[T any] struct { /* internal */ }
+
+func NewSignal[T any](initial T) *Signal[T]
+func (s *Signal[T]) Get() T
+func (s *Signal[T]) Set(v T)
+func (s *Signal[T]) Update(fn func(T) T)  // compute new from old
+
+func Computed[T any](fn func() T) *Signal[T]  // auto-tracks dependencies
+func Effect(fn func())                          // runs when tracked signals change
+```
+
+### Signal usage in components
+
+```go
+type ProductFilters struct {
+    Search  Signal[string]
+    Category Signal[string]
+    Results  Computed[[]Product]  // derived from Search + Category
+}
+
+func (f *ProductFilters) Render() HTML {
+    return Form(nil,
+        Input(Text, "search",
+            Placeholder("Search products..."),
+            Bind(&f.Search),  // two-way binding
+        ),
+        Select("category",
+            Options("All", "Electronics", "Books", "Clothing"),
+            Bind(&f.Category),
+        ),
+    )
+}
+
+func (f *ProductFilters) Actions() {
+    // Results auto-updates when Search or Category changes
+    // This runs on server because it needs to query data
+    Effect(func() {
+        f.Results = Compute(func() []Product {
+            return db.SearchProducts(f.Search.Get(), f.Category.Get())
+        })
+    })
+}
+```
+
+### Dependency injection
+
+Global services, provided at the App level, injectable into any component:
+
+```go
+// main.go
+app := NewApp(
+    Provide(NewCartService),       // singleton
+    Provide(NewAuthService),       // singleton
+    Provide(NewAnalyticsService),  // singleton
+    Theme(DefaultTheme),
+)
+
+// In any component — inject via struct embedding or fields
+type ProductCard struct {
+    Product  Product
+    Cart     *CartService    `inject:""`  // auto-injected
+    Analytics *AnalyticsService `inject:""`
+}
+```
+
+---
+
+## App & Routing
+
+Code-based, compositional. The app is declared as a tree of intentions:
+
+```go
+app := NewApp(
+    Provide(NewCartService),
+    Provide(NewAuthService),
+    Theme(DefaultTheme),
+)
+
+// Layouts — shared chrome
+admin := Layout("admin",
+    Sidebar(AdminNav),
+    Header(UserMenu),
+)
+
+public := Layout("public",
+    Header(PublicNav),
+    Footer(PublicFooter),
+)
+
+// Screens — top-level views, rendered inside a layout
+app.Screen("/users", admin, &UserListScreen{})
+app.Screen("/users/new", admin, &UserFormScreen{})
+app.Screen("/users/:id", admin, &UserDetailScreen{})
+
+// Drawers — side panels
+app.Drawer("filters", admin, &FilterDrawer{})
+
+// Sheets — bottom panels
+app.Sheet("cart", public, &CartSheet{})
+
+// Dialogs — modal overlays
+app.Dialog("confirm-delete", &ConfirmDialog{})
+```
+
+### Screen types
+
+| Type | Rendering | ARIA | Hydration |
+|---|---|---|---|
+| **Screen** | Full page or route-based | `<main>` landmark | On page load |
+| **Drawer** | Side panel, slides in | `role="dialog"` aria-modal | On activation |
+| **Sheet** | Bottom panel, slides up | `role="dialog"` aria-modal | On activation |
+| **Dialog** | Modal overlay | `role="dialog"`, focus trap, escape close | On activation |
+
+Same component definition can be mounted as any screen type. The layout decides the presentation.
+
+---
+
+## The `.ui.go` Convention
+
+### Why `.ui.go`?
+
+- Valid Go — `gofmt`, `go vet`, IDE highlighting, autocomplete all work
+- Like `_test.go` — same language, special treatment by tooling
+- Clear compilation boundary — the build system knows these files compile to JS
+- No new syntax to learn, no new parser to write
+
+### Linter rules for `.ui.go`
+
+A custom linter (`core-ui check`) enforces the restricted subset:
+
+**Allowed:**
+- Struct field read/write
+- Basic types (string, int, bool, float, slices, maps)
+- Control flow (if, for, switch, range)
+- String formatting (`fmt.Sprintf`)
+- Framework primitives (`Signal`, `Computed`, `Effect`, `On`, `Server`, `Render`, `Bind`)
+- Range over slices/maps
+- Function literals (closures for event handlers)
+- Calling other `.ui.go` component Render methods
+- Calling framework Element constructors (Button, Heading, etc.)
+
+**Forbidden:**
+- `go` keyword (goroutines)
+- `chan` (channels)
+- `interface{}` type assertions
+- `reflect` package
+- `net/http`, `database/*`, `os/*`, any I/O
+- `time.Sleep`
+- Method calls on non-framework types (except local struct methods)
+- Direct pointer arithmetic
+- Importing non-framework packages (except `fmt`, `strings`)
+
+### Build pipeline
+
+```
+counter.ui.go
+    │
+    ├── go vet, gofmt ──→ ✅ valid Go
+    │
+    ├── core-ui check ──→ ✅ passes linter (restricted subset)
+    │
+    ├── go build ───────→ counter.o (server-side rendering, SSR/SSG)
+    │
+    └── core-ui compile ─→ counter.behavior.js (client-side hydration)
+                          counter.styles.css (extracted styles)
+```
+
+The same `.ui.go` file produces:
+1. **Go object code** — used by the server for SSR/SSG rendering
+2. **JS behavior module** — the compiled client-side hydration code
+3. **CSS chunk** — extracted styles for this component
+
+---
+
+## Accessibility (ADA) by Default
+
+Every primitive has correct semantics baked in. The AI can't build inaccessible UI because the primitives won't let it.
+
+### Elements produce correct markup
+
+```go
+// What you write
+Button("Save", OnClick("save"), Primary)
+
+// What renders (framework handles this)
+<button type="button" class="btn btn-primary" onclick="..." aria-label="Save">Save</button>
+
+// What you write
+Heading(2, "User Details")
+
+// What renders
+<h2 id="heading-user-details">User Details</h2>
+// ID auto-generated for aria-labelledby references
+```
+
+### Layout landmarks are automatic
+
+```go
+Layout("admin",
+    Sidebar(AdminNav),     // → <nav aria-label="Admin navigation">
+    Header(UserMenu),      // → <header role="banner">
+    Footer(Acknowledgments), // → <footer role="contentinfo">
+)
+// Screen content → <main id="main-content" role="main">
+// Skip-nav link auto-injected: <a href="#main-content" class="skip-link">Skip to main content</a>
+```
+
+### Widget-level accessibility
+
+```go
+// Dialog — framework handles focus trap, escape close, aria-modal
+Dialog("confirm-delete", &ConfirmDialog{})
+// → <dialog open aria-modal="true" aria-labelledby="heading-confirm-delete">
+// → Focus trapped inside, Escape closes, Tab cycles within
+
+// Live regions — framework marks dynamic content
+Group(RoleStatus, Attrs{"aria-live": "polite"},
+    Text(cartCount),
+)
+// → <div role="status" aria-live="polite">3 items</div>
+```
+
+---
+
+## Styling System
+
+### Token-based theming + utility classes
+
+```go
+// theme.config.go
+var DefaultTheme = Theme{
+    Colors: Colors{
+        "primary":    "#4F46E5",
+        "secondary":  "#6B7280",
+        "danger":     "#EF4444",
+        "success":    "#10B981",
+        "surface":    "#FFFFFF",
+        "background": "#F9FAFB",
+        "text":       "#1F2937",
+        "text-muted": "#6B7280",
+    },
+    Spacing: Spacing{
+        "xs": 2, "sm": 4, "md": 8, "lg": 16, "xl": 24, "2xl": 32,
+    },
+    Radii: Radii{
+        "sm": 4, "md": 8, "lg": 12, "full": 9999,
+    },
+    Fonts: Fonts{
+        "body":    "'Inter', system-ui, sans-serif",
+        "heading": "'Inter', system-ui, sans-serif",
+        "mono":    "'JetBrains Mono', monospace",
+    },
+    Breakpoints: Breakpoints{
+        "sm": 640, "md": 768, "lg": 1024, "xl": 1280,
+    },
+}
+```
+
+### Utility classes in Go
+
+```go
+// Semantic style references — maps to token values
+func (c ProductCard) Render() HTML {
+    return Card(
+        Use("card"),  // applies card styles from theme
+        Image(c.Product.Image, c.Product.Name),
+        Heading(4, c.Product.Name),
+        Text(c.Product.Price),
+        Button("Add to Cart", OnClick("add"), Primary),
+    )
+}
+
+// Or inline utilities (Tailwind-like, but generated from tokens)
+Div(
+    Classes{
+        "flex":     true,
+        "gap-{md}": true,    // resolves to gap-8 from token
+        "p-{lg}":   true,    // resolves to p-16 from token
+    },
+    children...,
+)
+```
+
+### Progressive CSS Loading
+
+CSS is loaded progressively based on the user journey. Never unloaded.
+
+```
+Build time:
+  1. Scan all components → map component → required CSS classes
+  2. Scan all screens → map screen → components used
+  3. Analyze routes → build screen transition graph (user journey)
+  4. Generate CSS chunks per screen + preload hints for adjacent screens
+
+Runtime:
+  Initial load:    Ship CSS for current screen's components (critical path)
+  Navigation:      Load CSS for next screen (preload started on previous screen)
+  Hydration:       Load CSS for newly hydrated widget (if not already loaded)
+  Caching:         Browser cache. Once loaded, stays loaded. No unload.
+```
+
+```
+User visits /products:
+  Ship: base.css + nav.css + grid.css + card.css + filters.css = 6KB
+  Preload: gallery.css + tabs.css (next likely screen: /products/:id)
+
+User navigates to /products/:id:
+  Ship: gallery.css + tabs.css (already preloaded = instant)
+  Preload: cart.css + form.css (next likely: /cart)
+
+User navigates to /cart:
+  Ship: cart.css (already preloaded = instant)
+  No new preloads (checkout reuses form.css already loaded)
+```
+
+---
+
+## Progressive JS Hydration
+
+### Incremental hydration (Angular-inspired)
+
+The HTML is pre-rendered (SSG or SSR). JS interactivity is activated on demand:
+
+1. **Page load** — HTML is visible immediately. No JS blocking render.
+2. **First interaction** — User clicks a widget. Framework hydrates JUST that widget.
+3. **After hydration** — Widget runs locally (client-compiled actions) or as island (server goroutine).
+4. **Pre-hydration** — Framework can preload JS for widgets likely to be interacted with next.
+
+### JS runtime budget
+
+| Component | Size | Loads when |
+|---|---|---|
+| Core runtime | ~3KB | First page load |
+| Component behavior (avg) | ~0.5KB each | First interaction with widget |
+| Preloaded behaviors | ~0.3KB each | <link rel="preload"> for likely interactions |
+
+### Hydration flow
+
+```
+1. Server renders full HTML page (SSG at build time, or SSR per request)
+   → <div data-widget="product-card" data-id="42">
+        <img src="..." alt="Product Name" />
+        <h4>Product Name</h4>
+        <button data-action="add-to-cart">Add to Cart</button>
+      </div>
+
+2. Page loads. HTML is visible. No JS executed yet.
+
+3. User clicks "Add to Cart"
+   → Core runtime intercepts click (event delegation)
+   → Fetches product-card.behavior.js (if not already loaded)
+   → Hydrates widget: attaches event listeners, initializes local state
+   → Executes action handler locally OR sends to server via Server()
+
+4. From now on, this widget is interactive.
+   → Client actions run in browser (no round-trip)
+   → Server actions stream updates via SSE
+```
+
+---
+
+## SSG / SSR / Live Modes
+
+The same component definitions work in all modes. The framework decides delivery.
+
+### SSG — Static Site Generation
+
+```go
+// Build time: renders HTML, outputs to /dist/
+app.Static("/", &HomeScreen{})
+app.Static("/about", &AboutScreen{})
+app.Static("/products", &ProductListScreen{})  // static list page
+// Product detail pages generated from data
+app.Static("/products/:id", &ProductDetailScreen{}, FromData(loadProducts))
+```
+
+### SSR — Server-Side Rendering
+
+```go
+// Per request: renders HTML, sends response
+app.Screen("/users/:id", admin, &UserDetailScreen{})
+// → GET /users/42 → server renders UserDetailScreen with user data → HTML response
+```
+
+### Live — Server-Driven Island
+
+```go
+// Any component with Server() calls becomes a live island when hydrated
+// Server spawns a goroutine per connected component
+func (c *LiveCounter) Actions() {
+    On("increment", func() {
+        c.Count++
+        analytics.Track("increment", c.Count)  // external call → server action
+        Server("sync-count", c.Count)           // → SSE stream to client
+    })
+}
+```
+
+---
+
+## Build Tools
+
+### `core-ui check` — Linter
+
+Validates `.ui.go` files against the restricted subset. Integrates with `go vet`.
+
+```bash
+core-ui check ./...
+# output:
+# components/cart.ui.go:42: goroutines not allowed in .ui.go files
+# components/cart.ui.go:55: import "database/sql" not allowed in .ui.go files
+```
+
+### `core-ui compile` — Go → JS compiler
+
+Compiles `.ui.go` action handlers to JavaScript. Only handles the restricted subset.
+
+```bash
+core-ui compile ./...
+# For each .ui.go file with Actions():
+#   → dist/js/product-card.behavior.js
+#   → dist/css/product-card.styles.css
+```
+
+### `core-ui build` — Full build
+
+SSG + compile + CSS extraction in one step.
+
+```bash
+core-ui build
+# 1. Renders SSG pages → dist/
+# 2. Compiles .ui.go → dist/js/*.behavior.js
+# 3. Extracts CSS → dist/css/*.css
+# 4. Generates preload manifests based on route graph
+# 5. Generates service worker for offline caching (optional)
+```
+
+---
+
+## Summary: What Makes This Different
+
+| Dimension | React/Angular/Svelte | core-ui |
+|---|---|---|
+| **Language** | JS/TS | Go (valid Go, `.ui.go` subset) |
+| **Mental model** | Web pages with components | Mobile app with screens, widgets |
+| **Accessibility** | Opt-in (eslint-plugin-jsx-a11y) | Impossible to opt out (primitives enforce it) |
+| **Hydration** | Full page or manual `lazy()` | Incremental, interaction-triggered, inferred |
+| **Client/Server split** | Developer decides (Next.js RSC) | Framework infers from handler purity |
+| **CSS loading** | All upfront (Tailwind) or per-route | Journey-aware progressive loading |
+| **State** | External library (Redux, NgRx) | Built-in signals + DI |
+| **AI authoring** | AI generates broken JSX/CSS | Restricted subset + semantic primitives = correct by construction |
+| **SSG/SSR/Live** | Different frameworks for each | Same code, different delivery mode |
+
+---
+
+## Open Questions & Future Exploration
+
+1. **Go→JS compiler scope** — Exactly which Go expressions to support in the restricted subset? Need a formal spec.
+2. **Signal thread safety** — How do concurrent goroutines update signals safely? Mutex per signal? Lock-free?
+3. **Widget hydration boundary** — Is the widget always the hydration unit? Or can sub-components hydrate independently?
+4. **Testing** — How to test `.ui.go` components? Snapshot testing of rendered HTML? Visual regression?
+5. **Error boundaries** — What happens when a server-side widget crashes? Error UI per widget?
+6. **Animation** — Transition between screens, drawer open/close, sheet slide-up. CSS animations or framework-managed?
+7. **Form handling** — Built-in form primitives with validation? Or keep it minimal and let widgets compose forms from elements?
+8. **Code splitting** — How granular should JS chunks be? Per widget? Per screen? Per behavior?
+9. **Offline / PWA** — Can SSG pages work offline? Service worker generation from route graph?
+10. **Editor tooling** — VSCode extension for `.ui.go`? Syntax highlighting is free (it's Go), but linter integration, autocomplete for framework primitives?
