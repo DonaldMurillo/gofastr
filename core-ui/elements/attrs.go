@@ -88,6 +88,21 @@ func OnChange(action string) Attrs {
 	return Attrs{"data-action": action, "data-action-type": "change"}
 }
 
+// ContainerType returns Attrs that declare an element as a CSS container query context.
+// The containerType is typically "inline-size" (respond to width) or "size" (width + height).
+// Use this on parent elements whose children should respond to the parent's size.
+//
+//	elements.Div(
+//		elements.ContainerType("inline-size", "product-grid"),
+//		productCards...,
+//	)
+func ContainerType(containerType string, name string) Attrs {
+	return Attrs{
+		"container-type": containerType,
+		"container-name": name,
+	}
+}
+
 // setAttr is a helper that sets a key in the attrs map, creating it if nil.
 func setAttr(attrs Attrs, key, value string) Attrs {
 	if attrs == nil {

@@ -40,12 +40,13 @@ func findProductBySlug(slug string) (Product, bool) {
 }
 
 // productCards returns a grid of ProductCards from the catalog.
+// The grid is a CSS container query context — cards reflow based on container width.
 func productCards() render.HTML {
 	cards := make([]render.HTML, len(products))
 	for i, p := range products {
 		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
 	}
-	return elements.Div(elements.Attrs{"class": "product-grid"}, cards...)
+	return elements.Div(elements.Attrs{"class": "product-grid", "container-type": "inline-size", "container-name": "product-grid"}, cards...)
 }
 
 // featuredProductCards returns the first 3 products as cards.
@@ -55,7 +56,7 @@ func featuredProductCards() render.HTML {
 		p := products[i]
 		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
 	}
-	return elements.Div(elements.Attrs{"class": "product-grid"}, cards...)
+	return elements.Div(elements.Attrs{"class": "product-grid", "container-type": "inline-size", "container-name": "product-grid"}, cards...)
 }
 
 // HeaderComponent renders the site header with navigation.

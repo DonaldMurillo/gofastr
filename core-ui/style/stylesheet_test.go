@@ -131,3 +131,50 @@ func TestStyleSheetComplexSelector(t *testing.T) {
 		t.Errorf("expected child selector, got: %s", css)
 	}
 }
+
+func TestStyleSheetContainer(t *testing.T) {
+	theme := DefaultTheme()
+	ss := NewStyleSheet(theme)
+
+	ss.Rule(".sidebar").
+		Set("container-type", "inline-size", "container-name", "sidebar").
+		Container("sidebar", "(min-width: 400px)", func(ss *StyleSheet) {
+			ss.Rule(".sidebar .widget").
+				Set("font-size", "1.125rem").
+				End()
+		}).
+		End()
+
+	css := ss.CSS()
+	if !strings.Contains(css, "container-type: inline-size") {
+		t.Errorf("expected container-type, got: %s", css)
+	}
+	if !strings.Contains(css, "container-name: sidebar") {
+		t.Errorf("expected container-name, got: %s", css)
+	}
+	if !strings.Contains(css, "@container sidebar (min-width: 400px)") {
+		t.Errorf("expected @container rule, got: %s", css)
+	}
+	if !strings.Contains(css, ".sidebar .widget {") {
+		t.Errorf("expected .sidebar .widget rule, got: %s", css)
+	}
+}
+
+func TestStyleSheetContainerUnnamed(t *testing.T) {
+	theme := DefaultTheme()
+	ss := NewStyleSheet(theme)
+
+	ss.Rule(".card-grid").
+		Set("container-type", "inline-size").
+		Container("", "(min-width: 300px)", func(ss *StyleSheet) {
+			ss.Rule(".card").
+				Set("flex-direction", "row").
+				End()
+		}).
+		End()
+
+	css := ss.CSS()
+	if !strings.Contains(css, "@container (min-width: 300px)") {
+		t.Errorf("expected unnamed @container, got: %s", css)
+	}
+}

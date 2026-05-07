@@ -191,6 +191,33 @@ func createStyleSheet(theme style.Theme) string {
 		).
 		End()
 
+	// Container queries: product cards reflow based on parent width, not viewport.
+	// When a product-grid is wide enough, cards go horizontal (image left, text right).
+	ss.Rule(".product-grid").
+		Container("product-grid", "(min-width: 600px)", func(ss *style.StyleSheet) {
+			ss.Rule(".product-card").
+				Set("display", "flex", "flex-direction", "row").
+				End()
+			ss.Rule(".product-card img").
+				Set("width", "50%", "height", "auto", "min-height", "200px").
+				End()
+			ss.Rule(".product-card h3").
+				Set("padding", "{spacing.md} {spacing.md} 0").
+				End()
+			ss.Rule(".product-card p").
+				Set("padding", "{spacing.xs} {spacing.md}").
+				End()
+			ss.Rule(".product-card button").
+				Set("width", "auto", "margin", "{spacing.md}").
+				End()
+		}).
+		Container("product-grid", "(min-width: 900px)", func(ss *style.StyleSheet) {
+			ss.Rule(".product-card img").
+				Set("width", "40%").
+				End()
+		}).
+		End()
+
 	// Product card
 	ss.Rule(".product-card").
 		Set(

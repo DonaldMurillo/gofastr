@@ -97,6 +97,36 @@ func (ss *StyleSheet) Media(query string, fn func(ss *StyleSheet)) *StyleSheet {
 	return ss
 }
 
+// Container adds a @container query wrapping rules built in the callback.
+// Container queries style elements based on their container's size, not the viewport.
+// Name is the container-name to query (set via container-type/container-name on the parent).
+// Query is the condition, e.g. "(min-width: 400px)".
+//
+//	ss.Rule(".sidebar").
+//		Set("container-type", "inline-size", "container-name", "sidebar").
+//		Container("sidebar", "(min-width: 400px)", func(ss *style.StyleSheet) {
+//			ss.Rule(".sidebar .widget").Set("font-size", "1.125rem").End()
+//		}).
+//		End()
+func (ss *StyleSheet) Container(name string, query string, fn func(ss *StyleSheet)) *StyleSheet {
+	parent := ss.during
+	if parent == nil {
+		return ss
+	}
+	child := &StyleSheet{theme: ss.theme}
+	fn(child)
+	parentQuery := "@container "
+	if name != "" {
+		parentQuery += name + " "
+	}
+	parentQuery += query
+	for _, r := range child.rules {
+		r.parent = parentQuery
+		parent.children = append(parent.children, r)
+	}
+	return ss
+}
+
 // Keyframes adds a @keyframes animation.
 func (ss *StyleSheet) Keyframes(name string, steps ...KeyframeStep) *StyleSheet {
 	r := cssRule{parent: "@keyframes " + name}
@@ -162,23 +192,23 @@ func (ss *StyleSheet) writeRule(b *strings.Builder, r cssRule, parentSelector st
 		b.WriteString("}\n")
 	}
 
-	// Write children (pseudo-classes, descendants, media queries)
-	mediaParent := ""
+	// Write children (pseudo-classes, descendants, media/container queries)
+	atParent := ""
 	for _, child := range r.children {
-		if child.parent != "" && strings.HasPrefix(child.parent, "@media") {
-			if mediaParent != child.parent {
-				if mediaParent != "" {
+		if child.parent != "" && (strings.HasPrefix(child.parent, "@media") || strings.HasPrefix(child.parent, "@container")) {
+			if atParent != child.parent {
+				if atParent != "" {
 					b.WriteString("}\n")
 				}
 				fmt.Fprintf(b, "%s {\n", child.parent)
-				mediaParent = child.parent
+				atParent = child.parent
 			}
 			ss.writeRule(b, child, "")
 			continue
 		}
 		ss.writeRule(b, child, child.selector)
 	}
-	if mediaParent != "" {
+	if atParent != "" {
 		b.WriteString("}\n")
 	}
 }
