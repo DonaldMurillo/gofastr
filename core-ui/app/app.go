@@ -162,3 +162,21 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 
 	return render.Join(doctype, html), nil
 }
+
+// RenderPartial returns just the screen content (no layout, no <html>/<head>/<body>).
+// Used for client-side navigation where the layout is already in the DOM.
+func (a *App) RenderPartial(path string) (render.HTML, error) {
+	screen, ok := a.Router.Resolve(path)
+	if !ok {
+		return "", fmt.Errorf("app: no screen registered for path %q", path)
+	}
+
+	if screen.Type == ScreenPage {
+		// Return just the component content — client-side router will
+		// swap it into the existing <main> element
+		return screen.Component.Render(), nil
+	}
+
+	// Drawer/sheet/dialog — return full ARIA-wrapped content
+	return screen.Render(), nil
+}

@@ -33,6 +33,16 @@
     registerRoutes(window.__gofastr_routes);
   }
 
+  // Cache the initial page so back-navigation to it works instantly
+  const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
+  if (initialMain) {
+    screenCache.set(location.pathname, {
+      html: initialMain.innerHTML,
+      title: document.title,
+      timestamp: Date.now(),
+    });
+  }
+
   // -----------------------------------------------------------------------
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
@@ -183,16 +193,50 @@
     return routes.has(clean);
   };
 
+  // -----------------------------------------------------------------------
+  // Screen cache — stores rendered screens for instant back-navigation.
+  // Static screens are kept indefinitely; dynamic screens use LRU eviction.
+  // -----------------------------------------------------------------------
+  const screenCache = new Map(); // path → { html, title, timestamp }
+  const MAX_CACHE_SIZE = 20;
+
+  const cacheScreen = (path, html, title) => {
+    // Evict oldest entries if cache is full
+    if (screenCache.size >= MAX_CACHE_SIZE) {
+      const oldest = screenCache.keys().next().value;
+      screenCache.delete(oldest);
+    }
+    screenCache.set(path, { html, title, timestamp: Date.now() });
+  };
+
+  const getCachedScreen = (path) => screenCache.get(path);
+
   /**
    * Fetch a page and swap the <main> content without a full reload.
-   * Parses the full HTML response, extracts the <main> element,
-   * replaces the current <main>, updates title and active nav link.
+   * For client-side navigation, the server returns partial HTML (just
+   * the screen component content). The layout (header, footer) stays intact.
+   *
+   * Screen caching: after first load, the screen content is cached. Going
+   * back to a cached screen restores it instantly without a network request.
    */
   const loadPage = async (path) => {
     const prevPath = currentPath;
     currentPath = path;
 
     try {
+      // Check screen cache first (instant back-navigation)
+      const cached = getCachedScreen(path);
+      if (cached) {
+        swapMainContent(cached.html);
+        document.title = cached.title;
+        updateActiveLink(path);
+        window.scrollTo(0, 0);
+        window.dispatchEvent(new CustomEvent('gofastr:navigate', {
+          detail: { path, prevPath, cached: true },
+        }));
+        return;
+      }
+
       const resp = await fetch(path, {
         headers: { 'X-Gofastr-Navigate': '1' },
       });
@@ -200,45 +244,62 @@
 
       const html = await resp.text();
 
-      // Parse the response HTML
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-
-      // Swap <main> content
-      const newMain = doc.querySelector('main');
-      const oldMain = document.querySelector('main');
-      if (newMain && oldMain) {
-        oldMain.innerHTML = newMain.innerHTML;
+      if (resp.headers.get('X-Gofastr-Partial') === 'true') {
+        // Server returned partial content — swap directly into <main>
+        swapMainContent(html);
+        cacheScreen(path, html, document.title);
+      } else {
+        // Fallback: server returned full page — parse and extract <main>
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newMain = doc.querySelector('main');
+        if (newMain) {
+          swapMainContent(newMain.innerHTML);
+        }
+        const title = doc.querySelector('title')?.textContent ?? document.title;
+        cacheScreen(path, newMain?.innerHTML ?? '', title);
+        document.title = title;
       }
-
-      // Update page title
-      const newTitle = doc.querySelector('title');
-      if (newTitle) document.title = newTitle.textContent;
 
       // Update active nav link
-      const navLinks = document.querySelectorAll('nav a');
-      for (const link of navLinks) {
-        const href = link.getAttribute('href');
-        if (href === path) {
-          link.setAttribute('aria-current', 'page');
-          link.classList.add('active');
-        } else {
-          link.removeAttribute('aria-current');
-          link.classList.remove('active');
-        }
-      }
+      updateActiveLink(path);
 
       // Scroll to top
       window.scrollTo(0, 0);
 
-      // Dispatch a custom event so components know navigation happened
+      // Dispatch navigation event
       window.dispatchEvent(new CustomEvent('gofastr:navigate', {
-        detail: { path, prevPath },
+        detail: { path, prevPath, cached: false },
       }));
     } catch (err) {
       // Fallback to full page load on error
       console.error('[gofastr] Navigation failed, falling back to full load:', err);
       location.href = path;
+    }
+  };
+
+  /**
+   * Swap content into the <main> element, reusing the existing layout.
+   */
+  const swapMainContent = (html) => {
+    const main = document.querySelector('[role="main"]') ?? document.querySelector('main');
+    if (main) main.innerHTML = html;
+  };
+
+  /**
+   * Update the active navigation link based on current path.
+   */
+  const updateActiveLink = (path) => {
+    const navLinks = document.querySelectorAll('nav a');
+    for (const link of navLinks) {
+      const href = link.getAttribute('href');
+      if (href === path) {
+        link.setAttribute('aria-current', 'page');
+        link.classList.add('active');
+      } else {
+        link.removeAttribute('aria-current');
+        link.classList.remove('active');
+      }
     }
   };
 

@@ -25,6 +25,10 @@ func TestRuntimeJS(t *testing.T) {
 		"data-island",
 		"hydrate",
 		"collectParams",
+		"screenCache",        // screen caching for back-navigation
+		"swapMainContent",    // partial content swapping
+		"X-Gofastr-Navigate", // client-side navigation header
+		"X-Gofastr-Partial",  // server partial response header
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
@@ -40,8 +44,8 @@ func TestRuntimeSize(t *testing.T) {
 	}
 	t.Logf("Runtime size: %d bytes", size)
 	// Should be reasonably small (router + DOM helpers + SSE + hydration)
-	if size > 20000 {
-		t.Errorf("runtime too large: %d bytes (max 20000)", size)
+	if size > 25000 {
+		t.Errorf("runtime too large: %d bytes (max 25000)", size)
 	}
 }
 

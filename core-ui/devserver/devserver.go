@@ -243,6 +243,12 @@ func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
+	// Client-side navigation: return just the screen content (no layout)
+	if r.Header.Get("X-Gofastr-Navigate") == "1" {
+		ds.handlePartialPage(w, r, path)
+		return
+	}
+
 	html, err := ds.App.RenderPage(path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
@@ -304,6 +310,20 @@ func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, page)
+}
+
+// handlePartialPage returns just the screen content for client-side navigation.
+// The runtime.js router swaps the <main> content without a full page reload.
+func (ds *DevServer) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
+	html, err := ds.App.RenderPartial(path)
+	if err != nil {
+		http.Error(w, "Page not found: "+path, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Gofastr-Partial", "true")
+	fmt.Fprint(w, html)
 }
 
 // handleSSE streams island updates to the client.
