@@ -339,6 +339,11 @@ func (ds *DevServer) handlePartialPage(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	// Look up screen title from route info
+	if scr, ok := ds.App.Router.Resolve(path); ok && scr.Title != "" {
+		w.Header().Set("X-Gofastr-Title", scr.Title)
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Gofastr-Partial", "true")
 	fmt.Fprint(w, html)

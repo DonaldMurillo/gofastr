@@ -147,8 +147,14 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 			"content": "width=device-width, initial-scale=1.0",
 		}),
 	)
+	var titleText string
+	if screen.Title != "" {
+		titleText = screen.Title + " — " + a.Name
+	} else {
+		titleText = a.Name
+	}
 	headChildren = append(headChildren,
-		render.Tag("title", nil, render.Text(a.Name)),
+		render.Tag("title", nil, render.Text(titleText)),
 	)
 
 	// Theme CSS custom properties.

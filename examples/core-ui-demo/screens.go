@@ -216,7 +216,7 @@ func (s *SignalDemoScreen) Render() render.HTML {
 	currentTotal := total.Get()
 	currentLog := log.Get()
 
-	return elements.Div(nil,
+	return elements.Div(elements.Attrs{"data-component": "signal-demo"},
 		elements.Heading(1, nil, render.Text("Signal Demo")),
 		elements.Paragraph(nil, render.Text("Demonstrates Computed and Effect signals working together.")),
 		elements.Section(

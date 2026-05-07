@@ -90,6 +90,7 @@ func setupDevServer() *devserver.DevServer {
 	ds.CompileActions("home-counter", &CounterComponent{ID: "home-counter"})
 	ds.CompileActions("add-to-cart", &InteractiveButton{Label: "Add to Cart"})
 	ds.CompileActions("search-filter", &SearchFilterComponent{})
+	ds.CompileActions("signal-demo", &SignalDemoScreen{})
 
 	// Serve embedded static files if no filesystem path found
 	if ds.StaticDir() == "" {

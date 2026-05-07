@@ -293,7 +293,9 @@
 
       if (resp.headers.get('X-Gofastr-Partial') === 'true') {
         swapMainContent(html);
-        cacheScreen(path, html, document.title);
+        const title = resp.headers.get('X-Gofastr-Title') || document.title;
+        document.title = title;
+        cacheScreen(path, html, title);
         window.__gofastr.loadCSS(path);
       } else {
         const doc = new DOMParser().parseFromString(html, 'text/html');
