@@ -1,0 +1,660 @@
+package app
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/gofastr/gofastr/core/render"
+)
+
+// stubComponent is a test helper that renders fixed HTML.
+type stubComponent struct {
+	html render.HTML
+}
+
+func (s *stubComponent) Render() render.HTML { return s.html }
+
+// stubService is a test helper for DI tests.
+type stubService struct {
+	Value string
+}
+
+func TestNewApp(t *testing.T) {
+	a := NewApp("TestApp")
+	if a.Name != "TestApp" {
+		t.Errorf("expected name TestApp, got %q", a.Name)
+	}
+	if a.Container == nil {
+		t.Error("expected Container to be initialized")
+	}
+	if a.Router == nil {
+		t.Error("expected Router to be initialized")
+	}
+	if a.Theme != nil {
+		t.Error("expected Theme to be nil by default")
+	}
+}
+
+func TestAppWithTheme(t *testing.T) {
+	a := NewApp("ThemedApp")
+	theme := style.DefaultTheme()
+	result := a.WithTheme(theme)
+	if result != a {
+		t.Error("WithTheme should return the app for chaining")
+	}
+	if a.Theme == nil {
+		t.Error("expected Theme to be set")
+	}
+	if a.Theme.Name != "default" {
+		t.Errorf("expected theme name 'default', got %q", a.Theme.Name)
+	}
+}
+
+func TestProvideAndResolve(t *testing.T) {
+	c := NewContainer()
+
+	// Provide a direct value.
+	svc := &stubService{Value: "hello"}
+	if err := c.Provide(svc); err != nil {
+		t.Fatalf("Provide failed: %v", err)
+	}
+
+	// Resolve it.
+	var resolved *stubService
+	if err := c.Resolve(&resolved); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if resolved.Value != "hello" {
+		t.Errorf("expected 'hello', got %q", resolved.Value)
+	}
+}
+
+func TestProvideConstructor(t *testing.T) {
+	c := NewContainer()
+
+	// Provide a constructor function.
+	err := c.Provide(func() *stubService {
+		return &stubService{Value: "from-constructor"}
+	})
+	if err != nil {
+		t.Fatalf("Provide failed: %v", err)
+	}
+
+	var resolved *stubService
+	if err := c.Resolve(&resolved); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if resolved.Value != "from-constructor" {
+		t.Errorf("expected 'from-constructor', got %q", resolved.Value)
+	}
+
+	// Resolve again — should be the same singleton.
+	var resolved2 *stubService
+	if err := c.Resolve(&resolved2); err != nil {
+		t.Fatalf("second Resolve failed: %v", err)
+	}
+	if resolved != resolved2 {
+		t.Error("expected singleton: resolved instances should be identical")
+	}
+}
+
+func TestInject(t *testing.T) {
+	c := NewContainer()
+	svc := &stubService{Value: "injected"}
+	_ = c.Provide(svc)
+
+	type target struct {
+		Service *stubService `inject:""`
+	}
+
+	var tgt target
+	if err := c.Inject(&tgt); err != nil {
+		t.Fatalf("Inject failed: %v", err)
+	}
+	if tgt.Service == nil {
+		t.Error("expected Service to be injected")
+	}
+	if tgt.Service.Value != "injected" {
+		t.Errorf("expected 'injected', got %q", tgt.Service.Value)
+	}
+}
+
+func TestInjectNonTaggedFields(t *testing.T) {
+	c := NewContainer()
+	svc := &stubService{Value: "present"}
+	_ = c.Provide(svc)
+
+	type target struct {
+		Service *stubService `inject:""`
+		Ignored string
+	}
+
+	var tgt target
+	tgt.Ignored = "original"
+	if err := c.Inject(&tgt); err != nil {
+		t.Fatalf("Inject failed: %v", err)
+	}
+	if tgt.Service.Value != "present" {
+		t.Errorf("expected injected service, got %v", tgt.Service)
+	}
+	if tgt.Ignored != "original" {
+		t.Errorf("expected Ignored to remain 'original', got %q", tgt.Ignored)
+	}
+}
+
+func TestNewScreen(t *testing.T) {
+	comp := &stubComponent{html: render.Raw("<p>Hello</p>")}
+	s := NewScreen("/home", comp)
+	if s.Path != "/home" {
+		t.Errorf("expected path '/home', got %q", s.Path)
+	}
+	if s.Type != ScreenPage {
+		t.Errorf("expected ScreenPage, got %v", s.Type)
+	}
+	if s.Component != comp {
+		t.Error("expected component to be set")
+	}
+}
+
+func TestNewDrawer(t *testing.T) {
+	comp := &stubComponent{html: render.Raw("<nav>Menu</nav>")}
+	s := NewDrawer("/sidebar", comp)
+	if s.Type != ScreenDrawer {
+		t.Errorf("expected ScreenDrawer, got %v", s.Type)
+	}
+
+	html := string(s.Render())
+	if !strings.Contains(html, `role="complementary"`) {
+		t.Errorf("expected role=complementary in drawer, got: %s", html)
+	}
+	if !strings.Contains(html, "drawer") {
+		t.Errorf("expected drawer class in drawer, got: %s", html)
+	}
+}
+
+func TestNewSheet(t *testing.T) {
+	comp := &stubComponent{html: render.Raw("<p>Sheet content</p>")}
+	s := NewSheet("/sheet", comp)
+	if s.Type != ScreenSheet {
+		t.Errorf("expected ScreenSheet, got %v", s.Type)
+	}
+
+	html := string(s.Render())
+	if !strings.Contains(html, `role="dialog"`) {
+		t.Errorf("expected role=dialog in sheet, got: %s", html)
+	}
+	if !strings.Contains(html, `aria-modal="true"`) {
+		t.Errorf("expected aria-modal=true in sheet, got: %s", html)
+	}
+	if !strings.Contains(html, "sheet") {
+		t.Errorf("expected sheet class, got: %s", html)
+	}
+}
+
+func TestNewDialog(t *testing.T) {
+	comp := &stubComponent{html: render.Raw("<p>Dialog content</p>")}
+	s := NewDialog("/dialog", comp)
+	if s.Type != ScreenDialog {
+		t.Errorf("expected ScreenDialog, got %v", s.Type)
+	}
+
+	html := string(s.Render())
+	if !strings.Contains(html, `role="dialog"`) {
+		t.Errorf("expected role=dialog in dialog, got: %s", html)
+	}
+	if !strings.Contains(html, `aria-modal="true"`) {
+		t.Errorf("expected aria-modal=true in dialog, got: %s", html)
+	}
+	if !strings.Contains(html, "dialog-overlay") {
+		t.Errorf("expected dialog-overlay class, got: %s", html)
+	}
+}
+
+func TestScreenRender(t *testing.T) {
+	comp := &stubComponent{html: render.Raw("<p>Page content</p>")}
+	s := NewScreen("/", comp)
+
+	html := string(s.Render())
+	if !strings.Contains(html, "<main") {
+		t.Errorf("expected <main> element, got: %s", html)
+	}
+	if !strings.Contains(html, `role="main"`) {
+		t.Errorf("expected role=main, got: %s", html)
+	}
+	if !strings.Contains(html, "<p>Page content</p>") {
+		t.Errorf("expected page content, got: %s", html)
+	}
+}
+
+func TestLayout(t *testing.T) {
+	headerComp := &stubComponent{html: render.Raw("<h1>Header</h1>")}
+	sidebarComp := &stubComponent{html: render.Raw("<ul><li>Nav</li></ul>")}
+	footerComp := &stubComponent{html: render.Raw("<p>Footer</p>")}
+
+	l := NewLayout("app").
+		WithHeader(headerComp).
+		WithSidebar(sidebarComp).
+		WithFooter(footerComp)
+
+	if l.Name != "app" {
+		t.Errorf("expected name 'app', got %q", l.Name)
+	}
+	if l.Header != headerComp {
+		t.Error("expected header to be set")
+	}
+	if l.Sidebar != sidebarComp {
+		t.Error("expected sidebar to be set")
+	}
+	if l.Footer != footerComp {
+		t.Error("expected footer to be set")
+	}
+}
+
+func TestLayoutWrap(t *testing.T) {
+	headerComp := &stubComponent{html: render.Raw("<h1>Header</h1>")}
+	sidebarComp := &stubComponent{html: render.Raw("<ul><li>Nav</li></ul>")}
+	footerComp := &stubComponent{html: render.Raw("<p>Footer</p>")}
+
+	l := NewLayout("app").
+		WithHeader(headerComp).
+		WithSidebar(sidebarComp).
+		WithFooter(footerComp)
+
+	content := render.Raw("<p>Content</p>")
+	html := string(l.Wrap(content))
+
+	// Check structure.
+	if !strings.Contains(html, `class="layout-app"`) {
+		t.Errorf("expected layout-app class, got: %s", html)
+	}
+	if !strings.Contains(html, `role="banner"`) {
+		t.Errorf("expected role=banner, got: %s", html)
+	}
+	if !strings.Contains(html, "<h1>Header</h1>") {
+		t.Errorf("expected header content, got: %s", html)
+	}
+	if !strings.Contains(html, `aria-label="Sidebar"`) {
+		t.Errorf("expected Sidebar aria-label, got: %s", html)
+	}
+	if !strings.Contains(html, `class="layout-body"`) {
+		t.Errorf("expected layout-body class, got: %s", html)
+	}
+	if !strings.Contains(html, `role="contentinfo"`) {
+		t.Errorf("expected role=contentinfo, got: %s", html)
+	}
+	if !strings.Contains(html, "<p>Content</p>") {
+		t.Errorf("expected content, got: %s", html)
+	}
+}
+
+func TestLayoutWrapNil(t *testing.T) {
+	var l *Layout
+	content := render.Raw("<p>Just content</p>")
+	html := string(l.Wrap(content))
+	if html != "<p>Just content</p>" {
+		t.Errorf("nil layout should pass through content, got: %s", html)
+	}
+}
+
+func TestRouter(t *testing.T) {
+	r := NewRouter()
+	comp := &stubComponent{html: render.Raw("<p>Home</p>")}
+	screen := NewScreen("/", comp)
+	r.Screen(screen, nil)
+
+	resolved, ok := r.Resolve("/")
+	if !ok {
+		t.Error("expected to resolve /")
+	}
+	if resolved != screen {
+		t.Error("expected to get the same screen")
+	}
+
+	_, ok = r.Resolve("/nonexistent")
+	if ok {
+		t.Error("expected not to resolve /nonexistent")
+	}
+}
+
+func TestRouterRender(t *testing.T) {
+	r := NewRouter()
+	comp := &stubComponent{html: render.Raw("<p>Home</p>")}
+	screen := NewScreen("/", comp)
+	r.Screen(screen, nil)
+
+	html, err := r.Render("/")
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, "<p>Home</p>") {
+		t.Errorf("expected content in rendered output, got: %s", s)
+	}
+
+	_, err = r.Render("/nonexistent")
+	if err == nil {
+		t.Error("expected error for unregistered path")
+	}
+}
+
+func TestRouterRenderWithLayout(t *testing.T) {
+	r := NewRouter()
+	comp := &stubComponent{html: render.Raw("<p>Home</p>")}
+	screen := NewScreen("/", comp)
+
+	layout := NewLayout("sidebar").WithHeader(&stubComponent{html: render.Raw("<h1>App</h1>")})
+	r.Screen(screen, layout)
+
+	html, err := r.Render("/")
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, `class="layout-sidebar"`) {
+		t.Errorf("expected layout-sidebar class, got: %s", s)
+	}
+	if !strings.Contains(s, "<h1>App</h1>") {
+		t.Errorf("expected header content, got: %s", s)
+	}
+}
+
+func TestRouterPaths(t *testing.T) {
+	r := NewRouter()
+	r.Screen(NewScreen("/", &stubComponent{html: render.Raw("a")}), nil)
+	r.Screen(NewScreen("/about", &stubComponent{html: render.Raw("b")}), nil)
+	r.Screen(NewScreen("/contact", &stubComponent{html: render.Raw("c")}), nil)
+
+	paths := r.Paths()
+	if len(paths) != 3 {
+		t.Errorf("expected 3 paths, got %d", len(paths))
+	}
+
+	// Check all paths are present.
+	pathSet := make(map[string]bool)
+	for _, p := range paths {
+		pathSet[p] = true
+	}
+	for _, expected := range []string{"/", "/about", "/contact"} {
+		if !pathSet[expected] {
+			t.Errorf("expected path %q in Paths()", expected)
+		}
+	}
+}
+
+func TestAppRenderPage(t *testing.T) {
+	a := NewApp("MyApp")
+	comp := &stubComponent{html: render.Raw("<p>Welcome</p>")}
+	a.RegisterScreen(NewScreen("/", comp), nil)
+
+	html, err := a.RenderPage("/")
+	if err != nil {
+		t.Fatalf("RenderPage failed: %v", err)
+	}
+	s := string(html)
+
+	// Check DOCTYPE.
+	if !strings.HasPrefix(s, "<!DOCTYPE html>") {
+		t.Errorf("expected DOCTYPE, got: %s", s[:50])
+	}
+	// Check html lang.
+	if !strings.Contains(s, `<html lang="en"`) {
+		t.Errorf("expected html lang=en, got: %s", s)
+	}
+	// Check charset.
+	if !strings.Contains(s, `charset="UTF-8"`) {
+		t.Errorf("expected charset, got: %s", s)
+	}
+	// Check viewport.
+	if !strings.Contains(s, `name="viewport"`) {
+		t.Errorf("expected viewport meta, got: %s", s)
+	}
+	// Check title.
+	if !strings.Contains(s, "<title>MyApp</title>") {
+		t.Errorf("expected title, got: %s", s)
+	}
+	// Check skip link.
+	if !strings.Contains(s, `class="skip-link"`) {
+		t.Errorf("expected skip-link, got: %s", s)
+	}
+	if !strings.Contains(s, "Skip to main content") {
+		t.Errorf("expected skip link text, got: %s", s)
+	}
+	if !strings.Contains(s, `href="#main-content"`) {
+		t.Errorf("expected skip link href, got: %s", s)
+	}
+	// Check content.
+	if !strings.Contains(s, "<p>Welcome</p>") {
+		t.Errorf("expected content, got: %s", s)
+	}
+}
+
+func TestAppRenderPageWithTheme(t *testing.T) {
+	a := NewApp("ThemedApp")
+	theme := style.DefaultTheme()
+	a.WithTheme(theme)
+	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>Content</p>")}), nil)
+
+	html, err := a.RenderPage("/")
+	if err != nil {
+		t.Fatalf("RenderPage failed: %v", err)
+	}
+	s := string(html)
+
+	if !strings.Contains(s, "<style>") {
+		t.Errorf("expected <style> tag for theme, got: %s", s)
+	}
+	if !strings.Contains(s, ":root {") {
+		t.Errorf("expected :root CSS custom properties, got: %s", s)
+	}
+	if !strings.Contains(s, "--color-primary") {
+		t.Errorf("expected color custom properties, got: %s", s)
+	}
+}
+
+func TestAppRenderScreenWithLayout(t *testing.T) {
+	a := NewApp("LayoutApp")
+	comp := &stubComponent{html: render.Raw("<p>Screen content</p>")}
+	screen := NewScreen("/dashboard", comp)
+
+	headerComp := &stubComponent{html: render.Raw("<h1>Dashboard</h1>")}
+	layout := NewLayout("dashboard").WithHeader(headerComp)
+	a.RegisterScreen(screen, layout)
+
+	html, err := a.RenderPage("/dashboard")
+	if err != nil {
+		t.Fatalf("RenderPage failed: %v", err)
+	}
+	s := string(html)
+
+	if !strings.Contains(s, `class="layout-dashboard"`) {
+		t.Errorf("expected layout-dashboard class, got: %s", s)
+	}
+	if !strings.Contains(s, "<h1>Dashboard</h1>") {
+		t.Errorf("expected header content, got: %s", s)
+	}
+	if !strings.Contains(s, "<p>Screen content</p>") {
+		t.Errorf("expected screen content, got: %s", s)
+	}
+}
+
+func TestDefaultLayout(t *testing.T) {
+	a := NewApp("DefaultLayoutApp")
+	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
+	a.RegisterScreen(NewScreen("/about", &stubComponent{html: render.Raw("<p>About</p>")}), nil)
+
+	// Set default layout after screen registration.
+	headerComp := &stubComponent{html: render.Raw("<h1>Global Header</h1>")}
+	defaultLayout := NewLayout("default").WithHeader(headerComp)
+	a.SetDefaultLayout(defaultLayout)
+
+	// Both screens should use the default layout.
+	html, err := a.RenderPage("/")
+	if err != nil {
+		t.Fatalf("RenderPage / failed: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, `class="layout-default"`) {
+		t.Errorf("expected layout-default class for /, got: %s", s)
+	}
+	if !strings.Contains(s, "<h1>Global Header</h1>") {
+		t.Errorf("expected global header for /, got: %s", s)
+	}
+
+	html, err = a.RenderPage("/about")
+	if err != nil {
+		t.Fatalf("RenderPage /about failed: %v", err)
+	}
+	s = string(html)
+	if !strings.Contains(s, `class="layout-default"`) {
+		t.Errorf("expected layout-default class for /about, got: %s", s)
+	}
+}
+
+func TestDefaultLayoutOverride(t *testing.T) {
+	a := NewApp("OverrideApp")
+
+	// Default layout.
+	defaultHeader := &stubComponent{html: render.Raw("<h1>Default</h1>")}
+	a.SetDefaultLayout(NewLayout("default").WithHeader(defaultHeader))
+
+	// Screen with explicit layout overrides default.
+	customHeader := &stubComponent{html: render.Raw("<h1>Custom</h1>")}
+	customLayout := NewLayout("custom").WithHeader(customHeader)
+
+	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
+	a.RegisterScreen(NewScreen("/special", &stubComponent{html: render.Raw("<p>Special</p>")}), customLayout)
+
+	html, err := a.RenderPage("/")
+	if err != nil {
+		t.Fatalf("RenderPage / failed: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, `class="layout-default"`) {
+		t.Errorf("expected default layout for /, got: %s", s)
+	}
+
+	html, err = a.RenderPage("/special")
+	if err != nil {
+		t.Fatalf("RenderPage /special failed: %v", err)
+	}
+	s = string(html)
+	if !strings.Contains(s, `class="layout-custom"`) {
+		t.Errorf("expected custom layout for /special, got: %s", s)
+	}
+	if !strings.Contains(s, "<h1>Custom</h1>") {
+		t.Errorf("expected custom header for /special, got: %s", s)
+	}
+}
+
+func TestProvideErrors(t *testing.T) {
+	c := NewContainer()
+
+	// Nil value.
+	err := c.Provide(nil)
+	if err == nil {
+		t.Error("expected error for nil provider")
+	}
+
+	// Function with wrong number of returns.
+	err = c.Provide(func() (*stubService, error) { return nil, nil })
+	if err == nil {
+		t.Error("expected error for multi-return constructor")
+	}
+}
+
+func TestResolveErrors(t *testing.T) {
+	c := NewContainer()
+
+	// Non-pointer target.
+	err := c.Resolve(stubService{})
+	if err == nil {
+		t.Error("expected error for non-pointer target")
+	}
+
+	// Unregistered type.
+	var svc *stubService
+	err = c.Resolve(&svc)
+	if err == nil {
+		t.Error("expected error for unregistered type")
+	}
+}
+
+func TestInjectErrors(t *testing.T) {
+	c := NewContainer()
+
+	// Non-pointer.
+	err := c.Inject(stubService{})
+	if err == nil {
+		t.Error("expected error for non-pointer target")
+	}
+
+	// Non-struct pointer.
+	val := 42
+	err = c.Inject(&val)
+	if err == nil {
+		t.Error("expected error for non-struct pointer")
+	}
+}
+
+func TestAppProvideAndInject(t *testing.T) {
+	a := NewApp("DIApp")
+	svc := &stubService{Value: "app-injected"}
+	_ = a.Provide(svc)
+
+	type target struct {
+		Service *stubService `inject:""`
+	}
+
+	var tgt target
+	_ = a.Inject(&tgt)
+	if tgt.Service == nil || tgt.Service.Value != "app-injected" {
+		t.Errorf("expected injected service via app, got %v", tgt.Service)
+	}
+}
+
+func TestRenderPageUnregistered(t *testing.T) {
+	a := NewApp("EmptyApp")
+	_, err := a.RenderPage("/nonexistent")
+	if err == nil {
+		t.Error("expected error for unregistered path")
+	}
+}
+
+func TestScreenTypeString(t *testing.T) {
+	tests := []struct {
+		t        ScreenType
+		expected string
+	}{
+		{ScreenPage, "page"},
+		{ScreenDrawer, "drawer"},
+		{ScreenSheet, "sheet"},
+		{ScreenDialog, "dialog"},
+		{ScreenType(99), "unknown(99)"},
+	}
+	for _, tt := range tests {
+		got := tt.t.String()
+		if got != tt.expected {
+			t.Errorf("ScreenType(%d).String() = %q, want %q", tt.t, got, tt.expected)
+		}
+	}
+}
+
+func TestLayoutWrapNoHeaderNoFooter(t *testing.T) {
+	// Layout with only sidebar, no header/footer.
+	l := NewLayout("minimal").WithSidebar(&stubComponent{html: render.Raw("<nav>Links</nav>")})
+	html := string(l.Wrap(render.Raw("<p>Content</p>")))
+
+	if !strings.Contains(html, `class="layout-body"`) {
+		t.Errorf("expected layout-body, got: %s", html)
+	}
+	if !strings.Contains(html, `aria-label="Sidebar"`) {
+		t.Errorf("expected sidebar aria-label, got: %s", html)
+	}
+	if strings.Contains(html, "role=\"banner\"") {
+		t.Errorf("did not expect header when none set, got: %s", html)
+	}
+	if strings.Contains(html, "role=\"contentinfo\"") {
+		t.Errorf("did not expect footer when none set, got: %s", html)
+	}
+}
