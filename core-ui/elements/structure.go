@@ -2,6 +2,21 @@ package elements
 
 import "github.com/gofastr/gofastr/core/render"
 
+// Group produces a <div> element with the given ARIA role.
+// Use for live regions, toolbar groups, and other role-based containers.
+// Example: Group(RoleStatus, Attrs{"aria-live": "polite"}, children...)
+func Group(role string, attrs Attrs, children ...render.HTML) render.HTML {
+	if attrs == nil {
+		attrs = make(Attrs, 1)
+	}
+	if role != "" {
+		if _, ok := attrs["role"]; !ok {
+			attrs["role"] = role
+		}
+	}
+	return render.Tag("div", attrs, children...)
+}
+
 // Div produces a <div> element.
 func Div(attrs Attrs, children ...render.HTML) render.HTML {
 	return render.Tag("div", attrs, children...)

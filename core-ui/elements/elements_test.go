@@ -794,3 +794,84 @@ func TestFullForm(t *testing.T) {
 	assertContains(t, f, `<label for="email">Email</label>`)
 	assertContains(t, f, `<input`)
 }
+
+// ============================================================================
+// Group and ButtonGroup
+// ============================================================================
+
+func TestGroup(t *testing.T) {
+	html := Group(RoleStatus, Aria("live", "polite"), render.Text("3 items"))
+	s := string(html)
+	if !strings.Contains(s, `role="status"`) {
+		t.Errorf("expected role=status, got %s", s)
+	}
+	if !strings.Contains(s, "3 items") {
+		t.Errorf("expected content, got %s", s)
+	}
+}
+
+func TestButtonGroup(t *testing.T) {
+	html := ButtonGroup(nil,
+		Button("Yes", nil),
+		Button("No", nil),
+	)
+	s := string(html)
+	if !strings.Contains(s, `role="group"`) {
+		t.Errorf("expected role=group, got %s", s)
+	}
+	if !strings.Contains(s, "Yes") || !strings.Contains(s, "No") {
+		t.Errorf("expected both buttons, got %s", s)
+	}
+}
+
+// ============================================================================
+// Event helpers
+// ============================================================================
+
+func TestOnClick(t *testing.T) {
+	attrs := OnClick("save")
+	if attrs["data-action"] != "save" {
+		t.Errorf("expected data-action=save, got %v", attrs)
+	}
+}
+
+func TestOnSubmit(t *testing.T) {
+	attrs := OnSubmit("submit-form")
+	if attrs["data-action"] != "submit-form" {
+		t.Errorf("expected data-action=submit-form, got %v", attrs)
+	}
+	if attrs["data-action-type"] != "submit" {
+		t.Errorf("expected data-action-type=submit, got %v", attrs)
+	}
+}
+
+func TestOnInput(t *testing.T) {
+	attrs := OnInput("search")
+	if attrs["data-action"] != "search" {
+		t.Errorf("expected data-action=search, got %v", attrs)
+	}
+	if attrs["data-action-type"] != "input" {
+		t.Errorf("expected data-action-type=input, got %v", attrs)
+	}
+}
+
+func TestOnChange(t *testing.T) {
+	attrs := OnChange("category")
+	if attrs["data-action"] != "category" {
+		t.Errorf("expected data-action=category, got %v", attrs)
+	}
+	if attrs["data-action-type"] != "change" {
+		t.Errorf("expected data-action-type=change, got %v", attrs)
+	}
+}
+
+func TestOnClickInButton(t *testing.T) {
+	html := Button("Save", OnClick("save"))
+	s := string(html)
+	if !strings.Contains(s, `data-action="save"`) {
+		t.Errorf("expected data-action on button, got %s", s)
+	}
+	if !strings.Contains(s, "Save") {
+		t.Errorf("expected button text, got %s", s)
+	}
+}

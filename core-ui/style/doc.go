@@ -12,6 +12,5 @@
 //
 //	theme := style.DefaultTheme()
 //	css := theme.CSSCustomProperties()
-//	classes := style.Use("btn-primary", "card")
-//	attrs := classes.ToAttr()
+//	attrs := style.Use("card")
 package style

@@ -33,15 +33,53 @@ func (c Classes) String() string {
 	return strings.Join(active, " ")
 }
 
-// Use references named component styles from the theme.
-// Returns Classes with the component's style class name(s) set to true.
-// Class names are prefixed with "c-" to avoid collisions with utility classes.
-func Use(names ...string) Classes {
-	classes := make(Classes, len(names))
-	for _, name := range names {
-		classes["c-"+name] = true
+// Use returns an Attrs (map[string]string) with a "class" attribute set to the
+// component style name. This is resolved at render time using the theme's
+// ComponentStyles map. The generated class name follows the pattern "comp-{name}".
+//
+// Example: Use("card") → Attrs{"class": "comp-card"}
+func Use(name string) map[string]string {
+	return map[string]string{"class": "comp-" + name}
+}
+
+// UseWith merges a component style class with additional classes.
+// Example: UseWith("card", Classes{"highlighted": true}) → Attrs{"class": "comp-card highlighted"}
+func UseWith(name string, extra Classes) map[string]string {
+	cls := "comp-" + name
+	for c, include := range extra {
+		if include {
+			cls += " " + c
+		}
 	}
-	return classes
+	return map[string]string{"class": cls}
+}
+
+// ComponentCSS generates the CSS rules for a named component style.
+// It resolves all token references in the style definition.
+// Returns empty string if the component style is not defined.
+func (t Theme) ComponentCSS(name string) string {
+	def, ok := t.Components[name]
+	if !ok {
+		return ""
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, ".comp-%s {\n", name)
+	for prop, value := range def {
+		resolved := t.ResolveAll(value)
+		fmt.Fprintf(&b, "  %s: %s;\n", prop, resolved)
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// AllComponentCSS generates CSS for all defined component styles.
+func (t Theme) AllComponentCSS() string {
+	var parts []string
+	for name := range t.Components {
+		parts = append(parts, t.ComponentCSS(name))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // UtilityClass generates a utility class name from a property and token.

@@ -63,6 +63,31 @@ func Aria(key, value string) Attrs {
 	return Attrs{"aria-" + key: value}
 }
 
+// OnClick returns Attrs with data-action set to the given action name.
+// Used to wire up click handlers on elements.
+// Example: Button("Save", OnClick("save"))
+func OnClick(action string) Attrs {
+	return Attrs{"data-action": action}
+}
+
+// OnSubmit returns Attrs with data-action set and data-action-type="submit".
+// Used on form elements.
+func OnSubmit(action string) Attrs {
+	return Attrs{"data-action": action, "data-action-type": "submit"}
+}
+
+// OnInput returns Attrs with data-action set and data-action-type="input".
+// Used on input/textarea elements for real-time input handling.
+func OnInput(action string) Attrs {
+	return Attrs{"data-action": action, "data-action-type": "input"}
+}
+
+// OnChange returns Attrs with data-action set and data-action-type="change".
+// Used on select/input elements for change handling.
+func OnChange(action string) Attrs {
+	return Attrs{"data-action": action, "data-action-type": "change"}
+}
+
 // setAttr is a helper that sets a key in the attrs map, creating it if nil.
 func setAttr(attrs Attrs, key, value string) Attrs {
 	if attrs == nil {

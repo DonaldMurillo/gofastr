@@ -315,15 +315,73 @@ func TestClassesString(t *testing.T) {
 
 // --- Use -------------------------------------------------------------------
 
-func TestUseComponentStyles(t *testing.T) {
-	classes := Use("btn-primary", "card")
-	got := classes.String()
-
-	if !strings.Contains(got, "c-btn-primary") {
-		t.Errorf("Use should contain c-btn-primary, got: %s", got)
+func TestUse(t *testing.T) {
+	attrs := Use("card")
+	if attrs["class"] != "comp-card" {
+		t.Errorf("expected class=comp-card, got %v", attrs)
 	}
-	if !strings.Contains(got, "c-card") {
-		t.Errorf("Use should contain c-card, got: %s", got)
+}
+
+func TestUseWith(t *testing.T) {
+	attrs := UseWith("card", Classes{"highlighted": true, "hidden": false})
+	s := attrs["class"]
+	if !strings.Contains(s, "comp-card") {
+		t.Errorf("expected comp-card in class, got %s", s)
+	}
+	if !strings.Contains(s, "highlighted") {
+		t.Errorf("expected highlighted in class, got %s", s)
+	}
+	if strings.Contains(s, "hidden") {
+		t.Errorf("should not include false classes, got %s", s)
+	}
+}
+
+func TestComponentCSS(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Components["card"] = StyleDef{
+		"padding":          "{spacing.md} {spacing.lg}",
+		"border-radius":    "{radii.lg}",
+		"background-color": "{colors.surface}",
+	}
+
+	css := theme.ComponentCSS("card")
+	if !strings.Contains(css, ".comp-card") {
+		t.Errorf("expected .comp-card selector, got %s", css)
+	}
+	if !strings.Contains(css, "padding: 8 16") {
+		t.Errorf("expected resolved spacing, got %s", css)
+	}
+	if !strings.Contains(css, "border-radius: 12") {
+		t.Errorf("expected resolved radii, got %s", css)
+	}
+	if !strings.Contains(css, "background-color: #FFFFFF") {
+		t.Errorf("expected resolved color, got %s", css)
+	}
+}
+
+func TestComponentCSSNotFound(t *testing.T) {
+	theme := DefaultTheme()
+	css := theme.ComponentCSS("nonexistent")
+	if css != "" {
+		t.Errorf("expected empty string for undefined component, got %s", css)
+	}
+}
+
+func TestAllComponentCSS(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Components["card"] = StyleDef{
+		"padding": "{spacing.md}",
+	}
+	theme.Components["badge"] = StyleDef{
+		"font-size": "{spacing.sm}px",
+	}
+
+	css := theme.AllComponentCSS()
+	if !strings.Contains(css, ".comp-card") {
+		t.Errorf("expected .comp-card, got %s", css)
+	}
+	if !strings.Contains(css, ".comp-badge") {
+		t.Errorf("expected .comp-badge, got %s", css)
 	}
 }
 

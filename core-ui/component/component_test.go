@@ -1,6 +1,7 @@
 package component
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gofastr/gofastr/core/render"
@@ -370,6 +371,30 @@ func TestLifecycleTriggerOrder(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Widget test helpers
+// ---------------------------------------------------------------------------
+
+// greetComponent is a simple non-interactive component for widget tests.
+type greetComponent struct {
+	name string
+}
+
+func (g *greetComponent) Render() render.HTML {
+	return render.Tag("span", nil, render.Text("Hello "+g.name))
+}
+
+// counterComponent is an interactive component for widget tests.
+type counterComponent struct{}
+
+func (c *counterComponent) Render() render.HTML {
+	return render.Tag("button", nil, render.Text("count"))
+}
+
+func (c *counterComponent) Actions() {
+	On("click", func(ctx *ComponentContext) {})
+}
+
+// ---------------------------------------------------------------------------
 // 15. TestComponentComposition
 // ---------------------------------------------------------------------------
 
@@ -381,5 +406,57 @@ func TestComponentComposition(t *testing.T) {
 	want := render.HTML("<div><span>inner</span></div>")
 	if got != want {
 		t.Fatalf("composition Render() = %q, want %q", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 16. TestNewWidget
+// ---------------------------------------------------------------------------
+
+func TestNewWidget(t *testing.T) {
+	comp := &greetComponent{name: "World"}
+	w := NewWidget("greet", comp)
+	if w.ID != "greet" {
+		t.Errorf("expected ID greet, got %s", w.ID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 17. TestWidgetRender
+// ---------------------------------------------------------------------------
+
+func TestWidgetRender(t *testing.T) {
+	comp := &greetComponent{name: "World"}
+	w := NewWidget("greet", comp)
+	html := w.Render()
+	s := string(html)
+	if !strings.Contains(s, `data-widget="greet"`) {
+		t.Errorf("expected data-widget attribute, got %s", s)
+	}
+	if !strings.Contains(s, `data-hydrate=`) {
+		t.Errorf("expected data-hydrate attribute, got %s", s)
+	}
+	if !strings.Contains(s, "Hello World") {
+		t.Errorf("expected component content, got %s", s)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 18. TestWidgetInteractive
+// ---------------------------------------------------------------------------
+
+func TestWidgetInteractive(t *testing.T) {
+	// Non-interactive component
+	comp := &greetComponent{name: "World"}
+	w := NewWidget("greet", comp)
+	if w.IsInteractive() {
+		t.Error("non-interactive component should not be interactive")
+	}
+
+	// Interactive component
+	interactive := &counterComponent{}
+	wi := NewWidget("counter", interactive)
+	if !wi.IsInteractive() {
+		t.Error("interactive component should be interactive")
 	}
 }

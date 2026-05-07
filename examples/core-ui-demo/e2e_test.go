@@ -758,3 +758,174 @@ func TestThemeResolution(t *testing.T) {
 		t.Errorf("expected 12px radius for lg, got %q", radius)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// J. Widget Tests (hydration boundary)
+// ---------------------------------------------------------------------------
+
+func TestWidgetRender(t *testing.T) {
+	comp := &HeroComponent{Title: "Test", Subtitle: "Widget", CTAText: "Go", CTALink: "/go"}
+	w := component.NewWidget("hero", comp)
+	html := w.Render()
+	assertContains(t, html, `data-widget="hero"`)
+	assertContains(t, html, `data-hydrate=`)
+	assertContains(t, html, "Test")
+}
+
+func TestWidgetInteractive(t *testing.T) {
+	// Non-interactive component
+	plain := &HeaderComponent{}
+	w1 := component.NewWidget("header", plain)
+	if w1.IsInteractive() {
+		t.Error("non-interactive component should not be interactive widget")
+	}
+
+	// Interactive component
+	btn := &InteractiveButton{Label: "Click"}
+	w2 := component.NewWidget("btn", btn)
+	if !w2.IsInteractive() {
+		t.Error("interactive component should be interactive widget")
+	}
+}
+
+func TestWidgetHydrationStrategy(t *testing.T) {
+	// Lazy hydration for non-interactive
+	plain := &HeaderComponent{}
+	w1 := component.NewWidget("plain", plain)
+	html1 := w1.Render()
+	assertContains(t, html1, `data-hydrate="lazy"`)
+
+	// Interaction-based hydration for interactive
+	btn := &InteractiveButton{Label: "Click"}
+	w2 := component.NewWidget("btn", btn)
+	html2 := w2.Render()
+	assertContains(t, html2, `data-hydrate="interaction"`)
+}
+
+// ---------------------------------------------------------------------------
+// K. Group & ButtonGroup Tests
+// ---------------------------------------------------------------------------
+
+func TestGroupLiveRegion(t *testing.T) {
+	html := elements.Group(elements.RoleStatus, elements.Aria("live", "polite"), render.Text("3 items"))
+	assertContainsAll(t, html, `role="status"`, `aria-live="polite"`, "3 items")
+}
+
+func TestGroupWithAlert(t *testing.T) {
+	html := elements.Group(elements.RoleAlert, nil, render.Text("Error!"))
+	assertContainsAll(t, html, `role="alert"`, "Error!")
+}
+
+func TestButtonGroup(t *testing.T) {
+	html := elements.ButtonGroup(nil,
+		elements.Button("Yes", elements.OnClick("yes")),
+		elements.Button("No", elements.OnClick("no")),
+	)
+	assertContainsAll(t, html, `role="group"`, "Yes", "No")
+}
+
+// ---------------------------------------------------------------------------
+// L. Event Helper Tests
+// ---------------------------------------------------------------------------
+
+func TestOnClickInButton(t *testing.T) {
+	html := elements.Button("Save", elements.OnClick("save"))
+	assertContainsAll(t, html, `data-action="save"`, "Save")
+}
+
+func TestOnInputOnSearchField(t *testing.T) {
+	a := createTestApp()
+	html, err := a.RenderPage("/products")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Products page should have a search input
+	assertContains(t, html, `name="q"`)
+}
+
+func TestEventHelperAttrs(t *testing.T) {
+	onClick := elements.OnClick("action")
+	if onClick["data-action"] != "action" {
+		t.Errorf("expected data-action=action, got %v", onClick)
+	}
+
+	onSubmit := elements.OnSubmit("submit-form")
+	if onSubmit["data-action-type"] != "submit" {
+		t.Errorf("expected data-action-type=submit, got %v", onSubmit)
+	}
+
+	onInput := elements.OnInput("search")
+	if onInput["data-action-type"] != "input" {
+		t.Errorf("expected data-action-type=input, got %v", onInput)
+	}
+
+	onChange := elements.OnChange("category")
+	if onChange["data-action-type"] != "change" {
+		t.Errorf("expected data-action-type=change, got %v", onChange)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// M. Use() Semantic Style Tests
+// ---------------------------------------------------------------------------
+
+func TestUseComponentStyle(t *testing.T) {
+	attrs := style.Use("card")
+	if attrs["class"] != "comp-card" {
+		t.Errorf("expected class=comp-card, got %v", attrs)
+	}
+}
+
+func TestUseWith(t *testing.T) {
+	attrs := style.UseWith("card", style.Classes{"highlighted": true, "hidden": false})
+	s := attrs["class"]
+	if !strings.Contains(s, "comp-card") {
+		t.Errorf("expected comp-card, got %s", s)
+	}
+	if !strings.Contains(s, "highlighted") {
+		t.Errorf("expected highlighted, got %s", s)
+	}
+	if strings.Contains(s, "hidden") {
+		t.Errorf("should not include false classes, got %s", s)
+	}
+}
+
+func TestComponentCSSGeneration(t *testing.T) {
+	theme := createTheme()
+	theme.Components["card"] = style.StyleDef{
+		"padding": "{spacing.md} {spacing.lg}",
+	}
+	css := theme.ComponentCSS("card")
+	assertContains(t, render.HTML(css), ".comp-card")
+	assertContains(t, render.HTML(css), "padding: 8 16")
+}
+
+// ---------------------------------------------------------------------------
+// N. Widget + Island Integration
+// ---------------------------------------------------------------------------
+
+func TestWidgetInIsland(t *testing.T) {
+	btn := &InteractiveButton{Label: "Click me"}
+	w := component.NewWidget("clicker", btn)
+	isl := island.NewIsland("island-1", w)
+
+	html := isl.Render()
+	// Island wrapper
+	assertContains(t, html, `data-island="island-1"`)
+	// Widget wrapper
+	assertContains(t, html, `data-widget="clicker"`)
+	// Button content
+	assertContains(t, html, "Click me")
+}
+
+func TestWidgetCompositionInScreen(t *testing.T) {
+	a := createTestApp()
+	html, err := a.RenderPage("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Home page should have content
+	assertContains(t, html, "Welcome to GoFastr")
+	// Should have landmarks
+	assertContains(t, html, `role="main"`)
+}

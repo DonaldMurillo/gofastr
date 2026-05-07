@@ -101,6 +101,18 @@ func TextArea(name string, attrs Attrs) render.HTML {
 	return render.Tag("textarea", attrs)
 }
 
+// ButtonGroup produces a <div> with role="group" containing buttons.
+// This provides an accessible grouping for related buttons.
+func ButtonGroup(attrs Attrs, children ...render.HTML) render.HTML {
+	if attrs == nil {
+		attrs = make(Attrs, 1)
+	}
+	if _, ok := attrs["role"]; !ok {
+		attrs["role"] = "group"
+	}
+	return render.Tag("div", attrs, children...)
+}
+
 // FieldSet produces a <fieldset> element with a <legend> derived from
 // the legend parameter.
 func FieldSet(legend string, attrs Attrs, children ...render.HTML) render.HTML {
