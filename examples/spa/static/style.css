@@ -1,0 +1,201 @@
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface2: #1e1e1e;
+  --text: #e8e8e8;
+  --text-dim: #888;
+  --accent: #646cff;
+  --accent-hover: #7c7eff;
+  --border: #2a2a2a;
+  --radius: 8px;
+  --max-w: 720px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Nav */
+nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+nav .logo {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  margin-right: 2rem;
+}
+
+nav .links {
+  display: flex;
+  gap: 0.25rem;
+}
+
+nav .links a {
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  transition: all 0.15s;
+}
+
+nav .links a:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+nav .links a.router-link-active {
+  color: var(--accent);
+  background: rgba(100, 108, 255, 0.1);
+}
+
+/* Main */
+main {
+  flex: 1;
+  max-width: var(--max-w);
+  width: 100%;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+}
+
+/* Headings */
+h1 { font-size: 2rem; margin-bottom: 1rem; }
+h2 { font-size: 1.4rem; margin-bottom: 0.75rem; margin-top: 1.5rem; }
+h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+p { margin-bottom: 0.75rem; color: var(--text-dim); }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.card h3 { color: var(--text); }
+.card .meta { font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem; }
+
+/* Tag */
+.tag {
+  display: inline-block;
+  background: rgba(100, 108, 255, 0.15);
+  color: var(--accent);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+}
+
+/* Back link */
+.back {
+  display: inline-block;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.back:hover { text-decoration: underline; }
+
+/* Detail body */
+.detail-body {
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+
+/* Project link */
+.project-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.project-link:hover { text-decoration: underline; }
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Lists */
+ul, ol {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.5rem;
+  color: var(--text-dim);
+}
+
+li {
+  margin-bottom: 0.4rem;
+  line-height: 1.7;
+}
+
+ul { list-style: disc; }
+ol { list-style: decimal; }
+ul ul { list-style: circle; margin-top: 0.3rem; }
+ol ol, ul ol { list-style: lower-alpha; margin-top: 0.3rem; }
+
+code {
+  background: var(--surface2);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* Vue transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Loading */
+.loading {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Error */
+.error {
+  color: #ff6b6b;
+  text-align: center;
+  padding: 2rem;
+}

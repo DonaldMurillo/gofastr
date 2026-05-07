@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact — Static Site Demo</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">StaticDemo</a>
+    <div class="links">
+      <a href="/">Home</a>
+      <a href="/about.html">About</a>
+      <a href="/contact.html" class="active">Contact</a>
+    </div>
+  </nav>
+
+  <main class="page">
+    <h1>Contact Us</h1>
+    <p>Have a question or want to contribute? Drop us a line.</p>
+
+    <form id="contactForm">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required placeholder="Your name">
+
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required placeholder="you@example.com">
+
+      <label for="message">Message</label>
+      <textarea id="message" name="message" required placeholder="What's on your mind?"></textarea>
+
+      <button type="submit">Send Message</button>
+    </form>
+
+    <div class="msg" id="successMsg">
+      <strong>Sent!</strong> Thanks for reaching out. We'll get back to you soon.
+    </div>
+
+    <script>
+      document.getElementById('contactForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        this.style.display = 'none';
+        document.getElementById('successMsg').style.display = 'block';
+      });
+    </script>
+  </main>
+
+  <footer>Built with GoFastr — static HTML files served from a folder, zero JavaScript</footer>
+</body>
+</html>
