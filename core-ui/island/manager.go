@@ -126,6 +126,20 @@ func (m *Manager) Unsubscribe(sessionID string) {
 	close(ch)
 }
 
+// PushUpdate sends a direct update to a session's SSE stream.
+func (m *Manager) PushUpdate(update IslandUpdate, sessionID string) {
+	m.mu.RLock()
+	ch, ok := m.streams[sessionID]
+	m.mu.RUnlock()
+
+	if ok {
+		select {
+		case ch <- update:
+		default:
+		}
+	}
+}
+
 // Get retrieves an island by ID.
 func (m *Manager) Get(islandID string) (*Island, bool) {
 	m.mu.RLock()

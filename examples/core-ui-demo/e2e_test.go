@@ -7,11 +7,13 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/check"
 	"github.com/gofastr/gofastr/core-ui/compile"
 	"github.com/gofastr/gofastr/core-ui/component"
+	"github.com/gofastr/gofastr/core-ui/devserver"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core-ui/island"
 	"github.com/gofastr/gofastr/core-ui/runtime"
@@ -928,4 +930,281 @@ func TestWidgetCompositionInScreen(t *testing.T) {
 	assertContains(t, html, "Welcome to GoFastr")
 	// Should have landmarks
 	assertContains(t, html, `role="main"`)
+}
+
+// ---------------------------------------------------------------------------
+// O. DevServer Integration Tests
+// ---------------------------------------------------------------------------
+
+func createTestDevServer() *devserver.DevServer {
+	application := app.NewApp("GoFastr Demo")
+	theme := createTheme()
+	application.WithTheme(theme)
+
+	layout := app.NewLayout("main").
+		WithHeader(&HeaderComponent{}).
+		WithFooter(&FooterComponent{})
+	application.SetDefaultLayout(layout)
+
+	application.RegisterScreen(app.NewScreen("/", &HomeScreen{}), nil)
+	application.RegisterScreen(app.NewScreen("/products", &ProductListScreen{}), nil)
+	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}), nil)
+	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: signal.New(0)}), nil)
+
+	return devserver.NewDevServer(application,
+		devserver.WithRouteGraph(&devserver.RouteGraph{
+			Routes: []devserver.RouteInfo{
+				{Path: "/", Title: "Home", Preload: true},
+				{Path: "/products", Title: "Products"},
+				{Path: "/about", Title: "About"},
+				{Path: "/cart", Title: "Cart"},
+			},
+		}),
+	)
+}
+
+func TestDevServerHomePageHasRuntimeAndSSE(t *testing.T) {
+	ds := createTestDevServer()
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// Core framework injections
+	assertContainsAll(t, render.HTML(body),
+		`<script src="/__gofastr/runtime.js"></script>`,
+		`name="gofastr-sse"`,
+		"/__gofastr/sse?session=",
+		"window.__gofastr_routes",
+	)
+
+	// Page content
+	assertContainsAll(t, render.HTML(body),
+		"Welcome to GoFastr",
+		`role="main"`,
+		"Skip to main content",
+	)
+
+	// Session cookie
+	var hasCookie bool
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "gofastr-session" {
+			hasCookie = true
+			if !strings.HasPrefix(c.Value, "sess-") {
+				t.Errorf("expected session ID starting with sess-, got %q", c.Value)
+			}
+		}
+	}
+	if !hasCookie {
+		t.Error("expected gofastr-session cookie")
+	}
+}
+
+func TestDevServerProductsPageHasSearch(t *testing.T) {
+	ds := createTestDevServer()
+	req := httptest.NewRequest("GET", "/products", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assertContainsAll(t, render.HTML(body),
+		"Products",
+		`name="q"`,
+		"Search products",
+		"Widget Pro",
+		"Gadget Max",
+		`/__gofastr/runtime.js`,
+	)
+}
+
+func TestDevServerAboutPage(t *testing.T) {
+	ds := createTestDevServer()
+	req := httptest.NewRequest("GET", "/about", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assertContainsAll(t, render.HTML(body),
+		"About GoFastr",
+		"Our Mission",
+		"Alice — Founder",
+		"hello@gofastr.dev",
+	)
+}
+
+func TestDevServerCartDrawer(t *testing.T) {
+	ds := createTestDevServer()
+	req := httptest.NewRequest("GET", "/cart", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assertContainsAll(t, render.HTML(body),
+		"Shopping Cart",
+		"Your cart is empty",
+		"Close cart",
+	)
+}
+
+func TestDevServerRuntimeJSEndpoint(t *testing.T) {
+	ds := createTestDevServer()
+	req := httptest.NewRequest("GET", "/__gofastr/runtime.js", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// Runtime must have event delegation + SSE
+	assertContainsAll(t, render.HTML(body),
+		"__gofastr",
+		"data-action",
+		"EventSource",
+		"MutationObserver",
+		"hydrate",
+	)
+
+	// Content type
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "javascript") {
+		t.Errorf("expected javascript content type, got %q", ct)
+	}
+}
+
+func TestDevServerSSEStreamWithIsland(t *testing.T) {
+	ds := createTestDevServer()
+	sess := ds.CreateSession()
+
+	// Register an island
+	hero := &HeroComponent{Title: "Live", Subtitle: "Updates", CTAText: "Go", CTALink: "/go"}
+	w := component.NewWidget("live-hero", hero)
+	isl := ds.RegisterWidget(sess.ID, w)
+
+	// Subscribe
+	ch := ds.Islands.Subscribe(sess.ID)
+
+	// Push update
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		ds.Islands.PushUpdate(island.IslandUpdate{
+			IslandID: isl.ID,
+			HTML:     "<p>Updated content!</p>",
+		}, sess.ID)
+	}()
+
+	select {
+	case update := <-ch:
+		if !strings.Contains(update.HTML, "Updated content!") {
+			t.Errorf("expected updated content, got %q", update.HTML)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SSE island update")
+	}
+}
+
+func TestDevServerSessionCreation(t *testing.T) {
+	ds := createTestDevServer()
+
+	// First visit creates session
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	cookies := w.Result().Cookies()
+	var sessionID string
+	for _, c := range cookies {
+		if c.Name == "gofastr-session" {
+			sessionID = c.Value
+		}
+	}
+	if sessionID == "" {
+		t.Fatal("expected session cookie")
+	}
+
+	// Subsequent request with cookie reuses session
+	req2 := httptest.NewRequest("GET", "/", nil)
+	req2.AddCookie(&http.Cookie{Name: "gofastr-session", Value: sessionID})
+	w2 := httptest.NewRecorder()
+	ds.ServeHTTP(w2, req2)
+
+	body := w2.Body.String()
+	if !strings.Contains(body, sessionID) {
+		t.Error("expected page to contain the same session ID")
+	}
+}
+
+func TestDevServerActionsJSInjection(t *testing.T) {
+	ds := createTestDevServer()
+
+	// Compile actions for interactive component
+	btn := &InteractiveButton{Label: "Test"}
+	ds.CompileActions("test-btn", btn)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assertContainsAll(t, render.HTML(body),
+		"test-btn",
+		"__gofastr",
+	)
+}
+
+func TestDevServerSignalUpdatePushesIsland(t *testing.T) {
+	ds := createTestDevServer()
+	sess := ds.CreateSession()
+
+	// Register island
+	cart := &CartDrawer{CartCount: signal.New(3)}
+	w := component.NewWidget("cart-widget", cart)
+	isl := ds.RegisterWidget(sess.ID, w)
+
+	// Subscribe to catch updates
+	ch := ds.Islands.Subscribe(sess.ID)
+
+	// Post signal update
+	body := strings.NewReader(`{"value": 5}`)
+	req := httptest.NewRequest("POST", "/__gofastr/signal/cart?session="+sess.ID, body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Should get island update via SSE
+	select {
+	case update := <-ch:
+		if update.IslandID != isl.ID {
+			t.Errorf("expected island %s, got %q", isl.ID, update.IslandID)
+		}
+		if !strings.Contains(update.HTML, "Shopping Cart") {
+			t.Errorf("expected cart content, got %q", update.HTML)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for island update")
+	}
+}
+
+func TestDevServerRouteGraphPreload(t *testing.T) {
+	ds := createTestDevServer()
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assertContainsAll(t, render.HTML(body),
+		"window.__gofastr_routes",
+		`"Preload":true`,
+		`"Title":"Home"`,
+		`"Title":"Products"`,
+	)
 }
