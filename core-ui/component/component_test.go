@@ -300,18 +300,18 @@ func TestExtractActionsNonInteractive(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestServerCall(t *testing.T) {
-	call := Server("save", "name", 42)
-	if call.Event != "save" {
-		t.Errorf("ServerCall.Event = %q, want %q", call.Event, "save")
+	call := Server("save", "key1", "val1", "key2", "val2")
+	if call.Action != "save" {
+		t.Errorf("ServerCall.Action = %q, want %q", call.Action, "save")
 	}
-	if len(call.Args) != 2 {
-		t.Fatalf("len(Args) = %d, want 2", len(call.Args))
+	if len(call.Params) != 2 {
+		t.Fatalf("len(Params) = %d, want 2", len(call.Params))
 	}
-	if call.Args[0] != "name" {
-		t.Errorf("Args[0] = %v, want %q", call.Args[0], "name")
+	if call.Params["key1"] != "val1" {
+		t.Errorf("Params[\"key1\"] = %v, want %q", call.Params["key1"], "val1")
 	}
-	if call.Args[1] != 42 {
-		t.Errorf("Args[1] = %v, want 42", call.Args[1])
+	if call.Params["key2"] != "val2" {
+		t.Errorf("Params[\"key2\"] = %v, want %q", call.Params["key2"], "val2")
 	}
 }
 
@@ -442,7 +442,63 @@ func TestWidgetRender(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 18. TestWidgetInteractive
+// 18. TestSafeRenderPanickingComponent
+// ---------------------------------------------------------------------------
+
+type panickingComponent struct{}
+
+func (p *panickingComponent) Render() render.HTML { panic("oh no") }
+
+func TestSafeRenderPanickingComponent(t *testing.T) {
+	comp := &panickingComponent{}
+	html, err := SafeRender(comp)
+	if err == nil {
+		t.Error("expected error from panicking component")
+	}
+	if !strings.Contains(string(html), "Error:") {
+		t.Errorf("expected error UI, got: %s", html)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 19. TestSafeRenderErrorBoundary
+// ---------------------------------------------------------------------------
+
+type customErrorBoundary struct{}
+
+func (c *customErrorBoundary) Render() render.HTML { panic("oh no") }
+func (c *customErrorBoundary) RenderError(err error) render.HTML {
+	return render.HTML("<div>Custom error: " + err.Error() + "</div>")
+}
+
+func TestSafeRenderErrorBoundary(t *testing.T) {
+	comp := &customErrorBoundary{}
+	html, err := SafeRender(comp)
+	if err == nil {
+		t.Error("expected error from panicking component")
+	}
+	if !strings.Contains(string(html), "Custom error") {
+		t.Errorf("expected custom error UI, got: %s", html)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 20. TestSafeRenderNormalComponent
+// ---------------------------------------------------------------------------
+
+func TestSafeRenderNormalComponent(t *testing.T) {
+	comp := &staticComp{html: render.Raw("<p>fine</p>")}
+	html, err := SafeRender(comp)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if html != render.HTML("<p>fine</p>") {
+		t.Errorf("expected <p>fine</p>, got: %s", html)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 21. TestWidgetInteractive
 // ---------------------------------------------------------------------------
 
 func TestWidgetInteractive(t *testing.T) {

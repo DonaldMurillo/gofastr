@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
@@ -132,6 +133,156 @@ func (s *ProductDetailScreen) Render() render.HTML {
 // SetParams implements app.ParamSetter — receives route params from the router.
 func (s *ProductDetailScreen) SetParams(params map[string]string) {
 	s.Slug = params["slug"]
+}
+
+// ConfirmDialogScreen is a dialog that asks the user to confirm an action.
+type ConfirmDialogScreen struct {
+	Message   string
+	OnConfirm string
+}
+
+func (s *ConfirmDialogScreen) Render() render.HTML {
+	return elements.Div(elements.Attrs{"class": "confirm-dialog-content"},
+		elements.Heading(2, nil, render.Text("Confirm Action")),
+		elements.Paragraph(nil, render.Text(s.Message)),
+		elements.Div(nil,
+			elements.Button("Cancel", elements.Attrs{
+				"class":              "overlay-cancel",
+				"data-overlay-close": "",
+			}),
+			elements.Button("Confirm", elements.Attrs{
+				"class":       "cta-button confirm-btn",
+				"data-action": "confirm-action",
+			}),
+		),
+	)
+}
+
+// CartSheetScreen shows cart items as a bottom sheet.
+type CartSheetScreen struct {
+	CartCount *signal.Signal[int]
+}
+
+func (s *CartSheetScreen) Render() render.HTML {
+	count := s.CartCount.Get()
+	items := make([]render.HTML, count)
+	for i := 0; i < count; i++ {
+		items[i] = elements.ListItem(nil, render.Text(fmt.Sprintf("Cart item %d", i+1)))
+	}
+
+	var list render.HTML
+	if len(items) > 0 {
+		list = elements.UnorderedList(nil, items...)
+	} else {
+		list = elements.Paragraph(nil, render.Text("Your cart is empty."))
+	}
+
+	return elements.Div(nil,
+		elements.Heading(2, nil, render.Text("Shopping Cart")),
+		elements.Span(
+			elements.Attrs{
+				"class":      "cart-badge",
+				"aria-label": fmt.Sprintf("Cart has %d items", count),
+			},
+			render.Text(fmt.Sprintf("%d items", count)),
+		),
+		list,
+	)
+}
+
+// SignalDemoScreen demonstrates Computed and Effect signals.
+// It shows a price calculator where quantity * unit price = total (computed),
+// and an effect that logs every change.
+type SignalDemoScreen struct{}
+
+func (s *SignalDemoScreen) Render() render.HTML {
+	// Create a quantity signal
+	quantity := signal.New(1)
+	unitPrice := 29.99
+
+	// Computed signal derives total from quantity
+	total := signal.NewComputed(func() string {
+		q := quantity.Get()
+		return fmt.Sprintf("$%.2f", float64(q)*unitPrice)
+	})
+
+	// Effect runs whenever quantity changes
+	log := signal.New("")
+	signal.Effect(func() {
+		q := quantity.Get()
+		log.Set(fmt.Sprintf("Quantity changed to %d → total: %s", q, total.Get()))
+	})
+
+	currentTotal := total.Get()
+	currentLog := log.Get()
+
+	return elements.Div(nil,
+		elements.Heading(1, nil, render.Text("Signal Demo")),
+		elements.Paragraph(nil, render.Text("Demonstrates Computed and Effect signals working together.")),
+		elements.Section(
+			elements.Aria("label", "Price calculator"),
+			elements.Div(elements.Attrs{"class": "counter-display"},
+				elements.Button("−", elements.Attrs{
+					"class": "counter-btn", "data-action": "signal-decrement",
+					"aria-label": "Decrease quantity",
+				}),
+				render.Tag("span", map[string]string{"class": "counter-value"}, render.Text(fmt.Sprintf("%d", quantity.Get()))),
+				elements.Button("+", elements.Attrs{
+					"class": "counter-btn", "data-action": "signal-increment",
+					"aria-label": "Increase quantity",
+				}),
+			),
+			elements.Paragraph(nil, render.Text(fmt.Sprintf("Unit price: $%.2f", unitPrice))),
+			elements.Paragraph(elements.Attrs{"class": "product-detail-price"}, render.Text(fmt.Sprintf("Total: %s", currentTotal))),
+			elements.Paragraph(elements.Attrs{"aria-live": "polite"}, render.Text(currentLog)),
+		),
+		elements.Paragraph(nil, render.Text("The Computed signal auto-derives the total. The Effect signal reacts to changes and logs them.")),
+	)
+}
+
+func (s *SignalDemoScreen) Actions() {
+	component.On("signal-increment", func(ctx *component.ComponentContext) {}, component.WithClientJS("const n = G.getState('signal-qty', 1) + 1; G.setState('signal-qty', n); G.toast('Quantity: ' + n);"))
+	component.On("signal-decrement", func(ctx *component.ComponentContext) {}, component.WithClientJS("const n = Math.max(1, G.getState('signal-qty', 1) - 1); G.setState('signal-qty', n); G.toast('Quantity: ' + n);"))
+}
+
+// ErrorBoundaryDemoScreen demonstrates the ErrorBoundary feature.
+// It includes a component that deliberately panics to show the fallback UI.
+type ErrorBoundaryDemoScreen struct{}
+
+func (s *ErrorBoundaryDemoScreen) Render() render.HTML {
+	return elements.Div(nil,
+		elements.Heading(1, nil, render.Text("Error Boundary Demo")),
+		elements.Paragraph(nil, render.Text("Error boundaries catch panics in component Render() and show a fallback UI.")),
+		elements.Section(
+			elements.Aria("label", "Safe component"),
+			elements.Heading(2, nil, render.Text("Working Component")),
+			elements.Paragraph(nil, render.Text("This component renders normally.")),
+		),
+		elements.Section(
+			elements.Aria("label", "Broken component with error boundary"),
+			elements.Heading(2, nil, render.Text("Panicking Component")),
+			// Use SafeRender via a wrapper — the broken component panics
+			// but SafeRender catches it and shows the red error box
+			renderHTMLWithErrorBoundary(),
+		),
+		elements.Paragraph(nil, render.Text("The red box above is the default error boundary fallback. Components can implement ErrorBoundary for custom fallback UI.")),
+	)
+}
+
+// brokenComponent deliberately panics to demonstrate error boundaries.
+type brokenComponent struct{}
+
+func (b *brokenComponent) Render() render.HTML {
+	panic("deliberate panic for error boundary demo")
+}
+
+// renderHTMLWithErrorBoundary uses SafeRender to catch the panic.
+func renderHTMLWithErrorBoundary() render.HTML {
+	html, err := component.SafeRender(&brokenComponent{})
+	if err != nil {
+		return elements.Div(elements.Attrs{"class": "error-boundary-result"}, html)
+	}
+	return html
 }
 
 // ProductDetailComponent renders a full product detail view.

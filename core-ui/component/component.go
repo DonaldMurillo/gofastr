@@ -1,6 +1,10 @@
 package component
 
-import "github.com/gofastr/gofastr/core/render"
+import (
+	"fmt"
+
+	"github.com/gofastr/gofastr/core/render"
+)
 
 // Component is the base interface for all UI components.
 // A component describes its appearance via Render.
@@ -57,18 +61,47 @@ func NewWidget(id string, comp Component) *Widget {
 // Output: <div data-widget="{id}" data-hydrate="lazy">{component.Render()}</div>
 func (w *Widget) Render() render.HTML {
 	hydrateStrategy := "lazy"
-	if w.Actions != nil && w.Actions.HasActions() {
-		hydrateStrategy = "interaction"
-	}
-	return render.Tag("div", map[string]string{
+	attrs := map[string]string{
 		"data-widget":  w.ID,
 		"data-hydrate": hydrateStrategy,
-	}, w.Component.Render())
+	}
+	if w.Actions != nil && w.Actions.HasActions() {
+		hydrateStrategy = "interaction"
+		attrs["data-behavior"] = "/__gofastr/widget/" + w.ID + ".js"
+	}
+	attrs["data-hydrate"] = hydrateStrategy
+	return render.Tag("div", attrs, w.Component.Render())
 }
 
 // IsInteractive returns true if the widget's component has actions.
 func (w *Widget) IsInteractive() bool {
 	return w.Actions != nil && w.Actions.HasActions()
+}
+
+// ErrorBoundary is implemented by components that provide a custom error fallback.
+type ErrorBoundary interface {
+	RenderError(err error) render.HTML
+}
+
+// SafeRender calls Render() with panic recovery. If the component panics,
+// it returns a fallback error UI. Components implementing ErrorBoundary
+// get a custom fallback; others get a generic red-bordered box.
+func SafeRender(c Component) (html render.HTML, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("component render panic: %v", r)
+			if eb, ok := c.(ErrorBoundary); ok {
+				html = eb.RenderError(err)
+			} else {
+				html = render.HTML(fmt.Sprintf(
+					`<div style="border:2px solid #EF4444;padding:16px;border-radius:8px;background:#FEF2F2;color:#991B1B;"><strong>Error:</strong> %s</div>`,
+					err.Error(),
+				))
+			}
+		}
+	}()
+	html = c.Render()
+	return
 }
 
 // ComponentList renders multiple components joined together.

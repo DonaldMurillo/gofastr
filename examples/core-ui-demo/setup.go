@@ -10,6 +10,7 @@ import (
 	"github.com/gofastr/gofastr/core-ui/devserver"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	coresignal "github.com/gofastr/gofastr/core-ui/signal"
+	"github.com/gofastr/gofastr/core-ui/style"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -54,15 +55,35 @@ func setupDevServer() *devserver.DevServer {
 	application.RegisterScreen(app.NewScreen("/products", &ProductListScreen{}).WithTitle("Products").WithDescription("Browse our products"), nil)
 	application.RegisterScreen(app.NewScreen("/products/:slug", &ProductDetailScreen{}).WithTitle("Product Detail").WithDescription("View product details"), nil)
 	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}).WithTitle("About").WithDescription("About GoFastr"), nil)
-	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: coresignal.New(0)}).WithTitle("Cart").WithDescription("Your shopping cart"), nil)
+	// Dialog & Sheet screens (fetched as partials, shown as overlays)
+	cartCount := coresignal.New(0)
+	application.RegisterScreen(app.NewSheet("/cart-sheet", &CartSheetScreen{CartCount: cartCount}).WithTitle("Cart Sheet").WithDescription("Cart as bottom sheet"), nil)
+	application.RegisterScreen(app.NewDialog("/confirm-dialog", &ConfirmDialogScreen{Message: "Are you sure you want to add this item to your cart?"}).WithTitle("Confirm").WithDescription("Confirmation dialog"), nil)
+
+	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: cartCount}).WithTitle("Cart").WithDescription("Your shopping cart"), nil)
+	application.RegisterScreen(app.NewScreen("/signals", &SignalDemoScreen{}).WithTitle("Signal Demo").WithDescription("Computed and Effect signals"), nil)
+	application.RegisterScreen(app.NewScreen("/error-boundary", &ErrorBoundaryDemoScreen{}).WithTitle("Error Boundary").WithDescription("Error boundary demo"), nil)
 
 	// Generate all CSS from Go using the theme system (dog-food!)
 	cssStr := createStyleSheet(*application.Theme)
+
+	// Build route graph for progressive CSS loading
+	rg := style.NewRouteGraph()
+	rg.AddRoute("/", "home.css", []string{"/products", "/about"})
+	rg.AddRoute("/products", "products.css", []string{"/", "/products/:slug"})
+	rg.AddRoute("/products/:slug", "detail.css", []string{"/products"})
+	rg.AddRoute("/about", "about.css", []string{"/", "/products"})
+	rg.AddRoute("/cart", "cart.css", []string{"/"})
+	rg.AddRoute("/cart-sheet", "cart-sheet.css", []string{"/"})
+	rg.AddRoute("/confirm-dialog", "confirm-dialog.css", []string{"/products/:slug"})
+	rg.AddRoute("/signals", "signals.css", []string{"/"})
+	rg.AddRoute("/error-boundary", "error-boundary.css", []string{"/"})
 
 	// Create DevServer — routes are auto-built from registered screens
 	ds := devserver.NewDevServer(application,
 		devserver.WithCustomCSS(cssStr),
 		devserver.WithStaticDir(staticDirPath()),
+		devserver.WithRouteGraph(rg),
 	)
 
 	// Compile actions for interactive components

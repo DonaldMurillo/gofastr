@@ -121,6 +121,7 @@ func createStyleSheet(theme style.Theme) string {
 			"padding", "0",
 			"max-width", "none",
 		).
+		Transition("opacity 0.2s ease").
 		End()
 
 	// Footer
@@ -482,6 +483,52 @@ func createStyleSheet(theme style.Theme) string {
 		Pseudo("::before", "content", "none").
 		End()
 
+	// Page transition: entering state
+	ss.Rule("[role=\"main\"].page-entering").
+		Set("opacity", "0").
+		End()
+
+	// Dialog animations
+	ss.Rule(".dialog-overlay").
+		Set("position", "fixed", "top", "0", "left", "0", "right", "0", "bottom", "0",
+			"background", "rgba(0, 0, 0, 0.5)", "z-index", "1000",
+			"display", "flex", "align-items", "center", "justify-content", "center").
+		Transition("opacity 0.2s ease").
+		Pseudo(".dialog-closing", "opacity", "0").
+		End()
+
+	ss.Rule(".dialog").
+		Set("background", "white", "border-radius", "{radii.lg}", "padding", "{spacing.xl}",
+			"max-width", "480px", "width", "90%", "max-height", "90vh", "overflow-y", "auto",
+			"box-shadow", "0 20px 60px rgba(0,0,0,0.2)").
+		Transition("transform 0.2s ease, opacity 0.2s ease").
+		Pseudo(".dialog-opening", "transform", "scale(0.95)", "opacity", "0").
+		End()
+
+	// Sheet animations
+	ss.Rule(".sheet").
+		Set("position", "fixed", "bottom", "0", "left", "0", "right", "0",
+			"background", "white", "border-radius", "{radii.lg} {radii.lg} 0 0",
+			"padding", "{spacing.xl}", "max-height", "70vh", "overflow-y", "auto",
+			"box-shadow", "0 -4px 20px rgba(0,0,0,0.1)", "z-index", "1001").
+		Transition("transform 0.3s ease").
+		Pseudo(".sheet-opening", "transform", "translateY(100%)").
+		Pseudo(".sheet-closing", "transform", "translateY(100%)").
+		End()
+
+	ss.Rule(".sheet-handle").
+		Set("width", "40px", "height", "4px", "background", "{colors.border}",
+			"border-radius", "2px", "margin", "0 auto {spacing.md}").
+		End()
+
+	// Close button for overlays
+	ss.Rule(".overlay-close").
+		Set("position", "absolute", "top", "{spacing.md}", "right", "{spacing.md}",
+			"background", "none", "border", "none", "font-size", "1.5rem",
+			"cursor", "pointer", "color", "{colors.text-muted}", "line-height", "1").
+		Pseudo(":hover", "color", "{colors.text}").
+		End()
+
 	// Product detail page
 	ss.Rule(".product-detail").
 		Set("max-width", "900px", "margin", "0 auto", "padding", "{spacing.xl}").
@@ -542,6 +589,11 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".product-card-link").
 		Set("text-decoration", "none", "color", "inherit", "display", "block").
 		Pseudo(":hover", "opacity", "0.9").
+		End()
+
+	// Error boundary demo
+	ss.Rule(".error-boundary-result").
+		Set("margin", "{spacing.lg} 0").
 		End()
 
 	return ss.CSS()

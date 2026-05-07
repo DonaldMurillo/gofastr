@@ -2,7 +2,9 @@ package app
 
 import (
 	"fmt"
+	"log"
 
+	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/style"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -115,7 +117,11 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 	var wrapped render.HTML
 	if screen.Type == ScreenPage {
 		if layout != nil {
-			content = screen.Component.Render()
+			var renderErr error
+			content, renderErr = component.SafeRender(screen.Component)
+			if renderErr != nil {
+				log.Printf("[gofastr] component render error: %v", renderErr)
+			}
 		} else {
 			content = screen.Render()
 		}
@@ -188,7 +194,11 @@ func (a *App) RenderPartial(path string) (render.HTML, error) {
 	if screen.Type == ScreenPage {
 		// Return just the component content — client-side router will
 		// swap it into the existing <main> element
-		return screen.Component.Render(), nil
+		html, renderErr := component.SafeRender(screen.Component)
+		if renderErr != nil {
+			log.Printf("[gofastr] component render error: %v", renderErr)
+		}
+		return html, nil
 	}
 
 	// Drawer/sheet/dialog — return full ARIA-wrapped content

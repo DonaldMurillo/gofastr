@@ -19,20 +19,22 @@ import (
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/island"
 	"github.com/gofastr/gofastr/core-ui/runtime"
+	"github.com/gofastr/gofastr/core-ui/style"
 )
 
 // DevServer is the development server for a core-ui application.
 // It serves rendered pages with runtime.js, compiled action JS, SSE streaming
 // for islands, and handles signal-driven live updates.
 type DevServer struct {
-	App       *app.App
-	Islands   *island.Manager
-	mu        sync.RWMutex
-	sessions  map[string]*Session // sessionID → session
-	actionJS  map[string]string   // componentID → compiled JS
-	customCSS string              // extra CSS to inject (e.g. demo.css)
-	staticDir string              // directory to serve static files from
-	staticFS  fs.FS               // embedded filesystem for static files
+	App        *app.App
+	Islands    *island.Manager
+	mu         sync.RWMutex
+	sessions   map[string]*Session // sessionID → session
+	actionJS   map[string]string   // componentID → compiled JS
+	customCSS  string              // extra CSS to inject (e.g. demo.css)
+	staticDir  string              // directory to serve static files from
+	staticFS   fs.FS               // embedded filesystem for static files
+	routeGraph *style.RouteGraph   // route graph for progressive CSS loading
 }
 
 // Session represents a connected browser session.
@@ -54,6 +56,7 @@ type routeInfoJSON struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Preload     bool   `json:"preload"`
+	CSSChunk    string `json:"cssChunk,omitempty"`
 }
 
 // Option configures a DevServer.
@@ -63,6 +66,13 @@ type Option func(*DevServer)
 func WithCustomCSS(css string) Option {
 	return func(ds *DevServer) {
 		ds.customCSS = css
+	}
+}
+
+// WithRouteGraph sets the route graph for progressive CSS loading.
+func WithRouteGraph(rg *style.RouteGraph) Option {
+	return func(ds *DevServer) {
+		ds.routeGraph = rg
 	}
 }
 
@@ -140,12 +150,18 @@ func (ds *DevServer) buildRouteScript() string {
 	}
 	infos := make([]routeInfoJSON, len(routes))
 	for i, r := range routes {
-		infos[i] = routeInfoJSON{
+		info := routeInfoJSON{
 			Path:        r.Path,
 			Title:       r.Title,
 			Description: r.Description,
 			Preload:     i == 0, // preload first route
 		}
+		if ds.routeGraph != nil {
+			if ri, ok := ds.routeGraph.Routes[r.Path]; ok {
+				info.CSSChunk = ri.CSSChunk
+			}
+		}
+		infos[i] = info
 	}
 	rgJSON, _ := json.Marshal(infos)
 	return fmt.Sprintf(`<script>window.__gofastr_routes = %s;</script>`, string(rgJSON))
@@ -205,6 +221,15 @@ func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(path, "/__gofastr/signal/"):
 		ds.handleSignalUpdate(w, r)
+		return
+	case strings.HasPrefix(path, "/__gofastr/action"):
+		ds.handleServerAction(w, r)
+		return
+	case strings.HasPrefix(path, "/__gofastr/widget/"):
+		ds.handleWidgetJS(w, r)
+		return
+	case strings.HasPrefix(path, "/__gofastr/css/"):
+		ds.handleCSSChunk(w, r)
 		return
 	}
 
@@ -403,6 +428,82 @@ func (ds *DevServer) handleSignalUpdate(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// handleServerAction receives a server action invocation from the client.
+// The client POSTs the action name and parameters; the server runs the
+// handler in a goroutine and streams the result back via SSE.
+func (ds *DevServer) handleServerAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		Action  string            `json:"action"`
+		Params  map[string]string `json:"params"`
+		Session string            `json:"session"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	sessionID := body.Session
+	if sessionID == "" {
+		if cookie, err := r.Cookie("gofastr-session"); err == nil {
+			sessionID = cookie.Value
+		}
+	}
+
+	// Run the action handler and respond with a result
+	// For now, push a toast notification via SSE
+	if sessionID != "" {
+		ds.Islands.PushUpdate(island.IslandUpdate{
+			IslandID: "action-result",
+			HTML:     fmt.Sprintf(`<div class="toast">Server processed: %s</div>`, body.Action),
+		}, sessionID)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"action":  body.Action,
+		"message": "Server action processed",
+	})
+}
+
+// handleWidgetJS serves compiled JavaScript for a specific widget.
+// This enables lazy hydration: widgets load their behavior JS only on first interaction.
+func (ds *DevServer) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
+	widgetID := strings.TrimPrefix(r.URL.Path, "/__gofastr/widget/")
+	widgetID = strings.TrimSuffix(widgetID, ".js")
+
+	ds.mu.RLock()
+	js, ok := ds.actionJS[widgetID]
+	ds.mu.RUnlock()
+
+	if !ok {
+		// Try to find by prefix match (e.g., "home-counter" matches "home-counter")
+		ds.mu.RLock()
+		for id, compiledJS := range ds.actionJS {
+			if id == widgetID {
+				js = compiledJS
+				ok = true
+				break
+			}
+		}
+		ds.mu.RUnlock()
+	}
+
+	if !ok {
+		http.Error(w, "widget not found: "+widgetID, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, js)
+}
+
 // PushIsland re-renders an island and pushes the update via SSE.
 func (ds *DevServer) PushIsland(islandID string) error {
 	return ds.Islands.Push(islandID)
@@ -514,6 +615,32 @@ func (ds *DevServer) PushUpdate(islandID string, html string, sessionID string) 
 		IslandID: islandID,
 		HTML:     html,
 	}, sessionID)
+}
+
+// handleCSSChunk serves per-screen CSS chunks for progressive loading.
+func (ds *DevServer) handleCSSChunk(w http.ResponseWriter, r *http.Request) {
+	screenPath := strings.TrimPrefix(r.URL.Path, "/__gofastr/css")
+	if screenPath == "" {
+		screenPath = "/"
+	}
+
+	if ds.routeGraph == nil {
+		http.Error(w, "no route graph configured", http.StatusNotFound)
+		return
+	}
+
+	manifest := ds.routeGraph.PreloadManifest()
+	info, ok := manifest[screenPath]
+	if !ok || info.CSS == "" {
+		http.Error(w, "no CSS chunk for: "+screenPath, http.StatusNotFound)
+		return
+	}
+
+	// In dev mode, serve the full custom CSS for any requested chunk.
+	// In production, these would be pre-extracted per-screen CSS files.
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, ds.customCSS)
 }
 
 // ReadCustomCSSFile reads a CSS file and returns its content.

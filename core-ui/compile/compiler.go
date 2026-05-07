@@ -595,6 +595,23 @@ func compileCall(e *ast.CallExpr) (string, error) {
 		return compileSprintfToTemplate(e)
 	}
 
+	// Check for component.Server() calls → generate fetch to server endpoint
+	if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+		if sel.Sel.Name == "Server" {
+			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "component" {
+				// Server("action-name", ...) → fetch to /__gofastr/action
+				actionArg := `"unknown"`
+				if len(e.Args) > 0 {
+					a, err := compileExpr(e.Args[0])
+					if err == nil {
+						actionArg = a
+					}
+				}
+				return fmt.Sprintf(`fetch("/__gofastr/action", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:%s,params:{},session:document.cookie.match(/gofastr-session=([^;]+)/)?.[1]||""})}).then(r=>r.json())`, actionArg), nil
+			}
+		}
+	}
+
 	// Check for elements.Xxx() calls
 	if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
 		if ident, ok := sel.X.(*ast.Ident); ok {

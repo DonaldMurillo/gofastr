@@ -88,6 +88,21 @@ func OnChange(action string) Attrs {
 	return Attrs{"data-action": action, "data-action-type": "change"}
 }
 
+// Bind returns Attrs that create a two-way binding between an input element
+// and a named state key. The runtime.js listens for input events on elements
+// with data-bind and dispatches actions with the new value.
+//
+// Usage:
+//
+//	search := signal.New("")
+//	elements.Input(elements.Text, "search",
+//	    elements.Bind("search"),
+//	    elements.Placeholder("Search..."),
+//	)
+func Bind(key string) Attrs {
+	return Attrs{"data-bind": key}
+}
+
 // ContainerType returns Attrs that declare an element as a CSS container query context.
 // The containerType is typically "inline-size" (respond to width) or "size" (width + height).
 // Use this on parent elements whose children should respond to the parent's size.

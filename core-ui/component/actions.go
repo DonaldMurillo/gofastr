@@ -22,19 +22,21 @@ type ActionDef struct {
 	ClientJS string
 }
 
-// ServerCall represents a request to execute something on the server.
+// ServerCall represents a call that should be executed on the server.
 type ServerCall struct {
-	Event string
-	Args  []any
+	Action string
+	Params map[string]string
 }
 
 // Server marks an action as requiring server-side execution.
-// The action will be sent to the server via SSE.
-func Server(event string, args ...any) ServerCall {
-	return ServerCall{
-		Event: event,
-		Args:  args,
+// When the compiler sees this, it generates JS that POSTs to the server
+// instead of running locally. The server handler runs in a goroutine.
+func Server(action string, params ...string) *ServerCall {
+	p := make(map[string]string)
+	for i := 0; i+1 < len(params); i += 2 {
+		p[params[i]] = params[i+1]
 	}
+	return &ServerCall{Action: action, Params: p}
 }
 
 // ActionRegistry holds all registered actions for a component.

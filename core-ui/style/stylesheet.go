@@ -54,6 +54,18 @@ func (ss *StyleSheet) Set(props ...string) *StyleSheet {
 	return ss
 }
 
+// Transition adds CSS transition properties to the current rule.
+// Shorthand: Transition("opacity 0.2s, transform 0.3s")
+// Resolves theme tokens in duration values.
+func (ss *StyleSheet) Transition(transitions ...string) *StyleSheet {
+	if ss.during == nil {
+		return ss
+	}
+	val := ss.theme.ResolveAll(strings.Join(transitions, ", "))
+	ss.during.props = append(ss.during.props, cssProp{prop: "transition", value: val})
+	return ss
+}
+
 // Pseudo adds a pseudo-class/element rule nested under the current selector.
 func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 	if ss.during == nil {

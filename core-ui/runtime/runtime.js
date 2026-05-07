@@ -169,6 +169,46 @@
       return html;
     },
 
+    /** Sync all [data-bind] elements from current state */
+    syncBindings() {
+      document.querySelectorAll('[data-bind]').forEach(el => {
+        const key = el.getAttribute('data-bind');
+        if (key && state[key] !== undefined) {
+          el.value = state[key];
+        }
+      });
+    },
+
+    /** Call a server action and handle the response */
+    async serverAction(action, params = {}) {
+      const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
+      const session = sessionCookie ? sessionCookie[1] : '';
+      const resp = await fetch('/__gofastr/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, params, session }),
+      });
+      if (resp.ok) {
+        const result = await resp.json();
+        if (result.message) {
+          window.__gofastr.toast(result.message);
+        }
+        return result;
+      }
+      return null;
+    },
+
+    /** Load CSS for a screen path if not already loaded */
+    loadCSS(screenPath) {
+      const linkId = 'gofastr-css-' + screenPath.replace(/[^a-zA-Z0-9]/g, '-');
+      if (document.getElementById(linkId)) return; // already loaded
+      const link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      link.href = '/__gofastr/css' + screenPath;
+      document.head.appendChild(link);
+    },
+
     formatInt: (n) => String(n),
     formatFloat: (n, d) => Number(n).toFixed(d),
   };
@@ -228,29 +268,19 @@
 
   const getCachedScreen = (path) => screenCache.get(path);
 
-  /**
-   * Fetch a page and swap the <main> content without a full reload.
-   * For client-side navigation, the server returns partial HTML (just
-   * the screen component content). The layout (header, footer) stays intact.
-   *
-   * Screen caching: after first load, the screen content is cached. Going
-   * back to a cached screen restores it instantly without a network request.
-   */
+  /** Fetch page, swap <main>. Caches for instant back-nav. */
   const loadPage = async (path) => {
     const prevPath = currentPath;
     currentPath = path;
 
     try {
-      // Check screen cache first (instant back-navigation)
       const cached = getCachedScreen(path);
       if (cached) {
         swapMainContent(cached.html);
         document.title = cached.title;
         updateActiveLink(path);
         window.scrollTo(0, 0);
-        window.dispatchEvent(new CustomEvent('gofastr:navigate', {
-          detail: { path, prevPath, cached: true },
-        }));
+        window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
         return;
       }
 
@@ -262,50 +292,35 @@
       const html = await resp.text();
 
       if (resp.headers.get('X-Gofastr-Partial') === 'true') {
-        // Server returned partial content — swap directly into <main>
         swapMainContent(html);
         cacheScreen(path, html, document.title);
+        window.__gofastr.loadCSS(path);
       } else {
-        // Fallback: server returned full page — parse and extract <main>
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const newMain = doc.querySelector('main');
-        if (newMain) {
-          swapMainContent(newMain.innerHTML);
-        }
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const nm = doc.querySelector('main');
+        if (nm) swapMainContent(nm.innerHTML);
         const title = doc.querySelector('title')?.textContent ?? document.title;
-        cacheScreen(path, newMain?.innerHTML ?? '', title);
+        cacheScreen(path, nm?.innerHTML ?? '', title);
         document.title = title;
       }
-
-      // Update active nav link
       updateActiveLink(path);
-
-      // Scroll to top
       window.scrollTo(0, 0);
-
-      // Dispatch navigation event
-      window.dispatchEvent(new CustomEvent('gofastr:navigate', {
-        detail: { path, prevPath, cached: false },
-      }));
+      if (Array.isArray(window.__gofastr_routes)) {
+        const cur = window.__gofastr_routes.find(r => r.path === path);
+        if (cur?.cssChunk) window.__gofastr.loadCSS(path);
+      }
+      window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
     } catch (err) {
-      // Fallback to full page load on error
-      console.error('[gofastr] Navigation failed, falling back to full load:', err);
+      console.error('[gofastr] Nav failed:', err);
       location.href = path;
     }
   };
 
-  /**
-   * Swap content into the <main> element, reusing the existing layout.
-   */
   const swapMainContent = (html) => {
     const main = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (main) main.innerHTML = html;
   };
 
-  /**
-   * Update the active navigation link based on current path.
-   */
   const updateActiveLink = (path) => {
     const navLinks = document.querySelectorAll('nav a');
     for (const link of navLinks) {
@@ -320,23 +335,14 @@
     }
   };
 
-  // Intercept clicks on internal links
+  // Intercept internal link clicks
   document.addEventListener('click', (e) => {
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
-
     const href = anchor.getAttribute('href');
-
-    // Skip if modifier keys (open in new tab/window)
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-
-    // Skip external links, hashes, mailto, tel
     if (!isInternalLink(href)) return;
-
-    // Skip if target="_blank"
     if (anchor.target === '_blank') return;
-
-    // Only intercept known routes
     if (!isKnownRoute(href)) return;
 
     e.preventDefault();
@@ -352,9 +358,7 @@
     }
   });
 
-  // -----------------------------------------------------------------------
-  // Event delegation: clicks on [data-action]
-  // -----------------------------------------------------------------------
+  // Event delegation: [data-action]
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
@@ -369,9 +373,7 @@
     }
   });
 
-  // -----------------------------------------------------------------------
-  // Event delegation: input/change/submit on [data-action-type]
-  // -----------------------------------------------------------------------
+  // Event delegation: [data-action-type]
   for (const eventType of ['input', 'change', 'submit']) {
     document.addEventListener(eventType, (e) => {
       const target = e.target.closest(`[data-action-type="${eventType}"]`);
@@ -391,9 +393,16 @@
     });
   }
 
-  // -----------------------------------------------------------------------
+  // Two-way binding: [data-bind]
+  document.addEventListener('input', (e) => {
+    const target = e.target.closest('[data-bind]');
+    if (!target) return;
+    const key = target.getAttribute('data-bind');
+    if (!key) return;
+    window.__gofastr.setState(key, target.value);
+  });
+
   // Hydration on first interaction
-  // -----------------------------------------------------------------------
   const hydrated = new Set();
 
   const hydrate = (componentId) => {
@@ -412,9 +421,7 @@
     }
   };
 
-  // -----------------------------------------------------------------------
   // MutationObserver for auto-hydration
-  // -----------------------------------------------------------------------
   const setupMutationObserver = () => {
     if (typeof MutationObserver === 'undefined') return;
     if (!document.body) return;
@@ -449,9 +456,7 @@
     document.addEventListener('DOMContentLoaded', setupMutationObserver);
   }
 
-  // -----------------------------------------------------------------------
   // SSE Island Support
-  // -----------------------------------------------------------------------
   const connectSSE = () => {
     const sseUrl = document.querySelector('meta[name="gofastr-sse"]')?.getAttribute('content');
     if (!sseUrl) return;
@@ -476,16 +481,60 @@
     };
   };
 
-  // Reconnect SSE after client-side navigation
-  window.addEventListener('gofastr:navigate', () => {
-    // The existing EventSource is still connected to the session
-    // but islands from the new page need to exist in the DOM
-    // — they'll get updates naturally since SSE is session-scoped
-  });
+  window.addEventListener('gofastr:navigate', () => { /* SSE session-scoped */ });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', connectSSE);
   } else {
     connectSSE();
   }
+
+  // Overlay manager: Dialog & Sheet open/close + focus trap
+  const overlayStack=[];
+  const focusSel='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
+  window.__gofastr.openOverlay=async(type,path)=>{
+    const resp=await fetch(path,{headers:{'X-Gofastr-Navigate':'1'}});
+    if(!resp.ok) return;
+    const html=await resp.text(),isSheet=type==='sheet';
+    const ov=document.createElement('div');
+    ov.className=isSheet?'sheet sheet-opening':'dialog-overlay';
+    ov.setAttribute('data-overlay','');
+    const cb='<button class="overlay-close" aria-label="Close" data-overlay-close>×</button>';
+    ov.innerHTML=isSheet?`<div class="sheet-handle"></div>${html}${cb}`:`<div class="dialog dialog-opening">${html}${cb}</div>`;
+    document.body.appendChild(ov);
+    document.body.style.overflow='hidden';
+    ov.offsetHeight;
+    const inner=ov.querySelector('.dialog')||ov;
+    inner.classList.remove('dialog-opening','sheet-opening');
+    const f=ov.querySelectorAll(focusSel);
+    if(f.length>0)f[0].focus();
+    overlayStack.push(ov);
+    return ov;
+  };
+  window.__gofastr.closeOverlay=(ov)=>{
+    if(!ov)ov=overlayStack[overlayStack.length-1];
+    if(!ov)return;
+    const inner=ov.querySelector('.dialog')||ov;
+    if(inner.classList.contains('dialog'))ov.classList.add('dialog-closing');
+    else inner.classList.add('sheet-closing');
+    setTimeout(()=>{
+      ov.remove();document.body.style.overflow='';
+      const i=overlayStack.indexOf(ov);
+      if(i>-1)overlayStack.splice(i,1);
+      if(overlayStack.length>0)document.body.style.overflow='hidden';
+    },300);
+  };
+  document.addEventListener('click',(e)=>{
+    if(e.target.matches('[data-overlay-close]')){window.__gofastr.closeOverlay(e.target.closest('[data-overlay]'));return;}
+    if(e.target.matches('.dialog-overlay')||e.target.matches('.sheet'))window.__gofastr.closeOverlay(e.target);
+  });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&overlayStack.length>0)window.__gofastr.closeOverlay();
+    if(e.key==='Tab'&&overlayStack.length>0){
+      const top=overlayStack[overlayStack.length-1],f=top.querySelectorAll(focusSel);
+      if(!f.length)return;
+      if(e.shiftKey&&document.activeElement===f[0]){e.preventDefault();f[f.length-1].focus();}
+      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){e.preventDefault();f[0].focus();}
+    }
+  });
 })();
