@@ -106,8 +106,8 @@ func TestResolveTokenSpacing(t *testing.T) {
 	if !ok {
 		t.Error("ResolveToken({spacing.md}) not found")
 	}
-	if val != "8" {
-		t.Errorf("ResolveToken({spacing.md}) = %q, want %q", val, "8")
+	if val != "8px" {
+		t.Errorf("ResolveToken({spacing.md}) = %q, want %q", val, "8px")
 	}
 }
 
@@ -118,8 +118,8 @@ func TestResolveTokenRadii(t *testing.T) {
 	if !ok {
 		t.Error("ResolveToken({radii.lg}) not found")
 	}
-	if val != "12" {
-		t.Errorf("ResolveToken({radii.lg}) = %q, want %q", val, "12")
+	if val != "12px" {
+		t.Errorf("ResolveToken({radii.lg}) = %q, want %q", val, "12px")
 	}
 }
 
@@ -348,10 +348,10 @@ func TestComponentCSS(t *testing.T) {
 	if !strings.Contains(css, ".comp-card") {
 		t.Errorf("expected .comp-card selector, got %s", css)
 	}
-	if !strings.Contains(css, "padding: 8 16") {
+	if !strings.Contains(css, "padding: 8px 16px") {
 		t.Errorf("expected resolved spacing, got %s", css)
 	}
-	if !strings.Contains(css, "border-radius: 12") {
+	if !strings.Contains(css, "border-radius: 12px") {
 		t.Errorf("expected resolved radii, got %s", css)
 	}
 	if !strings.Contains(css, "background-color: #FFFFFF") {
@@ -630,7 +630,7 @@ func TestGenerateCSSWithKnownStyles(t *testing.T) {
 	if !strings.Contains(css, ".c-btn-primary {") {
 		t.Errorf("GenerateCSS should contain .c-btn-primary, got:\n%s", css)
 	}
-	if !strings.Contains(css, "padding: 4 16") {
+	if !strings.Contains(css, "padding: 4px 16px") {
 		t.Errorf("GenerateCSS should resolve tokens in padding, got:\n%s", css)
 	}
 	if !strings.Contains(css, "color: #FFFFFF") {

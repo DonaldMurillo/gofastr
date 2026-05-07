@@ -902,7 +902,7 @@ func TestComponentCSSGeneration(t *testing.T) {
 	}
 	css := theme.ComponentCSS("card")
 	assertContains(t, render.HTML(css), ".comp-card")
-	assertContains(t, render.HTML(css), "padding: 8 16")
+	assertContains(t, render.HTML(css), "padding: 8px 16px")
 }
 
 // ---------------------------------------------------------------------------

@@ -16,15 +16,6 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
-// findCSS loads demo.css from embedded static files.
-func findCSS() string {
-	data, err := staticFiles.ReadFile("static/demo.css")
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
 // staticDirPath returns a filesystem path for the embedded static directory,
 // or falls back to a relative path. Used for serving images etc.
 func staticDirPath() string {
@@ -65,8 +56,8 @@ func setupDevServer() *devserver.DevServer {
 	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}).WithTitle("About").WithDescription("About GoFastr"), nil)
 	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: coresignal.New(0)}).WithTitle("Cart").WithDescription("Your shopping cart"), nil)
 
-	// Read custom CSS from embedded files
-	cssStr := findCSS()
+	// Generate all CSS from Go using the theme system (dog-food!)
+	cssStr := createStyleSheet(*application.Theme)
 
 	// Create DevServer — routes are auto-built from registered screens
 	ds := devserver.NewDevServer(application,

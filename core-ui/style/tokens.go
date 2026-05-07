@@ -34,11 +34,11 @@ func (t Theme) ResolveToken(ref string) (string, bool) {
 		}
 	case "spacing":
 		if v, ok := t.Spacing[name]; ok {
-			return fmt.Sprintf("%d", v), true
+			return fmt.Sprintf("%dpx", v), true
 		}
 	case "radii":
 		if v, ok := t.Radii[name]; ok {
-			return fmt.Sprintf("%d", v), true
+			return fmt.Sprintf("%dpx", v), true
 		}
 	case "fonts", "font":
 		if v, ok := t.Fonts[name]; ok {

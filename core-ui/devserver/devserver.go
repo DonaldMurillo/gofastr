@@ -290,16 +290,9 @@ func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
 		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
 	}
 
-	// Inject theme CSS variables + custom CSS
-	cssBlock := ""
-	if ds.App != nil && ds.App.Theme != nil {
-		cssBlock += ds.App.Theme.CSSCustomProperties()
-	}
+	// Inject custom CSS (theme CSS vars already in <head> from RenderPage)
 	if ds.customCSS != "" {
-		cssBlock += "\n" + ds.customCSS
-	}
-	if cssBlock != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", cssBlock)
+		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
 		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
 	}
 
@@ -463,16 +456,9 @@ func (ds *DevServer) RenderPage(path string, sessionID string) (string, error) {
 		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
 	}
 
-	// Inject theme CSS variables + custom CSS
-	cssBlock := ""
-	if ds.App != nil && ds.App.Theme != nil {
-		cssBlock += ds.App.Theme.CSSCustomProperties()
-	}
+	// Inject custom CSS (theme CSS vars already in <head> from App.RenderPage)
 	if ds.customCSS != "" {
-		cssBlock += "\n" + ds.customCSS
-	}
-	if cssBlock != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", cssBlock)
+		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
 		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
 	}
 
