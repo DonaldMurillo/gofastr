@@ -61,6 +61,7 @@ func setupDevServer() *devserver.DevServer {
 	// Register screens — this IS the route table
 	application.RegisterScreen(app.NewScreen("/", &HomeScreen{}).WithTitle("Home").WithDescription("GoFastr Demo Homepage"), nil)
 	application.RegisterScreen(app.NewScreen("/products", &ProductListScreen{}).WithTitle("Products").WithDescription("Browse our products"), nil)
+	application.RegisterScreen(app.NewScreen("/products/:slug", &ProductDetailScreen{}).WithTitle("Product Detail").WithDescription("View product details"), nil)
 	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}).WithTitle("About").WithDescription("About GoFastr"), nil)
 	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: coresignal.New(0)}).WithTitle("Cart").WithDescription("Your shopping cart"), nil)
 

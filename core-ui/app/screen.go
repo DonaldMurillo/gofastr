@@ -38,6 +38,9 @@ type Screen struct {
 	Component component.Component
 	// Layout is an optional layout override for this screen.
 	Layout *Layout
+
+	// routeParams holds extracted dynamic route parameters.
+	routeParams map[string]string
 }
 
 // NewScreen creates a page screen.
@@ -60,6 +63,18 @@ func (s *Screen) WithTitle(title string) *Screen {
 func (s *Screen) WithDescription(desc string) *Screen {
 	s.Description = desc
 	return s
+}
+
+// RouteParams returns the extracted dynamic route parameters for this screen.
+// Returns nil if the screen was matched by an exact path.
+func (s *Screen) RouteParams() map[string]string {
+	return s.routeParams
+}
+
+// ParamSetter is implemented by components that accept route parameters
+// before rendering. The app calls SetParams after resolving a dynamic route.
+type ParamSetter interface {
+	SetParams(params map[string]string)
 }
 
 // NewDrawer creates a drawer screen.

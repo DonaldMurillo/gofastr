@@ -204,7 +204,22 @@
 
   const isKnownRoute = (path) => {
     const clean = path.split('?')[0].split('#')[0];
-    return routes.has(clean);
+    // Exact match
+    if (routes.has(clean)) return true;
+    // Try dynamic route patterns (e.g., /products/:slug)
+    const parts = clean.split('/').filter(Boolean);
+    for (const [pattern] of routes) {
+      if (!pattern.includes(':')) continue;
+      const patParts = pattern.split('/').filter(Boolean);
+      if (patParts.length !== parts.length) continue;
+      let match = true;
+      for (let i = 0; i < patParts.length; i++) {
+        if (patParts[i].startsWith(':')) continue; // dynamic segment
+        if (patParts[i] !== parts[i]) { match = false; break; }
+      }
+      if (match) return true;
+    }
+    return false;
   };
 
   // -----------------------------------------------------------------------

@@ -9,6 +9,55 @@ import (
 	"github.com/gofastr/gofastr/core/render"
 )
 
+// Product holds product data for display in cards and detail pages.
+type Product struct {
+	Slug        string
+	Name        string
+	Price       float64
+	ImageSrc    string
+	ImageAlt    string
+	Description string
+}
+
+// products is the demo product catalog.
+var products = []Product{
+	{Slug: "widget-pro", Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.svg", ImageAlt: "Widget Pro product photo", Description: "The Widget Pro is our best-selling multi-tool. Built from aerospace-grade aluminum with a comfortable grip, it handles any task with precision. Perfect for everyday carry."},
+	{Slug: "gadget-max", Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.svg", ImageAlt: "Gadget Max product photo", Description: "Gadget Max delivers maximum performance in a compact form. Featuring smart sensors and wireless connectivity, it integrates seamlessly into your workflow."},
+	{Slug: "tool-ultra", Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.svg", ImageAlt: "Tool Ultra product photo", Description: "Tool Ultra is the lightweight champion. Don't let the price fool you — it's packed with features that rival tools twice the cost. Ideal for beginners and pros alike."},
+	{Slug: "device-x", Name: "Device X", Price: 99.99, ImageSrc: "/img/device.svg", ImageAlt: "Device X product photo", Description: "Device X is our flagship product. Premium materials, cutting-edge technology, and a stunning design make it the ultimate choice for power users."},
+	{Slug: "module-z", Name: "Module Z", Price: 39.99, ImageSrc: "/img/module.svg", ImageAlt: "Module Z product photo", Description: "Module Z is the expandable solution you've been waiting for. Snap together multiple modules to build exactly what you need. Compatible with all GoFastr products."},
+	{Slug: "unit-s", Name: "Unit S", Price: 14.99, ImageSrc: "/img/unit.svg", ImageAlt: "Unit S product photo", Description: "Unit S is the compact essential. Small enough to fit in your pocket, powerful enough to get the job done. The perfect starter product."},
+}
+
+// findProductBySlug returns a product by its URL slug.
+func findProductBySlug(slug string) (Product, bool) {
+	for _, p := range products {
+		if p.Slug == slug {
+			return p, true
+		}
+	}
+	return Product{}, false
+}
+
+// productCards returns a grid of ProductCards from the catalog.
+func productCards() render.HTML {
+	cards := make([]render.HTML, len(products))
+	for i, p := range products {
+		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
+	}
+	return elements.Div(elements.Attrs{"class": "product-grid"}, cards...)
+}
+
+// featuredProductCards returns the first 3 products as cards.
+func featuredProductCards() render.HTML {
+	cards := make([]render.HTML, 3)
+	for i := 0; i < 3 && i < len(products); i++ {
+		p := products[i]
+		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
+	}
+	return elements.Div(elements.Attrs{"class": "product-grid"}, cards...)
+}
+
 // HeaderComponent renders the site header with navigation.
 type HeaderComponent struct{}
 
@@ -95,14 +144,18 @@ type ProductCard struct {
 	Price    float64
 	ImageSrc string
 	ImageAlt string
+	Slug     string
 }
 
 func (p *ProductCard) Render() render.HTML {
-	return elements.Article(
-		elements.Attrs{"class": "product-card", "data-component": "add-to-cart"},
+	cardContent := render.Join(
 		elements.Image(p.ImageSrc, p.ImageAlt, nil),
 		elements.Heading(3, nil, render.Text(p.Name)),
 		elements.Paragraph(nil, render.Text(fmt.Sprintf("$%.2f", p.Price))),
+	)
+	return elements.Article(
+		elements.Attrs{"class": "product-card", "data-component": "add-to-cart"},
+		elements.LinkHTML("/products/"+p.Slug, cardContent, elements.Attrs{"class": "product-card-link"}),
 		elements.Button("Add to cart", elements.Attrs{
 			"class":            "add-to-cart",
 			"data-action":      "add-to-cart",

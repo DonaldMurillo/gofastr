@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
@@ -22,12 +21,6 @@ func (s *HomeScreen) Render() render.HTML {
 
 	counter := &CounterComponent{ID: "home-counter", Count: 0}
 
-	products := component.ComponentList(
-		&ProductCard{Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.svg", ImageAlt: "Widget Pro product photo"},
-		&ProductCard{Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.svg", ImageAlt: "Gadget Max product photo"},
-		&ProductCard{Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.svg", ImageAlt: "Tool Ultra product photo"},
-	)
-
 	return elements.Div(nil,
 		hero.Render(),
 		elements.Section(
@@ -39,7 +32,7 @@ func (s *HomeScreen) Render() render.HTML {
 		elements.Section(
 			elements.Aria("label", "Featured products"),
 			elements.Heading(2, nil, render.Text("Featured Products")),
-			elements.Div(elements.Attrs{"class": "product-grid"}, products),
+			featuredProductCards(),
 		),
 	)
 }
@@ -48,21 +41,12 @@ func (s *HomeScreen) Render() render.HTML {
 type ProductListScreen struct{}
 
 func (s *ProductListScreen) Render() render.HTML {
-	products := component.ComponentList(
-		&ProductCard{Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.svg", ImageAlt: "Widget Pro"},
-		&ProductCard{Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.svg", ImageAlt: "Gadget Max"},
-		&ProductCard{Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.svg", ImageAlt: "Tool Ultra"},
-		&ProductCard{Name: "Device X", Price: 99.99, ImageSrc: "/img/device.svg", ImageAlt: "Device X"},
-		&ProductCard{Name: "Module Z", Price: 39.99, ImageSrc: "/img/module.svg", ImageAlt: "Module Z"},
-		&ProductCard{Name: "Unit S", Price: 14.99, ImageSrc: "/img/unit.svg", ImageAlt: "Unit S"},
-	)
-
 	search := &SearchFilterComponent{}
 
 	return elements.Div(nil,
 		elements.Heading(1, nil, render.Text("Products")),
 		search.Render(),
-		elements.Div(elements.Attrs{"class": "product-grid"}, products),
+		productCards(),
 	)
 }
 
@@ -124,5 +108,53 @@ func (s *CartDrawer) Render() render.HTML {
 		),
 		list,
 		elements.Button("Close cart", elements.Attrs{"class": "close-cart"}),
+	)
+}
+
+// ProductDetailScreen shows a single product's details.
+// It reads the slug from route params set by the router.
+type ProductDetailScreen struct {
+	Slug string // set dynamically
+}
+
+func (s *ProductDetailScreen) Render() render.HTML {
+	p, ok := findProductBySlug(s.Slug)
+	if !ok {
+		return elements.Div(nil,
+			elements.Heading(1, nil, render.Text("Product Not Found")),
+			elements.Paragraph(nil, render.Text("The product you're looking for doesn't exist.")),
+			elements.Link("/products", "← Back to Products", nil),
+		)
+	}
+	return (&ProductDetailComponent{Product: p}).Render()
+}
+
+// SetParams implements app.ParamSetter — receives route params from the router.
+func (s *ProductDetailScreen) SetParams(params map[string]string) {
+	s.Slug = params["slug"]
+}
+
+// ProductDetailComponent renders a full product detail view.
+type ProductDetailComponent struct {
+	Product Product
+}
+
+func (p *ProductDetailComponent) Render() render.HTML {
+	return elements.Div(elements.Attrs{"class": "product-detail"},
+		elements.Link("/products", "← Back to Products", elements.Attrs{"class": "back-link"}),
+		elements.Div(elements.Attrs{"class": "product-detail-content"},
+			elements.Image(p.Product.ImageSrc, p.Product.ImageAlt, elements.Attrs{"class": "product-detail-image"}),
+			elements.Div(elements.Attrs{"class": "product-detail-info"},
+				elements.Heading(1, nil, render.Text(p.Product.Name)),
+				elements.Paragraph(elements.Attrs{"class": "product-detail-price"}, render.Text(fmt.Sprintf("$%.2f", p.Product.Price))),
+				elements.Paragraph(nil, render.Text(p.Product.Description)),
+				elements.Button("Add to cart", elements.Attrs{
+					"class":            "add-to-cart cta-button",
+					"data-action":      "add-to-cart",
+					"data-param-name":  p.Product.Name,
+					"data-param-price": fmt.Sprintf("%.2f", p.Product.Price),
+				}),
+			),
+		),
 	)
 }

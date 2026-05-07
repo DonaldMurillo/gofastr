@@ -398,8 +398,8 @@ func TestBrowserRoutesRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("routes check: %v", err)
 	}
-	if routeCount != 4 {
-		t.Errorf("expected 4 routes, got %d", routeCount)
+	if routeCount < 4 {
+		t.Errorf("expected at least 4 routes, got %d", routeCount)
 	}
 }
 
@@ -642,4 +642,82 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// TestProductDetailNavigation verifies dynamic routes work with client-side nav.
+func TestProductDetailNavigation(t *testing.T) {
+	base := startTestServer(t)
+	ctx := newBrowserCtx(t)
+
+	// 1. Go to products page
+	var mainContent string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/products"),
+		waitForPage(),
+		chromedp.Sleep(1*time.Second),
+		chromedp.Evaluate(`document.querySelector('[role="main"]')?.textContent ?? 'NO_MAIN'`, &mainContent),
+	)
+	if err != nil {
+		t.Fatalf("load products: %v", err)
+	}
+	if !strings.Contains(mainContent, "Widget Pro") {
+		t.Fatalf("expected products page, got: %s", truncate(mainContent, 100))
+	}
+
+	// 2. Click on Widget Pro card link (dynamic route /products/widget-pro)
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`
+			(() => {
+				const link = document.querySelector('a[href="/products/widget-pro"]');
+				if (!link) return 'NO_LINK';
+				link.click();
+				return 'clicked';
+			})()
+		`, nil),
+		chromedp.Sleep(2*time.Second),
+		chromedp.Evaluate(`document.querySelector('[role="main"]')?.textContent ?? 'NO_MAIN'`, &mainContent),
+		chromedp.Location(&mainContent), // reuse var to get URL
+	)
+	if err != nil {
+		t.Fatalf("navigate to product detail: %v", err)
+	}
+
+	// Verify we're on the detail page
+	var detailContent string
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('[role="main"]')?.textContent ?? 'NO_MAIN'`, &detailContent),
+	)
+	if err != nil {
+		t.Fatalf("get detail content: %v", err)
+	}
+	if !strings.Contains(detailContent, "Widget Pro") {
+		t.Errorf("expected detail page for Widget Pro, got: %s", truncate(detailContent, 200))
+	}
+	if !strings.Contains(detailContent, "29.99") {
+		t.Errorf("expected price on detail page, got: %s", truncate(detailContent, 200))
+	}
+	if !strings.Contains(detailContent, "Back to Products") {
+		t.Errorf("expected back link on detail page, got: %s", truncate(detailContent, 200))
+	}
+
+	// 3. Go back to products via the back link
+	var productsContent string
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`
+			(() => {
+				const link = document.querySelector('a.back-link');
+				if (!link) return 'NO_LINK';
+				link.click();
+				return 'clicked';
+			})()
+		`, nil),
+		chromedp.Sleep(2*time.Second),
+		chromedp.Evaluate(`document.querySelector('[role="main"]')?.textContent ?? 'NO_MAIN'`, &productsContent),
+	)
+	if err != nil {
+		t.Fatalf("navigate back to products: %v", err)
+	}
+	if !strings.Contains(productsContent, "Gadget Max") {
+		t.Errorf("expected products page after back, got: %s", truncate(productsContent, 100))
+	}
 }

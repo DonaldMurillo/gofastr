@@ -95,6 +95,13 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
+	// Inject route params into ParamSetter components
+	if params := screen.RouteParams(); len(params) > 0 {
+		if ps, ok := screen.Component.(ParamSetter); ok {
+			ps.SetParams(params)
+		}
+	}
+
 	layout := screen.Layout
 	if layout == nil {
 		layout = a.Router.defaultLayout
@@ -169,6 +176,13 @@ func (a *App) RenderPartial(path string) (render.HTML, error) {
 	screen, ok := a.Router.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
+	}
+
+	// Inject route params into ParamSetter components
+	if params := screen.RouteParams(); len(params) > 0 {
+		if ps, ok := screen.Component.(ParamSetter); ok {
+			ps.SetParams(params)
+		}
 	}
 
 	if screen.Type == ScreenPage {
