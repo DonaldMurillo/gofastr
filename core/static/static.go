@@ -163,10 +163,13 @@ func Mount(r *router.Router, config Config) {
 	config = config.defaults()
 	handler := Handler(config)
 
-	pattern := config.Prefix + "/"
-	r.Get(pattern, handler)
-	// Also catch everything under the prefix using a catch-all wildcard.
-	r.Get(config.Prefix+"/{path...}", handler)
+	if config.Prefix == "" || config.Prefix == "/" {
+		// Root mount: catch-all handles everything including /
+		r.Get("/{path...}", handler)
+	} else {
+		r.Get(config.Prefix+"/", handler)
+		r.Get(config.Prefix+"/{path...}", handler)
+	}
 }
 
 // containsDotDot checks if the path contains ".." components that could

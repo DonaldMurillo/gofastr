@@ -79,3 +79,6 @@ demo_server
 gofastr
 gofastr-*
 !gofastr/
+# pi agent state (auto-added)
+pi-agent/plugins/*
+!pi-agent/plugins/registry.json
