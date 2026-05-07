@@ -37,6 +37,15 @@ func Link(href, text string, attrs Attrs) render.HTML {
 	return render.Tag("a", attrs, render.Text(text))
 }
 
+// LinkHTML produces an <a> element with raw HTML content (not escaped).
+func LinkHTML(href string, content render.HTML, attrs Attrs) render.HTML {
+	if attrs == nil {
+		attrs = make(Attrs, 1)
+	}
+	attrs["href"] = href
+	return render.Tag("a", attrs, content)
+}
+
 // Form produces a <form> element with method and action attributes.
 func Form(method, action string, attrs Attrs, children ...render.HTML) render.HTML {
 	if attrs == nil {

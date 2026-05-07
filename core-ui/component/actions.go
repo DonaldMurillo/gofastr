@@ -3,9 +3,23 @@ package component
 // ActionDef defines a single event handler within a component.
 type ActionDef struct {
 	Event    string                  // "click", "submit", "input", "change", "keydown", etc.
-	Handler  func(*ComponentContext) // the handler function
+	Handler  func(*ComponentContext) // the server-side handler (runs in Go)
 	Server   bool                    // if true, this action must run on the server
 	Debounce int                     // debounce in milliseconds (0 = no debounce)
+
+	// ClientJS is the JavaScript handler body. This is what gets compiled
+	// into the actions.js bundle. It receives a `params` object with:
+	//   params.value  — input value (for input/change events)
+	//   params.*      — any data-param-* attributes from the trigger element
+	//
+	// Available runtime helpers via `G` (window.__gofastr):
+	//   G.getState(key, default)   G.setState(key, value)
+	//   G.updateText(sel, text)    G.updateHTML(sel, html)
+	//   G.toast(msg)               G.navigate(path)
+	//   G.addClass(sel, cls)       G.removeClass(sel, cls)
+	//
+	// Example: "G.setState('count', G.getState('count', 0) + 1); G.updateText('[data-count]', G.getState('count', 0));"
+	ClientJS string
 }
 
 // ServerCall represents a request to execute something on the server.
@@ -67,16 +81,30 @@ var currentRegistry *ActionRegistry
 // On registers an event handler into the current registry.
 // This is the primary API for .ui.go files.
 //
-// Usage: On("click", func(ctx *ComponentContext) { ... })
-func On(event string, handler func(*ComponentContext)) ActionDef {
+// Usage: On("click", func(ctx *ComponentContext) { ... }, WithClientJS("G.setState('x', 1)"))
+func On(event string, handler func(*ComponentContext), opts ...ActionOption) ActionDef {
 	def := ActionDef{
 		Event:   event,
 		Handler: handler,
+	}
+	for _, opt := range opts {
+		opt(&def)
 	}
 	if currentRegistry != nil {
 		currentRegistry.Register(def)
 	}
 	return def
+}
+
+// ActionOption is a functional option for ActionDef.
+type ActionOption func(*ActionDef)
+
+// WithClientJS sets the client-side JavaScript handler body.
+// This JS runs in the browser when the action is triggered.
+func WithClientJS(js string) ActionOption {
+	return func(def *ActionDef) {
+		def.ClientJS = js
+	}
 }
 
 // ExtractActions analyzes a component and extracts its action definitions.

@@ -63,3 +63,8 @@ func (r *Router) Paths() []string {
 	}
 	return paths
 }
+
+// Screens returns the internal screens map for direct access.
+func (r *Router) Screens() map[string]*Screen {
+	return r.screens
+}

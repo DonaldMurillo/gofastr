@@ -28,6 +28,10 @@ type Screen struct {
 	Path string
 	// Name is a human-readable name for the screen.
 	Name string
+	// Title is the page title for <title> and route graph.
+	Title string
+	// Description is a short description for route preloading metadata.
+	Description string
 	// Type classifies the screen as page, drawer, sheet, or dialog.
 	Type ScreenType
 	// Component is the component that renders this screen.
@@ -44,6 +48,18 @@ func NewScreen(path string, comp component.Component) *Screen {
 		Type:      ScreenPage,
 		Component: comp,
 	}
+}
+
+// WithTitle sets the screen's page title.
+func (s *Screen) WithTitle(title string) *Screen {
+	s.Title = title
+	return s
+}
+
+// WithDescription sets the screen's description.
+func (s *Screen) WithDescription(desc string) *Screen {
+	s.Description = desc
+	return s
 }
 
 // NewDrawer creates a drawer screen.

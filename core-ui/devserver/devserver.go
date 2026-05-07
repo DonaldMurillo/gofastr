@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,13 +25,14 @@ import (
 // It serves rendered pages with runtime.js, compiled action JS, SSE streaming
 // for islands, and handles signal-driven live updates.
 type DevServer struct {
-	App        *app.App
-	Islands    *island.Manager
-	mu         sync.RWMutex
-	sessions   map[string]*Session // sessionID → session
-	routeGraph *RouteGraph
-	actionJS   map[string]string // componentID → compiled JS
-	customCSS  string            // extra CSS to inject (e.g. demo.css)
+	App       *app.App
+	Islands   *island.Manager
+	mu        sync.RWMutex
+	sessions  map[string]*Session // sessionID → session
+	actionJS  map[string]string   // componentID → compiled JS
+	customCSS string              // extra CSS to inject (e.g. demo.css)
+	staticDir string              // directory to serve static files from
+	staticFS  fs.FS               // embedded filesystem for static files
 }
 
 // Session represents a connected browser session.
@@ -44,16 +47,13 @@ type SignalAny interface {
 	UpdateAsInterface(v interface{})
 	Subscribe() <-chan struct{}
 }
-type RouteGraph struct {
-	Routes []RouteInfo
-}
 
-// RouteInfo describes a route for client-side preloading.
-type RouteInfo struct {
-	Path        string
-	Title       string
-	Description string
-	Preload     bool
+// routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
+type routeInfoJSON struct {
+	Path        string `json:"path"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Preload     bool   `json:"preload"`
 }
 
 // Option configures a DevServer.
@@ -66,11 +66,26 @@ func WithCustomCSS(css string) Option {
 	}
 }
 
-// WithRouteGraph sets route preloading information.
-func WithRouteGraph(rg *RouteGraph) Option {
+// WithStaticDir sets the directory to serve static files from.
+func WithStaticDir(dir string) Option {
 	return func(ds *DevServer) {
-		ds.routeGraph = rg
+		ds.staticDir = dir
 	}
+}
+
+// StaticDir returns the configured static directory path.
+func (ds *DevServer) StaticDir() string {
+	return ds.staticDir
+}
+
+// SetStaticFS sets an embedded filesystem for serving static files.
+func (ds *DevServer) SetStaticFS(fsys fs.FS) {
+	ds.staticFS = fsys
+}
+
+// HasStaticFS reports whether an embedded static FS is configured.
+func (ds *DevServer) HasStaticFS() bool {
+	return ds.staticFS != nil
 }
 
 // NewDevServer creates a new development server.
@@ -115,6 +130,25 @@ func (ds *DevServer) CompileActions(componentID string, comp component.Component
 		}
 	}
 	return ""
+}
+
+// buildRouteScript auto-builds the __gofastr_routes script from registered screens.
+func (ds *DevServer) buildRouteScript() string {
+	routes := ds.App.Routes()
+	if len(routes) == 0 {
+		return ""
+	}
+	infos := make([]routeInfoJSON, len(routes))
+	for i, r := range routes {
+		infos[i] = routeInfoJSON{
+			Path:        r.Path,
+			Title:       r.Title,
+			Description: r.Description,
+			Preload:     i == 0, // preload first route
+		}
+	}
+	rgJSON, _ := json.Marshal(infos)
+	return fmt.Sprintf(`<script>window.__gofastr_routes = %s;</script>`, string(rgJSON))
 }
 
 // GetActionJS returns all compiled action JS concatenated.
@@ -174,6 +208,33 @@ func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Static file serving
+	if path == "/favicon.ico" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if path != "/" {
+		// Try filesystem directory first
+		if ds.staticDir != "" {
+			filePath := filepath.Join(ds.staticDir, path)
+			if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+				http.ServeFile(w, r, filePath)
+				return
+			}
+		}
+		// Try embedded filesystem
+		if ds.staticFS != nil {
+			cleanPath := strings.TrimPrefix(path, "/")
+			if cleanPath != "" {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+					f.Close()
+					http.ServeFileFS(w, r, ds.staticFS, cleanPath)
+					return
+				}
+			}
+		}
+	}
+
 	// Page rendering
 	ds.handlePage(w, r)
 }
@@ -223,16 +284,21 @@ func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
 		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
 	}
 
-	// Inject custom CSS
+	// Inject theme CSS variables + custom CSS
+	cssBlock := ""
+	if ds.App != nil && ds.App.Theme != nil {
+		cssBlock += ds.App.Theme.CSSCustomProperties()
+	}
 	if ds.customCSS != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
+		cssBlock += "\n" + ds.customCSS
+	}
+	if cssBlock != "" {
+		cssTag := fmt.Sprintf("<style>%s</style>", cssBlock)
 		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
 	}
 
-	// Inject route graph for client-side preloading
-	if ds.routeGraph != nil {
-		rgJSON, _ := json.Marshal(ds.routeGraph.Routes)
-		rgScript := fmt.Sprintf(`<script>window.__gofastr_routes = %s;</script>`, string(rgJSON))
+	// Inject route graph (auto-built from registered screens)
+	if rgScript := ds.buildRouteScript(); rgScript != "" {
 		page = strings.Replace(page, "</head>", rgScript+"\n</head>", 1)
 	}
 
@@ -377,28 +443,61 @@ func (ds *DevServer) RenderPage(path string, sessionID string) (string, error) {
 		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
 	}
 
-	// Inject custom CSS
+	// Inject theme CSS variables + custom CSS
+	cssBlock := ""
+	if ds.App != nil && ds.App.Theme != nil {
+		cssBlock += ds.App.Theme.CSSCustomProperties()
+	}
 	if ds.customCSS != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
+		cssBlock += "\n" + ds.customCSS
+	}
+	if cssBlock != "" {
+		cssTag := fmt.Sprintf("<style>%s</style>", cssBlock)
 		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
 	}
 
-	// Inject route graph
-	if ds.routeGraph != nil {
-		rgJSON, _ := json.Marshal(ds.routeGraph.Routes)
-		rgScript := fmt.Sprintf(`<script>window.__gofastr_routes = %s;</script>`, string(rgJSON))
+	// Inject route graph (auto-built from registered screens)
+	if rgScript := ds.buildRouteScript(); rgScript != "" {
 		page = strings.Replace(page, "</head>", rgScript+"\n</head>", 1)
 	}
 
 	return page, nil
 }
 
-// actionsToJS converts an ActionRegistry to browser-runnable JavaScript.
+// actionsToJS converts an ActionRegistry to browser-runnable JavaScript
+// using the ClientJS field from each ActionDef. Each action's ClientJS
+// is wrapped in a handler function and registered with the runtime.
 func actionsToJS(componentID string, reg *component.ActionRegistry) string {
+	if !reg.HasActions() {
+		return ""
+	}
+
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("if (!window.__gofastr) window.__gofastr = {handlers:{}};\n"))
-	sb.WriteString(fmt.Sprintf("window.__gofastr.handlers[%q] = {\n", componentID))
-	sb.WriteString("};\n")
+	sb.WriteString(fmt.Sprintf("// Component: %s\n", componentID))
+	sb.WriteString("(() => {\n")
+	sb.WriteString(fmt.Sprintf("  const id = %q;\n", componentID))
+	sb.WriteString("  const G = window.__gofastr;\n")
+	sb.WriteString("  const handlers = {\n")
+
+	first := true
+	for _, action := range reg.All() {
+		if !first {
+			sb.WriteString(",\n")
+		}
+		first = false
+
+		body := strings.TrimSpace(action.ClientJS)
+		if body == "" {
+			body = fmt.Sprintf("// no client handler for %q", action.Event)
+		}
+
+		sb.WriteString(fmt.Sprintf("    %q: (params) => {\n      %s\n    }", action.Event, body))
+	}
+
+	sb.WriteString("\n  };\n")
+	sb.WriteString("  G.register(id, handlers);\n")
+	sb.WriteString("})();\n")
+
 	return sb.String()
 }
 

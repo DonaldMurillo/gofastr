@@ -50,6 +50,30 @@ func (a *App) RegisterScreen(screen *Screen, layout *Layout) {
 	a.Router.Screen(screen, layout)
 }
 
+// RouteEntry describes a registered route for consumption by the DevServer.
+type RouteEntry struct {
+	Path        string
+	Title       string
+	Description string
+}
+
+// Routes returns all registered screen paths as RouteEntry slices.
+func (a *App) Routes() []RouteEntry {
+	var entries []RouteEntry
+	for _, path := range a.Router.Paths() {
+		screen, ok := a.Router.Resolve(path)
+		if !ok {
+			continue
+		}
+		entries = append(entries, RouteEntry{
+			Path:        screen.Path,
+			Title:       screen.Title,
+			Description: screen.Description,
+		})
+	}
+	return entries
+}
+
 // SetDefaultLayout sets the default layout.
 func (a *App) SetDefaultLayout(layout *Layout) {
 	a.Router.DefaultLayout(layout)
@@ -71,12 +95,33 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	content := screen.Render()
 	layout := screen.Layout
 	if layout == nil {
 		layout = a.Router.defaultLayout
 	}
-	wrapped := layout.Wrap(content)
+
+	// Render the component directly for ScreenPage when a layout is present —
+	// the layout provides the <main> wrapper. For other screen types (drawer,
+	// sheet, dialog), always use screen.Render() which adds proper ARIA wrapping
+	// and skip the layout entirely since they are overlays.
+	var content render.HTML
+	var wrapped render.HTML
+	if screen.Type == ScreenPage {
+		if layout != nil {
+			content = screen.Component.Render()
+		} else {
+			content = screen.Render()
+		}
+		if layout != nil {
+			wrapped = layout.Wrap(content)
+		} else {
+			wrapped = content
+		}
+	} else {
+		// Drawer/sheet/dialog — render with ARIA wrapping, skip layout
+		content = screen.Render()
+		wrapped = content
+	}
 
 	// Build <head>.
 	var headChildren []render.HTML

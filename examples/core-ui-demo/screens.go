@@ -9,7 +9,7 @@ import (
 	"github.com/gofastr/gofastr/core/render"
 )
 
-// HomeScreen is the landing page with hero and featured products.
+// HomeScreen is the landing page with hero, counter, and featured products.
 type HomeScreen struct{}
 
 func (s *HomeScreen) Render() render.HTML {
@@ -20,14 +20,22 @@ func (s *HomeScreen) Render() render.HTML {
 		CTALink:  "/products",
 	}
 
+	counter := &CounterComponent{ID: "home-counter", Count: 0}
+
 	products := component.ComponentList(
-		&ProductCard{Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.jpg", ImageAlt: "Widget Pro product photo"},
-		&ProductCard{Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.jpg", ImageAlt: "Gadget Max product photo"},
-		&ProductCard{Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.jpg", ImageAlt: "Tool Ultra product photo"},
+		&ProductCard{Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.svg", ImageAlt: "Widget Pro product photo"},
+		&ProductCard{Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.svg", ImageAlt: "Gadget Max product photo"},
+		&ProductCard{Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.svg", ImageAlt: "Tool Ultra product photo"},
 	)
 
 	return elements.Div(nil,
 		hero.Render(),
+		elements.Section(
+			elements.Aria("label", "Interactive counter"),
+			elements.Heading(2, nil, render.Text("Try It Live")),
+			elements.Paragraph(nil, render.Text("Click the buttons — the Go counter compiles to JS that runs in your browser.")),
+			counter.Render(),
+		),
 		elements.Section(
 			elements.Aria("label", "Featured products"),
 			elements.Heading(2, nil, render.Text("Featured Products")),
@@ -41,24 +49,19 @@ type ProductListScreen struct{}
 
 func (s *ProductListScreen) Render() render.HTML {
 	products := component.ComponentList(
-		&ProductCard{Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.jpg", ImageAlt: "Widget Pro"},
-		&ProductCard{Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.jpg", ImageAlt: "Gadget Max"},
-		&ProductCard{Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.jpg", ImageAlt: "Tool Ultra"},
-		&ProductCard{Name: "Device X", Price: 99.99, ImageSrc: "/img/device.jpg", ImageAlt: "Device X"},
-		&ProductCard{Name: "Module Z", Price: 39.99, ImageSrc: "/img/module.jpg", ImageAlt: "Module Z"},
-		&ProductCard{Name: "Unit S", Price: 14.99, ImageSrc: "/img/unit.jpg", ImageAlt: "Unit S"},
+		&ProductCard{Name: "Widget Pro", Price: 29.99, ImageSrc: "/img/widget.svg", ImageAlt: "Widget Pro"},
+		&ProductCard{Name: "Gadget Max", Price: 49.99, ImageSrc: "/img/gadget.svg", ImageAlt: "Gadget Max"},
+		&ProductCard{Name: "Tool Ultra", Price: 19.99, ImageSrc: "/img/tool.svg", ImageAlt: "Tool Ultra"},
+		&ProductCard{Name: "Device X", Price: 99.99, ImageSrc: "/img/device.svg", ImageAlt: "Device X"},
+		&ProductCard{Name: "Module Z", Price: 39.99, ImageSrc: "/img/module.svg", ImageAlt: "Module Z"},
+		&ProductCard{Name: "Unit S", Price: 14.99, ImageSrc: "/img/unit.svg", ImageAlt: "Unit S"},
 	)
+
+	search := &SearchFilterComponent{}
 
 	return elements.Div(nil,
 		elements.Heading(1, nil, render.Text("Products")),
-		elements.Form("get", "/products", elements.Aria("label", "Search products"),
-			elements.Label("search-input", "Search", nil),
-			elements.Input("search", "q", elements.Attrs{
-				"id":          "search-input",
-				"placeholder": "Search products...",
-			}),
-			elements.Button("Search", elements.Attrs{"type": "submit"}),
-		),
+		search.Render(),
 		elements.Div(elements.Attrs{"class": "product-grid"}, products),
 	)
 }

@@ -68,7 +68,7 @@ func newTestDevServer() *DevServer {
 		WithHeader(&testHeaderComp{}).
 		WithFooter(&testFooterComp{})
 	application.SetDefaultLayout(layout)
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}), nil)
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("Home page"), nil)
 
 	return NewDevServer(application)
 }
@@ -81,12 +81,7 @@ func newTestDevServerWithCSS() *DevServer {
 
 func newTestDevServerWithRouteGraph() *DevServer {
 	ds := newTestDevServer()
-	ds.routeGraph = &RouteGraph{
-		Routes: []RouteInfo{
-			{Path: "/", Title: "Home", Preload: true},
-			{Path: "/about", Title: "About"},
-		},
-	}
+	ds.App.RegisterScreen(app.NewScreen("/about", &testHomeComp{}).WithTitle("About").WithDescription("About page"), nil)
 	return ds
 }
 
@@ -347,9 +342,9 @@ func TestDevServerRouteGraph(t *testing.T) {
 
 	body := w.Body.String()
 	assertContains(t, body, "window.__gofastr_routes")
-	assertContains(t, body, `"Path":"/"`)
-	assertContains(t, body, `"Title":"Home"`)
-	assertContains(t, body, `"Title":"About"`)
+	assertContains(t, body, `"path":"/"`)
+	assertContains(t, body, `"title":"Home"`)
+	assertContains(t, body, `"title":"About"`)
 }
 
 // ---------------------------------------------------------------------------

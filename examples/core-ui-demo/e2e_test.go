@@ -310,12 +310,15 @@ func TestExtractActions(t *testing.T) {
 	if !reg.HasActions() {
 		t.Error("expected InteractiveButton to have actions")
 	}
-	clickAction, ok := reg.Get("click")
+	action, ok := reg.Get("add-to-cart")
 	if !ok {
-		t.Error("expected 'click' action to be registered")
+		t.Error("expected 'add-to-cart' action to be registered")
 	}
-	if clickAction.Event != "click" {
-		t.Errorf("expected event 'click', got %q", clickAction.Event)
+	if action.Event != "add-to-cart" {
+		t.Errorf("expected event 'add-to-cart', got %q", action.Event)
+	}
+	if action.ClientJS == "" {
+		t.Error("expected ClientJS to be set on add-to-cart action")
 	}
 }
 
@@ -576,7 +579,7 @@ func TestSSEEndpoint(t *testing.T) {
 // G. Runtime Tests
 // ---------------------------------------------------------------------------
 
-func TestRuntimeJSLoads(t *testing.T) {
+func TestE2ERuntimeJSLoads(t *testing.T) {
 	js, err := runtime.RuntimeJS()
 	if err != nil {
 		t.Fatalf("RuntimeJS error: %v", err)
@@ -591,8 +594,8 @@ func TestRuntimeSize(t *testing.T) {
 	if size == 0 {
 		t.Error("RuntimeSize returned 0")
 	}
-	if size > 10*1024 {
-		t.Errorf("runtime is %d bytes, expected under 10KB", size)
+	if size > 20*1024 {
+		t.Errorf("runtime is %d bytes, expected under 20KB", size)
 	}
 }
 
@@ -946,21 +949,12 @@ func createTestDevServer() *devserver.DevServer {
 		WithFooter(&FooterComponent{})
 	application.SetDefaultLayout(layout)
 
-	application.RegisterScreen(app.NewScreen("/", &HomeScreen{}), nil)
-	application.RegisterScreen(app.NewScreen("/products", &ProductListScreen{}), nil)
-	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}), nil)
-	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: signal.New(0)}), nil)
+	application.RegisterScreen(app.NewScreen("/", &HomeScreen{}).WithTitle("Home").WithDescription("Homepage"), nil)
+	application.RegisterScreen(app.NewScreen("/products", &ProductListScreen{}).WithTitle("Products").WithDescription("Products"), nil)
+	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}).WithTitle("About").WithDescription("About"), nil)
+	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: signal.New(0)}).WithTitle("Cart").WithDescription("Cart"), nil)
 
-	return devserver.NewDevServer(application,
-		devserver.WithRouteGraph(&devserver.RouteGraph{
-			Routes: []devserver.RouteInfo{
-				{Path: "/", Title: "Home", Preload: true},
-				{Path: "/products", Title: "Products"},
-				{Path: "/about", Title: "About"},
-				{Path: "/cart", Title: "Cart"},
-			},
-		}),
-	)
+	return devserver.NewDevServer(application)
 }
 
 func TestDevServerHomePageHasRuntimeAndSSE(t *testing.T) {
@@ -1203,8 +1197,8 @@ func TestDevServerRouteGraphPreload(t *testing.T) {
 	body := w.Body.String()
 	assertContainsAll(t, render.HTML(body),
 		"window.__gofastr_routes",
-		`"Preload":true`,
-		`"Title":"Home"`,
-		`"Title":"Products"`,
+		`"preload":true`,
+		`"title":"Home"`,
+		`"title":"Products"`,
 	)
 }

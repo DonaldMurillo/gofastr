@@ -13,15 +13,13 @@ import (
 type HeaderComponent struct{}
 
 func (h *HeaderComponent) Render() render.HTML {
-	return elements.Header(
+	return elements.Nav(
 		elements.Aria("label", "Main navigation"),
-		elements.Nav(
-			elements.Aria("label", "Primary"),
-			elements.Div(nil,
-				elements.Link("/", "GoFastr Demo", elements.Aria("label", "Home")),
-				elements.Link("/products", "Products", nil),
-				elements.Link("/about", "About", nil),
-			),
+		elements.Div(nil,
+			elements.Link("/", "GoFastr Demo", elements.Aria("label", "Home")),
+			elements.Link("/products", "Products", nil),
+			elements.Link("/about", "About", nil),
+			elements.LinkHTML("/cart", render.HTML("Cart "+string(elements.Span(elements.Attrs{"class": "cart-badge"}, render.Text("0")))), nil),
 		),
 	)
 }
@@ -30,10 +28,7 @@ func (h *HeaderComponent) Render() render.HTML {
 type FooterComponent struct{}
 
 func (f *FooterComponent) Render() render.HTML {
-	return elements.Footer(
-		elements.Aria("label", "Site footer"),
-		elements.Paragraph(nil, render.Text("© 2025 GoFastr Demo. All rights reserved.")),
-	)
+	return elements.Paragraph(nil, render.Text("© 2025 GoFastr Demo. All rights reserved."))
 }
 
 // HeroComponent renders a hero section with a heading and CTA button.
@@ -56,7 +51,45 @@ func (h *HeroComponent) Render() render.HTML {
 	)
 }
 
-// ProductCard renders a product card with image, name, and price.
+// CounterComponent is an interactive counter that gets compiled to JS.
+type CounterComponent struct {
+	ID    string
+	Count int
+}
+
+func (c *CounterComponent) Render() render.HTML {
+	return elements.Div(
+		elements.Attrs{
+			"data-component": c.ID,
+			"class":          "counter-display",
+		},
+		elements.Button("−", elements.Attrs{
+			"data-action": "counter-decrement",
+			"class":       "counter-btn counter-dec",
+			"aria-label":  "Decrement counter",
+		}),
+		render.Tag("span", map[string]string{
+			"class":                "counter-value",
+			"data-counter-display": "",
+		}, render.Text(fmt.Sprintf("%d", c.Count))),
+		elements.Button("+", elements.Attrs{
+			"data-action": "counter-increment",
+			"class":       "counter-btn counter-inc",
+			"aria-label":  "Increment counter",
+		}),
+	)
+}
+
+func (c *CounterComponent) Actions() {
+	component.On("counter-increment", func(ctx *component.ComponentContext) {
+		c.Count++
+	}, component.WithClientJS("const key = 'counter-' + id; const next = G.getState(key, 0) + 1; G.setState(key, next); G.updateText('[data-counter-display]', next);"))
+	component.On("counter-decrement", func(ctx *component.ComponentContext) {
+		c.Count--
+	}, component.WithClientJS("const key = 'counter-' + id; const next = G.getState(key, 0) - 1; G.setState(key, next); G.updateText('[data-counter-display]', next);"))
+}
+
+// ProductCard renders a product card with image, name, price, and add-to-cart.
 type ProductCard struct {
 	Name     string
 	Price    float64
@@ -66,11 +99,16 @@ type ProductCard struct {
 
 func (p *ProductCard) Render() render.HTML {
 	return elements.Article(
-		elements.Attrs{"class": "product-card"},
+		elements.Attrs{"class": "product-card", "data-component": "add-to-cart"},
 		elements.Image(p.ImageSrc, p.ImageAlt, nil),
 		elements.Heading(3, nil, render.Text(p.Name)),
 		elements.Paragraph(nil, render.Text(fmt.Sprintf("$%.2f", p.Price))),
-		elements.Button("Add to cart", elements.Attrs{"class": "add-to-cart"}),
+		elements.Button("Add to cart", elements.Attrs{
+			"class":            "add-to-cart",
+			"data-action":      "add-to-cart",
+			"data-param-name":  p.Name,
+			"data-param-price": fmt.Sprintf("%.2f", p.Price),
+		}),
 	)
 }
 
@@ -90,7 +128,7 @@ func (c *CartBadge) Render() render.HTML {
 	)
 }
 
-// InteractiveButton demonstrates InteractiveComponent.
+// InteractiveButton demonstrates InteractiveComponent with add-to-cart action.
 type InteractiveButton struct {
 	Label string
 }
@@ -100,8 +138,32 @@ func (b *InteractiveButton) Render() render.HTML {
 }
 
 func (b *InteractiveButton) Actions() {
-	component.On("click", func(ctx *component.ComponentContext) {
-		// Handle click
+	component.On("add-to-cart", func(ctx *component.ComponentContext) {
 		_ = ctx
-	})
+	}, component.WithClientJS("const count = G.getState('cart-count', 0) + 1; G.setState('cart-count', count); document.querySelectorAll('.cart-badge').forEach(b => b.textContent = count); G.toast('Added to cart! (' + count + ' items)');"))
+}
+
+// SearchFilterComponent renders a search input that filters products via data-action.
+type SearchFilterComponent struct{}
+
+func (s *SearchFilterComponent) Render() render.HTML {
+	return elements.Div(
+		elements.Attrs{"data-component": "search-filter"},
+		elements.Form("get", "/products", elements.Aria("label", "Search products"),
+			elements.Label("search-input", "Search", nil),
+			elements.Input("search", "q", elements.Attrs{
+				"id":               "search-input",
+				"placeholder":      "Search products...",
+				"data-action":      "search-products",
+				"data-action-type": "input",
+			}),
+			elements.Button("Search", elements.Attrs{"type": "submit"}),
+		),
+	)
+}
+
+func (s *SearchFilterComponent) Actions() {
+	component.On("search-products", func(ctx *component.ComponentContext) {
+		_ = ctx
+	}, component.WithClientJS("const q = (params.value || '').toLowerCase(); document.querySelectorAll('.product-card').forEach(card => { const h3 = card.querySelector('h3'); card.style.display = (h3 && h3.textContent.toLowerCase().includes(q)) ? '' : 'none'; });"))
 }

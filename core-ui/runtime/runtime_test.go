@@ -39,9 +39,9 @@ func TestRuntimeSize(t *testing.T) {
 		t.Fatal("runtime size is 0")
 	}
 	t.Logf("Runtime size: %d bytes", size)
-	// Should be reasonably small
-	if size > 10000 {
-		t.Errorf("runtime too large: %d bytes (max 10000)", size)
+	// Should be reasonably small (router + DOM helpers + SSE + hydration)
+	if size > 20000 {
+		t.Errorf("runtime too large: %d bytes (max 20000)", size)
 	}
 }
 
@@ -58,16 +58,28 @@ func TestRuntimeJSSyntax(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// IIFE wrapper
-	if !strings.HasPrefix(strings.TrimSpace(js), "(function()") {
-		t.Error("runtime should be an IIFE")
+	// IIFE wrapper (ES2020+ arrow style)
+	trimmed := strings.TrimSpace(js)
+	// Strip leading comments
+	for strings.HasPrefix(trimmed, "//") {
+		idx := strings.Index(trimmed, "\n")
+		if idx == -1 {
+			break
+		}
+		trimmed = strings.TrimSpace(trimmed[idx+1:])
+	}
+	if !strings.HasPrefix(trimmed, "(() =>") && !strings.HasPrefix(trimmed, "(function") {
+		t.Errorf("runtime should be an IIFE, got: %s", truncate(trimmed, 50))
 	}
 	// Should end with closing
-	if !strings.HasSuffix(strings.TrimSpace(js), "})();") {
-		t.Error("runtime should end with })();")
+	if !strings.HasSuffix(trimmed, ")();") {
+		t.Error("runtime should end with )();")
 	}
-	// No template literals (ES5 compatible)
-	if strings.Contains(js, "`") {
-		t.Error("runtime should not use ES6 template literals for browser compat")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
+	return s[:n] + "..."
 }
