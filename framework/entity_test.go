@@ -140,7 +140,7 @@ func TestAppFluentAPI(t *testing.T) {
 			{Name: "body", Type: schema.Text},
 			{Name: "author", Type: schema.Relation, To: "users"},
 		},
-		CRUD: true,
+		CRUD: boolPtr(true),
 		MCP:  true,
 	})
 
@@ -160,7 +160,8 @@ func TestAppFluentAPI(t *testing.T) {
 	if len(e.GetFields()) != 6 {
 		t.Errorf("expected 6 fields, got %d", len(e.GetFields()))
 	}
-	if !e.Config.CRUD {
+	if *e.Config.CRUD {
+	} else {
 		t.Error("expected CRUD to be true")
 	}
 	if !e.Config.MCP {
@@ -261,5 +262,10 @@ func TestEntityValidation(t *testing.T) {
 
 // ptrFloat is a test helper to create a *float64 from a literal.
 func ptrFloat(v float64) *float64 {
+	return &v
+}
+
+// boolPtr is a test helper to create a *bool from a literal.
+func boolPtr(v bool) *bool {
 	return &v
 }

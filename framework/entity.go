@@ -19,7 +19,7 @@ type EntityConfig struct {
 	SoftDelete  bool           // enable soft-delete (deleted_at column)
 	MultiTenant bool           // scope queries by tenant_id
 	Timestamps  bool           // add created_at / updated_at columns
-	CRUD        bool           // auto-generate CRUD routes
+	CRUD        *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
 	MCP         bool           // auto-generate MCP tools
 
 	// timestampsSet tracks whether Timestamps was explicitly set.

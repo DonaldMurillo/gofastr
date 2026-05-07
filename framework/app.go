@@ -116,10 +116,17 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		panic(fmt.Sprintf("framework: failed to register entity %q: %v", name, err))
 	}
 
-	// Auto-register CRUD routes if enabled (default when DB is set)
-	if (config.CRUD || a.DB != nil) && a.DB != nil {
+	// Auto-register CRUD routes.
+	// Default (CRUD==nil): auto-register when DB is set.
+	// Set CRUD to &true to always register, &false to opt out.
+	if config.CRUD != nil {
+		if *config.CRUD && a.DB != nil {
+			handler := NewCrudHandler(e, a.DB)
+			handler.JSONCase = a.JSONCasing()
+			RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
+		}
+	} else if a.DB != nil {
 		handler := NewCrudHandler(e, a.DB)
-		// Apply JSON casing from app config
 		handler.JSONCase = a.JSONCasing()
 		RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
 	}
