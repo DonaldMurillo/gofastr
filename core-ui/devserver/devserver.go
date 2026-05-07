@@ -279,11 +279,11 @@ func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
 	sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
 	page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
 
-	// Inject runtime.js
+	// Inject runtime.js before </body> so document.body is available
 	runtimeScript := `<script src="/__gofastr/runtime.js"></script>`
-	page = strings.Replace(page, "</head>", runtimeScript+"\n</head>", 1)
+	page = strings.Replace(page, "</body>", runtimeScript+"\n</body>", 1)
 
-	// Inject compiled actions
+	// Inject compiled actions after runtime.js
 	actionJS := ds.GetActionJS()
 	if actionJS != "" {
 		actionsScript := fmt.Sprintf("<script>%s</script>", actionJS)
@@ -452,11 +452,11 @@ func (ds *DevServer) RenderPage(path string, sessionID string) (string, error) {
 	sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
 	page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
 
-	// Inject runtime.js
+	// Inject runtime.js before </body> so document.body is available
 	runtimeScript := `<script src="/__gofastr/runtime.js"></script>`
-	page = strings.Replace(page, "</head>", runtimeScript+"\n</head>", 1)
+	page = strings.Replace(page, "</body>", runtimeScript+"\n</body>", 1)
 
-	// Inject compiled actions
+	// Inject compiled actions after runtime.js
 	actionJS := ds.GetActionJS()
 	if actionJS != "" {
 		actionsScript := fmt.Sprintf("<script>%s</script>", actionJS)

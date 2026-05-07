@@ -33,6 +33,20 @@
     registerRoutes(window.__gofastr_routes);
   }
 
+  // -----------------------------------------------------------------------
+  // Screen cache — stores rendered screens for instant back-navigation.
+  // -----------------------------------------------------------------------
+  const screenCache = new Map(); // path → { html, title, timestamp }
+  const MAX_CACHE_SIZE = 20;
+
+  const cacheScreen = (path, html, title) => {
+    if (screenCache.size >= MAX_CACHE_SIZE) {
+      const oldest = screenCache.keys().next().value;
+      screenCache.delete(oldest);
+    }
+    screenCache.set(path, { html, title, timestamp: Date.now() });
+  };
+
   // Cache the initial page so back-navigation to it works instantly
   const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
   if (initialMain) {
@@ -194,20 +208,8 @@
   };
 
   // -----------------------------------------------------------------------
-  // Screen cache — stores rendered screens for instant back-navigation.
-  // Static screens are kept indefinitely; dynamic screens use LRU eviction.
+  // Client-side navigation — fetch partial HTML, swap <main> content
   // -----------------------------------------------------------------------
-  const screenCache = new Map(); // path → { html, title, timestamp }
-  const MAX_CACHE_SIZE = 20;
-
-  const cacheScreen = (path, html, title) => {
-    // Evict oldest entries if cache is full
-    if (screenCache.size >= MAX_CACHE_SIZE) {
-      const oldest = screenCache.keys().next().value;
-      screenCache.delete(oldest);
-    }
-    screenCache.set(path, { html, title, timestamp: Date.now() });
-  };
 
   const getCachedScreen = (path) => screenCache.get(path);
 
@@ -398,7 +400,10 @@
   // -----------------------------------------------------------------------
   // MutationObserver for auto-hydration
   // -----------------------------------------------------------------------
-  if (typeof MutationObserver !== 'undefined') {
+  const setupMutationObserver = () => {
+    if (typeof MutationObserver === 'undefined') return;
+    if (!document.body) return;
+
     const setupHydration = (el) => {
       const id = el.getAttribute('data-component') ?? el.getAttribute('data-widget');
       if (!id) return;
@@ -421,6 +426,12 @@
         for (const node of m.addedNodes) observeNode(node);
       }
     }).observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.body) {
+    setupMutationObserver();
+  } else {
+    document.addEventListener('DOMContentLoaded', setupMutationObserver);
   }
 
   // -----------------------------------------------------------------------
