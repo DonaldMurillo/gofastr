@@ -80,6 +80,8 @@ gofastr
 gofastr-*
 !gofastr/
 /core-ui-demo
+/blog
+/demo
 *.png
 .playwright-mcp/
 screens/
