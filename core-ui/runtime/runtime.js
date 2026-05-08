@@ -200,13 +200,41 @@
 
     /** Load CSS for a screen path if not already loaded */
     loadCSS(screenPath) {
-      const linkId = 'gofastr-css-' + screenPath.replace(/[^a-zA-Z0-9]/g, '-');
-      if (document.getElementById(linkId)) return; // already loaded
-      const link = document.createElement('link');
-      link.id = linkId;
-      link.rel = 'stylesheet';
-      link.href = '/__gofastr/css' + screenPath;
-      document.head.appendChild(link);
+      const makeId = (p) => 'gofastr-css-' + p.replace(/[^a-zA-Z0-9]/g, '-');
+      // Build parent paths (closest first, then up to root)
+      const parents = [];
+      let p = screenPath;
+      while (p !== '/' && p.includes('/')) {
+        p = p.substring(0, p.lastIndexOf('/')) || '/';
+        parents.push(p);
+      }
+      // Try parent paths first (they have registered CSS), skip dynamic sub-routes
+      for (const path of parents) {
+        const linkId = makeId(path);
+        if (document.getElementById(linkId)) return;
+      }
+      // Load only the closest parent that isn't already loaded
+      for (const path of parents) {
+        const linkId = makeId(path);
+        const link = document.createElement('link');
+        link.id = linkId;
+        link.rel = 'stylesheet';
+        link.href = '/__gofastr/css' + path;
+        link.onerror = () => link.remove();
+        document.head.appendChild(link);
+        return;
+      }
+      // If screenPath itself is a root or known route, load it
+      if (screenPath === '/' || parents.length === 0) {
+        const linkId = makeId(screenPath);
+        if (!document.getElementById(linkId)) {
+          const link = document.createElement('link');
+          link.id = linkId;
+          link.rel = 'stylesheet';
+          link.href = '/__gofastr/css' + screenPath;
+          document.head.appendChild(link);
+        }
+      }
     },
 
     formatInt: (n) => String(n),
@@ -483,7 +511,7 @@
     };
   };
 
-  window.addEventListener('gofastr:navigate', () => { /* SSE session-scoped */ });
+  window.addEventListener('gofastr:navigate', () => { closeAllOverlays(); });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', connectSSE);
@@ -491,44 +519,132 @@
     connectSSE();
   }
 
-  // Overlay manager: Dialog & Sheet open/close + focus trap
+  // Overlay manager: Dialog, Sheet, Drawer — all use a full-screen backdrop wrapper.
+  // The backdrop (ov) covers the viewport. The content (.dialog/.sheet/.drawer) is a child.
+  // Click on backdrop → close. Click on content → does NOT close.
+  // Escape → close topmost. Tab → trapped inside topmost overlay.
+  const overlayCache={};
   const overlayStack=[];
   const focusSel='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
+  // Close all open overlays (used on navigation).
+  const closeAllOverlays=()=>{
+    [...overlayStack].forEach(ov=>ov.remove());
+    overlayStack.length=0;
+    document.body.style.overflow='';
+  };
+
+  // Inject built-in overlay CSS on first use (apps can override via theme).
+  let _overlayCSSInjected=false;
+  const _injectOverlayCSS=()=>{
+    if(_overlayCSSInjected)return;
+    _overlayCSSInjected=true;
+    const s=document.createElement('style');
+    s.setAttribute('data-gofastr-overlays','');
+    s.textContent=`
+[data-overlay]{box-sizing:border-box}
+.overlay-backdrop{position:fixed;inset:0;display:flex;z-index:1000;background:rgba(0,0,0,0.5);transition:opacity 0.3s}
+.backdrop-closing{opacity:0}
+.dialog-overlay{align-items:center;justify-content:center}
+.dialog{position:relative;background:var(--surface,#fff);border-radius:var(--radius-lg,12px);padding:var(--spacing-xl,24px);max-width:90vw;width:480px;transition:transform 0.2s,opacity 0.2s}
+.dialog.dialog-opening,.dialog.dialog-closing{transform:scale(0.95);opacity:0}
+.sheet-backdrop{align-items:flex-end;justify-content:center}
+.sheet{position:relative;background:var(--surface,#fff);border-radius:var(--radius-lg,12px) var(--radius-lg,12px) 0 0;padding:var(--spacing-lg,16px);max-height:70vh;overflow-y:auto;width:100%;max-width:100%;transition:transform 0.3s}
+.sheet.sheet-opening,.sheet.sheet-closing{transform:translateY(100%)}
+.sheet-handle{width:40px;height:4px;background:var(--border,#E5E7EB);border-radius:2px;margin:0 auto 8px}
+.drawer-backdrop{align-items:stretch;justify-content:flex-start}
+.drawer{position:relative;background:var(--surface,#fff);width:320px;max-width:85vw;height:100vh;overflow-y:auto;padding:var(--spacing-xl,24px);transition:transform 0.3s}
+.drawer.drawer-opening,.drawer.drawer-closing{transform:translateX(-100%)}
+.overlay-close{position:absolute;top:8px;right:8px;background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted,#6B7280);line-height:1;padding:4px 8px;border-radius:4px}
+.overlay-close:hover{background:var(--background,#F9FAFB)}
+.dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.dialog-cancel-btn{padding:8px 16px;border:1px solid var(--border,#E5E7EB);border-radius:var(--radius-sm,4px);background:transparent;color:var(--text,#1F2937);cursor:pointer;font-size:14px}
+.dialog-cancel-btn:hover{background:var(--background,#F9FAFB)}
+.confirm-btn{padding:8px 16px;border:none;border-radius:var(--radius-sm,4px);background:var(--primary,#4F46E5);color:#fff;cursor:pointer;font-size:14px;font-weight:600}
+.confirm-btn:hover{opacity:0.9}
+`;
+    document.head.appendChild(s);
+  };
+
+  const _pendingOverlays=new Set();
   window.__gofastr.openOverlay=async(type,path)=>{
-    const resp=await fetch(path,{headers:{'X-Gofastr-Navigate':'1'}});
-    if(!resp.ok) return;
-    const html=await resp.text(),isSheet=type==='sheet';
-    const ov=document.createElement('div');
-    ov.className=isSheet?'sheet sheet-opening':'dialog-overlay';
-    ov.setAttribute('data-overlay','');
-    const cb='<button class="overlay-close" aria-label="Close" data-overlay-close>×</button>';
-    ov.innerHTML=isSheet?`<div class="sheet-handle"></div>${html}${cb}`:`<div class="dialog dialog-opening">${html}${cb}</div>`;
-    document.body.appendChild(ov);
+    const key=type+':'+path;
+    if(_pendingOverlays.has(key)) return;
+    _pendingOverlays.add(key);
+    _injectOverlayCSS();
+    try {
+    let html;
+    if(overlayCache[path]){
+      html=overlayCache[path];
+    } else {
+      const resp=await fetch(path,{headers:{'X-Gofastr-Navigate':'1'}});
+      if(!resp.ok) return;
+      html=await resp.text();
+      overlayCache[path]=html;
+    }
+    // Hydrate cached HTML with current client state
+    const cartCount=window.__gofastr.getState('cart-count',0);
+    let hydrated=html;
+    if(cartCount>0){
+      const items=Array.from({length:cartCount},(_,i)=>'<li>Cart item '+(i+1)+'</li>').join('');
+      hydrated=hydrated.replace(/Your cart is empty\./,'<ul>'+items+'</ul>');
+      hydrated=hydrated.replace(/\d+\s*items?/g,cartCount+' item'+(cartCount!==1?'s':''));
+      hydrated=hydrated.replace(/(<span[^>]*cart-badge[^>]*>)([\s\S]*?)(<\/span>)/,'$1'+cartCount+' items$3');
+    }
+    const isSheet=type==='sheet';
+    const isDrawer=type==='drawer';
+    // All types: full-screen backdrop with content child inside
+    const backdrop=document.createElement('div');
+    backdrop.setAttribute('data-overlay','');
+    const cb='<button class="overlay-close" aria-label="Close" data-overlay-close>\u00d7</button>';
+    if(isDrawer){
+      backdrop.className='overlay-backdrop drawer-backdrop';
+      backdrop.innerHTML=`<nav class="drawer drawer-opening">${hydrated}<button class="drawer-close-btn" data-overlay-close style='width:100%;margin-top:1rem;padding:0.5rem;text-align:center;background:transparent;border:1px solid var(--border);border-radius:4px;cursor:pointer'>Close</button>${cb}</nav>`;
+    } else if(isSheet){
+      backdrop.className='overlay-backdrop sheet-backdrop';
+      backdrop.innerHTML=`<div class="sheet sheet-opening"><div class="sheet-handle"></div>${hydrated}<button class="sheet-close-btn cta-button" data-overlay-close style="width:100%;margin-top:0.5rem">Close</button>${cb}</div>`;
+    } else {
+      backdrop.className='overlay-backdrop dialog-overlay';
+      backdrop.innerHTML=`<div class="dialog dialog-opening">${hydrated}${cb}</div>`;
+    }
+    document.body.appendChild(backdrop);
     document.body.style.overflow='hidden';
-    ov.offsetHeight;
-    const inner=ov.querySelector('.dialog')||ov;
-    inner.classList.remove('dialog-opening','sheet-opening');
-    const f=ov.querySelectorAll(focusSel);
+    // Force reflow so the browser paints the "opening" state, then remove
+    // the class to trigger the CSS transition (slide-in / fade-in).
+    backdrop.offsetHeight;
+    const content=backdrop.querySelector('.dialog,.drawer,.sheet');
+    if(content) content.classList.remove('dialog-opening','sheet-opening','drawer-opening');
+    const f=backdrop.querySelectorAll(focusSel);
     if(f.length>0)f[0].focus();
-    overlayStack.push(ov);
-    return ov;
+    overlayStack.push(backdrop);
+    return backdrop;
+    } finally { _pendingOverlays.delete(key); }
   };
   window.__gofastr.closeOverlay=(ov)=>{
     if(!ov)ov=overlayStack[overlayStack.length-1];
     if(!ov)return;
-    const inner=ov.querySelector('.dialog')||ov;
-    if(inner.classList.contains('dialog'))ov.classList.add('dialog-closing');
-    else inner.classList.add('sheet-closing');
+    // Add closing animation class to the content element, not the backdrop
+    const content=ov.querySelector('.dialog,.drawer,.sheet');
+    if(content){
+      if(content.classList.contains('dialog'))content.classList.add('dialog-closing');
+      else if(content.classList.contains('drawer'))content.classList.add('drawer-closing');
+      else if(content.classList.contains('sheet'))content.classList.add('sheet-closing');
+    }
+    ov.classList.add('backdrop-closing');
     setTimeout(()=>{
-      ov.remove();document.body.style.overflow='';
+      ov.remove();
+      document.body.style.overflow='';
       const i=overlayStack.indexOf(ov);
       if(i>-1)overlayStack.splice(i,1);
       if(overlayStack.length>0)document.body.style.overflow='hidden';
     },300);
   };
   document.addEventListener('click',(e)=>{
-    if(e.target.matches('[data-overlay-close]')){window.__gofastr.closeOverlay(e.target.closest('[data-overlay]'));return;}
-    if(e.target.matches('.dialog-overlay')||e.target.matches('.sheet'))window.__gofastr.closeOverlay(e.target);
+    if(e.target.matches('[data-overlay-close]')){
+      window.__gofastr.closeOverlay(e.target.closest('[data-overlay]'));
+      return;
+    }
+    // Only clicking the backdrop itself (not content inside it) should close
+    if(e.target.matches('.overlay-backdrop'))window.__gofastr.closeOverlay(e.target);
   });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'&&overlayStack.length>0)window.__gofastr.closeOverlay();
@@ -539,4 +655,5 @@
       else if(!e.shiftKey&&document.activeElement===f[f.length-1]){e.preventDefault();f[0].focus();}
     }
   });
+  window.G=window.__gofastr;
 })();

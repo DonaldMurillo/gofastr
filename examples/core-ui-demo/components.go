@@ -71,6 +71,7 @@ func (h *HeaderComponent) Render() render.HTML {
 			elements.Link("/about", "About", nil),
 			elements.Link("/signals", "Signals", nil),
 			elements.Link("/error-boundary", "Error Boundary", nil),
+			elements.Link("/dashboard", "Dashboard", nil),
 			elements.LinkHTML("/cart", render.HTML("Cart "+string(elements.Span(elements.Attrs{"class": "cart-badge"}, render.Text("0")))), nil),
 		),
 	)
@@ -196,7 +197,7 @@ func (b *InteractiveButton) Render() render.HTML {
 func (b *InteractiveButton) Actions() {
 	component.On("add-to-cart", func(ctx *component.ComponentContext) {
 		_ = ctx
-	}, component.WithClientJS("const count = G.getState('cart-count', 0) + 1; G.setState('cart-count', count); document.querySelectorAll('.cart-badge').forEach(b => b.textContent = count); G.toast('Added to cart! (' + count + ' items)'); G.openOverlay('sheet', '/cart-sheet'); G.serverAction('add-to-cart', params);"))
+	}, component.WithClientJS("const count = G.getState('cart-count', 0) + 1; G.setState('cart-count', count); document.querySelectorAll('.cart-badge').forEach(b => b.textContent = count); G.toast('Added to cart! (' + count + ' items)');"))
 }
 
 // SearchFilterComponent renders a search input that filters products via data-action.

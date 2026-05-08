@@ -79,6 +79,12 @@ demo_server
 gofastr
 gofastr-*
 !gofastr/
+/core-ui-demo
+*.png
+.playwright-mcp/
+screens/
+research-ui-approaches.md
+.mcp.json
 # pi agent state (auto-added)
 pi-agent/plugins/*
 !pi-agent/plugins/registry.json

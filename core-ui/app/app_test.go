@@ -164,12 +164,14 @@ func TestNewDrawer(t *testing.T) {
 		t.Errorf("expected ScreenDrawer, got %v", s.Type)
 	}
 
+	// Drawer renders bare content — runtime adds structural wrapping
 	html := string(s.Render())
-	if !strings.Contains(html, `role="complementary"`) {
-		t.Errorf("expected role=complementary in drawer, got: %s", html)
+	if !strings.Contains(html, "<nav>Menu</nav>") {
+		t.Errorf("expected bare content in drawer, got: %s", html)
 	}
-	if !strings.Contains(html, "drawer") {
-		t.Errorf("expected drawer class in drawer, got: %s", html)
+	// Wrappers are NOT added server-side for overlays
+	if strings.Contains(html, "overlay-backdrop") {
+		t.Errorf("drawer should not include overlay wrapper, got: %s", html)
 	}
 }
 
@@ -180,15 +182,13 @@ func TestNewSheet(t *testing.T) {
 		t.Errorf("expected ScreenSheet, got %v", s.Type)
 	}
 
+	// Sheet renders bare content — runtime adds structural wrapping
 	html := string(s.Render())
-	if !strings.Contains(html, `role="dialog"`) {
-		t.Errorf("expected role=dialog in sheet, got: %s", html)
+	if !strings.Contains(html, "<p>Sheet content</p>") {
+		t.Errorf("expected bare content in sheet, got: %s", html)
 	}
-	if !strings.Contains(html, `aria-modal="true"`) {
-		t.Errorf("expected aria-modal=true in sheet, got: %s", html)
-	}
-	if !strings.Contains(html, "sheet") {
-		t.Errorf("expected sheet class, got: %s", html)
+	if strings.Contains(html, "overlay-backdrop") {
+		t.Errorf("sheet should not include overlay wrapper, got: %s", html)
 	}
 }
 
@@ -199,15 +199,13 @@ func TestNewDialog(t *testing.T) {
 		t.Errorf("expected ScreenDialog, got %v", s.Type)
 	}
 
+	// Dialog renders bare content — runtime adds structural wrapping
 	html := string(s.Render())
-	if !strings.Contains(html, `role="dialog"`) {
-		t.Errorf("expected role=dialog in dialog, got: %s", html)
+	if !strings.Contains(html, "<p>Dialog content</p>") {
+		t.Errorf("expected bare content in dialog, got: %s", html)
 	}
-	if !strings.Contains(html, `aria-modal="true"`) {
-		t.Errorf("expected aria-modal=true in dialog, got: %s", html)
-	}
-	if !strings.Contains(html, "dialog-overlay") {
-		t.Errorf("expected dialog-overlay class, got: %s", html)
+	if strings.Contains(html, "overlay-backdrop") {
+		t.Errorf("dialog should not include overlay wrapper, got: %s", html)
 	}
 }
 

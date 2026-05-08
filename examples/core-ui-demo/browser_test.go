@@ -587,8 +587,8 @@ func TestClientSideNavigationWithCache(t *testing.T) {
 		chromedp.Run(ctx,
 			chromedp.Evaluate(`document.querySelector('nav a[aria-current="page"]') !== null`, &hasActive),
 		)
-		if navLinkCount != 6 || !hasActive {
-			t.Errorf("nav should have 6 links with active state, got %d links, active=%v", navLinkCount, hasActive)
+		if navLinkCount != 7 || !hasActive {
+			t.Errorf("nav should have 7 links with active state, got %d links, active=%v", navLinkCount, hasActive)
 		}
 	}
 

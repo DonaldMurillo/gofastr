@@ -22,6 +22,39 @@ const (
 	ScreenDialog
 )
 
+// ScreenSpec is an optional interface that components can implement to
+// self-declare their screen metadata. When a component implements ScreenSpec,
+// the app reads title, description, and screen type directly from it — no
+// need for WithTitle/WithDescription/WithScreenType builder chaining.
+//
+// Implement only the methods you need; the builder methods still work as overrides.
+type ScreenSpec interface {
+	// ScreenTitle returns the page title for <title> and route metadata.
+	ScreenTitle() string
+	// ScreenDescription returns a short description for route preloading.
+	ScreenDescription() string
+	// ScreenType returns the type of screen (page, drawer, sheet, dialog).
+	// Return ScreenPage for normal full-page views.
+	ScreenType() ScreenType
+}
+
+// ScreenComponentID is an optional extension of ScreenSpec that lets a screen
+// declare its component ID for action compilation. If not implemented, the
+// ID is derived from the route path. The component ID must match the
+// data-component attribute in the rendered HTML.
+type ScreenComponentID interface {
+	ScreenSpec
+	// ComponentID returns the ID used for action registration and data-component.
+	ComponentID() string
+}
+
+// ScreenActions is an optional interface for screens that declare server actions.
+// If implemented, the DevServer auto-compiles actions when the screen is registered.
+// The Actions method uses component.On() to register handlers, same as InteractiveComponent.
+type ScreenActions interface {
+	Actions()
+}
+
 // Screen represents a top-level view in the app hierarchy.
 type Screen struct {
 	// Path is the route pattern, e.g., "/users/:id".
@@ -119,32 +152,19 @@ func (s *Screen) Render() render.HTML {
 		}, content)
 
 	case ScreenDrawer:
-		return elements.Aside(elements.Attrs{
-			"role":       elements.RoleComplementary,
-			"aria-label": s.Name,
-			"class":      "drawer",
-		}, content)
+		// Runtime handles structural wrapping (backdrop + nav.drawer).
+		// Server returns just the inner content.
+		return content
 
 	case ScreenSheet:
-		return render.Tag("div", elements.Attrs{
-			"role":       elements.RoleDialog,
-			"aria-label": s.Name,
-			"aria-modal": "true",
-			"class":      "sheet",
-		}, content)
+		// Runtime handles structural wrapping (backdrop + div.sheet).
+		// Server returns just the inner content.
+		return content
 
 	case ScreenDialog:
-		// Dialog wraps content in an overlay + dialog structure.
-		dialog := render.Tag("div", elements.Attrs{
-			"role":       elements.RoleDialog,
-			"aria-label": s.Name,
-			"aria-modal": "true",
-			"class":      "dialog",
-		}, content)
-		overlay := render.Tag("div", elements.Attrs{
-			"class": "dialog-overlay",
-		}, dialog)
-		return overlay
+		// Runtime handles structural wrapping (backdrop + div.dialog).
+		// Server returns just the inner content.
+		return content
 
 	default:
 		// Fallback: treat as page.

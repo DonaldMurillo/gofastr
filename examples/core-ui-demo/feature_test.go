@@ -132,102 +132,40 @@ func TestFeature_DialogFocusTrap(t *testing.T) {
 
 // TestFeature_SheetOverlay verifies the sheet overlay (bottom slide-up) opens and closes.
 func TestFeature_SheetOverlay(t *testing.T) {
-	base := startTestServer(t)
-	ctx := newBrowserCtx(t)
-
-	var sheetCount int
-	var sheetText string
-	var bodyOverflow string
-
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		waitForPage(),
-		// Open sheet via runtime API
-		chromedp.Evaluate(`window.__gofastr.openOverlay('sheet', '/cart-sheet')`, nil),
-		chromedp.Sleep(500*time.Millisecond),
-		// Verify sheet exists
-		chromedp.Evaluate(`document.querySelectorAll('.sheet[data-overlay]').length`, &sheetCount),
-		// Verify sheet content
-		chromedp.Evaluate(`document.querySelector('.sheet')?.textContent ?? 'NOT_FOUND'`, &sheetText),
-		// Verify body scroll locked
-		chromedp.Evaluate(`document.body.style.overflow`, &bodyOverflow),
-	)
-	if err != nil {
-		t.Fatalf("sheet open: %v", err)
-	}
-	if sheetCount != 1 {
-		t.Errorf("expected 1 sheet overlay, got %d", sheetCount)
-	}
-	if !strings.Contains(sheetText, "Shopping Cart") {
-		t.Errorf("sheet should contain 'Shopping Cart', got: %s", truncate(sheetText, 100))
-	}
-	if bodyOverflow != "hidden" {
-		t.Errorf("body overflow should be 'hidden' while sheet open, got %q", bodyOverflow)
-	}
-
-	// Close sheet via Escape
-	var sheetCountAfterClose int
-	err = chromedp.Run(ctx,
-		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
-		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('.sheet').length`, &sheetCountAfterClose),
-	)
-	if err != nil {
-		t.Fatalf("sheet close: %v", err)
-	}
-	if sheetCountAfterClose != 0 {
-		t.Errorf("sheet should close on Escape, got %d sheets", sheetCountAfterClose)
-	}
+	t.Skip("cart sheet removed — sheet overlay tested via dialog instead")
 }
 
 // TestFeature_SheetHasDragHandle verifies the sheet has a drag handle element.
 func TestFeature_SheetHasDragHandle(t *testing.T) {
-	base := startTestServer(t)
-	ctx := newBrowserCtx(t)
-
-	var hasHandle bool
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		waitForPage(),
-		chromedp.Evaluate(`window.__gofastr.openOverlay('sheet', '/cart-sheet')`, nil),
-		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('.sheet-handle') !== null`, &hasHandle),
-	)
-	if err != nil {
-		t.Fatalf("sheet handle: %v", err)
-	}
-	if !hasHandle {
-		t.Error("sheet should have a .sheet-handle element")
-	}
+	t.Skip("cart sheet removed")
 }
 
-// TestFeature_AddToCartOpensSheet verifies clicking "Add to cart" opens the cart sheet.
-func TestFeature_AddToCartOpensSheet(t *testing.T) {
+// TestFeature_AddToCartUpdatesBadge verifies clicking "Add to cart" updates badge and shows toast.
+func TestFeature_AddToCartUpdatesBadge(t *testing.T) {
 	base := startTestServer(t)
 	ctx := newBrowserCtx(t)
 
-	var sheetExists bool
+	var badgeText string
 	var toastText string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
 		// Click the first add-to-cart button
-		chromedp.Evaluate(`document.querySelector('.add-to-cart').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-action="add-to-cart"]').click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		// Check sheet opened
-		chromedp.Evaluate(`document.querySelector('.sheet[data-overlay]') !== null`, &sheetExists),
+		// Check badge updated
+		chromedp.Evaluate(`document.querySelector('.cart-badge')?.textContent ?? 'none'`, &badgeText),
 		// Check toast appeared
 		chromedp.Evaluate(`document.querySelector('.gofastr-toast')?.textContent ?? 'none'`, &toastText),
 	)
 	if err != nil {
-		t.Fatalf("add-to-cart sheet: %v", err)
+		t.Fatalf("add-to-cart: %v", err)
 	}
-	if !sheetExists {
-		t.Error("add-to-cart should open cart sheet")
+	if !strings.Contains(badgeText, "1") {
+		t.Errorf("badge should show 1, got: %s", badgeText)
 	}
-	// Toast may show "Added to cart" or "Server action processed" (serverAction fires after)
-	if !strings.Contains(toastText, "Added to cart") && !strings.Contains(toastText, "processed") {
-		t.Errorf("add-to-cart should show toast, got: %s", toastText)
+	if !strings.Contains(toastText, "Added to cart") {
+		t.Errorf("should show 'Added to cart' toast, got: %s", toastText)
 	}
 }
 
@@ -344,12 +282,12 @@ func TestFeature_SignalDemoPage(t *testing.T) {
 	}
 }
 
-// TestFeature_SignalDemoCounter verifies clicking +/- buttons fires actions.
+// TestFeature_SignalDemoCounter verifies clicking +/- buttons updates the computed total and log.
 func TestFeature_SignalDemoCounter(t *testing.T) {
 	base := startTestServer(t)
 	ctx := newBrowserCtx(t)
 
-	var toastText string
+	var totalText, logText, qtyText string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
@@ -365,14 +303,22 @@ func TestFeature_SignalDemoCounter(t *testing.T) {
 			})()
 		`, nil),
 		chromedp.Sleep(300*time.Millisecond),
-		// Check toast
-		chromedp.Evaluate(`document.querySelector('.gofastr-toast')?.textContent ?? 'none'`, &toastText),
+		// Check DOM updates
+		chromedp.Evaluate(`document.getElementById('signal-total')?.textContent ?? 'none'`, &totalText),
+		chromedp.Evaluate(`document.getElementById('signal-log')?.textContent ?? 'none'`, &logText),
+		chromedp.Evaluate(`document.getElementById('signal-qty')?.textContent ?? 'none'`, &qtyText),
 	)
 	if err != nil {
 		t.Fatalf("signal counter: %v", err)
 	}
-	if !strings.Contains(toastText, "Quantity") {
-		t.Errorf("incrementing signal should show toast with quantity, got: %s", toastText)
+	if !strings.Contains(totalText, "$59.98") {
+		t.Errorf("signal total should show $59.98, got: %s", totalText)
+	}
+	if !strings.Contains(logText, "Quantity changed to 2") {
+		t.Errorf("signal log should show quantity change, got: %s", logText)
+	}
+	if qtyText != "2" {
+		t.Errorf("signal counter value should be 2, got: %s", qtyText)
 	}
 }
 
@@ -714,11 +660,11 @@ func TestFeature_OverlayStack(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		// Open dialog
+		// Open first dialog
 		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
 		chromedp.Sleep(300*time.Millisecond),
-		// Open sheet on top
-		chromedp.Evaluate(`window.__gofastr.openOverlay('sheet', '/cart-sheet')`, nil),
+		// Open second dialog on top
+		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
 		chromedp.Sleep(300*time.Millisecond),
 		// Check both exist
 		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &stackCount),

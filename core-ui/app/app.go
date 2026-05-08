@@ -52,6 +52,32 @@ func (a *App) RegisterScreen(screen *Screen, layout *Layout) {
 	a.Router.Screen(screen, layout)
 }
 
+// Register adds a screen to the app by reading metadata from the component
+// if it implements ScreenSpec. This is the preferred registration API — the
+// component declares its own title, description, and type.
+//
+//	application.Register("/", &HomeScreen{})  // HomeScreen implements ScreenSpec
+//
+// If the component does not implement ScreenSpec, it defaults to ScreenPage
+// with empty title/description (use RegisterScreen with builder for that case).
+func (a *App) Register(path string, comp component.Component, layout *Layout) {
+	screen := &Screen{
+		Path:      path,
+		Name:      path,
+		Type:      ScreenPage,
+		Component: comp,
+	}
+
+	// Read metadata from ScreenSpec if implemented
+	if spec, ok := comp.(ScreenSpec); ok {
+		screen.Title = spec.ScreenTitle()
+		screen.Description = spec.ScreenDescription()
+		screen.Type = spec.ScreenType()
+	}
+
+	a.Router.Screen(screen, layout)
+}
+
 // RouteEntry describes a registered route for consumption by the DevServer.
 type RouteEntry struct {
 	Path        string
@@ -103,6 +129,9 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 			ps.SetParams(params)
 		}
 	}
+
+	// Inject DI services into screen fields tagged `inject:""`
+	a.Inject(screen.Component)
 
 	layout := screen.Layout
 	if layout == nil {
@@ -196,6 +225,9 @@ func (a *App) RenderPartial(path string) (render.HTML, error) {
 			ps.SetParams(params)
 		}
 	}
+
+	// Inject DI services into screen fields tagged `inject:""`
+	a.Inject(screen.Component)
 
 	if screen.Type == ScreenPage {
 		// Return just the component content — client-side router will

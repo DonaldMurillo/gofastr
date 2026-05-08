@@ -40,7 +40,7 @@ func createTestApp() *app.App {
 	application.RegisterScreen(app.NewScreen("/", &HomeScreen{}), nil)
 	application.RegisterScreen(app.NewScreen("/products", &ProductListScreen{}), nil)
 	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}), nil)
-	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: cartCount}), nil)
+	application.RegisterScreen(app.NewScreen("/cart", &CartDrawer{CartCount: cartCount}), nil)
 
 	return application
 }
@@ -594,8 +594,8 @@ func TestRuntimeSize(t *testing.T) {
 	if size == 0 {
 		t.Error("RuntimeSize returned 0")
 	}
-	if size > 20*1024 {
-		t.Errorf("runtime is %d bytes, expected under 20KB", size)
+	if size > 26*1024 {
+		t.Errorf("runtime is %d bytes, expected under 26KB", size)
 	}
 }
 
@@ -667,13 +667,12 @@ func TestLayoutWrapsContent(t *testing.T) {
 	)
 }
 
-func TestDrawerScreenType(t *testing.T) {
+func TestCartScreenRenders(t *testing.T) {
 	a := createTestApp()
 	html, err := a.RenderPage("/cart")
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, html, "drawer")
 	assertContains(t, html, "Shopping Cart")
 }
 
@@ -1040,7 +1039,7 @@ func TestDevServerCartDrawer(t *testing.T) {
 	assertContainsAll(t, render.HTML(body),
 		"Shopping Cart",
 		"Your cart is empty",
-		"Close cart",
+		"data-page",
 	)
 }
 

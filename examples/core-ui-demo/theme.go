@@ -362,20 +362,6 @@ func createStyleSheet(theme style.Theme) string {
 		).
 		End()
 
-	// Close cart button
-	ss.Rule(".close-cart").
-		Set(
-			"margin-top", "{spacing.lg}",
-			"padding", "{spacing.md} {spacing.lg}",
-			"background", "{colors.border}",
-			"border", "none",
-			"border-radius", "{radii.md}",
-			"font-weight", "600",
-			"cursor", "pointer",
-			"width", "100%",
-		).
-		End()
-
 	// Buttons
 	ss.Rule("button").
 		Set("font-family", "{fonts.body}").
@@ -488,29 +474,52 @@ func createStyleSheet(theme style.Theme) string {
 		Set("opacity", "0").
 		End()
 
-	// Dialog animations
-	ss.Rule(".dialog-overlay").
+	// -----------------------------------------------------------------------
+	// Overlay backdrop — shared by all overlay types (dialog, sheet, drawer)
+	// -----------------------------------------------------------------------
+	// The backdrop is a full-screen fixed element that dims the page.
+	// The content (.dialog / .sheet / .drawer) is a child inside it.
+	// Click on backdrop → close. Click on content → stays open.
+	ss.Rule(".overlay-backdrop").
 		Set("position", "fixed", "top", "0", "left", "0", "right", "0", "bottom", "0",
 			"background", "rgba(0, 0, 0, 0.5)", "z-index", "1000",
 			"display", "flex", "align-items", "center", "justify-content", "center").
-		Transition("opacity 0.2s ease").
-		Pseudo(".dialog-closing", "opacity", "0").
+		Transition("opacity 0.3s ease").
+		End()
+
+	ss.Rule(".backdrop-closing").
+		Set("opacity", "0").
+		End()
+
+	// -----------------------------------------------------------------------
+	// Dialog — centered modal card
+	// -----------------------------------------------------------------------
+	ss.Rule(".dialog-overlay").
+		Set("align-items", "center", "justify-content", "center").
 		End()
 
 	ss.Rule(".dialog").
 		Set("background", "white", "border-radius", "{radii.lg}", "padding", "{spacing.xl}",
 			"max-width", "480px", "width", "90%", "max-height", "90vh", "overflow-y", "auto",
-			"box-shadow", "0 20px 60px rgba(0,0,0,0.2)").
+			"box-shadow", "0 20px 60px rgba(0,0,0,0.2)", "position", "relative").
 		Transition("transform 0.2s ease, opacity 0.2s ease").
 		Pseudo(".dialog-opening", "transform", "scale(0.95)", "opacity", "0").
+		Pseudo(".dialog-closing", "transform", "scale(0.95)", "opacity", "0").
 		End()
 
-	// Sheet animations
+	// -----------------------------------------------------------------------
+	// Sheet — slides up from bottom
+	// -----------------------------------------------------------------------
+	ss.Rule(".sheet-backdrop").
+		Set("align-items", "flex-end", "justify-content", "stretch").
+		End()
+
 	ss.Rule(".sheet").
-		Set("position", "fixed", "bottom", "0", "left", "0", "right", "0",
-			"background", "white", "border-radius", "{radii.lg} {radii.lg} 0 0",
+		Set("background", "white", "border-radius", "{radii.lg} {radii.lg} 0 0",
 			"padding", "{spacing.xl}", "max-height", "70vh", "overflow-y", "auto",
-			"box-shadow", "0 -4px 20px rgba(0,0,0,0.1)", "z-index", "1001").
+			"box-shadow", "0 -4px 20px rgba(0,0,0,0.1)",
+			"width", "100%", "position", "relative",
+			"padding-bottom", "60px").
 		Transition("transform 0.3s ease").
 		Pseudo(".sheet-opening", "transform", "translateY(100%)").
 		Pseudo(".sheet-closing", "transform", "translateY(100%)").
@@ -521,12 +530,93 @@ func createStyleSheet(theme style.Theme) string {
 			"border-radius", "2px", "margin", "0 auto {spacing.md}").
 		End()
 
-	// Close button for overlays
+	// -----------------------------------------------------------------------
+	// Drawer — slides in from left
+	// -----------------------------------------------------------------------
+	ss.Rule(".drawer-backdrop").
+		Set("align-items", "stretch", "justify-content", "flex-start").
+		End()
+
+	ss.Rule(".drawer").
+		Set("width", "320px", "max-width", "85vw", "height", "100%",
+			"background", "white",
+			"padding", "{spacing.xl}", "overflow-y", "auto",
+			"box-shadow", "4px 0 20px rgba(0,0,0,0.1)", "position", "relative").
+		Transition("transform 0.3s ease").
+		Pseudo(".drawer-opening", "transform", "translateX(-100%)").
+		Pseudo(".drawer-closing", "transform", "translateX(-100%)").
+		End()
+
+	// -----------------------------------------------------------------------
+	// Shared overlay controls
+	// -----------------------------------------------------------------------
 	ss.Rule(".overlay-close").
 		Set("position", "absolute", "top", "{spacing.md}", "right", "{spacing.md}",
 			"background", "none", "border", "none", "font-size", "1.5rem",
 			"cursor", "pointer", "color", "{colors.text-muted}", "line-height", "1").
 		Pseudo(":hover", "color", "{colors.text}").
+		End()
+
+	ss.Rule(".sheet-close-btn").
+		Set("margin-top", "{spacing.lg}", "padding", "{spacing.md}",
+			"background", "{colors.border}", "border", "none",
+			"border-radius", "{radii.md}", "font-weight", "600",
+			"cursor", "pointer", "width", "100%", "font-size", "1rem",
+			"color", "{colors.text}", "position", "sticky", "bottom", "0",
+			"z-index", "2", "display", "block").
+		Pseudo(":hover", "background", "{colors.text-muted}").
+		End()
+
+	ss.Rule(".drawer-close-btn").
+		Set("margin-top", "{spacing.lg}", "padding", "{spacing.md}",
+			"background", "{colors.border}", "border", "none",
+			"border-radius", "{radii.md}", "font-weight", "600",
+			"cursor", "pointer", "width", "100%", "font-size", "1rem",
+			"color", "{colors.text}").
+		Pseudo(":hover", "background", "{colors.text-muted}").
+		End()
+
+	// Overlay demo buttons (home page)
+	ss.Rule(".overlay-demo-buttons").
+		Set("display", "flex", "gap", "{spacing.md}", "flex-wrap", "wrap", "margin-top", "{spacing.md}").
+		End()
+
+	// Drawer content
+	ss.Rule(".drawer-content").
+		Set("padding", "{spacing.sm}").
+		End()
+	ss.Rule(".drawer-nav-list").
+		Set("list-style", "none", "padding", "0", "margin", "{spacing.md} 0").
+		End()
+	ss.Rule(".drawer-nav-list li").
+		Set("padding", "{spacing.sm}", "0", "border-bottom", "1px solid {colors.border}").
+		End()
+	ss.Rule(".drawer-nav-list a").
+		Set("color", "{colors.primary}", "text-decoration", "none", "font-weight", "500").
+		Pseudo(":hover", "text-decoration", "underline").
+		End()
+
+	// Sheet content
+	ss.Rule(".sheet-content").
+		Set("padding", "{spacing.sm}").
+		End()
+	ss.Rule(".sheet-product-preview").
+		Set("padding", "{spacing.md}", "background", "{colors.surface}",
+			"border-radius", "{radii.md}", "margin-top", "{spacing.md}").
+		End()
+
+	// Dialog actions
+	ss.Rule(".dialog-actions").
+		Set("display", "flex", "gap", "{spacing.md}", "justify-content", "flex-end",
+			"margin-top", "{spacing.lg}").
+		End()
+
+	// Cart items list
+	ss.Rule(".cart-items").
+		Set("list-style", "none", "padding", "0", "margin", "{spacing.md} 0").
+		End()
+	ss.Rule(".cart-items li").
+		Set("padding", "{spacing.md}", "border-bottom", "1px solid {colors.border}").
 		End()
 
 	// Product detail page
@@ -594,6 +684,60 @@ func createStyleSheet(theme style.Theme) string {
 	// Error boundary demo
 	ss.Rule(".error-boundary-result").
 		Set("margin", "{spacing.lg} 0").
+		End()
+
+	// DI Showcase
+	ss.Rule(".di-showcase").
+		Set("max-width", "700px", "margin", "0 auto", "padding", "{spacing.xl}").
+		End()
+	ss.Rule(".di-card-grid").
+		Set("display", "grid", "grid-template-columns", "repeat(auto-fit, minmax(200px, 1fr))", "gap", "{spacing.md}", "margin", "{spacing.lg} 0").
+		End()
+	ss.Rule(".di-card").
+		Set("background", "{colors.surface}", "border", "1px solid {colors.border}",
+			"border-radius", "{radius.md}", "padding", "{spacing.lg}",
+			"text-align", "center").
+		End()
+	ss.Rule(".di-card-icon").
+		Set("font-size", "2rem", "margin-bottom", "{spacing.sm}").
+		End()
+	ss.Rule(".di-card-label").
+		Set("font-size", "0.875rem", "color", "{colors.muted}", "font-weight", "600", "text-transform", "uppercase",
+			"letter-spacing", "0.05em", "margin-bottom", "{spacing.xs}").
+		End()
+	ss.Rule(".di-card-value").
+		Set("font-size", "1.125rem", "font-weight", "600", "color", "{colors.text}").
+		End()
+	ss.Rule(".di-code-block").
+		Set("background", "{colors.surface}", "border", "1px solid {colors.border}",
+			"border-radius", "{radius.md}", "padding", "{spacing.lg}",
+			"overflow-x", "auto", "margin-top", "{spacing.lg}").
+		End()
+	ss.Rule(".di-code-block pre").
+		Set("margin", "0", "font-size", "0.8rem", "line-height", "1.6",
+			"white-space", "pre-wrap", "font-family", "monospace").
+		End()
+	ss.Rule(".di-actions").
+		Set("margin", "{spacing.lg} 0", "text-align", "center").
+		End()
+	ss.Rule(".di-bump-btn").
+		Set("padding", "12px 24px", "font-size", "1rem").
+		End()
+	ss.Rule(".di-details").
+		Set("margin-top", "{spacing.lg}").
+		End()
+	ss.Rule(".di-details summary").
+		Set("cursor", "pointer", "font-weight", "600", "color", "{colors.primary}",
+			"padding", "{spacing.sm} 0").
+		End()
+	ss.Rule(".di-card-hint").
+		Set("font-size", "0.75rem", "color", "{colors.muted}", "margin-top", "{spacing.xs}").
+		End()
+	ss.Rule(".di-proof").
+		Set("margin-top", "{spacing.lg}", "padding", "{spacing.md}",
+			"background", "{colors.surface}", "border", "1px solid {colors.border}",
+			"border-radius", "{radius.md}", "font-size", "0.9rem",
+			"color", "{colors.text}", "line-height", "1.5").
 		End()
 
 	return ss.CSS()

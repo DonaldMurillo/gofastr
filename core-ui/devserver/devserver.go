@@ -142,7 +142,41 @@ func (ds *DevServer) CompileActions(componentID string, comp component.Component
 	return ""
 }
 
+// AutoCompileActions scans all registered screens and compiles actions for
+// any that implement InteractiveComponent. The component ID is derived from
+// ScreenComponentID.ComponentID() if implemented, otherwise from the route path.
+func (ds *DevServer) AutoCompileActions() {
+	for _, route := range ds.App.Routes() {
+		screen, ok := ds.App.Router.Resolve(route.Path)
+		if !ok {
+			continue
+		}
+		if _, ok := screen.Component.(component.InteractiveComponent); ok {
+			var id string
+			if cid, ok := screen.Component.(app.ScreenComponentID); ok {
+				id = cid.ComponentID()
+			} else {
+				id = pathToActionID(route.Path)
+			}
+			ds.CompileActions(id, screen.Component)
+		}
+	}
+}
+
+// pathToActionID derives a component action ID from a route path.
+// "/" → "home", "/products" → "products", "/products/:slug" → "products-detail"
+func pathToActionID(path string) string {
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return "home"
+	}
+	// Replace / and : for valid JS identifiers
+	name := strings.NewReplacer("/", "-", ":", "").Replace(path)
+	return name
+}
+
 // buildRouteScript auto-builds the __gofastr_routes script from registered screens.
+// CSS chunk names are auto-derived from the screen path unless overridden via RouteGraph.
 func (ds *DevServer) buildRouteScript() string {
 	routes := ds.App.Routes()
 	if len(routes) == 0 {
@@ -155,9 +189,11 @@ func (ds *DevServer) buildRouteScript() string {
 			Title:       r.Title,
 			Description: r.Description,
 			Preload:     i == 0, // preload first route
+			CSSChunk:    pathToChunkName(r.Path),
 		}
+		// Allow RouteGraph to override chunk name
 		if ds.routeGraph != nil {
-			if ri, ok := ds.routeGraph.Routes[r.Path]; ok {
+			if ri, ok := ds.routeGraph.Routes[r.Path]; ok && ri.CSSChunk != "" {
 				info.CSSChunk = ri.CSSChunk
 			}
 		}
@@ -165,6 +201,18 @@ func (ds *DevServer) buildRouteScript() string {
 	}
 	rgJSON, _ := json.Marshal(infos)
 	return fmt.Sprintf(`<script>window.__gofastr_routes = %s;</script>`, string(rgJSON))
+}
+
+// pathToChunkName derives a CSS chunk filename from a route path.
+// "/" → "home.css", "/about" → "about.css", "/products/:slug" → "products-slug.css"
+func pathToChunkName(path string) string {
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return "home.css"
+	}
+	// Replace / and : with - for valid filenames
+	name := strings.NewReplacer("/", "-", ":", "").Replace(path)
+	return name + ".css"
 }
 
 // GetActionJS returns all compiled action JS concatenated.
@@ -341,7 +389,11 @@ func (ds *DevServer) handlePartialPage(w http.ResponseWriter, r *http.Request, p
 
 	// Look up screen title from route info
 	if scr, ok := ds.App.Router.Resolve(path); ok && scr.Title != "" {
-		w.Header().Set("X-Gofastr-Title", scr.Title)
+		title := scr.Title
+		if title != "" {
+			title = title + " — " + ds.App.Name
+		}
+		w.Header().Set("X-Gofastr-Title", title)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -627,18 +679,6 @@ func (ds *DevServer) handleCSSChunk(w http.ResponseWriter, r *http.Request) {
 	screenPath := strings.TrimPrefix(r.URL.Path, "/__gofastr/css")
 	if screenPath == "" {
 		screenPath = "/"
-	}
-
-	if ds.routeGraph == nil {
-		http.Error(w, "no route graph configured", http.StatusNotFound)
-		return
-	}
-
-	manifest := ds.routeGraph.PreloadManifest()
-	info, ok := manifest[screenPath]
-	if !ok || info.CSS == "" {
-		http.Error(w, "no CSS chunk for: "+screenPath, http.StatusNotFound)
-		return
 	}
 
 	// In dev mode, serve the full custom CSS for any requested chunk.
