@@ -1,5 +1,7 @@
 package component
 
+import "sync"
+
 // ActionDef defines a single event handler within a component.
 type ActionDef struct {
 	Event    string                  // "click", "submit", "input", "change", "keydown", etc.
@@ -112,15 +114,20 @@ func WithClientJS(js string) ActionOption {
 // ExtractActions analyzes a component and extracts its action definitions.
 // It calls the Actions() method if the component implements InteractiveComponent,
 // collecting the registered actions into an ActionRegistry.
+// Thread-safe: uses a mutex to protect the package-level registry.
+var extractMu sync.Mutex
+
 func ExtractActions(c Component) *ActionRegistry {
 	ic, ok := c.(InteractiveComponent)
 	if !ok {
 		return NewActionRegistry()
 	}
+	extractMu.Lock()
 	reg := NewActionRegistry()
 	prev := currentRegistry
 	currentRegistry = reg
 	ic.Actions()
 	currentRegistry = prev
+	extractMu.Unlock()
 	return reg
 }

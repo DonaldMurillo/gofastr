@@ -62,12 +62,12 @@ func (r *Router) DefaultLayout(layout *Layout) {
 }
 
 // Resolve finds the screen for a given path.
-// Returns the screen and whether it was found.
-// For dynamic routes, the extracted params are available via RouteParams.
-func (r *Router) Resolve(path string) (*Screen, bool) {
+// Returns the screen, the extracted route params (for dynamic routes), and whether it was found.
+// Params are returned separately to avoid mutating the shared screen instance.
+func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 	// Exact match first
 	if s, ok := r.screens[path]; ok {
-		return s, true
+		return s, nil, true
 	}
 
 	// Try dynamic routes
@@ -87,20 +87,27 @@ func (r *Router) Resolve(path string) (*Screen, bool) {
 			}
 		}
 		if match {
-			dr.screen.routeParams = params
-			return dr.screen, true
+			return dr.screen, params, true
 		}
 	}
 
-	return nil, false
+	return nil, nil, false
 }
 
 // Render renders a screen by path, applying its layout.
 func (r *Router) Render(path string) (render.HTML, error) {
-	screen, ok := r.Resolve(path)
+	screen, params, ok := r.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
+
+	// Inject route params if the component accepts them
+	if len(params) > 0 {
+		if ps, ok := screen.Component.(ParamSetter); ok {
+			ps.SetParams(params)
+		}
+	}
+	screen.routeParams = params
 
 	content := screen.Render()
 	layout := screen.Layout

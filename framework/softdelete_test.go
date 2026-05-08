@@ -304,7 +304,7 @@ func TestFileFieldProcess(t *testing.T) {
 	store := &mockStorage{}
 	content := strings.NewReader("hello world file content")
 
-	ff, err := ProcessFileField(store, content, "document.txt", "posts", "attachment")
+	ff, err := ProcessFileField(context.Background(), store, content, "document.txt", "posts", "attachment")
 	if err != nil {
 		t.Fatalf("ProcessFileField returned error: %v", err)
 	}
@@ -329,12 +329,12 @@ func TestFileFieldProcess(t *testing.T) {
 
 func TestFileFieldDeleteNil(t *testing.T) {
 	store := &mockStorage{}
-	if err := DeleteFileField(store, nil); err != nil {
+	if err := DeleteFileField(context.Background(), store, nil); err != nil {
 		t.Errorf("expected nil error for nil FileField, got: %v", err)
 	}
 
 	ff := &FileField{StorageRef: ""}
-	if err := DeleteFileField(store, ff); err != nil {
+	if err := DeleteFileField(context.Background(), store, ff); err != nil {
 		t.Errorf("expected nil error for empty StorageRef, got: %v", err)
 	}
 }
@@ -343,7 +343,7 @@ func TestFileFieldDeleteWithRef(t *testing.T) {
 	store := &mockStorage{}
 	ff := &FileField{StorageRef: "uploads/test/file.txt"}
 
-	if err := DeleteFileField(store, ff); err != nil {
+	if err := DeleteFileField(context.Background(), store, ff); err != nil {
 		t.Errorf("expected nil error, got: %v", err)
 	}
 
@@ -354,7 +354,7 @@ func TestFileFieldDeleteWithRef(t *testing.T) {
 
 func TestFileFieldProcessNilStorage(t *testing.T) {
 	content := strings.NewReader("test")
-	_, err := ProcessFileField(nil, content, "test.txt", "posts", "file")
+	_, err := ProcessFileField(context.Background(), nil, content, "test.txt", "posts", "file")
 	if err == nil {
 		t.Error("expected error with nil storage")
 	}
@@ -362,7 +362,7 @@ func TestFileFieldProcessNilStorage(t *testing.T) {
 
 func TestFileFieldDeleteNilStorage(t *testing.T) {
 	ff := &FileField{StorageRef: "test"}
-	if err := DeleteFileField(nil, ff); err == nil {
+	if err := DeleteFileField(context.Background(), nil, ff); err == nil {
 		t.Error("expected error with nil storage")
 	}
 }

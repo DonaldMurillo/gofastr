@@ -329,3 +329,57 @@ func TestComplexQuery(t *testing.T) {
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+// --- F4: Build idempotency ---
+
+func TestBuildIdempotent(t *testing.T) {
+	qb := Select("id").From("users").Where("active = $1", true).Limit(10).Offset(5)
+
+	sql1, args1 := qb.Build()
+	sql2, args2 := qb.Build()
+
+	if sql1 != sql2 {
+		t.Errorf("Build() not idempotent: sql1=%q sql2=%q", sql1, sql2)
+	}
+	if len(args1) != len(args2) {
+		t.Errorf("Build() args differ: %v vs %v", args1, args2)
+	}
+}
+
+// --- F5: Cursor + Where placeholder interaction ---
+
+func TestCursorThenWherePlaceholderOrdering(t *testing.T) {
+	qb := Select("id", "name").From("posts").
+		Cursor("id", 100, "forward").
+		Where("status = $1", "published")
+
+	sql, args := qb.Build()
+
+	// Cursor placeholder must not collide with Where placeholder
+	if strings.Count(sql, "$1") != 1 || strings.Count(sql, "$2") != 1 {
+		t.Errorf("expected unique placeholders, got SQL: %q", sql)
+	}
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+	}
+	// First arg is the cursor value (100)
+	if args[0].(int) != 100 {
+		t.Errorf("first arg should be cursor value 100, got %v", args[0])
+	}
+}
+
+func TestMultipleCursorsPlaceholderOrdering(t *testing.T) {
+	qb := Select("id").From("posts").
+		Cursor("id", 50, "forward").
+		Cursor("created_at", "2024-01-01", "forward")
+
+	sql, args := qb.Build()
+
+	// Both cursors must get unique placeholders
+	if strings.Count(sql, "$1") != 1 || strings.Count(sql, "$2") != 1 {
+		t.Errorf("expected unique $1 and $2, got SQL: %q", sql)
+	}
+	if len(args) != 2 {
+		t.Errorf("expected 2 args, got %d: %v", len(args), args)
+	}
+}

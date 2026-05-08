@@ -89,7 +89,7 @@ type RouteEntry struct {
 func (a *App) Routes() []RouteEntry {
 	var entries []RouteEntry
 	for _, path := range a.Router.Paths() {
-		screen, ok := a.Router.Resolve(path)
+		screen, _, ok := a.Router.Resolve(path)
 		if !ok {
 			continue
 		}
@@ -118,20 +118,23 @@ func (a *App) RenderScreen(path string) (render.HTML, error) {
 //   - Head with charset, viewport, title, and theme CSS custom properties
 //   - Body with skip link (ADA-compliant) and the rendered screen with layout
 func (a *App) RenderPage(path string) (render.HTML, error) {
-	screen, ok := a.Router.Resolve(path)
+	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
 	// Inject route params into ParamSetter components
-	if params := screen.RouteParams(); len(params) > 0 {
+	if len(params) > 0 {
 		if ps, ok := screen.Component.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
+		screen.routeParams = params
 	}
 
 	// Inject DI services into screen fields tagged `inject:""`
-	a.Inject(screen.Component)
+	if err := a.Inject(screen.Component); err != nil {
+		log.Printf("[gofastr] DI injection error for %q: %v", path, err)
+	}
 
 	layout := screen.Layout
 	if layout == nil {
@@ -214,20 +217,23 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 // RenderPartial returns just the screen content (no layout, no <html>/<head>/<body>).
 // Used for client-side navigation where the layout is already in the DOM.
 func (a *App) RenderPartial(path string) (render.HTML, error) {
-	screen, ok := a.Router.Resolve(path)
+	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
 	// Inject route params into ParamSetter components
-	if params := screen.RouteParams(); len(params) > 0 {
+	if len(params) > 0 {
 		if ps, ok := screen.Component.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
+		screen.routeParams = params
 	}
 
 	// Inject DI services into screen fields tagged `inject:""`
-	a.Inject(screen.Component)
+	if err := a.Inject(screen.Component); err != nil {
+		log.Printf("[gofastr] DI injection error for %q: %v", path, err)
+	}
 
 	if screen.Type == ScreenPage {
 		// Return just the component content — client-side router will

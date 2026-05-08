@@ -2,8 +2,11 @@ package devserver
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -486,3 +489,95 @@ func TestDevServerRenderPageNotFound(t *testing.T) {
 		t.Error("expected error for unknown path")
 	}
 }
+
+// --- F11: Static file path traversal prevention ---
+
+func TestDevServer_PathTraversalBlocked(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "safe.txt"), []byte("ok"), 0644)
+
+	a := app.NewApp("traversal-test")
+	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+	ds := NewDevServer(a, WithStaticDir(dir))
+
+	server := httptest.NewServer(ds)
+	defer server.Close()
+
+	// Try path traversal
+	resp, err := http.Get(server.URL + "/../../../etc/passwd")
+	if err != nil {
+		t.Skipf("request error (client may normalize path): %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == 200 && strings.Contains(string(body), "root:") {
+		t.Error("path traversal should be blocked")
+	}
+}
+
+// --- F12: Server action handler invocation ---
+
+func TestDevServer_ServerActionInvokesHandler(t *testing.T) {
+	a := app.NewApp("action-test")
+	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+	ds := NewDevServer(a)
+
+	// Register a component with actions
+	handlerCalled := false
+	ic := &actionTestComp{
+		actions: func() {
+			component.On("test-action", func(ctx *component.ComponentContext) {
+				handlerCalled = true
+			})
+		},
+	}
+	ds.CompileActions("test-comp", ic)
+
+	// POST to the action endpoint
+	body := strings.NewReader(`{"action":"test-action","params":{},"componentId":"test-comp"}`)
+	req := httptest.NewRequest(http.MethodPost, "/__gofastr/action", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if !handlerCalled {
+		t.Error("expected Go handler to be invoked")
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&result)
+	if result["status"] != "ok" {
+		t.Errorf("expected status ok, got %v", result["status"])
+	}
+}
+
+func TestDevServer_ServerActionUnknownComponent(t *testing.T) {
+	a := app.NewApp("action-test2")
+	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+	ds := NewDevServer(a)
+
+	body := strings.NewReader(`{"action":"test","params":{},"componentId":"no-such-comp"}`)
+	req := httptest.NewRequest(http.MethodPost, "/__gofastr/action", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+
+	var result map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&result)
+	if result["status"] != "error" {
+		t.Errorf("expected error for unknown component, got %v", result)
+	}
+}
+
+// actionTestComp is a test component that implements InteractiveComponent
+type actionTestComp struct {
+	html    string
+	actions func()
+}
+
+func (c *actionTestComp) Render() render.HTML { return render.Raw(c.html) }
+func (c *actionTestComp) Actions()            { c.actions() }

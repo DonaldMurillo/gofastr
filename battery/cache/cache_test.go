@@ -2,6 +2,8 @@ package cache
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -210,5 +212,46 @@ func TestMemoryCacheWithPrefix(t *testing.T) {
 	}
 	if got != "val" {
 		t.Errorf("got %q, want %q", got, "val")
+	}
+}
+
+// --- F6: Cache preserves response headers ---
+
+func TestCacheMiddleware_PreservesHeaders(t *testing.T) {
+	store := NewMemoryCache()
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+
+	// First request — MISS
+	req1 := httptest.NewRequest(http.MethodGet, "/api/data", nil)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+
+	if rec1.Header().Get("X-Cache") != "MISS" {
+		t.Errorf("first request X-Cache: got %q, want MISS", rec1.Header().Get("X-Cache"))
+	}
+	if rec1.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("first request Content-Type: got %q", rec1.Header().Get("Content-Type"))
+	}
+	if rec1.Code != http.StatusCreated {
+		t.Errorf("first request status: got %d, want 201", rec1.Code)
+	}
+
+	// Second request — HIT
+	req2 := httptest.NewRequest(http.MethodGet, "/api/data", nil)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if rec2.Header().Get("X-Cache") != "HIT" {
+		t.Errorf("second request X-Cache: got %q, want HIT", rec2.Header().Get("X-Cache"))
+	}
+	if rec2.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("cached response should preserve Content-Type, got %q", rec2.Header().Get("Content-Type"))
+	}
+	if rec2.Code != http.StatusCreated {
+		t.Errorf("cached response should preserve status, got %d, want 201", rec2.Code)
 	}
 }

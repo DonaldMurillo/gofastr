@@ -362,18 +362,16 @@ func TestFeature_ServerAction(t *testing.T) {
 	base := startTestServer(t)
 	ctx := newBrowserCtx(t)
 
+	// Test with a component that has registered actions (signals page)
 	var actionResult string
-	var toastText string
 
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
+		chromedp.Navigate(base+"/signals"),
 		waitForPage(),
-		// Call server action directly
-		chromedp.Evaluate(`window.__gofastr.serverAction('test-action', {foo: 'bar'}).then(r => window.__serverResult = JSON.stringify(r))`, nil),
+		// Call server action with componentId (signals has action registry)
+		chromedp.Evaluate(`window.__gofastr._serverActionFor('signal-demo', 'signal-increment', {}).then(r => window.__serverResult = JSON.stringify(r))`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`window.__serverResult ?? 'none'`, &actionResult),
-		// Check toast appeared
-		chromedp.Evaluate(`document.querySelector('.gofastr-toast')?.textContent ?? 'none'`, &toastText),
 	)
 	if err != nil {
 		t.Fatalf("server action: %v", err)
@@ -381,8 +379,19 @@ func TestFeature_ServerAction(t *testing.T) {
 	if !strings.Contains(actionResult, `"status":"ok"`) {
 		t.Errorf("server action should return status ok, got: %s", actionResult)
 	}
-	if !strings.Contains(toastText, "processed") {
-		t.Errorf("server action should show toast, got: %s", toastText)
+
+	// Test error case: unknown component
+	var errorResult string
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__gofastr._serverActionFor('nonexistent', 'test', {}).then(r => window.__serverError = JSON.stringify(r))`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`window.__serverError ?? 'none'`, &errorResult),
+	)
+	if err != nil {
+		t.Fatalf("server action error case: %v", err)
+	}
+	if !strings.Contains(errorResult, `"status":"error"`) {
+		t.Errorf("unknown component should return error, got: %s", errorResult)
 	}
 }
 

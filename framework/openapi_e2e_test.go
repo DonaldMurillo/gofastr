@@ -458,19 +458,19 @@ func TestE2E_OpenAPI_FilterParameters(t *testing.T) {
 		}
 	}
 
-	// Filter params
-	for _, name := range []string{"filter_id", "filter_title", "filter_views", "filter_published"} {
+	// Filter params — now documented as <field>, <field>_gt, <field>_gte, etc.
+	for _, name := range []string{"id", "id_gt", "id_lt", "title", "title_like", "views", "views_gte", "published"} {
 		if _, ok := paramMap[name]; !ok {
 			t.Errorf("missing filter param %q", name)
 		}
 	}
 
 	// Verify types
-	viewsSchema := getNestedMap(paramMap["filter_views"], "schema")
-	assertEqual(t, "filter_views type", "integer", viewsSchema["type"])
+	viewsSchema := getNestedMap(paramMap["views"], "schema")
+	assertEqual(t, "views type", "integer", viewsSchema["type"])
 
-	pubSchema := getNestedMap(paramMap["filter_published"], "schema")
-	assertEqual(t, "filter_published type", "boolean", pubSchema["type"])
+	pubSchema := getNestedMap(paramMap["published"], "schema")
+	assertEqual(t, "published type", "boolean", pubSchema["type"])
 }
 
 func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {

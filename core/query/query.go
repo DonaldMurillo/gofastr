@@ -114,12 +114,13 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 	if dir == "backward" {
 		op = "<"
 	}
-	condition := fmt.Sprintf("%s %s $%d", field, op, len(qb.args)+1)
+	// Use $1 placeholder; Build will renumber it correctly
+	condition := fmt.Sprintf("%s %s $1", field, op)
 	qb.args = append(qb.args, value)
 	qb.wheres = append(qb.wheres, whereClause{
 		connector: "AND",
 		condition: condition,
-		args:      nil, // already appended above
+		args:      []any{value}, // Carry args so Build's paramIdx advances
 	})
 	// Ensure ORDER BY the cursor field
 	qb.orderBy = append(qb.orderBy, orderClause{column: field, dir: ""})
@@ -127,8 +128,13 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 }
 
 // Build produces the final parameterized SQL and argument slice.
+// It does not mutate the QueryBuilder — safe to call multiple times.
 func (qb *QueryBuilder) Build() (string, []any) {
 	var sb strings.Builder
+
+	// Copy args so Build doesn't mutate the builder on repeated calls
+	args := make([]any, len(qb.args))
+	copy(args, qb.args)
 
 	// SELECT columns
 	cols := "*"
@@ -186,17 +192,17 @@ func (qb *QueryBuilder) Build() (string, []any) {
 
 	// LIMIT
 	if qb.limit != nil {
-		fmt.Fprintf(&sb, " LIMIT $%d", len(qb.args)+1)
-		qb.args = append(qb.args, *qb.limit)
+		fmt.Fprintf(&sb, " LIMIT $%d", len(args)+1)
+		args = append(args, *qb.limit)
 	}
 
 	// OFFSET
 	if qb.offset != nil {
-		fmt.Fprintf(&sb, " OFFSET $%d", len(qb.args)+1)
-		qb.args = append(qb.args, *qb.offset)
+		fmt.Fprintf(&sb, " OFFSET $%d", len(args)+1)
+		args = append(args, *qb.offset)
 	}
 
-	return sb.String(), qb.args
+	return sb.String(), args
 }
 
 // renumberPlaceholders replaces $N placeholders in a condition string

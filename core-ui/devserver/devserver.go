@@ -26,15 +26,16 @@ import (
 // It serves rendered pages with runtime.js, compiled action JS, SSE streaming
 // for islands, and handles signal-driven live updates.
 type DevServer struct {
-	App        *app.App
-	Islands    *island.Manager
-	mu         sync.RWMutex
-	sessions   map[string]*Session // sessionID → session
-	actionJS   map[string]string   // componentID → compiled JS
-	customCSS  string              // extra CSS to inject (e.g. demo.css)
-	staticDir  string              // directory to serve static files from
-	staticFS   fs.FS               // embedded filesystem for static files
-	routeGraph *style.RouteGraph   // route graph for progressive CSS loading
+	App            *app.App
+	Islands        *island.Manager
+	mu             sync.RWMutex
+	sessions       map[string]*Session                  // sessionID → session
+	actionJS       map[string]string                    // componentID → compiled JS
+	actionHandlers map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
+	customCSS      string                               // extra CSS to inject (e.g. demo.css)
+	staticDir      string                               // directory to serve static files from
+	staticFS       fs.FS                                // embedded filesystem for static files
+	routeGraph     *style.RouteGraph                    // route graph for progressive CSS loading
 }
 
 // Session represents a connected browser session.
@@ -101,10 +102,11 @@ func (ds *DevServer) HasStaticFS() bool {
 // NewDevServer creates a new development server.
 func NewDevServer(application *app.App, opts ...Option) *DevServer {
 	ds := &DevServer{
-		App:      application,
-		Islands:  island.NewManager(),
-		sessions: make(map[string]*Session),
-		actionJS: make(map[string]string),
+		App:            application,
+		Islands:        island.NewManager(),
+		sessions:       make(map[string]*Session),
+		actionJS:       make(map[string]string),
+		actionHandlers: make(map[string]*component.ActionRegistry),
 	}
 	for _, opt := range opts {
 		opt(ds)
@@ -122,6 +124,7 @@ func (ds *DevServer) RegisterWidget(sessionID string, w *component.Widget) *isla
 }
 
 // CompileActions compiles a component's action methods to JS and caches them.
+// It also stores the action registry so handleServerAction can invoke Go handlers.
 func (ds *DevServer) CompileActions(componentID string, comp component.Component) string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
@@ -136,6 +139,7 @@ func (ds *DevServer) CompileActions(componentID string, comp component.Component
 		if actions != nil {
 			js := actionsToJS(componentID, actions)
 			ds.actionJS[componentID] = js
+			ds.actionHandlers[componentID] = actions
 			return js
 		}
 	}
@@ -147,7 +151,7 @@ func (ds *DevServer) CompileActions(componentID string, comp component.Component
 // ScreenComponentID.ComponentID() if implemented, otherwise from the route path.
 func (ds *DevServer) AutoCompileActions() {
 	for _, route := range ds.App.Routes() {
-		screen, ok := ds.App.Router.Resolve(route.Path)
+		screen, _, ok := ds.App.Router.Resolve(route.Path)
 		if !ok {
 			continue
 		}
@@ -289,10 +293,15 @@ func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path != "/" {
 		// Try filesystem directory first
 		if ds.staticDir != "" {
-			filePath := filepath.Join(ds.staticDir, path)
-			if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
-				http.ServeFile(w, r, filePath)
-				return
+			filePath := filepath.Join(ds.staticDir, filepath.Clean("/"+path))
+			// Prevent path traversal: ensure resolved path is within staticDir
+			absPath, _ := filepath.Abs(filePath)
+			absStatic, _ := filepath.Abs(ds.staticDir)
+			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
+				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+					http.ServeFile(w, r, filePath)
+					return
+				}
 			}
 		}
 		// Try embedded filesystem
@@ -388,7 +397,7 @@ func (ds *DevServer) handlePartialPage(w http.ResponseWriter, r *http.Request, p
 	}
 
 	// Look up screen title from route info
-	if scr, ok := ds.App.Router.Resolve(path); ok && scr.Title != "" {
+	if scr, _, ok := ds.App.Router.Resolve(path); ok && scr.Title != "" {
 		title := scr.Title
 		if title != "" {
 			title = title + " — " + ds.App.Name
@@ -486,8 +495,9 @@ func (ds *DevServer) handleSignalUpdate(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleServerAction receives a server action invocation from the client.
-// The client POSTs the action name and parameters; the server runs the
-// handler in a goroutine and streams the result back via SSE.
+// The client POSTs the action name, component ID, and parameters;
+// the server looks up the registered Go handler, invokes it, and
+// responds with a JSON result.
 func (ds *DevServer) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -495,9 +505,10 @@ func (ds *DevServer) handleServerAction(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var body struct {
-		Action  string            `json:"action"`
-		Params  map[string]string `json:"params"`
-		Session string            `json:"session"`
+		Action      string            `json:"action"`
+		Params      map[string]string `json:"params"`
+		Session     string            `json:"session"`
+		ComponentID string            `json:"componentId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -511,20 +522,53 @@ func (ds *DevServer) handleServerAction(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Run the action handler and respond with a result
-	// For now, push a toast notification via SSE
-	if sessionID != "" {
-		ds.Islands.PushUpdate(island.IslandUpdate{
-			IslandID: "action-result",
-			HTML:     fmt.Sprintf(`<div class="toast">Server processed: %s</div>`, body.Action),
-		}, sessionID)
+	componentID := body.ComponentID
+	actionName := body.Action
+
+	// Look up the action registry for this component
+	ds.mu.RLock()
+	reg, ok := ds.actionHandlers[componentID]
+	ds.mu.RUnlock()
+
+	if !ok || reg == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "error",
+			"error":  fmt.Sprintf("no action registry for component %q", componentID),
+		})
+		return
 	}
 
+	actionDef, found := reg.Get(actionName)
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "error",
+			"error":  fmt.Sprintf("no action %q registered for component %q", actionName, componentID),
+		})
+		return
+	}
+
+	// Invoke the Go handler if one exists
+	if actionDef.Handler != nil {
+		ctx := component.NewComponentContext(actionName, "", body.Params)
+		actionDef.Handler(ctx)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "ok",
+			"action":  actionName,
+			"message": "Server action processed",
+		})
+		return
+	}
+
+	// No Go handler — just acknowledge
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
-		"action":  body.Action,
-		"message": "Server action processed",
+		"action":  actionName,
+		"message": "Server action acknowledged (no handler)",
 	})
 }
 
@@ -654,6 +698,10 @@ func actionsToJS(componentID string, reg *component.ActionRegistry) string {
 		if body == "" {
 			body = fmt.Sprintf("// no client handler for %q", action.Event)
 		}
+
+		// Inject componentId into serverAction calls so the server can route
+		// to the correct action handler.
+		body = strings.ReplaceAll(body, "G.serverAction(", fmt.Sprintf("G._serverActionFor(%q, ", componentID))
 
 		sb.WriteString(fmt.Sprintf("    %q: (params) => {\n      %s\n    }", action.Event, body))
 	}

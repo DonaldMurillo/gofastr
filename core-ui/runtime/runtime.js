@@ -181,12 +181,17 @@
 
     /** Call a server action and handle the response */
     async serverAction(action, params = {}) {
+      return this._serverActionFor('', action, params);
+    },
+
+    /** Call a server action for a specific component */
+    async _serverActionFor(componentId, action, params = {}) {
       const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
       const session = sessionCookie ? sessionCookie[1] : '';
       const resp = await fetch('/__gofastr/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, params, session }),
+        body: JSON.stringify({ action, params, session, componentId }),
       });
       if (resp.ok) {
         const result = await resp.json();
@@ -535,6 +540,13 @@
 
   // Inject built-in overlay CSS on first use (apps can override via theme).
   let _overlayCSSInjected=false;
+  /** Strip <script> tags and event handler attributes from HTML to mitigate XSS */
+  const _sanitizeHTML=(html)=>{
+    return html
+      .replace(/<script\b[^<]*(?:<\/script>)?/gi,'')
+      .replace(/\bon\w+\s*=\s*(["'][^"']*["']|\S+)/gi,'');
+  };
+
   const _injectOverlayCSS=()=>{
     if(_overlayCSSInjected)return;
     _overlayCSSInjected=true;
@@ -579,6 +591,7 @@
       const resp=await fetch(path,{headers:{'X-Gofastr-Navigate':'1'}});
       if(!resp.ok) return;
       html=await resp.text();
+      html=_sanitizeHTML(html);
       overlayCache[path]=html;
     }
     // Hydrate cached HTML with current client state

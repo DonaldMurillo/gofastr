@@ -119,22 +119,26 @@ func (c *Container) Inject(target any) error {
 	et := ev.Type()
 	for i := 0; i < et.NumField(); i++ {
 		field := et.Field(i)
-		if _, ok := field.Tag.Lookup("inject"); ok {
-			fieldType := field.Type
-			if c.resolved[fieldType] {
-				ev.Field(i).Set(reflect.ValueOf(c.singletons[fieldType]))
-			} else if provider, ok := c.providers[fieldType]; ok {
-				pv := reflect.ValueOf(provider)
-				var result any
-				if pv.Kind() == reflect.Func {
-					out := pv.Call(nil)
-					result = out[0].Interface()
-				} else {
-					result = provider
-				}
-				ev.Field(i).Set(reflect.ValueOf(result))
+		if _, ok := field.Tag.Lookup("inject"); !ok {
+			continue
+		}
+		fieldType := field.Type
+		if c.resolved[fieldType] {
+			ev.Field(i).Set(reflect.ValueOf(c.singletons[fieldType]))
+		} else if provider, ok := c.providers[fieldType]; ok {
+			pv := reflect.ValueOf(provider)
+			var result any
+			if pv.Kind() == reflect.Func {
+				out := pv.Call(nil)
+				result = out[0].Interface()
+			} else {
+				result = provider
 			}
-			// If no provider, silently skip (field keeps zero value)
+			c.singletons[fieldType] = result
+			c.resolved[fieldType] = true
+			ev.Field(i).Set(reflect.ValueOf(result))
+		} else {
+			return fmt.Errorf("app: no provider registered for injected field %s of type %v", field.Name, fieldType)
 		}
 	}
 	return nil

@@ -301,7 +301,7 @@ func TestRouter(t *testing.T) {
 	screen := NewScreen("/", comp)
 	r.Screen(screen, nil)
 
-	resolved, ok := r.Resolve("/")
+	resolved, _, ok := r.Resolve("/")
 	if !ok {
 		t.Error("expected to resolve /")
 	}
@@ -309,7 +309,7 @@ func TestRouter(t *testing.T) {
 		t.Error("expected to get the same screen")
 	}
 
-	_, ok = r.Resolve("/nonexistent")
+	_, _, ok = r.Resolve("/nonexistent")
 	if ok {
 		t.Error("expected not to resolve /nonexistent")
 	}
@@ -654,5 +654,68 @@ func TestLayoutWrapNoHeaderNoFooter(t *testing.T) {
 	}
 	if strings.Contains(html, "role=\"contentinfo\"") {
 		t.Errorf("did not expect footer when none set, got: %s", html)
+	}
+}
+
+// --- F13: Route params isolation (no shared mutable state) ---
+
+func TestRouteParamsIsolation(t *testing.T) {
+	r := NewRouter()
+	r.Screen(NewScreen("/users/:id", &stubComponent{html: render.Raw("<p>User</p>")}), nil)
+	r.Screen(NewScreen("/posts/:slug", &stubComponent{html: render.Raw("<p>Post</p>")}), nil)
+
+	// Resolve first dynamic route
+	s1, params1, ok1 := r.Resolve("/users/42")
+	if !ok1 || params1 == nil {
+		t.Fatal("expected to resolve /users/42")
+	}
+	if params1["id"] != "42" {
+		t.Errorf("expected id=42, got %v", params1)
+	}
+
+	// Resolve second dynamic route
+	s2, params2, ok2 := r.Resolve("/posts/hello-world")
+	if !ok2 || params2 == nil {
+		t.Fatal("expected to resolve /posts/hello-world")
+	}
+	if params2["slug"] != "hello-world" {
+		t.Errorf("expected slug=hello-world, got %v", params2)
+	}
+
+	// The first screen's RouteParams should NOT have been mutated
+	if s1.RouteParams() != nil {
+		t.Errorf("screen routeParams should be nil until explicitly set, got %v", s1.RouteParams())
+	}
+
+	// Screens are the same shared instances but params are independent
+	if s1 == s2 {
+		t.Error("different dynamic routes should resolve to different screens")
+	}
+}
+
+func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
+	r := NewRouter()
+	r.Screen(NewScreen("/items/:id", &stubComponent{html: render.Raw("<p>Item</p>")}), nil)
+
+	// Resolve with id=1
+	_, params1, _ := r.Resolve("/items/1")
+	if params1["id"] != "1" {
+		t.Fatalf("first resolve: expected id=1, got %v", params1)
+	}
+
+	// Resolve with id=2
+	screen, params2, _ := r.Resolve("/items/2")
+	if params2["id"] != "2" {
+		t.Fatalf("second resolve: expected id=2, got %v", params2)
+	}
+
+	// First params map should be unchanged
+	if params1["id"] != "1" {
+		t.Errorf("first params mutated: expected id=1, got %v", params1)
+	}
+
+	// Screen should not have accumulated params from previous resolve
+	if screen.RouteParams() != nil {
+		t.Errorf("shared screen should not have stale params, got %v", screen.RouteParams())
 	}
 }

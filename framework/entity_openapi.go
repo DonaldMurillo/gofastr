@@ -83,10 +83,19 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
 		listOp.AddParameter("sort", "query", "Sort field", false, map[string]any{"type": "string"})
 
-		// Add filter parameters for visible fields
+		// Add filter parameters matching the actual filter parser
+		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
+		// <field>_lte, <field>_like, <field>_in.
 		for _, f := range visibleFields {
+			name := toCamelCase(f.Name)
 			filterSchema := fieldToFilterSchema(f)
-			listOp.AddParameter("filter_"+toCamelCase(f.Name), "query", "Filter by "+toCamelCase(f.Name), false, filterSchema)
+			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
+			listOp.AddParameter(name+"_gt", "query", name+" greater than", false, filterSchema)
+			listOp.AddParameter(name+"_gte", "query", name+" greater than or equal", false, filterSchema)
+			listOp.AddParameter(name+"_lt", "query", name+" less than", false, filterSchema)
+			listOp.AddParameter(name+"_lte", "query", name+" less than or equal", false, filterSchema)
+			listOp.AddParameter(name+"_like", "query", name+" contains (LIKE)", false, filterSchema)
+			listOp.AddParameter(name+"_in", "query", name+" in comma-separated list", false, map[string]any{"type": "string"})
 		}
 
 		listOp.AddResponse(200, "List of "+entityName, listRef)

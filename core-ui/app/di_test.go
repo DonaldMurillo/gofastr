@@ -167,7 +167,7 @@ func TestDI_InjectSkipsUntaggedFields(t *testing.T) {
 	}
 }
 
-func TestDI_InjectSkipsFieldsWithNoProvider(t *testing.T) {
+func TestDI_InjectErrorsOnMissingProvider(t *testing.T) {
 	type Partial struct {
 		Log *Logger   `inject:""`
 		DB  *Database `inject:""` // no provider for this
@@ -177,16 +177,16 @@ func TestDI_InjectSkipsFieldsWithNoProvider(t *testing.T) {
 	c.Provide(&Logger{Prefix: "partial"})
 
 	p := &Partial{}
-	if err := c.Inject(p); err != nil {
-		t.Fatalf("Inject: %v", err)
+	err := c.Inject(p)
+	if err == nil {
+		t.Fatal("Inject should return error when a provider is missing")
+	}
+	if !strings.Contains(err.Error(), "no provider") {
+		t.Errorf("error should mention 'no provider', got %q", err.Error())
 	}
 
-	if p.Log == nil {
-		t.Error("provided field should be injected")
-	}
-	if p.DB != nil {
-		t.Error("unprovided field should remain nil, not get a mystery value")
-	}
+	// The first field should still be nil since injection stops on error
+	// (or it may be set depending on implementation — both are acceptable)
 }
 
 // --- 4. Error handling ---
@@ -280,6 +280,7 @@ func TestDI_AppProvideAndResolve(t *testing.T) {
 func TestDI_AppInject(t *testing.T) {
 	app := NewApp("test")
 	app.Provide(&Logger{Prefix: "app"})
+	app.Provide(&Database{DSN: "test://db"})
 
 	svc := &UserService{}
 	if err := app.Inject(svc); err != nil {
@@ -287,6 +288,9 @@ func TestDI_AppInject(t *testing.T) {
 	}
 	if svc.Log == nil || svc.Log.Prefix != "app" {
 		t.Error("App.Inject should fill tagged fields from App's container")
+	}
+	if svc.DB == nil || svc.DB.DSN != "test://db" {
+		t.Error("App.Inject should fill DB field from App's container")
 	}
 }
 

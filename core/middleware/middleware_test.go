@@ -264,11 +264,15 @@ func TestCORSSetsHeaders(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req.Header.Set("Origin", "https://example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://example.com" {
 		t.Errorf("origin: got %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("vary: got %q", got)
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST" {
 		t.Errorf("methods: got %q", got)
@@ -387,5 +391,45 @@ func TestFullPipeline(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "GET") {
 		t.Error("expected log output to contain GET")
+	}
+}
+
+// --- F7: CORS multi-origin selects matching origin ---
+
+func TestCORSMultipleOrigins(t *testing.T) {
+	handler := CORS(CORSConfig{
+		AllowedOrigins: []string{"https://app.example.com", "https://admin.example.com"},
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Request from first origin
+	req1 := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req1.Header.Set("Origin", "https://app.example.com")
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+
+	if got := rec1.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Errorf("origin 1: got %q", got)
+	}
+
+	// Request from second origin
+	req2 := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req2.Header.Set("Origin", "https://admin.example.com")
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if got := rec2.Header().Get("Access-Control-Allow-Origin"); got != "https://admin.example.com" {
+		t.Errorf("origin 2: got %q", got)
+	}
+
+	// Request from unknown origin — should not get ACAO header
+	req3 := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req3.Header.Set("Origin", "https://evil.com")
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, req3)
+
+	if got := rec3.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("unknown origin should not be allowed, got %q", got)
 	}
 }
