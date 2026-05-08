@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gofastr/gofastr/core/query"
@@ -291,6 +292,10 @@ func TestFilePathSanitizes(t *testing.T) {
 
 func TestFilePathMultipleFiles(t *testing.T) {
 	path1 := GenerateFilePath("posts", "avatar", "photo.png")
+
+	// Ensure unique nanosecond timestamps between calls
+	time.Sleep(time.Microsecond)
+
 	path2 := GenerateFilePath("posts", "avatar", "photo.png")
 
 	// Paths should be unique due to nanosecond timestamp

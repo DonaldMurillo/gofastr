@@ -356,6 +356,27 @@ func TestTimeoutContextCancelled(t *testing.T) {
 	}
 }
 
+func TestTimeoutConcurrentRequests(t *testing.T) {
+	// This test is designed to be run with -race to detect data races.
+	m := Timeout(100 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(30 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			m.ServeHTTP(rec, req)
+		}()
+	}
+	wg.Wait()
+}
+
 // ---------------------------------------------------------------------------
 // Integration: full pipeline
 // ---------------------------------------------------------------------------

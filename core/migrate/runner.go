@@ -21,13 +21,29 @@ type Status struct {
 	Pending []Migration
 }
 
+// nowFunc returns the dialect-appropriate default timestamp expression.
+func (m *Migrator) nowFunc() string {
+	if m.dialect == DialectSQLite {
+		return "CURRENT_TIMESTAMP"
+	}
+	return "NOW()"
+}
+
+// placeholder returns the dialect-appropriate parameter placeholder for the nth arg.
+func (m *Migrator) placeholder(n int) string {
+	if m.dialect == DialectSQLite {
+		return "?"
+	}
+	return fmt.Sprintf("$%d", n)
+}
+
 // CreateMigrationsTable ensures the migrations tracking table exists.
 func (m *Migrator) CreateMigrationsTable(ctx context.Context) error {
 	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		version BIGINT NOT NULL PRIMARY KEY,
 		name    TEXT    NOT NULL DEFAULT '',
-		applied_at TIMESTAMP NOT NULL DEFAULT NOW()
-	)`, m.tableName)
+		applied_at TIMESTAMP NOT NULL DEFAULT %s
+	)`, m.tableName, m.nowFunc())
 	_, err := m.db.ExecContext(ctx, ddl)
 	return err
 }
@@ -108,8 +124,9 @@ func (m *Migrator) runMigrationUp(ctx context.Context, mig Migration) error {
 	}
 
 	insertSQL := fmt.Sprintf(
-		"INSERT INTO %s (version, name, applied_at) VALUES ($1, $2, $3)",
+		"INSERT INTO %s (version, name, applied_at) VALUES (%s, %s, %s)",
 		m.tableName,
+		m.placeholder(1), m.placeholder(2), m.placeholder(3),
 	)
 	if _, err := tx.ExecContext(ctx, insertSQL, mig.Version, mig.Name, time.Now().UTC()); err != nil {
 		_ = tx.Rollback()
@@ -176,7 +193,7 @@ func (m *Migrator) runMigrationDown(ctx context.Context, mig Migration) error {
 		return fmt.Errorf("exec down: %w", err)
 	}
 
-	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE version = $1", m.tableName)
+	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE version = %s", m.tableName, m.placeholder(1))
 	if _, err := tx.ExecContext(ctx, deleteSQL, mig.Version); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("delete migration record: %w", err)

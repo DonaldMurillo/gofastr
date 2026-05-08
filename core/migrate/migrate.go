@@ -18,6 +18,14 @@ type Migration struct {
 	Down    string // SQL to roll back the migration
 }
 
+// Dialect represents the SQL dialect to use for migration queries.
+type Dialect string
+
+const (
+	DialectPostgres Dialect = "postgres"
+	DialectSQLite   Dialect = "sqlite3"
+)
+
 // Option configures a Migrator.
 type Option func(*Migrator)
 
@@ -33,17 +41,29 @@ type Migrator struct {
 	db         *sql.DB
 	migrations []Migration
 	tableName  string
+	dialect    Dialect
+}
+
+// WithDialect sets the SQL dialect for the migrator.
+// Defaults to DialectPostgres if not specified.
+func WithDialect(d Dialect) Option {
+	return func(m *Migrator) {
+		m.dialect = d
+	}
 }
 
 // New creates a new Migrator with the given database connection and options.
 // By default the tracking table is "_migrations".
 func New(db *sql.DB, opts ...Option) *Migrator {
 	m := &Migrator{
-		db:        db,
-		tableName: "_migrations",
+		db:      db,
+		dialect: DialectPostgres,
 	}
 	for _, opt := range opts {
 		opt(m)
+	}
+	if m.tableName == "" {
+		m.tableName = "_migrations"
 	}
 	return m
 }

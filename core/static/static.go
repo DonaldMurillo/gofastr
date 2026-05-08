@@ -37,8 +37,10 @@ type Config struct {
 	// paths that don't match any file will serve IndexFile instead of 404.
 	SPA bool
 
-	// DirListing enables directory listing. When false (the default),
-	// directory paths return 404.
+	// DirListing is reserved for a future release.
+	// When implemented, enabling it will render an HTML directory listing
+	// instead of returning 404 for directory paths that lack an index file.
+	// Do not set this field — it is currently ignored.
 	DirListing bool
 }
 
@@ -117,13 +119,8 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 
 	// If it's a directory, try to serve the index file.
 	if stat.IsDir() {
-		if !config.DirListing {
-			// Try serving index file inside the directory.
-			indexPath := path.Join(name, config.IndexFile)
-			return serveFile(w, r, config, indexPath)
-		}
-		// TODO: implement directory listing if DirListing is true.
-		return false
+		indexPath := path.Join(name, config.IndexFile)
+		return serveFile(w, r, config, indexPath)
 	}
 
 	// Read file content for ETag generation.

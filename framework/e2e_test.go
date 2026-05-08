@@ -874,3 +874,41 @@ func (p *routePlugin) RegisterRoutes(r *router.Router) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 }
+
+// ============================================================================
+// Debug endpoint opt-in tests
+// ============================================================================
+
+func TestDebugEndpoints_DisabledByDefault(t *testing.T) {
+	app := NewApp()
+	ta := TestHarness(t, app)
+
+	resp := ta.Get("/.debug/stats")
+	if resp.Status() != http.StatusNotFound {
+		t.Errorf("expected 404 when DebugEndpoints not enabled, got %d; body: %s", resp.Status(), resp.Body())
+	}
+}
+
+func TestDebugEndpoints_EnabledViaConfig(t *testing.T) {
+	app := NewApp(WithConfig(AppConfig{
+		DebugEndpoints: true,
+	}))
+	app.registerDebugEndpoints()
+	ta := TestHarness(t, app)
+
+	resp := ta.Get("/.debug/stats")
+	if resp.Status() != http.StatusOK {
+		t.Fatalf("expected 200 when DebugEndpoints enabled, got %d; body: %s", resp.Status(), resp.Body())
+	}
+
+	var body map[string]any
+	if err := resp.JSON(&body); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if _, ok := body["goroutines"]; !ok {
+		t.Error("expected goroutines field in debug stats")
+	}
+	if _, ok := body["memory"]; !ok {
+		t.Error("expected memory field in debug stats")
+	}
+}

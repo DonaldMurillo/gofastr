@@ -101,6 +101,10 @@ func (r *Router) Render(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
+	// Lock screen for concurrent-safe param mutation + render
+	screen.mu.Lock()
+	defer screen.mu.Unlock()
+
 	// Inject route params if the component accepts them
 	if len(params) > 0 {
 		if ps, ok := screen.Component.(ParamSetter); ok {

@@ -241,13 +241,45 @@ func TestManagerSubscribe(t *testing.T) {
 func TestManagerUnsubscribe(t *testing.T) {
 	mgr := NewManager()
 
+	entry := func() *streamEntry {
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		return mgr.streams["sess-unsub"]
+	}
+
 	ch := mgr.Subscribe("sess-unsub")
+	e := entry()
+	if e == nil {
+		t.Fatal("expected stream entry after subscribe")
+	}
+
 	mgr.Unsubscribe("sess-unsub")
 
-	// Channel should be closed.
-	_, ok := <-ch
-	if ok {
-		t.Error("expected channel to be closed after unsubscribe")
+	// Entry should be removed from streams map.
+	if entry() != nil {
+		t.Error("expected entry to be removed from streams after unsubscribe")
+	}
+
+	// Data channel should NOT be closed (new design prevents send-on-closed panic).
+	// Instead, verify that the done channel is closed.
+	select {
+	case <-e.done:
+		// done channel is closed — correct
+	default:
+		t.Error("expected done channel to be closed after unsubscribe")
+	}
+
+	// Verify that sending after unsubscribe doesn't panic
+	mgr.Register(&Island{ID: "test-island", Component: &testComponent{html: render.Text("x")}, SessionID: "sess-unsub"})
+	// PushUpdate should not panic even though unsubscribed
+	mgr.PushUpdate(IslandUpdate{IslandID: "test-island", HTML: "x"}, "sess-unsub")
+
+	// The data channel should be usable without blocking or panicking
+	select {
+	case <-ch:
+		t.Error("data channel should not receive after unsubscribe")
+	default:
+		// correct — no data sent because stream was removed
 	}
 }
 

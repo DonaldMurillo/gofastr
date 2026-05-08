@@ -610,6 +610,62 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	assertContains(t, "required", required, "name")
 }
 
+// TestE2E_OpenAPI_FilterParameters_SnakeCase verifies that filter params are
+// documented using raw field names (e.g. "created_at_gt") not camelCase
+// ("createdAtGt"), since ParseFilters matches against schema field names.
+func TestE2E_OpenAPI_FilterParameters_SnakeCase(t *testing.T) {
+	app := NewApp()
+
+	orders := Define("orders", EntityConfig{
+		Table: "orders",
+		Fields: []schema.Field{
+			{Name: "customer_name", Type: schema.String},
+			{Name: "created_at", Type: schema.String},
+			{Name: "total_price", Type: schema.Float},
+		},
+	})
+	app.Registry.Register(orders)
+
+	spec := EntityOpenAPI(app.Registry, "Test", "1.0.0")
+	doc := buildDocAsAny(spec)
+	paths := doc["paths"].(map[string]any)
+
+	listPath := getNestedMap(paths, "/orders")
+	listGet := getNestedMap(listPath, "get")
+	params, _ := listGet["parameters"].([]any)
+
+	paramMap := make(map[string]map[string]any)
+	for _, p := range params {
+		pm := p.(map[string]any)
+		paramMap[pm["name"].(string)] = pm
+	}
+
+	// Filter params must use raw (snake_case) field names, NOT camelCase
+	for _, name := range []string{
+		"customer_name", "customer_name_like",
+		"created_at", "created_at_gt", "created_at_gte", "created_at_lt", "created_at_lte",
+		"total_price", "total_price_gt", "total_price_gte",
+	} {
+		if _, ok := paramMap[name]; !ok {
+			t.Errorf("missing filter param %q (OpenAPI must use raw field names)", name)
+		}
+	}
+
+	// Verify camelCase versions are NOT present
+	for _, name := range []string{"customerName", "customerName_like", "createdAt", "createdAt_gt", "totalPrice"} {
+		if _, ok := paramMap[name]; ok {
+			t.Errorf("camelCase filter param %q should NOT be in spec (parser expects snake_case)", name)
+		}
+	}
+
+	// Verify types are correct for snake_case fields
+	priceSchema := getNestedMap(paramMap["total_price"], "schema")
+	assertEqual(t, "total_price type", "number", priceSchema["type"])
+
+	nameSchema := getNestedMap(paramMap["customer_name"], "schema")
+	assertEqual(t, "customer_name type", "string", nameSchema["type"])
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -525,6 +526,88 @@ func TestS3StorageWithClient(t *testing.T) {
 	if exists {
 		t.Fatal("Exists should be false after Delete")
 	}
+}
+
+// ─── S3 Key Validation Tests ────────────────────────────────────────
+
+func TestS3KeyValidationEmptyKey(t *testing.T) {
+	client := newMockS3Client()
+	s := NewS3Storage("bucket", "us-east-1", WithS3Client(client))
+	ctx := context.Background()
+
+	// Save with empty key should fail.
+	if err := s.Save(ctx, "", bytes.NewReader([]byte("data"))); err == nil {
+		t.Error("Save with empty key should fail")
+	}
+
+	// Get with empty key should fail.
+	if _, err := s.Get(ctx, ""); err == nil {
+		t.Error("Get with empty key should fail")
+	}
+
+	// Delete with empty key should fail.
+	if err := s.Delete(ctx, ""); err == nil {
+		t.Error("Delete with empty key should fail")
+	}
+
+	// Exists with empty key should fail.
+	if _, err := s.Exists(ctx, ""); err == nil {
+		t.Error("Exists with empty key should fail")
+	}
+}
+
+func TestS3KeyValidationPathTraversal(t *testing.T) {
+	client := newMockS3Client()
+	s := NewS3Storage("bucket", "us-east-1", WithS3Client(client))
+	ctx := context.Background()
+
+	traversalKeys := []string{"../etc/passwd", "foo/../../secret", ".."}
+	for _, key := range traversalKeys {
+		if err := s.Save(ctx, key, bytes.NewReader([]byte("data"))); err == nil {
+			t.Errorf("Save(%q) should reject path traversal", key)
+		}
+		if _, err := s.Get(ctx, key); err == nil {
+			t.Errorf("Get(%q) should reject path traversal", key)
+		}
+		if err := s.Delete(ctx, key); err == nil {
+			t.Errorf("Delete(%q) should reject path traversal", key)
+		}
+		if _, err := s.Exists(ctx, key); err == nil {
+			t.Errorf("Exists(%q) should reject path traversal", key)
+		}
+	}
+}
+
+func TestS3PresignedKeyValidation(t *testing.T) {
+	s := NewS3Storage("bucket", "us-east-1", WithPresigner(&mockPresigner{}))
+	ctx := context.Background()
+
+	// Empty key.
+	if _, err := s.PresignedGetURL(ctx, "", time.Hour); err == nil {
+		t.Error("PresignedGetURL with empty key should fail")
+	}
+	if _, err := s.PresignedPutURL(ctx, "", time.Hour); err == nil {
+		t.Error("PresignedPutURL with empty key should fail")
+	}
+
+	// Path traversal.
+	if _, err := s.PresignedGetURL(ctx, "../secret", time.Hour); err == nil {
+		t.Error("PresignedGetURL with traversal key should fail")
+	}
+	if _, err := s.PresignedPutURL(ctx, "../secret", time.Hour); err == nil {
+		t.Error("PresignedPutURL with traversal key should fail")
+	}
+}
+
+// mockPresigner is a minimal mock for testing presigned URL key validation.
+type mockPresigner struct{}
+
+func (m *mockPresigner) PresignGet(_ context.Context, _, _ string, _ time.Duration) (*url.URL, error) {
+	return &url.URL{Scheme: "https", Host: "s3.amazonaws.com", Path: "/bucket/key"}, nil
+}
+
+func (m *mockPresigner) PresignPut(_ context.Context, _, _ string, _ time.Duration) (*url.URL, error) {
+	return &url.URL{Scheme: "https", Host: "s3.amazonaws.com", Path: "/bucket/key"}, nil
 }
 
 // ─── StorageType String ─────────────────────────────────────────────

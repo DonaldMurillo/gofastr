@@ -79,6 +79,7 @@ func runInit(args []string) {
 	mainContent := fmt.Sprintf(`package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -151,7 +152,7 @@ func RegisterAll(app *framework.App) {
 			{Name: "body", Type: schema.Text},
 			{Name: "published", Type: schema.Bool},
 		},
-		CRUD: true,
+		CRUD: boolPtr(true),
 	})
 }
 
@@ -173,21 +174,11 @@ func RegisterMigrations(m *migrate.Migrator) {
 }
 
 func ptrFloat(f float64) *float64 { return &f }
+
+func boolPtr(b bool) *bool { return &b }
 `
 	if err := os.WriteFile(filepath.Join(name, "entities", "entities.go"), []byte(entitiesContent), 0o644); err != nil {
 		fail("Failed to write entities/entities.go: %v", err)
-		os.Exit(1)
-	}
-
-	// Write go.mod
-	goModContent := fmt.Sprintf(`module %s
-
-go 1.22
-
-require github.com/gofastr/gofastr v0.1.0
-`, modulePath)
-	if err := os.WriteFile(filepath.Join(name, "go.mod"), []byte(goModContent), 0o644); err != nil {
-		fail("Failed to write go.mod: %v", err)
 		os.Exit(1)
 	}
 
@@ -230,7 +221,7 @@ bin/
 		os.Exit(1)
 	}
 
-	// Run go mod init (overwrite the placeholder go.mod with a real one)
+	// Run go mod init to generate a proper go.mod
 	cmd := exec.Command("go", "mod", "init", modulePath)
 	cmd.Dir = name
 	cmd.Stdout = os.Stdout

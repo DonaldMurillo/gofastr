@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/style"
@@ -123,6 +122,10 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
+	// Lock screen for concurrent-safe param mutation + render
+	screen.mu.Lock()
+	defer screen.mu.Unlock()
+
 	// Inject route params into ParamSetter components
 	if len(params) > 0 {
 		if ps, ok := screen.Component.(ParamSetter); ok {
@@ -133,7 +136,7 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 
 	// Inject DI services into screen fields tagged `inject:""`
 	if err := a.Inject(screen.Component); err != nil {
-		log.Printf("[gofastr] DI injection error for %q: %v", path, err)
+		return "", fmt.Errorf("app: DI injection failed for %q: %w", path, err)
 	}
 
 	layout := screen.Layout
@@ -152,7 +155,7 @@ func (a *App) RenderPage(path string) (render.HTML, error) {
 			var renderErr error
 			content, renderErr = component.SafeRender(screen.Component)
 			if renderErr != nil {
-				log.Printf("[gofastr] component render error: %v", renderErr)
+				return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
 		} else {
 			content = screen.Render()
@@ -222,6 +225,10 @@ func (a *App) RenderPartial(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
+	// Lock screen for concurrent-safe param mutation + render
+	screen.mu.Lock()
+	defer screen.mu.Unlock()
+
 	// Inject route params into ParamSetter components
 	if len(params) > 0 {
 		if ps, ok := screen.Component.(ParamSetter); ok {
@@ -232,7 +239,7 @@ func (a *App) RenderPartial(path string) (render.HTML, error) {
 
 	// Inject DI services into screen fields tagged `inject:""`
 	if err := a.Inject(screen.Component); err != nil {
-		log.Printf("[gofastr] DI injection error for %q: %v", path, err)
+		return "", fmt.Errorf("app: DI injection failed for %q: %w", path, err)
 	}
 
 	if screen.Type == ScreenPage {
@@ -240,7 +247,7 @@ func (a *App) RenderPartial(path string) (render.HTML, error) {
 		// swap it into the existing <main> element
 		html, renderErr := component.SafeRender(screen.Component)
 		if renderErr != nil {
-			log.Printf("[gofastr] component render error: %v", renderErr)
+			return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 		}
 		return html, nil
 	}

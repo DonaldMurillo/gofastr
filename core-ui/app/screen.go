@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/elements"
@@ -74,6 +75,9 @@ type Screen struct {
 
 	// routeParams holds extracted dynamic route parameters.
 	routeParams map[string]string
+
+	// mu protects SetParams + render for concurrent access on dynamic routes.
+	mu sync.Mutex
 }
 
 // NewScreen creates a page screen.
@@ -149,19 +153,23 @@ func (s *Screen) Render() render.HTML {
 		return elements.Main(elements.MainConfig{}, content)
 
 	case ScreenDrawer:
-		// Runtime handles structural wrapping (backdrop + nav.drawer).
-		// Server returns just the inner content.
-		return content
+		return render.Tag("div", map[string]string{
+			"role":       "complementary",
+			"aria-label": s.Title,
+		}, content)
 
 	case ScreenSheet:
-		// Runtime handles structural wrapping (backdrop + div.sheet).
-		// Server returns just the inner content.
-		return content
+		return render.Tag("div", map[string]string{
+			"role":       "complementary",
+			"aria-label": s.Title,
+		}, content)
 
 	case ScreenDialog:
-		// Runtime handles structural wrapping (backdrop + div.dialog).
-		// Server returns just the inner content.
-		return content
+		return render.Tag("div", map[string]string{
+			"role":       "dialog",
+			"aria-modal": "true",
+			"aria-label": s.Title,
+		}, content)
 
 	default:
 		// Fallback: treat as page.

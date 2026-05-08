@@ -96,7 +96,7 @@ func sqlType(f schema.Field) string {
 func sqlDefault(f schema.Field) string {
 	switch v := f.Default.(type) {
 	case string:
-		return fmt.Sprintf("'%s'", v)
+		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
 	case int:
 		return fmt.Sprintf("%d", v)
 	case float64:

@@ -25,13 +25,14 @@ type DBExecutor interface {
 type CrudHandler struct {
 	Entity     *Entity
 	DB         DBExecutor
-	PrimaryKey string   // defaults to "id"
-	JSONCase   JSONCase // casing strategy for JSON keys
+	PrimaryKey string        // defaults to "id"
+	JSONCase   JSONCase      // casing strategy for JSON keys
+	Hooks      *HookRegistry // optional lifecycle hooks
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
 func NewCrudHandler(entity *Entity, db DBExecutor) *CrudHandler {
-	return &CrudHandler{Entity: entity, DB: db, PrimaryKey: "id", JSONCase: CaseCamel}
+	return &CrudHandler{Entity: entity, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
 }
 
 // WithJSONCase sets the JSON casing strategy for the handler.
@@ -47,6 +48,82 @@ type ListResponse struct {
 	Page       int              `json:"page"`
 	PerPage    int              `json:"perPage"`
 	TotalPages int              `json:"totalPages"`
+}
+
+// applyTenantScope adds a tenant_id filter to the query when the entity
+// is configured for multi-tenancy and a tenant ID is present in the context.
+// Note: uses PostgreSQL-style $1 placeholders.
+func (ch *CrudHandler) applyTenantScope(qb *query.QueryBuilder, r *http.Request) {
+	if ch.Entity.Config.MultiTenant {
+		tenantID := GetTenantID(r.Context())
+		if tenantID != "" {
+			qb.Where("tenant_id = $1", tenantID)
+		}
+	}
+}
+
+// applyTenantScopeCount adds a tenant_id filter to a count query builder.
+// Note: uses PostgreSQL-style $1 placeholders.
+func (ch *CrudHandler) applyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
+	if ch.Entity.Config.MultiTenant {
+		tenantID := GetTenantID(r.Context())
+		if tenantID != "" {
+			cb.Where("tenant_id = $1", tenantID)
+		}
+	}
+}
+
+// applyTenantScopeUpdate adds a tenant_id filter to an update query builder.
+// Note: uses PostgreSQL-style $1 placeholders.
+func (ch *CrudHandler) applyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
+	if ch.Entity.Config.MultiTenant {
+		tenantID := GetTenantID(r.Context())
+		if tenantID != "" {
+			ub.Where("tenant_id = $1", tenantID)
+		}
+	}
+}
+
+// applyTenantScopeDelete adds a tenant_id filter to a delete query builder.
+// Note: uses PostgreSQL-style $1 placeholders.
+func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
+	if ch.Entity.Config.MultiTenant {
+		tenantID := GetTenantID(r.Context())
+		if tenantID != "" {
+			db.Where("tenant_id = $1", tenantID)
+		}
+	}
+}
+
+// injectTenant injects the tenant_id into a data map when multi-tenancy is enabled.
+func (ch *CrudHandler) injectTenant(data map[string]any, r *http.Request) {
+	if ch.Entity.Config.MultiTenant {
+		tenantID := GetTenantID(r.Context())
+		if tenantID != "" {
+			data["tenant_id"] = tenantID
+		}
+	}
+}
+
+// applySoftDeleteFilter adds a deleted_at IS NULL filter unless the caller
+// requests trashed records via ?trashed=true.
+func (ch *CrudHandler) applySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
+	if ch.Entity.Config.SoftDelete {
+		showTrashed := r.URL.Query().Get("trashed") == "true"
+		if !showTrashed {
+			qb.Where("deleted_at IS NULL")
+		}
+	}
+}
+
+// applySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
+func (ch *CrudHandler) applySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
+	if ch.Entity.Config.SoftDelete {
+		showTrashed := r.URL.Query().Get("trashed") == "true"
+		if !showTrashed {
+			cb.Where("deleted_at IS NULL")
+		}
+	}
 }
 
 // entityFields returns all field names for queries (SELECT, RETURNING).
@@ -122,6 +199,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		applyFiltersToCountQuery(countQb, filters)
+		ch.applyTenantScopeCount(countQb, r)
+		ch.applySoftDeleteFilterCount(countQb, r)
 		countSQL, countArgs := countQb.Build()
 		var total int
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
@@ -134,6 +213,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		applyFiltersToQuery(qb, filters)
+		ch.applyTenantScope(qb, r)
+		ch.applySoftDeleteFilter(qb, r)
 		applySortToQuery(qb, sorts)
 
 		offset := (page - 1) * perPage
@@ -186,6 +267,8 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		qb.Where(ch.PrimaryKey+" = $1", id)
+		ch.applyTenantScope(qb, r)
+		ch.applySoftDeleteFilter(qb, r)
 
 		sqlStr, args := qb.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
@@ -218,10 +301,21 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 		body = ch.unconvertMapKeys(body)
 
+		// Inject tenant_id for multi-tenant entities
+		ch.injectTenant(body, r)
+
 		// Generate values for all auto-generated fields
 		for _, f := range ch.Entity.GetFields() {
 			if f.AutoGenerate != schema.AutoNone {
 				body[f.Name] = generateFieldValue(f.AutoGenerate)
+			}
+		}
+
+		// Execute BeforeCreate hooks
+		if ch.Hooks != nil {
+			if err := ch.Hooks.ExecuteHooks(r.Context(), BeforeCreate, body); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
 			}
 		}
 
@@ -238,10 +332,20 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return
 		}
 
-		// Build INSERT with all fields present in body
+		// Build INSERT — skip auto-generated, read-only, and hidden fields
 		var cols []string
 		var vals []any
 		for _, f := range ch.Entity.GetFields() {
+			if f.AutoGenerate != schema.AutoNone {
+				// Already handled above
+				val := body[f.Name]
+				cols = append(cols, f.Name)
+				vals = append(vals, val)
+				continue
+			}
+			if f.ReadOnly || f.Hidden {
+				continue // clients should not set these
+			}
 			val, ok := body[f.Name]
 			if !ok {
 				if f.Default != nil {
@@ -252,6 +356,15 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			}
 			cols = append(cols, f.Name)
 			vals = append(vals, val)
+		}
+
+		// Ensure tenant_id is included for multi-tenant entities.
+		// It may not be in the entity's field list, so we add it explicitly.
+		if ch.Entity.Config.MultiTenant {
+			if tenantID := GetTenantID(r.Context()); tenantID != "" {
+				cols = append(cols, "tenant_id")
+				vals = append(vals, tenantID)
+			}
 		}
 
 		// Return only visible fields
@@ -268,6 +381,11 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 			return
+		}
+
+		// Execute AfterCreate hooks
+		if ch.Hooks != nil {
+			ch.Hooks.ExecuteHooks(r.Context(), AfterCreate, result)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -293,6 +411,14 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 		body = ch.unconvertMapKeys(body)
 
+		// Execute BeforeUpdate hooks
+		if ch.Hooks != nil {
+			if err := ch.Hooks.ExecuteHooks(r.Context(), BeforeUpdate, body); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
 			w.Header().Set("Content-Type", "application/json")
@@ -308,7 +434,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		ub := query.Update(ch.Entity.GetTable())
 		anySet := false
 		for _, f := range ch.Entity.GetFields() {
-			if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly {
+			if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
 				continue
 			}
 			val, ok := body[f.Name]
@@ -325,6 +451,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 
 		ub.Where(ch.PrimaryKey+" = $1", id)
+		ch.applyTenantScopeUpdate(ub, r)
 		visFields := ch.visibleFields()
 		ub.Returning(visFields...)
 
@@ -339,6 +466,11 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			}
 			writeJSONError(w, http.StatusInternalServerError, "update failed: "+err.Error())
 			return
+		}
+
+		// Execute AfterUpdate hooks
+		if ch.Hooks != nil {
+			ch.Hooks.ExecuteHooks(r.Context(), AfterUpdate, result)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -357,10 +489,19 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return
 		}
 
+		// Execute BeforeDelete hooks
+		if ch.Hooks != nil {
+			if err := ch.Hooks.ExecuteHooks(r.Context(), BeforeDelete, id); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
 		if ch.Entity.Config.SoftDelete {
 			ub := query.Update(ch.Entity.GetTable()).
-				Set("deleted_at", "NOW()").
+				Set("deleted_at", time.Now().UTC()).
 				Where(ch.PrimaryKey+" = $1", id)
+			ch.applyTenantScopeUpdate(ub, r)
 			sqlStr, args := ub.Build()
 			res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 			if err != nil {
@@ -375,6 +516,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 		} else {
 			db := query.Delete(ch.Entity.GetTable()).
 				Where(ch.PrimaryKey+" = $1", id)
+			ch.applyTenantScopeDelete(db, r)
 			sqlStr, args := db.Build()
 			res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 			if err != nil {
@@ -386,6 +528,11 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 				writeJSONError(w, http.StatusNotFound, "not found")
 				return
 			}
+		}
+
+		// Execute AfterDelete hooks
+		if ch.Hooks != nil {
+			ch.Hooks.ExecuteHooks(r.Context(), AfterDelete, id)
 		}
 
 		w.WriteHeader(http.StatusNoContent)

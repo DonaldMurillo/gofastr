@@ -28,8 +28,9 @@ const (
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name     string   // application name
-	JSONCase JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
+	Name           string   // application name
+	JSONCase       JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
+	DebugEndpoints bool     // opt-in for /.debug/* endpoints
 }
 
 // App is the top-level application container.
@@ -123,11 +124,13 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		if *config.CRUD && a.DB != nil {
 			handler := NewCrudHandler(e, a.DB)
 			handler.JSONCase = a.JSONCasing()
+			handler.Hooks = a.HookRegistry(name)
 			RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
 		}
 	} else if a.DB != nil {
 		handler := NewCrudHandler(e, a.DB)
 		handler.JSONCase = a.JSONCasing()
+		handler.Hooks = a.HookRegistry(name)
 		RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
 	}
 
@@ -207,7 +210,9 @@ func (a *App) Start(addr string) error {
 		a.Router.Get("/docs/", openapi.SwaggerUIHandler(spec, "/docs"))
 	}
 
-	a.registerDebugEndpoints()
+	if a.Config.DebugEndpoints {
+		a.registerDebugEndpoints()
+	}
 
 	name := a.Config.Name
 	if name == "" {
@@ -225,7 +230,9 @@ func (a *App) Start(addr string) error {
 
 	fmt.Printf("\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Printf("  %s PID: %d\n", arrow(), os.Getpid())
-	fmt.Printf("  %s Stats: http://%s/.debug/stats\n", arrow(), host)
+	if a.Config.DebugEndpoints {
+		fmt.Printf("  %s Stats: http://%s/.debug/stats\n", arrow(), host)
+	}
 
 	// Log entity routes
 	for _, e := range a.Registry.All() {

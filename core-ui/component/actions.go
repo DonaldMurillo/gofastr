@@ -123,11 +123,18 @@ func ExtractActions(c Component) *ActionRegistry {
 		return NewActionRegistry()
 	}
 	extractMu.Lock()
+	defer extractMu.Unlock()
+
 	reg := NewActionRegistry()
 	prev := currentRegistry
 	currentRegistry = reg
+	defer func() {
+		currentRegistry = prev
+		if r := recover(); r != nil {
+			// Actions() panicked — return empty registry, don't deadlock.
+		}
+	}()
+
 	ic.Actions()
-	currentRegistry = prev
-	extractMu.Unlock()
 	return reg
 }

@@ -126,24 +126,30 @@ func (s *Spec) Build() map[string]any {
 	return doc
 }
 
-// toOpenAPIPath converts GoFastr path params (:name) to OpenAPI style ({name}).
-func toOpenAPIPath(path string) string {
-	parts := strings.Split(path, "/")
+// toOpenAPIPath converts path params to OpenAPI style ({name}).
+// Both GoFastr style (:name) and Go 1.22 style ({name}) are accepted;
+// the result is always OpenAPI {name} style.
+func toOpenAPIPath(p string) string {
+	parts := strings.Split(p, "/")
 	for i, part := range parts {
 		if strings.HasPrefix(part, ":") {
+			// :name → {name}
 			parts[i] = "{" + part[1:] + "}"
 		}
+		// {name} is already OpenAPI style; no transformation needed.
 	}
 	return strings.Join(parts, "/")
 }
 
-// extractPathParams returns the parameter names from GoFastr-style path
-// segments (e.g. ":id" → "id").
+// extractPathParams returns the parameter names from path segments.
+// Both GoFastr style (:id) and Go 1.22 style ({id}) are recognised.
 func extractPathParams(path string) []string {
 	var params []string
 	for _, part := range strings.Split(path, "/") {
 		if strings.HasPrefix(part, ":") {
 			params = append(params, part[1:])
+		} else if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			params = append(params, part[1:len(part)-1])
 		}
 	}
 	return params

@@ -77,7 +77,17 @@ func (q *MemoryQueue) processJob(job Job) {
 }
 
 // Enqueue adds a job to the buffered channel. If the job has no ID, one is generated.
-func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) error {
+// Uses recover to handle the race between Close() closing the channel and this
+// method sending to it.
+func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) (err error) {
+	// Recover from send on closed channel — Close() can close jobChan
+	// between our RLock check and the channel send below.
+	defer func() {
+		if r := recover(); r != nil {
+			err = ErrQueueClosed
+		}
+	}()
+
 	q.mu.RLock()
 	closed := q.closed
 	q.mu.RUnlock()

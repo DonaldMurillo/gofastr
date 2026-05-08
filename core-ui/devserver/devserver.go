@@ -36,6 +36,7 @@ type DevServer struct {
 	staticDir      string                               // directory to serve static files from
 	staticFS       fs.FS                                // embedded filesystem for static files
 	routeGraph     *style.RouteGraph                    // route graph for progressive CSS loading
+	signals        map[string]SignalAny                 // signalID → signal for live updates
 }
 
 // Session represents a connected browser session.
@@ -97,6 +98,15 @@ func (ds *DevServer) SetStaticFS(fsys fs.FS) {
 // HasStaticFS reports whether an embedded static FS is configured.
 func (ds *DevServer) HasStaticFS() bool {
 	return ds.staticFS != nil
+}
+
+// RegisterSignal registers a signal with the devserver so the signal update
+// endpoint can apply client-sent values.
+func (ds *DevServer) RegisterSignal(id string, s SignalAny) {
+	if ds.signals == nil {
+		ds.signals = make(map[string]SignalAny)
+	}
+	ds.signals[id] = s
 }
 
 // NewDevServer creates a new development server.
@@ -293,7 +303,7 @@ func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path != "/" {
 		// Try filesystem directory first
 		if ds.staticDir != "" {
-			filePath := filepath.Join(ds.staticDir, filepath.Clean("/"+path))
+			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
 			// Prevent path traversal: ensure resolved path is within staticDir
 			absPath, _ := filepath.Abs(filePath)
 			absStatic, _ := filepath.Abs(ds.staticDir)
@@ -482,7 +492,11 @@ func (ds *DevServer) handleSignalUpdate(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		// Re-render island with updated signal
-		_ = signalID
+		if s, ok := ds.signals[signalID]; ok {
+			if val, exists := body["value"]; exists {
+				s.UpdateAsInterface(val)
+			}
+		}
 		html := isl.Update()
 		ds.Islands.PushUpdate(island.IslandUpdate{
 			IslandID: id,

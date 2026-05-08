@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -71,19 +72,33 @@ func NewS3Storage(bucket, region string, opts ...S3Option) *S3Storage {
 	return s
 }
 
-// Save stores the contents of r as an S3 object with the given key.
-func (s *S3Storage) Save(ctx context.Context, key string, r io.Reader) error {
-	if s.Client == nil {
-		return fmt.Errorf("storage: s3 client not configured")
-	}
+// validateKey checks that a key is non-empty and doesn't contain path traversal.
+func validateKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("storage: empty key")
+	}
+	if strings.Contains(key, "..") {
+		return fmt.Errorf("storage: key contains path traversal: %s", key)
+	}
+	return nil
+}
+
+// Save stores the contents of r as an S3 object with the given key.
+func (s *S3Storage) Save(ctx context.Context, key string, r io.Reader) error {
+	if err := validateKey(key); err != nil {
+		return err
+	}
+	if s.Client == nil {
+		return fmt.Errorf("storage: s3 client not configured")
 	}
 	return s.Client.PutObject(ctx, s.Bucket, key, r, -1, "")
 }
 
 // Delete removes the S3 object identified by key.
 func (s *S3Storage) Delete(ctx context.Context, key string) error {
+	if err := validateKey(key); err != nil {
+		return err
+	}
 	if s.Client == nil {
 		return fmt.Errorf("storage: s3 client not configured")
 	}
@@ -92,6 +107,9 @@ func (s *S3Storage) Delete(ctx context.Context, key string) error {
 
 // Get returns a ReadCloser for the S3 object identified by key.
 func (s *S3Storage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	if err := validateKey(key); err != nil {
+		return nil, err
+	}
 	if s.Client == nil {
 		return nil, fmt.Errorf("storage: s3 client not configured")
 	}
@@ -100,6 +118,9 @@ func (s *S3Storage) Get(ctx context.Context, key string) (io.ReadCloser, error) 
 
 // Exists reports whether an S3 object exists for the given key.
 func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
+	if err := validateKey(key); err != nil {
+		return false, err
+	}
 	if s.Client == nil {
 		return false, fmt.Errorf("storage: s3 client not configured")
 	}
@@ -108,6 +129,9 @@ func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
 
 // PresignedGetURL returns a presigned URL for downloading the object.
 func (s *S3Storage) PresignedGetURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
+	if err := validateKey(key); err != nil {
+		return nil, err
+	}
 	if s.presigner == nil {
 		return nil, fmt.Errorf("storage: presigner not configured")
 	}
@@ -116,6 +140,9 @@ func (s *S3Storage) PresignedGetURL(ctx context.Context, key string, expires tim
 
 // PresignedPutURL returns a presigned URL for uploading the object directly.
 func (s *S3Storage) PresignedPutURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
+	if err := validateKey(key); err != nil {
+		return nil, err
+	}
 	if s.presigner == nil {
 		return nil, fmt.Errorf("storage: presigner not configured")
 	}

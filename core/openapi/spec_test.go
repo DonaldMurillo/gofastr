@@ -110,6 +110,53 @@ func TestMultiplePathParams(t *testing.T) {
 	}
 }
 
+func TestPathParamGo122Style(t *testing.T) {
+	s := NewSpec("API", "1.0.0")
+	op := NewOperation()
+	op.Summary = "Get user"
+	s.AddPath("GET", "/users/{id}", *op)
+
+	doc := s.Build()
+
+	paths := doc["paths"].(map[string]map[string]any)
+	pathItem, ok := paths["/users/{id}"]
+	if !ok {
+		t.Fatalf("expected path /users/{id}, got keys: %v", keys(paths))
+	}
+	getOp := pathItem["get"].(map[string]any)
+
+	params := getOp["parameters"].([]map[string]any)
+	found := false
+	for _, p := range params {
+		if p["name"] == "id" && p["in"] == "path" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing path parameter 'id' for Go 1.22 {id} style")
+	}
+}
+
+func TestMixedPathParamStyles(t *testing.T) {
+	s := NewSpec("API", "1.0.0")
+	op := NewOperation()
+
+	// :colon style
+	s.AddPath("GET", "/a/:x", *op)
+	// {brace} style
+	s.AddPath("GET", "/b/{y}", *op)
+
+	doc := s.Build()
+	paths := doc["paths"].(map[string]map[string]any)
+
+	if _, ok := paths["/a/{x}"]; !ok {
+		t.Errorf("expected /a/{x}, got keys: %v", keys(paths))
+	}
+	if _, ok := paths["/b/{y}"]; !ok {
+		t.Errorf("expected /b/{y}, got keys: %v", keys(paths))
+	}
+}
+
 // ---------- Schema generation ----------
 
 func TestFieldToSchema(t *testing.T) {

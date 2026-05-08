@@ -18,7 +18,6 @@ type Router struct {
 	prefix      string
 	middlewares []Middleware
 	notFound    http.Handler
-	notAllowed  http.Handler
 	parent      *Router
 }
 
@@ -112,7 +111,6 @@ func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 		prefix:      r.prefix + prefix,
 		middlewares: combined,
 		notFound:    r.notFound,
-		notAllowed:  r.notAllowed,
 		parent:      r,
 	}
 }
@@ -122,10 +120,11 @@ func (r *Router) NotFound(handler http.Handler) {
 	r.notFound = handler
 }
 
-// MethodNotAllowed sets a custom handler for 405 (Method Not Allowed) responses.
-func (r *Router) MethodNotAllowed(handler http.Handler) {
-	r.notAllowed = handler
-}
+// NOTE: Go 1.22+ ServeMux handles 405 Method Not Allowed responses
+// natively. There is no way to intercept or customise this behaviour
+// through ServeMux, so a MethodNotAllowed API has been intentionally
+// omitted. If you need custom 405 handling, wrap the Router with
+// middleware that checks r.Pattern after ServeHTTP returns.
 
 // ServeHTTP implements http.Handler. It dispatches requests through the
 // underlying ServeMux. If no route matches and a custom notFound handler

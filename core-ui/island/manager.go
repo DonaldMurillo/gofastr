@@ -11,12 +11,20 @@ type IslandUpdate struct {
 	HTML     string
 }
 
+// streamEntry holds a per-session update stream. The data channel is never
+// closed; instead, the done channel is closed on Unsubscribe to signal
+// termination. This prevents panics from sending to a closed channel.
+type streamEntry struct {
+	ch   chan IslandUpdate
+	done chan struct{} // closed when unsubscribed
+}
+
 // Manager tracks active islands across all client sessions.
 type Manager struct {
 	mu      sync.RWMutex
-	islands map[string]*Island           // islandID → Island
-	clients map[string]map[string]bool   // sessionID → set of islandIDs
-	streams map[string]chan IslandUpdate // sessionID → update channel
+	islands map[string]*Island         // islandID → Island
+	clients map[string]map[string]bool // sessionID → set of islandIDs
+	streams map[string]*streamEntry    // sessionID → update stream
 }
 
 // NewManager creates a new island manager.
@@ -24,7 +32,7 @@ func NewManager() *Manager {
 	return &Manager{
 		islands: make(map[string]*Island),
 		clients: make(map[string]map[string]bool),
-		streams: make(map[string]chan IslandUpdate),
+		streams: make(map[string]*streamEntry),
 	}
 }
 
@@ -70,17 +78,16 @@ func (m *Manager) Unregister(islandID string) {
 
 // Push re-renders an island and sends the update to the client's SSE stream.
 func (m *Manager) Push(islandID string) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	isl, ok := m.islands[islandID]
 	if !ok {
-		m.mu.RUnlock()
+		m.mu.Unlock()
 		return errors.New("island not found: " + islandID)
 	}
 	html := isl.Update()
 	sessionID := isl.SessionID
-
-	ch, hasStream := m.streams[sessionID]
-	m.mu.RUnlock()
+	entry, hasStream := m.streams[sessionID]
+	m.mu.Unlock()
 
 	if hasStream {
 		update := IslandUpdate{
@@ -88,7 +95,8 @@ func (m *Manager) Push(islandID string) error {
 			HTML:     string(html),
 		}
 		select {
-		case ch <- update:
+		case entry.ch <- update:
+		case <-entry.done:
 		default:
 			// Drop update if channel is full — client may be slow.
 		}
@@ -103,38 +111,44 @@ func (m *Manager) Subscribe(sessionID string) <-chan IslandUpdate {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if ch, ok := m.streams[sessionID]; ok {
-		return ch
+	if entry, ok := m.streams[sessionID]; ok {
+		return entry.ch
 	}
 
-	ch := make(chan IslandUpdate, 64)
-	m.streams[sessionID] = ch
-	return ch
+	entry := &streamEntry{
+		ch:   make(chan IslandUpdate, 64),
+		done: make(chan struct{}),
+	}
+	m.streams[sessionID] = entry
+	return entry.ch
 }
 
-// Unsubscribe removes the update channel for a session and closes it.
+// Unsubscribe removes the update channel for a session.
+// It closes the done channel to signal termination; the data channel is never
+// closed, preventing panics from concurrent sends.
 func (m *Manager) Unsubscribe(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ch, ok := m.streams[sessionID]
+	entry, ok := m.streams[sessionID]
 	if !ok {
 		return
 	}
 
 	delete(m.streams, sessionID)
-	close(ch)
+	close(entry.done) // signal done; data channel is never closed
 }
 
 // PushUpdate sends a direct update to a session's SSE stream.
 func (m *Manager) PushUpdate(update IslandUpdate, sessionID string) {
 	m.mu.RLock()
-	ch, ok := m.streams[sessionID]
+	entry, ok := m.streams[sessionID]
 	m.mu.RUnlock()
 
 	if ok {
 		select {
-		case ch <- update:
+		case entry.ch <- update:
+		case <-entry.done:
 		default:
 		}
 	}

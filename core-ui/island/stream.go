@@ -35,6 +35,14 @@ func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ch := m.ConnectSession(sessionID)
+
+	// Get the done channel so we can detect unsubscribe.
+	m.mu.RLock()
+	entry, hasEntry := m.streams[sessionID]
+	m.mu.RUnlock()
+	if !hasEntry {
+		return
+	}
 	defer m.Unsubscribe(sessionID)
 
 	// Respect client context cancellation.
@@ -44,10 +52,9 @@ func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case update, ok := <-ch:
-			if !ok {
-				return
-			}
+		case <-entry.done:
+			return
+		case update := <-ch:
 			payload := ssePayload{
 				Island: update.IslandID,
 				HTML:   update.HTML,

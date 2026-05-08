@@ -86,8 +86,10 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		// Add filter parameters matching the actual filter parser
 		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
 		// <field>_lte, <field>_like, <field>_in.
+		// Filter parameters use raw field names (e.g. "created_at_gt")
+		// because ParseFilters matches against the schema field names directly.
 		for _, f := range visibleFields {
-			name := toCamelCase(f.Name)
+			name := f.Name
 			filterSchema := fieldToFilterSchema(f)
 			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
 			listOp.AddParameter(name+"_gt", "query", name+" greater than", false, filterSchema)
