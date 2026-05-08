@@ -99,6 +99,45 @@ func LintFile(filename string) (*Result, error) {
 	return lintFile(fset, file, filename), nil
 }
 
+// elementRequiredFields maps element function names to their required field rules.
+// Each entry maps a config struct field name to whether it's required.
+// For fields where EITHER of two fields must be set (e.g. Label/LabelledBy),
+// use an "or" group key.
+var elementRequiredFields = map[string]fieldRule{
+	// Structural: Label OR LabelledBy
+	"Nav":     {orFields: []string{"Label", "LabelledBy"}},
+	"Section": {orFields: []string{"Label", "LabelledBy"}},
+	"Aside":   {orFields: []string{"Label", "LabelledBy"}},
+
+	// Group: Role required
+	"Group": {required: []string{"Role"}},
+
+	// Interactive
+	"Button":   {required: []string{"Label"}},
+	"Link":     {required: []string{"Href", "Text"}},
+	"LinkHTML": {required: []string{"Href", "Content"}},
+	"Form":     {required: []string{"Method"}},
+	"Input":    {required: []string{"Type", "Name"}},
+	"Label":    {required: []string{"For", "Text"}},
+	"Select":   {required: []string{"Name"}},
+	"TextArea": {required: []string{"Name"}},
+	"FieldSet": {required: []string{"Legend"}},
+
+	// Text
+	"Heading": {required: []string{"Level"}},
+	"Abbr":    {required: []string{"Title"}},
+	"Time":    {required: []string{"Datetime"}},
+
+	// Media
+	"Image":  {required: []string{"Src", "Alt"}},
+	"Source": {required: []string{"Src", "Type"}},
+}
+
+type fieldRule struct {
+	required []string // all must be set
+	orFields []string // at least one must be set
+}
+
 // LintPackage lints all .go files in a directory.
 func LintPackage(dir string) (*Result, error) {
 	result := &Result{}
@@ -153,8 +192,11 @@ func lintFile(fset *token.FileSet, file *ast.File, filename string) *Result {
 			result.add(filename, fset.Position(node.Switch).Line,
 				"type switches not allowed in .ui.go files")
 
-		// Check forbidden built-in calls and make(chan ...)
+		// Check forbidden built-in calls, make(chan ...), and element config required fields
 		case *ast.CallExpr:
+			// Check for elements.Xxx(XxxConfig{...}) calls with missing required fields
+			checkElementConfig(node, filename, fset, result)
+
 			ident, ok := node.Fun.(*ast.Ident)
 			if !ok {
 				return true
@@ -209,4 +251,77 @@ func checkImport(imp *ast.ImportSpec, filename string, fset *token.FileSet, resu
 	pos := fset.Position(imp.Pos())
 	result.add(filename, pos.Line,
 		fmt.Sprintf("import of %q not allowed in .ui.go files", path))
+}
+
+// checkElementConfig checks calls like elements.Xxx(elements.XxxConfig{...})
+// for missing required fields.
+func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet, result *Result) {
+	// We look for patterns:
+	//   elements.Nav(elements.NavConfig{...})
+	//   Nav(NavConfig{...})
+	var funcName string
+
+	switch fn := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		funcName = fn.Sel.Name
+	case *ast.Ident:
+		funcName = fn.Name
+	default:
+		return
+	}
+
+	rule, ok := elementRequiredFields[funcName]
+	if !ok {
+		return
+	}
+
+	if len(call.Args) == 0 {
+		return
+	}
+
+	// The first argument should be a composite literal: XxxConfig{...}
+	lit, ok := call.Args[0].(*ast.CompositeLit)
+	if !ok {
+		// Not a struct literal — could be a variable, skip static analysis
+		return
+	}
+
+	// Collect which fields are explicitly set in the struct literal
+	setFields := map[string]bool{}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		setFields[key.Name] = true
+	}
+
+	line := fset.Position(call.Lparen).Line
+
+	// Check required fields (all must be set)
+	for _, field := range rule.required {
+		if !setFields[field] {
+			result.add(filename, line,
+				fmt.Sprintf("elements.%s: missing required field %q in %sConfig", funcName, field, funcName))
+		}
+	}
+
+	// Check OR fields (at least one must be set)
+	if len(rule.orFields) > 0 {
+		found := false
+		for _, field := range rule.orFields {
+			if setFields[field] {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result.add(filename, line,
+				fmt.Sprintf("elements.%s: missing required field — must set one of %v in %sConfig", funcName, rule.orFields, funcName))
+		}
+	}
 }

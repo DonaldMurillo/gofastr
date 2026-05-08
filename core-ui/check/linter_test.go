@@ -355,3 +355,331 @@ func Bad() { _ = context.Background() }
 		t.Errorf("expected context violation, got: %v", result.Violations)
 	}
 }
+
+// ===========================================================================
+// Element config required field tests
+// ===========================================================================
+
+func TestLintNavMissingLabel(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Nav(elements.NavConfig{Class: "main"})
+}
+`
+	path := writeTempGoFile(t, dir, "nav_no_label.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Nav without Label/LabelledBy")
+	}
+	found := false
+	for _, v := range result.Violations {
+		if strings.Contains(v.Message, "Nav") && strings.Contains(v.Message, "Label") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected Nav missing Label violation, got: %v", result.Violations)
+	}
+}
+
+func TestLintNavWithLabel(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Nav(elements.NavConfig{Label: "Main"})
+}
+`
+	path := writeTempGoFile(t, dir, "nav_with_label.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Nav with Label, got:\n%s", result.Error())
+	}
+}
+
+func TestLintSectionMissingLabel(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Section(elements.SectionConfig{Class: "intro"})
+}
+`
+	path := writeTempGoFile(t, dir, "section_no_label.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Section without Label/LabelledBy")
+	}
+}
+
+func TestLintSectionWithLabelledBy(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Section(elements.SectionConfig{LabelledBy: "heading-1"})
+}
+`
+	path := writeTempGoFile(t, dir, "section_labelledby.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Section with LabelledBy, got:\n%s", result.Error())
+	}
+}
+
+func TestLintHeadingMissingLevel(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Heading(elements.HeadingConfig{Class: "title"})
+}
+`
+	path := writeTempGoFile(t, dir, "heading_no_level.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Heading without Level")
+	}
+}
+
+func TestLintHeadingWithLevel(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Heading(elements.HeadingConfig{Level: 2})
+}
+`
+	path := writeTempGoFile(t, dir, "heading_with_level.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Heading with Level, got:\n%s", result.Error())
+	}
+}
+
+func TestLintButtonMissingLabel(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Button(elements.ButtonConfig{Class: "btn"})
+}
+`
+	path := writeTempGoFile(t, dir, "button_no_label.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Button without Label")
+	}
+}
+
+func TestLintLinkMissingHref(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Link(elements.LinkConfig{Text: "Click"})
+}
+`
+	path := writeTempGoFile(t, dir, "link_no_href.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Link without Href")
+	}
+	// Should report missing Href
+	found := false
+	for _, v := range result.Violations {
+		if strings.Contains(v.Message, "Href") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected missing Href violation, got: %v", result.Violations)
+	}
+}
+
+func TestLintLinkComplete(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Link(elements.LinkConfig{Href: "/about", Text: "About"})
+}
+`
+	path := writeTempGoFile(t, dir, "link_complete.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Link with Href+Text, got:\n%s", result.Error())
+	}
+}
+
+func TestLintImageMissingSrc(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Image(elements.ImageConfig{Alt: "photo"})
+}
+`
+	path := writeTempGoFile(t, dir, "image_no_src.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Image without Src")
+	}
+}
+
+func TestLintImageComplete(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Image(elements.ImageConfig{Src: "/img.jpg", Alt: "Photo"})
+}
+`
+	path := writeTempGoFile(t, dir, "image_complete.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Image with Src+Alt, got:\n%s", result.Error())
+	}
+}
+
+func TestLintInputMissingFields(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Input(elements.InputConfig{Class: "field"})
+}
+`
+	path := writeTempGoFile(t, dir, "input_missing.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violations for Input without Type/Name")
+	}
+	// Should report both missing fields
+	foundType, foundName := false, false
+	for _, v := range result.Violations {
+		if strings.Contains(v.Message, "Type") {
+			foundType = true
+		}
+		if strings.Contains(v.Message, "Name") {
+			foundName = true
+		}
+	}
+	if !foundType {
+		t.Error("expected missing Type violation")
+	}
+	if !foundName {
+		t.Error("expected missing Name violation")
+	}
+}
+
+func TestLintGroupMissingRole(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Bad() {
+	elements.Group(elements.GroupConfig{AriaLabel: "info"})
+}
+`
+	path := writeTempGoFile(t, dir, "group_no_role.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasErrors() {
+		t.Fatal("expected violation for Group without Role")
+	}
+}
+
+func TestLintGroupWithRole(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Group(elements.GroupConfig{Role: "status"})
+}
+`
+	path := writeTempGoFile(t, dir, "group_with_role.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Group with Role, got:\n%s", result.Error())
+	}
+}
+
+func TestLintDivNoRequiredFields(t *testing.T) {
+	dir := t.TempDir()
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok() {
+	elements.Div(elements.DivConfig{})
+}
+`
+	path := writeTempGoFile(t, dir, "div_empty.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations for Div with empty config, got:\n%s", result.Error())
+	}
+}
+
+func TestLintConfigPassedAsVariable(t *testing.T) {
+	dir := t.TempDir()
+	// When config is a variable (not a struct literal), linter can't check it
+	content := `package test
+import "github.com/gofastr/gofastr/core-ui/elements"
+func Ok(cfg elements.NavConfig) {
+	elements.Nav(cfg)
+}
+`
+	path := writeTempGoFile(t, dir, "var_config.ui.go", content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasErrors() {
+		t.Errorf("expected no violations when config is a variable, got:\n%s", result.Error())
+	}
+}
