@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gofastr/gofastr/core/openapi"
@@ -120,21 +121,121 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 	// Auto-register CRUD routes.
 	// Default (CRUD==nil): auto-register when DB is set.
 	// Set CRUD to &true to always register, &false to opt out.
-	if config.CRUD != nil {
-		if *config.CRUD && a.DB != nil {
-			handler := NewCrudHandler(e, a.DB)
-			handler.JSONCase = a.JSONCasing()
-			handler.Hooks = a.HookRegistry(name)
-			RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
+	// MCP=true implies CRUD must be mounted: MCP tools dispatch through the
+	// router so they share its middleware chain (auth, recovery, etc.).
+	crudEnabled := a.DB != nil && (config.CRUD == nil || *config.CRUD)
+	if config.MCP && a.DB != nil && config.CRUD != nil && !*config.CRUD {
+		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
+	}
+
+	var crudHandler *CrudHandler
+	if crudEnabled {
+		crudHandler = NewCrudHandler(e, a.DB)
+		crudHandler.JSONCase = a.JSONCasing()
+		crudHandler.Hooks = a.HookRegistry(name)
+		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
+	}
+
+	if config.MCP && a.DB != nil {
+		if err := RegisterEntityMCPTools(a.MCP, crudHandler, a.Router); err != nil {
+			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q: %v", name, err))
 		}
-	} else if a.DB != nil {
-		handler := NewCrudHandler(e, a.DB)
-		handler.JSONCase = a.JSONCasing()
-		handler.Hooks = a.HookRegistry(name)
-		RegisterCrudRoutes(a.Router, handler, "/"+e.GetTable())
+	}
+
+	if len(config.Endpoints) > 0 {
+		if err := a.registerEntityEndpoints(e, config.Endpoints); err != nil {
+			panic(fmt.Sprintf("framework: failed to register endpoints for entity %q: %v", name, err))
+		}
 	}
 
 	return a
+}
+
+// EntityFromFile loads and registers one JSON entity declaration.
+func (a *App) EntityFromFile(path string) (*Entity, error) {
+	decl, err := LoadEntityDeclaration(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := decl.Config()
+	if err != nil {
+		return nil, err
+	}
+	a.Entity(decl.Name, cfg)
+	return a.Registry.Get(decl.Name)
+}
+
+// EntitiesFromDir loads and registers every *.json declaration in dir.
+func (a *App) EntitiesFromDir(dir string) error {
+	decls, err := LoadEntityDeclarations(dir)
+	if err != nil {
+		return err
+	}
+	for _, decl := range decls {
+		cfg, err := decl.Config()
+		if err != nil {
+			return err
+		}
+		a.Entity(decl.Name, cfg)
+	}
+	return nil
+}
+
+func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) error {
+	for _, endpoint := range endpoints {
+		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
+		if method == "" {
+			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
+		}
+		path := entityEndpointPath(entity, endpoint.Path)
+		if endpoint.Handler != nil {
+			a.Router.Handle(method, path, endpoint.Handler)
+		}
+		if endpoint.MCP {
+			if endpoint.MCPHandler == nil {
+				return fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", endpoint.Path)
+			}
+			name := endpoint.Name
+			if name == "" {
+				name = defaultEndpointToolName(entity.GetName(), method, path)
+			}
+			description := endpoint.Description
+			if description == "" {
+				description = method + " " + path
+			}
+			if err := a.MCP.RegisterTool(name, description, map[string]any{"type": "object"}, endpoint.MCPHandler); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func entityEndpointPath(entity *Entity, path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + strings.Trim(entity.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
+	}
+	return normalizePath(convertColonParams(path))
+}
+
+func convertColonParams(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if strings.HasPrefix(part, ":") && len(part) > 1 {
+			parts[i] = "{" + strings.TrimPrefix(part, ":") + "}"
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+func defaultEndpointToolName(entityName, method, path string) string {
+	cleaned := strings.Trim(path, "/")
+	cleaned = strings.NewReplacer("/", "_", "{", "", "}", "", "-", "_").Replace(cleaned)
+	return strings.ToLower(entityName + "_" + method + "_" + cleaned)
 }
 
 // JSONCasing returns the configured JSON casing strategy.

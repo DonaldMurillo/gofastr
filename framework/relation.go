@@ -12,13 +12,13 @@ const (
 
 // Relation describes a relationship between two entities.
 type Relation struct {
-	Type             RelationType
-	Name             string // logical name for this relation (e.g. "author", "comments")
-	Entity           string // target entity/table name
-	ForeignKey       string // FK column name
-	Through          string // pivot table name (ManyToMany only)
-	LocalKey         string // column on the local side of a ManyToMany pivot
-	ForeignKeyTarget string // column on the target side of a ManyToMany pivot
+	Type             RelationType `json:"type"`
+	Name             string       `json:"name"`                // logical name for this relation (e.g. "author", "comments")
+	Entity           string       `json:"entity"`              // target entity/table name
+	ForeignKey       string       `json:"foreign_key"`         // FK column name
+	Through          string       `json:"through,omitempty"`   // pivot table name (ManyToMany only)
+	LocalKey         string       `json:"local_key,omitempty"` // column on the local side of a ManyToMany pivot
+	ForeignKeyTarget string       `json:"foreign_key_target,omitempty"`
 }
 
 // HasOne declares a one-to-one relationship. The target entity holds a

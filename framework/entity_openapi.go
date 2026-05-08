@@ -153,6 +153,21 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			404: {"description": entityName + " not found"},
 		}
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
+
+		for _, endpoint := range entity.Config.Endpoints {
+			if endpoint.Method == "" || endpoint.Path == "" {
+				continue
+			}
+			customOp := openapi.NewOperation()
+			customOp.Summary = endpoint.Description
+			if customOp.Summary == "" {
+				customOp.Summary = endpoint.Method + " " + endpoint.Path
+			}
+			customOp.OperationID = defaultEndpointToolName(entityName, endpoint.Method, entityEndpointPath(entity, endpoint.Path))
+			customOp.Tags = []string{entityName}
+			customOp.AddResponse(200, "OK", map[string]any{"type": "object"})
+			s.AddPath(endpoint.Method, entityEndpointPath(entity, endpoint.Path), *customOp)
+		}
 	}
 
 	return s

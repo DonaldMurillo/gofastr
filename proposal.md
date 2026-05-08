@@ -95,6 +95,10 @@ app.EntitiesFromDir("entities/")
 app.Run()
 ```
 
+Current implementation note (2026-05-08): JSON entity declarations are supported
+as one file per entity in `entities/*.json`. The CLI reads that same shape and
+writes deterministic Go files into `.gofastr/entities/`.
+
 ### What `CRUD: true, MCP: true` generates:
 
 | Auto-generated | Routes | MCP Tools | OpenAPI |
@@ -167,9 +171,9 @@ Single static binary. Zero runtime deps. Go stdlib first.
 
 ```
 gofastr init "blog with posts and tags"   → scaffold project
-gofastr generate                          → entity declarations → Go codegen
+gofastr generate                          → entities/*.json → .gofastr Go codegen
 gofastr dev                               → hot-reload dev server
-gofastr build                             → production binary
+gofastr build                             → generate + production binary
 gofastr migrate                           → run DB migrations
 ```
 

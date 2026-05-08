@@ -3,8 +3,10 @@ package framework
 import (
 	"database/sql"
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/schema"
 )
 
@@ -16,6 +18,7 @@ type EntityConfig struct {
 	Table       string         // DB table name (defaults to snake_case of Name)
 	Fields      []schema.Field // typed field definitions
 	Relations   []Relation     // entity relationships
+	Endpoints   []Endpoint     // custom HTTP endpoints for this entity
 	SoftDelete  bool           // enable soft-delete (deleted_at column)
 	MultiTenant bool           // scope queries by tenant_id
 	Timestamps  bool           // add created_at / updated_at columns
@@ -25,6 +28,22 @@ type EntityConfig struct {
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.
 	timestampsSet bool
+}
+
+// Endpoint declares a custom route owned by an entity.
+//
+// Path may be absolute ("/posts/{id}/publish") or relative to the entity table
+// path ("{id}/publish"). Both Go 1.22 "{id}" and older ":id" parameter syntax
+// are accepted. Handler is used for HTTP. MCPHandler is optional and is only
+// registered when MCP is true.
+type Endpoint struct {
+	Method      string          `json:"method"`
+	Path        string          `json:"path"`
+	Name        string          `json:"name,omitempty"`
+	Description string          `json:"description,omitempty"`
+	MCP         bool            `json:"mcp,omitempty"`
+	Handler     http.Handler    `json:"-"`
+	MCPHandler  mcp.ToolHandler `json:"-"`
 }
 
 // WithTimestamps returns a copy of the config with Timestamps set to the

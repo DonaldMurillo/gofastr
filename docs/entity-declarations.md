@@ -1,0 +1,99 @@
+# Entity Declarations
+
+GoFastr supports JSON entity declarations for agent-friendly app generation.
+Declarations live in `entities/*.json` and can be loaded at runtime or used by
+the CLI code generator.
+
+## Runtime Loading
+
+```go
+app := framework.NewApp(framework.WithDB(db))
+if err := app.EntitiesFromDir("entities"); err != nil {
+    log.Fatal(err)
+}
+```
+
+For a single declaration:
+
+```go
+entity, err := app.EntityFromFile("entities/posts.json")
+```
+
+## JSON Shape
+
+```json
+{
+  "name": "posts",
+  "table": "posts",
+  "soft_delete": true,
+  "multi_tenant": false,
+  "crud": true,
+  "mcp": true,
+  "fields": [
+    { "name": "title", "type": "string", "required": true, "max": 200 },
+    { "name": "body", "type": "text" },
+    { "name": "status", "type": "enum", "values": ["draft", "published"], "default": "draft" },
+    { "name": "author_id", "type": "relation", "to": "users" }
+  ]
+}
+```
+
+Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
+`enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
+
+## Code Generation
+
+```bash
+gofastr generate
+```
+
+This reads `entities/*.json` and writes generated Go files into
+`.gofastr/entities/`:
+
+- `register.go` with `RegisterAll(app *framework.App)`
+- `models.go` with basic entity model structs
+
+Useful flags:
+
+- `--dry-run` lists generated files without writing.
+- `--json` emits machine-readable output.
+- `--entities=<dir>` reads declarations from another directory.
+- `--out=<dir>` writes generated files somewhere else.
+- `--no-clean` preserves existing files in the output directory.
+
+`gofastr build` runs generation automatically when an `entities/` directory is
+present. Pass `--no-generate` to skip that step.
+
+## MCP Tools
+
+When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
+
+- `{entity}_list`
+- `{entity}_get`
+- `{entity}_create`
+- `{entity}_update`
+- `{entity}_delete`
+
+The tools use the same validation and CRUD handler behavior as HTTP routes.
+
+## Custom Endpoints
+
+Custom endpoint handlers are Go behavior and should be registered from Go code:
+
+```go
+app.Entity("posts", framework.EntityConfig{
+    Fields: []schema.Field{{Name: "title", Type: schema.String}},
+    Endpoints: []framework.Endpoint{{
+        Method: http.MethodPost,
+        Path: "{id}/publish",
+        Handler: publishHandler,
+        MCP: true,
+        Name: "posts_publish",
+        MCPHandler: publishTool,
+    }},
+})
+```
+
+Endpoint paths can be absolute (`/posts/{id}/publish`) or relative to the
+entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are
+accepted.

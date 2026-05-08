@@ -1,0 +1,13 @@
+{
+  "name": "posts",
+  "soft_delete": true,
+  "fields": [
+    { "name": "title", "type": "string", "required": true },
+    { "name": "body", "type": "text" },
+    { "name": "status", "type": "enum", "values": ["draft", "published"], "default": "draft" },
+    { "name": "author_id", "type": "relation", "to": "users" },
+    { "name": "published_at", "type": "timestamp" }
+  ],
+  "crud": true,
+  "mcp": true
+}

@@ -250,6 +250,28 @@ func TestRecoveryPassesThrough(t *testing.T) {
 	}
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	handler := SecurityHeaders(SecurityHeadersConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	checks := map[string]string{
+		"Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+		"X-Frame-Options":         "DENY",
+		"Permissions-Policy":      "geolocation=(), microphone=(), camera=()",
+	}
+	for header, want := range checks {
+		if got := rec.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CORS
 // ---------------------------------------------------------------------------

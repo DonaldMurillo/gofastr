@@ -1,6 +1,7 @@
 # GoFastr Blog Example
 
-A minimal blog application demonstrating the GoFastr framework's entity definitions, relationships, CRUD routes, custom endpoints, MCP tools, and middleware.
+A minimal blog application demonstrating JSON entity declarations, CRUD routes,
+soft delete, custom endpoints, generated OpenAPI, and entity MCP tools.
 
 ## Quick Start
 
@@ -11,7 +12,7 @@ go run examples/blog/main.go
 
 The server starts on **http://localhost:8080**.
 
-> **Note:** CRUD endpoints require a running PostgreSQL database.  Update the connection string in `main.go` to match your environment.  Custom endpoints (`/posts/published`, `/posts/search`) respond even without a database.
+The example uses SQLite at `./blog.db` and auto-migrates on startup.
 
 ## Endpoints
 
@@ -32,7 +33,7 @@ The server starts on **http://localhost:8080**.
 | GET      | `/posts`              | No   | List posts (paginated)       |
 | GET      | `/posts/{id}`         | No   | Get post by ID               |
 | GET      | `/posts/published`    | No   | List published posts only    |
-| GET      | `/posts/search?q=...` | No   | Search posts by keyword      |
+| GET      | `/posts/search?q=...` | No   | Search indexed posts         |
 | POST     | `/posts`              | Yes  | Create post                  |
 | PUT      | `/posts/{id}`         | Yes  | Update post                  |
 | DELETE   | `/posts/{id}`         | Yes  | Soft-delete post             |
@@ -49,11 +50,11 @@ The server starts on **http://localhost:8080**.
 
 ### Auth
 
-Write endpoints (POST, PUT, DELETE) require an `Authorization` header:
+This example does not enforce auth. Production apps should add auth middleware
+or per-entity access control before exposing write endpoints.
 
 ```bash
-curl -H "Authorization: Bearer <token>" \
-     -H "Content-Type: application/json" \
+curl -H "Content-Type: application/json" \
      -d '{"name":"Ada","email":"ada@example.com"}' \
      http://localhost:8080/users
 ```
@@ -84,35 +85,49 @@ User ──< Post ──< Comment
 - **Post** belongs to **User** (author), has many **Comments**, and supports soft-delete
 - **Comment** belongs to both **Post** and **User**
 
-## JSON DSL
+## JSON Declarations
 
-The same application can be declared as a JSON document (see `gofastr.json`).
-This format is designed for AI code generation — describe your entities and
-relationships, and the framework builds the app:
+The entities are declared in `examples/blog/entities/*.json`. This format is
+designed for AI code generation: describe your entities and the framework builds
+the routes, migrations, OpenAPI schemas, and MCP CRUD tools.
 
 ```json
 {
-  "entities": {
-    "posts": {
-      "fields": [
-        { "name": "title", "type": "string", "required": true },
-        { "name": "body",  "type": "text" },
-        { "name": "status", "type": "enum", "values": ["draft", "published"] }
-      ],
-      "relations": [
-        { "type": "belongsTo", "name": "author", "entity": "users", "foreignKey": "author_id" }
-      ],
-      "crud": true,
-      "mcp": true
-    }
-  }
+  "name": "posts",
+  "soft_delete": true,
+  "fields": [
+    { "name": "title", "type": "string", "required": true },
+    { "name": "body", "type": "text" },
+    { "name": "status", "type": "enum", "values": ["draft", "published"] }
+  ],
+  "crud": true,
+  "mcp": true
 }
 ```
 
+Generate Go from those declarations:
+
+```bash
+cd examples/blog
+gofastr generate
+```
+
+## Search
+
+The blog uses `battery/search` with the in-memory backend for `/posts/search`.
+Production apps can swap this interface for a Postgres full-text, Meilisearch,
+or Elasticsearch backend.
+
 ## MCP Tools
 
-The blog registers an MCP tool for post search:
+Each entity sets `"mcp": true`, so GoFastr registers CRUD tools:
 
 | Tool            | Description              | Parameters              |
 | --------------- | ------------------------ | ----------------------- |
-| `search_posts`  | Search posts by keyword  | `q` (string, required)  |
+| `posts_list`    | List posts               | filters, page, limit    |
+| `posts_get`     | Get a post               | `id`                    |
+| `posts_create`  | Create a post            | writable post fields    |
+| `posts_update`  | Update a post            | `id` + writable fields  |
+| `posts_delete`  | Delete a post            | `id`                    |
+
+The same pattern exists for `users` and `comments`.

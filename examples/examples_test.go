@@ -301,6 +301,38 @@ func TestSPAEntityAPI(t *testing.T) {
 	})
 }
 
+func TestBlogEntityDeclarationsLoad(t *testing.T) {
+	decls, err := framework.LoadEntityDeclarations("blog/entities")
+	if err != nil {
+		t.Fatalf("LoadEntityDeclarations: %v", err)
+	}
+	if len(decls) != 3 {
+		t.Fatalf("declarations len = %d", len(decls))
+	}
+
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	app := framework.NewApp(framework.WithDB(db))
+	if err := app.EntitiesFromDir("blog/entities"); err != nil {
+		t.Fatalf("EntitiesFromDir: %v", err)
+	}
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	for _, name := range []string{"users", "posts", "comments"} {
+		if _, err := app.Registry.Get(name); err != nil {
+			t.Fatalf("registry missing %s: %v", name, err)
+		}
+	}
+	if tools := app.MCP.ListTools(); len(tools) != 15 {
+		t.Fatalf("MCP tools len = %d, want 15", len(tools))
+	}
+}
+
 // TestSPAStaticFiles verifies SPA static files are served.
 func TestSPAStaticFiles(t *testing.T) {
 	staticDir := "spa/static"
