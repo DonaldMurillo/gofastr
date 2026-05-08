@@ -62,7 +62,7 @@ func TestClasses(t *testing.T) {
 	tests := []struct {
 		name  string
 		input map[string]bool
-		want  string // expected class string (order may vary)
+		want  string
 	}{
 		{"empty", map[string]bool{}, ""},
 		{"all false", map[string]bool{"a": false, "b": false}, ""},
@@ -83,7 +83,6 @@ func TestClasses(t *testing.T) {
 		})
 	}
 
-	// Test that mixed produces a class string containing both true values.
 	got := Classes(map[string]bool{"active": true, "big": true, "skip": false})
 	if got == nil {
 		t.Fatal("expected non-nil result")
@@ -180,13 +179,11 @@ func TestRoleConstants(t *testing.T) {
 func TestHeading(t *testing.T) {
 	t.Run("h1 through h6", func(t *testing.T) {
 		for level := 1; level <= 6; level++ {
-			h := Heading(level, nil, render.Text("Title"))
+			h := Heading(HeadingConfig{Level: level}, render.Text("Title"))
 			tag := string(h)[1:3]
-			if level >= 1 && level <= 9 {
-				expected := []byte{'h', byte('0' + level)}
-				if tag != string(expected) {
-					t.Errorf("Heading(%d) produced tag %q, want <h%d>", level, tag, level)
-				}
+			expected := []byte{'h', byte('0' + level)}
+			if tag != string(expected) {
+				t.Errorf("Heading(%d) produced tag %q, want <h%d>", level, tag, level)
 			}
 			assertContains(t, h, "Title")
 			assertContains(t, h, "</h")
@@ -194,104 +191,117 @@ func TestHeading(t *testing.T) {
 	})
 
 	t.Run("auto-generates id", func(t *testing.T) {
-		h := Heading(2, nil, render.Text("Hello World"))
+		h := Heading(HeadingConfig{Level: 2}, render.Text("Hello World"))
 		if !strings.Contains(string(h), `id="heading-hello-world"`) {
 			t.Errorf("expected auto-generated id, got %q", h)
 		}
 	})
 
 	t.Run("preserves explicit id", func(t *testing.T) {
-		h := Heading(1, Attrs{"id": "custom-id"}, render.Text("Title"))
+		h := Heading(HeadingConfig{Level: 1, ID: "custom-id"}, render.Text("Title"))
 		assertContains(t, h, `id="custom-id"`)
 		assertNotContains(t, h, `id="heading-`)
 	})
 
-	t.Run("clamps level", func(t *testing.T) {
-		h := Heading(0, nil, render.Text("Low"))
-		assertContains(t, h, "<h1")
-		h = Heading(10, nil, render.Text("High"))
-		assertContains(t, h, "<h6")
+	t.Run("panics on invalid level", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Error("expected panic for Heading with Level=0")
+			}
+		}()
+		Heading(HeadingConfig{Level: 0}, render.Text("Low"))
+	})
+
+	t.Run("panics on level > 6", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Error("expected panic for Heading with Level=10")
+			}
+		}()
+		Heading(HeadingConfig{Level: 10}, render.Text("High"))
 	})
 
 	t.Run("nil children", func(t *testing.T) {
-		h := Heading(3, nil)
+		h := Heading(HeadingConfig{Level: 3})
 		assertContains(t, h, "<h3")
 		assertContains(t, h, "</h3>")
 	})
 }
 
 func TestParagraph(t *testing.T) {
-	p := Paragraph(nil, render.Text("Hello"))
+	p := Paragraph(TextConfig{}, render.Text("Hello"))
 	assertContains(t, p, "<p>")
 	assertContains(t, p, "Hello")
 	assertContains(t, p, "</p>")
 
-	p2 := Paragraph(Attrs{"class": "lead"}, render.Text("Intro"))
+	p2 := Paragraph(TextConfig{Class: "lead"}, render.Text("Intro"))
 	assertContains(t, p2, `class="lead"`)
 }
 
 func TestSpan(t *testing.T) {
-	s := Span(nil, render.Text("inline"))
+	s := Span(TextConfig{}, render.Text("inline"))
 	assertContains(t, s, "<span>")
 	assertContains(t, s, "inline")
 }
 
 func TestStrong(t *testing.T) {
-	s := Strong(nil, render.Text("bold"))
+	s := Strong(TextConfig{}, render.Text("bold"))
 	assertContains(t, s, "<strong>")
 	assertContains(t, s, "bold")
 }
 
 func TestEm(t *testing.T) {
-	e := Em(nil, render.Text("italic"))
+	e := Em(TextConfig{}, render.Text("italic"))
 	assertContains(t, e, "<em>")
 	assertContains(t, e, "italic")
 }
 
 func TestCode(t *testing.T) {
-	c := Code(nil, render.Text("x := 1"))
+	c := Code(TextConfig{}, render.Text("x := 1"))
 	assertContains(t, c, "<code>")
 	assertContains(t, c, "x := 1")
 }
 
 func TestPre(t *testing.T) {
-	p := Pre(nil, render.Text("  indented  "))
+	p := Pre(TextConfig{}, render.Text("  indented  "))
 	assertContains(t, p, "<pre>")
 	assertContains(t, p, "  indented  ")
 }
 
 func TestBlockquote(t *testing.T) {
-	b := Blockquote(Attrs{"cite": "https://example.com"}, render.Text("Quote"))
+	b := Blockquote(TextConfig{Attrs: Attrs{"cite": "https://example.com"}}, render.Text("Quote"))
 	assertContains(t, b, "<blockquote")
 	assertContains(t, b, "Quote")
 	assertContains(t, b, `cite="https://example.com"`)
 }
 
 func TestCite(t *testing.T) {
-	c := Cite(nil, render.Text("Work Title"))
+	c := Cite(TextConfig{}, render.Text("Work Title"))
 	assertContains(t, c, "<cite>")
 	assertContains(t, c, "Work Title")
 }
 
 func TestSmall(t *testing.T) {
-	s := Small(nil, render.Text("fine print"))
+	s := Small(TextConfig{}, render.Text("fine print"))
 	assertContains(t, s, "<small>")
 }
 
 func TestMark(t *testing.T) {
-	m := Mark(nil, render.Text("highlighted"))
+	m := Mark(TextConfig{}, render.Text("highlighted"))
 	assertContains(t, m, "<mark>")
 }
 
 func TestAbbr(t *testing.T) {
-	a := Abbr("HyperText Markup Language", nil, render.Text("HTML"))
+	a := Abbr(AbbrConfig{Title: "HyperText Markup Language"}, render.Text("HTML"))
 	assertContains(t, a, "<abbr")
 	assertContains(t, a, `title="HyperText Markup Language"`)
 	assertContains(t, a, "HTML")
 }
 
 func TestTime(t *testing.T) {
-	tm := Time("2024-01-15", nil, render.Text("Jan 15"))
+	tm := Time(TimeConfig{Datetime: "2024-01-15"}, render.Text("Jan 15"))
 	assertContains(t, tm, "<time")
 	assertContains(t, tm, `datetime="2024-01-15"`)
 	assertContains(t, tm, "Jan 15")
@@ -302,88 +312,95 @@ func TestTime(t *testing.T) {
 // ============================================================================
 
 func TestDiv(t *testing.T) {
-	d := Div(nil, render.Text("content"))
+	d := Div(DivConfig{}, render.Text("content"))
 	assertContains(t, d, "<div>")
 	assertContains(t, d, "content")
 }
 
 func TestArticle(t *testing.T) {
-	a := Article(nil, render.Text("post"))
+	a := Article(ArticleConfig{}, render.Text("post"))
 	assertContains(t, a, "<article>")
 }
 
 func TestSection(t *testing.T) {
-	t.Run("no role without aria-label", func(t *testing.T) {
-		s := Section(nil, render.Text("content"))
-		assertContains(t, s, "<section>")
-		assertNotContains(t, s, "role=")
+	t.Run("requires Label or LabelledBy", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Error("expected panic for Section without Label/LabelledBy")
+			}
+		}()
+		Section(SectionConfig{})
 	})
 
-	t.Run("adds role=region with aria-label", func(t *testing.T) {
-		s := Section(Attrs{"aria-label": "Features"}, render.Text("content"))
+	t.Run("with Label adds role=region", func(t *testing.T) {
+		s := Section(SectionConfig{Label: "Features"}, render.Text("content"))
+		assertContains(t, s, "<section")
 		assertContains(t, s, `role="region"`)
+		assertContains(t, s, `aria-label="Features"`)
 	})
 
-	t.Run("adds role=region with aria-labelledby", func(t *testing.T) {
-		s := Section(Attrs{"aria-labelledby": "heading-1"}, render.Text("content"))
+	t.Run("with LabelledBy adds role=region", func(t *testing.T) {
+		s := Section(SectionConfig{LabelledBy: "heading-1"}, render.Text("content"))
 		assertContains(t, s, `role="region"`)
+		assertContains(t, s, `aria-labelledby="heading-1"`)
 	})
 }
 
 func TestMain(t *testing.T) {
-	m := Main(nil, render.Text("main content"))
+	m := Main(MainConfig{}, render.Text("main content"))
 	assertContains(t, m, "<main")
 	assertContains(t, m, `role="main"`)
 	assertContains(t, m, `id="main-content"`)
 
 	t.Run("preserves explicit id", func(t *testing.T) {
-		m := Main(Attrs{"id": "content"})
+		m := Main(MainConfig{ID: "content"})
 		assertContains(t, m, `id="content"`)
 	})
 }
 
 func TestHeader(t *testing.T) {
-	h := Header(nil, render.Text("header"))
+	h := Header(HeaderConfig{}, render.Text("header"))
 	assertContains(t, h, "<header")
 	assertContains(t, h, `role="banner"`)
 }
 
 func TestFooter(t *testing.T) {
-	f := Footer(nil, render.Text("footer"))
+	f := Footer(FooterConfig{}, render.Text("footer"))
 	assertContains(t, f, "<footer")
 	assertContains(t, f, `role="contentinfo"`)
 }
 
 func TestNav(t *testing.T) {
-	n := Nav(Attrs{"aria-label": "Main nav"}, render.Text("links"))
+	n := Nav(NavConfig{Label: "Main nav"}, render.Text("links"))
 	assertContains(t, n, "<nav")
 	assertContains(t, n, `role="navigation"`)
 	assertContains(t, n, `aria-label="Main nav"`)
 }
 
 func TestAside(t *testing.T) {
-	a := Aside(nil, render.Text("sidebar"))
+	a := Aside(AsideConfig{Label: "Sidebar"}, render.Text("sidebar"))
 	assertContains(t, a, "<aside")
 	assertContains(t, a, `role="complementary"`)
 }
 
 func TestFigure(t *testing.T) {
-	f := Figure(nil, render.Text("fig content"))
+	f := Figure(FigureConfig{}, render.Text("fig content"))
 	assertContains(t, f, "<figure>")
 }
 
 func TestFigCaption(t *testing.T) {
-	f := FigCaption(nil, render.Text("caption"))
+	f := FigCaption(FigCaptionConfig{}, render.Text("caption"))
 	assertContains(t, f, "<figcaption>")
 }
 
 func TestDetails(t *testing.T) {
-	d := Details(nil, render.Text("disclosed content"))
+	d := Details(DetailsConfig{}, render.Text("disclosed content"))
 	assertContains(t, d, "<details>")
 }
 
 func TestSummary(t *testing.T) {
-	s := Summary(nil, render.Text("click to expand"))
+	s := Summary(SummaryConfig{}, render.Text("click to expand"))
 	assertContains(t, s, "<summary>")
 }
 
@@ -393,7 +410,7 @@ func TestSummary(t *testing.T) {
 
 func TestButton(t *testing.T) {
 	t.Run("with label", func(t *testing.T) {
-		b := Button("Submit", nil)
+		b := Button(ButtonConfig{Label: "Submit"})
 		assertContains(t, b, "<button")
 		assertContains(t, b, `type="button"`)
 		assertContains(t, b, `aria-label="Submit"`)
@@ -401,49 +418,48 @@ func TestButton(t *testing.T) {
 	})
 
 	t.Run("empty label no aria-label", func(t *testing.T) {
-		b := Button("", Attrs{"class": "icon-btn"})
+		b := Button(ButtonConfig{Label: "", Class: "icon-btn"})
 		assertNotContains(t, b, "aria-label=")
 		assertContains(t, b, `type="button"`)
 	})
 
-	t.Run("respects existing type", func(t *testing.T) {
-		b := Button("Go", Attrs{"type": "submit"})
+	t.Run("respects explicit type", func(t *testing.T) {
+		b := Button(ButtonConfig{Label: "Go", Type: "submit"})
 		assertContains(t, b, `type="submit"`)
 	})
 }
 
 func TestLink(t *testing.T) {
-	a := Link("/about", "About Us", nil)
+	a := Link(LinkConfig{Href: "/about", Text: "About Us"})
 	assertContains(t, a, "<a")
 	assertContains(t, a, `href="/about"`)
 	assertContains(t, a, "About Us")
 }
 
 func TestForm(t *testing.T) {
-	f := Form("POST", "/submit", nil, render.Text("form content"))
+	f := Form(FormConfig{Method: "POST", Action: "/submit"}, render.Text("form content"))
 	assertContains(t, f, "<form")
 	assertContains(t, f, `method="POST"`)
 	assertContains(t, f, `action="/submit"`)
 }
 
 func TestFormEmptyAction(t *testing.T) {
-	f := Form("GET", "", nil)
+	f := Form(FormConfig{Method: "GET"})
 	assertContains(t, f, `method="GET"`)
 	assertNotContains(t, f, "action=")
 }
 
 func TestInput(t *testing.T) {
-	inp := Input("text", "email", Attrs{"id": "email-field"})
+	inp := Input(InputConfig{Type: "text", Name: "email", ID: "email-field"})
 	assertContains(t, inp, "<input")
 	assertContains(t, inp, `type="text"`)
 	assertContains(t, inp, `name="email"`)
 	assertContains(t, inp, `id="email-field"`)
-	// Void element: no closing tag.
 	assertNotContains(t, inp, "</input>")
 }
 
 func TestLabel(t *testing.T) {
-	l := Label("email-field", "Email Address", nil)
+	l := Label(LabelConfig{For: "email-field", Text: "Email Address"})
 	assertContains(t, l, "<label")
 	assertContains(t, l, `for="email-field"`)
 	assertContains(t, l, "Email Address")
@@ -454,7 +470,7 @@ func TestSelect(t *testing.T) {
 		{Value: "us", Text: "United States", Selected: false},
 		{Value: "ca", Text: "Canada", Selected: true},
 	}
-	s := Select("country", opts, nil)
+	s := Select(SelectConfig{Name: "country", Options: opts})
 	assertContains(t, s, "<select")
 	assertContains(t, s, `name="country"`)
 	assertContains(t, s, `value="us"`)
@@ -476,7 +492,7 @@ func TestOption(t *testing.T) {
 }
 
 func TestTextArea(t *testing.T) {
-	ta := TextArea("description", Attrs{"rows": "5"})
+	ta := TextArea(TextAreaConfig{Name: "description", Attrs: Attrs{"rows": "5"}})
 	assertContains(t, ta, "<textarea")
 	assertContains(t, ta, `name="description"`)
 	assertContains(t, ta, `rows="5"`)
@@ -484,7 +500,7 @@ func TestTextArea(t *testing.T) {
 }
 
 func TestFieldSet(t *testing.T) {
-	fs := FieldSet("Personal Info", nil, render.Text("fields here"))
+	fs := FieldSet(FieldSetConfig{Legend: "Personal Info"}, render.Text("fields here"))
 	assertContains(t, fs, "<fieldset")
 	assertContains(t, fs, "<legend>")
 	assertContains(t, fs, "Personal Info")
@@ -492,7 +508,7 @@ func TestFieldSet(t *testing.T) {
 }
 
 func TestLegend(t *testing.T) {
-	l := Legend(nil, render.Text("Group Label"))
+	l := Legend(TextConfig{}, render.Text("Group Label"))
 	assertContains(t, l, "<legend>")
 	assertContains(t, l, "Group Label")
 }
@@ -502,35 +518,35 @@ func TestLegend(t *testing.T) {
 // ============================================================================
 
 func TestOrderedList(t *testing.T) {
-	ol := OrderedList(nil, render.Text("item"))
+	ol := OrderedList(ListConfig{}, render.Text("item"))
 	assertContains(t, ol, "<ol")
 	assertContains(t, ol, `role="list"`)
 }
 
 func TestUnorderedList(t *testing.T) {
-	ul := UnorderedList(nil, render.Text("item"))
+	ul := UnorderedList(ListConfig{}, render.Text("item"))
 	assertContains(t, ul, "<ul")
 	assertContains(t, ul, `role="list"`)
 }
 
 func TestListItem(t *testing.T) {
-	li := ListItem(nil, render.Text("first"))
+	li := ListItem(ListItemConfig{}, render.Text("first"))
 	assertContains(t, li, "<li")
 	assertContains(t, li, `role="listitem"`)
 }
 
 func TestDescriptionList(t *testing.T) {
-	dl := DescriptionList(nil, render.Text("content"))
+	dl := DescriptionList(TextConfig{}, render.Text("content"))
 	assertContains(t, dl, "<dl>")
 }
 
 func TestDescriptionTerm(t *testing.T) {
-	dt := DescriptionTerm(nil, render.Text("Term"))
+	dt := DescriptionTerm(TextConfig{}, render.Text("Term"))
 	assertContains(t, dt, "<dt>")
 }
 
 func TestDescriptionDetail(t *testing.T) {
-	dd := DescriptionDetail(nil, render.Text("Definition"))
+	dd := DescriptionDetail(TextConfig{}, render.Text("Definition"))
 	assertContains(t, dd, "<dd>")
 }
 
@@ -539,58 +555,58 @@ func TestDescriptionDetail(t *testing.T) {
 // ============================================================================
 
 func TestTable(t *testing.T) {
-	tbl := Table(nil, render.Text("table content"))
+	tbl := Table(TableConfig{}, render.Text("table content"))
 	assertContains(t, tbl, "<table")
 	assertContains(t, tbl, `role="table"`)
 }
 
 func TestCaption(t *testing.T) {
-	c := Caption(nil, render.Text("Q1 Sales"))
+	c := Caption(CaptionConfig{}, render.Text("Q1 Sales"))
 	assertContains(t, c, "<caption>")
 	assertContains(t, c, "Q1 Sales")
 }
 
 func TestThead(t *testing.T) {
-	th := Thead(nil, render.Text("head"))
+	th := Thead(TableSectionConfig{}, render.Text("head"))
 	assertContains(t, th, "<thead")
 	assertContains(t, th, `role="rowgroup"`)
 }
 
 func TestTbody(t *testing.T) {
-	tb := Tbody(nil, render.Text("body"))
+	tb := Tbody(TableSectionConfig{}, render.Text("body"))
 	assertContains(t, tb, "<tbody")
 	assertContains(t, tb, `role="rowgroup"`)
 }
 
 func TestTfoot(t *testing.T) {
-	tf := Tfoot(nil, render.Text("foot"))
+	tf := Tfoot(TableSectionConfig{}, render.Text("foot"))
 	assertContains(t, tf, "<tfoot")
 	assertContains(t, tf, `role="rowgroup"`)
 }
 
 func TestTableRow(t *testing.T) {
-	tr := TableRow(nil, render.Text("row"))
+	tr := TableRow(TableRowConfig{}, render.Text("row"))
 	assertContains(t, tr, "<tr")
 	assertContains(t, tr, `role="row"`)
 }
 
 func TestTH(t *testing.T) {
 	t.Run("default scope=col", func(t *testing.T) {
-		th := TH(nil, render.Text("Name"))
+		th := TH(THConfig{}, render.Text("Name"))
 		assertContains(t, th, "<th")
 		assertContains(t, th, `scope="col"`)
 		assertContains(t, th, `role="columnheader"`)
 	})
 
 	t.Run("scope=row", func(t *testing.T) {
-		th := TH(Attrs{"scope": "row"}, render.Text("Total"))
+		th := TH(THConfig{Scope: "row"}, render.Text("Total"))
 		assertContains(t, th, `scope="row"`)
 		assertContains(t, th, `role="rowheader"`)
 	})
 }
 
 func TestTD(t *testing.T) {
-	td := TD(nil, render.Text("data"))
+	td := TD(TDConfig{}, render.Text("data"))
 	assertContains(t, td, "<td")
 	assertContains(t, td, `role="cell"`)
 }
@@ -601,7 +617,7 @@ func TestTD(t *testing.T) {
 
 func TestImage(t *testing.T) {
 	t.Run("with alt text", func(t *testing.T) {
-		img := Image("/photo.jpg", "A sunset", nil)
+		img := Image(ImageConfig{Src: "/photo.jpg", Alt: "A sunset"})
 		assertContains(t, img, "<img")
 		assertContains(t, img, `src="/photo.jpg"`)
 		assertContains(t, img, `alt="A sunset"`)
@@ -610,27 +626,37 @@ func TestImage(t *testing.T) {
 	})
 
 	t.Run("decorative (empty alt)", func(t *testing.T) {
-		img := Image("/decor.png", "", nil)
+		img := Image(ImageConfig{Src: "/decor.png", Alt: ""})
 		assertContains(t, img, `alt=""`)
 		assertContains(t, img, `role="presentation"`)
+	})
+
+	t.Run("requires Src", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Error("expected panic for Image without Src")
+			}
+		}()
+		Image(ImageConfig{Alt: "no src"})
 	})
 }
 
 func TestAudio(t *testing.T) {
-	a := Audio(Attrs{"controls": "controls"}, render.Text("fallback"))
+	a := Audio(AudioConfig{Attrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
 	assertContains(t, a, "<audio")
 	assertContains(t, a, `controls="controls"`)
 	assertContains(t, a, "fallback")
 }
 
 func TestVideo(t *testing.T) {
-	v := Video(Attrs{"controls": "controls"}, render.Text("fallback"))
+	v := Video(VideoConfig{Attrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
 	assertContains(t, v, "<video")
 	assertContains(t, v, `controls="controls"`)
 }
 
 func TestSource(t *testing.T) {
-	s := Source("movie.mp4", "video/mp4", nil)
+	s := Source(SourceConfig{Src: "movie.mp4", Type: "video/mp4"})
 	assertContains(t, s, "<source")
 	assertContains(t, s, `src="movie.mp4"`)
 	assertContains(t, s, `type="video/mp4"`)
@@ -638,13 +664,13 @@ func TestSource(t *testing.T) {
 }
 
 func TestHR(t *testing.T) {
-	h := HR(nil)
+	h := HR(TextConfig{})
 	assertContains(t, h, "<hr>")
 	assertNotContains(t, h, "</hr>")
 }
 
 func TestBR(t *testing.T) {
-	b := BR(nil)
+	b := BR()
 	assertContains(t, b, "<br>")
 	assertNotContains(t, b, "</br>")
 }
@@ -678,65 +704,64 @@ func TestAutoEscaping(t *testing.T) {
 	malicious := "<script>alert('xss')</script>"
 
 	t.Run("Paragraph escapes content", func(t *testing.T) {
-		p := Paragraph(nil, render.Text(malicious))
+		p := Paragraph(TextConfig{}, render.Text(malicious))
 		assertNotContains(t, p, "<script>")
 		assertContains(t, p, "&lt;script&gt;")
 	})
 
 	t.Run("Span escapes content", func(t *testing.T) {
-		s := Span(nil, render.Text(malicious))
+		s := Span(TextConfig{}, render.Text(malicious))
 		assertNotContains(t, s, "<script>")
 	})
 
 	t.Run("Link escapes text", func(t *testing.T) {
-		a := Link("/page", malicious, nil)
+		a := Link(LinkConfig{Href: "/page", Text: malicious})
 		assertNotContains(t, a, "<script>")
 	})
 
 	t.Run("Label escapes text", func(t *testing.T) {
-		l := Label("field", malicious, nil)
+		l := Label(LabelConfig{For: "field", Text: malicious})
 		assertNotContains(t, l, "<script>")
 	})
 }
 
 // ============================================================================
-// Nil attrs edge case
+// Nil / zero-value config edge cases
 // ============================================================================
 
-func TestNilAttrs(t *testing.T) {
-	// Ensure nil attrs doesn't panic and produces clean HTML.
+func TestZeroConfigNoPanic(t *testing.T) {
+	// Ensure zero-value configs don't panic and produce clean HTML.
 	elements := []struct {
 		name string
 		html render.HTML
 	}{
-		{"Div", Div(nil)},
-		{"Article", Article(nil)},
-		{"Paragraph", Paragraph(nil)},
-		{"Span", Span(nil)},
-		{"Strong", Strong(nil)},
-		{"Em", Em(nil)},
-		{"Code", Code(nil)},
-		{"Pre", Pre(nil)},
-		{"Blockquote", Blockquote(nil)},
-		{"Cite", Cite(nil)},
-		{"Small", Small(nil)},
-		{"Mark", Mark(nil)},
-		{"Figure", Figure(nil)},
-		{"FigCaption", FigCaption(nil)},
-		{"Details", Details(nil)},
-		{"Summary", Summary(nil)},
-		{"Legend", Legend(nil)},
-		{"Caption", Caption(nil)},
-		{"DescriptionList", DescriptionList(nil)},
-		{"DescriptionTerm", DescriptionTerm(nil)},
-		{"DescriptionDetail", DescriptionDetail(nil)},
+		{"Div", Div(DivConfig{})},
+		{"Article", Article(ArticleConfig{})},
+		{"Paragraph", Paragraph(TextConfig{})},
+		{"Span", Span(TextConfig{})},
+		{"Strong", Strong(TextConfig{})},
+		{"Em", Em(TextConfig{})},
+		{"Code", Code(TextConfig{})},
+		{"Pre", Pre(TextConfig{})},
+		{"Blockquote", Blockquote(TextConfig{})},
+		{"Cite", Cite(TextConfig{})},
+		{"Small", Small(TextConfig{})},
+		{"Mark", Mark(TextConfig{})},
+		{"Figure", Figure(FigureConfig{})},
+		{"FigCaption", FigCaption(FigCaptionConfig{})},
+		{"Details", Details(DetailsConfig{})},
+		{"Summary", Summary(SummaryConfig{})},
+		{"Legend", Legend(TextConfig{})},
+		{"Caption", Caption(CaptionConfig{})},
+		{"DescriptionList", DescriptionList(TextConfig{})},
+		{"DescriptionTerm", DescriptionTerm(TextConfig{})},
+		{"DescriptionDetail", DescriptionDetail(TextConfig{})},
 	}
 
 	for _, el := range elements {
 		t.Run(el.name, func(t *testing.T) {
-			// Just ensure no panic and non-empty output.
 			if el.html == "" {
-				t.Errorf("%s with nil attrs produced empty HTML", el.name)
+				t.Errorf("%s with zero config produced empty HTML", el.name)
 			}
 		})
 	}
@@ -747,23 +772,22 @@ func TestNilAttrs(t *testing.T) {
 // ============================================================================
 
 func TestFullTable(t *testing.T) {
-	tbl := Table(Attrs{"class": "data-table"},
-		Caption(nil, render.Text("Sales Report")),
-		Thead(nil,
-			TableRow(nil,
-				TH(nil, render.Text("Product")),
-				TH(nil, render.Text("Revenue")),
+	tbl := Table(TableConfig{Class: "data-table"},
+		Caption(CaptionConfig{}, render.Text("Sales Report")),
+		Thead(TableSectionConfig{},
+			TableRow(TableRowConfig{},
+				TH(THConfig{}, render.Text("Product")),
+				TH(THConfig{}, render.Text("Revenue")),
 			),
 		),
-		Tbody(nil,
-			TableRow(nil,
-				TD(nil, render.Text("Widget A")),
-				TD(nil, render.Text("$1,200")),
+		Tbody(TableSectionConfig{},
+			TableRow(TableRowConfig{},
+				TD(TDConfig{}, render.Text("Widget A")),
+				TD(TDConfig{}, render.Text("$1,200")),
 			),
 		),
 	)
 
-	got := string(tbl)
 	assertContains(t, tbl, `<table`)
 	assertContains(t, tbl, `<caption>Sales Report</caption>`)
 	assertContains(t, tbl, "<thead")
@@ -771,8 +795,6 @@ func TestFullTable(t *testing.T) {
 	assertContains(t, tbl, "<th")
 	assertContains(t, tbl, "<td")
 	assertContains(t, tbl, "</table>")
-
-	_ = got
 }
 
 // ============================================================================
@@ -780,10 +802,10 @@ func TestFullTable(t *testing.T) {
 // ============================================================================
 
 func TestFullForm(t *testing.T) {
-	f := Form("POST", "/register", Attrs{"class": "form"},
-		FieldSet("Account", nil,
-			Label("email", "Email", nil),
-			Input("email", "email", Attrs{"id": "email", "required": "required"}),
+	f := Form(FormConfig{Method: "POST", Action: "/register", Class: "form"},
+		FieldSet(FieldSetConfig{Legend: "Account"},
+			Label(LabelConfig{For: "email", Text: "Email"}),
+			Input(InputConfig{Type: "email", Name: "email", ID: "email", Attrs: Attrs{"required": "required"}}),
 		),
 	)
 
@@ -800,7 +822,7 @@ func TestFullForm(t *testing.T) {
 // ============================================================================
 
 func TestGroup(t *testing.T) {
-	html := Group(RoleStatus, Aria("live", "polite"), render.Text("3 items"))
+	html := Group(GroupConfig{Role: RoleStatus, AriaLabel: "3 items"}, render.Text("3 items"))
 	s := string(html)
 	if !strings.Contains(s, `role="status"`) {
 		t.Errorf("expected role=status, got %s", s)
@@ -811,9 +833,9 @@ func TestGroup(t *testing.T) {
 }
 
 func TestButtonGroup(t *testing.T) {
-	html := ButtonGroup(nil,
-		Button("Yes", nil),
-		Button("No", nil),
+	html := ButtonGroup(ButtonGroupConfig{},
+		Button(ButtonConfig{Label: "Yes"}),
+		Button(ButtonConfig{Label: "No"}),
 	)
 	s := string(html)
 	if !strings.Contains(s, `role="group"`) {
@@ -866,7 +888,7 @@ func TestOnChange(t *testing.T) {
 }
 
 func TestOnClickInButton(t *testing.T) {
-	html := Button("Save", OnClick("save"))
+	html := Button(ButtonConfig{Label: "Save", Attrs: OnClick("save")})
 	s := string(html)
 	if !strings.Contains(s, `data-action="save"`) {
 		t.Errorf("expected data-action on button, got %s", s)

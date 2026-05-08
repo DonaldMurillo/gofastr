@@ -40,13 +40,15 @@ func findProductBySlug(slug string) (Product, bool) {
 }
 
 // productCards returns a grid of ProductCards from the catalog.
-// The grid is a CSS container query context — cards reflow based on container width.
 func productCards() render.HTML {
 	cards := make([]render.HTML, len(products))
 	for i, p := range products {
 		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
 	}
-	return elements.Div(elements.Attrs{"class": "product-grid", "container-type": "inline-size", "container-name": "product-grid"}, cards...)
+	return elements.Div(elements.DivConfig{
+		Class: "product-grid",
+		Attrs: elements.Attrs{"container-type": "inline-size", "container-name": "product-grid"},
+	}, cards...)
 }
 
 // featuredProductCards returns the first 3 products as cards.
@@ -56,7 +58,10 @@ func featuredProductCards() render.HTML {
 		p := products[i]
 		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
 	}
-	return elements.Div(elements.Attrs{"class": "product-grid", "container-type": "inline-size", "container-name": "product-grid"}, cards...)
+	return elements.Div(elements.DivConfig{
+		Class: "product-grid",
+		Attrs: elements.Attrs{"container-type": "inline-size", "container-name": "product-grid"},
+	}, cards...)
 }
 
 // HeaderComponent renders the site header with navigation.
@@ -64,15 +69,18 @@ type HeaderComponent struct{}
 
 func (h *HeaderComponent) Render() render.HTML {
 	return elements.Nav(
-		elements.Aria("label", "Main navigation"),
-		elements.Div(nil,
-			elements.Link("/", "GoFastr Demo", elements.Aria("label", "Home")),
-			elements.Link("/products", "Products", nil),
-			elements.Link("/about", "About", nil),
-			elements.Link("/signals", "Signals", nil),
-			elements.Link("/error-boundary", "Error Boundary", nil),
-			elements.Link("/dashboard", "Dashboard", nil),
-			elements.LinkHTML("/cart", render.HTML("Cart "+string(elements.Span(elements.Attrs{"class": "cart-badge"}, render.Text("0")))), nil),
+		elements.NavConfig{Label: "Main navigation"},
+		elements.Div(elements.DivConfig{},
+			elements.Link(elements.LinkConfig{Href: "/", Text: "GoFastr Demo", Attrs: elements.Aria("label", "Home")}),
+			elements.Link(elements.LinkConfig{Href: "/products", Text: "Products"}),
+			elements.Link(elements.LinkConfig{Href: "/about", Text: "About"}),
+			elements.Link(elements.LinkConfig{Href: "/signals", Text: "Signals"}),
+			elements.Link(elements.LinkConfig{Href: "/error-boundary", Text: "Error Boundary"}),
+			elements.Link(elements.LinkConfig{Href: "/dashboard", Text: "Dashboard"}),
+			elements.LinkHTML(elements.LinkHTMLConfig{
+				Href:    "/cart",
+				Content: render.HTML("Cart " + string(elements.Span(elements.TextConfig{Class: "cart-badge"}, render.Text("0")))),
+			}),
 		),
 	)
 }
@@ -81,7 +89,7 @@ func (h *HeaderComponent) Render() render.HTML {
 type FooterComponent struct{}
 
 func (f *FooterComponent) Render() render.HTML {
-	return elements.Paragraph(nil, render.Text("© 2025 GoFastr Demo. All rights reserved."))
+	return elements.Paragraph(elements.TextConfig{}, render.Text("© 2025 GoFastr Demo. All rights reserved."))
 }
 
 // HeroComponent renders a hero section with a heading and CTA button.
@@ -94,12 +102,14 @@ type HeroComponent struct {
 
 func (h *HeroComponent) Render() render.HTML {
 	return elements.Section(
-		elements.Aria("label", "Hero"),
-		elements.Heading(1, nil, render.Text(h.Title)),
-		elements.Paragraph(nil, render.Text(h.Subtitle)),
-		elements.Link(h.CTALink, h.CTAText, elements.Attrs{
-			"class": "cta-button",
-			"role":  "button",
+		elements.SectionConfig{Label: "Hero"},
+		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text(h.Title)),
+		elements.Paragraph(elements.TextConfig{}, render.Text(h.Subtitle)),
+		elements.Link(elements.LinkConfig{
+			Href:  h.CTALink,
+			Text:  h.CTAText,
+			Class: "cta-button",
+			Attrs: elements.Attrs{"role": "button"},
 		}),
 	)
 }
@@ -112,23 +122,27 @@ type CounterComponent struct {
 
 func (c *CounterComponent) Render() render.HTML {
 	return elements.Div(
-		elements.Attrs{
-			"data-component": c.ID,
-			"class":          "counter-display",
+		elements.DivConfig{
+			Class: "counter-display",
+			Attrs: elements.Attrs{"data-component": c.ID},
 		},
-		elements.Button("−", elements.Attrs{
-			"data-action": "counter-decrement",
-			"class":       "counter-btn counter-dec",
-			"aria-label":  "Decrement counter",
+		elements.Button(elements.ButtonConfig{
+			Label: "−",
+			Attrs: elements.Attrs{
+				"data-action": "counter-decrement",
+				"class":       "counter-btn counter-dec",
+			},
 		}),
 		render.Tag("span", map[string]string{
 			"class":                "counter-value",
 			"data-counter-display": "",
 		}, render.Text(fmt.Sprintf("%d", c.Count))),
-		elements.Button("+", elements.Attrs{
-			"data-action": "counter-increment",
-			"class":       "counter-btn counter-inc",
-			"aria-label":  "Increment counter",
+		elements.Button(elements.ButtonConfig{
+			Label: "+",
+			Attrs: elements.Attrs{
+				"data-action": "counter-increment",
+				"class":       "counter-btn counter-inc",
+			},
 		}),
 	)
 }
@@ -153,18 +167,25 @@ type ProductCard struct {
 
 func (p *ProductCard) Render() render.HTML {
 	cardContent := render.Join(
-		elements.Image(p.ImageSrc, p.ImageAlt, nil),
-		elements.Heading(3, nil, render.Text(p.Name)),
-		elements.Paragraph(nil, render.Text(fmt.Sprintf("$%.2f", p.Price))),
+		elements.Image(elements.ImageConfig{Src: p.ImageSrc, Alt: p.ImageAlt}),
+		elements.Heading(elements.HeadingConfig{Level: 3}, render.Text(p.Name)),
+		elements.Paragraph(elements.TextConfig{}, render.Text(fmt.Sprintf("$%.2f", p.Price))),
 	)
 	return elements.Article(
-		elements.Attrs{"class": "product-card", "data-component": "add-to-cart"},
-		elements.LinkHTML("/products/"+p.Slug, cardContent, elements.Attrs{"class": "product-card-link"}),
-		elements.Button("Add to cart", elements.Attrs{
-			"class":            "add-to-cart",
-			"data-action":      "add-to-cart",
-			"data-param-name":  p.Name,
-			"data-param-price": fmt.Sprintf("%.2f", p.Price),
+		elements.ArticleConfig{Class: "product-card", Attrs: elements.Attrs{"data-component": "add-to-cart"}},
+		elements.LinkHTML(elements.LinkHTMLConfig{
+			Href:    "/products/" + p.Slug,
+			Content: cardContent,
+			Class:   "product-card-link",
+		}),
+		elements.Button(elements.ButtonConfig{
+			Label: "Add to cart",
+			Class: "add-to-cart",
+			Attrs: elements.Attrs{
+				"data-action":      "add-to-cart",
+				"data-param-name":  p.Name,
+				"data-param-price": fmt.Sprintf("%.2f", p.Price),
+			},
 		}),
 	)
 }
@@ -177,9 +198,9 @@ type CartBadge struct {
 func (c *CartBadge) Render() render.HTML {
 	count := c.Count.Get()
 	return elements.Span(
-		elements.Attrs{
-			"class":      "cart-badge",
-			"aria-label": fmt.Sprintf("Cart has %d items", count),
+		elements.TextConfig{
+			Class: "cart-badge",
+			Attrs: elements.Attrs{"aria-label": fmt.Sprintf("Cart has %d items", count)},
 		},
 		render.Text(fmt.Sprintf("%d", count)),
 	)
@@ -191,7 +212,7 @@ type InteractiveButton struct {
 }
 
 func (b *InteractiveButton) Render() render.HTML {
-	return elements.Button(b.Label, elements.Attrs{"class": "interactive-btn"})
+	return elements.Button(elements.ButtonConfig{Label: b.Label, Class: "interactive-btn"})
 }
 
 func (b *InteractiveButton) Actions() {
@@ -205,17 +226,21 @@ type SearchFilterComponent struct{}
 
 func (s *SearchFilterComponent) Render() render.HTML {
 	return elements.Div(
-		elements.Attrs{"data-component": "search-filter"},
-		elements.Form("get", "/products", elements.Aria("label", "Search products"),
-			elements.Label("search-input", "Search", nil),
-			elements.Input("search", "q", elements.Attrs{
-				"id":               "search-input",
-				"placeholder":      "Search products...",
-				"data-action":      "search-products",
-				"data-action-type": "input",
-				"data-bind":        "search",
+		elements.DivConfig{Attrs: elements.Attrs{"data-component": "search-filter"}},
+		elements.Form(elements.FormConfig{Method: "get", Action: "/products"},
+			elements.Label(elements.LabelConfig{For: "search-input", Text: "Search"}),
+			elements.Input(elements.InputConfig{
+				Type: "search",
+				Name: "q",
+				ID:   "search-input",
+				Attrs: elements.Attrs{
+					"placeholder":      "Search products...",
+					"data-action":      "search-products",
+					"data-action-type": "input",
+					"data-bind":        "search",
+				},
 			}),
-			elements.Button("Search", elements.Attrs{"type": "submit"}),
+			elements.Button(elements.ButtonConfig{Label: "Search", Type: "submit"}),
 		),
 	)
 }

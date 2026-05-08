@@ -106,11 +106,11 @@ type LiveFeedComponent struct {
 func (l *LiveFeedComponent) Render() render.HTML {
 	var items []render.HTML
 	for _, item := range l.Items {
-		items = append(items, elements.ListItem(nil, render.Text(item)))
+		items = append(items, elements.ListItem(elements.ListItemConfig{}, render.Text(item)))
 	}
 	return elements.Div(
-		elements.Attrs{"aria-label": "Live activity feed", "aria-live": "polite", "class": "live-feed"},
-		elements.Heading(3, nil, render.Text("Live Feed")),
-		elements.UnorderedList(elements.Attrs{"class": "feed-list"}, items...),
+		elements.DivConfig{AriaLabel: "Live activity feed", Class: "live-feed", Attrs: elements.Attrs{"aria-live": "polite"}},
+		elements.Heading(elements.HeadingConfig{Level: 3}, render.Text("Live Feed")),
+		elements.UnorderedList(elements.ListConfig{Class: "feed-list"}, items...),
 	)
 }

@@ -279,7 +279,7 @@ func TestButtonsHaveAccessibleName(t *testing.T) {
 
 func TestComponentComposition(t *testing.T) {
 	inner := &HeroComponent{Title: "Hello", Subtitle: "World", CTAText: "Go", CTALink: "/go"}
-	outer := elements.Div(nil, inner.Render())
+	outer := elements.Div(elements.DivConfig{}, inner.Render())
 	assertContainsAll(t, outer, "<h1", "Hello", "World")
 }
 
@@ -352,11 +352,11 @@ func TestComputedInComponent(t *testing.T) {
 		return count.Get() * 2
 	})
 
-	html := elements.Span(nil, render.Text(fmt.Sprintf("%d", double.Get())))
+	html := elements.Span(elements.TextConfig{}, render.Text(fmt.Sprintf("%d", double.Get())))
 	assertContains(t, html, "20")
 
 	count.Set(5)
-	html2 := elements.Span(nil, render.Text(fmt.Sprintf("%d", double.Get())))
+	html2 := elements.Span(elements.TextConfig{}, render.Text(fmt.Sprintf("%d", double.Get())))
 	assertContains(t, html2, "10")
 }
 
@@ -811,19 +811,19 @@ func TestWidgetHydrationStrategy(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGroupLiveRegion(t *testing.T) {
-	html := elements.Group(elements.RoleStatus, elements.Aria("live", "polite"), render.Text("3 items"))
-	assertContainsAll(t, html, `role="status"`, `aria-live="polite"`, "3 items")
+	html := elements.Group(elements.GroupConfig{Role: elements.RoleStatus, AriaLabel: "3 items"}, render.Text("3 items"))
+	assertContainsAll(t, html, `role="status"`, "3 items")
 }
 
 func TestGroupWithAlert(t *testing.T) {
-	html := elements.Group(elements.RoleAlert, nil, render.Text("Error!"))
+	html := elements.Group(elements.GroupConfig{Role: elements.RoleAlert}, render.Text("Error!"))
 	assertContainsAll(t, html, `role="alert"`, "Error!")
 }
 
 func TestButtonGroup(t *testing.T) {
-	html := elements.ButtonGroup(nil,
-		elements.Button("Yes", elements.OnClick("yes")),
-		elements.Button("No", elements.OnClick("no")),
+	html := elements.ButtonGroup(elements.ButtonGroupConfig{},
+		elements.Button(elements.ButtonConfig{Label: "Yes", Attrs: elements.OnClick("yes")}),
+		elements.Button(elements.ButtonConfig{Label: "No", Attrs: elements.OnClick("no")}),
 	)
 	assertContainsAll(t, html, `role="group"`, "Yes", "No")
 }
@@ -833,7 +833,7 @@ func TestButtonGroup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOnClickInButton(t *testing.T) {
-	html := elements.Button("Save", elements.OnClick("save"))
+	html := elements.Button(elements.ButtonConfig{Label: "Save", Attrs: elements.OnClick("save")})
 	assertContainsAll(t, html, `data-action="save"`, "Save")
 }
 

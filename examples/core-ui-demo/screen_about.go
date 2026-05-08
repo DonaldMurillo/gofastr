@@ -14,26 +14,26 @@ func (s *AboutScreen) ScreenDescription() string  { return "About GoFastr" }
 func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *AboutScreen) Render() render.HTML {
-	return elements.Div(nil,
-		elements.Heading(1, nil, render.Text("About GoFastr")),
+	return elements.Div(elements.DivConfig{},
+		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("About GoFastr")),
 		elements.Section(
-			elements.Aria("label", "Our mission"),
-			elements.Heading(2, nil, render.Text("Our Mission")),
-			elements.Paragraph(nil, render.Text("GoFastr makes it easy to build fast, accessible web applications in pure Go.")),
+			elements.SectionConfig{Label: "Our mission"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Our Mission")),
+			elements.Paragraph(elements.TextConfig{}, render.Text("GoFastr makes it easy to build fast, accessible web applications in pure Go.")),
 		),
 		elements.Section(
-			elements.Aria("label", "Our team"),
-			elements.Heading(2, nil, render.Text("Our Team")),
-			elements.UnorderedList(nil,
-				elements.ListItem(nil, render.Text("Alice — Founder & CEO")),
-				elements.ListItem(nil, render.Text("Bob — Lead Engineer")),
-				elements.ListItem(nil, render.Text("Carol — Design Lead")),
+			elements.SectionConfig{Label: "Our team"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Our Team")),
+			elements.UnorderedList(elements.ListConfig{},
+				elements.ListItem(elements.ListItemConfig{}, render.Text("Alice — Founder & CEO")),
+				elements.ListItem(elements.ListItemConfig{}, render.Text("Bob — Lead Engineer")),
+				elements.ListItem(elements.ListItemConfig{}, render.Text("Carol — Design Lead")),
 			),
 		),
 		elements.Section(
-			elements.Aria("label", "Contact"),
-			elements.Heading(2, nil, render.Text("Contact")),
-			elements.Paragraph(nil, render.Text("Reach us at hello@gofastr.dev")),
+			elements.SectionConfig{Label: "Contact"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Contact")),
+			elements.Paragraph(elements.TextConfig{}, render.Text("Reach us at hello@gofastr.dev")),
 		),
 	)
 }

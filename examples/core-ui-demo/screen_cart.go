@@ -22,22 +22,22 @@ func (s *CartDrawer) Render() render.HTML {
 	count := s.CartCount.Get()
 	items := make([]render.HTML, count)
 	for i := 0; i < count; i++ {
-		items[i] = elements.ListItem(nil, render.Text(fmt.Sprintf("Cart item %d", i+1)))
+		items[i] = elements.ListItem(elements.ListItemConfig{}, render.Text(fmt.Sprintf("Cart item %d", i+1)))
 	}
 
 	var list render.HTML
 	if len(items) > 0 {
-		list = elements.UnorderedList(elements.Attrs{"class": "cart-items"}, items...)
+		list = elements.UnorderedList(elements.ListConfig{Class: "cart-items"}, items...)
 	} else {
-		list = elements.Paragraph(nil, render.Text("Your cart is empty."))
+		list = elements.Paragraph(elements.TextConfig{}, render.Text("Your cart is empty."))
 	}
 
-	return elements.Div(elements.Attrs{"data-page": "cart"},
-		elements.Heading(2, nil, render.Text("Shopping Cart")),
+	return elements.Div(elements.DivConfig{Attrs: elements.Attrs{"data-page": "cart"}},
+		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Shopping Cart")),
 		elements.Span(
-			elements.Attrs{
-				"class":      "cart-badge",
-				"aria-label": fmt.Sprintf("Cart has %d items", count),
+			elements.TextConfig{
+				Class: "cart-badge",
+				Attrs: elements.Attrs{"aria-label": fmt.Sprintf("Cart has %d items", count)},
 			},
 			render.Text(fmt.Sprintf("%d items", count)),
 		),

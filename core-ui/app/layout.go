@@ -44,17 +44,6 @@ func (l *Layout) WithFooter(c component.Component) *Layout {
 
 // Wrap renders the layout wrapping the given content HTML.
 // If the layout is nil, Wrap returns the content unchanged.
-//
-// The output structure is:
-//
-//	<div class="layout-{name}">
-//	  <header role="banner">...</header>           (if header set)
-//	  <div class="layout-body">
-//	    <nav role="navigation" aria-label="Sidebar">...</nav>  (if sidebar set)
-//	    <main id="main-content" role="main">{content}</main>
-//	  </div>
-//	  <footer role="contentinfo">...</footer>      (if footer set)
-//	</div>
 func (l *Layout) Wrap(content render.HTML) render.HTML {
 	if l == nil {
 		return content
@@ -64,32 +53,22 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 
 	// Sidebar (optional).
 	if l.Sidebar != nil {
-		nav := elements.Nav(elements.Attrs{
-			"role":       elements.RoleNavigation,
-			"aria-label": "Sidebar",
-		}, l.Sidebar.Render())
+		nav := elements.Nav(elements.NavConfig{Label: "Sidebar"}, l.Sidebar.Render())
 		bodyChildren = append(bodyChildren, nav)
 	}
 
 	// Main content.
-	mainContent := elements.Main(elements.Attrs{
-		"id":   "main-content",
-		"role": elements.RoleMain,
-	}, content)
+	mainContent := elements.Main(elements.MainConfig{}, content)
 	bodyChildren = append(bodyChildren, mainContent)
 
 	// Layout body: sidebar + main.
-	body := elements.Div(elements.Attrs{
-		"class": "layout-body",
-	}, bodyChildren...)
+	body := elements.Div(elements.DivConfig{Class: "layout-body"}, bodyChildren...)
 
 	var wrapperChildren []render.HTML
 
 	// Header (optional).
 	if l.Header != nil {
-		header := elements.Header(elements.Attrs{
-			"role": elements.RoleBanner,
-		}, l.Header.Render())
+		header := elements.Header(elements.HeaderConfig{}, l.Header.Render())
 		wrapperChildren = append(wrapperChildren, header)
 	}
 
@@ -98,14 +77,10 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 
 	// Footer (optional).
 	if l.Footer != nil {
-		footer := elements.Footer(elements.Attrs{
-			"role": elements.RoleContentinfo,
-		}, l.Footer.Render())
+		footer := elements.Footer(elements.FooterConfig{}, l.Footer.Render())
 		wrapperChildren = append(wrapperChildren, footer)
 	}
 
 	// Wrapper div.
-	return elements.Div(elements.Attrs{
-		"class": "layout-" + l.Name,
-	}, wrapperChildren...)
+	return elements.Div(elements.DivConfig{Class: "layout-" + l.Name}, wrapperChildren...)
 }

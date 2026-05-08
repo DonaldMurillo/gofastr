@@ -118,6 +118,22 @@ func ContainerType(containerType string, name string) Attrs {
 	}
 }
 
+// buildAttrs constructs an Attrs map from optional base attrs, ID, and Class.
+// It never returns nil — always returns a usable map.
+func buildAttrs(base Attrs, id, class string) Attrs {
+	attrs := make(Attrs)
+	for k, v := range base {
+		attrs[k] = v
+	}
+	if id != "" {
+		attrs["id"] = id
+	}
+	if class != "" {
+		attrs["class"] = class
+	}
+	return attrs
+}
+
 // setAttr is a helper that sets a key in the attrs map, creating it if nil.
 func setAttr(attrs Attrs, key, value string) Attrs {
 	if attrs == nil {

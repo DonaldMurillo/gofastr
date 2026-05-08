@@ -8,7 +8,6 @@ import (
 )
 
 // ErrorBoundaryDemoScreen demonstrates the ErrorBoundary feature.
-// It includes a component that deliberately panics to show the fallback UI.
 type ErrorBoundaryDemoScreen struct{}
 
 func (s *ErrorBoundaryDemoScreen) ScreenTitle() string        { return "Error Boundary" }
@@ -16,35 +15,33 @@ func (s *ErrorBoundaryDemoScreen) ScreenDescription() string  { return "Error bo
 func (s *ErrorBoundaryDemoScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ErrorBoundaryDemoScreen) Render() render.HTML {
-	return elements.Div(nil,
-		elements.Heading(1, nil, render.Text("Error Boundary Demo")),
-		elements.Paragraph(nil, render.Text("Error boundaries catch panics in component Render() and show a fallback UI.")),
+	return elements.Div(elements.DivConfig{},
+		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Error Boundary Demo")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("Error boundaries catch panics in component Render() and show a fallback UI.")),
 		elements.Section(
-			elements.Aria("label", "Safe component"),
-			elements.Heading(2, nil, render.Text("Working Component")),
-			elements.Paragraph(nil, render.Text("This component renders normally.")),
+			elements.SectionConfig{Label: "Safe component"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Working Component")),
+			elements.Paragraph(elements.TextConfig{}, render.Text("This component renders normally.")),
 		),
 		elements.Section(
-			elements.Aria("label", "Broken component with error boundary"),
-			elements.Heading(2, nil, render.Text("Panicking Component")),
+			elements.SectionConfig{Label: "Broken component with error boundary"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Panicking Component")),
 			renderHTMLWithErrorBoundary(),
 		),
-		elements.Paragraph(nil, render.Text("The red box above is the default error boundary fallback. Components can implement ErrorBoundary for custom fallback UI.")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("The red box above is the default error boundary fallback. Components can implement ErrorBoundary for custom fallback UI.")),
 	)
 }
 
-// brokenComponent deliberately panics to demonstrate error boundaries.
 type brokenComponent struct{}
 
 func (b *brokenComponent) Render() render.HTML {
 	panic("deliberate panic for error boundary demo")
 }
 
-// renderHTMLWithErrorBoundary uses SafeRender to catch the panic.
 func renderHTMLWithErrorBoundary() render.HTML {
 	html, err := component.SafeRender(&brokenComponent{})
 	if err != nil {
-		return elements.Div(elements.Attrs{"class": "error-boundary-result"}, html)
+		return elements.Div(elements.DivConfig{Class: "error-boundary-result"}, html)
 	}
 	return html
 }

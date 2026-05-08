@@ -11,8 +11,6 @@ import (
 )
 
 // SignalDemoScreen demonstrates Computed and Effect signals.
-// It shows a price calculator where quantity * unit price = total (computed),
-// and an effect that logs every change.
 type SignalDemoScreen struct{}
 
 func (s *SignalDemoScreen) ScreenTitle() string        { return "Signal Demo" }
@@ -21,17 +19,14 @@ func (s *SignalDemoScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *SignalDemoScreen) ComponentID() string        { return "signal-demo" }
 
 func (s *SignalDemoScreen) Render() render.HTML {
-	// Create a quantity signal
 	quantity := signal.New(1)
 	unitPrice := 29.99
 
-	// Computed signal derives total from quantity
 	total := signal.NewComputed(func() string {
 		q := quantity.Get()
 		return fmt.Sprintf("$%.2f", float64(q)*unitPrice)
 	})
 
-	// Effect runs whenever quantity changes
 	log := signal.New("")
 	signal.Effect(func() {
 		q := quantity.Get()
@@ -41,27 +36,29 @@ func (s *SignalDemoScreen) Render() render.HTML {
 	currentTotal := total.Get()
 	currentLog := log.Get()
 
-	return elements.Div(elements.Attrs{"data-component": "signal-demo"},
-		elements.Heading(1, nil, render.Text("Signal Demo")),
-		elements.Paragraph(nil, render.Text("Demonstrates Computed and Effect signals working together.")),
+	return elements.Div(elements.DivConfig{Attrs: elements.Attrs{"data-component": "signal-demo"}},
+		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Signal Demo")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("Demonstrates Computed and Effect signals working together.")),
 		elements.Section(
-			elements.Aria("label", "Price calculator"),
-			elements.Div(elements.Attrs{"class": "counter-display"},
-				elements.Button("−", elements.Attrs{
-					"class": "counter-btn", "data-action": "signal-decrement",
-					"aria-label": "Decrease quantity",
+			elements.SectionConfig{Label: "Price calculator"},
+			elements.Div(elements.DivConfig{Class: "counter-display"},
+				elements.Button(elements.ButtonConfig{
+					Label: "−",
+					Class: "counter-btn",
+					Attrs: elements.Attrs{"data-action": "signal-decrement", "aria-label": "Decrease quantity"},
 				}),
 				render.Tag("span", map[string]string{"class": "counter-value", "id": "signal-qty"}, render.Text(fmt.Sprintf("%d", quantity.Get()))),
-				elements.Button("+", elements.Attrs{
-					"class": "counter-btn", "data-action": "signal-increment",
-					"aria-label": "Increase quantity",
+				elements.Button(elements.ButtonConfig{
+					Label: "+",
+					Class: "counter-btn",
+					Attrs: elements.Attrs{"data-action": "signal-increment", "aria-label": "Increase quantity"},
 				}),
 			),
-			elements.Paragraph(nil, render.Text(fmt.Sprintf("Unit price: $%.2f", unitPrice))),
-			elements.Paragraph(elements.Attrs{"class": "product-detail-price"}, render.HTML(fmt.Sprintf(`<span id="signal-total">Total: %s</span>`, currentTotal))),
-			elements.Paragraph(elements.Attrs{"aria-live": "polite"}, render.HTML(fmt.Sprintf(`<span id="signal-log">%s</span>`, currentLog))),
+			elements.Paragraph(elements.TextConfig{}, render.Text(fmt.Sprintf("Unit price: $%.2f", unitPrice))),
+			elements.Paragraph(elements.TextConfig{Class: "product-detail-price"}, render.HTML(fmt.Sprintf(`<span id="signal-total">Total: %s</span>`, currentTotal))),
+			elements.Paragraph(elements.TextConfig{Attrs: elements.Attrs{"aria-live": "polite"}}, render.HTML(fmt.Sprintf(`<span id="signal-log">%s</span>`, currentLog))),
 		),
-		elements.Paragraph(nil, render.Text("The Computed signal auto-derives the total. The Effect signal reacts to changes and logs them.")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("The Computed signal auto-derives the total. The Effect signal reacts to changes and logs them.")),
 	)
 }
 

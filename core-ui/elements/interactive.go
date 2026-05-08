@@ -11,82 +11,101 @@ type SelectOption struct {
 	Selected bool
 }
 
-// Button produces a <button> element with type="button" and aria-label
-// set from label when provided.
-func Button(label string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 2)
+// Button produces a <button> element.
+// Required: Label (used as both visible text and aria-label).
+func Button(cfg ButtonConfig) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	btnType := cfg.Type
+	if btnType == "" {
+		btnType = "button"
 	}
-	if _, ok := attrs["type"]; !ok {
-		attrs["type"] = "button"
+	setAttr(attrs, "type", btnType)
+	if cfg.Label != "" {
+		setAttr(attrs, "aria-label", cfg.Label)
 	}
-	if label != "" {
-		if _, ok := attrs["aria-label"]; !ok {
-			attrs["aria-label"] = label
-		}
-	}
-	return render.Tag("button", attrs, render.Text(label))
+	return render.Tag("button", attrs, render.Text(cfg.Label))
 }
 
 // Link produces an <a> element with the given href and text content.
-func Link(href, text string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 1)
+// Required: Href and Text.
+func Link(cfg LinkConfig) render.HTML {
+	if cfg.Href == "" {
+		panic("elements: Link requires Href")
 	}
-	attrs["href"] = href
-	return render.Tag("a", attrs, render.Text(text))
+	if cfg.Text == "" {
+		panic("elements: Link requires Text")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "href", cfg.Href)
+	return render.Tag("a", attrs, render.Text(cfg.Text))
 }
 
 // LinkHTML produces an <a> element with raw HTML content (not escaped).
-func LinkHTML(href string, content render.HTML, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 1)
+// Required: Href and Content.
+func LinkHTML(cfg LinkHTMLConfig) render.HTML {
+	if cfg.Href == "" {
+		panic("elements: LinkHTML requires Href")
 	}
-	attrs["href"] = href
-	return render.Tag("a", attrs, content)
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "href", cfg.Href)
+	return render.Tag("a", attrs, cfg.Content)
 }
 
-// Form produces a <form> element with method and action attributes.
-func Form(method, action string, attrs Attrs, children ...render.HTML) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 2)
+// Form produces a <form> element.
+// Required: Method.
+func Form(cfg FormConfig, children ...render.HTML) render.HTML {
+	if cfg.Method == "" {
+		panic("elements: Form requires Method")
 	}
-	attrs["method"] = method
-	if action != "" {
-		attrs["action"] = action
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "method", cfg.Method)
+	if cfg.Action != "" {
+		setAttr(attrs, "action", cfg.Action)
 	}
 	return render.Tag("form", attrs, children...)
 }
 
-// Input produces a void <input> element with type and name attributes.
-func Input(inputType, name string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 2)
+// Input produces a void <input> element.
+// Required: Type and Name.
+func Input(cfg InputConfig) render.HTML {
+	if cfg.Type == "" {
+		panic("elements: Input requires Type")
 	}
-	attrs["type"] = inputType
-	attrs["name"] = name
+	if cfg.Name == "" {
+		panic("elements: Input requires Name")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "type", cfg.Type)
+	setAttr(attrs, "name", cfg.Name)
 	return render.VoidTag("input", attrs)
 }
 
 // Label produces a <label> element with a for attribute linking it to
 // the form control with the given ID.
-func Label(forID, text string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 1)
+// Required: For and Text.
+func Label(cfg LabelConfig) render.HTML {
+	if cfg.For == "" {
+		panic("elements: Label requires For")
 	}
-	attrs["for"] = forID
-	return render.Tag("label", attrs, render.Text(text))
+	if cfg.Text == "" {
+		panic("elements: Label requires Text")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "for", cfg.For)
+	return render.Tag("label", attrs, render.Text(cfg.Text))
 }
 
 // Select produces a <select> element containing the given options.
-func Select(name string, options []SelectOption, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 1)
+// Required: Name.
+func Select(cfg SelectConfig) render.HTML {
+	if cfg.Name == "" {
+		panic("elements: Select requires Name")
 	}
-	attrs["name"] = name
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "name", cfg.Name)
 
-	children := make([]render.HTML, len(options))
-	for i, opt := range options {
+	children := make([]render.HTML, len(cfg.Options))
+	for i, opt := range cfg.Options {
 		children[i] = Option(opt.Value, opt.Text, opt.Selected)
 	}
 	return render.Tag("select", attrs, children...)
@@ -101,36 +120,42 @@ func Option(value, text string, selected bool) render.HTML {
 	return render.Tag("option", attrs, render.Text(text))
 }
 
-// TextArea produces a <textarea> element with the given name.
-func TextArea(name string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 1)
+// TextArea produces a <textarea> element.
+// Required: Name.
+func TextArea(cfg TextAreaConfig) render.HTML {
+	if cfg.Name == "" {
+		panic("elements: TextArea requires Name")
 	}
-	attrs["name"] = name
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "name", cfg.Name)
 	return render.Tag("textarea", attrs)
 }
 
 // ButtonGroup produces a <div> with role="group" containing buttons.
-// This provides an accessible grouping for related buttons.
-func ButtonGroup(attrs Attrs, children ...render.HTML) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 1)
-	}
-	if _, ok := attrs["role"]; !ok {
-		attrs["role"] = "group"
+func ButtonGroup(cfg ButtonGroupConfig, children ...render.HTML) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "role", "group")
+	if cfg.AriaLabel != "" {
+		setAttr(attrs, "aria-label", cfg.AriaLabel)
 	}
 	return render.Tag("div", attrs, children...)
 }
 
 // FieldSet produces a <fieldset> element with a <legend> derived from
-// the legend parameter.
-func FieldSet(legend string, attrs Attrs, children ...render.HTML) render.HTML {
-	legendHTML := Legend(nil, render.Text(legend))
+// cfg.Legend.
+// Required: Legend.
+func FieldSet(cfg FieldSetConfig, children ...render.HTML) render.HTML {
+	if cfg.Legend == "" {
+		panic("elements: FieldSet requires Legend")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	legendHTML := Legend(TextConfig{}, render.Text(cfg.Legend))
 	all := append([]render.HTML{legendHTML}, children...)
 	return render.Tag("fieldset", attrs, all...)
 }
 
 // Legend produces a <legend> element.
-func Legend(attrs Attrs, children ...render.HTML) render.HTML {
+func Legend(cfg TextConfig, children ...render.HTML) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	return render.Tag("legend", attrs, children...)
 }

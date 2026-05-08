@@ -146,10 +146,7 @@ func (s *Screen) Render() render.HTML {
 
 	switch s.Type {
 	case ScreenPage:
-		return elements.Main(elements.Attrs{
-			"id":   "main-content",
-			"role": "main",
-		}, content)
+		return elements.Main(elements.MainConfig{}, content)
 
 	case ScreenDrawer:
 		// Runtime handles structural wrapping (backdrop + nav.drawer).
@@ -168,10 +165,7 @@ func (s *Screen) Render() render.HTML {
 
 	default:
 		// Fallback: treat as page.
-		return elements.Main(elements.Attrs{
-			"id":   "main-content",
-			"role": "main",
-		}, content)
+		return elements.Main(elements.MainConfig{}, content)
 	}
 }
 

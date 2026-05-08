@@ -25,7 +25,7 @@ import (
 type testHeaderComp struct{}
 
 func (t *testHeaderComp) Render() render.HTML {
-	return elements.Header(elements.Aria("label", "Site header"),
+	return elements.Header(elements.HeaderConfig{},
 		render.Text("Test Site"),
 	)
 }
@@ -33,7 +33,7 @@ func (t *testHeaderComp) Render() render.HTML {
 type testFooterComp struct{}
 
 func (t *testFooterComp) Render() render.HTML {
-	return elements.Footer(elements.Aria("label", "Site footer"),
+	return elements.Footer(elements.FooterConfig{},
 		render.Text("© 2025"),
 	)
 }
@@ -41,9 +41,9 @@ func (t *testFooterComp) Render() render.HTML {
 type testHomeComp struct{}
 
 func (t *testHomeComp) Render() render.HTML {
-	return elements.Div(nil,
-		elements.Heading(1, nil, render.Text("Home Page")),
-		elements.Paragraph(nil, render.Text("Welcome!")),
+	return elements.Div(elements.DivConfig{},
+		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Home Page")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("Welcome!")),
 	)
 }
 
@@ -52,7 +52,7 @@ type testClickButton struct {
 }
 
 func (b *testClickButton) Render() render.HTML {
-	return elements.Button(b.Label, elements.OnClick("do-click"))
+	return elements.Button(elements.ButtonConfig{Label: b.Label, Attrs: elements.OnClick("do-click")})
 }
 
 func (b *testClickButton) Actions() {

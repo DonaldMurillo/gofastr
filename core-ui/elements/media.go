@@ -2,51 +2,60 @@ package elements
 
 import "github.com/gofastr/gofastr/core/render"
 
-// Image produces a void <img> element. The alt parameter is always required;
-// pass an empty string for decorative images (role="presentation" is added
-// automatically in that case).
-func Image(src, alt string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 2)
+// Image produces a void <img> element.
+// Required: Src and Alt. Empty Alt marks the image as decorative
+// (role="presentation" is added automatically).
+func Image(cfg ImageConfig) render.HTML {
+	if cfg.Src == "" {
+		panic("elements: Image requires Src")
 	}
-	attrs["src"] = src
-	attrs["alt"] = alt
-	if alt == "" {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "src", cfg.Src)
+	setAttr(attrs, "alt", cfg.Alt)
+	if cfg.Alt == "" {
 		if _, ok := attrs["role"]; !ok {
-			attrs["role"] = "presentation"
+			setAttr(attrs, "role", "presentation")
 		}
 	}
 	return render.VoidTag("img", attrs)
 }
 
 // Audio produces an <audio> element for sound content.
-func Audio(attrs Attrs, children ...render.HTML) render.HTML {
+func Audio(cfg AudioConfig, children ...render.HTML) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	return render.Tag("audio", attrs, children...)
 }
 
 // Video produces a <video> element for video content.
-func Video(attrs Attrs, children ...render.HTML) render.HTML {
+func Video(cfg VideoConfig, children ...render.HTML) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	return render.Tag("video", attrs, children...)
 }
 
 // Source produces a void <source> element for use inside <audio> or <video>.
-func Source(src, mediaType string, attrs Attrs) render.HTML {
-	if attrs == nil {
-		attrs = make(Attrs, 2)
+// Required: Src and Type.
+func Source(cfg SourceConfig) render.HTML {
+	if cfg.Src == "" {
+		panic("elements: Source requires Src")
 	}
-	attrs["src"] = src
-	attrs["type"] = mediaType
+	if cfg.Type == "" {
+		panic("elements: Source requires Type")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "src", cfg.Src)
+	setAttr(attrs, "type", cfg.Type)
 	return render.VoidTag("source", attrs)
 }
 
 // HR produces a void <hr> element (thematic break).
-func HR(attrs Attrs) render.HTML {
+func HR(cfg TextConfig) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	return render.VoidTag("hr", attrs)
 }
 
 // BR produces a void <br> element (line break).
-func BR(attrs Attrs) render.HTML {
-	return render.VoidTag("br", attrs)
+func BR() render.HTML {
+	return render.VoidTag("br", nil)
 }
 
 // Meta produces a void <meta> element with name and content attributes.

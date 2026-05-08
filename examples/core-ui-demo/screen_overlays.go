@@ -16,15 +16,15 @@ func (s *DemoDrawerScreen) ScreenDescription() string  { return "Drawer overlay 
 func (s *DemoDrawerScreen) ScreenType() app.ScreenType { return app.ScreenDrawer }
 
 func (s *DemoDrawerScreen) Render() render.HTML {
-	return elements.Div(elements.Attrs{"class": "drawer-content"},
-		elements.Heading(2, nil, render.Text("Quick Nav")),
-		elements.Paragraph(nil, render.Text("A drawer slides in from the side. Great for navigation, filters, or settings.")),
-		elements.Nav(nil,
-			elements.UnorderedList(elements.Attrs{"class": "drawer-nav-list"},
-				elements.ListItem(nil, elements.Link("/", "Home", nil)),
-				elements.ListItem(nil, elements.Link("/products", "Products", nil)),
-				elements.ListItem(nil, elements.Link("/about", "About", nil)),
-				elements.ListItem(nil, elements.Link("/signals", "Signal Demo", nil)),
+	return elements.Div(elements.DivConfig{Class: "drawer-content"},
+		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Quick Nav")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("A drawer slides in from the side. Great for navigation, filters, or settings.")),
+		elements.Nav(elements.NavConfig{Label: "Drawer navigation"},
+			elements.UnorderedList(elements.ListConfig{Class: "drawer-nav-list"},
+				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/", Text: "Home"})),
+				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/products", Text: "Products"})),
+				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/about", Text: "About"})),
+				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/signals", Text: "Signal Demo"})),
 			),
 		),
 	)
@@ -38,13 +38,13 @@ func (s *DemoSheetScreen) ScreenDescription() string  { return "Sheet overlay de
 func (s *DemoSheetScreen) ScreenType() app.ScreenType { return app.ScreenSheet }
 
 func (s *DemoSheetScreen) Render() render.HTML {
-	return elements.Div(elements.Attrs{"class": "sheet-content"},
-		elements.Heading(2, nil, render.Text("Quick Preview")),
-		elements.Paragraph(nil, render.Text("A sheet slides up from the bottom. Perfect for previews, action sheets, or quick forms.")),
-		elements.Div(elements.Attrs{"class": "sheet-product-preview"},
-			elements.Heading(3, nil, render.Text("Widget Pro")),
-			elements.Paragraph(nil, render.Text(fmt.Sprintf("%s%.2f", "$", 29.99))),
-			elements.Paragraph(nil, render.Text("High-quality widget with premium features. Add to cart from the products page.")),
+	return elements.Div(elements.DivConfig{Class: "sheet-content"},
+		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Quick Preview")),
+		elements.Paragraph(elements.TextConfig{}, render.Text("A sheet slides up from the bottom. Perfect for previews, action sheets, or quick forms.")),
+		elements.Div(elements.DivConfig{Class: "sheet-product-preview"},
+			elements.Heading(elements.HeadingConfig{Level: 3}, render.Text("Widget Pro")),
+			elements.Paragraph(elements.TextConfig{}, render.Text(fmt.Sprintf("%s%.2f", "$", 29.99))),
+			elements.Paragraph(elements.TextConfig{}, render.Text("High-quality widget with premium features. Add to cart from the products page.")),
 		),
 	)
 }
@@ -60,18 +60,22 @@ func (s *ConfirmDialogScreen) ScreenDescription() string  { return "Confirmation
 func (s *ConfirmDialogScreen) ScreenType() app.ScreenType { return app.ScreenDialog }
 
 func (s *ConfirmDialogScreen) Render() render.HTML {
-	return elements.Div(elements.Attrs{"class": "confirm-dialog-content"},
-		elements.Heading(2, nil, render.Text("Confirm Action")),
-		elements.Paragraph(nil, render.Text(s.Message)),
-		elements.Div(elements.Attrs{"class": "dialog-actions"},
-			elements.Button("Cancel", elements.Attrs{
-				"class":              "dialog-cancel-btn",
-				"data-overlay-close": "",
+	return elements.Div(elements.DivConfig{Class: "confirm-dialog-content"},
+		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Confirm Action")),
+		elements.Paragraph(elements.TextConfig{}, render.Text(s.Message)),
+		elements.Div(elements.DivConfig{Class: "dialog-actions"},
+			elements.Button(elements.ButtonConfig{
+				Label: "Cancel",
+				Class: "dialog-cancel-btn",
+				Attrs: elements.Attrs{"data-overlay-close": ""},
 			}),
-			elements.Button("Confirm", elements.Attrs{
-				"class":              "cta-button confirm-btn",
-				"data-action":        "confirm-action",
-				"data-overlay-close": "",
+			elements.Button(elements.ButtonConfig{
+				Label: "Confirm",
+				Class: "cta-button confirm-btn",
+				Attrs: elements.Attrs{
+					"data-action":        "confirm-action",
+					"data-overlay-close": "",
+				},
 			}),
 		),
 	)

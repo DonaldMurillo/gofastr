@@ -23,27 +23,27 @@ func (s *HomeScreen) Render() render.HTML {
 
 	counter := &CounterComponent{ID: "home-counter", Count: 0}
 
-	return elements.Div(nil,
+	return elements.Div(elements.DivConfig{},
 		hero.Render(),
 		elements.Section(
-			elements.Aria("label", "Interactive counter"),
-			elements.Heading(2, nil, render.Text("Try It Live")),
-			elements.Paragraph(nil, render.Text("Click the buttons — the Go counter compiles to JS that runs in your browser.")),
+			elements.SectionConfig{Label: "Interactive counter"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Try It Live")),
+			elements.Paragraph(elements.TextConfig{}, render.Text("Click the buttons — the Go counter compiles to JS that runs in your browser.")),
 			counter.Render(),
 		),
 		elements.Section(
-			elements.Aria("label", "Overlay demos"),
-			elements.Heading(2, nil, render.Text("Overlays")),
-			elements.Paragraph(nil, render.Text("Drawers, sheets, and dialogs — all powered by the runtime overlay manager.")),
-			elements.Div(elements.Attrs{"class": "overlay-demo-buttons"},
+			elements.SectionConfig{Label: "Overlay demos"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Overlays")),
+			elements.Paragraph(elements.TextConfig{}, render.Text("Drawers, sheets, and dialogs — all powered by the runtime overlay manager.")),
+			elements.Div(elements.DivConfig{Class: "overlay-demo-buttons"},
 				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('drawer','/demo-drawer')"}, render.Text("Open Drawer")),
 				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('sheet','/demo-sheet')"}, render.Text("Open Sheet")),
 				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('dialog','/confirm-dialog')"}, render.Text("Open Dialog")),
 			),
 		),
 		elements.Section(
-			elements.Aria("label", "Featured products"),
-			elements.Heading(2, nil, render.Text("Featured Products")),
+			elements.SectionConfig{Label: "Featured products"},
+			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Featured Products")),
 			featuredProductCards(),
 		),
 	)
