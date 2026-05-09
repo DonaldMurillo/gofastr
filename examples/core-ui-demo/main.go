@@ -9,16 +9,21 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/devserver"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core/render"
+	"github.com/gofastr/gofastr/framework/uihost"
 )
 
 func main() {
-	ds := setupDevServer()
+	addr := ":8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
+
+	fwApp, host := setupServer()
 
 	// Start live island updater (simulates real-time content)
-	go liveIslandUpdater(ds)
+	go liveIslandUpdater(host)
 
 	// Graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -30,27 +35,28 @@ func main() {
 		<-sigCh
 		fmt.Println("\nShutting down...")
 		cancel()
+		_ = fwApp.Shutdown(context.Background())
 	}()
 
 	fmt.Println("━" + "─────────────────────────────────────────────")
-	fmt.Println("  GoFastr Demo — Full DevServer")
-	fmt.Println("  http://localhost:8080")
+	fmt.Println("  GoFastr Demo — framework.App + uihost")
+	fmt.Println("  http://localhost" + addr)
 	fmt.Println()
-	fmt.Println("  Pages:  /  /products  /about  /cart")
+	fmt.Println("  Pages:  /  /products  /about  /cart  /todos")
 	fmt.Println("  SSE:    /__gofastr/sse?session=<id>")
 	fmt.Println("  JS:     /__gofastr/runtime.js")
 	fmt.Println("  Actions:/__gofastr/actions.js")
 	fmt.Println("━" + "─────────────────────────────────────────────")
 
-	if err := ds.StartContext(ctx, ":8080"); err != nil && ctx.Err() == nil {
+	if err := fwApp.Start(addr); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 // liveIslandUpdater simulates real-time content streaming via SSE.
-func liveIslandUpdater(ds *devserver.DevServer) {
-	sess := ds.CreateSession()
+func liveIslandUpdater(host *uihost.UIHost) {
+	sess := host.CreateSession()
 
 	liveFeed := &LiveFeedComponent{Items: []string{
 		"🚀 GoFastr v1.0 released!",
@@ -58,7 +64,7 @@ func liveIslandUpdater(ds *devserver.DevServer) {
 		"⚡ Performance: 2x faster rendering",
 	}}
 	w := component.NewWidget("live-feed", liveFeed)
-	isl := ds.RegisterWidget(sess.ID, w)
+	isl := host.RegisterWidget(sess.ID, w)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -76,7 +82,7 @@ func liveIslandUpdater(ds *devserver.DevServer) {
 		liveFeed.Items = append(liveFeed.Items, items[idx%len(items)])
 		idx++
 		html := isl.Update()
-		ds.PushUpdate(isl.ID, string(html), sess.ID)
+		host.PushUpdate(isl.ID, string(html), sess.ID)
 	}
 }
 

@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/devserver"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	coresignal "github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
+	"github.com/gofastr/gofastr/framework"
+	"github.com/gofastr/gofastr/framework/uihost"
 )
 
 //go:embed static
@@ -32,10 +33,18 @@ func staticDirPath() string {
 	return ""
 }
 
-// setupDevServer creates and configures the DevServer with all routes,
-// themes, actions, and subsystems. Used by both main() and browser tests.
-func setupDevServer() *devserver.DevServer {
-	// Create app
+// setupHost is a test convenience that returns just the UIHost. The host
+// supports ServeHTTP directly, so existing handler-level tests can keep
+// calling host.ServeHTTP without the framework App in front of them.
+func setupHost() *uihost.UIHost {
+	_, host := setupServer()
+	return host
+}
+
+// setupServer creates a framework.App with the core-ui host mounted on it.
+// Used by both main() and browser tests.
+func setupServer() (*framework.App, *uihost.UIHost) {
+	// Create core-ui app
 	application := app.NewApp("GoFastr Demo")
 
 	// Set theme
@@ -76,27 +85,31 @@ func setupDevServer() *devserver.DevServer {
 	// Generate all CSS from Go using the theme system (dog-food!)
 	cssStr := createStyleSheet(*application.Theme)
 
-	// Create DevServer — routes and CSS chunks auto-built from registered screens
-	ds := devserver.NewDevServer(application,
-		devserver.WithCustomCSS(cssStr),
-		devserver.WithStaticDir(staticDirPath()),
+	// Build the UI host — routes and CSS chunks auto-built from screens.
+	host := uihost.New(application,
+		uihost.WithCustomCSS(cssStr),
+		uihost.WithStaticDir(staticDirPath()),
 	)
 
 	// Auto-compile actions from screens that implement InteractiveComponent
-	ds.AutoCompileActions()
+	host.AutoCompileActions()
 
 	// Compile actions for standalone components (not registered as screens)
-	ds.CompileActions("home-counter", &CounterComponent{ID: "home-counter"})
-	ds.CompileActions("add-to-cart", &InteractiveButton{Label: "Add to Cart"})
-	ds.CompileActions("search-filter", &SearchFilterComponent{})
+	host.CompileActions("home-counter", &CounterComponent{ID: "home-counter"})
+	host.CompileActions("add-to-cart", &InteractiveButton{Label: "Add to Cart"})
+	host.CompileActions("search-filter", &SearchFilterComponent{})
 
 	// Serve embedded static files if no filesystem path found
-	if ds.StaticDir() == "" {
+	if host.StaticDir() == "" {
 		sub, _ := fs.Sub(staticFiles, "static")
-		ds.SetStaticFS(sub)
+		host.SetStaticFS(sub)
 	}
 
-	return ds
+	// Wrap in a framework.App so we get the standard middleware chain,
+	// graceful shutdown, and a place to attach future entity routes.
+	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "core-ui-demo"}))
+	fwApp.Mount(host)
+	return fwApp, host
 }
 
 // LiveFeedComponent shows a live activity feed that updates via SSE.

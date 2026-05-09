@@ -1,10 +1,10 @@
-// Package devserver provides a development server that wires together all core-ui
-// subsystems: App rendering, Island SSE streaming, runtime.js injection,
-// Go→JS action compilation, and signal-driven live updates.
-package devserver
+// Package uihost wires a core-ui application onto a framework.App's router.
+// It mounts page rendering, runtime.js, compiled action JS, SSE island
+// streaming, sessions, and signal-driven updates as routes — there is no
+// standalone server. The framework.App owns the HTTP listener.
+package uihost
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -20,12 +20,14 @@ import (
 	"github.com/gofastr/gofastr/core-ui/island"
 	"github.com/gofastr/gofastr/core-ui/runtime"
 	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/gofastr/gofastr/core/router"
 )
 
-// DevServer is the development server for a core-ui application.
-// It serves rendered pages with runtime.js, compiled action JS, SSE streaming
-// for islands, and handles signal-driven live updates.
-type DevServer struct {
+// UIHost mounts a core-ui application onto a router. It serves rendered
+// pages with runtime.js, compiled action JS, SSE streaming for islands,
+// sessions, and signal-driven live updates. The framework.App is
+// responsible for ListenAndServe.
+type UIHost struct {
 	App            *app.App
 	Islands        *island.Manager
 	mu             sync.RWMutex
@@ -61,57 +63,57 @@ type routeInfoJSON struct {
 	CSSChunk    string `json:"cssChunk,omitempty"`
 }
 
-// Option configures a DevServer.
-type Option func(*DevServer)
+// Option configures a UIHost.
+type Option func(*UIHost)
 
 // WithCustomCSS adds extra CSS to inject into every page.
 func WithCustomCSS(css string) Option {
-	return func(ds *DevServer) {
+	return func(ds *UIHost) {
 		ds.customCSS = css
 	}
 }
 
 // WithRouteGraph sets the route graph for progressive CSS loading.
 func WithRouteGraph(rg *style.RouteGraph) Option {
-	return func(ds *DevServer) {
+	return func(ds *UIHost) {
 		ds.routeGraph = rg
 	}
 }
 
 // WithStaticDir sets the directory to serve static files from.
 func WithStaticDir(dir string) Option {
-	return func(ds *DevServer) {
+	return func(ds *UIHost) {
 		ds.staticDir = dir
 	}
 }
 
 // StaticDir returns the configured static directory path.
-func (ds *DevServer) StaticDir() string {
+func (ds *UIHost) StaticDir() string {
 	return ds.staticDir
 }
 
 // SetStaticFS sets an embedded filesystem for serving static files.
-func (ds *DevServer) SetStaticFS(fsys fs.FS) {
+func (ds *UIHost) SetStaticFS(fsys fs.FS) {
 	ds.staticFS = fsys
 }
 
 // HasStaticFS reports whether an embedded static FS is configured.
-func (ds *DevServer) HasStaticFS() bool {
+func (ds *UIHost) HasStaticFS() bool {
 	return ds.staticFS != nil
 }
 
 // RegisterSignal registers a signal with the devserver so the signal update
 // endpoint can apply client-sent values.
-func (ds *DevServer) RegisterSignal(id string, s SignalAny) {
+func (ds *UIHost) RegisterSignal(id string, s SignalAny) {
 	if ds.signals == nil {
 		ds.signals = make(map[string]SignalAny)
 	}
 	ds.signals[id] = s
 }
 
-// NewDevServer creates a new development server.
-func NewDevServer(application *app.App, opts ...Option) *DevServer {
-	ds := &DevServer{
+// New creates a new development server.
+func New(application *app.App, opts ...Option) *UIHost {
+	ds := &UIHost{
 		App:            application,
 		Islands:        island.NewManager(),
 		sessions:       make(map[string]*Session),
@@ -126,7 +128,7 @@ func NewDevServer(application *app.App, opts ...Option) *DevServer {
 
 // RegisterWidget registers a widget with the island manager for a session.
 // Returns the widget wrapped as an island for rendering.
-func (ds *DevServer) RegisterWidget(sessionID string, w *component.Widget) *island.Island {
+func (ds *UIHost) RegisterWidget(sessionID string, w *component.Widget) *island.Island {
 	isl := island.NewIsland(fmt.Sprintf("%s-%s", w.ID, sessionID), w)
 	isl.SessionID = sessionID
 	ds.Islands.Register(isl)
@@ -135,7 +137,7 @@ func (ds *DevServer) RegisterWidget(sessionID string, w *component.Widget) *isla
 
 // CompileActions compiles a component's action methods to JS and caches them.
 // It also stores the action registry so handleServerAction can invoke Go handlers.
-func (ds *DevServer) CompileActions(componentID string, comp component.Component) string {
+func (ds *UIHost) CompileActions(componentID string, comp component.Component) string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
@@ -159,7 +161,7 @@ func (ds *DevServer) CompileActions(componentID string, comp component.Component
 // AutoCompileActions scans all registered screens and compiles actions for
 // any that implement InteractiveComponent. The component ID is derived from
 // ScreenComponentID.ComponentID() if implemented, otherwise from the route path.
-func (ds *DevServer) AutoCompileActions() {
+func (ds *UIHost) AutoCompileActions() {
 	for _, route := range ds.App.Routes() {
 		screen, _, ok := ds.App.Router.Resolve(route.Path)
 		if !ok {
@@ -191,7 +193,7 @@ func pathToActionID(path string) string {
 
 // buildRouteScript auto-builds the __gofastr_routes script from registered screens.
 // CSS chunk names are auto-derived from the screen path unless overridden via RouteGraph.
-func (ds *DevServer) buildRouteScript() string {
+func (ds *UIHost) buildRouteScript() string {
 	routes := ds.App.Routes()
 	if len(routes) == 0 {
 		return ""
@@ -230,7 +232,7 @@ func pathToChunkName(path string) string {
 }
 
 // GetActionJS returns all compiled action JS concatenated.
-func (ds *DevServer) GetActionJS() string {
+func (ds *UIHost) GetActionJS() string {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 
@@ -243,7 +245,7 @@ func (ds *DevServer) GetActionJS() string {
 }
 
 // CreateSession creates a new browser session.
-func (ds *DevServer) CreateSession() *Session {
+func (ds *UIHost) CreateSession() *Session {
 	id := fmt.Sprintf("sess-%d", time.Now().UnixNano())
 	sess := &Session{
 		ID:      id,
@@ -256,7 +258,7 @@ func (ds *DevServer) CreateSession() *Session {
 }
 
 // GetSession retrieves a session by ID.
-func (ds *DevServer) GetSession(id string) (*Session, bool) {
+func (ds *UIHost) GetSession(id string) (*Session, bool) {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 	s, ok := ds.sessions[id]
@@ -264,7 +266,7 @@ func (ds *DevServer) GetSession(id string) (*Session, bool) {
 }
 
 // ServeHTTP implements http.Handler, routing requests to pages or SSE.
-func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	// API / SSE routes
@@ -332,7 +334,7 @@ func (ds *DevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePage renders a full page with runtime.js, SSE meta tag, and compiled actions.
-func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	// Client-side navigation: return just the screen content (no layout)
@@ -399,7 +401,7 @@ func (ds *DevServer) handlePage(w http.ResponseWriter, r *http.Request) {
 
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
-func (ds *DevServer) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
+func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
 	html, err := ds.App.RenderPartial(path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
@@ -421,7 +423,7 @@ func (ds *DevServer) handlePartialPage(w http.ResponseWriter, r *http.Request, p
 }
 
 // handleSSE streams island updates to the client.
-func (ds *DevServer) handleSSE(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
 		http.Error(w, "missing session parameter", http.StatusBadRequest)
@@ -433,7 +435,7 @@ func (ds *DevServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRuntimeJS serves the core-ui runtime JavaScript.
-func (ds *DevServer) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
 	js := runtime.MustRuntimeJS()
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -441,14 +443,14 @@ func (ds *DevServer) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleActionsJS serves all compiled action JS.
-func (ds *DevServer) handleActionsJS(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 	js := ds.GetActionJS()
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	fmt.Fprint(w, js)
 }
 
 // handleCreateSession creates a new session and returns its ID.
-func (ds *DevServer) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	sess := ds.CreateSession()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"sessionId": sess.ID})
@@ -456,7 +458,7 @@ func (ds *DevServer) handleCreateSession(w http.ResponseWriter, r *http.Request)
 
 // handleSignalUpdate receives a signal update from the client and pushes
 // island updates via SSE.
-func (ds *DevServer) handleSignalUpdate(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleSignalUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -512,7 +514,7 @@ func (ds *DevServer) handleSignalUpdate(w http.ResponseWriter, r *http.Request) 
 // The client POSTs the action name, component ID, and parameters;
 // the server looks up the registered Go handler, invokes it, and
 // responds with a JSON result.
-func (ds *DevServer) handleServerAction(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -588,7 +590,7 @@ func (ds *DevServer) handleServerAction(w http.ResponseWriter, r *http.Request) 
 
 // handleWidgetJS serves compiled JavaScript for a specific widget.
 // This enables lazy hydration: widgets load their behavior JS only on first interaction.
-func (ds *DevServer) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	widgetID := strings.TrimPrefix(r.URL.Path, "/__gofastr/widget/")
 	widgetID = strings.TrimSuffix(widgetID, ".js")
 
@@ -620,36 +622,72 @@ func (ds *DevServer) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 }
 
 // PushIsland re-renders an island and pushes the update via SSE.
-func (ds *DevServer) PushIsland(islandID string) error {
+func (ds *UIHost) PushIsland(islandID string) error {
 	return ds.Islands.Push(islandID)
 }
 
-// Start starts the dev server on the given address.
-func (ds *DevServer) Start(addr string) error {
-	fmt.Printf("GoFastr DevServer running on http://%s\n", addr)
-	server := &http.Server{
-		Addr:    addr,
-		Handler: ds,
-	}
-	return server.ListenAndServe()
+// Mount registers the UI's HTTP handlers on the given router.
+//
+// It registers:
+//   - All `/__gofastr/*` infrastructure endpoints (runtime.js, actions.js,
+//     SSE, session, signal updates, server actions, widget JS, CSS chunks)
+//   - A NotFound handler that first attempts static-file resolution (from
+//     either staticDir or staticFS) and falls back to page rendering.
+//
+// Mount must be called after the framework.App has registered its other
+// routes (entity CRUD, custom endpoints) so the page handler only takes
+// requests that nothing else claimed.
+func (ds *UIHost) Mount(r *router.Router) {
+	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
+	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
+	r.Get("/__gofastr/sse", http.HandlerFunc(ds.handleSSE))
+	r.Get("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
+	r.Post("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
+	r.Post("/__gofastr/signal/{id}", http.HandlerFunc(ds.handleSignalUpdate))
+	r.Post("/__gofastr/action", http.HandlerFunc(ds.handleServerAction))
+	r.Get("/__gofastr/widget/{id}", http.HandlerFunc(ds.handleWidgetJS))
+	r.Get("/__gofastr/css/{path...}", http.HandlerFunc(ds.handleCSSChunk))
+
+	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 }
 
-// StartContext starts the dev server with a context for graceful shutdown.
-func (ds *DevServer) StartContext(ctx context.Context, addr string) error {
-	fmt.Printf("GoFastr DevServer running on http://%s\n", addr)
-	server := &http.Server{
-		Addr:    addr,
-		Handler: ds,
+// serveOrRender is the catch-all NotFound handler. It first tries static
+// file resolution (filesystem or embedded FS), and if no file matches it
+// falls through to page rendering.
+func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	if path == "/favicon.ico" {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
-	go func() {
-		<-ctx.Done()
-		server.Shutdown(context.Background())
-	}()
-	return server.ListenAndServe()
+	if path != "/" {
+		if ds.staticDir != "" {
+			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
+			absPath, _ := filepath.Abs(filePath)
+			absStatic, _ := filepath.Abs(ds.staticDir)
+			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
+				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+					http.ServeFile(w, r, filePath)
+					return
+				}
+			}
+		}
+		if ds.staticFS != nil {
+			cleanPath := strings.TrimPrefix(path, "/")
+			if cleanPath != "" {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+					f.Close()
+					http.ServeFileFS(w, r, ds.staticFS, cleanPath)
+					return
+				}
+			}
+		}
+	}
+	ds.handlePage(w, r)
 }
 
 // RenderPage renders a page with all injections (for testing).
-func (ds *DevServer) RenderPage(path string, sessionID string) (string, error) {
+func (ds *UIHost) RenderPage(path string, sessionID string) (string, error) {
 	html, err := ds.App.RenderPage(path)
 	if err != nil {
 		return "", err
@@ -729,7 +767,7 @@ func actionsToJS(componentID string, reg *component.ActionRegistry) string {
 
 // PushUpdate pushes an island update for a specific session.
 // This is a convenience method that wraps the island manager's push mechanism.
-func (ds *DevServer) PushUpdate(islandID string, html string, sessionID string) {
+func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 	ds.Islands.PushUpdate(island.IslandUpdate{
 		IslandID: islandID,
 		HTML:     html,
@@ -737,7 +775,7 @@ func (ds *DevServer) PushUpdate(islandID string, html string, sessionID string) 
 }
 
 // handleCSSChunk serves per-screen CSS chunks for progressive loading.
-func (ds *DevServer) handleCSSChunk(w http.ResponseWriter, r *http.Request) {
+func (ds *UIHost) handleCSSChunk(w http.ResponseWriter, r *http.Request) {
 	screenPath := strings.TrimPrefix(r.URL.Path, "/__gofastr/css")
 	if screenPath == "" {
 		screenPath = "/"

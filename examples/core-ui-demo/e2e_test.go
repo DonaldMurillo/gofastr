@@ -13,7 +13,7 @@ import (
 	"github.com/gofastr/gofastr/core-ui/check"
 	"github.com/gofastr/gofastr/core-ui/compile"
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/devserver"
+	"github.com/gofastr/gofastr/framework/uihost"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core-ui/island"
 	"github.com/gofastr/gofastr/core-ui/runtime"
@@ -938,7 +938,7 @@ func TestWidgetCompositionInScreen(t *testing.T) {
 // O. DevServer Integration Tests
 // ---------------------------------------------------------------------------
 
-func createTestDevServer() *devserver.DevServer {
+func createTestHost() *uihost.UIHost {
 	application := app.NewApp("GoFastr Demo")
 	theme := createTheme()
 	application.WithTheme(theme)
@@ -953,11 +953,11 @@ func createTestDevServer() *devserver.DevServer {
 	application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}).WithTitle("About").WithDescription("About"), nil)
 	application.RegisterScreen(app.NewDrawer("/cart", &CartDrawer{CartCount: signal.New(0)}).WithTitle("Cart").WithDescription("Cart"), nil)
 
-	return devserver.NewDevServer(application)
+	return uihost.New(application)
 }
 
 func TestDevServerHomePageHasRuntimeAndSSE(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -998,7 +998,7 @@ func TestDevServerHomePageHasRuntimeAndSSE(t *testing.T) {
 }
 
 func TestDevServerProductsPageHasSearch(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	req := httptest.NewRequest("GET", "/products", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -1015,7 +1015,7 @@ func TestDevServerProductsPageHasSearch(t *testing.T) {
 }
 
 func TestDevServerAboutPage(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	req := httptest.NewRequest("GET", "/about", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -1030,7 +1030,7 @@ func TestDevServerAboutPage(t *testing.T) {
 }
 
 func TestDevServerCartDrawer(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	req := httptest.NewRequest("GET", "/cart", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -1044,7 +1044,7 @@ func TestDevServerCartDrawer(t *testing.T) {
 }
 
 func TestDevServerRuntimeJSEndpoint(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	req := httptest.NewRequest("GET", "/__gofastr/runtime.js", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -1071,7 +1071,7 @@ func TestDevServerRuntimeJSEndpoint(t *testing.T) {
 }
 
 func TestDevServerSSEStreamWithIsland(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	sess := ds.CreateSession()
 
 	// Register an island
@@ -1102,7 +1102,7 @@ func TestDevServerSSEStreamWithIsland(t *testing.T) {
 }
 
 func TestDevServerSessionCreation(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 
 	// First visit creates session
 	req := httptest.NewRequest("GET", "/", nil)
@@ -1133,7 +1133,7 @@ func TestDevServerSessionCreation(t *testing.T) {
 }
 
 func TestDevServerActionsJSInjection(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 
 	// Compile actions for interactive component
 	btn := &InteractiveButton{Label: "Test"}
@@ -1151,7 +1151,7 @@ func TestDevServerActionsJSInjection(t *testing.T) {
 }
 
 func TestDevServerSignalUpdatePushesIsland(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	sess := ds.CreateSession()
 
 	// Register island
@@ -1188,7 +1188,7 @@ func TestDevServerSignalUpdatePushesIsland(t *testing.T) {
 }
 
 func TestDevServerRouteGraphPreload(t *testing.T) {
-	ds := createTestDevServer()
+	ds := createTestHost()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)

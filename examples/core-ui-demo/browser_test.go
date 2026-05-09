@@ -17,7 +17,7 @@ import (
 // startTestServer starts the demo app on a random port and returns the base URL.
 func startTestServer(t *testing.T) string {
 	t.Helper()
-	ds := setupDevServer()
+	ds := setupHost()
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -587,8 +587,8 @@ func TestClientSideNavigationWithCache(t *testing.T) {
 		chromedp.Run(ctx,
 			chromedp.Evaluate(`document.querySelector('nav a[aria-current="page"]') !== null`, &hasActive),
 		)
-		if navLinkCount != 7 || !hasActive {
-			t.Errorf("nav should have 7 links with active state, got %d links, active=%v", navLinkCount, hasActive)
+		if navLinkCount != 8 || !hasActive {
+			t.Errorf("nav should have 8 links with active state, got %d links, active=%v", navLinkCount, hasActive)
 		}
 	}
 

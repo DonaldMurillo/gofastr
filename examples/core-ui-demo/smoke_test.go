@@ -10,7 +10,7 @@ import (
 )
 
 func TestBrowserSmokeServer(t *testing.T) {
-	ds := setupDevServer()
+	ds := setupHost()
 	srv := httptest.NewServer(ds)
 	defer srv.Close()
 	t.Log("Server URL:", srv.URL)

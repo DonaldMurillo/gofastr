@@ -1,4 +1,4 @@
-package devserver
+package uihost
 
 import (
 	"encoding/json"
@@ -65,7 +65,7 @@ func (b *testClickButton) Actions() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-func newTestDevServer() *DevServer {
+func newTestUIHost() *UIHost {
 	application := app.NewApp("Test App")
 	layout := app.NewLayout("main").
 		WithHeader(&testHeaderComp{}).
@@ -73,17 +73,17 @@ func newTestDevServer() *DevServer {
 	application.SetDefaultLayout(layout)
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("Home page"), nil)
 
-	return NewDevServer(application)
+	return New(application)
 }
 
-func newTestDevServerWithCSS() *DevServer {
-	ds := newTestDevServer()
+func newTestUIHostWithCSS() *UIHost {
+	ds := newTestUIHost()
 	ds.customCSS = "body { background: red; }"
 	return ds
 }
 
-func newTestDevServerWithRouteGraph() *DevServer {
-	ds := newTestDevServer()
+func newTestUIHostWithRouteGraph() *UIHost {
+	ds := newTestUIHost()
 	ds.App.RegisterScreen(app.NewScreen("/about", &testHomeComp{}).WithTitle("About").WithDescription("About page"), nil)
 	return ds
 }
@@ -110,11 +110,11 @@ func truncate(s string, max int) string {
 }
 
 // ---------------------------------------------------------------------------
-// A. DevServer Basic Tests
+// A. UIHost Basic Tests
 // ---------------------------------------------------------------------------
 
-func TestDevServerServesPages(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostServesPages(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -128,8 +128,8 @@ func TestDevServerServesPages(t *testing.T) {
 	assertContains(t, body, "© 2025")
 }
 
-func TestDevServer404(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHost404(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/nonexistent", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -143,8 +143,8 @@ func TestDevServer404(t *testing.T) {
 // B. Runtime JS Injection
 // ---------------------------------------------------------------------------
 
-func TestDevServerInjectsRuntimeJS(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostInjectsRuntimeJS(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -153,8 +153,8 @@ func TestDevServerInjectsRuntimeJS(t *testing.T) {
 	assertContains(t, body, `<script src="/__gofastr/runtime.js"></script>`)
 }
 
-func TestDevServerServesRuntimeJS(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostServesRuntimeJS(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/__gofastr/runtime.js", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -175,8 +175,8 @@ func TestDevServerServesRuntimeJS(t *testing.T) {
 // C. SSE Streaming
 // ---------------------------------------------------------------------------
 
-func TestDevServerInjectsSSEMetaTag(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostInjectsSSEMetaTag(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -186,8 +186,8 @@ func TestDevServerInjectsSSEMetaTag(t *testing.T) {
 	assertContains(t, body, "/__gofastr/sse?session=")
 }
 
-func TestDevServerSSERequiresSession(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostSSERequiresSession(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/__gofastr/sse", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -197,8 +197,8 @@ func TestDevServerSSERequiresSession(t *testing.T) {
 	}
 }
 
-func TestDevServerSSEStream(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostSSEStream(t *testing.T) {
+	ds := newTestUIHost()
 
 	// Register an island for a session
 	sess := ds.CreateSession()
@@ -238,8 +238,8 @@ func TestDevServerSSEStream(t *testing.T) {
 // D. Session Management
 // ---------------------------------------------------------------------------
 
-func TestDevServerCreatesSession(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostCreatesSession(t *testing.T) {
+	ds := newTestUIHost()
 	sess := ds.CreateSession()
 
 	if sess.ID == "" {
@@ -259,8 +259,8 @@ func TestDevServerCreatesSession(t *testing.T) {
 	}
 }
 
-func TestDevServerAutoSessionCookie(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostAutoSessionCookie(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -281,8 +281,8 @@ func TestDevServerAutoSessionCookie(t *testing.T) {
 	}
 }
 
-func TestDevServerReuseSession(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostReuseSession(t *testing.T) {
+	ds := newTestUIHost()
 
 	// First request creates session
 	req1 := httptest.NewRequest("GET", "/", nil)
@@ -301,8 +301,8 @@ func TestDevServerReuseSession(t *testing.T) {
 	assertContains(t, body, cookie.Value)
 }
 
-func TestDevServerSessionEndpoint(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostSessionEndpoint(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/__gofastr/session", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -323,8 +323,8 @@ func TestDevServerSessionEndpoint(t *testing.T) {
 // E. Custom CSS Injection
 // ---------------------------------------------------------------------------
 
-func TestDevServerCustomCSS(t *testing.T) {
-	ds := newTestDevServerWithCSS()
+func TestUIHostCustomCSS(t *testing.T) {
+	ds := newTestUIHostWithCSS()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -337,8 +337,8 @@ func TestDevServerCustomCSS(t *testing.T) {
 // F. Route Graph Injection
 // ---------------------------------------------------------------------------
 
-func TestDevServerRouteGraph(t *testing.T) {
-	ds := newTestDevServerWithRouteGraph()
+func TestUIHostRouteGraph(t *testing.T) {
+	ds := newTestUIHostWithRouteGraph()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -354,8 +354,8 @@ func TestDevServerRouteGraph(t *testing.T) {
 // G. Action Compilation & Injection
 // ---------------------------------------------------------------------------
 
-func TestDevServerCompilesActions(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostCompilesActions(t *testing.T) {
+	ds := newTestUIHost()
 	btn := &testClickButton{Label: "Click me"}
 	js := ds.CompileActions("btn-1", btn)
 
@@ -365,8 +365,8 @@ func TestDevServerCompilesActions(t *testing.T) {
 	assertContains(t, js, "btn-1")
 }
 
-func TestDevServerInjectsActions(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostInjectsActions(t *testing.T) {
+	ds := newTestUIHost()
 	btn := &testClickButton{Label: "Click me"}
 	ds.CompileActions("btn-1", btn)
 
@@ -379,8 +379,8 @@ func TestDevServerInjectsActions(t *testing.T) {
 	assertContains(t, body, "__gofastr")
 }
 
-func TestDevServerActionsEndpoint(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostActionsEndpoint(t *testing.T) {
+	ds := newTestUIHost()
 	btn := &testClickButton{Label: "Click me"}
 	ds.CompileActions("btn-1", btn)
 
@@ -399,8 +399,8 @@ func TestDevServerActionsEndpoint(t *testing.T) {
 // H. Signal Update Endpoint
 // ---------------------------------------------------------------------------
 
-func TestDevServerSignalUpdateEndpoint(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostSignalUpdateEndpoint(t *testing.T) {
+	ds := newTestUIHost()
 	sess := ds.CreateSession()
 
 	// Register an island for this session
@@ -435,8 +435,8 @@ func TestDevServerSignalUpdateEndpoint(t *testing.T) {
 	}
 }
 
-func TestDevServerSignalUpdateRejectsGet(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostSignalUpdateRejectsGet(t *testing.T) {
+	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/__gofastr/signal/x", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
@@ -447,11 +447,11 @@ func TestDevServerSignalUpdateRejectsGet(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// I. Widget + Island Integration via DevServer
+// I. Widget + Island Integration via UIHost
 // ---------------------------------------------------------------------------
 
-func TestDevServerRegisterWidget(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostRegisterWidget(t *testing.T) {
+	ds := newTestUIHost()
 	sess := ds.CreateSession()
 
 	btn := &testClickButton{Label: "Click"}
@@ -469,8 +469,8 @@ func TestDevServerRegisterWidget(t *testing.T) {
 // J. RenderPage (testing helper)
 // ---------------------------------------------------------------------------
 
-func TestDevServerRenderPage(t *testing.T) {
-	ds := newTestDevServerWithCSS()
+func TestUIHostRenderPage(t *testing.T) {
+	ds := newTestUIHostWithCSS()
 	page, err := ds.RenderPage("/", "sess-test123")
 	if err != nil {
 		t.Fatal(err)
@@ -482,8 +482,8 @@ func TestDevServerRenderPage(t *testing.T) {
 	assertContains(t, page, "body { background: red; }")
 }
 
-func TestDevServerRenderPageNotFound(t *testing.T) {
-	ds := newTestDevServer()
+func TestUIHostRenderPageNotFound(t *testing.T) {
+	ds := newTestUIHost()
 	_, err := ds.RenderPage("/nope", "sess-test")
 	if err == nil {
 		t.Error("expected error for unknown path")
@@ -492,13 +492,13 @@ func TestDevServerRenderPageNotFound(t *testing.T) {
 
 // --- F11: Static file path traversal prevention ---
 
-func TestDevServer_PathTraversalBlocked(t *testing.T) {
+func TestUIHost_PathTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "safe.txt"), []byte("ok"), 0644)
 
 	a := app.NewApp("traversal-test")
 	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-	ds := NewDevServer(a, WithStaticDir(dir))
+	ds := New(a, WithStaticDir(dir))
 
 	server := httptest.NewServer(ds)
 	defer server.Close()
@@ -518,10 +518,10 @@ func TestDevServer_PathTraversalBlocked(t *testing.T) {
 
 // --- F12: Server action handler invocation ---
 
-func TestDevServer_ServerActionInvokesHandler(t *testing.T) {
+func TestUIHost_ServerActionInvokesHandler(t *testing.T) {
 	a := app.NewApp("action-test")
 	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-	ds := NewDevServer(a)
+	ds := New(a)
 
 	// Register a component with actions
 	handlerCalled := false
@@ -555,10 +555,10 @@ func TestDevServer_ServerActionInvokesHandler(t *testing.T) {
 	}
 }
 
-func TestDevServer_ServerActionUnknownComponent(t *testing.T) {
+func TestUIHost_ServerActionUnknownComponent(t *testing.T) {
 	a := app.NewApp("action-test2")
 	a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-	ds := NewDevServer(a)
+	ds := New(a)
 
 	body := strings.NewReader(`{"action":"test","params":{},"componentId":"no-such-comp"}`)
 	req := httptest.NewRequest(http.MethodPost, "/__gofastr/action", body)

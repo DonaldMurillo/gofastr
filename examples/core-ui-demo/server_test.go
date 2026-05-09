@@ -9,7 +9,7 @@ import (
 )
 
 func TestServerResponse(t *testing.T) {
-	ds := setupDevServer()
+	ds := setupHost()
 	srv := httptest.NewServer(ds)
 	defer srv.Close()
 
@@ -84,7 +84,7 @@ func TestServerResponse(t *testing.T) {
 }
 
 func TestPartialPageResponse(t *testing.T) {
-	ds := setupDevServer()
+	ds := setupHost()
 	srv := httptest.NewServer(ds)
 	defer srv.Close()
 

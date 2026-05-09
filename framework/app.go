@@ -14,8 +14,16 @@ import (
 	"github.com/gofastr/gofastr/core/openapi"
 
 	"github.com/gofastr/gofastr/core/mcp"
+	"github.com/gofastr/gofastr/core/middleware"
 	"github.com/gofastr/gofastr/core/router"
 )
+
+// Mountable is anything that can register routes on the framework's router.
+// UI hosts, admin panels, websocket pubsub layers, etc. all satisfy this
+// interface and are attached via App.Mount.
+type Mountable interface {
+	Mount(*router.Router)
+}
 
 // JSONCase defines the casing convention for JSON keys in API responses.
 type JSONCase string
@@ -44,9 +52,12 @@ type App struct {
 	Config   AppConfig
 	Plugins  *PluginManager
 
-	server *http.Server
-	events *EventBus
-	hooks  map[string]*HookRegistry
+	server     *http.Server
+	events     *EventBus
+	hooks      map[string]*HookRegistry
+	mountables []Mountable
+	mwApplied  bool
+	noDefaults bool
 }
 
 // AppOption is a functional option for configuring an App.
@@ -78,6 +89,53 @@ func WithMCPServer(s *mcp.Server) AppOption {
 	return func(a *App) {
 		a.MCP = s
 	}
+}
+
+// WithoutDefaultMiddleware disables the default middleware chain
+// (recovery, request-id, logging, security headers, timeout). Use this
+// when you want full control over middleware composition via Use().
+func WithoutDefaultMiddleware() AppOption {
+	return func(a *App) {
+		a.noDefaults = true
+	}
+}
+
+// Mount attaches a Mountable to the app. The Mountable's Mount method is
+// called against the app's router during Start, after all entity routes
+// have been registered. Returns the app for fluent chaining.
+func (a *App) Mount(m Mountable) *App {
+	a.mountables = append(a.mountables, m)
+	return a
+}
+
+// Use appends middleware to the app's router. Calling Use disables the
+// default middleware chain — once you start composing your own, the app
+// trusts you to attach what you need.
+func (a *App) Use(mw ...router.Middleware) *App {
+	if len(mw) == 0 {
+		return a
+	}
+	a.Router.Use(mw...)
+	a.mwApplied = true
+	return a
+}
+
+// applyDefaultMiddleware attaches the standard chain on first call. The
+// order is outermost-first: recovery → request-id → logging → security
+// headers → timeout. Skipped entirely when WithoutDefaultMiddleware is
+// set or when Use has already been called.
+func (a *App) applyDefaultMiddleware() {
+	if a.mwApplied || a.noDefaults {
+		return
+	}
+	a.Router.Use(
+		router.Middleware(middleware.Recovery()),
+		router.Middleware(middleware.RequestID()),
+		router.Middleware(middleware.Logging()),
+		router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})),
+		router.Middleware(middleware.Timeout(30*time.Second)),
+	)
+	a.mwApplied = true
 }
 
 // NewApp creates a new App with the given options.
@@ -290,7 +348,10 @@ func (a *App) HookRegistry(entityName string) *HookRegistry {
 }
 
 // Start starts the HTTP server on the given address.
-// Auto-migrates tables, registers OpenAPI/Swagger, debug stats.
+// Auto-migrates tables, registers OpenAPI/Swagger, debug stats, applies
+// the default middleware chain (unless disabled), and calls Mount on
+// every attached Mountable.
+//
 // Sets the process title to the app name for visibility in ps/Activity Monitor.
 func (a *App) Start(addr string) error {
 	// Auto-migrate all registered entities
@@ -299,6 +360,9 @@ func (a *App) Start(addr string) error {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 	}
+
+	// Apply default middleware chain unless the user opted out or composed their own.
+	a.applyDefaultMiddleware()
 
 	// Auto-generate and serve OpenAPI spec
 	if len(a.Registry.All()) > 0 {
@@ -313,6 +377,12 @@ func (a *App) Start(addr string) error {
 
 	if a.Config.DebugEndpoints {
 		a.registerDebugEndpoints()
+	}
+
+	// Mount any attached UI hosts / extensions. Mountables run after entity
+	// routes so they can register catch-all NotFound handlers safely.
+	for _, m := range a.mountables {
+		m.Mount(a.Router)
 	}
 
 	name := a.Config.Name
@@ -402,7 +472,8 @@ func formatBytes(b uint64) string {
 func arrow() string        { return "\033[33m→\033[0m" }
 func bold(s string) string { return "\033[1m" + s + "\033[0m" }
 
-// Shutdown gracefully shuts down the HTTP server.
+// Shutdown gracefully stops the HTTP server, waiting up to ctx's deadline for
+// in-flight requests to complete. Safe to call before Start (no-op).
 func (a *App) Shutdown(ctx context.Context) error {
 	if a.server == nil {
 		return nil
