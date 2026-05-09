@@ -476,3 +476,36 @@ func TestCORSMultipleOrigins(t *testing.T) {
 		t.Errorf("unknown origin should not be allowed, got %q", got)
 	}
 }
+
+// flushableRecorder is a httptest.ResponseRecorder that also implements
+// http.Flusher and Hijacker so the timeout middleware's pass-through can
+// be exercised in tests.
+type flushableRecorder struct {
+	*httptest.ResponseRecorder
+	flushed bool
+}
+
+func (f *flushableRecorder) Flush() { f.flushed = true }
+
+// TestTimeoutPassesFlushThrough pins the regression that broke SSE under
+// the consolidated server: the timeout middleware's wrapped writer now
+// implements http.Flusher and forwards Flush to the underlying writer.
+func TestTimeoutPassesFlushThrough(t *testing.T) {
+	rec := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
+
+	handler := Timeout(5 * time.Second)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("inner handler should see an http.Flusher")
+		}
+		_, _ = w.Write([]byte("partial"))
+		flusher.Flush()
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler.ServeHTTP(rec, req)
+
+	if !rec.flushed {
+		t.Error("Flush did not propagate to the underlying ResponseWriter")
+	}
+}

@@ -100,11 +100,17 @@ func WithoutDefaultMiddleware() AppOption {
 	}
 }
 
-// Mount attaches a Mountable to the app. The Mountable's Mount method is
-// called against the app's router during Start, after all entity routes
-// have been registered. Returns the app for fluent chaining.
+// Mount attaches a Mountable and registers its routes on the app's router
+// immediately. The default middleware chain is already in place (committed
+// during NewApp), so any handler the Mountable registers is wrapped with
+// it. Returns the app for fluent chaining.
+//
+// Mountables typically register a NotFound catch-all (e.g. a UI host that
+// renders pages for any unrouted path), so call Mount AFTER any explicit
+// routes you want to take precedence (entity CRUD, custom endpoints).
 func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
+	m.Mount(a.Router)
 	return a
 }
 
@@ -383,11 +389,8 @@ func (a *App) Start(addr string) error {
 		a.registerDebugEndpoints()
 	}
 
-	// Mount any attached UI hosts / extensions. Mountables run after entity
-	// routes so they can register catch-all NotFound handlers safely.
-	for _, m := range a.mountables {
-		m.Mount(a.Router)
-	}
+	// Mountables already registered their routes when App.Mount was called;
+	// nothing to do at Start time.
 
 	name := a.Config.Name
 	if name == "" {
