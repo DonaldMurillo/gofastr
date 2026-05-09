@@ -72,12 +72,19 @@ Usage:
 
 Flags:
   --addr value          HTTP listen address (default ":8765")
-  --journal path        Path to JSONL journal (default: in-memory)
+  --journal path        Path to JSONL journal (default: .kiln.session.jsonl)
+  --agent value         Spawn an agent per chat_user event:
+                          claude-code | pi | codex   built-in adapters (BYO auth)
+                          auto                       first installed of the above
+                          none                       explicit no-agent (default)
+                          "<freeform cmd>"           custom command, prompt appended
   --no-http             Skip the HTTP server in stdio modes
   --keep-db             Don't delete the ephemeral SQLite on exit
 
 Examples:
-  kiln agent "build me a blog"
+  kiln agent "build me a blog"           # turnkey pi launcher
+  kiln serve --agent claude-code         # use Claude Code (~/.claude auth)
+  kiln serve --agent auto                # whichever CLI you have installed
   kiln serve --addr :7777
   kiln mcp --journal ./session.jsonl
   kiln acp --no-http
@@ -105,7 +112,12 @@ func parseFlags(args []string) runOptions {
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal path (use :memory: to disable persistence)")
 	noHTTP := fs.Bool("no-http", false, "Skip the HTTP server in stdio modes")
 	keepDB := fs.Bool("keep-db", false, "Don't delete the ephemeral SQLite on exit")
-	agentCmd := fs.String("agent", "", "Agent command to spawn on each chat_user event (e.g. \"pi -p --provider zai --model glm-5.1\"). KILN_URL is injected into the env.")
+	agentCmd := fs.String("agent", "", `Agent to spawn on each chat_user event. Accepts:
+  claude-code | pi | codex   — built-in adapter (uses your existing CLI auth)
+  auto                       — pick the first installed from the list above
+  none                       — explicitly run no agent (default if unset)
+  "<freeform cmd>"           — custom: e.g. "pi -p --model glm-5.1"
+KILN_URL is injected into the env so the agent can drive the runtime.`)
 	_ = fs.Parse(args)
 	return runOptions{addr: *addr, journal: *journalPath, noHTTP: *noHTTP, keepDB: *keepDB, agentCmd: *agentCmd}
 }
@@ -196,23 +208,35 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		printBanner(logger, opts.addr, stdioMode)
 	}
 
-	// Optional in-process agent watcher: spawn the configured command
-	// once per chat_user event with KILN_URL set so the agent can drive
-	// Kiln via HTTP. The agent's stdout is journaled as chat_assistant.
-	if opts.agentCmd != "" {
-		// Make sure the skill the agent reads is in sync with this
-		// build — otherwise stale advice (like pointing at the old
-		// /kiln/chat URL) leaks into pi's responses.
+	// Optional in-process agent watcher: resolve the configured adapter
+	// (or freeform command) and spawn it once per chat_user event with
+	// KILN_URL injected. The agent's stdout is journaled as chat_assistant.
+	adapter, ok := resolveAdapter(opts.agentCmd)
+	if ok {
+		// Sync the skill so adapters that read it (claude-code, pi via
+		// ~/.claude/skills/kiln/) get the current version of the
+		// framework knowledge.
 		if path, err := installSkill(); err == nil {
 			logger.Printf("skill:     %s (synced)", path)
 		} else {
 			logger.Printf("skill install: %v (continuing)", err)
 		}
-		go runAgentWatcher(ctx, logger, l, tools, opts.agentCmd, opts.addr)
-		logger.Printf("agent:     %q (spawns per chat_user event)", opts.agentCmd)
+		go runAgentWatcher(ctx, logger, l, tools, adapter, opts.addr)
+		logger.Printf("agent:     %s", adapter.Display)
 	} else if !stdioMode {
-		logger.Printf("agent:     (none — chat goes to journal but nothing runs;")
-		logger.Printf("            pass --agent \"pi -p\" to wire one up)")
+		switch opts.agentCmd {
+		case "":
+			logger.Printf("agent:     (none — pass --agent auto to pick an installed CLI,")
+			logger.Printf("            or --agent claude-code|pi|codex to be explicit)")
+		case "auto":
+			logger.Printf("agent:     auto-detect found nothing on PATH (claude-code, pi, codex)")
+			logger.Printf("           — install one or pass --agent \"<full cmd>\"")
+		case "none":
+			logger.Printf("agent:     (none — explicit)")
+		default:
+			logger.Printf("agent:     %q is not a known adapter and its binary isn't on PATH", opts.agentCmd)
+			logger.Printf("           — pass --agent claude-code|pi|codex|auto|none")
+		}
 	}
 
 	switch {

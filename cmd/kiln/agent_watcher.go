@@ -27,9 +27,8 @@ import (
 // note so the panel's thinking indicator clears and the user sees what
 // happened. Anything the cancelled turn already wrote to the journal
 // stays — Kiln's world is append-only, so partial work persists.
-func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, cmd, addr string) {
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
+func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, adapter Adapter, addr string) {
+	if adapter.BuildArgs == nil {
 		return
 	}
 
@@ -82,7 +81,7 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 
 			go func(turnCtx context.Context, cancel context.CancelFunc, text string) {
 				defer cancel()
-				runOneAgentTurn(turnCtx, logger, tools, parts, kilnURL, text)
+				runOneAgentTurn(turnCtx, logger, tools, adapter, kilnURL, text)
 				// Clear curCancl if it still points at this turn.
 				mu.Lock()
 				if curCtx == turnCtx {
@@ -134,11 +133,14 @@ func enrichPrompt(text string) string {
 	return text
 }
 
-func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.Tools, parts []string, kilnURL, text string) {
+func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.Tools, adapter Adapter, kilnURL, text string) {
 	enriched := enrichPrompt(text)
-	args := append([]string(nil), parts[1:]...)
-	args = append(args, enriched)
-	c := exec.CommandContext(ctx, parts[0], args...)
+	argv := adapter.BuildArgs(enriched)
+	if len(argv) == 0 {
+		logger.Printf("agent: adapter %q produced empty argv", adapter.Name)
+		return
+	}
+	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), "KILN_URL="+kilnURL)
 	c.Stderr = os.Stderr // surface diagnostic output to the kiln operator
 	out, err := c.Output()
