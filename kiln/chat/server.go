@@ -1,13 +1,18 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/gofastr/gofastr/core/router"
+	"github.com/gofastr/gofastr/kiln/journal"
 	"github.com/gofastr/gofastr/kiln/live"
 	"github.com/gofastr/gofastr/kiln/protocol"
 )
@@ -30,11 +35,37 @@ const WidgetTag = `<script src="/kiln/chat/widget.js" data-corner="bottom-right"
 type Server struct {
 	live  *live.Live
 	tools *protocol.Tools
+
+	// callCounter is a monotonic ID source for tool_call envelopes
+	// journaled by the HTTP dispatcher. Atomic so concurrent HTTP
+	// requests can each get a unique id without locking.
+	callCounter int64
 }
 
 // New constructs a chat Server.
 func New(l *live.Live, t *protocol.Tools) *Server {
 	return &Server{live: l, tools: t}
+}
+
+// journaledTools is the set of tools whose calls/results we wrap in
+// tool_call/tool_result journal entries for observability. We skip
+// read-only ops (world_get) and ops whose own kind already journals
+// the meaningful state (chat, propose_plan, approve_plan, reject_plan).
+var journaledTools = map[string]bool{
+	"set_app_config": true,
+	"add_entity":     true,
+	"update_entity":  true,
+	"delete_entity":  true,
+	"add_field":      true,
+	"delete_field":   true,
+	"add_page":       true,
+	"delete_page":    true,
+	"add_hook":       true,
+	"delete_hook":    true,
+	"add_route":      true,
+	"delete_route":   true,
+	"add_seed":       true,
+	"undo":           true,
 }
 
 // Mount registers the panel routes onto r. The host fallback page is
@@ -101,12 +132,75 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing tool name", http.StatusBadRequest)
 		return
 	}
-	res, err := s.dispatch(r.Context(), name, r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Journal a tool_call envelope BEFORE dispatching, so the panel
+	// renders the agent's intent even if the underlying tool fails. The
+	// ID flows through to the matching tool_result so the widget can
+	// pair them.
+	var callID string
+	if journaledTools[name] {
+		callID = s.nextCallID()
+		var args map[string]any
+		if len(body) > 0 {
+			_ = json.Unmarshal(body, &args)
+		}
+		_ = s.applyEntry(journal.KindToolCall, journal.ToolCallPayload{
+			CallID: callID,
+			Name:   name,
+			Args:   args,
+		})
+	}
+
+	res, err := s.dispatch(r.Context(), name, bytes.NewReader(body))
+	if err != nil {
+		// Journal a synthetic tool_result with the parse error so the
+		// agent's failed call still appears in the timeline.
+		if callID != "" {
+			_ = s.applyEntry(journal.KindToolResult, journal.ToolResultPayload{
+				CallID: callID,
+				OK:     false,
+				Error:  err.Error(),
+				Kind:   "validation",
+			})
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	if callID != "" {
+		_ = s.applyEntry(journal.KindToolResult, journal.ToolResultPayload{
+			CallID: callID,
+			OK:     res.OK,
+			Result: res.Result,
+			Error:  res.Error,
+			Kind:   res.Kind,
+			Hint:   res.Hint,
+		})
+	}
 	writeResult(w, res)
+}
+
+func (s *Server) nextCallID() string {
+	n := atomic.AddInt64(&s.callCounter, 1)
+	return fmt.Sprintf("c%d-%d", time.Now().UnixNano(), n)
+}
+
+// applyEntry builds a journal Entry for the given kind/payload and feeds
+// it through the live mutator. The chat server uses this only for
+// envelope kinds (KindToolCall, KindToolResult) — the underlying tool
+// dispatch journals world_edit / plan_* entries through protocol.Tools.
+func (s *Server) applyEntry(kind journal.Kind, payload any) error {
+	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddInt64(&s.callCounter, 1))
+	entry, err := journal.NewEntry(id, time.Now().UTC(), kind, "", payload)
+	if err != nil {
+		return err
+	}
+	return s.live.Apply(entry)
 }
 
 func writeResult(w http.ResponseWriter, res protocol.Result) {

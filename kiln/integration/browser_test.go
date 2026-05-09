@@ -643,6 +643,77 @@ func TestBrowser_ApprovePlanButton(t *testing.T) {
 	}
 }
 
+// --- (10) HTTP dispatch journals tool_call/tool_result -------------
+//
+// The HTTP /kiln/tool/{name} dispatcher wraps each call in a tool_call
+// envelope and follows up with a tool_result. The widget renders these
+// as → / ← rows in the panel using summarizeArgs. This test invokes
+// the HTTP path directly (not the typed protocol) and verifies both
+// rows show up with the expected text.
+func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__kilnSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatalf("SSE never opened")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Hit the HTTP dispatcher directly with an add_entity call.
+	body := strings.NewReader(`{"entity":{"name":"items","fields":[{"name":"label","type":"string"},{"name":"qty","type":"int"}]}}`)
+	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /kiln/tool/add_entity: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status %d", resp.StatusCode)
+	}
+
+	// Wait for both rows to land via SSE → refresh.
+	deadline := time.Now().Add(5 * time.Second)
+	var rows []string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx,
+			chromedp.Evaluate(`Array.from(document.querySelectorAll(".kiln-msg-tool, .kiln-msg-tool-error")).map(el=>el.textContent)`, &rows),
+		)
+		if len(rows) >= 2 && containsAny(rows, "→ add_entity") && containsAny(rows, "← ok") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	joined := strings.Join(rows, "\n")
+	for _, want := range []string{"→ add_entity", "name=items", "fields=2", "← ok"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("panel rows missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func containsAny(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
