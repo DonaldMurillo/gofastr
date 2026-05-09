@@ -72,34 +72,100 @@ func TestAddFieldUnknownEntity(t *testing.T) {
 	}
 }
 
-func TestDeleteEntityRequiresConfirm(t *testing.T) {
+func TestDeleteEntityRequiresApprovedPlan(t *testing.T) {
 	tools := newTools(t)
 	posts := &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}}
 	if r := tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: posts}); !r.OK {
 		t.Fatal("add: ", r)
 	}
 
+	// 1) No plan_id → needs_plan.
 	res := tools.DeleteEntity(context.Background(), protocol.DeleteEntityArgs{Name: "posts"})
 	if res.OK {
-		t.Fatal("first call must require confirm")
+		t.Fatal("first call without plan must be blocked")
 	}
-	if res.Kind != "needs_confirm" {
-		t.Errorf("kind = %q, want needs_confirm", res.Kind)
-	}
-	preview, ok := res.Result.(map[string]any)
-	if !ok {
-		t.Fatalf("expected preview result, got %T", res.Result)
-	}
-	if preview["confirm_token"] == nil || preview["confirm_token"] == "" {
-		t.Errorf("preview missing confirm_token: %v", preview)
+	if res.Kind != "needs_plan" {
+		t.Errorf("kind = %q, want needs_plan", res.Kind)
 	}
 
-	res = tools.DeleteEntity(context.Background(), protocol.DeleteEntityArgs{
-		Name:         "posts",
-		ConfirmToken: preview["confirm_token"].(string),
-	})
+	// 2) Propose a plan but don't approve → still blocked.
+	if r := tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID:  "p1",
+		Steps:   []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !r.OK {
+		t.Fatal("propose: ", r)
+	}
+	res = tools.DeleteEntity(context.Background(), protocol.DeleteEntityArgs{Name: "posts", PlanID: "p1"})
+	if res.OK || res.Kind != "needs_plan" {
+		t.Errorf("unapproved plan should block, got %+v", res)
+	}
+
+	// 3) Approved plan → succeeds.
+	if r := tools.ApprovePlan(context.Background(), protocol.ApprovePlanArgs{PlanID: "p1"}); !r.OK {
+		t.Fatal("approve: ", r)
+	}
+	res = tools.DeleteEntity(context.Background(), protocol.DeleteEntityArgs{Name: "posts", PlanID: "p1"})
 	if !res.OK {
-		t.Fatalf("with token, expected OK, got %+v", res)
+		t.Fatalf("approved plan should authorize delete, got %+v", res)
+	}
+
+	// 4) Replay attempt: re-add posts and try the same plan again — must block.
+	if r := tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: posts}); !r.OK {
+		t.Fatal("re-add: ", r)
+	}
+	res = tools.DeleteEntity(context.Background(), protocol.DeleteEntityArgs{Name: "posts", PlanID: "p1"})
+	if res.OK {
+		t.Errorf("plan reuse should be blocked, got OK")
+	}
+	if res.Kind != "needs_plan" {
+		t.Errorf("replay kind = %q, want needs_plan", res.Kind)
+	}
+}
+
+func TestDeleteEntityWrongTargetBlocked(t *testing.T) {
+	tools := newTools(t)
+	if r := tools.AddEntity(context.Background(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.AddEntity(context.Background(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "users", Fields: []world.Field{{Name: "email", Type: "string"}}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+	// Plan covers users, agent tries to delete posts.
+	if r := tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID:  "p1",
+		Steps:   []string{"drop users"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "users"}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.ApprovePlan(context.Background(), protocol.ApprovePlanArgs{PlanID: "p1"}); !r.OK {
+		t.Fatal(r)
+	}
+	res := tools.DeleteEntity(context.Background(), protocol.DeleteEntityArgs{Name: "posts", PlanID: "p1"})
+	if res.OK {
+		t.Fatalf("plan covering users must not authorize deleting posts, got %+v", res)
+	}
+}
+
+func TestRejectPlanBlocksApproval(t *testing.T) {
+	tools := newTools(t)
+	if r := tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID:  "p1",
+		Steps:   []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.RejectPlan(context.Background(), protocol.RejectPlanArgs{PlanID: "p1", Reason: "not now"}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.ApprovePlan(context.Background(), protocol.ApprovePlanArgs{PlanID: "p1"}); r.OK {
+		t.Fatal("approve after reject must fail")
 	}
 }
 

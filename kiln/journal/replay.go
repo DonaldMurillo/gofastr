@@ -80,6 +80,7 @@ func Apply(s *Session, e Entry) error {
 			ProposedAt: e.Timestamp,
 			Steps:      append([]string(nil), p.Steps...),
 			Reason:     p.Reason,
+			Targets:    append([]PlanTarget(nil), p.Targets...),
 		}
 		return nil
 	case KindPlanApproved:
@@ -91,9 +92,28 @@ func Apply(s *Session, e Entry) error {
 		if !ok {
 			return fmt.Errorf("plan_approved references unknown plan_id %q", p.PlanID)
 		}
+		if plan.Rejected {
+			return fmt.Errorf("plan_approved on already-rejected plan %q", p.PlanID)
+		}
 		plan.Approved = true
 		plan.ApprovedAt = e.Timestamp
 		plan.Modified = p.Modified
+		return nil
+	case KindPlanRejected:
+		var p PlanRejectedPayload
+		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		plan, ok := s.Plans[p.PlanID]
+		if !ok {
+			return fmt.Errorf("plan_rejected references unknown plan_id %q", p.PlanID)
+		}
+		if plan.Approved {
+			return fmt.Errorf("plan_rejected on already-approved plan %q", p.PlanID)
+		}
+		plan.Rejected = true
+		plan.RejectedAt = e.Timestamp
+		plan.RejectReason = p.Reason
 		return nil
 	default:
 		return fmt.Errorf("unknown entry kind %q", e.Kind)

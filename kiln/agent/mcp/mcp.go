@@ -26,9 +26,10 @@ func Register(srv *mcpcore.Server, tools *protocol.Tools) error {
 				Name: desc.Name,
 				Args: params,
 			})
-			if !res.OK && res.Kind != "needs_confirm" {
-				return res, nil
-			}
+			// Both ok and !ok results return as the structured Result so
+			// the agent (and panel) can branch on Kind/Hint. needs_plan
+			// surfaces destructive-op blockers; the agent should call
+			// propose_plan and retry.
 			return res, nil
 		})
 		if err != nil {

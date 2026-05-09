@@ -49,12 +49,13 @@ database and re-renders the live preview after each call.
 
 Operating rules:
 - For small additive asks, just call the right tools. Don't narrate every step.
-- For large or destructive asks (>3 tool calls or any delete), call propose_plan first and wait
-  for the user to approve before executing.
-- Destructive tools (delete_entity, delete_field) return a confirm_token on the first call;
-  surface the preview to the user and call again with the token after they approve.
+- For ANY destructive op (delete_entity, delete_field, delete_page, delete_hook, delete_route)
+  you MUST: (1) call propose_plan with targets listing each destructive op, (2) wait for the
+  user to click Approve in the panel, (3) call the destructive tool with plan_id set. The
+  protocol enforces this — a delete without an approved matching plan returns kind=needs_plan.
+  Each (plan, target) is single-use; reuse needs a new plan.
 - When a tool returns ok=false, read the kind and hint fields and self-correct in the next turn.
-  Common kinds: validation, conflict, not_found, needs_confirm.
+  Common kinds: validation, conflict, not_found, needs_plan.
 - Never invent tool names. Never write Go, JS, or SQL — express behavior via declarative
   hooks (validate, set_field, audit, emit_event) and route actions (respond_json).
 - When unsure of the current state, call world_get with a path (e.g. entities.posts) before
@@ -70,7 +71,7 @@ func BuildFrameworkSlab(tools []protocol.Descriptor) string {
 	for _, d := range tools {
 		fmt.Fprintf(&b, "• %s — %s\n", d.Name, d.Description)
 		if d.Destructive {
-			b.WriteString("    (destructive: requires confirm_token on second call)\n")
+			b.WriteString("    (destructive: requires plan_id of an approved propose_plan with matching target)\n")
 		}
 	}
 	b.WriteString("\nField types: string, text, int, float, decimal, bool, enum, uuid, timestamp, ")

@@ -199,30 +199,44 @@ func TestRespondJSONWithComputedBody(t *testing.T) {
 	}
 }
 
-// --- (4) destructive ops with confirm token --------------------------
+// --- (4) destructive ops require an approved plan -------------------
 
-func TestDeleteEntityConfirmFlow(t *testing.T) {
+func TestDeleteEntityPlanFlow(t *testing.T) {
 	h := newHarness(t)
 	h.addEntity(t, &world.Entity{Name: "trash", Fields: []world.Field{{Name: "x", Type: "string"}}})
 
+	// 1) No plan_id → blocked.
 	first := h.tools.DeleteEntity(t.Context(), protocol.DeleteEntityArgs{Name: "trash"})
-	if first.OK || first.Kind != "needs_confirm" {
-		t.Fatalf("first call should require confirm: %+v", first)
+	if first.OK || first.Kind != "needs_plan" {
+		t.Fatalf("first call without plan should be blocked: %+v", first)
 	}
-	tok := first.Result.(map[string]any)["confirm_token"].(string)
 
-	second := h.tools.DeleteEntity(t.Context(), protocol.DeleteEntityArgs{Name: "trash", ConfirmToken: tok})
+	// 2) Propose + approve plan with the right target.
+	if r := h.tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
+		PlanID:  "p1",
+		Steps:   []string{"drop trash"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "trash"}},
+	}); !r.OK {
+		t.Fatalf("propose: %+v", r)
+	}
+	if r := h.tools.ApprovePlan(t.Context(), protocol.ApprovePlanArgs{PlanID: "p1"}); !r.OK {
+		t.Fatalf("approve: %+v", r)
+	}
+
+	// 3) Now the delete succeeds.
+	second := h.tools.DeleteEntity(t.Context(), protocol.DeleteEntityArgs{Name: "trash", PlanID: "p1"})
 	if !second.OK {
-		t.Fatalf("with token, expected OK: %+v", second)
+		t.Fatalf("with approved plan, expected OK: %+v", second)
 	}
 	if _, ok := h.live.Session().World.Entities["trash"]; ok {
-		t.Error("entity still present after confirmed delete")
+		t.Error("entity still present after approved delete")
 	}
 
-	// Token is single-use.
-	stale := h.tools.DeleteEntity(t.Context(), protocol.DeleteEntityArgs{Name: "trash", ConfirmToken: tok})
+	// 4) Plan target is single-use even after re-adding.
+	h.addEntity(t, &world.Entity{Name: "trash", Fields: []world.Field{{Name: "x", Type: "string"}}})
+	stale := h.tools.DeleteEntity(t.Context(), protocol.DeleteEntityArgs{Name: "trash", PlanID: "p1"})
 	if stale.OK {
-		t.Error("stale token should not work twice")
+		t.Error("plan reuse should be blocked, got OK")
 	}
 }
 

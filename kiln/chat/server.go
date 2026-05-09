@@ -216,6 +216,12 @@ func (s *Server) dispatch(ctx context.Context, name string, body interface {
 			return protocol.Result{}, err
 		}
 		return s.tools.ApprovePlan(ctx, args), nil
+	case "reject_plan":
+		var args protocol.RejectPlanArgs
+		if err := dec.Decode(&args); err != nil {
+			return protocol.Result{}, err
+		}
+		return s.tools.RejectPlan(ctx, args), nil
 	case "undo":
 		return s.tools.Undo(ctx, protocol.UndoArgs{}), nil
 	case "chat":

@@ -26,14 +26,23 @@ type ChatEvent struct {
 
 // Plan represents a multi-step plan proposed by the agent. Approved plans
 // retain ApprovedAt; unapproved plans have a zero ApprovedAt.
+//
+// Targets is the destructive-op manifest: each entry names one tool call
+// the plan claims authority for. Destructive tool calls (delete_entity,
+// delete_field, …) reject unless an approved plan's Targets list
+// includes a matching entry. See protocol.Tools.
 type Plan struct {
-	PlanID     string    `json:"plan_id"`
-	ProposedAt time.Time `json:"proposed_at"`
-	Steps      []string  `json:"steps"`
-	Reason     string    `json:"reason,omitempty"`
-	Approved   bool      `json:"approved,omitempty"`
-	ApprovedAt time.Time `json:"approved_at,omitempty"`
-	Modified   bool      `json:"modified,omitempty"`
+	PlanID     string       `json:"plan_id"`
+	ProposedAt time.Time    `json:"proposed_at"`
+	Steps      []string     `json:"steps"`
+	Reason     string       `json:"reason,omitempty"`
+	Targets    []PlanTarget `json:"targets,omitempty"`
+	Approved   bool         `json:"approved,omitempty"`
+	ApprovedAt time.Time    `json:"approved_at,omitempty"`
+	Modified   bool         `json:"modified,omitempty"`
+	Rejected   bool         `json:"rejected,omitempty"`
+	RejectedAt time.Time    `json:"rejected_at,omitempty"`
+	RejectReason string     `json:"reject_reason,omitempty"`
 }
 
 // NewSession returns an empty Session with an empty world.

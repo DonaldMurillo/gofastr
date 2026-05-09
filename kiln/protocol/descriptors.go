@@ -56,12 +56,12 @@ var descriptors = map[string]Descriptor{
 	},
 	"delete_entity": {
 		Name:        "delete_entity",
-		Description: "Drop an entity. Destructive: first call returns a confirm_token; call again with the token to execute.",
+		Description: "Drop an entity. Destructive: requires plan_id of an approved propose_plan whose targets include {op:\"delete_entity\",name:<entity>}.",
 		Destructive: true,
 		Schema: object(map[string]any{
-			"name":          str(""),
-			"confirm_token": str(""),
-		}, []string{"name"}),
+			"name":    str(""),
+			"plan_id": str("approved plan authorizing this delete"),
+		}, []string{"name", "plan_id"}),
 	},
 	"add_field": {
 		Name:        "add_field",
@@ -73,13 +73,13 @@ var descriptors = map[string]Descriptor{
 	},
 	"delete_field": {
 		Name:        "delete_field",
-		Description: "Remove a field from an entity. Destructive: requires confirm_token.",
+		Description: "Remove a field from an entity. Destructive: requires plan_id of an approved propose_plan whose targets include {op:\"delete_field\",name:\"<entity>.<field>\"}.",
 		Destructive: true,
 		Schema: object(map[string]any{
-			"entity":        str(""),
-			"field":         str(""),
-			"confirm_token": str(""),
-		}, []string{"entity", "field"}),
+			"entity":  str(""),
+			"field":   str(""),
+			"plan_id": str("approved plan authorizing this delete"),
+		}, []string{"entity", "field", "plan_id"}),
 	},
 	"add_page": {
 		Name:        "add_page",
@@ -88,8 +88,12 @@ var descriptors = map[string]Descriptor{
 	},
 	"delete_page": {
 		Name:        "delete_page",
-		Description: "Remove a page by path.",
-		Schema:      object(map[string]any{"path": str("")}, []string{"path"}),
+		Description: "Remove a page by path. Destructive: requires plan_id of an approved propose_plan whose targets include {op:\"delete_page\",name:\"<path>\"}.",
+		Destructive: true,
+		Schema: object(map[string]any{
+			"path":    str(""),
+			"plan_id": str("approved plan authorizing this delete"),
+		}, []string{"path", "plan_id"}),
 	},
 	"add_hook": {
 		Name:        "add_hook",
@@ -98,8 +102,12 @@ var descriptors = map[string]Descriptor{
 	},
 	"delete_hook": {
 		Name:        "delete_hook",
-		Description: "Remove a hook by ID.",
-		Schema:      object(map[string]any{"id": str("")}, []string{"id"}),
+		Description: "Remove a hook by ID. Destructive: requires plan_id of an approved propose_plan whose targets include {op:\"delete_hook\",name:\"<id>\"}.",
+		Destructive: true,
+		Schema: object(map[string]any{
+			"id":      str(""),
+			"plan_id": str("approved plan authorizing this delete"),
+		}, []string{"id", "plan_id"}),
 	},
 	"add_route": {
 		Name:        "add_route",
@@ -108,11 +116,13 @@ var descriptors = map[string]Descriptor{
 	},
 	"delete_route": {
 		Name:        "delete_route",
-		Description: "Remove a route by method+path.",
+		Description: "Remove a route by method+path. Destructive: requires plan_id of an approved propose_plan whose targets include {op:\"delete_route\",name:\"<METHOD> <path>\"}.",
+		Destructive: true,
 		Schema: object(map[string]any{
-			"method": str(""),
-			"path":   str(""),
-		}, []string{"method", "path"}),
+			"method":  str(""),
+			"path":    str(""),
+			"plan_id": str("approved plan authorizing this delete"),
+		}, []string{"method", "path", "plan_id"}),
 	},
 	"add_seed": {
 		Name:        "add_seed",
@@ -121,11 +131,15 @@ var descriptors = map[string]Descriptor{
 	},
 	"propose_plan": {
 		Name:        "propose_plan",
-		Description: "Submit a multi-step plan for the user to approve. Use when a request needs more than ~3 tool calls or any destructive op.",
+		Description: "Submit a multi-step plan for the user to approve. Required before any destructive op. List each destructive op in `targets` so the protocol can authorize the matching delete_*. The user clicks Approve in the panel; you then call delete_* with `plan_id` set.",
 		Schema: object(map[string]any{
 			"plan_id": str("stable id for this plan"),
 			"steps":   list(str("one short step description")),
 			"reason":  str("optional justification"),
+			"targets": list(object(map[string]any{
+				"op":   str("destructive op key, e.g. \"delete_entity\""),
+				"name": str("target name, e.g. \"posts\" or \"posts.title\""),
+			}, []string{"op", "name"})),
 		}, []string{"plan_id", "steps"}),
 	},
 	"approve_plan": {
@@ -134,6 +148,14 @@ var descriptors = map[string]Descriptor{
 		Schema: object(map[string]any{
 			"plan_id":  str(""),
 			"modified": boolean(),
+		}, []string{"plan_id"}),
+	},
+	"reject_plan": {
+		Name:        "reject_plan",
+		Description: "Reject a proposed plan. Rejected plans cannot later be approved — propose a new one. Typically invoked by the panel on user click.",
+		Schema: object(map[string]any{
+			"plan_id": str(""),
+			"reason":  str("optional explanation"),
 		}, []string{"plan_id"}),
 	},
 	"undo": {

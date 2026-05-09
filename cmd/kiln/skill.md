@@ -27,7 +27,7 @@ Response is always:
 
 ```json
 { "ok": true,  "result": { ... } }
-{ "ok": false, "error": "...", "kind": "validation|conflict|not_found|needs_confirm", "hint": "..." }
+{ "ok": false, "error": "...", "kind": "validation|conflict|not_found|needs_plan", "hint": "..." }
 ```
 
 If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln serve` started in cwd is what you're talking to.
@@ -35,8 +35,11 @@ If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln se
 ## Operating rules
 
 - For small additive asks ("add a `priority` field"), call the right tool directly. Don't narrate.
-- For large or destructive asks (>3 tool calls or any delete), call `propose_plan` first and wait for the user to approve.
-- Destructive tools (`delete_entity`, `delete_field`) return `{"ok":false,"kind":"needs_confirm","result":{"confirm_token":"..."}}` on the first call. Surface the preview, ask the user to confirm, then call again with the token in the args.
+- For any destructive op (`delete_entity`, `delete_field`, `delete_page`, `delete_hook`, `delete_route`), you MUST:
+  1. Call `propose_plan` with `targets` listing every destructive op you intend to perform. Example: `targets: [{op:"delete_entity", name:"posts"}]`.
+  2. Wait for the user to click Approve in the panel (which calls `approve_plan`).
+  3. Call the destructive tool with `plan_id` set to your plan's id. The protocol enforces this — calling without an approved plan returns `{"ok":false,"kind":"needs_plan",...}`. Each (plan, target) is single-use; reuse requires a new plan.
+- For large additive asks (>3 tool calls), `propose_plan` is recommended for visibility but not required.
 - When `ok=false`, read `kind` and `hint` and self-correct. Don't repeat the same call.
 - When unsure of state, GET `$KILN_URL/kiln/world` (or call the `world_get` tool with a path) before acting.
 
@@ -49,9 +52,9 @@ If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln se
 ### Entities (CRUD, OpenAPI, MCP all auto-generate from these)
 - `add_entity(entity)` — declare a new entity with fields/relations/CRUD/MCP/soft-delete/multi-tenant flags.
 - `update_entity(entity)` — replace an entity in full (prefer `add_field` for additive changes).
-- `delete_entity(name, confirm_token?)` — drop an entity. Destructive.
+- `delete_entity(name, plan_id)` — drop an entity. Destructive: requires approved plan with target `{op:"delete_entity",name}`.
 - `add_field(entity, field)` — append a field. Auto-runs ALTER TABLE ADD COLUMN.
-- `delete_field(entity, field, confirm_token?)` — remove a field. Destructive.
+- `delete_field(entity, field, plan_id)` — remove a field. Destructive: target `{op:"delete_field",name:"<entity>.<field>"}`.
 
 ### UI pages
 - `add_page(page)` — register a page. Pages are element trees (`{kind, props, children, bindings, actions}`).
@@ -63,8 +66,9 @@ If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln se
 - `add_seed(seed)` — insert seed rows.
 
 ### Plans, history, app config
-- `propose_plan(plan_id, steps[], reason?)` — submit a plan for user approval.
-- `approve_plan(plan_id)` — usually invoked by the panel, but you can call it after the user agrees in chat.
+- `propose_plan(plan_id, steps[], reason?, targets?)` — submit a plan for user approval. List destructive ops in `targets` (e.g. `[{op:"delete_entity",name:"posts"}]`) to authorize them.
+- `approve_plan(plan_id)` — usually invoked by the panel when the user clicks Approve.
+- `reject_plan(plan_id, reason?)` — invoked by the panel when the user clicks Reject. Rejected plans cannot later be approved.
 - `undo()` — truncate the journal by one entry, reverting the most recent change.
 - `set_app_config(config)` — name, json case (`camel`/`snake`), debug endpoints.
 - `chat(role, text)` — record a message in the session journal.

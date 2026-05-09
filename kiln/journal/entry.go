@@ -19,6 +19,7 @@ const (
 	KindToolResult    Kind = "tool_result"
 	KindPlanProposed  Kind = "plan_proposed"
 	KindPlanApproved  Kind = "plan_approved"
+	KindPlanRejected  Kind = "plan_rejected"
 )
 
 // Op names a world mutation operation. Only set when Kind == KindWorldEdit.
@@ -168,13 +169,32 @@ type ToolResultPayload struct {
 	Hint   string `json:"hint,omitempty"`
 }
 
+// PlanTarget names a single destructive op the plan covers. Destructive
+// tool calls require an approved plan whose Targets list contains a
+// matching entry — that's the safety gate.
+//
+//	op   — the protocol op key, e.g. "delete_entity", "delete_field"
+//	name — the target name, e.g. "posts" or "posts.title" or "/about"
+type PlanTarget struct {
+	Op   string `json:"op"`
+	Name string `json:"name"`
+}
+
 type PlanProposedPayload struct {
-	PlanID string   `json:"plan_id"`
-	Steps  []string `json:"steps"`
-	Reason string   `json:"reason,omitempty"`
+	PlanID  string       `json:"plan_id"`
+	Steps   []string     `json:"steps"`
+	Reason  string       `json:"reason,omitempty"`
+	Targets []PlanTarget `json:"targets,omitempty"`
 }
 
 type PlanApprovedPayload struct {
 	PlanID   string `json:"plan_id"`
 	Modified bool   `json:"modified,omitempty"`
+}
+
+// PlanRejectedPayload journals a user's "no" on a proposed plan.
+// Rejected plans cannot be approved later — propose a new one.
+type PlanRejectedPayload struct {
+	PlanID string `json:"plan_id"`
+	Reason string `json:"reason,omitempty"`
 }

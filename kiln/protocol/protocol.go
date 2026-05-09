@@ -2,8 +2,6 @@ package protocol
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -21,7 +19,7 @@ type Result struct {
 	OK     bool   `json:"ok"`
 	Result any    `json:"result,omitempty"`
 	Error  string `json:"error,omitempty"`
-	Kind   string `json:"kind,omitempty"` // "validation" | "conflict" | "not_found" | "needs_confirm" | ...
+	Kind   string `json:"kind,omitempty"` // "validation" | "conflict" | "not_found" | "needs_plan" | ...
 	Hint   string `json:"hint,omitempty"`
 }
 
@@ -29,16 +27,21 @@ type Result struct {
 type Tools struct {
 	live *live.Live
 
-	mu       sync.Mutex
-	counter  int64
-	confirms map[string]string // token → operation key
+	mu      sync.Mutex
+	counter int64
+
+	// consumed tracks plan targets that have already been used. Once a
+	// destructive op succeeds against a plan, that (planID, opKey) pair
+	// is recorded here so the same plan can't authorize the same delete
+	// twice. Per-process, in-memory — not journaled.
+	consumed map[string]map[string]bool
 }
 
 // New constructs Tools bound to a Live runtime.
 func New(l *live.Live) *Tools {
 	return &Tools{
 		live:     l,
-		confirms: map[string]string{},
+		consumed: map[string]map[string]bool{},
 	}
 }
 
@@ -71,8 +74,11 @@ type UpdateEntityArgs struct {
 }
 
 type DeleteEntityArgs struct {
-	Name         string `json:"name"`
-	ConfirmToken string `json:"confirm_token,omitempty"`
+	Name string `json:"name"`
+	// PlanID names an approved plan whose Targets list contains
+	// {op:"delete_entity",name:<Name>}. Required — destructive ops do not
+	// run without a plan-approved authorization.
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type AddFieldArgs struct {
@@ -81,9 +87,9 @@ type AddFieldArgs struct {
 }
 
 type DeleteFieldArgs struct {
-	Entity       string `json:"entity"`
-	Field        string `json:"field"`
-	ConfirmToken string `json:"confirm_token,omitempty"`
+	Entity string `json:"entity"`
+	Field  string `json:"field"`
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type AddPageArgs struct {
@@ -91,7 +97,8 @@ type AddPageArgs struct {
 }
 
 type DeletePageArgs struct {
-	Path string `json:"path"`
+	Path   string `json:"path"`
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type AddHookArgs struct {
@@ -99,7 +106,8 @@ type AddHookArgs struct {
 }
 
 type DeleteHookArgs struct {
-	ID string `json:"id"`
+	ID     string `json:"id"`
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type AddRouteArgs struct {
@@ -109,6 +117,7 @@ type AddRouteArgs struct {
 type DeleteRouteArgs struct {
 	Method string `json:"method"`
 	Path   string `json:"path"`
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type AddSeedArgs struct {
@@ -116,14 +125,20 @@ type AddSeedArgs struct {
 }
 
 type ProposePlanArgs struct {
-	PlanID string   `json:"plan_id"`
-	Steps  []string `json:"steps"`
-	Reason string   `json:"reason,omitempty"`
+	PlanID  string               `json:"plan_id"`
+	Steps   []string             `json:"steps"`
+	Reason  string               `json:"reason,omitempty"`
+	Targets []journal.PlanTarget `json:"targets,omitempty"`
 }
 
 type ApprovePlanArgs struct {
 	PlanID   string `json:"plan_id"`
 	Modified bool   `json:"modified,omitempty"`
+}
+
+type RejectPlanArgs struct {
+	PlanID string `json:"plan_id"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type UndoArgs struct{}
@@ -203,18 +218,15 @@ func (t *Tools) DeleteEntity(_ context.Context, args DeleteEntityArgs) Result {
 	if !exists {
 		return notFound("entity %q not found", args.Name)
 	}
-	opKey := "delete_entity:" + args.Name
-	if !t.checkConfirm(opKey, args.ConfirmToken) {
-		token := t.issueConfirm(opKey)
-		return needsConfirm(map[string]any{
-			"confirm_token": token,
-			"preview": map[string]any{
-				"deletes":   args.Name,
-				"row_count": "unknown — query the live DB to see",
-			},
-		})
+	target := journal.PlanTarget{Op: "delete_entity", Name: args.Name}
+	if r := t.requirePlan(args.PlanID, target); !r.OK {
+		return r
 	}
-	return t.applyEdit(journal.OpDeleteEntity, journal.DeleteEntityPayload{Name: args.Name, Prev: prev})
+	res := t.applyEdit(journal.OpDeleteEntity, journal.DeleteEntityPayload{Name: args.Name, Prev: prev})
+	if res.OK {
+		t.consumeTarget(args.PlanID, target)
+	}
+	return res
 }
 
 func (t *Tools) AddField(_ context.Context, args AddFieldArgs) Result {
@@ -249,14 +261,15 @@ func (t *Tools) DeleteField(_ context.Context, args DeleteFieldArgs) Result {
 	if prev == nil {
 		return notFound("field %s.%s not found", args.Entity, args.Field)
 	}
-	opKey := "delete_field:" + args.Entity + "." + args.Field
-	if !t.checkConfirm(opKey, args.ConfirmToken) {
-		return needsConfirm(map[string]any{
-			"confirm_token": t.issueConfirm(opKey),
-			"preview":       map[string]any{"drops": args.Entity + "." + args.Field},
-		})
+	target := journal.PlanTarget{Op: "delete_field", Name: args.Entity + "." + args.Field}
+	if r := t.requirePlan(args.PlanID, target); !r.OK {
+		return r
 	}
-	return t.applyEdit(journal.OpDeleteField, journal.DeleteFieldPayload{Entity: args.Entity, Field: args.Field, Prev: prev})
+	res := t.applyEdit(journal.OpDeleteField, journal.DeleteFieldPayload{Entity: args.Entity, Field: args.Field, Prev: prev})
+	if res.OK {
+		t.consumeTarget(args.PlanID, target)
+	}
+	return res
 }
 
 func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
@@ -288,7 +301,15 @@ func (t *Tools) DeletePage(_ context.Context, args DeletePageArgs) Result {
 	if !exists {
 		return notFound("page %q not found", args.Path)
 	}
-	return t.applyEdit(journal.OpDeletePage, journal.DeletePagePayload{Path: args.Path, Prev: prev})
+	target := journal.PlanTarget{Op: "delete_page", Name: args.Path}
+	if r := t.requirePlan(args.PlanID, target); !r.OK {
+		return r
+	}
+	res := t.applyEdit(journal.OpDeletePage, journal.DeletePagePayload{Path: args.Path, Prev: prev})
+	if res.OK {
+		t.consumeTarget(args.PlanID, target)
+	}
+	return res
 }
 
 func (t *Tools) AddHook(_ context.Context, args AddHookArgs) Result {
@@ -304,12 +325,25 @@ func (t *Tools) AddHook(_ context.Context, args AddHookArgs) Result {
 }
 
 func (t *Tools) DeleteHook(_ context.Context, args DeleteHookArgs) Result {
+	var prev *world.Hook
 	for _, h := range t.live.Session().World.Hooks {
 		if h.ID == args.ID {
-			return t.applyEdit(journal.OpDeleteHook, journal.DeleteHookPayload{ID: args.ID, Prev: h})
+			prev = h
+			break
 		}
 	}
-	return notFound("hook %q not found", args.ID)
+	if prev == nil {
+		return notFound("hook %q not found", args.ID)
+	}
+	target := journal.PlanTarget{Op: "delete_hook", Name: args.ID}
+	if r := t.requirePlan(args.PlanID, target); !r.OK {
+		return r
+	}
+	res := t.applyEdit(journal.OpDeleteHook, journal.DeleteHookPayload{ID: args.ID, Prev: prev})
+	if res.OK {
+		t.consumeTarget(args.PlanID, target)
+	}
+	return res
 }
 
 func (t *Tools) AddRoute(_ context.Context, args AddRouteArgs) Result {
@@ -325,12 +359,25 @@ func (t *Tools) AddRoute(_ context.Context, args AddRouteArgs) Result {
 }
 
 func (t *Tools) DeleteRoute(_ context.Context, args DeleteRouteArgs) Result {
+	var prev *world.Route
 	for _, r := range t.live.Session().World.Routes {
 		if r.Method == args.Method && r.Path == args.Path {
-			return t.applyEdit(journal.OpDeleteRoute, journal.DeleteRoutePayload{Method: args.Method, Path: args.Path, Prev: r})
+			prev = r
+			break
 		}
 	}
-	return notFound("route %s %s not found", args.Method, args.Path)
+	if prev == nil {
+		return notFound("route %s %s not found", args.Method, args.Path)
+	}
+	target := journal.PlanTarget{Op: "delete_route", Name: args.Method + " " + args.Path}
+	if r := t.requirePlan(args.PlanID, target); !r.OK {
+		return r
+	}
+	res := t.applyEdit(journal.OpDeleteRoute, journal.DeleteRoutePayload{Method: args.Method, Path: args.Path, Prev: prev})
+	if res.OK {
+		t.consumeTarget(args.PlanID, target)
+	}
+	return res
 }
 
 func (t *Tools) AddSeed(_ context.Context, args AddSeedArgs) Result {
@@ -348,19 +395,44 @@ func (t *Tools) ProposePlan(_ context.Context, args ProposePlanArgs) Result {
 		return conflict("plan %q already exists", args.PlanID)
 	}
 	return t.applyEntry(journal.KindPlanProposed, "", journal.PlanProposedPayload{
-		PlanID: args.PlanID,
-		Steps:  args.Steps,
-		Reason: args.Reason,
+		PlanID:  args.PlanID,
+		Steps:   args.Steps,
+		Reason:  args.Reason,
+		Targets: args.Targets,
 	})
 }
 
 func (t *Tools) ApprovePlan(_ context.Context, args ApprovePlanArgs) Result {
-	if _, ok := t.live.Session().Plans[args.PlanID]; !ok {
+	plan, exists := t.live.Session().Plans[args.PlanID]
+	if !exists {
 		return notFound("plan %q not found", args.PlanID)
+	}
+	if plan.Rejected {
+		return conflict("plan %q was rejected — propose a new plan", args.PlanID)
+	}
+	if plan.Approved {
+		return ok(map[string]any{"plan_id": args.PlanID, "already": true})
 	}
 	return t.applyEntry(journal.KindPlanApproved, "", journal.PlanApprovedPayload{
 		PlanID:   args.PlanID,
 		Modified: args.Modified,
+	})
+}
+
+func (t *Tools) RejectPlan(_ context.Context, args RejectPlanArgs) Result {
+	plan, exists := t.live.Session().Plans[args.PlanID]
+	if !exists {
+		return notFound("plan %q not found", args.PlanID)
+	}
+	if plan.Approved {
+		return conflict("plan %q already approved", args.PlanID)
+	}
+	if plan.Rejected {
+		return ok(map[string]any{"plan_id": args.PlanID, "already": true})
+	}
+	return t.applyEntry(journal.KindPlanRejected, "", journal.PlanRejectedPayload{
+		PlanID: args.PlanID,
+		Reason: args.Reason,
 	})
 }
 
@@ -410,28 +482,51 @@ func (t *Tools) applyEntry(kind journal.Kind, op journal.Op, payload any) Result
 	return Result{OK: true, Result: map[string]any{"entry_id": entry.ID}}
 }
 
-func (t *Tools) issueConfirm(op string) string {
+// requirePlan is the destructive-op safety gate. It returns Result{OK:true}
+// when the call may proceed (an approved, not-yet-consumed plan covers
+// the target); otherwise Result{OK:false, Kind:"needs_plan"} with a hint
+// telling the agent how to comply.
+func (t *Tools) requirePlan(planID string, target journal.PlanTarget) Result {
+	if planID == "" {
+		return needsPlan(target, "no plan_id supplied — call propose_plan listing this destructive op in `targets`, then await user approval")
+	}
+	plan, exists := t.live.Session().Plans[planID]
+	if !exists {
+		return needsPlan(target, fmt.Sprintf("plan %q not found", planID))
+	}
+	if plan.Rejected {
+		return needsPlan(target, fmt.Sprintf("plan %q was rejected — propose a new plan", planID))
+	}
+	if !plan.Approved {
+		return needsPlan(target, fmt.Sprintf("plan %q is not yet approved by the user", planID))
+	}
+	matched := false
+	for _, tg := range plan.Targets {
+		if tg == target {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets` — propose a plan that includes %+v", planID, target))
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	buf := make([]byte, 8)
-	_, _ = rand.Read(buf)
-	token := hex.EncodeToString(buf)
-	t.confirms[token] = op
-	return token
+	if used, ok := t.consumed[planID]; ok && used[target.Op+":"+target.Name] {
+		return needsPlan(target, fmt.Sprintf("plan %q already consumed for this target — propose a new plan", planID))
+	}
+	return Result{OK: true}
 }
 
-func (t *Tools) checkConfirm(op, token string) bool {
-	if token == "" {
-		return false
-	}
+// consumeTarget marks (planID, target) as used. Called only after the
+// underlying applyEdit succeeded.
+func (t *Tools) consumeTarget(planID string, target journal.PlanTarget) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	stored, ok := t.confirms[token]
-	if !ok || stored != op {
-		return false
+	if t.consumed[planID] == nil {
+		t.consumed[planID] = map[string]bool{}
 	}
-	delete(t.confirms, token)
-	return true
+	t.consumed[planID][target.Op+":"+target.Name] = true
 }
 
 // --- result constructors ----------------------------------------------
@@ -462,8 +557,20 @@ func conflict(format string, a ...any) Result {
 	return r
 }
 
-func needsConfirm(preview map[string]any) Result {
-	return Result{OK: false, Kind: "needs_confirm", Result: preview}
+// needsPlan signals "you tried a destructive op without an approved
+// plan covering it." The Result includes the target so the agent (and
+// the panel) know what to propose; the Hint tells the agent the next
+// step.
+func needsPlan(target journal.PlanTarget, hint string) Result {
+	return Result{
+		OK:   false,
+		Kind: "needs_plan",
+		Result: map[string]any{
+			"target": target,
+		},
+		Error: "destructive op blocked: needs an approved plan",
+		Hint:  hint,
+	}
 }
 
 func (r Result) withHint(h string) Result {

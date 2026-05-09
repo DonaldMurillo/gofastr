@@ -11,6 +11,7 @@ import (
 	"github.com/chromedp/chromedp"
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/gofastr/gofastr/kiln/journal"
 	"github.com/gofastr/gofastr/kiln/protocol"
 	"github.com/gofastr/gofastr/kiln/world"
 )
@@ -264,8 +265,18 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 	}
 	waitForSSE(t, ctx)
 
-	// Agent rewrites the page in place: delete then add with new content.
-	if r := tools.DeletePage(t.Context(), protocol.DeletePageArgs{Path: "/draft"}); !r.OK {
+	// Agent rewrites the page in place: propose+approve a plan, delete, then add.
+	if r := tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
+		PlanID:  "rewrite-draft",
+		Steps:   []string{"replace /draft with v2"},
+		Targets: []journal.PlanTarget{{Op: "delete_page", Name: "/draft"}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.ApprovePlan(t.Context(), protocol.ApprovePlanArgs{PlanID: "rewrite-draft"}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.DeletePage(t.Context(), protocol.DeletePageArgs{Path: "/draft", PlanID: "rewrite-draft"}); !r.OK {
 		t.Fatal(r)
 	}
 	if r := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
