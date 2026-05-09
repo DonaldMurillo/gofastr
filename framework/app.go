@@ -155,6 +155,13 @@ func NewApp(opts ...AppOption) *App {
 		opt(a)
 	}
 
+	// Apply default middleware before any routes are registered. The router
+	// wraps handlers at Handle() time, so middleware added after that has
+	// no effect — we have to commit to a chain up front. Users who want a
+	// custom chain pass WithoutDefaultMiddleware and call App.Use(...) before
+	// registering entities.
+	a.applyDefaultMiddleware()
+
 	// Propagate DB to registry and its entities
 	if a.DB != nil {
 		a.Registry.SetDB(a.DB)
@@ -360,9 +367,6 @@ func (a *App) Start(addr string) error {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 	}
-
-	// Apply default middleware chain unless the user opted out or composed their own.
-	a.applyDefaultMiddleware()
 
 	// Auto-generate and serve OpenAPI spec
 	if len(a.Registry.All()) > 0 {

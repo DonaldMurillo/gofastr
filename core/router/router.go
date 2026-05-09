@@ -116,8 +116,11 @@ func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 }
 
 // NotFound sets a custom handler for 404 (Not Found) responses.
+// The handler is wrapped with the router's middleware chain — at the time
+// NotFound is called — so 404 responses go through the same recovery,
+// logging, security headers, etc. as matched routes.
 func (r *Router) NotFound(handler http.Handler) {
-	r.notFound = handler
+	r.notFound = r.wrap(handler)
 }
 
 // NOTE: Go 1.22+ ServeMux handles 405 Method Not Allowed responses
