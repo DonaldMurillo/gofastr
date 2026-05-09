@@ -40,6 +40,12 @@ type UIHost struct {
 	staticFS       fs.FS                                // embedded filesystem for static files
 	routeGraph     *style.RouteGraph                    // route graph for progressive CSS loading
 	signals        map[string]SignalAny                 // signalID → signal for live updates
+
+	// standalone is a private router lazily mounted on first ServeHTTP call,
+	// so the host can satisfy http.Handler when it is used outside a
+	// framework.App. Tests use this path; production goes through Mount.
+	standalone     *router.Router
+	standaloneOnce sync.Once
 }
 
 // Session represents a connected browser session.
@@ -286,81 +292,17 @@ func (ds *UIHost) GetSession(id string) (*Session, bool) {
 	return s, ok
 }
 
-// ServeHTTP implements http.Handler, routing requests to pages or SSE.
+// ServeHTTP makes UIHost satisfy http.Handler by routing through a private
+// router that has Mount called on it. Production wiring goes through
+// framework.App.Mount(host); ServeHTTP exists so the host can also be used
+// standalone (tests, embedded experiments) without dragging in the full
+// framework App.
 func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-
-	// API / SSE routes
-	switch {
-	case path == "/__gofastr/sse":
-		ds.handleSSE(w, r)
-		return
-	case path == "/__gofastr/runtime.js":
-		ds.handleRuntimeJS(w, r)
-		return
-	case path == "/__gofastr/actions.js":
-		ds.handleActionsJS(w, r)
-		return
-	case path == "/__gofastr/theme.css":
-		ds.handleThemeCSS(w, r)
-		return
-	case path == "/__gofastr/styles.css":
-		ds.handleStylesCSS(w, r)
-		return
-	case path == "/__gofastr/routes.js":
-		ds.handleRoutesJS(w, r)
-		return
-	case path == "/__gofastr/session":
-		ds.handleCreateSession(w, r)
-		return
-	case strings.HasPrefix(path, "/__gofastr/signal/"):
-		ds.handleSignalUpdate(w, r)
-		return
-	case strings.HasPrefix(path, "/__gofastr/action"):
-		ds.handleServerAction(w, r)
-		return
-	case strings.HasPrefix(path, "/__gofastr/widget/"):
-		ds.handleWidgetJS(w, r)
-		return
-	case strings.HasPrefix(path, "/__gofastr/css/"):
-		ds.handleCSSChunk(w, r)
-		return
-	}
-
-	// Static file serving
-	if path == "/favicon.ico" {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if path != "/" {
-		// Try filesystem directory first
-		if ds.staticDir != "" {
-			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
-			// Prevent path traversal: ensure resolved path is within staticDir
-			absPath, _ := filepath.Abs(filePath)
-			absStatic, _ := filepath.Abs(ds.staticDir)
-			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
-				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
-					http.ServeFile(w, r, filePath)
-					return
-				}
-			}
-		}
-		// Try embedded filesystem
-		if ds.staticFS != nil {
-			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" {
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
-					f.Close()
-					http.ServeFileFS(w, r, ds.staticFS, cleanPath)
-					return
-				}
-			}
-		}
-	}
-
-	// Page rendering
-	ds.handlePage(w, r)
+	ds.standaloneOnce.Do(func() {
+		ds.standalone = router.New()
+		ds.Mount(ds.standalone)
+	})
+	ds.standalone.ServeHTTP(w, r)
 }
 
 // handlePage renders a full page with runtime.js, SSE meta tag, and compiled actions.
@@ -373,7 +315,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := ds.App.RenderPageContext(r.Context(), path)
+	html, err := ds.App.RenderPage(r.Context(), path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
 		return
@@ -490,7 +432,7 @@ func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
-	html, err := ds.App.RenderPartialContext(r.Context(), path)
+	html, err := ds.App.RenderPartial(r.Context(), path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
 		return
@@ -735,11 +677,21 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
 	r.Post("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
 	r.Post("/__gofastr/signal/{id}", http.HandlerFunc(ds.handleSignalUpdate))
+	r.Get("/__gofastr/signal/{id}", http.HandlerFunc(methodNotAllowed))
 	r.Post("/__gofastr/action", http.HandlerFunc(ds.handleServerAction))
+	r.Get("/__gofastr/action", http.HandlerFunc(methodNotAllowed))
 	r.Get("/__gofastr/widget/{id}", http.HandlerFunc(ds.handleWidgetJS))
 	r.Get("/__gofastr/css/{path...}", http.HandlerFunc(ds.handleCSSChunk))
 
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
+}
+
+// methodNotAllowed is registered alongside POST-only endpoints so a wrong-
+// method request gets a clear 405 instead of falling through to the UI
+// page handler and getting a misleading 404.
+func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Allow", "POST")
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 // serveOrRender is the catch-all NotFound handler. It first tries static
@@ -777,23 +729,13 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	ds.handlePage(w, r)
 }
 
-// RenderPage renders a page with all injections (for testing). Uses the
-// background context for Load.
-func (ds *UIHost) RenderPage(path string, sessionID string) (string, error) {
-	html, err := ds.App.RenderPage(path)
-	if err != nil {
-		return "", err
-	}
-	return ds.injectChrome(string(html), sessionID), nil
-}
-
 // RenderStaticPage produces a fully-rendered page suitable for static-site
 // generation: it runs the screen's Load(ctx) hook, applies layout/theme,
 // and injects runtime.js, compiled actions, custom CSS, and the route
 // graph — but skips the SSE meta tag because there is no live session.
 // The result is safe to write to disk and serve from any static host.
 func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
-	html, err := ds.App.RenderPageContext(ctx, path)
+	html, err := ds.App.RenderPage(ctx, path)
 	if err != nil {
 		return "", err
 	}

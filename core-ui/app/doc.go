@@ -9,7 +9,7 @@
 //	app := app.NewApp("MyApp")
 //	screen := app.NewScreen("/", myComponent)
 //	app.RegisterScreen(screen, nil)
-//	html, _ := app.RenderPage("/")
+//	html, _ := app.RenderPage(ctx, "/")
 //
 // # Screen Types
 //

@@ -388,7 +388,7 @@ func TestAppRenderPage(t *testing.T) {
 	comp := &stubComponent{html: render.Raw("<p>Welcome</p>")}
 	a.RegisterScreen(NewScreen("/", comp), nil)
 
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatalf("RenderPage failed: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestAppRenderPageDoesNotInlineThemeStyles(t *testing.T) {
 	a.WithTheme(theme)
 	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>Content</p>")}), nil)
 
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatalf("RenderPage failed: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestAppRenderScreenWithLayout(t *testing.T) {
 	layout := NewLayout("dashboard").WithHeader(headerComp)
 	a.RegisterScreen(screen, layout)
 
-	html, err := a.RenderPage("/dashboard")
+	html, err := a.RenderPage(context.Background(), "/dashboard")
 	if err != nil {
 		t.Fatalf("RenderPage failed: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestDefaultLayout(t *testing.T) {
 	a.SetDefaultLayout(defaultLayout)
 
 	// Both screens should use the default layout.
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatalf("RenderPage / failed: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestDefaultLayout(t *testing.T) {
 		t.Errorf("expected global header for /, got: %s", s)
 	}
 
-	html, err = a.RenderPage("/about")
+	html, err = a.RenderPage(context.Background(), "/about")
 	if err != nil {
 		t.Fatalf("RenderPage /about failed: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestDefaultLayoutOverride(t *testing.T) {
 	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
 	a.RegisterScreen(NewScreen("/special", &stubComponent{html: render.Raw("<p>Special</p>")}), customLayout)
 
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatalf("RenderPage / failed: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestDefaultLayoutOverride(t *testing.T) {
 		t.Errorf("expected default layout for /, got: %s", s)
 	}
 
-	html, err = a.RenderPage("/special")
+	html, err = a.RenderPage(context.Background(), "/special")
 	if err != nil {
 		t.Fatalf("RenderPage /special failed: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestAppProvideAndInject(t *testing.T) {
 
 func TestRenderPageUnregistered(t *testing.T) {
 	a := NewApp("EmptyApp")
-	_, err := a.RenderPage("/nonexistent")
+	_, err := a.RenderPage(context.Background(), "/nonexistent")
 	if err == nil {
 		t.Error("expected error for unregistered path")
 	}
@@ -758,7 +758,7 @@ func (l *loaderComponent) Render() render.HTML {
 	return render.HTML(fmt.Sprintf(`<div data-loaded="%d">%s</div>`, l.loadCalls, l.body))
 }
 
-func TestRenderPageContextRunsLoaderBeforeRender(t *testing.T) {
+func TestRenderPageRunsLoaderBeforeRender(t *testing.T) {
 	a := NewApp("LoaderApp")
 	loader := &loaderComponent{body: "after-load"}
 	a.Register("/p", loader, nil)
@@ -766,9 +766,9 @@ func TestRenderPageContextRunsLoaderBeforeRender(t *testing.T) {
 	type ctxKey struct{}
 	ctx := context.WithValue(context.Background(), ctxKey{}, "marker")
 
-	html, err := a.RenderPageContext(ctx, "/p")
+	html, err := a.RenderPage(ctx, "/p")
 	if err != nil {
-		t.Fatalf("RenderPageContext: %v", err)
+		t.Fatalf("RenderPage: %v", err)
 	}
 	if loader.loadCalls != 1 {
 		t.Errorf("Load should run exactly once, got %d", loader.loadCalls)
@@ -784,24 +784,24 @@ func TestRenderPageContextRunsLoaderBeforeRender(t *testing.T) {
 	}
 }
 
-func TestRenderPageContextPropagatesLoadError(t *testing.T) {
+func TestRenderPagePropagatesLoadError(t *testing.T) {
 	a := NewApp("LoaderApp")
 	want := errors.New("boom")
 	a.Register("/p", &loaderComponent{failWith: want}, nil)
 
-	_, err := a.RenderPageContext(context.Background(), "/p")
+	_, err := a.RenderPage(context.Background(), "/p")
 	if err == nil || !errors.Is(err, want) {
 		t.Errorf("expected wrapped %v, got %v", want, err)
 	}
 }
 
-func TestRenderPartialContextRunsLoader(t *testing.T) {
+func TestRenderPartialRunsLoader(t *testing.T) {
 	a := NewApp("LoaderApp")
 	loader := &loaderComponent{body: "partial"}
 	a.Register("/p", loader, nil)
 
-	if _, err := a.RenderPartialContext(context.Background(), "/p"); err != nil {
-		t.Fatalf("RenderPartialContext: %v", err)
+	if _, err := a.RenderPartial(context.Background(), "/p"); err != nil {
+		t.Fatalf("RenderPartial: %v", err)
 	}
 	if loader.loadCalls != 1 {
 		t.Errorf("expected Load to run once for partials, got %d", loader.loadCalls)
@@ -814,7 +814,7 @@ func TestRenderPageNoContextStillWorks(t *testing.T) {
 	loader := &loaderComponent{body: "no-ctx"}
 	a.Register("/p", loader, nil)
 
-	if _, err := a.RenderPage("/p"); err != nil {
+	if _, err := a.RenderPage(context.Background(), "/p"); err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
 	if loader.gotCtx == nil {

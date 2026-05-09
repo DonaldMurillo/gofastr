@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -93,7 +94,7 @@ func TestAppSetup(t *testing.T) {
 
 func TestHomeScreenRenders(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatalf("RenderPage(/) error: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestAllScreensRender(t *testing.T) {
 	a := createTestApp()
 	paths := []string{"/", "/products", "/about", "/cart"}
 	for _, p := range paths {
-		html, err := a.RenderPage(p)
+		html, err := a.RenderPage(context.Background(), p)
 		if err != nil {
 			t.Errorf("RenderPage(%q) error: %v", p, err)
 			continue
@@ -117,7 +118,7 @@ func TestAllScreensRender(t *testing.T) {
 
 func TestPageHasDoctype(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +127,7 @@ func TestPageHasDoctype(t *testing.T) {
 
 func TestPageHasHTMLLang(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +136,7 @@ func TestPageHasHTMLLang(t *testing.T) {
 
 func TestPageHasMetaViewport(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +146,7 @@ func TestPageHasMetaViewport(t *testing.T) {
 
 func TestPageHasSkipLink(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,11 +157,14 @@ func TestPageHasSkipLink(t *testing.T) {
 
 func TestPageHasTitle(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, html, "<title>GoFastr Demo</title>")
+	// The title is composed as "<screen-title> — <app-name>" when the
+	// screen self-declares a title via ScreenSpec; the home screen
+	// declares "Home", so the full <title> is "Home — GoFastr Demo".
+	assertContains(t, html, "<title>Home — GoFastr Demo</title>")
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +174,7 @@ func TestPageHasTitle(t *testing.T) {
 func TestImagesHaveAlt(t *testing.T) {
 	a := createTestApp()
 	for _, path := range []string{"/", "/products"} {
-		html, err := a.RenderPage(path)
+		html, err := a.RenderPage(context.Background(), path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +190,7 @@ func TestImagesHaveAlt(t *testing.T) {
 
 func TestFormsHaveLabels(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/products")
+	html, err := a.RenderPage(context.Background(), "/products")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +208,7 @@ func TestFormsHaveLabels(t *testing.T) {
 
 func TestHeadingsHaveContent(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +220,7 @@ func TestHeadingsHaveContent(t *testing.T) {
 
 func TestNavHasAriaLabel(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +235,7 @@ func TestNavHasAriaLabel(t *testing.T) {
 
 func TestMainHasRole(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +244,7 @@ func TestMainHasRole(t *testing.T) {
 
 func TestARIALandmarksPresent(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +258,7 @@ func TestARIALandmarksPresent(t *testing.T) {
 
 func TestButtonsHaveAccessibleName(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +405,7 @@ func TestThemeApplied(t *testing.T) {
 	theme := createTheme()
 	a := app.NewApp("Test")
 	a.WithTheme(theme)
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	// No screens, so this will fail — just test theme CSS
 	_ = html
 	_ = err
@@ -647,7 +651,7 @@ func (t *TestComp) Render() string {
 
 func TestPageNotFound(t *testing.T) {
 	a := createTestApp()
-	_, err := a.RenderPage("/nonexistent")
+	_, err := a.RenderPage(context.Background(), "/nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent path")
 	}
@@ -655,7 +659,7 @@ func TestPageNotFound(t *testing.T) {
 
 func TestLayoutWrapsContent(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -669,7 +673,7 @@ func TestLayoutWrapsContent(t *testing.T) {
 
 func TestCartScreenRenders(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/cart")
+	html, err := a.RenderPage(context.Background(), "/cart")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,7 +682,7 @@ func TestCartScreenRenders(t *testing.T) {
 
 func TestProductsScreenHasSearch(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/products")
+	html, err := a.RenderPage(context.Background(), "/products")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -691,7 +695,7 @@ func TestProductsScreenHasSearch(t *testing.T) {
 
 func TestAboutScreenHasSections(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/about")
+	html, err := a.RenderPage(context.Background(), "/about")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -839,7 +843,7 @@ func TestOnClickInButton(t *testing.T) {
 
 func TestOnInputOnSearchField(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/products")
+	html, err := a.RenderPage(context.Background(), "/products")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -924,7 +928,7 @@ func TestWidgetInIsland(t *testing.T) {
 
 func TestWidgetCompositionInScreen(t *testing.T) {
 	a := createTestApp()
-	html, err := a.RenderPage("/")
+	html, err := a.RenderPage(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -967,12 +971,13 @@ func TestDevServerHomePageHasRuntimeAndSSE(t *testing.T) {
 	}
 	body := w.Body.String()
 
-	// Core framework injections
+	// Core framework injections — runtime + SSE meta inline; route graph
+	// is now an external <script src="/__gofastr/routes.js">.
 	assertContainsAll(t, render.HTML(body),
 		`<script src="/__gofastr/runtime.js"></script>`,
+		`<script src="/__gofastr/routes.js"></script>`,
 		`name="gofastr-sse"`,
 		"/__gofastr/sse?session=",
-		"window.__gofastr_routes",
 	)
 
 	// Page content
@@ -1139,12 +1144,18 @@ func TestDevServerActionsJSInjection(t *testing.T) {
 	btn := &InteractiveButton{Label: "Test"}
 	ds.CompileActions("test-btn", btn)
 
-	req := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, req)
+	// Page links to /__gofastr/actions.js — body is no longer inlined.
+	pageReq := httptest.NewRequest("GET", "/", nil)
+	pageRec := httptest.NewRecorder()
+	ds.ServeHTTP(pageRec, pageReq)
+	if !strings.Contains(pageRec.Body.String(), `<script src="/__gofastr/actions.js"></script>`) {
+		t.Error("page should reference /__gofastr/actions.js")
+	}
 
-	body := w.Body.String()
-	assertContainsAll(t, render.HTML(body),
+	jsReq := httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
+	jsRec := httptest.NewRecorder()
+	ds.ServeHTTP(jsRec, jsReq)
+	assertContainsAll(t, render.HTML(jsRec.Body.String()),
 		"test-btn",
 		"__gofastr",
 	)
@@ -1189,12 +1200,21 @@ func TestDevServerSignalUpdatePushesIsland(t *testing.T) {
 
 func TestDevServerRouteGraphPreload(t *testing.T) {
 	ds := createTestHost()
-	req := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
-	assertContainsAll(t, render.HTML(body),
+	// The page no longer inlines the route graph — it pulls /__gofastr/routes.js
+	// via a <script src> tag. Verify the script tag is present, then fetch the
+	// external JS body and assert on its contents.
+	pageReq := httptest.NewRequest("GET", "/", nil)
+	pageRec := httptest.NewRecorder()
+	ds.ServeHTTP(pageRec, pageReq)
+	if !strings.Contains(pageRec.Body.String(), `<script src="/__gofastr/routes.js"></script>`) {
+		t.Errorf("page should reference /__gofastr/routes.js")
+	}
+
+	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
+	jsRec := httptest.NewRecorder()
+	ds.ServeHTTP(jsRec, jsReq)
+	assertContainsAll(t, render.HTML(jsRec.Body.String()),
 		"window.__gofastr_routes",
 		`"preload":true`,
 		`"title":"Home"`,

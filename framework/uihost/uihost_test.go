@@ -496,35 +496,6 @@ func TestUIHostRegisterWidget(t *testing.T) {
 	assertContains(t, string(islHTML), "Click")
 }
 
-// ---------------------------------------------------------------------------
-// J. RenderPage (testing helper)
-// ---------------------------------------------------------------------------
-
-func TestUIHostRenderPage(t *testing.T) {
-	ds := newTestUIHostWithCSS()
-	page, err := ds.RenderPage("/", "sess-test123")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assertContains(t, page, "Home Page")
-	assertContains(t, page, `/__gofastr/sse?session=sess-test123`)
-	assertContains(t, page, "/__gofastr/runtime.js")
-	// CustomCSS is now linked, not inlined.
-	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/styles.css">`)
-	if strings.Contains(page, "body { background: red; }") {
-		t.Errorf("custom CSS should not appear inline in the rendered page")
-	}
-}
-
-func TestUIHostRenderPageNotFound(t *testing.T) {
-	ds := newTestUIHost()
-	_, err := ds.RenderPage("/nope", "sess-test")
-	if err == nil {
-		t.Error("expected error for unknown path")
-	}
-}
-
 // --- F11: Static file path traversal prevention ---
 
 func TestUIHost_PathTraversalBlocked(t *testing.T) {

@@ -112,21 +112,14 @@ func (a *App) RenderScreen(path string) (render.HTML, error) {
 	return a.Router.Render(path)
 }
 
-// RenderPage is the no-context shortcut for RenderPageContext. Use the
-// context-aware variant when serving HTTP requests so screen Load methods
-// see request cancellation.
-func (a *App) RenderPage(path string) (render.HTML, error) {
-	return a.RenderPageContext(context.Background(), path)
-}
-
-// RenderPageContext renders a full HTML page (<!DOCTYPE html><html>...) for a
+// RenderPage renders a full HTML page (<!DOCTYPE html><html>...) for a
 // screen path. It resolves the route, locks the screen for concurrent param
 // safety, injects route params, runs DI, calls the screen's Load(ctx) hook
 // if present, and finally renders. The page includes:
 //   - DOCTYPE and html declaration
 //   - Head with charset, viewport, title, and theme CSS custom properties
 //   - Body with skip link (ADA-compliant) and the rendered screen with layout
-func (a *App) RenderPageContext(ctx context.Context, path string) (render.HTML, error) {
+func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
@@ -240,16 +233,11 @@ func (a *App) RenderPageContext(ctx context.Context, path string) (render.HTML, 
 	return render.Join(doctype, html), nil
 }
 
-// RenderPartial is the no-context shortcut for RenderPartialContext.
-func (a *App) RenderPartial(path string) (render.HTML, error) {
-	return a.RenderPartialContext(context.Background(), path)
-}
-
-// RenderPartialContext returns just the screen content (no layout, no
+// RenderPartial returns just the screen content (no layout, no
 // <html>/<head>/<body>). Used for client-side navigation where the layout
 // is already in the DOM. Runs the same param-injection / DI / Load pipeline
-// as RenderPageContext.
-func (a *App) RenderPartialContext(ctx context.Context, path string) (render.HTML, error) {
+// as RenderPage.
+func (a *App) RenderPartial(ctx context.Context, path string) (render.HTML, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
