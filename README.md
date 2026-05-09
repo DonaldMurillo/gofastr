@@ -131,20 +131,43 @@ gofastr migrate up | down | status  Run versioned migrations
 
 ### `kiln/` — agent-driven build-mode runtime
 
-Build a GoFastr app live by chatting with an external agent (Claude Code, Codex, Cursor, Pi). The agent calls Kiln's tool surface; the world IR mutates; the running app re-renders; the schema migrates — all in-process. Freeze when done to emit canonical `entities/*.json` you can drop into a regular GoFastr project.
+Build a GoFastr app live by chatting with a coding agent (Claude Code, pi, Codex, …). The agent drives Kiln's typed tool surface; the world IR mutates; the running app re-renders; the schema migrates — all in-process. Freeze the journal when done to emit canonical `entities/*.json` and graduate to regular Go source you commit.
 
 ```bash
 go install ./cmd/kiln
 
-kiln agent -p "build me a blog"   # starts kiln serve, installs skill, execs pi
-kiln serve                        # HTTP only — open http://localhost:8765/kiln/chat
-kiln mcp                          # MCP over stdio (subprocess harnesses)
-kiln acp                          # ACP over stdio
+kiln serve --agent claude-code    # auto-uses ~/.claude/.credentials.json
+kiln serve --agent pi             # uses pi's installed config
+kiln serve --agent auto           # picks the first installed CLI on PATH
+kiln serve --agent "<freeform>"   # any command you want; prompt is appended
+
+kiln mcp   --no-http              # MCP over stdio (subprocess harnesses)
+kiln acp   --no-http              # ACP over stdio
+kiln freeze --dir build/          # journal → build/entities/*.json + world.json
 ```
 
-`kiln agent` is the turnkey path: it starts a managed `kiln serve` subprocess in the current directory, waits for the HTTP server to come online, exports `KILN_URL` into the environment, ensures `~/.claude/skills/kiln/SKILL.md` is installed (so pi automatically loads framework knowledge), then execs `pi` with whatever args you pass. Pi reads the skill, sees `$KILN_URL`, and drives the build with curl-against-HTTP — no MCP startup race. The serve subprocess is SIGTERM'd on pi exit; you watch the live preview at <http://localhost:8765/kiln/chat>.
+#### How it works
 
-Wire into Claude Code instead:
+`kiln serve` runs an HTTP server (panel + SSE + REST tool dispatch + MCP at `/mcp`) and a floating chat widget that auto-mounts on every URL. When `--agent <name>` is set, kiln subscribes to its own SSE bus: every `chat_user` event spawns the configured CLI as a subprocess with `KILN_URL` injected. The CLI reads `~/.claude/skills/kiln/SKILL.md` (auto-installed), sees `$KILN_URL`, and drives the build with `curl` against HTTP. Stdout is journaled as `chat_assistant` so the panel renders the reply.
+
+**Bring-your-own auth.** Kiln does not manage credentials. Each adapter spawns its CLI which manages its own login (`claude` reads `~/.claude/.credentials.json`, `pi` reads its own config, etc.). Adding a new agent is a one-entry change in `cmd/kiln/adapters.go`.
+
+#### Safety: plan-gated destructive ops
+
+Destructive tools (`delete_entity`, `delete_field`, `delete_page`, `delete_hook`, `delete_route`) are enforced at the protocol layer:
+
+1. Agent calls `propose_plan` listing each destructive op in `targets`:
+
+   ```json
+   { "plan_id": "p1", "steps": ["drop posts"], "targets": [{"op":"delete_entity","name":"posts"}] }
+   ```
+
+2. The panel renders a plan card with **Approve** / **Reject** buttons.
+3. After Approve, the agent retries the destructive call with `plan_id` set.
+
+Without an approved plan whose `Targets` list matches, `delete_*` returns `{"ok":false,"kind":"needs_plan"}`. Each `(plan, target)` is single-use; reuse needs a new plan.
+
+#### Wire into Claude Code as an MCP server
 
 ```json
 {
@@ -154,18 +177,20 @@ Wire into Claude Code instead:
 }
 ```
 
-Or hit it via HTTP directly:
+#### Or hit the HTTP API directly
 
 ```bash
-kiln serve --addr :8765 &
+kiln serve --agent none --addr :8765 &
 curl -X POST http://localhost:8765/kiln/tool/add_entity \
   -H 'Content-Type: application/json' \
   -d '{"entity":{"name":"posts","fields":[{"name":"title","type":"string","required":true}]}}'
-curl http://localhost:8765/posts            # CRUD live
-curl http://localhost:8765/kiln/world      # current IR
+curl http://localhost:8765/posts          # CRUD live
+curl http://localhost:8765/kiln/world     # current IR
 ```
 
-Tools: `add_entity`, `update_entity`, `delete_entity`, `add_field`, `delete_field`, `add_page`, `delete_page`, `add_hook`, `delete_hook`, `add_route`, `delete_route`, `add_seed`, `set_app_config`, `propose_plan`, `approve_plan`, `undo`, `world_get`, `chat`. See `kiln/protocol/descriptors.go` for full schemas.
+#### Tool surface
+
+`world_get`, `set_app_config`, `add_entity`, `update_entity`, `delete_entity`, `add_field`, `delete_field`, `add_page`, `delete_page`, `add_hook`, `delete_hook`, `add_route`, `delete_route`, `add_seed`, `propose_plan`, `approve_plan`, `reject_plan`, `undo`, `chat`. See `kiln/protocol/descriptors.go` for full JSON schemas.
 
 ## Repository layout
 
