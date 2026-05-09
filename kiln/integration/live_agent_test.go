@@ -396,9 +396,18 @@ func TestLive_RouteRespondsJSON(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
-		`Add a custom GET route at "/health" that responds with status 200 and body {"ok": true, "service": "kiln"} via the respond_json action. Use the add_route tool once.`,
+	srv.chatRetry(
+		`Add a custom GET route at "/health" that responds with status 200 and body {"ok": true, "service": "kiln"} via the respond_json action. Use the add_route tool exactly once.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			for _, r := range srv.world().Routes {
+				if r["method"] == "GET" && r["path"] == "/health" {
+					return true
+				}
+			}
+			return false
+		},
 	)
 
 	body, err := httpGet(t, srv.URL+"/health")
@@ -1250,6 +1259,8 @@ Stop after the two add_entity calls.`,
 type worldDump struct {
 	Entities map[string]map[string]any
 	Pages    map[string]map[string]any
+	Routes   []map[string]any
+	Hooks    []map[string]any
 }
 
 func (s *liveServer) world() worldDump {
@@ -1262,10 +1273,17 @@ func (s *liveServer) world() worldDump {
 		World struct {
 			Entities map[string]map[string]any `json:"entities"`
 			Pages    map[string]map[string]any `json:"pages"`
+			Routes   []map[string]any          `json:"routes"`
+			Hooks    []map[string]any          `json:"hooks"`
 		} `json:"world"`
 	}
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		s.t.Fatalf("decode world: %v body=%.300s", err, body)
 	}
-	return worldDump{Entities: resp.World.Entities, Pages: resp.World.Pages}
+	return worldDump{
+		Entities: resp.World.Entities,
+		Pages:    resp.World.Pages,
+		Routes:   resp.World.Routes,
+		Hooks:    resp.World.Hooks,
+	}
 }
