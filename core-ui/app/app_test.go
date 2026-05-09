@@ -430,7 +430,10 @@ func TestAppRenderPage(t *testing.T) {
 	}
 }
 
-func TestAppRenderPageWithTheme(t *testing.T) {
+func TestAppRenderPageDoesNotInlineThemeStyles(t *testing.T) {
+	// Theme is now served as an external resource by the host (e.g.
+	// framework/uihost serves /__gofastr/theme.css). RenderPage must
+	// emit no inline <style> for the theme so strict CSP holds.
 	a := NewApp("ThemedApp")
 	theme := style.DefaultTheme()
 	a.WithTheme(theme)
@@ -442,14 +445,24 @@ func TestAppRenderPageWithTheme(t *testing.T) {
 	}
 	s := string(html)
 
-	if !strings.Contains(s, "<style>") {
-		t.Errorf("expected <style> tag for theme, got: %s", s)
+	if strings.Contains(s, "<style>") {
+		t.Errorf("expected no inline <style> in core-ui RenderPage; the host injects an external <link>. got:\n%s", s)
 	}
-	if !strings.Contains(s, ":root {") {
-		t.Errorf("expected :root CSS custom properties, got: %s", s)
+	if strings.Contains(s, ":root {") {
+		t.Errorf("expected no inline :root custom properties; theme is served separately. got:\n%s", s)
 	}
-	if !strings.Contains(s, "--color-primary") {
-		t.Errorf("expected color custom properties, got: %s", s)
+}
+
+// Theme content is still reachable from the App so hosts can serve it.
+func TestAppThemeCustomPropertiesAccessible(t *testing.T) {
+	a := NewApp("ThemedApp")
+	a.WithTheme(style.DefaultTheme())
+	if a.Theme == nil {
+		t.Fatal("Theme should be exposed on App")
+	}
+	css := a.Theme.CSSCustomProperties()
+	if !strings.Contains(css, ":root {") || !strings.Contains(css, "--color-primary") {
+		t.Errorf("theme CSS missing expected properties: %s", css)
 	}
 }
 

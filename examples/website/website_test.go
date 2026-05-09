@@ -142,6 +142,71 @@ func TestLiveServerRendersAndAppliesMiddleware(t *testing.T) {
 	}
 }
 
+// TestStrictCSPWithExternalResources pins the architectural fix that came
+// out of the "no styles" report: the framework injects no inline styles
+// or scripts. Theme CSS, custom CSS, route graph, runtime, and compiled
+// actions are all served as separate /__gofastr/* endpoints and the page
+// references them via <link>/<script src>. The default CSP can therefore
+// stay strict (default-src 'self') without breaking UI rendering.
+func TestStrictCSPWithExternalResources(t *testing.T) {
+	fwApp, _ := setupServer()
+	srv := httptest.NewServer(fwApp.Router)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	csp := resp.Header.Get("Content-Security-Policy")
+	if csp == "" {
+		t.Fatal("Content-Security-Policy header is missing")
+	}
+	if strings.Contains(csp, "'unsafe-inline'") {
+		t.Errorf("default CSP must not require 'unsafe-inline'; got %q", csp)
+	}
+
+	body := readAll(t, resp.Body)
+
+	// The page must NOT have inline <style>...content...</style> or inline
+	// <script>...content...</script> blocks (only external src/href is OK).
+	if strings.Contains(body, "<style>") {
+		t.Error("page contains an inline <style> block — should be a <link rel=\"stylesheet\">")
+	}
+	// Inline scripts (with bodies) are forbidden, but <script src="..."> is fine.
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.Contains(line, "<script") {
+			continue
+		}
+		if !strings.Contains(line, "src=") && !strings.Contains(line, "</script>") {
+			continue
+		}
+		// Form: <script>...body...</script> means a body between the tags.
+		if strings.Contains(line, "<script>") {
+			t.Errorf("inline <script> body found: %q", line)
+		}
+	}
+
+	// And the external endpoints all must exist + 200.
+	for _, endpoint := range []string{
+		"/__gofastr/theme.css",
+		"/__gofastr/styles.css",
+		"/__gofastr/runtime.js",
+		"/__gofastr/routes.js",
+	} {
+		r, err := http.Get(srv.URL + endpoint)
+		if err != nil {
+			t.Errorf("%s: %v", endpoint, err)
+			continue
+		}
+		r.Body.Close()
+		if r.StatusCode != http.StatusOK {
+			t.Errorf("%s = %d, want 200", endpoint, r.StatusCode)
+		}
+	}
+}
+
 // TestDocCatalogResolvesPaths exercises the doc-catalog directly to pin the
 // behavior screens depend on: load() must succeed, find() must round-trip
 // at least one slug, and missing slugs must error.

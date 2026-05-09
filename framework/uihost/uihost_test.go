@@ -325,12 +325,28 @@ func TestUIHostSessionEndpoint(t *testing.T) {
 
 func TestUIHostCustomCSS(t *testing.T) {
 	ds := newTestUIHostWithCSS()
-	req := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
-	assertContains(t, body, "body { background: red; }")
+	// The page references the styles via <link> rather than inlining.
+	pageReq := httptest.NewRequest("GET", "/", nil)
+	pageRec := httptest.NewRecorder()
+	ds.ServeHTTP(pageRec, pageReq)
+	page := pageRec.Body.String()
+	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/styles.css">`)
+	if strings.Contains(page, "body { background: red; }") {
+		t.Errorf("custom CSS should not be inlined; expected external <link>. got:\n%s", page)
+	}
+
+	// And the styles endpoint serves the actual CSS body.
+	cssReq := httptest.NewRequest("GET", "/__gofastr/styles.css", nil)
+	cssRec := httptest.NewRecorder()
+	ds.ServeHTTP(cssRec, cssReq)
+	if cssRec.Code != 200 {
+		t.Fatalf("/__gofastr/styles.css = %d, want 200", cssRec.Code)
+	}
+	if got := cssRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/css") {
+		t.Errorf("Content-Type = %q, want text/css", got)
+	}
+	assertContains(t, cssRec.Body.String(), "body { background: red; }")
 }
 
 // ---------------------------------------------------------------------------
@@ -339,11 +355,22 @@ func TestUIHostCustomCSS(t *testing.T) {
 
 func TestUIHostRouteGraph(t *testing.T) {
 	ds := newTestUIHostWithRouteGraph()
-	req := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	// Page references routes.js externally.
+	pageReq := httptest.NewRequest("GET", "/", nil)
+	pageRec := httptest.NewRecorder()
+	ds.ServeHTTP(pageRec, pageReq)
+	page := pageRec.Body.String()
+	assertContains(t, page, `<script src="/__gofastr/routes.js"></script>`)
+	if strings.Contains(page, "window.__gofastr_routes") {
+		t.Errorf("route-graph payload should not be inline in the page; expected external <script src>. got:\n%s", page)
+	}
+
+	// /routes.js carries the actual bootstrap.
+	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
+	jsRec := httptest.NewRecorder()
+	ds.ServeHTTP(jsRec, jsReq)
+	body := jsRec.Body.String()
 	assertContains(t, body, "window.__gofastr_routes")
 	assertContains(t, body, `"path":"/"`)
 	assertContains(t, body, `"title":"Home"`)
@@ -374,9 +401,13 @@ func TestUIHostInjectsActions(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
-	assertContains(t, body, "btn-1")
-	assertContains(t, body, "__gofastr")
+	page := w.Body.String()
+	// The actions.js script reference is what we inject when there are
+	// any compiled handlers. The body itself lives at /__gofastr/actions.js.
+	assertContains(t, page, `<script src="/__gofastr/actions.js"></script>`)
+	if strings.Contains(page, "btn-1") {
+		t.Errorf("compiled action body should not be inlined; found in page:\n%s", page)
+	}
 }
 
 func TestUIHostActionsEndpoint(t *testing.T) {
@@ -479,7 +510,11 @@ func TestUIHostRenderPage(t *testing.T) {
 	assertContains(t, page, "Home Page")
 	assertContains(t, page, `/__gofastr/sse?session=sess-test123`)
 	assertContains(t, page, "/__gofastr/runtime.js")
-	assertContains(t, page, "body { background: red; }")
+	// CustomCSS is now linked, not inlined.
+	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/styles.css">`)
+	if strings.Contains(page, "body { background: red; }") {
+		t.Errorf("custom CSS should not appear inline in the rendered page")
+	}
 }
 
 func TestUIHostRenderPageNotFound(t *testing.T) {

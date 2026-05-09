@@ -217,13 +217,11 @@ func (a *App) RenderPageContext(ctx context.Context, path string) (render.HTML, 
 		render.Tag("title", nil, render.Text(titleText)),
 	)
 
-	// Theme CSS custom properties.
-	if a.Theme != nil {
-		css := a.Theme.CSSCustomProperties()
-		headChildren = append(headChildren,
-			render.Tag("style", nil, render.Raw(css)),
-		)
-	}
+	// Theme + custom CSS + the route-graph script are NOT injected inline
+	// here. The host (e.g. framework/uihost) is responsible for emitting
+	// <link rel="stylesheet"> and <script src="..."> tags pointing at
+	// endpoints it serves. That keeps the rendered page strict-CSP-clean
+	// (no 'unsafe-inline' required) and lets the host control caching.
 
 	head := render.Tag("head", nil, headChildren...)
 

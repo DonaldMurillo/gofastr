@@ -66,21 +66,36 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
-	// Runtime.js + compiled actions.
-	rtPath := filepath.Join(b.OutDir, "__gofastr", "runtime.js")
-	if err := writeFile(rtPath, []byte(runtime.MustRuntimeJS())); err != nil {
-		return res, err
+	// /__gofastr/* assets — runtime, compiled actions, theme CSS, custom
+	// CSS, route graph script. The injected <link>/<script src> tags in
+	// the rendered HTML reference these paths, so SSG output is broken
+	// without them.
+	type asset struct {
+		urlPath string
+		body    []byte
 	}
-	res.Assets = append(res.Assets, "/__gofastr/runtime.js")
-	b.log("wrote /__gofastr/runtime.js")
-
+	assets := []asset{
+		{urlPath: "/__gofastr/runtime.js", body: []byte(runtime.MustRuntimeJS())},
+	}
 	if js := b.Host.GetActionJS(); js != "" {
-		actPath := filepath.Join(b.OutDir, "__gofastr", "actions.js")
-		if err := writeFile(actPath, []byte(js)); err != nil {
+		assets = append(assets, asset{urlPath: "/__gofastr/actions.js", body: []byte(js)})
+	}
+	if app := b.Host.App; app != nil && app.Theme != nil {
+		assets = append(assets, asset{urlPath: "/__gofastr/theme.css", body: []byte(app.Theme.CSSCustomProperties())})
+	}
+	if css := b.Host.CustomCSS(); css != "" {
+		assets = append(assets, asset{urlPath: "/__gofastr/styles.css", body: []byte(css)})
+	}
+	if rg := b.Host.RouteGraphJS(); rg != "" {
+		assets = append(assets, asset{urlPath: "/__gofastr/routes.js", body: []byte(rg)})
+	}
+	for _, a := range assets {
+		dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(a.urlPath, "/")))
+		if err := writeFile(dst, a.body); err != nil {
 			return res, err
 		}
-		res.Assets = append(res.Assets, "/__gofastr/actions.js")
-		b.log("wrote /__gofastr/actions.js")
+		res.Assets = append(res.Assets, a.urlPath)
+		b.log("wrote %s", a.urlPath)
 	}
 
 	// Static assets — either filesystem dir or embedded FS.

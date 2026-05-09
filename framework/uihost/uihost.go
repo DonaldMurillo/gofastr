@@ -113,6 +113,16 @@ func (ds *UIHost) CustomCSS() string {
 	return ds.customCSS
 }
 
+// RouteGraphJS returns the JS body that bootstraps window.__gofastr_routes
+// (sans <script> tags). Used by the static builder to write the same
+// payload as a real .js file.
+func (ds *UIHost) RouteGraphJS() string {
+	body := ds.buildRouteScript()
+	body = strings.TrimPrefix(body, "<script>")
+	body = strings.TrimSuffix(body, "</script>")
+	return strings.TrimSpace(body)
+}
+
 // RegisterSignal registers a signal with the devserver so the signal update
 // endpoint can apply client-sent values.
 func (ds *UIHost) RegisterSignal(id string, s SignalAny) {
@@ -291,6 +301,15 @@ func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/__gofastr/actions.js":
 		ds.handleActionsJS(w, r)
 		return
+	case path == "/__gofastr/theme.css":
+		ds.handleThemeCSS(w, r)
+		return
+	case path == "/__gofastr/styles.css":
+		ds.handleStylesCSS(w, r)
+		return
+	case path == "/__gofastr/routes.js":
+		ds.handleRoutesJS(w, r)
+		return
 	case path == "/__gofastr/session":
 		ds.handleCreateSession(w, r)
 		return
@@ -384,35 +403,88 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, page)
 }
 
-// injectChrome appends the runtime.js, compiled actions, custom CSS, and
-// route graph into a rendered page. When sessionID is non-empty, an SSE
-// meta tag pointing at this session is injected too. SSG output passes
-// "" for sessionID — the client will lazily create a session on first
-// interaction if it ever needs one.
+// injectChrome adds links and scripts pointing at the host's served
+// endpoints. Everything stays as external resources — no inline <style>
+// or inline <script> — so the default strict Content-Security-Policy
+// (default-src 'self') works without 'unsafe-inline'.
+//
+// When sessionID is non-empty, an SSE meta tag pointing at this session
+// is injected too. SSG output passes "" for sessionID — the client will
+// lazily create a session on first interaction if it ever needs one.
 func (ds *UIHost) injectChrome(page, sessionID string) string {
+	// <head>
 	if sessionID != "" {
 		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
 		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
 	}
-
-	runtimeScript := `<script src="/__gofastr/runtime.js"></script>`
-	page = strings.Replace(page, "</body>", runtimeScript+"\n</body>", 1)
-
-	if actionJS := ds.GetActionJS(); actionJS != "" {
-		actionsScript := fmt.Sprintf("<script>%s</script>", actionJS)
-		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
+	if ds.App != nil && ds.App.Theme != nil {
+		page = strings.Replace(page,
+			"</head>",
+			`<link rel="stylesheet" href="/__gofastr/theme.css">`+"\n</head>", 1)
 	}
-
 	if ds.customCSS != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
-		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
+		page = strings.Replace(page,
+			"</head>",
+			`<link rel="stylesheet" href="/__gofastr/styles.css">`+"\n</head>", 1)
+	}
+	if ds.buildRouteScript() != "" {
+		page = strings.Replace(page,
+			"</head>",
+			`<script src="/__gofastr/routes.js"></script>`+"\n</head>", 1)
 	}
 
-	if rgScript := ds.buildRouteScript(); rgScript != "" {
-		page = strings.Replace(page, "</head>", rgScript+"\n</head>", 1)
+	// <body>
+	page = strings.Replace(page,
+		"</body>",
+		`<script src="/__gofastr/runtime.js"></script>`+"\n</body>", 1)
+	if ds.GetActionJS() != "" {
+		page = strings.Replace(page,
+			"</body>",
+			`<script src="/__gofastr/actions.js"></script>`+"\n</body>", 1)
 	}
 
 	return page
+}
+
+// handleThemeCSS serves the active theme as a real CSS resource so the
+// page can reference it via <link>.
+func (ds *UIHost) handleThemeCSS(w http.ResponseWriter, r *http.Request) {
+	if ds.App == nil || ds.App.Theme == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, ds.App.Theme.CSSCustomProperties())
+}
+
+// handleStylesCSS serves the WithCustomCSS payload.
+func (ds *UIHost) handleStylesCSS(w http.ResponseWriter, r *http.Request) {
+	if ds.customCSS == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, ds.customCSS)
+}
+
+// handleRoutesJS serves the route-graph bootstrap as an external JS file
+// instead of an inline <script>. The body is a normal assignment to
+// window.__gofastr_routes; the runtime reads it on load.
+func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
+	body := ds.buildRouteScript()
+	// buildRouteScript returns "<script>window.__gofastr_routes = …;</script>".
+	// Strip the wrapping tags so the same payload is valid as an external file.
+	body = strings.TrimPrefix(body, "<script>")
+	body = strings.TrimSuffix(body, "</script>")
+	if strings.TrimSpace(body) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, body)
 }
 
 // handlePartialPage returns just the screen content for client-side navigation.
@@ -656,6 +728,9 @@ func (ds *UIHost) PushIsland(islandID string) error {
 func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
+	r.Get("/__gofastr/theme.css", http.HandlerFunc(ds.handleThemeCSS))
+	r.Get("/__gofastr/styles.css", http.HandlerFunc(ds.handleStylesCSS))
+	r.Get("/__gofastr/routes.js", http.HandlerFunc(ds.handleRoutesJS))
 	r.Get("/__gofastr/sse", http.HandlerFunc(ds.handleSSE))
 	r.Get("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
 	r.Post("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))

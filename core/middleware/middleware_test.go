@@ -259,15 +259,34 @@ func TestSecurityHeaders(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	checks := map[string]string{
-		"Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'; base-uri 'self'",
-		"X-Content-Type-Options":  "nosniff",
-		"Referrer-Policy":         "no-referrer",
-		"X-Frame-Options":         "DENY",
-		"Permissions-Policy":      "geolocation=(), microphone=(), camera=()",
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "no-referrer",
+		"X-Frame-Options":        "DENY",
+		"Permissions-Policy":     "geolocation=(), microphone=(), camera=()",
 	}
 	for header, want := range checks {
 		if got := rec.Header().Get(header); got != want {
 			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+
+	// CSP must be strict by default — the framework renders all CSS and
+	// scripts as external resources under /__gofastr/*, so no
+	// 'unsafe-inline' fallbacks are needed.
+	csp := rec.Header().Get("Content-Security-Policy")
+	for _, want := range []string{
+		"default-src 'self'",
+		"img-src 'self' data:",
+		"frame-ancestors 'none'",
+		"base-uri 'self'",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP missing %q; got %q", want, csp)
+		}
+	}
+	for _, mustNot := range []string{"'unsafe-inline'", "'unsafe-eval'"} {
+		if strings.Contains(csp, mustNot) {
+			t.Errorf("CSP must not contain %q (default should be strict); got %q", mustNot, csp)
 		}
 	}
 }
