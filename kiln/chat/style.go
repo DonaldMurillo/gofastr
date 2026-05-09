@@ -336,6 +336,95 @@ func widgetCSS() string {
 	ss.Rule(".kiln-status-warn").Set("color", "rgba(255, 200, 110, 0.85)").End()
 	ss.Rule(".kiln-status-error").Set("color", "{colors.kiln-bad}").End()
 
+	// --- plan card (Approve/Reject) ----------------------------------
+	// Distinct row that surfaces a proposed plan — shows the steps,
+	// the destructive targets, and Approve/Reject buttons until the
+	// user decides. Decision collapses to a status line.
+	ss.Rule(".kiln-msg-plan").
+		Set(
+			"align-self", "stretch",
+			"background", "rgba(255, 200, 110, 0.10)",
+			"border", "1px solid rgba(255, 200, 110, 0.45)",
+			"border-radius", "10px",
+			"padding", "{spacing.kiln-pad-sm} {spacing.kiln-pad}",
+			"display", "flex",
+			"flex-direction", "column",
+			"gap", "6px",
+			"font-size", "12px",
+			"color", "{colors.kiln-fg}",
+		).
+		End()
+	ss.Rule(".kiln-plan-head").
+		Set("display", "flex", "align-items", "baseline", "gap", "8px", "flex-wrap", "wrap").
+		End()
+	ss.Rule(".kiln-plan-title").
+		Set("font-weight", "600", "color", "rgba(255, 200, 110, 0.95)").
+		End()
+	ss.Rule(".kiln-plan-reason").
+		Set("color", "{colors.kiln-fg-muted}", "font-size", "11px").
+		End()
+	ss.Rule(".kiln-plan-steps").
+		Set("margin", "0", "padding-left", "18px", "color", "{colors.kiln-fg-muted}").
+		End()
+	ss.Rule(".kiln-plan-steps li").Set("line-height", "1.4").End()
+	ss.Rule(".kiln-plan-targets").
+		Set(
+			"font-family", "ui-monospace, monospace",
+			"font-size", "11px",
+			"color", "{colors.kiln-bad}",
+			"padding", "4px 8px",
+			"background", "rgba(255, 111, 111, 0.10)",
+			"border-radius", "6px",
+		).
+		End()
+	ss.Rule(".kiln-plan-targets-label").
+		Set("color", "{colors.kiln-fg-muted}", "margin-right", "4px").
+		End()
+	ss.Rule(".kiln-plan-actions").
+		Set("display", "flex", "gap", "8px", "margin-top", "4px").
+		End()
+	ss.Rule(".kiln-plan-btn").
+		Set(
+			"flex", "1",
+			"padding", "6px 10px",
+			"border", "1px solid rgba(255, 255, 255, 0.18)",
+			"border-radius", "6px",
+			"background", "transparent",
+			"color", "{colors.kiln-fg}",
+			"font", "inherit",
+			"font-size", "12px",
+			"cursor", "pointer",
+			"transition", "background 0.12s, border-color 0.12s",
+		).
+		End()
+	ss.Rule(".kiln-plan-btn:hover").
+		Set("background", "rgba(255, 255, 255, 0.06)").
+		End()
+	ss.Rule(".kiln-plan-btn:disabled").
+		Set("opacity", "0.5", "cursor", "default").
+		End()
+	ss.Rule(".kiln-plan-btn-approve").
+		Set("border-color", "rgba(110, 220, 150, 0.45)", "color", "rgba(140, 230, 170, 0.95)").
+		End()
+	ss.Rule(".kiln-plan-btn-approve:hover").
+		Set("background", "rgba(110, 220, 150, 0.12)").
+		End()
+	ss.Rule(".kiln-plan-btn-reject").
+		Set("border-color", "rgba(255, 130, 130, 0.45)", "color", "rgba(255, 160, 160, 0.95)").
+		End()
+	ss.Rule(".kiln-plan-btn-reject:hover").
+		Set("background", "rgba(255, 130, 130, 0.12)").
+		End()
+	ss.Rule(".kiln-plan-status").
+		Set("font-size", "12px", "padding", "4px 0").
+		End()
+	ss.Rule(".kiln-plan-status-approved").
+		Set("color", "rgba(140, 230, 170, 0.95)").
+		End()
+	ss.Rule(".kiln-plan-status-rejected").
+		Set("color", "rgba(255, 160, 160, 0.95)").
+		End()
+
 	// --- thinking indicator (typing dots) ----------------------------
 	ss.Rule(".kiln-thinking").
 		Set(

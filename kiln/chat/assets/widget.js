@@ -249,11 +249,12 @@
     return m ? text.slice(m[0].length) : text;
   }
 
-  function hydrate(parts) {
+  function hydrate(parts, plans) {
     const log = document.getElementById("kiln-log");
     if (!log) return;
     log.innerHTML = "";
-    if (!parts || !parts.length) {
+    const planList = Object.values(plans || {});
+    if ((!parts || !parts.length) && !planList.length) {
       setEmpty(true);
       return;
     }
@@ -261,26 +262,107 @@
     // Failsafe: if the latest event is an assistant message, the agent
     // is definitely done — stop the thinking ticker even if the
     // chat_assistant SSE event was missed (race after page reload).
-    const last = parts[parts.length - 1];
+    const last = parts && parts.length ? parts[parts.length - 1] : null;
     if (last && last.message && last.kind === "chat_assistant") {
       stopThinkingTick();
     }
-    for (const e of parts) {
-      const id = e.entry_id || e.entryID;
-      if (e.message) {
-        const role = e.kind === "chat_user" ? "user" : "assistant";
-        const text = role === "user" ? stripPagePrefix(e.message.text) : e.message.text;
-        log.appendChild(render(role, text, { id }));
-      } else if (e.call) {
-        log.appendChild(render("tool", "→ " + e.call.name + " " + summarizeArgs(e.call.args), { id }));
-      } else if (e.result) {
-        const r = e.result;
-        log.appendChild(render(r.ok ? "tool" : "tool-error",
-          r.ok ? "← ok" : "← " + (r.kind || "error") + ": " + (r.error || ""),
-          { id }));
+    // Build a unified, time-sorted timeline: chat events + plan entries.
+    const items = [];
+    for (const e of parts || []) {
+      items.push({ kind: "chat", t: e.ts || 0, e });
+    }
+    for (const p of planList) {
+      items.push({ kind: "plan", t: p.proposed_at || 0, p });
+    }
+    items.sort((a, b) => {
+      const ta = typeof a.t === "string" ? Date.parse(a.t) : a.t;
+      const tb = typeof b.t === "string" ? Date.parse(b.t) : b.t;
+      return (ta || 0) - (tb || 0);
+    });
+    for (const it of items) {
+      if (it.kind === "chat") {
+        const e = it.e;
+        const id = e.entry_id || e.entryID;
+        if (e.message) {
+          const role = e.kind === "chat_user" ? "user" : "assistant";
+          const text = role === "user" ? stripPagePrefix(e.message.text) : e.message.text;
+          log.appendChild(render(role, text, { id }));
+        } else if (e.call) {
+          log.appendChild(render("tool", "→ " + e.call.name + " " + summarizeArgs(e.call.args), { id }));
+        } else if (e.result) {
+          const r = e.result;
+          log.appendChild(render(r.ok ? "tool" : "tool-error",
+            r.ok ? "← ok" : "← " + (r.kind || "error") + ": " + (r.error || ""),
+            { id }));
+        }
+      } else if (it.kind === "plan") {
+        log.appendChild(renderPlan(it.p));
       }
     }
     log.scrollTop = log.scrollHeight;
+  }
+
+  // renderPlan builds the proposed-plan card. While the plan is pending
+  // (not yet approved or rejected) it shows Approve and Reject buttons.
+  // Once decided, the buttons collapse to a status line.
+  function renderPlan(plan) {
+    const root = el("li", {
+      class: "kiln-msg kiln-msg-plan",
+      "data-plan-id": plan.plan_id,
+    });
+    const head = el("div", { class: "kiln-plan-head" },
+      el("span", { class: "kiln-plan-title" }, "Plan: " + plan.plan_id),
+    );
+    if (plan.reason) {
+      head.appendChild(el("span", { class: "kiln-plan-reason" }, plan.reason));
+    }
+    root.appendChild(head);
+
+    const steps = el("ol", { class: "kiln-plan-steps" });
+    for (const s of plan.steps || []) {
+      steps.appendChild(el("li", null, s));
+    }
+    root.appendChild(steps);
+
+    if (Array.isArray(plan.targets) && plan.targets.length) {
+      const tg = el("div", { class: "kiln-plan-targets" },
+        el("span", { class: "kiln-plan-targets-label" }, "Will run: "),
+      );
+      const list = plan.targets
+        .map((t) => t.op + " " + t.name)
+        .join(", ");
+      tg.appendChild(document.createTextNode(list));
+      root.appendChild(tg);
+    }
+
+    if (plan.approved) {
+      root.appendChild(el("div", { class: "kiln-plan-status kiln-plan-status-approved" },
+        "✓ Approved"));
+      return root;
+    }
+    if (plan.rejected) {
+      const txt = "✕ Rejected" + (plan.reject_reason ? ": " + plan.reject_reason : "");
+      root.appendChild(el("div", { class: "kiln-plan-status kiln-plan-status-rejected" }, txt));
+      return root;
+    }
+
+    // Pending — show Approve / Reject buttons.
+    const actions = el("div", { class: "kiln-plan-actions" });
+    const approve = el("button", {
+      type: "button",
+      class: "kiln-plan-btn kiln-plan-btn-approve",
+      "data-plan-action": "approve",
+      "data-plan-id": plan.plan_id,
+    }, "Approve");
+    const reject = el("button", {
+      type: "button",
+      class: "kiln-plan-btn kiln-plan-btn-reject",
+      "data-plan-action": "reject",
+      "data-plan-id": plan.plan_id,
+    }, "Reject");
+    actions.append(approve, reject);
+    root.appendChild(actions);
+    return root;
   }
 
   function setStatus(text, kind) {
@@ -299,7 +381,10 @@
   async function refresh() {
     try {
       const data = await getJSON("/kiln/world");
-      hydrate(data.session && data.session.chat);
+      hydrate(
+        data.session && data.session.chat,
+        data.session && data.session.plans,
+      );
     } catch (_) {
       setStatus("offline — retrying…", "warn");
     }
@@ -379,6 +464,32 @@
       } finally {
         sendBtn.disabled = false;
         input.focus();
+      }
+    });
+
+    // Plan Approve/Reject buttons inside the panel. We intercept these
+    // BEFORE the data-kiln-tool delegation below so the widget chrome
+    // exclusion doesn't block them.
+    panel.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("[data-plan-action]");
+      if (!btn) return;
+      ev.preventDefault();
+      const action = btn.getAttribute("data-plan-action");
+      const planID = btn.getAttribute("data-plan-id");
+      if (!planID) return;
+      btn.disabled = true;
+      const tool = action === "approve" ? "approve_plan" : "reject_plan";
+      try {
+        const r = await postJSON("/kiln/tool/" + tool, { plan_id: planID });
+        if (!r.ok) {
+          setStatus(tool + " failed: " + ((r && (r.error || r.kind)) || "unknown"), "error");
+          btn.disabled = false;
+        }
+        // SSE plan_approved / plan_rejected event will trigger refresh
+        // and re-render the row in its new state.
+      } catch (err) {
+        setStatus("network error: " + err.message, "error");
+        btn.disabled = false;
       }
     });
 
@@ -485,6 +596,7 @@
       es.addEventListener("chat_user", refresh);
       es.addEventListener("plan_proposed", refresh);
       es.addEventListener("plan_approved", refresh);
+      es.addEventListener("plan_rejected", refresh);
       // tool_call/tool_result come from the journal so they'll show up
       // when refresh() rehydrates the chat — no need to manually append.
       es.addEventListener("tool_call", refresh);

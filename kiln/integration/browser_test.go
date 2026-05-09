@@ -542,5 +542,107 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	}
 }
 
-// safety: keep fmt import live for diagnostic Sprintf use in failures
+// --- (9) plan approve button ----------------------------------------
+//
+// Verifies the user-facing safety loop: when an agent proposes a plan,
+// the panel renders Approve/Reject buttons; clicking Approve calls
+// approve_plan which marks the plan approved in the journal, and the
+// gated destructive op succeeds when retried with the plan_id.
+func TestBrowser_ApprovePlanButton(t *testing.T) {
+	urlBase, tools := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Seed: an entity to delete + an agent-proposed plan covering it.
+	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "trash", Fields: []world.Field{{Name: "x", Type: "string"}},
+	}}); !r.OK {
+		t.Fatal(r)
+	}
+	if r := tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
+		PlanID:  "p1",
+		Steps:   []string{"drop trash"},
+		Reason:  "user wants to clean up",
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "trash"}},
+	}); !r.OK {
+		t.Fatal(r)
+	}
+
+	// Open the panel and wait for the plan card.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// Wait for the plan card to render via SSE → refresh.
+	deadline := time.Now().Add(8 * time.Second)
+	var planText string
+	for time.Now().Before(deadline) {
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`(()=>{const el=document.querySelector(".kiln-msg-plan");return el?el.textContent:""})()`, &planText),
+		); err == nil && strings.Contains(planText, "p1") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !strings.Contains(planText, "p1") {
+		t.Fatalf("plan card never rendered; got %q", planText)
+	}
+	for _, want := range []string{"drop trash", "delete_entity trash", "Approve", "Reject"} {
+		if !strings.Contains(planText, want) {
+			t.Errorf("plan card missing %q in:\n%s", want, planText)
+		}
+	}
+
+	// Click Approve.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`[data-plan-action="approve"][data-plan-id="p1"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("click approve: %v", err)
+	}
+
+	// Plan should journal as approved — poll session.Plans.
+	approvedDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(approvedDeadline) {
+		plans := tools.Live().Session().Plans
+		if p, ok := plans["p1"]; ok && p.Approved {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if p, ok := tools.Live().Session().Plans["p1"]; !ok || !p.Approved {
+		t.Fatalf("plan p1 not approved in journal after click; plans=%+v",
+			tools.Live().Session().Plans)
+	}
+
+	// And the destructive op must now succeed when called with plan_id.
+	res := tools.DeleteEntity(t.Context(), protocol.DeleteEntityArgs{Name: "trash", PlanID: "p1"})
+	if !res.OK {
+		t.Fatalf("delete_entity with approved plan failed: %+v", res)
+	}
+	if _, exists := tools.Live().Session().World.Entities["trash"]; exists {
+		t.Error("entity still present after approved delete")
+	}
+
+	// Re-render the plan card; it should now show Approved status.
+	var statusText string
+	statusDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(statusDeadline) {
+		_ = chromedp.Run(ctx,
+			chromedp.Evaluate(`(()=>{const el=document.querySelector(".kiln-plan-status-approved");return el?el.textContent:""})()`, &statusText),
+		)
+		if strings.Contains(statusText, "Approved") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !strings.Contains(statusText, "Approved") {
+		t.Errorf("plan card never showed Approved status; got %q", statusText)
+	}
+}
+
+// safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
+var _ = journal.PlanTarget{}
