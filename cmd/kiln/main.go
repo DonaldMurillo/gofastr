@@ -212,7 +212,12 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	// Optional in-process agent watcher: resolve the configured adapter
 	// (or freeform command) and spawn it once per chat_user event with
 	// KILN_URL injected. The agent's stdout is journaled as chat_assistant.
+	//
+	// The store is mutable at runtime via /kiln/agent — the panel's
+	// config modal POSTs there to switch adapters mid-session.
 	adapter, ok := resolveAdapter(opts.agentCmd)
+	store := NewAdapterStore(adapter)
+	mountAgentRoutes(l.Aux(), store)
 	if ok {
 		// Sync the skill so adapters that read it (claude-code, pi via
 		// ~/.claude/skills/kiln/) get the current version of the
@@ -222,9 +227,12 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		} else {
 			logger.Printf("skill install: %v (continuing)", err)
 		}
-		go runAgentWatcher(ctx, logger, l, tools, adapter, opts.addr)
+		go runAgentWatcher(ctx, logger, l, tools, store, opts.addr)
 		logger.Printf("agent:     %s", adapter.Display)
 	} else if !stdioMode {
+		// Even without a startup adapter, run the watcher so a runtime
+		// switch via /kiln/agent immediately starts dispatching turns.
+		go runAgentWatcher(ctx, logger, l, tools, store, opts.addr)
 		switch opts.agentCmd {
 		case "":
 			logger.Printf("agent:     (none — pass --agent auto to pick an installed CLI,")

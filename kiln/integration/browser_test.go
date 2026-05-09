@@ -761,6 +761,74 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 	}
 }
 
+// --- (12) Agent settings modal --------------------------------------
+//
+// The kiln chat server in startKiln doesn't wire the runtime adapter
+// store (that lives in cmd/kiln). For the widget side, we just verify
+// the modal opens and renders the correct chrome — backend coverage of
+// /kiln/agent is in cmd/kiln tests. This catches the click-handler →
+// modal-render → buttons-present chain.
+func TestBrowser_AgentConfigModalOpens(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`#kiln-config`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// /kiln/agent isn't mounted in startKiln (no adapter store), so the
+	// modal would error out talking to it. We stub the JSON fetcher in
+	// the page so the modal can still render — this test checks the
+	// click-handler + DOM assembly path, not the backend round-trip.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(()=>{
+			window.__origFetch = window.fetch;
+			window.fetch = function(u, opts) {
+				if (typeof u === "string" && u.indexOf("/kiln/agent") === 0) {
+					return Promise.resolve(new Response(JSON.stringify({
+						current: { name: "claude-code", display: "claude --print …" },
+						available: [
+							{ name: "claude-code", display: "claude", installed: true },
+							{ name: "pi", display: "pi -p …", installed: false },
+							{ name: "codex", display: "codex exec", installed: false },
+						],
+						order: ["claude-code","pi","codex"],
+						in_flight: true,
+					}), { status: 200, headers: {"Content-Type":"application/json"} }));
+				}
+				return window.__origFetch(u, opts);
+			};
+		})()`, nil),
+		chromedp.Click(`#kiln-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("open modal: %v", err)
+	}
+
+	// Inspect the modal's contents.
+	var html string
+	if err := chromedp.Run(ctx,
+		chromedp.OuterHTML(`.kiln-modal`, &html, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("read modal html: %v", err)
+	}
+	for _, want := range []string{
+		"Agent settings",
+		"claude-code", "pi", "codex",
+		"none", "custom",
+		"Apply", "Cancel",
+		"A turn is running", // in_flight warning
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("modal missing %q in:\n%s", want, html[:min(len(html), 600)])
+		}
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

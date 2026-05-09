@@ -83,6 +83,13 @@
       el("span", { class: "kiln-panel-title" }, "Kiln"),
       el("span", { class: "kiln-panel-page", id: "kiln-page" }, ""),
       el("button", {
+        class: "kiln-panel-config",
+        "aria-label": "Agent settings",
+        type: "button",
+        title: "Agent settings",
+        id: "kiln-config",
+      }, "⚙"),
+      el("button", {
         class: "kiln-panel-reset",
         "aria-label": "Reset session — wipes the journal and starts fresh",
         type: "button",
@@ -385,6 +392,121 @@
     ta.style.height = Math.min(ta.scrollHeight, max) + "px";
   }
 
+  // openAgentConfigModal renders the agent-settings dialog. Built lazily
+  // on first click. Reads current state from /kiln/agent, lists every
+  // built-in adapter with its installed flag, lets the user pick or
+  // type a custom command, and POSTs the selection back. Surfaces an
+  // explicit warning when a turn is in flight — switching will cancel.
+  async function openAgentConfigModal(panel) {
+    let state;
+    try {
+      state = await getJSON("/kiln/agent");
+    } catch (err) {
+      setStatus("agent config: " + err.message, "error");
+      return;
+    }
+
+    // Backdrop swallows clicks outside the modal.
+    const backdrop = el("div", { class: "kiln-modal-backdrop" });
+    const modal = el("div", { class: "kiln-modal", role: "dialog", "aria-modal": "true", "aria-label": "Agent settings" });
+    const title = el("h2", { class: "kiln-modal-title" }, "Agent settings");
+    const subtitle = el("p", { class: "kiln-modal-sub" },
+      "Pick which CLI agent kiln spawns when you send a message. Each adapter brings its own auth — kiln spawns the binary; the binary handles login.");
+
+    const list = el("div", { class: "kiln-adapter-list" });
+    const customInputWrap = el("div", { class: "kiln-adapter-custom" });
+    const customInput = el("input", {
+      type: "text",
+      class: "kiln-adapter-custom-input",
+      placeholder: `e.g. "pi -p --provider zai --model glm-5.1"`,
+      "aria-label": "Custom agent command",
+    });
+    customInputWrap.appendChild(customInput);
+
+    const currentName = state && state.current && state.current.name ? state.current.name : "none";
+
+    // Special row: "none".
+    list.appendChild(buildAdapterRow("none", "(no agent — chat goes to journal but nothing runs)", true, currentName === "none"));
+
+    // Built-in adapters from the registry.
+    for (const a of (state.available || [])) {
+      list.appendChild(buildAdapterRow(a.name, a.display, a.installed, currentName === a.name));
+    }
+
+    // Custom row.
+    const customRow = buildAdapterRow("custom", "Custom command (BYO any agent — prompt is appended as final arg)", true, false);
+    list.appendChild(customRow);
+    customRow.appendChild(customInputWrap);
+
+    // Warning rendered below the list, only visible when a turn is in flight.
+    const warning = el("div", { class: "kiln-modal-warning" });
+    if (state.in_flight) {
+      warning.classList.add("kiln-modal-warning-visible");
+      warning.textContent = "⚠ A turn is running. Switching will cancel it; the partial work above is preserved.";
+    }
+
+    const btnRow = el("div", { class: "kiln-modal-actions" });
+    const cancelBtn = el("button", { type: "button", class: "kiln-modal-cancel" }, "Cancel");
+    const applyBtn = el("button", { type: "button", class: "kiln-modal-apply" }, "Apply");
+    btnRow.append(cancelBtn, applyBtn);
+
+    modal.append(title, subtitle, list, warning, btnRow);
+    backdrop.appendChild(modal);
+    panel.appendChild(backdrop);
+
+    function close() { backdrop.remove(); }
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+    cancelBtn.addEventListener("click", close);
+
+    applyBtn.addEventListener("click", async () => {
+      const sel = list.querySelector('input[name="kiln-adapter"]:checked');
+      if (!sel) return;
+      const name = sel.value;
+      const body = name === "custom"
+        ? { name: "custom", custom: customInput.value.trim() }
+        : { name };
+      if (name === "custom" && !body.custom) {
+        setStatus("custom adapter needs a command", "error");
+        return;
+      }
+      applyBtn.disabled = true;
+      try {
+        const r = await postJSON("/kiln/agent", body);
+        if (!r.ok) {
+          setStatus("agent switch: " + (r.error || "unknown"), "error");
+          applyBtn.disabled = false;
+          return;
+        }
+        setStatus("agent: " + (r.current && r.current.display || name), "ok");
+        close();
+      } catch (err) {
+        setStatus("network error: " + err.message, "error");
+        applyBtn.disabled = false;
+      }
+    });
+  }
+
+  function buildAdapterRow(name, display, installed, isCurrent) {
+    const row = el("label", {
+      class: "kiln-adapter-row" + (installed ? "" : " kiln-adapter-row-disabled"),
+      "data-installed": installed ? "1" : "0",
+    });
+    const radio = el("input", {
+      type: "radio",
+      name: "kiln-adapter",
+      value: name,
+      class: "kiln-adapter-radio",
+    });
+    if (!installed) radio.disabled = true;
+    if (isCurrent) radio.checked = true;
+    const label = el("div", { class: "kiln-adapter-label" },
+      el("div", { class: "kiln-adapter-name" }, name),
+      el("div", { class: "kiln-adapter-display" }, display + (!installed ? "  — not installed" : "")),
+    );
+    row.append(radio, label);
+    return row;
+  }
+
   async function refresh() {
     try {
       const data = await getJSON("/kiln/world");
@@ -447,6 +569,16 @@
           resetBtn.disabled = false;
         }
       });
+    }
+
+    // Config gear: opens the agent-settings modal. The modal lists
+    // available adapters (claude-code, pi, codex), shows which are
+    // installed, lets the user switch + supply a custom command. The
+    // current selection is highlighted; switching warns the user that
+    // any in-flight agent turn will be cancelled.
+    const configBtn = document.getElementById("kiln-config");
+    if (configBtn) {
+      configBtn.addEventListener("click", () => openAgentConfigModal(panel));
     }
 
     const input = document.getElementById("kiln-input");

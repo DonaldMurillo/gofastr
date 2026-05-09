@@ -169,6 +169,143 @@ func widgetCSS() string {
 		Pseudo(":hover", "color", "{colors.kiln-fg}").
 		End()
 
+	// --- Config gear button ------------------------------------------
+	ss.Rule(".kiln-panel-config").
+		Set(
+			"background", "transparent",
+			"color", "{colors.kiln-fg-muted}",
+			"border", "none",
+			"font-size", "14px",
+			"line-height", "1",
+			"cursor", "pointer",
+			"padding", "4px 6px",
+			"margin-right", "2px",
+			"border-radius", "4px",
+		).
+		Pseudo(":hover", "color", "{colors.kiln-fg}", "background", "rgba(255, 255, 255, 0.06)").
+		End()
+
+	// --- Agent settings modal ----------------------------------------
+	// Sits inside .kiln-panel as an absolutely-positioned overlay so it
+	// occupies the panel area without touching page chrome.
+	ss.Rule(".kiln-modal-backdrop").
+		Set(
+			"position", "absolute",
+			"inset", "0",
+			"background", "rgba(10, 12, 18, 0.55)",
+			"backdrop-filter", "blur(2px)",
+			"display", "flex",
+			"align-items", "center",
+			"justify-content", "center",
+			"z-index", "10",
+			"border-radius", "inherit",
+		).
+		End()
+	ss.Rule(".kiln-modal").
+		Set(
+			"width", "92%",
+			"max-height", "94%",
+			"overflow-y", "auto",
+			"background", "rgba(20, 23, 30, 0.96)",
+			"border", "1px solid rgba(255, 255, 255, 0.10)",
+			"border-radius", "12px",
+			"padding", "16px",
+			"display", "flex",
+			"flex-direction", "column",
+			"gap", "10px",
+			"color", "{colors.kiln-fg}",
+		).
+		End()
+	ss.Rule(".kiln-modal-title").
+		Set("margin", "0", "font-size", "14px", "font-weight", "600").
+		End()
+	ss.Rule(".kiln-modal-sub").
+		Set("margin", "0", "color", "{colors.kiln-fg-muted}", "font-size", "12px", "line-height", "1.4").
+		End()
+	ss.Rule(".kiln-adapter-list").
+		Set("display", "flex", "flex-direction", "column", "gap", "6px", "margin-top", "4px").
+		End()
+	ss.Rule(".kiln-adapter-row").
+		Set(
+			"display", "flex",
+			"align-items", "flex-start",
+			"gap", "10px",
+			"padding", "10px",
+			"border", "1px solid rgba(255, 255, 255, 0.08)",
+			"border-radius", "8px",
+			"cursor", "pointer",
+			"flex-wrap", "wrap",
+		).
+		Pseudo(":hover", "background", "rgba(255, 255, 255, 0.04)").
+		End()
+	ss.Rule(".kiln-adapter-row-disabled").
+		Set("opacity", "0.5", "cursor", "not-allowed").
+		End()
+	ss.Rule(".kiln-adapter-radio").
+		Set("margin-top", "2px", "accent-color", "{colors.kiln-accent}").
+		End()
+	ss.Rule(".kiln-adapter-label").
+		Set("display", "flex", "flex-direction", "column", "gap", "2px", "flex", "1", "min-width", "0").
+		End()
+	ss.Rule(".kiln-adapter-name").
+		Set("font-weight", "600", "font-size", "12px", "font-family", "ui-monospace, monospace").
+		End()
+	ss.Rule(".kiln-adapter-display").
+		Set("font-size", "11px", "color", "{colors.kiln-fg-muted}", "line-height", "1.4").
+		End()
+	ss.Rule(".kiln-adapter-custom").
+		Set("flex-basis", "100%", "margin-top", "6px").
+		End()
+	ss.Rule(".kiln-adapter-custom-input").
+		Set(
+			"width", "100%",
+			"box-sizing", "border-box",
+			"padding", "6px 8px",
+			"font", "inherit",
+			"font-size", "12px",
+			"font-family", "ui-monospace, monospace",
+			"background", "rgba(0, 0, 0, 0.30)",
+			"border", "1px solid rgba(255, 255, 255, 0.10)",
+			"border-radius", "6px",
+			"color", "{colors.kiln-fg}",
+		).
+		Pseudo(":focus", "outline", "none", "border-color", "{colors.kiln-accent}").
+		End()
+	ss.Rule(".kiln-modal-warning").
+		Set(
+			"display", "none",
+			"padding", "8px 10px",
+			"background", "rgba(255, 200, 110, 0.08)",
+			"border", "1px solid rgba(255, 200, 110, 0.35)",
+			"border-radius", "6px",
+			"font-size", "12px",
+			"color", "rgba(255, 220, 160, 0.92)",
+			"line-height", "1.4",
+		).
+		End()
+	ss.Rule(".kiln-modal-warning-visible").Set("display", "block").End()
+	ss.Rule(".kiln-modal-actions").
+		Set("display", "flex", "gap", "8px", "justify-content", "flex-end", "margin-top", "4px").
+		End()
+	ss.Rule(".kiln-modal-cancel, .kiln-modal-apply").
+		Set(
+			"padding", "8px 14px",
+			"border-radius", "6px",
+			"border", "1px solid rgba(255, 255, 255, 0.18)",
+			"background", "transparent",
+			"color", "{colors.kiln-fg}",
+			"font", "inherit",
+			"font-size", "12px",
+			"cursor", "pointer",
+		).
+		Pseudo(":disabled", "opacity", "0.5", "cursor", "default").
+		End()
+	ss.Rule(".kiln-modal-apply").
+		Set("background", "{colors.kiln-accent}", "border-color", "{colors.kiln-accent}", "color", "white").
+		End()
+	ss.Rule(".kiln-modal-apply:hover").Set("filter", "brightness(1.1)").End()
+	ss.Rule(".kiln-modal-cancel:hover").Set("background", "rgba(255, 255, 255, 0.06)").End()
+
 	// --- Reset session button -----------------------------------------
 	// Lives between the page chip and the close × in the panel header.
 	// Smaller font + circular hover so it doesn't compete with × visually.

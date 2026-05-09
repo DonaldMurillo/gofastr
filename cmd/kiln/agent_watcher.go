@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 
 	"github.com/gofastr/gofastr/kiln/journal"
 	"github.com/gofastr/gofastr/kiln/live"
@@ -27,11 +26,7 @@ import (
 // note so the panel's thinking indicator clears and the user sees what
 // happened. Anything the cancelled turn already wrote to the journal
 // stays — Kiln's world is append-only, so partial work persists.
-func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, adapter Adapter, addr string) {
-	if adapter.BuildArgs == nil {
-		return
-	}
-
+func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, store *AdapterStore, addr string) {
 	host := addr
 	if strings.HasPrefix(host, ":") {
 		host = "localhost" + host
@@ -41,19 +36,11 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 	ch, unsub := l.Subscribe()
 	defer unsub()
 
-	var (
-		mu       sync.Mutex
-		curCtx   context.Context
-		curCancl context.CancelFunc
-	)
 	for {
 		select {
 		case <-ctx.Done():
-			mu.Lock()
-			if curCancl != nil {
-				curCancl()
-			}
-			mu.Unlock()
+			// Process exit: cancel any in-flight turn through the store.
+			store.Set(store.Get())
 			return
 		case ev, ok := <-ch:
 			if !ok {
@@ -67,28 +54,23 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 				continue
 			}
 
-			mu.Lock()
-			if curCancl != nil {
-				// Supersede the in-flight turn. The goroutine running
-				// runOneAgentTurn will see ctx.Err() != nil after Output
-				// returns and journal a (superseded) note.
-				curCancl()
+			// Read the current adapter at turn-spawn time so runtime
+			// switches via /kiln/agent take effect on the very next turn.
+			adapter := store.Get()
+			if adapter.BuildArgs == nil {
+				continue
 			}
-			turnCtx, cancel := context.WithCancel(ctx)
-			curCtx = turnCtx
-			curCancl = cancel
-			mu.Unlock()
 
-			go func(turnCtx context.Context, cancel context.CancelFunc, text string) {
-				defer cancel()
+			turnCtx, cancel := context.WithCancelCause(ctx)
+			// Register cancel with the store. If a prior turn was still
+			// running, the store cancels it with errSupersededByNewMessage.
+			store.SetTurnCancel(cancel)
+
+			go func(turnCtx context.Context, cancel context.CancelCauseFunc, text string, adapter Adapter) {
+				defer cancel(nil)
 				runOneAgentTurn(turnCtx, logger, tools, adapter, kilnURL, text)
-				// Clear curCancl if it still points at this turn.
-				mu.Lock()
-				if curCtx == turnCtx {
-					curCtx, curCancl = nil, nil
-				}
-				mu.Unlock()
-			}(turnCtx, cancel, text)
+				store.ClearTurnCancel()
+			}(turnCtx, cancel, text, adapter)
 		}
 	}
 }
@@ -146,16 +128,24 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	out, err := c.Output()
 	resp := strings.TrimSpace(string(out))
 
-	// Cancellation path: a newer chat_user superseded this turn. Use a
-	// fresh context for the journal write — the original ctx is done.
-	// Skip "agent error" journaling because the kill is intentional.
+	// Cancellation path: this turn was superseded. Render the right
+	// reason: a newer message vs. a runtime agent switch. Use a fresh
+	// context for the journal write — the original ctx is done.
 	if ctx.Err() != nil {
-		logger.Printf("agent: superseded by newer message")
-		// Use Background so the synthetic note still lands after cancel.
-		_ = tools.Chat(context.Background(), protocol.ChatArgs{
-			Role: "assistant",
-			Text: "(superseded by newer message — partial work above is preserved)",
-		})
+		cause := context.Cause(ctx)
+		var note string
+		switch cause {
+		case errAgentSwitched:
+			note = "(superseded by agent harness switch — partial work above is preserved)"
+			logger.Printf("agent: %v", cause)
+		case errSupersededByNewMessage:
+			note = "(superseded by newer message — partial work above is preserved)"
+			logger.Printf("agent: %v", cause)
+		default:
+			note = "(turn cancelled — partial work above is preserved)"
+			logger.Printf("agent: cancelled (cause=%v)", cause)
+		}
+		_ = tools.Chat(context.Background(), protocol.ChatArgs{Role: "assistant", Text: note})
 		return
 	}
 
