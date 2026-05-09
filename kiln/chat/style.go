@@ -169,6 +169,25 @@ func widgetCSS() string {
 		Pseudo(":hover", "color", "{colors.kiln-fg}").
 		End()
 
+	// --- Reset session button -----------------------------------------
+	// Lives between the page chip and the close × in the panel header.
+	// Smaller font + circular hover so it doesn't compete with × visually.
+	ss.Rule(".kiln-panel-reset").
+		Set(
+			"background", "transparent",
+			"color", "{colors.kiln-fg-muted}",
+			"border", "none",
+			"font-size", "14px",
+			"line-height", "1",
+			"cursor", "pointer",
+			"padding", "4px 6px",
+			"margin-right", "2px",
+			"border-radius", "4px",
+		).
+		Pseudo(":hover", "color", "rgba(255, 130, 130, 0.95)", "background", "rgba(255, 130, 130, 0.10)").
+		Pseudo(":disabled", "opacity", "0.4", "cursor", "default").
+		End()
+
 	// --- Log -----------------------------------------------------------
 	ss.Rule(".kiln-log").
 		Set(

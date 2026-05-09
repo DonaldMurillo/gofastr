@@ -163,6 +163,12 @@ var descriptors = map[string]Descriptor{
 		Description: "Truncate the journal by one entry, reverting the most recent change.",
 		Schema:      object(nil, nil),
 	},
+	"reset_session": {
+		Name:        "reset_session",
+		Description: "Wipe the entire journal and reload to an empty world. Used by the panel's Reset button. Destructive in scope but does not require a plan — it's a user-initiated start-over.",
+		Destructive: true,
+		Schema:      object(nil, nil),
+	},
 	"chat": {
 		Name:        "chat",
 		Description: "Record a chat message in the session journal.",

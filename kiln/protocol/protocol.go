@@ -143,6 +143,8 @@ type RejectPlanArgs struct {
 
 type UndoArgs struct{}
 
+type ResetSessionArgs struct{}
+
 type ChatArgs struct {
 	Role string `json:"role"` // "user" | "assistant"
 	Text string `json:"text"`
@@ -434,6 +436,25 @@ func (t *Tools) RejectPlan(_ context.Context, args RejectPlanArgs) Result {
 		PlanID: args.PlanID,
 		Reason: args.Reason,
 	})
+}
+
+// ResetSession truncates the journal to zero entries and reloads the
+// live runtime. The DB schema is rebuilt from scratch (empty world →
+// empty migration set). In-memory plan-consumption tracking resets
+// too. Used by the panel's "Reset" button when the user wants a clean
+// slate without killing the process.
+func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
+	j := t.live.Journal()
+	if err := j.TruncateAfter(0); err != nil {
+		return failure("truncate: %v", err)
+	}
+	if err := t.live.Reload(); err != nil {
+		return failure("reload: %v", err)
+	}
+	t.mu.Lock()
+	t.consumed = map[string]map[string]bool{}
+	t.mu.Unlock()
+	return ok(nil)
 }
 
 func (t *Tools) Undo(_ context.Context, _ UndoArgs) Result {

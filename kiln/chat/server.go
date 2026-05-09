@@ -48,9 +48,13 @@ func New(l *live.Live, t *protocol.Tools) *Server {
 }
 
 // journaledTools is the set of tools whose calls/results we wrap in
-// tool_call/tool_result journal entries for observability. We skip
-// read-only ops (world_get) and ops whose own kind already journals
-// the meaningful state (chat, propose_plan, approve_plan, reject_plan).
+// tool_call/tool_result journal entries for observability. We skip:
+//   - read-only ops (world_get)
+//   - ops whose own kind already journals the meaningful state
+//     (chat, propose_plan, approve_plan, reject_plan)
+//   - meta-ops that mutate the journal itself (undo, reset_session)
+//     since wrapping them in a journal entry would be incoherent —
+//     the wrapping entry races with the truncate they perform.
 var journaledTools = map[string]bool{
 	"set_app_config": true,
 	"add_entity":     true,
@@ -65,7 +69,6 @@ var journaledTools = map[string]bool{
 	"add_route":      true,
 	"delete_route":   true,
 	"add_seed":       true,
-	"undo":           true,
 }
 
 // Mount registers the panel routes onto r. The host fallback page is
@@ -318,6 +321,8 @@ func (s *Server) dispatch(ctx context.Context, name string, body interface {
 		return s.tools.RejectPlan(ctx, args), nil
 	case "undo":
 		return s.tools.Undo(ctx, protocol.UndoArgs{}), nil
+	case "reset_session":
+		return s.tools.ResetSession(ctx, protocol.ResetSessionArgs{}), nil
 	case "chat":
 		var args protocol.ChatArgs
 		if err := dec.Decode(&args); err != nil {

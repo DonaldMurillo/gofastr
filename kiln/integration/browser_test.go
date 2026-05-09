@@ -714,6 +714,53 @@ func containsAny(haystack []string, needle string) bool {
 	return false
 }
 
+// --- (11) Reset session button --------------------------------------
+//
+// Verifies the panel's Reset button: builds an entity, clicks Reset
+// (auto-accepting the window.confirm dialog), and verifies the world
+// is empty afterwards.
+func TestBrowser_ResetSessionButton(t *testing.T) {
+	urlBase, tools := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Seed: an entity that should disappear after reset.
+	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "trash", Fields: []world.Field{{Name: "x", Type: "string"}},
+	}}); !r.OK {
+		t.Fatal(r)
+	}
+	if _, ok := tools.Live().Session().World.Entities["trash"]; !ok {
+		t.Fatal("seed entity didn't land before reset")
+	}
+
+	// Open panel, override window.confirm to true, click Reset.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.Evaluate(`window.confirm = function(){return true};`, nil),
+		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("click reset: %v", err)
+	}
+
+	// Wait for the journal to be wiped — poll session state.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(tools.Live().Session().World.Entities) == 0 &&
+			len(tools.Live().Session().Chat) == 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := len(tools.Live().Session().World.Entities); got != 0 {
+		t.Errorf("entities not cleared by reset; got %d", got)
+	}
+	if got := len(tools.Live().Session().Chat); got != 0 {
+		t.Errorf("chat not cleared by reset; got %d", got)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

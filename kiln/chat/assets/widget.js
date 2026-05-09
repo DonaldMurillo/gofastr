@@ -82,6 +82,13 @@
     const head = el("header", { class: "kiln-panel-head" },
       el("span", { class: "kiln-panel-title" }, "Kiln"),
       el("span", { class: "kiln-panel-page", id: "kiln-page" }, ""),
+      el("button", {
+        class: "kiln-panel-reset",
+        "aria-label": "Reset session — wipes the journal and starts fresh",
+        type: "button",
+        title: "Reset session",
+        id: "kiln-reset",
+      }, "↺"),
       el("button", { class: "kiln-panel-close", "aria-label": "Close", type: "button" }, "×"),
     );
     const log = el("ol", { class: "kiln-log", id: "kiln-log" });
@@ -414,6 +421,33 @@
 
     fab.addEventListener("click", () => setOpen(true));
     close.addEventListener("click", () => setOpen(false));
+
+    // Reset button: wipes the journal and reloads to an empty world.
+    // Confirms first because it can't be undone.
+    const resetBtn = document.getElementById("kiln-reset");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", async () => {
+        if (!window.confirm(
+          "Reset the Kiln session? This wipes the journal and clears the world. " +
+          "The chat history and all built entities/pages/hooks/routes will be gone. " +
+          "There is no undo for this.",
+        )) return;
+        resetBtn.disabled = true;
+        try {
+          const r = await postJSON("/kiln/tool/reset_session", {});
+          if (!r.ok) {
+            setStatus("reset failed: " + ((r && (r.error || r.kind)) || "unknown"), "error");
+          } else {
+            // Force a full reload — the page itself may not exist anymore.
+            location.reload();
+          }
+        } catch (err) {
+          setStatus("network error: " + err.message, "error");
+        } finally {
+          resetBtn.disabled = false;
+        }
+      });
+    }
 
     const input = document.getElementById("kiln-input");
     input.addEventListener("input", () => autosize(input));
