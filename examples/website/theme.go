@@ -1,0 +1,174 @@
+package main
+
+import (
+	"github.com/gofastr/gofastr/core-ui/style"
+)
+
+// createTheme builds the website's visual language. We start from the
+// default theme and pin a couple of brand colors so the GoFastr identity
+// is consistent across pages.
+func createTheme() style.Theme {
+	base := style.DefaultTheme()
+	custom := style.Theme{
+		Colors: style.Colors{
+			"primary":   "#2563EB", // blue-600
+			"secondary": "#0F172A", // slate-900
+			"accent":    "#10B981", // emerald-500
+		},
+	}
+	return style.MergeThemes(base, custom)
+}
+
+// createStyleSheet emits all the site's CSS as a string. Generated via
+// the Go DSL so the whole codebase stays in one language.
+func createStyleSheet(theme style.Theme) string {
+	ss := style.NewStyleSheet(theme)
+
+	// Reset.
+	ss.Rule("*, *::before, *::after").
+		Set("box-sizing", "border-box", "margin", "0", "padding", "0").
+		End()
+	ss.Rule("body").
+		Set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+			"font-size", "16px", "line-height", "1.6",
+			"color", "{colors.text}", "background", "{colors.background}").
+		End()
+	ss.Rule("a").
+		Set("color", "{colors.primary}", "text-decoration", "none").
+		End()
+	ss.Rule("a:hover").Set("text-decoration", "underline").End()
+	ss.Rule(".skip-link").
+		Set("position", "absolute", "left", "-9999px",
+			"background", "{colors.primary}", "color", "white",
+			"padding", "{spacing.sm} {spacing.md}").
+		End()
+	ss.Rule(".skip-link:focus").Set("left", "{spacing.sm}", "top", "{spacing.sm}").End()
+
+	// Header.
+	ss.Rule(".site-header").
+		Set("display", "flex", "align-items", "center", "justify-content", "space-between",
+			"padding", "{spacing.md} {spacing.xl}",
+			"border-bottom", "1px solid {colors.border}",
+			"background", "{colors.surface}", "position", "sticky", "top", "0", "z-index", "10").
+		End()
+	ss.Rule(".site-header .brand").
+		Set("font-weight", "700", "font-size", "1.125rem", "color", "{colors.secondary}").
+		End()
+	ss.Rule(".site-header nav").
+		Set("display", "flex", "gap", "{spacing.lg}").End()
+	ss.Rule(".site-header nav a").
+		Set("color", "{colors.text}", "font-weight", "500").End()
+	ss.Rule(".site-header nav a[aria-current='page']").
+		Set("color", "{colors.primary}").End()
+
+	// Footer.
+	ss.Rule(".site-footer").
+		Set("padding", "{spacing.xl}", "text-align", "center",
+			"color", "{colors.text-muted}",
+			"border-top", "1px solid {colors.border}",
+			"margin-top", "{spacing.3xl}").
+		End()
+
+	// Hero.
+	ss.Rule(".hero").
+		Set("padding", "{spacing.3xl} {spacing.xl}", "text-align", "center",
+			"background", "linear-gradient(135deg, {colors.primary} 0%, {colors.secondary} 100%)",
+			"color", "white").
+		End()
+	ss.Rule(".hero h1").
+		Set("font-size", "2.5rem", "font-weight", "800", "margin-bottom", "{spacing.md}").End()
+	ss.Rule(".hero .subtitle").
+		Set("font-size", "1.125rem", "max-width", "640px", "margin", "0 auto {spacing.lg}",
+			"opacity", "0.9").End()
+	ss.Rule(".hero .cta-row").
+		Set("display", "flex", "justify-content", "center", "gap", "{spacing.md}").End()
+	ss.Rule(".cta-button").
+		Set("display", "inline-block", "padding", "{spacing.sm} {spacing.lg}",
+			"border-radius", "{radii.md}", "font-weight", "600",
+			"background", "white", "color", "{colors.primary}").End()
+	ss.Rule(".cta-button.secondary").
+		Set("background", "transparent", "color", "white",
+			"border", "1px solid white").End()
+
+	// Generic content container.
+	ss.Rule("main").
+		Set("max-width", "880px", "margin", "0 auto", "padding", "{spacing.xl}").End()
+
+	// Feature grid.
+	ss.Rule(".feature-grid").
+		Set("display", "grid", "grid-template-columns", "repeat(auto-fit, minmax(240px, 1fr))",
+			"gap", "{spacing.lg}", "margin", "{spacing.xl} 0").End()
+	ss.Rule(".feature-card").
+		Set("padding", "{spacing.lg}", "background", "{colors.surface}",
+			"border", "1px solid {colors.border}", "border-radius", "{radii.md}").End()
+	ss.Rule(".feature-card h3").
+		Set("font-size", "1.125rem", "color", "{colors.secondary}", "margin-bottom", "{spacing.sm}").End()
+	ss.Rule(".feature-card p").
+		Set("color", "{colors.text-muted}", "font-size", "0.95rem").End()
+
+	// Doc list / index.
+	ss.Rule(".doc-list").
+		Set("display", "grid", "gap", "{spacing.sm}", "margin", "{spacing.lg} 0").End()
+	ss.Rule(".doc-list a").
+		Set("display", "block", "padding", "{spacing.md}",
+			"background", "{colors.surface}", "border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}", "color", "{colors.text}").End()
+	ss.Rule(".doc-list a:hover").
+		Set("border-color", "{colors.primary}", "text-decoration", "none").End()
+	ss.Rule(".doc-list a strong").
+		Set("display", "block", "color", "{colors.primary}",
+			"margin-bottom", "{spacing.xs}").End()
+	ss.Rule(".doc-list a span").
+		Set("color", "{colors.text-muted}", "font-size", "0.9rem").End()
+
+	// Markdown body — covers what core/markdown emits.
+	ss.Rule(".doc-body h1").
+		Set("font-size", "2rem", "margin", "{spacing.xl} 0 {spacing.md}",
+			"color", "{colors.secondary}").End()
+	ss.Rule(".doc-body h2").
+		Set("font-size", "1.5rem", "margin", "{spacing.xl} 0 {spacing.md}",
+			"color", "{colors.secondary}",
+			"border-bottom", "1px solid {colors.border}", "padding-bottom", "{spacing.sm}").End()
+	ss.Rule(".doc-body h3").
+		Set("font-size", "1.2rem", "margin", "{spacing.lg} 0 {spacing.sm}",
+			"color", "{colors.secondary}").End()
+	ss.Rule(".doc-body p").
+		Set("margin", "{spacing.md} 0").End()
+	ss.Rule(".doc-body ul, .doc-body ol").
+		Set("padding-left", "{spacing.xl}", "margin", "{spacing.md} 0").End()
+	ss.Rule(".doc-body li").Set("margin", "{spacing.xs} 0").End()
+	ss.Rule(".doc-body code").
+		Set("background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"padding", "1px 6px", "border-radius", "{radii.sm}",
+			"font-size", "0.9em",
+			"font-family", "ui-monospace, 'SF Mono', Menlo, monospace").End()
+	ss.Rule(".doc-body pre").
+		Set("background", "{colors.secondary}", "color", "white",
+			"padding", "{spacing.md}", "border-radius", "{radii.md}",
+			"overflow-x", "auto", "margin", "{spacing.md} 0").End()
+	ss.Rule(".doc-body pre code").
+		Set("background", "transparent", "border", "0",
+			"color", "white", "padding", "0", "font-size", "0.9em").End()
+	ss.Rule(".doc-body blockquote").
+		Set("border-left", "4px solid {colors.primary}",
+			"padding", "{spacing.sm} {spacing.md}",
+			"color", "{colors.text-muted}", "margin", "{spacing.md} 0",
+			"background", "{colors.surface}").End()
+	ss.Rule(".doc-body table").
+		Set("width", "100%", "border-collapse", "collapse", "margin", "{spacing.md} 0").End()
+	ss.Rule(".doc-body th, .doc-body td").
+		Set("border", "1px solid {colors.border}", "padding", "{spacing.sm}").End()
+	ss.Rule(".doc-body th").
+		Set("background", "{colors.surface}", "font-weight", "600").End()
+	ss.Rule(".doc-body hr").
+		Set("border", "0", "border-top", "1px solid {colors.border}", "margin", "{spacing.xl} 0").End()
+	ss.Rule(".doc-body a").Set("color", "{colors.primary}").End()
+
+	// Doc-page back link.
+	ss.Rule(".doc-back").
+		Set("display", "inline-block", "color", "{colors.text-muted}",
+			"font-size", "0.9rem", "margin-bottom", "{spacing.lg}").End()
+
+	return ss.CSS()
+}

@@ -200,11 +200,18 @@ func (a *App) RenderPageContext(ctx context.Context, path string) (render.HTML, 
 			"content": "width=device-width, initial-scale=1.0",
 		}),
 	)
-	var titleText string
-	if screen.Title != "" {
-		titleText = screen.Title + " — " + a.Name
-	} else {
-		titleText = a.Name
+	// Title: re-read ScreenTitle() AFTER Load so dynamic routes
+	// (e.g. /docs/:slug) can compute the title from data fetched in Load.
+	// Falls back to the registration-time title, then to the app name alone.
+	titleText := a.Name
+	effectiveTitle := screen.Title
+	if spec, ok := screen.Component.(ScreenSpec); ok {
+		if t := spec.ScreenTitle(); t != "" {
+			effectiveTitle = t
+		}
+	}
+	if effectiveTitle != "" {
+		titleText = effectiveTitle + " — " + a.Name
 	}
 	headChildren = append(headChildren,
 		render.Tag("title", nil, render.Text(titleText)),
