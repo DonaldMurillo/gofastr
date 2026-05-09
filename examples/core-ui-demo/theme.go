@@ -695,7 +695,7 @@ func createStyleSheet(theme style.Theme) string {
 		End()
 	ss.Rule(".di-card").
 		Set("background", "{colors.surface}", "border", "1px solid {colors.border}",
-			"border-radius", "{radius.md}", "padding", "{spacing.lg}",
+			"border-radius", "{radii.md}", "padding", "{spacing.lg}",
 			"text-align", "center").
 		End()
 	ss.Rule(".di-card-icon").
@@ -710,7 +710,7 @@ func createStyleSheet(theme style.Theme) string {
 		End()
 	ss.Rule(".di-code-block").
 		Set("background", "{colors.surface}", "border", "1px solid {colors.border}",
-			"border-radius", "{radius.md}", "padding", "{spacing.lg}",
+			"border-radius", "{radii.md}", "padding", "{spacing.lg}",
 			"overflow-x", "auto", "margin-top", "{spacing.lg}").
 		End()
 	ss.Rule(".di-code-block pre").
@@ -736,8 +736,70 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".di-proof").
 		Set("margin-top", "{spacing.lg}", "padding", "{spacing.md}",
 			"background", "{colors.surface}", "border", "1px solid {colors.border}",
-			"border-radius", "{radius.md}", "font-size", "0.9rem",
+			"border-radius", "{radii.md}", "font-size", "0.9rem",
 			"color", "{colors.text}", "line-height", "1.5").
+		End()
+
+	// Todos
+	ss.Rule(".todos-screen").
+		Set("max-width", "640px", "margin", "0 auto", "padding", "{spacing.xl}").
+		End()
+	ss.Rule(".todo-form").
+		Set("display", "flex", "gap", "{spacing.sm}", "margin", "{spacing.lg} 0").
+		End()
+	ss.Rule(".todo-input").
+		Set("flex", "1", "padding", "{spacing.sm} {spacing.md}",
+			"border", "1px solid {colors.border}", "border-radius", "{radii.md}",
+			"background", "{colors.surface}", "color", "{colors.text}",
+			"font-size", "1rem").
+		End()
+	ss.Rule(".todo-input:focus").
+		Set("outline", "2px solid {colors.primary}", "outline-offset", "2px",
+			"border-color", "{colors.primary}").
+		End()
+	ss.Rule(".todo-stats").
+		Set("display", "flex", "justify-content", "space-between", "align-items", "center",
+			"margin", "{spacing.md} 0", "color", "{colors.muted}", "font-size", "0.9rem").
+		End()
+	ss.Rule(".todo-clear").
+		Set("background", "transparent", "border", "1px solid {colors.border}",
+			"color", "{colors.muted}", "padding", "{spacing.xs} {spacing.sm}",
+			"border-radius", "{radii.sm}", "cursor", "pointer", "font-size", "0.85rem").
+		End()
+	ss.Rule(".todo-clear:hover").
+		Set("color", "{colors.text}", "border-color", "{colors.primary}").
+		End()
+	ss.Rule(".todo-list").
+		Set("list-style", "none", "padding", "0", "margin", "0",
+			"display", "flex", "flex-direction", "column", "gap", "{spacing.xs}").
+		End()
+	ss.Rule(".todo-item").
+		Set("display", "flex", "align-items", "center", "gap", "{spacing.sm}",
+			"padding", "{spacing.sm} {spacing.md}",
+			"background", "{colors.surface}", "border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}").
+		End()
+	ss.Rule(".todo-item.todo-done .todo-check span").
+		Set("text-decoration", "line-through", "color", "{colors.muted}").
+		End()
+	ss.Rule(".todo-check").
+		Set("flex", "1", "display", "flex", "align-items", "center", "gap", "{spacing.sm}",
+			"cursor", "pointer", "color", "{colors.text}").
+		End()
+	ss.Rule(".todo-check input").
+		Set("width", "18px", "height", "18px", "accent-color", "{colors.primary}").
+		End()
+	ss.Rule(".todo-delete").
+		Set("background", "transparent", "border", "0", "color", "{colors.muted}",
+			"font-size", "1.4rem", "line-height", "1", "cursor", "pointer",
+			"padding", "0 {spacing.sm}", "border-radius", "{radii.sm}").
+		End()
+	ss.Rule(".todo-delete:hover").
+		Set("color", "{colors.danger}", "background", "{colors.surface}").
+		End()
+	ss.Rule(".todo-empty").
+		Set("padding", "{spacing.lg}", "text-align", "center",
+			"color", "{colors.muted}", "font-style", "italic").
 		End()
 
 	return ss.CSS()

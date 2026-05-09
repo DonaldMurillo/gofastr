@@ -46,7 +46,11 @@ func main() {
 
 	// --- Start (auto-migrates, auto-routes CRUD, auto-serves OpenAPI + Swagger) ---
 
-	if err := app.Start(":8080"); err != nil {
+	addr := ":8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
+	if err := app.Start(addr); err != nil {
 		log.Fatal(err)
 	}
 }

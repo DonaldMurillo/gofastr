@@ -1,6 +1,9 @@
 # Pi internal
 .pi/
 
+# Claude Code session state
+.claude/
+
 # Binaries
 bin/
 *.exe

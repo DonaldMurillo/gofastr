@@ -71,6 +71,7 @@ func setupDevServer() *devserver.DevServer {
 	application.Register("/signals", &SignalDemoScreen{}, nil)
 	application.Register("/error-boundary", &ErrorBoundaryDemoScreen{}, nil)
 	application.Register("/dashboard", &DashboardScreen{}, nil)
+	application.Register("/todos", &TodosScreen{}, nil)
 
 	// Generate all CSS from Go using the theme system (dog-food!)
 	cssStr := createStyleSheet(*application.Theme)

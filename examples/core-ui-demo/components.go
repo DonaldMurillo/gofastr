@@ -77,6 +77,7 @@ func (h *HeaderComponent) Render() render.HTML {
 			elements.Link(elements.LinkConfig{Href: "/signals", Text: "Signals"}),
 			elements.Link(elements.LinkConfig{Href: "/error-boundary", Text: "Error Boundary"}),
 			elements.Link(elements.LinkConfig{Href: "/dashboard", Text: "Dashboard"}),
+			elements.Link(elements.LinkConfig{Href: "/todos", Text: "Todos"}),
 			elements.LinkHTML(elements.LinkHTMLConfig{
 				Href:    "/cart",
 				Content: render.HTML("Cart " + string(elements.Span(elements.TextConfig{Class: "cart-badge"}, render.Text("0")))),
