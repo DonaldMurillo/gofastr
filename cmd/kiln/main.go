@@ -69,6 +69,7 @@ Usage:
   kiln acp   [flags]      HTTP + ACP over stdio
   kiln freeze [flags]     Read journal, emit entities/*.json + world.json
                           to a target dir for "graduate to source" commits
+                          --diff to print a review summary instead of writing
 
 Flags:
   --addr value          HTTP listen address (default ":8765")
