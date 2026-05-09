@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -50,10 +51,42 @@ type ScreenComponentID interface {
 }
 
 // ScreenActions is an optional interface for screens that declare server actions.
-// If implemented, the DevServer auto-compiles actions when the screen is registered.
+// If implemented, the host auto-compiles actions when the screen is registered.
 // The Actions method uses component.On() to register handlers, same as InteractiveComponent.
 type ScreenActions interface {
 	Actions()
+}
+
+// ScreenLoader is an optional interface for screens that need to fetch data
+// before rendering. Load runs AFTER route params have been injected and AFTER
+// DI services are wired, but BEFORE Render. Mutating fields on the screen is
+// the expected pattern — those fields are then read by Render.
+//
+// The same Load runs for both SSR (per-request) and SSG (at build time), so
+// implementations should be deterministic given the same context inputs.
+// Network calls are fine; non-deterministic state (random IDs, time-of-day
+// branches) will produce different output between SSG runs.
+type ScreenLoader interface {
+	Load(ctx context.Context) error
+}
+
+// StaticPathsProvider is an optional interface for screens that mount on a
+// dynamic route pattern (e.g. "/products/:slug") and want to participate in
+// static-site generation. The returned slice is one entry per concrete URL
+// the SSG build should produce; each entry maps each ":param" in the route
+// pattern to the value used for that build.
+//
+//	func (s *ProductDetailScreen) StaticPaths(ctx context.Context) []map[string]string {
+//	    return []map[string]string{
+//	        {"slug": "device"},
+//	        {"slug": "gadget"},
+//	    }
+//	}
+//
+// Routes whose screen does not implement StaticPathsProvider are skipped at
+// build time (they remain reachable via SSR if the server is running).
+type StaticPathsProvider interface {
+	StaticPaths(ctx context.Context) []map[string]string
 }
 
 // Screen represents a top-level view in the app hierarchy.

@@ -5,6 +5,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -100,6 +101,16 @@ func (ds *UIHost) SetStaticFS(fsys fs.FS) {
 // HasStaticFS reports whether an embedded static FS is configured.
 func (ds *UIHost) HasStaticFS() bool {
 	return ds.staticFS != nil
+}
+
+// StaticFS returns the configured embedded static FS, or nil if none.
+func (ds *UIHost) StaticFS() fs.FS {
+	return ds.staticFS
+}
+
+// CustomCSS returns the extra CSS string injected into every page.
+func (ds *UIHost) CustomCSS() string {
+	return ds.customCSS
 }
 
 // RegisterSignal registers a signal with the devserver so the signal update
@@ -343,7 +354,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := ds.App.RenderPage(path)
+	html, err := ds.App.RenderPageContext(r.Context(), path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
 		return
@@ -367,42 +378,47 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	page := string(html)
-
-	// Inject SSE meta tag
-	sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
-	page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
-
-	// Inject runtime.js before </body> so document.body is available
-	runtimeScript := `<script src="/__gofastr/runtime.js"></script>`
-	page = strings.Replace(page, "</body>", runtimeScript+"\n</body>", 1)
-
-	// Inject compiled actions after runtime.js
-	actionJS := ds.GetActionJS()
-	if actionJS != "" {
-		actionsScript := fmt.Sprintf("<script>%s</script>", actionJS)
-		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
-	}
-
-	// Inject custom CSS (theme CSS vars already in <head> from RenderPage)
-	if ds.customCSS != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
-		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
-	}
-
-	// Inject route graph (auto-built from registered screens)
-	if rgScript := ds.buildRouteScript(); rgScript != "" {
-		page = strings.Replace(page, "</head>", rgScript+"\n</head>", 1)
-	}
+	page := ds.injectChrome(string(html), sessionID)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, page)
 }
 
+// injectChrome appends the runtime.js, compiled actions, custom CSS, and
+// route graph into a rendered page. When sessionID is non-empty, an SSE
+// meta tag pointing at this session is injected too. SSG output passes
+// "" for sessionID — the client will lazily create a session on first
+// interaction if it ever needs one.
+func (ds *UIHost) injectChrome(page, sessionID string) string {
+	if sessionID != "" {
+		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
+		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
+	}
+
+	runtimeScript := `<script src="/__gofastr/runtime.js"></script>`
+	page = strings.Replace(page, "</body>", runtimeScript+"\n</body>", 1)
+
+	if actionJS := ds.GetActionJS(); actionJS != "" {
+		actionsScript := fmt.Sprintf("<script>%s</script>", actionJS)
+		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
+	}
+
+	if ds.customCSS != "" {
+		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
+		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
+	}
+
+	if rgScript := ds.buildRouteScript(); rgScript != "" {
+		page = strings.Replace(page, "</head>", rgScript+"\n</head>", 1)
+	}
+
+	return page
+}
+
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
-	html, err := ds.App.RenderPartial(path)
+	html, err := ds.App.RenderPartialContext(r.Context(), path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
 		return
@@ -686,42 +702,27 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	ds.handlePage(w, r)
 }
 
-// RenderPage renders a page with all injections (for testing).
+// RenderPage renders a page with all injections (for testing). Uses the
+// background context for Load.
 func (ds *UIHost) RenderPage(path string, sessionID string) (string, error) {
 	html, err := ds.App.RenderPage(path)
 	if err != nil {
 		return "", err
 	}
+	return ds.injectChrome(string(html), sessionID), nil
+}
 
-	page := string(html)
-
-	// Inject SSE meta tag
-	sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
-	page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
-
-	// Inject runtime.js before </body> so document.body is available
-	runtimeScript := `<script src="/__gofastr/runtime.js"></script>`
-	page = strings.Replace(page, "</body>", runtimeScript+"\n</body>", 1)
-
-	// Inject compiled actions after runtime.js
-	actionJS := ds.GetActionJS()
-	if actionJS != "" {
-		actionsScript := fmt.Sprintf("<script>%s</script>", actionJS)
-		page = strings.Replace(page, "</body>", actionsScript+"\n</body>", 1)
+// RenderStaticPage produces a fully-rendered page suitable for static-site
+// generation: it runs the screen's Load(ctx) hook, applies layout/theme,
+// and injects runtime.js, compiled actions, custom CSS, and the route
+// graph — but skips the SSE meta tag because there is no live session.
+// The result is safe to write to disk and serve from any static host.
+func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
+	html, err := ds.App.RenderPageContext(ctx, path)
+	if err != nil {
+		return "", err
 	}
-
-	// Inject custom CSS (theme CSS vars already in <head> from App.RenderPage)
-	if ds.customCSS != "" {
-		cssTag := fmt.Sprintf("<style>%s</style>", ds.customCSS)
-		page = strings.Replace(page, "</head>", cssTag+"\n</head>", 1)
-	}
-
-	// Inject route graph (auto-built from registered screens)
-	if rgScript := ds.buildRouteScript(); rgScript != "" {
-		page = strings.Replace(page, "</head>", rgScript+"\n</head>", 1)
-	}
-
-	return page, nil
+	return ds.injectChrome(string(html), ""), nil
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript

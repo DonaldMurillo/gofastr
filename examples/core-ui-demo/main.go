@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,10 +12,23 @@ import (
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core/render"
+	"github.com/gofastr/gofastr/framework/static"
 	"github.com/gofastr/gofastr/framework/uihost"
 )
 
 func main() {
+	var (
+		buildStatic = flag.String("build-static", "", "output dir for static-site generation; empty = serve")
+		watch       = flag.Bool("watch", false, "with --build-static, rebuild on file changes")
+		watchInt    = flag.Duration("watch-interval", 500*time.Millisecond, "polling interval for --watch")
+	)
+	flag.Parse()
+
+	if *buildStatic != "" {
+		runBuildStatic(*buildStatic, *watch, *watchInt)
+		return
+	}
+
 	addr := ":8080"
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port
@@ -84,6 +98,43 @@ func liveIslandUpdater(host *uihost.UIHost) {
 		html := isl.Update()
 		host.PushUpdate(isl.ID, string(html), sess.ID)
 	}
+}
+
+func runBuildStatic(out string, watch bool, interval time.Duration) {
+	_, host := setupServer()
+	builder := &static.Builder{
+		Host:   host,
+		OutDir: out,
+		Logger: func(format string, args ...any) {
+			fmt.Printf("  "+format+"\n", args...)
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\nStopping watcher...")
+		cancel()
+	}()
+
+	if !watch {
+		res, err := builder.Build(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "build-static: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\nBuilt %d page(s) and %d asset(s) into %s\n", len(res.Pages), len(res.Assets), out)
+		return
+	}
+
+	fmt.Printf("Watching for changes (interval=%s)...\n", interval)
+	_ = builder.Watch(ctx, []string{"."}, interval, func(err error) {
+		fmt.Fprintf(os.Stderr, "  build error: %v\n", err)
+	})
 }
 
 // Ensure unused imports are satisfied

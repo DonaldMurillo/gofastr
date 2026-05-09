@@ -1,6 +1,9 @@
 package app
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -717,5 +720,91 @@ func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
 	// Screen should not have accumulated params from previous resolve
 	if screen.RouteParams() != nil {
 		t.Errorf("shared screen should not have stale params, got %v", screen.RouteParams())
+	}
+}
+
+// loaderComponent records that Load ran and remembers the context, so the
+// test can assert on cancellation propagation and ordering vs Render.
+type loaderComponent struct {
+	loadCalls int
+	gotCtx    context.Context
+	failWith  error
+	body      string
+}
+
+func (l *loaderComponent) Load(ctx context.Context) error {
+	l.loadCalls++
+	l.gotCtx = ctx
+	if l.failWith != nil {
+		return l.failWith
+	}
+	return nil
+}
+
+func (l *loaderComponent) Render() render.HTML {
+	return render.HTML(fmt.Sprintf(`<div data-loaded="%d">%s</div>`, l.loadCalls, l.body))
+}
+
+func TestRenderPageContextRunsLoaderBeforeRender(t *testing.T) {
+	a := NewApp("LoaderApp")
+	loader := &loaderComponent{body: "after-load"}
+	a.Register("/p", loader, nil)
+
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, "marker")
+
+	html, err := a.RenderPageContext(ctx, "/p")
+	if err != nil {
+		t.Fatalf("RenderPageContext: %v", err)
+	}
+	if loader.loadCalls != 1 {
+		t.Errorf("Load should run exactly once, got %d", loader.loadCalls)
+	}
+	if loader.gotCtx == nil || loader.gotCtx.Value(ctxKey{}) != "marker" {
+		t.Errorf("Load did not receive the caller's context")
+	}
+	if !strings.Contains(string(html), "after-load") {
+		t.Errorf("rendered HTML missing loader output: %s", html)
+	}
+	if !strings.Contains(string(html), `data-loaded="1"`) {
+		t.Errorf("expected Render to observe loadCalls=1: %s", html)
+	}
+}
+
+func TestRenderPageContextPropagatesLoadError(t *testing.T) {
+	a := NewApp("LoaderApp")
+	want := errors.New("boom")
+	a.Register("/p", &loaderComponent{failWith: want}, nil)
+
+	_, err := a.RenderPageContext(context.Background(), "/p")
+	if err == nil || !errors.Is(err, want) {
+		t.Errorf("expected wrapped %v, got %v", want, err)
+	}
+}
+
+func TestRenderPartialContextRunsLoader(t *testing.T) {
+	a := NewApp("LoaderApp")
+	loader := &loaderComponent{body: "partial"}
+	a.Register("/p", loader, nil)
+
+	if _, err := a.RenderPartialContext(context.Background(), "/p"); err != nil {
+		t.Fatalf("RenderPartialContext: %v", err)
+	}
+	if loader.loadCalls != 1 {
+		t.Errorf("expected Load to run once for partials, got %d", loader.loadCalls)
+	}
+}
+
+func TestRenderPageNoContextStillWorks(t *testing.T) {
+	// The no-ctx wrappers must continue to work; they substitute a Background ctx.
+	a := NewApp("LoaderApp")
+	loader := &loaderComponent{body: "no-ctx"}
+	a.Register("/p", loader, nil)
+
+	if _, err := a.RenderPage("/p"); err != nil {
+		t.Fatalf("RenderPage: %v", err)
+	}
+	if loader.gotCtx == nil {
+		t.Errorf("Load should still receive a non-nil context (Background)")
 	}
 }
