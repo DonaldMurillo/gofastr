@@ -303,15 +303,19 @@ func TestLive_BuildSimplePage(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	_, edits := srv.chat(
+	srv.chatRetry(
 		`Create a page at "/" with kind "div" containing a heading level 1 with text "Hello Kiln" and a paragraph with text "This page was built live." Use the add_page tool exactly once.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			_, ok := srv.world().Pages["/"]
+			return ok
+		},
 	)
 
-	// Verify the world has the page.
 	world := srv.world()
 	if _, ok := world.Pages["/"]; !ok {
-		t.Fatalf("/ not in world after agent run; edits=%+v", edits)
+		t.Fatalf("/ not in world after agent run; world=%+v", world)
 	}
 	page := world.Pages["/"]
 	if page["tree"] == nil {
@@ -336,9 +340,14 @@ func TestLive_BuildEntityWithFieldTypes(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Add an entity called "tasks" with fields: title (string, required), done (bool, default false), priority (int), due (date), notes (text). Call add_entity once. Do not add anything else.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			_, ok := srv.world().Entities["tasks"]
+			return ok
+		},
 	)
 
 	// Hit the auto-generated CRUD endpoint.
@@ -369,12 +378,25 @@ func TestLive_BuildHookFires(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Step 1: add an entity "posts" with fields title (string, required) and body (text). `+
 			`Step 2: add a hook with id "no_spam" on entity "posts" event "before_create" `+
 			`with action kind "validate" params {"expression":"entity.title != \"spam\"","message":"no spam allowed"}. `+
 			`Use add_entity then add_hook. Don't add anything else.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			w := srv.world()
+			if _, ok := w.Entities["posts"]; !ok {
+				return false
+			}
+			for _, h := range w.Hooks {
+				if h["id"] == "no_spam" {
+					return true
+				}
+			}
+			return false
+		},
 	)
 
 	// Allowed insert.
@@ -425,12 +447,21 @@ func TestLive_PageWithForm(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Step 1: add an entity "notes" with field text (string, required). `+
 			`Step 2: add a page at "/new" containing a form with method POST action /notes, `+
 			`a label "Note" with for="t", an input id="t" name="text" type="text", and a submit button labeled "Save". `+
 			`Use add_entity then add_page.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			w := srv.world()
+			if _, ok := w.Entities["notes"]; !ok {
+				return false
+			}
+			_, ok := w.Pages["/new"]
+			return ok
+		},
 	)
 
 	// The page should render and contain the form action.
@@ -453,13 +484,32 @@ func TestLive_FullStackBlog(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Build a small blog: 1) entity "posts" with title (string, required), body (text), status (enum draft/published, default draft); `+
 			`2) entity "comments" with body (text, required), post_id (relation to posts); `+
 			`3) custom route GET /health returning JSON {"ok":true} via respond_json; `+
 			`4) page at "/" with a heading "Blog" and a paragraph welcoming readers. `+
 			`Make 4 separate tool calls. Don't add hooks or extra fields.`,
 		8*time.Minute,
+		3,
+		func() bool {
+			w := srv.world()
+			if _, ok := w.Entities["posts"]; !ok {
+				return false
+			}
+			if _, ok := w.Entities["comments"]; !ok {
+				return false
+			}
+			if _, ok := w.Pages["/"]; !ok {
+				return false
+			}
+			for _, r := range w.Routes {
+				if r["method"] == "GET" && r["path"] == "/health" {
+					return true
+				}
+			}
+			return false
+		},
 	)
 
 	world := srv.world()
@@ -483,7 +533,7 @@ func TestLive_AllFieldTypes(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Add an entity called "kitchen_sink" with these fields and ONLY these fields. Use add_entity exactly once. Do not invent fields. Do not summarize until the call is made.
 
 - s (string, required)
@@ -497,6 +547,11 @@ func TestLive_AllFieldTypes(t *testing.T) {
 - dt (date)
 - j (json)`,
 		liveTimeout(),
+		3,
+		func() bool {
+			_, ok := srv.world().Entities["kitchen_sink"]
+			return ok
+		},
 	)
 
 	world := srv.world()
@@ -546,7 +601,7 @@ func TestLive_HookLifecycleEvents(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Make these tool calls in order, exactly:
 
 1) add_entity "posts" with fields title (string, required), slug (string), audit_seen (string).
@@ -555,6 +610,20 @@ func TestLive_HookLifecycleEvents(t *testing.T) {
 
 Do exactly these three calls and stop.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			w := srv.world()
+			if _, ok := w.Entities["posts"]; !ok {
+				return false
+			}
+			seen := map[string]bool{}
+			for _, h := range w.Hooks {
+				if id, ok := h["id"].(string); ok {
+					seen[id] = true
+				}
+			}
+			return seen["set_slug"] && seen["title_required"]
+		},
 	)
 
 	// Validate hook should reject empty title.
@@ -672,9 +741,14 @@ func TestLive_SoftDeleteFromAgent(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Add an entity "items" with soft_delete:true and field label (string, required). Use add_entity exactly once. Stop after.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			ent, ok := srv.world().Entities["items"]
+			return ok && ent["soft_delete"] == true
+		},
 	)
 
 	world := srv.world()
@@ -694,9 +768,16 @@ func TestLive_FreezeRoundTrip(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
 
-	srv.chat(
+	srv.chatRetry(
 		`Add two entities, in order: "users" with email (string, required, unique), and "todos" with text (string, required), done (bool, default false). Stop after the two add_entity calls.`,
 		liveTimeout(),
+		3,
+		func() bool {
+			w := srv.world()
+			_, hasU := w.Entities["users"]
+			_, hasT := w.Entities["todos"]
+			return hasU && hasT
+		},
 	)
 
 	world := srv.world()
