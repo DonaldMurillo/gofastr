@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -79,6 +81,7 @@ func (s *Server) Mount(r *router.Router) {
 	r.Get("/kiln/chat/widget.css", http.HandlerFunc(s.serveWidgetCSS))
 	r.Get("/kiln/chat/base.css", http.HandlerFunc(s.serveBaseCSS))
 	r.Get("/kiln/world", http.HandlerFunc(s.serveWorld))
+	r.Get("/kiln/status", http.HandlerFunc(s.serveStatus))
 	r.Post("/kiln/chat/message", http.HandlerFunc(s.serveChatMessage))
 	r.Post("/kiln/tool/{name}", http.HandlerFunc(s.serveToolDispatch))
 	r.Get("/.kiln/events", http.HandlerFunc(s.live.ServeSSE))
@@ -104,6 +107,128 @@ func (s *Server) serveBaseCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, baseCSS())
+}
+
+// serveStatus returns a focused snapshot of the live runtime, ideal for
+// programmatic introspection ("what is the agent doing right now?").
+//
+// By default the response includes:
+//
+//	{
+//	  "counts":     { entities:N, pages:N, hooks:N, routes:N, seeds:N, plans:N, chat:N },
+//	  "last_user":      <ChatEvent or null>,
+//	  "last_assistant": <ChatEvent or null>,
+//	  "pending_plans":  [<Plan with !Approved && !Rejected> …],
+//	  "recent":         [<last 10 chat events, oldest first>]
+//	}
+//
+// Caller can shape the response with ?fields=counts,recent,…
+// (comma-separated). Unknown fields are ignored. ?recent_n=N caps the
+// recent list (default 10, max 200). Sensible defaults so the bare
+// /kiln/status call returns something useful.
+//
+// Available fields: counts, last_user, last_assistant, pending_plans,
+// recent, world, plans, chat, app.
+func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
+	sess := s.live.Session()
+
+	// Parse field selector.
+	want := map[string]bool{}
+	if raw := r.URL.Query().Get("fields"); raw != "" {
+		for _, f := range strings.Split(raw, ",") {
+			f = strings.TrimSpace(f)
+			if f != "" {
+				want[f] = true
+			}
+		}
+	} else {
+		// Defaults: the high-signal subset.
+		for _, f := range []string{"counts", "last_user", "last_assistant", "pending_plans", "recent"} {
+			want[f] = true
+		}
+	}
+
+	recentN := 10
+	if raw := r.URL.Query().Get("recent_n"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			if n > 200 {
+				n = 200
+			}
+			recentN = n
+		}
+	}
+
+	out := map[string]any{}
+
+	if want["counts"] {
+		out["counts"] = map[string]int{
+			"entities": len(sess.World.Entities),
+			"pages":    len(sess.World.Pages),
+			"hooks":    len(sess.World.Hooks),
+			"routes":   len(sess.World.Routes),
+			"seeds":    len(sess.World.Seeds),
+			"plans":    len(sess.Plans),
+			"chat":     len(sess.Chat),
+		}
+	}
+
+	if want["last_user"] || want["last_assistant"] {
+		var lastUser, lastAssistant *journal.ChatEvent
+		for i := len(sess.Chat) - 1; i >= 0; i-- {
+			e := sess.Chat[i]
+			if lastUser == nil && e.Kind == journal.KindChatUser {
+				cp := e
+				lastUser = &cp
+			}
+			if lastAssistant == nil && e.Kind == journal.KindChatAssistant {
+				cp := e
+				lastAssistant = &cp
+			}
+			if lastUser != nil && lastAssistant != nil {
+				break
+			}
+		}
+		if want["last_user"] {
+			out["last_user"] = lastUser
+		}
+		if want["last_assistant"] {
+			out["last_assistant"] = lastAssistant
+		}
+	}
+
+	if want["pending_plans"] {
+		pending := []*journal.Plan{}
+		for _, p := range sess.Plans {
+			if !p.Approved && !p.Rejected {
+				pending = append(pending, p)
+			}
+		}
+		out["pending_plans"] = pending
+	}
+
+	if want["recent"] {
+		start := len(sess.Chat) - recentN
+		if start < 0 {
+			start = 0
+		}
+		out["recent"] = sess.Chat[start:]
+	}
+
+	if want["world"] {
+		out["world"] = sess.World
+	}
+	if want["plans"] {
+		out["plans"] = sess.Plans
+	}
+	if want["chat"] {
+		out["chat"] = sess.Chat
+	}
+	if want["app"] {
+		out["app"] = sess.World.App
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) serveWorld(w http.ResponseWriter, _ *http.Request) {

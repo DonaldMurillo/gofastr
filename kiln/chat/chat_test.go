@@ -129,6 +129,124 @@ func TestWorldEndpointReturnsJSON(t *testing.T) {
 	}
 }
 
+func TestStatusEndpointDefaults(t *testing.T) {
+	l, tools := setup(t)
+	tools.AddEntity(t.Context(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
+	})
+	tools.Chat(t.Context(), protocol.ChatArgs{Role: "user", Text: "hi"})
+	tools.Chat(t.Context(), protocol.ChatArgs{Role: "assistant", Text: "hello!"})
+	tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
+		PlanID: "p-pending", Steps: []string{"think"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/kiln/status", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status code = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, rec.Body.String())
+	}
+
+	// Defaults: counts, last_user, last_assistant, pending_plans, recent.
+	for _, want := range []string{"counts", "last_user", "last_assistant", "pending_plans", "recent"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("default response missing %q: %v", want, got)
+		}
+	}
+	// Default does NOT include heavy fields.
+	for _, unwanted := range []string{"world", "plans", "chat"} {
+		if _, ok := got[unwanted]; ok {
+			t.Errorf("default response should not include %q (caller didn't ask): %v", unwanted, got)
+		}
+	}
+
+	// counts shape sanity.
+	counts, _ := got["counts"].(map[string]any)
+	if counts["entities"].(float64) != 1 {
+		t.Errorf("entities count = %v, want 1", counts["entities"])
+	}
+	if counts["plans"].(float64) != 1 {
+		t.Errorf("plans count = %v, want 1", counts["plans"])
+	}
+	if counts["chat"].(float64) != 2 {
+		t.Errorf("chat count = %v, want 2", counts["chat"])
+	}
+
+	// last_user / last_assistant shape sanity.
+	lu, _ := got["last_user"].(map[string]any)
+	if lu == nil || lu["message"] == nil {
+		t.Errorf("last_user missing or empty: %v", got["last_user"])
+	}
+	la, _ := got["last_assistant"].(map[string]any)
+	if la == nil || la["message"] == nil {
+		t.Errorf("last_assistant missing: %v", got["last_assistant"])
+	}
+
+	// pending_plans contains the un-decided one.
+	pending, _ := got["pending_plans"].([]any)
+	if len(pending) != 1 {
+		t.Errorf("pending_plans count = %d, want 1", len(pending))
+	}
+}
+
+func TestStatusEndpointFieldsParam(t *testing.T) {
+	l, tools := setup(t)
+	tools.AddEntity(t.Context(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
+	})
+
+	// Only counts.
+	req := httptest.NewRequest(http.MethodGet, "/kiln/status?fields=counts", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if _, ok := got["counts"]; !ok {
+		t.Errorf("counts missing under fields=counts: %v", got)
+	}
+	if _, ok := got["recent"]; ok {
+		t.Errorf("recent should not appear when not requested: %v", got)
+	}
+	if _, ok := got["last_user"]; ok {
+		t.Errorf("last_user should not appear when not requested: %v", got)
+	}
+
+	// world only — heavy field, opt-in.
+	req = httptest.NewRequest(http.MethodGet, "/kiln/status?fields=world", nil)
+	rec = httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	got = map[string]any{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	w, ok := got["world"].(map[string]any)
+	if !ok {
+		t.Fatalf("world missing under fields=world: %v", got)
+	}
+	if _, hit := w["entities"].(map[string]any); !hit {
+		t.Errorf("world.entities missing: %v", w)
+	}
+}
+
+func TestStatusEndpointRecentN(t *testing.T) {
+	l, tools := setup(t)
+	for i := 0; i < 25; i++ {
+		tools.Chat(t.Context(), protocol.ChatArgs{Role: "user", Text: "msg"})
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/kiln/status?fields=recent&recent_n=5", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	recent, _ := got["recent"].([]any)
+	if len(recent) != 5 {
+		t.Errorf("recent length = %d, want 5", len(recent))
+	}
+}
+
 func TestToolDispatchHappyPath(t *testing.T) {
 	l, _ := setup(t)
 	body := bytes.NewBufferString(`{"entity":{"name":"posts","fields":[{"name":"title","type":"string"}]}}`)

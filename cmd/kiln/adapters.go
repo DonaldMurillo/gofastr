@@ -27,10 +27,16 @@ type Adapter struct {
 var adapters = map[string]Adapter{
 	"claude-code": {
 		Name:    "claude-code",
-		Display: "claude --print  (Claude Code, reads ~/.claude/.credentials.json)",
+		Display: "claude --print --dangerously-skip-permissions  (Claude Code, reads ~/.claude/.credentials.json)",
 		Detect:  func() bool { _, err := exec.LookPath("claude"); return err == nil },
 		BuildArgs: func(text string) []string {
-			return []string{"claude", "--print", text}
+			// --dangerously-skip-permissions is required for non-interactive
+			// runs — without it claude --print hangs at the first Bash/Edit
+			// tool-use waiting for a permission prompt that nobody can answer.
+			// Kiln invokes Claude in a controlled, kiln-scoped session, and
+			// the only "tool" the agent uses is curl against $KILN_URL, so
+			// bypassing the prompt is correct.
+			return []string{"claude", "--print", "--dangerously-skip-permissions", text}
 		},
 	},
 	"pi": {
