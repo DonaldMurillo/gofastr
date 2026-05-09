@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kiln</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: radial-gradient(ellipse at top, #1d2230 0%, #0e0f12 60%);
+    color: #e6e8eb;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .kiln-host {
+    min-height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 48px 24px 360px; gap: 18px; text-align: center;
+  }
+  .kiln-mark {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, #4f8cff 0%, #6f5cff 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 600; color: white;
+    box-shadow: 0 12px 36px rgba(79, 140, 255, 0.35);
+  }
+  .kiln-host h1 { margin: 0; font-weight: 600; font-size: 22px; letter-spacing: 0.2px; }
+  .kiln-host p.lead { margin: 0; color: #b3b9c4; max-width: 44ch; font-size: 14px; }
+  .kiln-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px; width: min(720px, 100%); margin-top: 12px;
+  }
+  .kiln-card {
+    text-align: left; padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+  }
+  .kiln-card h2 { margin: 0 0 6px 0; font-size: 12px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: #9aa0a6; }
+  .kiln-card p { margin: 0; color: #b3b9c4; font-size: 13px; }
+  .kiln-card code {
+    display: block; margin-top: 8px; padding: 8px 10px;
+    background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px; font: 11px/1.45 ui-monospace, monospace;
+    color: #c2cad9; white-space: pre-wrap; word-break: break-word;
+  }
+  .kiln-host .hint { color: #6b7280; font-size: 12px; margin-top: 8px; }
+  .kiln-host .hint code {
+    background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;
+    font-family: ui-monospace, monospace;
+  }
+</style>
+</head>
+<body>
+<div class="kiln-host">
+  <div class="kiln-mark">✶</div>
+  <h1>Kiln</h1>
+  <p class="lead">Empty world. Drive the build by chatting with an agent in the floating panel, or by calling the tool API directly. Every change journals + re-renders live.</p>
+
+  <div class="kiln-cards">
+    <div class="kiln-card">
+      <h2>Talk to it</h2>
+      <p>The widget in the corner streams chat through to whichever agent you've wired up. Type a goal and it builds.</p>
+    </div>
+    <div class="kiln-card">
+      <h2>Or curl it</h2>
+      <p>Same surface, scriptable from any terminal:</p>
+      <code>curl -X POST http://localhost:8765/kiln/tool/add_entity \
+  -H 'Content-Type: application/json' \
+  -d '{"entity":{"name":"posts","fields":[
+        {"name":"title","type":"string","required":true}]}}'</code>
+    </div>
+    <div class="kiln-card">
+      <h2>Watch live</h2>
+      <p>Every edit journals to <code style="display:inline">.kiln.session.jsonl</code>, migrates SQLite, and broadcasts SSE so the panel updates in real time.</p>
+    </div>
+  </div>
+
+  <p class="hint">Open <code>/kiln/world</code> to see the current IR · agent shortcut <code>kiln agent -p "build me X"</code></p>
+</div>
+<script src="/kiln/chat/widget.js" data-corner="bottom-right" data-remember="true" data-open="true"></script>
+</body>
+</html>

@@ -129,14 +129,54 @@ gofastr build                       Generate then go build
 gofastr migrate up | down | status  Run versioned migrations
 ```
 
+### `kiln/` — agent-driven build-mode runtime
+
+Build a GoFastr app live by chatting with an external agent (Claude Code, Codex, Cursor, Pi). The agent calls Kiln's tool surface; the world IR mutates; the running app re-renders; the schema migrates — all in-process. Freeze when done to emit canonical `entities/*.json` you can drop into a regular GoFastr project.
+
+```bash
+go install ./cmd/kiln
+
+kiln agent -p "build me a blog"   # starts kiln serve, installs skill, execs pi
+kiln serve                        # HTTP only — open http://localhost:8765/kiln/chat
+kiln mcp                          # MCP over stdio (subprocess harnesses)
+kiln acp                          # ACP over stdio
+```
+
+`kiln agent` is the turnkey path: it starts a managed `kiln serve` subprocess in the current directory, waits for the HTTP server to come online, exports `KILN_URL` into the environment, ensures `~/.claude/skills/kiln/SKILL.md` is installed (so pi automatically loads framework knowledge), then execs `pi` with whatever args you pass. Pi reads the skill, sees `$KILN_URL`, and drives the build with curl-against-HTTP — no MCP startup race. The serve subprocess is SIGTERM'd on pi exit; you watch the live preview at <http://localhost:8765/kiln/chat>.
+
+Wire into Claude Code instead:
+
+```json
+{
+  "mcpServers": {
+    "kiln": { "command": "kiln", "args": ["mcp", "--no-http"] }
+  }
+}
+```
+
+Or hit it via HTTP directly:
+
+```bash
+kiln serve --addr :8765 &
+curl -X POST http://localhost:8765/kiln/tool/add_entity \
+  -H 'Content-Type: application/json' \
+  -d '{"entity":{"name":"posts","fields":[{"name":"title","type":"string","required":true}]}}'
+curl http://localhost:8765/posts            # CRUD live
+curl http://localhost:8765/kiln/world      # current IR
+```
+
+Tools: `add_entity`, `update_entity`, `delete_entity`, `add_field`, `delete_field`, `add_page`, `delete_page`, `add_hook`, `delete_hook`, `add_route`, `delete_route`, `add_seed`, `set_app_config`, `propose_plan`, `approve_plan`, `undo`, `world_get`, `chat`. See `kiln/protocol/descriptors.go` for full schemas.
+
 ## Repository layout
 
 ```
 core/        stdlib-only primitives (router, query, mcp, openapi, …)
 framework/   entity system, app wiring, declarations, query DSL, hooks
 core-ui/     server-driven UI runtime (signals, components, islands)
+kiln/       agent-driven build-mode runtime + chat panel + MCP/ACP servers
 battery/     pluggable infra (auth, cache, email, queue, search, storage)
 cmd/gofastr/ CLI: generate, build, migrate
+cmd/kiln/   CLI: serve, mcp, acp
 docs/        feature docs (entity declarations, migrations, query DSL, …)
 examples/    blog, core-ui-demo, demo, spa, static-site
 plan/        proposal-driven task tracker

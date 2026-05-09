@@ -1,0 +1,233 @@
+package chat_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/gofastr/gofastr/kiln/chat"
+	"github.com/gofastr/gofastr/kiln/db"
+	"github.com/gofastr/gofastr/kiln/journal"
+	"github.com/gofastr/gofastr/kiln/live"
+	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/gofastr/gofastr/framework"
+)
+
+func setup(t *testing.T) (*live.Live, *protocol.Tools) {
+	t.Helper()
+	d, cleanup, err := db.EphemeralSQLite("kiln-chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	factory := func() *framework.App { return framework.NewApp(framework.WithDB(d)) }
+	l, err := live.New(journal.NewMemory(), factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := protocol.New(l)
+	srv := chat.New(l, tools)
+	srv.Mount(l.Aux())
+	l.SetFallbackHTML(chat.HostHTML())
+	return l, tools
+}
+
+func TestHostFallbackOnUnmappedHTMLPath(t *testing.T) {
+	l, _ := setup(t)
+	for _, path := range []string{"/", "/anything", "/random/junk"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/html")
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", path, rec.Code)
+		}
+		body := rec.Body.String()
+		for _, want := range []string{"Kiln", "/kiln/chat/widget.js", "data-corner"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s body missing %q: %s", path, want, body)
+			}
+		}
+	}
+}
+
+func TestNonHTMLPathStill404s(t *testing.T) {
+	l, _ := setup(t)
+	req := httptest.NewRequest(http.MethodGet, "/some/api/endpoint", nil)
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for JSON request, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWidgetJSServed(t *testing.T) {
+	l, _ := setup(t)
+	req := httptest.NewRequest(http.MethodGet, "/kiln/chat/widget.js", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {
+		t.Errorf("content-type = %q", ct)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"EventSource", "kiln-widget", "kiln-fab", "kiln-corner"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("widget.js missing %q", want)
+		}
+	}
+}
+
+func TestWidgetCSSServed(t *testing.T) {
+	l, _ := setup(t)
+	req := httptest.NewRequest(http.MethodGet, "/kiln/chat/widget.css", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{".kiln-widget", ".kiln-panel", "backdrop-filter", ".kiln-corner-bottom-right"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("widget.css missing %q", want)
+		}
+	}
+}
+
+func TestWorldEndpointReturnsJSON(t *testing.T) {
+	l, tools := setup(t)
+	tools.AddEntity(t.Context(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/kiln/world", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, rec.Body.String())
+	}
+	w, ok := got["world"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing world: %v", got)
+	}
+	ents, _ := w["entities"].(map[string]any)
+	if _, hit := ents["posts"]; !hit {
+		t.Errorf("posts missing: %v", w)
+	}
+}
+
+func TestToolDispatchHappyPath(t *testing.T) {
+	l, _ := setup(t)
+	body := bytes.NewBufferString(`{"entity":{"name":"posts","fields":[{"name":"title","type":"string"}]}}`)
+	req := httptest.NewRequest(http.MethodPost, "/kiln/tool/add_entity", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var res protocol.Result
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !res.OK {
+		t.Errorf("expected OK, got %+v", res)
+	}
+}
+
+func TestToolDispatchUnknownTool(t *testing.T) {
+	l, _ := setup(t)
+	body := bytes.NewBufferString(`{}`)
+	req := httptest.NewRequest(http.MethodPost, "/kiln/tool/not_real", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected non-200 for unknown tool, got %d", rec.Code)
+	}
+}
+
+func TestToolDispatchInvalidJSON(t *testing.T) {
+	l, _ := setup(t)
+	body := bytes.NewBufferString(`not json`)
+	req := httptest.NewRequest(http.MethodPost, "/kiln/tool/add_entity", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Errorf("invalid JSON should fail, got %d", rec.Code)
+	}
+}
+
+func TestChatMessageEndpoint(t *testing.T) {
+	l, _ := setup(t)
+	body := bytes.NewBufferString(`{"role":"user","text":"hello"}`)
+	req := httptest.NewRequest(http.MethodPost, "/kiln/chat/message", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestChatPanelSurvivesRebuild(t *testing.T) {
+	l, tools := setup(t)
+	// Trigger a rebuild via a world edit.
+	tools.AddEntity(t.Context(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "x", Fields: []world.Field{{Name: "y", Type: "string"}}},
+	})
+	// Panel assets and host fallback should still respond.
+	for _, path := range []string{"/kiln/chat/widget.js", "/kiln/chat/widget.css"} {
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("after rebuild, %s = %d", path, rec.Code)
+		}
+	}
+	// Host fallback still serves on unmapped HTML paths.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("after rebuild, / fallback = %d", rec.Code)
+	}
+}
+
+func TestSSEMountedOnAux(t *testing.T) {
+	// SSE handler must be reachable via aux router so it survives rebuilds.
+	// Run against a real httptest.Server so the connection can be closed.
+	l, _ := setup(t)
+	srv := httptest.NewServer(l)
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/.kiln/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		t.Errorf(".kiln/events should be mounted on aux, got 404")
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+	cancel() // close the stream
+}

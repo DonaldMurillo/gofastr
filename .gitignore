@@ -93,3 +93,7 @@ research-ui-approaches.md
 # pi agent state (auto-added)
 pi-agent/plugins/*
 !pi-agent/plugins/registry.json
+
+# kiln per-session journal (write-time state, not source)
+.kiln.session.jsonl
+.kiln.session.jsonl.bak
