@@ -20,9 +20,13 @@ import (
 // command's stdout is captured and journaled as chat_assistant so the
 // floating panel renders the agent's reply.
 //
-// Spawn semantics: serialized — at most one agent runs at a time. If a
-// second chat_user arrives while the first is still running, it queues
-// behind. This matches the user's mental model of a turn-by-turn chat.
+// Spawn semantics: cancel-and-replace. A second chat_user that arrives
+// while the first turn is still running CANCELS the first via context
+// cancellation (which kills the subprocess tree on Unix) and starts the
+// new one. The cancelled turn journals a synthetic "(superseded …)"
+// note so the panel's thinking indicator clears and the user sees what
+// happened. Anything the cancelled turn already wrote to the journal
+// stays — Kiln's world is append-only, so partial work persists.
 func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, cmd, addr string) {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
@@ -38,10 +42,19 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 	ch, unsub := l.Subscribe()
 	defer unsub()
 
-	var serial sync.Mutex
+	var (
+		mu       sync.Mutex
+		curCtx   context.Context
+		curCancl context.CancelFunc
+	)
 	for {
 		select {
 		case <-ctx.Done():
+			mu.Lock()
+			if curCancl != nil {
+				curCancl()
+			}
+			mu.Unlock()
 			return
 		case ev, ok := <-ch:
 			if !ok {
@@ -50,16 +63,33 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 			if ev.Kind != string(journal.KindChatUser) {
 				continue
 			}
-			// Find the matching chat event in the session and pull its text.
 			text := chatTextByEntryID(l, ev.EntryID)
 			if text == "" {
 				continue
 			}
-			go func(text string) {
-				serial.Lock()
-				defer serial.Unlock()
-				runOneAgentTurn(ctx, logger, tools, parts, kilnURL, text)
-			}(text)
+
+			mu.Lock()
+			if curCancl != nil {
+				// Supersede the in-flight turn. The goroutine running
+				// runOneAgentTurn will see ctx.Err() != nil after Output
+				// returns and journal a (superseded) note.
+				curCancl()
+			}
+			turnCtx, cancel := context.WithCancel(ctx)
+			curCtx = turnCtx
+			curCancl = cancel
+			mu.Unlock()
+
+			go func(turnCtx context.Context, cancel context.CancelFunc, text string) {
+				defer cancel()
+				runOneAgentTurn(turnCtx, logger, tools, parts, kilnURL, text)
+				// Clear curCancl if it still points at this turn.
+				mu.Lock()
+				if curCtx == turnCtx {
+					curCtx, curCancl = nil, nil
+				}
+				mu.Unlock()
+			}(turnCtx, cancel, text)
 		}
 	}
 }
@@ -113,6 +143,20 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	c.Stderr = os.Stderr // surface diagnostic output to the kiln operator
 	out, err := c.Output()
 	resp := strings.TrimSpace(string(out))
+
+	// Cancellation path: a newer chat_user superseded this turn. Use a
+	// fresh context for the journal write — the original ctx is done.
+	// Skip "agent error" journaling because the kill is intentional.
+	if ctx.Err() != nil {
+		logger.Printf("agent: superseded by newer message")
+		// Use Background so the synthetic note still lands after cancel.
+		_ = tools.Chat(context.Background(), protocol.ChatArgs{
+			Role: "assistant",
+			Text: "(superseded by newer message — partial work above is preserved)",
+		})
+		return
+	}
+
 	if err != nil {
 		logger.Printf("agent: %v", err)
 		if resp == "" {
