@@ -426,6 +426,22 @@ func widgetCSS() string {
 	ss.Rule(".kiln-modal-title").
 		Set("margin", "0", "font-size", "14px", "font-weight", "600").
 		End()
+	ss.Rule(".kiln-kbd").
+		Set(
+			"display", "inline-block",
+			"margin-left", "6px",
+			"padding", "1px 5px",
+			"font-family", "ui-monospace, monospace",
+			"font-size", "10px",
+			"background", "rgba(255, 255, 255, 0.06)",
+			"border", "1px solid rgba(255, 255, 255, 0.15)",
+			"border-bottom-width", "2px",
+			"border-radius", "3px",
+			"color", "rgba(220, 225, 235, 0.85)",
+			"vertical-align", "1px",
+		).
+		End()
+
 	ss.Rule(".kiln-modal-tip").
 		Set(
 			"margin", "8px 0",

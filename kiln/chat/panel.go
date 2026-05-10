@@ -150,7 +150,7 @@ func (pe *panelEnv) resetConfirmHTML() string {
 		`<p class="kiln-modal-sub">Currently live: <strong data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</strong>. Reset wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
 		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal — emits a review summary you can paste into a commit message before resetting.</p>` +
 		`<div class="kiln-modal-actions">` +
-		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel</button>` +
+		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel <kbd class="kiln-kbd">Esc</kbd></button>` +
 		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-close>Reset</button>` +
 		`</div>` +
 		`</div>`
@@ -168,7 +168,7 @@ func (pe *panelEnv) agentSettingsHTML() string {
 		`<p class="kiln-modal-sub">Pick which CLI agent kiln spawns when you send a message.</p>` +
 		`<div class="kiln-modal-body" id="kiln-agent-list" data-fui-signal="agent_list_html" data-fui-signal-mode="html">Loading…</div>` +
 		`<div class="kiln-modal-actions">` +
-		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close</button>` +
+		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close <kbd class="kiln-kbd">Esc</kbd></button>` +
 		`</div>` +
 		`</div>`
 }
