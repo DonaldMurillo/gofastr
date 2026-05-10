@@ -522,10 +522,12 @@
       }
 
       // Click-to-fill: any clickable element with
-      // data-fui-fill-input="<selector>" copies its textContent
-      // into the matching input/textarea on click, focuses it, and
-      // fires an input event so any validity wiring re-syncs.
-      // Useful for quick-start example buttons.
+      // data-fui-fill-input="<selector>" copies a value into the
+      // matching input/textarea on click, focuses it, and fires
+      // an input event so any validity wiring re-syncs. The value
+      // defaults to the button's textContent; override with
+      // data-fui-fill-text="<explicit text>" for cases where the
+      // button label and the prompt should differ.
       widgetEl.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-fui-fill-input]');
         if (!btn || !widgetEl.contains(btn)) return;
@@ -534,7 +536,8 @@
         const target = widgetEl.querySelector(sel) || document.querySelector(sel);
         if (!target) return;
         e.preventDefault();
-        target.value = btn.textContent.trim();
+        const explicit = btn.getAttribute('data-fui-fill-text');
+        target.value = explicit !== null ? explicit : btn.textContent.trim();
         target.dispatchEvent(new Event('input', { bubbles: true }));
         try { target.focus(); target.select?.(); } catch (_) {}
       });

@@ -2788,6 +2788,44 @@ func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 	t.Errorf("stop button stayed visible after cancel click")
 }
 
+// Plan card has a Modify button that pre-fills the input with a
+// refinement prompt so users have a third option besides binary
+// Approve/Reject.
+func TestBrowser_PlanCardModifyPrefillsInput(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID:  "p-tweak",
+		Steps:   []string{"add field email to users"},
+		Targets: []journal.PlanTarget{{Op: "add_field", Name: "users.email"}},
+	})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-plan-btn-modify`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-plan-btn-modify`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var v string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.querySelector('.kiln-input').value`, &v))
+		if strings.HasPrefix(v, "Refine plan p-tweak:") {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var got string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-input').value`, &got))
+	t.Errorf("Modify did not prefill input with 'Refine plan p-tweak:'; got %q", got)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

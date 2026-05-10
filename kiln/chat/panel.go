@@ -699,6 +699,9 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 		}
 		b.WriteString(`</div>`)
 	default:
+		// Approve / Reject / Modify. Modify pre-fills the input with
+		// a refinement prompt so the user has a one-click path to
+		// nudge the plan instead of binary accept/decline.
 		fmt.Fprintf(b,
 			`<div class="kiln-plan-actions">`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-approve" `+
@@ -709,8 +712,13 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 				`data-plan-action="reject" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/reject_plan"  `+
 				`data-fui-rpc-body='{"plan_id":"%s"}'>Reject</button>`+
+				`<button type="button" class="kiln-plan-btn kiln-plan-btn-modify" `+
+				`data-fui-fill-input=".kiln-input" `+
+				`data-fui-fill-text="Refine plan %s: ">Modify…</button>`+
 				`</div>`,
-			escAttr(p.PlanID), escAttr(p.PlanID), escAttr(p.PlanID), escAttr(p.PlanID))
+			escAttr(p.PlanID), escAttr(p.PlanID),
+			escAttr(p.PlanID), escAttr(p.PlanID),
+			escAttr(p.PlanID))
 	}
 	b.WriteString(`</li>`)
 }
