@@ -37,6 +37,11 @@ var testInFlight atomic.Bool
 // updates can flip it and notify "agent_changed".
 var testCurrentAgent atomic.Value // string
 
+// testNoAdaptersInstalled forces the simulated "available" adapters
+// to report installed=false (for tests that exercise the
+// "no agent CLIs detected" install hint).
+var testNoAdaptersInstalled atomic.Bool
+
 // stand a live kiln server up on httptest. Same wiring as cmd/kiln.
 func startKiln(t *testing.T) (string, *protocol.Tools) {
 	srvURL, _, tools := startKilnExt(t)
@@ -50,9 +55,11 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	t.Helper()
 	testInFlight.Store(false)
 	testCurrentAgent.Store("none")
+	testNoAdaptersInstalled.Store(false)
 	t.Cleanup(func() {
 		testInFlight.Store(false)
 		testCurrentAgent.Store("none")
+		testNoAdaptersInstalled.Store(false)
 	})
 	d, cleanup, err := db.EphemeralSQLite("kiln-browser")
 	if err != nil {
@@ -77,10 +84,11 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 		if curName == "" {
 			curName = "none"
 		}
+		ccInstalled := !testNoAdaptersInstalled.Load()
 		return map[string]any{
 			"current": map[string]any{"name": curName, "display": "(stub: " + curName + ")"},
 			"available": []map[string]any{
-				{"name": "claude-code", "display": "Claude Code CLI", "installed": true},
+				{"name": "claude-code", "display": "Claude Code CLI", "installed": ccInstalled},
 				{"name": "pi", "display": "pi", "installed": false},
 				{"name": "codex", "display": "OpenAI Codex CLI", "installed": false},
 			},
@@ -3078,6 +3086,30 @@ func TestBrowser_PlanCardShowsRelativeProposeTime(t *testing.T) {
 	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-plan-when`, &when, chromedp.ByQuery))
 	if !strings.Contains(when, "proposed ") || !strings.Contains(when, "ago") {
 		t.Errorf("expected 'proposed Xs ago' chip; got %q", when)
+	}
+}
+
+// Gear modal surfaces an install hint when no agent CLIs are
+// detected — otherwise the modal looks like a list of broken
+// options with no obvious next step.
+func TestBrowser_GearModalShowsInstallHintWhenNoAdaptersInstalled(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	testNoAdaptersInstalled.Store(true)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var hint string
+	_ = chromedp.Run(ctx, chromedp.Text(`#kiln-agent-list .kiln-modal-tip`, &hint, chromedp.ByQuery))
+	if !strings.Contains(hint, "No agent CLIs detected") {
+		t.Errorf("expected install hint when no adapters installed; got %q", hint)
 	}
 }
 

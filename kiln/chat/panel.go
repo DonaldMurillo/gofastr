@@ -192,6 +192,23 @@ func (pe *panelEnv) agentListHTML() string {
 	available, _ := state["available"].([]map[string]any)
 
 	var b strings.Builder
+
+	// If zero adapters are installed, prepend an install hint —
+	// otherwise the modal looks like a list of broken options.
+	anyInstalled := false
+	for _, a := range available {
+		if installed, _ := a["installed"].(bool); installed {
+			anyInstalled = true
+			break
+		}
+	}
+	if !anyInstalled && len(available) > 0 {
+		b.WriteString(`<p class="kiln-modal-tip">No agent CLIs detected on PATH. Install one to enable chat-driven builds — e.g. ` +
+			`<code>brew install pi</code>, ` +
+			`<code>npm i -g @anthropic-ai/claude-code</code>, ` +
+			`or <code>npm i -g @openai/codex</code>.</p>`)
+	}
+
 	// Form posts directly to /kiln/agent (registered by cmd/kiln).
 	// data-fui-rpc-close dismisses the modal on a successful 2xx so
 	// the user gets visible feedback that Apply landed. Re-open to
