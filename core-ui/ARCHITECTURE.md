@@ -78,6 +78,7 @@ server side and the runtime does the work.
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
+| `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
 
 **Response headers the runtime understands:**
 

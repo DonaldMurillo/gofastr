@@ -33,6 +33,147 @@
   const routes = new Map(); // path → { title, preload }
   let currentPath = location.pathname + location.search;
 
+  // -----------------------------------------------------------------------
+  // Module-level RPC dispatcher — installed ONCE at script load.
+  //
+  // Why module-level: islands fire RPCs from anywhere on the page, not
+  // just inside a mounted widget. The model (see core-ui/ARCHITECTURE.md)
+  // requires `data-fui-rpc` to work without any widget setup. Each
+  // mounted widget still has its own RPC handler so widget-scoped
+  // close/reset behavior keeps working — but the global path is the
+  // baseline, always available.
+  //
+  // Response semantics:
+  //   - body  → broadcast to data-fui-rpc-signal (text or JSON)
+  //   - X-Gofastr-Push-State header → apply via history.pushState,
+  //     update currentPath. NO re-fetch — URL update only.
+  //
+  // X-FUI-Widget header is set when the button lives inside a
+  // data-fui-widget context, omitted otherwise. The server doesn't
+  // require it.
+  // -----------------------------------------------------------------------
+  async function dispatchRPC(node) {
+    const path = node.getAttribute('data-fui-rpc');
+    const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
+    const responseSignal = node.getAttribute('data-fui-rpc-signal');
+    const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
+    const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
+    let body = node.getAttribute('data-fui-rpc-body');
+    if (!body && node.tagName === 'FORM') {
+      const fd = new FormData(node);
+      const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+      body = JSON.stringify(obj);
+    }
+    const widgetEl = node.closest('[data-fui-widget]');
+    const headers = {};
+    if (widgetEl) headers['X-FUI-Widget'] = widgetEl.getAttribute('data-fui-widget') || '';
+    if (body) headers['Content-Type'] = 'application/json';
+    if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
+    try {
+      const r = await fetch(path, { method, headers, body: body || undefined });
+      if (!r.ok) {
+        const txt = await r.text();
+        if (responseSignal) window.__gofastr.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
+        return;
+      }
+      // URL state update (no re-fetch). Either the server hands us the
+      // canonical URL via X-Gofastr-Push-State, or the triggering
+      // element declares it via data-fui-push-state. Header takes
+      // precedence so the server can override.
+      const pushState = r.headers.get('X-Gofastr-Push-State')
+        || node.getAttribute('data-fui-push-state');
+      if (pushState) {
+        try {
+          history.pushState(null, '', pushState);
+          currentPath = location.pathname + location.search;
+        } catch (_) {}
+      }
+      const ct = r.headers.get('content-type') || '';
+      const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
+      if (responseSignal) window.__gofastr.setSignal(responseSignal, data);
+      // Widget-scoped helpers (close/reset) — only valid when inside a widget.
+      if (closeOnSuccess && widgetEl && widgetEl.__fuiDismiss) widgetEl.__fuiDismiss();
+      if (resetOnSuccess) node.reset();
+    } finally {
+      if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
+    }
+  }
+
+  // Global click+submit dispatcher — installed once at module load.
+  // Catches data-fui-rpc on any element NOT inside a widget. Widget
+  // scopes have their own handler that intercepts first.
+  //
+  // Also handles legacy data-kiln-tool buttons + plain forms with a
+  // relative `action` attribute, kept here because kiln-built pages
+  // rely on the same generic dispatcher.
+  if (!document.__fuiGlobalDispatch) {
+    document.__fuiGlobalDispatch = true;
+    document.addEventListener('click', async (e) => {
+      // Skip if inside a widget — that widget's handler owns the click.
+      if (e.target.closest('[data-fui-widget]')) return;
+      const btn = e.target.closest('[data-fui-rpc]');
+      if (btn && btn.tagName !== 'FORM') {
+        e.preventDefault();
+        await dispatchRPC(btn);
+        return;
+      }
+      // Legacy: data-kiln-tool buttons fire a /kiln/tool/<name> POST
+      // with the data-kiln-args body. Kept for kiln-built pages.
+      const legacy = e.target.closest('[data-kiln-tool]');
+      if (legacy) {
+        e.preventDefault();
+        const tool = legacy.getAttribute('data-kiln-tool');
+        const args = legacy.getAttribute('data-kiln-args') || '';
+        try {
+          await fetch('/kiln/tool/' + tool, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: args,
+          });
+        } catch (_) {}
+      }
+    });
+    document.addEventListener('submit', async (e) => {
+      const form = e.target.closest('form');
+      if (!form || form.closest('[data-fui-widget]')) return;
+      if (form.hasAttribute('data-fui-rpc')) {
+        e.preventDefault();
+        await dispatchRPC(form);
+        return;
+      }
+      // Legacy: data-kiln-tool form submits.
+      if (form.hasAttribute('data-kiln-tool')) {
+        e.preventDefault();
+        const tool = form.getAttribute('data-kiln-tool');
+        const fd = new FormData(form);
+        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+        try {
+          await fetch('/kiln/tool/' + tool, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(obj),
+          });
+        } catch (_) {}
+        return;
+      }
+      // Plain forms with a relative `action` post via fetch (so
+      // server-rendered forms work without a full page reload).
+      const action = form.getAttribute('action');
+      if (action && !action.match(/^https?:\/\//)) {
+        e.preventDefault();
+        const fd = new FormData(form);
+        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+        try {
+          await fetch(action, {
+            method: form.getAttribute('method') || 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(obj),
+          });
+        } catch (_) {}
+      }
+    });
+  }
+
   const registerRoutes = (routeList) => {
     if (!Array.isArray(routeList)) return;
     for (const r of routeList) {
@@ -1004,36 +1145,39 @@
     }
   };
 
-  // Link clicks: by default we DO NOT intercept — every navigation is
-  // a real browser request that the server fully re-renders (SSR), and
-  // runtime.js then hydrates the new page on load (signals, event
-  // delegation, SSE bindings). This is incremental-hydration-on-SSR,
-  // not SPA-with-content-swap.
+  // Link clicks: cross-page navigation (/a → /b) is intercepted and
+  // handled client-side via partial fetch + cache. No hard refresh.
+  // This is the Angular-router-style behavior described in
+  // core-ui/ARCHITECTURE.md ("Page → page navigation"). In-page state
+  // changes are NOT routes — they go through data-fui-rpc on islands
+  // and never hit this handler.
   //
-  // To opt into client-side partial swap on a specific link, add
-  // data-fui-spa to the <a>. The router below will fetch the partial,
-  // swap <main>, and pushState — same machinery as before, but
-  // explicit per link instead of pulled in by default.
+  // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
+  // unknown routes fall through to default browser navigation.
   document.addEventListener('click', (e) => {
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
-    if (!anchor.hasAttribute('data-fui-spa')) return;
     const href = anchor.getAttribute('href');
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!isInternalLink(href)) return;
     if (anchor.target === '_blank') return;
     if (!isKnownRoute(href)) return;
+    // data-fui-rpc anchors are RPC triggers, not navigation.
+    if (anchor.hasAttribute('data-fui-rpc')) return;
 
     const fullPath = resolvePath(href);
+    if (fullPath === currentPath) {
+      // Already there — let the browser handle the click (focus, scroll, etc.).
+      return;
+    }
     e.preventDefault();
     history.pushState(null, '', fullPath);
     loadPage(fullPath);
   });
 
-  // popstate only matters when we own the navigation (data-fui-spa).
-  // Default browser nav reloads the page anyway, so popstate from
-  // those is moot. We still listen so SPA-driven pushStates back-stack
-  // correctly.
+  // popstate: a URL change via back/forward triggers a screen-partial
+  // re-fetch (cache makes it instant). This covers both cross-page
+  // navigations AND in-page state changes pushed via X-Gofastr-Push-State.
   window.addEventListener('popstate', () => {
     const path = location.pathname + location.search;
     if (path !== currentPath && currentPath !== '') {

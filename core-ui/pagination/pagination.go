@@ -43,6 +43,24 @@ type Config struct {
 	// OmitPrevNext suppresses the prev/next anchors entirely.
 	OmitPrevNext bool
 
+	// IslandSignal turns this pagination into an island update trigger.
+	// When non-empty, every page link renders as a `<button
+	// data-fui-rpc="<endpoint>?<page-key>=N" data-fui-rpc-method="GET"
+	// data-fui-rpc-signal="<name>">N</button>` instead of an `<a href>`.
+	// Click → runtime fires the RPC → response replaces the signal-bound
+	// container. The server-side handler is responsible for returning
+	// the new HTML and (recommended) an `X-Gofastr-Push-State` header
+	// so the URL stays in sync.
+	//
+	// Pair with IslandEndpoint (the URL the buttons hit) for full island
+	// behavior. When unset, pagination falls back to plain <a href> links.
+	IslandSignal string
+
+	// IslandEndpoint is the URL the page-change RPC fires at. The HrefPattern's
+	// %d placeholder still encodes the page number — the runtime sends the
+	// resulting URL as the RPC path. Required when IslandSignal is set.
+	IslandEndpoint string
+
 	ID    string
 	Class string
 }
@@ -94,9 +112,16 @@ func New(cfg Config) render.HTML {
 	pages := pageNumbers(cfg.Total, cfg.Current, window)
 	items := make([]render.HTML, 0, len(pages)+2)
 
+	island := cfg.IslandSignal != "" && cfg.IslandEndpoint != ""
+
 	if prevLabel != "" {
-		items = append(items, prevNextItem(prevLabel, "prev",
-			cfg.HrefPattern, cfg.Current-1, cfg.Current > 1))
+		if island {
+			items = append(items, prevNextItemRPC(cfg.IslandEndpoint, cfg.IslandSignal,
+				prevLabel, "prev", cfg.HrefPattern, cfg.Current-1, cfg.Current > 1))
+		} else {
+			items = append(items, prevNextItem(prevLabel, "prev",
+				cfg.HrefPattern, cfg.Current-1, cfg.Current > 1))
+		}
 	}
 	for _, p := range pages {
 		if p == 0 {
@@ -106,11 +131,21 @@ func New(cfg Config) render.HTML {
 			))
 			continue
 		}
-		items = append(items, pageItem(cfg.HrefPattern, p, p == cfg.Current))
+		if island {
+			items = append(items, pageItemRPC(cfg.IslandEndpoint, cfg.IslandSignal,
+				cfg.HrefPattern, p, p == cfg.Current))
+		} else {
+			items = append(items, pageItem(cfg.HrefPattern, p, p == cfg.Current))
+		}
 	}
 	if nextLabel != "" {
-		items = append(items, prevNextItem(nextLabel, "next",
-			cfg.HrefPattern, cfg.Current+1, cfg.Current < cfg.Total))
+		if island {
+			items = append(items, prevNextItemRPC(cfg.IslandEndpoint, cfg.IslandSignal,
+				nextLabel, "next", cfg.HrefPattern, cfg.Current+1, cfg.Current < cfg.Total))
+		} else {
+			items = append(items, prevNextItem(nextLabel, "next",
+				cfg.HrefPattern, cfg.Current+1, cfg.Current < cfg.Total))
+		}
 	}
 
 	return render.Tag("nav", map[string]string{"aria-label": label},
@@ -142,11 +177,69 @@ func prevNextItem(label, kind, pattern string, page int, enabled bool) render.HT
 	}
 	return render.Tag("li", map[string]string{"class": cls},
 		render.Tag("a", map[string]string{
-			"href":     fmt.Sprintf(pattern, page),
-			"rel":      kind,
+			"href":       fmt.Sprintf(pattern, page),
+			"rel":        kind,
 			"aria-label": label,
 		}, render.Text(label)),
 	)
+}
+
+// pageItemRPC renders a page link as a data-fui-rpc button. Used when
+// IslandSignal + IslandEndpoint are set on the Config — a click fires
+// the RPC; the response replaces the signal-bound wrapper. See
+// core-ui/ARCHITECTURE.md ("In-page state change" + "URL params are the
+// source of truth").
+func pageItemRPC(islandEndpoint, signal, hrefPattern string, page int, current bool) render.HTML {
+	rpcURL := islandEndpoint + relativeQuery(hrefPattern, page)
+	pushState := fmt.Sprintf(hrefPattern, page)
+	attrs := map[string]string{
+		"type":                  "button",
+		"data-fui-rpc":          rpcURL,
+		"data-fui-rpc-method":   "GET",
+		"data-fui-rpc-signal":   signal,
+		"data-fui-push-state":   pushState,
+	}
+	if current {
+		attrs["aria-current"] = "page"
+	}
+	return render.Tag("li", nil,
+		render.Tag("button", attrs, render.Text(fmt.Sprintf("%d", page))),
+	)
+}
+
+// prevNextItemRPC mirrors prevNextItem in island mode.
+func prevNextItemRPC(islandEndpoint, signal, label, kind, hrefPattern string, page int, enabled bool) render.HTML {
+	cls := "pagination-" + kind
+	if !enabled {
+		return render.Tag("li", map[string]string{"class": cls + " is-disabled"},
+			render.Tag("span", map[string]string{"aria-disabled": "true"}, render.Text(label)),
+		)
+	}
+	rpcURL := islandEndpoint + relativeQuery(hrefPattern, page)
+	pushState := fmt.Sprintf(hrefPattern, page)
+	return render.Tag("li", map[string]string{"class": cls},
+		render.Tag("button", map[string]string{
+			"type":                "button",
+			"data-fui-rpc":        rpcURL,
+			"data-fui-rpc-method": "GET",
+			"data-fui-rpc-signal": signal,
+			"data-fui-push-state": pushState,
+			"rel":                 kind,
+			"aria-label":          label,
+		}, render.Text(label)),
+	)
+}
+
+// relativeQuery extracts the `?…` part of an href pattern with the
+// page number filled in. Used to compose the RPC URL from the
+// IslandEndpoint + the existing href pattern. If the pattern has no
+// `?`, returns "?p=<page>" as a fallback.
+func relativeQuery(hrefPattern string, page int) string {
+	rendered := fmt.Sprintf(hrefPattern, page)
+	if i := strings.Index(rendered, "?"); i >= 0 {
+		return rendered[i:]
+	}
+	return fmt.Sprintf("?p=%d", page)
 }
 
 // pageNumbers returns the page sequence to render. 0 marks an ellipsis.

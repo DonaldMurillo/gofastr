@@ -85,6 +85,25 @@ type DataTableConfig struct {
 	// a default empty state is rendered.
 	Empty EmptyStateConfig
 
+	// IslandSignal turns this DataTable into an island. When non-empty,
+	// sort headers render as `data-fui-rpc` buttons that fire RPCs at
+	// IslandEndpoint instead of plain `<a href>` links. The Pagination
+	// config inherits the same island settings automatically (so a single
+	// IslandSignal+IslandEndpoint pair drives both sort and page).
+	//
+	// The signal-bound wrapper is the caller's responsibility — wrap
+	// the DataTable's rendered HTML in:
+	//   <div data-fui-signal="<IslandSignal>" data-fui-signal-mode="html">
+	//     {DataTable(...)}
+	//   </div>
+	IslandSignal string
+
+	// IslandEndpoint is the URL the sort/page RPCs target. Sort links
+	// hit "<endpoint>?sort=…&dir=…&p=…"; pagination links hit
+	// "<endpoint>?sort=…&dir=…&p=N". The handler is expected to return
+	// the full new DataTable HTML.
+	IslandEndpoint string
+
 	ID    string
 	Class string
 }
@@ -125,7 +144,8 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	// and column-header semantics come from core-ui.
 	thCells := make([]render.HTML, len(cfg.Columns))
 	for i, col := range cfg.Columns {
-		thCells[i] = renderHeader(col, cfg.SortBy, cfg.SortDir, cfg.SortHrefPattern)
+		thCells[i] = renderHeader(col, cfg.SortBy, cfg.SortDir, cfg.SortHrefPattern,
+			cfg.IslandSignal, cfg.IslandEndpoint)
 	}
 	thead := elements.Thead(elements.TableSectionConfig{},
 		elements.TableRow(elements.TableRowConfig{}, thCells...),
@@ -167,9 +187,17 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		elements.Div(elements.DivConfig{Class: "ui-data-table__scroll"}, table),
 	}
 	if cfg.Pagination != nil {
+		// In island mode, the pagination automatically inherits the
+		// DataTable's IslandSignal + IslandEndpoint so sort + page hit
+		// the same handler.
+		pagCfg := *cfg.Pagination
+		if cfg.IslandSignal != "" && pagCfg.IslandSignal == "" {
+			pagCfg.IslandSignal = cfg.IslandSignal
+			pagCfg.IslandEndpoint = cfg.IslandEndpoint
+		}
 		children = append(children,
 			elements.Div(elements.DivConfig{Class: "ui-data-table__footer"},
-				pagination.New(*cfg.Pagination)))
+				pagination.New(pagCfg)))
 	}
 	return elements.Div(elements.DivConfig{
 		Class: wrapClass(cfg.Class, "ui-data-table"), ID: cfg.ID,
@@ -185,7 +213,7 @@ func wrapClass(extra, base string) string {
 	return base + " " + extra
 }
 
-func renderHeader(col Column, activeKey string, activeDir SortDir, pattern string) render.HTML {
+func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, islandSignal, islandEndpoint string) render.HTML {
 	thCfg := elements.THConfig{Scope: "col"}
 	if col.Align != "" && col.Align != "start" {
 		thCfg.Class = "is-align-" + col.Align
@@ -215,16 +243,42 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern strin
 	thCfg.Attrs = thAttrs
 
 	href := fmt.Sprintf(pattern, url.QueryEscape(col.Key), url.QueryEscape(string(nextDir)))
-	link := elements.LinkHTML(elements.LinkHTMLConfig{
-		Href:  href,
-		Class: "ui-data-table__sort",
-		Content: render.Join(
+	indicatorSpan := elements.Span(elements.TextConfig{
+		Class: "ui-data-table__sort-indicator",
+		Attrs: elements.Attrs{"aria-hidden": "true"},
+	}, render.Text(strings.TrimSpace(indicator)))
+
+	// Island mode: render as a data-fui-rpc button so click fires
+	// an RPC and the response replaces the surrounding island. The
+	// button also carries data-fui-push-state so the URL stays in sync.
+	if islandSignal != "" && islandEndpoint != "" {
+		// Strip the leading "?" from href so we can attach to the
+		// island endpoint as its query.
+		query := href
+		if i := strings.Index(query, "?"); i >= 0 {
+			query = query[i:]
+		} else {
+			query = "?" + query
+		}
+		btn := render.Tag("button", map[string]string{
+			"type":                "button",
+			"class":               "ui-data-table__sort",
+			"data-fui-rpc":        islandEndpoint + query,
+			"data-fui-rpc-method": "GET",
+			"data-fui-rpc-signal": islandSignal,
+			"data-fui-push-state": href,
+		},
 			render.Text(col.Header),
-			elements.Span(elements.TextConfig{
-				Class: "ui-data-table__sort-indicator",
-				Attrs: elements.Attrs{"aria-hidden": "true"},
-			}, render.Text(strings.TrimSpace(indicator))),
-		),
+			indicatorSpan,
+		)
+		return elements.TH(thCfg, btn)
+	}
+
+	// Plain mode: <a href> link, full SSR navigation if clicked.
+	link := elements.LinkHTML(elements.LinkHTMLConfig{
+		Href:    href,
+		Class:   "ui-data-table__sort",
+		Content: render.Join(render.Text(col.Header), indicatorSpan),
 	})
 	return elements.TH(thCfg, link)
 }

@@ -92,6 +92,11 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "website"}))
 	fwApp.Mount(host)
 
+	// Island RPC endpoints — see the matching screen files for how the
+	// demos wire IslandSignal + IslandEndpoint into the rendered HTML.
+	fwApp.Router.Get("/islands/pagination-demo/page", http.HandlerFunc(PaginationIslandHandler))
+	fwApp.Router.Get("/islands/datatable-demo/state", http.HandlerFunc(DataTableIslandHandler))
+
 	if devMode() {
 		// Dev-only livereload — short-poll, NOT long-poll. Each request
 		// returns immediately with the server's start timestamp; the

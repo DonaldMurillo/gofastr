@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"sort"
 	"strconv"
 
@@ -11,17 +12,25 @@ import (
 	"github.com/gofastr/gofastr/framework/ui"
 )
 
-// DataTableDemoScreen serves /framework-ui/datatable. It now reads the
-// URL query (sort, dir, p) via app.QueryFromContext, sorts and
-// paginates the in-memory demo data, and re-renders. Clicking a
-// sortable header or pagination link round-trips through the server
-// and produces a different table — proving the link-driven sort and
-// pagination story actually works end-to-end.
+// DataTableDemoScreen serves /framework-ui/datatable. The live demo is
+// an island — clicking a sort header or page button fires an RPC to
+// /islands/datatable-demo/state, the server returns the new DataTable
+// HTML, and the runtime swaps just the island's content. URL is kept
+// in sync via per-button data-fui-push-state. Refresh / share-link /
+// browser-back round-trip through the URL → Load(ctx) reads ?sort=…
+// &dir=…&p=… → SSR re-renders the right view.
+//
+// See core-ui/ARCHITECTURE.md for the full island contract.
 type DataTableDemoScreen struct {
 	sortBy  string
 	sortDir ui.SortDir
 	page    int
 }
+
+const (
+	datatableDemoSignal   = "datatable-demo"
+	datatableDemoEndpoint = "/islands/datatable-demo/state"
+)
 
 func (s *DataTableDemoScreen) ScreenTitle() string        { return "DataTable" }
 func (s *DataTableDemoScreen) ScreenDescription() string  { return "Composable list view with sort + pagination." }
@@ -66,14 +75,15 @@ var demoCustomers = []customer{
 	{"Liam O'Connor", "liam@example.com", ui.StatusNeutral, "$84.00", 84.00},
 }
 
-func (s *DataTableDemoScreen) Render() render.HTML {
-	// Snapshot the demo data, sort, paginate.
+// renderDataTableIsland produces the DataTable's island content for a
+// given (sort, dir, page). Reused by both the initial SSR render and
+// the RPC handler so the two responses are byte-for-byte identical.
+func renderDataTableIsland(sortBy string, sortDir ui.SortDir, page int) render.HTML {
 	all := make([]customer, len(demoCustomers))
 	copy(all, demoCustomers)
-	sortCustomers(all, s.sortBy, s.sortDir)
+	sortCustomers(all, sortBy, sortDir)
 
 	totalPages := (len(all) + demoPageSize - 1) / demoPageSize
-	page := s.page
 	if page > totalPages {
 		page = totalPages
 	}
@@ -98,33 +108,59 @@ func (s *DataTableDemoScreen) Render() render.HTML {
 			},
 		})
 	}
-
 	cols := []ui.Column{
 		{Key: "name", Header: "Name", Sortable: true},
 		{Key: "email", Header: "Email", Sortable: true},
 		{Key: "status", Header: "Status"},
 		{Key: "balance", Header: "Balance", Sortable: true, Align: "end"},
 	}
-
 	caption := "Customer accounts"
-	if s.sortBy != "" {
-		caption += " — sorted by " + s.sortBy + " " + string(s.sortDir) + "ending"
+	if sortBy != "" {
+		caption += " — sorted by " + sortBy + " " + string(sortDir) + "ending"
 	}
 	caption += " · page " + itoa(page) + " of " + itoa(totalPages)
 
-	tableLive := ui.DataTable(ui.DataTableConfig{
+	return ui.DataTable(ui.DataTableConfig{
 		Caption: caption,
 		Columns: cols, Rows: rows,
-		SortBy: s.sortBy, SortDir: s.sortDir,
-		// Sort links must keep the current page; pagination links
-		// must keep the current sort. Build patterns that preserve
-		// the OTHER axis.
+		SortBy: sortBy, SortDir: sortDir,
 		SortHrefPattern: sortHrefPattern(page),
 		Pagination: &pagination.Config{
 			Total: totalPages, Current: page,
-			HrefPattern: pageHrefPattern(s.sortBy, string(s.sortDir)),
+			HrefPattern: pageHrefPattern(sortBy, string(sortDir)),
 		},
+		IslandSignal:   datatableDemoSignal,
+		IslandEndpoint: datatableDemoEndpoint,
 	})
+}
+
+// DataTableIslandHandler serves /islands/datatable-demo/state for sort
+// and page RPCs.
+func DataTableIslandHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	sortBy := q.Get("sort")
+	sortDir := ui.SortDir(q.Get("dir"))
+	if sortDir != ui.SortAsc && sortDir != ui.SortDesc {
+		sortDir = ui.SortAsc
+	}
+	page := 1
+	if v, err := strconv.Atoi(q.Get("p")); err == nil && v > 0 {
+		page = v
+	}
+	render.RespondHTML(w, renderDataTableIsland(sortBy, sortDir, page))
+}
+
+func (s *DataTableDemoScreen) Render() render.HTML {
+	tableLive := renderDataTableIsland(s.sortBy, s.sortDir, s.page)
+
+	// Wrap in the signal-bound container — RPC responses replace this innerHTML.
+	liveIsland := render.Tag("div",
+		map[string]string{
+			"data-fui-signal":      datatableDemoSignal,
+			"data-fui-signal-mode": "html",
+		},
+		tableLive,
+	)
 
 	emptyCols := []ui.Column{
 		{Key: "name", Header: "Name"},
@@ -139,6 +175,7 @@ func (s *DataTableDemoScreen) Render() render.HTML {
 			Description: "Try widening the date range or clearing the search.",
 		},
 	})
+	_ = emptyDemo
 
 	return render.Tag("main", nil,
 		render.Tag("a", map[string]string{"href": "/framework-ui/", "class": "doc-back"},
@@ -148,9 +185,9 @@ func (s *DataTableDemoScreen) Render() render.HTML {
 			Subtitle: "Sortable, paginated list view composed from core-ui primitives + framework/ui's EmptyState. Pure server-rendered — click a sortable header or a page link and watch the URL update + the table re-render.",
 		}),
 		ui.Section(ui.SectionConfig{
-			Heading:     "Live",
-			Description: "Click a sortable header (Name, Email, Balance). The URL updates to ?sort=…&dir=…, the server re-sorts, and the table re-renders. Click a page link to flip pages — sort state is preserved across clicks.",
-		}, tableLive),
+			Heading:     "Live (island mode)",
+			Description: "Click a sortable header or pagination button. The runtime fires an RPC to /islands/datatable-demo/state and swaps just this island — no full reload. URL stays in sync via data-fui-push-state. Refresh/share-link works because Load(ctx) reads the URL.",
+		}, liveIsland),
 
 		ui.Callout(ui.CalloutConfig{Title: "Try it", Variant: ui.StatusInfo},
 			render.Text("Click \"Email\" twice — the indicator goes ↑ then ↓ as direction flips. Click page 2 — the same sort persists."),
