@@ -217,6 +217,7 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
+		crudHandler.Events = a.Events()
 		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
 	}
 

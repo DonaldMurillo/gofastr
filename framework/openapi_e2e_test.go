@@ -421,21 +421,21 @@ func TestE2E_OpenAPI_MultipleEntityTagsAndPaths(t *testing.T) {
 		t.Fatalf("expected 4 tags, got %d", len(tags))
 	}
 
-	// Should have 12 paths (4 list + 4 detail + 4 batch)
+	// Should have 16 paths per entity (list, detail, _batch, _events) × 4
 	paths := doc["paths"].(map[string]any)
 	expectedPaths := []string{
-		"/users", "/users/{id}", "/users/_batch",
-		"/posts", "/posts/{id}", "/posts/_batch",
-		"/comments", "/comments/{id}", "/comments/_batch",
-		"/tags", "/tags/{id}", "/tags/_batch",
+		"/users", "/users/{id}", "/users/_batch", "/users/_events",
+		"/posts", "/posts/{id}", "/posts/_batch", "/posts/_events",
+		"/comments", "/comments/{id}", "/comments/_batch", "/comments/_events",
+		"/tags", "/tags/{id}", "/tags/_batch", "/tags/_events",
 	}
 	for _, p := range expectedPaths {
 		if _, ok := paths[p]; !ok {
 			t.Errorf("missing path %q", p)
 		}
 	}
-	if len(paths) != 12 {
-		t.Errorf("expected 12 paths, got %d: %v", len(paths), mapKeys(paths))
+	if len(paths) != 16 {
+		t.Errorf("expected 16 paths, got %d: %v", len(paths), mapKeys(paths))
 	}
 }
 

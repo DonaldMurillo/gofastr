@@ -38,6 +38,7 @@ type CrudHandler struct {
 	JSONCase   JSONCase           // casing strategy for JSON keys
 	Hooks      *HookRegistry      // optional lifecycle hooks
 	Storage    upload.Storage // optional; enables multipart uploads for Image/File fields
+	Events     *EventBus      // optional; receives entity.created/updated/deleted on commit
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -362,6 +363,8 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return
 		}
 
+		ch.emitEvent(r.Context(), EntityCreated, result)
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(result)
@@ -399,6 +402,8 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return
 		}
 
+		ch.emitEvent(r.Context(), EntityUpdated, result)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	}
@@ -422,6 +427,8 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			writeCRUDError(w, err)
 			return
 		}
+
+		ch.emitEvent(r.Context(), EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 
 		w.WriteHeader(http.StatusNoContent)
 	}

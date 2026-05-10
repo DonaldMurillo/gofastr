@@ -250,6 +250,21 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
 		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
 
+		// --- GET /{table}/_events — SSE entity subscription stream ---
+		eventsOp := openapi.NewOperation()
+		eventsOp.Summary = "Subscribe to " + entityName + " events (SSE)"
+		eventsOp.OperationID = "events_" + entityName
+		eventsOp.Tags = []string{entityName}
+		eventsOp.Responses[200] = map[string]any{
+			"description": "Server-Sent Events stream of entity.created/updated/deleted",
+			"content": map[string]any{
+				"text/event-stream": map[string]any{
+					"schema": map[string]any{"type": "string"},
+				},
+			},
+		}
+		s.AddPath("GET", path+"/_events", *eventsOp)
+
 		// --- DELETE /{table}/_batch — BatchDelete ---
 		batchDeleteBody := map[string]any{
 			"type": "object",

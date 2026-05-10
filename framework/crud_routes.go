@@ -31,6 +31,8 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string) {
 	r.Post(path+"/_batch", handler.BatchCreate())
 	r.Patch(path+"/_batch", handler.BatchUpdate())
 	r.Delete(path+"/_batch", handler.BatchDelete())
+
+	r.Get(path+"/_events", handler.EventStream())
 }
 
 // normalizePath strips trailing slashes from a path.

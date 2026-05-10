@@ -119,6 +119,13 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, txErr.Error())
 			return
 		}
+		if txErr == nil {
+			for _, res := range results {
+				if res.Data != nil {
+					ch.emitEvent(r.Context(), EntityCreated, res.Data)
+				}
+			}
+		}
 		writeBatchResponse(w, batchResponse{Committed: txErr == nil, Results: results})
 	}
 }
@@ -179,6 +186,13 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, txErr.Error())
 			return
 		}
+		if txErr == nil {
+			for _, res := range results {
+				if res.Data != nil {
+					ch.emitEvent(r.Context(), EntityUpdated, res.Data)
+				}
+			}
+		}
 		writeBatchResponse(w, batchResponse{Committed: txErr == nil, Results: results})
 	}
 }
@@ -225,6 +239,13 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
 			writeJSONError(w, http.StatusInternalServerError, txErr.Error())
 			return
+		}
+		if txErr == nil {
+			for _, res := range results {
+				if res.Data != nil {
+					ch.emitEvent(r.Context(), EntityDeleted, res.Data)
+				}
+			}
 		}
 		writeBatchResponse(w, batchResponse{Committed: txErr == nil, Results: results})
 	}
