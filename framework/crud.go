@@ -208,6 +208,15 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
 			return
 		}
+
+		// Cursor pagination is opt-in: presence of the ?cursor key (even
+		// empty for first-page) switches to keyset mode and emits the
+		// CursorPage envelope.
+		if r.URL.Query().Has("cursor") {
+			ch.serveCursorList(ctx, w, r, includes, filters)
+			return
+		}
+
 		sorts := ParseSort(r, ch.Entity.GetFields())
 
 		// Count total matching rows
