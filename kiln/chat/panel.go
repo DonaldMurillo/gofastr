@@ -297,9 +297,9 @@ func (pe *panelEnv) headerHTML() string {
 		(func() string {
 			label := pe.agentLabel()
 			if label == "no agent" {
-				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-fui-signal="agent" data-fui-open="kiln-agent-settings" title="Pick an agent">` + escHTML(label) + `</button>`
+				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-fui-signal="agent" data-fui-flash-on-update data-fui-open="kiln-agent-settings" title="Pick an agent">` + escHTML(label) + `</button>`
 			}
-			return `<span class="kiln-panel-agent" data-fui-signal="agent">` + escHTML(label) + `</span>`
+			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + escHTML(label) + `</span>`
 		})() +
 		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="Open world IR (JSON)">` + escHTML(pe.worldSnapshotText()) + `</a>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
