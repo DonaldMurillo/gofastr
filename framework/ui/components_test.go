@@ -123,13 +123,19 @@ func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 
 // ─── Callout ───
 func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
+	// Danger/warning callouts must announce assertively → role=alert
+	// (rendered as a <div role="alert">).
 	for _, v := range []StatusVariant{StatusDanger, StatusWarning} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
 		mustContain(t, h, `role="alert"`)
 	}
+	// Info/success/neutral callouts are non-urgent → rendered as
+	// <aside role="complementary"> (via elements.Aside) so screen
+	// readers treat them as side notes.
 	for _, v := range []StatusVariant{StatusInfo, StatusSuccess, StatusNeutral} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
-		mustContain(t, h, `role="note"`)
+		mustContain(t, h, `<aside`)
+		mustContain(t, h, `role="complementary"`)
 	}
 }
 
