@@ -2344,6 +2344,54 @@ func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 	}
 }
 
+// Cmd/Ctrl+K focuses the chat input even when the focus is somewhere
+// else on the page. Verifies the framework's data-fui-shortcut-focus
+// primitive against the kiln textarea opt-in.
+func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		// Move focus away from the input.
+		chromedp.Evaluate(`document.body.focus()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a Cmd+K keydown via JS — chromedp.KeyEvent doesn't
+	// reliably set metaKey across platforms.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		(function(){
+			const ev = new KeyboardEvent('keydown', {
+				key: 'k', code: 'KeyK',
+				metaKey: true, ctrlKey: true,
+				bubbles: true, cancelable: true,
+			});
+			document.dispatchEvent(ev);
+		})()
+	`, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var focusedClass string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.activeElement && document.activeElement.className`, &focusedClass))
+		if strings.Contains(focusedClass, "kiln-input") {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var got string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.activeElement && document.activeElement.tagName`, &got))
+	t.Errorf("Cmd+K did not focus .kiln-input; activeElement tag=%q", got)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

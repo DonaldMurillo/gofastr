@@ -12,6 +12,21 @@
   // -----------------------------------------------------------------------
   const state = {};
 
+  // parseCombo turns a string like "Mod+Shift+k" into a normalized
+  // shortcut spec the keydown handlers compare against. Mod is the
+  // OS-appropriate primary modifier (Cmd on Mac, Ctrl elsewhere).
+  function parseCombo(s) {
+    const out = { key: '', mod: false, shift: false, alt: false };
+    s.split('+').forEach((p) => {
+      const t = p.trim().toLowerCase();
+      if (t === 'mod' || t === 'cmd' || t === 'ctrl') out.mod = true;
+      else if (t === 'shift') out.shift = true;
+      else if (t === 'alt' || t === 'option') out.alt = true;
+      else out.key = t;
+    });
+    return out;
+  }
+
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
@@ -492,6 +507,27 @@
           if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
         }
       }
+
+      // Keyboard-shortcut focus: any element with
+      // data-fui-shortcut-focus="Mod+k" (or any combo per parseCombo
+      // below) is focused on the matching keypress, regardless of
+      // where the keystroke originated. Mod = Cmd on Mac, Ctrl else.
+      widgetEl.querySelectorAll('[data-fui-shortcut-focus]').forEach((el) => {
+        const combo = el.getAttribute('data-fui-shortcut-focus') || '';
+        if (!combo) return;
+        const match = parseCombo(combo);
+        document.addEventListener('keydown', (e) => {
+          if (!match.key) return;
+          if (e.key.toLowerCase() !== match.key) return;
+          if (match.mod && !(e.metaKey || e.ctrlKey)) return;
+          if (match.shift && !e.shiftKey) return;
+          if (match.alt && !e.altKey) return;
+          // Skip when the user is mid-IME composition.
+          if (e.isComposing) return;
+          e.preventDefault();
+          try { el.focus(); el.select?.(); } catch (_) {}
+        });
+      });
 
       // Live elapsed-time counters: any element with
        // data-fui-tick-elapsed=<unix-ms> gets its text rewritten each
