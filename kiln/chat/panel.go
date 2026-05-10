@@ -521,7 +521,7 @@ func (pe *panelEnv) toolCountsSinceLastUserMessage() (calls, pending int) {
 func (pe *panelEnv) inputHTML() string {
 	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset data-fui-disable-when-invalid data-fui-submit-on-enter>` +
 		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-fui-autogrow data-fui-shortcut-focus="Mod+k" data-fui-clear-on-esc></textarea>` +
-		`<button class="kiln-send" type="submit">Send <kbd class="kiln-kbd">⏎</kbd></button>` +
+		`<button class="kiln-send" type="submit" aria-keyshortcuts="Enter">Send <kbd class="kiln-kbd">⏎</kbd></button>` +
 		`</form>`
 }
 
@@ -836,8 +836,8 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 		approveLabel := "Approve"
 		rejectLabel := "Reject"
 		if primary {
-			approveExtra = ` data-fui-shortcut-click="y"`
-			rejectExtra = ` data-fui-shortcut-click="n"`
+			approveExtra = ` data-fui-shortcut-click="y" aria-keyshortcuts="y"`
+			rejectExtra = ` data-fui-shortcut-click="n" aria-keyshortcuts="n"`
 			approveLabel = `Approve <kbd class="kiln-kbd">Y</kbd>`
 			rejectLabel = `Reject <kbd class="kiln-kbd">N</kbd>`
 		}
