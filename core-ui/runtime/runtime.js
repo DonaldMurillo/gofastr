@@ -31,7 +31,7 @@
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
   const routes = new Map(); // path → { title, preload }
-  let currentPath = location.pathname;
+  let currentPath = location.pathname + location.search;
 
   const registerRoutes = (routeList) => {
     if (!Array.isArray(routeList)) return;
@@ -897,8 +897,20 @@
     return true;
   };
 
-  const isKnownRoute = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+  // resolvePath turns any href (absolute or relative, with or without
+  // query/hash) into a path+search string anchored at the current
+  // location. "?p=2" → "/components/pagination?p=2", "/about" → "/about".
+  const resolvePath = (href) => {
+    try {
+      const u = new URL(href, location.href);
+      return u.pathname + u.search;
+    } catch (_) { return href; }
+  };
+
+  const isKnownRoute = (href) => {
+    // Resolve relative URLs (e.g. "?p=2") against the current location
+    // so query-only links match their owning route.
+    const clean = resolvePath(href).split('?')[0].split('#')[0];
     // Exact match
     if (routes.has(clean)) return true;
     // Try dynamic route patterns (e.g., /products/:slug)
@@ -992,25 +1004,39 @@
     }
   };
 
-  // Intercept internal link clicks
+  // Link clicks: by default we DO NOT intercept — every navigation is
+  // a real browser request that the server fully re-renders (SSR), and
+  // runtime.js then hydrates the new page on load (signals, event
+  // delegation, SSE bindings). This is incremental-hydration-on-SSR,
+  // not SPA-with-content-swap.
+  //
+  // To opt into client-side partial swap on a specific link, add
+  // data-fui-spa to the <a>. The router below will fetch the partial,
+  // swap <main>, and pushState — same machinery as before, but
+  // explicit per link instead of pulled in by default.
   document.addEventListener('click', (e) => {
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
+    if (!anchor.hasAttribute('data-fui-spa')) return;
     const href = anchor.getAttribute('href');
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!isInternalLink(href)) return;
     if (anchor.target === '_blank') return;
     if (!isKnownRoute(href)) return;
 
+    const fullPath = resolvePath(href);
     e.preventDefault();
-    history.pushState(null, '', href);
-    loadPage(href);
+    history.pushState(null, '', fullPath);
+    loadPage(fullPath);
   });
 
-  // Handle browser back/forward
+  // popstate only matters when we own the navigation (data-fui-spa).
+  // Default browser nav reloads the page anyway, so popstate from
+  // those is moot. We still listen so SPA-driven pushStates back-stack
+  // correctly.
   window.addEventListener('popstate', () => {
-    const path = location.pathname;
-    if (path !== currentPath) {
+    const path = location.pathname + location.search;
+    if (path !== currentPath && currentPath !== '') {
       loadPage(path);
     }
   });
@@ -1142,6 +1168,15 @@
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', connectSSE);
+
+    // Hydration-on-SSR: every fresh page render runs through here on
+    // load. Apply aria-current to the matching nav link so the active
+    // state is visible without SPA-style routing. Server-rendered
+    // pages can also embed aria-current themselves; this just fills
+    // the gap when they don't.
+    document.addEventListener('DOMContentLoaded', () => {
+      updateActiveLink(location.pathname);
+    });
   } else {
     connectSSE();
   }

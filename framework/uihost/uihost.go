@@ -451,7 +451,11 @@ func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
-	html, err := ds.App.RenderPartial(r.Context(), path)
+	// Mirror handlePage: expose the live *http.Request to ScreenLoader
+	// via app.WithRequest so partial-fetched screens can still read URL
+	// query (sort, page, filters) just like full-render screens do.
+	ctx := app.WithRequest(r.Context(), r)
+	html, err := ds.App.RenderPartial(ctx, path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
 		return
