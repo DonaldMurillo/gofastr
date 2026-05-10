@@ -520,7 +520,7 @@ func (pe *panelEnv) toolCountsSinceLastUserMessage() (calls, pending int) {
 
 func (pe *panelEnv) inputHTML() string {
 	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset data-fui-disable-when-invalid data-fui-submit-on-enter>` +
-		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-fui-autogrow data-fui-shortcut-focus="Mod+k" data-fui-clear-on-esc></textarea>` +
+		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-fui-autogrow data-fui-shortcut-focus="Mod+k" data-fui-clear-on-esc data-fui-persist-storage="kiln-input-draft"></textarea>` +
 		`<button class="kiln-send" type="submit" aria-keyshortcuts="Enter">Send <kbd class="kiln-kbd">⏎</kbd></button>` +
 		`<span class="kiln-input-charcount" data-fui-charcount-source=".kiln-input" aria-hidden="true"></span>` +
 		`</form>`

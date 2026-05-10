@@ -3211,6 +3211,54 @@ func TestBrowser_InputCharCounterUpdatesLive(t *testing.T) {
 	t.Errorf("expected '5 chars'; got %q", got)
 }
 
+// Typed-but-not-sent chat input survives a page reload via
+// localStorage. Clears on send via the form.reset wiring.
+func TestBrowser_DraftPromptPersistsAcrossReload(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "draft surviving reload"),
+		// Reload — the value should persist.
+		chromedp.Reload(),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var v string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &v))
+		if strings.Contains(v, "draft surviving reload") {
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var got string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &got))
+	if !strings.Contains(got, "draft surviving reload") {
+		t.Fatalf("draft did not survive reload; got %q", got)
+	}
+
+	// Send the draft → form.reset clears storage → next reload starts empty.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Reload(),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var afterSend string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &afterSend))
+	if afterSend != "" {
+		t.Errorf("expected empty input after send + reload; got %q", afterSend)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

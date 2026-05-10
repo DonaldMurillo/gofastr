@@ -633,6 +633,30 @@
       // Enter-to-submit on textareas inside data-fui-submit-on-enter
       // forms. Shift+Enter still inserts a newline. Skips submission
       // when form is invalid (HTML5 :required handles the no-op feel).
+      // Persist input drafts: data-fui-persist-storage='<key>' on
+       // an input/textarea saves its value to localStorage on input
+       // and restores it on mount. Cleared on form reset (after a
+       // successful send) so a fresh send doesn't immediately
+       // re-restore the same text.
+      widgetEl.querySelectorAll('[data-fui-persist-storage]').forEach((el) => {
+        const key = el.getAttribute('data-fui-persist-storage');
+        if (!key) return;
+        try {
+          const saved = window.localStorage.getItem(key);
+          if (saved && !el.value) {
+            el.value = saved;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        } catch (_) {}
+        el.addEventListener('input', () => {
+          try { window.localStorage.setItem(key, el.value); } catch (_) {}
+        });
+        const form = el.form;
+        if (form) form.addEventListener('reset', () => {
+          try { window.localStorage.removeItem(key); } catch (_) {}
+        });
+      });
+
       // Char counter: any element with data-fui-charcount-source
        // gets its textContent updated to "<n> chars" of the matching
        // input/textarea on every input. Useful for length-aware
