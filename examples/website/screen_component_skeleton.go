@@ -18,14 +18,14 @@ func (s *SkeletonScreen) Render() render.HTML {
 	block := skeleton.New(skeleton.Config{Variant: skeleton.Block, Width: "100%", Height: "120px"})
 	circle := skeleton.New(skeleton.Config{Variant: skeleton.Circle, Width: "3rem"})
 
-	avatarRow := render.Tag("div", map[string]string{"style": "display:flex;gap:0.75rem;align-items:center"},
+	avatarRow := render.Tag("div", map[string]string{"class": "demo-row-tight"},
 		circle,
-		render.Tag("div", map[string]string{"style": "flex:1"},
+		render.Tag("div", map[string]string{"class": "demo-flex-1"},
 			skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "40%"}),
 		),
 	)
 
-	stack := render.Tag("div", map[string]string{"style": "display:grid;gap:1.25rem"},
+	stack := render.Tag("div", map[string]string{"class": "demo-stack demo-stack--lg"},
 		render.Tag("div", nil,
 			render.Tag("strong", nil, render.Text("Multi-line paragraph")),
 			multiline,

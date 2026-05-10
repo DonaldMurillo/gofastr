@@ -231,6 +231,24 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "flex", "gap", "{spacing.md}",
 			"align-items", "center", "flex-wrap", "wrap").End()
 
+	// Demo-page layout helpers (used by example screens to avoid
+	// inline style attributes — a strict-CSP environment blocks any
+	// style="…" attribute on rendered HTML).
+	ss.Rule(".demo-stack").
+		Set("display", "grid", "gap", "1rem").End()
+	ss.Rule(".demo-stack--sm").Set("gap", "0.75rem").End()
+	ss.Rule(".demo-stack--lg").Set("gap", "1.25rem").End()
+	ss.Rule(".demo-stack--toast").
+		Set("display", "grid", "gap", "0.75rem", "max-inline-size", "28rem").End()
+	ss.Rule(".demo-row-flex").
+		Set("display", "flex", "gap", "0.5rem", "align-items", "center", "flex-wrap", "wrap").End()
+	ss.Rule(".demo-row-tight").
+		Set("display", "flex", "gap", "0.75rem", "align-items", "center").End()
+	ss.Rule(".demo-flex-1").Set("flex", "1").End()
+	ss.Rule(".demo-row-label").
+		Set("display", "block", "margin-bottom", "0.5rem",
+			"font-size", "0.85rem", "color", "{colors.text-muted}").End()
+
 	// Theme-swap demo: radios + :has() override --color-primary on the
 	// preview wrapper. Pure CSS — no JS — proves the "one-token swap"
 	// re-skin claim viscerally.

@@ -79,7 +79,7 @@ func (s *PaginationScreen) Render() render.HTML {
 		Total: 8, Current: 1, HrefPattern: "?p=%d",
 	})
 
-	stack := render.Tag("div", map[string]string{"style": "display:grid;gap:1rem"},
+	stack := render.Tag("div", map[string]string{"class": "demo-stack"},
 		labeledRow(
 			"Live (island) — click a page button. Server returns just this island; no full reload, URL updates via pushState.",
 			liveIsland),
@@ -139,7 +139,7 @@ func clampPage(s string, max int) int {
 
 func labeledRow(label string, body render.HTML) render.HTML {
 	return render.Tag("div", nil,
-		render.Tag("strong", map[string]string{"style": "display:block;margin-bottom:0.5rem;font-size:0.85rem;color:var(--color-text-muted)"},
+		render.Tag("strong", map[string]string{"class": "demo-row-label"},
 			render.Text(label)),
 		body,
 	)

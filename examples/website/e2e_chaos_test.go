@@ -150,8 +150,8 @@ func TestE2E_Livereload_ScriptIsServed(t *testing.T) {
 	if !strings.Contains(jsBody, "/__livereload") {
 		t.Errorf("livereload.js missing /__livereload reference; got:\n%s", jsBody)
 	}
-	if !strings.Contains(jsBody, "setInterval") {
-		t.Errorf("livereload.js should short-poll via setInterval; got:\n%s", jsBody)
+	if !strings.Contains(jsBody, "EventSource") {
+		t.Errorf("livereload.js should use EventSource (SSE push); got:\n%s", jsBody)
 	}
 }
 

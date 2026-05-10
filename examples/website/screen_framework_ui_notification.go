@@ -33,7 +33,7 @@ func (s *NotificationDemoScreen) Load(ctx context.Context) error {
 }
 
 func (s *NotificationDemoScreen) Render() render.HTML {
-	stack := render.Tag("div", map[string]string{"style": "display:grid;gap:0.75rem;max-width:28rem"},
+	stack := render.Tag("div", map[string]string{"class": "demo-stack demo-stack--toast"},
 		ui.Notification(ui.NotificationConfig{
 			Title:       "Saved",
 			Body:        "Your changes were applied.",

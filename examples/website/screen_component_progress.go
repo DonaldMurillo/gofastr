@@ -24,7 +24,7 @@ func (s *ProgressScreen) Render() render.HTML {
 		Value: -1, Label: "Working…", Description: "Reticulating splines…",
 	})
 
-	stack := render.Tag("div", map[string]string{"style": "display:grid;gap:1rem"},
+	stack := render.Tag("div", map[string]string{"class": "demo-stack"},
 		determinate, determinateLow, indeterminate,
 	)
 

@@ -122,8 +122,8 @@ func TestLivereloadEndpointsServe(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "/__livereload") {
 		t.Errorf("expected livereload script to reference /__livereload")
 	}
-	if !strings.Contains(rec.Body.String(), "setInterval") {
-		t.Errorf("expected livereload script to use setInterval (short-poll)")
+	if !strings.Contains(rec.Body.String(), "EventSource") {
+		t.Errorf("expected livereload script to use EventSource (SSE-based push)")
 	}
 
 	pageReq := httptest.NewRequest("GET", "/", nil)

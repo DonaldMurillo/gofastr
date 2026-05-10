@@ -164,10 +164,19 @@ func TestAvatarUsesImageWhenSrcSet(t *testing.T) {
 	mustContain(t, h, `alt="Alice"`)
 }
 
-func TestAvatarSizeStyle(t *testing.T) {
-	h := Avatar(AvatarConfig{Name: "x", Size: "3rem"})
-	mustContain(t, h, "inline-size:3rem")
-	mustContain(t, h, "block-size:3rem")
+func TestAvatarSizeVariantClass(t *testing.T) {
+	cases := map[AvatarSize]string{
+		AvatarSm: "ui-avatar--sm",
+		AvatarLg: "ui-avatar--lg",
+		AvatarXl: "ui-avatar--xl",
+	}
+	for size, want := range cases {
+		h := Avatar(AvatarConfig{Name: "x", Size: size})
+		mustContain(t, h, want)
+	}
+	// Default size: no variant class, but the base class is there.
+	h := Avatar(AvatarConfig{Name: "x"})
+	mustContain(t, h, "class=\"ui-avatar\"")
 }
 
 func TestInitialsHelper(t *testing.T) {

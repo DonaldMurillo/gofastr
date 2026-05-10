@@ -300,7 +300,12 @@ func BaseCSS() string {
   font-size: 0.8rem;
   overflow: hidden;
   flex-shrink: 0;
+  inline-size: 2.5rem;
+  block-size:  2.5rem;
 }
+.ui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.7rem; }
+.ui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: 0.95rem; }
+.ui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: 1.1rem; }
 .ui-avatar__img {
   width: 100%;
   height: 100%;

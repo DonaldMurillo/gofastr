@@ -472,13 +472,25 @@ func StatCard(cfg StatCardConfig) render.HTML {
 
 // ─── Avatar ─────────────────────────────────────────────────────────
 
+// AvatarSize is one of a small set of pre-defined avatar sizes.
+// Sizes are CSS classes — no inline styles — so a strict CSP that
+// blocks `style="…"` attributes still works.
+type AvatarSize string
+
+const (
+	AvatarSm AvatarSize = "sm" // ~1.5rem
+	AvatarMd AvatarSize = ""   // default ~2.5rem
+	AvatarLg AvatarSize = "lg" // ~3rem
+	AvatarXl AvatarSize = "xl" // ~4rem
+)
+
 // AvatarConfig configures an avatar.
 type AvatarConfig struct {
 	// Name is required; used for alt text and to derive initials when
 	// no image source is set.
 	Name string
-	Src  string // optional image URL; falls back to initials when empty
-	Size string // CSS length, e.g. "2rem". Defaults to "2.5rem".
+	Src  string     // optional image URL; falls back to initials when empty
+	Size AvatarSize // sm | "" (default md) | lg | xl
 	ID   string
 	Class string
 }
@@ -489,18 +501,15 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: Avatar requires Name")
 	}
-	size := cfg.Size
-	if size == "" {
-		size = "2.5rem"
-	}
 	cls := "ui-avatar"
+	if cfg.Size != AvatarMd {
+		cls += " ui-avatar--" + string(cfg.Size)
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	style := "inline-size:" + size + ";block-size:" + size
 	spanCfg := elements.TextConfig{
 		Class: cls, ID: cfg.ID,
-		Attrs: elements.Attrs{"style": style},
 	}
 	if cfg.Src != "" {
 		return elements.Span(spanCfg,

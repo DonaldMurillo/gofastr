@@ -37,7 +37,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 	avatarRow := render.Tag("div", map[string]string{"class": "demo-avatar-row"},
 		ui.Avatar(ui.AvatarConfig{Name: "Donald Murillo"}),
 		ui.Avatar(ui.AvatarConfig{Name: "Alice Thompson"}),
-		ui.Avatar(ui.AvatarConfig{Name: "B", Size: "3rem"}),
+		ui.Avatar(ui.AvatarConfig{Name: "B", Size: ui.AvatarLg}),
 		ui.Avatar(ui.AvatarConfig{Name: "Catherine"}),
 	)
 
@@ -49,7 +49,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		ui.StatusBadge(ui.StatusBadgeConfig{Label: "Draft", Variant: ui.StatusNeutral}),
 	)
 
-	calloutStack := render.Tag("div", map[string]string{"style": "display:grid;gap:0.75rem"},
+	calloutStack := render.Tag("div", map[string]string{"class": "demo-stack demo-stack--sm"},
 		ui.Callout(ui.CalloutConfig{Title: "Heads up", Variant: ui.StatusInfo},
 			render.Text("Callouts are persistent inline blocks. Use Toast for ephemeral notifications.")),
 		ui.Callout(ui.CalloutConfig{Title: "Saved", Variant: ui.StatusSuccess},
@@ -63,7 +63,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 	emptyState := ui.EmptyState(ui.EmptyStateConfig{
 		Title:       "No customers yet",
 		Description: "Once your team adds the first customer, they'll appear here. You can also import from CSV.",
-		Action: render.Tag("div", map[string]string{"style": "display:flex;gap:0.5rem"},
+		Action: render.Tag("div", map[string]string{"class": "demo-row-flex"},
 			elements.Button(elements.ButtonConfig{Label: "Import CSV", Class: "ui-button"}),
 			ui.DangerButton(ui.DangerButtonConfig{Label: "Reset all"}),
 		),
