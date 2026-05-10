@@ -3382,6 +3382,59 @@ func TestBrowser_HelpButtonOpensShortcutsModal(t *testing.T) {
 	}
 }
 
+// Regression: chat log must actually scroll when content overflows
+// the panel. Earlier, .kiln-log-wrap was a non-flex item so its
+// child .kiln-log (overflow-y:auto, flex:1) had no height
+// constraint and grew to fit content — pushing the log past the
+// panel's max-height with no visible scrollbar.
+func TestBrowser_LongChatLogScrollsInsidePanel(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Seed enough content to exceed the panel's max-height.
+	for i := 0; i < 60; i++ {
+		tools.Chat(context.Background(), protocol.ChatArgs{
+			Role: "user", Text: fmt.Sprintf("seed message #%d filler text to take vertical space", i),
+		})
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var info struct {
+		LogScrollH    float64 `json:"logScrollH"`
+		LogClientH    float64 `json:"logClientH"`
+		PanelH        float64 `json:"panelH"`
+		PanelScrollH  float64 `json:"panelScrollH"`
+	}
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`(function(){
+			const log = document.querySelector('.kiln-log');
+			const panel = document.querySelector('.kiln-panel');
+			return {
+				logScrollH: log.scrollHeight,
+				logClientH: log.clientHeight,
+				panelH: panel.getBoundingClientRect().height,
+				panelScrollH: panel.scrollHeight,
+			};
+		})()`, &info))
+	// Log must overflow (scrollable).
+	if info.LogScrollH <= info.LogClientH+4 {
+		t.Errorf("log not scrollable: scrollH=%v clientH=%v — content fits without overflow",
+			info.LogScrollH, info.LogClientH)
+	}
+	// Panel must NOT overflow itself (overflow:hidden + child scrolls).
+	if info.PanelScrollH > info.PanelH+4 {
+		t.Errorf("panel itself overflows: h=%v scrollH=%v — children should constrain inside the panel",
+			info.PanelH, info.PanelScrollH)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

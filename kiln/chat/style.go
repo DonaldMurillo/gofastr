@@ -608,6 +608,20 @@ func widgetCSS() string {
 		End()
 
 	// --- Log -----------------------------------------------------------
+	// .kiln-log-wrap is the flex middle child of .kiln-panel and the
+	// scroll-anchor target. Needs flex:1 + min-height:0 so its
+	// .kiln-log child (overflow-y:auto) actually constrains under
+	// the panel's max-height — without min-height:0 the wrap pushes
+	// content past the panel and nothing scrolls.
+	ss.Rule(".kiln-log-wrap").
+		Set(
+			"flex", "1",
+			"min-height", "0",
+			"display", "flex",
+			"flex-direction", "column",
+		).
+		End()
+
 	ss.Rule(".kiln-log").
 		Set(
 			"flex", "1",
