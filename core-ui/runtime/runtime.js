@@ -508,6 +508,24 @@
         }
       }
 
+      // Click-to-fill: any clickable element with
+      // data-fui-fill-input="<selector>" copies its textContent
+      // into the matching input/textarea on click, focuses it, and
+      // fires an input event so any validity wiring re-syncs.
+      // Useful for quick-start example buttons.
+      widgetEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-fui-fill-input]');
+        if (!btn || !widgetEl.contains(btn)) return;
+        const sel = btn.getAttribute('data-fui-fill-input');
+        if (!sel) return;
+        const target = widgetEl.querySelector(sel) || document.querySelector(sel);
+        if (!target) return;
+        e.preventDefault();
+        target.value = btn.textContent.trim();
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        try { target.focus(); target.select?.(); } catch (_) {}
+      });
+
       // Keyboard-shortcut focus: any element with
       // data-fui-shortcut-focus="Mod+k" (or any combo per parseCombo
       // below) is focused on the matching keypress, regardless of

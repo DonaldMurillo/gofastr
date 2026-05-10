@@ -191,6 +191,42 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-quickstart").
+		Set(
+			"display", "flex",
+			"flex-direction", "column",
+			"gap", "6px",
+			"padding", "12px",
+			"margin", "8px",
+			"background", "rgba(120, 170, 255, 0.06)",
+			"border", "1px dashed rgba(120, 170, 255, 0.25)",
+			"border-radius", "8px",
+		).
+		End()
+	ss.Rule(".kiln-quickstart-label").
+		Set(
+			"font-size", "10px",
+			"text-transform", "uppercase",
+			"letter-spacing", "0.5px",
+			"color", "rgba(170, 180, 200, 0.7)",
+			"margin-bottom", "4px",
+		).
+		End()
+	ss.Rule(".kiln-quickstart-btn").
+		Set(
+			"background", "rgba(255, 255, 255, 0.04)",
+			"border", "1px solid {colors.kiln-glass-edge}",
+			"color", "{colors.kiln-fg}",
+			"padding", "8px 10px",
+			"border-radius", "6px",
+			"font", "inherit",
+			"font-size", "12px",
+			"text-align", "left",
+			"cursor", "pointer",
+		).
+		Pseudo(":hover", "background", "rgba(120, 170, 255, 0.10)", "border-color", "rgba(120, 170, 255, 0.40)").
+		End()
+
 	ss.Rule(".kiln-turn-divider").
 		Set(
 			"list-style", "none",

@@ -2540,6 +2540,58 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 	t.Errorf("status never showed '1 done · 1 running'; final=%q", last)
 }
 
+// On a fresh server (no chat, no plans, empty world) the panel
+// surfaces a quick-start tray with example prompts. Clicking one
+// fills the textarea and focuses it so the user just hits Enter.
+// Once any chat exists the tray vanishes.
+func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-quickstart`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-quickstart-btn`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("quickstart tray: %v", err)
+	}
+
+	var val string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.querySelector('.kiln-input').value`, &val))
+		if val != "" {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	if val == "" {
+		t.Fatalf("clicking quickstart did not fill input")
+	}
+	var focused string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.activeElement && document.activeElement.className`, &focused))
+	if !strings.Contains(focused, "kiln-input") {
+		t.Errorf("clicking quickstart did not focus input; activeElement.class=%q", focused)
+	}
+
+	// Tray should disappear once chat history exists.
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "x"})
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('.kiln-quickstart')`, &present))
+		if !present {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Errorf("quickstart tray still visible after first chat lands")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

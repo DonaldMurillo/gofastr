@@ -453,9 +453,29 @@ func (pe *panelEnv) inputHTML() string {
 // signal. Walks the journal so world_edits surface as synthetic
 // system rows (".kiln-msg-tool") even when no tool_call envelope
 // was journaled (in-process tools.X() calls fire world_edit only).
+//
+// First-run UX: when nothing has happened yet (empty chat + empty
+// world + no plans) we render a quick-start tray with example
+// prompts so users have a click-path forward instead of an empty
+// box. The buttons set the textarea value via a tiny on-page hook
+// (data-fui-fill-input) and focus it.
 func (pe *panelEnv) logHTMLForCurrent() string {
 	sess := pe.live.Session()
 	var b strings.Builder
+
+	if len(sess.Chat) == 0 && len(sess.Plans) == 0 && (sess.World == nil || (len(sess.World.Entities) == 0 && len(sess.World.Pages) == 0)) {
+		b.WriteString(`<div class="kiln-quickstart">`)
+		b.WriteString(`<div class="kiln-quickstart-label">try one of these:</div>`)
+		for _, ex := range []string{
+			"add an entity called notes with title (string) and body (text)",
+			"build me a small blog: posts and authors with a one-to-many relation",
+			"add a page at /dashboard listing all entities with row counts",
+		} {
+			fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-fui-fill-input=".kiln-input">%s</button>`, escHTML(ex))
+		}
+		b.WriteString(`</div>`)
+	}
+
 	b.WriteString(`<ol class="kiln-log">`)
 
 	type item struct {
