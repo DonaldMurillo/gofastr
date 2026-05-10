@@ -2180,6 +2180,66 @@ func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 	t.Errorf("agent chip never updated to 'claude-code'; final=%q", last)
 }
 
+// Pending tool rows get a live elapsed-time counter so a stuck tool
+// is visible to the user without waiting for the result. Uses the
+// runtime's data-fui-tick-elapsed primitive.
+func TestBrowser_PendingToolRowTicksElapsedTime(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Inject a tool_call directly into the journal WITHOUT a result so
+	// the panel renders the pending state. Use a kind/op the journal
+	// accepts via Apply.
+	if err := l.Apply(journal.Entry{
+		ID:        "pending-test-1",
+		Timestamp: time.Now(),
+		Kind:      journal.KindToolCall,
+		Payload: mustJSON(journal.ToolCallPayload{
+			CallID: "test-pending-1", Name: "add_entity",
+			Args: map[string]any{"entity": map[string]any{"name": "x"}},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-tool-pending`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the first tick to replace the "…" placeholder.
+	deadline := time.Now().Add(2 * time.Second)
+	var t1 string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Text(`[data-fui-tick-elapsed]`, &t1, chromedp.ByQuery))
+		if t1 != "…" && t1 != "" {
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	if t1 == "…" || t1 == "" {
+		t.Fatalf("ticker never replaced placeholder; got %q", t1)
+	}
+
+	time.Sleep(700 * time.Millisecond)
+	var t2 string
+	_ = chromedp.Run(ctx, chromedp.Text(`[data-fui-tick-elapsed]`, &t2, chromedp.ByQuery))
+	if t1 == t2 {
+		t.Errorf("ticker did not advance over 700ms; t1=%q t2=%q", t1, t2)
+	}
+}
+
+func mustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

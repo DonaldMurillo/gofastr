@@ -481,6 +481,26 @@
         }
       }
 
+      // Live elapsed-time counters: any element with
+       // data-fui-tick-elapsed=<unix-ms> gets its text rewritten each
+       // animation frame as 'Ns', '1.2s', '12s' relative to that
+       // start time. Used by the panel for pending tool-call rows so
+       // a stuck tool is visible without waiting for the result.
+       const tickElapsed = () => {
+         widgetEl.querySelectorAll('[data-fui-tick-elapsed]').forEach((el) => {
+           const start = parseInt(el.getAttribute('data-fui-tick-elapsed'), 10);
+           if (!start) return;
+           const ms = Date.now() - start;
+           let txt;
+           if (ms < 1000) txt = ms + 'ms';
+           else if (ms < 10000) txt = (ms / 1000).toFixed(1) + 's';
+           else txt = Math.round(ms / 1000) + 's';
+           el.textContent = txt;
+         });
+       };
+       tickElapsed();
+       setInterval(tickElapsed, 200);
+
       // Textareas marked data-fui-autogrow size their height to fit
       // their content, capped by CSS max-height. Clears inline height
       // before measuring so growth + shrinkage both work after edits

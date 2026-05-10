@@ -495,7 +495,10 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 			d := r.Timestamp.Sub(e.Timestamp)
 			suffix = ` <span class="kiln-msg-tool-elapsed">(` + escHTML(formatElapsed(d)) + `)</span>`
 		} else {
-			suffix = ` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running…)</span>`
+			// Live ticker — runtime rewrites text every 200ms relative
+			// to the call timestamp so pending tools surface their age.
+			suffix = fmt.Sprintf(` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running… <span data-fui-tick-elapsed="%d">…</span>)</span>`,
+				e.Timestamp.UnixMilli())
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s" data-tool="%s">%s %s %s%s</li>`,
 			escAttr(e.Call.CallID), escAttr(e.Call.Name),
