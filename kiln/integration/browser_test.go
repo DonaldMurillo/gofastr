@@ -2240,6 +2240,59 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// In-flight header indicator includes a live-ticking elapsed time
+// since the last user message: 'agent thinking · 1.2s · 0 tools'.
+// Verifies the data-fui-tick-elapsed plumbing reaches this surface.
+func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
+	urlBase, l, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "go build it"})
+	testInFlight.Store(true)
+	l.Notify("agent_turn_started", "pi")
+
+	// Wait for the ticker to land in the status indicator.
+	deadline := time.Now().Add(2 * time.Second)
+	var t1 string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status [data-fui-tick-elapsed]`, &t1, chromedp.ByQuery))
+		if t1 != "" && t1 != "…" {
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	if t1 == "" || t1 == "…" {
+		t.Fatalf("ticker did not initialize in header status; got %q", t1)
+	}
+
+	time.Sleep(700 * time.Millisecond)
+	var t2 string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status [data-fui-tick-elapsed]`, &t2, chromedp.ByQuery))
+	if t1 == t2 {
+		t.Errorf("header elapsed ticker did not advance; t1=%q t2=%q", t1, t2)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

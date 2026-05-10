@@ -373,10 +373,27 @@ func (pe *panelEnv) statusText() string {
 	}
 	count := pe.toolCallsSinceLastUserMessage()
 	suffix := ""
+	// Live elapsed-time tick driven by data-fui-tick-elapsed (runtime
+	// rewrites every 200ms). Anchored to the last user message
+	// timestamp; turn-start is non-journaled (Notify only) so this is
+	// the closest stable anchor with a real timestamp.
+	if start := pe.lastUserMessageMillis(); start > 0 {
+		suffix += fmt.Sprintf(` · <span data-fui-tick-elapsed="%d">…</span>`, start)
+	}
 	if count > 0 {
-		suffix = ` · ` + pluralize(count, "tool", "tools")
+		suffix += ` · ` + pluralize(count, "tool", "tools")
 	}
 	return `<span class="kiln-thinking" role="status" aria-live="polite">agent thinking` + suffix + `<span class="kiln-thinking-dots">…</span></span>`
+}
+
+func (pe *panelEnv) lastUserMessageMillis() int64 {
+	chat := pe.live.Session().Chat
+	for i := len(chat) - 1; i >= 0; i-- {
+		if chat[i].Kind == journal.KindChatUser {
+			return chat[i].Timestamp.UnixMilli()
+		}
+	}
+	return 0
 }
 
 // toolCallsSinceLastUserMessage counts journaled tool_call entries
