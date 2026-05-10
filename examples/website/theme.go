@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/gofastr/gofastr/core-ui/accordion"
 	"github.com/gofastr/gofastr/core-ui/style"
 )
 
@@ -170,5 +171,47 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "inline-block", "color", "{colors.text-muted}",
 			"font-size", "0.9rem", "margin-bottom", "{spacing.lg}").End()
 
-	return ss.CSS()
+	// Component index — tag chip on each card.
+	ss.Rule(".component-tag").
+		Set("display", "inline-block", "margin-left", "{spacing.sm}",
+			"padding", "2px 8px", "border-radius", "{radii.full}",
+			"background", "{colors.background}", "color", "{colors.text-muted}",
+			"font-size", "0.75rem", "font-style", "normal",
+			"font-family", "ui-monospace, 'SF Mono', Menlo, monospace").End()
+	ss.Rule(".lede").
+		Set("font-size", "1.05rem", "color", "{colors.text-muted}",
+			"margin", "{spacing.md} 0 {spacing.xl}").End()
+
+	// Live-demo frame for component pages.
+	ss.Rule(".demo-frame").
+		Set("display", "grid", "grid-template-columns", "1fr",
+			"gap", "{spacing.md}", "margin", "{spacing.lg} 0 {spacing.xl}",
+			"border", "1px solid {colors.border}", "border-radius", "{radii.md}",
+			"overflow", "hidden", "background", "{colors.surface}").End()
+	ss.Media("(min-width: 880px)", func(ss *style.StyleSheet) {
+		ss.Rule(".demo-frame").
+			Set("grid-template-columns", "1fr 1fr").End()
+	})
+	ss.Rule(".demo-live").
+		Set("padding", "{spacing.lg}", "background", "{colors.background}").End()
+	ss.Rule(".demo-source").
+		Set("padding", "{spacing.lg}", "background", "{colors.secondary}", "color", "white",
+			"overflow-x", "auto").End()
+	ss.Rule(".demo-source pre, .demo-source code").
+		Set("background", "transparent", "color", "white", "border", "0",
+			"padding", "0", "font-size", "0.85em",
+			"font-family", "ui-monospace, 'SF Mono', Menlo, monospace").End()
+	ss.Rule(".demo-label").
+		Set("display", "inline-block", "padding", "2px 8px", "margin-bottom", "{spacing.sm}",
+			"border-radius", "{radii.sm}", "font-size", "0.7rem",
+			"font-weight", "700", "letter-spacing", "0.05em", "text-transform", "uppercase").End()
+	ss.Rule(".demo-live .demo-label").
+		Set("background", "{colors.surface}", "color", "{colors.text-muted}",
+			"border", "1px solid {colors.border}").End()
+	ss.Rule(".demo-source .demo-label").
+		Set("background", "rgba(255,255,255,0.12)", "color", "white").End()
+
+	// core-ui component CSS (appended verbatim — uses CSS custom properties
+	// from the theme above).
+	return ss.CSS() + accordion.BaseCSS()
 }

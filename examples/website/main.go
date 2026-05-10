@@ -39,7 +39,7 @@ func main() {
 	fmt.Println("  GoFastr Website")
 	fmt.Println("  http://localhost" + addr)
 	fmt.Println()
-	fmt.Println("  Pages:  /  /docs/  /docs/:slug  /examples/  /about")
+	fmt.Println("  Pages:  /  /docs/  /docs/:slug  /examples/  /components/  /about")
 	fmt.Println("━─────────────────────────────────────────────")
 
 	if err := fwApp.Start(addr); err != nil {
@@ -66,6 +66,8 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/docs/", &DocsIndexScreen{}, nil)
 	site.Register("/docs/:slug", &DocsPageScreen{}, nil)
 	site.Register("/examples/", &ExamplesScreen{}, nil)
+	site.Register("/components/", &ComponentsIndexScreen{}, nil)
+	site.Register("/components/accordion", &AccordionScreen{}, nil)
 	site.Register("/about", &AboutScreen{}, nil)
 
 	cssStr := createStyleSheet(*site.Theme)
