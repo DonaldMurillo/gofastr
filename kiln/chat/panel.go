@@ -722,9 +722,31 @@ func formatElapsed(d time.Duration) string {
 	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
+// formatRelTime returns a brief relative-time string like '12s ago',
+// '4m ago', '1h ago' — enough context for plan cards / chat rows
+// to convey freshness without taking too much space.
+func formatRelTime(t time.Time) string {
+	d := time.Since(t)
+	if d < 0 {
+		return "just now"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+}
+
 func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 	b.WriteString(`<li class="kiln-msg kiln-msg-plan" data-plan-id="` + escAttr(p.PlanID) + `">`)
 	fmt.Fprintf(b, `<div class="kiln-plan-head"><span class="kiln-plan-title">Plan: %s</span>`, escHTML(p.PlanID))
+	fmt.Fprintf(b, `<span class="kiln-plan-when" title="%s">proposed %s</span>`,
+		escAttr(formatRowTime(p.ProposedAt)), escHTML(formatRelTime(p.ProposedAt)))
 	if p.Reason != "" {
 		fmt.Fprintf(b, `<span class="kiln-plan-reason">%s</span>`, escHTML(p.Reason))
 	}

@@ -191,6 +191,15 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-plan-when").
+		Set(
+			"margin-left", "8px",
+			"font-size", "10px",
+			"color", "rgba(170, 180, 200, 0.65)",
+			"font-family", "ui-monospace, monospace",
+		).
+		End()
+
 	ss.Rule(".kiln-plan-target").
 		Set(
 			"display", "inline-block",

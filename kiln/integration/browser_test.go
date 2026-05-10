@@ -3058,6 +3058,29 @@ func TestBrowser_QuickstartAdaptsToExistingWorld(t *testing.T) {
 	}
 }
 
+// Plan card head shows a relative-time 'proposed Xs ago' chip so
+// users see when the plan landed without checking timestamps.
+func TestBrowser_PlanCardShowsRelativeProposeTime(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID: "p-when",
+		Steps:  []string{"do something"},
+	})
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-plan-when`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var when string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-plan-when`, &when, chromedp.ByQuery))
+	if !strings.Contains(when, "proposed ") || !strings.Contains(when, "ago") {
+		t.Errorf("expected 'proposed Xs ago' chip; got %q", when)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
