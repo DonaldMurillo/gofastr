@@ -57,6 +57,24 @@ type SSEBinding struct {
 	Path   string `json:"path"`   // e.g. "/.kiln/events"
 	Event  string `json:"event"`  // e.g. "world_edit"
 	Signal string `json:"signal"` // e.g. "page"
+
+	// Refetch=true tells the runtime to re-fetch /state and apply the
+	// signal's fresh value instead of using the SSE event's payload.
+	// Use when the signal source is server-rendered (HTML, derived
+	// state) and the SSE event is just a "something changed" trigger.
+	Refetch bool `json:"refetch,omitempty"`
+
+	// Reload=true tells the runtime to do a full page reload on this
+	// event. Useful for events that change which page is rendered at
+	// the current URL (kiln add_page / delete_page / add_route /
+	// delete_route). Signal is ignored when Reload is set.
+	Reload bool `json:"reload,omitempty"`
+
+	// Match optionally filters the binding to events whose JSON
+	// payload contains all the listed key=value pairs. Useful when
+	// the SSE channel multiplexes by event type (e.g. "world_edit")
+	// and the host wants to react only to specific ops.
+	Match map[string]string `json:"match,omitempty"`
 }
 
 // RPCEndpoint is a server-side HTTP handler the widget can invoke
@@ -94,6 +112,14 @@ type Definition struct {
 	// for corners, Modal for Center, etc.). Most hosts leave this
 	// nil and use a preset.
 	Skeleton func(slots map[string]render.HTML) render.HTML
+
+	// ExtraCSS is host-supplied CSS appended after the framework's
+	// chrome rules in the per-widget stylesheet (/<StylePath>). Use
+	// for content styling (slot innards, host-specific class names)
+	// that doesn't fit in the page theme. Generate it through
+	// core-ui/style.NewStyleSheet for token consistency, or pass an
+	// already-resolved CSS string.
+	ExtraCSS func() string
 
 	// Modal flags
 	Backdrop      bool // dim the page behind the widget
@@ -160,6 +186,34 @@ func (b *Builder) SSE(path, event, signal string) *Builder {
 	b.def.SSE = append(b.def.SSE, SSEBinding{
 		Path: path, Event: event, Signal: signal,
 	})
+	return b
+}
+
+// SSERefetch binds an SSE event to a signal whose value is rendered
+// server-side. The runtime re-fetches /state on each event and applies
+// the named signal's fresh value, rather than using the event's payload.
+// Use for HTML/derived signals where the SSE event is just a trigger.
+func (b *Builder) SSERefetch(path, event, signal string) *Builder {
+	b.def.SSE = append(b.def.SSE, SSEBinding{
+		Path: path, Event: event, Signal: signal, Refetch: true,
+	})
+	return b
+}
+
+// SSEReload triggers a full page reload on the SSE event. Use for events
+// that change what's rendered at the current URL (e.g. kiln's add_page /
+// delete_page / add_route — the page itself is now different). Pass
+// matchPairs as alternating key/value strings to filter on payload
+// fields (e.g. SSEReload(path, "world_edit", "op", "add_page")).
+func (b *Builder) SSEReload(path, event string, matchPairs ...string) *Builder {
+	binding := SSEBinding{Path: path, Event: event, Reload: true}
+	if len(matchPairs) >= 2 {
+		binding.Match = map[string]string{}
+		for i := 0; i+1 < len(matchPairs); i += 2 {
+			binding.Match[matchPairs[i]] = matchPairs[i+1]
+		}
+	}
+	b.def.SSE = append(b.def.SSE, binding)
 	return b
 }
 

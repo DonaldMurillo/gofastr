@@ -35,6 +35,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 		Slot("header", htmlComp{html: pe.headerHTML()}).
 		Slot("log", htmlComp{html: pe.logHTMLForCurrent()}).
 		Slot("input", htmlComp{html: pe.inputHTML()}).
+		Skeleton(pe.skeleton).
 		Signal("chat_html", widget.SignalFunc(func() (any, error) {
 			return pe.logHTMLForCurrent(), nil
 		})).
@@ -42,15 +43,24 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 			// Filled in by the host (cmd/kiln) via SSE binding to "agent_changed".
 			return "", nil
 		})).
-		// Every world / chat event triggers a chat_html refresh.
-		SSE("/.kiln/events", "chat_user", "chat_html").
-		SSE("/.kiln/events", "chat_assistant", "chat_html").
-		SSE("/.kiln/events", "world_edit", "chat_html").
-		SSE("/.kiln/events", "tool_call", "chat_html").
-		SSE("/.kiln/events", "tool_result", "chat_html").
-		SSE("/.kiln/events", "plan_proposed", "chat_html").
-		SSE("/.kiln/events", "plan_approved", "chat_html").
-		SSE("/.kiln/events", "plan_rejected", "chat_html").
+		// Every world / chat event triggers a chat_html refresh —
+		// SSERefetch re-pulls the rendered HTML from /state instead
+		// of using the SSE payload (which is just metadata).
+		SSERefetch("/.kiln/events", "chat_user", "chat_html").
+		SSERefetch("/.kiln/events", "chat_assistant", "chat_html").
+		SSERefetch("/.kiln/events", "world_edit", "chat_html").
+		SSERefetch("/.kiln/events", "tool_call", "chat_html").
+		SSERefetch("/.kiln/events", "tool_result", "chat_html").
+		SSERefetch("/.kiln/events", "plan_proposed", "chat_html").
+		SSERefetch("/.kiln/events", "plan_approved", "chat_html").
+		SSERefetch("/.kiln/events", "plan_rejected", "chat_html").
+		// Page-affecting world edits: full reload so the now-rendered
+		// page reflects the new world. Filtered by op so add_entity
+		// (which doesn't change page rendering) doesn't trigger reloads.
+		SSEReload("/.kiln/events", "world_edit", "op", "add_page").
+		SSEReload("/.kiln/events", "world_edit", "op", "delete_page").
+		SSEReload("/.kiln/events", "world_edit", "op", "add_route").
+		SSEReload("/.kiln/events", "world_edit", "op", "delete_route").
 		// RPC: chat send, reset, approve/reject, undo.
 		RPCWithSignal("POST", "/kiln/panel/send", http.HandlerFunc(pe.serveSend), "chat_html").
 		RPCWithSignal("POST", "/kiln/panel/reset", http.HandlerFunc(pe.serveReset), "chat_html").
@@ -59,8 +69,32 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 		RPC("POST", "/kiln/panel/undo", http.HandlerFunc(pe.serveUndo)).
 		Build()
 
+	def.ExtraCSS = widgetCSS // appends panel content CSS after framework chrome
 	tag := widget.Mount(r, &def)
 	pe.scriptTag = tag
+}
+
+// skeleton renders the kiln panel chrome with the floating-panel
+// classes the existing CSS already targets (.kiln-widget,
+// .kiln-panel.kiln-open, etc.). The fui-* classes are added alongside
+// so the framework's positioning + bootstrap behavior also applies.
+func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
+	var b strings.Builder
+	b.WriteString(`<div class="fui-widget fui-pos-bottom-right kiln-widget kiln-corner-bottom-right" data-fui-widget="kiln-panel">`)
+	b.WriteString(`<section class="kiln-panel kiln-open" role="dialog" aria-label="Kiln agent">`)
+	if h, ok := slots["header"]; ok {
+		b.WriteString(string(h))
+	}
+	if l, ok := slots["log"]; ok {
+		b.WriteString(`<div class="kiln-log-wrap" data-fui-signal="chat_html" data-fui-signal-mode="html">`)
+		b.WriteString(string(l))
+		b.WriteString(`</div>`)
+	}
+	if inp, ok := slots["input"]; ok {
+		b.WriteString(string(inp))
+	}
+	b.WriteString(`</section></div>`)
+	return render.HTML(b.String())
 }
 
 // PanelScriptTag returns the bootstrap script tag the host fallback HTML
@@ -93,7 +127,7 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-page">/</span>` +
 		`<span class="kiln-panel-agent" data-fui-signal="agent">no agent</span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-action="config">⚙</button>` +
-		`<button type="button" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-signal="chat_html">↺</button>` +
+		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-signal="chat_html">↺</button>` +
 		`<button type="button" class="kiln-panel-close" data-fui-action="close" aria-label="Close">×</button>` +
 		`</div>`
 }
@@ -105,19 +139,22 @@ func (pe *panelEnv) inputHTML() string {
 		`</form>`
 }
 
-// logHTMLForCurrent returns the chat log + plan cards as HTML, ready
-// for innerHTML insertion via the chat_html signal.
+// logHTMLForCurrent returns the chat log + plan cards + world_edit
+// rows as HTML, ready for innerHTML insertion via the chat_html
+// signal. Walks the journal so world_edits surface as synthetic
+// system rows (".kiln-msg-tool") even when no tool_call envelope
+// was journaled (in-process tools.X() calls fire world_edit only).
 func (pe *panelEnv) logHTMLForCurrent() string {
 	sess := pe.live.Session()
 	var b strings.Builder
 	b.WriteString(`<ol class="kiln-log">`)
 
-	// Build a unified, time-sorted list of chat events + plan entries.
 	type item struct {
 		ts    time.Time
-		kind  string // "chat" | "plan"
+		kind  string // "chat" | "plan" | "world_edit"
 		chat  *journal.ChatEvent
 		plan  *journal.Plan
+		op    journal.Op
 	}
 	items := make([]item, 0, len(sess.Chat)+len(sess.Plans))
 	for i := range sess.Chat {
@@ -127,7 +164,15 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 	for _, p := range sess.Plans {
 		items = append(items, item{ts: p.ProposedAt, kind: "plan", plan: p})
 	}
-	// Stable sort by timestamp (insertion order preserved on equal).
+	// Pull world_edit entries from the journal so add_entity / add_page
+	// etc. show as "✦ <op>" rows even when no tool_call envelope exists.
+	if entries, err := pe.live.Journal().Read(); err == nil {
+		for _, e := range entries {
+			if e.Kind == journal.KindWorldEdit {
+				items = append(items, item{ts: e.Timestamp, kind: "world_edit", op: e.Op})
+			}
+		}
+	}
 	for i := 1; i < len(items); i++ {
 		for j := i; j > 0 && items[j].ts.Before(items[j-1].ts); j-- {
 			items[j], items[j-1] = items[j-1], items[j]
@@ -140,6 +185,8 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 			renderChatEvent(&b, it.chat)
 		case "plan":
 			renderPlanCard(&b, it.plan)
+		case "world_edit":
+			fmt.Fprintf(&b, `<li class="kiln-msg kiln-msg-tool">✦ %s</li>`, escHTML(string(it.op)))
 		}
 	}
 	b.WriteString(`</ol>`)
@@ -210,13 +257,15 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 		fmt.Fprintf(b,
 			`<div class="kiln-plan-actions">`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-approve" `+
+				`data-plan-action="approve" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/approve_plan" data-fui-rpc-signal="chat_html" `+
 				`data-fui-rpc-body='{"plan_id":"%s"}'>Approve</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-reject" `+
+				`data-plan-action="reject" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/reject_plan" data-fui-rpc-signal="chat_html" `+
 				`data-fui-rpc-body='{"plan_id":"%s"}'>Reject</button>`+
 				`</div>`,
-			escAttr(p.PlanID), escAttr(p.PlanID))
+			escAttr(p.PlanID), escAttr(p.PlanID), escAttr(p.PlanID), escAttr(p.PlanID))
 	}
 	b.WriteString(`</li>`)
 }

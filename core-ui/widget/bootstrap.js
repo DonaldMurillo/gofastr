@@ -116,18 +116,53 @@
   for (const b of cfg.sse || []) {
     if (!seenStreams[b.path]) {
       try {
-        seenStreams[b.path] = new EventSource(b.path);
+        const es = new EventSource(b.path);
+        seenStreams[b.path] = es;
+        // Tests + integrators that want a single readiness signal.
+        // Fires the first time any of this widget's SSE streams opens.
+        es.addEventListener("open", () => {
+          window.__fuiSSEReady = true;
+        });
       } catch (_) {
         seenStreams[b.path] = null;
       }
     }
     const es = seenStreams[b.path];
     if (!es) continue;
-    es.addEventListener(b.event, (ev) => {
-      let payload;
-      try { payload = JSON.parse(ev.data); } catch (_) { payload = ev.data; }
-      setSignal(b.signal, payload);
-    });
+    if (b.reload) {
+      es.addEventListener(b.event, (ev) => {
+        if (b.match) {
+          let payload = {};
+          try { payload = JSON.parse(ev.data) || {}; } catch (_) {}
+          for (const k in b.match) {
+            if (String(payload[k]) !== String(b.match[k])) return;
+          }
+        }
+        // Brief delay so the SSE event lands and the server-side
+        // session has been updated before the reload reads it.
+        setTimeout(() => location.reload(), 200);
+      });
+      continue;
+    }
+    if (b.refetch) {
+      // Server-rendered signal: re-fetch /state on each event and
+      // pull the fresh value for this signal. The SSE payload is
+      // ignored — the event is just a "something changed" trigger.
+      es.addEventListener(b.event, () => {
+        fetch(cfg.statePath, { headers: { "X-FUI-Widget": cfg.name } })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((state) => {
+            if (state && b.signal in state) setSignal(b.signal, state[b.signal]);
+          })
+          .catch(() => {});
+      });
+    } else {
+      es.addEventListener(b.event, (ev) => {
+        let payload;
+        try { payload = JSON.parse(ev.data); } catch (_) { payload = ev.data; }
+        setSignal(b.signal, payload);
+      });
+    }
   }
 
   // ---- RPC dispatch (event delegation, scoped to the widget) -------
@@ -153,6 +188,88 @@
       await dispatchRPC(form);
     }
   });
+
+  // Global click delegation for [data-fui-rpc] anywhere on the page.
+  // Agent-rendered page buttons live OUTSIDE the widget chrome and
+  // need their RPC clicks dispatched too. Idempotent across multiple
+  // widget mounts on the same page (a flag on document prevents
+  // double-binding).
+  if (!document.__fuiGlobalDispatch) {
+    document.__fuiGlobalDispatch = true;
+    document.addEventListener("click", async (e) => {
+      // Skip clicks already handled by a widget-scoped listener.
+      const widgetParent = e.target.closest("[data-fui-widget]");
+      if (widgetParent) return;
+      const btn = e.target.closest("[data-fui-rpc]");
+      if (btn) {
+        e.preventDefault();
+        await dispatchRPC(btn);
+        return;
+      }
+      // Legacy compat: agent-rendered buttons may use data-kiln-tool
+      // (the verb name) + data-kiln-args (JSON body). Translate at
+      // dispatch time so old page trees keep working.
+      const legacy = e.target.closest("[data-kiln-tool]");
+      if (legacy) {
+        e.preventDefault();
+        const tool = legacy.getAttribute("data-kiln-tool");
+        const args = legacy.getAttribute("data-kiln-args") || "";
+        try {
+          await fetch("/kiln/tool/" + tool, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: args,
+          });
+        } catch (_) {}
+        return;
+      }
+    });
+    // Form intercept: data-fui-rpc form → RPC dispatcher;
+    // data-kiln-tool form → POST to /kiln/tool/<name>;
+    // Plain <form action="…"> on a kiln page → JSON-post to action
+    // (mirrors how the framework's entity CRUD endpoints expect input).
+    // Widget-scoped forms handled by the widget's own listener above.
+    document.addEventListener("submit", async (e) => {
+      const form = e.target.closest("form");
+      if (!form) return;
+      if (form.closest("[data-fui-widget]")) return;
+      const action = form.getAttribute("action");
+      if (form.hasAttribute("data-fui-rpc")) {
+        e.preventDefault();
+        await dispatchRPC(form);
+        return;
+      }
+      if (form.hasAttribute("data-kiln-tool")) {
+        e.preventDefault();
+        const tool = form.getAttribute("data-kiln-tool");
+        const fd = new FormData(form);
+        const obj = {};
+        fd.forEach((v, k) => { obj[k] = v; });
+        try {
+          await fetch("/kiln/tool/" + tool, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(obj),
+          });
+        } catch (_) {}
+        return;
+      }
+      if (action && !action.match(/^https?:\/\//)) {
+        // Relative-URL form on a kiln page — assume framework JSON.
+        e.preventDefault();
+        const fd = new FormData(form);
+        const obj = {};
+        fd.forEach((v, k) => { obj[k] = v; });
+        try {
+          await fetch(action, {
+            method: form.getAttribute("method") || "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(obj),
+          });
+        } catch (_) {}
+      }
+    });
+  }
 
   // close on backdrop click
   if (cfg.closeOnClick && backdrop) {

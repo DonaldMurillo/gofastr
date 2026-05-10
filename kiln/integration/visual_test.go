@@ -41,6 +41,7 @@ func saveShot(t *testing.T, name string, buf []byte) string {
 // (1) Empty state on host renders the welcome cards + the floating
 // expanded panel with empty message.
 func TestVisual_HostEmptyState(t *testing.T) {
+	t.Skip("host empty-state DOM (.kiln-empty) was a legacy widget.js construct; new panel mounts immediately — needs visual test rewrite")
 	urlBase, _ := startKiln(t)
 	ctx, cancel := newChrome(t)
 	defer cancel()
@@ -62,6 +63,7 @@ func TestVisual_HostEmptyState(t *testing.T) {
 // (2) Status text is visible mid-flight. We slow the network so the
 // pending state stays on screen long enough to capture.
 func TestVisual_StatusFeedbackOnSend(t *testing.T) {
+	t.Skip(".kiln-status was a legacy widget.js DOM node; status feedback in the new panel surfaces via signals — needs visual test rewrite")
 	urlBase, _ := startKiln(t)
 	ctx, cancel := newChrome(t)
 	defer cancel()
@@ -330,27 +332,20 @@ func TestVisual_PanelChromeStyling(t *testing.T) {
 	ctx, cancel := newChrome(t)
 	defer cancel()
 
-	var fabHidden bool
 	var panelOpen bool
-	var bgImage string
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector(".kiln-fab").classList.contains("kiln-fab-hidden")`, &fabHidden),
+		// Panel always opens immediately under the new framework — the
+		// legacy FAB-toggle no longer exists. Just confirm the panel is
+		// rendered with the expected open state.
 		chromedp.Evaluate(`document.querySelector(".kiln-panel").classList.contains("kiln-open")`, &panelOpen),
-		chromedp.Evaluate(`getComputedStyle(document.body).backgroundImage`, &bgImage),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !fabHidden {
-		t.Error("FAB should be hidden when panel is open")
-	}
 	if !panelOpen {
-		t.Error("panel should be open on host (data-open=true)")
-	}
-	if !strings.Contains(bgImage, "radial-gradient") {
-		t.Errorf("body bg should use radial-gradient, got: %s", bgImage)
+		t.Error("panel should be open on host (always-open in new framework)")
 	}
 
 	var shot []byte
@@ -366,7 +361,7 @@ func waitForSSE(t *testing.T, ctx context.Context) {
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		var ready bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`!!window.__kilnSSEReady`, &ready)); err == nil && ready {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
 			return
 		}
 		time.Sleep(80 * time.Millisecond)

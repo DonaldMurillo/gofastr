@@ -67,14 +67,18 @@ func encodeJSON(v any) string {
 	return strings.TrimRight(buf.String(), "\n")
 }
 
-// serveStyle returns the widget stylesheet. By default the framework
-// owns positioning (corner/center/edge) + chrome (panel, modal, toast)
-// styling; the host can extend by setting def.Skeleton with classed
-// content that references theme tokens.
+// serveStyle returns the widget stylesheet. The framework owns
+// positioning (corner/center/edge) + chrome (panel, modal, toast,
+// backdrop). Hosts that need additional rules — typically content
+// styling for slot innards — supply def.ExtraCSS, which is appended
+// verbatim after the framework rules.
 func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, widgetCSS(s.def))
+	if s.def.ExtraCSS != nil {
+		fmt.Fprint(w, "\n", s.def.ExtraCSS())
+	}
 }
 
 // serveState returns the current value of every named signal as JSON.

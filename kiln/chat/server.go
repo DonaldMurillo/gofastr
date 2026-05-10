@@ -25,12 +25,11 @@ var hostHTML string
 //go:embed assets/widget.js
 var widgetJS string
 
-// WidgetTag is the HTML snippet to embed the floating widget on a page.
+// WidgetTag is the HTML snippet to embed the floating panel on a page.
 // kiln/render auto-injects this on every page it serves; user-built
-// apps can drop it in manually. The widget remembers open/closed state
-// in localStorage so navigating between pages preserves the user's
-// preference.
-const WidgetTag = `<script src="/kiln/chat/widget.js" data-corner="bottom-right"></script>`
+// apps can drop it in manually. Loads the framework-served bootstrap
+// for the kiln-panel widget — no bespoke widget.js.
+const WidgetTag = `<script src="/core-ui/widget/kiln-panel/bootstrap.js"></script>`
 
 // Server hosts the in-app Kiln surfaces: the floating widget assets,
 // the world-state JSON endpoint, the tool dispatcher, and the SSE bus.
