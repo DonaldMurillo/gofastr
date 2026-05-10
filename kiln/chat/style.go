@@ -245,6 +245,29 @@ func widgetCSS() string {
 		Set("border-left", "2px solid rgba(255, 200, 110, 0.45)", "padding-left", "6px").
 		End()
 
+	// Copy-transcript button. Borrows the basic header-button look.
+	ss.Rule(".kiln-panel-copy").
+		Set(
+			"background", "rgba(255, 255, 255, 0.04)",
+			"border", "1px solid rgba(255, 255, 255, 0.10)",
+			"color", "rgba(220, 225, 235, 0.85)",
+			"border-radius", "4px",
+			"width", "22px",
+			"height", "22px",
+			"font-size", "12px",
+			"line-height", "1",
+			"cursor", "pointer",
+			"margin-right", "4px",
+			"display", "inline-flex",
+			"align-items", "center",
+			"justify-content", "center",
+		).
+		Pseudo(":hover", "background", "rgba(255, 255, 255, 0.08)").
+		End()
+	ss.Rule(".kiln-panel-copy.fui-copied").
+		Set("background", "rgba(110, 220, 150, 0.20)", "color", "rgba(140, 230, 170, 0.95)").
+		End()
+
 	// Stop button: only visible when the in-flight indicator
 	// (.kiln-thinking inside the head) is rendered.
 	ss.Rule(".kiln-panel-stop").

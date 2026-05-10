@@ -657,6 +657,40 @@
         });
       });
 
+      // Copy-from: any clickable element with
+      // data-fui-copy-text-from='<selector>' copies the matching
+      // element's textContent to the system clipboard. The button
+      // gets a brief 'copied!' affordance via the .fui-copied
+      // class for 1.2s.
+      widgetEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-fui-copy-text-from]');
+        if (!btn || !widgetEl.contains(btn)) return;
+        const sel = btn.getAttribute('data-fui-copy-text-from');
+        if (!sel) return;
+        const target = widgetEl.querySelector(sel) || document.querySelector(sel);
+        if (!target) return;
+        e.preventDefault();
+        const text = (target.innerText || target.textContent || '').trim();
+        const flash = () => {
+          btn.classList.add('fui-copied');
+          setTimeout(() => btn.classList.remove('fui-copied'), 1200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(flash, flash);
+        } else {
+          // Fallback for older browsers / lacking permissions.
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+            flash();
+          } catch (_) {}
+        }
+      });
+
       // Char counter: any element with data-fui-charcount-source
        // gets its textContent updated to "<n> chars" of the matching
        // input/textarea on every input. Useful for length-aware

@@ -3259,6 +3259,52 @@ func TestBrowser_DraftPromptPersistsAcrossReload(t *testing.T) {
 	}
 }
 
+// Copy-transcript button copies the chat log textContent to the
+// clipboard and flashes a 'copied' state. Verifies the framework
+// data-fui-copy-text-from primitive on the kiln panel opt-in.
+func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "trace this"})
+
+	// Stub the clipboard so the copy succeeds even in headless without permissions.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-copy`, chromedp.ByQuery),
+		chromedp.Evaluate(`(function(){
+			window.__copied = '';
+			Object.defineProperty(navigator, 'clipboard', {
+				configurable: true,
+				value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } },
+			});
+		})()`, nil),
+		chromedp.Click(`.kiln-panel-copy`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var copied string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__copied`, &copied))
+		if strings.Contains(copied, "trace this") {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var copied string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__copied`, &copied))
+	if !strings.Contains(copied, "trace this") {
+		t.Errorf("clipboard did not receive transcript text; got %q", copied)
+	}
+	var hasFlash bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-panel-copy').classList.contains('fui-copied')`, &hasFlash))
+	if !hasFlash {
+		t.Errorf("expected .fui-copied flash class on copy button after click")
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
