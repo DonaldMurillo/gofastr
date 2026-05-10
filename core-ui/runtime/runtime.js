@@ -603,6 +603,19 @@
       // Enter-to-submit on textareas inside data-fui-submit-on-enter
       // forms. Shift+Enter still inserts a newline. Skips submission
       // when form is invalid (HTML5 :required handles the no-op feel).
+      // Esc clears any input/textarea opted in via
+      // data-fui-clear-on-esc; fires an input event so validity
+      // wiring re-syncs (Send button disables again, etc).
+      widgetEl.querySelectorAll('[data-fui-clear-on-esc]').forEach((el) => {
+        el.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape' || !el.value) return;
+          e.preventDefault();
+          e.stopPropagation();
+          el.value = '';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      });
+
       const enterForms = widgetEl.querySelectorAll('form[data-fui-submit-on-enter]');
       const isEnter = (e) => (e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13);
       enterForms.forEach((form) => {

@@ -2886,6 +2886,34 @@ func TestBrowser_WorldEndpointReturnsIndentedJSON(t *testing.T) {
 	}
 }
 
+// Pressing Esc inside the chat textarea wipes the typed value
+// (without affecting modals — only triggered when the textarea
+// is the focused element with a non-empty value).
+func TestBrowser_EscClearsChatInput(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "abandon ship"),
+		chromedp.Focus(`.kiln-input`, chromedp.ByQuery),
+		chromedp.KeyEvent(kb.Escape),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var v string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &v))
+		if v == "" {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	t.Errorf("Esc did not clear textarea content")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
