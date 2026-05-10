@@ -59,6 +59,41 @@ func TestResolveAdapterCustomBuildArgs(t *testing.T) {
 	}
 }
 
+// When the user passes --agent as a freeform string that happens to
+// equal a built-in adapter's exact spawn command, classify it as that
+// named adapter — not "custom". Otherwise the gear modal can't mark a
+// "current" radio (curName=="custom" matches none of the listed
+// adapter rows), and the user sees an unselected list.
+func TestResolveAdapterFreeformMatchesBuiltin(t *testing.T) {
+	for name, want := range adapters {
+		// Build the adapter's natural spawn command (argv minus the
+		// trailing prompt) and feed it back through resolveAdapter as
+		// a single string — the same path --agent "<freeform>" takes.
+		argv := want.BuildArgs("")
+		spawn := joinArgv(argv[:len(argv)-1])
+		got, ok := resolveAdapter(spawn)
+		if !ok {
+			t.Errorf("%s: spawn cmd %q failed to resolve", name, spawn)
+			continue
+		}
+		if got.Name != name {
+			t.Errorf("%s: spawn cmd %q resolved to adapter %q, want %q (so the gear modal can mark it current)",
+				name, spawn, got.Name, name)
+		}
+	}
+}
+
+func joinArgv(argv []string) string {
+	out := ""
+	for i, a := range argv {
+		if i > 0 {
+			out += " "
+		}
+		out += a
+	}
+	return out
+}
+
 func TestResolveAdapterUnknownName(t *testing.T) {
 	// Names that aren't in the registry and aren't shell-cmd-shaped
 	// (single token) should NOT resolve to "custom" — that would be

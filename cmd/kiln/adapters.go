@@ -94,6 +94,20 @@ func resolveAdapter(value string) (Adapter, bool) {
 	if len(parts) == 0 {
 		return Adapter{}, false
 	}
+	// If the freeform spawn matches a built-in adapter's exact argv
+	// prefix, return that named adapter — not a "custom" one. The gear
+	// modal keys its "current" radio off the adapter name; classifying
+	// "pi -p --provider zai --model glm-5.1" as custom would leave the
+	// user staring at an all-unselected list even though their --agent
+	// is the pi preset.
+	for _, name := range adapterAutoOrder {
+		a := adapters[name]
+		argv := a.BuildArgs("")
+		prefixArgs := argv[:len(argv)-1]
+		if argvEqual(prefixArgs, parts) {
+			return a, true
+		}
+	}
 	binary := parts[0]
 	prefix := append([]string(nil), parts...)
 	return Adapter{
@@ -107,4 +121,16 @@ func resolveAdapter(value string) (Adapter, bool) {
 			return append(append([]string(nil), prefix...), text)
 		},
 	}, true
+}
+
+func argvEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
