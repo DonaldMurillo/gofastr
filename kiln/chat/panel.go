@@ -454,7 +454,12 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		if e.Kind == journal.KindChatAssistant {
 			role = "assistant"
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-%s">%s</li>`, role, escHTML(stripPagePrefix(e.Message.Text)))
+		page, body := splitPagePrefix(e.Message.Text)
+		var pageChip string
+		if page != "" {
+			pageChip = fmt.Sprintf(`<span class="kiln-msg-page">%s</span>`, escHTML(page))
+		}
+		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-%s">%s%s</li>`, role, pageChip, escHTML(body))
 		return
 	}
 	if e.Call != nil {
@@ -699,13 +704,30 @@ func summarizeArgs(args map[string]any) string {
 }
 
 func stripPagePrefix(s string) string {
-	if !strings.HasPrefix(s, "[page=") {
+	page, rest := splitPagePrefix(s)
+	if page == "" {
 		return s
 	}
-	if i := strings.Index(s, "] "); i > 0 {
-		return s[i+2:]
+	return rest
+}
+
+// splitPagePrefix peels the "[page=/foo] " context header that the
+// widget prepends so the panel can render the page as a chip alongside
+// the message text. Returns ("", s) when no prefix is present.
+func splitPagePrefix(s string) (page, rest string) {
+	if !strings.HasPrefix(s, "[page=") {
+		return "", s
 	}
-	return s
+	end := strings.Index(s, "] ")
+	if end <= 0 {
+		return "", s
+	}
+	body := s[len("[page="):end]
+	if i := strings.Index(body, " "); i >= 0 {
+		// "[page=/x ?q=1]" — drop the query suffix from the chip text.
+		body = body[:i]
+	}
+	return body, s[end+2:]
 }
 
 func escHTML(s string) string {

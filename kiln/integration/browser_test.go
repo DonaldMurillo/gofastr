@@ -2081,6 +2081,40 @@ func TestBrowser_TextareaAutoGrowsWithContent(t *testing.T) {
 	t.Errorf("textarea did not grow with content: initial=%v final=%v", initialHeight, finalH)
 }
 
+// User messages submitted from a kiln-built page carry a "[page=/foo] "
+// prefix from the widget; the panel surfaces that prefix as a chip
+// next to the message body so the agent's context isn't invisible.
+func TestBrowser_PagePrefixRendersAsChip(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "[page=/dashboard] add a status field"})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var chipText string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`(function(){const e=document.querySelector('.kiln-msg-user .kiln-msg-page');return e?e.textContent:'';})()`,
+			&chipText))
+		if chipText == "/dashboard" {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var fragment string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-msg-user').outerHTML`, &fragment))
+	t.Errorf("expected page chip '/dashboard' inside .kiln-msg-user; got: %s", fragment)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

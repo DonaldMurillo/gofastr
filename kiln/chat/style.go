@@ -191,6 +191,21 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-msg-page").
+		Set(
+			"display", "inline-block",
+			"margin-right", "6px",
+			"padding", "1px 6px",
+			"background", "rgba(120, 170, 255, 0.12)",
+			"color", "rgba(150, 190, 255, 0.95)",
+			"border", "1px solid rgba(120, 170, 255, 0.30)",
+			"border-radius", "999px",
+			"font-size", "10px",
+			"font-family", "ui-monospace, monospace",
+			"vertical-align", "1px",
+		).
+		End()
+
 	ss.Rule(".kiln-panel-snapshot").
 		Set(
 			"display", "inline-flex",
