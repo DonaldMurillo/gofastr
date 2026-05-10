@@ -2592,6 +2592,49 @@ func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 	t.Errorf("quickstart tray still visible after first chat lands")
 }
 
+// Plan card highlights destructive targets (delete_*) with a red
+// chip so the user can scan a multi-target plan and immediately see
+// which ops are dangerous.
+func TestBrowser_PlanCardHighlightsDestructiveTargets(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Seed an entity so delete_entity is a valid target.
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "doomed", Fields: []world.Field{{Name: "x", Type: "string"}}}})
+
+	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID: "p-mixed",
+		Steps:  []string{"delete the doomed entity, then add a new one"},
+		Targets: []journal.PlanTarget{
+			{Op: "delete_entity", Name: "doomed"},
+			{Op: "add_entity", Name: "fresh"},
+		},
+	})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-plan-targets`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var destCount, safeCount int
+		_ = chromedp.Run(ctx,
+			chromedp.Evaluate(`document.querySelectorAll('.kiln-plan-target-destructive').length`, &destCount),
+			chromedp.Evaluate(`document.querySelectorAll('.kiln-plan-target:not(.kiln-plan-target-destructive)').length`, &safeCount),
+		)
+		if destCount == 1 && safeCount == 1 {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Errorf("expected exactly 1 destructive target chip and 1 non-destructive in plan card")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

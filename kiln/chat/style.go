@@ -191,6 +191,26 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-plan-target").
+		Set(
+			"display", "inline-block",
+			"padding", "1px 6px",
+			"border-radius", "4px",
+			"font-family", "ui-monospace, monospace",
+			"background", "rgba(255, 255, 255, 0.04)",
+			"border", "1px solid rgba(255, 255, 255, 0.08)",
+			"font-size", "11px",
+		).
+		End()
+	ss.Rule(".kiln-plan-target-destructive").
+		Set(
+			"background", "rgba(220, 80, 80, 0.10)",
+			"color", "{colors.kiln-bad}",
+			"border-color", "rgba(220, 80, 80, 0.30)",
+			"font-weight", "600",
+		).
+		End()
+
 	ss.Rule(".kiln-quickstart").
 		Set(
 			"display", "flex",

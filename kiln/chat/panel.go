@@ -667,11 +667,16 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 	}
 	if len(p.Targets) > 0 {
 		b.WriteString(`<div class="kiln-plan-targets"><span class="kiln-plan-targets-label">Will run: </span>`)
-		parts := make([]string, 0, len(p.Targets))
-		for _, t := range p.Targets {
-			parts = append(parts, t.Op+" "+t.Name)
+		for i, t := range p.Targets {
+			if i > 0 {
+				b.WriteString(`, `)
+			}
+			cls := "kiln-plan-target"
+			if strings.HasPrefix(t.Op, "delete_") {
+				cls += " kiln-plan-target-destructive"
+			}
+			fmt.Fprintf(b, `<span class="%s">%s %s</span>`, cls, escHTML(t.Op), escHTML(t.Name))
 		}
-		b.WriteString(escHTML(strings.Join(parts, ", ")))
 		b.WriteString(`</div>`)
 	}
 	switch {
