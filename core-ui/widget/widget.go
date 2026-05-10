@@ -332,9 +332,15 @@ func Mount(r *router.Router, def *Definition) {
 }
 
 // RuntimeTag returns the single <script> tag a host page embeds to load
-// the framework runtime + auto-mount every registered widget. Same tag
-// regardless of how many widgets are mounted; idempotent across pages.
-const RuntimeTag = `<script src="/__gofastr/runtime.js"></script>`
+// the framework runtime + auto-mount every registered widget. The URL
+// includes a content-hash query param so a new server build invalidates
+// any cached runtime in the browser without manual hard-reload.
+//
+// Implemented as a func, not a const, because the hash is computed lazily
+// from the embedded runtime.js bytes.
+func RuntimeTag() string {
+	return `<script src="/__gofastr/runtime.js?v=` + runtimeHash() + `"></script>`
+}
 
 // MountRuntime registers the framework runtime endpoints on r:
 //

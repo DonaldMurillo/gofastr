@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/router"
+	"github.com/gofastr/gofastr/core-ui/widget"
 	"github.com/gofastr/gofastr/kiln/journal"
 	"github.com/gofastr/gofastr/kiln/live"
 	"github.com/gofastr/gofastr/kiln/protocol"
@@ -25,11 +26,11 @@ var hostHTML string
 //go:embed assets/widget.js
 var widgetJS string
 
-// WidgetTag is the HTML snippet to embed the floating panel on a page.
-// Loads the shared framework runtime which auto-discovers every widget
-// the host has registered (kiln-panel + any future siblings) — one URL
-// per page, regardless of widget count.
-const WidgetTag = `<script src="/__gofastr/runtime.js"></script>`
+// WidgetTag returns the script tag to embed the floating panel on a
+// page. Delegates to widget.RuntimeTag so the URL gets a content-hash
+// cache-bust query param — fresh build invalidates any cached runtime
+// in the browser.
+func WidgetTag() string { return widget.RuntimeTag() }
 
 // Server hosts the in-app Kiln surfaces: the floating widget assets,
 // the world-state JSON endpoint, the tool dispatcher, and the SSE bus.
@@ -88,8 +89,16 @@ func (s *Server) Mount(r *router.Router) {
 }
 
 // HostHTML is the empty-state shell. Returned to any unmatched HTML
-// request so the floating widget is always reachable.
-func HostHTML() string { return hostHTML }
+// request so the floating widget is always reachable. The embedded
+// HTML uses a placeholder script tag we substitute with WidgetTag at
+// serve time so the runtime URL gets a fresh content-hash cache-bust
+// query param on every page load.
+func HostHTML() string {
+	return strings.Replace(hostHTML,
+		`<script src="/__gofastr/runtime.js"></script>`,
+		WidgetTag(),
+		1)
+}
 
 func (s *Server) serveWidgetJS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")

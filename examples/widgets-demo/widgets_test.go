@@ -53,7 +53,7 @@ func startPanelDemo(t *testing.T) (string, *int64) {
 	widget.MountRuntime(r)
 
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, widget.RuntimeTag)
+		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, widget.RuntimeTag())
 	}))
 
 	srv := httptest.NewServer(r)
@@ -73,7 +73,7 @@ func startModalDemo(t *testing.T) string {
 	widget.Mount(r, &modal)
 	widget.MountRuntime(r)
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, widget.RuntimeTag)
+		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, widget.RuntimeTag())
 	}))
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

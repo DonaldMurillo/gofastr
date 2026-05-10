@@ -70,7 +70,7 @@ func main() {
 <p>The floating panel and modal below are mounted via core-ui/widget. The
 panel's Increment button POSTs to /api/inc and the response value flows
 back into the counter signal — no page reload.</p>
-` + widget.RuntimeTag + `
+` + widget.RuntimeTag() + `
 </body></html>`))
 	}))
 

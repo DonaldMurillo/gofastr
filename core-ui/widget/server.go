@@ -1,16 +1,40 @@
 package widget
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/runtime"
 	"github.com/gofastr/gofastr/core-ui/style"
 )
+
+// runtimeHash is the SHA256 of the embedded runtime.js, computed once
+// at first use. Cache-busts the script URL so a new build invalidates
+// any previously-cached runtime in the browser.
+var (
+	runtimeHashOnce sync.Once
+	runtimeHashVal  string
+)
+
+func runtimeHash() string {
+	runtimeHashOnce.Do(func() {
+		js, err := runtime.RuntimeJS()
+		if err != nil {
+			runtimeHashVal = "dev"
+			return
+		}
+		sum := sha256.Sum256([]byte(js))
+		runtimeHashVal = hex.EncodeToString(sum[:8]) // 16 hex chars is plenty
+	})
+	return runtimeHashVal
+}
 
 // server is the per-widget HTTP plumbing: stylesheet + signal state
 // snapshot. One instance per Mount call.
@@ -20,10 +44,17 @@ type server struct {
 
 // serveRuntime returns the framework runtime JS at /__gofastr/runtime.js.
 // Single URL for every page; the runtime self-discovers widgets via
-// /__gofastr/widgets at startup.
+// /__gofastr/widgets at startup. Pages embed the runtime URL with a
+// ?v=<hash> cache-bust query param (see RuntimeTag) so a new build
+// invalidates any previously cached runtime.
+//
+// Belt-and-suspenders cache headers: no-store + no-cache + must-revalidate
+// + Pragma:no-cache + Expires:0 covers every browser quirk.
 func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	rt, err := runtime.RuntimeJS()
 	if err != nil {
 		http.Error(w, "runtime unavailable: "+err.Error(), http.StatusInternalServerError)

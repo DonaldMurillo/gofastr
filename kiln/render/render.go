@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/gofastr/gofastr/core-ui/widget"
 	"github.com/gofastr/gofastr/framework"
 	"github.com/gofastr/gofastr/kiln/effect"
 	"github.com/gofastr/gofastr/kiln/world"
@@ -183,11 +184,10 @@ func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 	return decl.Config()
 }
 
-// WidgetTag is the HTML snippet auto-injected into every Kiln-rendered
-// page. Mirrors kiln/chat.WidgetTag — kept local to avoid coupling
-// kiln/render to kiln/chat. The panel defaults open on every page load;
-// state lives in the journal, not in the browser.
-const WidgetTag = `<script src="/__gofastr/runtime.js"></script>`
+// widgetTag returns the script tag auto-injected into every Kiln-rendered
+// page. Delegates to widget.RuntimeTag for content-hash cache-busting
+// so a fresh build invalidates any stale runtime in the browser.
+func widgetTag() string { return widget.RuntimeTag() }
 
 func applyPages(app *framework.App, w *world.World) error {
 	// Build a set of paths the entity CRUD layer has already registered
@@ -266,7 +266,7 @@ func renderFullPage(p *world.Page) string {
 <main class="kiln-page">
 ` + string(RenderNode(p.Tree)) + `
 </main>
-` + WidgetTag + `
+` + widgetTag() + `
 </body>
 </html>`
 }
