@@ -3032,6 +3032,32 @@ func TestBrowser_ToolRowCategoryColorsApply(t *testing.T) {
 	}
 }
 
+// Quickstart prompts adapt to the current world: when an entity
+// exists, the suggestions reference its name instead of generic
+// onboarding examples.
+func TestBrowser_QuickstartAdaptsToExistingWorld(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "widgets", Fields: []world.Field{{Name: "label", Type: "string"}}}})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-quickstart-btn`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var combined string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`Array.from(document.querySelectorAll('.kiln-quickstart-btn')).map(e=>e.textContent).join("|")`,
+		&combined))
+	if !strings.Contains(combined, "widgets") {
+		t.Errorf("quickstart prompts did not mention existing entity 'widgets'; got %q", combined)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

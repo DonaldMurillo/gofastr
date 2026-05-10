@@ -431,6 +431,44 @@ func (pe *panelEnv) lastUserMessageMillis() int64 {
 	return 0
 }
 
+// quickstartExamples picks 3 prompts tailored to the current world
+// state. Empty world → first-time onboarding suggestions. Once an
+// entity exists → suggest building on it (page, hook, relation).
+// Returns nil when the world is rich enough that suggestions would
+// just be noise (any chat history triggers an empty list upstream).
+func (pe *panelEnv) quickstartExamples() []string {
+	w := pe.live.Session().World
+	if w == nil || len(w.Entities) == 0 {
+		return []string{
+			"add an entity called notes with title (string) and body (text)",
+			"build me a small blog: posts and authors with a one-to-many relation",
+			"add a page at /dashboard listing all entities with row counts",
+		}
+	}
+	// Pick the first entity (sorted) to anchor world-aware suggestions.
+	names := make([]string, 0, len(w.Entities))
+	for k := range w.Entities {
+		names = append(names, k)
+	}
+	sortStrings(names)
+	first := names[0]
+
+	suggestions := []string{
+		fmt.Sprintf("add a page at /%s listing all rows with edit links", first),
+		fmt.Sprintf("add a before_create hook on %s that validates required fields", first),
+	}
+	if len(w.Entities) > 1 {
+		suggestions = append(suggestions,
+			fmt.Sprintf("add a relation between %s and %s", names[0], names[1]),
+		)
+	} else {
+		suggestions = append(suggestions,
+			fmt.Sprintf("add a related entity to %s, like comments or tags", first),
+		)
+	}
+	return suggestions
+}
+
 // toolCountsSinceLastUserMessage returns (totalCalls, pendingCalls)
 // in the current turn. Pending = tool_call without a matching
 // tool_result yet. Drives the 'N tools (M done · K running)' split
@@ -483,17 +521,16 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 	sess := pe.live.Session()
 	var b strings.Builder
 
-	if len(sess.Chat) == 0 && len(sess.Plans) == 0 && (sess.World == nil || (len(sess.World.Entities) == 0 && len(sess.World.Pages) == 0)) {
-		b.WriteString(`<div class="kiln-quickstart">`)
-		b.WriteString(`<div class="kiln-quickstart-label">try one of these:</div>`)
-		for _, ex := range []string{
-			"add an entity called notes with title (string) and body (text)",
-			"build me a small blog: posts and authors with a one-to-many relation",
-			"add a page at /dashboard listing all entities with row counts",
-		} {
-			fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-fui-fill-input=".kiln-input">%s</button>`, escHTML(ex))
+	if len(sess.Chat) == 0 && len(sess.Plans) == 0 {
+		examples := pe.quickstartExamples()
+		if len(examples) > 0 {
+			b.WriteString(`<div class="kiln-quickstart">`)
+			b.WriteString(`<div class="kiln-quickstart-label">try one of these:</div>`)
+			for _, ex := range examples {
+				fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-fui-fill-input=".kiln-input">%s</button>`, escHTML(ex))
+			}
+			b.WriteString(`</div>`)
 		}
-		b.WriteString(`</div>`)
 	}
 
 	b.WriteString(`<ol class="kiln-log">`)
