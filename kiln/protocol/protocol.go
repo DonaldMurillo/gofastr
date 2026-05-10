@@ -145,6 +145,14 @@ type UndoArgs struct{}
 
 type ResetSessionArgs struct{}
 
+// SetThemeArgs replaces world.App.Theme. Keys are token names from
+// core-ui/widget/theme (e.g. "page-bg", "page-primary", "page-accent");
+// values are CSS color literals. Empty Theme map clears overrides
+// (revert to framework defaults).
+type SetThemeArgs struct {
+	Theme map[string]string `json:"theme"`
+}
+
 type ChatArgs struct {
 	Role string `json:"role"` // "user" | "assistant"
 	Text string `json:"text"`
@@ -436,6 +444,24 @@ func (t *Tools) RejectPlan(_ context.Context, args RejectPlanArgs) Result {
 		PlanID: args.PlanID,
 		Reason: args.Reason,
 	})
+}
+
+// SetTheme writes world.App.Theme via a SetAppConfig journal entry.
+// Theme tokens flow into core-ui/widget/theme.PageCSS at render time;
+// the next /kiln/theme.css fetch reflects the new palette and every
+// page re-skins on the client's next stylesheet load.
+func (t *Tools) SetTheme(_ context.Context, args SetThemeArgs) Result {
+	prev := t.live.Session().World.App
+	next := prev
+	if args.Theme == nil {
+		next.Theme = nil
+	} else {
+		next.Theme = map[string]string{}
+		for k, v := range args.Theme {
+			next.Theme[k] = v
+		}
+	}
+	return t.applyEdit(journal.OpSetAppConfig, journal.SetAppConfigPayload{Config: next, Prev: &prev})
 }
 
 // ResetSession truncates the journal to zero entries and reloads the

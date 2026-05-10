@@ -169,6 +169,13 @@ var descriptors = map[string]Descriptor{
 		Destructive: true,
 		Schema:      object(nil, nil),
 	},
+	"set_theme": {
+		Name:        "set_theme",
+		Description: "Replace the kiln page theme. Keys are core-ui/widget/theme token names (e.g. \"page-bg\", \"page-primary\", \"page-accent\"); values are CSS color literals. Empty `theme` clears overrides. The next /kiln/theme.css fetch reflects the change and every page re-skins on next load.",
+		Schema: object(map[string]any{
+			"theme": object(nil, nil),
+		}, []string{"theme"}),
+	},
 	"chat": {
 		Name:        "chat",
 		Description: "Record a chat message in the session journal.",

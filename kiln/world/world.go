@@ -26,11 +26,21 @@ func New() *World {
 	}
 }
 
-// AppConfig mirrors framework.AppConfig in JSON-only form.
+// AppConfig mirrors framework.AppConfig in JSON-only form, plus
+// kiln-specific UI configuration (theme overrides) that the agent or
+// a host tool may override at runtime.
 type AppConfig struct {
 	Name           string `json:"name,omitempty"`
 	JSONCase       string `json:"json_case,omitempty"` // "camel" | "snake"
 	DebugEndpoints bool   `json:"debug_endpoints,omitempty"`
+
+	// Theme is an optional set of token overrides applied to the
+	// framework's default page theme. Keys are token names (e.g.
+	// "page-bg", "page-primary", "page-fg-soft"); values are CSS
+	// color literals. The renderer merges these on top of
+	// core-ui/widget/theme.PageTheme(), so a single set_theme call
+	// re-skins every page.
+	Theme map[string]string `json:"theme,omitempty"`
 }
 
 // Entity is the JSON-clean entity declaration. It tracks framework

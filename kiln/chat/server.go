@@ -111,14 +111,16 @@ func (s *Server) serveBaseCSS(w http.ResponseWriter, _ *http.Request) {
 }
 
 // serveThemeCSS returns the kiln page theme stylesheet at /kiln/theme.css.
-// The CSS is generated programmatically by pageCSS() — no static .css
-// file. The framework's core-ui/style stylesheet builder owns token
-// resolution; that means a theme override (eventually via
-// world.App.Theme) re-skins every page without rewriting any rule.
+// The CSS is built by core-ui/widget/theme.PageCSS over a Theme that
+// merges world.App.Theme overrides on top of the framework default —
+// so a set_theme tool call re-skins every page without rewriting any
+// rule, and the same theme is reusable from any other host that
+// imports core-ui/widget/theme.
 func (s *Server) serveThemeCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprint(w, pageCSS())
+	app := s.live.Session().World.App
+	fmt.Fprint(w, pageCSSFor(&app))
 }
 
 // serveStatus returns a focused snapshot of the live runtime, ideal for
@@ -460,6 +462,12 @@ func (s *Server) dispatch(ctx context.Context, name string, body interface {
 		return s.tools.Undo(ctx, protocol.UndoArgs{}), nil
 	case "reset_session":
 		return s.tools.ResetSession(ctx, protocol.ResetSessionArgs{}), nil
+	case "set_theme":
+		var args protocol.SetThemeArgs
+		if err := dec.Decode(&args); err != nil {
+			return protocol.Result{}, err
+		}
+		return s.tools.SetTheme(ctx, args), nil
 	case "chat":
 		var args protocol.ChatArgs
 		if err := dec.Decode(&args); err != nil {
