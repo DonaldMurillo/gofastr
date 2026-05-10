@@ -6,17 +6,20 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gofastr/gofastr/core/migrate"
 	"github.com/gofastr/gofastr/core/schema"
 )
 
-// Dialect identifies the SQL dialect the migrator emits for. The framework's
-// AutoMigrate auto-detects this from the open *sql.DB; callers that bypass
-// AutoMigrate (e.g. tests) can pass it explicitly to MigrateEntityDialect.
-type Dialect string
+// Dialect identifies the SQL dialect the migrator emits for. It's an alias
+// for migrate.Dialect so framework code and the lower-level migration system
+// share one source of truth for dialect identity.
+type Dialect = migrate.Dialect
 
+// Dialect identifiers re-exported from core/migrate for ergonomic use inside
+// the framework package and in tests.
 const (
-	DialectSQLite   Dialect = "sqlite"
-	DialectPostgres Dialect = "postgres"
+	DialectSQLite   = migrate.DialectSQLite
+	DialectPostgres = migrate.DialectPostgres
 )
 
 // detectDialect returns the dialect of an open *sql.DB. It probes for
