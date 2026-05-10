@@ -239,9 +239,11 @@ func TestCrudCreate_SkipsReadOnlyFields(t *testing.T) {
 	ch := NewCrudHandler(entity, db)
 
 	// Expect INSERT to only have "title" columns, not "status"
+	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO posts .*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("test-id", "Hello"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status"}).AddRow("test-id", "Hello", ""))
+	mock.ExpectCommit()
 
 	body := map[string]any{
 		"title":  "Hello",
@@ -256,6 +258,9 @@ func TestCrudCreate_SkipsReadOnlyFields(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ch.Create().ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unfulfilled expectations: %v", err)
 	}
@@ -278,9 +283,11 @@ func TestCrudCreate_SkipsHiddenFields(t *testing.T) {
 
 	ch := NewCrudHandler(entity, db)
 
+	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO posts .*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("test-id", "Hello"))
+	mock.ExpectCommit()
 
 	body := map[string]any{
 		"title":         "Hello",
@@ -337,9 +344,11 @@ func TestCrudCreate_ExecutesHooks(t *testing.T) {
 	ch := NewCrudHandler(entity, db)
 	ch.Hooks = hooks
 
+	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO posts .*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("test-id", "Hello"))
+	mock.ExpectCommit()
 
 	body := map[string]any{"title": "Hello"}
 	bodyBytes, _ := json.Marshal(body)
@@ -363,7 +372,7 @@ func TestCrudCreate_ExecutesHooks(t *testing.T) {
 }
 
 func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
-	db, _, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	if err != nil {
 		t.Fatalf("failed to create sqlmock: %v", err)
 	}
@@ -384,6 +393,10 @@ func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
 	ch := NewCrudHandler(entity, db)
 	ch.Hooks = hooks
 
+	// BeforeCreate fires inside the tx; rejection rolls back without an INSERT.
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
 	body := map[string]any{"title": "Hello"}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -395,6 +408,9 @@ func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 when BeforeCreate rejects, got %d", rec.Code)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unfulfilled expectations: %v", err)
 	}
 }
 
@@ -427,9 +443,11 @@ func TestCrudUpdate_ExecutesHooks(t *testing.T) {
 	ch := NewCrudHandler(entity, db)
 	ch.Hooks = hooks
 
+	mock.ExpectBegin()
 	mock.ExpectQuery(`UPDATE posts .*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("p1", "Updated"))
+	mock.ExpectCommit()
 
 	body := map[string]any{"title": "Updated"}
 	bodyBytes, _ := json.Marshal(body)
@@ -478,9 +496,11 @@ func TestCrudDelete_ExecutesHooks(t *testing.T) {
 	ch := NewCrudHandler(entity, db)
 	ch.Hooks = hooks
 
+	mock.ExpectBegin()
 	mock.ExpectExec(`DELETE FROM posts .*`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 
 	req := httptest.NewRequest("DELETE", "/posts/p1", nil)
 	req.SetPathValue("id", "p1")
