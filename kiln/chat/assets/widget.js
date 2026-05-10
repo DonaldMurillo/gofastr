@@ -82,6 +82,11 @@
     const head = el("header", { class: "kiln-panel-head" },
       el("span", { class: "kiln-panel-title" }, "Kiln"),
       el("span", { class: "kiln-panel-page", id: "kiln-page" }, ""),
+      el("span", {
+        class: "kiln-panel-agent",
+        id: "kiln-agent-badge",
+        title: "Active agent — click ⚙ to switch",
+      }, "—"),
       el("button", {
         class: "kiln-panel-config",
         "aria-label": "Agent settings",
@@ -478,6 +483,7 @@
           return;
         }
         setStatus("agent: " + (r.current && r.current.display || name), "ok");
+        refreshAgentBadge();
         close();
       } catch (err) {
         setStatus("network error: " + err.message, "error");
@@ -505,6 +511,36 @@
     );
     row.append(radio, label);
     return row;
+  }
+
+  // refreshAgentBadge fetches /kiln/agent and updates the header chip
+  // with the active agent's name. Falls back to a "no agent" tone if
+  // none is configured. Called on mount and after a successful switch.
+  async function refreshAgentBadge() {
+    const badge = document.getElementById("kiln-agent-badge");
+    if (!badge) return;
+    try {
+      const r = await fetch("/kiln/agent");
+      if (!r.ok) {
+        badge.textContent = "—";
+        badge.classList.remove("kiln-panel-agent-none");
+        return;
+      }
+      const data = await r.json();
+      const name = data && data.current && data.current.name;
+      if (!name || name === "none") {
+        badge.textContent = "no agent";
+        badge.classList.add("kiln-panel-agent-none");
+      } else {
+        badge.textContent = name;
+        badge.classList.remove("kiln-panel-agent-none");
+      }
+      if (data && data.current && data.current.display) {
+        badge.title = "Active agent: " + data.current.display + " — click ⚙ to switch";
+      }
+    } catch (_) {
+      badge.textContent = "—";
+    }
   }
 
   async function refresh() {
@@ -543,6 +579,9 @@
 
     fab.addEventListener("click", () => setOpen(true));
     close.addEventListener("click", () => setOpen(false));
+
+    // Populate the agent chip immediately on mount.
+    refreshAgentBadge();
 
     // Reset button: wipes the journal and reloads to an empty world.
     // Confirms first because it can't be undone.

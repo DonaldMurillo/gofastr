@@ -169,6 +169,36 @@ func widgetCSS() string {
 		Pseudo(":hover", "color", "{colors.kiln-fg}").
 		End()
 
+	// --- Agent badge -------------------------------------------------
+	// Chip in the panel header showing which CLI is currently wired up.
+	// Tone shifts when no agent is configured so the user can't miss it.
+	ss.Rule(".kiln-panel-agent").
+		Set(
+			"display", "inline-flex",
+			"align-items", "center",
+			"padding", "2px 8px",
+			"margin-right", "4px",
+			"font-size", "11px",
+			"font-family", "ui-monospace, monospace",
+			"font-weight", "600",
+			"background", "rgba(110, 220, 150, 0.12)",
+			"color", "rgba(140, 230, 170, 0.95)",
+			"border", "1px solid rgba(110, 220, 150, 0.30)",
+			"border-radius", "999px",
+			"max-width", "120px",
+			"overflow", "hidden",
+			"text-overflow", "ellipsis",
+			"white-space", "nowrap",
+		).
+		End()
+	ss.Rule(".kiln-panel-agent-none").
+		Set(
+			"background", "rgba(255, 200, 110, 0.10)",
+			"color", "rgba(255, 200, 110, 0.85)",
+			"border-color", "rgba(255, 200, 110, 0.30)",
+		).
+		End()
+
 	// --- Config gear button ------------------------------------------
 	ss.Rule(".kiln-panel-config").
 		Set(

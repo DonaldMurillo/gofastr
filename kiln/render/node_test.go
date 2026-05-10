@@ -137,3 +137,48 @@ func TestRenderNodeAttrsEscape(t *testing.T) {
 		t.Errorf("attrs not escaped: %q", got)
 	}
 }
+
+// Strict CSP rejects inline style="…" and on*="…" handlers. The
+// renderer drops those props server-side so a single bad agent turn
+// can't poison the page. The kiln-* utility classes from theme.css
+// are the supported alternative.
+func TestRenderNodeDropsDangerousAttrs(t *testing.T) {
+	cases := []struct {
+		name string
+		prop string
+		val  any
+	}{
+		{"style", "style", "color:red;background:#000"},
+		{"onclick", "onclick", "alert(1)"},
+		{"onerror", "onerror", "alert(2)"},
+		{"onmouseover", "onmouseover", "evil()"},
+		{"srcdoc", "srcdoc", "<script>alert(3)</script>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render.RenderNode(world.Node{
+				Kind:  "section",
+				Props: map[string]any{"id": "x", tc.prop: tc.val},
+			})
+			s := string(got)
+			if strings.Contains(s, tc.prop+"=") {
+				t.Errorf("dangerous attr %q leaked into output: %s", tc.prop, s)
+			}
+			// id should still pass through.
+			if !strings.Contains(s, `id="x"`) {
+				t.Errorf("safe attr id was unexpectedly dropped: %s", s)
+			}
+		})
+	}
+}
+
+// Class-based styling is the supported path. Verify class survives.
+func TestRenderNodeKeepsClassProp(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind:  "section",
+		Props: map[string]any{"class": "kiln-section kiln-section-soft"},
+	})
+	if !strings.Contains(string(got), `class="kiln-section kiln-section-soft"`) {
+		t.Errorf("class prop should pass through: %q", got)
+	}
+}

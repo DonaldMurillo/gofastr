@@ -260,10 +260,11 @@ func renderFullPage(p *world.Page) string {
 <meta charset="utf-8">
 <title>` + escapeText(title) + `</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/kiln/theme.css">
 <link rel="stylesheet" href="/kiln/chat/widget.css">
 <link rel="stylesheet" href="/kiln/chat/base.css">
 </head>
-<body>
+<body class="kiln-app">
 <main class="kiln-page">
 ` + string(RenderNode(p.Tree)) + `
 </main>

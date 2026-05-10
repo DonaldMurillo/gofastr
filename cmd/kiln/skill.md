@@ -157,6 +157,53 @@ curl -s "$KILN_URL/posts" | head
 curl -s "$KILN_URL/health"
 ```
 
+## Styling — use Kiln theme classes, NEVER inline styles
+
+Kiln serves a strict CSP. Any element with a `style="…"` attribute is
+**dropped by the renderer** and the browser rejects inline styles
+anyway. Don't put `style` in `props`. Use `class` with the utility
+classes below — they reference theme tokens (`var(--kiln-…)`) so a
+single theme change re-skins the whole app.
+
+**Layout containers** — `kiln-container` (1200px), `kiln-container-md`
+(960px), `kiln-container-sm` (720px), `kiln-section` (vertical padding),
+`kiln-section-soft` (muted bg), `kiln-section-inverse` (dark bg + light fg).
+
+**Stacks & rows** — `kiln-stack` / `kiln-stack-sm` / `kiln-stack-lg`
+(vertical), `kiln-row` / `kiln-row-end` / `kiln-row-between` /
+`kiln-row-wrap` (horizontal).
+
+**Grids** — `kiln-grid-2`, `kiln-grid-3`, `kiln-grid-4`, `kiln-grid-auto`
+(responsive auto-fit columns).
+
+**Hero / typography** — `kiln-hero` (centered hero block; wrap with this
+on the section, then a single h1 + p inside), `kiln-display`,
+`kiln-title`, `kiln-h2`, `kiln-eyebrow` (uppercase label), `kiln-muted`,
+`kiln-subtle`, `kiln-center`.
+
+**Surfaces** — `kiln-card` (elevated), `kiln-card-soft` (muted bg).
+
+**Buttons / CTAs** — `kiln-button` (primary CTA), `kiln-button-secondary`
+(outlined), `kiln-button-ghost` (tertiary). Use on `<a>` or `<button>`.
+
+**Nav / footer** — `kiln-nav`, `kiln-nav-links`, `kiln-footer`.
+
+**Pills / badges** — `kiln-pill`, `kiln-badge-success`, `kiln-badge-warning`,
+`kiln-badge-danger`.
+
+**Quote** — `kiln-quote` (centered pullquote).
+
+Forms and tables already get default styling on `body.kiln-app` — you
+don't need to add classes to `<input>`, `<table>`, etc. Just use the
+right element kinds.
+
+Theme tokens (read-only in this version): `--kiln-bg`, `--kiln-surface`,
+`--kiln-surface-soft`, `--kiln-border`, `--kiln-fg`, `--kiln-fg-soft`,
+`--kiln-fg-muted`, `--kiln-fg-subtle`, `--kiln-primary`, `--kiln-primary-fg`,
+`--kiln-accent`, `--kiln-success`, `--kiln-warning`, `--kiln-danger`,
+plus `--kiln-r-{sm,md,lg}` (radii) and `--kiln-pad-{xs,sm,md,lg,xl}`
+(spacing). The theme is consistent across every page.
+
 ## Element kinds (for pages)
 
 `text`, `raw`, `div`, `section`, `header`, `footer`, `main`, `nav`, `aside`, `article`, `heading` (with `level: 1-6`), `paragraph`, `span`, `strong`, `em`, `code`, `pre`, `button`, `link`, `image`, `input`, `label`, `form`, `list` (use `ordered: true` for `<ol>`), `table`, `thead`, `tbody`, `tr`, `th`, `td`.

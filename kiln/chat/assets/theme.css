@@ -1,0 +1,225 @@
+/* Kiln default theme — auto-served at /kiln/theme.css.
+   Agents must NOT use inline style="…". They use the utility classes
+   below, which reference CSS variables. The theme can be redefined by
+   the world's app config without rewriting any page tree.
+
+   The token names are stable; when the agent tools (or a future
+   set_theme tool) override them, every page picks up the new look. */
+
+:root {
+  /* palette — neutral light by default */
+  --kiln-bg:           #FAF9F6;
+  --kiln-surface:      #FFFFFF;
+  --kiln-surface-soft: #F5F4F1;
+  --kiln-border:       #E5E1DA;
+  --kiln-fg:           #0F172A;
+  --kiln-fg-soft:      #37352F;
+  --kiln-fg-muted:     #6B7280;
+  --kiln-fg-subtle:    #9B9A97;
+  --kiln-primary:      #0F172A;
+  --kiln-primary-fg:   #FFFFFF;
+  --kiln-accent:       #4F8CFF;
+  --kiln-success:      #10B981;
+  --kiln-warning:      #F2C94C;
+  --kiln-danger:       #EF4444;
+
+  /* radii */
+  --kiln-r-sm: 4px;
+  --kiln-r-md: 8px;
+  --kiln-r-lg: 14px;
+
+  /* spacing */
+  --kiln-pad-xs: 4px;
+  --kiln-pad-sm: 8px;
+  --kiln-pad-md: 12px;
+  --kiln-pad-lg: 24px;
+  --kiln-pad-xl: 48px;
+
+  /* typography */
+  --kiln-font:   -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  --kiln-mono:   ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --kiln-text-xs: 0.75rem;
+  --kiln-text-sm: 0.875rem;
+  --kiln-text-md: 1rem;
+  --kiln-text-lg: 1.125rem;
+  --kiln-text-xl: 1.5rem;
+  --kiln-text-2xl: 2.25rem;
+  --kiln-text-3xl: 3rem;
+
+  /* shadow */
+  --kiln-shadow-sm: 0 1px 2px rgba(15,23,42,0.06);
+  --kiln-shadow-md: 0 6px 16px -8px rgba(15,23,42,0.18), 0 2px 4px rgba(15,23,42,0.06);
+  --kiln-shadow-lg: 0 24px 64px -32px rgba(15,23,42,0.24), 0 12px 24px -12px rgba(15,23,42,0.12);
+}
+
+/* Reset + base */
+*, *::before, *::after { box-sizing: border-box; }
+body.kiln-app {
+  margin: 0;
+  background: var(--kiln-bg);
+  color: var(--kiln-fg);
+  font-family: var(--kiln-font);
+  font-size: var(--kiln-text-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+body.kiln-app a { color: var(--kiln-fg); text-decoration: none; }
+body.kiln-app a:hover { text-decoration: underline; }
+body.kiln-app h1, body.kiln-app h2, body.kiln-app h3,
+body.kiln-app h4, body.kiln-app h5, body.kiln-app h6 {
+  margin: 0; line-height: 1.2; letter-spacing: -0.02em;
+}
+
+/* Layout primitives — pure class-based, no inline style needed. */
+.kiln-page { min-height: 100vh; }
+
+.kiln-container { max-width: 1200px; margin: 0 auto; padding: 0 var(--kiln-pad-lg); }
+.kiln-container-sm { max-width: 720px; margin: 0 auto; padding: 0 var(--kiln-pad-lg); }
+.kiln-container-md { max-width: 960px; margin: 0 auto; padding: 0 var(--kiln-pad-lg); }
+.kiln-container-lg { max-width: 1200px; margin: 0 auto; padding: 0 var(--kiln-pad-lg); }
+
+.kiln-section          { padding: var(--kiln-pad-xl) var(--kiln-pad-lg); }
+.kiln-section-soft     { background: var(--kiln-surface-soft); }
+.kiln-section-inverse  { background: var(--kiln-primary); color: var(--kiln-primary-fg); }
+.kiln-section-inverse a { color: var(--kiln-primary-fg); }
+
+.kiln-stack    { display: flex; flex-direction: column; gap: var(--kiln-pad-md); }
+.kiln-stack-sm { display: flex; flex-direction: column; gap: var(--kiln-pad-sm); }
+.kiln-stack-lg { display: flex; flex-direction: column; gap: var(--kiln-pad-lg); }
+
+.kiln-row     { display: flex; align-items: center; gap: var(--kiln-pad-md); }
+.kiln-row-end { display: flex; align-items: center; gap: var(--kiln-pad-md); justify-content: flex-end; }
+.kiln-row-between { display: flex; align-items: center; gap: var(--kiln-pad-md); justify-content: space-between; }
+.kiln-row-wrap { display: flex; align-items: center; gap: var(--kiln-pad-md); flex-wrap: wrap; }
+
+.kiln-grid-2  { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--kiln-pad-lg); }
+.kiln-grid-3  { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--kiln-pad-lg); }
+.kiln-grid-4  { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--kiln-pad-md); }
+.kiln-grid-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--kiln-pad-md); }
+
+.kiln-center  { text-align: center; }
+.kiln-muted   { color: var(--kiln-fg-muted); }
+.kiln-subtle  { color: var(--kiln-fg-subtle); }
+
+.kiln-eyebrow {
+  text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: var(--kiln-text-xs); font-weight: 700;
+  color: var(--kiln-fg);
+  margin: 0 0 var(--kiln-pad-sm);
+}
+
+/* Hero / display headings */
+.kiln-hero {
+  text-align: center;
+  padding: calc(var(--kiln-pad-xl) * 1.5) var(--kiln-pad-lg) var(--kiln-pad-xl);
+}
+.kiln-hero h1 { font-size: var(--kiln-text-3xl); font-weight: 700; max-width: 24ch; margin: 0 auto var(--kiln-pad-md); }
+.kiln-hero p  { font-size: var(--kiln-text-lg); color: var(--kiln-fg-soft); max-width: 60ch; margin: 0 auto var(--kiln-pad-lg); }
+
+.kiln-display { font-size: var(--kiln-text-3xl); font-weight: 700; }
+.kiln-title   { font-size: var(--kiln-text-2xl); font-weight: 700; }
+.kiln-h2      { font-size: var(--kiln-text-xl); font-weight: 700; }
+
+/* Card */
+.kiln-card {
+  background: var(--kiln-surface);
+  border: 1px solid var(--kiln-border);
+  border-radius: var(--kiln-r-lg);
+  padding: var(--kiln-pad-lg);
+  box-shadow: var(--kiln-shadow-sm);
+}
+.kiln-card-soft {
+  background: var(--kiln-surface-soft);
+  border: 1px solid var(--kiln-border);
+  border-radius: var(--kiln-r-lg);
+  padding: var(--kiln-pad-lg);
+}
+
+/* Buttons / CTAs */
+.kiln-button {
+  display: inline-flex; align-items: center; gap: var(--kiln-pad-sm);
+  background: var(--kiln-primary); color: var(--kiln-primary-fg);
+  border: 1px solid var(--kiln-primary);
+  padding: 10px 18px;
+  border-radius: var(--kiln-r-md);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.kiln-button:hover { filter: brightness(1.08); text-decoration: none; }
+.kiln-button-secondary {
+  background: var(--kiln-surface); color: var(--kiln-fg);
+  border-color: var(--kiln-border);
+}
+.kiln-button-ghost {
+  background: transparent; color: var(--kiln-fg);
+  border-color: transparent;
+}
+
+/* Nav */
+.kiln-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--kiln-pad-lg);
+  padding: var(--kiln-pad-md) var(--kiln-pad-lg);
+  border-bottom: 1px solid var(--kiln-border);
+}
+.kiln-nav-links { display: flex; gap: var(--kiln-pad-lg); align-items: center; }
+.kiln-nav-links a { color: var(--kiln-fg-soft); }
+
+/* Footer */
+.kiln-footer {
+  border-top: 1px solid var(--kiln-border);
+  background: var(--kiln-surface-soft);
+  padding: var(--kiln-pad-xl) var(--kiln-pad-lg) var(--kiln-pad-lg);
+}
+
+/* Pills, badges */
+.kiln-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--kiln-surface-soft);
+  border: 1px solid var(--kiln-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: var(--kiln-text-xs); font-weight: 600;
+  color: var(--kiln-fg-soft);
+}
+.kiln-badge-success { color: var(--kiln-success); font-weight: 600; }
+.kiln-badge-warning { color: #B45309; font-weight: 600; }
+.kiln-badge-danger  { color: var(--kiln-danger); font-weight: 600; }
+
+/* Quote / pullquote */
+.kiln-quote {
+  font-size: var(--kiln-text-xl); line-height: 1.5;
+  color: var(--kiln-fg); font-weight: 500;
+  max-width: 60ch; margin: 0 auto var(--kiln-pad-lg);
+  text-align: center;
+}
+
+/* Forms */
+.kiln-app input[type="text"],
+.kiln-app input[type="email"],
+.kiln-app input[type="number"],
+.kiln-app input[type="search"],
+.kiln-app input[type="password"],
+.kiln-app textarea,
+.kiln-app select {
+  width: 100%;
+  background: var(--kiln-surface);
+  border: 1px solid var(--kiln-border);
+  border-radius: var(--kiln-r-md);
+  padding: 8px 12px;
+  color: var(--kiln-fg);
+  font: inherit;
+}
+.kiln-app input:focus,
+.kiln-app textarea:focus,
+.kiln-app select:focus { outline: none; border-color: var(--kiln-accent); }
+
+/* CRUD listing tables (entity GET endpoints render <table>) */
+.kiln-app table { width: 100%; border-collapse: collapse; }
+.kiln-app th, .kiln-app td {
+  padding: var(--kiln-pad-sm) var(--kiln-pad-md);
+  border-bottom: 1px solid var(--kiln-border);
+  text-align: left;
+}
+.kiln-app th { font-weight: 600; color: var(--kiln-fg-soft); background: var(--kiln-surface-soft); }

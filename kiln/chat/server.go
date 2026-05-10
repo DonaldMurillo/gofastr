@@ -25,6 +25,9 @@ var hostHTML string
 //go:embed assets/widget.js
 var widgetJS string
 
+//go:embed assets/theme.css
+var themeCSS string
+
 // WidgetTag is the HTML snippet to embed the floating widget on a page.
 // kiln/render auto-injects this on every page it serves; user-built
 // apps can drop it in manually. The widget remembers open/closed state
@@ -80,6 +83,7 @@ func (s *Server) Mount(r *router.Router) {
 	r.Get("/kiln/chat/widget.js", http.HandlerFunc(s.serveWidgetJS))
 	r.Get("/kiln/chat/widget.css", http.HandlerFunc(s.serveWidgetCSS))
 	r.Get("/kiln/chat/base.css", http.HandlerFunc(s.serveBaseCSS))
+	r.Get("/kiln/theme.css", http.HandlerFunc(s.serveThemeCSS))
 	r.Get("/kiln/world", http.HandlerFunc(s.serveWorld))
 	r.Get("/kiln/status", http.HandlerFunc(s.serveStatus))
 	r.Post("/kiln/chat/message", http.HandlerFunc(s.serveChatMessage))
@@ -107,6 +111,16 @@ func (s *Server) serveBaseCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, baseCSS())
+}
+
+// serveThemeCSS returns the kiln default theme stylesheet at /kiln/theme.css.
+// Linked from every kiln-rendered page so the agent can use class-based
+// styling (.kiln-section, .kiln-card, .kiln-button, etc.) without ever
+// emitting inline `style="…"` — which the strict CSP would block.
+func (s *Server) serveThemeCSS(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprint(w, themeCSS)
 }
 
 // serveStatus returns a focused snapshot of the live runtime, ideal for

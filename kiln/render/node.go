@@ -383,6 +383,28 @@ func wrapAsListItems(children []render.HTML) []render.HTML {
 // extraAttrs collects any prop keys NOT in the well-known list. These
 // flow into elements.X via Attrs so agent-supplied data-kiln-tool,
 // data-kiln-args, aria-*, role, target, rel, etc. all reach the DOM.
+// dangerousAttrs are HTML attributes the renderer drops unconditionally.
+// They violate strict CSP (default-src 'self' with no unsafe-inline) and
+// are the most common XSS vectors. The kiln runtime ships strict CSP, so
+// agents that try to set inline styles or event handlers will produce
+// non-functional pages with browser console errors. Drop them here so
+// the agent's mistake doesn't leak to the user.
+var dangerousAttrs = map[string]bool{
+	"style":   true, // → use class + theme tokens instead
+	"srcdoc":  true,
+	"sandbox": false, // OK on iframes; keep
+}
+
+// extraAttrs collects element props that should pass through as raw
+// HTML attributes. It:
+//   - skips the `known` list (props the caller already promoted to
+//     first-class element fields, like id/class/role)
+//   - drops dangerousAttrs (style, on*, srcdoc) — these violate CSP and
+//     can't be rescued; if the agent emits them, swallow silently
+//   - passes the rest through with fmt.Sprint
+//
+// The agent skill explicitly forbids `style`; this is a hard belt-and-
+// suspenders so a single bad turn doesn't poison the page.
 func extraAttrs(props map[string]any, known ...string) elements.Attrs {
 	if len(props) == 0 {
 		return nil
@@ -397,6 +419,14 @@ func extraAttrs(props map[string]any, known ...string) elements.Attrs {
 			continue
 		}
 		if v == nil {
+			continue
+		}
+		if dangerousAttrs[k] {
+			continue
+		}
+		// Inline event handlers — onclick, onload, onmouseover, … —
+		// are inline JS that the strict CSP rejects. Drop them.
+		if len(k) > 2 && k[0] == 'o' && k[1] == 'n' {
 			continue
 		}
 		out[k] = fmt.Sprint(v)
