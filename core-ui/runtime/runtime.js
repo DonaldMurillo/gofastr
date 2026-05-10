@@ -467,10 +467,14 @@
         }
       }
 
-      // Widget-scoped click + submit
+      // Widget-scoped click + submit. The click handler only fires
+      // for button-like targets (BUTTON, INPUT, A) — skipping FORM
+      // matches lets clicks on form descendants (radios, checkboxes,
+      // text inputs) reach their default browser behavior. The form's
+      // submit handler owns POSTing the form on Apply.
       widgetEl.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-fui-rpc]');
-        if (btn && widgetEl.contains(btn)) {
+        if (btn && widgetEl.contains(btn) && btn.tagName !== 'FORM') {
           e.preventDefault();
           await dispatchRPC(btn);
           return;
@@ -504,7 +508,9 @@
         document.addEventListener('click', async (e) => {
           if (e.target.closest('[data-fui-widget]')) return;
           const fuiBtn = e.target.closest('[data-fui-rpc]');
-          if (fuiBtn) { e.preventDefault(); await dispatchRPC(fuiBtn); return; }
+          // Same FORM-skip as the widget-scoped handler — the global
+          // submit listener below owns POSTing forms.
+          if (fuiBtn && fuiBtn.tagName !== 'FORM') { e.preventDefault(); await dispatchRPC(fuiBtn); return; }
           const legacy = e.target.closest('[data-kiln-tool]');
           if (legacy) {
             e.preventDefault();

@@ -1139,6 +1139,60 @@ func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
 	}
 }
 
+// TestBrowser_ApplyAgentActuallyPosts: clicking a radio + Apply must
+// fire a POST /kiln/agent with {name: "<selected>"}. Catches the case
+// where the form submit handler is overshadowed by the click handler
+// (or vice versa), the FormData serialization drops the radio, or the
+// runtime treats the form's data-fui-rpc as a click target only.
+func TestBrowser_ApplyAgentActuallyPosts(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Stub /kiln/agent to capture the POST body without going through
+	// the real adapter store.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list .kiln-adapter-row`, chromedp.ByQuery),
+		// Install a fetch interceptor that records the POST body.
+		chromedp.Evaluate(`(()=>{
+			window.__capturedAgentPost = null;
+			const orig = window.fetch;
+			window.fetch = function(input, init) {
+				try {
+					const url = typeof input === 'string' ? input : (input && input.url) || '';
+					if (url.indexOf('/kiln/agent') >= 0 && init && init.method === 'POST') {
+						window.__capturedAgentPost = init.body;
+					}
+				} catch(_) {}
+				return orig.apply(this, arguments);
+			};
+			return true;
+		})()`, nil),
+		chromedp.Click(`#kiln-agent-list input[value="claude-code"]`, chromedp.ByQuery),
+		chromedp.Click(`#kiln-agent-list .kiln-modal-apply`, chromedp.ByQuery),
+		chromedp.Sleep(400*time.Millisecond),
+	); err != nil {
+		t.Fatalf("apply flow: %v", err)
+	}
+
+	var captured string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__capturedAgentPost || ""`, &captured),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("captured POST body: %q", captured)
+	if captured == "" {
+		t.Fatalf("apply click did not POST to /kiln/agent — no fetch captured")
+	}
+	if !strings.Contains(captured, `"name":"claude-code"`) {
+		t.Errorf("captured body missing selected adapter: %q", captured)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
