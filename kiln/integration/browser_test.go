@@ -3183,6 +3183,34 @@ func TestBrowser_ApprovedPlansCollapse(t *testing.T) {
 	}
 }
 
+// Char counter span shows '<n> chars' alongside the input,
+// updating live as the user types. Verifies the framework
+// data-fui-charcount-source primitive on the kiln textarea.
+func TestBrowser_InputCharCounterUpdatesLive(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input-charcount`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "hello"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var txt string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-input-charcount`, &txt, chromedp.ByQuery))
+		if txt == "5 chars" {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var got string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-input-charcount`, &got, chromedp.ByQuery))
+	t.Errorf("expected '5 chars'; got %q", got)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

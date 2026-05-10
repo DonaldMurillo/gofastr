@@ -633,6 +633,22 @@
       // Enter-to-submit on textareas inside data-fui-submit-on-enter
       // forms. Shift+Enter still inserts a newline. Skips submission
       // when form is invalid (HTML5 :required handles the no-op feel).
+      // Char counter: any element with data-fui-charcount-source
+       // gets its textContent updated to "<n> chars" of the matching
+       // input/textarea on every input. Useful for length-aware
+       // prompts (LLM context budget, character limits).
+      widgetEl.querySelectorAll('[data-fui-charcount-source]').forEach((el) => {
+        const sel = el.getAttribute('data-fui-charcount-source');
+        if (!sel) return;
+        const src = widgetEl.querySelector(sel) || document.querySelector(sel);
+        if (!src) return;
+        const sync = () => { el.textContent = src.value.length + ' chars'; };
+        src.addEventListener('input', sync);
+        const form = src.form;
+        if (form) form.addEventListener('reset', () => requestAnimationFrame(sync));
+        sync();
+      });
+
       // Esc clears any input/textarea opted in via
       // data-fui-clear-on-esc; fires an input event so validity
       // wiring re-syncs (Send button disables again, etc).

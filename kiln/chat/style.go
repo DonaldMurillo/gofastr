@@ -650,6 +650,17 @@ func widgetCSS() string {
 		).
 		End()
 
+	ss.Rule(".kiln-input-charcount").
+		Set(
+			"font-size", "10px",
+			"font-family", "ui-monospace, monospace",
+			"color", "rgba(170, 180, 200, 0.45)",
+			"align-self", "center",
+			"padding", "0 6px",
+			"pointer-events", "none",
+		).
+		End()
+
 	ss.Rule(".kiln-input").
 		Set(
 			"flex", "1",
