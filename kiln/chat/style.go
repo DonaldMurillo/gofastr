@@ -211,6 +211,15 @@ func widgetCSS() string {
 		).
 		End()
 
+	// Generic flash animation used by data-fui-flash-on-update.
+	ss.Rule(".fui-flash").
+		Set("animation", "fuiFlashPulse 0.6s ease-out").
+		End()
+	ss.Keyframes("fuiFlashPulse",
+		style.Step("0%", "box-shadow", "0 0 0 0 rgba(120, 170, 255, 0.6)"),
+		style.Step("100%", "box-shadow", "0 0 0 8px rgba(120, 170, 255, 0)"),
+	)
+
 	ss.Rule(".kiln-quickstart").
 		Set(
 			"display", "flex",

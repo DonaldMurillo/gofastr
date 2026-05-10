@@ -338,6 +338,19 @@
           else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') node.textContent = String(value);
           else node.textContent = JSON.stringify(value);
         }
+        // After-update hook: brief flash to signal the value changed.
+        // Useful for headers/badges where the user might miss an
+        // update otherwise. Duration overridable via
+        // data-fui-flash-duration-ms; default 600ms.
+        if (node.hasAttribute('data-fui-flash-on-update')) {
+          const dur = parseInt(node.getAttribute('data-fui-flash-duration-ms') || '600', 10);
+          node.classList.remove('fui-flash');
+          // Force reflow so the next add re-runs the animation.
+          // eslint-disable-next-line no-unused-expressions
+          node.offsetWidth;
+          node.classList.add('fui-flash');
+          setTimeout(() => node.classList.remove('fui-flash'), dur);
+        }
         // After-update hook: scroll a container to bottom so streaming
         // chat logs / live tails surface new content without manual
         // scrolling. Opt-in via data-fui-scroll-bottom-on-update on

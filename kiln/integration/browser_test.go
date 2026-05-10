@@ -2661,6 +2661,52 @@ func TestBrowser_ChatRowsHaveTimestampTitle(t *testing.T) {
 	}
 }
 
+// data-fui-flash-on-update adds .fui-flash for ~600ms after a
+// signal update so the user can spot which header pill changed.
+// Verifies the kiln world snapshot opt-in: add an entity, see the
+// flash class land on .kiln-panel-snapshot.
+func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-snapshot`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "flashy", Fields: []world.Field{{Name: "x", Type: "string"}}}})
+
+	// Look for .fui-flash within the brief window before the
+	// 600ms timeout removes it.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var hasClass bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.querySelector('.kiln-panel-snapshot').classList.contains('fui-flash')`, &hasClass))
+		if hasClass {
+			return
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	t.Errorf(".fui-flash class never landed on snapshot pill after entity addition")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
