@@ -30,8 +30,8 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderGeneratedProject: %v", err)
 	}
-	if len(files) != 5 {
-		t.Fatalf("files len = %d, want 5 (register, models, columns, repo, events)", len(files))
+	if len(files) != 6 {
+		t.Fatalf("files len = %d, want 6 (register, models, columns, repo, events, client)", len(files))
 	}
 	byName := map[string]string{}
 	for _, f := range files {
@@ -111,6 +111,11 @@ func TestGenerateProjectE2EGeneratedPackageBuilds(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Copy repo go.sum into the temp module so transitive deps (otel,
+	// testcontainers, etc.) resolve without network access.
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
 	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +138,11 @@ func TestGenerateProjectE2EGeneratedPackageBuilds(t *testing.T) {
 	}
 	generateProject(nil)
 
-	cmd := exec.Command("go", "test", "./.gofastr/entities")
+	// -mod=mod lets `go test` auto-add transitive deps (otel etc.) from the
+	// replaced framework into the temp module's go.mod on the fly. Without
+	// it Go refuses to build because go.mod doesn't list every transitive
+	// require explicitly.
+	cmd := exec.Command("go", "test", "-mod=mod", "./.gofastr/entities")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -143,6 +152,17 @@ func TestGenerateProjectE2EGeneratedPackageBuilds(t *testing.T) {
 
 func floatPtrTest(v float64) *float64 {
 	return &v
+}
+
+// copyGoSum copies the repo's go.sum into the temp module so `go test`
+// inside the temp dir can satisfy transitive dependencies without needing
+// network access.
+func copyGoSum(repoRoot, destDir string) error {
+	src, err := os.ReadFile(filepath.Join(repoRoot, "go.sum"))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(destDir, "go.sum"), src, 0o644)
 }
 
 func repoGoVersion(repoRoot string) (string, error) {

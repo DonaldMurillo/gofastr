@@ -90,6 +90,12 @@ func generateProject(args []string) {
 	}
 	for _, file := range files {
 		path := filepath.Join(options.outputDir, file.name)
+		// file.name may contain subdirectories (e.g. "client/client.go") so
+		// ensure the parent directory exists before writing.
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			fail("Failed to create %s: %v", filepath.Dir(path), err)
+			os.Exit(1)
+		}
 		if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
 			fail("Failed to write %s: %v", path, err)
 			os.Exit(1)
@@ -179,6 +185,9 @@ func RegisterAll(app *framework.App) {
 		{name: "columns.go", content: renderColumns(decls)},
 		{name: "repo.go", content: renderRepos(decls)},
 		{name: "events.go", content: renderEvents(decls)},
+		// Generated client lives in its own package so consumers can import
+		// it without dragging the server-side schema/framework deps along.
+		{name: "client/client.go", content: renderClient(decls)},
 	}, nil
 }
 
