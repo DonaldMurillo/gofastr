@@ -191,11 +191,17 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 }
 
 // List returns an http.HandlerFunc that lists entity records with filtering,
-// sorting, and pagination.
+// sorting, pagination, and optional ?include= eager-loaded relations.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		page, perPage := parsePagination(r)
+
+		includes, err := parseIncludes(r, ch.Entity)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		filters, err := ParseFilters(r, ch.Entity.GetFields())
 		if err != nil {
@@ -243,6 +249,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		if err := ch.applyIncludes(ctx, results, includes); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
+			return
+		}
+
 		totalPages := total / perPage
 		if total%perPage != 0 {
 			totalPages++
@@ -262,12 +273,19 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 }
 
 // Get returns an http.HandlerFunc that fetches a single entity by ID.
+// Honours ?include= eager-loaded relations.
 func (ch *CrudHandler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		id := r.PathValue("id")
 		if id == "" {
 			writeJSONError(w, http.StatusBadRequest, "missing id")
+			return
+		}
+
+		includes, err := parseIncludes(r, ch.Entity)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -288,6 +306,11 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 				return
 			}
 			writeJSONError(w, http.StatusInternalServerError, "query failed: "+err.Error())
+			return
+		}
+
+		if err := ch.applyIncludes(ctx, []map[string]any{result}, includes); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
 			return
 		}
 
