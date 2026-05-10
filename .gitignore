@@ -1,8 +1,14 @@
 # Pi internal
 .pi/
 
-# Claude Code session state
-.claude/
+# Claude Code per-session state stays local; .claude/skills/ IS tracked
+# (repo-shared agent skills, see .claude/skills/gofastr-ui/SKILL.md).
+.claude/sessions/
+.claude/cache/
+.claude/local/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/projects/
 
 # Binaries
 bin/
@@ -79,8 +85,8 @@ logs/
 
 # ---- Build artifacts ----
 demo_server
-gofastr
-gofastr-*
+/gofastr
+/gofastr-*
 !gofastr/
 kiln
 kiln-*
