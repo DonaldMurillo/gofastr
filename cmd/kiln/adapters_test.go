@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,46 @@ func TestResolveAdapterCustomBuildArgs(t *testing.T) {
 	got := a.BuildArgs("the prompt")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("BuildArgs = %#v, want %#v", got, want)
+	}
+}
+
+// pi has no auto-discovery for ~/.claude/skills/ — its adapter must
+// inject --skill <path> when the kiln skill file exists. Without it
+// pi has no idea about the kiln tool API and just hallucinates Go
+// code instead of calling add_entity / add_page / etc.
+func TestPiAdapterIncludesSkillFlag(t *testing.T) {
+	// Skip when the skill isn't installed (e.g. CI without ~/.claude).
+	if kilnSkillPath() == "" {
+		t.Skip("kiln skill not installed at ~/.claude/skills/kiln/SKILL.md")
+	}
+	a := adapters["pi"]
+	argv := a.BuildArgs("hi")
+	var sawSkill bool
+	for i := 0; i < len(argv)-1; i++ {
+		if argv[i] == "--skill" && strings.HasSuffix(argv[i+1], "SKILL.md") {
+			sawSkill = true
+			break
+		}
+	}
+	if !sawSkill {
+		t.Errorf("pi argv missing '--skill <kiln-skill-path>': %v", argv)
+	}
+}
+
+// codex has no --skill flag, so the adapter prepends the skill
+// content to the prompt as a tagged block.
+func TestCodexAdapterPrependsSkillToPrompt(t *testing.T) {
+	if kilnSkillPath() == "" {
+		t.Skip("kiln skill not installed at ~/.claude/skills/kiln/SKILL.md")
+	}
+	a := adapters["codex"]
+	argv := a.BuildArgs("real prompt")
+	if len(argv) < 3 {
+		t.Fatalf("codex argv too short: %v", argv)
+	}
+	prompt := argv[len(argv)-1]
+	if !strings.Contains(prompt, "<kiln-skill>") || !strings.Contains(prompt, "real prompt") {
+		t.Errorf("codex prompt missing kiln-skill block or original text; got %q", prompt)
 	}
 }
 

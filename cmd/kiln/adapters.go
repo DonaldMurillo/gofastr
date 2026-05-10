@@ -1,9 +1,27 @@
 package main
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
+
+// kilnSkillPath returns the absolute path to the kiln skill installed
+// by installSkill(). Used by adapters that don't auto-discover skills
+// from ~/.claude/skills/ (pi, codex) — they need an explicit flag
+// pointing at the skill file.
+func kilnSkillPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(home, ".claude", "skills", "kiln", "SKILL.md")
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
 
 // Adapter describes how to spawn a third-party CLI coding agent for one
 // turn of conversation. Every adapter shares the same contract:
@@ -41,18 +59,36 @@ var adapters = map[string]Adapter{
 	},
 	"pi": {
 		Name:    "pi",
-		Display: "pi -p --provider zai --model glm-5.1  (Pi coding agent)",
+		Display: "pi -p --provider zai --model glm-5.1 --skill <kiln SKILL.md>  (Pi coding agent)",
 		Detect:  func() bool { _, err := exec.LookPath("pi"); return err == nil },
 		BuildArgs: func(text string) []string {
-			return []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1", text}
+			argv := []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1"}
+			// Pi doesn't auto-load ~/.claude/skills/ — point it at
+			// the kiln skill explicitly so the agent knows about
+			// add_entity / add_page / etc. Without this pi just
+			// hallucinates Go code instead of calling the tool API.
+			if p := kilnSkillPath(); p != "" {
+				argv = append(argv, "--skill", p)
+			}
+			argv = append(argv, text)
+			return argv
 		},
 	},
 	"codex": {
 		Name:    "codex",
-		Display: "codex exec  (OpenAI Codex CLI)",
+		Display: "codex exec  (OpenAI Codex CLI; kiln skill prepended to prompt)",
 		Detect:  func() bool { _, err := exec.LookPath("codex"); return err == nil },
 		BuildArgs: func(text string) []string {
-			return []string{"codex", "exec", text}
+			// Codex has no --skill flag — prepend the skill content
+			// to the prompt so the agent has the kiln tool API
+			// in its context.
+			prompt := text
+			if p := kilnSkillPath(); p != "" {
+				if buf, err := os.ReadFile(p); err == nil {
+					prompt = "<kiln-skill>\n" + string(buf) + "\n</kiln-skill>\n\n" + text
+				}
+			}
+			return []string{"codex", "exec", prompt}
 		},
 	},
 }
