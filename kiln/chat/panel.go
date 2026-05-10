@@ -358,7 +358,7 @@ func (pe *panelEnv) headerHTML() string {
 			}
 			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + escHTML(label) + `</span>`
 		})() +
-		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="Open world IR (JSON)">` + escHTML(pe.worldSnapshotText()) + `</a>` +
+		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + escAttr(pe.worldSnapshotTooltip()) + `">` + escHTML(pe.worldSnapshotText()) + `</a>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-fui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
 		`<button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard" data-fui-copy-text-from=".kiln-log">⎘</button>` +
@@ -404,6 +404,42 @@ func (pe *panelEnv) worldSnapshotText() string {
 		return "empty world"
 	}
 	return strings.Join(parts, " · ")
+}
+
+// worldSnapshotTooltip is the longer-form world summary shown on
+// hover of the snapshot pill — always lists every entity by name
+// regardless of count, so even sprawling worlds reveal their full
+// contents without opening /kiln/world.
+func (pe *panelEnv) worldSnapshotTooltip() string {
+	w := pe.live.Session().World
+	if w == nil || (len(w.Entities) == 0 && len(w.Pages) == 0 && len(w.Routes) == 0 && len(w.Hooks) == 0) {
+		return "Empty world — open /kiln/world for the IR"
+	}
+	var b strings.Builder
+	if n := len(w.Entities); n > 0 {
+		names := make([]string, 0, n)
+		for k := range w.Entities {
+			names = append(names, k)
+		}
+		sortStrings(names)
+		fmt.Fprintf(&b, "Entities (%d): %s\n", n, strings.Join(names, ", "))
+	}
+	if n := len(w.Pages); n > 0 {
+		paths := make([]string, 0, n)
+		for k := range w.Pages {
+			paths = append(paths, k)
+		}
+		sortStrings(paths)
+		fmt.Fprintf(&b, "Pages (%d): %s\n", n, strings.Join(paths, ", "))
+	}
+	if n := len(w.Routes); n > 0 {
+		fmt.Fprintf(&b, "Routes: %d\n", n)
+	}
+	if n := len(w.Hooks); n > 0 {
+		fmt.Fprintf(&b, "Hooks: %d\n", n)
+	}
+	b.WriteString("Click to open /kiln/world (JSON)")
+	return b.String()
 }
 
 func sortStrings(s []string) {
