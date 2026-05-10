@@ -25,10 +25,25 @@ type EntityConfig struct {
 	CRUD        *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
 	MCP         bool           // auto-generate MCP tools
 	CursorField string         // optional: field used for keyset cursor pagination; defaults to PrimaryKey
+	Indices     []Index        // additional CREATE INDEX statements emitted by AutoMigrate
 
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.
 	timestampsSet bool
+}
+
+// Index declares a secondary index on an entity. Both dialects accept the
+// same CREATE INDEX syntax; AutoMigrate emits CREATE INDEX IF NOT EXISTS so
+// re-runs are safe.
+//
+// Name is optional — when empty, AutoMigrate synthesises one as
+// "idx_<table>_<col1>_<col2>". Unique indices reject duplicate rows for the
+// chosen column set; for single-column uniqueness prefer the Field-level
+// Unique flag which lives on the column definition.
+type Index struct {
+	Name    string   `json:"name,omitempty"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique,omitempty"`
 }
 
 // Endpoint declares a custom route owned by an entity.

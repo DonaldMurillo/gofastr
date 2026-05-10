@@ -23,6 +23,8 @@ func runGenerate(args []string) {
 		generateEntity(args[1:])
 	case "all":
 		generateProject(args[1:])
+	case "ts", "typescript":
+		runGenerateTS(args[1:])
 	default:
 		fail("Unknown resource type: %s", resourceType)
 		info("Supported: all, entity")

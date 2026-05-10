@@ -107,8 +107,36 @@ func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entit
 		strings.Join(columns, ",\n\t"),
 	)
 
-	_, err := db.Exec(stmt)
-	return err
+	if _, err := db.Exec(stmt); err != nil {
+		return err
+	}
+
+	// Secondary indices — emit AFTER the table exists. CREATE INDEX IF NOT
+	// EXISTS works on both engines so re-running AutoMigrate is idempotent.
+	for _, idx := range entity.Config.Indices {
+		if len(idx.Columns) == 0 {
+			continue
+		}
+		if _, err := db.Exec(indexDDL(entity.GetTable(), idx)); err != nil {
+			return fmt.Errorf("create index on %s: %w", entity.GetTable(), err)
+		}
+	}
+	return nil
+}
+
+// indexDDL builds the CREATE INDEX statement for one declared Index. Name
+// is synthesised from the table + columns when empty.
+func indexDDL(table string, idx Index) string {
+	name := idx.Name
+	if name == "" {
+		name = "idx_" + table + "_" + strings.Join(idx.Columns, "_")
+	}
+	unique := ""
+	if idx.Unique {
+		unique = "UNIQUE "
+	}
+	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)",
+		unique, name, table, strings.Join(idx.Columns, ", "))
 }
 
 // foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
