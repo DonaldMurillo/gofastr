@@ -34,6 +34,18 @@ If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln se
 
 ## Operating rules
 
+### YOUR FIRST ACTION, EVERY TURN
+
+```bash
+curl -s "$KILN_URL/kiln/world"
+```
+
+Do this **before** writing any text. The response is the ONLY truth about what exists. Whatever you "remember" about a dashboard, blog, entities, or pages — discard it. Read the response, then act based on what's actually there.
+
+If the world is empty (`"entities":{}` or absent), there is **no app**. Do not describe a dashboard, do not list entities, do not say "this is already implemented". The correct response in that case is: act on the user's intent (build it now) or ask a clarifying question via the `chat` tool.
+
+### Other rules
+
 - For small additive asks ("add a `priority` field"), call the right tool directly. Don't narrate.
 - For any destructive op (`delete_entity`, `delete_field`, `delete_page`, `delete_hook`, `delete_route`), you MUST:
   1. Call `propose_plan` with `targets` listing every destructive op you intend to perform. Example: `targets: [{op:"delete_entity", name:"posts"}]`.
@@ -42,6 +54,13 @@ If `$KILN_URL` isn't set, default to `http://localhost:8765`. The first `kiln se
 - For large additive asks (>3 tool calls), `propose_plan` is recommended for visibility but not required.
 - When `ok=false`, read `kind` and `hint` and self-correct. Don't repeat the same call.
 - When unsure of state, GET `$KILN_URL/kiln/world` (or call the `world_get` tool with a path) before acting.
+- **MANDATORY FIRST STEP: GET `$KILN_URL/kiln/world` before doing anything else.** This is the source of truth for what's live. Do NOT make ANY statement about existing entities, pages, hooks, routes, or "what's already implemented" without first calling `world_get` (or `curl $KILN_URL/kiln/world`). Saying "the dashboard is already implemented" or "this is already wired up" without verifying is hallucination — the user is watching the live world, and they will catch you. There is no codebase to inspect; the world IR is the only state.
+- **DO NOT read files in the working directory.** Any Go / JS / SQL / Markdown sitting in `./` (including `examples/`, `entities/`, `screen_*.go`) is unrelated to the live kiln world. It is leftover source from prior sessions or unrelated apps. Reading it and reporting on it as if it were the kiln state is the most common failure mode. The world is **only** what `$KILN_URL/kiln/world` returns. Stick to bash + curl.
+- **When the request is ambiguous or you'd be guessing — STOP and ask.** Call `chat(role:"assistant", text:"<one focused question>")` with the specific clarification you need, then exit. The user will reply and a new turn will run with the answer. Examples:
+  - "list all entities" against an empty world → ask: "The world has no entities yet — should I scaffold a starter set (notes, users) or wait for you to add them first?"
+  - "add a hook" with no entity context → ask: "Which entity should the hook fire on, and at which lifecycle stage (before_create, after_update, …)?"
+  - "build a blog" → ask: "Quick check before I start: posts + authors with a one-to-many relation, or richer (tags, comments)?"
+  Asking is **always** preferred over guessing or claiming work is already done.
 
 ## Tool surface
 

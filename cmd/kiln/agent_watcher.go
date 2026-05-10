@@ -192,6 +192,13 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), "KILN_URL="+kilnURL)
 	c.Stderr = os.Stderr // surface diagnostic output to the kiln operator
+	// Adapters that ask for a clean working directory (e.g. pi, which
+	// will cat any Go file in cwd and report on it as if it were the
+	// kiln world) get their isolated dir created on demand.
+	if adapter.Dir != "" {
+		_ = os.MkdirAll(adapter.Dir, 0o755)
+		c.Dir = adapter.Dir
+	}
 	out, err := c.Output()
 	resp := strings.TrimSpace(string(out))
 

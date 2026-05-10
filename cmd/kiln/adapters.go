@@ -38,6 +38,12 @@ type Adapter struct {
 	Display   string // human-readable description for the startup banner
 	Detect    func() bool
 	BuildArgs func(text string) []string
+	// Dir overrides the working directory for the spawned process.
+	// Empty means inherit kiln's cwd. Set this for adapters whose
+	// model is prone to reading the cwd (pi will cat any Go file
+	// it sees and report on it as if it were the kiln world);
+	// pointing them at a clean temp dir blocks that confusion.
+	Dir string
 }
 
 // adapters is the built-in registry. Adding a new agent is a one-entry
@@ -59,10 +65,19 @@ var adapters = map[string]Adapter{
 	},
 	"pi": {
 		Name:    "pi",
-		Display: "pi -p --provider zai --model glm-5.1 --skill <kiln SKILL.md>  (Pi coding agent)",
+		Display: "pi -p --provider zai --model glm-5.1 --tools bash --skill <kiln SKILL.md>  (Pi coding agent — runs in /tmp/kiln-pi/ to isolate from cwd)",
+		Dir:     filepath.Join(os.TempDir(), "kiln-pi"),
 		Detect:  func() bool { _, err := exec.LookPath("pi"); return err == nil },
 		BuildArgs: func(text string) []string {
-			argv := []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1"}
+			argv := []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1",
+				// Restrict pi to bash only — it dispatches kiln tools
+				// via curl. Without --tools=Bash, pi's Read tool sees
+				// the cwd's Go source (e.g. examples/blog/) and reports
+				// on it as if it were the kiln world, since both look
+				// like 'app code' to the model. The kiln world is the
+				// only source of truth and is reachable solely via
+				// $KILN_URL HTTP — bash is sufficient.
+				"--tools", "bash"}
 			// Pi doesn't auto-load ~/.claude/skills/ — point it at
 			// the kiln skill explicitly so the agent knows about
 			// add_entity / add_page / etc. Without this pi just
