@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -73,56 +74,56 @@ func TestEntitiesFromDirLoadsDeclarationsInDirectory(t *testing.T) {
 }
 
 func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
-	db := setupTestDB(t)
-	defer db.Close()
-	createPostsTable(t, db)
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTable(t, db)
 
-	app := NewApp(WithDB(db))
-	app.Entity("posts", EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.String},
-		},
-		MCP: true,
+		app := NewApp(WithDB(db))
+		app.Entity("posts", EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "body", Type: schema.Text},
+				{Name: "status", Type: schema.String},
+			},
+			MCP: true,
+		})
+
+		createResult := callMCPTool(t, app.MCP, "posts_create", map[string]any{
+			"title":  "Hello MCP",
+			"body":   "Created through a tool",
+			"status": "draft",
+		})
+		created := createResult.(map[string]any)
+		id, ok := created["id"].(string)
+		if !ok || id == "" {
+			t.Fatalf("create result missing id: %#v", createResult)
+		}
+
+		getResult := callMCPTool(t, app.MCP, "posts_get", map[string]any{"id": id})
+		got := getResult.(map[string]any)
+		if got["title"] != "Hello MCP" {
+			t.Fatalf("get title = %#v", got["title"])
+		}
+
+		updateResult := callMCPTool(t, app.MCP, "posts_update", map[string]any{"id": id, "title": "Hello MCP", "status": "published"})
+		updated := updateResult.(map[string]any)
+		if updated["status"] != "published" {
+			t.Fatalf("updated status = %#v", updated["status"])
+		}
+
+		listResult := callMCPTool(t, app.MCP, "posts_list", map[string]any{"limit": 10})
+		list := listResult.(map[string]any)
+		data := list["data"].([]any)
+		if len(data) != 1 {
+			t.Fatalf("list data len = %d", len(data))
+		}
+
+		deleteResult := callMCPTool(t, app.MCP, "posts_delete", map[string]any{"id": id})
+		deleted := deleteResult.(map[string]any)
+		if deleted["deleted"] != true {
+			t.Fatalf("delete result = %#v", deleted)
+		}
 	})
-
-	createResult := callMCPTool(t, app.MCP, "posts_create", map[string]any{
-		"title":  "Hello MCP",
-		"body":   "Created through a tool",
-		"status": "draft",
-	})
-	created := createResult.(map[string]any)
-	id, ok := created["id"].(string)
-	if !ok || id == "" {
-		t.Fatalf("create result missing id: %#v", createResult)
-	}
-
-	getResult := callMCPTool(t, app.MCP, "posts_get", map[string]any{"id": id})
-	got := getResult.(map[string]any)
-	if got["title"] != "Hello MCP" {
-		t.Fatalf("get title = %#v", got["title"])
-	}
-
-	updateResult := callMCPTool(t, app.MCP, "posts_update", map[string]any{"id": id, "title": "Hello MCP", "status": "published"})
-	updated := updateResult.(map[string]any)
-	if updated["status"] != "published" {
-		t.Fatalf("updated status = %#v", updated["status"])
-	}
-
-	listResult := callMCPTool(t, app.MCP, "posts_list", map[string]any{"limit": 10})
-	list := listResult.(map[string]any)
-	data := list["data"].([]any)
-	if len(data) != 1 {
-		t.Fatalf("list data len = %d", len(data))
-	}
-
-	deleteResult := callMCPTool(t, app.MCP, "posts_delete", map[string]any{"id": id})
-	deleted := deleteResult.(map[string]any)
-	if deleted["deleted"] != true {
-		t.Fatalf("delete result = %#v", deleted)
-	}
 }
 
 func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {

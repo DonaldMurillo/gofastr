@@ -571,92 +571,91 @@ func TestSqlDefault_NonStringTypes(t *testing.T) {
 // ============================================================================
 
 func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`CREATE TABLE posts (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		body TEXT DEFAULT '',
-		status TEXT DEFAULT 'draft',
-		author_id TEXT DEFAULT '',
-		deleted_at DATETIME DEFAULT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	// Insert one active, one soft-deleted
-	_, err = db.Exec("INSERT INTO posts (id, title) VALUES (?, ?)", "p1", "Active Post")
-	if err != nil {
-		t.Fatalf("insert p1: %v", err)
-	}
-	_, err = db.Exec("INSERT INTO posts (id, title, deleted_at) VALUES (?, ?, ?)", "p2", "Deleted Post", time.Now().UTC().Format("2006-01-02T15:04:05Z"))
-	if err != nil {
-		t.Fatalf("insert p2: %v", err)
-	}
-
-	app := NewApp(WithDB(db))
-	entity := Define("posts", EntityConfig{
-		Table:      "posts",
-		SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.String},
-			{Name: "author_id", Type: schema.String},
-		},
+	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
+		db := openTestDB(t, dialect)
+		var err error
+	
+		_, err = db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			body TEXT DEFAULT '',
+			status TEXT DEFAULT 'draft',
+			author_id TEXT DEFAULT '',
+			deleted_at TIMESTAMP DEFAULT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+		if err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	
+		// Insert one active, one soft-deleted
+		_, err = db.Exec("INSERT INTO posts (id, title) VALUES ($1, $2)", "p1", "Active Post")
+		if err != nil {
+			t.Fatalf("insert p1: %v", err)
+		}
+		_, err = db.Exec("INSERT INTO posts (id, title, deleted_at) VALUES ($1, $2, $3)", "p2", "Deleted Post", time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+		if err != nil {
+			t.Fatalf("insert p2: %v", err)
+		}
+	
+		app := NewApp(WithDB(db))
+		entity := Define("posts", EntityConfig{
+			Table:      "posts",
+			SoftDelete: true,
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "body", Type: schema.Text},
+				{Name: "status", Type: schema.String},
+				{Name: "author_id", Type: schema.String},
+			},
+		})
+		app.Registry.Register(entity)
+	
+		crud := NewCrudHandler(entity, db)
+		RegisterCrudRoutes(app.Router, crud, "/posts")
+	
+		ta := TestHarness(t, app)
+		defer ta.Close()
+	
+		// List should only return the active post
+		resp := ta.Get("/posts")
+		resp.AssertStatus(t, http.StatusOK)
+		resp.AssertBodyContains(t, "Active Post")
+		if strings.Contains(resp.Body(), "Deleted Post") {
+			t.Error("expected soft-deleted post to be excluded from list")
+		}
+	
+		var listResult ListResponse
+		if err := resp.JSON(&listResult); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		if listResult.Total != 1 {
+			t.Errorf("expected total=1, got %d", listResult.Total)
+		}
+	
+		// Get the active post should work
+		resp = ta.Get("/posts/p1")
+		resp.AssertStatus(t, http.StatusOK)
+	
+		// Get the soft-deleted post should return 404
+		resp = ta.Get("/posts/p2")
+		resp.AssertStatus(t, http.StatusNotFound)
+	
+		// List with ?trashed=true should include deleted post
+		resp = ta.Get("/posts?trashed=true")
+		resp.AssertStatus(t, http.StatusOK)
+		resp.AssertBodyContains(t, "Active Post")
+		resp.AssertBodyContains(t, "Deleted Post")
+	
+		var trashedResult ListResponse
+		if err := resp.JSON(&trashedResult); err != nil {
+			t.Fatalf("decode trashed list: %v", err)
+		}
+		if trashedResult.Total != 2 {
+			t.Errorf("expected total=2 with trashed, got %d", trashedResult.Total)
+		}
 	})
-	app.Registry.Register(entity)
-
-	crud := NewCrudHandler(entity, db)
-	RegisterCrudRoutes(app.Router, crud, "/posts")
-
-	ta := TestHarness(t, app)
-	defer ta.Close()
-
-	// List should only return the active post
-	resp := ta.Get("/posts")
-	resp.AssertStatus(t, http.StatusOK)
-	resp.AssertBodyContains(t, "Active Post")
-	if strings.Contains(resp.Body(), "Deleted Post") {
-		t.Error("expected soft-deleted post to be excluded from list")
-	}
-
-	var listResult ListResponse
-	if err := resp.JSON(&listResult); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
-	if listResult.Total != 1 {
-		t.Errorf("expected total=1, got %d", listResult.Total)
-	}
-
-	// Get the active post should work
-	resp = ta.Get("/posts/p1")
-	resp.AssertStatus(t, http.StatusOK)
-
-	// Get the soft-deleted post should return 404
-	resp = ta.Get("/posts/p2")
-	resp.AssertStatus(t, http.StatusNotFound)
-
-	// List with ?trashed=true should include deleted post
-	resp = ta.Get("/posts?trashed=true")
-	resp.AssertStatus(t, http.StatusOK)
-	resp.AssertBodyContains(t, "Active Post")
-	resp.AssertBodyContains(t, "Deleted Post")
-
-	var trashedResult ListResponse
-	if err := resp.JSON(&trashedResult); err != nil {
-		t.Fatalf("decode trashed list: %v", err)
-	}
-	if trashedResult.Total != 2 {
-		t.Errorf("expected total=2 with trashed, got %d", trashedResult.Total)
-	}
 }
 
 // ============================================================================
@@ -664,55 +663,54 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 // ============================================================================
 
 func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`CREATE TABLE posts (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		slug TEXT DEFAULT '',
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	app := NewApp(WithDB(db))
-	entity := Define("posts", EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "slug", Type: schema.String, ReadOnly: true},
-		},
+	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
+		db := openTestDB(t, dialect)
+		var err error
+	
+		_, err = db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			slug TEXT DEFAULT '',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+		if err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	
+		app := NewApp(WithDB(db))
+		entity := Define("posts", EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "slug", Type: schema.String, ReadOnly: true},
+			},
+		})
+		app.Registry.Register(entity)
+	
+		crud := NewCrudHandler(entity, db)
+		RegisterCrudRoutes(app.Router, crud, "/posts")
+	
+		ta := TestHarness(t, app)
+		defer ta.Close()
+	
+		// Create with slug (ReadOnly) should still succeed but slug should not be in the INSERT
+		resp := ta.Post("/posts", map[string]string{
+			"title": "Hello",
+			"slug":  "hacked-slug", // should be ignored
+		})
+		resp.AssertStatus(t, http.StatusCreated)
+	
+		// Verify slug was NOT inserted
+		var slug sql.NullString
+		err = db.QueryRow("SELECT slug FROM posts LIMIT 1").Scan(&slug)
+		if err != nil {
+			t.Fatalf("query slug: %v", err)
+		}
+		if slug.Valid && slug.String == "hacked-slug" {
+			t.Error("ReadOnly field 'slug' should not have been set from request body")
+		}
 	})
-	app.Registry.Register(entity)
-
-	crud := NewCrudHandler(entity, db)
-	RegisterCrudRoutes(app.Router, crud, "/posts")
-
-	ta := TestHarness(t, app)
-	defer ta.Close()
-
-	// Create with slug (ReadOnly) should still succeed but slug should not be in the INSERT
-	resp := ta.Post("/posts", map[string]string{
-		"title": "Hello",
-		"slug":  "hacked-slug", // should be ignored
-	})
-	resp.AssertStatus(t, http.StatusCreated)
-
-	// Verify slug was NOT inserted
-	var slug sql.NullString
-	err = db.QueryRow("SELECT slug FROM posts LIMIT 1").Scan(&slug)
-	if err != nil {
-		t.Fatalf("query slug: %v", err)
-	}
-	if slug.Valid && slug.String == "hacked-slug" {
-		t.Error("ReadOnly field 'slug' should not have been set from request body")
-	}
 }
 
 // ============================================================================
@@ -720,81 +718,80 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 // ============================================================================
 
 func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`CREATE TABLE posts (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		body TEXT DEFAULT '',
-		status TEXT DEFAULT 'draft',
-		author_id TEXT DEFAULT '',
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	app := NewApp(WithDB(db))
-	entity := Define("posts", EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.String},
-			{Name: "author_id", Type: schema.String},
-		},
-	})
-	app.Registry.Register(entity)
-
-	var beforeCreateCalled, afterCreateCalled bool
-	hooks := app.HookRegistry("posts")
-	hooks.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
-		beforeCreateCalled = true
-		// Modify data before insert
-		if m, ok := data.(map[string]any); ok {
-			m["status"] = "auto-draft"
+	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
+		db := openTestDB(t, dialect)
+		var err error
+	
+		_, err = db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			body TEXT DEFAULT '',
+			status TEXT DEFAULT 'draft',
+			author_id TEXT DEFAULT '',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+		if err != nil {
+			t.Fatalf("create table: %v", err)
 		}
-		return nil
+	
+		app := NewApp(WithDB(db))
+		entity := Define("posts", EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "body", Type: schema.Text},
+				{Name: "status", Type: schema.String},
+				{Name: "author_id", Type: schema.String},
+			},
+		})
+		app.Registry.Register(entity)
+	
+		var beforeCreateCalled, afterCreateCalled bool
+		hooks := app.HookRegistry("posts")
+		hooks.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+			beforeCreateCalled = true
+			// Modify data before insert
+			if m, ok := data.(map[string]any); ok {
+				m["status"] = "auto-draft"
+			}
+			return nil
+		})
+		hooks.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+			afterCreateCalled = true
+			return nil
+		})
+	
+		crud := NewCrudHandler(entity, db)
+		crud.Hooks = hooks
+		RegisterCrudRoutes(app.Router, crud, "/posts")
+	
+		ta := TestHarness(t, app)
+		defer ta.Close()
+	
+		resp := ta.Post("/posts", map[string]string{
+			"title": "Hook Test",
+		})
+		resp.AssertStatus(t, http.StatusCreated)
+	
+		if !beforeCreateCalled {
+			t.Error("expected BeforeCreate hook to be called")
+		}
+		if !afterCreateCalled {
+			t.Error("expected AfterCreate hook to be called")
+		}
+	
+		// Verify the hook-modified data was inserted
+		var status string
+		id := extractIDFromResponse(t, resp)
+		err = db.QueryRow("SELECT status FROM posts WHERE id = $1", id).Scan(&status)
+		if err != nil {
+			t.Fatalf("query status: %v", err)
+		}
+		if status != "auto-draft" {
+			t.Errorf("expected status='auto-draft' (set by hook), got %q", status)
+		}
 	})
-	hooks.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
-		afterCreateCalled = true
-		return nil
-	})
-
-	crud := NewCrudHandler(entity, db)
-	crud.Hooks = hooks
-	RegisterCrudRoutes(app.Router, crud, "/posts")
-
-	ta := TestHarness(t, app)
-	defer ta.Close()
-
-	resp := ta.Post("/posts", map[string]string{
-		"title": "Hook Test",
-	})
-	resp.AssertStatus(t, http.StatusCreated)
-
-	if !beforeCreateCalled {
-		t.Error("expected BeforeCreate hook to be called")
-	}
-	if !afterCreateCalled {
-		t.Error("expected AfterCreate hook to be called")
-	}
-
-	// Verify the hook-modified data was inserted
-	var status string
-	id := extractIDFromResponse(t, resp)
-	err = db.QueryRow("SELECT status FROM posts WHERE id = ?", id).Scan(&status)
-	if err != nil {
-		t.Fatalf("query status: %v", err)
-	}
-	if status != "auto-draft" {
-		t.Errorf("expected status='auto-draft' (set by hook), got %q", status)
-	}
 }
 
 // ============================================================================
@@ -802,94 +799,93 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 // ============================================================================
 
 func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`CREATE TABLE posts (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		body TEXT DEFAULT '',
-		status TEXT DEFAULT 'draft',
-		author_id TEXT DEFAULT '',
-		tenant_id TEXT DEFAULT '',
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	// Insert posts for two tenants
-	_, err = db.Exec("INSERT INTO posts (id, title, tenant_id) VALUES (?, ?, ?)", "p1", "Tenant A Post", "tenant-a")
-	if err != nil {
-		t.Fatalf("insert p1: %v", err)
-	}
-	_, err = db.Exec("INSERT INTO posts (id, title, tenant_id) VALUES (?, ?, ?)", "p2", "Tenant B Post", "tenant-b")
-	if err != nil {
-		t.Fatalf("insert p2: %v", err)
-	}
-
-	app := NewApp(WithDB(db))
-	entity := Define("posts", EntityConfig{
-		Table:       "posts",
-		MultiTenant: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-			{Name: "status", Type: schema.String},
-			{Name: "author_id", Type: schema.String},
-		},
+	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
+		db := openTestDB(t, dialect)
+		var err error
+	
+		_, err = db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			body TEXT DEFAULT '',
+			status TEXT DEFAULT 'draft',
+			author_id TEXT DEFAULT '',
+			tenant_id TEXT DEFAULT '',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+		if err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	
+		// Insert posts for two tenants
+		_, err = db.Exec("INSERT INTO posts (id, title, tenant_id) VALUES ($1, $2, $3)", "p1", "Tenant A Post", "tenant-a")
+		if err != nil {
+			t.Fatalf("insert p1: %v", err)
+		}
+		_, err = db.Exec("INSERT INTO posts (id, title, tenant_id) VALUES ($1, $2, $3)", "p2", "Tenant B Post", "tenant-b")
+		if err != nil {
+			t.Fatalf("insert p2: %v", err)
+		}
+	
+		app := NewApp(WithDB(db))
+		entity := Define("posts", EntityConfig{
+			Table:       "posts",
+			MultiTenant: true,
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "body", Type: schema.Text},
+				{Name: "status", Type: schema.String},
+				{Name: "author_id", Type: schema.String},
+			},
+		})
+		WithMultiTenant(entity, DefaultTenantConfig())
+		app.Registry.Register(entity)
+	
+		// Apply tenant middleware BEFORE registering routes
+		// (Router.wrap bakes in middleware at registration time)
+		app.Router.Use(TenantMiddleware("X-Tenant-ID"))
+	
+		crud := NewCrudHandler(entity, db)
+		RegisterCrudRoutes(app.Router, crud, "/posts")
+	
+		ta := TestHarness(t, app)
+		defer ta.Close()
+	
+		// List as tenant-a — should only see tenant-a's posts
+		req := ta.Request(http.MethodGet, "/posts", nil)
+		req.WithHeader("X-Tenant-ID", "tenant-a")
+		resp := req.Execute()
+		resp.AssertStatus(t, http.StatusOK)
+	
+		var listResult ListResponse
+		if err := resp.JSON(&listResult); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		if listResult.Total != 1 {
+			t.Errorf("expected 1 post for tenant-a, got %d", listResult.Total)
+		}
+		if len(listResult.Data) > 0 && listResult.Data[0]["title"] != "Tenant A Post" {
+			t.Errorf("expected 'Tenant A Post', got %v", listResult.Data[0]["title"])
+		}
+	
+		// Create as tenant-a — should inject tenant_id
+		req2 := ta.Request(http.MethodPost, "/posts", strings.NewReader(`{"title":"New Post"}`))
+		req2.WithHeader("X-Tenant-ID", "tenant-a")
+		req2.WithHeader("Content-Type", "application/json")
+		resp2 := req2.Execute()
+		resp2.AssertStatus(t, http.StatusCreated)
+	
+		// Verify tenant_id was set
+		id := extractIDFromResponse(t, resp2)
+		var tenantID string
+		err = db.QueryRow("SELECT tenant_id FROM posts WHERE id = $1", id).Scan(&tenantID)
+		if err != nil {
+			t.Fatalf("query tenant_id: %v", err)
+		}
+		if tenantID != "tenant-a" {
+			t.Errorf("expected tenant_id='tenant-a', got %q", tenantID)
+		}
 	})
-	WithMultiTenant(entity, DefaultTenantConfig())
-	app.Registry.Register(entity)
-
-	// Apply tenant middleware BEFORE registering routes
-	// (Router.wrap bakes in middleware at registration time)
-	app.Router.Use(TenantMiddleware("X-Tenant-ID"))
-
-	crud := NewCrudHandler(entity, db)
-	RegisterCrudRoutes(app.Router, crud, "/posts")
-
-	ta := TestHarness(t, app)
-	defer ta.Close()
-
-	// List as tenant-a — should only see tenant-a's posts
-	req := ta.Request(http.MethodGet, "/posts", nil)
-	req.WithHeader("X-Tenant-ID", "tenant-a")
-	resp := req.Execute()
-	resp.AssertStatus(t, http.StatusOK)
-
-	var listResult ListResponse
-	if err := resp.JSON(&listResult); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
-	if listResult.Total != 1 {
-		t.Errorf("expected 1 post for tenant-a, got %d", listResult.Total)
-	}
-	if len(listResult.Data) > 0 && listResult.Data[0]["title"] != "Tenant A Post" {
-		t.Errorf("expected 'Tenant A Post', got %v", listResult.Data[0]["title"])
-	}
-
-	// Create as tenant-a — should inject tenant_id
-	req2 := ta.Request(http.MethodPost, "/posts", strings.NewReader(`{"title":"New Post"}`))
-	req2.WithHeader("X-Tenant-ID", "tenant-a")
-	req2.WithHeader("Content-Type", "application/json")
-	resp2 := req2.Execute()
-	resp2.AssertStatus(t, http.StatusCreated)
-
-	// Verify tenant_id was set
-	id := extractIDFromResponse(t, resp2)
-	var tenantID string
-	err = db.QueryRow("SELECT tenant_id FROM posts WHERE id = ?", id).Scan(&tenantID)
-	if err != nil {
-		t.Fatalf("query tenant_id: %v", err)
-	}
-	if tenantID != "tenant-a" {
-		t.Errorf("expected tenant_id='tenant-a', got %q", tenantID)
-	}
 }
 
 // ============================================================================
@@ -897,75 +893,74 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 // ============================================================================
 
 func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`CREATE TABLE posts (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		deleted_at DATETIME DEFAULT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	app := NewApp(WithDB(db))
-	entity := Define("posts", EntityConfig{
-		Table:      "posts",
-		SoftDelete: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
+	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
+		db := openTestDB(t, dialect)
+		var err error
+	
+		_, err = db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			deleted_at TIMESTAMP DEFAULT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+		if err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	
+		app := NewApp(WithDB(db))
+		entity := Define("posts", EntityConfig{
+			Table:      "posts",
+			SoftDelete: true,
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+			},
+		})
+		app.Registry.Register(entity)
+	
+		crud := NewCrudHandler(entity, db)
+		RegisterCrudRoutes(app.Router, crud, "/posts")
+	
+		ta := TestHarness(t, app)
+		defer ta.Close()
+	
+		// Create a post
+		resp := ta.Post("/posts", map[string]string{
+			"title": "Delete Test",
+		})
+		resp.AssertStatus(t, http.StatusCreated)
+		id := extractIDFromResponse(t, resp)
+	
+		// Before delete: deleted_at should be NULL
+		var beforeDelete sql.NullString
+		db.QueryRow("SELECT deleted_at FROM posts WHERE id = $1", id).Scan(&beforeDelete)
+		if beforeDelete.Valid {
+			t.Error("expected deleted_at to be NULL before delete")
+		}
+	
+		// Soft delete
+		resp = ta.Delete("/posts/" + id)
+		resp.AssertStatus(t, http.StatusNoContent)
+	
+		// After delete: deleted_at should be a real timestamp (not the literal string "NOW()")
+		var afterDelete sql.NullString
+		err = db.QueryRow("SELECT deleted_at FROM posts WHERE id = $1", id).Scan(&afterDelete)
+		if err != nil {
+			t.Fatalf("query after delete: %v", err)
+		}
+		if !afterDelete.Valid {
+			t.Fatal("expected deleted_at to be set after soft delete")
+		}
+		// Verify it's a timestamp, not the literal "NOW()" string
+		if afterDelete.String == "NOW()" {
+			t.Error("deleted_at should be a real timestamp, not the literal string 'NOW()'")
+		}
+		// Parse it to confirm it's a valid time
+		_, err = time.Parse("2006-01-02T15:04:05Z", afterDelete.String)
+		if err != nil {
+			t.Logf("Note: deleted_at = %q (may use different format, that's OK for SQLite)", afterDelete.String)
+		}
 	})
-	app.Registry.Register(entity)
-
-	crud := NewCrudHandler(entity, db)
-	RegisterCrudRoutes(app.Router, crud, "/posts")
-
-	ta := TestHarness(t, app)
-	defer ta.Close()
-
-	// Create a post
-	resp := ta.Post("/posts", map[string]string{
-		"title": "Delete Test",
-	})
-	resp.AssertStatus(t, http.StatusCreated)
-	id := extractIDFromResponse(t, resp)
-
-	// Before delete: deleted_at should be NULL
-	var beforeDelete sql.NullString
-	db.QueryRow("SELECT deleted_at FROM posts WHERE id = ?", id).Scan(&beforeDelete)
-	if beforeDelete.Valid {
-		t.Error("expected deleted_at to be NULL before delete")
-	}
-
-	// Soft delete
-	resp = ta.Delete("/posts/" + id)
-	resp.AssertStatus(t, http.StatusNoContent)
-
-	// After delete: deleted_at should be a real timestamp (not the literal string "NOW()")
-	var afterDelete sql.NullString
-	err = db.QueryRow("SELECT deleted_at FROM posts WHERE id = ?", id).Scan(&afterDelete)
-	if err != nil {
-		t.Fatalf("query after delete: %v", err)
-	}
-	if !afterDelete.Valid {
-		t.Fatal("expected deleted_at to be set after soft delete")
-	}
-	// Verify it's a timestamp, not the literal "NOW()" string
-	if afterDelete.String == "NOW()" {
-		t.Error("deleted_at should be a real timestamp, not the literal string 'NOW()'")
-	}
-	// Parse it to confirm it's a valid time
-	_, err = time.Parse("2006-01-02T15:04:05Z", afterDelete.String)
-	if err != nil {
-		t.Logf("Note: deleted_at = %q (may use different format, that's OK for SQLite)", afterDelete.String)
-	}
 }
 
 // ============================================================================
