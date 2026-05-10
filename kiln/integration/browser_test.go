@@ -2826,6 +2826,30 @@ func TestBrowser_PlanCardModifyPrefillsInput(t *testing.T) {
 	t.Errorf("Modify did not prefill input with 'Refine plan p-tweak:'; got %q", got)
 }
 
+// Chat log uses aria-live so screen readers announce new messages.
+func TestBrowser_ChatLogIsAriaLive(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-log-wrap`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var role, ariaLive string
+	_ = chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.kiln-log-wrap').getAttribute('role')`, &role),
+		chromedp.Evaluate(`document.querySelector('.kiln-log-wrap').getAttribute('aria-live')`, &ariaLive),
+	)
+	if role != "log" {
+		t.Errorf("expected role=log, got %q", role)
+	}
+	if ariaLive != "polite" {
+		t.Errorf("expected aria-live=polite, got %q", ariaLive)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
