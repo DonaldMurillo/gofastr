@@ -13,6 +13,12 @@ import (
 
 func runGenerate(args []string) {
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
+		for _, a := range args {
+			if a == "--watch" {
+				runGenerateWatch(args)
+				return
+			}
+		}
 		generateProject(args)
 		return
 	}

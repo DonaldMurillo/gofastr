@@ -225,6 +225,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 		sorts := ParseSort(r, ch.Entity.GetFields())
 
+		cols, err := ch.projectFromRequest(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		applyFiltersToCountQuery(countQb, filters)
@@ -237,8 +243,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// Build data query — select only visible fields
-		cols := ch.visibleFields()
+		// Build data query — select only projected (or all visible by default).
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		applyFiltersToQuery(qb, filters)
@@ -304,7 +309,11 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		cols := ch.visibleFields()
+		cols, err := ch.projectFromRequest(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		qb.Where(ch.PrimaryKey+" = $1", id)
