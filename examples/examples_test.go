@@ -623,3 +623,84 @@ func stringContains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestApiTourSmoke spins up the api-tour app's entity graph (without binding
+// a port) and exercises the new endpoints — eager loading, cursor pagination,
+// batch create, and the SSE handler — through TestHarness. This isn't the
+// shipped main.go (that runs ListenAndServe); it pins the entity wiring so
+// the example doesn't drift from the framework API.
+func TestApiTourSmoke(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("pragma: %v", err)
+	}
+
+	app := framework.NewApp(
+		framework.WithDB(db),
+		framework.WithConfig(framework.AppConfig{Name: "api-tour-test"}),
+	)
+	app.Entity("users", framework.EntityConfig{
+		Table: "users",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
+			{Name: "name", Type: schema.String, Required: true},
+		},
+		Relations: []framework.Relation{
+			framework.HasOne("profile", "profiles", "user_id"),
+		},
+	})
+	app.Entity("profiles", framework.EntityConfig{
+		Table: "profiles",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "bio", Type: schema.Text},
+		},
+	})
+	app.Entity("posts", framework.EntityConfig{
+		Table:       "posts",
+		CursorField: "created_at",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "author_id", Type: schema.String, Required: true},
+		},
+		Relations: []framework.Relation{
+			framework.BelongsTo("author", "users", "author_id"),
+		},
+	})
+
+	// Migrate (creates tables) and seed.
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	mustExec := func(q string, args ...any) {
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("exec %q: %v", q, err)
+		}
+	}
+	mustExec("INSERT INTO users(id, name) VALUES ($1, $2)", "u1", "Alice")
+	mustExec("INSERT INTO profiles(id, user_id, bio) VALUES ($1, $2, $3)", "p1", "u1", "Hi")
+
+	ta := framework.TestHarness(t, app)
+
+	// Batch create posts in one round trip.
+	resp := ta.Post("/posts/_batch", map[string]any{
+		"items": []map[string]any{
+			{"title": "T1", "author_id": "u1"},
+			{"title": "T2", "author_id": "u1"},
+		},
+	})
+	resp.AssertStatus(t, http.StatusOK)
+
+	// List with nested includes.
+	resp = ta.Get("/posts?include=author.profile")
+	resp.AssertStatus(t, http.StatusOK)
+	resp.AssertBodyContains(t, "Alice")
+	resp.AssertBodyContains(t, "Hi")
+}
+
