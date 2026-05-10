@@ -382,7 +382,7 @@ func (pe *panelEnv) statusText() string {
 	if !inFlight {
 		return ""
 	}
-	count := pe.toolCallsSinceLastUserMessage()
+	calls, pending := pe.toolCountsSinceLastUserMessage()
 	suffix := ""
 	// Live elapsed-time tick driven by data-fui-tick-elapsed (runtime
 	// rewrites every 200ms). Anchored to the last user message
@@ -391,8 +391,12 @@ func (pe *panelEnv) statusText() string {
 	if start := pe.lastUserMessageMillis(); start > 0 {
 		suffix += fmt.Sprintf(` · <span data-fui-tick-elapsed="%d">…</span>`, start)
 	}
-	if count > 0 {
-		suffix += ` · ` + pluralize(count, "tool", "tools")
+	if calls > 0 {
+		suffix += ` · ` + pluralize(calls, "tool", "tools")
+		if pending > 0 {
+			done := calls - pending
+			suffix += fmt.Sprintf(` (%d done · %d running)`, done, pending)
+		}
 	}
 	return `<span class="kiln-thinking" role="status" aria-live="polite">agent thinking` + suffix + `<span class="kiln-thinking-dots">…</span></span>`
 }
@@ -407,10 +411,11 @@ func (pe *panelEnv) lastUserMessageMillis() int64 {
 	return 0
 }
 
-// toolCallsSinceLastUserMessage counts journaled tool_call entries
-// after the most recent chat_user. Drives the in-header tool counter
-// so users see how busy the agent is mid-turn.
-func (pe *panelEnv) toolCallsSinceLastUserMessage() int {
+// toolCountsSinceLastUserMessage returns (totalCalls, pendingCalls)
+// in the current turn. Pending = tool_call without a matching
+// tool_result yet. Drives the 'N tools (M done · K running)' split
+// in the in-flight indicator.
+func (pe *panelEnv) toolCountsSinceLastUserMessage() (calls, pending int) {
 	chat := pe.live.Session().Chat
 	lastUser := -1
 	for i := len(chat) - 1; i >= 0; i-- {
@@ -419,13 +424,21 @@ func (pe *panelEnv) toolCallsSinceLastUserMessage() int {
 			break
 		}
 	}
-	count := 0
+	resolved := map[string]bool{}
 	for i := lastUser + 1; i < len(chat); i++ {
-		if chat[i].Kind == journal.KindToolCall {
-			count++
+		if chat[i].Kind == journal.KindToolResult && chat[i].Result != nil {
+			resolved[chat[i].Result.CallID] = true
 		}
 	}
-	return count
+	for i := lastUser + 1; i < len(chat); i++ {
+		if chat[i].Kind == journal.KindToolCall && chat[i].Call != nil {
+			calls++
+			if !resolved[chat[i].Call.CallID] {
+				pending++
+			}
+		}
+	}
+	return
 }
 
 func (pe *panelEnv) inputHTML() string {

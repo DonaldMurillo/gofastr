@@ -2474,6 +2474,72 @@ func TestBrowser_SnapshotPillLinksToWorld(t *testing.T) {
 	}
 }
 
+// In-flight indicator splits the tool count into done vs running so
+// users can tell whether the agent is making progress (calls > done)
+// vs stuck waiting on a single slow tool.
+func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
+	urlBase, l, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	// Start a turn with one resolved + one pending tool.
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "do work"})
+	testInFlight.Store(true)
+	l.Notify("agent_turn_started", "pi")
+
+	// Resolved tool: hit /kiln/tool — journals call + result.
+	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json",
+		strings.NewReader(`{"entity":{"name":"r","fields":[{"name":"x","type":"string"}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	// Pending tool: inject tool_call without a matching result.
+	if err := l.Apply(journal.Entry{
+		ID: "pending-split-1", Timestamp: time.Now(),
+		Kind: journal.KindToolCall,
+		Payload: mustJSON(journal.ToolCallPayload{
+			CallID: "pending-split-call", Name: "add_entity",
+			Args: map[string]any{"entity": map[string]any{"name": "p"}},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &status, chromedp.ByQuery))
+		if strings.Contains(status, "1 done") && strings.Contains(status, "1 running") {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var last string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &last, chromedp.ByQuery))
+	t.Errorf("status never showed '1 done · 1 running'; final=%q", last)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
