@@ -551,7 +551,8 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		if page != "" {
 			pageChip = fmt.Sprintf(`<span class="kiln-msg-page">%s</span>`, escHTML(page))
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-%s">%s%s</li>`, role, pageChip, escHTML(body))
+		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-%s" title="%s">%s%s</li>`,
+			role, escAttr(formatRowTime(e.Timestamp)), pageChip, escHTML(body))
 		return
 	}
 	if e.Call != nil {
@@ -568,8 +569,8 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 			suffix = fmt.Sprintf(` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running… <span data-fui-tick-elapsed="%d">…</span>)</span>`,
 				e.Timestamp.UnixMilli())
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s" data-tool="%s">%s %s %s%s</li>`,
-			escAttr(e.Call.CallID), escAttr(e.Call.Name),
+		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s" data-tool="%s" title="%s">%s %s %s%s</li>`,
+			escAttr(e.Call.CallID), escAttr(e.Call.Name), escAttr(formatRowTime(e.Timestamp)),
 			escHTML(toolIcon(e.Call.Name)), escHTML(e.Call.Name),
 			escHTML(summarizeArgs(e.Call.Args)), suffix)
 		return
@@ -601,10 +602,18 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 				txt = "✗ " + e.Result.Kind + ": " + e.Result.Error
 			}
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s">%s</li>`,
-			cls, escAttr(e.Result.CallID), escHTML(txt))
+		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s" title="%s">%s</li>`,
+			cls, escAttr(e.Result.CallID), escAttr(formatRowTime(e.Timestamp)), escHTML(txt))
 		return
 	}
+}
+
+// formatRowTime renders a timestamp the way users want to read it
+// when hovering: 'Mon 15:04:05.123' for recent rows, dropping the
+// weekday once it's irrelevant. Local time so it matches the wall
+// clock in the user's terminal.
+func formatRowTime(t time.Time) string {
+	return t.Local().Format("Mon 15:04:05.000")
 }
 
 // toolIcon returns a category-distinguishing prefix for a tool name

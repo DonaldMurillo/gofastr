@@ -2635,6 +2635,32 @@ func TestBrowser_PlanCardHighlightsDestructiveTargets(t *testing.T) {
 	t.Errorf("expected exactly 1 destructive target chip and 1 non-destructive in plan card")
 }
 
+// Each chat row carries a title attribute with its formatted
+// timestamp so hovering surfaces 'when did this happen' without
+// adding visual clutter to the row layout.
+func TestBrowser_ChatRowsHaveTimestampTitle(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "ping"})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var title string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-msg-user').getAttribute('title')`, &title))
+	// Format: "Mon 15:04:05.000" — short check on shape.
+	if len(title) < 10 || !strings.Contains(title, ":") {
+		t.Errorf("expected timestamp-shaped title attr, got %q", title)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
