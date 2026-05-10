@@ -444,6 +444,7 @@
         const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
         const responseSignal = node.getAttribute('data-fui-rpc-signal');
         const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
+        const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
         let body = node.getAttribute('data-fui-rpc-body');
         if (!body && node.tagName === 'FORM') {
           const fd = new FormData(node);
@@ -464,6 +465,7 @@
           const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
           if (responseSignal) NS.setSignal(responseSignal, data);
           if (closeOnSuccess) dismiss();
+          if (resetOnSuccess) node.reset();
         } finally {
           if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
         }

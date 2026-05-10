@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,9 +25,25 @@ import (
 	"github.com/gofastr/gofastr/framework"
 )
 
+// testInFlight is the integration-test handle for the simulated
+// in_flight bit consumed by the AgentStateFn passed to MountPanel.
+// Tests flip it via Store/Reset to drive the in-flight indicator
+// without needing a real agent subprocess.
+var testInFlight atomic.Bool
+
 // stand a live kiln server up on httptest. Same wiring as cmd/kiln.
 func startKiln(t *testing.T) (string, *protocol.Tools) {
+	srvURL, _, tools := startKilnExt(t)
+	return srvURL, tools
+}
+
+// startKilnExt is startKiln + the *live.Live pointer so tests can drive
+// synthetic SSE events (l.Notify) and a flippable in_flight callback so
+// tests can simulate an agent turn.
+func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	t.Helper()
+	testInFlight.Store(false)
+	t.Cleanup(func() { testInFlight.Store(false) })
 	d, cleanup, err := db.EphemeralSQLite("kiln-browser")
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +60,9 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 	chatSrv.Mount(l.Aux())
 	chat.MountPanel(l.Aux(), l, tools, func() any {
 		// Stub agent state for the integration tests — at least one
-		// installed adapter so the modal list isn't empty.
+		// installed adapter so the modal list isn't empty. Reads
+		// in_flight from the package-level testInFlight closure so
+		// tests that need to simulate an agent turn can flip it.
 		return map[string]any{
 			"current": map[string]any{"name": "none", "display": "(no agent)"},
 			"available": []map[string]any{
@@ -51,7 +70,7 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 				{"name": "pi", "display": "pi", "installed": false},
 				{"name": "codex", "display": "OpenAI Codex CLI", "installed": false},
 			},
-			"in_flight": false,
+			"in_flight": testInFlight.Load(),
 		}
 	})
 	l.SetFallbackHTML(chat.HostHTML())
@@ -72,7 +91,7 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 
 	srv := httptest.NewServer(l)
 	t.Cleanup(srv.Close)
-	return srv.URL, tools
+	return srv.URL, l, tools
 }
 
 func newChrome(t *testing.T) (context.Context, context.CancelFunc) {
@@ -1233,6 +1252,117 @@ func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
 		time.Sleep(60 * time.Millisecond)
 	}
 	t.Errorf("modal did not dismiss after Apply — user gets no visible feedback that the click landed")
+}
+
+// After a successful chat send the textarea should clear so the next
+// keystroke starts a fresh prompt. Otherwise pressing Send again
+// resubmits the same text — surprising and dangerous (re-fires the
+// agent on the same prompt). The fix is framework-level: the
+// data-fui-rpc-reset opt-in on the form tells the runtime to call
+// form.reset() after a 2xx ack.
+func TestBrowser_SendClearsInput(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "a one-shot prompt"),
+		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("send flow: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var val string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.querySelector('.kiln-input').value`, &val))
+		if val == "" {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var lastVal string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-input').value`, &lastVal))
+	t.Errorf("textarea did not clear after Send — risk of accidental resubmit. value=%q", lastVal)
+}
+
+// When the agent watcher fires "agent_turn_started", the panel header
+// should show a visible "agent thinking…" indicator within 2s. When
+// "agent_turn_ended" fires, the indicator should disappear within 2s.
+// Drives the synthetic SSE events via Live.Notify (which the watcher
+// uses in production) so the test exercises the same path without
+// spawning a real agent subprocess.
+func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatalf("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	// Indicator should be empty before any turn starts.
+	var pre string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &pre, chromedp.ByQuery))
+	if strings.Contains(pre, "thinking") {
+		t.Fatalf("status said %q before any turn started", pre)
+	}
+
+	// Simulate a turn starting.
+	testInFlight.Store(true)
+	l.Notify("agent_turn_started", "pi")
+
+	deadline := time.Now().Add(2 * time.Second)
+	var seen string
+	for time.Now().Before(deadline) {
+		var s string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &s, chromedp.ByQuery))
+		if strings.Contains(s, "thinking") {
+			seen = s
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	if !strings.Contains(seen, "thinking") {
+		t.Fatalf("indicator never appeared after agent_turn_started; status=%q", seen)
+	}
+
+	// Simulate the turn ending.
+	testInFlight.Store(false)
+	l.Notify("agent_turn_ended", "pi")
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var s string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &s, chromedp.ByQuery))
+		if !strings.Contains(s, "thinking") {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var last string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &last, chromedp.ByQuery))
+	t.Errorf("indicator did not clear after agent_turn_ended; status=%q", last)
 }
 
 // safety: keep fmt + journal imports live

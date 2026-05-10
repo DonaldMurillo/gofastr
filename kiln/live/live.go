@@ -104,6 +104,14 @@ func (l *Live) Apply(e journal.Entry) error {
 	return nil
 }
 
+// Notify broadcasts a synthetic SSE Event without journaling. Use for
+// runtime lifecycle signals the panel needs to react to but that are
+// not part of world state — agent_turn_started, agent_turn_ended,
+// session_reset, etc. Safe to call concurrently.
+func (l *Live) Notify(kind, summary string) {
+	l.bus.Send(Event{Kind: kind, Summary: summary})
+}
+
 // applySideEffects runs DB-level side effects keyed to specific ops that
 // can't be rebuilt idempotently. Today: OpAddSeed inserts the seed rows
 // after the rebuild has migrated the schema.

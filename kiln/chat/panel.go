@@ -55,6 +55,9 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 			// Filled in by the host (cmd/kiln) via SSE binding to "agent_changed".
 			return "", nil
 		})).
+		Signal("chat_status", widget.SignalFunc(func() (any, error) {
+			return pe.statusText(), nil
+		})).
 		// Every world / chat event triggers a chat_html refresh —
 		// SSERefetch re-pulls the rendered HTML from /state instead
 		// of using the SSE payload (which is just metadata).
@@ -66,6 +69,14 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		SSERefetch("/.kiln/events", "plan_proposed", "chat_html").
 		SSERefetch("/.kiln/events", "plan_approved", "chat_html").
 		SSERefetch("/.kiln/events", "plan_rejected", "chat_html").
+		// session_reset (synthetic) clears the panel after the user
+		// hits ↺. Without this the chat list shows stale items until
+		// the next event lands. agent_turn_started/ended drive the
+		// in-flight indicator in the header.
+		SSERefetch("/.kiln/events", "session_reset", "chat_html").
+		SSERefetch("/.kiln/events", "agent_turn_started", "chat_status").
+		SSERefetch("/.kiln/events", "agent_turn_ended", "chat_status").
+		SSERefetch("/.kiln/events", "chat_assistant", "chat_status").
 		// Page-affecting world edits: full reload so the now-rendered
 		// page reflects the new world. Filtered by op so add_entity
 		// (which doesn't change page rendering) doesn't trigger reloads.
@@ -241,14 +252,34 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
 		`<span class="kiln-panel-agent" data-fui-signal="agent">no agent</span>` +
+		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
 		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" >↺</button>` +
 		`<button type="button" class="kiln-panel-close" data-fui-action="close" aria-label="Close">×</button>` +
 		`</div>`
 }
 
+// statusText returns the in-flight indicator HTML. Empty when no agent
+// turn is running; an animated dots row otherwise. Read from the
+// AgentStateFn so cmd/kiln owns the truth without panel knowing about
+// AdapterStore.
+func (pe *panelEnv) statusText() string {
+	if pe.agentState == nil {
+		return ""
+	}
+	state, _ := pe.agentState().(map[string]any)
+	if state == nil {
+		return ""
+	}
+	inFlight, _ := state["in_flight"].(bool)
+	if !inFlight {
+		return ""
+	}
+	return `<span class="kiln-thinking" role="status" aria-live="polite">agent thinking<span class="kiln-thinking-dots">…</span></span>`
+}
+
 func (pe *panelEnv) inputHTML() string {
-	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" >` +
+	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset>` +
 		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…" rows="2" autocomplete="off"></textarea>` +
 		`<button class="kiln-send" type="submit">Send</button>` +
 		`</form>`

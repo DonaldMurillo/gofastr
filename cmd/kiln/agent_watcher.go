@@ -68,8 +68,10 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 
 			go func(turnCtx context.Context, cancel context.CancelCauseFunc, text string, adapter Adapter) {
 				defer cancel(nil)
+				l.Notify("agent_turn_started", adapter.Name)
 				runOneAgentTurn(turnCtx, logger, tools, adapter, kilnURL, text)
 				store.ClearTurnCancel()
+				l.Notify("agent_turn_ended", adapter.Name)
 			}(turnCtx, cancel, text, adapter)
 		}
 	}
