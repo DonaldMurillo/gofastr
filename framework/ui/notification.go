@@ -33,9 +33,27 @@ type NotificationConfig struct {
 	// Defaults to "Dismiss notification".
 	DismissLabel string
 
+	// Position pins the notification to a screen corner via fixed
+	// positioning. Defaults to NotificationInline (in document flow).
+	Position NotificationPosition
+
 	ID    string
 	Class string
 }
+
+// NotificationPosition controls where a Notification renders.
+type NotificationPosition string
+
+const (
+	// NotificationInline (default) renders in document flow. Hosts
+	// position a stack themselves.
+	NotificationInline NotificationPosition = ""
+
+	NotificationTopRight    NotificationPosition = "top-right"
+	NotificationTopLeft     NotificationPosition = "top-left"
+	NotificationBottomRight NotificationPosition = "bottom-right"
+	NotificationBottomLeft  NotificationPosition = "bottom-left"
+)
 
 // Notification renders the toast row.
 func Notification(cfg NotificationConfig) render.HTML {
@@ -47,6 +65,9 @@ func Notification(cfg NotificationConfig) render.HTML {
 		v = StatusInfo
 	}
 	cls := "ui-notification ui-notification--" + string(v)
+	if cfg.Position != NotificationInline {
+		cls += " ui-notification--floating ui-notification--at-" + string(cfg.Position)
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

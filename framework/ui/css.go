@@ -390,6 +390,34 @@ func BaseCSS() string {
   color: var(--color-text-muted, #52525B);
 }
 
+/* Floating positioning — when Position is set on Notification, it
+   pins to a screen corner via position: fixed. Pure CSS, no JS. */
+.ui-notification--floating {
+  position: fixed;
+  z-index: 1000;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  animation: ui-notification-slide-in 220ms ease-out;
+}
+.ui-notification--at-top-right    { top: 1rem; right: 1rem; }
+.ui-notification--at-top-left     { top: 1rem; left: 1rem; }
+.ui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
+.ui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
+@keyframes ui-notification-slide-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ui-notification--at-bottom-right,
+.ui-notification--at-bottom-left {
+  animation-name: ui-notification-slide-in-up;
+}
+@keyframes ui-notification-slide-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-notification--floating { animation: none; }
+}
+
 /* ─── DataTable ─── */
 .ui-data-table { display: grid; gap: var(--spacing-md, 8px); }
 .ui-data-table__scroll {

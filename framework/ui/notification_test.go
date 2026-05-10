@@ -70,6 +70,31 @@ func TestNotificationBodyRenders(t *testing.T) {
 	}
 }
 
+func TestNotificationPositionAddsFloatingClasses(t *testing.T) {
+	cases := map[NotificationPosition]string{
+		NotificationTopRight:    "ui-notification--at-top-right",
+		NotificationTopLeft:     "ui-notification--at-top-left",
+		NotificationBottomRight: "ui-notification--at-bottom-right",
+		NotificationBottomLeft:  "ui-notification--at-bottom-left",
+	}
+	for pos, want := range cases {
+		h := string(Notification(NotificationConfig{Title: "x", Position: pos}))
+		if !strings.Contains(h, "ui-notification--floating") {
+			t.Errorf("Position=%q expected floating class, got: %s", pos, h)
+		}
+		if !strings.Contains(h, want) {
+			t.Errorf("Position=%q expected %s, got: %s", pos, want, h)
+		}
+	}
+}
+
+func TestNotificationInlineHasNoFloatingClass(t *testing.T) {
+	h := string(Notification(NotificationConfig{Title: "x"}))
+	if strings.Contains(h, "ui-notification--floating") {
+		t.Errorf("default (inline) should not be floating, got: %s", h)
+	}
+}
+
 func TestNotificationGlyphPerVariant(t *testing.T) {
 	cases := map[StatusVariant]string{
 		StatusSuccess: "✓",
