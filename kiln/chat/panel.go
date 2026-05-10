@@ -468,8 +468,10 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		} else {
 			suffix = ` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running…)</span>`
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s">→ %s %s%s</li>`,
-			escAttr(e.Call.CallID), escHTML(e.Call.Name), escHTML(summarizeArgs(e.Call.Args)), suffix)
+		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s" data-tool="%s">%s %s %s%s</li>`,
+			escAttr(e.Call.CallID), escAttr(e.Call.Name),
+			escHTML(toolIcon(e.Call.Name)), escHTML(e.Call.Name),
+			escHTML(summarizeArgs(e.Call.Args)), suffix)
 		return
 	}
 	if e.Result != nil {
@@ -503,6 +505,37 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 			cls, escAttr(e.Result.CallID), escHTML(txt))
 		return
 	}
+}
+
+// toolIcon returns a category-distinguishing prefix for a tool name
+// so a long log scans by shape, not by reading every word. Mutating
+// vs read vs plan vs meta show different glyphs; unknown tools fall
+// back to the neutral "→".
+func toolIcon(name string) string {
+	switch name {
+	case "add_entity", "update_entity", "delete_entity",
+		"add_field", "delete_field":
+		return "▢" // entity-shape
+	case "add_page", "delete_page":
+		return "◇" // page-shape
+	case "add_hook", "delete_hook":
+		return "⌖" // hook-shape
+	case "add_route", "delete_route":
+		return "⚙" // route-shape
+	case "add_seed":
+		return "✿" // seed-shape
+	case "propose_plan", "approve_plan", "reject_plan":
+		return "❘" // plan-shape
+	case "world_get":
+		return "◈" // read-only
+	case "set_app_config", "set_theme":
+		return "✦" // app-meta
+	case "undo", "reset_session":
+		return "↶" // history meta
+	case "chat":
+		return "💬"
+	}
+	return "→"
 }
 
 func formatElapsed(d time.Duration) string {

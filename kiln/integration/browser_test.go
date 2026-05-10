@@ -734,13 +734,13 @@ func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
 		_ = chromedp.Run(ctx,
 			chromedp.Evaluate(`Array.from(document.querySelectorAll(".kiln-msg-tool, .kiln-msg-tool-error")).map(el=>el.textContent)`, &rows),
 		)
-		if len(rows) >= 2 && containsAny(rows, "→ add_entity") && containsAny(rows, "← ok") {
+		if len(rows) >= 2 && containsAny(rows, "▢ add_entity") && containsAny(rows, "← ok") {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	joined := strings.Join(rows, "\n")
-	for _, want := range []string{"→ add_entity", "name=items", "fields=2", "← ok"} {
+	for _, want := range []string{"▢ add_entity", "name=items", "fields=2", "← ok"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("panel rows missing %q in:\n%s", want, joined)
 		}
@@ -1783,7 +1783,7 @@ func TestBrowser_EscClosesModals(t *testing.T) {
 
 // Tool-call rows annotate elapsed time (or "running…" while pending),
 // and tool_result rows echo the tool name. Long agent turns become
-// scannable: "→ add_entity name=foo (210ms)" / "← ok · add_entity".
+// scannable: "▢ add_entity name=foo (210ms)" / "← ok · add_entity".
 func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
 	ctx, cancel := newChrome(t)
@@ -1814,7 +1814,7 @@ func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 			&rows))
 		var sawElapsed, sawNameEcho bool
 		for _, r := range rows {
-			if strings.Contains(r, "→ add_entity") && (strings.Contains(r, "ms)") || strings.Contains(r, "<1ms") || strings.Contains(r, "s)")) {
+			if strings.Contains(r, "▢ add_entity") && (strings.Contains(r, "ms)") || strings.Contains(r, "<1ms") || strings.Contains(r, "s)")) {
 				sawElapsed = true
 			}
 			if strings.Contains(r, "← ok · add_entity") {
