@@ -158,9 +158,32 @@ func TestE2E_Conformance_ListPosts_ResponseMatchesSpec(t *testing.T) {
 		t.Fatal("spec missing GET /posts 200 response")
 	}
 
-	// 3. Spec says response references ListResponse — verify structure
+	// 3. Spec says response is oneOf [ListResponse, CursorPage] — pick the
+	// offset variant (which has "page") for conformance against the body
+	// returned without a ?cursor query.
 	schema := getSpecResponseSchema(t, specDoc, "/posts", "get", "200")
-	if ref := schema["$ref"]; ref != nil {
+	if oneOf, ok := schema["oneOf"].([]any); ok {
+		picked := false
+		for _, variant := range oneOf {
+			v, ok := variant.(map[string]any)
+			if !ok {
+				continue
+			}
+			if ref := v["$ref"]; ref != nil {
+				v = resolveSchemaRef(t, specDoc, v)
+			}
+			if props, ok := v["properties"].(map[string]any); ok {
+				if _, hasPage := props["page"]; hasPage {
+					schema = v
+					picked = true
+					break
+				}
+			}
+		}
+		if !picked {
+			t.Fatal("oneOf for /posts 200 did not contain an offset (ListResponse) variant")
+		}
+	} else if ref := schema["$ref"]; ref != nil {
 		schema = resolveSchemaRef(t, specDoc, schema)
 	}
 
