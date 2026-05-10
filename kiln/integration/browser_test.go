@@ -1781,6 +1781,58 @@ func TestBrowser_EscClosesModals(t *testing.T) {
 	t.Errorf("reset-confirm modal still present after Esc")
 }
 
+// Tool-call rows annotate elapsed time (or "running…" while pending),
+// and tool_result rows echo the tool name. Long agent turns become
+// scannable: "→ add_entity name=foo (210ms)" / "← ok · add_entity".
+func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hit /kiln/tool/add_entity directly so the chat server journals
+	// both tool_call AND tool_result with paired call IDs (the same
+	// path pi takes when the agent dispatches a tool over HTTP).
+	body := `{"entity":{"name":"notes","fields":[{"name":"title","type":"string","required":true}]}}`
+	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var rows []string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`Array.from(document.querySelectorAll('.kiln-msg-tool, .kiln-msg-tool-error')).map(el=>el.textContent)`,
+			&rows))
+		var sawElapsed, sawNameEcho bool
+		for _, r := range rows {
+			if strings.Contains(r, "→ add_entity") && (strings.Contains(r, "ms)") || strings.Contains(r, "<1ms") || strings.Contains(r, "s)")) {
+				sawElapsed = true
+			}
+			if strings.Contains(r, "← ok · add_entity") {
+				sawNameEcho = true
+			}
+		}
+		if sawElapsed && sawNameEcho {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var rows []string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`Array.from(document.querySelectorAll('.kiln-msg-tool, .kiln-msg-tool-error')).map(el=>el.textContent)`,
+		&rows))
+	t.Errorf("missing elapsed-time and/or name-echo annotations; rows=%v", rows)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

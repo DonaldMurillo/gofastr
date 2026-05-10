@@ -371,9 +371,20 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 		op    journal.Op
 	}
 	items := make([]item, 0, len(sess.Chat)+len(sess.Plans))
+	// Index tool_results by their call_id so each tool_call row can
+	// annotate elapsed time and the matching tool_result row can
+	// echo the tool name.
+	resultByCall := map[string]*journal.ChatEvent{}
+	callByID := map[string]*journal.ChatEvent{}
 	for i := range sess.Chat {
 		e := sess.Chat[i]
 		items = append(items, item{ts: e.Timestamp, kind: "chat", chat: &e})
+		if e.Call != nil {
+			callByID[e.Call.CallID] = &e
+		}
+		if e.Result != nil {
+			resultByCall[e.Result.CallID] = &e
+		}
 	}
 	for _, p := range sess.Plans {
 		items = append(items, item{ts: p.ProposedAt, kind: "plan", plan: p})
@@ -396,7 +407,7 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 	for _, it := range items {
 		switch it.kind {
 		case "chat":
-			renderChatEvent(&b, it.chat)
+			renderChatEvent(&b, it.chat, resultByCall, callByID)
 		case "plan":
 			renderPlanCard(&b, it.plan)
 		case "world_edit":
@@ -407,7 +418,7 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 	return b.String()
 }
 
-func renderChatEvent(b *strings.Builder, e *journal.ChatEvent) {
+func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, callByID map[string]*journal.ChatEvent) {
 	if e.Message != nil {
 		role := "user"
 		if e.Kind == journal.KindChatAssistant {
@@ -417,8 +428,18 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent) {
 		return
 	}
 	if e.Call != nil {
-		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool">→ %s %s</li>`,
-			escHTML(e.Call.Name), escHTML(summarizeArgs(e.Call.Args)))
+		// Pair with the matching tool_result for elapsed time + status.
+		// Pending (no result yet) is shown as "(running…)" so users
+		// see the in-flight state instead of a silent "→".
+		var suffix string
+		if r, ok := resultByCall[e.Call.CallID]; ok {
+			d := r.Timestamp.Sub(e.Timestamp)
+			suffix = ` <span class="kiln-msg-tool-elapsed">(` + escHTML(formatElapsed(d)) + `)</span>`
+		} else {
+			suffix = ` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running…)</span>`
+		}
+		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s">→ %s %s%s</li>`,
+			escAttr(e.Call.CallID), escHTML(e.Call.Name), escHTML(summarizeArgs(e.Call.Args)), suffix)
 		return
 	}
 	if e.Result != nil {
@@ -426,13 +447,43 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent) {
 		if !e.Result.OK {
 			cls = "kiln-msg-tool-error"
 		}
-		txt := "← ok"
-		if !e.Result.OK {
-			txt = "← " + e.Result.Kind + ": " + e.Result.Error
+		// Echo the tool name on the result row so a long log is
+		// readable without scrolling up to find the matching call.
+		var name string
+		if c, ok := callByID[e.Result.CallID]; ok && c.Call != nil {
+			name = c.Call.Name
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg %s">%s</li>`, cls, escHTML(txt))
+		var txt string
+		if e.Result.OK {
+			if name != "" {
+				txt = "← ok · " + name
+			} else {
+				txt = "← ok"
+			}
+		} else {
+			if name != "" {
+				txt = "← " + name + " · " + e.Result.Kind + ": " + e.Result.Error
+			} else {
+				txt = "← " + e.Result.Kind + ": " + e.Result.Error
+			}
+		}
+		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s">%s</li>`,
+			cls, escAttr(e.Result.CallID), escHTML(txt))
 		return
 	}
+}
+
+func formatElapsed(d time.Duration) string {
+	if d < time.Millisecond {
+		return "<1ms"
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < 10*time.Second {
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
+	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
 func renderPlanCard(b *strings.Builder, p *journal.Plan) {
