@@ -96,6 +96,14 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"current":{"name":"claude-code"}}`))
 	}))
+	// Stub /kiln/agent/cancel so the panel stop-button works in tests.
+	// Real handler is in cmd/kiln/agent_http.go.
+	l.Aux().Post("/kiln/agent/cancel", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		testInFlight.Store(false)
+		l.Notify("agent_turn_ended", "")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"cancelled":true}`))
+	}))
 
 	mcpSrv, err := kilnmcp.NewServer(tools)
 	if err != nil {
@@ -2705,6 +2713,79 @@ func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
 		time.Sleep(40 * time.Millisecond)
 	}
 	t.Errorf(".fui-flash class never landed on snapshot pill after entity addition")
+}
+
+// Cancel-turn button is only visible while in-flight, and clicking
+// it stops the run (panel reflects no-longer-busy state).
+func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-head`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	// Stop button must be hidden by default.
+	var preDisplay string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`getComputedStyle(document.querySelector('.kiln-panel-stop')).display`, &preDisplay))
+	if preDisplay != "none" {
+		t.Errorf("stop button visible before turn started; display=%q", preDisplay)
+	}
+
+	// Start a turn → button appears.
+	testInFlight.Store(true)
+	l.Notify("agent_turn_started", "pi")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var d string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`getComputedStyle(document.querySelector('.kiln-panel-stop')).display`, &d))
+		if d != "none" {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var midDisplay string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`getComputedStyle(document.querySelector('.kiln-panel-stop')).display`, &midDisplay))
+	if midDisplay == "none" {
+		t.Fatalf("stop button never appeared while in flight; display=%q", midDisplay)
+	}
+
+	// Click → cancel → button hides again.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`.kiln-panel-stop`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var d string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`getComputedStyle(document.querySelector('.kiln-panel-stop')).display`, &d))
+		if d == "none" {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	t.Errorf("stop button stayed visible after cancel click")
 }
 
 // safety: keep fmt + journal imports live

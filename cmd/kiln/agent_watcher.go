@@ -208,6 +208,9 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 		case errSupersededByNewMessage:
 			note = "(superseded by newer message — partial work above is preserved)"
 			logger.Printf("agent: %v", cause)
+		case errCancelledByUser:
+			note = "(cancelled by user — partial work above is preserved)"
+			logger.Printf("agent: %v", cause)
 		default:
 			note = "(turn cancelled — partial work above is preserved)"
 			logger.Printf("agent: cancelled (cause=%v)", cause)

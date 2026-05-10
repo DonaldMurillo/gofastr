@@ -211,6 +211,30 @@ func widgetCSS() string {
 		).
 		End()
 
+	// Stop button: only visible when the in-flight indicator
+	// (.kiln-thinking inside the head) is rendered.
+	ss.Rule(".kiln-panel-stop").
+		Set(
+			"display", "none",
+			"background", "rgba(220, 80, 80, 0.18)",
+			"border", "1px solid rgba(220, 80, 80, 0.35)",
+			"color", "rgba(255, 200, 200, 0.95)",
+			"border-radius", "4px",
+			"width", "22px",
+			"height", "22px",
+			"font-size", "10px",
+			"line-height", "1",
+			"cursor", "pointer",
+			"margin-right", "4px",
+		).
+		End()
+	ss.Rule(".kiln-panel-head:has(.kiln-thinking) .kiln-panel-stop").
+		Set("display", "inline-flex", "align-items", "center", "justify-content", "center").
+		End()
+	ss.Rule(".kiln-panel-stop:hover").
+		Set("background", "rgba(220, 80, 80, 0.30)").
+		End()
+
 	// Generic flash animation used by data-fui-flash-on-update.
 	ss.Rule(".fui-flash").
 		Set("animation", "fuiFlashPulse 0.6s ease-out").

@@ -84,3 +84,23 @@ func (s *AdapterStore) ClearTurnCancel() {
 	s.cancelFn = nil
 	s.inFlight = false
 }
+
+// errCancelledByUser is the cause used when the user clicks the
+// header stop button while a turn is in flight.
+var errCancelledByUser = errors.New("cancelled by user")
+
+// CancelInFlight cancels the running turn (if any) without changing
+// the adapter. Used by the panel's stop button. No-op if no turn is
+// running.
+func (s *AdapterStore) CancelInFlight() bool {
+	s.mu.Lock()
+	cancel := s.cancelFn
+	s.cancelFn = nil
+	s.inFlight = false
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel(errCancelledByUser)
+		return true
+	}
+	return false
+}

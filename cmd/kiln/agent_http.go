@@ -80,6 +80,16 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 			"current": describeAdapter(adapter),
 		})
 	}))
+
+	// Cancel-in-flight: panel's stop button. Lets the user kill a
+	// runaway turn without dropping the configured adapter.
+	r.Post("/kiln/agent/cancel", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cancelled := store.CancelInFlight()
+		if cancelled && notify != nil {
+			notify("agent_turn_ended", "")
+		}
+		writeJSON(w, map[string]any{"ok": true, "cancelled": cancelled})
+	}))
 }
 
 // agentState returns the structure consumed by both the GET endpoint
