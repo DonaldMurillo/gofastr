@@ -191,6 +191,15 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-turn-divider").
+		Set(
+			"list-style", "none",
+			"height", "1px",
+			"margin", "8px 0",
+			"background", "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)",
+		).
+		End()
+
 	ss.Rule(".kiln-panel-conn").
 		Set(
 			"display", "inline-block",

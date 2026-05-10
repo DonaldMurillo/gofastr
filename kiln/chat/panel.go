@@ -476,7 +476,13 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 		}
 	}
 
-	for _, it := range items {
+	prevWasUser := false
+	for i, it := range items {
+		// Insert a turn divider when a new user message starts a
+		// new turn (skip the very first row to avoid a leading line).
+		if i > 0 && it.kind == "chat" && it.chat != nil && it.chat.Kind == journal.KindChatUser && !prevWasUser {
+			b.WriteString(`<li class="kiln-turn-divider" aria-hidden="true"></li>`)
+		}
 		switch it.kind {
 		case "chat":
 			renderChatEvent(&b, it.chat, resultByCall, callByID)
@@ -485,6 +491,7 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 		case "world_edit":
 			fmt.Fprintf(&b, `<li class="kiln-msg kiln-msg-tool">✦ %s</li>`, escHTML(string(it.op)))
 		}
+		prevWasUser = it.kind == "chat" && it.chat != nil && it.chat.Kind == journal.KindChatUser
 	}
 	b.WriteString(`</ol>`)
 	return b.String()

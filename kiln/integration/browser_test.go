@@ -2392,6 +2392,45 @@ func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 	t.Errorf("Cmd+K did not focus .kiln-input; activeElement tag=%q", got)
 }
 
+// Multiple turns get visible dividers so a long log groups by
+// exchange. Two user messages with a tool dispatch between → one
+// divider before the second user message.
+func TestBrowser_TurnDividersBetweenTurns(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Two-turn shape: user → tool → user → tool → user (3 turns).
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "first"})
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "first_ent", Fields: []world.Field{{Name: "x", Type: "string"}}}})
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "second"})
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "second_ent", Fields: []world.Field{{Name: "y", Type: "string"}}}})
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "third"})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var dividers int
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.querySelectorAll('.kiln-turn-divider').length`, &dividers))
+		if dividers >= 2 {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var n int
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelectorAll('.kiln-turn-divider').length`, &n))
+	t.Errorf("expected at least 2 turn dividers across 3 user turns, got %d", n)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
