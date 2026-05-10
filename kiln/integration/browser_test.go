@@ -2985,6 +2985,53 @@ func TestBrowser_SnapshotPillNamesEntitiesWhenFew(t *testing.T) {
 	t.Errorf("expected snapshot pill to name entities; got %q", pill)
 }
 
+// Tool rows are color-coded by category. We don't assert exact
+// pixels (font-rendering noise) but we assert the runtime
+// computed-style border-left differs between a mutation tool and
+// a plan tool, so the CSS rules are wired correctly.
+func TestBrowser_ToolRowCategoryColorsApply(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	for _, e := range []struct {
+		callID, name string
+	}{
+		{"cat-mutate", "add_entity"},
+		{"cat-plan", "propose_plan"},
+	} {
+		if err := l.Apply(journal.Entry{
+			ID: e.callID, Timestamp: time.Now(), Kind: journal.KindToolCall,
+			Payload: mustJSON(journal.ToolCallPayload{CallID: e.callID, Name: e.name}),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-tool[data-tool="add_entity"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-msg-tool[data-tool="propose_plan"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var mutBorder, planBorder string
+	_ = chromedp.Run(ctx,
+		chromedp.Evaluate(
+			`getComputedStyle(document.querySelector('.kiln-msg-tool[data-tool="add_entity"]')).borderLeftColor`,
+			&mutBorder),
+		chromedp.Evaluate(
+			`getComputedStyle(document.querySelector('.kiln-msg-tool[data-tool="propose_plan"]')).borderLeftColor`,
+			&planBorder),
+	)
+	if mutBorder == "" || planBorder == "" {
+		t.Errorf("borderLeftColor empty (mut=%q plan=%q)", mutBorder, planBorder)
+	}
+	if mutBorder == planBorder {
+		t.Errorf("expected different border-left colors for mutation vs plan tools, both=%q", mutBorder)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

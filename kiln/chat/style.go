@@ -211,6 +211,23 @@ func widgetCSS() string {
 		).
 		End()
 
+	// Color-code tool-call rows by category via the data-tool
+	// attribute so a long log distinguishes mutations from plans
+	// from reads at a glance. Subtle left-border tint, never
+	// background — keeps the log uniform-looking.
+	ss.Rule(`.kiln-msg-tool[data-tool^="add_"], .kiln-msg-tool[data-tool^="update_"], .kiln-msg-tool[data-tool^="delete_"]`).
+		Set("border-left", "2px solid rgba(120, 170, 255, 0.45)", "padding-left", "6px").
+		End()
+	ss.Rule(`.kiln-msg-tool[data-tool^="propose_plan"], .kiln-msg-tool[data-tool^="approve_plan"], .kiln-msg-tool[data-tool^="reject_plan"]`).
+		Set("border-left", "2px solid rgba(170, 130, 255, 0.45)", "padding-left", "6px").
+		End()
+	ss.Rule(`.kiln-msg-tool[data-tool="world_get"]`).
+		Set("border-left", "2px solid rgba(180, 180, 180, 0.30)", "padding-left", "6px").
+		End()
+	ss.Rule(`.kiln-msg-tool[data-tool="undo"], .kiln-msg-tool[data-tool="reset_session"]`).
+		Set("border-left", "2px solid rgba(255, 200, 110, 0.45)", "padding-left", "6px").
+		End()
+
 	// Stop button: only visible when the in-flight indicator
 	// (.kiln-thinking inside the head) is rendered.
 	ss.Rule(".kiln-panel-stop").
