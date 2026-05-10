@@ -101,6 +101,40 @@ type DeletePageArgs struct {
 	PlanID string `json:"plan_id,omitempty"`
 }
 
+// UpdatePageElementArgs is the surgical-edit alternative to delete-and-
+// re-add. The agent fetches the page, locates the target by its
+// stable _id (assigned by add_page), and ships a single patch op
+// describing what to change. Non-destructive: page edits don't lose
+// persisted data, so no plan is required.
+//
+// Patch.Op is one of:
+//
+//	"set_props"        — merge Patch.SetProps into the element's props
+//	"replace_props"    — replace the element's props in full with SetProps
+//	"replace_subtree"  — replace the element + its children with Patch.Element
+//	"remove"           — drop the element from its parent (root not allowed)
+//	"insert_before"    — insert Patch.Element as a sibling before this one
+//	"insert_after"     — insert Patch.Element as a sibling after this one
+//	"append_child"     — append Patch.Element as a child of this element
+//
+// IfMatch, when set, is compared against Page.Version. Mismatch returns
+// {ok:false,kind:"conflict",hint:"refetch"} so the agent re-reads the
+// page and re-emits the patch against the current state.
+type UpdatePageElementArgs struct {
+	Path      string         `json:"path"`
+	ElementID string         `json:"element_id"`
+	IfMatch   *int           `json:"if_match,omitempty"`
+	Patch     PageElementOp  `json:"patch"`
+}
+
+// PageElementOp is the discriminated patch shape. Op selects which
+// fields are read.
+type PageElementOp struct {
+	Op        string         `json:"op"`
+	SetProps  map[string]any `json:"set_props,omitempty"`
+	Element   *world.Node    `json:"element,omitempty"`
+}
+
 type AddHookArgs struct {
 	Hook *world.Hook `json:"hook"`
 }
@@ -303,7 +337,158 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 					args.Page.Path+"/list", "/view"+args.Page.Path, args.Page.Path+"-page"))
 		}
 	}
+	// Assign a stable _id to every node lacking one, so update_page_element
+	// can address any subtree without positional paths or selector
+	// queries. User-provided IDs are preserved.
+	world.AssignNodeIDs(&args.Page.Tree, world.NewElementID)
+	// First version is 1 — agents read this back via /kiln/world and
+	// pass it as if_match on update_page_element to detect drift.
+	args.Page.Version = 1
 	return t.applyEdit(journal.OpAddPage, journal.AddPagePayload{Page: args.Page})
+}
+
+// UpdatePageElement applies a single atomic patch to one element
+// inside a page tree. See UpdatePageElementArgs for the patch op
+// vocabulary. Always non-destructive (pages have no persisted state
+// to lose; the previous tree lives in the journal for undo).
+func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs) Result {
+	if args.Path == "" {
+		return invalid("missing path")
+	}
+	if args.ElementID == "" {
+		return invalid("missing element_id — fetch the page from /kiln/world/pages.<path> and copy the target element's _id field")
+	}
+	if args.Patch.Op == "" {
+		return invalid("missing patch.op — one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child")
+	}
+	current, exists := t.live.Session().World.Pages[args.Path]
+	if !exists {
+		return notFound("page %q not found", args.Path)
+	}
+	// Optimistic concurrency: if the agent provided a baseline version
+	// and the page has moved on, reject so the agent re-reads.
+	if args.IfMatch != nil && *args.IfMatch != current.Version {
+		return conflict("page %q has version %d, if_match=%d — refetch and retry",
+			args.Path, current.Version, *args.IfMatch).
+			withHint("GET $KILN_URL/kiln/world to read the new tree, then re-emit the patch with the current _id and version")
+	}
+	// Work on a deep clone so a mid-patch failure can't leave the
+	// live world in a half-mutated state.
+	next := world.ClonePage(current)
+	target, parent, idx, ok := world.FindNodeByID(&next.Tree, args.ElementID)
+	if !ok {
+		return notFound("element %q not found in page %q", args.ElementID, args.Path).
+			withHint("element ids are listed inline as _id on every node in /kiln/world/pages.<path>")
+	}
+	if r := applyPageElementPatch(target, parent, idx, args.Patch); !r.OK {
+		return r
+	}
+	// Re-assign IDs in case the patch introduced fresh subtrees that
+	// lacked _id. Existing IDs are preserved by AssignNodeIDs.
+	world.AssignNodeIDs(&next.Tree, world.NewElementID)
+	next.Version = current.Version + 1
+	return t.applyEdit(journal.OpUpdatePageElement, journal.UpdatePageElementPayload{
+		Path: args.Path,
+		New:  next,
+		Prev: current,
+	})
+}
+
+// applyPageElementPatch mutates target/parent in-place per the op.
+// Returns Result{OK:true} on success, or a Result describing the
+// problem.
+func applyPageElementPatch(target, parent *world.Node, idx int, patch PageElementOp) Result {
+	switch patch.Op {
+	case "set_props":
+		if patch.SetProps == nil {
+			return invalid("set_props requires a non-null set_props map")
+		}
+		if target.Props == nil {
+			target.Props = map[string]any{}
+		}
+		for k, v := range patch.SetProps {
+			target.Props[k] = v
+		}
+		return Result{OK: true}
+
+	case "replace_props":
+		// Distinct from set_props: caller wants the props map to
+		// be exactly what they passed (any keys not in set_props
+		// are dropped). nil is equivalent to "clear all props".
+		target.Props = nil
+		if patch.SetProps != nil {
+			target.Props = map[string]any{}
+			for k, v := range patch.SetProps {
+				target.Props[k] = v
+			}
+		}
+		return Result{OK: true}
+
+	case "replace_subtree":
+		if patch.Element == nil {
+			return invalid("replace_subtree requires a non-null element")
+		}
+		// Preserve the element's _id so the same handle keeps
+		// referring to the same logical slot in the tree. The
+		// agent's intent is "swap the contents", not "swap the
+		// identity" — and re-using the id avoids breaking future
+		// patches the agent has staged.
+		newNode := *patch.Element
+		newNode.ID = target.ID
+		*target = newNode
+		return Result{OK: true}
+
+	case "remove":
+		if parent == nil {
+			return invalid("cannot remove the root element of the page; use delete_page or replace_subtree on the root instead")
+		}
+		parent.Children = append(parent.Children[:idx], parent.Children[idx+1:]...)
+		return Result{OK: true}
+
+	case "insert_before":
+		if parent == nil {
+			return invalid("cannot insert a sibling before the root element; use append_child on the root instead")
+		}
+		if patch.Element == nil {
+			return invalid("insert_before requires a non-null element")
+		}
+		parent.Children = insertAt(parent.Children, idx, *patch.Element)
+		return Result{OK: true}
+
+	case "insert_after":
+		if parent == nil {
+			return invalid("cannot insert a sibling after the root element; use append_child on the root instead")
+		}
+		if patch.Element == nil {
+			return invalid("insert_after requires a non-null element")
+		}
+		parent.Children = insertAt(parent.Children, idx+1, *patch.Element)
+		return Result{OK: true}
+
+	case "append_child":
+		if patch.Element == nil {
+			return invalid("append_child requires a non-null element")
+		}
+		target.Children = append(target.Children, *patch.Element)
+		return Result{OK: true}
+
+	default:
+		return invalid("unknown patch.op %q — one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child", patch.Op)
+	}
+}
+
+func insertAt(children []world.Node, idx int, n world.Node) []world.Node {
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > len(children) {
+		idx = len(children)
+	}
+	out := make([]world.Node, 0, len(children)+1)
+	out = append(out, children[:idx]...)
+	out = append(out, n)
+	out = append(out, children[idx:]...)
+	return out
 }
 
 func (t *Tools) DeletePage(_ context.Context, args DeletePageArgs) Result {

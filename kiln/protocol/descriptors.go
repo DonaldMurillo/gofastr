@@ -95,6 +95,29 @@ var descriptors = map[string]Descriptor{
 			"plan_id": str("approved plan authorizing this delete"),
 		}, []string{"path", "plan_id"}),
 	},
+	"update_page_element": {
+		Name: "update_page_element",
+		Description: "Patch one element inside a page tree without re-sending the whole page. " +
+			"Address the element by its stable _id (read it from /kiln/world/pages.<path>). " +
+			"Non-destructive — page edits don't lose persisted data, no plan required. " +
+			"patch.op selects the operation: set_props (merge), replace_props, replace_subtree, " +
+			"remove, insert_before, insert_after, append_child. " +
+			"Pass if_match=<page.version> for optimistic concurrency; mismatch returns a conflict so you can refetch.",
+		Schema: object(map[string]any{
+			"path":       str("page path, e.g. /dashboard"),
+			"element_id": str("the _id of the target element from /kiln/world/pages.<path>"),
+			"if_match":   map[string]any{"type": "integer", "description": "expected page.version; if mismatched, conflict"},
+			"patch": object(map[string]any{
+				"op": enum("set_props", "replace_props", "replace_subtree",
+					"remove", "insert_before", "insert_after", "append_child"),
+				"set_props": map[string]any{"type": "object",
+					"description": "for set_props (merge) or replace_props (full replace)"},
+				"element": object(map[string]any{
+					"kind": str("element kind"),
+				}, nil),
+			}, []string{"op"}),
+		}, []string{"path", "element_id", "patch"}),
+	},
 	"add_hook": {
 		Name:        "add_hook",
 		Description: "Add a declarative entity hook. Action runs when the entity event fires; condition gates it.",

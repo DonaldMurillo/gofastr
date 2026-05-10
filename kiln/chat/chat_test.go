@@ -278,6 +278,32 @@ func TestToolDispatchUnknownTool(t *testing.T) {
 	}
 }
 
+// Every descriptor must be reachable via the HTTP /kiln/tool/{name}
+// surface. The two dispatch tables (kiln/agent/loop.go for in-process
+// + MCP, kiln/chat/server.go for HTTP) are easy to update out of step
+// — this test pins the invariant: if you add a descriptor, you also
+// have to wire HTTP, otherwise the tool surface published in /kiln/world
+// claims a tool that callers can't actually invoke from curl.
+func TestEveryDescriptorReachableViaHTTP(t *testing.T) {
+	l, tools := setup(t)
+	for _, d := range tools.List() {
+		t.Run(d.Name, func(t *testing.T) {
+			// Send `{}` — most tools fail validation, which is fine. We
+			// only care that the dispatcher recognized the tool name
+			// and got far enough to invoke it. Status 400 with body
+			// "unknown tool" is the failure mode this guards against.
+			req := httptest.NewRequest(http.MethodPost, "/kiln/tool/"+d.Name, bytes.NewBufferString(`{}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			l.ServeHTTP(rec, req)
+			body := rec.Body.String()
+			if strings.Contains(body, "unknown tool") {
+				t.Fatalf("HTTP dispatcher reports %q as unknown — wire it in kiln/chat/server.go's tool switch (it's in the descriptor table but not the HTTP path)", d.Name)
+			}
+		})
+	}
+}
+
 func TestToolDispatchInvalidJSON(t *testing.T) {
 	l, _ := setup(t)
 	body := bytes.NewBufferString(`not json`)

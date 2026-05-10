@@ -31,8 +31,9 @@ const (
 	OpDeleteEntity  Op = "delete_entity"
 	OpAddField      Op = "add_field"
 	OpDeleteField   Op = "delete_field"
-	OpAddPage       Op = "add_page"
-	OpDeletePage    Op = "delete_page"
+	OpAddPage           Op = "add_page"
+	OpDeletePage        Op = "delete_page"
+	OpUpdatePageElement Op = "update_page_element"
 	OpAddHook       Op = "add_hook"
 	OpDeleteHook    Op = "delete_hook"
 	OpAddRoute      Op = "add_route"
@@ -113,6 +114,22 @@ type AddPagePayload struct {
 
 type DeletePagePayload struct {
 	Path string      `json:"path"`
+	Prev *world.Page `json:"prev,omitempty"`
+}
+
+// UpdatePageElementPayload carries the post-patch page snapshot. The
+// protocol layer applies the patch (set_props / replace_subtree /
+// remove / insert / append) against a clone of the live page, bumps
+// Page.Version, then journals the resulting page in full. Replay just
+// swaps Pages[Path] = New; no patch logic lives in the journal layer,
+// which keeps replay deterministic and independent of how the patch
+// was originally expressed.
+//
+// Prev is the full page state before the patch, kept for undo and
+// for any future audit/diff tooling.
+type UpdatePageElementPayload struct {
+	Path string      `json:"path"`
+	New  *world.Page `json:"new"`
 	Prev *world.Page `json:"prev,omitempty"`
 }
 

@@ -154,6 +154,12 @@ func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
 		}
 		return t.DeletePage(ctx, a)
+	case "update_page_element":
+		var a protocol.UpdatePageElementArgs
+		if err := dec(&a); err != nil {
+			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
+		}
+		return t.UpdatePageElement(ctx, a)
 	case "add_hook":
 		var a protocol.AddHookArgs
 		if err := dec(&a); err != nil {
