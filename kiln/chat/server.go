@@ -326,7 +326,7 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (s *Server) serveWorld(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 	sess := s.live.Session()
 	resp := map[string]any{
 		"world": sess.World,
@@ -336,7 +336,13 @@ func (s *Server) serveWorld(w http.ResponseWriter, _ *http.Request) {
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	// Pretty-print for browser visitors so the IR is human-readable
+	// when opened in a tab. The shape is identical — automated
+	// callers parsing JSON don't care about whitespace.
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(resp)
 }
 
 func (s *Server) serveChatMessage(w http.ResponseWriter, r *http.Request) {

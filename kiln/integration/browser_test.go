@@ -2871,6 +2871,21 @@ func TestBrowser_ResetModalMentionsFreezeDiff(t *testing.T) {
 	}
 }
 
+// /kiln/world JSON is pretty-printed (indented) so a browser tab
+// renders the IR human-readably. Automated parsers don't care.
+func TestBrowser_WorldEndpointReturnsIndentedJSON(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	resp, err := http.Get(urlBase + "/kiln/world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "\n  ") {
+		t.Errorf("expected indented JSON in /kiln/world; got body fragment: %s", firstN(string(body), 200))
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
