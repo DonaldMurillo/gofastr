@@ -18,7 +18,10 @@ import (
 // adapter watcher reads the store at turn-spawn time, so any switch
 // takes effect on the next chat_user event. An in-flight turn is
 // cancelled when its adapter is replaced.
-func mountAgentRoutes(r *router.Router, store *AdapterStore) {
+//
+// notify is called after a successful POST switch so the panel's
+// header chip updates without a refresh; pass nil to disable.
+func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, summary string)) {
 	r.Get("/kiln/agent", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, agentState(store))
 	}))
@@ -69,6 +72,9 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore) {
 			return
 		}
 		store.Set(adapter)
+		if notify != nil {
+			notify("agent_changed", adapter.Name)
+		}
 		writeJSON(w, map[string]any{
 			"ok":      true,
 			"current": describeAdapter(adapter),

@@ -32,6 +32,11 @@ import (
 // without needing a real agent subprocess.
 var testInFlight atomic.Bool
 
+// testCurrentAgent is the simulated current-adapter name consumed
+// by the test AgentStateFn so tests that assert the header chip
+// updates can flip it and notify "agent_changed".
+var testCurrentAgent atomic.Value // string
+
 // stand a live kiln server up on httptest. Same wiring as cmd/kiln.
 func startKiln(t *testing.T) (string, *protocol.Tools) {
 	srvURL, _, tools := startKilnExt(t)
@@ -44,7 +49,11 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	t.Helper()
 	testInFlight.Store(false)
-	t.Cleanup(func() { testInFlight.Store(false) })
+	testCurrentAgent.Store("none")
+	t.Cleanup(func() {
+		testInFlight.Store(false)
+		testCurrentAgent.Store("none")
+	})
 	d, cleanup, err := db.EphemeralSQLite("kiln-browser")
 	if err != nil {
 		t.Fatal(err)
@@ -62,10 +71,14 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	chat.MountPanel(l.Aux(), l, tools, func() any {
 		// Stub agent state for the integration tests — at least one
 		// installed adapter so the modal list isn't empty. Reads
-		// in_flight from the package-level testInFlight closure so
-		// tests that need to simulate an agent turn can flip it.
+		// in_flight + current from package-level test atomics so
+		// tests can simulate turns and adapter switches.
+		curName, _ := testCurrentAgent.Load().(string)
+		if curName == "" {
+			curName = "none"
+		}
 		return map[string]any{
-			"current": map[string]any{"name": "none", "display": "(no agent)"},
+			"current": map[string]any{"name": curName, "display": "(stub: " + curName + ")"},
 			"available": []map[string]any{
 				{"name": "claude-code", "display": "Claude Code CLI", "installed": true},
 				{"name": "pi", "display": "pi", "installed": false},
@@ -2113,6 +2126,58 @@ func TestBrowser_PagePrefixRendersAsChip(t *testing.T) {
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
 		`document.querySelector('.kiln-msg-user').outerHTML`, &fragment))
 	t.Errorf("expected page chip '/dashboard' inside .kiln-msg-user; got: %s", fragment)
+}
+
+// Header agent chip reflects the current adapter and updates live
+// when the user (or the API) switches via /kiln/agent — driven by
+// the agent_changed SSE Notify.
+func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-agent`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var initial string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-agent`, &initial, chromedp.ByQuery))
+	if initial != "no agent" {
+		t.Errorf("expected initial chip 'no agent'; got %q", initial)
+	}
+
+	// Wait for SSE to be live so the refetch fires.
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	testCurrentAgent.Store("claude-code")
+	l.Notify("agent_changed", "claude-code")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var got string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-agent`, &got, chromedp.ByQuery))
+		if got == "claude-code" {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var last string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-agent`, &last, chromedp.ByQuery))
+	t.Errorf("agent chip never updated to 'claude-code'; final=%q", last)
 }
 
 // safety: keep fmt + journal imports live

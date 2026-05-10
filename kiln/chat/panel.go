@@ -52,8 +52,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 			return pe.logHTMLForCurrent(), nil
 		})).
 		Signal("agent", widget.SignalFunc(func() (any, error) {
-			// Filled in by the host (cmd/kiln) via SSE binding to "agent_changed".
-			return "", nil
+			return pe.agentLabel(), nil
 		})).
 		Signal("chat_status", widget.SignalFunc(func() (any, error) {
 			return pe.statusText(), nil
@@ -83,6 +82,8 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		// Tool-call landing increments the in-flight tool counter
 		// shown in the header — refresh chat_status on each one.
 		SSERefetch("/.kiln/events", "tool_call", "chat_status").
+		// Agent picker → header chip update.
+		SSERefetch("/.kiln/events", "agent_changed", "agent").
 		// World-snapshot pill: live count of entities/pages/routes/hooks.
 		// Refresh on any world_edit so the pill keeps pace with the agent.
 		SSERefetch("/.kiln/events", "world_edit", "world_snapshot").
@@ -286,7 +287,7 @@ func (pe *panelEnv) headerHTML() string {
 	return `<div class="kiln-panel-head">` +
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
-		`<span class="kiln-panel-agent" data-fui-signal="agent">no agent</span>` +
+		`<span class="kiln-panel-agent" data-fui-signal="agent">` + escHTML(pe.agentLabel()) + `</span>` +
 		`<span class="kiln-panel-snapshot" data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</span>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
@@ -328,6 +329,29 @@ func pluralize(n int, singular, plural string) string {
 		return "1 " + singular
 	}
 	return fmt.Sprintf("%d %s", n, plural)
+}
+
+// agentLabel returns the current adapter name for the header chip:
+// the adapter Name (e.g. "claude-code", "pi", "custom"), or "no
+// agent" when none is wired. Read from the AgentStateFn so the
+// truth lives in cmd/kiln (AdapterStore) without panel knowing.
+func (pe *panelEnv) agentLabel() string {
+	if pe.agentState == nil {
+		return "no agent"
+	}
+	state, _ := pe.agentState().(map[string]any)
+	if state == nil {
+		return "no agent"
+	}
+	cur, _ := state["current"].(map[string]any)
+	if cur == nil {
+		return "no agent"
+	}
+	name, _ := cur["name"].(string)
+	if name == "" || name == "none" {
+		return "no agent"
+	}
+	return name
 }
 
 // statusText returns the in-flight indicator HTML. Empty when no agent

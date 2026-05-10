@@ -185,7 +185,7 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	// time. mountAgentRoutes still owns the /kiln/agent HTTP surface.
 	adapter, adapterOK := resolveAdapter(opts.agentCmd)
 	store := NewAdapterStore(adapter)
-	mountAgentRoutes(l.Aux(), store)
+	mountAgentRoutes(l.Aux(), store, l.Notify)
 
 	chatSrv := chat.New(l, tools)
 	chatSrv.Mount(l.Aux())

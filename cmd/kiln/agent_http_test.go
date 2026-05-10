@@ -14,7 +14,7 @@ import (
 func TestAgentHTTPGetReturnsCurrentAndAvailable(t *testing.T) {
 	store := NewAdapterStore(Adapter{}) // none
 	r := router.New()
-	mountAgentRoutes(r, store)
+	mountAgentRoutes(r, store, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/kiln/agent", nil)
 	rec := httptest.NewRecorder()
@@ -42,7 +42,7 @@ func TestAgentHTTPGetReturnsCurrentAndAvailable(t *testing.T) {
 func TestAgentHTTPSetAcceptsCustomAndCancelsInflight(t *testing.T) {
 	store := NewAdapterStore(Adapter{})
 	r := router.New()
-	mountAgentRoutes(r, store)
+	mountAgentRoutes(r, store, nil)
 
 	// Simulate an in-flight turn so we can verify cancellation fires.
 	cancelled := make(chan error, 1)
@@ -86,7 +86,7 @@ func TestAgentHTTPSetAcceptsCustomAndCancelsInflight(t *testing.T) {
 func TestAgentHTTPSetUnknownReturnsError(t *testing.T) {
 	store := NewAdapterStore(Adapter{})
 	r := router.New()
-	mountAgentRoutes(r, store)
+	mountAgentRoutes(r, store, nil)
 
 	body := bytes.NewBufferString(`{"name":"nonexistent-binary-xyz"}`)
 	req := httptest.NewRequest(http.MethodPost, "/kiln/agent", body)
