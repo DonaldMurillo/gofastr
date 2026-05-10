@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/core-ui/component"
+	"github.com/gofastr/gofastr/core-ui/runtime"
 	"github.com/gofastr/gofastr/core-ui/style"
 )
 
@@ -46,11 +47,23 @@ func (s *server) serveBootstrap(w http.ResponseWriter, _ *http.Request) {
 		"sse":               s.def.SSE,
 	}
 	chrome := s.renderSkeleton()
-	out := strings.NewReplacer(
+	init := strings.NewReplacer(
 		"__FUI_CONFIG__", encodeJSON(cfg),
 		"__FUI_CHROME__", encodeJSON(string(chrome)),
 	).Replace(bootstrapTemplate)
-	fmt.Fprint(w, out)
+
+	// Prepend the framework runtime so the bootstrap is self-sufficient:
+	// any page that includes the script tag gets __gofastr.mountWidget
+	// without a separate /__gofastr/runtime.js fetch. The runtime is
+	// idempotent (its IIFE registers window.__gofastr only once), so
+	// multiple widget tags on the same page don't conflict.
+	if rt, err := runtime.RuntimeJS(); err == nil {
+		fmt.Fprint(w, rt, "\n", init)
+	} else {
+		// Fallback: write only the init. Caller must ensure runtime is
+		// loaded by some other means.
+		fmt.Fprint(w, init)
+	}
 }
 
 // encodeJSON marshals v with SetEscapeHTML(false) so embedded HTML

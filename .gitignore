@@ -82,9 +82,15 @@ demo_server
 gofastr
 gofastr-*
 !gofastr/
+kiln
+kiln-*
+!kiln/
 /core-ui-demo
 /blog
 /demo
+/website
+/widgets-demo
+/widgets_demo
 *.png
 .playwright-mcp/
 screens/

@@ -244,6 +244,262 @@
 
     formatInt: (n) => String(n),
     formatFloat: (n, d) => Number(n).toFixed(d),
+
+    // -----------------------------------------------------------------
+    // Widgets (core-ui/widget) — overlay UIs that mount on top of any
+    // page. mountWidget is the runtime entrypoint used by per-widget
+    // bootstrap scripts. The host (Go) builds the WidgetDef → emits a
+    // tiny init script that calls __gofastr.mountWidget(cfg, chrome).
+    // All DOM/SSE/RPC plumbing lives here, in the framework runtime.
+    // -----------------------------------------------------------------
+
+    /** Internal widget-state registry. Idempotent: a widget mounted
+        twice with the same name is a no-op. */
+    _widgets: {},
+    _signals: {},
+
+    /** Push a value into a named signal and reflect it into all
+        [data-fui-signal="<name>"] DOM nodes. Mode is read from the
+        node's data-fui-signal-mode attr ("text" default, "html",
+        "attr"+data-fui-signal-attr). */
+    setSignal(name, value) {
+      let s = this._signals[name];
+      if (!s) { s = this._signals[name] = { value: undefined, listeners: [] }; }
+      s.value = value;
+      for (const fn of s.listeners) {
+        try { fn(value); } catch (_) {}
+      }
+      document.querySelectorAll('[data-fui-signal="' + name + '"]').forEach((node) => {
+        const mode = node.getAttribute('data-fui-signal-mode') || 'text';
+        if (mode === 'html') {
+          node.innerHTML = (typeof value === 'string') ? value : (value == null ? '' : JSON.stringify(value));
+        } else if (mode === 'attr') {
+          const attr = node.getAttribute('data-fui-signal-attr') || 'value';
+          node.setAttribute(attr, String(value ?? ''));
+        } else {
+          if (value == null) node.textContent = '';
+          else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') node.textContent = String(value);
+          else node.textContent = JSON.stringify(value);
+        }
+      });
+    },
+
+    /** Read the current value of a named signal. */
+    signal(name) {
+      return this._signals[name]?.value;
+    },
+
+    /** Mount a widget. cfg comes from the per-widget bootstrap;
+        chromeHTML is the host-rendered slot DOM as an HTML string.
+        Idempotent — a widget already mounted (same cfg.name) is a
+        no-op. */
+    mountWidget(cfg, chromeHTML) {
+      const NS = this;
+      if (NS._widgets[cfg.name]) return; // already mounted
+      NS._widgets[cfg.name] = { cfg };
+
+      // Stylesheet
+      if (!document.querySelector('link[data-fui-style="' + cfg.name + '"]')) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = cfg.stylePath;
+        link.setAttribute('data-fui-style', cfg.name);
+        document.head.appendChild(link);
+      }
+
+      // Backdrop + chrome
+      let backdrop = null;
+      if (cfg.backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.className = 'fui-backdrop';
+        backdrop.setAttribute('data-fui-backdrop', cfg.name);
+        document.body.appendChild(backdrop);
+      }
+      const tmp = document.createElement('div');
+      tmp.innerHTML = chromeHTML;
+      const widgetEl = tmp.firstElementChild;
+      document.body.appendChild(widgetEl);
+      NS._widgets[cfg.name].root = widgetEl;
+      NS._widgets[cfg.name].backdrop = backdrop;
+
+      function dismiss() {
+        if (widgetEl?.parentNode) widgetEl.parentNode.removeChild(widgetEl);
+        if (backdrop?.parentNode) backdrop.parentNode.removeChild(backdrop);
+        delete NS._widgets[cfg.name];
+      }
+      NS._widgets[cfg.name].dismiss = dismiss;
+
+      // Initial state hydration
+      fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((state) => {
+          for (const k in state) NS.setSignal(k, state[k]);
+        })
+        .catch(() => {});
+
+      // SSE bindings
+      const seenStreams = {};
+      for (const b of cfg.sse || []) {
+        if (!seenStreams[b.path]) {
+          try {
+            const es = new EventSource(b.path);
+            seenStreams[b.path] = es;
+            es.addEventListener('open', () => { window.__fuiSSEReady = true; });
+          } catch (_) {
+            seenStreams[b.path] = null;
+          }
+        }
+        const es = seenStreams[b.path];
+        if (!es) continue;
+        if (b.reload) {
+          es.addEventListener(b.event, (ev) => {
+            if (b.match) {
+              let payload = {};
+              try { payload = JSON.parse(ev.data) || {}; } catch (_) {}
+              for (const k in b.match) {
+                if (String(payload[k]) !== String(b.match[k])) return;
+              }
+            }
+            setTimeout(() => location.reload(), 200);
+          });
+          continue;
+        }
+        if (b.refetch) {
+          es.addEventListener(b.event, () => {
+            fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((state) => {
+                if (state && b.signal in state) NS.setSignal(b.signal, state[b.signal]);
+              })
+              .catch(() => {});
+          });
+        } else {
+          es.addEventListener(b.event, (ev) => {
+            let payload;
+            try { payload = JSON.parse(ev.data); } catch (_) { payload = ev.data; }
+            NS.setSignal(b.signal, payload);
+          });
+        }
+      }
+
+      async function dispatchRPC(node) {
+        const path = node.getAttribute('data-fui-rpc');
+        const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
+        const responseSignal = node.getAttribute('data-fui-rpc-signal');
+        let body = node.getAttribute('data-fui-rpc-body');
+        if (!body && node.tagName === 'FORM') {
+          const fd = new FormData(node);
+          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+          body = JSON.stringify(obj);
+        }
+        const headers = { 'X-FUI-Widget': cfg.name };
+        if (body) headers['Content-Type'] = 'application/json';
+        if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
+        try {
+          const r = await fetch(path, { method, headers, body: body || undefined });
+          if (!r.ok) {
+            const txt = await r.text();
+            if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
+            return;
+          }
+          const ct = r.headers.get('content-type') || '';
+          const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
+          if (responseSignal) NS.setSignal(responseSignal, data);
+        } finally {
+          if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
+        }
+      }
+
+      // Widget-scoped click + submit
+      widgetEl.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-fui-rpc]');
+        if (btn && widgetEl.contains(btn)) {
+          e.preventDefault();
+          await dispatchRPC(btn);
+          return;
+        }
+        const closeBtn = e.target.closest('[data-fui-action="close"]');
+        if (closeBtn && widgetEl.contains(closeBtn)) {
+          e.preventDefault();
+          dismiss();
+        }
+      });
+      widgetEl.addEventListener('submit', async (e) => {
+        const form = e.target.closest('form[data-fui-rpc]');
+        if (form && widgetEl.contains(form)) {
+          e.preventDefault();
+          await dispatchRPC(form);
+        }
+      });
+
+      if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);
+      if (cfg.closeOnEscape) {
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && document.body.contains(widgetEl)) dismiss();
+        });
+      }
+
+      // Global click+submit dispatcher (idempotent across widgets).
+      // Handles agent-rendered page buttons + plain forms + legacy
+      // data-kiln-tool attributes.
+      if (!document.__fuiGlobalDispatch) {
+        document.__fuiGlobalDispatch = true;
+        document.addEventListener('click', async (e) => {
+          if (e.target.closest('[data-fui-widget]')) return;
+          const fuiBtn = e.target.closest('[data-fui-rpc]');
+          if (fuiBtn) { e.preventDefault(); await dispatchRPC(fuiBtn); return; }
+          const legacy = e.target.closest('[data-kiln-tool]');
+          if (legacy) {
+            e.preventDefault();
+            const tool = legacy.getAttribute('data-kiln-tool');
+            const args = legacy.getAttribute('data-kiln-args') || '';
+            try {
+              await fetch('/kiln/tool/' + tool, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: args,
+              });
+            } catch (_) {}
+          }
+        });
+        document.addEventListener('submit', async (e) => {
+          const form = e.target.closest('form');
+          if (!form || form.closest('[data-fui-widget]')) return;
+          if (form.hasAttribute('data-fui-rpc')) {
+            e.preventDefault();
+            await dispatchRPC(form);
+            return;
+          }
+          if (form.hasAttribute('data-kiln-tool')) {
+            e.preventDefault();
+            const tool = form.getAttribute('data-kiln-tool');
+            const fd = new FormData(form);
+            const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+            try {
+              await fetch('/kiln/tool/' + tool, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(obj),
+              });
+            } catch (_) {}
+            return;
+          }
+          const action = form.getAttribute('action');
+          if (action && !action.match(/^https?:\/\//)) {
+            e.preventDefault();
+            const fd = new FormData(form);
+            const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+            try {
+              await fetch(action, {
+                method: form.getAttribute('method') || 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(obj),
+              });
+            } catch (_) {}
+          }
+        });
+      }
+    },
   };
 
   // -----------------------------------------------------------------------

@@ -43,9 +43,10 @@ func TestRuntimeSize(t *testing.T) {
 		t.Fatal("runtime size is 0")
 	}
 	t.Logf("Runtime size: %d bytes", size)
-	// Should be reasonably small (router + DOM helpers + SSE + hydration)
-	if size > 26000 {
-		t.Errorf("runtime too large: %d bytes (max 26000)", size)
+	// Reasonably small for: router + DOM helpers + SSE + hydration +
+	// widget mounting (mountWidget + signals + RPC dispatch).
+	if size > 40000 {
+		t.Errorf("runtime too large: %d bytes (max 40000)", size)
 	}
 }
 
