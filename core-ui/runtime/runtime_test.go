@@ -44,9 +44,14 @@ func TestRuntimeSize(t *testing.T) {
 	}
 	t.Logf("Runtime size: %d bytes", size)
 	// Reasonably small for: router + DOM helpers + SSE + hydration +
-	// widget mounting (mountWidget + signals + RPC dispatch).
-	if size > 40000 {
-		t.Errorf("runtime too large: %d bytes (max 40000)", size)
+	// widget mounting + the data-fui-* primitive set (rpc-reset,
+	// disable-when-invalid, submit-on-enter, autogrow, clear-on-esc,
+	// shortcut-focus, shortcut-click, fill-input, scroll-bottom-on-
+	// update, flash-on-update, tick-elapsed, charcount-source,
+	// persist-storage, copy-text-from). Cap at 64KB so the runtime
+	// still fits under most CDN single-RTT thresholds.
+	if size > 64000 {
+		t.Errorf("runtime too large: %d bytes (max 64000)", size)
 	}
 }
 

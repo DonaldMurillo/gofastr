@@ -598,8 +598,8 @@ func TestRuntimeSize(t *testing.T) {
 	if size == 0 {
 		t.Error("RuntimeSize returned 0")
 	}
-	if size > 40*1024 {
-		t.Errorf("runtime is %d bytes, expected under 40KB", size)
+	if size > 64*1024 {
+		t.Errorf("runtime is %d bytes, expected under 64KB", size)
 	}
 }
 
