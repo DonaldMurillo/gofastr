@@ -542,6 +542,36 @@
         try { target.focus(); target.select?.(); } catch (_) {}
       });
 
+      // Keyboard-shortcut click: data-fui-shortcut-click="<combo>"
+      // simulates a click on the matching keypress when no input is
+      // focused (so typing 'y' inside the chat input still types).
+      // Useful for binary-decision UIs (Approve/Reject). Document-
+      // level delegation so elements added later via signal updates
+      // (plan cards re-rendered on chat_html refetch) still bind.
+      // Idempotent guard avoids double-binding across widget mounts.
+      if (!document.__fuiShortcutClick) {
+        document.__fuiShortcutClick = true;
+        document.addEventListener('keydown', (e) => {
+          const a = document.activeElement;
+          if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+          if (e.isComposing) return;
+          const targets = document.querySelectorAll('[data-fui-shortcut-click]');
+          for (const el of targets) {
+            const combo = el.getAttribute('data-fui-shortcut-click') || '';
+            if (!combo) continue;
+            const match = parseCombo(combo);
+            if (!match.key) continue;
+            if (e.key.toLowerCase() !== match.key) continue;
+            if (match.mod && !(e.metaKey || e.ctrlKey)) continue;
+            if (match.shift && !e.shiftKey) continue;
+            if (match.alt && !e.altKey) continue;
+            e.preventDefault();
+            try { el.click(); } catch (_) {}
+            return;
+          }
+        });
+      }
+
       // Keyboard-shortcut focus: any element with
       // data-fui-shortcut-focus="Mod+k" (or any combo per parseCombo
       // below) is focused on the matching keypress, regardless of

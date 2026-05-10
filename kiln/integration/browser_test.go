@@ -3113,6 +3113,46 @@ func TestBrowser_GearModalShowsInstallHintWhenNoAdaptersInstalled(t *testing.T) 
 	}
 }
 
+// Y key approves the most recent unresolved plan (when no input
+// is focused). N rejects. Verifies the framework's
+// data-fui-shortcut-click primitive against the kiln plan card
+// opt-in.
+func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID: "p-y", Steps: []string{"do work"},
+	})
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-plan-btn-approve[data-fui-shortcut-click="y"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.body.focus()`, nil),
+		chromedp.Evaluate(`(function(){
+			document.dispatchEvent(new KeyboardEvent('keydown', {key:'y', bubbles:true, cancelable:true}));
+		})()`, nil),
+		chromedp.WaitVisible(`.kiln-plan-status-approved`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("Y → approve: %v", err)
+	}
+
+	// New plan + N → reject.
+	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID: "p-n", Steps: []string{"do other work"},
+	})
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(`.kiln-plan-btn-reject[data-fui-shortcut-click="n"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.body.focus()`, nil),
+		chromedp.Evaluate(`(function(){
+			document.dispatchEvent(new KeyboardEvent('keydown', {key:'n', bubbles:true, cancelable:true}));
+		})()`, nil),
+		chromedp.WaitVisible(`.kiln-plan-status-rejected`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("N → reject: %v", err)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

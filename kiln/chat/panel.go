@@ -595,6 +595,23 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 		}
 	}
 
+	// Find the most recent unresolved plan id; its Approve/Reject
+	// buttons get Y/N keyboard shortcuts.
+	var latestUnresolvedID string
+	var latestUnresolvedAt time.Time
+	for _, it := range items {
+		if it.kind != "plan" || it.plan == nil {
+			continue
+		}
+		if it.plan.Approved || it.plan.Rejected {
+			continue
+		}
+		if it.plan.ProposedAt.After(latestUnresolvedAt) {
+			latestUnresolvedAt = it.plan.ProposedAt
+			latestUnresolvedID = it.plan.PlanID
+		}
+	}
+
 	prevWasUser := false
 	for i, it := range items {
 		// Insert a turn divider when a new user message starts a
@@ -606,7 +623,7 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 		case "chat":
 			renderChatEvent(&b, it.chat, resultByCall, callByID)
 		case "plan":
-			renderPlanCard(&b, it.plan)
+			renderPlanCard(&b, it.plan, it.plan.PlanID == latestUnresolvedID)
 		case "world_edit":
 			fmt.Fprintf(&b, `<li class="kiln-msg kiln-msg-tool">✦ %s</li>`, escHTML(string(it.op)))
 		}
@@ -761,7 +778,7 @@ func formatRelTime(t time.Time) string {
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
-func renderPlanCard(b *strings.Builder, p *journal.Plan) {
+func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 	b.WriteString(`<li class="kiln-msg kiln-msg-plan" data-plan-id="` + escAttr(p.PlanID) + `">`)
 	fmt.Fprintf(b, `<div class="kiln-plan-head"><span class="kiln-plan-title">Plan: %s</span>`, escHTML(p.PlanID))
 	fmt.Fprintf(b, `<span class="kiln-plan-when" title="%s">proposed %s</span>`,
@@ -803,23 +820,35 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 	default:
 		// Approve / Reject / Modify. Modify pre-fills the input with
 		// a refinement prompt so the user has a one-click path to
-		// nudge the plan instead of binary accept/decline.
+		// nudge the plan instead of binary accept/decline. The
+		// most recent unresolved plan ('primary') gets Y/N keyboard
+		// shortcuts on its Approve/Reject buttons + a kbd hint badge.
+		approveExtra := ""
+		rejectExtra := ""
+		approveLabel := "Approve"
+		rejectLabel := "Reject"
+		if primary {
+			approveExtra = ` data-fui-shortcut-click="y"`
+			rejectExtra = ` data-fui-shortcut-click="n"`
+			approveLabel = `Approve <kbd class="kiln-kbd">Y</kbd>`
+			rejectLabel = `Reject <kbd class="kiln-kbd">N</kbd>`
+		}
 		fmt.Fprintf(b,
 			`<div class="kiln-plan-actions">`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-approve" `+
 				`data-plan-action="approve" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/approve_plan"  `+
-				`data-fui-rpc-body='{"plan_id":"%s"}'>Approve</button>`+
+				`data-fui-rpc-body='{"plan_id":"%s"}'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-reject" `+
 				`data-plan-action="reject" data-plan-id="%s" `+
 				`data-fui-rpc="/kiln/panel/reject_plan"  `+
-				`data-fui-rpc-body='{"plan_id":"%s"}'>Reject</button>`+
+				`data-fui-rpc-body='{"plan_id":"%s"}'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-modify" `+
 				`data-fui-fill-input=".kiln-input" `+
 				`data-fui-fill-text="Refine plan %s: ">Modify…</button>`+
 				`</div>`,
-			escAttr(p.PlanID), escAttr(p.PlanID),
-			escAttr(p.PlanID), escAttr(p.PlanID),
+			escAttr(p.PlanID), escAttr(p.PlanID), approveExtra, approveLabel,
+			escAttr(p.PlanID), escAttr(p.PlanID), rejectExtra, rejectLabel,
 			escAttr(p.PlanID))
 	}
 	b.WriteString(`</li>`)
