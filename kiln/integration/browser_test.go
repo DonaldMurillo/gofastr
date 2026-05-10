@@ -775,12 +775,14 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 		t.Fatal("seed entity didn't land before reset")
 	}
 
-	// Open panel, override window.confirm to true, click Reset.
+	// Open panel, click Reset → confirmation modal opens, click the
+	// danger Reset button inside the modal to confirm.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`#kiln-reset`, chromedp.ByQuery),
-		chromedp.Evaluate(`window.confirm = function(){return true};`, nil),
 		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-modal-danger`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("click reset: %v", err)
 	}
@@ -1381,6 +1383,8 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
 		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-modal-danger`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("reset flow: %v", err)
 	}
@@ -1581,6 +1585,72 @@ func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 	var last string
 	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &last, chromedp.ByQuery))
 	t.Errorf("snapshot pill never updated to '1 entity' after add_entity; final=%q", last)
+}
+
+// Reset is destructive (truncates journal + drops DB schema). The
+// header ↺ button must NOT directly reset — it must open a confirm
+// modal. Cancel from the modal preserves the world; Confirm wipes.
+func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Seed a chat message — should survive a Cancel and disappear on Confirm.
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "do not lose me"})
+
+	// Click ↺ → modal opens with Cancel + Reset buttons.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("open confirm modal: %v", err)
+	}
+
+	// Modal must contain a clearly destructive Reset button distinct from Cancel.
+	var hasDanger, hasCancel bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`!!document.querySelector('.kiln-modal-danger')`, &hasDanger))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`!!document.querySelector('.kiln-modal-cancel')`, &hasCancel))
+	if !hasDanger || !hasCancel {
+		t.Fatalf("confirm modal missing Cancel/Reset buttons: danger=%v cancel=%v", hasDanger, hasCancel)
+	}
+
+	// Cancel: chat message should still be there.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`.kiln-modal-cancel`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	var msgPresent bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`!!document.querySelector('.kiln-msg-user')`, &msgPresent))
+	if !msgPresent {
+		t.Errorf("chat message disappeared after Cancel — confirm modal triggered the reset anyway")
+	}
+
+	// Confirm: re-open and click the danger button → message should disappear.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-modal-danger`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("confirm flow: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('.kiln-msg-user')`, &present))
+		if !present {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Errorf("chat message did not clear after Confirm — confirm flow broken")
 }
 
 // safety: keep fmt + journal imports live

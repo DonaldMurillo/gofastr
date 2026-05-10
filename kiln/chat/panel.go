@@ -124,7 +124,29 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	settings.ExtraCSS = widgetCSS
 	widget.Mount(r, &settings)
 
+	// Hidden Modal: reset confirmation, opened by the ↺ button via
+	// data-fui-open="kiln-reset-confirm". Reset is destructive
+	// (truncates journal + drops DB schema) so a single misclick
+	// shouldn't lose work — the modal forces an explicit Confirm.
+	resetConfirm := preset.Modal("kiln-reset-confirm").
+		Hidden().
+		Slot("body", htmlComp{html: pe.resetConfirmHTML()}).
+		Build()
+	resetConfirm.ExtraCSS = widgetCSS
+	widget.Mount(r, &resetConfirm)
+
 	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
+}
+
+func (pe *panelEnv) resetConfirmHTML() string {
+	return `<div class="kiln-modal">` +
+		`<h2 class="kiln-modal-title">Reset session?</h2>` +
+		`<p class="kiln-modal-sub">This wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen with <code>kiln freeze</code> is gone.</p>` +
+		`<div class="kiln-modal-actions">` +
+		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel</button>` +
+		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-close>Reset</button>` +
+		`</div>` +
+		`</div>`
 }
 
 // agentSettingsHTML is the modal body. The list itself is server-
@@ -265,7 +287,7 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-snapshot" data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</span>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
-		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" >↺</button>` +
+		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-open="kiln-reset-confirm">↺</button>` +
 		`<button type="button" class="kiln-panel-close" data-fui-action="close" aria-label="Close">×</button>` +
 		`</div>`
 }

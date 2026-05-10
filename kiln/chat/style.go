@@ -352,6 +352,13 @@ func widgetCSS() string {
 		Set("background", "{colors.kiln-accent}", "border-color", "{colors.kiln-accent}", "color", "white").
 		End()
 	ss.Rule(".kiln-modal-apply:hover").Set("filter", "brightness(1.1)").End()
+	ss.Rule(".kiln-modal-danger").
+		Set(
+			"background", "rgba(220, 80, 80, 0.85)",
+			"color", "white",
+			"border-color", "rgba(220, 80, 80, 0.95)",
+		).
+		End()
 	ss.Rule(".kiln-modal-cancel:hover").Set("background", "rgba(255, 255, 255, 0.06)").End()
 
 	// --- Reset session button -----------------------------------------
