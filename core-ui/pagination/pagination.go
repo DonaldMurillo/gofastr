@@ -291,7 +291,10 @@ func BaseCSS() string {
 .pagination li {
   display: inline-flex;
 }
-.pagination a, .pagination span {
+/* Targets <a>, <button> (island mode), and <span> (current/disabled). */
+.pagination a,
+.pagination button,
+.pagination span {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -300,10 +303,16 @@ func BaseCSS() string {
   padding: 0 var(--spacing-sm, 4px);
   border-radius: var(--radii-md, 8px);
   border: 1px solid transparent;
+  background: transparent;
   text-decoration: none;
   color: var(--color-text, #1F2937);
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
 }
-.pagination a:hover {
+.pagination span { cursor: default; }
+.pagination a:hover,
+.pagination button:hover {
   background: var(--color-surface, #FFFFFF);
   border-color: var(--color-border, #E5E7EB);
 }
@@ -311,6 +320,7 @@ func BaseCSS() string {
   background: var(--color-primary, #4F46E5);
   color: white;
   font-weight: 600;
+  border-color: var(--color-primary, #4F46E5);
 }
 .pagination .is-disabled span,
 .pagination [aria-disabled="true"] {

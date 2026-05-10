@@ -472,12 +472,21 @@ func BaseCSS() string {
 .ui-data-table__table .is-align-end   { text-align: end; }
 .ui-data-table__table .is-align-center { text-align: center; }
 
-.ui-data-table__sort {
+/* Targets both <a> (plain mode) and <button> (island mode). The
+   button selector resets user-agent button styling so it inherits
+   from the <th> like a link does. */
+.ui-data-table__sort,
+button.ui-data-table__sort {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  background: transparent;
+  border: 0;
+  padding: 0;
   color: inherit;
+  font: inherit;
   text-decoration: none;
+  cursor: pointer;
 }
 .ui-data-table__sort:hover {
   color: var(--color-text, #18181B);
