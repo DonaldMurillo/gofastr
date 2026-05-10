@@ -77,11 +77,15 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 	widget.Mount(r, &def)
 
 	// Hidden Modal: agent-settings, opened by the gear button via
-	// data-fui-open="kiln-agent-settings".
+	// data-fui-open="kiln-agent-settings". Loads the same panel CSS
+	// (widgetCSS) so .kiln-modal-card, .kiln-modal-title, .kiln-button
+	// and friends are styled. Without this the modal renders as
+	// transparent floating text — looks like the gear "doesn't work".
 	settings := preset.Modal("kiln-agent-settings").
 		Hidden().
 		Slot("body", htmlComp{html: pe.agentSettingsHTML()}).
 		Build()
+	settings.ExtraCSS = widgetCSS
 	widget.Mount(r, &settings)
 
 	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
@@ -91,8 +95,11 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 // already exists at /kiln/agent (see cmd/kiln/agent_http.go); this
 // modal just surfaces a clean container so the gear button has somewhere
 // to land. Future iterations can render the adapter list here.
+//
+// Uses kiln-modal-* classes that already have styled rules in
+// kiln/chat/style.go (.kiln-modal — the card container, etc.).
 func (pe *panelEnv) agentSettingsHTML() string {
-	return `<div class="kiln-modal-card">` +
+	return `<div class="kiln-modal">` +
 		`<h2 class="kiln-modal-title">Agent settings</h2>` +
 		`<p class="kiln-modal-sub">Pick which CLI agent kiln spawns when you send a message.</p>` +
 		`<div class="kiln-modal-body" id="kiln-agent-list">Loading…</div>` +

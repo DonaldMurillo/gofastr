@@ -682,6 +682,13 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/action", http.HandlerFunc(methodNotAllowed))
 	r.Get("/__gofastr/widget/{id}", http.HandlerFunc(ds.handleWidgetJS))
 	r.Get("/__gofastr/css/{path...}", http.HandlerFunc(ds.handleCSSChunk))
+	// runtime.js auto-discovers core-ui/widget widgets at /__gofastr/widgets;
+	// for plain framework apps that don't mount any widgets, serve an empty
+	// list so the discovery fetch doesn't 404 in the browser console.
+	r.Get("/__gofastr/widgets", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	}))
 
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 }

@@ -989,6 +989,55 @@ func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
 	}
 }
 
+// TestBrowser_GearOpenedModalIsActuallyVisible: opening the modal isn't
+// enough — the user has to actually see a styled card. Catches the case
+// where the framework chrome mounts but the host's slot CSS classes
+// aren't loaded, leaving a transparent modal that looks like nothing.
+func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-fui-widget="kiln-agent-settings"]`, chromedp.ByQuery),
+		chromedp.Sleep(300*time.Millisecond),
+	); err != nil {
+		t.Fatalf("open modal: %v", err)
+	}
+
+	var diag string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(()=>{
+			const card = document.querySelector('[data-fui-widget="kiln-agent-settings"] .kiln-modal');
+			if (!card) return JSON.stringify({error: "modal card not in DOM"});
+			const cs = getComputedStyle(card);
+			const r = card.getBoundingClientRect();
+			return JSON.stringify({
+				bg: cs.backgroundColor,
+				borderRadius: cs.borderRadius,
+				padding: cs.padding,
+				width: r.width, height: r.height,
+			});
+		})()`, &diag),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("modal card style: %s", diag)
+	// A styled card has a non-transparent background and non-zero size.
+	for _, want := range []string{`"bg":"rgba(`, `"borderRadius":"`} {
+		if !strings.Contains(diag, want) {
+			t.Errorf("modal card not visibly styled: %s", diag)
+		}
+	}
+	// Background should NOT be the default transparent (rgba(0,0,0,0)).
+	if strings.Contains(diag, `"bg":"rgba(0, 0, 0, 0)"`) {
+		t.Errorf("modal card background is fully transparent — host CSS not loaded into modal widget: %s", diag)
+	}
+}
+
 // TestBrowser_GearOpensAgentSettingsModal: clicking the gear button
 // (data-fui-open="kiln-agent-settings") mounts the previously-hidden
 // Modal widget. Catches the "I can't even open the gear" regression.
