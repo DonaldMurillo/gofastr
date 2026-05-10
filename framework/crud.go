@@ -103,10 +103,12 @@ func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.R
 	}
 }
 
-// injectTenant injects the tenant_id into a data map when multi-tenancy is enabled.
-func (ch *CrudHandler) injectTenant(data map[string]any, r *http.Request) {
+// injectTenant injects the tenant_id into a data map when multi-tenancy is
+// enabled. It reads the tenant ID from ctx so it works whether the caller is
+// outside or inside an in-tx context derived from the request.
+func (ch *CrudHandler) injectTenant(data map[string]any, ctx context.Context) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(r.Context())
+		tenantID := GetTenantID(ctx)
 		if tenantID != "" {
 			data["tenant_id"] = tenantID
 		}
@@ -341,85 +343,13 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 		body = ch.unconvertMapKeys(body)
 
-		// Inject tenant_id for multi-tenant entities
-		ch.injectTenant(body, r)
-
-		// Generate values for all auto-generated fields
-		for _, f := range ch.Entity.GetFields() {
-			if f.AutoGenerate != schema.AutoNone {
-				body[f.Name] = generateFieldValue(f.AutoGenerate)
-			}
-		}
-
 		var result map[string]any
 		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
-			// Execute BeforeCreate hooks within tx so they can read pending state
-			if ch.Hooks != nil {
-				if err := ch.Hooks.ExecuteHooks(ctx, BeforeCreate, body); err != nil {
-					return &beforeHookError{err: err}
-				}
-			}
-
-			// Validate after Before hooks (hooks may mutate body)
-			vr := schema.ValidateAll(ch.entitySchema(), body)
-			if !vr.Valid {
-				return &validationError{fields: vr.Errors}
-			}
-
-			// Build INSERT — skip auto-generated, read-only, and hidden fields
-			var cols []string
-			var vals []any
-			for _, f := range ch.Entity.GetFields() {
-				if f.AutoGenerate != schema.AutoNone {
-					val := body[f.Name]
-					cols = append(cols, f.Name)
-					vals = append(vals, val)
-					continue
-				}
-				if f.ReadOnly || f.Hidden {
-					continue
-				}
-				val, ok := body[f.Name]
-				if !ok {
-					if f.Default != nil {
-						val = f.Default
-					} else {
-						continue
-					}
-				}
-				cols = append(cols, f.Name)
-				vals = append(vals, val)
-			}
-
-			// Ensure tenant_id is included for multi-tenant entities.
-			if ch.Entity.Config.MultiTenant {
-				if tenantID := GetTenantID(ctx); tenantID != "" {
-					cols = append(cols, "tenant_id")
-					vals = append(vals, tenantID)
-				}
-			}
-
-			visFields := ch.visibleFields()
-			ib := query.Insert(ch.Entity.GetTable()).
-				Columns(cols...).
-				Values(vals...).
-				Returning(visFields...)
-
-			sqlStr, args := ib.Build()
-			row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-			res, err := scanRow(row, visFields, ch.convertKey)
+			res, err := ch.doCreate(ctx, r, body)
 			if err != nil {
-				return fmt.Errorf("insert: %w", err)
+				return err
 			}
 			result = res
-
-			// AfterCreate hooks now participate in the tx; an error rolls back.
-			if ch.Hooks != nil {
-				if err := ch.Hooks.ExecuteHooks(ctx, AfterCreate, result); err != nil {
-					return fmt.Errorf("after-create hook: %w", err)
-				}
-			}
 			return nil
 		})
 		if err != nil {
@@ -452,56 +382,11 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 
 		var result map[string]any
 		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
-			if ch.Hooks != nil {
-				if err := ch.Hooks.ExecuteHooks(ctx, BeforeUpdate, body); err != nil {
-					return &beforeHookError{err: err}
-				}
-			}
-
-			vr := schema.ValidateAll(ch.entitySchema(), body)
-			if !vr.Valid {
-				return &validationError{fields: vr.Errors}
-			}
-
-			ub := query.Update(ch.Entity.GetTable())
-			anySet := false
-			for _, f := range ch.Entity.GetFields() {
-				if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
-					continue
-				}
-				val, ok := body[f.Name]
-				if !ok {
-					continue
-				}
-				ub.Set(f.Name, val)
-				anySet = true
-			}
-			if !anySet {
-				return errNoFieldsToUpdate
-			}
-
-			ub.Where(ch.PrimaryKey+" = $1", id)
-			ch.applyTenantScopeUpdate(ub, r)
-			visFields := ch.visibleFields()
-			ub.Returning(visFields...)
-
-			sqlStr, args := ub.Build()
-			row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-			res, err := scanRow(row, visFields, ch.convertKey)
+			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					return errNotFound
-				}
-				return fmt.Errorf("update: %w", err)
+				return err
 			}
 			result = res
-
-			if ch.Hooks != nil {
-				if err := ch.Hooks.ExecuteHooks(ctx, AfterUpdate, result); err != nil {
-					return fmt.Errorf("after-update hook: %w", err)
-				}
-			}
 			return nil
 		})
 		if err != nil {
@@ -526,45 +411,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 		}
 
 		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
-			if ch.Hooks != nil {
-				if err := ch.Hooks.ExecuteHooks(ctx, BeforeDelete, id); err != nil {
-					return &beforeHookError{err: err}
-				}
-			}
-
-			var affected int64
-			if ch.Entity.Config.SoftDelete {
-				ub := query.Update(ch.Entity.GetTable()).
-					Set("deleted_at", time.Now().UTC()).
-					Where(ch.PrimaryKey+" = $1", id)
-				ch.applyTenantScopeUpdate(ub, r)
-				sqlStr, args := ub.Build()
-				res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
-				if err != nil {
-					return fmt.Errorf("soft delete: %w", err)
-				}
-				affected, _ = res.RowsAffected()
-			} else {
-				db := query.Delete(ch.Entity.GetTable()).
-					Where(ch.PrimaryKey+" = $1", id)
-				ch.applyTenantScopeDelete(db, r)
-				sqlStr, args := db.Build()
-				res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
-				if err != nil {
-					return fmt.Errorf("delete: %w", err)
-				}
-				affected, _ = res.RowsAffected()
-			}
-			if affected == 0 {
-				return errNotFound
-			}
-
-			if ch.Hooks != nil {
-				if err := ch.Hooks.ExecuteHooks(ctx, AfterDelete, id); err != nil {
-					return fmt.Errorf("after-delete hook: %w", err)
-				}
-			}
-			return nil
+			return ch.doDelete(ctx, r, id)
 		})
 		if err != nil {
 			writeCRUDError(w, err)

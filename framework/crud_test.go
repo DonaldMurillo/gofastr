@@ -99,7 +99,7 @@ func TestCrudInjectTenant(t *testing.T) {
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-abc"))
 
 	data := map[string]any{"title": "Hello"}
-	ch.injectTenant(data, req)
+	ch.injectTenant(data, req.Context())
 
 	if v, ok := data["tenant_id"]; !ok || v != "tenant-abc" {
 		t.Errorf("expected tenant_id to be injected, got: %v", data)
@@ -115,7 +115,7 @@ func TestCrudInjectTenant_NotMultiTenant(t *testing.T) {
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-abc"))
 
 	data := map[string]any{"title": "Hello"}
-	ch.injectTenant(data, req)
+	ch.injectTenant(data, req.Context())
 
 	if _, ok := data["tenant_id"]; ok {
 		t.Error("expected no tenant_id injection for non-multitenant entity")
