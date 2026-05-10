@@ -49,10 +49,11 @@ func startPanelDemo(t *testing.T) (string, *int64) {
 		}), "counter").
 		Build()
 
-	panelTag := widget.Mount(r, &panel)
+	widget.Mount(r, &panel)
+	widget.MountRuntime(r)
 
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, panelTag)
+		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, widget.RuntimeTag)
 	}))
 
 	srv := httptest.NewServer(r)
@@ -69,9 +70,10 @@ func startModalDemo(t *testing.T) string {
 			`<div id="modal-card"><h2>Modal</h2><button id="modal-close" type="button" data-fui-action="close">Close</button></div>`,
 		}).
 		Build()
-	modalTag := widget.Mount(r, &modal)
+	widget.Mount(r, &modal)
+	widget.MountRuntime(r)
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, modalTag)
+		fmt.Fprintf(w, `<!DOCTYPE html><html><body><h1>widgets-demo</h1>%s</body></html>`, widget.RuntimeTag)
 	}))
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

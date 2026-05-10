@@ -1,8 +1,6 @@
 package widget
 
 import (
-	"bytes"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,70 +12,54 @@ import (
 	"github.com/gofastr/gofastr/core-ui/style"
 )
 
-// server is the per-widget HTTP plumbing: bootstrap script, style
-// sheet, and signal state snapshot. One instance per Mount call.
+// server is the per-widget HTTP plumbing: stylesheet + signal state
+// snapshot. One instance per Mount call.
 type server struct {
 	def Definition
 }
 
-//go:embed bootstrap.js
-var bootstrapTemplate string
-
-// serveBootstrap returns the per-widget loader script. Composed from a
-// shared template plus widget-specific config (signals, SSE bindings,
-// initial-state path, slot HTML). The shared template provides:
-//
-//   - Mounts a root <div data-fui-widget="<name>"> on <body>
-//   - Loads core-ui/runtime if not already present (idempotent)
-//   - Fetches initial state, renders the chrome with slot HTML, hydrates
-//   - Subscribes to SSE bindings, pushes payloads into signals
-//   - Wires data-fui-rpc clicks/submits to POST endpoints
-//   - Wires data-fui-action="close" to dismiss
-func (s *server) serveBootstrap(w http.ResponseWriter, _ *http.Request) {
+// serveRuntime returns the framework runtime JS at /__gofastr/runtime.js.
+// Single URL for every page; the runtime self-discovers widgets via
+// /__gofastr/widgets at startup.
+func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	cfg := map[string]any{
-		"name":              s.def.Name,
-		"position":          string(s.def.Position),
-		"backdrop":          s.def.Backdrop,
-		"closeOnEscape":     s.def.CloseOnEscape,
-		"closeOnClick":      s.def.CloseOnClickOutside,
-		"stylePath":         s.def.StylePath,
-		"statePath":         s.def.StatePath,
-		"sse":               s.def.SSE,
+	rt, err := runtime.RuntimeJS()
+	if err != nil {
+		http.Error(w, "runtime unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
-	chrome := s.renderSkeleton()
-	init := strings.NewReplacer(
-		"__FUI_CONFIG__", encodeJSON(cfg),
-		"__FUI_CHROME__", encodeJSON(string(chrome)),
-	).Replace(bootstrapTemplate)
-
-	// Prepend the framework runtime so the bootstrap is self-sufficient:
-	// any page that includes the script tag gets __gofastr.mountWidget
-	// without a separate /__gofastr/runtime.js fetch. The runtime is
-	// idempotent (its IIFE registers window.__gofastr only once), so
-	// multiple widget tags on the same page don't conflict.
-	if rt, err := runtime.RuntimeJS(); err == nil {
-		fmt.Fprint(w, rt, "\n", init)
-	} else {
-		// Fallback: write only the init. Caller must ensure runtime is
-		// loaded by some other means.
-		fmt.Fprint(w, init)
-	}
+	fmt.Fprint(w, rt)
 }
 
-// encodeJSON marshals v with SetEscapeHTML(false) so embedded HTML
-// stays readable in the emitted bootstrap (no </> noise).
-// Safe because the bootstrap script is served as application/javascript,
-// not as HTML, so the usual XSS concern with raw <,> in JSON-in-HTML
-// doesn't apply.
-func encodeJSON(v any) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
+// serveWidgetList returns the JSON list of registered widgets. The
+// runtime fetches this at startup, calls mountWidget() for each entry.
+// Each entry contains the same cfg + chrome HTML the per-widget
+// bootstrap used to inline.
+func serveWidgetList(w http.ResponseWriter, _ *http.Request) {
+	defs := allWidgets()
+	out := make([]map[string]any, 0, len(defs))
+	for _, d := range defs {
+		s := &server{def: *d}
+		chrome := s.renderSkeleton()
+		out = append(out, map[string]any{
+			"cfg": map[string]any{
+				"name":          d.Name,
+				"position":      string(d.Position),
+				"backdrop":      d.Backdrop,
+				"closeOnEscape": d.CloseOnEscape,
+				"closeOnClick":  d.CloseOnClickOutside,
+				"stylePath":     d.StylePath,
+				"statePath":     d.StatePath,
+				"sse":           d.SSE,
+			},
+			"chrome": string(chrome),
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
-	// Encoder appends a trailing newline; trim it for cleaner output.
-	return strings.TrimRight(buf.String(), "\n")
+	_ = enc.Encode(out)
 }
 
 // serveStyle returns the widget stylesheet. The framework owns

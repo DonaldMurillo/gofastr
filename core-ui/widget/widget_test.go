@@ -95,7 +95,7 @@ func TestRPCDefaultMethodIsPOST(t *testing.T) {
 	}
 }
 
-func TestMountServesBootstrapStyleAndState(t *testing.T) {
+func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	def := widget.New("kiln-test").
 		Slot("header", stubComponent{`<span class="hi">hi</span>`}).
 		Signal("page", widget.SignalFunc(func() (any, error) { return "/dashboard", nil })).
@@ -103,24 +103,31 @@ func TestMountServesBootstrapStyleAndState(t *testing.T) {
 		Build()
 
 	r := router.New()
-	tag := widget.Mount(r, &def)
-	if !strings.Contains(tag, def.BootstrapPath) {
-		t.Errorf("returned tag missing bootstrap path: %q", tag)
-	}
+	widget.Mount(r, &def)
+	widget.MountRuntime(r)
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	// /core-ui/widget/<name>/bootstrap.js
-	resp, err := http.Get(srv.URL + def.BootstrapPath)
+	// Shared framework runtime — single URL across all widgets.
+	resp, err := http.Get(srv.URL + "/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("bootstrap status: %v code=%d", err, resp.StatusCode)
+		t.Fatalf("runtime status: %v code=%d", err, resp.StatusCode)
+	}
+	rtBody := readAll(t, resp)
+	for _, want := range []string{"window.__gofastr", "mountWidget", "/__gofastr/widgets"} {
+		if !strings.Contains(rtBody, want) {
+			t.Errorf("runtime missing %q", want)
+		}
+	}
+
+	// Widget discovery list — runtime fetches this on init.
+	resp, err = http.Get(srv.URL + "/__gofastr/widgets")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("widget-list status: %v code=%d", err, resp.StatusCode)
 	}
 	body := readAll(t, resp)
-	// Slot HTML is JSON-encoded into a JS string literal, so quotes
-	// are backslash-escaped in the bootstrap output.
 	for _, want := range []string{
-		"window.__fui",
 		`"name":"kiln-test"`,
 		`"signal":"page"`,
 		`fui-slot-header`,

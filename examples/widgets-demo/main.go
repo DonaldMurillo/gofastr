@@ -58,8 +58,9 @@ func main() {
 		}).
 		Build()
 
-	panelTag := widget.Mount(r, &panel)
-	modalTag := widget.Mount(r, &modal)
+	widget.Mount(r, &panel)
+	widget.Mount(r, &modal)
+	widget.MountRuntime(r)
 
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -69,8 +70,7 @@ func main() {
 <p>The floating panel and modal below are mounted via core-ui/widget. The
 panel's Increment button POSTs to /api/inc and the response value flows
 back into the counter signal — no page reload.</p>
-` + panelTag + `
-` + modalTag + `
+` + widget.RuntimeTag + `
 </body></html>`))
 	}))
 

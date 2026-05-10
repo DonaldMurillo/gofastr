@@ -834,34 +834,47 @@ func TestBrowser_AgentConfigModalOpens(t *testing.T) {
 
 // --- (13) New core-ui/widget-driven panel mounts cleanly ----------
 //
-// Exercises chat.MountPanel — the framework-driven kiln panel. We
-// don't navigate via the legacy host fallback (which still loads the
-// old widget.js). Instead we land on a synthetic page that loads
-// only the new bootstrap so the two runtimes don't collide.
+// Exercises chat.MountPanel — the framework-driven kiln panel. The
+// runtime is now served at /__gofastr/runtime.js and auto-discovers
+// every registered widget via /__gofastr/widgets.
 func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	urlBase, _ := startKiln(t)
 
-	// Verify the framework-served bootstrap is reachable and well-formed.
-	resp, err := http.Get(urlBase + "/core-ui/widget/kiln-panel/bootstrap.js")
+	// Shared framework runtime — single URL, idempotent IIFE, fetches
+	// the widget list at startup.
+	resp, err := http.Get(urlBase + "/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("new panel bootstrap not reachable: status=%d err=%v", resp.StatusCode, err)
+		t.Fatalf("framework runtime not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	rtBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	for _, want := range []string{"window.__gofastr", "mountWidget", "/__gofastr/widgets"} {
+		if !strings.Contains(string(rtBody), want) {
+			t.Errorf("runtime missing %q", want)
+		}
+	}
+
+	// Widget discovery — runtime fetches this; one entry per registered
+	// widget, with cfg + chrome HTML inline.
+	resp, err = http.Get(urlBase + "/__gofastr/widgets")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("widget discovery not reachable: status=%d err=%v", resp.StatusCode, err)
+	}
+	listBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	for _, want := range []string{
-		`window.__fui`,
 		`"name":"kiln-panel"`,
 		`"signal":"chat_html"`,
 		`kiln-log-wrap`,
 		`kiln-input`,
 		`/kiln/panel/send`,
 	} {
-		if !strings.Contains(string(body), want) {
-			t.Errorf("new panel bootstrap missing %q", want)
+		if !strings.Contains(string(listBody), want) {
+			t.Errorf("widget discovery list missing %q", want)
 		}
 	}
 
-	// /state should serialize the chat_html signal as a string.
+	// Per-widget /state still serves the signal snapshot.
 	resp, err = http.Get(urlBase + "/core-ui/widget/kiln-panel/state")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel state not reachable: status=%d err=%v", resp.StatusCode, err)
@@ -872,8 +885,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 		t.Errorf("new panel state missing chat_html signal: %s", string(stateBody))
 	}
 
-	// /style.css should include the framework's fui-pos rules + the
-	// theme :root variables — proves the per-widget stylesheet pipeline.
+	// Per-widget stylesheet still serves the theme-resolved CSS.
 	resp, err = http.Get(urlBase + "/core-ui/widget/kiln-panel/style.css")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel style not reachable: status=%d err=%v", resp.StatusCode, err)

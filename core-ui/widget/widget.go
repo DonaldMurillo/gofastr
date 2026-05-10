@@ -2,6 +2,7 @@ package widget
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/core/router"
@@ -132,6 +133,26 @@ type Definition struct {
 	StatePath     string // default: /core-ui/widget/<name>/state
 }
 
+// registry is the process-global list of mounted widgets. The framework
+// runtime (window.__gofastr) fetches /__gofastr/widgets at startup and
+// mounts every entry. One scripted runtime URL on the page; arbitrarily
+// many widgets register through the registry.
+var (
+	registryMu sync.Mutex
+	registry   = map[string]*Definition{}
+)
+
+// allWidgets returns the registered widgets (snapshot copy).
+func allWidgets() []*Definition {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	out := make([]*Definition, 0, len(registry))
+	for _, d := range registry {
+		out = append(out, d)
+	}
+	return out
+}
+
 // New starts a builder for a widget Definition with sensible defaults.
 func New(name string) *Builder {
 	return &Builder{
@@ -254,24 +275,20 @@ func (b *Builder) Build() Definition { return b.def }
 
 // --- Mount ------------------------------------------------------------
 
-// Mount wires the widget's HTTP routes onto r and returns the bootstrap
-// script tag the host can embed in any page. Default paths
-// (BootstrapPath, StylePath, StatePath) are filled in on def if unset
-// so the caller can read them after Mount returns.
+// Mount registers the widget's HTTP routes on r and adds it to the
+// process-global registry the framework runtime auto-discovers. Hosts
+// don't embed a per-widget script tag — they embed ONE shared runtime
+// tag (see RuntimeTag) and the runtime mounts every registered widget.
 //
-// Routes mounted:
+// Routes mounted on r:
 //
-//	GET  <BootstrapPath>     bootstrap.js — the per-widget loader
 //	GET  <StylePath>         widget styles (theme-resolved CSS)
 //	GET  <StatePath>         JSON snapshot of all signals (initial render)
 //	*    <RPC.Path>          for each RPC, the host's handler
 //
-// SSE bindings reference an existing event bus the host already serves
-// (we don't re-broadcast; we just instruct the client where to listen).
-func Mount(r *router.Router, def *Definition) string {
-	if def.BootstrapPath == "" {
-		def.BootstrapPath = "/core-ui/widget/" + def.Name + "/bootstrap.js"
-	}
+// Default paths are filled in on def if unset so the caller can read
+// them after Mount returns. Mount is idempotent on def.Name.
+func Mount(r *router.Router, def *Definition) {
 	if def.StylePath == "" {
 		def.StylePath = "/core-ui/widget/" + def.Name + "/style.css"
 	}
@@ -280,8 +297,6 @@ func Mount(r *router.Router, def *Definition) string {
 	}
 
 	srv := &server{def: *def}
-
-	r.Get(def.BootstrapPath, http.HandlerFunc(srv.serveBootstrap))
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
 	r.Get(def.StatePath, http.HandlerFunc(srv.serveState))
 
@@ -301,5 +316,25 @@ func Mount(r *router.Router, def *Definition) string {
 		}
 	}
 
-	return `<script src="` + def.BootstrapPath + `"></script>`
+	registryMu.Lock()
+	registry[def.Name] = def
+	registryMu.Unlock()
+}
+
+// RuntimeTag returns the single <script> tag a host page embeds to load
+// the framework runtime + auto-mount every registered widget. Same tag
+// regardless of how many widgets are mounted; idempotent across pages.
+const RuntimeTag = `<script src="/__gofastr/runtime.js"></script>`
+
+// MountRuntime registers the framework runtime endpoints on r:
+//
+//	GET /__gofastr/runtime.js   the shared runtime (one URL, every page)
+//	GET /__gofastr/widgets      JSON list of registered widgets, used by
+//	                            the runtime at startup to auto-mount
+//
+// Call this once per host (kiln serve, examples/widgets-demo, etc.).
+// The runtime IIFE is idempotent, so re-mounting on rebuilds is safe.
+func MountRuntime(r *router.Router) {
+	r.Get("/__gofastr/runtime.js", http.HandlerFunc(serveRuntime))
+	r.Get("/__gofastr/widgets", http.HandlerFunc(serveWidgetList))
 }

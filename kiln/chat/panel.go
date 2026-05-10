@@ -70,8 +70,8 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 		Build()
 
 	def.ExtraCSS = widgetCSS // appends panel content CSS after framework chrome
-	tag := widget.Mount(r, &def)
-	pe.scriptTag = tag
+	widget.Mount(r, &def)
+	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
 }
 
 // skeleton renders the kiln panel chrome with the floating-panel
@@ -97,21 +97,11 @@ func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
 	return render.HTML(b.String())
 }
 
-// PanelScriptTag returns the bootstrap script tag the host fallback HTML
-// embeds. Empty string until MountPanel is called. Different from
-// chat.WidgetTag (legacy single-script-tag) — the new tag is per-widget
-// and fully managed by the widget framework.
-func PanelScriptTag(r *router.Router, l *live.Live, tools *protocol.Tools) string {
-	pe := &panelEnv{live: l, tools: tools}
-	return widget.Mount(r, &widget.Definition{Name: "kiln-panel-tag-only"}) + pe.scriptTag
-}
-
 // panelEnv carries the live + tools refs into RPC handlers and HTML
 // rendering. One per widget mount.
 type panelEnv struct {
-	live      *live.Live
-	tools     *protocol.Tools
-	scriptTag string
+	live  *live.Live
+	tools *protocol.Tools
 }
 
 // htmlComp is a render.HTML-valued Component for slot composition.

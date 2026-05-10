@@ -187,7 +187,7 @@ func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 // page. Mirrors kiln/chat.WidgetTag — kept local to avoid coupling
 // kiln/render to kiln/chat. The panel defaults open on every page load;
 // state lives in the journal, not in the browser.
-const WidgetTag = `<script src="/core-ui/widget/kiln-panel/bootstrap.js"></script>`
+const WidgetTag = `<script src="/__gofastr/runtime.js"></script>`
 
 func applyPages(app *framework.App, w *world.World) error {
 	// Build a set of paths the entity CRUD layer has already registered

@@ -409,7 +409,7 @@ func TestWidgetInjectedOnEveryPage(t *testing.T) {
 		if rec.Code != 200 {
 			t.Fatalf("%s status=%d", p, rec.Code)
 		}
-		if !strings.Contains(rec.Body.String(), "/kiln/chat/widget.js") {
+		if !strings.Contains(rec.Body.String(), "/__gofastr/runtime.js") {
 			t.Errorf("widget script missing on %s: %s", p, rec.Body.String())
 		}
 	}
@@ -599,7 +599,7 @@ func TestFullBlogScenario(t *testing.T) {
 		if rec.Code != 200 {
 			t.Errorf("page %s: %d", p, rec.Code)
 		}
-		if !strings.Contains(rec.Body.String(), "/kiln/chat/widget.js") {
+		if !strings.Contains(rec.Body.String(), "/__gofastr/runtime.js") {
 			t.Errorf("widget not injected on %s", p)
 		}
 	}

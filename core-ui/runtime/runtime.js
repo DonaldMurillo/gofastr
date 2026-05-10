@@ -33,6 +33,32 @@
     registerRoutes(window.__gofastr_routes);
   }
 
+  // Auto-discover registered widgets. The framework runtime is loaded
+  // once per page (via /__gofastr/runtime.js); each Mount(r, def) on
+  // the server registers in a process-global map; this fetch picks the
+  // list up and mounts every widget. 404 means no widgets registered
+  // — silently skip (the runtime works for plain pages too).
+  fetch('/__gofastr/widgets', { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((list) => {
+      if (!Array.isArray(list)) return;
+      // Wait for the public API to be installed (it's defined further
+      // below in this same IIFE), then mount each widget.
+      const tryMount = () => {
+        if (!window.__gofastr || !window.__gofastr.mountWidget) {
+          setTimeout(tryMount, 0);
+          return;
+        }
+        for (const item of list) {
+          try {
+            window.__gofastr.mountWidget(item.cfg, item.chrome);
+          } catch (_) {}
+        }
+      };
+      tryMount();
+    })
+    .catch(() => {});
+
   // -----------------------------------------------------------------------
   // Screen cache — stores rendered screens for instant back-navigation.
   // -----------------------------------------------------------------------

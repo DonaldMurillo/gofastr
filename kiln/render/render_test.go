@@ -155,7 +155,7 @@ func TestApplyPageRendersHTML(t *testing.T) {
 	if !strings.Contains(body, "<!DOCTYPE html>") {
 		t.Errorf("page should be wrapped in a full HTML document: %q", body)
 	}
-	if !strings.Contains(body, "/core-ui/widget/kiln-panel/bootstrap.js") {
+	if !strings.Contains(body, "/__gofastr/runtime.js") {
 		t.Errorf("page should auto-inject the widget bootstrap script: %q", body)
 	}
 	if !strings.Contains(body, "Dashboard") {

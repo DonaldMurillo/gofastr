@@ -50,7 +50,7 @@ func TestHostFallbackOnUnmappedHTMLPath(t *testing.T) {
 			t.Fatalf("%s status = %d", path, rec.Code)
 		}
 		body := rec.Body.String()
-		for _, want := range []string{"Kiln", "/kiln/chat/widget.js", "data-corner"} {
+		for _, want := range []string{"Kiln", "/__gofastr/runtime.js"} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s body missing %q: %s", path, want, body)
 			}
