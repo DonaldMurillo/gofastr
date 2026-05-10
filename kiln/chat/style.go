@@ -611,6 +611,7 @@ func widgetCSS() string {
 		Set(
 			"background", "{colors.kiln-user-bg}",
 			"align-self", "flex-end",
+			"max-width", "85%",
 		).
 		End()
 
@@ -618,6 +619,7 @@ func widgetCSS() string {
 		Set(
 			"background", "{colors.kiln-assist-bg}",
 			"align-self", "flex-start",
+			"max-width", "85%",
 		).
 		End()
 
