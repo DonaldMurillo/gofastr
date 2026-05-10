@@ -323,6 +323,39 @@ func TestUIHostSessionEndpoint(t *testing.T) {
 // E. Custom CSS Injection
 // ---------------------------------------------------------------------------
 
+func TestUIHostExtraScriptsInjectedBeforeBodyEnd(t *testing.T) {
+	application := app.NewApp("Test")
+	application.SetDefaultLayout(app.NewLayout("main"))
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("h"), nil)
+	ds := New(application,
+		WithExtraScripts("/__livereload.js", "/diag.js"),
+	)
+
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	page := rec.Body.String()
+
+	for _, src := range []string{`<script src="/__livereload.js"></script>`, `<script src="/diag.js"></script>`} {
+		assertContains(t, page, src)
+	}
+	// Order matters: extras must appear after the framework runtime so
+	// they don't race with bootstrap, and before </body>.
+	runtimeAt := strings.Index(page, `src="/__gofastr/runtime.js"`)
+	livereloadAt := strings.Index(page, `src="/__livereload.js"`)
+	bodyCloseAt := strings.LastIndex(page, "</body>")
+	if !(runtimeAt > 0 && runtimeAt < livereloadAt && livereloadAt < bodyCloseAt) {
+		t.Fatalf("expected runtime.js < /__livereload.js < </body>; got runtime=%d livereload=%d body=%d",
+			runtimeAt, livereloadAt, bodyCloseAt)
+	}
+}
+
+func TestUIHostNoExtraScriptsByDefault(t *testing.T) {
+	ds := newTestUIHost()
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	assertNotContains(t, rec.Body.String(), `/__livereload.js`)
+}
+
 func TestUIHostCustomCSS(t *testing.T) {
 	ds := newTestUIHostWithCSS()
 

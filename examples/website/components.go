@@ -16,6 +16,7 @@ func (h *HeaderComponent) Render() render.HTML {
 			elements.Link(elements.LinkConfig{Href: "/", Text: "Home"}),
 			elements.Link(elements.LinkConfig{Href: "/docs/", Text: "Docs"}),
 			elements.Link(elements.LinkConfig{Href: "/components/", Text: "Components"}),
+			elements.Link(elements.LinkConfig{Href: "/framework-ui/", Text: "Framework UI"}),
 			elements.Link(elements.LinkConfig{Href: "/examples/", Text: "Examples"}),
 			elements.Link(elements.LinkConfig{Href: "/about", Text: "About"}),
 			elements.Link(elements.LinkConfig{

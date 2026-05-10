@@ -2,22 +2,32 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/accordion"
+	"github.com/gofastr/gofastr/core-ui/breadcrumbs"
+	"github.com/gofastr/gofastr/core-ui/pagination"
+	"github.com/gofastr/gofastr/core-ui/progress"
+	"github.com/gofastr/gofastr/core-ui/skeleton"
 	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/gofastr/gofastr/core-ui/tabs"
+	"github.com/gofastr/gofastr/framework/ui"
+	"github.com/gofastr/gofastr/framework/ui/theme"
 )
 
-// createTheme builds the website's visual language. We start from the
-// default theme and pin a couple of brand colors so the GoFastr identity
-// is consistent across pages.
+// createTheme builds the website's visual language. The website
+// dogfoods framework/ui/theme — every page renders against the same
+// canonical token set every consumer would use.
+//
+// The "secondary" token isn't part of framework/ui/theme yet; we keep
+// it locally for the hero gradient until framework/ui needs it.
 func createTheme() style.Theme {
-	base := style.DefaultTheme()
-	custom := style.Theme{
+	base := theme.Default(theme.Overrides{
+		Primary: "#2563EB", // blue-600 — GoFastr brand
+		Accent:  "#10B981", // emerald-500
+	})
+	return style.MergeThemes(base, style.Theme{
 		Colors: style.Colors{
-			"primary":   "#2563EB", // blue-600
-			"secondary": "#0F172A", // slate-900
-			"accent":    "#10B981", // emerald-500
+			"secondary": "#0F172A", // slate-900 — used by the hero gradient
 		},
-	}
-	return style.MergeThemes(base, custom)
+	})
 }
 
 // createStyleSheet emits all the site's CSS as a string. Generated via
@@ -211,7 +221,24 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".demo-source .demo-label").
 		Set("background", "rgba(255,255,255,0.12)", "color", "white").End()
 
-	// core-ui component CSS (appended verbatim — uses CSS custom properties
-	// from the theme above).
-	return ss.CSS() + accordion.BaseCSS()
+	// Framework-UI demo helpers — small layout shims used only on the
+	// /framework-ui/ page to align rows nicely.
+	ss.Rule(".demo-stat-row").
+		Set("display", "grid",
+			"grid-template-columns", "repeat(auto-fit, minmax(180px, 1fr))",
+			"gap", "{spacing.md}").End()
+	ss.Rule(".demo-avatar-row, .demo-badge-row").
+		Set("display", "flex", "gap", "{spacing.md}",
+			"align-items", "center", "flex-wrap", "wrap").End()
+
+	// core-ui + framework/ui component CSS (appended verbatim — each
+	// uses CSS custom properties from the theme above).
+	return ss.CSS() +
+		accordion.BaseCSS() +
+		tabs.BaseCSS() +
+		progress.BaseCSS() +
+		skeleton.BaseCSS() +
+		breadcrumbs.BaseCSS() +
+		pagination.BaseCSS() +
+		ui.BaseCSS()
 }

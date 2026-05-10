@@ -28,6 +28,36 @@ var componentEntries = []componentEntry{
 		Tag:   "Group · Stack",
 		Intro: "Disclosure widgets built on native <details>/<summary>. Two variants: an exclusive group (single-open via the name= attribute) and an independent stack. Pure server-rendered, modern-CSS animation, zero JavaScript.",
 	},
+	{
+		Slug:  "tabs",
+		Name:  "Tabs",
+		Tag:   "Tab strip",
+		Intro: "Tabbed-content layout built from native <details> elements arranged with CSS Grid. Zero JavaScript, native keyboard accessibility, full mutual exclusivity via the name= attribute.",
+	},
+	{
+		Slug:  "progress",
+		Name:  "Progress",
+		Tag:   "Determinate · Indeterminate",
+		Intro: "Native <progress> wrapped with theme-aware styling. Determinate when Value is set, animated indeterminate when Value < 0. Drive live updates via signal binding.",
+	},
+	{
+		Slug:  "skeleton",
+		Name:  "Skeleton",
+		Tag:   "Line · Block · Circle",
+		Intro: "Pure-CSS shimmer placeholders for loading states. Three variants cover paragraphs, blocks, and avatars. Aria-hidden so screen readers announce the parent's loading state once, not every shimmer.",
+	},
+	{
+		Slug:  "breadcrumbs",
+		Name:  "Breadcrumbs",
+		Tag:   "Trail nav",
+		Intro: "Ordered-list trail with aria-current=\"page\" on the leaf. CSS-driven slash separators (no DOM noise). One <nav aria-label=\"Breadcrumb\"> wrapper.",
+	},
+	{
+		Slug:  "pagination",
+		Name:  "Pagination",
+		Tag:   "Numeric nav",
+		Intro: "Numeric page navigation with first/last anchors and ellipses for gaps. ARIA-correct (<nav aria-label=\"Pagination\">, aria-current=\"page\"), prev/next disabled at boundaries.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

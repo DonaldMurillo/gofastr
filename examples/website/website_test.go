@@ -13,15 +13,24 @@ import (
 )
 
 // TestSetupServerWiresAllExpectedRoutes ensures the website's screen
-// registry covers every page promised in the README.
+// registry covers every page promised in the README, including the
+// component demos and the framework/ui dogfood page.
 func TestSetupServerWiresAllExpectedRoutes(t *testing.T) {
 	_, host := setupServer()
 	want := map[string]bool{
-		"/":            false,
-		"/docs/":       false,
-		"/docs/:slug":  false,
-		"/examples/":   false,
-		"/about":       false,
+		"/":                       false,
+		"/docs/":                  false,
+		"/docs/:slug":             false,
+		"/examples/":              false,
+		"/about":                  false,
+		"/components/":            false,
+		"/components/accordion":   false,
+		"/components/tabs":        false,
+		"/components/progress":    false,
+		"/components/skeleton":    false,
+		"/components/breadcrumbs": false,
+		"/components/pagination":  false,
+		"/framework-ui/":          false,
 	}
 	for _, route := range host.App.Routes() {
 		if _, ok := want[route.Path]; ok {
@@ -32,6 +41,94 @@ func TestSetupServerWiresAllExpectedRoutes(t *testing.T) {
 		if !found {
 			t.Errorf("route %q is not registered", path)
 		}
+	}
+}
+
+// TestComponentDemosRenderWithoutPanic walks every component demo
+// page and asserts the live demo HTML contains the expected
+// component-class signature. Catches regressions where a screen
+// compiles but emits empty or wrong markup.
+func TestComponentDemosRenderWithoutPanic(t *testing.T) {
+	cases := []struct {
+		path     string
+		mustHave []string
+	}{
+		{"/components/accordion", []string{`accordion-group`, `accordion-stack`, `accordion-summary`}},
+		{"/components/tabs", []string{`class="tabs"`, `tabs-summary`, `tabs-panel`}},
+		{"/components/progress", []string{`<progress`, `class="progress-bar"`, `value="73"`}},
+		{"/components/skeleton", []string{`skeleton-line`, `skeleton-block`, `skeleton-circle`}},
+		{"/components/breadcrumbs", []string{`<nav aria-label="Breadcrumb">`, `breadcrumbs`, `aria-current="page"`}},
+		{"/components/pagination", []string{`<nav aria-label="Pagination">`, `pagination`, `aria-current="page"`}},
+		{"/framework-ui/", []string{
+			`ui-page-header`, `ui-stat-card`, `ui-badge--success`,
+			`ui-callout--danger`, `ui-form-section`, `ui-empty-state`,
+			`ui-button--danger`, `ui-avatar`,
+		}},
+	}
+
+	app, _ := setupServer()
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", tc.path, nil)
+		rec := httptest.NewRecorder()
+		app.Router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200", tc.path, rec.Code)
+			continue
+		}
+		body := rec.Body.String()
+		for _, want := range tc.mustHave {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: missing %q in body", tc.path, want)
+			}
+		}
+	}
+}
+
+// TestLivereloadEndpointsServe confirms the dev-mode livereload pair
+// is wired correctly when GOFASTR_DEV=1: the JS asset serves a script
+// that fetches the long-poll endpoint, and every rendered page links
+// to that asset. With GOFASTR_DEV unset, the endpoints are absent.
+func TestLivereloadEndpointsServe(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	app, _ := setupServer()
+
+	req := httptest.NewRequest("GET", "/__livereload.js", nil)
+	rec := httptest.NewRecorder()
+	app.Router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/__livereload.js status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "fetch('/__livereload')") {
+		t.Errorf("expected livereload script to fetch /__livereload")
+	}
+
+	pageReq := httptest.NewRequest("GET", "/", nil)
+	pageRec := httptest.NewRecorder()
+	app.Router.ServeHTTP(pageRec, pageReq)
+	if !strings.Contains(pageRec.Body.String(), `src="/__livereload.js"`) {
+		t.Errorf("page missing livereload script tag")
+	}
+}
+
+// TestLivereloadGatedByDevMode confirms the absence of /__livereload.js
+// when GOFASTR_DEV is unset — production-mode behavior.
+func TestLivereloadGatedByDevMode(t *testing.T) {
+	// Make sure we run with the env var unset.
+	t.Setenv("GOFASTR_DEV", "")
+	app, _ := setupServer()
+
+	req := httptest.NewRequest("GET", "/__livereload.js", nil)
+	rec := httptest.NewRecorder()
+	app.Router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("/__livereload.js without GOFASTR_DEV expected 404, got %d", rec.Code)
+	}
+
+	pageReq := httptest.NewRequest("GET", "/", nil)
+	pageRec := httptest.NewRecorder()
+	app.Router.ServeHTTP(pageRec, pageReq)
+	if strings.Contains(pageRec.Body.String(), `src="/__livereload.js"`) {
+		t.Errorf("page should NOT include livereload script when GOFASTR_DEV is unset")
 	}
 }
 

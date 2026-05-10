@@ -36,6 +36,7 @@ type UIHost struct {
 	actionJS       map[string]string                    // componentID → compiled JS
 	actionHandlers map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	customCSS      string                               // extra CSS to inject (e.g. demo.css)
+	extraScripts   []string                             // extra <script src="…"> URLs to inject before </body>
 	staticDir      string                               // directory to serve static files from
 	staticFS       fs.FS                                // embedded filesystem for static files
 	routeGraph     *style.RouteGraph                    // route graph for progressive CSS loading
@@ -77,6 +78,15 @@ type Option func(*UIHost)
 func WithCustomCSS(css string) Option {
 	return func(ds *UIHost) {
 		ds.customCSS = css
+	}
+}
+
+// WithExtraScripts adds external <script src="…"> URLs to inject before
+// </body> on every page. Use for dev-only tooling like livereload.
+// CSP-safe — every URL becomes an external resource, no inline JS.
+func WithExtraScripts(urls ...string) Option {
+	return func(ds *UIHost) {
+		ds.extraScripts = append(ds.extraScripts, urls...)
 	}
 }
 
@@ -383,6 +393,11 @@ func (ds *UIHost) injectChrome(page, sessionID string) string {
 		page = strings.Replace(page,
 			"</body>",
 			`<script src="/__gofastr/actions.js"></script>`+"\n</body>", 1)
+	}
+	for _, src := range ds.extraScripts {
+		page = strings.Replace(page,
+			"</body>",
+			fmt.Sprintf(`<script src=%q></script>`, src)+"\n</body>", 1)
 	}
 
 	return page
