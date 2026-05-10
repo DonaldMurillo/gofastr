@@ -239,6 +239,14 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
+		// requested limit is huge. Skips include resolution to keep memory
+		// bounded.
+		if r.URL.Query().Get("stream") == "true" || perPage >= streamListThreshold {
+			ch.serveStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage)
+			return
+		}
+
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		applyFiltersToCountQuery(countQb, filters)
