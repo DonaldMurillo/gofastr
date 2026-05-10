@@ -2914,6 +2914,48 @@ func TestBrowser_EscClearsChatInput(t *testing.T) {
 	t.Errorf("Esc did not clear textarea content")
 }
 
+// Tool error rows append the protocol's hint so the user sees
+// what to do next ('— add a propose_plan first', etc).
+func TestBrowser_ErrorRowsIncludeHint(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Synth a tool_call + tool_result with a Hint in the result.
+	if err := l.Apply(journal.Entry{
+		ID: "hint-call", Timestamp: time.Now(), Kind: journal.KindToolCall,
+		Payload: mustJSON(journal.ToolCallPayload{
+			CallID: "hc-1", Name: "delete_entity",
+			Args: map[string]any{"name": "doomed"},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Apply(journal.Entry{
+		ID: "hint-result", Timestamp: time.Now(), Kind: journal.KindToolResult,
+		Payload: mustJSON(journal.ToolResultPayload{
+			CallID: "hc-1", OK: false,
+			Kind:  "validation",
+			Error: "destructive op without approved plan",
+			Hint:  "call propose_plan first, then approve_plan, then re-issue this delete",
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-tool-error`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-msg-tool-error`, &text, chromedp.ByQuery))
+	if !strings.Contains(text, "call propose_plan first") {
+		t.Errorf("expected hint in error row, got %q", text)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

@@ -598,11 +598,16 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 			}
 		} else {
 			// Errors: distinct ✗ prefix so a long log scans for failures
-			// without reading every word; tool name + kind + message.
+			// without reading every word; tool name + kind + message;
+			// hint appended if the protocol surfaced one (e.g.
+			// 'add a propose_plan first' for destructive ops).
 			if name != "" {
 				txt = "✗ " + name + " · " + e.Result.Kind + ": " + e.Result.Error
 			} else {
 				txt = "✗ " + e.Result.Kind + ": " + e.Result.Error
+			}
+			if e.Result.Hint != "" {
+				txt += " — " + e.Result.Hint
 			}
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s" title="%s">%s</li>`,
