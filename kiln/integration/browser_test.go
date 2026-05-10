@@ -1365,6 +1365,39 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	t.Errorf("indicator did not clear after agent_turn_ended; status=%q", last)
 }
 
+// Clicking ↺ (Reset) should immediately clear the panel chat list,
+// not wait for the next unrelated SSE event. ResetSession truncates
+// the journal and reloads on the backend, but until something else
+// fired chat_html refresh the panel kept showing stale items.
+func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Seed a chat message so the log isn't empty before reset.
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "seeded prompt"})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("reset flow: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('.kiln-msg-user')`, &present))
+		if !present {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Errorf("panel chat list still showed seeded message 2s after Reset — UI did not react to session_reset")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

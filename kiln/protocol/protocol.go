@@ -480,6 +480,10 @@ func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
 	t.mu.Lock()
 	t.consumed = map[string]map[string]bool{}
 	t.mu.Unlock()
+	// Notify so the panel re-fetches chat_html immediately. Without
+	// this the UI shows stale items until something else fires an
+	// SSE event — felt to the user like "Reset didn't work."
+	t.live.Notify("session_reset", "")
 	return ok(nil)
 }
 
