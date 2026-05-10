@@ -31,6 +31,10 @@ func TestSetupServerWiresAllExpectedRoutes(t *testing.T) {
 		"/components/breadcrumbs": false,
 		"/components/pagination":  false,
 		"/framework-ui/":          false,
+		"/framework-ui/datatable": false,
+		"/framework-ui/form":      false,
+		"/framework-ui/theme":     false,
+		"/framework-ui/notification": false,
 	}
 	for _, route := range host.App.Routes() {
 		if _, ok := want[route.Path]; ok {
@@ -63,6 +67,22 @@ func TestComponentDemosRenderWithoutPanic(t *testing.T) {
 			`ui-page-header`, `ui-stat-card`, `ui-badge--success`,
 			`ui-callout--danger`, `ui-form-section`, `ui-empty-state`,
 			`ui-button--danger`, `ui-avatar`,
+		}},
+		{"/framework-ui/datatable", []string{
+			`ui-data-table`, `ui-data-table__sort`,
+			`aria-sort="ascending"`, `<caption`,
+		}},
+		{"/framework-ui/form", []string{
+			`ui-form`, `ui-form__fields`, `is-error`, `Form has errors`,
+			`ui-callout--danger`,
+		}},
+		{"/framework-ui/notification", []string{
+			`ui-notification--success`, `ui-notification--danger`,
+			`ui-notification__icon`, `ui-notification__dismiss`,
+		}},
+		{"/framework-ui/theme", []string{
+			`theme-swap`, `theme-swap__picker`, `theme-swap__preview`,
+			`name="theme"`, `value="teal"`,
 		}},
 	}
 

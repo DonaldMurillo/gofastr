@@ -128,6 +128,43 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 			Description: "Forms are where semantic tokens earn their keep — error states, required indicators, help text, focus rings all reference the theme.",
 		}, form),
 
+		// Deep-dive links.
+		ui.Section(ui.SectionConfig{
+			Heading:     "Deep-dive demos",
+			Description: "Each of these has its own page with multiple states + composition notes.",
+		},
+			render.Tag("ul", map[string]string{"class": "doc-list"},
+				render.Tag("li", nil,
+					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/datatable",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("DataTable")),
+							render.Tag("span", nil, render.Text("Sortable headers, pagination footer, empty state, ARIA-correct via core-ui elements.")),
+						)}),
+				),
+				render.Tag("li", nil,
+					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/form",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("Form & validation")),
+							render.Tag("span", nil, render.Text("FieldErrors round-trip; pristine vs validation-failed states side by side.")),
+						)}),
+				),
+				render.Tag("li", nil,
+					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/notification",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("Notification")),
+							render.Tag("span", nil, render.Text("Styled toast row — five variants, optional dismiss link, role=alert auto-applied.")),
+						)}),
+				),
+				render.Tag("li", nil,
+					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/theme",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("Theme swap")),
+							render.Tag("span", nil, render.Text("One-token-swap re-skin demo — pick a primary color and watch the whole page re-skin via :has().")),
+						)}),
+				),
+			),
+		),
+
 		// Boundary explanation.
 		ui.Callout(ui.CalloutConfig{Title: "The boundary rule", Variant: ui.StatusInfo},
 			render.Tag("p", nil, render.Text(

@@ -231,6 +231,46 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "flex", "gap", "{spacing.md}",
 			"align-items", "center", "flex-wrap", "wrap").End()
 
+	// Theme-swap demo: radios + :has() override --color-primary on the
+	// preview wrapper. Pure CSS — no JS — proves the "one-token swap"
+	// re-skin claim viscerally.
+	ss.Rule(".theme-swap").
+		Set("display", "grid", "gap", "{spacing.lg}",
+			"grid-template-columns", "1fr",
+			"padding", "{spacing.lg}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"background", "{colors.surface}").End()
+	ss.Media("(min-width: 880px)", func(ss *style.StyleSheet) {
+		ss.Rule(".theme-swap").
+			Set("grid-template-columns", "240px 1fr").End()
+	})
+	ss.Rule(".theme-swap__picker").
+		Set("display", "grid", "gap", "{spacing.sm}",
+			"border", "0", "padding", "0").End()
+	ss.Rule(".theme-swap__picker legend").
+		Set("font-size", "0.75rem", "font-weight", "700",
+			"text-transform", "uppercase", "letter-spacing", "0.06em",
+			"color", "{colors.text-muted}", "margin-bottom", "{spacing.sm}").End()
+	ss.Rule(".theme-swap__option").
+		Set("display", "flex", "gap", "{spacing.sm}", "align-items", "center").End()
+	ss.Rule(".theme-swap__option label").
+		Set("color", "{colors.text}", "cursor", "pointer").End()
+	ss.Rule(".theme-swap__preview").
+		Set("display", "grid", "gap", "{spacing.md}").End()
+	ss.Rule(".theme-swap__row").
+		Set("display", "flex", "gap", "{spacing.md}",
+			"align-items", "center", "flex-wrap", "wrap").End()
+	// :has() rules: clicking a radio overrides --color-primary on the
+	// nearest .theme-swap__preview sibling. CSS variables cascade, so
+	// every component inside re-skins.
+	ss.Rule(`.theme-swap:has(input[value="teal"]:checked) .theme-swap__preview`).
+		Set("--color-primary", "#14B8A6", "--color-info", "#14B8A6").End()
+	ss.Rule(`.theme-swap:has(input[value="rose"]:checked) .theme-swap__preview`).
+		Set("--color-primary", "#F43F5E", "--color-info", "#F43F5E").End()
+	ss.Rule(`.theme-swap:has(input[value="amber"]:checked) .theme-swap__preview`).
+		Set("--color-primary", "#D97706", "--color-info", "#D97706").End()
+
 	// core-ui + framework/ui component CSS (appended verbatim — each
 	// uses CSS custom properties from the theme above).
 	return ss.CSS() +

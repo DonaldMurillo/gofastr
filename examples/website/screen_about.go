@@ -4,10 +4,12 @@ import (
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core/render"
+	"github.com/gofastr/gofastr/framework/ui"
 )
 
-// AboutScreen — static copy. Could be re-implemented as a markdown screen
-// later for symmetry with /docs.
+// AboutScreen — composed from framework/ui semantic components, so
+// every visible element on this page is also a real test case for
+// PageHeader / Section / Callout.
 type AboutScreen struct{}
 
 func (s *AboutScreen) ScreenTitle() string        { return "About" }
@@ -16,28 +18,44 @@ func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *AboutScreen) Render() render.HTML {
 	return render.Tag("main", map[string]string{"class": "doc-body"},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("About GoFastr")),
-		render.Tag("p", nil, render.Text(
-			"GoFastr is an experimental framework that treats AI agents as first-class authors "+
-				"of web applications. You describe your domain in JSON or Go, and the framework "+
-				"generates everything around it — schema, REST endpoints, OpenAPI, MCP tools, and "+
-				"admin-grade UI primitives — without giving up database/sql, net/http, or "+
-				"compile-time safety.")),
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Status")),
-		render.Tag("p", nil, render.Text(
-			"Pre-alpha research. APIs change between commits. Suitable for learning and "+
-				"experimentation, not production work.")),
-		render.Tag("ul", nil,
-			render.Tag("li", nil, render.Text("core/ primitives are usable and tested in isolation")),
-			render.Tag("li", nil, render.Text("framework/ entity layer is solid for SQLite + Postgres CRUD apps")),
-			render.Tag("li", nil, render.Text("core-ui/ is the active research frontier — APIs change")),
-			render.Tag("li", nil, render.Text("CLI binary blank-imports only sqlite3; build your own for other drivers")),
-			render.Tag("li", nil, render.Text("No license has been chosen yet — the code is read-only until one is added")),
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow: "About",
+			Title:   "GoFastr",
+			Subtitle: "An experimental framework that treats AI agents as first-class authors of web applications. Describe your domain once; get schema, REST, OpenAPI, MCP tools, and admin UI without giving up database/sql, net/http, or compile-time safety.",
+		}),
+
+		ui.Section(ui.SectionConfig{
+			Heading:     "Status",
+			Description: "Pre-alpha research. APIs change between commits. Suitable for learning and experimentation, not production work.",
+		},
+			render.Tag("ul", nil,
+				render.Tag("li", nil, render.Text("core/ primitives are usable and tested in isolation")),
+				render.Tag("li", nil, render.Text("framework/ entity layer is solid for SQLite + Postgres CRUD apps")),
+				render.Tag("li", nil, render.Text("core-ui/ is the active research frontier — APIs change")),
+				render.Tag("li", nil, render.Text("CLI binary blank-imports only sqlite3; build your own for other drivers")),
+			),
 		),
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Why")),
-		render.Tag("p", nil, render.Text(
-			"Most Go web frameworks assume a human will hand-write every route, query, validator, "+
-				"migration, and form. AI agents already generate this code — but no framework treats "+
-				"their output as the canonical source. GoFastr inverts that: one declaration, many surfaces.")),
+
+		ui.Callout(ui.CalloutConfig{Title: "No license chosen yet", Variant: ui.StatusWarning},
+			render.Text("The code is read-only until a license is added — please don't fork-and-publish until then.")),
+
+		ui.Section(ui.SectionConfig{
+			Heading:     "Why",
+			Description: "Most Go web frameworks assume a human will hand-write every route, query, validator, migration, and form. AI agents already generate this code — but no framework treats their output as the canonical source. GoFastr inverts that: one declaration, many surfaces.",
+		}),
+
+		ui.Section(ui.SectionConfig{
+			Heading: "Layered design",
+		}, render.Tag("ul", nil,
+			render.Tag("li", nil,
+				elements.Strong(elements.TextConfig{}, render.Text("core/ ")),
+				render.Text("— stdlib-only primitives. Render, router, markdown, validator.")),
+			render.Tag("li", nil,
+				elements.Strong(elements.TextConfig{}, render.Text("core-ui/ ")),
+				render.Text("— elements, accordion, tabs, progress, skeleton, breadcrumbs, pagination, widget, theme. Everything maps 1:1 to an HTML primitive or ARIA pattern.")),
+			render.Tag("li", nil,
+				elements.Strong(elements.TextConfig{}, render.Text("framework/ ")),
+				render.Text("— entity system + ui semantic components. Composes core-ui to express product intent (PageHeader, FormField, DataTable…).")),
+		)),
 	)
 }

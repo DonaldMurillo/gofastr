@@ -4,6 +4,7 @@ import (
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core/render"
+	"github.com/gofastr/gofastr/framework/ui"
 )
 
 // ComponentsIndexScreen lists every core-ui component package the website
@@ -66,16 +67,20 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 		cards = append(cards, elements.LinkHTML(elements.LinkHTMLConfig{
 			Href: "/components/" + c.Slug,
 			Content: render.Join(
-				render.Tag("strong", nil, render.Text(c.Name)),
-				render.Tag("em", map[string]string{"class": "component-tag"}, render.Text(c.Tag)),
-				render.Tag("span", nil, render.Text(c.Intro)),
+				elements.Strong(elements.TextConfig{}, render.Text(c.Name)),
+				elements.Span(elements.TextConfig{Class: "component-tag"}, render.Text(c.Tag)),
+				elements.Span(elements.TextConfig{}, render.Text(c.Intro)),
 			),
 		}))
 	}
 	return render.Tag("main", nil,
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Components")),
-		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
-			"Building blocks shipped in core-ui/. Every component on this site is rendered with itself — what you see is the dogfood.")),
-		render.Tag("div", map[string]string{"class": "doc-list"}, cards...),
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow: "core-ui",
+			Title:   "Components",
+			Subtitle: "Building blocks shipped in core-ui/. Every component on this site is rendered with itself — what you see is the dogfood.",
+		}),
+		ui.Section(ui.SectionConfig{
+			Heading: "Available components",
+		}, render.Tag("div", map[string]string{"class": "doc-list"}, cards...)),
 	)
 }

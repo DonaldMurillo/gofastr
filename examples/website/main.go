@@ -75,6 +75,10 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/breadcrumbs", &BreadcrumbsScreen{}, nil)
 	site.Register("/components/pagination", &PaginationScreen{}, nil)
 	site.Register("/framework-ui/", &FrameworkUIScreen{}, nil)
+	site.Register("/framework-ui/datatable", &DataTableDemoScreen{}, nil)
+	site.Register("/framework-ui/form", &FormDemoScreen{}, nil)
+	site.Register("/framework-ui/theme", &ThemeSwapDemoScreen{}, nil)
+	site.Register("/framework-ui/notification", &NotificationDemoScreen{}, nil)
 	site.Register("/about", &AboutScreen{}, nil)
 
 	cssStr := createStyleSheet(*site.Theme)
