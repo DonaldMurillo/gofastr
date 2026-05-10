@@ -133,6 +133,21 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// UnmarshalEntity is the public entry point for converting a snake-cased
+// row map into a typed entity struct (json tags in camelCase). Exposed so
+// generated repository code outside this package can call it.
+func UnmarshalEntity(m map[string]any, dest any) error {
+	return unmarshalRowToStruct(m, dest)
+}
+
+// MarshalEntity is the inverse — converts a typed entity struct into the
+// snake-cased map[string]any the framework's CRUD primitives expect. Skips
+// fields whose JSON tag carries omitempty if the value is the type's zero,
+// per encoding/json semantics.
+func MarshalEntity(src any) (map[string]any, error) {
+	return marshalStructToRow(src)
+}
+
 // unmarshalRowToStruct converts a snake-cased map (the framework's standard
 // row shape) into a typed struct whose JSON tags are camelCase. Same casing
 // transform the typed-hooks helpers use — kept symmetric so generated repo

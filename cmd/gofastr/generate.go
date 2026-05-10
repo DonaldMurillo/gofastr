@@ -168,6 +168,8 @@ func RegisterAll(app *framework.App) {
 	return []generatedFile{
 		{name: "register.go", content: register.String()},
 		{name: "models.go", content: models.String()},
+		{name: "columns.go", content: renderColumns(decls)},
+		{name: "repo.go", content: renderRepos(decls)},
 	}, nil
 }
 
