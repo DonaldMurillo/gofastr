@@ -55,6 +55,54 @@ func (c rawColumn) IsNotNull() Condition {
 	return Condition{sql: string(c) + " IS NOT NULL"}
 }
 
+// And combines conditions with AND. Useful inside Or(...) to nest a group
+// of ANDed predicates: Or(And(a, b), And(c, d)).
+func And(conds ...Condition) Condition {
+	if len(conds) == 0 {
+		return Condition{sql: "1 = 1"}
+	}
+	if len(conds) == 1 {
+		return conds[0]
+	}
+	parts := make([]string, 0, len(conds))
+	var args []any
+	for _, c := range conds {
+		parts = append(parts, c.sql)
+		args = append(args, c.args...)
+	}
+	return Condition{
+		sql:  "(" + strings.Join(parts, " AND ") + ")",
+		args: args,
+	}
+}
+
+// Or combines conditions with OR. Each conjunct keeps its own internal
+// argument order; placeholders are renumbered at QueryBuilder.Build time so
+// "$1" in a fragment doesn't collide with another fragment's "$1".
+func Or(conds ...Condition) Condition {
+	if len(conds) == 0 {
+		return Condition{sql: "1 = 0"}
+	}
+	if len(conds) == 1 {
+		return conds[0]
+	}
+	parts := make([]string, 0, len(conds))
+	var args []any
+	for _, c := range conds {
+		parts = append(parts, c.sql)
+		args = append(args, c.args...)
+	}
+	return Condition{
+		sql:  "(" + strings.Join(parts, " OR ") + ")",
+		args: args,
+	}
+}
+
+// Not wraps a condition in NOT (...).
+func Not(c Condition) Condition {
+	return Condition{sql: "NOT (" + c.sql + ")", args: c.args}
+}
+
 // inFragment builds a "col IN ($1, $2, …)" condition from a slice of args.
 // Empty input yields a tautologically-false fragment so the SQL still binds
 // correctly without a special case at every call site.

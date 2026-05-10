@@ -169,6 +169,72 @@ func TestTypedQuery_StringOps(t *testing.T) {
 }
 
 // ============================================================================
+// UpdateAll bulk updates rows matching the WHERE chain
+// ============================================================================
+
+func TestTypedQuery_UpdateAll(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		_, ch := queryApp(t, db)
+		seedQueryPosts(t, db)
+
+		n, err := NewTypedQuery[queryTestPost](ch).
+			Where(queryPostsViews.Gte(50)).
+			UpdateAll(context.Background(), map[string]any{"title": "boosted"})
+		if err != nil {
+			t.Fatalf("UpdateAll: %v", err)
+		}
+		if n != 2 {
+			t.Fatalf("expected 2 rows touched, got %d", n)
+		}
+
+		// Verify
+		boosted, err := NewTypedQuery[queryTestPost](ch).
+			Where(queryPostsTitle.Eq("boosted")).
+			Find(context.Background())
+		if err != nil {
+			t.Fatalf("find: %v", err)
+		}
+		if len(boosted) != 2 {
+			t.Fatalf("expected 2 boosted, got %d", len(boosted))
+		}
+	})
+}
+
+// ============================================================================
+// DeleteAll bulk-deletes rows matching the WHERE chain
+// ============================================================================
+
+func TestTypedQuery_DeleteAll(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		_, ch := queryApp(t, db)
+		seedQueryPosts(t, db)
+
+		n, err := NewTypedQuery[queryTestPost](ch).
+			Where(queryPostsViews.Lt(30)).
+			DeleteAll(context.Background())
+		if err != nil {
+			t.Fatalf("DeleteAll: %v", err)
+		}
+		if n != 2 {
+			t.Fatalf("expected 2 rows deleted, got %d", n)
+		}
+
+		remaining, err := NewTypedQuery[queryTestPost](ch).Find(context.Background())
+		if err != nil {
+			t.Fatalf("find: %v", err)
+		}
+		if len(remaining) != 2 {
+			t.Fatalf("expected 2 remaining, got %d", len(remaining))
+		}
+		for _, p := range remaining {
+			if p.Views < 30 {
+				t.Fatalf("expected views >= 30, got %d", p.Views)
+			}
+		}
+	})
+}
+
+// ============================================================================
 // Empty In() clause returns no rows (1 = 0 fragment)
 // ============================================================================
 

@@ -189,6 +189,82 @@ func TestTx_BeforeCreateRejection_NoInsert(t *testing.T) {
 }
 
 // ============================================================================
+// Test: app.InTx runs fn inside a tx, commits on success
+// ============================================================================
+
+func TestApp_InTx_Commits(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTestTable(t, db)
+		app := newPostsApp(t, db)
+
+		err := app.InTx(context.Background(), func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO posts(id, title, body) VALUES ($1, $2, $3)", "p1", "in-tx", "")
+			return err
+		})
+		if err != nil {
+			t.Fatalf("InTx: %v", err)
+		}
+		if got := rowCount(t, db); got != 1 {
+			t.Fatalf("expected 1 row after commit, got %d", got)
+		}
+	})
+}
+
+// ============================================================================
+// Test: app.InTx rolls back when fn returns error
+// ============================================================================
+
+func TestApp_InTx_RollsBackOnError(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTestTable(t, db)
+		app := newPostsApp(t, db)
+
+		err := app.InTx(context.Background(), func(ctx context.Context, tx *sql.Tx) error {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO posts(id, title, body) VALUES ($1, $2, $3)", "p1", "tentative", ""); err != nil {
+				return err
+			}
+			return errors.New("changed my mind")
+		})
+		if err == nil || err.Error() != "changed my mind" {
+			t.Fatalf("expected rollback error, got %v", err)
+		}
+		if got := rowCount(t, db); got != 0 {
+			t.Fatalf("expected 0 rows after rollback, got %d", got)
+		}
+	})
+}
+
+// ============================================================================
+// Test: TxFromContext is populated inside InTx fn
+// ============================================================================
+
+func TestApp_InTx_TxInContext(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTestTable(t, db)
+		app := newPostsApp(t, db)
+
+		var sawTx bool
+		err := app.InTx(context.Background(), func(ctx context.Context, tx *sql.Tx) error {
+			ctxTx, ok := TxFromContext(ctx)
+			if !ok {
+				return errors.New("no tx in ctx")
+			}
+			if ctxTx != tx {
+				return errors.New("ctx tx differs from arg")
+			}
+			sawTx = true
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("InTx: %v", err)
+		}
+		if !sawTx {
+			t.Fatal("expected fn to find tx in ctx")
+		}
+	})
+}
+
+// ============================================================================
 // Test: TxFromContext returns false when no tx is active.
 // ============================================================================
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gofastr/gofastr/core/query"
 )
@@ -19,39 +20,37 @@ import (
 // and runs the same eager-load helpers when Include() is set.
 type TypedQuery[T any] struct {
 	handler  *CrudHandler
-	qb       *query.QueryBuilder
+	wheres   []Condition
+	orders   []Order
+	limit    *int
+	offset   *int
 	includes []string
 }
 
 // NewTypedQuery starts a new query against the handler's entity. Callers
 // should chain Where/Order/Limit/Include and finish with Find/First/Count.
 func NewTypedQuery[T any](h *CrudHandler) *TypedQuery[T] {
-	cols := h.visibleFields()
-	qb := query.Select(cols...).From(h.Entity.GetTable())
-	// Tenant + soft-delete defaults — same as the HTTP path on a request
-	// without ?trashed=true. We synthesize a request to feed the existing
-	// helpers; tenant ID still flows from ctx at Find time.
-	return &TypedQuery[T]{handler: h, qb: qb}
+	return &TypedQuery[T]{handler: h}
 }
 
 // Where appends an AND condition. Multiple Where calls AND together.
 func (q *TypedQuery[T]) Where(c Condition) *TypedQuery[T] {
-	c.Apply(q.qb)
+	q.wheres = append(q.wheres, c)
 	return q
 }
 
 // Order appends an ORDER BY clause. Multiple Order calls compose in input
 // order (first declared = primary sort).
 func (q *TypedQuery[T]) Order(o Order) *TypedQuery[T] {
-	o.Apply(q.qb)
+	q.orders = append(q.orders, o)
 	return q
 }
 
 // Limit caps the result size.
-func (q *TypedQuery[T]) Limit(n int) *TypedQuery[T] { q.qb.Limit(n); return q }
+func (q *TypedQuery[T]) Limit(n int) *TypedQuery[T] { q.limit = &n; return q }
 
 // Offset skips the first n rows.
-func (q *TypedQuery[T]) Offset(n int) *TypedQuery[T] { q.qb.Offset(n); return q }
+func (q *TypedQuery[T]) Offset(n int) *TypedQuery[T] { q.offset = &n; return q }
 
 // Include eager-loads the named relations on the result rows. Names follow
 // the same dotted-path syntax as ?include= (e.g. "author.profile").
@@ -60,14 +59,34 @@ func (q *TypedQuery[T]) Include(rels ...string) *TypedQuery[T] {
 	return q
 }
 
+// buildSelect materialises a fresh SELECT QueryBuilder reflecting the
+// query's current state. Re-buildable: Find/First/Count call it
+// independently so each pass gets its own renumbered placeholders.
+func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
+	cols := q.handler.visibleFields()
+	qb := query.Select(cols...).From(q.handler.Entity.GetTable())
+	for _, c := range q.wheres {
+		c.Apply(qb)
+	}
+	for _, o := range q.orders {
+		o.Apply(qb)
+	}
+	if q.limit != nil {
+		qb.Limit(*q.limit)
+	}
+	if q.offset != nil {
+		qb.Offset(*q.offset)
+	}
+	req := syntheticRequest(ctx, "GET", "/")
+	q.handler.applyTenantScope(qb, req)
+	q.handler.applySoftDeleteFilter(qb, req)
+	return qb
+}
+
 // Find executes the query and decodes results into []*T.
 func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
-	// Apply tenant + soft-delete defaults via the synthetic request helper.
-	req := syntheticRequest(ctx, "GET", "/")
-	q.handler.applyTenantScope(q.qb, req)
-	q.handler.applySoftDeleteFilter(q.qb, req)
-
-	sqlStr, args := q.qb.Build()
+	qb := q.buildSelect(ctx)
+	sqlStr, args := qb.Build()
 	rows, err := q.handler.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -104,7 +123,8 @@ func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
 // sql.ErrNoRows when the query yields zero rows so callers can detect "not
 // found" with errors.Is.
 func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
-	q.qb.Limit(1)
+	one := 1
+	q.limit = &one
 	out, err := q.Find(ctx)
 	if err != nil {
 		return nil, err
@@ -115,22 +135,25 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 	return out[0], nil
 }
 
-// Count returns the number of rows matching the current filters (ignores
-// limit/offset/order, like a SELECT COUNT(*) over the same WHERE clause).
+// Count returns the number of rows matching the current filters. Ignores
+// limit/offset/order — pure SELECT COUNT(*) over the same WHERE predicate.
 func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
-	// We can't easily share filters with the existing CountBuilder because
-	// they live inside the SELECT QueryBuilder's Where chain. Re-run the
-	// SELECT with COUNT(*) by constructing a new builder that copies wheres.
-	// Pragmatic: fall back to executing the existing SELECT and counting in
-	// memory, but that defeats the point. Better: query the original SQL
-	// wrapped in SELECT COUNT(*) FROM (...) sub.
-	innerSQL, args := q.qb.Build()
-	wrapped := "SELECT COUNT(*) FROM (" + innerSQL + ") AS sub"
+	cb := query.Count(q.handler.Entity.GetTable())
+	for _, c := range q.wheres {
+		cb.Where(c.sql, c.args...)
+	}
+	req := syntheticRequest(ctx, "GET", "/")
+	q.handler.applyTenantScopeCount(cb, req)
+	q.handler.applySoftDeleteFilterCount(cb, req)
+	sqlStr, args := cb.Build()
 	var n int
-	if err := q.handler.DB.QueryRowContext(ctx, wrapped, args...).Scan(&n); err != nil {
+	if err := q.handler.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
+	// (legacy comment removed — wrapped COUNT was a workaround for the prior
+	// design that baked filters straight into the SELECT QueryBuilder. Now
+	// that wheres live as Conditions we can build a CountBuilder cleanly.)
 }
 
 // UnmarshalEntity is the public entry point for converting a snake-cased
@@ -173,6 +196,87 @@ func marshalStructToRow(src any) (map[string]any, error) {
 		return nil, err
 	}
 	return mapToSnakeCase(m), nil
+}
+
+// Exists returns true if at least one row matches the current WHERE chain.
+// Cheaper than First+IsNotFound for the "do any match?" question because it
+// runs a COUNT(*) with LIMIT 1 internally.
+func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
+	n, err := q.Limit(1).Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// UpdateAll applies the same field updates to every row matching the
+// current Where chain and returns the number of rows touched. Ignores
+// Limit/Offset/Order — the underlying SQL is a plain UPDATE with the
+// same WHERE predicate that Find would use.
+//
+// Fields are snake-cased map[string]any (the framework's wire shape). For
+// type-safe updates, marshal a partial struct with framework.MarshalEntity
+// and pass the resulting map.
+func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (int, error) {
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("UpdateAll: no fields to set")
+	}
+	ub := query.Update(q.handler.Entity.GetTable())
+	for k, v := range fields {
+		// Don't allow callers to mutate the primary key wholesale via bulk
+		// update — that's almost always a bug.
+		if k == q.handler.PrimaryKey {
+			continue
+		}
+		ub.Set(k, v)
+	}
+	for _, c := range q.wheres {
+		ub.Where(c.sql, c.args...)
+	}
+	req := syntheticRequest(ctx, "PATCH", "/")
+	q.handler.applyTenantScopeUpdate(ub, req)
+
+	sqlStr, args := ub.Build()
+	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// DeleteAll removes every row matching the current Where chain. For
+// SoftDelete entities, sets deleted_at instead of issuing a DELETE.
+func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
+	req := syntheticRequest(ctx, "DELETE", "/")
+	if q.handler.Entity.Config.SoftDelete {
+		ub := query.Update(q.handler.Entity.GetTable()).
+			Set("deleted_at", time.Now().UTC())
+		for _, c := range q.wheres {
+			ub.Where(c.sql, c.args...)
+		}
+		q.handler.applyTenantScopeUpdate(ub, req)
+		sqlStr, args := ub.Build()
+		res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
+		if err != nil {
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		return int(n), nil
+	}
+
+	db := query.Delete(q.handler.Entity.GetTable())
+	for _, c := range q.wheres {
+		db.Where(c.sql, c.args...)
+	}
+	q.handler.applyTenantScopeDelete(db, req)
+	sqlStr, args := db.Build()
+	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // IsNotFound reports whether err corresponds to a not-found result on a

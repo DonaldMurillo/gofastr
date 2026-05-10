@@ -171,6 +171,78 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	return results, nil
 }
 
+// BatchCreateMany runs CreateOne for each body in a single transaction.
+// Events fire after commit (per item, in input order). Any per-item error
+// rolls back the whole batch — same semantics as the HTTP _batch endpoint.
+func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
+	results := make([]map[string]any, len(bodies))
+	req := syntheticRequest(ctx, "POST", "/")
+	txErr := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+		for i, body := range bodies {
+			res, err := ch.doCreate(ctx, req, body)
+			if err != nil {
+				return err
+			}
+			results[i] = res
+		}
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	for _, res := range results {
+		ch.emitEvent(ctx, EntityCreated, res)
+	}
+	return results, nil
+}
+
+// BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
+func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
+	if len(ids) != len(bodies) {
+		return nil, fmt.Errorf("BatchUpdateMany: ids and bodies length mismatch (%d vs %d)", len(ids), len(bodies))
+	}
+	results := make([]map[string]any, len(ids))
+	req := syntheticRequest(ctx, "PATCH", "/")
+	txErr := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+		for i, id := range ids {
+			res, err := ch.doUpdate(ctx, req, id, bodies[i])
+			if err != nil {
+				return err
+			}
+			results[i] = res
+		}
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	for _, res := range results {
+		ch.emitEvent(ctx, EntityUpdated, res)
+	}
+	return results, nil
+}
+
+// BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the
+// ids that were successfully removed.
+func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]string, error) {
+	req := syntheticRequest(ctx, "DELETE", "/")
+	txErr := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+		for _, id := range ids {
+			if err := ch.doDelete(ctx, req, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	for _, id := range ids {
+		ch.emitEvent(ctx, EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+	}
+	return ids, nil
+}
+
 // CountAll returns COUNT(*) for the given filters (no pagination). Cheap
 // helper for typed repos that want a totals figure without hitting List.
 func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, error) {

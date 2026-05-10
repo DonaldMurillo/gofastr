@@ -89,6 +89,78 @@ func (r *e2ePostsRepo) WithTx(tx *sql.Tx) *e2ePostsRepo {
 	return &e2ePostsRepo{handler: &h}
 }
 
+// ---- Phase D/E additions to the contract repo ----
+
+func (r *e2ePostsRepo) Exists(ctx context.Context, id string) (bool, error) {
+	return r.Query().Where(NewUUIDColumn("id").Eq(id)).Exists(ctx)
+}
+
+func (r *e2ePostsRepo) Count(ctx context.Context) (int, error) {
+	return r.Query().Count(ctx)
+}
+
+func (r *e2ePostsRepo) FirstOrCreate(ctx context.Context, row *e2ePost, match Condition) (*e2ePost, error) {
+	existing, err := r.Query().Where(match).First(ctx)
+	if err == nil {
+		return existing, nil
+	}
+	if !IsNotFound(err) {
+		return nil, err
+	}
+	if err := r.Create(ctx, row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func (r *e2ePostsRepo) BatchCreate(ctx context.Context, rows []*e2ePost) ([]*e2ePost, error) {
+	bodies := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		b, err := MarshalEntity(row)
+		if err != nil {
+			return nil, err
+		}
+		bodies[i] = b
+	}
+	results, err := r.handler.BatchCreateMany(ctx, bodies)
+	if err != nil {
+		return nil, err
+	}
+	for i, res := range results {
+		if err := UnmarshalEntity(res, rows[i]); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
+}
+
+func (r *e2ePostsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*e2ePost) ([]*e2ePost, error) {
+	bodies := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		b, err := MarshalEntity(row)
+		if err != nil {
+			return nil, err
+		}
+		delete(b, "id")
+		bodies[i] = b
+	}
+	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
+	if err != nil {
+		return nil, err
+	}
+	for i, res := range results {
+		if err := UnmarshalEntity(res, rows[i]); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
+}
+
+func (r *e2ePostsRepo) BatchDelete(ctx context.Context, ids []string) error {
+	_, err := r.handler.BatchDeleteMany(ctx, ids)
+	return err
+}
+
 // "Generated" column constants — same shape codegen emits.
 var (
 	e2ePostsTitle = NewStringColumn("title")
@@ -157,6 +229,118 @@ func TestTypedRepoContract_RoundTrip(t *testing.T) {
 		_, err = repo.Get(ctx, got.ID)
 		if !IsNotFound(err) {
 			t.Fatalf("expected not-found after delete, got %v", err)
+		}
+	})
+}
+
+// ============================================================================
+// Test: Exists / Count / FirstOrCreate
+// ============================================================================
+
+func TestTypedRepoContract_ExistsCountFirstOrCreate(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTestTable(t, db)
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("posts", EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "body", Type: schema.Text},
+			},
+		}.WithTimestamps(false))
+		repo := newE2EPostsRepo(app)
+		ctx := context.Background()
+
+		// Empty table
+		if n, err := repo.Count(ctx); err != nil || n != 0 {
+			t.Fatalf("Count empty: n=%d err=%v", n, err)
+		}
+		if got, err := repo.Exists(ctx, "missing"); err != nil || got {
+			t.Fatalf("Exists missing: got=%v err=%v", got, err)
+		}
+
+		// FirstOrCreate when missing → creates.
+		row := &e2ePost{Title: "fresh", Body: "body"}
+		got, err := repo.FirstOrCreate(ctx, row, NewStringColumn("title").Eq("fresh"))
+		if err != nil {
+			t.Fatalf("FirstOrCreate create: %v", err)
+		}
+		if got.ID == "" {
+			t.Fatal("expected ID after create")
+		}
+
+		// FirstOrCreate when found → returns existing without inserting again.
+		row2 := &e2ePost{Title: "ignored"}
+		got2, err := repo.FirstOrCreate(ctx, row2, NewStringColumn("title").Eq("fresh"))
+		if err != nil {
+			t.Fatalf("FirstOrCreate find: %v", err)
+		}
+		if got2.ID != got.ID {
+			t.Fatalf("expected same row, got %s vs %s", got2.ID, got.ID)
+		}
+		// Count should still be 1.
+		if n, err := repo.Count(ctx); err != nil || n != 1 {
+			t.Fatalf("Count after FOC: n=%d err=%v", n, err)
+		}
+		if ok, _ := repo.Exists(ctx, got.ID); !ok {
+			t.Fatal("Exists should be true")
+		}
+	})
+}
+
+// ============================================================================
+// Test: BatchCreate / BatchUpdate / BatchDelete round-trip + atomicity
+// ============================================================================
+
+func TestTypedRepoContract_BatchOps(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTestTable(t, db)
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("posts", EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "body", Type: schema.Text},
+			},
+		}.WithTimestamps(false))
+		repo := newE2EPostsRepo(app)
+		ctx := context.Background()
+
+		// BatchCreate
+		rows := []*e2ePost{
+			{Title: "A"}, {Title: "B"}, {Title: "C"},
+		}
+		out, err := repo.BatchCreate(ctx, rows)
+		if err != nil {
+			t.Fatalf("BatchCreate: %v", err)
+		}
+		if len(out) != 3 {
+			t.Fatalf("expected 3 out, got %d", len(out))
+		}
+		for i, r := range out {
+			if r.ID == "" {
+				t.Fatalf("row %d missing ID after batch create", i)
+			}
+		}
+
+		// BatchUpdate
+		ids := []string{out[0].ID, out[1].ID}
+		patches := []*e2ePost{{Title: "A2"}, {Title: "B2"}}
+		patched, err := repo.BatchUpdate(ctx, ids, patches)
+		if err != nil {
+			t.Fatalf("BatchUpdate: %v", err)
+		}
+		if patched[0].Title != "A2" || patched[1].Title != "B2" {
+			t.Fatalf("BatchUpdate result: %+v", patched)
+		}
+
+		// BatchDelete — drop A2 + C
+		if err := repo.BatchDelete(ctx, []string{out[0].ID, out[2].ID}); err != nil {
+			t.Fatalf("BatchDelete: %v", err)
+		}
+		n, _ := repo.Count(ctx)
+		if n != 1 {
+			t.Fatalf("expected 1 remaining, got %d", n)
 		}
 	})
 }

@@ -176,6 +176,87 @@ func (r *%sRepo) Query() *framework.TypedQuery[%s] {
 	return framework.NewTypedQuery[%s](r.handler)
 }
 
+// Exists reports whether a row with the given id is present (and not soft-
+// deleted for SoftDelete entities). Tenant scope still applies.
+func (r *%sRepo) Exists(ctx context.Context, id string) (bool, error) {
+	return r.Query().Where(%sID.Eq(id)).Exists(ctx)
+}
+
+// Count returns the total number of rows visible under the current tenant
+// and soft-delete scope. Chain through Query() for filtered counts.
+func (r *%sRepo) Count(ctx context.Context) (int, error) {
+	return r.Query().Count(ctx)
+}
+
+// FirstOrCreate looks up a row by the given match condition and returns it
+// if found. Otherwise inserts row (filling in its server-generated fields)
+// and returns it.
+func (r *%sRepo) FirstOrCreate(ctx context.Context, row *%s, match framework.Condition) (*%s, error) {
+	existing, err := r.Query().Where(match).First(ctx)
+	if err == nil {
+		return existing, nil
+	}
+	if !framework.IsNotFound(err) {
+		return nil, err
+	}
+	if err := r.Create(ctx, row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+// BatchCreate inserts every row in one transaction; on any per-item error
+// the entire batch rolls back. Returned slice is in input order.
+func (r *%sRepo) BatchCreate(ctx context.Context, rows []*%s) ([]*%s, error) {
+	bodies := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		b, err := framework.MarshalEntity(row)
+		if err != nil {
+			return nil, err
+		}
+		bodies[i] = b
+	}
+	results, err := r.handler.BatchCreateMany(ctx, bodies)
+	if err != nil {
+		return nil, err
+	}
+	for i, res := range results {
+		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
+}
+
+// BatchUpdate updates every row by its id in one transaction.
+func (r *%sRepo) BatchUpdate(ctx context.Context, ids []string, rows []*%s) ([]*%s, error) {
+	bodies := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		b, err := framework.MarshalEntity(row)
+		if err != nil {
+			return nil, err
+		}
+		delete(b, "id")
+		bodies[i] = b
+	}
+	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
+	if err != nil {
+		return nil, err
+	}
+	for i, res := range results {
+		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
+}
+
+// BatchDelete deletes every id atomically.
+func (r *%sRepo) BatchDelete(ctx context.Context, ids []string) error {
+	_, err := r.handler.BatchDeleteMany(ctx, ids)
+	return err
+}
+
 `,
 			// Repo struct doc + type
 			struct_, decl.Name,
@@ -196,6 +277,18 @@ func (r *%sRepo) Query() *framework.TypedQuery[%s] {
 			struct_,
 			// Query
 			struct_, struct_, struct_,
+			// Exists
+			struct_, struct_,
+			// Count
+			struct_,
+			// FirstOrCreate
+			struct_, struct_, struct_,
+			// BatchCreate
+			struct_, struct_, struct_,
+			// BatchUpdate
+			struct_, struct_, struct_,
+			// BatchDelete
+			struct_,
 		))
 	}
 	return sb.String()
