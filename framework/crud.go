@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/core/upload"
 )
 
 // beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
@@ -33,9 +34,10 @@ type DBExecutor interface {
 type CrudHandler struct {
 	Entity     *Entity
 	DB         DBExecutor
-	PrimaryKey string        // defaults to "id"
-	JSONCase   JSONCase      // casing strategy for JSON keys
-	Hooks      *HookRegistry // optional lifecycle hooks
+	PrimaryKey string             // defaults to "id"
+	JSONCase   JSONCase           // casing strategy for JSON keys
+	Hooks      *HookRegistry      // optional lifecycle hooks
+	Storage    upload.Storage // optional; enables multipart uploads for Image/File fields
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -334,17 +336,20 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 // Auto-generated fields are populated server-side and excluded from the
 // request body. The hook chain (BeforeCreate → INSERT → AfterCreate) runs
 // inside a single transaction; if any step errors the write is rolled back.
+//
+// Accepts application/json or multipart/form-data. When the request is
+// multipart, parts whose name matches an Image/File field are streamed
+// through the handler's Storage backend and persisted as a URL string.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		body, err := ch.readRequestBody(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		body = ch.unconvertMapKeys(body)
 
 		var result map[string]any
-		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		err = ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doCreate(ctx, r, body)
 			if err != nil {
 				return err
@@ -365,6 +370,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 // Update returns an http.HandlerFunc that updates an entity by ID. The hook
 // chain (BeforeUpdate → UPDATE → AfterUpdate) runs inside a transaction.
+// Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -373,15 +379,14 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return
 		}
 
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		body, err := ch.readRequestBody(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		body = ch.unconvertMapKeys(body)
 
 		var result map[string]any
-		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		err = ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
 				return err

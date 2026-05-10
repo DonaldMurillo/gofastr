@@ -16,6 +16,7 @@ import (
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/middleware"
 	"github.com/gofastr/gofastr/core/router"
+	"github.com/gofastr/gofastr/core/upload"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -51,6 +52,7 @@ type App struct {
 	DB       *sql.DB
 	Config   AppConfig
 	Plugins  *PluginManager
+	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
 	server     *http.Server
 	events     *EventBus
@@ -88,6 +90,16 @@ func WithRouter(r *router.Router) AppOption {
 func WithMCPServer(s *mcp.Server) AppOption {
 	return func(a *App) {
 		a.MCP = s
+	}
+}
+
+// WithFileStorage sets the default upload.Storage used by CRUD handlers
+// to persist files for Image and File entity fields when a multipart
+// request arrives. Without this option, multipart requests on those
+// fields fail with a clear error.
+func WithFileStorage(s upload.Storage) AppOption {
+	return func(a *App) {
+		a.Storage = s
 	}
 }
 
@@ -204,6 +216,7 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		crudHandler = NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
+		crudHandler.Storage = a.Storage
 		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
 	}
 
