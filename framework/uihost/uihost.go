@@ -325,7 +325,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := ds.App.RenderPage(r.Context(), path)
+	// Make the live request available to ScreenLoader.Load(ctx) so
+	// screens can read URL query params, headers, etc. SSG builds
+	// pass nil and the helpers degrade to empty values.
+	ctx := app.WithRequest(r.Context(), r)
+	html, err := ds.App.RenderPage(ctx, path)
 	if err != nil {
 		http.Error(w, "Page not found: "+path, http.StatusNotFound)
 		return
