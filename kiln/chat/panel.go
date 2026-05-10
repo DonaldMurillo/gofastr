@@ -834,13 +834,17 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 		// shortcuts on its Approve/Reject buttons + a kbd hint badge.
 		approveExtra := ""
 		rejectExtra := ""
+		modifyExtra := ""
 		approveLabel := "Approve"
 		rejectLabel := "Reject"
+		modifyLabel := "Modify…"
 		if primary {
 			approveExtra = ` data-fui-shortcut-click="y" aria-keyshortcuts="y"`
 			rejectExtra = ` data-fui-shortcut-click="n" aria-keyshortcuts="n"`
+			modifyExtra = ` data-fui-shortcut-click="m" aria-keyshortcuts="m"`
 			approveLabel = `Approve <kbd class="kiln-kbd">Y</kbd>`
 			rejectLabel = `Reject <kbd class="kiln-kbd">N</kbd>`
+			modifyLabel = `Modify… <kbd class="kiln-kbd">M</kbd>`
 		}
 		fmt.Fprintf(b,
 			`<div class="kiln-plan-actions">`+
@@ -854,11 +858,11 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 				`data-fui-rpc-body='{"plan_id":"%s"}'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-modify" `+
 				`data-fui-fill-input=".kiln-input" `+
-				`data-fui-fill-text="Refine plan %s: ">Modify…</button>`+
+				`data-fui-fill-text="Refine plan %s: "%s>%s</button>`+
 				`</div>`,
 			escAttr(p.PlanID), escAttr(p.PlanID), approveExtra, approveLabel,
 			escAttr(p.PlanID), escAttr(p.PlanID), rejectExtra, rejectLabel,
-			escAttr(p.PlanID))
+			escAttr(p.PlanID), modifyExtra, modifyLabel)
 	}
 	b.WriteString(`</li>`)
 }
