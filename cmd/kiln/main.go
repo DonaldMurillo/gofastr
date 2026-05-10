@@ -180,9 +180,16 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	//   - chat.MountPanel:  new core-ui/widget-driven panel (primary)
 	// host.html is updated to load the new bootstrap; the legacy routes
 	// remain so existing integrations don't 404 mid-migration.
+	// AdapterStore is created up-front so the panel modal's
+	// agent_list_html signal can read live adapter state at hydration
+	// time. mountAgentRoutes still owns the /kiln/agent HTTP surface.
+	adapter, adapterOK := resolveAdapter(opts.agentCmd)
+	store := NewAdapterStore(adapter)
+	mountAgentRoutes(l.Aux(), store)
+
 	chatSrv := chat.New(l, tools)
 	chatSrv.Mount(l.Aux())
-	chat.MountPanel(l.Aux(), l, tools)
+	chat.MountPanel(l.Aux(), l, tools, func() any { return agentState(store) })
 	l.SetFallbackHTML(chat.HostHTML())
 
 	// MCP over HTTP — Kiln's tool surface (add_entity, undo, etc.) at
@@ -216,16 +223,10 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		printBanner(logger, opts.addr, stdioMode)
 	}
 
-	// Optional in-process agent watcher: resolve the configured adapter
-	// (or freeform command) and spawn it once per chat_user event with
-	// KILN_URL injected. The agent's stdout is journaled as chat_assistant.
-	//
-	// The store is mutable at runtime via /kiln/agent — the panel's
-	// config modal POSTs there to switch adapters mid-session.
-	adapter, ok := resolveAdapter(opts.agentCmd)
-	store := NewAdapterStore(adapter)
-	mountAgentRoutes(l.Aux(), store)
-	if ok {
+	// Optional in-process agent watcher: spawn the resolved adapter
+	// once per chat_user event with KILN_URL injected. The store/routes
+	// were registered earlier (above) so the panel modal can read state.
+	if adapterOK {
 		// Sync the skill so adapters that read it (claude-code, pi via
 		// ~/.claude/skills/kiln/) get the current version of the
 		// framework knowledge.

@@ -18,16 +18,28 @@ import (
 	"github.com/gofastr/gofastr/kiln/protocol"
 )
 
+// AgentStateFn returns the JSON-shaped agent state consumed by the
+// gear modal. Shape: { current: {name, display}, available: [{name,
+// display, installed}, ...], in_flight: bool }. Concretely supplied
+// by cmd/kiln (which owns the AdapterStore); kept as a callback so
+// the chat package doesn't depend on cmd/kiln. Pass nil to render an
+// empty modal (development / tests without an adapter registry).
+type AgentStateFn func() any
+
 // MountPanel registers the kiln chat panel as a core-ui/widget on r.
 // The widget is a framework-managed FloatingPanel; kiln contributes:
 //   - slot HTML for header / log / input (rendered server-side from session)
 //   - SSE bindings that push fresh log HTML into the chat_html signal
 //   - RPC handlers for chat send, reset, approve/reject, agent control
 //
+// agentState is read by the gear modal's agent_list_html signal at
+// mount time so the user sees the actual adapter list (claude-code,
+// pi, codex, ...) instead of a Loading… placeholder. nil → no list.
+//
 // All bespoke kiln widget plumbing (vanilla JS DOM, hand-rolled CSS,
 // per-route HTTP handlers) is replaced by this single declaration.
-func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
-	pe := &panelEnv{live: l, tools: tools}
+func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentState AgentStateFn) {
+	pe := &panelEnv{live: l, tools: tools, agentState: agentState}
 
 	// Build slot HTML once per Mount call. SSE events drive signal updates
 	// that re-render the chat log via data-fui-signal="chat_html" (HTML mode).
@@ -84,6 +96,12 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 	settings := preset.Modal("kiln-agent-settings").
 		Hidden().
 		Slot("body", htmlComp{html: pe.agentSettingsHTML()}).
+		// Server-rendered HTML for the adapter list. The runtime
+		// hydrates [data-fui-signal="agent_list_html"][mode="html"]
+		// on modal mount, replacing the Loading… placeholder.
+		Signal("agent_list_html", widget.SignalFunc(func() (any, error) {
+			return pe.agentListHTML(), nil
+		})).
 		Build()
 	settings.ExtraCSS = widgetCSS
 	widget.Mount(r, &settings)
@@ -91,10 +109,9 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
 }
 
-// agentSettingsHTML is a placeholder modal body. Real adapter switching
-// already exists at /kiln/agent (see cmd/kiln/agent_http.go); this
-// modal just surfaces a clean container so the gear button has somewhere
-// to land. Future iterations can render the adapter list here.
+// agentSettingsHTML is the modal body. The list itself is server-
+// rendered via the agent_list_html signal — the runtime hydrates
+// the placeholder on widget mount.
 //
 // Uses kiln-modal-* classes that already have styled rules in
 // kiln/chat/style.go (.kiln-modal — the card container, etc.).
@@ -102,11 +119,82 @@ func (pe *panelEnv) agentSettingsHTML() string {
 	return `<div class="kiln-modal">` +
 		`<h2 class="kiln-modal-title">Agent settings</h2>` +
 		`<p class="kiln-modal-sub">Pick which CLI agent kiln spawns when you send a message.</p>` +
-		`<div class="kiln-modal-body" id="kiln-agent-list">Loading…</div>` +
+		`<div class="kiln-modal-body" id="kiln-agent-list" data-fui-signal="agent_list_html" data-fui-signal-mode="html">Loading…</div>` +
 		`<div class="kiln-modal-actions">` +
 		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close</button>` +
 		`</div>` +
 		`</div>`
+}
+
+// agentListHTML renders the adapter list as HTML. Each row is a label
+// containing a radio + name + description + installed flag. The
+// "current" adapter is checked. Apply happens via the /kiln/panel/agent_select
+// RPC bound on the form (see serveAgentSelect).
+func (pe *panelEnv) agentListHTML() string {
+	if pe.agentState == nil {
+		return `<p class="kiln-modal-sub">No agent registry mounted.</p>`
+	}
+	state, _ := pe.agentState().(map[string]any)
+	if state == nil {
+		return `<p class="kiln-modal-sub">No agent registry mounted.</p>`
+	}
+	curName := ""
+	if cur, ok := state["current"].(map[string]any); ok {
+		curName, _ = cur["name"].(string)
+	}
+	available, _ := state["available"].([]map[string]any)
+
+	var b strings.Builder
+	// Form posts directly to /kiln/agent (registered by cmd/kiln).
+	// The response is the new state — no signal binding here because
+	// pushing the JSON back into the html-mode signal would replace
+	// the form. Re-open the modal to see the updated "current" mark.
+	b.WriteString(`<form class="kiln-adapter-list" data-fui-rpc="/kiln/agent">`)
+
+	// "none" sentinel — always present, always installed.
+	writeAdapterRow(&b, "none", "(no agent — chat goes to journal but nothing runs)", true, curName == "none" || curName == "")
+
+	for _, a := range available {
+		name, _ := a["name"].(string)
+		display, _ := a["display"].(string)
+		installed, _ := a["installed"].(bool)
+		writeAdapterRow(&b, name, display, installed, curName == name)
+	}
+
+	b.WriteString(`<div class="kiln-modal-actions">`)
+	b.WriteString(`<button type="submit" class="kiln-modal-apply">Apply</button>`)
+	b.WriteString(`</div>`)
+	b.WriteString(`</form>`)
+	return b.String()
+}
+
+func writeAdapterRow(b *strings.Builder, name, display string, installed, isCurrent bool) {
+	rowClass := "kiln-adapter-row"
+	if !installed {
+		rowClass += " kiln-adapter-row-disabled"
+	}
+	fmt.Fprintf(b, `<label class="%s" data-installed="%t">`, rowClass, installed)
+	checked := ""
+	if isCurrent {
+		checked = ` checked`
+	}
+	disabled := ""
+	if !installed {
+		disabled = ` disabled`
+	}
+	fmt.Fprintf(b,
+		`<input type="radio" name="name" value="%s" class="kiln-adapter-radio"%s%s>`,
+		escAttr(name), checked, disabled,
+	)
+	suffix := ""
+	if !installed {
+		suffix = " — not installed"
+	}
+	fmt.Fprintf(b,
+		`<div class="kiln-adapter-label"><div class="kiln-adapter-name">%s</div><div class="kiln-adapter-display">%s%s</div></div>`,
+		escHTML(name), escHTML(display), escHTML(suffix),
+	)
+	b.WriteString(`</label>`)
 }
 
 // skeleton renders the kiln panel chrome with the floating-panel
@@ -135,8 +223,9 @@ func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
 // panelEnv carries the live + tools refs into RPC handlers and HTML
 // rendering. One per widget mount.
 type panelEnv struct {
-	live  *live.Live
-	tools *protocol.Tools
+	live       *live.Live
+	tools      *protocol.Tools
+	agentState AgentStateFn
 }
 
 // htmlComp is a render.HTML-valued Component for slot composition.

@@ -41,7 +41,19 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 	tools := protocol.New(l)
 	chatSrv := chat.New(l, tools)
 	chatSrv.Mount(l.Aux())
-	chat.MountPanel(l.Aux(), l, tools)
+	chat.MountPanel(l.Aux(), l, tools, func() any {
+		// Stub agent state for the integration tests — at least one
+		// installed adapter so the modal list isn't empty.
+		return map[string]any{
+			"current": map[string]any{"name": "none", "display": "(no agent)"},
+			"available": []map[string]any{
+				{"name": "claude-code", "display": "Claude Code CLI", "installed": true},
+				{"name": "pi", "display": "pi", "installed": false},
+				{"name": "codex", "display": "OpenAI Codex CLI", "installed": false},
+			},
+			"in_flight": false,
+		}
+	})
 	l.SetFallbackHTML(chat.HostHTML())
 
 	mcpSrv, err := kilnmcp.NewServer(tools)
@@ -1081,6 +1093,50 @@ func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 		time.Sleep(80 * time.Millisecond)
 	}
 	t.Errorf("agent-settings modal never appeared after gear click")
+}
+
+// TestBrowser_GearOpenedModalListsAgents: the modal must actually show
+// the agent CLI rows after opening — not just the styled card. Catches
+// the "Loading…" placeholder never being replaced (Signal not wired or
+// no provider passed to MountPanel).
+func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-fui-widget="kiln-agent-settings"]`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+	); err != nil {
+		t.Fatalf("open modal: %v", err)
+	}
+
+	// Wait for the agent list to populate (Loading… → adapter rows).
+	deadline := time.Now().Add(3 * time.Second)
+	var diag string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{
+			const list = document.querySelector('#kiln-agent-list');
+			if (!list) return JSON.stringify({error:"list not in DOM"});
+			const rows = list.querySelectorAll('.kiln-adapter-row');
+			const txt = list.textContent.trim();
+			return JSON.stringify({rows: rows.length, text: txt.slice(0,160)});
+		})()`, &diag))
+		if strings.Contains(diag, `"rows":`) && !strings.Contains(diag, `"rows":0`) {
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Logf("agent list: %s", diag)
+	if strings.Contains(diag, `Loading…`) {
+		t.Errorf("agent list still showing Loading… placeholder — Signal didn't hydrate: %s", diag)
+	}
+	if !strings.Contains(diag, `"rows":`) || strings.Contains(diag, `"rows":0`) {
+		t.Errorf("agent list rendered no .kiln-adapter-row entries: %s", diag)
+	}
 }
 
 // safety: keep fmt + journal imports live
