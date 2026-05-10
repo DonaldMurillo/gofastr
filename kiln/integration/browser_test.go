@@ -56,6 +56,14 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 	})
 	l.SetFallbackHTML(chat.HostHTML())
 
+	// Stub /kiln/agent so the modal Apply form has somewhere to POST.
+	// Real wiring lives in cmd/kiln/agent_http.go; tests only need a
+	// 200 ack so the runtime's data-fui-rpc-close path triggers.
+	l.Aux().Post("/kiln/agent", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"current":{"name":"claude-code"}}`))
+	}))
+
 	mcpSrv, err := kilnmcp.NewServer(tools)
 	if err != nil {
 		t.Fatal(err)
@@ -1191,6 +1199,40 @@ func TestBrowser_ApplyAgentActuallyPosts(t *testing.T) {
 	if !strings.Contains(captured, `"name":"claude-code"`) {
 		t.Errorf("captured body missing selected adapter: %q", captured)
 	}
+}
+
+// TestBrowser_ApplyAgentClosesModal: after a successful Apply POST,
+// the modal must dismiss so the user has visible feedback that the
+// click landed. Without this the click looks like a no-op (POST fires
+// in the background but the modal stays open and unchanged).
+func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list .kiln-adapter-row`, chromedp.ByQuery),
+		chromedp.Click(`#kiln-agent-list input[value="claude-code"]`, chromedp.ByQuery),
+		chromedp.Click(`#kiln-agent-list .kiln-modal-apply`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("apply flow: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`,
+			&present))
+		if !present {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	t.Errorf("modal did not dismiss after Apply — user gets no visible feedback that the click landed")
 }
 
 // safety: keep fmt + journal imports live

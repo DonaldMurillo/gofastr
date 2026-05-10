@@ -146,10 +146,11 @@ func (pe *panelEnv) agentListHTML() string {
 
 	var b strings.Builder
 	// Form posts directly to /kiln/agent (registered by cmd/kiln).
-	// The response is the new state — no signal binding here because
-	// pushing the JSON back into the html-mode signal would replace
-	// the form. Re-open the modal to see the updated "current" mark.
-	b.WriteString(`<form class="kiln-adapter-list" data-fui-rpc="/kiln/agent">`)
+	// data-fui-rpc-close dismisses the modal on a successful 2xx so
+	// the user gets visible feedback that Apply landed. Re-open to
+	// see the new "current" mark; the panel header chip still needs
+	// SSE wiring (separate task) to update without a modal re-open.
+	b.WriteString(`<form class="kiln-adapter-list" data-fui-rpc="/kiln/agent" data-fui-rpc-close>`)
 
 	// "none" sentinel — always present, always installed.
 	writeAdapterRow(&b, "none", "(no agent — chat goes to journal but nothing runs)", true, curName == "none" || curName == "")
