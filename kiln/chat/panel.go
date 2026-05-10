@@ -131,6 +131,14 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	settings.ExtraCSS = widgetCSS
 	widget.Mount(r, &settings)
 
+	// Hidden Modal: keyboard-shortcuts help.
+	help := preset.Modal("kiln-help").
+		Hidden().
+		Slot("body", htmlComp{html: pe.helpHTML()}).
+		Build()
+	help.ExtraCSS = widgetCSS
+	widget.Mount(r, &help)
+
 	// Hidden Modal: reset confirmation, opened by the ↺ button via
 	// data-fui-open="kiln-reset-confirm". Reset is destructive
 	// (truncates journal + drops DB schema) so a single misclick
@@ -143,6 +151,33 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	widget.Mount(r, &resetConfirm)
 
 	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
+}
+
+func (pe *panelEnv) helpHTML() string {
+	rows := []struct {
+		key, what string
+	}{
+		{"⌘K / Ctrl+K", "focus the chat input"},
+		{"Enter", "send the current prompt"},
+		{"Shift+Enter", "newline inside the prompt"},
+		{"Esc", "clear the input (or close any open modal)"},
+		{"Y", "approve the most recent unresolved plan"},
+		{"N", "reject the most recent unresolved plan"},
+		{"M", "modify the most recent unresolved plan (pre-fills the input)"},
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="kiln-modal">`)
+	b.WriteString(`<h2 class="kiln-modal-title">Keyboard shortcuts</h2>`)
+	b.WriteString(`<dl class="kiln-help-list">`)
+	for _, r := range rows {
+		fmt.Fprintf(&b, `<dt><kbd class="kiln-kbd">%s</kbd></dt><dd>%s</dd>`, escHTML(r.key), escHTML(r.what))
+	}
+	b.WriteString(`</dl>`)
+	b.WriteString(`<div class="kiln-modal-actions">`)
+	b.WriteString(`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close <kbd class="kiln-kbd">Esc</kbd></button>`)
+	b.WriteString(`</div>`)
+	b.WriteString(`</div>`)
+	return b.String()
 }
 
 func (pe *panelEnv) resetConfirmHTML() string {
@@ -325,6 +360,7 @@ func (pe *panelEnv) headerHTML() string {
 		})() +
 		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="Open world IR (JSON)">` + escHTML(pe.worldSnapshotText()) + `</a>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
+		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts" data-fui-open="kiln-help">?</button>` +
 		`<button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard" data-fui-copy-text-from=".kiln-log">⎘</button>` +
 		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-fui-rpc="/kiln/agent/cancel" data-fui-rpc-method="POST">■</button>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +

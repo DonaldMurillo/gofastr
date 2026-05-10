@@ -772,6 +772,40 @@ func widgetCSS() string {
 		).
 		End()
 
+	ss.Rule(".kiln-panel-help").
+		Set(
+			"background", "rgba(255, 255, 255, 0.04)",
+			"border", "1px solid rgba(255, 255, 255, 0.10)",
+			"color", "rgba(220, 225, 235, 0.85)",
+			"border-radius", "4px",
+			"width", "22px",
+			"height", "22px",
+			"font-size", "12px",
+			"font-weight", "600",
+			"line-height", "1",
+			"cursor", "pointer",
+			"margin-right", "4px",
+			"display", "inline-flex",
+			"align-items", "center",
+			"justify-content", "center",
+		).
+		Pseudo(":hover", "background", "rgba(255, 255, 255, 0.08)").
+		End()
+	ss.Rule(".kiln-help-list").
+		Set(
+			"display", "grid",
+			"grid-template-columns", "auto 1fr",
+			"gap", "8px 14px",
+			"margin", "10px 0",
+		).
+		End()
+	ss.Rule(".kiln-help-list dt").
+		Set("text-align", "right", "margin", "0").
+		End()
+	ss.Rule(".kiln-help-list dd").
+		Set("margin", "0", "color", "rgba(220, 225, 235, 0.85)", "font-size", "13px").
+		End()
+
 	ss.Rule(".kiln-msg-retry").
 		Set(
 			"display", "inline-block",

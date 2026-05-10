@@ -3351,6 +3351,37 @@ func TestBrowser_FailedToolRowOffersRetry(t *testing.T) {
 	t.Errorf("retry did not pre-fill input; got %q", got)
 }
 
+// '?' button opens a keyboard-shortcuts help modal.
+func TestBrowser_HelpButtonOpensShortcutsModal(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-help`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-help`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-help-list`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`Array.from(document.querySelectorAll('.kiln-help-list dt')).map(e=>e.textContent)`, &keys))
+	wantKeys := []string{"⌘K", "Enter", "Esc", "Y", "N", "M"}
+	for _, w := range wantKeys {
+		var found bool
+		for _, k := range keys {
+			if strings.Contains(k, w) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("help modal missing %q in %v", w, keys)
+		}
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
