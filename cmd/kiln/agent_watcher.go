@@ -7,11 +7,69 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/gofastr/gofastr/kiln/journal"
 	"github.com/gofastr/gofastr/kiln/live"
 	"github.com/gofastr/gofastr/kiln/protocol"
 )
+
+// countToolsAndErrors snapshots the journaled tool counts so the
+// per-turn summary at agent_turn_ended is just (post - pre) without
+// needing to track via mutex during the run.
+func countToolsAndErrors(l *live.Live) (calls, errors int) {
+	for _, e := range l.Session().Chat {
+		if e.Kind == journal.KindToolCall {
+			calls++
+		}
+		if e.Kind == journal.KindToolResult && e.Result != nil && !e.Result.OK {
+			errors++
+		}
+	}
+	return
+}
+
+// turnSummary renders a one-line system note appended at the end of
+// every agent turn so the user gets visible closure (vs. "did pi
+// stop or is it still working?"). Examples:
+//   "✓ turn complete · 5 tools · 23s"
+//   "⚠ turn complete · 11 tools · 2 errors · 47s"
+//   "· no tools used · 1.2s" (chat-only reply)
+func turnSummary(toolCount, errorCount int, dur time.Duration) string {
+	prefix := "✓"
+	if errorCount > 0 {
+		prefix = "⚠"
+	}
+	parts := []string{prefix + " turn complete"}
+	if toolCount == 0 {
+		parts = []string{"· no tools used"}
+	} else {
+		if toolCount == 1 {
+			parts = append(parts, "1 tool")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d tools", toolCount))
+		}
+		if errorCount > 0 {
+			if errorCount == 1 {
+				parts = append(parts, "1 error")
+			} else {
+				parts = append(parts, fmt.Sprintf("%d errors", errorCount))
+			}
+		}
+	}
+	parts = append(parts, formatTurnDuration(dur))
+	return "[" + strings.Join(parts, " · ") + "]"
+}
+
+func formatTurnDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < 10*time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%ds", int(d.Seconds()))
+}
 
 // runAgentWatcher subscribes to live's event bus and spawns the
 // configured agent command once per chat_user event. KILN_URL is
@@ -69,8 +127,15 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 			go func(turnCtx context.Context, cancel context.CancelCauseFunc, text string, adapter Adapter) {
 				defer cancel(nil)
 				l.Notify("agent_turn_started", adapter.Name)
+				start := time.Now()
+				preToolCount, preErrCount := countToolsAndErrors(l)
 				runOneAgentTurn(turnCtx, logger, tools, adapter, kilnURL, text)
 				store.ClearTurnCancel()
+				postToolCount, postErrCount := countToolsAndErrors(l)
+				_ = tools.Chat(context.Background(), protocol.ChatArgs{
+					Role: "assistant",
+					Text: turnSummary(postToolCount-preToolCount, postErrCount-preErrCount, time.Since(start)),
+				})
 				l.Notify("agent_turn_ended", adapter.Name)
 			}(turnCtx, cancel, text, adapter)
 		}
