@@ -43,6 +43,7 @@ func serveWidgetList(w http.ResponseWriter, _ *http.Request) {
 		s := &server{def: *d}
 		chrome := s.renderSkeleton()
 		out = append(out, map[string]any{
+			"hidden": d.Hidden,
 			"cfg": map[string]any{
 				"name":          d.Name,
 				"position":      string(d.Position),

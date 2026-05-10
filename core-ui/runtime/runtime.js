@@ -42,17 +42,33 @@
     .then((r) => (r.ok ? r.json() : null))
     .then((list) => {
       if (!Array.isArray(list)) return;
-      // Wait for the public API to be installed (it's defined further
-      // below in this same IIFE), then mount each widget.
       const tryMount = () => {
         if (!window.__gofastr || !window.__gofastr.mountWidget) {
           setTimeout(tryMount, 0);
           return;
         }
+        // Stash every widget's payload so openWidget can retrieve a
+        // hidden one on demand.
+        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
         for (const item of list) {
+          window.__gofastr._widgetCatalog[item.cfg.name] = item;
+          if (item.hidden) continue; // open later via openWidget(name)
           try {
             window.__gofastr.mountWidget(item.cfg, item.chrome);
           } catch (_) {}
+        }
+        // Global click delegation for data-fui-open buttons. Bound
+        // ONCE per document (idempotent flag).
+        if (!document.__fuiOpenDispatch) {
+          document.__fuiOpenDispatch = true;
+          document.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-fui-open]');
+            if (!btn) return;
+            const name = btn.getAttribute('data-fui-open');
+            if (!name) return;
+            e.preventDefault();
+            window.__gofastr.openWidget(name);
+          });
         }
       };
       tryMount();
@@ -313,6 +329,21 @@
     /** Read the current value of a named signal. */
     signal(name) {
       return this._signals[name]?.value;
+    },
+
+    /** Mount a hidden widget by name. Looks up the entry stashed by
+        the auto-discovery fetch and delegates to mountWidget. No-op
+        if the widget is already mounted (mountWidget is idempotent). */
+    openWidget(name) {
+      const entry = this._widgetCatalog && this._widgetCatalog[name];
+      if (!entry) return;
+      this.mountWidget(entry.cfg, entry.chrome);
+    },
+
+    /** Dismiss a mounted widget by name. */
+    closeWidget(name) {
+      const w = this._widgets[name];
+      if (w && typeof w.dismiss === 'function') w.dismiss();
     },
 
     /** Mount a widget. cfg comes from the per-widget bootstrap;

@@ -127,6 +127,12 @@ type Definition struct {
 	CloseOnEscape bool // ESC closes the widget
 	CloseOnClickOutside bool
 
+	// Hidden=true means the widget is registered but NOT auto-mounted
+	// on page load. A button with data-fui-open="<name>" calls
+	// __gofastr.openWidget(name) to mount it on demand. Use for
+	// modals + drawers that should appear in response to user action.
+	Hidden bool
+
 	// Asset path overrides. Default routes are derived from Name.
 	BootstrapPath string // default: /core-ui/widget/<name>/bootstrap.js
 	StylePath     string // default: /core-ui/widget/<name>/style.css
@@ -263,6 +269,10 @@ func (b *Builder) RPCWithSignal(method, path string, h http.Handler, signal stri
 
 // Backdrop forces a backdrop regardless of position.
 func (b *Builder) Backdrop() *Builder { b.def.Backdrop = true; return b }
+
+// Hidden marks the widget as registered-but-not-auto-mounted. Open
+// it from a button with data-fui-open="<name>".
+func (b *Builder) Hidden() *Builder { b.def.Hidden = true; return b }
 
 // Skeleton overrides the default chrome wrapper.
 func (b *Builder) Skeleton(fn func(slots map[string]render.HTML) render.HTML) *Builder {

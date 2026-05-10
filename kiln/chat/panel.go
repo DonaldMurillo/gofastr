@@ -62,16 +62,44 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools) {
 		SSEReload("/.kiln/events", "world_edit", "op", "add_route").
 		SSEReload("/.kiln/events", "world_edit", "op", "delete_route").
 		// RPC: chat send, reset, approve/reject, undo.
-		RPCWithSignal("POST", "/kiln/panel/send", http.HandlerFunc(pe.serveSend), "chat_html").
-		RPCWithSignal("POST", "/kiln/panel/reset", http.HandlerFunc(pe.serveReset), "chat_html").
-		RPCWithSignal("POST", "/kiln/panel/approve_plan", http.HandlerFunc(pe.serveApprove), "chat_html").
-		RPCWithSignal("POST", "/kiln/panel/reject_plan", http.HandlerFunc(pe.serveReject), "chat_html").
+		// SSE refetch owns log updates; the synchronous RPC response is
+		// just an ack. Binding chat_html to the response was a footgun:
+		// on error (or even on success) the JSON ack got stringified
+		// into the log innerHTML.
+		RPC("POST", "/kiln/panel/send", http.HandlerFunc(pe.serveSend)).
+		RPC("POST", "/kiln/panel/reset", http.HandlerFunc(pe.serveReset)).
+		RPC("POST", "/kiln/panel/approve_plan", http.HandlerFunc(pe.serveApprove)).
+		RPC("POST", "/kiln/panel/reject_plan", http.HandlerFunc(pe.serveReject)).
 		RPC("POST", "/kiln/panel/undo", http.HandlerFunc(pe.serveUndo)).
 		Build()
 
 	def.ExtraCSS = widgetCSS // appends panel content CSS after framework chrome
 	widget.Mount(r, &def)
+
+	// Hidden Modal: agent-settings, opened by the gear button via
+	// data-fui-open="kiln-agent-settings".
+	settings := preset.Modal("kiln-agent-settings").
+		Hidden().
+		Slot("body", htmlComp{html: pe.agentSettingsHTML()}).
+		Build()
+	widget.Mount(r, &settings)
+
 	widget.MountRuntime(r) // idempotent — the framework runtime URL goes here
+}
+
+// agentSettingsHTML is a placeholder modal body. Real adapter switching
+// already exists at /kiln/agent (see cmd/kiln/agent_http.go); this
+// modal just surfaces a clean container so the gear button has somewhere
+// to land. Future iterations can render the adapter list here.
+func (pe *panelEnv) agentSettingsHTML() string {
+	return `<div class="kiln-modal-card">` +
+		`<h2 class="kiln-modal-title">Agent settings</h2>` +
+		`<p class="kiln-modal-sub">Pick which CLI agent kiln spawns when you send a message.</p>` +
+		`<div class="kiln-modal-body" id="kiln-agent-list">Loading…</div>` +
+		`<div class="kiln-modal-actions">` +
+		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close</button>` +
+		`</div>` +
+		`</div>`
 }
 
 // skeleton renders the kiln panel chrome with the floating-panel
@@ -116,14 +144,14 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
 		`<span class="kiln-panel-agent" data-fui-signal="agent">no agent</span>` +
-		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-action="config">⚙</button>` +
-		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-signal="chat_html">↺</button>` +
+		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
+		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" >↺</button>` +
 		`<button type="button" class="kiln-panel-close" data-fui-action="close" aria-label="Close">×</button>` +
 		`</div>`
 }
 
 func (pe *panelEnv) inputHTML() string {
-	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-signal="chat_html">` +
+	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" >` +
 		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…" rows="2" autocomplete="off"></textarea>` +
 		`<button class="kiln-send" type="submit">Send</button>` +
 		`</form>`
@@ -248,11 +276,11 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 			`<div class="kiln-plan-actions">`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-approve" `+
 				`data-plan-action="approve" data-plan-id="%s" `+
-				`data-fui-rpc="/kiln/panel/approve_plan" data-fui-rpc-signal="chat_html" `+
+				`data-fui-rpc="/kiln/panel/approve_plan"  `+
 				`data-fui-rpc-body='{"plan_id":"%s"}'>Approve</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-reject" `+
 				`data-plan-action="reject" data-plan-id="%s" `+
-				`data-fui-rpc="/kiln/panel/reject_plan" data-fui-rpc-signal="chat_html" `+
+				`data-fui-rpc="/kiln/panel/reject_plan"  `+
 				`data-fui-rpc-body='{"plan_id":"%s"}'>Reject</button>`+
 				`</div>`,
 			escAttr(p.PlanID), escAttr(p.PlanID), escAttr(p.PlanID), escAttr(p.PlanID))
@@ -262,22 +290,28 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan) {
 
 // --- RPC handlers ----------------------------------------------------
 
+// All RPC handlers return a small JSON ack. The actual log update flows
+// to the panel via the SSE refetch binding (chat_user / world_edit /
+// plan_*) — that's the only path that should write to chat_html.
+
 func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if strings.TrimSpace(body.Text) == "" {
-		http.Error(w, "empty", http.StatusBadRequest)
+		// Don't 4xx on empty — that would surface as an RPC failure
+		// in the runtime. Silent ack: nothing to do, no journal write.
+		ack(w)
 		return
 	}
 	pe.tools.Chat(r.Context(), protocol.ChatArgs{Role: "user", Text: body.Text})
-	pe.respondHTML(w, pe.logHTMLForCurrent())
+	ack(w)
 }
 
 func (pe *panelEnv) serveReset(w http.ResponseWriter, r *http.Request) {
 	pe.tools.ResetSession(r.Context(), protocol.ResetSessionArgs{})
-	pe.respondHTML(w, pe.logHTMLForCurrent())
+	ack(w)
 }
 
 func (pe *panelEnv) serveApprove(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +320,7 @@ func (pe *panelEnv) serveApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pe.tools.ApprovePlan(r.Context(), protocol.ApprovePlanArgs{PlanID: body.PlanID})
-	pe.respondHTML(w, pe.logHTMLForCurrent())
+	ack(w)
 }
 
 func (pe *panelEnv) serveReject(w http.ResponseWriter, r *http.Request) {
@@ -296,22 +330,17 @@ func (pe *panelEnv) serveReject(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pe.tools.RejectPlan(r.Context(), protocol.RejectPlanArgs{PlanID: body.PlanID, Reason: body.Reason})
-	pe.respondHTML(w, pe.logHTMLForCurrent())
+	ack(w)
 }
 
 func (pe *panelEnv) serveUndo(w http.ResponseWriter, _ *http.Request) {
 	pe.tools.Undo(context.Background(), protocol.UndoArgs{})
-	w.WriteHeader(http.StatusOK)
+	ack(w)
 }
 
-// respondHTML writes the html string as the JSON response body so the
-// fui runtime's data-fui-rpc-signal binding (which json-decodes) puts
-// the html into the named signal.
-func (pe *panelEnv) respondHTML(w http.ResponseWriter, html string) {
+func ack(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(html)
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // --- helpers ---------------------------------------------------------

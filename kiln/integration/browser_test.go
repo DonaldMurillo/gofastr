@@ -914,6 +914,126 @@ func startKilnWithNewPanel(t *testing.T) (string, *protocol.Tools) {
 	return url, tools
 }
 
+// --- (14) Panel error path doesn't poison the log -------------------
+//
+// Empty-send returns 400. The legacy bug: the runtime captured the
+// non-OK response into the chat_html signal which then rendered the
+// JSON error blob as innerHTML of the log. Tests added here BEFORE
+// the fix; they fail until panel.go drops its chat_html signal bind
+// and lets the SSE refetch own log updates instead.
+func TestBrowser_EmptySendDoesNotPoisonLog(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-send`, chromedp.ByQuery),
+		// Click Send with an empty input — fires real submit event.
+		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+	); err != nil {
+		t.Fatalf("empty submit: %v", err)
+	}
+
+	var logHTML string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.kiln-log-wrap')?.innerHTML ?? ''`, &logHTML),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, banned := range []string{`"ok":false`, `"status":400`, `"text":"empty`} {
+		if strings.Contains(logHTML, banned) {
+			t.Errorf("log was polluted by error response — found %q in:\n%s", banned, logHTML)
+		}
+	}
+}
+
+// TestBrowser_SendMessageUpdatesLogViaSSE: legitimate send must end up
+// in the log. With the chat_html bind removed, the SSE refetch is the
+// only path; this guards against the regression where dropping the
+// bind also drops legit updates.
+func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
+	urlBase, tools := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "hello via panel"),
+		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	var logHTML string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx,
+			chromedp.Evaluate(`document.querySelector('.kiln-log-wrap')?.innerHTML ?? ''`, &logHTML),
+		)
+		if strings.Contains(logHTML, "hello via panel") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !strings.Contains(logHTML, "hello via panel") {
+		t.Errorf("message never appeared in log via SSE refetch:\n%s", logHTML)
+	}
+	// And the journal recorded it (sanity).
+	chats := tools.Live().Session().Chat
+	if len(chats) == 0 || chats[len(chats)-1].Message == nil ||
+		!strings.Contains(chats[len(chats)-1].Message.Text, "hello via panel") {
+		t.Errorf("journal didn't capture the message: %+v", chats)
+	}
+}
+
+// TestBrowser_GearOpensAgentSettingsModal: clicking the gear button
+// (data-fui-open="kiln-agent-settings") mounts the previously-hidden
+// Modal widget. Catches the "I can't even open the gear" regression.
+func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
+	urlBase, _ := startKiln(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	// Modal should NOT be visible before the click.
+	var presentBefore bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(
+			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`,
+			&presentBefore,
+		),
+	); err != nil {
+		t.Fatalf("pre-click: %v", err)
+	}
+	if presentBefore {
+		t.Errorf("agent-settings modal should be hidden before gear click")
+	}
+
+	// Click gear, modal mounts.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("click gear: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`,
+			&present))
+		if present {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Errorf("agent-settings modal never appeared after gear click")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
