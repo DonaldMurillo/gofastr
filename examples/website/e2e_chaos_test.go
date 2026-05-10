@@ -147,8 +147,11 @@ func TestE2E_Livereload_ScriptIsServed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chromedp navigate to /__livereload.js: %v", err)
 	}
-	if !strings.Contains(jsBody, "fetch('/__livereload')") {
-		t.Errorf("livereload.js missing the long-poll fetch; got:\n%s", jsBody)
+	if !strings.Contains(jsBody, "/__livereload") {
+		t.Errorf("livereload.js missing /__livereload reference; got:\n%s", jsBody)
+	}
+	if !strings.Contains(jsBody, "setInterval") {
+		t.Errorf("livereload.js should short-poll via setInterval; got:\n%s", jsBody)
 	}
 }
 

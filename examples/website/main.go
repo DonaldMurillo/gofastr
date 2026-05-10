@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -92,15 +93,18 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp.Mount(host)
 
 	if devMode() {
-		// Dev-only livereload — long-polled connection that drops on
-		// server restart, paired with a tiny script that reloads when
-		// the poll errors. CSP-safe (external file, no inline JS).
-		// Gated by GOFASTR_DEV=1 so tests and production are clean.
+		// Dev-only livereload — short-poll, NOT long-poll. Each request
+		// returns immediately with the server's start timestamp; the
+		// client compares it against the first value it saw and reloads
+		// when it changes. A short-poll avoids tying up Chrome's
+		// 6-connections-per-host pool with hanging long-polls (which
+		// caused page navigation to stall after a few rapid clicks).
+		// Gated by GOFASTR_DEV=1.
+		buildID := strconv.FormatInt(time.Now().UnixNano(), 10)
 		fwApp.Router.Get("/__livereload", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "text/plain")
-			w.(http.Flusher).Flush()
-			<-r.Context().Done()
+			_, _ = w.Write([]byte(buildID))
 		}))
 		fwApp.Router.Get("/__livereload.js", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/javascript")
@@ -117,18 +121,24 @@ func devMode() bool {
 	return os.Getenv("GOFASTR_DEV") == "1"
 }
 
+// livereloadJS — short-poll loop. Each request is a normal GET that
+// returns immediately with the server's build-id. The client snapshots
+// the first value it sees and reloads as soon as it changes (which
+// happens on every server restart). When the server is briefly down
+// during a rebuild, fetch errors are caught and the loop just retries.
 const livereloadJS = `(() => {
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const reachable = async () => {
-    try { const r = await fetch('/__livereload', {method: 'HEAD'}); return r.ok; }
-    catch { return false; }
+  let initial = null;
+  const tick = async () => {
+    try {
+      const r = await fetch('/__livereload', { cache: 'no-store' });
+      const id = await r.text();
+      if (initial === null) { initial = id; return; }
+      if (id !== initial) location.reload();
+    } catch (_) { /* server restarting — try again next tick */ }
   };
-  const watch = async () => {
-    try { await fetch('/__livereload'); } catch {}
-    while (!(await reachable())) { await wait(200); }
-    location.reload();
-  };
-  watch();
+  // First call captures the baseline; subsequent calls watch for change.
+  tick();
+  setInterval(tick, 1000);
 })();`
 
 func runBuildStatic(out string, watch bool, interval time.Duration) {

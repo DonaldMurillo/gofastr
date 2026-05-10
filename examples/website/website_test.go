@@ -119,8 +119,11 @@ func TestLivereloadEndpointsServe(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/__livereload.js status = %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "fetch('/__livereload')") {
-		t.Errorf("expected livereload script to fetch /__livereload")
+	if !strings.Contains(rec.Body.String(), "/__livereload") {
+		t.Errorf("expected livereload script to reference /__livereload")
+	}
+	if !strings.Contains(rec.Body.String(), "setInterval") {
+		t.Errorf("expected livereload script to use setInterval (short-poll)")
 	}
 
 	pageReq := httptest.NewRequest("GET", "/", nil)
