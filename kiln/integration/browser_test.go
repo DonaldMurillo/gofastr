@@ -1833,6 +1833,53 @@ func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 	t.Errorf("missing elapsed-time and/or name-echo annotations; rows=%v", rows)
 }
 
+// Pressing Enter (no Shift) inside the chat textarea submits the
+// form — standard chat UX. Shift+Enter still inserts a newline.
+func TestBrowser_EnterSubmitsChat(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "hi via enter"),
+		chromedp.Focus(`.kiln-input`, chromedp.ByQuery),
+		chromedp.KeyEvent(kb.Enter),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("enter-submit flow: %v", err)
+	}
+	// Input should have cleared (data-fui-rpc-reset).
+	var val string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &val))
+		if val == "" {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	if val != "" {
+		t.Errorf("textarea did not clear after Enter-submit: %q", val)
+	}
+
+	// Shift+Enter must NOT submit — it inserts a newline.
+	if err := chromedp.Run(ctx,
+		chromedp.Focus(`.kiln-input`, chromedp.ByQuery),
+		chromedp.SendKeys(`.kiln-input`, "line1"),
+		chromedp.KeyEvent(kb.Enter, chromedp.KeyModifiers(8)), // 8 = Shift per cdproto/input.Modifier
+		chromedp.SendKeys(`.kiln-input`, "line2"),
+	); err != nil {
+		t.Fatalf("shift+enter setup: %v", err)
+	}
+	var afterShift string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &afterShift))
+	if !strings.Contains(afterShift, "line1") || !strings.Contains(afterShift, "line2") {
+		t.Errorf("Shift+Enter should have inserted a newline; textarea=%q", afterShift)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

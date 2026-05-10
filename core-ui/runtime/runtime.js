@@ -481,6 +481,34 @@
         }
       }
 
+      // Enter-to-submit on textareas inside data-fui-submit-on-enter
+      // forms. Shift+Enter still inserts a newline. Skips submission
+      // when form is invalid (HTML5 :required handles the no-op feel).
+      const enterForms = widgetEl.querySelectorAll('form[data-fui-submit-on-enter]');
+      const isEnter = (e) => (e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13);
+      enterForms.forEach((form) => {
+        form.querySelectorAll('textarea').forEach((ta) => {
+          // keydown to call preventDefault before the browser inserts \n.
+          ta.addEventListener('keydown', (e) => {
+            if (!isEnter(e) || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof form.requestSubmit === 'function') {
+              form.requestSubmit();
+            } else {
+              form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            }
+          });
+          // Belt-and-suspenders: keypress can also fire the char event
+          // in some contexts (older keyboard APIs / synthesized events).
+          ta.addEventListener('keypress', (e) => {
+            if (!isEnter(e) || e.shiftKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+          });
+        });
+      });
+
       // Form-validity → button-disabled wiring. Any FORM marked
        // data-fui-disable-when-invalid keeps its inner submit buttons
        // disabled while form.checkValidity() is false. Pairs with HTML5
