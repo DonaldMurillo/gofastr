@@ -191,6 +191,24 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-panel-conn").
+		Set(
+			"display", "inline-block",
+			"width", "8px",
+			"height", "8px",
+			"border-radius", "50%",
+			"margin-right", "6px",
+			"background", "rgba(180, 180, 180, 0.4)",
+			"transition", "background 0.2s ease",
+		).
+		End()
+	ss.Rule("body.fui-sse-up .kiln-panel-conn").
+		Set("background", "rgba(110, 220, 150, 0.85)").
+		End()
+	ss.Rule("body.fui-sse-down .kiln-panel-conn").
+		Set("background", "{colors.kiln-bad}", "animation", "kilnPulse 1.2s ease-in-out infinite").
+		End()
+
 	ss.Rule(".kiln-msg-page").
 		Set(
 			"display", "inline-block",

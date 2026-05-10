@@ -285,6 +285,7 @@ func (h htmlComp) Render() render.HTML { return render.HTML(h.html) }
 
 func (pe *panelEnv) headerHTML() string {
 	return `<div class="kiln-panel-head">` +
+		`<span class="kiln-panel-conn" title="SSE connection status" aria-label="SSE connection status"></span>` +
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
 		`<span class="kiln-panel-agent" data-fui-signal="agent">` + escHTML(pe.agentLabel()) + `</span>` +

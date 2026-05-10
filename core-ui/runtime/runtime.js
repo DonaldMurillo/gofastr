@@ -411,7 +411,19 @@
           try {
             const es = new EventSource(b.path);
             seenStreams[b.path] = es;
-            es.addEventListener('open', () => { window.__fuiSSEReady = true; });
+            // Track SSE connection state on document.body so any
+            // widget can style itself off the html-level class. The
+            // browser auto-reconnects on transient drops; we toggle
+            // the class on each open/error transition.
+            es.addEventListener('open', () => {
+              window.__fuiSSEReady = true;
+              document.body.classList.remove('fui-sse-down');
+              document.body.classList.add('fui-sse-up');
+            });
+            es.addEventListener('error', () => {
+              document.body.classList.remove('fui-sse-up');
+              document.body.classList.add('fui-sse-down');
+            });
           } catch (_) {
             seenStreams[b.path] = null;
           }

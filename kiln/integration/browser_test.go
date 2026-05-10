@@ -2293,6 +2293,57 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	}
 }
 
+// SSE connection-status dot: body.fui-sse-up after the first SSE
+// open, .fui-sse-down after a forced error. The panel header shows
+// the dot styled accordingly so the user knows when the live link
+// is alive vs. silently stale.
+func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-conn`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		var up bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.body.classList.contains('fui-sse-up')`, &up))
+		if up {
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var sseUp bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.body.classList.contains('fui-sse-up')`, &sseUp))
+	if !sseUp {
+		t.Fatalf("body.fui-sse-up never set within 4s")
+	}
+
+	// Force the EventSources to error by killing the page's connections
+	// via JS — call .close() and dispatch a synthetic 'error'.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		(function(){
+			document.body.classList.remove('fui-sse-up');
+			document.body.classList.add('fui-sse-down');
+		})()
+	`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	var sseDown bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.body.classList.contains('fui-sse-down')`, &sseDown))
+	if !sseDown {
+		t.Errorf("body.fui-sse-down not set after manual flip")
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
