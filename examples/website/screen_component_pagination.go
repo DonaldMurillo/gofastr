@@ -1,19 +1,42 @@
 package main
 
 import (
+	"context"
+	"strconv"
+
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/elements"
 	"github.com/gofastr/gofastr/core-ui/pagination"
 	"github.com/gofastr/gofastr/core/render"
 )
 
-type PaginationScreen struct{}
+// PaginationScreen now reads ?p from the URL and threads it into the
+// "Live" demo so clicking a page link actually advances the table —
+// the screen Load() pulls the value via app.QueryFromContext.
+type PaginationScreen struct {
+	page int
+}
 
 func (s *PaginationScreen) ScreenTitle() string        { return "Pagination" }
 func (s *PaginationScreen) ScreenDescription() string  { return "Numeric pagination with ARIA." }
 func (s *PaginationScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
+func (s *PaginationScreen) Load(ctx context.Context) error {
+	s.page = 1
+	if v, err := strconv.Atoi(app.QueryFromContext(ctx).Get("p")); err == nil && v > 0 {
+		s.page = v
+	}
+	return nil
+}
+
 func (s *PaginationScreen) Render() render.HTML {
+	livePage := s.page
+	if livePage < 1 || livePage > 5 {
+		livePage = 1
+	}
+	live := pagination.New(pagination.Config{
+		Total: 5, Current: livePage, HrefPattern: "?p=%d",
+	})
 	small := pagination.New(pagination.Config{
 		Total: 5, Current: 3, HrefPattern: "?p=%d",
 	})
@@ -32,6 +55,9 @@ func (s *PaginationScreen) Render() render.HTML {
 	})
 
 	stack := render.Tag("div", map[string]string{"style": "display:grid;gap:1rem"},
+		labeledRow(
+			"Live — current page is "+strconv.Itoa(livePage)+" (click any number to navigate)",
+			live),
 		labeledRow("5 pages, current=3 (no ellipsis)", small),
 		labeledRow("8 pages, current=1 (Previous disabled at boundary)", atFirst),
 		labeledRow("20 pages, current=4 (single ellipsis)", mid),

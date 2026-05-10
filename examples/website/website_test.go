@@ -70,7 +70,8 @@ func TestComponentDemosRenderWithoutPanic(t *testing.T) {
 		}},
 		{"/framework-ui/datatable", []string{
 			`ui-data-table`, `ui-data-table__sort`,
-			`aria-sort="ascending"`, `<caption`,
+			// no sort param → all sortable headers report aria-sort="none"
+			`aria-sort="none"`, `<caption`,
 		}},
 		{"/framework-ui/form", []string{
 			`ui-form`, `ui-form__fields`, `is-error`, `Form has errors`,

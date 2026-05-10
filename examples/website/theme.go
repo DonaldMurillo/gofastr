@@ -227,7 +227,7 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "grid",
 			"grid-template-columns", "repeat(auto-fit, minmax(180px, 1fr))",
 			"gap", "{spacing.md}").End()
-	ss.Rule(".demo-avatar-row, .demo-badge-row").
+	ss.Rule(".demo-avatar-row, .demo-badge-row, .demo-trigger-row").
 		Set("display", "flex", "gap", "{spacing.md}",
 			"align-items", "center", "flex-wrap", "wrap").End()
 
