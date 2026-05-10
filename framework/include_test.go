@@ -469,3 +469,85 @@ func TestInclude_Nested_OnList(t *testing.T) {
 		}
 	})
 }
+
+// ============================================================================
+// Test: scoped include — ?include=comments(body_like=nice) attaches only the
+// matching subset.
+// ============================================================================
+
+func TestInclude_Scoped_FilterChildren(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		// Add a third comment that should NOT match the scoped filter.
+		if _, err := db.Exec(
+			"INSERT INTO comments(id, body, post_id) VALUES ($1, $2, $3)",
+			"c3", "boring", "p1"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts/p1?include=comments(body_like=%25nice%25)")
+		resp.AssertStatus(t, http.StatusOK)
+
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		comments, ok := got["comments"].([]any)
+		if !ok {
+			t.Fatalf("expected comments slice, got %T (%v)", got["comments"], got["comments"])
+		}
+		if len(comments) != 1 {
+			t.Fatalf("expected 1 matching comment, got %d (%v)", len(comments), comments)
+		}
+	})
+}
+
+// ============================================================================
+// Test: scoped include composes with the regular include list — comments
+// filtered, author unfiltered.
+// ============================================================================
+
+func TestInclude_Scoped_Mixed(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts/p1?include=author,comments(body=nice)")
+		resp.AssertStatus(t, http.StatusOK)
+
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if author, _ := got["author"].(map[string]any); author == nil || author["name"] != "Alice" {
+			t.Fatalf("expected unfiltered author, got %v", got["author"])
+		}
+		comments, _ := got["comments"].([]any)
+		if len(comments) != 1 {
+			t.Fatalf("expected 1 scoped comment, got %d (%v)", len(comments), comments)
+		}
+		first := comments[0].(map[string]any)
+		if first["body"] != "nice" {
+			t.Fatalf("expected body=nice, got %v", first["body"])
+		}
+	})
+}
+
+// ============================================================================
+// Test: scoped include with unknown field returns 400
+// ============================================================================
+
+func TestInclude_Scoped_UnknownField_400(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts/p1?include=comments(does_not_exist=x)")
+		resp.AssertStatus(t, http.StatusBadRequest).
+			AssertBodyContains(t, "does_not_exist")
+	})
+}
