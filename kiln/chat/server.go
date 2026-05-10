@@ -25,9 +25,6 @@ var hostHTML string
 //go:embed assets/widget.js
 var widgetJS string
 
-//go:embed assets/theme.css
-var themeCSS string
-
 // WidgetTag is the HTML snippet to embed the floating widget on a page.
 // kiln/render auto-injects this on every page it serves; user-built
 // apps can drop it in manually. The widget remembers open/closed state
@@ -113,14 +110,15 @@ func (s *Server) serveBaseCSS(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(w, baseCSS())
 }
 
-// serveThemeCSS returns the kiln default theme stylesheet at /kiln/theme.css.
-// Linked from every kiln-rendered page so the agent can use class-based
-// styling (.kiln-section, .kiln-card, .kiln-button, etc.) without ever
-// emitting inline `style="…"` — which the strict CSP would block.
+// serveThemeCSS returns the kiln page theme stylesheet at /kiln/theme.css.
+// The CSS is generated programmatically by pageCSS() — no static .css
+// file. The framework's core-ui/style stylesheet builder owns token
+// resolution; that means a theme override (eventually via
+// world.App.Theme) re-skins every page without rewriting any rule.
 func (s *Server) serveThemeCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprint(w, themeCSS)
+	fmt.Fprint(w, pageCSS())
 }
 
 // serveStatus returns a focused snapshot of the live runtime, ideal for
