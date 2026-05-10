@@ -58,6 +58,9 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		Signal("chat_status", widget.SignalFunc(func() (any, error) {
 			return pe.statusText(), nil
 		})).
+		Signal("world_snapshot", widget.SignalFunc(func() (any, error) {
+			return pe.worldSnapshotText(), nil
+		})).
 		// Every world / chat event triggers a chat_html refresh —
 		// SSERefetch re-pulls the rendered HTML from /state instead
 		// of using the SSE payload (which is just metadata).
@@ -77,6 +80,10 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		SSERefetch("/.kiln/events", "agent_turn_started", "chat_status").
 		SSERefetch("/.kiln/events", "agent_turn_ended", "chat_status").
 		SSERefetch("/.kiln/events", "chat_assistant", "chat_status").
+		// World-snapshot pill: live count of entities/pages/routes/hooks.
+		// Refresh on any world_edit so the pill keeps pace with the agent.
+		SSERefetch("/.kiln/events", "world_edit", "world_snapshot").
+		SSERefetch("/.kiln/events", "session_reset", "world_snapshot").
 		// Page-affecting world edits: full reload so the now-rendered
 		// page reflects the new world. Filtered by op so add_entity
 		// (which doesn't change page rendering) doesn't trigger reloads.
@@ -255,11 +262,47 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
 		`<span class="kiln-panel-agent" data-fui-signal="agent">no agent</span>` +
+		`<span class="kiln-panel-snapshot" data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</span>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
 		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-rpc="/kiln/panel/reset" >↺</button>` +
 		`<button type="button" class="kiln-panel-close" data-fui-action="close" aria-label="Close">×</button>` +
 		`</div>`
+}
+
+// worldSnapshotText returns a glanceable summary of the live world:
+// "3 entities · 1 page · 2 routes · 5 hooks". Singular forms collapse
+// (1 entity, not 1 entities). Empty world returns "empty world" so
+// the pill is never blank.
+func (pe *panelEnv) worldSnapshotText() string {
+	w := pe.live.Session().World
+	if w == nil {
+		return "empty world"
+	}
+	parts := []string{}
+	if n := len(w.Entities); n > 0 {
+		parts = append(parts, pluralize(n, "entity", "entities"))
+	}
+	if n := len(w.Pages); n > 0 {
+		parts = append(parts, pluralize(n, "page", "pages"))
+	}
+	if n := len(w.Routes); n > 0 {
+		parts = append(parts, pluralize(n, "route", "routes"))
+	}
+	if n := len(w.Hooks); n > 0 {
+		parts = append(parts, pluralize(n, "hook", "hooks"))
+	}
+	if len(parts) == 0 {
+		return "empty world"
+	}
+	return strings.Join(parts, " · ")
+}
+
+func pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }
 
 // statusText returns the in-flight indicator HTML. Empty when no agent

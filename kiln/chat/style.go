@@ -191,6 +191,24 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-panel-snapshot").
+		Set(
+			"display", "inline-flex",
+			"align-items", "center",
+			"padding", "2px 8px",
+			"margin-right", "4px",
+			"font-size", "11px",
+			"font-family", "ui-monospace, monospace",
+			"color", "rgba(170, 180, 200, 0.85)",
+			"background", "rgba(255, 255, 255, 0.04)",
+			"border", "1px solid rgba(255, 255, 255, 0.08)",
+			"border-radius", "999px",
+			"white-space", "nowrap",
+			"overflow", "hidden",
+			"text-overflow", "ellipsis",
+			"max-width", "200px",
+		).
+		End()
 	ss.Rule(".kiln-panel-agent-none").
 		Set(
 			"background", "rgba(255, 200, 110, 0.10)",

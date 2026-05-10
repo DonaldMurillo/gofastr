@@ -1523,6 +1523,66 @@ func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
 	}
 }
 
+// World snapshot pill in the panel header keeps the user oriented:
+// 'empty world' on a fresh start; '1 entity' / '2 entities · 1 page'
+// after the agent works. Updates live via SSE refresh on world_edit.
+func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-snapshot`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// Initial state: empty world.
+	var initial string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &initial, chromedp.ByQuery))
+	if !strings.Contains(initial, "empty") {
+		t.Fatalf("expected 'empty world' on fresh load, got %q", initial)
+	}
+
+	// Wait for SSE so the world_edit refetch can fire.
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	// Add an entity — pill should re-render to "1 entity" within 2s.
+	res := tools.AddEntity(context.Background(), protocol.AddEntityArgs{
+		Entity: &world.Entity{Name: "notes", Fields: []world.Field{
+			{Name: "title", Type: "string", Required: true},
+		}},
+	})
+	if !res.OK {
+		t.Fatalf("add_entity failed: %v", res.Error)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var pill string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &pill, chromedp.ByQuery))
+		if strings.Contains(pill, "1 entity") {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var last string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &last, chromedp.ByQuery))
+	t.Errorf("snapshot pill never updated to '1 entity' after add_entity; final=%q", last)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
