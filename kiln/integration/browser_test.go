@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/gofastr/gofastr/kiln/chat"
@@ -1714,6 +1715,70 @@ func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Errorf("Send button stayed enabled after send cleared the input")
+}
+
+// Esc closes any open modal — keyboard users shouldn't have to mouse
+// over to Cancel. preset.Modal sets CloseOnEscape, the runtime wires
+// the keydown listener; this test pins that wiring against
+// regressions for both kiln modals (gear + reset-confirm).
+func TestBrowser_EscClosesModals(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// (a) Gear modal
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("open gear: %v", err)
+	}
+	if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Escape)); err != nil { // ESC
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`, &present))
+		if !present {
+			break
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var stillGear bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`, &stillGear))
+	if stillGear {
+		t.Errorf("gear modal still present after Esc")
+	}
+
+	// (b) Reset-confirm modal
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+		chromedp.KeyEvent(kb.Escape),
+	); err != nil {
+		t.Fatalf("open + esc reset: %v", err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var present bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`!!document.querySelector('[data-fui-widget="kiln-reset-confirm"]')`, &present))
+		if !present {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	t.Errorf("reset-confirm modal still present after Esc")
 }
 
 // safety: keep fmt + journal imports live
