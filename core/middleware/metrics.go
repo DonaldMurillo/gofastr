@@ -181,3 +181,14 @@ func (w *metricsResponseWriter) Write(b []byte) (int, error) {
 	}
 	return w.ResponseWriter.Write(b)
 }
+
+// Flush forwards to the underlying ResponseWriter's Flusher if it has one.
+// Without this, wrapping breaks any handler that streams (SSE, chunked JSON,
+// long-poll), because the SSE constructor type-asserts http.Flusher and
+// panics otherwise. Found the hard way by the full-stack E2E test that
+// exercised /posts/_events through the metrics middleware.
+func (w *metricsResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

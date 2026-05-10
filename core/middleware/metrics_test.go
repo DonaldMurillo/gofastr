@@ -117,6 +117,29 @@ func TestMetrics_ConcurrentSafe(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Regression: the wrapped ResponseWriter must forward Flush() so SSE / chunked
+// handlers work behind the metrics middleware. Caught in a full-stack E2E
+// before this fixture existed — keeping it pinned here so the assertion
+// fires at the unit level too.
+// ============================================================================
+
+func TestMetrics_ResponseWriterImplementsFlusher(t *testing.T) {
+	m := NewMetrics()
+	captured := make(chan bool, 1)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, ok := w.(http.Flusher)
+		captured <- ok
+		w.WriteHeader(http.StatusOK)
+	})
+	h := MetricsMiddleware(m)(inner)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+	if !<-captured {
+		t.Fatal("expected wrapped ResponseWriter to implement http.Flusher")
+	}
+}
+
 func TestMetrics_UnmatchedRoute(t *testing.T) {
 	m := NewMetrics()
 	h := MetricsMiddleware(m)(http.NotFoundHandler())
