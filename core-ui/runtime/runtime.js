@@ -481,6 +481,31 @@
         }
       }
 
+      // Form-validity → button-disabled wiring. Any FORM marked
+       // data-fui-disable-when-invalid keeps its inner submit buttons
+       // disabled while form.checkValidity() is false. Pairs with HTML5
+       // input attributes (required, pattern, …) so the framework
+       // doesn't reinvent validation.
+      const validityForms = widgetEl.querySelectorAll('form[data-fui-disable-when-invalid]');
+      validityForms.forEach((form) => {
+        const sync = () => {
+          const ok = form.checkValidity();
+          form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((btn) => {
+            btn.disabled = !ok;
+          });
+        };
+        form.addEventListener('input', sync);
+        form.addEventListener('change', sync);
+        // form.reset() empties values but the 'reset' handler runs
+        // BEFORE the values clear; re-sync next frame so validity
+        // reflects the cleared state.
+        form.addEventListener('reset', () => {
+          requestAnimationFrame(sync);
+        });
+        // Initial state.
+        Promise.resolve().then(sync);
+      });
+
       // Widget-scoped click + submit. The click handler only fires
       // for button-like targets (BUTTON, INPUT, A) — skipping FORM
       // matches lets clicks on form descendants (radios, checkboxes,

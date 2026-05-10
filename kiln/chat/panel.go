@@ -347,8 +347,8 @@ func (pe *panelEnv) statusText() string {
 }
 
 func (pe *panelEnv) inputHTML() string {
-	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset>` +
-		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…" rows="2" autocomplete="off"></textarea>` +
+	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset data-fui-disable-when-invalid>` +
+		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…" rows="2" autocomplete="off" required></textarea>` +
 		`<button class="kiln-send" type="submit">Send</button>` +
 		`</form>`
 }

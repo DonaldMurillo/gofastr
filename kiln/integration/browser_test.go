@@ -1653,6 +1653,69 @@ func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
 	t.Errorf("chat message did not clear after Confirm — confirm flow broken")
 }
 
+// Send button stays disabled while the textarea is empty so the user
+// can't accidentally fire a no-op POST. Becomes enabled the moment
+// any non-whitespace text is typed; goes back to disabled after the
+// 2xx ack clears the textarea (existing data-fui-rpc-reset).
+func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-send`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Initial state: empty textarea → button must be disabled.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var disabled bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-send').disabled`, &disabled))
+		if disabled {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	var initialDisabled bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-send').disabled`, &initialDisabled))
+	if !initialDisabled {
+		t.Fatalf("Send button enabled with empty input — should be disabled")
+	}
+
+	// Type → button enables.
+	if err := chromedp.Run(ctx,
+		chromedp.SendKeys(`.kiln-input`, "hello"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var afterTypeDisabled bool
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-send').disabled`, &afterTypeDisabled))
+	if afterTypeDisabled {
+		t.Errorf("Send button still disabled after typing — should be enabled")
+	}
+
+	// Send → input clears via data-fui-rpc-reset → button disables again.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var disabled bool
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-send').disabled`, &disabled))
+		if disabled {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("Send button stayed enabled after send cleared the input")
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
