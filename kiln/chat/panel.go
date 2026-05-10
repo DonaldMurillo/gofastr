@@ -145,7 +145,8 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 func (pe *panelEnv) resetConfirmHTML() string {
 	return `<div class="kiln-modal">` +
 		`<h2 class="kiln-modal-title">Reset session?</h2>` +
-		`<p class="kiln-modal-sub">This wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen with <code>kiln freeze</code> is gone.</p>` +
+		`<p class="kiln-modal-sub">This wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
+		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal — emits a review summary you can paste into a commit message before resetting.</p>` +
 		`<div class="kiln-modal-actions">` +
 		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel</button>` +
 		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-close>Reset</button>` +

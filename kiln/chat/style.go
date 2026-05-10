@@ -400,6 +400,27 @@ func widgetCSS() string {
 	ss.Rule(".kiln-modal-title").
 		Set("margin", "0", "font-size", "14px", "font-weight", "600").
 		End()
+	ss.Rule(".kiln-modal-tip").
+		Set(
+			"margin", "8px 0",
+			"padding", "8px 10px",
+			"background", "rgba(120, 170, 255, 0.06)",
+			"border-left", "3px solid rgba(120, 170, 255, 0.4)",
+			"border-radius", "0 4px 4px 0",
+			"font-size", "12px",
+			"color", "rgba(180, 200, 230, 0.92)",
+		).
+		End()
+	ss.Rule(".kiln-modal-tip code").
+		Set(
+			"background", "rgba(0, 0, 0, 0.35)",
+			"padding", "1px 5px",
+			"border-radius", "3px",
+			"font-family", "ui-monospace, monospace",
+			"font-size", "11px",
+		).
+		End()
+
 	ss.Rule(".kiln-modal-sub").
 		Set("margin", "0", "color", "{colors.kiln-fg-muted}", "font-size", "12px", "line-height", "1.4").
 		End()

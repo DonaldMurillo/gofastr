@@ -2850,6 +2850,27 @@ func TestBrowser_ChatLogIsAriaLive(t *testing.T) {
 	}
 }
 
+// Reset confirm modal mentions kiln freeze --diff so users have a
+// concrete backup path before destroying their session.
+func TestBrowser_ResetModalMentionsFreezeDiff(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-modal-tip`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var tip string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-modal-tip`, &tip, chromedp.ByQuery))
+	if !strings.Contains(tip, "kiln freeze --diff") {
+		t.Errorf("reset modal tip does not mention 'kiln freeze --diff'; got %q", tip)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
