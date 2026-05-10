@@ -249,7 +249,9 @@ func widgetCSS() string {
 			"overflow", "hidden",
 			"text-overflow", "ellipsis",
 			"max-width", "200px",
+			"text-decoration", "none",
 		).
+		Pseudo(":hover", "background", "rgba(255, 255, 255, 0.08)", "color", "rgba(220, 225, 235, 0.95)").
 		End()
 	ss.Rule(".kiln-panel-agent-none").
 		Set(

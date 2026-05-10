@@ -2449,6 +2449,31 @@ func TestBrowser_NoAgentChipOpensSettings(t *testing.T) {
 	}
 }
 
+// World-snapshot pill links to /kiln/world for IR inspection.
+func TestBrowser_SnapshotPillLinksToWorld(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-snapshot`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var href, target string
+	_ = chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.kiln-panel-snapshot').getAttribute('href')`, &href),
+		chromedp.Evaluate(`document.querySelector('.kiln-panel-snapshot').getAttribute('target')`, &target),
+	)
+	if href != "/kiln/world" {
+		t.Errorf("snapshot href = %q, want /kiln/world", href)
+	}
+	if target != "_blank" {
+		t.Errorf("snapshot target = %q, want _blank", target)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

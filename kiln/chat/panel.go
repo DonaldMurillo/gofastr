@@ -299,7 +299,7 @@ func (pe *panelEnv) headerHTML() string {
 			}
 			return `<span class="kiln-panel-agent" data-fui-signal="agent">` + escHTML(label) + `</span>`
 		})() +
-		`<span class="kiln-panel-snapshot" data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</span>` +
+		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" href="/kiln/world" target="_blank" rel="noopener" title="Open world IR (JSON)">` + escHTML(pe.worldSnapshotText()) + `</a>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
 		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-open="kiln-reset-confirm">↺</button>` +
