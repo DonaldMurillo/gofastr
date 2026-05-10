@@ -288,7 +288,17 @@ func (pe *panelEnv) headerHTML() string {
 		`<span class="kiln-panel-conn" title="SSE connection status" aria-label="SSE connection status"></span>` +
 		`<span class="kiln-panel-title">Kiln</span>` +
 		`<span class="kiln-panel-page">/</span>` +
-		`<span class="kiln-panel-agent" data-fui-signal="agent">` + escHTML(pe.agentLabel()) + `</span>` +
+		// When there's no agent wired, render the chip as a button
+		// that opens the gear modal directly — the user has a one-
+		// click path to fix it from where they noticed the problem.
+		// kiln-panel-agent-none CSS already styles it distinctly.
+		(func() string {
+			label := pe.agentLabel()
+			if label == "no agent" {
+				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-fui-signal="agent" data-fui-open="kiln-agent-settings" title="Pick an agent">` + escHTML(label) + `</button>`
+			}
+			return `<span class="kiln-panel-agent" data-fui-signal="agent">` + escHTML(label) + `</span>`
+		})() +
 		`<span class="kiln-panel-snapshot" data-fui-signal="world_snapshot">` + escHTML(pe.worldSnapshotText()) + `</span>` +
 		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +

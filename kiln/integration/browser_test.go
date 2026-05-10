@@ -2431,6 +2431,24 @@ func TestBrowser_TurnDividersBetweenTurns(t *testing.T) {
 	t.Errorf("expected at least 2 turn dividers across 3 user turns, got %d", n)
 }
 
+// When no agent is configured, the header chip is rendered as a
+// clickable button that opens the gear modal directly — the user
+// has a one-click path to fix the problem from where they notice it.
+func TestBrowser_NoAgentChipOpensSettings(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-agent-none`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-panel-agent-none`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("expected click on no-agent chip to open settings modal: %v", err)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
