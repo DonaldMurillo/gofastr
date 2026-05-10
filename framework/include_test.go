@@ -7,19 +7,13 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
-	_ "github.com/mattn/go-sqlite3"
 )
 
-// setupBlogDB creates posts, comments, users, tags, and post_tags tables to
-// exercise the four relation kinds.
-func setupBlogDB(t *testing.T) *sql.DB {
+// seedBlogDB creates the blog test schema (users, profiles, posts, comments,
+// tags, post_tags) on the given db and inserts fixture rows. Both dialects
+// accept this DDL — TEXT PRIMARY KEY and $N placeholders are portable.
+func seedBlogDB(t *testing.T, db *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-
 	stmts := []string{
 		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL)`,
 		`CREATE TABLE profiles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, bio TEXT)`,
@@ -37,24 +31,23 @@ func setupBlogDB(t *testing.T) *sql.DB {
 		sql  string
 		args []any
 	}{
-		{"INSERT INTO users(id, name) VALUES (?, ?)", []any{"u1", "Alice"}},
-		{"INSERT INTO users(id, name) VALUES (?, ?)", []any{"u2", "Bob"}},
-		{"INSERT INTO profiles(id, user_id, bio) VALUES (?, ?, ?)", []any{"prof1", "u1", "Hello from Alice"}},
-		{"INSERT INTO posts(id, title, author_id) VALUES (?, ?, ?)", []any{"p1", "First", "u1"}},
-		{"INSERT INTO posts(id, title, author_id) VALUES (?, ?, ?)", []any{"p2", "Second", "u2"}},
-		{"INSERT INTO comments(id, body, post_id) VALUES (?, ?, ?)", []any{"c1", "nice", "p1"}},
-		{"INSERT INTO comments(id, body, post_id) VALUES (?, ?, ?)", []any{"c2", "great", "p1"}},
-		{"INSERT INTO tags(id, name) VALUES (?, ?)", []any{"t1", "go"}},
-		{"INSERT INTO tags(id, name) VALUES (?, ?)", []any{"t2", "framework"}},
-		{"INSERT INTO post_tags(post_id, tag_id) VALUES (?, ?)", []any{"p1", "t1"}},
-		{"INSERT INTO post_tags(post_id, tag_id) VALUES (?, ?)", []any{"p1", "t2"}},
+		{"INSERT INTO users(id, name) VALUES ($1, $2)", []any{"u1", "Alice"}},
+		{"INSERT INTO users(id, name) VALUES ($1, $2)", []any{"u2", "Bob"}},
+		{"INSERT INTO profiles(id, user_id, bio) VALUES ($1, $2, $3)", []any{"prof1", "u1", "Hello from Alice"}},
+		{"INSERT INTO posts(id, title, author_id) VALUES ($1, $2, $3)", []any{"p1", "First", "u1"}},
+		{"INSERT INTO posts(id, title, author_id) VALUES ($1, $2, $3)", []any{"p2", "Second", "u2"}},
+		{"INSERT INTO comments(id, body, post_id) VALUES ($1, $2, $3)", []any{"c1", "nice", "p1"}},
+		{"INSERT INTO comments(id, body, post_id) VALUES ($1, $2, $3)", []any{"c2", "great", "p1"}},
+		{"INSERT INTO tags(id, name) VALUES ($1, $2)", []any{"t1", "go"}},
+		{"INSERT INTO tags(id, name) VALUES ($1, $2)", []any{"t2", "framework"}},
+		{"INSERT INTO post_tags(post_id, tag_id) VALUES ($1, $2)", []any{"p1", "t1"}},
+		{"INSERT INTO post_tags(post_id, tag_id) VALUES ($1, $2)", []any{"p1", "t2"}},
 	}
 	for _, s := range seeds {
 		if _, err := db.Exec(s.sql, s.args...); err != nil {
 			t.Fatalf("seed %q: %v", s.sql, err)
 		}
 	}
-	return db
 }
 
 // blogApp registers users, profiles, posts, comments, tags with relations.
@@ -95,16 +88,25 @@ func blogApp(t *testing.T, db *sql.DB) *App {
 	return app
 }
 
+// runIncludeTest fans the body out across both dialects, seeding the blog
+// schema and wiring the entity registrations once per dialect.
+func runIncludeTest(t *testing.T, body func(t *testing.T, ta *TestApp)) {
+	t.Helper()
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := blogApp(t, db)
+		ta := TestHarness(t, app)
+		body(t, ta)
+	})
+}
+
 // ============================================================================
 // Test: HasMany via ?include=
 // ============================================================================
 
 func TestInclude_HasMany(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
-
-	resp := ta.Get("/posts/p1?include=comments")
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
+		resp := ta.Get("/posts/p1?include=comments")
 	resp.AssertStatus(t, http.StatusOK)
 
 	var got map[string]any
@@ -118,6 +120,7 @@ func TestInclude_HasMany(t *testing.T) {
 	if len(comments) != 2 {
 		t.Fatalf("expected 2 comments, got %d: %v", len(comments), comments)
 	}
+	})
 }
 
 // ============================================================================
@@ -125,9 +128,7 @@ func TestInclude_HasMany(t *testing.T) {
 // ============================================================================
 
 func TestInclude_HasMany_EmptyDefault(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	// p2 has zero comments
 	resp := ta.Get("/posts/p2?include=comments")
@@ -144,6 +145,7 @@ func TestInclude_HasMany_EmptyDefault(t *testing.T) {
 	if len(comments) != 0 {
 		t.Fatalf("expected empty slice, got %v", comments)
 	}
+	})
 }
 
 // ============================================================================
@@ -151,9 +153,7 @@ func TestInclude_HasMany_EmptyDefault(t *testing.T) {
 // ============================================================================
 
 func TestInclude_BelongsTo(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts/p1?include=author")
 	resp.AssertStatus(t, http.StatusOK)
@@ -169,6 +169,7 @@ func TestInclude_BelongsTo(t *testing.T) {
 	if author["name"] != "Alice" {
 		t.Fatalf("expected author.name=Alice, got %v", author["name"])
 	}
+	})
 }
 
 // ============================================================================
@@ -176,9 +177,7 @@ func TestInclude_BelongsTo(t *testing.T) {
 // ============================================================================
 
 func TestInclude_HasOne(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/users/u1?include=profile")
 	resp.AssertStatus(t, http.StatusOK)
@@ -194,6 +193,7 @@ func TestInclude_HasOne(t *testing.T) {
 	if profile["bio"] != "Hello from Alice" {
 		t.Fatalf("expected profile.bio, got %v", profile["bio"])
 	}
+	})
 }
 
 // ============================================================================
@@ -201,9 +201,7 @@ func TestInclude_HasOne(t *testing.T) {
 // ============================================================================
 
 func TestInclude_HasOne_NilDefault(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	// u2 has no profile
 	resp := ta.Get("/users/u2?include=profile")
@@ -216,6 +214,7 @@ func TestInclude_HasOne_NilDefault(t *testing.T) {
 	if v, present := got["profile"]; !present || v != nil {
 		t.Fatalf("expected profile=nil, got present=%v value=%v", present, v)
 	}
+	})
 }
 
 // ============================================================================
@@ -223,9 +222,7 @@ func TestInclude_HasOne_NilDefault(t *testing.T) {
 // ============================================================================
 
 func TestInclude_ManyToMany(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts/p1?include=tags")
 	resp.AssertStatus(t, http.StatusOK)
@@ -241,6 +238,7 @@ func TestInclude_ManyToMany(t *testing.T) {
 	if len(tags) != 2 {
 		t.Fatalf("expected 2 tags, got %d: %v", len(tags), tags)
 	}
+	})
 }
 
 // ============================================================================
@@ -248,9 +246,7 @@ func TestInclude_ManyToMany(t *testing.T) {
 // ============================================================================
 
 func TestInclude_ListMultipleIncludes(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts?include=comments,author")
 	resp.AssertStatus(t, http.StatusOK)
@@ -270,6 +266,7 @@ func TestInclude_ListMultipleIncludes(t *testing.T) {
 			t.Fatalf("expected author key on every row, got %v", row)
 		}
 	}
+	})
 }
 
 // ============================================================================
@@ -277,13 +274,12 @@ func TestInclude_ListMultipleIncludes(t *testing.T) {
 // ============================================================================
 
 func TestInclude_Unknown_400(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts/p1?include=bogus")
 	resp.AssertStatus(t, http.StatusBadRequest).
 		AssertBodyContains(t, "bogus")
+	})
 }
 
 // ============================================================================
@@ -291,9 +287,7 @@ func TestInclude_Unknown_400(t *testing.T) {
 // ============================================================================
 
 func TestInclude_AbsentLeavesResponseUnchanged(t *testing.T) {
-	db := setupBlogDB(t)
-	app := blogApp(t, db)
-	ta := TestHarness(t, app)
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts/p1")
 	resp.AssertStatus(t, http.StatusOK)
@@ -307,4 +301,5 @@ func TestInclude_AbsentLeavesResponseUnchanged(t *testing.T) {
 			t.Fatalf("did not request %q via include, but it appeared in response: %v", key, got)
 		}
 	}
+	})
 }

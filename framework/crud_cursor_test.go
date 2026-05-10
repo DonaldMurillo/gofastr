@@ -9,28 +9,34 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
-	_ "github.com/mattn/go-sqlite3"
 )
 
-// setupCursorDB seeds a posts table with N rows whose ids sort lexically:
-// "p001", "p002", … so cursor pagination's ORDER BY id ASC has a stable order.
-func setupCursorDB(t *testing.T, n int) *sql.DB {
+// seedCursorDB creates the posts table on db and inserts N rows whose ids
+// sort lexically ("p001", "p002", …) so keyset pagination has a stable order
+// across both dialects.
+func seedCursorDB(t *testing.T, db *sql.DB, n int) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
 	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	for i := 1; i <= n; i++ {
 		id := fmt.Sprintf("p%03d", i)
-		if _, err := db.Exec("INSERT INTO posts(id, title) VALUES (?, ?)", id, fmt.Sprintf("Post %d", i)); err != nil {
+		if _, err := db.Exec("INSERT INTO posts(id, title) VALUES ($1, $2)", id, fmt.Sprintf("Post %d", i)); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 	}
-	return db
+}
+
+// runCursorTest fans the body across both dialects. n controls how many rows
+// to seed; 0 means leave the table empty.
+func runCursorTest(t *testing.T, n int, body func(t *testing.T, ta *TestApp)) {
+	t.Helper()
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedCursorDB(t, db, n)
+		app := cursorApp(t, db)
+		ta := TestHarness(t, app)
+		body(t, ta)
+	})
 }
 
 func cursorApp(t *testing.T, db *sql.DB) *App {
@@ -59,28 +65,27 @@ func decodeCursorPage(t *testing.T, body string) CursorPage {
 // ============================================================================
 
 func TestCursor_FirstPage(t *testing.T) {
-	db := setupCursorDB(t, 25)
-	ta := TestHarness(t, cursorApp(t, db))
+	runCursorTest(t, 25, func(t *testing.T, ta *TestApp) {
+		resp := ta.Get("/posts?cursor=&limit=10")
+		resp.AssertStatus(t, http.StatusOK)
 
-	resp := ta.Get("/posts?cursor=&limit=10")
-	resp.AssertStatus(t, http.StatusOK)
-
-	page := decodeCursorPage(t, resp.Body())
-	if len(page.Data) != 10 {
-		t.Fatalf("expected 10 items, got %d", len(page.Data))
-	}
-	if !page.HasMore {
-		t.Fatal("expected hasMore=true")
-	}
-	if page.Cursor == "" {
-		t.Fatal("expected non-empty cursor")
-	}
-	if got := page.Data[0]["id"]; got != "p001" {
-		t.Fatalf("expected first id p001, got %v", got)
-	}
-	if got := page.Data[9]["id"]; got != "p010" {
-		t.Fatalf("expected last id p010, got %v", got)
-	}
+		page := decodeCursorPage(t, resp.Body())
+		if len(page.Data) != 10 {
+			t.Fatalf("expected 10 items, got %d", len(page.Data))
+		}
+		if !page.HasMore {
+			t.Fatal("expected hasMore=true")
+		}
+		if page.Cursor == "" {
+			t.Fatal("expected non-empty cursor")
+		}
+		if got := page.Data[0]["id"]; got != "p001" {
+			t.Fatalf("expected first id p001, got %v", got)
+		}
+		if got := page.Data[9]["id"]; got != "p010" {
+			t.Fatalf("expected last id p010, got %v", got)
+		}
+	})
 }
 
 // ============================================================================
@@ -88,8 +93,7 @@ func TestCursor_FirstPage(t *testing.T) {
 // ============================================================================
 
 func TestCursor_WalksToLastPage(t *testing.T) {
-	db := setupCursorDB(t, 25)
-	ta := TestHarness(t, cursorApp(t, db))
+	runCursorTest(t, 25, func(t *testing.T, ta *TestApp) {
 
 	cursor := ""
 	seen := []string{}
@@ -120,6 +124,7 @@ func TestCursor_WalksToLastPage(t *testing.T) {
 			t.Fatalf("row %d: expected %s, got %s", i, want, seen[i-1])
 		}
 	}
+	})
 }
 
 // ============================================================================
@@ -127,8 +132,7 @@ func TestCursor_WalksToLastPage(t *testing.T) {
 // ============================================================================
 
 func TestCursor_LastPageHasNoMore(t *testing.T) {
-	db := setupCursorDB(t, 12)
-	ta := TestHarness(t, cursorApp(t, db))
+	runCursorTest(t, 12, func(t *testing.T, ta *TestApp) {
 
 	first := decodeCursorPage(t, ta.Get("/posts?cursor=&limit=10").Body())
 	if !first.HasMore {
@@ -148,6 +152,7 @@ func TestCursor_LastPageHasNoMore(t *testing.T) {
 	if second.Cursor != "" {
 		t.Fatalf("expected empty cursor on last page, got %q", second.Cursor)
 	}
+	})
 }
 
 // ============================================================================
@@ -155,12 +160,12 @@ func TestCursor_LastPageHasNoMore(t *testing.T) {
 // ============================================================================
 
 func TestCursor_InvalidCursor_400(t *testing.T) {
-	db := setupCursorDB(t, 5)
-	ta := TestHarness(t, cursorApp(t, db))
+	runCursorTest(t, 5, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts?cursor=" + url.QueryEscape("not-base64-!@#"))
 	resp.AssertStatus(t, http.StatusBadRequest).
 		AssertBodyContains(t, "invalid cursor")
+	})
 }
 
 // ============================================================================
@@ -168,8 +173,7 @@ func TestCursor_InvalidCursor_400(t *testing.T) {
 // ============================================================================
 
 func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
-	db := setupCursorDB(t, 5)
-	ta := TestHarness(t, cursorApp(t, db))
+	runCursorTest(t, 5, func(t *testing.T, ta *TestApp) {
 
 	resp := ta.Get("/posts?limit=10")
 	resp.AssertStatus(t, http.StatusOK)
@@ -184,6 +188,7 @@ func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
 	if off.Page != 1 || off.PerPage != 10 {
 		t.Fatalf("expected page=1 perPage=10 (offset shape), got %+v", off)
 	}
+	})
 }
 
 // ============================================================================
@@ -191,8 +196,7 @@ func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
 // ============================================================================
 
 func TestCursor_RespectsFilters(t *testing.T) {
-	db := setupCursorDB(t, 25)
-	ta := TestHarness(t, cursorApp(t, db))
+	runCursorTest(t, 25, func(t *testing.T, ta *TestApp) {
 
 	// Filter title_like contains "Post 2" → matches p002, p020-p025 (7 rows)
 	resp := ta.Get("/posts?cursor=&limit=10&title_like=" + url.QueryEscape("Post 2"))
@@ -207,6 +211,7 @@ func TestCursor_RespectsFilters(t *testing.T) {
 			t.Fatalf("filter violated: row title=%q does not contain 'Post 2'", title)
 		}
 	}
+	})
 }
 
 func contains(s, substr string) bool {
