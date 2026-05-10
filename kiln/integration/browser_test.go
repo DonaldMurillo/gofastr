@@ -1880,6 +1880,64 @@ func TestBrowser_EnterSubmitsChat(t *testing.T) {
 	}
 }
 
+// In-flight indicator includes a per-turn tool counter that ticks up
+// as the agent dispatches tools: 'agent thinking · 1 tool', '… · 3
+// tools'. Counted from the most-recent chat_user message.
+func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
+	urlBase, l, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer pollCancel()
+	for {
+		var ready bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(`!!window.__fuiSSEReady`, &ready)); err == nil && ready {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("SSE never opened")
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	// Simulate a turn in flight + journal a user msg + dispatch tools.
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "build something"})
+	testInFlight.Store(true)
+	l.Notify("agent_turn_started", "pi")
+
+	// Two tool dispatches via the chat HTTP path so tool_call SSE fires.
+	for _, body := range []string{
+		`{"entity":{"name":"a","fields":[{"name":"x","type":"string"}]}}`,
+		`{"entity":{"name":"b","fields":[{"name":"y","type":"string"}]}}`,
+	} {
+		resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &status, chromedp.ByQuery))
+		if strings.Contains(status, "thinking") && strings.Contains(status, "2 tools") {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var last string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &last, chromedp.ByQuery))
+	t.Errorf("status never showed '2 tools'; final=%q", last)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

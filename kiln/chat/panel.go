@@ -80,6 +80,9 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		SSERefetch("/.kiln/events", "agent_turn_started", "chat_status").
 		SSERefetch("/.kiln/events", "agent_turn_ended", "chat_status").
 		SSERefetch("/.kiln/events", "chat_assistant", "chat_status").
+		// Tool-call landing increments the in-flight tool counter
+		// shown in the header — refresh chat_status on each one.
+		SSERefetch("/.kiln/events", "tool_call", "chat_status").
 		// World-snapshot pill: live count of entities/pages/routes/hooks.
 		// Refresh on any world_edit so the pill keeps pace with the agent.
 		SSERefetch("/.kiln/events", "world_edit", "world_snapshot").
@@ -328,9 +331,10 @@ func pluralize(n int, singular, plural string) string {
 }
 
 // statusText returns the in-flight indicator HTML. Empty when no agent
-// turn is running; an animated dots row otherwise. Read from the
-// AgentStateFn so cmd/kiln owns the truth without panel knowing about
-// AdapterStore.
+// turn is running; an animated dots row otherwise, with a per-turn
+// tool counter so the user sees real progress (e.g. 'agent thinking ·
+// 5 tools'). Read from the AgentStateFn so cmd/kiln owns the truth
+// without panel knowing about AdapterStore.
 func (pe *panelEnv) statusText() string {
 	if pe.agentState == nil {
 		return ""
@@ -343,7 +347,33 @@ func (pe *panelEnv) statusText() string {
 	if !inFlight {
 		return ""
 	}
-	return `<span class="kiln-thinking" role="status" aria-live="polite">agent thinking<span class="kiln-thinking-dots">…</span></span>`
+	count := pe.toolCallsSinceLastUserMessage()
+	suffix := ""
+	if count > 0 {
+		suffix = ` · ` + pluralize(count, "tool", "tools")
+	}
+	return `<span class="kiln-thinking" role="status" aria-live="polite">agent thinking` + suffix + `<span class="kiln-thinking-dots">…</span></span>`
+}
+
+// toolCallsSinceLastUserMessage counts journaled tool_call entries
+// after the most recent chat_user. Drives the in-header tool counter
+// so users see how busy the agent is mid-turn.
+func (pe *panelEnv) toolCallsSinceLastUserMessage() int {
+	chat := pe.live.Session().Chat
+	lastUser := -1
+	for i := len(chat) - 1; i >= 0; i-- {
+		if chat[i].Kind == journal.KindChatUser {
+			lastUser = i
+			break
+		}
+	}
+	count := 0
+	for i := lastUser + 1; i < len(chat); i++ {
+		if chat[i].Kind == journal.KindToolCall {
+			count++
+		}
+	}
+	return count
 }
 
 func (pe *panelEnv) inputHTML() string {
