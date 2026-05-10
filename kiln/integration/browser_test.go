@@ -2034,6 +2034,53 @@ func firstN(s string, n int) string {
 	return s[:n] + "…"
 }
 
+// Long multi-line prompts make the textarea grow up to its CSS
+// max-height, so the user sees what they're typing without manually
+// resizing or scrolling inside the input.
+func TestBrowser_TextareaAutoGrowsWithContent(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture the initial rendered height (rows=2).
+	var initialHeight float64
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-input').getBoundingClientRect().height`, &initialHeight))
+
+	// Insert a long multi-line value and fire input.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		(function(){
+			const ta = document.querySelector('.kiln-input');
+			ta.value = 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8';
+			ta.dispatchEvent(new Event('input', { bubbles: true }));
+		})()
+	`, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var h float64
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.querySelector('.kiln-input').getBoundingClientRect().height`, &h))
+		if h > initialHeight+8 {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var finalH float64
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('.kiln-input').getBoundingClientRect().height`, &finalH))
+	t.Errorf("textarea did not grow with content: initial=%v final=%v", initialHeight, finalH)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

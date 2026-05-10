@@ -481,6 +481,23 @@
         }
       }
 
+      // Textareas marked data-fui-autogrow size their height to fit
+      // their content, capped by CSS max-height. Clears inline height
+      // before measuring so growth + shrinkage both work after edits
+      // and after form.reset().
+      widgetEl.querySelectorAll('textarea[data-fui-autogrow]').forEach((ta) => {
+        const grow = () => {
+          ta.style.height = 'auto';
+          ta.style.height = ta.scrollHeight + 'px';
+        };
+        ta.addEventListener('input', grow);
+        // form.reset() doesn't fire input; pick it up next frame.
+        const form = ta.form;
+        if (form) form.addEventListener('reset', () => requestAnimationFrame(grow));
+        // Initial sync (for value pre-set server-side or by autofill).
+        Promise.resolve().then(grow);
+      });
+
       // Enter-to-submit on textareas inside data-fui-submit-on-enter
       // forms. Shift+Enter still inserts a newline. Skips submission
       // when form is invalid (HTML5 :required handles the no-op feel).
