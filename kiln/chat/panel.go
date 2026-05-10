@@ -54,9 +54,6 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		Signal("agent", widget.SignalFunc(func() (any, error) {
 			return pe.agentLabel(), nil
 		})).
-		Signal("chat_status", widget.SignalFunc(func() (any, error) {
-			return pe.statusText(), nil
-		})).
 		Signal("world_snapshot", widget.SignalFunc(func() (any, error) {
 			return pe.worldSnapshotText(), nil
 		})).
@@ -76,15 +73,10 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		// the next event lands. agent_turn_started/ended drive the
 		// in-flight indicator in the header.
 		SSERefetch("/.kiln/events", "session_reset", "chat_html").
-		SSERefetch("/.kiln/events", "agent_turn_started", "chat_status").
-		SSERefetch("/.kiln/events", "agent_turn_ended", "chat_status").
-		SSERefetch("/.kiln/events", "chat_assistant", "chat_status").
-		// Tool-call landing increments the in-flight tool counter
-		// shown in the header — refresh chat_status on each one.
-		// tool_result also affects the (done · running) split so
-		// refresh on those too.
-		SSERefetch("/.kiln/events", "tool_call", "chat_status").
-		SSERefetch("/.kiln/events", "tool_result", "chat_status").
+		// In-flight indicator now lives at the bottom of the chat log
+		// itself (typing-bubble style); chat_html owns its render.
+		SSERefetch("/.kiln/events", "agent_turn_started", "chat_html").
+		SSERefetch("/.kiln/events", "agent_turn_ended", "chat_html").
 		// Agent picker → header chip update.
 		SSERefetch("/.kiln/events", "agent_changed", "agent").
 		// World-snapshot pill: live count of entities/pages/routes/hooks.
@@ -359,7 +351,6 @@ func (pe *panelEnv) headerHTML() string {
 			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + escHTML(label) + `</span>`
 		})() +
 		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + escAttr(pe.worldSnapshotTooltip()) + `">` + escHTML(pe.worldSnapshotText()) + `</a>` +
-		`<span class="kiln-panel-status" data-fui-signal="chat_status" data-fui-signal-mode="html"></span>` +
 		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-fui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
 		`<button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard" data-fui-copy-text-from=".kiln-log">⎘</button>` +
 		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-fui-rpc="/kiln/agent/cancel" data-fui-rpc-method="POST">■</button>` +
@@ -480,41 +471,6 @@ func (pe *panelEnv) agentLabel() string {
 	return name
 }
 
-// statusText returns the in-flight indicator HTML. Empty when no agent
-// turn is running; an animated dots row otherwise, with a per-turn
-// tool counter so the user sees real progress (e.g. 'agent thinking ·
-// 5 tools'). Read from the AgentStateFn so cmd/kiln owns the truth
-// without panel knowing about AdapterStore.
-func (pe *panelEnv) statusText() string {
-	if pe.agentState == nil {
-		return ""
-	}
-	state, _ := pe.agentState().(map[string]any)
-	if state == nil {
-		return ""
-	}
-	inFlight, _ := state["in_flight"].(bool)
-	if !inFlight {
-		return ""
-	}
-	calls, pending := pe.toolCountsSinceLastUserMessage()
-	suffix := ""
-	// Live elapsed-time tick driven by data-fui-tick-elapsed (runtime
-	// rewrites every 200ms). Anchored to the last user message
-	// timestamp; turn-start is non-journaled (Notify only) so this is
-	// the closest stable anchor with a real timestamp.
-	if start := pe.lastUserMessageMillis(); start > 0 {
-		suffix += fmt.Sprintf(` · <span data-fui-tick-elapsed="%d">…</span>`, start)
-	}
-	if calls > 0 {
-		suffix += ` · ` + pluralize(calls, "tool", "tools")
-		if pending > 0 {
-			done := calls - pending
-			suffix += fmt.Sprintf(` (%d done · %d running)`, done, pending)
-		}
-	}
-	return `<span class="kiln-thinking" role="status" aria-live="polite">agent thinking` + suffix + `<span class="kiln-thinking-dots">…</span></span>`
-}
 
 func (pe *panelEnv) lastUserMessageMillis() int64 {
 	chat := pe.live.Session().Chat
@@ -706,8 +662,57 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 		}
 		prevWasUser = it.kind == "chat" && it.chat != nil && it.chat.Kind == journal.KindChatUser
 	}
+	// Typing-bubble: render an in-flight indicator as the last list
+	// item when an agent turn is running. Auto-scroll-on-update
+	// already pins the view to the bottom so this is naturally
+	// visible. Hidden the moment the turn ends (signal re-renders
+	// chat_html on agent_turn_ended).
+	if pe.isInFlight() {
+		b.WriteString(pe.thinkingRowHTML())
+	}
 	b.WriteString(`</ol>`)
 	return b.String()
+}
+
+// thinkingRowHTML renders the in-flight 'typing bubble': a single
+// kiln-msg-assistant-style row with the existing .kiln-thinking
+// indicator inside (animated dots), the per-turn elapsed-time
+// ticker, and the live tool counter. Lives at the bottom of the
+// chat log so it reads as 'the agent is composing the next reply'.
+func (pe *panelEnv) thinkingRowHTML() string {
+	calls, pending := pe.toolCountsSinceLastUserMessage()
+	parts := []string{`agent thinking`}
+	if start := pe.lastUserMessageMillis(); start > 0 {
+		parts = append(parts, fmt.Sprintf(`<span data-fui-tick-elapsed="%d">…</span>`, start))
+	}
+	if calls > 0 {
+		label := pluralize(calls, "tool", "tools")
+		if pending > 0 {
+			done := calls - pending
+			label += fmt.Sprintf(` (%d done · %d running)`, done, pending)
+		}
+		parts = append(parts, label)
+	}
+	return `<li class="kiln-msg kiln-msg-assistant kiln-msg-thinking" role="status" aria-live="polite">` +
+		`<span class="kiln-thinking">` +
+		strings.Join(parts, ` · `) +
+		`<span class="kiln-thinking-dots">…</span>` +
+		`</span></li>`
+}
+
+// isInFlight reads the AgentStateFn's in_flight bit (same source as
+// the prior header indicator, just consumed by the chat-log
+// renderer now).
+func (pe *panelEnv) isInFlight() bool {
+	if pe.agentState == nil {
+		return false
+	}
+	state, _ := pe.agentState().(map[string]any)
+	if state == nil {
+		return false
+	}
+	v, _ := state["in_flight"].(bool)
+	return v
 }
 
 func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, callByID map[string]*journal.ChatEvent) {

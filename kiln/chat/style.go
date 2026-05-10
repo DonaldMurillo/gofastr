@@ -285,7 +285,7 @@ func widgetCSS() string {
 			"margin-right", "4px",
 		).
 		End()
-	ss.Rule(".kiln-panel-head:has(.kiln-thinking) .kiln-panel-stop").
+	ss.Rule(".kiln-panel:has(.kiln-msg-thinking) .kiln-panel-stop").
 		Set("display", "inline-flex", "align-items", "center", "justify-content", "center").
 		End()
 	ss.Rule(".kiln-panel-stop:hover").
@@ -657,6 +657,17 @@ func widgetCSS() string {
 			"background", "{colors.kiln-assist-bg}",
 			"align-self", "flex-start",
 			"max-width", "85%",
+		).
+		End()
+
+	// Typing-bubble: assistant-aligned in-flight indicator at the
+	// bottom of the chat list. Slightly dimmer + italic so users
+	// know it's pending content, not actual reply text.
+	ss.Rule(".kiln-msg-thinking").
+		Set(
+			"opacity", "0.85",
+			"font-style", "italic",
+			"color", "{colors.kiln-fg-muted}",
 		).
 		End()
 

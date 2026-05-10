@@ -1336,7 +1336,7 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel-head`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -1355,7 +1355,7 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 
 	// Indicator should be empty before any turn starts.
 	var pre string
-	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &pre, chromedp.ByQuery))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &pre))
 	if strings.Contains(pre, "thinking") {
 		t.Fatalf("status said %q before any turn started", pre)
 	}
@@ -1368,7 +1368,7 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	var seen string
 	for time.Now().Before(deadline) {
 		var s string
-		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &s, chromedp.ByQuery))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &s))
 		if strings.Contains(s, "thinking") {
 			seen = s
 			break
@@ -1386,14 +1386,14 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	deadline = time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var s string
-		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &s, chromedp.ByQuery))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &s))
 		if !strings.Contains(s, "thinking") {
 			return
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
 	var last string
-	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &last, chromedp.ByQuery))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &last))
 	t.Errorf("indicator did not clear after agent_turn_ended; status=%q", last)
 }
 
@@ -1919,7 +1919,7 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel-head`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1956,14 +1956,14 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var status string
-		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &status, chromedp.ByQuery))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &status))
 		if strings.Contains(status, "thinking") && strings.Contains(status, "2 tools") {
 			return
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
 	var last string
-	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &last, chromedp.ByQuery))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &last))
 	t.Errorf("status never showed '2 tools'; final=%q", last)
 }
 
@@ -2266,7 +2266,7 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel-head`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -2291,7 +2291,7 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var t1 string
 	for time.Now().Before(deadline) {
-		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status [data-fui-tick-elapsed]`, &t1, chromedp.ByQuery))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-fui-tick-elapsed]'); return e?e.textContent:'';})()`, &t1))
 		if t1 != "" && t1 != "…" {
 			break
 		}
@@ -2303,7 +2303,7 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 
 	time.Sleep(700 * time.Millisecond)
 	var t2 string
-	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status [data-fui-tick-elapsed]`, &t2, chromedp.ByQuery))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-fui-tick-elapsed]'); return e?e.textContent:'';})()`, &t2))
 	if t1 == t2 {
 		t.Errorf("header elapsed ticker did not advance; t1=%q t2=%q", t1, t2)
 	}
@@ -2500,7 +2500,7 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-panel-status`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-panel-head`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -2545,14 +2545,14 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var status string
-		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &status, chromedp.ByQuery))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &status))
 		if strings.Contains(status, "1 done") && strings.Contains(status, "1 running") {
 			return
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
 	var last string
-	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-status`, &last, chromedp.ByQuery))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking'); return e?e.textContent:'';})()`, &last))
 	t.Errorf("status never showed '1 done · 1 running'; final=%q", last)
 }
 
