@@ -15,20 +15,13 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
-	_ "github.com/mattn/go-sqlite3"
 )
 
-func setupEventsDB(t *testing.T) *sql.DB {
+func seedEventsDB(t *testing.T, db *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
 	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	return db
 }
 
 func eventsApp(t *testing.T, db *sql.DB) *App {
@@ -96,47 +89,49 @@ func readSSEEvents(t *testing.T, ctx context.Context, body *bufio.Reader) <-chan
 // ============================================================================
 
 func TestSSE_ReceivesCreateEvent(t *testing.T) {
-	db := setupEventsDB(t)
-	app := eventsApp(t, db)
-	srv := httptest.NewServer(app.Router)
-	t.Cleanup(srv.Close)
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedEventsDB(t, db)
+		app := eventsApp(t, db)
+		srv := httptest.NewServer(app.Router)
+		t.Cleanup(srv.Close)
 
-	streamCtx, cancelStream := context.WithCancel(context.Background())
-	defer cancelStream()
+		streamCtx, cancelStream := context.WithCancel(context.Background())
+		defer cancelStream()
 
-	req, _ := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+"/posts/_events", nil)
-	req.Header.Set("Accept", "text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	t.Cleanup(func() { resp.Body.Close() })
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 from SSE endpoint, got %d", resp.StatusCode)
-	}
-	events := readSSEEvents(t, streamCtx, bufio.NewReader(resp.Body))
-
-	// Trigger a create after the subscription is in place.
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		body, _ := json.Marshal(map[string]any{"title": "live"})
-		_, _ = http.Post(srv.URL+"/posts", "application/json", bytes.NewReader(body))
-	}()
-
-	select {
-	case ev := <-events:
-		if ev.Type != EntityCreated {
-			t.Fatalf("expected %q, got %q", EntityCreated, ev.Type)
+		req, _ := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+"/posts/_events", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("subscribe: %v", err)
 		}
-		if !strings.Contains(ev.Data, `"entity":"posts"`) {
-			t.Fatalf("expected entity=posts in payload, got %s", ev.Data)
+		t.Cleanup(func() { resp.Body.Close() })
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 from SSE endpoint, got %d", resp.StatusCode)
 		}
-		if !strings.Contains(ev.Data, `"title":"live"`) {
-			t.Fatalf("expected record.title=live in payload, got %s", ev.Data)
+		events := readSSEEvents(t, streamCtx, bufio.NewReader(resp.Body))
+
+		// Trigger a create after the subscription is in place.
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			body, _ := json.Marshal(map[string]any{"title": "live"})
+			_, _ = http.Post(srv.URL+"/posts", "application/json", bytes.NewReader(body))
+		}()
+
+		select {
+		case ev := <-events:
+			if ev.Type != EntityCreated {
+				t.Fatalf("expected %q, got %q", EntityCreated, ev.Type)
+			}
+			if !strings.Contains(ev.Data, `"entity":"posts"`) {
+				t.Fatalf("expected entity=posts in payload, got %s", ev.Data)
+			}
+			if !strings.Contains(ev.Data, `"title":"live"`) {
+				t.Fatalf("expected record.title=live in payload, got %s", ev.Data)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for entity.created event")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for entity.created event")
-	}
+	})
 }
 
 // ============================================================================
@@ -144,50 +139,47 @@ func TestSSE_ReceivesCreateEvent(t *testing.T) {
 // ============================================================================
 
 func TestSSE_FiltersByEntity(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	for _, ddl := range []string{
-		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`,
-		`CREATE TABLE comments (id TEXT PRIMARY KEY, body TEXT NOT NULL)`,
-	} {
-		if _, err := db.Exec(ddl); err != nil {
-			t.Fatalf("create: %v", err)
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		for _, ddl := range []string{
+			`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`,
+			`CREATE TABLE comments (id TEXT PRIMARY KEY, body TEXT NOT NULL)`,
+		} {
+			if _, err := db.Exec(ddl); err != nil {
+				t.Fatalf("create: %v", err)
+			}
 		}
-	}
-	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{Table: "comments", Fields: []schema.Field{{Name: "body", Type: schema.String, Required: true}}}.WithTimestamps(false))
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("posts", EntityConfig{Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}.WithTimestamps(false))
+		app.Entity("comments", EntityConfig{Table: "comments", Fields: []schema.Field{{Name: "body", Type: schema.String, Required: true}}}.WithTimestamps(false))
 
-	srv := httptest.NewServer(app.Router)
-	t.Cleanup(srv.Close)
+		srv := httptest.NewServer(app.Router)
+		t.Cleanup(srv.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	t.Cleanup(func() { resp.Body.Close() })
-	events := readSSEEvents(t, ctx, bufio.NewReader(resp.Body))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		events := readSSEEvents(t, ctx, bufio.NewReader(resp.Body))
 
-	// Drive the wrong entity (comments).
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		body, _ := json.Marshal(map[string]any{"body": "noise"})
-		_, _ = http.Post(srv.URL+"/comments", "application/json", bytes.NewReader(body))
-	}()
+		// Drive the wrong entity (comments).
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			body, _ := json.Marshal(map[string]any{"body": "noise"})
+			_, _ = http.Post(srv.URL+"/comments", "application/json", bytes.NewReader(body))
+		}()
 
-	select {
-	case ev := <-events:
-		t.Fatalf("expected no event on /posts stream, got %q payload=%s", ev.Type, ev.Data)
-	case <-time.After(300 * time.Millisecond):
-		// good — no leak
-	}
+		select {
+		case ev := <-events:
+			t.Fatalf("expected no event on /posts stream, got %q payload=%s", ev.Type, ev.Data)
+		case <-time.After(300 * time.Millisecond):
+			// good — no leak
+		}
+	})
 }
 
 // ============================================================================
@@ -195,47 +187,49 @@ func TestSSE_FiltersByEntity(t *testing.T) {
 // ============================================================================
 
 func TestSSE_DisconnectUnsubscribes(t *testing.T) {
-	db := setupEventsDB(t)
-	app := eventsApp(t, db)
-	srv := httptest.NewServer(app.Router)
-	t.Cleanup(srv.Close)
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedEventsDB(t, db)
+		app := eventsApp(t, db)
+		srv := httptest.NewServer(app.Router)
+		t.Cleanup(srv.Close)
 
-	bus := app.Events()
-	beforeCreate := len(bus.snapshot(EntityCreated))
+		bus := app.Events()
+		beforeCreate := len(bus.snapshot(EntityCreated))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-
-	// Confirm a handler was added.
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if len(bus.snapshot(EntityCreated)) == beforeCreate+1 {
-			break
+		ctx, cancel := context.WithCancel(context.Background())
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("subscribe: %v", err)
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if got := len(bus.snapshot(EntityCreated)); got != beforeCreate+1 {
-		t.Fatalf("expected one new EntityCreated handler after subscribe, got delta=%d", got-beforeCreate)
-	}
 
-	// Disconnect by cancelling the request context and closing the body.
-	cancel()
-	resp.Body.Close()
-
-	// Wait briefly for the handler goroutine to clean up.
-	deadline = time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if len(bus.snapshot(EntityCreated)) == beforeCreate {
-			return
+		// Confirm a handler was added.
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if len(bus.snapshot(EntityCreated)) == beforeCreate+1 {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("expected handler to be unsubscribed after disconnect, still %d (was %d)",
-		len(bus.snapshot(EntityCreated)), beforeCreate)
+		if got := len(bus.snapshot(EntityCreated)); got != beforeCreate+1 {
+			t.Fatalf("expected one new EntityCreated handler after subscribe, got delta=%d", got-beforeCreate)
+		}
+
+		// Disconnect by cancelling the request context and closing the body.
+		cancel()
+		resp.Body.Close()
+
+		// Wait briefly for the handler goroutine to clean up.
+		deadline = time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if len(bus.snapshot(EntityCreated)) == beforeCreate {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("expected handler to be unsubscribed after disconnect, still %d (was %d)",
+			len(bus.snapshot(EntityCreated)), beforeCreate)
+	})
 }
 
 // ============================================================================
@@ -243,93 +237,90 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 // ============================================================================
 
 func TestSSE_FiltersByTenant(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, tenant_id TEXT)`); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Use(TenantMiddleware("X-Tenant-ID"))
-	app.Entity("posts", EntityConfig{
-		Table:       "posts",
-		MultiTenant: true,
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
-	}.WithTimestamps(false))
-
-	srv := httptest.NewServer(app.Router)
-	t.Cleanup(srv.Close)
-
-	subscribe := func(tenant string) (<-chan sseEvent, context.CancelFunc) {
-		ctx, cancel := context.WithCancel(context.Background())
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
-		req.Header.Set("X-Tenant-ID", tenant)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("subscribe %s: %v", tenant, err)
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, tenant_id TEXT)`); err != nil {
+			t.Fatalf("create: %v", err)
 		}
-		t.Cleanup(func() { resp.Body.Close() })
-		return readSSEEvents(t, ctx, bufio.NewReader(resp.Body)), cancel
-	}
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Use(TenantMiddleware("X-Tenant-ID"))
+		app.Entity("posts", EntityConfig{
+			Table:       "posts",
+			MultiTenant: true,
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false))
 
-	streamA, cancelA := subscribe("tenant-a")
-	defer cancelA()
-	streamB, cancelB := subscribe("tenant-b")
-	defer cancelB()
+		srv := httptest.NewServer(app.Router)
+		t.Cleanup(srv.Close)
 
-	// POST as tenant-a.
-	go func() {
-		time.Sleep(80 * time.Millisecond)
-		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/posts", strings.NewReader(`{"title":"A only"}`))
-		req.Header.Set("X-Tenant-ID", "tenant-a")
-		req.Header.Set("Content-Type", "application/json")
-		_, _ = http.DefaultClient.Do(req)
-	}()
-
-	var (
-		gotA, gotB string
-		mu         sync.Mutex
-		wg         sync.WaitGroup
-	)
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		select {
-		case ev := <-streamA:
-			mu.Lock()
-			gotA = ev.Data
-			mu.Unlock()
-		case <-time.After(2 * time.Second):
+		subscribe := func(tenant string) (<-chan sseEvent, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(context.Background())
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
+			req.Header.Set("X-Tenant-ID", tenant)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("subscribe %s: %v", tenant, err)
+			}
+			t.Cleanup(func() { resp.Body.Close() })
+			return readSSEEvents(t, ctx, bufio.NewReader(resp.Body)), cancel
 		}
-	}()
-	go func() {
-		defer wg.Done()
-		select {
-		case ev := <-streamB:
-			mu.Lock()
-			gotB = ev.Data
-			mu.Unlock()
-		case <-time.After(700 * time.Millisecond):
-		}
-	}()
-	wg.Wait()
 
-	mu.Lock()
-	defer mu.Unlock()
-	if gotA == "" {
-		t.Fatal("tenant-a stream got nothing")
-	}
-	if !strings.Contains(gotA, `"title":"A only"`) {
-		t.Fatalf("tenant-a payload missing title: %s", gotA)
-	}
-	if gotB != "" {
-		t.Fatalf("tenant-b stream should not have received tenant-a's event, got %s", gotB)
-	}
+		streamA, cancelA := subscribe("tenant-a")
+		defer cancelA()
+		streamB, cancelB := subscribe("tenant-b")
+		defer cancelB()
+
+		// POST as tenant-a.
+		go func() {
+			time.Sleep(80 * time.Millisecond)
+			req, _ := http.NewRequest(http.MethodPost, srv.URL+"/posts", strings.NewReader(`{"title":"A only"}`))
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			req.Header.Set("Content-Type", "application/json")
+			_, _ = http.DefaultClient.Do(req)
+		}()
+
+		var (
+			gotA, gotB string
+			mu         sync.Mutex
+			wg         sync.WaitGroup
+		)
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			select {
+			case ev := <-streamA:
+				mu.Lock()
+				gotA = ev.Data
+				mu.Unlock()
+			case <-time.After(2 * time.Second):
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			select {
+			case ev := <-streamB:
+				mu.Lock()
+				gotB = ev.Data
+				mu.Unlock()
+			case <-time.After(700 * time.Millisecond):
+			}
+		}()
+		wg.Wait()
+
+		mu.Lock()
+		defer mu.Unlock()
+		if gotA == "" {
+			t.Fatal("tenant-a stream got nothing")
+		}
+		if !strings.Contains(gotA, `"title":"A only"`) {
+			t.Fatalf("tenant-a payload missing title: %s", gotA)
+		}
+		if gotB != "" {
+			t.Fatalf("tenant-b stream should not have received tenant-a's event, got %s", gotB)
+		}
+	})
 }
 
 // ============================================================================
