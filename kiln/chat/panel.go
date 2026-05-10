@@ -81,7 +81,10 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		SSERefetch("/.kiln/events", "chat_assistant", "chat_status").
 		// Tool-call landing increments the in-flight tool counter
 		// shown in the header — refresh chat_status on each one.
+		// tool_result also affects the (done · running) split so
+		// refresh on those too.
 		SSERefetch("/.kiln/events", "tool_call", "chat_status").
+		SSERefetch("/.kiln/events", "tool_result", "chat_status").
 		// Agent picker → header chip update.
 		SSERefetch("/.kiln/events", "agent_changed", "agent").
 		// World-snapshot pill: live count of entities/pages/routes/hooks.
