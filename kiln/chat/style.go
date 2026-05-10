@@ -191,6 +191,14 @@ func widgetCSS() string {
 			"white-space", "nowrap",
 		).
 		End()
+	ss.Rule(".kiln-plan-stepcount").
+		Set(
+			"margin-left", "8px",
+			"font-size", "10px",
+			"color", "rgba(170, 180, 200, 0.55)",
+		).
+		End()
+
 	ss.Rule(".kiln-plan-when").
 		Set(
 			"margin-left", "8px",

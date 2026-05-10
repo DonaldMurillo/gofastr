@@ -779,22 +779,30 @@ func formatRelTime(t time.Time) string {
 }
 
 func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
-	b.WriteString(`<li class="kiln-msg kiln-msg-plan" data-plan-id="` + escAttr(p.PlanID) + `">`)
+	collapsed := p.Approved || p.Rejected
+	cls := "kiln-msg kiln-msg-plan"
+	if collapsed {
+		cls += " kiln-msg-plan-collapsed"
+	}
+	b.WriteString(`<li class="` + cls + `" data-plan-id="` + escAttr(p.PlanID) + `">`)
 	fmt.Fprintf(b, `<div class="kiln-plan-head"><span class="kiln-plan-title">Plan: %s</span>`, escHTML(p.PlanID))
 	fmt.Fprintf(b, `<span class="kiln-plan-when" title="%s">proposed %s</span>`,
 		escAttr(formatRowTime(p.ProposedAt)), escHTML(formatRelTime(p.ProposedAt)))
+	if collapsed && len(p.Steps) > 0 {
+		fmt.Fprintf(b, `<span class="kiln-plan-stepcount">(%s)</span>`, escHTML(pluralize(len(p.Steps), "step", "steps")))
+	}
 	if p.Reason != "" {
 		fmt.Fprintf(b, `<span class="kiln-plan-reason">%s</span>`, escHTML(p.Reason))
 	}
 	b.WriteString(`</div>`)
-	if len(p.Steps) > 0 {
+	if !collapsed && len(p.Steps) > 0 {
 		b.WriteString(`<ol class="kiln-plan-steps">`)
 		for _, s := range p.Steps {
 			fmt.Fprintf(b, `<li>%s</li>`, escHTML(s))
 		}
 		b.WriteString(`</ol>`)
 	}
-	if len(p.Targets) > 0 {
+	if !collapsed && len(p.Targets) > 0 {
 		b.WriteString(`<div class="kiln-plan-targets"><span class="kiln-plan-targets-label">Will run: </span>`)
 		for i, t := range p.Targets {
 			if i > 0 {

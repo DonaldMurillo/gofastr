@@ -3153,6 +3153,36 @@ func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 	}
 }
 
+// Approved/rejected plan cards collapse: steps + targets hidden,
+// only the head + decision status remain. Long sessions stay
+// scannable.
+func TestBrowser_ApprovedPlansCollapse(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID: "p-collapse", Steps: []string{"step a", "step b", "step c"},
+	})
+	tools.ApprovePlan(context.Background(), protocol.ApprovePlanArgs{PlanID: "p-collapse"})
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-plan-collapsed`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var stepsCount int
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelectorAll('.kiln-msg-plan-collapsed .kiln-plan-steps').length`, &stepsCount))
+	if stepsCount != 0 {
+		t.Errorf("approved plan still rendered steps; want 0 got %d", stepsCount)
+	}
+	var stepCountText string
+	_ = chromedp.Run(ctx, chromedp.Text(`.kiln-plan-stepcount`, &stepCountText, chromedp.ByQuery))
+	if !strings.Contains(stepCountText, "3 steps") {
+		t.Errorf("expected '(3 steps)' chip on collapsed plan; got %q", stepCountText)
+	}
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
