@@ -174,8 +174,15 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	// Mount chat panel + SSE on the auxiliary router so they survive
 	// world rebuilds. The host fallback HTML (the floating widget shell)
 	// is installed on Live so any unmatched URL serves it.
+	//
+	// Two registrations:
+	//   - chat.New + Mount: legacy widget.js routes (kept transitionally)
+	//   - chat.MountPanel:  new core-ui/widget-driven panel (primary)
+	// host.html is updated to load the new bootstrap; the legacy routes
+	// remain so existing integrations don't 404 mid-migration.
 	chatSrv := chat.New(l, tools)
 	chatSrv.Mount(l.Aux())
+	chat.MountPanel(l.Aux(), l, tools)
 	l.SetFallbackHTML(chat.HostHTML())
 
 	// MCP over HTTP — Kiln's tool surface (add_entity, undo, etc.) at
