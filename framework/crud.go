@@ -39,6 +39,7 @@ type CrudHandler struct {
 	Hooks      *HookRegistry      // optional lifecycle hooks
 	Storage    upload.Storage // optional; enables multipart uploads for Image/File fields
 	Events     *EventBus      // optional; receives entity.created/updated/deleted on commit
+	Registry   *Registry      // optional; required for nested ?include=author.profile resolution
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -202,7 +203,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		ctx := r.Context()
 		page, perPage := parsePagination(r)
 
-		includes, err := parseIncludes(r, ch.Entity)
+		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
@@ -263,7 +264,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		if err := ch.applyIncludes(ctx, results, includes); err != nil {
+		if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
 			return
 		}
@@ -297,7 +298,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		includes, err := parseIncludes(r, ch.Entity)
+		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
@@ -323,7 +324,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		if err := ch.applyIncludes(ctx, []map[string]any{result}, includes); err != nil {
+		if err := ch.applyIncludeTree(ctx, []map[string]any{result}, includes); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
 			return
 		}

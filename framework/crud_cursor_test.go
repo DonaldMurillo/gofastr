@@ -214,6 +214,86 @@ func TestCursor_RespectsFilters(t *testing.T) {
 	})
 }
 
+// ============================================================================
+// Test: EntityConfig.CursorField overrides the PK for keyset pagination
+// ============================================================================
+
+func TestCursor_PerEntityCursorField(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		// Two-column table where created_at is the cursor; ids are inserted out
+		// of created_at order so PK-keyset would walk a different sequence.
+		if _, err := db.Exec(`CREATE TABLE events (
+			id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL UNIQUE,
+			label TEXT NOT NULL
+		)`); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		seeds := []struct {
+			id, ca, label string
+		}{
+			{"z", "2026-01-01T00:00:00Z", "first"},
+			{"y", "2026-01-02T00:00:00Z", "second"},
+			{"x", "2026-01-03T00:00:00Z", "third"},
+			{"w", "2026-01-04T00:00:00Z", "fourth"},
+			{"v", "2026-01-05T00:00:00Z", "fifth"},
+		}
+		for _, s := range seeds {
+			if _, err := db.Exec("INSERT INTO events(id, created_at, label) VALUES ($1, $2, $3)", s.id, s.ca, s.label); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+		}
+
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("events", EntityConfig{
+			Table:       "events",
+			CursorField: "created_at",
+			Fields: []schema.Field{
+				{Name: "created_at", Type: schema.String, Required: true},
+				{Name: "label", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false))
+		ta := TestHarness(t, app)
+
+		// First page — should be ordered by created_at ASC, not by id.
+		first := decodeCursorPage(t, ta.Get("/events?cursor=&limit=3").Body())
+		if len(first.Data) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(first.Data))
+		}
+		// Expected created_at order: 2026-01-01, 02, 03.
+		want := []string{"first", "second", "third"}
+		for i, w := range want {
+			label, _ := first.Data[i]["label"].(string)
+			if label != w {
+				t.Fatalf("row %d: expected label %q, got %q (data=%v)", i, w, label, first.Data[i])
+			}
+		}
+
+		// Walk the cursor — must finish at 5 rows, label order preserved.
+		cursor := first.Cursor
+		seen := append([]string{}, want...)
+		for hops := 0; hops < 5 && cursor != ""; hops++ {
+			next := decodeCursorPage(t, ta.Get("/events?cursor="+cursor+"&limit=3").Body())
+			for _, row := range next.Data {
+				seen = append(seen, fmt.Sprintf("%v", row["label"]))
+			}
+			if !next.HasMore {
+				break
+			}
+			cursor = next.Cursor
+		}
+		expected := []string{"first", "second", "third", "fourth", "fifth"}
+		if len(seen) != len(expected) {
+			t.Fatalf("expected %d rows walked, got %d (seen=%v)", len(expected), len(seen), seen)
+		}
+		for i, e := range expected {
+			if seen[i] != e {
+				t.Fatalf("walk position %d: expected %q, got %q", i, e, seen[i])
+			}
+		}
+	})
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

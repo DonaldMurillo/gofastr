@@ -218,6 +218,7 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
+		crudHandler.Registry = a.Registry
 		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
 	}
 

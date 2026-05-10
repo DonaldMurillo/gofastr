@@ -24,6 +24,7 @@ type EntityConfig struct {
 	Timestamps  bool           // add created_at / updated_at columns
 	CRUD        *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
 	MCP         bool           // auto-generate MCP tools
+	CursorField string         // optional: field used for keyset cursor pagination; defaults to PrimaryKey
 
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.

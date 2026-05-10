@@ -50,6 +50,60 @@ func seedBlogDB(t *testing.T, db *sql.DB) {
 	}
 }
 
+// nestedBlogApp registers EVERY entity (users, profiles, posts, comments,
+// tags) so the registry has a complete graph for nested ?include= resolution.
+// (blogApp below is the older variant that omits profiles+tags from the
+// registry — kept for tests that exercise the no-target-registered path.)
+func nestedBlogApp(t *testing.T, db *sql.DB) *App {
+	t.Helper()
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	app.Entity("users", EntityConfig{
+		Table: "users",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+		},
+		Relations: []Relation{
+			HasOne("profile", "profiles", "user_id"),
+		},
+	}.WithTimestamps(false))
+	app.Entity("profiles", EntityConfig{
+		Table: "profiles",
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "bio", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	app.Entity("posts", EntityConfig{
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "author_id", Type: schema.String},
+		},
+		Relations: []Relation{
+			HasMany("comments", "comments", "post_id"),
+			BelongsTo("author", "users", "author_id"),
+			ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+		},
+	}.WithTimestamps(false))
+	app.Entity("comments", EntityConfig{
+		Table: "comments",
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.String, Required: true},
+			{Name: "post_id", Type: schema.String, Required: true},
+		},
+		Relations: []Relation{
+			BelongsTo("post", "posts", "post_id"),
+		},
+	}.WithTimestamps(false))
+	app.Entity("tags", EntityConfig{
+		Table: "tags",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false))
+	return app
+}
+
 // blogApp registers users, profiles, posts, comments, tags with relations.
 func blogApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
@@ -301,5 +355,117 @@ func TestInclude_AbsentLeavesResponseUnchanged(t *testing.T) {
 			t.Fatalf("did not request %q via include, but it appeared in response: %v", key, got)
 		}
 	}
+	})
+}
+
+// ============================================================================
+// Test: Nested includes — ?include=author.profile loads two levels deep
+// ============================================================================
+
+func TestInclude_Nested_AuthorProfile(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts/p1?include=author.profile")
+		resp.AssertStatus(t, http.StatusOK)
+
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		author, ok := got["author"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected author object, got %T (%v)", got["author"], got["author"])
+		}
+		if author["name"] != "Alice" {
+			t.Fatalf("expected author.name=Alice, got %v", author["name"])
+		}
+		profile, ok := author["profile"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected nested profile object on author, got %T (%v)", author["profile"], author["profile"])
+		}
+		if profile["bio"] != "Hello from Alice" {
+			t.Fatalf("expected profile.bio, got %v", profile["bio"])
+		}
+	})
+}
+
+// ============================================================================
+// Test: Nested includes alongside flat ones — ?include=author.profile,comments
+// ============================================================================
+
+func TestInclude_Nested_Mixed(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts/p1?include=author.profile,comments")
+		resp.AssertStatus(t, http.StatusOK)
+
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		author := got["author"].(map[string]any)
+		if author["profile"] == nil {
+			t.Fatalf("expected nested profile, got %v", author)
+		}
+		comments, ok := got["comments"].([]any)
+		if !ok || len(comments) != 2 {
+			t.Fatalf("expected 2 comments alongside nested author.profile, got %v", comments)
+		}
+	})
+}
+
+// ============================================================================
+// Test: Unknown nested segment returns 400 with the bad segment named
+// ============================================================================
+
+func TestInclude_Nested_UnknownSegment_400(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts/p1?include=author.bogus")
+		resp.AssertStatus(t, http.StatusBadRequest).
+			AssertBodyContains(t, "bogus")
+	})
+}
+
+// ============================================================================
+// Test: List with nested includes batches every relation across all rows
+// (i.e. one query per relation, not per row).
+// ============================================================================
+
+func TestInclude_Nested_OnList(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		ta := TestHarness(t, app)
+
+		resp := ta.Get("/posts?include=author.profile")
+		resp.AssertStatus(t, http.StatusOK)
+
+		var env ListResponse
+		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if env.Total != 2 {
+			t.Fatalf("expected 2 posts, got %d", env.Total)
+		}
+		// p1 has author=Alice (profile present); p2 has author=Bob (no profile).
+		for _, row := range env.Data {
+			author, ok := row["author"].(map[string]any)
+			if !ok {
+				t.Fatalf("missing author on row: %v", row)
+			}
+			if _, present := author["profile"]; !present {
+				t.Fatalf("expected author.profile key on every row (nil for u2 OK), got %v", author)
+			}
+		}
 	})
 }

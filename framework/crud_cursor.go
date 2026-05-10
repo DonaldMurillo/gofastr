@@ -8,16 +8,25 @@ import (
 	"github.com/gofastr/gofastr/core/query"
 )
 
+// cursorField returns the column the handler keysets on. Defaults to the
+// entity primary key, overridden by EntityConfig.CursorField when non-empty.
+// The chosen field must be unique-enough that two rows never share the same
+// value — keyset pagination breaks the moment ties happen at the boundary.
+func (ch *CrudHandler) cursorField() string {
+	if ch.Entity.Config.CursorField != "" {
+		return ch.Entity.Config.CursorField
+	}
+	return ch.PrimaryKey
+}
+
 // serveCursorList handles a cursor-paginated List request. It uses keyset
-// pagination on the primary key (ORDER BY pk ASC for forward, DESC for
-// backward) and emits a CursorPage envelope. The total count is intentionally
-// omitted — cursor pagination's appeal is avoiding count's table scan.
+// pagination on the entity's cursor field (default: PrimaryKey) and emits a
+// CursorPage envelope. The total count is intentionally omitted — cursor
+// pagination's appeal is avoiding count's table scan.
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
-// ordered, unique key, and the entity primary key is the only field this
-// handler can guarantee that for. Future per-entity cursor fields could
-// relax this.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []Relation, filters []ParsedFilter) {
+// ordered, unique-enough key, so the cursor field controls ORDER BY.
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []ParsedFilter) {
 	cursor, limit, direction := ParseCursorPagination(r)
 	if direction != "forward" && direction != "backward" {
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")
@@ -34,6 +43,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		cursorValue = val
 	}
 
+	field := ch.cursorField()
 	cols := ch.visibleFields()
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
@@ -42,13 +52,14 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	ch.applySoftDeleteFilter(qb, r)
 
 	if cursorValue != "" {
-		qb.Cursor(ch.PrimaryKey, cursorValue, direction)
+		qb.Cursor(field, cursorValue, direction)
 	} else {
-		// First page — order by PK; backward starts from the largest values.
+		// First page — order by the cursor field; backward starts from the
+		// largest values.
 		if direction == "backward" {
-			qb.Order(ch.PrimaryKey, "DESC")
+			qb.Order(field, "DESC")
 		} else {
-			qb.Order(ch.PrimaryKey, "ASC")
+			qb.Order(field, "ASC")
 		}
 	}
 
@@ -69,13 +80,13 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		return
 	}
 
-	if err := ch.applyIncludes(ctx, results, includes); err != nil {
+	if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
 		return
 	}
 
-	pkKey := ch.convertKey(ch.PrimaryKey)
-	page := NewCursorPage(results, pkKey, limit)
+	cursorKey := ch.convertKey(field)
+	page := NewCursorPage(results, cursorKey, limit)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page)
