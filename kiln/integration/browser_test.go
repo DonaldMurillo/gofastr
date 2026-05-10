@@ -73,7 +73,7 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 			"in_flight": testInFlight.Load(),
 		}
 	})
-	l.SetFallbackHTML(chat.HostHTML())
+	l.SetFallbackFunc(chat.HostHTMLForRequest)
 
 	// Stub /kiln/agent so the modal Apply form has somewhere to POST.
 	// Real wiring lives in cmd/kiln/agent_http.go; tests only need a
@@ -1396,6 +1396,29 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 		time.Sleep(80 * time.Millisecond)
 	}
 	t.Errorf("panel chat list still showed seeded message 2s after Reset — UI did not react to session_reset")
+}
+
+// The empty-state landing page shows a curl example. Previously the
+// example hardcoded http://localhost:8765 — wrong on any non-default
+// port. Should render the actual server origin so users can copy the
+// example directly into their terminal.
+func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+
+	resp, err := http.Get(urlBase + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page := string(body)
+
+	if strings.Contains(page, "http://localhost:8765") {
+		t.Errorf("landing page still hardcodes http://localhost:8765 — should use actual host %q", urlBase)
+	}
+	if !strings.Contains(page, urlBase) {
+		t.Errorf("landing page does not contain actual host %q in any curl example", urlBase)
+	}
 }
 
 // safety: keep fmt + journal imports live

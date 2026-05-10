@@ -65,7 +65,7 @@
     <div class="kiln-card">
       <h2>Or curl it</h2>
       <p>Same surface, scriptable from any terminal:</p>
-      <code>curl -X POST http://localhost:8765/kiln/tool/add_entity \
+      <code>curl -X POST __KILN_BASE__/kiln/tool/add_entity \
   -H 'Content-Type: application/json' \
   -d '{"entity":{"name":"posts","fields":[
         {"name":"title","type":"string","required":true}]}}'</code>

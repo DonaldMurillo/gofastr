@@ -93,11 +93,43 @@ func (s *Server) Mount(r *router.Router) {
 // HTML uses a placeholder script tag we substitute with WidgetTag at
 // serve time so the runtime URL gets a fresh content-hash cache-bust
 // query param on every page load.
+//
+// The __KILN_BASE__ placeholder in the curl example is left untouched
+// here — for per-request substitution, callers should use
+// HostHTMLForRequest. HostHTML hard-codes localhost:8765 (the default
+// addr) so simple non-request callers (chat tests, snapshots) still
+// produce a complete page.
 func HostHTML() string {
-	return strings.Replace(hostHTML,
-		`<script src="/__gofastr/runtime.js"></script>`,
-		WidgetTag(),
-		1)
+	return strings.NewReplacer(
+		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
+		`__KILN_BASE__`, `http://localhost:8765`,
+	).Replace(hostHTML)
+}
+
+// HostHTMLForRequest is HostHTML with __KILN_BASE__ substituted from
+// the actual incoming request's scheme + host. Use as a fallback func
+// (live.SetFallbackFunc) so users see the real port/host in the curl
+// example regardless of what kiln serve --addr was passed.
+func HostHTMLForRequest(r *http.Request) string {
+	return strings.NewReplacer(
+		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
+		`__KILN_BASE__`, baseFromRequest(r),
+	).Replace(hostHTML)
+}
+
+func baseFromRequest(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if h := r.Header.Get("X-Forwarded-Proto"); h != "" {
+		scheme = h
+	}
+	host := r.Host
+	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
+		host = h
+	}
+	return scheme + "://" + host
 }
 
 func (s *Server) serveWidgetJS(w http.ResponseWriter, _ *http.Request) {

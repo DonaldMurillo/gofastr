@@ -29,6 +29,7 @@ type Live struct {
 	bus          *Broadcaster
 	aux          *router.Router
 	fallbackHTML string
+	fallbackFunc func(*http.Request) string
 }
 
 // SetFallbackHTML installs a catch-all HTML response for any request the
@@ -39,6 +40,18 @@ func (l *Live) SetFallbackHTML(html string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.fallbackHTML = html
+	l.fallbackFunc = nil
+}
+
+// SetFallbackFunc installs a per-request fallback renderer. Use when
+// the fallback HTML depends on request headers (e.g. host/port for
+// rendering correct curl examples). Mutually exclusive with
+// SetFallbackHTML — the most recent setter wins.
+func (l *Live) SetFallbackFunc(fn func(*http.Request) string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.fallbackFunc = fn
+	l.fallbackHTML = ""
 }
 
 // New constructs a Live runtime from an existing journal (which may already
@@ -225,7 +238,12 @@ func (l *Live) serveApp(w http.ResponseWriter, r *http.Request) {
 	l.mu.RLock()
 	app := l.app
 	fallback := l.fallbackHTML
+	fallbackFn := l.fallbackFunc
 	l.mu.RUnlock()
+
+	if fallbackFn != nil && fallback == "" {
+		fallback = fallbackFn(r)
+	}
 
 	if fallback != "" && wantsHTML(r) {
 		rec := newCapturingRecorder()

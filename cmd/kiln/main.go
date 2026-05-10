@@ -190,7 +190,7 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	chatSrv := chat.New(l, tools)
 	chatSrv.Mount(l.Aux())
 	chat.MountPanel(l.Aux(), l, tools, func() any { return agentState(store) })
-	l.SetFallbackHTML(chat.HostHTML())
+	l.SetFallbackFunc(chat.HostHTMLForRequest)
 
 	// MCP over HTTP — Kiln's tool surface (add_entity, undo, etc.) at
 	// /mcp; framework per-entity tools (auto-registered when an entity
