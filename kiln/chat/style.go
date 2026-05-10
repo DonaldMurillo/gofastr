@@ -534,11 +534,14 @@ func widgetCSS() string {
 
 	ss.Rule(".kiln-msg-tool-error").
 		Set(
-			"background", "transparent",
+			"background", "rgba(220, 80, 80, 0.10)",
 			"color", "{colors.kiln-bad}",
 			"font-family", "ui-monospace, monospace",
 			"font-size", "11px",
-			"align-self", "flex-start",
+			"align-self", "stretch",
+			"padding", "4px 8px",
+			"border-left", "3px solid {colors.kiln-bad}",
+			"border-radius", "0 4px 4px 0",
 		).
 		End()
 

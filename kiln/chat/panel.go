@@ -491,10 +491,12 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 				txt = "← ok"
 			}
 		} else {
+			// Errors: distinct ✗ prefix so a long log scans for failures
+			// without reading every word; tool name + kind + message.
 			if name != "" {
-				txt = "← " + name + " · " + e.Result.Kind + ": " + e.Result.Error
+				txt = "✗ " + name + " · " + e.Result.Kind + ": " + e.Result.Error
 			} else {
-				txt = "← " + e.Result.Kind + ": " + e.Result.Error
+				txt = "✗ " + e.Result.Kind + ": " + e.Result.Error
 			}
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s">%s</li>`,

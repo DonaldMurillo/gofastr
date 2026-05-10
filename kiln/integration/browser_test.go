@@ -1938,6 +1938,56 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 	t.Errorf("status never showed '2 tools'; final=%q", last)
 }
 
+// Failed tool dispatches surface as a distinct error row: ✗ prefix
+// (not the success ←), kiln-msg-tool-error class with red treatment,
+// tool name + error reason on the same line. Hits a known-bad
+// add_entity payload (missing required name) to force a validation
+// error from the protocol layer.
+func TestBrowser_FailedToolDispatchSurfacesDistinctRow(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bad add_entity: empty name field violates required.
+	body := `{"entity":{"name":"","fields":[{"name":"x","type":"string"}]}}`
+	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var rows []string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`Array.from(document.querySelectorAll('.kiln-msg-tool-error')).map(el=>el.textContent)`,
+			&rows))
+		var sawErrorRow bool
+		for _, r := range rows {
+			if strings.HasPrefix(strings.TrimSpace(r), "✗") {
+				sawErrorRow = true
+				break
+			}
+		}
+		if sawErrorRow {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	var allRows []string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`Array.from(document.querySelectorAll('.kiln-msg-tool, .kiln-msg-tool-error')).map(el=>el.className+': '+el.textContent)`,
+		&allRows))
+	t.Errorf("did not find a kiln-msg-tool-error row prefixed with ✗; rows=%v", allRows)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}
