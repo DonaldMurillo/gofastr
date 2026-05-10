@@ -3305,6 +3305,52 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	}
 }
 
+// Failed tool rows offer a one-click retry that pre-fills the
+// chat input with a retry prompt referencing the original tool + args.
+func TestBrowser_FailedToolRowOffersRetry(t *testing.T) {
+	urlBase, l, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := l.Apply(journal.Entry{
+		ID: "ret-call", Timestamp: time.Now(), Kind: journal.KindToolCall,
+		Payload: mustJSON(journal.ToolCallPayload{
+			CallID: "rc-1", Name: "add_entity",
+			Args: map[string]any{"entity": map[string]any{"name": "broken", "fields": []any{}}},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Apply(journal.Entry{
+		ID: "ret-result", Timestamp: time.Now(), Kind: journal.KindToolResult,
+		Payload: mustJSON(journal.ToolResultPayload{
+			CallID: "rc-1", OK: false, Kind: "validation", Error: "no fields",
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-msg-retry`, chromedp.ByQuery),
+		chromedp.Click(`.kiln-msg-retry`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var v string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &v))
+		if strings.HasPrefix(v, "retry the failed add_entity") {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var got string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('.kiln-input').value`, &got))
+	t.Errorf("retry did not pre-fill input; got %q", got)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

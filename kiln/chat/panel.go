@@ -705,8 +705,19 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 				txt += " — " + e.Result.Hint
 			}
 		}
-		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s" title="%s">%s</li>`,
-			cls, escAttr(e.Result.CallID), escAttr(formatRowTime(e.Timestamp)), escHTML(txt))
+		// On failure with a known matching call, append a small
+		// retry shortcut that pre-fills the chat input with a
+		// retry prompt referencing the original tool + args.
+		var retryBtn string
+		if !e.Result.OK {
+			if c, ok := callByID[e.Result.CallID]; ok && c.Call != nil {
+				prompt := "retry the failed " + c.Call.Name + " call (" + summarizeArgs(c.Call.Args) + "): "
+				retryBtn = fmt.Sprintf(` <button type="button" class="kiln-msg-retry" data-fui-fill-input=".kiln-input" data-fui-fill-text="%s" title="Retry this tool with edits">↻ retry</button>`,
+					escAttr(prompt))
+			}
+		}
+		fmt.Fprintf(b, `<li class="kiln-msg %s" data-call-id="%s" title="%s">%s%s</li>`,
+			cls, escAttr(e.Result.CallID), escAttr(formatRowTime(e.Timestamp)), escHTML(txt), retryBtn)
 		return
 	}
 }

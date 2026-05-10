@@ -772,6 +772,22 @@ func widgetCSS() string {
 		).
 		End()
 
+	ss.Rule(".kiln-msg-retry").
+		Set(
+			"display", "inline-block",
+			"margin-left", "8px",
+			"padding", "1px 6px",
+			"background", "rgba(255, 255, 255, 0.06)",
+			"border", "1px solid rgba(255, 255, 255, 0.15)",
+			"color", "rgba(220, 225, 235, 0.85)",
+			"border-radius", "4px",
+			"font-size", "10px",
+			"font-family", "ui-monospace, monospace",
+			"cursor", "pointer",
+		).
+		Pseudo(":hover", "background", "rgba(255, 255, 255, 0.10)").
+		End()
+
 	ss.Rule(".kiln-msg-tool-error").
 		Set(
 			"background", "rgba(220, 80, 80, 0.10)",
