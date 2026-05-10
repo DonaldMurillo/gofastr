@@ -98,6 +98,80 @@ func TestProjection_List(t *testing.T) {
 }
 
 // ============================================================================
+// camelCase input names work (?fields=createdAt → maps back to created_at)
+// ============================================================================
+
+func TestProjection_CamelCaseInput(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		if _, err := db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			author_id TEXT
+		)`); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := db.Exec("INSERT INTO posts(id, title, author_id) VALUES ($1, $2, $3)", "p1", "hi", "u1"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("posts", EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "author_id", Type: schema.String},
+			},
+		}.WithTimestamps(false))
+		ta := TestHarness(t, app)
+
+		// "authorId" is the wire-case form of the DB "author_id" column.
+		resp := ta.Get("/posts/p1?fields=authorId")
+		resp.AssertStatus(t, http.StatusOK)
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got["authorId"] != "u1" {
+			t.Fatalf("expected authorId=u1, got %v (full=%v)", got["authorId"], got)
+		}
+		if _, present := got["title"]; present {
+			t.Fatalf("title should be projected out, got %v", got)
+		}
+	})
+}
+
+// ============================================================================
+// Projection + ?include= work together (projection only filters base columns,
+// not the included relation tree).
+// ============================================================================
+
+func TestProjection_WithInclude(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := blogApp(t, db)
+		ta := TestHarness(t, app)
+
+		// Project to just "title" but still include "comments".
+		resp := ta.Get("/posts/p1?fields=title&include=comments")
+		resp.AssertStatus(t, http.StatusOK)
+
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got["title"] != "First" {
+			t.Fatalf("expected title in projection, got %v", got)
+		}
+		if _, ok := got["comments"]; !ok {
+			t.Fatalf("comments should still be included alongside projection: %v", got)
+		}
+		// authorId was NOT requested — should not appear at the top level.
+		if _, present := got["authorId"]; present {
+			t.Fatalf("authorId should be projected out, got %v", got)
+		}
+	})
+}
+
+// ============================================================================
 // Unknown field name returns 400
 // ============================================================================
 
