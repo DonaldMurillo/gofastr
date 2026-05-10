@@ -3,67 +3,105 @@ package framework
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gofastr/gofastr/core/query"
 )
 
-// cursorField returns the column the handler keysets on. Defaults to the
-// entity primary key, overridden by EntityConfig.CursorField when non-empty.
-// The chosen field must be unique-enough that two rows never share the same
-// value — keyset pagination breaks the moment ties happen at the boundary.
-func (ch *CrudHandler) cursorField() string {
-	if ch.Entity.Config.CursorField != "" {
-		return ch.Entity.Config.CursorField
+// cursorFields returns the ordered list of columns the handler keysets on.
+// Defaults to the entity primary key; EntityConfig.CursorField overrides to
+// a single named column; EntityConfig.CursorFields overrides to a composite
+// (multi-field) cursor with tuple comparison.
+//
+// Composite cursors should end in a guaranteed-unique tiebreak column
+// (typically the primary key) so paging never stalls on ties — the
+// framework appends PrimaryKey automatically if it isn't already listed.
+func (ch *CrudHandler) cursorFields() []string {
+	if len(ch.Entity.Config.CursorFields) > 0 {
+		fields := append([]string{}, ch.Entity.Config.CursorFields...)
+		hasPK := false
+		for _, f := range fields {
+			if f == ch.PrimaryKey {
+				hasPK = true
+				break
+			}
+		}
+		if !hasPK {
+			fields = append(fields, ch.PrimaryKey)
+		}
+		return fields
 	}
-	return ch.PrimaryKey
+	if ch.Entity.Config.CursorField != "" {
+		return []string{ch.Entity.Config.CursorField}
+	}
+	return []string{ch.PrimaryKey}
 }
 
 // serveCursorList handles a cursor-paginated List request. It uses keyset
-// pagination on the entity's cursor field (default: PrimaryKey) and emits a
-// CursorPage envelope. The total count is intentionally omitted — cursor
-// pagination's appeal is avoiding count's table scan.
+// pagination on the entity's cursor field(s) and emits a CursorPage envelope.
+// The total count is intentionally omitted — cursor pagination's appeal is
+// avoiding count's table scan.
+//
+// Single-field cursor: WHERE field > $1 ORDER BY field.
+// Composite cursor:    WHERE (f1, f2, …) > ($1, $2, …) ORDER BY f1, f2, …
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
-// ordered, unique-enough key, so the cursor field controls ORDER BY.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []ParsedFilter) {
+// ordered, unique-enough key, so the cursor field(s) control ORDER BY.
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []ParsedFilter, nested []nestedFilter) {
 	cursor, limit, direction := ParseCursorPagination(r)
 	if direction != "forward" && direction != "backward" {
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")
 		return
 	}
 
-	var cursorValue string
-	if cursor != "" {
-		_, val, err := DecodeCursor(cursor)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid cursor: "+err.Error())
-			return
-		}
-		cursorValue = val
-	}
-
-	field := ch.cursorField()
+	fields := ch.cursorFields()
 	cols := ch.visibleFields()
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
 	applyFiltersToQuery(qb, filters)
 	ch.applyTenantScope(qb, r)
 	ch.applySoftDeleteFilter(qb, r)
+	applyNestedFilters(
+		func(sql string, args ...any) { qb.Where(sql, args...) },
+		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+	)
 
-	if cursorValue != "" {
-		qb.Cursor(field, cursorValue, direction)
-	} else {
-		// First page — order by the cursor field; backward starts from the
-		// largest values.
-		if direction == "backward" {
-			qb.Order(field, "DESC")
+	// Decode cursor (if any) and apply tuple-comparison WHERE.
+	if cursor != "" {
+		decoded, err := decodeCursorAny(cursor, fields)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid cursor: "+err.Error())
+			return
+		}
+		if len(fields) == 1 {
+			qb.Cursor(fields[0], decoded[fields[0]], direction)
 		} else {
-			qb.Order(field, "ASC")
+			op := ">"
+			if direction == "backward" {
+				op = "<"
+			}
+			cols := strings.Join(fields, ", ")
+			placeholders := make([]string, len(fields))
+			args := make([]any, len(fields))
+			for i, f := range fields {
+				placeholders[i] = fmt.Sprintf("$%d", i+1)
+				args[i] = decoded[f]
+			}
+			qb.Where(fmt.Sprintf("(%s) %s (%s)", cols, op, strings.Join(placeholders, ", ")), args...)
 		}
 	}
 
-	// Fetch limit+1 to detect HasMore without an extra query.
+	// ORDER BY each cursor field in declared order.
+	for _, f := range fields {
+		if direction == "backward" {
+			qb.Order(f, "DESC")
+		} else {
+			qb.Order(f, "ASC")
+		}
+	}
+
 	qb.Limit(limit + 1)
 
 	dataSQL, dataArgs := qb.Build()
@@ -85,9 +123,61 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		return
 	}
 
-	cursorKey := ch.convertKey(field)
-	page := NewCursorPage(results, cursorKey, limit)
-
+	// Compute next cursor from the last row using all cursor field columns.
+	page := buildCursorPage(results, fields, ch.convertKey, limit)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page)
+}
+
+// decodeCursorAny accepts either the legacy single-field cursor or the new
+// multi-field encoding and returns a map keyed by the DB column name. For
+// the legacy form, the single field/value lands under the first entry in
+// `fields`.
+func decodeCursorAny(cursor string, fields []string) (map[string]string, error) {
+	out := map[string]string{}
+
+	// Try multi-cursor first; if it has fields, prefer it.
+	if mf, err := DecodeMultiCursor(cursor); err == nil && len(mf) > 0 {
+		for _, kv := range mf {
+			out[kv.Name] = kv.Value
+		}
+		return out, nil
+	}
+	// Fall back to single-field cursor.
+	if _, val, err := DecodeCursor(cursor); err == nil && len(fields) > 0 {
+		out[fields[0]] = val
+		return out, nil
+	}
+	return nil, fmt.Errorf("cursor format not recognised")
+}
+
+// buildCursorPage assembles the CursorPage envelope. For single-field
+// cursors it uses the legacy EncodeCursor shape so existing clients keep
+// working; for composite cursors it emits the multi-field encoding.
+func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, limit int) CursorPage {
+	hasMore := len(data) > limit
+	if hasMore {
+		data = data[:limit]
+	}
+	page := CursorPage{Data: data, HasMore: hasMore}
+	if !hasMore || len(data) == 0 {
+		return page
+	}
+	last := data[len(data)-1]
+	if len(fields) == 1 {
+		key := convertKey(fields[0])
+		if val, ok := last[key]; ok {
+			page.Cursor = EncodeCursor(fields[0], val)
+		}
+		return page
+	}
+	// Composite — build a map keyed by DB column name for EncodeMultiCursor.
+	dbRow := map[string]any{}
+	for _, f := range fields {
+		if v, ok := last[convertKey(f)]; ok {
+			dbRow[f] = v
+		}
+	}
+	page.Cursor = EncodeMultiCursor(fields, dbRow)
+	return page
 }

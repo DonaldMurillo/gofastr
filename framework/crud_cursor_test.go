@@ -294,6 +294,85 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 	})
 }
 
+// ============================================================================
+// Test: composite cursor — ORDER BY (created_at DESC, id DESC) with tuple
+// comparison handles ties on the leading column gracefully.
+// ============================================================================
+
+func TestCursor_Composite(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		// Two rows share the same created_at to force the tiebreak.
+		if _, err := db.Exec(`CREATE TABLE feed (
+			id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL,
+			label TEXT NOT NULL
+		)`); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		seeds := []struct {
+			id, ca, label string
+		}{
+			{"a", "2026-01-01T00:00:00Z", "a"},
+			{"b", "2026-01-02T00:00:00Z", "b"}, // shares timestamp with c
+			{"c", "2026-01-02T00:00:00Z", "c"},
+			{"d", "2026-01-03T00:00:00Z", "d"},
+			{"e", "2026-01-04T00:00:00Z", "e"},
+		}
+		for _, s := range seeds {
+			if _, err := db.Exec("INSERT INTO feed(id, created_at, label) VALUES ($1, $2, $3)",
+				s.id, s.ca, s.label); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+		}
+
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("feed", EntityConfig{
+			Table:        "feed",
+			CursorFields: []string{"created_at", "id"},
+			Fields: []schema.Field{
+				{Name: "created_at", Type: schema.String, Required: true},
+				{Name: "label", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false))
+		ta := TestHarness(t, app)
+
+		first := decodeCursorPage(t, ta.Get("/feed?cursor=&limit=2").Body())
+		if len(first.Data) != 2 {
+			t.Fatalf("first page: expected 2, got %d", len(first.Data))
+		}
+		// ORDER BY created_at ASC, id ASC. Expected: a (2026-01-01), b (2026-01-02 + id=b).
+		if first.Data[0]["label"] != "a" || first.Data[1]["label"] != "b" {
+			t.Fatalf("unexpected first page order: %+v", first.Data)
+		}
+		if !first.HasMore {
+			t.Fatal("expected hasMore=true after first page")
+		}
+
+		// Walk to the end.
+		seen := []string{"a", "b"}
+		cur := first.Cursor
+		for cur != "" {
+			page := decodeCursorPage(t, ta.Get("/feed?cursor="+cur+"&limit=2").Body())
+			for _, row := range page.Data {
+				seen = append(seen, fmt.Sprintf("%v", row["label"]))
+			}
+			if !page.HasMore {
+				break
+			}
+			cur = page.Cursor
+		}
+		want := []string{"a", "b", "c", "d", "e"}
+		if len(seen) != len(want) {
+			t.Fatalf("expected walk len=%d, got %d (seen=%v)", len(want), len(seen), seen)
+		}
+		for i, l := range want {
+			if seen[i] != l {
+				t.Fatalf("walk pos %d: want %q, got %q", i, l, seen[i])
+			}
+		}
+	})
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

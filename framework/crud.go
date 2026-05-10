@@ -215,11 +215,19 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		// Nested filters like ?author.name=alice. Parsed once and applied to
+		// both the count + data queries below.
+		nested, err := parseNestedFilters(r, ch.Entity, ch.Registry)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		// Cursor pagination is opt-in: presence of the ?cursor key (even
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if r.URL.Query().Has("cursor") {
-			ch.serveCursorList(ctx, w, r, includes, filters)
+			ch.serveCursorList(ctx, w, r, includes, filters, nested)
 			return
 		}
 
@@ -236,6 +244,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		applyFiltersToCountQuery(countQb, filters)
 		ch.applyTenantScopeCount(countQb, r)
 		ch.applySoftDeleteFilterCount(countQb, r)
+		applyNestedFilters(
+			func(sql string, args ...any) { countQb.Where(sql, args...) },
+			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		)
 		countSQL, countArgs := countQb.Build()
 		var total int
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
@@ -249,6 +261,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		applyFiltersToQuery(qb, filters)
 		ch.applyTenantScope(qb, r)
 		ch.applySoftDeleteFilter(qb, r)
+		applyNestedFilters(
+			func(sql string, args ...any) { qb.Where(sql, args...) },
+			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		)
 		applySortToQuery(qb, sorts)
 
 		offset := (page - 1) * perPage
