@@ -2956,6 +2956,35 @@ func TestBrowser_ErrorRowsIncludeHint(t *testing.T) {
 	}
 }
 
+// World snapshot pill names entities when there are few (≤4).
+func TestBrowser_SnapshotPillNamesEntitiesWhenFew(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "notes", Fields: []world.Field{{Name: "x", Type: "string"}}}})
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "users", Fields: []world.Field{{Name: "y", Type: "string"}}}})
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-panel-snapshot`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var pill string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Text(`.kiln-panel-snapshot`, &pill, chromedp.ByQuery))
+		if strings.Contains(pill, "notes") && strings.Contains(pill, "users") {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Errorf("expected snapshot pill to name entities; got %q", pill)
+}
+
 // safety: keep fmt + journal imports live
 var _ = fmt.Sprintf
 var _ = journal.PlanTarget{}

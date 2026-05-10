@@ -321,7 +321,16 @@ func (pe *panelEnv) worldSnapshotText() string {
 	}
 	parts := []string{}
 	if n := len(w.Entities); n > 0 {
-		parts = append(parts, pluralize(n, "entity", "entities"))
+		base := pluralize(n, "entity", "entities")
+		if n <= 4 {
+			names := make([]string, 0, n)
+			for k := range w.Entities {
+				names = append(names, k)
+			}
+			sortStrings(names)
+			base += " (" + strings.Join(names, ", ") + ")"
+		}
+		parts = append(parts, base)
 	}
 	if n := len(w.Pages); n > 0 {
 		parts = append(parts, pluralize(n, "page", "pages"))
@@ -336,6 +345,14 @@ func (pe *panelEnv) worldSnapshotText() string {
 		return "empty world"
 	}
 	return strings.Join(parts, " · ")
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
 }
 
 func pluralize(n int, singular, plural string) string {
