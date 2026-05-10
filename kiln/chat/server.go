@@ -18,6 +18,7 @@ import (
 	"github.com/gofastr/gofastr/kiln/journal"
 	"github.com/gofastr/gofastr/kiln/live"
 	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/gofastr/gofastr/kiln/world"
 )
 
 //go:embed assets/host.html
@@ -90,32 +91,72 @@ func (s *Server) Mount(r *router.Router) {
 
 // HostHTML is the empty-state shell. Returned to any unmatched HTML
 // request so the floating widget is always reachable. The embedded
-// HTML uses a placeholder script tag we substitute with WidgetTag at
-// serve time so the runtime URL gets a fresh content-hash cache-bust
-// query param on every page load.
+// HTML uses placeholders we substitute at serve time:
+//   __KILN_BASE__   the server's scheme+host (per-request when possible)
+//   __KILN_LEAD__   the welcome paragraph (adapts to current world)
+//   the runtime <script> tag (hashed for cache-busting)
 //
-// The __KILN_BASE__ placeholder in the curl example is left untouched
-// here — for per-request substitution, callers should use
-// HostHTMLForRequest. HostHTML hard-codes localhost:8765 (the default
-// addr) so simple non-request callers (chat tests, snapshots) still
-// produce a complete page.
+// HostHTML hard-codes localhost:8765 + the empty-world lead so non-
+// request callers (chat tests, snapshots) still produce a complete
+// page. For live serving with a Live runtime, prefer HostHTMLForLive.
 func HostHTML() string {
 	return strings.NewReplacer(
 		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
 		`__KILN_BASE__`, `http://localhost:8765`,
+		`__KILN_LEAD__`, defaultEmptyLead,
 	).Replace(hostHTML)
 }
 
 // HostHTMLForRequest is HostHTML with __KILN_BASE__ substituted from
-// the actual incoming request's scheme + host. Use as a fallback func
-// (live.SetFallbackFunc) so users see the real port/host in the curl
-// example regardless of what kiln serve --addr was passed.
+// the actual incoming request's scheme + host. Lead text stays the
+// empty-world message — for world-aware lead use HostHTMLForLive.
 func HostHTMLForRequest(r *http.Request) string {
 	return strings.NewReplacer(
 		`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
 		`__KILN_BASE__`, baseFromRequest(r),
+		`__KILN_LEAD__`, defaultEmptyLead,
 	).Replace(hostHTML)
 }
+
+// HostHTMLForLive is HostHTMLForRequest with the lead paragraph
+// computed from the Live runtime's current world: empty world →
+// the default copy; non-empty → a per-noun summary so visitors see
+// what the agent has built without opening the panel.
+func HostHTMLForLive(l *live.Live) func(*http.Request) string {
+	return func(r *http.Request) string {
+		return strings.NewReplacer(
+			`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
+			`__KILN_BASE__`, baseFromRequest(r),
+			`__KILN_LEAD__`, leadForWorld(l.Session().World),
+		).Replace(hostHTML)
+	}
+}
+
+const defaultEmptyLead = "Empty world. Drive the build by chatting with an agent in the floating panel, or by calling the tool API directly. Every change journals + re-renders live."
+
+// leadForWorld renders the headline paragraph for the empty-state
+// landing. Adapts to non-empty worlds so a visitor lands on a
+// running app and sees what's there without opening the panel.
+func leadForWorld(w *world.World) string {
+	if w == nil {
+		return defaultEmptyLead
+	}
+	parts := []string{}
+	if n := len(w.Entities); n > 0 {
+		parts = append(parts, pluralize(n, "entity", "entities"))
+	}
+	if n := len(w.Pages); n > 0 {
+		parts = append(parts, pluralize(n, "page", "pages"))
+	}
+	if n := len(w.Routes); n > 0 {
+		parts = append(parts, pluralize(n, "custom route", "custom routes"))
+	}
+	if len(parts) == 0 {
+		return defaultEmptyLead
+	}
+	return strings.Join(parts, " · ") + " live. Open the floating panel to keep building, or visit /kiln/world for the IR."
+}
+
 
 func baseFromRequest(r *http.Request) string {
 	scheme := "http"

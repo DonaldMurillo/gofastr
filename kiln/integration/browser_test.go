@@ -74,7 +74,7 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 			"in_flight": testInFlight.Load(),
 		}
 	})
-	l.SetFallbackFunc(chat.HostHTMLForRequest)
+	l.SetFallbackFunc(chat.HostHTMLForLive(l))
 
 	// Stub /kiln/agent so the modal Apply form has somewhere to POST.
 	// Real wiring lives in cmd/kiln/agent_http.go; tests only need a
@@ -1986,6 +1986,52 @@ func TestBrowser_FailedToolDispatchSurfacesDistinctRow(t *testing.T) {
 		`Array.from(document.querySelectorAll('.kiln-msg-tool, .kiln-msg-tool-error')).map(el=>el.className+': '+el.textContent)`,
 		&allRows))
 	t.Errorf("did not find a kiln-msg-tool-error row prefixed with ✗; rows=%v", allRows)
+}
+
+// The empty-state landing page lead paragraph adapts to world content:
+// 'Empty world…' on a fresh start, '2 entities · 1 page live…' once
+// the agent has built things. Renders against the actual world via
+// HostHTMLForLive (set up in startKilnExt).
+func TestBrowser_LandingLeadAdaptsToWorld(t *testing.T) {
+	urlBase, _, tools := startKilnExt(t)
+
+	// Empty world: lead must say "Empty world".
+	resp, err := http.Get(urlBase + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "Empty world") {
+		t.Errorf("expected 'Empty world' lead with no entities; got body fragment: %s", firstN(string(body), 800))
+	}
+
+	// Add two entities; lead should now reflect world content.
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "notes", Fields: []world.Field{{Name: "title", Type: "string", Required: true}}}})
+	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "users", Fields: []world.Field{{Name: "name", Type: "string"}}}})
+
+	resp, err = http.Get(urlBase + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	page := string(body)
+	if strings.Contains(page, "Empty world") {
+		t.Errorf("lead still says 'Empty world' after adding entities")
+	}
+	if !strings.Contains(page, "2 entities") {
+		t.Errorf("lead doesn't reflect entity count; body fragment: %s", firstN(page, 800))
+	}
+}
+
+func firstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // safety: keep fmt + journal imports live
