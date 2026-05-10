@@ -221,7 +221,10 @@ func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
 		b.WriteString(string(h))
 	}
 	if l, ok := slots["log"]; ok {
-		b.WriteString(`<div class="kiln-log-wrap" data-fui-signal="chat_html" data-fui-signal-mode="html">`)
+		// data-fui-scroll-bottom-on-update=".kiln-log" pushes the inner
+		// scrollable list to bottom after each chat_html refresh; the
+		// wrap itself has overflow:hidden, so the scroll is on .kiln-log.
+		b.WriteString(`<div class="kiln-log-wrap" data-fui-signal="chat_html" data-fui-signal-mode="html" data-fui-scroll-bottom-on-update=".kiln-log">`)
 		b.WriteString(string(l))
 		b.WriteString(`</div>`)
 	}

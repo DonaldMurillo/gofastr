@@ -323,6 +323,16 @@
           else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') node.textContent = String(value);
           else node.textContent = JSON.stringify(value);
         }
+        // After-update hook: scroll a container to bottom so streaming
+        // chat logs / live tails surface new content without manual
+        // scrolling. Opt-in via data-fui-scroll-bottom-on-update on
+        // the signal node itself or the resolved selector target.
+        if (node.hasAttribute('data-fui-scroll-bottom-on-update')) {
+          const sel = node.getAttribute('data-fui-scroll-bottom-on-update');
+          const target = sel ? node.querySelector(sel) || document.querySelector(sel) || node : node;
+          // Defer to end of microtask so the new innerHTML lays out first.
+          Promise.resolve().then(() => { try { target.scrollTop = target.scrollHeight; } catch (_) {} });
+        }
       });
     },
 

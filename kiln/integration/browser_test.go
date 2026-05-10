@@ -977,7 +977,7 @@ func TestBrowser_EmptySendDoesNotPoisonLog(t *testing.T) {
 
 	var logHTML string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.kiln-log-wrap')?.innerHTML ?? ''`, &logHTML),
+		chromedp.Evaluate(`document.querySelector('.kiln-log')?.innerHTML ?? ''`, &logHTML),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1010,7 +1010,7 @@ func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
 	var logHTML string
 	for time.Now().Before(deadline) {
 		_ = chromedp.Run(ctx,
-			chromedp.Evaluate(`document.querySelector('.kiln-log-wrap')?.innerHTML ?? ''`, &logHTML),
+			chromedp.Evaluate(`document.querySelector('.kiln-log')?.innerHTML ?? ''`, &logHTML),
 		)
 		if strings.Contains(logHTML, "hello via panel") {
 			break
@@ -1418,6 +1418,108 @@ func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
 	}
 	if !strings.Contains(page, urlBase) {
 		t.Errorf("landing page does not contain actual host %q in any curl example", urlBase)
+	}
+}
+
+// Verifies the runtime's data-fui-scroll-bottom-on-update opt-in:
+// after setSignal updates an html-mode signal node that has the
+// attribute, the resolved target's scrollTop should be at the bottom.
+// Builds a controlled overflow container in JS so the test isn't at
+// the mercy of the kiln panel's flex layout.
+func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	ctx, cancel := newChrome(t)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(urlBase+"/"),
+		chromedp.WaitVisible(`.kiln-widget`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	pollCtx, pollCancel := context.WithTimeout(ctx, 6*time.Second)
+	defer pollCancel()
+	for {
+		var ok bool
+		if err := chromedp.Run(pollCtx, chromedp.Evaluate(
+			`!!(window.__gofastr && window.__gofastr.setSignal)`, &ok)); err == nil && ok {
+			break
+		}
+		if pollCtx.Err() != nil {
+			t.Fatal("runtime namespace never loaded")
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		(function(){
+			const c = document.createElement('div');
+			c.id = 'scroll-test-container';
+			c.setAttribute('data-fui-signal', 'scroll_test');
+			c.setAttribute('data-fui-signal-mode', 'html');
+			c.setAttribute('data-fui-scroll-bottom-on-update', '');
+			c.style.cssText = 'position:fixed;top:0;left:0;width:200px;height:60px;overflow:auto;border:1px solid red;background:white;z-index:99999;';
+			c.innerHTML = '<div style="height:200px">initial</div>';
+			document.body.appendChild(c);
+			c.scrollTop = 0;
+		})()
+	`, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	var preTop, preHeight, preClient float64
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.getElementById('scroll-test-container').scrollTop`, &preTop))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.getElementById('scroll-test-container').scrollHeight`, &preHeight))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`document.getElementById('scroll-test-container').clientHeight`, &preClient))
+	if preTop != 0 || preHeight <= preClient+4 {
+		t.Fatalf("setup: container not in expected state (top=%v height=%v client=%v)", preTop, preHeight, preClient)
+	}
+
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`window.__gofastr.setSignal('scroll_test', '<div style="height:300px">replaced and taller</div>')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var top, height, client float64
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.getElementById('scroll-test-container').scrollTop`, &top))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.getElementById('scroll-test-container').scrollHeight`, &height))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(
+			`document.getElementById('scroll-test-container').clientHeight`, &client))
+		if top > 0 && top+client >= height-4 {
+			return
+		}
+		time.Sleep(60 * time.Millisecond)
+	}
+	var dump string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(
+		`JSON.stringify({top:document.getElementById('scroll-test-container').scrollTop,h:document.getElementById('scroll-test-container').scrollHeight,c:document.getElementById('scroll-test-container').clientHeight})`,
+		&dump))
+	t.Errorf("scroll-bottom-on-update did not pin scrollTop to bottom: %s", dump)
+}
+
+// And the kiln chat panel must opt in via the attribute on its log
+// container — otherwise even a working runtime feature won't help
+// users in the actual chat UI. The framework serves the panel's
+// chrome HTML via /__gofastr/widgets; assert the attribute is in
+// that payload.
+func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
+	urlBase, _, _ := startKilnExt(t)
+	resp, err := http.Get(urlBase + "/__gofastr/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page := string(body)
+	if !strings.Contains(page, `data-fui-scroll-bottom-on-update`) {
+		t.Errorf("kiln chat panel does not declare data-fui-scroll-bottom-on-update on its log container")
 	}
 }
 
