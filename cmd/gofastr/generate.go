@@ -170,6 +170,7 @@ func RegisterAll(app *framework.App) {
 		{name: "models.go", content: models.String()},
 		{name: "columns.go", content: renderColumns(decls)},
 		{name: "repo.go", content: renderRepos(decls)},
+		{name: "events.go", content: renderEvents(decls)},
 	}, nil
 }
 
@@ -341,6 +342,22 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", toCamelCase(field.Name), goTypeForField(field.Type), toCamelJSON(field.Name)))
+	}
+	// Relation fields — populated by TypedQuery.Include() and Repo.Get(...,
+	// includes...). Singular relations (HasOne/BelongsTo) get *Target;
+	// collections (HasMany/ManyToMany) get []*Target. Pointer so the absent
+	// case marshals as null (matches the framework's nil-for-missing
+	// contract).
+	for _, rel := range decl.Relations {
+		targetStruct := toCamelCase(rel.Entity)
+		fieldName := toCamelCase(rel.Name)
+		jsonTag := toCamelJSON(rel.Name)
+		switch rel.Type {
+		case framework.RelHasOne, framework.RelManyToOne:
+			sb.WriteString(fmt.Sprintf("\t%s *%s `json:\"%s,omitempty\"`\n", fieldName, targetStruct, jsonTag))
+		case framework.RelHasMany, framework.RelManyToMany:
+			sb.WriteString(fmt.Sprintf("\t%s []*%s `json:\"%s,omitempty\"`\n", fieldName, targetStruct, jsonTag))
+		}
 	}
 	sb.WriteString("}\n\n")
 	return sb.String()

@@ -30,8 +30,8 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderGeneratedProject: %v", err)
 	}
-	if len(files) != 4 {
-		t.Fatalf("files len = %d, want 4 (register, models, columns, repo)", len(files))
+	if len(files) != 5 {
+		t.Fatalf("files len = %d, want 5 (register, models, columns, repo, events)", len(files))
 	}
 	byName := map[string]string{}
 	for _, f := range files {

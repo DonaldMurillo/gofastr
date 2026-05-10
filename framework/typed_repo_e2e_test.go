@@ -346,6 +346,57 @@ func TestTypedRepoContract_BatchOps(t *testing.T) {
 }
 
 // ============================================================================
+// Test: typed Include populates relation fields on the generated-style model
+// ============================================================================
+
+// modelsWithRelations / modelUser / modelPost mirror what codegen now emits
+// for a posts entity with a BelongsTo author + HasMany comments.
+type modelUser struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+type modelComment struct {
+	ID     string `json:"id,omitempty"`
+	Body   string `json:"body,omitempty"`
+	PostID string `json:"postId,omitempty"`
+}
+type modelPost struct {
+	ID       string          `json:"id,omitempty"`
+	Title    string          `json:"title,omitempty"`
+	AuthorID string          `json:"authorId,omitempty"`
+	Author   *modelUser      `json:"author,omitempty"`
+	Comments []*modelComment `json:"comments,omitempty"`
+}
+
+func TestTypedRepoContract_IncludePopulatesRelationFields(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedBlogDB(t, db)
+		app := nestedBlogApp(t, db)
+		entity, _ := app.Registry.Get("posts")
+		ch := NewCrudHandler(entity, db)
+		ch.Hooks = app.HookRegistry("posts")
+		ch.Registry = app.Registry
+
+		got, err := NewTypedQuery[modelPost](ch).
+			Where(NewStringColumn("id").Eq("p1")).
+			Include("author", "comments").
+			First(context.Background())
+		if err != nil {
+			t.Fatalf("First: %v", err)
+		}
+		if got.Author == nil {
+			t.Fatalf("expected populated Author, got nil; raw=%+v", got)
+		}
+		if got.Author.Name != "Alice" {
+			t.Fatalf("expected Author.Name=Alice, got %q", got.Author.Name)
+		}
+		if len(got.Comments) != 2 {
+			t.Fatalf("expected 2 Comments, got %d", len(got.Comments))
+		}
+	})
+}
+
+// ============================================================================
 // Test: WithTx returns a tx-bound repo whose writes are atomic with the tx
 // ============================================================================
 
