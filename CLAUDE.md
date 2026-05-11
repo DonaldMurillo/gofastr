@@ -3,6 +3,11 @@
 **Before writing any UI, runtime, or `framework/uihost` code, read
 [`core-ui/ARCHITECTURE.md`](core-ui/ARCHITECTURE.md). This is mandatory.**
 
+**Before adding, moving, or extracting anything under `framework/`, read
+[`framework/ARCHITECTURE.md`](framework/ARCHITECTURE.md).** It captures the
+package layout, the layering rules, the cycle-breaking interfaces
+(`entity.Registry`, `db.Executor`), and the recipe for new extractions.
+
 The architecture document is the contract. Three different attempts at
 the UI navigation model were made before it was written, all wrong in
 different ways. The doc captures the model and lists the failure modes
@@ -45,3 +50,18 @@ explicitly so they don't repeat.
 - New island? Use `core-ui/widget` builder.
 - Theme tokens? `framework/ui/theme` for the canonical theme;
   `core-ui/style` for the underlying machinery.
+- Entity model, columns, relations, validators, EntityDeclaration?
+  `framework/entity/`. Most other framework subpackages depend on it.
+- HTTP CRUD handler / batch / cursor / stream / upload / typed query /
+  MCP tool generator / eager loading / includes? `framework/crud/`.
+- Filtering, sorting, pagination, DSL parsing — `framework/filter/`,
+  `framework/pagination/`, `framework/dsl/` (each is its own pkg).
+- Lifecycle hooks (BeforeCreate/AfterUpdate/etc.)? `framework/hook/`.
+- Auto-migration / schema diffing / dialect detection?
+  `framework/migrate/`.
+- Multi-tenancy, soft delete, RBAC? `framework/{tenant,softdelete,access}/`.
+- Cron, events, file-field upload helper, slow-query logger?
+  `framework/{cron,event,file,slowquery}/`.
+- App lifecycle, plugins, registry, typed hooks? Stay in `framework/`
+  root — these are the App spine. See `framework/ARCHITECTURE.md` for
+  why each remaining root file is glued to App.
