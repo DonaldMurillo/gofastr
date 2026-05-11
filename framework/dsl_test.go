@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/dsl"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
 func TestParseDSL(t *testing.T) {
-	got, err := ParseDSL(`posts.where(status="published", views>=10).include(author).order(created_at DESC).limit(5).after("cursor-1")`)
+	got, err := dsl.ParseDSL(`posts.where(status="published", views>=10).include(author).order(created_at DESC).limit(5).after("cursor-1")`)
 	if err != nil {
 		t.Fatalf("ParseDSL: %v", err)
 	}
@@ -19,10 +20,10 @@ func TestParseDSL(t *testing.T) {
 	if len(got.Filters) != 2 {
 		t.Fatalf("filters = %#v", got.Filters)
 	}
-	if got.Filters[0] != (DSLFilter{Field: "status", Operator: "=", Value: "published"}) {
+	if got.Filters[0] != (dsl.DSLFilter{Field: "status", Operator: "=", Value: "published"}) {
 		t.Fatalf("filter 0 = %#v", got.Filters[0])
 	}
-	if got.Orders[0] != (DSLOrder{Field: "created_at", Direction: "DESC"}) {
+	if got.Orders[0] != (dsl.DSLOrder{Field: "created_at", Direction: "DESC"}) {
 		t.Fatalf("order = %#v", got.Orders[0])
 	}
 	if got.Limit != 5 || got.After != "cursor-1" {
@@ -45,7 +46,7 @@ func TestBuildDSLQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	qb, err := BuildDSLQuery(registry, `posts.where(status="published", views in [10, 20]).include(author).order(created_at DESC).limit(2)`)
+	qb, err := dsl.BuildDSLQuery(registry, `posts.where(status="published", views in [10, 20]).include(author).order(created_at DESC).limit(2)`)
 	if err != nil {
 		t.Fatalf("BuildDSLQuery: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestBuildDSLQueryRejectsUnknownField(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := BuildDSLQuery(registry, `posts.where(missing="x")`); err == nil {
+	if _, err := dsl.BuildDSLQuery(registry, `posts.where(missing="x")`); err == nil {
 		t.Fatal("expected unknown field error")
 	}
 }

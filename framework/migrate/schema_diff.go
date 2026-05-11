@@ -32,7 +32,7 @@ type SchemaChange struct {
 // entity in the registry. Auto-detects dialect from the open DB; tables
 // missing entirely from the DB are reported as CREATE TABLE statements
 // (delegates to the same builder AutoMigrate uses).
-func DiffSchema(ctx context.Context, db *sql.DB, registry EntityRegistry) ([]SchemaChange, error) {
+func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]SchemaChange, error) {
 	dialect := DetectDialect(db)
 	all := registry.All()
 

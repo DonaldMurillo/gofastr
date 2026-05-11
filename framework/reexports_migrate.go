@@ -17,10 +17,10 @@ const (
 )
 
 var (
-	AutoMigrate           = migrate.AutoMigrate
-	MigrateEntity         = migrate.MigrateEntity
-	MigrateEntityDialect  = migrate.MigrateEntityDialect
-	DiffSchema            = migrate.DiffSchema
-	ApplySchemaDiff       = migrate.ApplySchemaDiff
-	DetectDialect         = migrate.DetectDialect
+	AutoMigrate          = migrate.AutoMigrate
+	MigrateEntity        = migrate.MigrateEntity
+	MigrateEntityDialect = migrate.MigrateEntityDialect
+	DiffSchema           = migrate.DiffSchema
+	ApplySchemaDiff      = migrate.ApplySchemaDiff
+	DetectDialect        = migrate.DetectDialect
 )

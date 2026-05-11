@@ -36,18 +36,11 @@ func DetectDialect(db *sql.DB) Dialect {
 	return DialectSQLite
 }
 
-// EntityRegistry is the minimal contract AutoMigrate (and DiffSchema) need
-// from the framework's Registry: a way to enumerate every registered entity
-// in stable order. Anything that returns the registered entities map
-// satisfies this — the *framework.Registry type does so implicitly.
-type EntityRegistry interface {
-	All() map[string]*entity.Entity
-}
 
 // AutoMigrate creates tables for all registered entities. Entities are
 // migrated in dependency order so FK targets exist before referencing
 // tables. Uses CREATE TABLE IF NOT EXISTS so re-running is safe.
-func AutoMigrate(db *sql.DB, registry EntityRegistry) error {
+func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 	all := registry.All()
 	ordered, err := topoSortEntities(all)
 	if err != nil {

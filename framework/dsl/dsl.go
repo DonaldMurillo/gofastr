@@ -1,4 +1,4 @@
-package framework
+package dsl
 
 import (
 	"fmt"
@@ -90,7 +90,7 @@ func ParseDSL(input string) (DSLQuery, error) {
 // BuildDSLQuery validates a DSL query against the app registry and returns a
 // core query builder. Includes are validated; callers can resolve eager loading
 // separately until relationship joins are fully generated.
-func BuildDSLQuery(registry *Registry, input string) (*query.QueryBuilder, error) {
+func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder, error) {
 	parsed, err := ParseDSL(input)
 	if err != nil {
 		return nil, err
