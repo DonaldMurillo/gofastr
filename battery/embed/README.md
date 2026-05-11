@@ -123,6 +123,24 @@ loop := &agent.Loop{
 
 Each user turn re-queries the index against the latest user message and injects the top 6 chunks as `# Project context` ahead of the framework's built-in prompt.
 
+## Live tests against real Ollama
+
+Default `go test ./...` covers the package with the stub embedder and an `httptest` mock of Ollama. Tests that exercise *real* semantic behaviour against a running Ollama live in `live_test.go` behind a `//go:build live` tag and are skipped unless you explicitly run them:
+
+```bash
+make ollama-up        # docker compose up + auto-pull nomic-embed-text
+make embed-live       # go test -tags=live -v ./battery/embed/...
+make ollama-down      # stop the container
+```
+
+`docker-compose.yml` bind-mounts `./.ollama/` (gitignored) so the model only downloads once per workstation. What the live suite verifies:
+
+- Paraphrases of the same intent have higher cosine than unrelated pairs (the property the stub *cannot* satisfy).
+- A small corpus + a paraphrase query surfaces the right doc at rank #1, both with and without hybrid keyword fusion.
+- MMR with a real embedder surfaces diverse topics on a near-duplicate corpus.
+- Snapshot + reopen survives a fresh embedder instance (model fingerprint matches).
+- The polling watcher feeds the real embedder end-to-end.
+
 ## Roadmap
 
 | Milestone | Status |

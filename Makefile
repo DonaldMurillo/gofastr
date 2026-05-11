@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install ollama-up ollama-down ollama-logs embed-live
 
 # ---- Build ----
 #
@@ -240,3 +240,29 @@ hooks:
 
 install: hooks
 	@echo "  ✓ GoFastr development environment ready"
+
+# ---- Ollama (battery/embed live tests) ----
+#
+# These targets manage a local Ollama container declared in
+# docker-compose.yml. Models cache to ./.ollama/ which is gitignored.
+
+ollama-up:
+	@./scripts/ollama-up.sh
+
+ollama-down:
+	@docker compose down
+	@echo "  ✓ ollama stopped"
+
+ollama-logs:
+	@docker compose logs -f ollama
+
+# embed-live runs the battery/embed tests that talk to a real Ollama
+# server. They are guarded by `//go:build live` so the default
+# `go test ./...` skips them entirely.
+embed-live:
+	@if ! curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1; then \
+		echo "✗ ollama is not reachable at http://localhost:11434"; \
+		echo "  run: make ollama-up"; \
+		exit 1; \
+	fi
+	go test -tags=live -count=1 -v ./battery/embed/...

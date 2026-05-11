@@ -172,6 +172,32 @@ loop := &agent.Loop{
 
 For every user turn, the hook runs a `Hybrid + MMR=0.3` query against the index and injects the top-6 chunks as a `# Project context` block. Retrieval errors degrade silently to an empty preamble so a misbehaving index never blocks the agent loop.
 
+## Local dev: Docker + live tests
+
+The package's default `go test ./...` covers the pipeline with the stub embedder + an `httptest` Ollama mock. To exercise the *real* semantic path (paraphrase clustering, real retrieval on a real corpus, MMR diversity that actually depends on real geometry), use the live-tagged suite:
+
+```bash
+make ollama-up        # docker compose up + pull nomic-embed-text on first run
+make embed-live       # go test -tags=live -v ./battery/embed/...
+make ollama-down      # tear down the container
+make ollama-logs      # tail Ollama logs while debugging
+```
+
+`docker-compose.yml` ships at the repo root with a single `ollama` service exposing port `11434` and bind-mounting `./.ollama/` (gitignored) so the ~270 MB model file persists between container restarts and stays out of the repo.
+
+The live suite (in `battery/embed/live_test.go`, guarded by `//go:build live`) asserts:
+
+| Test | What it verifies |
+| --- | --- |
+| `TestLive_OllamaProbe` | Server reachable, model returns embeddings, dim auto-detected. |
+| `TestLive_SemanticSimilarity` | Paraphrase pairs cluster; cross-intent pairs don't — the property the stub embedder cannot satisfy. |
+| `TestLive_IndexRetrievalParaphrase` | A 6-doc corpus + a paraphrase query surfaces the right doc at rank #1, both vec-only and hybrid. |
+| `TestLive_MMRImprovesDiversityOnNearDuplicates` | MMR top-3 on a near-duplicate corpus surfaces ≥2 distinct topics. |
+| `TestLive_PersistenceSurvivesProcessRestart` | Snapshot + reopen with a fresh embedder instance preserves retrieval. Model fingerprint must match. |
+| `TestLive_WatcherFeedsRealEmbedder` | Polling watcher round-trips files through a real embedder. |
+
+`make embed-live` refuses to run if `http://localhost:11434/api/tags` doesn't respond — it tells you to `make ollama-up` first.
+
 ## Scale targets
 
 | Corpus | Vector RAM (384-dim float32) | Brute-force query latency (Apple M-class) |
