@@ -184,7 +184,9 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 
 ### `battery/` — pluggable infrastructure
 
-`auth`, `cache`, `email`, `queue`, `search`, `storage`. Each behind a small interface with at least one in-memory implementation suitable for tests and small examples; production swaps in Redis, S3, Postgres FTS, etc.
+`auth`, `cache`, `email`, `embed`, `queue`, `search`, `storage`. Each behind a small interface with at least one in-memory implementation suitable for tests and small examples; production swaps in Redis, S3, Postgres FTS, etc.
+
+`battery/embed` is the local semantic-search battery: in-process vector index with brute-force cosine, optional hybrid keyword fusion, MMR diversity, snapshot/WAL persistence, fsnotify-free polling watcher, and a Kiln agent context hook. See [`docs/embed.md`](docs/embed.md).
 
 ### `cmd/gofastr` — CLI
 
@@ -193,6 +195,9 @@ gofastr generate                    Generate Go from entities/*.json
 gofastr generate entity post t:s    Scaffold a single entity in code
 gofastr build                       Generate then go build
 gofastr migrate up | down | status  Run versioned migrations
+gofastr embed index <path>          Index a project for semantic search
+gofastr embed watch <path>          Index + poll-watch for changes
+gofastr embed query "<text>"        Top-K semantic hits as JSON
 ```
 
 ### `kiln/` — agent-driven build-mode runtime
@@ -279,6 +284,7 @@ plan/        proposal-driven task tracker
 - [Migrations](docs/migrations.md) — versioned migrations and the CLI
 - [Query DSL](docs/query-dsl.md) — `Entity.where(...).order(...).limit(N)`
 - [Search](docs/search.md) — the `battery/search` interface
+- [Embed](docs/embed.md) — local semantic search via `battery/embed`
 - [Security](docs/security.md) — defaults, headers, and limits
 - [Architecture review](docs/project-architecture-review.md) — design notes and trade-offs
 - [Agent notes](docs/agent-notes.md) — running notes for AI contributors

@@ -24,6 +24,13 @@ type Loop struct {
 	// events (tool_call_dispatched, tool_call_returned). Optional.
 	OnEvent func(StreamEvent)
 
+	// ContextHook is called once per turn with the most recent user
+	// message text. Its return value is prepended to the provider's
+	// System prompt (separated by a blank line). It is the integration
+	// point for retrieval-augmented context — see [NewEmbedContextHook]
+	// for the wiring against a battery/embed index.
+	ContextHook func(ctx context.Context, userText string) string
+
 	messages []Message
 }
 
@@ -44,8 +51,14 @@ func (l *Loop) Run(ctx context.Context, userText string) error {
 	l.messages = append(l.messages, Message{Role: "user", Text: userText})
 
 	for turn := 0; turn < l.MaxTurns; turn++ {
+		system := BuildPrompt(l.Tools.Live().Session(), l.Tools.List()).String()
+		if l.ContextHook != nil {
+			if extra := l.ContextHook(ctx, lastUserText(l.messages)); extra != "" {
+				system = extra + "\n\n" + system
+			}
+		}
 		req := Request{
-			System:   BuildPrompt(l.Tools.Live().Session(), l.Tools.List()).String(),
+			System:   system,
 			Messages: l.messages,
 			Tools:    l.Tools.List(),
 			OnEvent:  l.OnEvent,
@@ -218,4 +231,16 @@ func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 // switch as the native Loop.
 func Dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Result {
 	return dispatch(ctx, t, call)
+}
+
+// lastUserText returns the text of the most recent "user" message, or
+// "" if there is none. Used by ContextHook to score retrieval against
+// the live user intent rather than the full transcript.
+func lastUserText(msgs []Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Text
+		}
+	}
+	return ""
 }
