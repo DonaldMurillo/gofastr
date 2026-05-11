@@ -214,7 +214,7 @@ Three bench apps under `benchmarks/apps/<name>/`:
 |-----------|----------------------------------------------------------------------|
 | `minimal` | `NewApp` + one plaintext route. No DB, no entities. Establishes the floor. |
 | `crud`    | One entity, SQLite + auto-migrate + CRUD routes.                     |
-| `full`    | Three related entities (includes), audit log, cron job, MCP enabled. |
+| `full`    | Upper bound — every supported framework surface wired on: three related entities with relations, audit log, cron, MCP, UI host + one screen, file storage, in-memory search backend, RolePolicy + RequirePermission, multi-tenant scope, custom endpoints, plugin, OpenAPI + Swagger UI, lifecycle hooks. |
 
 Plus the two cmd binaries (`gofastr`, `kiln`) for build-only comparison.
 
@@ -222,9 +222,9 @@ Output is Markdown to stdout and `dist/bench/resources.md`:
 
 ```
 | App         | Bin size | Build wall | Build peak RAM | Idle RAM | Loaded RAM | Load reqs/dur |
-| minimal     | 8.8 MB   |  5.4s      | 313.7 MB       | 10.9 MB  | 11.8 MB    | 200 / 17ms    |
-| crud        | 12.9 MB  | 18.7s      | 753.1 MB       | 13.8 MB  | 14.4 MB    | 200 / 18ms    |
-| full        | 12.9 MB  | 16.6s      | 753.5 MB       | 14.6 MB  | 15.3 MB    | 200 / 18ms    |
+| minimal     |  8.8 MB  |   5.4s     | 311.3 MB       | 11.0 MB  | 12.5 MB    | 200 / 12ms    |
+| crud        | 12.9 MB  |  16.7s     | 759.8 MB       | 13.7 MB  | 14.8 MB    | 200 / 16ms    |
+| full        | 13.5 MB  |  16.9s     | 752.8 MB       | 14.8 MB  | 16.2 MB    | 200 / 17ms    |
 ```
 
 ### What to look for
@@ -232,10 +232,11 @@ Output is Markdown to stdout and `dist/bench/resources.md`:
 - **Bin size delta `crud` − `minimal`** is the cost of the SQLite cgo
   driver. Switching to a pure-Go driver (`modernc.org/sqlite`) would
   cut this in half but slow the binary a few %.
-- **Bin size delta `full` − `crud`** is what the framework's optional
-  features (audit, cron, MCP, includes) actually cost in shipped
-  bytes. Tiny — they're code paths inside `framework/`, not separate
-  binaries' worth of code.
+- **Bin size delta `full` − `crud`** is what every other framework
+  surface costs at once: UI host, file storage, search backend, audit,
+  cron, MCP, access control, multi-tenant, OpenAPI/Swagger, plugins.
+  About **+0.6 MB** total — they're code paths inside the framework
+  and its sibling packages, not separate binaries' worth of code.
 - **Build peak RAM** is mostly the cgo toolchain. CI machines need to
   budget ~1 GB headroom for the compile step.
 - **Idle vs Loaded RAM** should be roughly equal after a warmup. A
