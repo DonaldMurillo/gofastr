@@ -597,8 +597,13 @@ func TestRuntimeSize(t *testing.T) {
 	if size == 0 {
 		t.Error("RuntimeSize returned 0")
 	}
-	if size > 64*1024 {
-		t.Errorf("runtime is %d bytes, expected under 64KB", size)
+	// Cap aligned with core-ui/runtime/runtime_test.go: 68KB
+	// uncompressed (~16-18KB gzip) is comfortably within typical
+	// TCP slow-start initial windows after compression. Bumped when
+	// the per-component CSS loader landed (catalog seeding + bundle
+	// dedup + idle queue).
+	if size > 68*1024 {
+		t.Errorf("runtime is %d bytes, expected under 68KB", size)
 	}
 }
 

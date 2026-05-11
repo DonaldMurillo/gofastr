@@ -1407,10 +1407,24 @@
   window.addEventListener('gofastr:navigate', () => { closeAllOverlays(); });
 
   const _bootstrapComponentCSS = () => {
-    if (window.__gofastr?.scanAndLoadCSS) {
-      window.__gofastr.scanAndLoadCSS(document.documentElement);
-      window.__gofastr.scheduleIdleLoads();
-    }
+    const G = window.__gofastr;
+    if (!G?.scanAndLoadCSS) return;
+    // Seed _pendingLinks with names already covered by the SSR
+    // bundle link, so the on-demand scanner doesn't redundantly load
+    // per-component sheets for them.
+    document.head.querySelectorAll('link[rel="stylesheet"]').forEach((l) => {
+      const href = l.getAttribute('href') || '';
+      const idx = href.indexOf('/__gofastr/comp-bundle.css');
+      if (idx < 0) return;
+      const q = href.indexOf('names=', idx);
+      if (q < 0) return;
+      const tail = href.slice(q + 6);
+      const end = tail.indexOf('&');
+      const list = (end < 0 ? tail : tail.slice(0, end)).split(',');
+      for (const n of list) if (n) G._pendingLinks.add(n);
+    });
+    G.scanAndLoadCSS(document.documentElement);
+    G.scheduleIdleLoads();
   };
 
   if (document.readyState === 'loading') {
