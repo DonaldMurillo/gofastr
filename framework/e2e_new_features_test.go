@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/cron"
 )
 
 // ============================================================================
@@ -306,11 +307,11 @@ func TestE2E_NewFeatures(t *testing.T) {
 // ============================================================================
 
 func TestE2E_CronFiresInsideApp(t *testing.T) {
-	s := NewScheduler()
+	s := cron.NewScheduler()
 	var fired atomic.Int32
 	// Match every minute so runOnce always triggers — we drive the tick
 	// manually via runOnce to avoid waiting on the wall clock.
-	if err := s.Register(CronJob{
+	if err := s.Register(cron.CronJob{
 		Name: "tick",
 		Spec: "* * * * *",
 		Run: func(_ context.Context) error {
@@ -320,7 +321,7 @@ func TestE2E_CronFiresInsideApp(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s.runOnce(context.Background(), time.Now())
+	s.RunOnce(context.Background(), time.Now())
 	deadline := time.Now().Add(time.Second)
 	for fired.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)

@@ -17,6 +17,9 @@ import (
 	"github.com/gofastr/gofastr/core/middleware"
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -55,8 +58,8 @@ type App struct {
 	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
 	server     *http.Server
-	events     *EventBus
-	hooks      map[string]*HookRegistry
+	events     *event.EventBus
+	hooks      map[string]*hook.HookRegistry
 	mountables []Mountable
 	mwApplied  bool
 	noDefaults bool
@@ -172,8 +175,8 @@ func NewApp(opts ...AppOption) *App {
 		MCP:      mcp.NewServer(),
 		Config:   AppConfig{JSONCase: CaseCamel},
 		Plugins:  NewPluginManager(),
-		events:   NewEventBus(),
-		hooks:    make(map[string]*HookRegistry),
+		events:   event.NewEventBus(),
+		hooks:    make(map[string]*hook.HookRegistry),
 	}
 
 	for _, opt := range opts {
@@ -364,20 +367,20 @@ func (a *App) InitPlugins() error {
 }
 
 // Events returns the application's event bus.
-func (a *App) Events() *EventBus {
+func (a *App) Events() *event.EventBus {
 	if a.events == nil {
-		a.events = NewEventBus()
+		a.events = event.NewEventBus()
 	}
 	return a.events
 }
 
 // HookRegistry returns (or creates) the hook registry for a named entity.
-func (a *App) HookRegistry(entityName string) *HookRegistry {
+func (a *App) HookRegistry(entityName string) *hook.HookRegistry {
 	if a.hooks == nil {
-		a.hooks = make(map[string]*HookRegistry)
+		a.hooks = make(map[string]*hook.HookRegistry)
 	}
 	if _, ok := a.hooks[entityName]; !ok {
-		a.hooks[entityName] = NewHookRegistry()
+		a.hooks[entityName] = hook.NewHookRegistry()
 	}
 	return a.hooks[entityName]
 }
@@ -404,7 +407,7 @@ func (a *App) OnStop(fn func() error) *App {
 // AddCron registers a Scheduler with the app's lifecycle: it starts when
 // Start runs and stops when Stop runs. Returns the App for chaining so
 // users can wire several schedulers in one expression.
-func (a *App) AddCron(s *Scheduler) *App {
+func (a *App) AddCron(s *cron.Scheduler) *App {
 	a.OnStart(func(ctx context.Context) error {
 		s.Start(ctx)
 		return nil

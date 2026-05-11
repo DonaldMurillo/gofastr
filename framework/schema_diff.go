@@ -205,9 +205,9 @@ func readLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[s
 	out := map[string]string{}
 	for rows.Next() {
 		var (
-			cid           int
-			name, typ     string
-			notnull, pk   int
+			cid          int
+			name, typ    string
+			notnull, pk  int
 			defaultValue sql.NullString
 		)
 		if err := rows.Scan(&cid, &name, &typ, &notnull, &defaultValue, &pk); err != nil {

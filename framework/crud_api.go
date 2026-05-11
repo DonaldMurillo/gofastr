@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/event"
 )
 
 // In-process typed CRUD API
@@ -50,7 +51,7 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	ch.emitEvent(ctx, EntityCreated, result)
+	ch.emitEvent(ctx, event.EntityCreated, result)
 	return result, nil
 }
 
@@ -70,7 +71,7 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 	if err != nil {
 		return nil, err
 	}
-	ch.emitEvent(ctx, EntityUpdated, result)
+	ch.emitEvent(ctx, event.EntityUpdated, result)
 	return result, nil
 }
 
@@ -83,7 +84,7 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ch.emitEvent(ctx, EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+	ch.emitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 	return nil
 }
 
@@ -191,7 +192,7 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 		return nil, txErr
 	}
 	for _, res := range results {
-		ch.emitEvent(ctx, EntityCreated, res)
+		ch.emitEvent(ctx, event.EntityCreated, res)
 	}
 	return results, nil
 }
@@ -217,7 +218,7 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 		return nil, txErr
 	}
 	for _, res := range results {
-		ch.emitEvent(ctx, EntityUpdated, res)
+		ch.emitEvent(ctx, event.EntityUpdated, res)
 	}
 	return results, nil
 }
@@ -238,7 +239,7 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 		return nil, txErr
 	}
 	for _, id := range ids {
-		ch.emitEvent(ctx, EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.emitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 	}
 	return ids, nil
 }

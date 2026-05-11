@@ -14,6 +14,8 @@ import (
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
@@ -36,10 +38,10 @@ type CrudHandler struct {
 	DB         DBExecutor
 	PrimaryKey string             // defaults to "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
-	Hooks      *HookRegistry      // optional lifecycle hooks
-	Storage    upload.Storage // optional; enables multipart uploads for Image/File fields
-	Events     *EventBus      // optional; receives entity.created/updated/deleted on commit
-	Registry   *Registry      // optional; required for nested ?include=author.profile resolution
+	Hooks      *hook.HookRegistry // optional lifecycle hooks
+	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
+	Events     *event.EventBus    // optional; receives entity.created/updated/deleted on commit
+	Registry   *Registry          // optional; required for nested ?include=author.profile resolution
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -397,7 +399,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return
 		}
 
-		ch.emitEvent(r.Context(), EntityCreated, result)
+		ch.emitEvent(r.Context(), event.EntityCreated, result)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -436,7 +438,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return
 		}
 
-		ch.emitEvent(r.Context(), EntityUpdated, result)
+		ch.emitEvent(r.Context(), event.EntityUpdated, result)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
@@ -462,7 +464,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return
 		}
 
-		ch.emitEvent(r.Context(), EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.emitEvent(r.Context(), event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 
 		w.WriteHeader(http.StatusNoContent)
 	}

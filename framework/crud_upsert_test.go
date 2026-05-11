@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
@@ -68,11 +69,11 @@ func TestUpsert_FiresHooks(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app, ch := upsertApp(t, db)
 		var beforeCalled, afterCalled int
-		app.HookRegistry("posts").RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			beforeCalled++
 			return nil
 		})
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			afterCalled++
 			return nil
 		})

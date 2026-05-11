@@ -14,16 +14,16 @@ import (
 // Name is set via Define(); Fields declare the schema.
 // Timestamps defaults to true — use WithTimestamps(false) to disable.
 type EntityConfig struct {
-	Name        string         // entity name (e.g. "users")
-	Table       string         // DB table name (defaults to snake_case of Name)
-	Fields      []schema.Field // typed field definitions
-	Relations   []Relation     // entity relationships
-	Endpoints   []Endpoint     // custom HTTP endpoints for this entity
-	SoftDelete  bool           // enable soft-delete (deleted_at column)
-	MultiTenant bool           // scope queries by tenant_id
-	Timestamps  bool           // add created_at / updated_at columns
-	CRUD        *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
-	MCP         bool           // auto-generate MCP tools
+	Name         string         // entity name (e.g. "users")
+	Table        string         // DB table name (defaults to snake_case of Name)
+	Fields       []schema.Field // typed field definitions
+	Relations    []Relation     // entity relationships
+	Endpoints    []Endpoint     // custom HTTP endpoints for this entity
+	SoftDelete   bool           // enable soft-delete (deleted_at column)
+	MultiTenant  bool           // scope queries by tenant_id
+	Timestamps   bool           // add created_at / updated_at columns
+	CRUD         *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
+	MCP          bool           // auto-generate MCP tools
 	CursorField  string         // optional: single-field keyset cursor; defaults to PrimaryKey
 	CursorFields []string       // optional: composite cursor — ORDER BY each field in order with tuple-compared keyset. Wins over CursorField when non-empty.
 	Indices      []Index        // additional CREATE INDEX statements emitted by AutoMigrate

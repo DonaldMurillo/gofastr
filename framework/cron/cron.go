@@ -1,4 +1,4 @@
-package framework
+package cron
 
 import (
 	"context"
@@ -84,9 +84,10 @@ func (s *Scheduler) Stop() {
 	<-s.stopped
 }
 
-// runOnce fires every job whose schedule matches the given minute. Exported
-// only for tests — production code lets the loop call this.
-func (s *Scheduler) runOnce(ctx context.Context, now time.Time) {
+// RunOnce fires every job whose schedule matches the given minute. Exported
+// for tests that drive the tick manually instead of waiting on the wall clock;
+// production code lets the loop call this.
+func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 	s.mu.Lock()
 	jobs := make([]scheduledJob, len(s.jobs))
 	copy(jobs, s.jobs)
@@ -120,7 +121,7 @@ func (s *Scheduler) run(ctx context.Context) {
 		case <-s.stop:
 			return
 		case t := <-timer.C:
-			s.runOnce(ctx, t)
+			s.RunOnce(ctx, t)
 			timer.Reset(s.tickEv)
 		}
 	}

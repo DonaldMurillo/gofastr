@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/event"
 )
 
 func seedEventsDB(t *testing.T, db *sql.DB) {
@@ -119,8 +120,8 @@ func TestSSE_ReceivesCreateEvent(t *testing.T) {
 
 		select {
 		case ev := <-events:
-			if ev.Type != EntityCreated {
-				t.Fatalf("expected %q, got %q", EntityCreated, ev.Type)
+			if ev.Type != event.EntityCreated {
+				t.Fatalf("expected %q, got %q", event.EntityCreated, ev.Type)
 			}
 			if !strings.Contains(ev.Data, `"entity":"posts"`) {
 				t.Fatalf("expected entity=posts in payload, got %s", ev.Data)
@@ -194,7 +195,7 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 		t.Cleanup(srv.Close)
 
 		bus := app.Events()
-		beforeCreate := len(bus.snapshot(EntityCreated))
+		beforeCreate := len(bus.Snapshot(event.EntityCreated))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/posts/_events", nil)
@@ -206,12 +207,12 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 		// Confirm a handler was added.
 		deadline := time.Now().Add(time.Second)
 		for time.Now().Before(deadline) {
-			if len(bus.snapshot(EntityCreated)) == beforeCreate+1 {
+			if len(bus.Snapshot(event.EntityCreated)) == beforeCreate+1 {
 				break
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
-		if got := len(bus.snapshot(EntityCreated)); got != beforeCreate+1 {
+		if got := len(bus.Snapshot(event.EntityCreated)); got != beforeCreate+1 {
 			t.Fatalf("expected one new EntityCreated handler after subscribe, got delta=%d", got-beforeCreate)
 		}
 
@@ -222,13 +223,13 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 		// Wait briefly for the handler goroutine to clean up.
 		deadline = time.Now().Add(time.Second)
 		for time.Now().Before(deadline) {
-			if len(bus.snapshot(EntityCreated)) == beforeCreate {
+			if len(bus.Snapshot(event.EntityCreated)) == beforeCreate {
 				return
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 		t.Fatalf("expected handler to be unsubscribed after disconnect, still %d (was %d)",
-			len(bus.snapshot(EntityCreated)), beforeCreate)
+			len(bus.Snapshot(event.EntityCreated)), beforeCreate)
 	})
 }
 

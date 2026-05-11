@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // inProcessApp builds a posts entity wired with a HookRegistry, suitable for
@@ -42,18 +44,18 @@ func TestCRUDApi_CreateOne_FullPipeline(t *testing.T) {
 		app, ch := inProcessApp(t, db)
 
 		var beforeRan, afterRan, eventReceived bool
-		app.HookRegistry("posts").RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			beforeRan = true
 			return nil
 		})
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			afterRan = true
 			return nil
 		})
 		// EmitAsync fires events in a goroutine; we use Events().Subscribe for
 		// the test so we get a synchronous notification we can wait on.
 		done := make(chan struct{}, 1)
-		cancel := app.Events().Subscribe(EntityCreated, func(ctx context.Context, ev Event) error {
+		cancel := app.Events().Subscribe(event.EntityCreated, func(ctx context.Context, ev event.Event) error {
 			eventReceived = true
 			select {
 			case done <- struct{}{}:
@@ -93,7 +95,7 @@ func TestCRUDApi_CreateOne_FullPipeline(t *testing.T) {
 func TestCRUDApi_CreateOne_HookRollback(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app, ch := inProcessApp(t, db)
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			return errors.New("boom")
 		})
 

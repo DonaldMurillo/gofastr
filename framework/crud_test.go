@@ -14,6 +14,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // ============================================================================
@@ -325,18 +326,18 @@ func TestCrudCreate_ExecutesHooks(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	hooks := NewHookRegistry()
+	hooks := hook.NewHookRegistry()
 	var beforeCalled, afterCalled bool
 	var beforeData map[string]any
 
-	hooks.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		beforeCalled = true
 		if m, ok := data.(map[string]any); ok {
 			beforeData = m
 		}
 		return nil
 	})
-	hooks.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		afterCalled = true
 		return nil
 	})
@@ -385,8 +386,8 @@ func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	hooks := NewHookRegistry()
-	hooks.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hooks := hook.NewHookRegistry()
+	hooks.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		return fmt.Errorf("rejected by policy")
 	})
 
@@ -428,14 +429,14 @@ func TestCrudUpdate_ExecutesHooks(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	hooks := NewHookRegistry()
+	hooks := hook.NewHookRegistry()
 	var beforeCalled, afterCalled bool
 
-	hooks.RegisterHook(BeforeUpdate, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
 		beforeCalled = true
 		return nil
 	})
-	hooks.RegisterHook(AfterUpdate, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 		afterCalled = true
 		return nil
 	})
@@ -481,14 +482,14 @@ func TestCrudDelete_ExecutesHooks(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	hooks := NewHookRegistry()
+	hooks := hook.NewHookRegistry()
 	var beforeCalled, afterCalled bool
 
-	hooks.RegisterHook(BeforeDelete, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.BeforeDelete, func(ctx context.Context, data any) error {
 		beforeCalled = true
 		return nil
 	})
-	hooks.RegisterHook(AfterDelete, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 		afterCalled = true
 		return nil
 	})
@@ -574,7 +575,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
 		db := openTestDB(t, dialect)
 		var err error
-	
+
 		_, err = db.Exec(`CREATE TABLE posts (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -588,7 +589,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create table: %v", err)
 		}
-	
+
 		// Insert one active, one soft-deleted
 		_, err = db.Exec("INSERT INTO posts (id, title) VALUES ($1, $2)", "p1", "Active Post")
 		if err != nil {
@@ -598,7 +599,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		if err != nil {
 			t.Fatalf("insert p2: %v", err)
 		}
-	
+
 		app := NewApp(WithDB(db))
 		entity := Define("posts", EntityConfig{
 			Table:      "posts",
@@ -611,13 +612,13 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 			},
 		})
 		app.Registry.Register(entity)
-	
+
 		crud := NewCrudHandler(entity, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
-	
+
 		ta := TestHarness(t, app)
 		defer ta.Close()
-	
+
 		// List should only return the active post
 		resp := ta.Get("/posts")
 		resp.AssertStatus(t, http.StatusOK)
@@ -625,7 +626,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		if strings.Contains(resp.Body(), "Deleted Post") {
 			t.Error("expected soft-deleted post to be excluded from list")
 		}
-	
+
 		var listResult ListResponse
 		if err := resp.JSON(&listResult); err != nil {
 			t.Fatalf("decode list: %v", err)
@@ -633,21 +634,21 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		if listResult.Total != 1 {
 			t.Errorf("expected total=1, got %d", listResult.Total)
 		}
-	
+
 		// Get the active post should work
 		resp = ta.Get("/posts/p1")
 		resp.AssertStatus(t, http.StatusOK)
-	
+
 		// Get the soft-deleted post should return 404
 		resp = ta.Get("/posts/p2")
 		resp.AssertStatus(t, http.StatusNotFound)
-	
+
 		// List with ?trashed=true should include deleted post
 		resp = ta.Get("/posts?trashed=true")
 		resp.AssertStatus(t, http.StatusOK)
 		resp.AssertBodyContains(t, "Active Post")
 		resp.AssertBodyContains(t, "Deleted Post")
-	
+
 		var trashedResult ListResponse
 		if err := resp.JSON(&trashedResult); err != nil {
 			t.Fatalf("decode trashed list: %v", err)
@@ -666,7 +667,7 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
 		db := openTestDB(t, dialect)
 		var err error
-	
+
 		_, err = db.Exec(`CREATE TABLE posts (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -677,7 +678,7 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create table: %v", err)
 		}
-	
+
 		app := NewApp(WithDB(db))
 		entity := Define("posts", EntityConfig{
 			Table: "posts",
@@ -687,20 +688,20 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 			},
 		})
 		app.Registry.Register(entity)
-	
+
 		crud := NewCrudHandler(entity, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
-	
+
 		ta := TestHarness(t, app)
 		defer ta.Close()
-	
+
 		// Create with slug (ReadOnly) should still succeed but slug should not be in the INSERT
 		resp := ta.Post("/posts", map[string]string{
 			"title": "Hello",
 			"slug":  "hacked-slug", // should be ignored
 		})
 		resp.AssertStatus(t, http.StatusCreated)
-	
+
 		// Verify slug was NOT inserted
 		var slug sql.NullString
 		err = db.QueryRow("SELECT slug FROM posts LIMIT 1").Scan(&slug)
@@ -721,7 +722,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
 		db := openTestDB(t, dialect)
 		var err error
-	
+
 		_, err = db.Exec(`CREATE TABLE posts (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -734,7 +735,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create table: %v", err)
 		}
-	
+
 		app := NewApp(WithDB(db))
 		entity := Define("posts", EntityConfig{
 			Table: "posts",
@@ -746,10 +747,10 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 			},
 		})
 		app.Registry.Register(entity)
-	
+
 		var beforeCreateCalled, afterCreateCalled bool
 		hooks := app.HookRegistry("posts")
-		hooks.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+		hooks.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			beforeCreateCalled = true
 			// Modify data before insert
 			if m, ok := data.(map[string]any); ok {
@@ -757,30 +758,30 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 			}
 			return nil
 		})
-		hooks.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		hooks.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			afterCreateCalled = true
 			return nil
 		})
-	
+
 		crud := NewCrudHandler(entity, db)
 		crud.Hooks = hooks
 		RegisterCrudRoutes(app.Router, crud, "/posts")
-	
+
 		ta := TestHarness(t, app)
 		defer ta.Close()
-	
+
 		resp := ta.Post("/posts", map[string]string{
 			"title": "Hook Test",
 		})
 		resp.AssertStatus(t, http.StatusCreated)
-	
+
 		if !beforeCreateCalled {
 			t.Error("expected BeforeCreate hook to be called")
 		}
 		if !afterCreateCalled {
 			t.Error("expected AfterCreate hook to be called")
 		}
-	
+
 		// Verify the hook-modified data was inserted
 		var status string
 		id := extractIDFromResponse(t, resp)
@@ -802,7 +803,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
 		db := openTestDB(t, dialect)
 		var err error
-	
+
 		_, err = db.Exec(`CREATE TABLE posts (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -816,7 +817,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create table: %v", err)
 		}
-	
+
 		// Insert posts for two tenants
 		_, err = db.Exec("INSERT INTO posts (id, title, tenant_id) VALUES ($1, $2, $3)", "p1", "Tenant A Post", "tenant-a")
 		if err != nil {
@@ -826,7 +827,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		if err != nil {
 			t.Fatalf("insert p2: %v", err)
 		}
-	
+
 		app := NewApp(WithDB(db))
 		entity := Define("posts", EntityConfig{
 			Table:       "posts",
@@ -840,23 +841,23 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		})
 		WithMultiTenant(entity, DefaultTenantConfig())
 		app.Registry.Register(entity)
-	
+
 		// Apply tenant middleware BEFORE registering routes
 		// (Router.wrap bakes in middleware at registration time)
 		app.Router.Use(TenantMiddleware("X-Tenant-ID"))
-	
+
 		crud := NewCrudHandler(entity, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
-	
+
 		ta := TestHarness(t, app)
 		defer ta.Close()
-	
+
 		// List as tenant-a — should only see tenant-a's posts
 		req := ta.Request(http.MethodGet, "/posts", nil)
 		req.WithHeader("X-Tenant-ID", "tenant-a")
 		resp := req.Execute()
 		resp.AssertStatus(t, http.StatusOK)
-	
+
 		var listResult ListResponse
 		if err := resp.JSON(&listResult); err != nil {
 			t.Fatalf("decode list: %v", err)
@@ -867,14 +868,14 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		if len(listResult.Data) > 0 && listResult.Data[0]["title"] != "Tenant A Post" {
 			t.Errorf("expected 'Tenant A Post', got %v", listResult.Data[0]["title"])
 		}
-	
+
 		// Create as tenant-a — should inject tenant_id
 		req2 := ta.Request(http.MethodPost, "/posts", strings.NewReader(`{"title":"New Post"}`))
 		req2.WithHeader("X-Tenant-ID", "tenant-a")
 		req2.WithHeader("Content-Type", "application/json")
 		resp2 := req2.Execute()
 		resp2.AssertStatus(t, http.StatusCreated)
-	
+
 		// Verify tenant_id was set
 		id := extractIDFromResponse(t, resp2)
 		var tenantID string
@@ -896,7 +897,7 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, _ *sql.DB, dialect Dialect) {
 		db := openTestDB(t, dialect)
 		var err error
-	
+
 		_, err = db.Exec(`CREATE TABLE posts (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -907,7 +908,7 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create table: %v", err)
 		}
-	
+
 		app := NewApp(WithDB(db))
 		entity := Define("posts", EntityConfig{
 			Table:      "posts",
@@ -917,31 +918,31 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 			},
 		})
 		app.Registry.Register(entity)
-	
+
 		crud := NewCrudHandler(entity, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
-	
+
 		ta := TestHarness(t, app)
 		defer ta.Close()
-	
+
 		// Create a post
 		resp := ta.Post("/posts", map[string]string{
 			"title": "Delete Test",
 		})
 		resp.AssertStatus(t, http.StatusCreated)
 		id := extractIDFromResponse(t, resp)
-	
+
 		// Before delete: deleted_at should be NULL
 		var beforeDelete sql.NullString
 		db.QueryRow("SELECT deleted_at FROM posts WHERE id = $1", id).Scan(&beforeDelete)
 		if beforeDelete.Valid {
 			t.Error("expected deleted_at to be NULL before delete")
 		}
-	
+
 		// Soft delete
 		resp = ta.Delete("/posts/" + id)
 		resp.AssertStatus(t, http.StatusNoContent)
-	
+
 		// After delete: deleted_at should be a real timestamp (not the literal string "NOW()")
 		var afterDelete sql.NullString
 		err = db.QueryRow("SELECT deleted_at FROM posts WHERE id = $1", id).Scan(&afterDelete)

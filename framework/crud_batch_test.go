@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // seedBatchDB creates a minimal posts table with a unique title column so we
@@ -374,7 +375,7 @@ func TestBatchDelete_MissingID_RollsBack(t *testing.T) {
 func TestBatchCreate_AfterHookError_RollsBack(t *testing.T) {
 	var calls int
 	configure := func(app *App) {
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			calls++
 			if calls == 2 {
 				return errors.New("policy reject")
@@ -409,4 +410,3 @@ func TestBatchCreate_AfterHookError_RollsBack(t *testing.T) {
 		}
 	})
 }
-

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // --- Relation tests ---
@@ -83,23 +85,23 @@ func TestRelationManyToMany(t *testing.T) {
 // --- Hook tests ---
 
 func TestHookRegistrationAndExecution(t *testing.T) {
-	hr := NewHookRegistry()
+	hr := hook.NewHookRegistry()
 	var order []string
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "first")
 		return nil
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "second")
 		return nil
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "third")
 		return nil
 	})
 
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, nil)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,23 +115,23 @@ func TestHookRegistrationAndExecution(t *testing.T) {
 }
 
 func TestHookStopsOnFirstError(t *testing.T) {
-	hr := NewHookRegistry()
+	hr := hook.NewHookRegistry()
 	var order []string
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "first")
 		return nil
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "second")
 		return errors.New("hook failed")
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "third")
 		return nil
 	})
 
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, nil)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, nil)
 	if err == nil {
 		t.Fatal("expected error from ExecuteHooks")
 	}
@@ -146,9 +148,9 @@ func TestHookStopsOnFirstError(t *testing.T) {
 }
 
 func TestHookCanModifyData(t *testing.T) {
-	hr := NewHookRegistry()
+	hr := hook.NewHookRegistry()
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		if m, ok := data.(map[string]any); ok {
 			m["modified"] = true
 		}
@@ -156,7 +158,7 @@ func TestHookCanModifyData(t *testing.T) {
 	})
 
 	data := map[string]any{"name": "test"}
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, data)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,25 +169,25 @@ func TestHookCanModifyData(t *testing.T) {
 }
 
 func TestHookDifferentTypes(t *testing.T) {
-	hr := NewHookRegistry()
-	var called HookType
+	hr := hook.NewHookRegistry()
+	var called hook.HookType
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
-		called = BeforeCreate
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
+		called = hook.BeforeCreate
 		return nil
 	})
-	hr.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
-		called = AfterCreate
+	hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
+		called = hook.AfterCreate
 		return nil
 	})
 
-	_ = hr.ExecuteHooks(context.Background(), BeforeCreate, nil)
-	if called != BeforeCreate {
+	_ = hr.ExecuteHooks(context.Background(), hook.BeforeCreate, nil)
+	if called != hook.BeforeCreate {
 		t.Errorf("expected BeforeCreate hook, got %d", called)
 	}
 
-	_ = hr.ExecuteHooks(context.Background(), AfterCreate, nil)
-	if called != AfterCreate {
+	_ = hr.ExecuteHooks(context.Background(), hook.AfterCreate, nil)
+	if called != hook.AfterCreate {
 		t.Errorf("expected AfterCreate hook, got %d", called)
 	}
 }
@@ -394,8 +396,8 @@ func TestEntityTableName(t *testing.T) {
 }
 
 func TestHooksForEmpty(t *testing.T) {
-	hr := NewHookRegistry()
-	hooks := hr.HooksFor(BeforeCreate)
+	hr := hook.NewHookRegistry()
+	hooks := hr.HooksFor(hook.BeforeCreate)
 	if len(hooks) != 0 {
 		t.Errorf("expected 0 hooks, got %d", len(hooks))
 	}
@@ -442,8 +444,8 @@ func TestHooksAndValidatorsIntegration(t *testing.T) {
 	vr := NewValidationRegistry()
 	vr.RegisterValidator(Required("title"))
 
-	hr := NewHookRegistry()
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr := hook.NewHookRegistry()
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		if m, ok := data.(map[string]any); ok {
 			m["slug"] = fmt.Sprintf("%v-slug", m["title"])
 		}
@@ -461,7 +463,7 @@ func TestHooksAndValidatorsIntegration(t *testing.T) {
 	}
 
 	// Then run hooks
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, data)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, data)
 	if err != nil {
 		t.Fatalf("hook failed: %v", err)
 	}

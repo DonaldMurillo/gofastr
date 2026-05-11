@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // AuditConfig configures the audit log helper.
@@ -92,19 +94,19 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		pk := "id"
 		hr := a.HookRegistry(name)
 
-		hr.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
 			diff, _ := json.Marshal(map[string]any{"new": row})
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpCreate, id, cfg.actor(ctx), diff)
 		})
-		hr.RegisterHook(AfterUpdate, func(ctx context.Context, data any) error {
+		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
 			diff, _ := json.Marshal(map[string]any{"new": row})
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpUpdate, id, cfg.actor(ctx), diff)
 		})
-		hr.RegisterHook(AfterDelete, func(ctx context.Context, data any) error {
+		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			id, _ := data.(string)
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpDelete, id, cfg.actor(ctx), nil)
 		})

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gofastr/gofastr/core/stream"
+	"github.com/gofastr/gofastr/framework/event"
 )
 
 // eventPayloadEntity is the map key under which CRUD events stamp the entity
@@ -34,7 +35,7 @@ func (ch *CrudHandler) emitEvent(ctx context.Context, eventType string, record a
 			data[eventKeyTenantID] = tid
 		}
 	}
-	ch.Events.EmitAsync(ctx, Event{Type: eventType, Data: data})
+	ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: data})
 }
 
 // EventStream returns an http.HandlerFunc that serves a Server-Sent Events
@@ -64,9 +65,9 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		tenantScope := ch.Entity.Config.MultiTenant
 		tenantID := GetTenantID(r.Context())
 
-		buf := make(chan Event, 32)
+		buf := make(chan event.Event, 32)
 
-		filter := func(_ context.Context, event Event) error {
+		filter := func(_ context.Context, event event.Event) error {
 			data, ok := event.Data.(map[string]any)
 			if !ok {
 				return nil
@@ -86,9 +87,9 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		}
 
 		cancels := []func(){
-			ch.Events.Subscribe(EntityCreated, filter),
-			ch.Events.Subscribe(EntityUpdated, filter),
-			ch.Events.Subscribe(EntityDeleted, filter),
+			ch.Events.Subscribe(event.EntityCreated, filter),
+			ch.Events.Subscribe(event.EntityUpdated, filter),
+			ch.Events.Subscribe(event.EntityDeleted, filter),
 		}
 		defer func() {
 			for _, c := range cancels {

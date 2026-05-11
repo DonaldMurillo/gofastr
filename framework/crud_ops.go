@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // doCreate runs the BeforeCreate → INSERT → AfterCreate chain for a single
@@ -27,7 +28,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, BeforeCreate, body); err != nil {
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -82,7 +83,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, AfterCreate, result); err != nil {
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
 		}
 	}
@@ -93,7 +94,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 // record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (map[string]any, error) {
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, BeforeUpdate, body); err != nil {
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -137,7 +138,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, AfterUpdate, result); err != nil {
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -148,7 +149,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 // single record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, BeforeDelete, id); err != nil {
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {
 			return &beforeHookError{err: err}
 		}
 	}
@@ -181,7 +182,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, AfterDelete, id); err != nil {
+		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterDelete, id); err != nil {
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}

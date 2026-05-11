@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/file"
 )
 
 // MaxMultipartMemory is the in-memory portion of a multipart upload before
@@ -105,7 +106,7 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fh *multipar
 		return fmt.Errorf("open file part %q: %w", key, err)
 	}
 	defer f.Close()
-	ff, err := ProcessFileField(ctx, ch.Storage, f, fh.Filename, ch.Entity.GetName(), key)
+	ff, err := file.ProcessFileField(ctx, ch.Storage, f, fh.Filename, ch.Entity.GetName(), key)
 	if err != nil {
 		return fmt.Errorf("upload %q: %w", key, err)
 	}

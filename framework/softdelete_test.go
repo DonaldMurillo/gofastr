@@ -11,6 +11,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/file"
 )
 
 // --- Soft Delete Tests ---
@@ -253,7 +254,7 @@ func TestTenantWithMultiTenant(t *testing.T) {
 // --- File Field Tests ---
 
 func TestFilePathGeneration(t *testing.T) {
-	path := GenerateFilePath("posts", "avatar", "photo.png")
+	path := file.GenerateFilePath("posts", "avatar", "photo.png")
 
 	if !strings.HasPrefix(path, "uploads/posts/avatar/") {
 		t.Errorf("expected path under uploads/posts/avatar/, got: %s", path)
@@ -280,7 +281,7 @@ func TestFilePathSanitizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := GenerateFilePath("posts", "file", tt.filename)
+			path := file.GenerateFilePath("posts", "file", tt.filename)
 			for _, bad := range tt.bad {
 				if strings.Contains(path, bad) {
 					t.Errorf("path should not contain %q, got: %s", bad, path)
@@ -291,12 +292,12 @@ func TestFilePathSanitizes(t *testing.T) {
 }
 
 func TestFilePathMultipleFiles(t *testing.T) {
-	path1 := GenerateFilePath("posts", "avatar", "photo.png")
+	path1 := file.GenerateFilePath("posts", "avatar", "photo.png")
 
 	// Ensure unique nanosecond timestamps between calls
 	time.Sleep(time.Microsecond)
 
-	path2 := GenerateFilePath("posts", "avatar", "photo.png")
+	path2 := file.GenerateFilePath("posts", "avatar", "photo.png")
 
 	// Paths should be unique due to nanosecond timestamp
 	if path1 == path2 {
@@ -309,7 +310,7 @@ func TestFileFieldProcess(t *testing.T) {
 	store := &mockStorage{}
 	content := strings.NewReader("hello world file content")
 
-	ff, err := ProcessFileField(context.Background(), store, content, "document.txt", "posts", "attachment")
+	ff, err := file.ProcessFileField(context.Background(), store, content, "document.txt", "posts", "attachment")
 	if err != nil {
 		t.Fatalf("ProcessFileField returned error: %v", err)
 	}
@@ -334,21 +335,21 @@ func TestFileFieldProcess(t *testing.T) {
 
 func TestFileFieldDeleteNil(t *testing.T) {
 	store := &mockStorage{}
-	if err := DeleteFileField(context.Background(), store, nil); err != nil {
+	if err := file.DeleteFileField(context.Background(), store, nil); err != nil {
 		t.Errorf("expected nil error for nil FileField, got: %v", err)
 	}
 
-	ff := &FileField{StorageRef: ""}
-	if err := DeleteFileField(context.Background(), store, ff); err != nil {
+	ff := &file.FileField{StorageRef: ""}
+	if err := file.DeleteFileField(context.Background(), store, ff); err != nil {
 		t.Errorf("expected nil error for empty StorageRef, got: %v", err)
 	}
 }
 
 func TestFileFieldDeleteWithRef(t *testing.T) {
 	store := &mockStorage{}
-	ff := &FileField{StorageRef: "uploads/test/file.txt"}
+	ff := &file.FileField{StorageRef: "uploads/test/file.txt"}
 
-	if err := DeleteFileField(context.Background(), store, ff); err != nil {
+	if err := file.DeleteFileField(context.Background(), store, ff); err != nil {
 		t.Errorf("expected nil error, got: %v", err)
 	}
 
@@ -359,15 +360,15 @@ func TestFileFieldDeleteWithRef(t *testing.T) {
 
 func TestFileFieldProcessNilStorage(t *testing.T) {
 	content := strings.NewReader("test")
-	_, err := ProcessFileField(context.Background(), nil, content, "test.txt", "posts", "file")
+	_, err := file.ProcessFileField(context.Background(), nil, content, "test.txt", "posts", "file")
 	if err == nil {
 		t.Error("expected error with nil storage")
 	}
 }
 
 func TestFileFieldDeleteNilStorage(t *testing.T) {
-	ff := &FileField{StorageRef: "test"}
-	if err := DeleteFileField(context.Background(), nil, ff); err == nil {
+	ff := &file.FileField{StorageRef: "test"}
+	if err := file.DeleteFileField(context.Background(), nil, ff); err == nil {
 		t.Error("expected error with nil storage")
 	}
 }

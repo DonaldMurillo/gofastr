@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
@@ -35,7 +37,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 		}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, BeforeCreate, body); err != nil {
+			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
 				return &beforeHookError{err: err}
 			}
 		}
@@ -125,7 +127,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, AfterCreate, result); err != nil {
+			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}
@@ -135,7 +137,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	ch.emitEvent(ctx, EntityCreated, result)
+	ch.emitEvent(ctx, event.EntityCreated, result)
 	return result, nil
 }
 

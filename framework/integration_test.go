@@ -11,6 +11,8 @@ import (
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // ============================================================================
@@ -516,15 +518,15 @@ func TestIntegrationPluginWithRoutesAndTools(t *testing.T) {
 func TestIntegrationEventsOnCRUD(t *testing.T) {
 	app := NewApp()
 
-	var receivedEvents []Event
-	app.Events().On(EntityCreated, func(ctx context.Context, event Event) error {
+	var receivedEvents []event.Event
+	app.Events().On(event.EntityCreated, func(ctx context.Context, event event.Event) error {
 		receivedEvents = append(receivedEvents, event)
 		return nil
 	})
 
 	// Emit event (simulating what would happen on create)
-	err := app.Events().Emit(context.Background(), Event{
-		Type: EntityCreated,
+	err := app.Events().Emit(context.Background(), event.Event{
+		Type: event.EntityCreated,
 		Data: map[string]any{"entity": "posts", "id": "123"},
 	})
 	if err != nil {
@@ -534,8 +536,8 @@ func TestIntegrationEventsOnCRUD(t *testing.T) {
 	if len(receivedEvents) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(receivedEvents))
 	}
-	if receivedEvents[0].Type != EntityCreated {
-		t.Errorf("expected event type %q, got %q", EntityCreated, receivedEvents[0].Type)
+	if receivedEvents[0].Type != event.EntityCreated {
+		t.Errorf("expected event type %q, got %q", event.EntityCreated, receivedEvents[0].Type)
 	}
 }
 
@@ -544,21 +546,21 @@ func TestIntegrationHookRegistry(t *testing.T) {
 
 	var hookCalls []string
 	hooks := app.HookRegistry("posts")
-	hooks.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		hookCalls = append(hookCalls, "before-create")
 		return nil
 	})
-	hooks.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+	hooks.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		hookCalls = append(hookCalls, "after-create")
 		return nil
 	})
 
 	// Execute hooks
-	err := hooks.ExecuteHooks(context.Background(), BeforeCreate, map[string]any{"title": "test"})
+	err := hooks.ExecuteHooks(context.Background(), hook.BeforeCreate, map[string]any{"title": "test"})
 	if err != nil {
 		t.Fatalf("ExecuteHooks failed: %v", err)
 	}
-	err = hooks.ExecuteHooks(context.Background(), AfterCreate, map[string]any{"title": "test"})
+	err = hooks.ExecuteHooks(context.Background(), hook.AfterCreate, map[string]any{"title": "test"})
 	if err != nil {
 		t.Fatalf("ExecuteHooks failed: %v", err)
 	}

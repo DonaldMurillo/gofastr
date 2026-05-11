@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/gofastr/gofastr/framework/event"
 )
 
 // MaxBatchSize caps how many items a single _batch request may contain.
@@ -122,7 +124,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		if txErr == nil {
 			for _, res := range results {
 				if res.Data != nil {
-					ch.emitEvent(r.Context(), EntityCreated, res.Data)
+					ch.emitEvent(r.Context(), event.EntityCreated, res.Data)
 				}
 			}
 		}
@@ -189,7 +191,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		if txErr == nil {
 			for _, res := range results {
 				if res.Data != nil {
-					ch.emitEvent(r.Context(), EntityUpdated, res.Data)
+					ch.emitEvent(r.Context(), event.EntityUpdated, res.Data)
 				}
 			}
 		}
@@ -243,7 +245,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		if txErr == nil {
 			for _, res := range results {
 				if res.Data != nil {
-					ch.emitEvent(r.Context(), EntityDeleted, res.Data)
+					ch.emitEvent(r.Context(), event.EntityDeleted, res.Data)
 				}
 			}
 		}

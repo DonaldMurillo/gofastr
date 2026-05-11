@@ -45,9 +45,9 @@ func (o Order) Apply(qb *query.QueryBuilder) {
 // type so they live here.
 type rawColumn string
 
-func (c rawColumn) name() string  { return string(c) }
-func (c rawColumn) Asc() Order    { return Order{column: string(c), dir: "ASC"} }
-func (c rawColumn) Desc() Order   { return Order{column: string(c), dir: "DESC"} }
+func (c rawColumn) name() string { return string(c) }
+func (c rawColumn) Asc() Order   { return Order{column: string(c), dir: "ASC"} }
+func (c rawColumn) Desc() Order  { return Order{column: string(c), dir: "DESC"} }
 func (c rawColumn) IsNull() Condition {
 	return Condition{sql: string(c) + " IS NULL"}
 }
@@ -184,12 +184,24 @@ type FloatColumn struct{ rawColumn }
 
 func NewFloatColumn(name string) FloatColumn { return FloatColumn{rawColumn: rawColumn(name)} }
 
-func (c FloatColumn) Eq(v float64) Condition  { return Condition{sql: c.name() + " = $1", args: []any{v}} }
-func (c FloatColumn) Neq(v float64) Condition { return Condition{sql: c.name() + " != $1", args: []any{v}} }
-func (c FloatColumn) Gt(v float64) Condition  { return Condition{sql: c.name() + " > $1", args: []any{v}} }
-func (c FloatColumn) Gte(v float64) Condition { return Condition{sql: c.name() + " >= $1", args: []any{v}} }
-func (c FloatColumn) Lt(v float64) Condition  { return Condition{sql: c.name() + " < $1", args: []any{v}} }
-func (c FloatColumn) Lte(v float64) Condition { return Condition{sql: c.name() + " <= $1", args: []any{v}} }
+func (c FloatColumn) Eq(v float64) Condition {
+	return Condition{sql: c.name() + " = $1", args: []any{v}}
+}
+func (c FloatColumn) Neq(v float64) Condition {
+	return Condition{sql: c.name() + " != $1", args: []any{v}}
+}
+func (c FloatColumn) Gt(v float64) Condition {
+	return Condition{sql: c.name() + " > $1", args: []any{v}}
+}
+func (c FloatColumn) Gte(v float64) Condition {
+	return Condition{sql: c.name() + " >= $1", args: []any{v}}
+}
+func (c FloatColumn) Lt(v float64) Condition {
+	return Condition{sql: c.name() + " < $1", args: []any{v}}
+}
+func (c FloatColumn) Lte(v float64) Condition {
+	return Condition{sql: c.name() + " <= $1", args: []any{v}}
+}
 
 // ----------------------------------------------------------------------------
 // Bool columns
@@ -200,9 +212,9 @@ type BoolColumn struct{ rawColumn }
 
 func NewBoolColumn(name string) BoolColumn { return BoolColumn{rawColumn: rawColumn(name)} }
 
-func (c BoolColumn) Eq(v bool) Condition  { return Condition{sql: c.name() + " = $1", args: []any{v}} }
-func (c BoolColumn) IsTrue() Condition    { return c.Eq(true) }
-func (c BoolColumn) IsFalse() Condition   { return c.Eq(false) }
+func (c BoolColumn) Eq(v bool) Condition { return Condition{sql: c.name() + " = $1", args: []any{v}} }
+func (c BoolColumn) IsTrue() Condition   { return c.Eq(true) }
+func (c BoolColumn) IsFalse() Condition  { return c.Eq(false) }
 
 // ----------------------------------------------------------------------------
 // Timestamp / Date columns
@@ -218,11 +230,21 @@ func NewTimestampColumn(name string) TimestampColumn {
 	return TimestampColumn{rawColumn: rawColumn(name)}
 }
 
-func (c TimestampColumn) Eq(v any) Condition  { return Condition{sql: c.name() + " = $1", args: []any{v}} }
-func (c TimestampColumn) Gt(v any) Condition  { return Condition{sql: c.name() + " > $1", args: []any{v}} }
-func (c TimestampColumn) Gte(v any) Condition { return Condition{sql: c.name() + " >= $1", args: []any{v}} }
-func (c TimestampColumn) Lt(v any) Condition  { return Condition{sql: c.name() + " < $1", args: []any{v}} }
-func (c TimestampColumn) Lte(v any) Condition { return Condition{sql: c.name() + " <= $1", args: []any{v}} }
+func (c TimestampColumn) Eq(v any) Condition {
+	return Condition{sql: c.name() + " = $1", args: []any{v}}
+}
+func (c TimestampColumn) Gt(v any) Condition {
+	return Condition{sql: c.name() + " > $1", args: []any{v}}
+}
+func (c TimestampColumn) Gte(v any) Condition {
+	return Condition{sql: c.name() + " >= $1", args: []any{v}}
+}
+func (c TimestampColumn) Lt(v any) Condition {
+	return Condition{sql: c.name() + " < $1", args: []any{v}}
+}
+func (c TimestampColumn) Lte(v any) Condition {
+	return Condition{sql: c.name() + " <= $1", args: []any{v}}
+}
 
 // ----------------------------------------------------------------------------
 // UUID columns (treated like strings for identity comparisons)
@@ -233,8 +255,10 @@ type UUIDColumn struct{ rawColumn }
 
 func NewUUIDColumn(name string) UUIDColumn { return UUIDColumn{rawColumn: rawColumn(name)} }
 
-func (c UUIDColumn) Eq(v string) Condition  { return Condition{sql: c.name() + " = $1", args: []any{v}} }
-func (c UUIDColumn) Neq(v string) Condition { return Condition{sql: c.name() + " != $1", args: []any{v}} }
+func (c UUIDColumn) Eq(v string) Condition { return Condition{sql: c.name() + " = $1", args: []any{v}} }
+func (c UUIDColumn) Neq(v string) Condition {
+	return Condition{sql: c.name() + " != $1", args: []any{v}}
+}
 func (c UUIDColumn) In(values ...string) Condition {
 	args := make([]any, len(values))
 	for i, v := range values {

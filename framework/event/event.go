@@ -1,4 +1,4 @@
-package framework
+package event
 
 import (
 	"context"
@@ -76,9 +76,9 @@ func (eb *EventBus) Subscribe(eventType string, handler EventHandler) (cancel fu
 	}
 }
 
-// snapshot returns a copy of the handlers registered for the event type, in
+// Snapshot returns a copy of the handlers registered for the event type, in
 // registration order, so emission doesn't hold the lock while user code runs.
-func (eb *EventBus) snapshot(eventType string) []EventHandler {
+func (eb *EventBus) Snapshot(eventType string) []EventHandler {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
 	entries := eb.handlers[eventType]
@@ -95,7 +95,7 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
-	for _, h := range eb.snapshot(event.Type) {
+	for _, h := range eb.Snapshot(event.Type) {
 		if err := h(ctx, event); err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
-	hs := eb.snapshot(event.Type)
+	hs := eb.Snapshot(event.Type)
 	go func() {
 		for _, h := range hs {
 			_ = h(ctx, event)

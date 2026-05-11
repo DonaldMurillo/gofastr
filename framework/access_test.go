@@ -4,20 +4,23 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/gofastr/gofastr/framework/access"
+	"github.com/gofastr/gofastr/framework/event"
 )
 
 // --- Access Control Tests ---
 
 func TestRolePolicyGrantAndCheck(t *testing.T) {
-	policy := NewRolePolicy()
+	policy := access.NewRolePolicy()
 	policy.Grant("admin", "posts:read", "posts:write")
 	policy.Grant("viewer", "posts:read")
 
 	ctx := context.Background()
-	ctx = WithPolicy(ctx, policy)
+	ctx = access.WithPolicy(ctx, policy)
 
 	// Admin can read and write
-	ctx = WithRoles(ctx, []string{"admin"})
+	ctx = access.WithRoles(ctx, []string{"admin"})
 	if !policy.Can(ctx, "posts:read", nil) {
 		t.Error("admin should be able to read posts")
 	}
@@ -26,7 +29,7 @@ func TestRolePolicyGrantAndCheck(t *testing.T) {
 	}
 
 	// Viewer can only read
-	ctx = WithRoles(ctx, []string{"viewer"})
+	ctx = access.WithRoles(ctx, []string{"viewer"})
 	if !policy.Can(ctx, "posts:read", nil) {
 		t.Error("viewer should be able to read posts")
 	}
@@ -36,13 +39,13 @@ func TestRolePolicyGrantAndCheck(t *testing.T) {
 }
 
 func TestRolePolicyMultipleRolesUnion(t *testing.T) {
-	policy := NewRolePolicy()
+	policy := access.NewRolePolicy()
 	policy.Grant("editor", "posts:read", "posts:write")
 	policy.Grant("moderator", "posts:delete", "posts:moderate")
 
 	ctx := context.Background()
-	ctx = WithPolicy(ctx, policy)
-	ctx = WithRoles(ctx, []string{"editor", "moderator"})
+	ctx = access.WithPolicy(ctx, policy)
+	ctx = access.WithRoles(ctx, []string{"editor", "moderator"})
 
 	// Should have permissions from both roles
 	if !policy.Can(ctx, "posts:read", nil) {
@@ -60,12 +63,12 @@ func TestRolePolicyMultipleRolesUnion(t *testing.T) {
 }
 
 func TestRolePolicyRevoke(t *testing.T) {
-	policy := NewRolePolicy()
+	policy := access.NewRolePolicy()
 	policy.Grant("admin", "posts:read", "posts:write", "posts:delete")
 
 	ctx := context.Background()
-	ctx = WithPolicy(ctx, policy)
-	ctx = WithRoles(ctx, []string{"admin"})
+	ctx = access.WithPolicy(ctx, policy)
+	ctx = access.WithRoles(ctx, []string{"admin"})
 
 	// Confirm all granted
 	if !policy.Can(ctx, "posts:read", nil) || !policy.Can(ctx, "posts:write", nil) || !policy.Can(ctx, "posts:delete", nil) {
@@ -88,11 +91,11 @@ func TestRolePolicyRevoke(t *testing.T) {
 }
 
 func TestRolePolicyNoRoles(t *testing.T) {
-	policy := NewRolePolicy()
+	policy := access.NewRolePolicy()
 	policy.Grant("admin", "posts:read")
 
 	ctx := context.Background()
-	ctx = WithPolicy(ctx, policy)
+	ctx = access.WithPolicy(ctx, policy)
 	// No roles set
 
 	if policy.Can(ctx, "posts:read", nil) {
@@ -103,16 +106,16 @@ func TestRolePolicyNoRoles(t *testing.T) {
 // --- Event System Tests ---
 
 func TestEventSubscribeAndEmit(t *testing.T) {
-	bus := NewEventBus()
-	var received Event
+	bus := event.NewEventBus()
+	var received event.Event
 
-	bus.On("user.created", func(ctx context.Context, event Event) error {
+	bus.On("user.created", func(ctx context.Context, event event.Event) error {
 		received = event
 		return nil
 	})
 
 	ctx := context.Background()
-	evt := Event{Type: "user.created", Data: map[string]any{"id": 42}}
+	evt := event.Event{Type: "user.created", Data: map[string]any{"id": 42}}
 
 	if err := bus.Emit(ctx, evt); err != nil {
 		t.Fatalf("Emit returned error: %v", err)
@@ -127,24 +130,24 @@ func TestEventSubscribeAndEmit(t *testing.T) {
 }
 
 func TestEventEmitCallsAllHandlersInOrder(t *testing.T) {
-	bus := NewEventBus()
+	bus := event.NewEventBus()
 	var order []int
 
-	bus.On("test.order", func(ctx context.Context, event Event) error {
+	bus.On("test.order", func(ctx context.Context, event event.Event) error {
 		order = append(order, 1)
 		return nil
 	})
-	bus.On("test.order", func(ctx context.Context, event Event) error {
+	bus.On("test.order", func(ctx context.Context, event event.Event) error {
 		order = append(order, 2)
 		return nil
 	})
-	bus.On("test.order", func(ctx context.Context, event Event) error {
+	bus.On("test.order", func(ctx context.Context, event event.Event) error {
 		order = append(order, 3)
 		return nil
 	})
 
 	ctx := context.Background()
-	if err := bus.Emit(ctx, Event{Type: "test.order"}); err != nil {
+	if err := bus.Emit(ctx, event.Event{Type: "test.order"}); err != nil {
 		t.Fatalf("Emit returned error: %v", err)
 	}
 
@@ -159,19 +162,19 @@ func TestEventEmitCallsAllHandlersInOrder(t *testing.T) {
 }
 
 func TestEventEmitStopsOnError(t *testing.T) {
-	bus := NewEventBus()
+	bus := event.NewEventBus()
 	var called bool
 
-	bus.On("test.err", func(ctx context.Context, event Event) error {
+	bus.On("test.err", func(ctx context.Context, event event.Event) error {
 		return errors.New("boom")
 	})
-	bus.On("test.err", func(ctx context.Context, event Event) error {
+	bus.On("test.err", func(ctx context.Context, event event.Event) error {
 		called = true
 		return nil
 	})
 
 	ctx := context.Background()
-	err := bus.Emit(ctx, Event{Type: "test.err"})
+	err := bus.Emit(ctx, event.Event{Type: "test.err"})
 	if err == nil {
 		t.Fatal("expected error from Emit")
 	}
