@@ -1,13 +1,47 @@
-package elements
+package html
 
 import "github.com/gofastr/gofastr/core/render"
+
+// ImageConfig configures a void <img> element.
+// Required: Src and Alt (empty Alt = decorative, gets role="presentation").
+type ImageConfig struct {
+	Src   string // required
+	Alt   string // required (empty = decorative image)
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// AudioConfig configures an <audio> element. No required fields.
+type AudioConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// VideoConfig configures a <video> element. No required fields.
+type VideoConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// SourceConfig configures a void <source> element.
+// Required: Src and Type.
+type SourceConfig struct {
+	Src   string // required
+	Type  string // required: MIME type
+	Class string
+	ID    string
+	Attrs Attrs
+}
 
 // Image produces a void <img> element.
 // Required: Src and Alt. Empty Alt marks the image as decorative
 // (role="presentation" is added automatically).
 func Image(cfg ImageConfig) render.HTML {
 	if cfg.Src == "" {
-		panic("elements: Image requires Src")
+		panic("html: Image requires Src")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "src", cfg.Src)
@@ -36,10 +70,10 @@ func Video(cfg VideoConfig, children ...render.HTML) render.HTML {
 // Required: Src and Type.
 func Source(cfg SourceConfig) render.HTML {
 	if cfg.Src == "" {
-		panic("elements: Source requires Src")
+		panic("html: Source requires Src")
 	}
 	if cfg.Type == "" {
-		panic("elements: Source requires Type")
+		panic("html: Source requires Type")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "src", cfg.Src)

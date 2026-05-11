@@ -2,7 +2,7 @@ package app
 
 import (
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -53,22 +53,22 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 
 	// Sidebar (optional).
 	if l.Sidebar != nil {
-		nav := elements.Nav(elements.NavConfig{Label: "Sidebar"}, l.Sidebar.Render())
+		nav := html.Nav(html.NavConfig{Label: "Sidebar"}, l.Sidebar.Render())
 		bodyChildren = append(bodyChildren, nav)
 	}
 
 	// Main content.
-	mainContent := elements.Main(elements.MainConfig{}, content)
+	mainContent := html.Main(html.MainConfig{}, content)
 	bodyChildren = append(bodyChildren, mainContent)
 
 	// Layout body: sidebar + main.
-	body := elements.Div(elements.DivConfig{Class: "layout-body"}, bodyChildren...)
+	body := html.Div(html.DivConfig{Class: "layout-body"}, bodyChildren...)
 
 	var wrapperChildren []render.HTML
 
 	// Header (optional).
 	if l.Header != nil {
-		header := elements.Header(elements.HeaderConfig{}, l.Header.Render())
+		header := html.Header(html.HeaderConfig{}, l.Header.Render())
 		wrapperChildren = append(wrapperChildren, header)
 	}
 
@@ -77,10 +77,10 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 
 	// Footer (optional).
 	if l.Footer != nil {
-		footer := elements.Footer(elements.FooterConfig{}, l.Footer.Render())
+		footer := html.Footer(html.FooterConfig{}, l.Footer.Render())
 		wrapperChildren = append(wrapperChildren, footer)
 	}
 
 	// Wrapper div.
-	return elements.Div(elements.DivConfig{Class: "layout-" + l.Name}, wrapperChildren...)
+	return html.Div(html.DivConfig{Class: "layout-" + l.Name}, wrapperChildren...)
 }

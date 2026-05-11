@@ -1,6 +1,20 @@
-package elements
+package html
 
 import "github.com/gofastr/gofastr/core/render"
+
+// ListConfig configures a list element (<ul> or <ol>). No required fields.
+type ListConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// ListItemConfig configures an <li> element. No required fields.
+type ListItemConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
 
 // OrderedList produces an <ol> element with role="list".
 func OrderedList(cfg ListConfig, children ...render.HTML) render.HTML {

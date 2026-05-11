@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -92,7 +92,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if submitLabel != "" {
 		children = append(children,
 			render.Tag("div", map[string]string{"class": "ui-form__actions"},
-				elements.Button(elements.ButtonConfig{
+				html.Button(html.ButtonConfig{
 					Label: submitLabel,
 					Type:  "submit",
 					Class: "ui-button",
@@ -100,7 +100,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			))
 	}
 
-	return elements.Form(elements.FormConfig{
+	return html.Form(html.FormConfig{
 		Method: method,
 		Action: cfg.Action,
 		Class:  cls,

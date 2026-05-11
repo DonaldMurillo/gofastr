@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -119,7 +119,7 @@ func (s *NotificationDemoScreen) Render() render.HTML {
 
 		ui.Section(ui.SectionConfig{
 			Heading: "Composition",
-			Description: "Notification composes elements.Span + elements.Strong + elements.Paragraph + elements.LinkHTML. Variants drive the leading icon background and accent rail color via framework/ui/theme tokens. Position adds .ui-notification--floating which sets position:fixed + animation.",
+			Description: "Notification composes html.Span + html.Strong + html.Paragraph + html.LinkHTML. Variants drive the leading icon background and accent rail color via framework/ui/theme tokens. Position adds .ui-notification--floating which sets position:fixed + animation.",
 		}),
 	}
 	if floating != "" {
@@ -129,7 +129,7 @@ func (s *NotificationDemoScreen) Render() render.HTML {
 }
 
 func linkButton(href, label string) render.HTML {
-	return elements.Link(elements.LinkConfig{
+	return html.Link(html.LinkConfig{
 		Href: href, Text: label, Class: "ui-button",
 	})
 }

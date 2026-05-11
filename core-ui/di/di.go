@@ -1,4 +1,4 @@
-package app
+package di
 
 import (
 	"fmt"
@@ -34,14 +34,14 @@ func (c *Container) Provide(constructor any) error {
 
 	v := reflect.ValueOf(constructor)
 	if !v.IsValid() {
-		return fmt.Errorf("app: cannot provide nil")
+		return fmt.Errorf("di: cannot provide nil")
 	}
 
 	// If it's a function, store it as a factory.
 	if v.Kind() == reflect.Func {
 		ft := v.Type()
 		if ft.NumOut() != 1 {
-			return fmt.Errorf("app: constructor must return exactly one value, got %d", ft.NumOut())
+			return fmt.Errorf("di: constructor must return exactly one value, got %d", ft.NumOut())
 		}
 		outType := ft.Out(0)
 		c.providers[outType] = constructor
@@ -64,7 +64,7 @@ func (c *Container) Resolve(target any) error {
 
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Ptr || tv.IsNil() {
-		return fmt.Errorf("app: target must be a non-nil pointer")
+		return fmt.Errorf("di: target must be a non-nil pointer")
 	}
 
 	targetType := tv.Elem().Type()
@@ -79,7 +79,7 @@ func (c *Container) Resolve(target any) error {
 	// Look up provider.
 	provider, ok := c.providers[targetType]
 	if !ok {
-		return fmt.Errorf("app: no provider registered for %v", targetType)
+		return fmt.Errorf("di: no provider registered for %v", targetType)
 	}
 
 	pv := reflect.ValueOf(provider)
@@ -108,12 +108,12 @@ func (c *Container) Inject(target any) error {
 
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Ptr || tv.IsNil() {
-		return fmt.Errorf("app: target must be a non-nil pointer to a struct")
+		return fmt.Errorf("di: target must be a non-nil pointer to a struct")
 	}
 
 	ev := tv.Elem()
 	if ev.Kind() != reflect.Struct {
-		return fmt.Errorf("app: target must point to a struct, got %s", ev.Kind())
+		return fmt.Errorf("di: target must point to a struct, got %s", ev.Kind())
 	}
 
 	et := ev.Type()
@@ -138,7 +138,7 @@ func (c *Container) Inject(target any) error {
 			c.resolved[fieldType] = true
 			ev.Field(i).Set(reflect.ValueOf(result))
 		} else {
-			return fmt.Errorf("app: no provider registered for injected field %s of type %v", field.Name, fieldType)
+			return fmt.Errorf("di: no provider registered for injected field %s of type %v", field.Name, fieldType)
 		}
 	}
 	return nil

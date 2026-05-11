@@ -10,7 +10,7 @@ GoFastr is a Go fullstack framework built in four layers:
 
 - **`framework/`** — public application/entity layer. Registers entities, auto-generates CRUD routes, OpenAPI output, hooks, events, plugins, migrations, debug endpoints, and app startup. PayloadCMS-inspired declarative API.
 - **`core/`** — 12 low-level reusable primitives: router, handler binding, query builders, middleware, OpenAPI builder, static serving, uploads, streaming, MCP, schema validation, and migrations. Standalone-usable.
-- **`core-ui/`** — server-rendered UI system: app/router/layout model, reactive signals, islands/SSE, action extraction, dev server, runtime JavaScript, styling/theming, and compile/lint helpers.
+- **`core-ui/`** — server-rendered UI system: app/router/layout model, DI container (`di/`), HTML primitives (`html/`), composed patterns (`patterns/`), reactive signals, islands/SSE, dev server, runtime JavaScript, styling/theming, and a `.ui.go` linter (`check/`).
 - **`battery/`** — optional pluggable backends: auth (JWT, sessions, password hashing), cache (in-memory, Redis), email (SMTP, log), queue (in-memory, Redis), storage (local, S3, in-memory).
 - **`cmd/gofastr/`** — CLI for `init`, `dev`, `build`, `generate`, `migrate`, `test`.
 

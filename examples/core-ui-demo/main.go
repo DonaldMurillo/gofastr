@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/static"
 	"github.com/gofastr/gofastr/framework/uihost"
@@ -95,8 +95,8 @@ func liveIslandUpdater(host *uihost.UIHost) {
 	for range ticker.C {
 		liveFeed.Items = append(liveFeed.Items, items[idx%len(items)])
 		idx++
-		html := isl.Update()
-		host.PushUpdate(isl.ID, string(html), sess.ID)
+		out := isl.Update()
+		host.PushUpdate(isl.ID, string(out), sess.ID)
 	}
 }
 
@@ -139,5 +139,5 @@ func runBuildStatic(out string, watch bool, interval time.Duration) {
 
 // Ensure unused imports are satisfied
 var _ = fmt.Sprintf
-var _ = elements.OnClick
+var _ = html.OnClick
 var _ = render.HTML("")

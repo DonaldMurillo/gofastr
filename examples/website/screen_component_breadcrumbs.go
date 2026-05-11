@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/breadcrumbs"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/patterns/breadcrumbs"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -28,12 +28,12 @@ func (s *BreadcrumbsScreen) Render() render.HTML {
 	return render.Tag("main", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Breadcrumbs")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Breadcrumbs")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"A nav element with an ordered list. The last crumb (with no Href) renders as aria-current=\"page\".")),
 		demoFrame(demo, source),
 
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Separators")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Separators")),
 		render.Tag("p", nil, render.Text(
 			"The slash between crumbs is a CSS pseudo-element (li + li::before). No extra DOM. Restyle the separator by overriding .breadcrumbs > li + li::before in your theme.")),
 	)

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -22,22 +22,22 @@ func (s *CartDrawer) Render() render.HTML {
 	count := s.CartCount.Get()
 	items := make([]render.HTML, count)
 	for i := 0; i < count; i++ {
-		items[i] = elements.ListItem(elements.ListItemConfig{}, render.Text(fmt.Sprintf("Cart item %d", i+1)))
+		items[i] = html.ListItem(html.ListItemConfig{}, render.Text(fmt.Sprintf("Cart item %d", i+1)))
 	}
 
 	var list render.HTML
 	if len(items) > 0 {
-		list = elements.UnorderedList(elements.ListConfig{Class: "cart-items"}, items...)
+		list = html.UnorderedList(html.ListConfig{Class: "cart-items"}, items...)
 	} else {
-		list = elements.Paragraph(elements.TextConfig{}, render.Text("Your cart is empty."))
+		list = html.Paragraph(html.TextConfig{}, render.Text("Your cart is empty."))
 	}
 
-	return elements.Div(elements.DivConfig{Attrs: elements.Attrs{"data-page": "cart"}},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Shopping Cart")),
-		elements.Span(
-			elements.TextConfig{
+	return html.Div(html.DivConfig{Attrs: html.Attrs{"data-page": "cart"}},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Shopping Cart")),
+		html.Span(
+			html.TextConfig{
 				Class: "cart-badge",
-				Attrs: elements.Attrs{"aria-label": fmt.Sprintf("Cart has %d items", count)},
+				Attrs: html.Attrs{"aria-label": fmt.Sprintf("Cart has %d items", count)},
 			},
 			render.Text(fmt.Sprintf("%d items", count)),
 		),

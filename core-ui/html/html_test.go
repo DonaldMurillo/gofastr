@@ -1,4 +1,4 @@
-package elements
+package html
 
 import (
 	"strings"

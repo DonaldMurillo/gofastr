@@ -1,4 +1,4 @@
-package elements
+package html
 
 import (
 	"github.com/gofastr/gofastr/core/render"
@@ -9,6 +9,103 @@ type SelectOption struct {
 	Value    string
 	Text     string
 	Selected bool
+}
+
+// ButtonConfig configures a <button> element.
+// Required: Label (used as both visible text and aria-label).
+type ButtonConfig struct {
+	Label string // required → text content AND aria-label
+	Type  string // defaults to "button"
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// LinkConfig configures an <a> element.
+// Required: Href and Text.
+type LinkConfig struct {
+	Href  string // required
+	Text  string // required (visible text content)
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// LinkHTMLConfig configures an <a> element with raw HTML content.
+// Required: Href and Content.
+type LinkHTMLConfig struct {
+	Href    string      // required
+	Content render.HTML // required (raw HTML content)
+	Class   string
+	ID      string
+	Attrs   Attrs
+}
+
+// FormConfig configures a <form> element.
+// Required: Method.
+type FormConfig struct {
+	Method string // required: "GET" or "POST"
+	Action string // optional: form action URL
+	Class  string
+	ID     string
+	Attrs  Attrs
+}
+
+// InputConfig configures a void <input> element.
+// Required: Type and Name.
+type InputConfig struct {
+	Type  string // required: "text", "email", "password", etc.
+	Name  string // required: form field name
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// LabelConfig configures a <label> element.
+// Required: For (the ID of the form control) and Text.
+type LabelConfig struct {
+	For   string // required: ID of the associated form control
+	Text  string // required: label text
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// SelectConfig configures a <select> element.
+// Required: Name and Options.
+type SelectConfig struct {
+	Name    string         // required: form field name
+	Options []SelectOption // required: at least one option
+	Class   string
+	ID      string
+	Attrs   Attrs
+}
+
+// TextAreaConfig configures a <textarea> element.
+// Required: Name.
+type TextAreaConfig struct {
+	Name  string // required: form field name
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// FieldSetConfig configures a <fieldset> element.
+// Required: Legend.
+type FieldSetConfig struct {
+	Legend string // required: becomes <legend> text
+	Class  string
+	ID     string
+	Attrs  Attrs
+}
+
+// ButtonGroupConfig configures a <div> with role="group" containing buttons.
+// No required fields.
+type ButtonGroupConfig struct {
+	AriaLabel string
+	Class     string
+	ID        string
+	Attrs     Attrs
 }
 
 // Button produces a <button> element.
@@ -30,10 +127,10 @@ func Button(cfg ButtonConfig) render.HTML {
 // Required: Href and Text.
 func Link(cfg LinkConfig) render.HTML {
 	if cfg.Href == "" {
-		panic("elements: Link requires Href")
+		panic("html: Link requires Href")
 	}
 	if cfg.Text == "" {
-		panic("elements: Link requires Text")
+		panic("html: Link requires Text")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "href", cfg.Href)
@@ -44,7 +141,7 @@ func Link(cfg LinkConfig) render.HTML {
 // Required: Href and Content.
 func LinkHTML(cfg LinkHTMLConfig) render.HTML {
 	if cfg.Href == "" {
-		panic("elements: LinkHTML requires Href")
+		panic("html: LinkHTML requires Href")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "href", cfg.Href)
@@ -55,7 +152,7 @@ func LinkHTML(cfg LinkHTMLConfig) render.HTML {
 // Required: Method.
 func Form(cfg FormConfig, children ...render.HTML) render.HTML {
 	if cfg.Method == "" {
-		panic("elements: Form requires Method")
+		panic("html: Form requires Method")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "method", cfg.Method)
@@ -69,10 +166,10 @@ func Form(cfg FormConfig, children ...render.HTML) render.HTML {
 // Required: Type and Name.
 func Input(cfg InputConfig) render.HTML {
 	if cfg.Type == "" {
-		panic("elements: Input requires Type")
+		panic("html: Input requires Type")
 	}
 	if cfg.Name == "" {
-		panic("elements: Input requires Name")
+		panic("html: Input requires Name")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "type", cfg.Type)
@@ -85,10 +182,10 @@ func Input(cfg InputConfig) render.HTML {
 // Required: For and Text.
 func Label(cfg LabelConfig) render.HTML {
 	if cfg.For == "" {
-		panic("elements: Label requires For")
+		panic("html: Label requires For")
 	}
 	if cfg.Text == "" {
-		panic("elements: Label requires Text")
+		panic("html: Label requires Text")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "for", cfg.For)
@@ -99,7 +196,7 @@ func Label(cfg LabelConfig) render.HTML {
 // Required: Name.
 func Select(cfg SelectConfig) render.HTML {
 	if cfg.Name == "" {
-		panic("elements: Select requires Name")
+		panic("html: Select requires Name")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "name", cfg.Name)
@@ -124,7 +221,7 @@ func Option(value, text string, selected bool) render.HTML {
 // Required: Name.
 func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Name == "" {
-		panic("elements: TextArea requires Name")
+		panic("html: TextArea requires Name")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "name", cfg.Name)
@@ -146,7 +243,7 @@ func ButtonGroup(cfg ButtonGroupConfig, children ...render.HTML) render.HTML {
 // Required: Legend.
 func FieldSet(cfg FieldSetConfig, children ...render.HTML) render.HTML {
 	if cfg.Legend == "" {
-		panic("elements: FieldSet requires Legend")
+		panic("html: FieldSet requires Legend")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	legendHTML := Legend(TextConfig{}, render.Text(cfg.Legend))

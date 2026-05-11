@@ -110,7 +110,7 @@ func TestDrift_NoLocationHrefAssignOutsideRuntime(t *testing.T) {
 		"../../framework",
 		"../../core-ui/widget",
 		"../../core-ui/app",
-		"../../core-ui/elements",
+		"../../core-ui/html",
 	}
 	rx := regexp.MustCompile(`location\.href\s*=`)
 	for _, root := range roots {

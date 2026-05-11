@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -59,7 +59,7 @@ func TestFormFieldRequiresLabelForInput(t *testing.T) {
 }
 
 func TestFormFieldRequired(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "name"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "name"})
 	h := FormField(FormFieldConfig{
 		Label: "Name", For: "name", Required: true, Input: in,
 	})
@@ -69,7 +69,7 @@ func TestFormFieldRequired(t *testing.T) {
 }
 
 func TestFormFieldErrorSwitchesStyling(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "n"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
 		Label: "Name", For: "n", Error: "Required field", Input: in,
 	})
@@ -82,7 +82,7 @@ func TestFormFieldErrorSwitchesStyling(t *testing.T) {
 }
 
 func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "n"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{Label: "x", For: "n", Help: "Hint", Input: in})
 	mustContain(t, h, "Hint")
 	mustContain(t, h, "ui-form-field__help")
@@ -130,7 +130,7 @@ func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
 		mustContain(t, h, `role="alert"`)
 	}
 	// Info/success/neutral callouts are non-urgent → rendered as
-	// <aside role="complementary"> (via elements.Aside) so screen
+	// <aside role="complementary"> (via html.Aside) so screen
 	// readers treat them as side notes.
 	for _, v := range []StatusVariant{StatusInfo, StatusSuccess, StatusNeutral} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))

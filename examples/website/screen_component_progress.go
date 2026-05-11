@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
-	"github.com/gofastr/gofastr/core-ui/progress"
+	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/gofastr/gofastr/core-ui/patterns/progress"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -42,12 +42,12 @@ progress.New(progress.Config{
 	return render.Tag("main", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Progress")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Progress")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"A wrapper around the native <progress> element. Two modes: determinate (Value set) and indeterminate (Value < 0).")),
 		demoFrame(stack, source),
 
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Driving live updates")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Driving live updates")),
 		render.Tag("p", nil, render.Text(
 			"For a server-pushed progress bar, bind a signal to the <progress value> attribute via data-fui-signal-attr=value. The runtime updates the attribute on every signal push, no page reload. (Pattern reused from core-ui/runtime — see widget docs.)")),
 	)

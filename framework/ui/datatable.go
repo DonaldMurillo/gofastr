@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gofastr/gofastr/core-ui/elements"
-	"github.com/gofastr/gofastr/core-ui/pagination"
+	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -138,21 +138,21 @@ func DataTable(cfg DataTableConfig) render.HTML {
 				empty.Description = "Adjust your filters or add new entries."
 			}
 		}
-		return elements.Div(elements.DivConfig{
+		return html.Div(html.DivConfig{
 			Class: wrapClass(cfg.Class, "ui-data-table is-empty"),
 			ID:    cfg.ID,
 		}, EmptyState(empty))
 	}
 
-	// Header — composed via elements.TR + elements.TH so ARIA scope
+	// Header — composed via html.TR + html.TH so ARIA scope
 	// and column-header semantics come from core-ui.
 	thCells := make([]render.HTML, len(cfg.Columns))
 	for i, col := range cfg.Columns {
 		thCells[i] = renderHeader(col, cfg.SortBy, cfg.SortDir, cfg.SortHrefPattern,
 			cfg.IslandSignal, cfg.IslandEndpoint)
 	}
-	thead := elements.Thead(elements.TableSectionConfig{},
-		elements.TableRow(elements.TableRowConfig{}, thCells...),
+	thead := html.Thead(html.TableSectionConfig{},
+		html.TableRow(html.TableRowConfig{}, thCells...),
 	)
 
 	// Body.
@@ -164,31 +164,31 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			if !ok {
 				content = render.Text("")
 			}
-			cellCfg := elements.TDConfig{}
+			cellCfg := html.TDConfig{}
 			if col.Align != "" && col.Align != "start" {
 				cellCfg.Class = "is-align-" + col.Align
 			}
-			cells[j] = elements.TD(cellCfg, content)
+			cells[j] = html.TD(cellCfg, content)
 		}
-		bodyRows[i] = elements.TableRow(elements.TableRowConfig{ID: r.ID}, cells...)
+		bodyRows[i] = html.TableRow(html.TableRowConfig{ID: r.ID}, cells...)
 	}
-	tbody := elements.Tbody(elements.TableSectionConfig{}, bodyRows...)
+	tbody := html.Tbody(html.TableSectionConfig{}, bodyRows...)
 
-	// Caption (when set) goes inside the table; elements.Caption
+	// Caption (when set) goes inside the table; html.Caption
 	// wraps it in a proper <caption>.
 	tableChildren := []render.HTML{}
 	if cfg.Caption != "" {
 		tableChildren = append(tableChildren,
-			elements.Caption(elements.CaptionConfig{Class: "ui-data-table__caption"},
+			html.Caption(html.CaptionConfig{Class: "ui-data-table__caption"},
 				render.Text(cfg.Caption)))
 	}
 	tableChildren = append(tableChildren, thead, tbody)
-	table := elements.Table(
-		elements.TableConfig{Class: "ui-data-table__table"},
+	table := html.Table(
+		html.TableConfig{Class: "ui-data-table__table"},
 		tableChildren...)
 
 	children := []render.HTML{
-		elements.Div(elements.DivConfig{Class: "ui-data-table__scroll"}, table),
+		html.Div(html.DivConfig{Class: "ui-data-table__scroll"}, table),
 	}
 	if cfg.Pagination != nil {
 		// In island mode, the pagination automatically inherits the
@@ -200,10 +200,10 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			pagCfg.IslandEndpoint = cfg.IslandEndpoint
 		}
 		children = append(children,
-			elements.Div(elements.DivConfig{Class: "ui-data-table__footer"},
+			html.Div(html.DivConfig{Class: "ui-data-table__footer"},
 				pagination.New(pagCfg)))
 	}
-	return elements.Div(elements.DivConfig{
+	return html.Div(html.DivConfig{
 		Class: wrapClass(cfg.Class, "ui-data-table"), ID: cfg.ID,
 	}, children...)
 }
@@ -218,14 +218,14 @@ func wrapClass(extra, base string) string {
 }
 
 func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, islandSignal, islandEndpoint string) render.HTML {
-	thCfg := elements.THConfig{Scope: "col"}
+	thCfg := html.THConfig{Scope: "col"}
 	if col.Align != "" && col.Align != "start" {
 		thCfg.Class = "is-align-" + col.Align
 	}
-	thAttrs := elements.Attrs{}
+	thAttrs := html.Attrs{}
 	if !col.Sortable {
 		thCfg.Attrs = thAttrs
-		return elements.TH(thCfg, render.Text(col.Header))
+		return html.TH(thCfg, render.Text(col.Header))
 	}
 
 	// Compute next sort: clicking the active column flips direction;
@@ -247,9 +247,9 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 	thCfg.Attrs = thAttrs
 
 	href := fmt.Sprintf(pattern, url.QueryEscape(col.Key), url.QueryEscape(string(nextDir)))
-	indicatorSpan := elements.Span(elements.TextConfig{
+	indicatorSpan := html.Span(html.TextConfig{
 		Class: "ui-data-table__sort-indicator",
-		Attrs: elements.Attrs{"aria-hidden": "true"},
+		Attrs: html.Attrs{"aria-hidden": "true"},
 	}, render.Text(strings.TrimSpace(indicator)))
 
 	// Island mode: render as a data-fui-rpc button so click fires
@@ -275,14 +275,14 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 			render.Text(col.Header),
 			indicatorSpan,
 		)
-		return elements.TH(thCfg, btn)
+		return html.TH(thCfg, btn)
 	}
 
 	// Plain mode: <a href> link, full SSR navigation if clicked.
-	link := elements.LinkHTML(elements.LinkHTMLConfig{
+	link := html.LinkHTML(html.LinkHTMLConfig{
 		Href:    href,
 		Class:   "ui-data-table__sort",
 		Content: render.Join(render.Text(col.Header), indicatorSpan),
 	})
-	return elements.TH(thCfg, link)
+	return html.TH(thCfg, link)
 }

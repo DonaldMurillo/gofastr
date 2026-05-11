@@ -40,7 +40,7 @@ const (
 
 // SignalSource produces JSON-serializable values that flow to the
 // browser as named signals. The runtime polls (or receives via SSE)
-// and pushes new values into [data-fui-signal="<name>"] elements.
+// and pushes new values into [data-fui-signal="<name>"] html.
 type SignalSource interface {
 	Read() (any, error)
 }

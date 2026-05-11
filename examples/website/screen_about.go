@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -48,13 +48,13 @@ func (s *AboutScreen) Render() render.HTML {
 			Heading: "Layered design",
 		}, render.Tag("ul", nil,
 			render.Tag("li", nil,
-				elements.Strong(elements.TextConfig{}, render.Text("core/ ")),
+				html.Strong(html.TextConfig{}, render.Text("core/ ")),
 				render.Text("— stdlib-only primitives. Render, router, markdown, validator.")),
 			render.Tag("li", nil,
-				elements.Strong(elements.TextConfig{}, render.Text("core-ui/ ")),
+				html.Strong(html.TextConfig{}, render.Text("core-ui/ ")),
 				render.Text("— elements, accordion, tabs, progress, skeleton, breadcrumbs, pagination, widget, theme. Everything maps 1:1 to an HTML primitive or ARIA pattern.")),
 			render.Tag("li", nil,
-				elements.Strong(elements.TextConfig{}, render.Text("framework/ ")),
+				html.Strong(html.TextConfig{}, render.Text("framework/ ")),
 				render.Text("— entity system + ui semantic components. Composes core-ui to express product intent (PageHeader, FormField, DataTable…).")),
 		)),
 	)

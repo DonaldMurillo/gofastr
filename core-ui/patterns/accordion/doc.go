@@ -1,5 +1,5 @@
 // Package accordion provides disclosure widgets built on the native
-// <details>/<summary> elements.
+// <details>/<summary> html.
 //
 // Two variants are exported:
 //

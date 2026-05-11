@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/accordion"
-	"github.com/gofastr/gofastr/core-ui/breadcrumbs"
-	"github.com/gofastr/gofastr/core-ui/pagination"
-	"github.com/gofastr/gofastr/core-ui/progress"
-	"github.com/gofastr/gofastr/core-ui/skeleton"
+	"github.com/gofastr/gofastr/core-ui/patterns/accordion"
+	"github.com/gofastr/gofastr/core-ui/patterns/breadcrumbs"
+	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
+	"github.com/gofastr/gofastr/core-ui/patterns/progress"
+	"github.com/gofastr/gofastr/core-ui/patterns/skeleton"
 	"github.com/gofastr/gofastr/core-ui/style"
-	"github.com/gofastr/gofastr/core-ui/tabs"
+	"github.com/gofastr/gofastr/core-ui/patterns/tabs"
 	"github.com/gofastr/gofastr/framework/ui"
 	"github.com/gofastr/gofastr/framework/ui/theme"
 )

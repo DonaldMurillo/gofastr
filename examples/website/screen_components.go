@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -64,12 +64,12 @@ var componentEntries = []componentEntry{
 func (s *ComponentsIndexScreen) Render() render.HTML {
 	cards := make([]render.HTML, 0, len(componentEntries))
 	for _, c := range componentEntries {
-		cards = append(cards, elements.LinkHTML(elements.LinkHTMLConfig{
+		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
 			Href: "/components/" + c.Slug,
 			Content: render.Join(
-				elements.Strong(elements.TextConfig{}, render.Text(c.Name)),
-				elements.Span(elements.TextConfig{Class: "component-tag"}, render.Text(c.Tag)),
-				elements.Span(elements.TextConfig{}, render.Text(c.Intro)),
+				html.Strong(html.TextConfig{}, render.Text(c.Name)),
+				html.Span(html.TextConfig{Class: "component-tag"}, render.Text(c.Tag)),
+				html.Span(html.TextConfig{}, render.Text(c.Intro)),
 			),
 		}))
 	}

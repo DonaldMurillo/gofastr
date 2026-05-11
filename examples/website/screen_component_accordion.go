@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/accordion"
+	"github.com/gofastr/gofastr/core-ui/patterns/accordion"
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
-// AccordionScreen documents the core-ui/accordion package with live demos
+// AccordionScreen documents the core-ui/patterns/accordion package with live demos
 // alongside the source they were rendered with.
 type AccordionScreen struct{}
 
@@ -79,24 +79,24 @@ func (s *AccordionScreen) Render() render.HTML {
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
 
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Accordion")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Accordion")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"Two disclosure widgets built on the native <details>/<summary> elements: an exclusive Group (one open at a time) and an independent Stack.")),
 
 		// --- Group ---
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Group — exclusive (single-open)")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Group — exclusive (single-open)")),
 		render.Tag("p", nil, render.Text(
 			"Use a Group when only one item should be open at a time — FAQs, settings panels, navigation drawers. The browser enforces exclusivity via the shared name= attribute. Try it: opening the second item closes the first automatically, with no JavaScript.")),
 		demoFrame(groupDemo, groupSource),
 
 		// --- Stack ---
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Stack — independent (multi-open)")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Stack — independent (multi-open)")),
 		render.Tag("p", nil, render.Text(
 			"Use a Stack when items should open and close independently — long forms, multi-step configuration, content-heavy pages with progressive disclosure.")),
 		demoFrame(stackDemo, stackSource),
 
 		// --- How it works ---
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("How the animation works")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("How the animation works")),
 		render.Tag("p", nil, render.Text(
 			"The accordion uses three modern CSS features. Together they let a native disclosure widget animate open and closed without JS:")),
 		render.Tag("ul", nil,
@@ -114,12 +114,12 @@ func (s *AccordionScreen) Render() render.HTML {
 			"Browsers without these features get instant open/close — intentional progressive enhancement. The component also respects prefers-reduced-motion.")),
 
 		// --- Server-rendered initial state ---
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Pre-opening on the server")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Pre-opening on the server")),
 		render.Tag("p", nil, render.Text(
 			"Set Open: true on any Item to render with that item already open. The first item in the Group above demonstrates this. Useful for deep links, error states, or onboarding flows.")),
 
 		// --- API summary ---
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("API")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
 		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
 			`type GroupConfig struct {
     Name      string // required → <details name="…">

@@ -180,7 +180,7 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ### `core-ui/` — server-driven UI runtime
 
-A separate, independently usable system for rendering interactive UIs from Go: signals, components, elements, server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a 670-line vanilla-JS runtime. See `examples/core-ui-demo` for an app that exercises every feature.
+A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a 670-line vanilla-JS runtime. See `examples/core-ui-demo` for an app that exercises every feature.
 
 ### `battery/` — pluggable infrastructure
 

@@ -3,16 +3,16 @@ package render
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/kiln/world"
 )
 
 // RenderNode walks a world.Node tree and emits HTML by dispatching to
-// the framework's core-ui/elements package. The IR (world.Node) is the
+// the framework's core-ui/html package. The IR (world.Node) is the
 // JSON shape the agent authors; the actual element vocabulary, ARIA
 // rules, attribute escaping, and accessibility defaults all live in
-// core-ui/elements — Kiln does not reimplement them.
+// core-ui/html — Kiln does not reimplement them.
 //
 // Unknown / forbidden elements (or elements missing required ARIA
 // fields) fall back to a comment in dev so the gap is visible.
@@ -25,7 +25,7 @@ func RenderNode(n world.Node) render.HTML {
 }
 
 // renderKind dispatches each known IR kind to the matching
-// core-ui/elements builder. All ID/Class plumbing and the agent's
+// core-ui/html builder. All ID/Class plumbing and the agent's
 // arbitrary attrs (data-kiln-tool, etc.) flow through Attrs.
 func renderKind(kind string, props map[string]any, children []render.HTML) render.HTML {
 	switch kind {
@@ -52,13 +52,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 	// --- structural containers -------------------------------------
 	case "div":
-		return elements.Div(elements.DivConfig{
+		return html.Div(html.DivConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Role: propString(props, "role"), AriaLabel: propString(props, "aria-label"),
 			Attrs: extraAttrs(props, "id", "class", "role", "aria-label"),
 		}, children...)
 	case "article":
-		return elements.Article(elements.ArticleConfig{
+		return html.Article(html.ArticleConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class"),
 		}, children...)
@@ -78,23 +78,23 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 				label = "section"
 			}
 		}
-		return elements.Section(elements.SectionConfig{
+		return html.Section(html.SectionConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
 		}, children...)
 	case "main":
-		return elements.Main(elements.MainConfig{
+		return html.Main(html.MainConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "header":
-		return elements.Header(elements.HeaderConfig{
+		return html.Header(html.HeaderConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "footer":
-		return elements.Footer(elements.FooterConfig{
+		return html.Footer(html.FooterConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class"),
 		}, children...)
@@ -107,7 +107,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if label == "" && labelledBy == "" {
 			label = "Main"
 		}
-		return elements.Nav(elements.NavConfig{
+		return html.Nav(html.NavConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
@@ -121,7 +121,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if label == "" && labelledBy == "" {
 			label = "Aside"
 		}
-		return elements.Aside(elements.AsideConfig{
+		return html.Aside(html.AsideConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
@@ -141,7 +141,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if text != "" {
 			body = append([]render.HTML{render.Text(text)}, body...)
 		}
-		return elements.Heading(elements.HeadingConfig{
+		return html.Heading(html.HeadingConfig{
 			Level: level,
 			ID:    propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "level", "text"),
@@ -152,26 +152,26 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if text != "" {
 			body = append([]render.HTML{render.Text(text)}, body...)
 		}
-		return elements.Paragraph(textConfig(props), body...)
+		return html.Paragraph(textConfig(props), body...)
 	case "span":
 		text := propString(props, "text")
 		body := children
 		if text != "" {
 			body = append([]render.HTML{render.Text(text)}, body...)
 		}
-		return elements.Span(textConfig(props), body...)
+		return html.Span(textConfig(props), body...)
 	case "strong":
-		return elements.Strong(textConfig(props), withTextProp(props, children)...)
+		return html.Strong(textConfig(props), withTextProp(props, children)...)
 	case "em":
-		return elements.Em(textConfig(props), withTextProp(props, children)...)
+		return html.Em(textConfig(props), withTextProp(props, children)...)
 	case "code":
-		return elements.Code(textConfig(props), withTextProp(props, children)...)
+		return html.Code(textConfig(props), withTextProp(props, children)...)
 	case "pre":
-		return elements.Pre(textConfig(props), withTextProp(props, children)...)
+		return html.Pre(textConfig(props), withTextProp(props, children)...)
 	case "small":
-		return elements.Small(textConfig(props), withTextProp(props, children)...)
+		return html.Small(textConfig(props), withTextProp(props, children)...)
 	case "blockquote":
-		return elements.Blockquote(textConfig(props), withTextProp(props, children)...)
+		return html.Blockquote(textConfig(props), withTextProp(props, children)...)
 
 	// --- interactive ----------------------------------------------
 	case "button":
@@ -179,13 +179,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if label == "" {
 			label = propString(props, "text")
 		}
-		// Carry agent action attrs through; elements.Button merges them.
+		// Carry agent action attrs through; html.Button merges them.
 		attrs := extraAttrs(props, "id", "class", "label", "text", "type")
 		typ := propString(props, "type")
 		if typ == "" {
 			typ = "button"
 		}
-		return elements.Button(elements.ButtonConfig{
+		return html.Button(html.ButtonConfig{
 			Label: label, Type: typ,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: attrs,
@@ -193,16 +193,16 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	case "link", "a":
 		text := propString(props, "text")
 		if text == "" && len(children) > 0 {
-			// Wrap children HTML — elements.Link only accepts plain text;
+			// Wrap children HTML — html.Link only accepts plain text;
 			// fall through to LinkHTML for HTML children.
-			return elements.LinkHTML(elements.LinkHTMLConfig{
+			return html.LinkHTML(html.LinkHTMLConfig{
 				Href:    propString(props, "href"),
 				Content: render.Join(children...),
 				ID:      propString(props, "id"), Class: propString(props, "class"),
 				Attrs: extraAttrs(props, "id", "class", "href", "text"),
 			})
 		}
-		return elements.Link(elements.LinkConfig{
+		return html.Link(html.LinkConfig{
 			Href: propString(props, "href"), Text: text,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "href", "text"),
@@ -219,7 +219,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if name == "" {
 			name = "field"
 		}
-		return elements.Input(elements.InputConfig{
+		return html.Input(html.InputConfig{
 			Type: typ, Name: name,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "type", "name"),
@@ -228,7 +228,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		text := propString(props, "text")
 		body := children
 		if text != "" && len(children) == 0 {
-			return elements.Label(elements.LabelConfig{
+			return html.Label(html.LabelConfig{
 				For: propString(props, "for"), Text: text,
 				ID: propString(props, "id"), Class: propString(props, "class"),
 				Attrs: extraAttrs(props, "id", "class", "for", "text"),
@@ -255,32 +255,32 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if method == "" {
 			method = "POST"
 		}
-		return elements.Form(elements.FormConfig{
+		return html.Form(html.FormConfig{
 			Method: method, Action: propString(props, "action"),
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "method", "action"),
 		}, children...)
 	case "select":
 		// Options expected as children (kind: "option" with value/text props).
-		// elements.Select takes a structured Options list — easier to
+		// html.Select takes a structured Options list — easier to
 		// fall through to manual <select> when the agent uses children.
 		return render.Tag("select", attrsFromProps(props,
 			"id", "class", "name", "required", "multiple",
 		), children...)
 	case "option":
-		return elements.Option(propString(props, "value"), propString(props, "text"), propBool(props, "selected"))
+		return html.Option(propString(props, "value"), propString(props, "text"), propBool(props, "selected"))
 	case "textarea":
 		name := propString(props, "name")
 		if name == "" {
 			name = "field"
 		}
-		return elements.TextArea(elements.TextAreaConfig{
+		return html.TextArea(html.TextAreaConfig{
 			Name: name,
 			ID:   propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "name"),
 		})
 	case "fieldset":
-		return elements.FieldSet(elements.FieldSetConfig{
+		return html.FieldSet(html.FieldSetConfig{
 			Legend: propString(props, "legend"),
 			ID:     propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "legend"),
@@ -290,7 +290,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	case "image", "img":
 		// Width/height pass through via Attrs since ImageConfig keeps
 		// only Src/Alt as first-class fields.
-		return elements.Image(elements.ImageConfig{
+		return html.Image(html.ImageConfig{
 			Src: propString(props, "src"), Alt: propString(props, "alt"),
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "src", "alt"),
@@ -302,20 +302,20 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		// Agent's children are typically already wrapped or are bare —
 		// auto-wrap any non-li children in <li>.
 		items := wrapAsListItems(children)
-		cfg := elements.ListConfig{
+		cfg := html.ListConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class", "ordered"),
 		}
 		if ordered {
-			return elements.OrderedList(cfg, items...)
+			return html.OrderedList(cfg, items...)
 		}
-		return elements.UnorderedList(cfg, items...)
+		return html.UnorderedList(cfg, items...)
 	case "ul":
-		return elements.UnorderedList(listConfig(props), wrapAsListItems(children)...)
+		return html.UnorderedList(listConfig(props), wrapAsListItems(children)...)
 	case "ol":
-		return elements.OrderedList(listConfig(props), wrapAsListItems(children)...)
+		return html.OrderedList(listConfig(props), wrapAsListItems(children)...)
 	case "li":
-		return elements.ListItem(elements.ListItemConfig{
+		return html.ListItem(html.ListItemConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Attrs: extraAttrs(props, "id", "class"),
 		}, children...)
@@ -342,15 +342,15 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 // --- helpers ----------------------------------------------------------
 
-func textConfig(props map[string]any) elements.TextConfig {
-	return elements.TextConfig{
+func textConfig(props map[string]any) html.TextConfig {
+	return html.TextConfig{
 		ID: propString(props, "id"), Class: propString(props, "class"),
 		Attrs: extraAttrs(props, "id", "class", "text"),
 	}
 }
 
-func listConfig(props map[string]any) elements.ListConfig {
-	return elements.ListConfig{
+func listConfig(props map[string]any) html.ListConfig {
+	return html.ListConfig{
 		ID: propString(props, "id"), Class: propString(props, "class"),
 		Attrs: extraAttrs(props, "id", "class"),
 	}
@@ -375,13 +375,13 @@ func wrapAsListItems(children []render.HTML) []render.HTML {
 			out = append(out, c)
 			continue
 		}
-		out = append(out, elements.ListItem(elements.ListItemConfig{}, c))
+		out = append(out, html.ListItem(html.ListItemConfig{}, c))
 	}
 	return out
 }
 
 // extraAttrs collects any prop keys NOT in the well-known list. These
-// flow into elements.X via Attrs so agent-supplied data-kiln-tool,
+// flow into html.X via Attrs so agent-supplied data-kiln-tool,
 // data-kiln-args, aria-*, role, target, rel, etc. all reach the DOM.
 // dangerousAttrs are HTML attributes the renderer drops unconditionally.
 // They violate strict CSP (default-src 'self' with no unsafe-inline) and
@@ -405,7 +405,7 @@ var dangerousAttrs = map[string]bool{
 //
 // The agent skill explicitly forbids `style`; this is a hard belt-and-
 // suspenders so a single bad turn doesn't poison the page.
-func extraAttrs(props map[string]any, known ...string) elements.Attrs {
+func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	if len(props) == 0 {
 		return nil
 	}
@@ -413,7 +413,7 @@ func extraAttrs(props map[string]any, known ...string) elements.Attrs {
 	for _, k := range known {
 		skip[k] = struct{}{}
 	}
-	out := elements.Attrs{}
+	out := html.Attrs{}
 	for k, v := range props {
 		if _, ok := skip[k]; ok {
 			continue

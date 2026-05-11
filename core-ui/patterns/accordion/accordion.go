@@ -21,7 +21,7 @@ func Group(cfg GroupConfig, items ...Item) render.HTML {
 }
 
 // Stack renders an independent accordion: every item opens and closes
-// on its own. No `name=` attribute is set on <details> elements.
+// on its own. No `name=` attribute is set on <details> html.
 func Stack(cfg StackConfig, items ...Item) render.HTML {
 	wrapAttrs := wrapperAttrs(cfg.ID, cfg.Class, cfg.AriaLabel, "accordion accordion-stack")
 	rendered := make([]render.HTML, len(items))

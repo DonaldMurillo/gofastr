@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	coresignal "github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework"
@@ -120,11 +120,11 @@ type LiveFeedComponent struct {
 func (l *LiveFeedComponent) Render() render.HTML {
 	var items []render.HTML
 	for _, item := range l.Items {
-		items = append(items, elements.ListItem(elements.ListItemConfig{}, render.Text(item)))
+		items = append(items, html.ListItem(html.ListItemConfig{}, render.Text(item)))
 	}
-	return elements.Div(
-		elements.DivConfig{AriaLabel: "Live activity feed", Class: "live-feed", Attrs: elements.Attrs{"aria-live": "polite"}},
-		elements.Heading(elements.HeadingConfig{Level: 3}, render.Text("Live Feed")),
-		elements.UnorderedList(elements.ListConfig{Class: "feed-list"}, items...),
+	return html.Div(
+		html.DivConfig{AriaLabel: "Live activity feed", Class: "live-feed", Attrs: html.Attrs{"aria-live": "polite"}},
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("Live Feed")),
+		html.UnorderedList(html.ListConfig{Class: "feed-list"}, items...),
 	)
 }

@@ -1,6 +1,49 @@
-package elements
+package html
 
 import "github.com/gofastr/gofastr/core/render"
+
+// TableConfig configures a <table> element. Automatically adds role="table".
+type TableConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// CaptionConfig configures a <caption> element. No required fields.
+type CaptionConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// TableSectionConfig configures thead/tbody/tfoot elements.
+type TableSectionConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// TableRowConfig configures a <tr> element.
+type TableRowConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// THConfig configures a <th> element. Scope defaults to "col" (columnheader).
+type THConfig struct {
+	Scope string // defaults to "col"
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// TDConfig configures a <td> element.
+type TDConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
 
 // Table produces a <table> element with role="table".
 func Table(cfg TableConfig, children ...render.HTML) render.HTML {

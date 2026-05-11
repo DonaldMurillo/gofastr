@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -78,7 +78,7 @@ func (s *CustomersFormScreen) Render() render.HTML {
 			ui.PageHeader(ui.PageHeaderConfig{
 				Eyebrow: "CRUD demo", Title: "Customer not found",
 			}),
-			elements.Link(elements.LinkConfig{
+			html.Link(html.LinkConfig{
 				Href: "/customers", Text: "← Back to list", Class: "ui-button",
 			}),
 		)
@@ -94,7 +94,7 @@ func (s *CustomersFormScreen) Render() render.HTML {
 		eyebrow = "CRUD demo · Edit"
 	}
 
-	statusOptions := []elements.SelectOption{
+	statusOptions := []html.SelectOption{
 		{Value: "neutral", Text: "Neutral", Selected: s.customer.Status == ui.StatusNeutral || s.customer.Status == ""},
 		{Value: "success", Text: "Active", Selected: s.customer.Status == ui.StatusSuccess},
 		{Value: "info", Text: "Pending", Selected: s.customer.Status == ui.StatusInfo},
@@ -120,22 +120,22 @@ func (s *CustomersFormScreen) Render() render.HTML {
 			ui.FormFieldFor(s.errs, "name", ui.FormFieldConfig{
 				Label: "Name", For: "f-name", Required: true,
 				Help:  "At least 2 characters.",
-				Input: elements.Input(elements.InputConfig{
+				Input: html.Input(html.InputConfig{
 					Type: "text", Name: "name", ID: "f-name",
-					Attrs: elements.Attrs{"value": s.customer.Name, "required": "required"},
+					Attrs: html.Attrs{"value": s.customer.Name, "required": "required"},
 				}),
 			}),
 			ui.FormFieldFor(s.errs, "email", ui.FormFieldConfig{
 				Label: "Email", For: "f-email", Required: true,
 				Help:  "Used for account recovery.",
-				Input: elements.Input(elements.InputConfig{
+				Input: html.Input(html.InputConfig{
 					Type: "email", Name: "email", ID: "f-email",
-					Attrs: elements.Attrs{"value": s.customer.Email, "required": "required"},
+					Attrs: html.Attrs{"value": s.customer.Email, "required": "required"},
 				}),
 			}),
 			ui.FormFieldFor(s.errs, "status", ui.FormFieldConfig{
 				Label: "Status", For: "f-status",
-				Input: elements.Select(elements.SelectConfig{
+				Input: html.Select(html.SelectConfig{
 					Name: "status", ID: "f-status", Options: statusOptions,
 				}),
 			}),

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 )
 
 func TestFormRequiresAction(t *testing.T) {
@@ -14,7 +14,7 @@ func TestFormRequiresAction(t *testing.T) {
 }
 
 func TestFormRendersDefaultsAndSubmitButton(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "n"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := string(Form(FormConfig{Action: "/x"},
 		FormField(FormFieldConfig{Label: "n", For: "n", Input: in}),
 	))
@@ -29,7 +29,7 @@ func TestFormRendersDefaultsAndSubmitButton(t *testing.T) {
 }
 
 func TestFormErrorsRenderSummaryCallout(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "email", Name: "e", ID: "e"})
+	in := html.Input(html.InputConfig{Type: "email", Name: "e", ID: "e"})
 	h := string(Form(FormConfig{
 		Action: "/x",
 		Errors: FieldErrors{"e": "Invalid email"},
@@ -48,7 +48,7 @@ func TestFormErrorsRenderSummaryCallout(t *testing.T) {
 }
 
 func TestFormFieldForPullsErrorByName(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "n"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	errs := FieldErrors{"n": "Required"}
 	h := string(FormFieldFor(errs, "n",
 		FormFieldConfig{Label: "Name", For: "n", Input: in}))
@@ -58,7 +58,7 @@ func TestFormFieldForPullsErrorByName(t *testing.T) {
 }
 
 func TestFormFieldForNoErrorWhenNotInMap(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "n"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	errs := FieldErrors{"other": "X"}
 	h := string(FormFieldFor(errs, "n",
 		FormFieldConfig{Label: "Name", For: "n", Input: in}))
@@ -68,7 +68,7 @@ func TestFormFieldForNoErrorWhenNotInMap(t *testing.T) {
 }
 
 func TestFormCustomMethodAndSubmitLabel(t *testing.T) {
-	in := elements.Input(elements.InputConfig{Type: "text", Name: "n", ID: "n"})
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := string(Form(FormConfig{
 		Action: "/x", Method: "GET", SubmitLabel: "Search",
 	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: in})))

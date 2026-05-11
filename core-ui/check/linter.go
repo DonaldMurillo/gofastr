@@ -59,7 +59,7 @@ var allowedImports = map[string]bool{
 	"errors":        true,
 
 	"github.com/gofastr/gofastr/core/render":       true,
-	"github.com/gofastr/gofastr/core-ui/elements":  true,
+	"github.com/gofastr/gofastr/core-ui/html":  true,
 	"github.com/gofastr/gofastr/core-ui/component": true,
 	"github.com/gofastr/gofastr/core-ui/signal":    true,
 	"github.com/gofastr/gofastr/core-ui/style":     true,
@@ -194,7 +194,7 @@ func lintFile(fset *token.FileSet, file *ast.File, filename string) *Result {
 
 		// Check forbidden built-in calls, make(chan ...), and element config required fields
 		case *ast.CallExpr:
-			// Check for elements.Xxx(XxxConfig{...}) calls with missing required fields
+			// Check for html.Xxx(XxxConfig{...}) calls with missing required fields
 			checkElementConfig(node, filename, fset, result)
 
 			ident, ok := node.Fun.(*ast.Ident)
@@ -253,11 +253,11 @@ func checkImport(imp *ast.ImportSpec, filename string, fset *token.FileSet, resu
 		fmt.Sprintf("import of %q not allowed in .ui.go files", path))
 }
 
-// checkElementConfig checks calls like elements.Xxx(elements.XxxConfig{...})
+// checkElementConfig checks calls like html.Xxx(html.XxxConfig{...})
 // for missing required fields.
 func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet, result *Result) {
 	// We look for patterns:
-	//   elements.Nav(elements.NavConfig{...})
+	//   html.Nav(html.NavConfig{...})
 	//   Nav(NavConfig{...})
 	var funcName string
 
@@ -306,7 +306,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 	for _, field := range rule.required {
 		if !setFields[field] {
 			result.add(filename, line,
-				fmt.Sprintf("elements.%s: missing required field %q in %sConfig", funcName, field, funcName))
+				fmt.Sprintf("html.%s: missing required field %q in %sConfig", funcName, field, funcName))
 		}
 	}
 
@@ -321,7 +321,7 @@ func checkElementConfig(call *ast.CallExpr, filename string, fset *token.FileSet
 		}
 		if !found {
 			result.add(filename, line,
-				fmt.Sprintf("elements.%s: missing required field — must set one of %v in %sConfig", funcName, rule.orFields, funcName))
+				fmt.Sprintf("html.%s: missing required field — must set one of %v in %sConfig", funcName, rule.orFields, funcName))
 		}
 	}
 }

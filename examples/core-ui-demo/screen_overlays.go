@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -16,15 +16,15 @@ func (s *DemoDrawerScreen) ScreenDescription() string  { return "Drawer overlay 
 func (s *DemoDrawerScreen) ScreenType() app.ScreenType { return app.ScreenDrawer }
 
 func (s *DemoDrawerScreen) Render() render.HTML {
-	return elements.Div(elements.DivConfig{Class: "drawer-content"},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Quick Nav")),
-		elements.Paragraph(elements.TextConfig{}, render.Text("A drawer slides in from the side. Great for navigation, filters, or settings.")),
-		elements.Nav(elements.NavConfig{Label: "Drawer navigation"},
-			elements.UnorderedList(elements.ListConfig{Class: "drawer-nav-list"},
-				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/", Text: "Home"})),
-				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/products", Text: "Products"})),
-				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/about", Text: "About"})),
-				elements.ListItem(elements.ListItemConfig{}, elements.Link(elements.LinkConfig{Href: "/signals", Text: "Signal Demo"})),
+	return html.Div(html.DivConfig{Class: "drawer-content"},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Quick Nav")),
+		html.Paragraph(html.TextConfig{}, render.Text("A drawer slides in from the side. Great for navigation, filters, or settings.")),
+		html.Nav(html.NavConfig{Label: "Drawer navigation"},
+			html.UnorderedList(html.ListConfig{Class: "drawer-nav-list"},
+				html.ListItem(html.ListItemConfig{}, html.Link(html.LinkConfig{Href: "/", Text: "Home"})),
+				html.ListItem(html.ListItemConfig{}, html.Link(html.LinkConfig{Href: "/products", Text: "Products"})),
+				html.ListItem(html.ListItemConfig{}, html.Link(html.LinkConfig{Href: "/about", Text: "About"})),
+				html.ListItem(html.ListItemConfig{}, html.Link(html.LinkConfig{Href: "/signals", Text: "Signal Demo"})),
 			),
 		),
 	)
@@ -38,13 +38,13 @@ func (s *DemoSheetScreen) ScreenDescription() string  { return "Sheet overlay de
 func (s *DemoSheetScreen) ScreenType() app.ScreenType { return app.ScreenSheet }
 
 func (s *DemoSheetScreen) Render() render.HTML {
-	return elements.Div(elements.DivConfig{Class: "sheet-content"},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Quick Preview")),
-		elements.Paragraph(elements.TextConfig{}, render.Text("A sheet slides up from the bottom. Perfect for previews, action sheets, or quick forms.")),
-		elements.Div(elements.DivConfig{Class: "sheet-product-preview"},
-			elements.Heading(elements.HeadingConfig{Level: 3}, render.Text("Widget Pro")),
-			elements.Paragraph(elements.TextConfig{}, render.Text(fmt.Sprintf("%s%.2f", "$", 29.99))),
-			elements.Paragraph(elements.TextConfig{}, render.Text("High-quality widget with premium features. Add to cart from the products page.")),
+	return html.Div(html.DivConfig{Class: "sheet-content"},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Quick Preview")),
+		html.Paragraph(html.TextConfig{}, render.Text("A sheet slides up from the bottom. Perfect for previews, action sheets, or quick forms.")),
+		html.Div(html.DivConfig{Class: "sheet-product-preview"},
+			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Widget Pro")),
+			html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("%s%.2f", "$", 29.99))),
+			html.Paragraph(html.TextConfig{}, render.Text("High-quality widget with premium features. Add to cart from the products page.")),
 		),
 	)
 }
@@ -60,19 +60,19 @@ func (s *ConfirmDialogScreen) ScreenDescription() string  { return "Confirmation
 func (s *ConfirmDialogScreen) ScreenType() app.ScreenType { return app.ScreenDialog }
 
 func (s *ConfirmDialogScreen) Render() render.HTML {
-	return elements.Div(elements.DivConfig{Class: "confirm-dialog-content"},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Confirm Action")),
-		elements.Paragraph(elements.TextConfig{}, render.Text(s.Message)),
-		elements.Div(elements.DivConfig{Class: "dialog-actions"},
-			elements.Button(elements.ButtonConfig{
+	return html.Div(html.DivConfig{Class: "confirm-dialog-content"},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Confirm Action")),
+		html.Paragraph(html.TextConfig{}, render.Text(s.Message)),
+		html.Div(html.DivConfig{Class: "dialog-actions"},
+			html.Button(html.ButtonConfig{
 				Label: "Cancel",
 				Class: "dialog-cancel-btn",
-				Attrs: elements.Attrs{"data-overlay-close": ""},
+				Attrs: html.Attrs{"data-overlay-close": ""},
 			}),
-			elements.Button(elements.ButtonConfig{
+			html.Button(html.ButtonConfig{
 				Label: "Confirm",
 				Class: "cta-button confirm-btn",
-				Attrs: elements.Attrs{
+				Attrs: html.Attrs{
 					"data-action":        "confirm-action",
 					"data-overlay-close": "",
 				},

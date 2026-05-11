@@ -1,8 +1,16 @@
-// Package app provides the root application hierarchy for GoFastr UI applications.
+// Package app is the URL → rendered page pipeline for GoFastr UI.
 //
-// It defines the App, Layout, Screen, and Router types that compose the
-// top-level structure of a web application. The package includes a simple
-// dependency injection container and code-based routing.
+// It composes the screen registry (Router), the per-screen lifecycle
+// (Screen + Load/Render), the shared chrome (Layout), and the request-
+// in-context helpers into a single App value. Anything that turns
+// "request for URL X" into "rendered HTML for URL X" lives in this
+// package.
+//
+// The DI container is its own concern and lives in the sibling
+// [core-ui/di] package. App wires one in via App.Container so screens
+// can be injected during the Load phase. Visual primitives live in
+// [core-ui/html] (1:1 HTML tags) and [core-ui/patterns] (higher-
+// level UI patterns).
 //
 // # Quick Start
 //
@@ -27,7 +35,8 @@
 //
 // # Dependency Injection
 //
-// The Container type provides a simple DI mechanism. Register constructors
+// App.Provide / App.Inject are thin convenience wrappers over the
+// [core-ui/di.Container] held in App.Container. Register constructors
 // or values with Provide, then resolve them with Resolve or inject them
 // into struct fields tagged with `inject:""`.
 package app

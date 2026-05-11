@@ -1,4 +1,4 @@
-package app
+package di
 
 import (
 	"errors"
@@ -254,43 +254,6 @@ func TestDI_InjectNilPointer(t *testing.T) {
 	err := c.Inject(svc)
 	if err == nil {
 		t.Error("injecting nil pointer should return an error")
-	}
-}
-
-// --- 5. App-level convenience methods ---
-
-func TestDI_AppProvideAndResolve(t *testing.T) {
-	app := NewApp("test")
-	err := app.Provide(func() *Config {
-		return &Config{Env: "testing"}
-	})
-	if err != nil {
-		t.Fatalf("App.Provide: %v", err)
-	}
-
-	var cfg *Config
-	if err := app.Container.Resolve(&cfg); err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if cfg.Env != "testing" {
-		t.Errorf("expected Env='testing', got %q", cfg.Env)
-	}
-}
-
-func TestDI_AppInject(t *testing.T) {
-	app := NewApp("test")
-	app.Provide(&Logger{Prefix: "app"})
-	app.Provide(&Database{DSN: "test://db"})
-
-	svc := &UserService{}
-	if err := app.Inject(svc); err != nil {
-		t.Fatalf("App.Inject: %v", err)
-	}
-	if svc.Log == nil || svc.Log.Prefix != "app" {
-		t.Error("App.Inject should fill tagged fields from App's container")
-	}
-	if svc.DB == nil || svc.DB.DSN != "test://db" {
-		t.Error("App.Inject should fill DB field from App's container")
 	}
 }
 

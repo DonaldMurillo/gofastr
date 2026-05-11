@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/pagination"
+	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -270,7 +270,7 @@ func (s *DataTableDemoScreen) Render() render.HTML {
 
 		ui.Section(ui.SectionConfig{
 			Heading: "Composition",
-			Description: "DataTable wires elements.Table + elements.Caption + elements.TH/TD + framework/ui.EmptyState + core-ui/pagination. Every ARIA role (rowgroup, columnheader, cell) comes from core-ui's elements.",
+			Description: "DataTable wires html.Table + html.Caption + html.TH/TD + framework/ui.EmptyState + core-ui/patterns/pagination. Every ARIA role (rowgroup, columnheader, cell) comes from core-ui's html.",
 		}),
 
 		ui.Section(ui.SectionConfig{

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core-ui/pagination"
+	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -104,7 +104,7 @@ func TestDataTableRendersHeadersAndRows(t *testing.T) {
 			}},
 		},
 	}))
-	// elements.TH/TD add role= attributes; we just check the scope and
+	// html.TH/TD add role= attributes; we just check the scope and
 	// the cell text are present.
 	for _, want := range []string{
 		`scope="col"`, `>Name<`, `>Email<`,

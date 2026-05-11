@@ -1,4 +1,4 @@
-package elements
+package html
 
 import (
 	"fmt"
@@ -7,6 +7,41 @@ import (
 
 	"github.com/gofastr/gofastr/core/render"
 )
+
+// HeadingConfig configures an <h1>–<h6> element.
+// Required: Level (1-6).
+type HeadingConfig struct {
+	Level int // required: 1-6
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// TextConfig configures a text container element (Paragraph, Span, Strong, Em, etc.).
+// No required fields — used for generic text containers.
+type TextConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// AbbrConfig configures an <abbr> element.
+// Required: Title.
+type AbbrConfig struct {
+	Title string // required: full expansion
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// TimeConfig configures a <time> element.
+// Required: Datetime.
+type TimeConfig struct {
+	Datetime string // required: machine-readable datetime
+	Class    string
+	ID       string
+	Attrs    Attrs
+}
 
 // nonAlphaNum matches runs of non-alphanumeric characters for slug generation.
 var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -28,7 +63,7 @@ func slugify(s string) string {
 func Heading(cfg HeadingConfig, children ...render.HTML) render.HTML {
 	level := cfg.Level
 	if level < 1 || level > 6 {
-		panic(fmt.Sprintf("elements: Heading Level must be 1-6, got %d", level))
+		panic(fmt.Sprintf("html: Heading Level must be 1-6, got %d", level))
 	}
 	tag := fmt.Sprintf("h%d", level)
 
@@ -114,7 +149,7 @@ func Mark(cfg TextConfig, children ...render.HTML) render.HTML {
 // Required: Title.
 func Abbr(cfg AbbrConfig, children ...render.HTML) render.HTML {
 	if cfg.Title == "" {
-		panic("elements: Abbr requires Title")
+		panic("html: Abbr requires Title")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "title", cfg.Title)
@@ -125,7 +160,7 @@ func Abbr(cfg AbbrConfig, children ...render.HTML) render.HTML {
 // Required: Datetime.
 func Time(cfg TimeConfig, children ...render.HTML) render.HTML {
 	if cfg.Datetime == "" {
-		panic("elements: Time requires Datetime")
+		panic("html: Time requires Datetime")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "datetime", cfg.Datetime)

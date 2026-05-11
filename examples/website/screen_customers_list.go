@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
-	"github.com/gofastr/gofastr/core-ui/pagination"
+	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -94,7 +94,7 @@ func renderCustomersIsland(sortBy string, sortDir ui.SortDir, page int, query st
 				"email":  render.Text(c.Email),
 				"status": ui.StatusBadge(ui.StatusBadgeConfig{Label: capitalize(string(c.Status)), Variant: c.Status}),
 				"actions": render.Join(
-					elements.Link(elements.LinkConfig{
+					html.Link(html.LinkConfig{
 						Href:  "/customers/" + strconv.FormatInt(c.ID, 10),
 						Text:  "Edit",
 						Class: "ui-link",
@@ -136,7 +136,7 @@ func renderCustomersIsland(sortBy string, sortDir ui.SortDir, page int, query st
 			empty = ui.EmptyStateConfig{
 				Title:       "No customers yet",
 				Description: "Add the first one using the button above.",
-				Action: elements.Link(elements.LinkConfig{
+				Action: html.Link(html.LinkConfig{
 					Href: "/customers/new", Text: "Add customer", Class: "ui-button",
 				}),
 			}
@@ -253,7 +253,7 @@ func (s *CustomersListScreen) Render() render.HTML {
 		Eyebrow:  "CRUD demo",
 		Title:    "Customers",
 		Subtitle: "Sort, paginate, search, create, edit, delete — every interaction is an island RPC. No hard refreshes.",
-		Actions: elements.Link(elements.LinkConfig{
+		Actions: html.Link(html.LinkConfig{
 			Href: "/customers/new", Text: "New customer", Class: "ui-button",
 		}),
 	})

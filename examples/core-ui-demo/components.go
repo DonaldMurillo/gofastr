@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -45,9 +45,9 @@ func productCards() render.HTML {
 	for i, p := range products {
 		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
 	}
-	return elements.Div(elements.DivConfig{
+	return html.Div(html.DivConfig{
 		Class: "product-grid",
-		Attrs: elements.Attrs{"container-type": "inline-size", "container-name": "product-grid"},
+		Attrs: html.Attrs{"container-type": "inline-size", "container-name": "product-grid"},
 	}, cards...)
 }
 
@@ -58,9 +58,9 @@ func featuredProductCards() render.HTML {
 		p := products[i]
 		cards[i] = (&ProductCard{Name: p.Name, Price: p.Price, ImageSrc: p.ImageSrc, ImageAlt: p.ImageAlt, Slug: p.Slug}).Render()
 	}
-	return elements.Div(elements.DivConfig{
+	return html.Div(html.DivConfig{
 		Class: "product-grid",
-		Attrs: elements.Attrs{"container-type": "inline-size", "container-name": "product-grid"},
+		Attrs: html.Attrs{"container-type": "inline-size", "container-name": "product-grid"},
 	}, cards...)
 }
 
@@ -68,19 +68,19 @@ func featuredProductCards() render.HTML {
 type HeaderComponent struct{}
 
 func (h *HeaderComponent) Render() render.HTML {
-	return elements.Nav(
-		elements.NavConfig{Label: "Main navigation"},
-		elements.Div(elements.DivConfig{},
-			elements.Link(elements.LinkConfig{Href: "/", Text: "GoFastr Demo", Attrs: elements.Aria("label", "Home")}),
-			elements.Link(elements.LinkConfig{Href: "/products", Text: "Products"}),
-			elements.Link(elements.LinkConfig{Href: "/about", Text: "About"}),
-			elements.Link(elements.LinkConfig{Href: "/signals", Text: "Signals"}),
-			elements.Link(elements.LinkConfig{Href: "/error-boundary", Text: "Error Boundary"}),
-			elements.Link(elements.LinkConfig{Href: "/dashboard", Text: "Dashboard"}),
-			elements.Link(elements.LinkConfig{Href: "/todos", Text: "Todos"}),
-			elements.LinkHTML(elements.LinkHTMLConfig{
+	return html.Nav(
+		html.NavConfig{Label: "Main navigation"},
+		html.Div(html.DivConfig{},
+			html.Link(html.LinkConfig{Href: "/", Text: "GoFastr Demo", Attrs: html.Aria("label", "Home")}),
+			html.Link(html.LinkConfig{Href: "/products", Text: "Products"}),
+			html.Link(html.LinkConfig{Href: "/about", Text: "About"}),
+			html.Link(html.LinkConfig{Href: "/signals", Text: "Signals"}),
+			html.Link(html.LinkConfig{Href: "/error-boundary", Text: "Error Boundary"}),
+			html.Link(html.LinkConfig{Href: "/dashboard", Text: "Dashboard"}),
+			html.Link(html.LinkConfig{Href: "/todos", Text: "Todos"}),
+			html.LinkHTML(html.LinkHTMLConfig{
 				Href:    "/cart",
-				Content: render.HTML("Cart " + string(elements.Span(elements.TextConfig{Class: "cart-badge"}, render.Text("0")))),
+				Content: render.HTML("Cart " + string(html.Span(html.TextConfig{Class: "cart-badge"}, render.Text("0")))),
 			}),
 		),
 	)
@@ -90,7 +90,7 @@ func (h *HeaderComponent) Render() render.HTML {
 type FooterComponent struct{}
 
 func (f *FooterComponent) Render() render.HTML {
-	return elements.Paragraph(elements.TextConfig{}, render.Text("© 2025 GoFastr Demo. All rights reserved."))
+	return html.Paragraph(html.TextConfig{}, render.Text("© 2025 GoFastr Demo. All rights reserved."))
 }
 
 // HeroComponent renders a hero section with a heading and CTA button.
@@ -102,15 +102,15 @@ type HeroComponent struct {
 }
 
 func (h *HeroComponent) Render() render.HTML {
-	return elements.Section(
-		elements.SectionConfig{Label: "Hero"},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text(h.Title)),
-		elements.Paragraph(elements.TextConfig{}, render.Text(h.Subtitle)),
-		elements.Link(elements.LinkConfig{
+	return html.Section(
+		html.SectionConfig{Label: "Hero"},
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(h.Title)),
+		html.Paragraph(html.TextConfig{}, render.Text(h.Subtitle)),
+		html.Link(html.LinkConfig{
 			Href:  h.CTALink,
 			Text:  h.CTAText,
 			Class: "cta-button",
-			Attrs: elements.Attrs{"role": "button"},
+			Attrs: html.Attrs{"role": "button"},
 		}),
 	)
 }
@@ -122,14 +122,14 @@ type CounterComponent struct {
 }
 
 func (c *CounterComponent) Render() render.HTML {
-	return elements.Div(
-		elements.DivConfig{
+	return html.Div(
+		html.DivConfig{
 			Class: "counter-display",
-			Attrs: elements.Attrs{"data-component": c.ID},
+			Attrs: html.Attrs{"data-component": c.ID},
 		},
-		elements.Button(elements.ButtonConfig{
+		html.Button(html.ButtonConfig{
 			Label: "−",
-			Attrs: elements.Attrs{
+			Attrs: html.Attrs{
 				"data-action": "counter-decrement",
 				"class":       "counter-btn counter-dec",
 			},
@@ -138,9 +138,9 @@ func (c *CounterComponent) Render() render.HTML {
 			"class":                "counter-value",
 			"data-counter-display": "",
 		}, render.Text(fmt.Sprintf("%d", c.Count))),
-		elements.Button(elements.ButtonConfig{
+		html.Button(html.ButtonConfig{
 			Label: "+",
-			Attrs: elements.Attrs{
+			Attrs: html.Attrs{
 				"data-action": "counter-increment",
 				"class":       "counter-btn counter-inc",
 			},
@@ -168,21 +168,21 @@ type ProductCard struct {
 
 func (p *ProductCard) Render() render.HTML {
 	cardContent := render.Join(
-		elements.Image(elements.ImageConfig{Src: p.ImageSrc, Alt: p.ImageAlt}),
-		elements.Heading(elements.HeadingConfig{Level: 3}, render.Text(p.Name)),
-		elements.Paragraph(elements.TextConfig{}, render.Text(fmt.Sprintf("$%.2f", p.Price))),
+		html.Image(html.ImageConfig{Src: p.ImageSrc, Alt: p.ImageAlt}),
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text(p.Name)),
+		html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("$%.2f", p.Price))),
 	)
-	return elements.Article(
-		elements.ArticleConfig{Class: "product-card", Attrs: elements.Attrs{"data-component": "add-to-cart"}},
-		elements.LinkHTML(elements.LinkHTMLConfig{
+	return html.Article(
+		html.ArticleConfig{Class: "product-card", Attrs: html.Attrs{"data-component": "add-to-cart"}},
+		html.LinkHTML(html.LinkHTMLConfig{
 			Href:    "/products/" + p.Slug,
 			Content: cardContent,
 			Class:   "product-card-link",
 		}),
-		elements.Button(elements.ButtonConfig{
+		html.Button(html.ButtonConfig{
 			Label: "Add to cart",
 			Class: "add-to-cart",
-			Attrs: elements.Attrs{
+			Attrs: html.Attrs{
 				"data-action":      "add-to-cart",
 				"data-param-name":  p.Name,
 				"data-param-price": fmt.Sprintf("%.2f", p.Price),
@@ -198,10 +198,10 @@ type CartBadge struct {
 
 func (c *CartBadge) Render() render.HTML {
 	count := c.Count.Get()
-	return elements.Span(
-		elements.TextConfig{
+	return html.Span(
+		html.TextConfig{
 			Class: "cart-badge",
-			Attrs: elements.Attrs{"aria-label": fmt.Sprintf("Cart has %d items", count)},
+			Attrs: html.Attrs{"aria-label": fmt.Sprintf("Cart has %d items", count)},
 		},
 		render.Text(fmt.Sprintf("%d", count)),
 	)
@@ -213,7 +213,7 @@ type InteractiveButton struct {
 }
 
 func (b *InteractiveButton) Render() render.HTML {
-	return elements.Button(elements.ButtonConfig{Label: b.Label, Class: "interactive-btn"})
+	return html.Button(html.ButtonConfig{Label: b.Label, Class: "interactive-btn"})
 }
 
 func (b *InteractiveButton) Actions() {
@@ -226,22 +226,22 @@ func (b *InteractiveButton) Actions() {
 type SearchFilterComponent struct{}
 
 func (s *SearchFilterComponent) Render() render.HTML {
-	return elements.Div(
-		elements.DivConfig{Attrs: elements.Attrs{"data-component": "search-filter"}},
-		elements.Form(elements.FormConfig{Method: "get", Action: "/products"},
-			elements.Label(elements.LabelConfig{For: "search-input", Text: "Search"}),
-			elements.Input(elements.InputConfig{
+	return html.Div(
+		html.DivConfig{Attrs: html.Attrs{"data-component": "search-filter"}},
+		html.Form(html.FormConfig{Method: "get", Action: "/products"},
+			html.Label(html.LabelConfig{For: "search-input", Text: "Search"}),
+			html.Input(html.InputConfig{
 				Type: "search",
 				Name: "q",
 				ID:   "search-input",
-				Attrs: elements.Attrs{
+				Attrs: html.Attrs{
 					"placeholder":      "Search products...",
 					"data-action":      "search-products",
 					"data-action-type": "input",
 					"data-bind":        "search",
 				},
 			}),
-			elements.Button(elements.ButtonConfig{Label: "Search", Type: "submit"}),
+			html.Button(html.ButtonConfig{Label: "Search", Type: "submit"}),
 		),
 	)
 }

@@ -12,10 +12,9 @@ import (
 
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/check"
-	"github.com/gofastr/gofastr/core-ui/compile"
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/framework/uihost"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core-ui/island"
 	"github.com/gofastr/gofastr/core-ui/runtime"
 	"github.com/gofastr/gofastr/core-ui/signal"
@@ -283,7 +282,7 @@ func TestButtonsHaveAccessibleName(t *testing.T) {
 
 func TestComponentComposition(t *testing.T) {
 	inner := &HeroComponent{Title: "Hello", Subtitle: "World", CTAText: "Go", CTALink: "/go"}
-	outer := elements.Div(elements.DivConfig{}, inner.Render())
+	outer := html.Div(html.DivConfig{}, inner.Render())
 	assertContainsAll(t, outer, "<h1", "Hello", "World")
 }
 
@@ -356,12 +355,12 @@ func TestComputedInComponent(t *testing.T) {
 		return count.Get() * 2
 	})
 
-	html := elements.Span(elements.TextConfig{}, render.Text(fmt.Sprintf("%d", double.Get())))
-	assertContains(t, html, "20")
+	out := html.Span(html.TextConfig{}, render.Text(fmt.Sprintf("%d", double.Get())))
+	assertContains(t, out, "20")
 
 	count.Set(5)
-	html2 := elements.Span(elements.TextConfig{}, render.Text(fmt.Sprintf("%d", double.Get())))
-	assertContains(t, html2, "10")
+	out2 := html.Span(html.TextConfig{}, render.Text(fmt.Sprintf("%d", double.Get())))
+	assertContains(t, out2, "10")
 }
 
 func TestSignalSubscribe(t *testing.T) {
@@ -619,33 +618,6 @@ func TestLinterAllowsValid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// I. Compiler Tests
-// ---------------------------------------------------------------------------
-
-func TestCompilerProducesJS(t *testing.T) {
-	src := `package main
-
-import "github.com/gofastr/gofastr/core-ui/elements"
-
-type TestComp struct{}
-
-func (t *TestComp) Render() string {
-	return string(elements.Div(nil))
-}
-`
-	output, err := compile.CompileSource(src)
-	if err != nil {
-		t.Fatalf("CompileSource error: %v", err)
-	}
-	if len(output.JS) == 0 {
-		t.Error("expected non-empty JS output")
-	}
-	if len(output.Errors) > 0 {
-		t.Logf("compiler warnings: %v", output.Errors)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Additional integration tests
 // ---------------------------------------------------------------------------
 
@@ -815,19 +787,19 @@ func TestWidgetHydrationStrategy(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGroupLiveRegion(t *testing.T) {
-	html := elements.Group(elements.GroupConfig{Role: elements.RoleStatus, AriaLabel: "3 items"}, render.Text("3 items"))
+	html := html.Group(html.GroupConfig{Role: html.RoleStatus, AriaLabel: "3 items"}, render.Text("3 items"))
 	assertContainsAll(t, html, `role="status"`, "3 items")
 }
 
 func TestGroupWithAlert(t *testing.T) {
-	html := elements.Group(elements.GroupConfig{Role: elements.RoleAlert}, render.Text("Error!"))
+	html := html.Group(html.GroupConfig{Role: html.RoleAlert}, render.Text("Error!"))
 	assertContainsAll(t, html, `role="alert"`, "Error!")
 }
 
 func TestButtonGroup(t *testing.T) {
-	html := elements.ButtonGroup(elements.ButtonGroupConfig{},
-		elements.Button(elements.ButtonConfig{Label: "Yes", Attrs: elements.OnClick("yes")}),
-		elements.Button(elements.ButtonConfig{Label: "No", Attrs: elements.OnClick("no")}),
+	html := html.ButtonGroup(html.ButtonGroupConfig{},
+		html.Button(html.ButtonConfig{Label: "Yes", Attrs: html.OnClick("yes")}),
+		html.Button(html.ButtonConfig{Label: "No", Attrs: html.OnClick("no")}),
 	)
 	assertContainsAll(t, html, `role="group"`, "Yes", "No")
 }
@@ -837,7 +809,7 @@ func TestButtonGroup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOnClickInButton(t *testing.T) {
-	html := elements.Button(elements.ButtonConfig{Label: "Save", Attrs: elements.OnClick("save")})
+	html := html.Button(html.ButtonConfig{Label: "Save", Attrs: html.OnClick("save")})
 	assertContainsAll(t, html, `data-action="save"`, "Save")
 }
 
@@ -852,22 +824,22 @@ func TestOnInputOnSearchField(t *testing.T) {
 }
 
 func TestEventHelperAttrs(t *testing.T) {
-	onClick := elements.OnClick("action")
+	onClick := html.OnClick("action")
 	if onClick["data-action"] != "action" {
 		t.Errorf("expected data-action=action, got %v", onClick)
 	}
 
-	onSubmit := elements.OnSubmit("submit-form")
+	onSubmit := html.OnSubmit("submit-form")
 	if onSubmit["data-action-type"] != "submit" {
 		t.Errorf("expected data-action-type=submit, got %v", onSubmit)
 	}
 
-	onInput := elements.OnInput("search")
+	onInput := html.OnInput("search")
 	if onInput["data-action-type"] != "input" {
 		t.Errorf("expected data-action-type=input, got %v", onInput)
 	}
 
-	onChange := elements.OnChange("category")
+	onChange := html.OnChange("category")
 	if onChange["data-action-type"] != "change" {
 		t.Errorf("expected data-action-type=change, got %v", onChange)
 	}

@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -36,31 +36,31 @@ func (s *DashboardScreen) Render() render.HTML {
 		proofText = fmt.Sprintf("DI working! StatsService injected (PageViews=%d, Interactions=%d). Reload this page — the counter keeps climbing because it's the SAME Go pointer in memory.", views, actions)
 	}
 
-	return elements.Div(elements.DivConfig{Class: "di-showcase"},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Dependency Injection")),
-		elements.Paragraph(elements.TextConfig{}, render.Text(
+	return html.Div(html.DivConfig{Class: "di-showcase"},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Dependency Injection")),
+		html.Paragraph(html.TextConfig{}, render.Text(
 			"StatsService is registered once at startup and injected into this screen via `inject:\"\"` struct tags. "+
 				"Reload this page — the Page Views counter keeps climbing because it's the same singleton in memory.",
 		)),
-		elements.Div(elements.DivConfig{Class: "di-card-grid"},
-			elements.Div(elements.DivConfig{Class: "di-card"},
-				elements.Div(elements.DivConfig{Class: "di-card-icon"}, render.Text("👁")),
-				elements.Div(elements.DivConfig{Class: "di-card-label"}, render.Text("Page Views (from DI singleton)")),
-				elements.Div(elements.DivConfig{Class: "di-card-value", Attrs: elements.Attrs{"data-count": "views"}}, render.Text(fmt.Sprintf("%d", views))),
-				elements.Div(elements.DivConfig{Class: "di-card-hint"}, render.Text("Reload to see this increment")),
+		html.Div(html.DivConfig{Class: "di-card-grid"},
+			html.Div(html.DivConfig{Class: "di-card"},
+				html.Div(html.DivConfig{Class: "di-card-icon"}, render.Text("👁")),
+				html.Div(html.DivConfig{Class: "di-card-label"}, render.Text("Page Views (from DI singleton)")),
+				html.Div(html.DivConfig{Class: "di-card-value", Attrs: html.Attrs{"data-count": "views"}}, render.Text(fmt.Sprintf("%d", views))),
+				html.Div(html.DivConfig{Class: "di-card-hint"}, render.Text("Reload to see this increment")),
 			),
-			elements.Div(elements.DivConfig{Class: "di-card"},
-				elements.Div(elements.DivConfig{Class: "di-card-icon"}, render.Text("📊")),
-				elements.Div(elements.DivConfig{Class: "di-card-label"}, render.Text("Service Memory Address")),
-				elements.Div(elements.DivConfig{Class: "di-card-value"}, render.Text(fmt.Sprintf("%p", s.Stats))),
-				elements.Div(elements.DivConfig{Class: "di-card-hint"}, render.Text("Same address every reload = same object")),
+			html.Div(html.DivConfig{Class: "di-card"},
+				html.Div(html.DivConfig{Class: "di-card-icon"}, render.Text("📊")),
+				html.Div(html.DivConfig{Class: "di-card-label"}, render.Text("Service Memory Address")),
+				html.Div(html.DivConfig{Class: "di-card-value"}, render.Text(fmt.Sprintf("%p", s.Stats))),
+				html.Div(html.DivConfig{Class: "di-card-hint"}, render.Text("Same address every reload = same object")),
 			),
 		),
-		elements.Div(elements.DivConfig{Class: "di-proof"}, render.Text(proofText)),
-		elements.Details(elements.DetailsConfig{Class: "di-details"},
-			elements.Summary(elements.SummaryConfig{}, render.Text("How this works (code)")),
-			elements.Div(elements.DivConfig{Class: "di-code-block"},
-				elements.Pre(elements.TextConfig{}, render.Text(`// 1. Register singleton at app setup (app.go):
+		html.Div(html.DivConfig{Class: "di-proof"}, render.Text(proofText)),
+		html.Details(html.DetailsConfig{Class: "di-details"},
+			html.Summary(html.SummaryConfig{}, render.Text("How this works (code)")),
+			html.Div(html.DivConfig{Class: "di-code-block"},
+				html.Pre(html.TextConfig{}, render.Text(`// 1. Register singleton at app setup (app.go):
 app.Provide(&StatsService{})
 
 // 2. Screen declares dependency via tag (this file):

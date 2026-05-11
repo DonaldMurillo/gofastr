@@ -1,6 +1,116 @@
-package elements
+package html
 
 import "github.com/gofastr/gofastr/core/render"
+
+// DivConfig configures a <div> element. No required fields.
+type DivConfig struct {
+	Class     string
+	ID        string
+	Role      string
+	AriaLabel string
+	Attrs     Attrs // passthrough for any extra attributes
+}
+
+// ArticleConfig configures an <article> element. No required fields.
+type ArticleConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// SectionConfig configures a <section> element.
+// Required: Label or LabelledBy (one must be set — becomes aria-label/aria-labelledby).
+type SectionConfig struct {
+	Label      string // required → aria-label
+	LabelledBy string // alternative → aria-labelledby
+	Class      string
+	ID         string
+	Attrs      Attrs
+}
+
+// MainConfig configures a <main> element.
+// Automatically adds role="main" and id="main-content".
+type MainConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// HeaderConfig configures a <header> element.
+// Automatically adds role="banner".
+type HeaderConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// FooterConfig configures a <footer> element.
+// Automatically adds role="contentinfo".
+type FooterConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// NavConfig configures a <nav> element.
+// Required: Label or LabelledBy (one must be set — becomes aria-label/aria-labelledby).
+// Automatically adds role="navigation".
+type NavConfig struct {
+	Label      string // required → aria-label
+	LabelledBy string // alternative → aria-labelledby
+	Class      string
+	ID         string
+	Attrs      Attrs
+}
+
+// AsideConfig configures an <aside> element.
+// Required: Label or LabelledBy (one must be set).
+// Automatically adds role="complementary".
+type AsideConfig struct {
+	Label      string // required → aria-label
+	LabelledBy string // alternative → aria-labelledby
+	Class      string
+	ID         string
+	Attrs      Attrs
+}
+
+// FigureConfig configures a <figure> element. No required fields.
+type FigureConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// FigCaptionConfig configures a <figcaption> element. No required fields.
+type FigCaptionConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// DetailsConfig configures a <details> element. No required fields.
+type DetailsConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// SummaryConfig configures a <summary> element. No required fields.
+type SummaryConfig struct {
+	Class string
+	ID    string
+	Attrs Attrs
+}
+
+// GroupConfig configures a <div> with an ARIA role.
+// Required: Role.
+type GroupConfig struct {
+	Role      string // required
+	AriaLabel string
+	Class     string
+	ID        string
+	Attrs     Attrs
+}
 
 // Div produces a <div> element.
 func Div(cfg DivConfig, children ...render.HTML) render.HTML {
@@ -26,7 +136,7 @@ func Article(cfg ArticleConfig, children ...render.HTML) render.HTML {
 // corresponding aria attribute.
 func Section(cfg SectionConfig, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
-		panic("elements: Section requires Label or LabelledBy")
+		panic("html: Section requires Label or LabelledBy")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
@@ -70,7 +180,7 @@ func Footer(cfg FooterConfig, children ...render.HTML) render.HTML {
 // Required: Label or LabelledBy.
 func Nav(cfg NavConfig, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
-		panic("elements: Nav requires Label or LabelledBy")
+		panic("html: Nav requires Label or LabelledBy")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
@@ -87,7 +197,7 @@ func Nav(cfg NavConfig, children ...render.HTML) render.HTML {
 // Required: Label or LabelledBy.
 func Aside(cfg AsideConfig, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
-		panic("elements: Aside requires Label or LabelledBy")
+		panic("html: Aside requires Label or LabelledBy")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
@@ -130,7 +240,7 @@ func Summary(cfg SummaryConfig, children ...render.HTML) render.HTML {
 // Required: Role.
 func Group(cfg GroupConfig, children ...render.HTML) render.HTML {
 	if cfg.Role == "" {
-		panic("elements: Group requires Role")
+		panic("html: Group requires Role")
 	}
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "role", cfg.Role)

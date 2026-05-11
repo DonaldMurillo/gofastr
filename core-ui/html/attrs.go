@@ -1,4 +1,4 @@
-package elements
+package html
 
 import (
 	"strings"
@@ -64,14 +64,14 @@ func Aria(key, value string) Attrs {
 }
 
 // OnClick returns Attrs with data-action set to the given action name.
-// Used to wire up click handlers on elements.
+// Used to wire up click handlers on html.
 // Example: Button("Save", OnClick("save"))
 func OnClick(action string) Attrs {
 	return Attrs{"data-action": action}
 }
 
 // OnSubmit returns Attrs with data-action set and data-action-type="submit".
-// Used on form elements.
+// Used on form html.
 func OnSubmit(action string) Attrs {
 	return Attrs{"data-action": action, "data-action-type": "submit"}
 }
@@ -95,9 +95,9 @@ func OnChange(action string) Attrs {
 // Usage:
 //
 //	search := signal.New("")
-//	elements.Input(elements.Text, "search",
-//	    elements.Bind("search"),
-//	    elements.Placeholder("Search..."),
+//	html.Input(html.Text, "search",
+//	    html.Bind("search"),
+//	    html.Placeholder("Search..."),
 //	)
 func Bind(key string) Attrs {
 	return Attrs{"data-bind": key}
@@ -107,8 +107,8 @@ func Bind(key string) Attrs {
 // The containerType is typically "inline-size" (respond to width) or "size" (width + height).
 // Use this on parent elements whose children should respond to the parent's size.
 //
-//	elements.Div(
-//		elements.ContainerType("inline-size", "product-grid"),
+//	html.Div(
+//		html.ContainerType("inline-size", "product-grid"),
 //		productCards...,
 //	)
 func ContainerType(containerType string, name string) Attrs {

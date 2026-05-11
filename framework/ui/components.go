@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -22,8 +22,8 @@ type PageHeaderConfig struct {
 // PageHeader renders a top-of-page header with title, optional subtitle
 // and eyebrow label, and an action slot.
 //
-// Composition: elements.Header (semantic <header role="banner">) +
-// elements.Heading (h1) + elements.Paragraph for eyebrow/subtitle.
+// Composition: html.Header (semantic <header role="banner">) +
+// html.Heading (h1) + html.Paragraph for eyebrow/subtitle.
 func PageHeader(cfg PageHeaderConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: PageHeader requires Title")
@@ -34,25 +34,25 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 	}
 	textChildren := []render.HTML{}
 	if cfg.Eyebrow != "" {
-		textChildren = append(textChildren, elements.Paragraph(
-			elements.TextConfig{Class: "ui-page-header__eyebrow"},
+		textChildren = append(textChildren, html.Paragraph(
+			html.TextConfig{Class: "ui-page-header__eyebrow"},
 			render.Text(cfg.Eyebrow)))
 	}
 	textChildren = append(textChildren,
-		elements.Heading(elements.HeadingConfig{Level: 1,
+		html.Heading(html.HeadingConfig{Level: 1,
 			Class: "ui-page-header__title"}, render.Text(cfg.Title)))
 	if cfg.Subtitle != "" {
-		textChildren = append(textChildren, elements.Paragraph(
-			elements.TextConfig{Class: "ui-page-header__subtitle"},
+		textChildren = append(textChildren, html.Paragraph(
+			html.TextConfig{Class: "ui-page-header__subtitle"},
 			render.Text(cfg.Subtitle)))
 	}
-	textBlock := elements.Div(elements.DivConfig{Class: "ui-page-header__text"}, textChildren...)
+	textBlock := html.Div(html.DivConfig{Class: "ui-page-header__text"}, textChildren...)
 	body := []render.HTML{textBlock}
 	if cfg.Actions != "" {
-		body = append(body, elements.Div(
-			elements.DivConfig{Class: "ui-page-header__actions"}, cfg.Actions))
+		body = append(body, html.Div(
+			html.DivConfig{Class: "ui-page-header__actions"}, cfg.Actions))
 	}
-	return elements.Header(elements.HeaderConfig{Class: cls, ID: cfg.ID}, body...)
+	return html.Header(html.HeaderConfig{Class: cls, ID: cfg.ID}, body...)
 }
 
 // slug normalizes text into a URL/id-safe slug.
@@ -90,7 +90,7 @@ type SectionConfig struct {
 // Section renders a content section with consistent spacing and an
 // optional heading + description.
 //
-// Composition: a labelled <section> via elements.Section. When a
+// Composition: a labelled <section> via html.Section. When a
 // Heading is provided, an h2 + aria-labelledby wires up the
 // accessibility name; otherwise a generic aria-label is required.
 // Without a heading or label this would silently produce an
@@ -106,21 +106,21 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	headingID := ""
 	if cfg.Heading != "" {
 		headingID = "ui-section-" + slug(cfg.Heading)
-		out = append(out, elements.Heading(elements.HeadingConfig{
+		out = append(out, html.Heading(html.HeadingConfig{
 			Level: 2, ID: headingID, Class: "ui-section__heading",
 		}, render.Text(cfg.Heading)))
 	}
 	if cfg.Description != "" {
-		out = append(out, elements.Paragraph(
-			elements.TextConfig{Class: "ui-section__description"},
+		out = append(out, html.Paragraph(
+			html.TextConfig{Class: "ui-section__description"},
 			render.Text(cfg.Description)))
 	}
 	if len(body) > 0 {
-		out = append(out, elements.Div(
-			elements.DivConfig{Class: "ui-section__body"}, body...))
+		out = append(out, html.Div(
+			html.DivConfig{Class: "ui-section__body"}, body...))
 	}
 
-	secCfg := elements.SectionConfig{Class: cls, ID: cfg.ID}
+	secCfg := html.SectionConfig{Class: cls, ID: cfg.ID}
 	if headingID != "" {
 		secCfg.LabelledBy = headingID
 	} else {
@@ -129,7 +129,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		// at least announced, rather than panicking on every call site.
 		secCfg.Label = "Section"
 	}
-	return elements.Section(secCfg, out...)
+	return html.Section(secCfg, out...)
 }
 
 // ─── FormField ──────────────────────────────────────────────────────
@@ -164,36 +164,36 @@ func FormField(cfg FormFieldConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	labelHTML := elements.Label(elements.LabelConfig{
+	labelHTML := html.Label(html.LabelConfig{
 		For:   cfg.For,
 		Text:  cfg.Label,
 		Class: "ui-form-field__label",
 	})
 	if cfg.Required {
 		// Append a visible "*" inside the label by wrapping the label
-		// + a sibling span. (elements.Label's Text covers the simple
+		// + a sibling span. (html.Label's Text covers the simple
 		// case; we add the asterisk via a sibling span so the label
 		// element stays a single accessible name.)
 		labelHTML = render.Join(labelHTML,
-			elements.Span(elements.TextConfig{
+			html.Span(html.TextConfig{
 				Class: "ui-form-field__required",
-				Attrs: elements.Attrs{"aria-hidden": "true"},
+				Attrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
 	out := []render.HTML{labelHTML, cfg.Input}
 	if cfg.Help != "" && cfg.Error == "" {
-		out = append(out, elements.Paragraph(elements.TextConfig{
+		out = append(out, html.Paragraph(html.TextConfig{
 			Class: "ui-form-field__help", ID: cfg.For + "-help",
 		}, render.Text(cfg.Help)))
 	}
 	if cfg.Error != "" {
-		out = append(out, elements.Paragraph(elements.TextConfig{
+		out = append(out, html.Paragraph(html.TextConfig{
 			Class: "ui-form-field__error",
 			ID:    cfg.For + "-error",
-			Attrs: elements.Attrs{"role": "alert"},
+			Attrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	}
-	return elements.Div(elements.DivConfig{Class: cls}, out...)
+	return html.Div(html.DivConfig{Class: cls}, out...)
 }
 
 // ─── FormSection ────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ type FormSectionConfig struct {
 
 // FormSection wraps a group of FormFields with a shared heading.
 //
-// Composition: elements.FieldSet + a heading-driven legend when a
+// Composition: html.FieldSet + a heading-driven legend when a
 // heading is provided; otherwise a plain <div> container so screen
 // readers don't announce an empty group label.
 func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
@@ -220,24 +220,24 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 		// unlabelled grouping landmark.
 		out := []render.HTML{}
 		if cfg.Description != "" {
-			out = append(out, elements.Paragraph(
-				elements.TextConfig{Class: "ui-form-section__description"},
+			out = append(out, html.Paragraph(
+				html.TextConfig{Class: "ui-form-section__description"},
 				render.Text(cfg.Description)))
 		}
-		out = append(out, elements.Div(
-			elements.DivConfig{Class: "ui-form-section__fields"}, fields...))
-		return elements.Div(elements.DivConfig{Class: cls}, out...)
+		out = append(out, html.Div(
+			html.DivConfig{Class: "ui-form-section__fields"}, fields...))
+		return html.Div(html.DivConfig{Class: cls}, out...)
 	}
 	out := []render.HTML{}
 	if cfg.Description != "" {
-		out = append(out, elements.Paragraph(
-			elements.TextConfig{Class: "ui-form-section__description"},
+		out = append(out, html.Paragraph(
+			html.TextConfig{Class: "ui-form-section__description"},
 			render.Text(cfg.Description)))
 	}
-	out = append(out, elements.Div(
-		elements.DivConfig{Class: "ui-form-section__fields"}, fields...))
-	return elements.FieldSet(
-		elements.FieldSetConfig{Legend: cfg.Heading, Class: cls},
+	out = append(out, html.Div(
+		html.DivConfig{Class: "ui-form-section__fields"}, fields...))
+	return html.FieldSet(
+		html.FieldSetConfig{Legend: cfg.Heading, Class: cls},
 		out...)
 }
 
@@ -247,7 +247,7 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 type DangerButtonConfig struct {
 	Label string // required visible text + aria-label
 	Type  string // "button" (default) | "submit" | "reset"
-	Attrs elements.Attrs
+	Attrs html.Attrs
 	ID    string
 	Class string
 }
@@ -263,7 +263,7 @@ func DangerButton(cfg DangerButtonConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return elements.Button(elements.ButtonConfig{
+	return html.Button(html.ButtonConfig{
 		Label: cfg.Label,
 		Type:  cfg.Type,
 		Class: cls,
@@ -306,7 +306,7 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return elements.Span(elements.TextConfig{Class: cls, ID: cfg.ID},
+	return html.Span(html.TextConfig{Class: cls, ID: cfg.ID},
 		render.Text(cfg.Label))
 }
 
@@ -324,7 +324,7 @@ type EmptyStateConfig struct {
 // EmptyState renders a centered title + description + optional CTA for
 // blank lists or zero-data screens.
 //
-// Composition: elements.Heading (h3) + elements.Paragraph + a div for
+// Composition: html.Heading (h3) + html.Paragraph + a div for
 // the action slot.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
 	if cfg.Title == "" {
@@ -335,20 +335,20 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	out := []render.HTML{
-		elements.Heading(elements.HeadingConfig{
+		html.Heading(html.HeadingConfig{
 			Level: 3, Class: "ui-empty-state__title",
 		}, render.Text(cfg.Title)),
 	}
 	if cfg.Description != "" {
-		out = append(out, elements.Paragraph(
-			elements.TextConfig{Class: "ui-empty-state__description"},
+		out = append(out, html.Paragraph(
+			html.TextConfig{Class: "ui-empty-state__description"},
 			render.Text(cfg.Description)))
 	}
 	if cfg.Action != "" {
-		out = append(out, elements.Div(
-			elements.DivConfig{Class: "ui-empty-state__action"}, cfg.Action))
+		out = append(out, html.Div(
+			html.DivConfig{Class: "ui-empty-state__action"}, cfg.Action))
 	}
-	return elements.Div(elements.DivConfig{Class: cls, ID: cfg.ID}, out...)
+	return html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...)
 }
 
 // ─── Callout ────────────────────────────────────────────────────────
@@ -364,7 +364,7 @@ type CalloutConfig struct {
 // Callout renders a persistent info/warning/error block. Distinct from
 // Toast / Notification (ephemeral) — Callouts live inline with content.
 //
-// Composition: elements.Aside (which auto-applies role=complementary
+// Composition: html.Aside (which auto-applies role=complementary
 // and requires an aria-label, here derived from Title or variant).
 // Falls through to a plain <div> with the appropriate role when no
 // Title is set, so the variant-driven role takes precedence over a
@@ -380,31 +380,31 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	}
 	out := []render.HTML{}
 	if cfg.Title != "" {
-		out = append(out, elements.Strong(
-			elements.TextConfig{Class: "ui-callout__title"},
+		out = append(out, html.Strong(
+			html.TextConfig{Class: "ui-callout__title"},
 			render.Text(cfg.Title)))
 	}
 	if len(body) > 0 {
-		out = append(out, elements.Div(
-			elements.DivConfig{Class: "ui-callout__body"}, body...))
+		out = append(out, html.Div(
+			html.DivConfig{Class: "ui-callout__body"}, body...))
 	}
 
-	// We want role="alert" on danger/warning callouts; elements.Aside
+	// We want role="alert" on danger/warning callouts; html.Aside
 	// always applies role=complementary, so for those variants we use
-	// a div + explicit role via elements.Div+Attrs.
+	// a div + explicit role via html.Div+Attrs.
 	role := calloutRole(v)
 	if role == "alert" {
-		return elements.Div(elements.DivConfig{
+		return html.Div(html.DivConfig{
 			Class: cls, ID: cfg.ID, Role: "alert",
 		}, out...)
 	}
-	// Note "info" role: elements.Aside requires Label/LabelledBy. Use
+	// Note "info" role: html.Aside requires Label/LabelledBy. Use
 	// the variant name as a safe fallback when no Title is provided.
 	label := cfg.Title
 	if label == "" {
 		label = string(v) + " note"
 	}
-	return elements.Aside(elements.AsideConfig{
+	return html.Aside(html.AsideConfig{
 		Class: cls, ID: cfg.ID, Label: label,
 	}, out...)
 }
@@ -455,19 +455,19 @@ func StatCard(cfg StatCardConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	out := []render.HTML{
-		elements.Paragraph(elements.TextConfig{Class: "ui-stat-card__label"}, render.Text(cfg.Label)),
-		elements.Paragraph(elements.TextConfig{Class: "ui-stat-card__value"}, render.Text(cfg.Value)),
+		html.Paragraph(html.TextConfig{Class: "ui-stat-card__label"}, render.Text(cfg.Label)),
+		html.Paragraph(html.TextConfig{Class: "ui-stat-card__value"}, render.Text(cfg.Value)),
 	}
 	if cfg.Trend != "" {
 		dir := cfg.Direction
 		if dir == "" {
 			dir = TrendFlat
 		}
-		out = append(out, elements.Paragraph(
-			elements.TextConfig{Class: "ui-stat-card__trend ui-stat-card__trend--" + string(dir)},
+		out = append(out, html.Paragraph(
+			html.TextConfig{Class: "ui-stat-card__trend ui-stat-card__trend--" + string(dir)},
 			render.Text(cfg.Trend)))
 	}
-	return elements.Div(elements.DivConfig{Class: cls, ID: cfg.ID}, out...)
+	return html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...)
 }
 
 // ─── Avatar ─────────────────────────────────────────────────────────
@@ -508,21 +508,21 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	spanCfg := elements.TextConfig{
+	spanCfg := html.TextConfig{
 		Class: cls, ID: cfg.ID,
 	}
 	if cfg.Src != "" {
-		return elements.Span(spanCfg,
-			elements.Image(elements.ImageConfig{
+		return html.Span(spanCfg,
+			html.Image(html.ImageConfig{
 				Src: cfg.Src, Alt: cfg.Name, Class: "ui-avatar__img",
 			}))
 	}
-	return elements.Span(spanCfg,
-		elements.Span(elements.TextConfig{
+	return html.Span(spanCfg,
+		html.Span(html.TextConfig{
 			Class: "ui-avatar__initials",
-			Attrs: elements.Attrs{"aria-hidden": "true"},
+			Attrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text(initials(cfg.Name))),
-		elements.Span(elements.TextConfig{Class: "ui-visually-hidden"},
+		html.Span(html.TextConfig{Class: "ui-visually-hidden"},
 			render.Text(cfg.Name)),
 	)
 }

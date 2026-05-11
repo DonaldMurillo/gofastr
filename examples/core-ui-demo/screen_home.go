@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -23,27 +23,27 @@ func (s *HomeScreen) Render() render.HTML {
 
 	counter := &CounterComponent{ID: "home-counter", Count: 0}
 
-	return elements.Div(elements.DivConfig{},
+	return html.Div(html.DivConfig{},
 		hero.Render(),
-		elements.Section(
-			elements.SectionConfig{Label: "Interactive counter"},
-			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Try It Live")),
-			elements.Paragraph(elements.TextConfig{}, render.Text("Click the buttons — the Go counter compiles to JS that runs in your browser.")),
+		html.Section(
+			html.SectionConfig{Label: "Interactive counter"},
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Try It Live")),
+			html.Paragraph(html.TextConfig{}, render.Text("Click the buttons — the Go counter compiles to JS that runs in your browser.")),
 			counter.Render(),
 		),
-		elements.Section(
-			elements.SectionConfig{Label: "Overlay demos"},
-			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Overlays")),
-			elements.Paragraph(elements.TextConfig{}, render.Text("Drawers, sheets, and dialogs — all powered by the runtime overlay manager.")),
-			elements.Div(elements.DivConfig{Class: "overlay-demo-buttons"},
+		html.Section(
+			html.SectionConfig{Label: "Overlay demos"},
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Overlays")),
+			html.Paragraph(html.TextConfig{}, render.Text("Drawers, sheets, and dialogs — all powered by the runtime overlay manager.")),
+			html.Div(html.DivConfig{Class: "overlay-demo-buttons"},
 				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('drawer','/demo-drawer')"}, render.Text("Open Drawer")),
 				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('sheet','/demo-sheet')"}, render.Text("Open Sheet")),
 				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('dialog','/confirm-dialog')"}, render.Text("Open Dialog")),
 			),
 		),
-		elements.Section(
-			elements.SectionConfig{Label: "Featured products"},
-			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Featured Products")),
+		html.Section(
+			html.SectionConfig{Label: "Featured products"},
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Featured Products")),
 			featuredProductCards(),
 		),
 	)
