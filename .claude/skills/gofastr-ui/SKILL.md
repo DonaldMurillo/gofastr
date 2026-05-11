@@ -51,6 +51,50 @@ code.
 | An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPCWithSignal(...)`) |
 | A theme token | `framework/ui/theme` |
 | A reactive value pushed by the server | `core-ui/signal` + an SSE binding on the widget |
+| **Per-component CSS** (loaded on demand, dedup'd, never re-fetched) | `core-ui/registry` (`RegisterStyle` + `Style.WrapHTML`) |
+
+## Per-component CSS — the registry pattern
+
+Component-owned CSS ships as a real `<link>` (never inline), loaded
+lazily on first appearance, dedup'd globally, and always scoped to
+`[data-fui-comp="<name>"]`. Global resets / typography / theme tokens
+stay in `theme.css` or `WithCustomCSS`.
+
+```go
+// styles_mything.go — registration + builder
+var myThingStyle = registry.RegisterStyle("ui-my-thing", myThingCSS)
+
+func myThingCSS(t style.Theme) string {
+    return style.NewComponentSheet("ui-my-thing", t).
+        Rule("&").Set("display", "flex").End().              // & = the marker element
+        Rule(".header").Set("font-weight", "700").End().     // descendant
+        Rule(".body").Set("padding", "{spacing.lg}").End().
+        MustBuild()
+}
+
+// at the render site — wrap the outer tag with .WrapHTML
+func MyThing(cfg MyThingConfig) render.HTML {
+    return myThingStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-my-thing"}, …))
+}
+```
+
+**Load modes:**
+- `LoadAuto` (default) — load when marker first hits DOM. SSR emits link on pages that use it.
+- `LoadPrewarm` — same as Auto + throttled `requestIdleCallback` prefetch.
+- `LoadAlways` — emit link on every page (use for chrome on essentially every screen).
+
+**Migration recipe** (extracting rules from a shared `BaseCSS()`):
+1. Move rules for `<name>` into a `<name>CSS(theme)` builder.
+2. Either use `ComponentSheet` (auto-scopes) or hand-prefix every selector with `[data-fui-comp="<name>"]`.
+3. `RegisterStyle("ui-<name>", <name>CSS, …opts)` in a package var.
+4. Wrap the helper's return value with `Style.WrapHTML(...)`.
+5. Delete the rules from `BaseCSS()`.
+
+**Hard rules:**
+- ❌ Never write inline `<style>` blocks for component CSS — always go through the registry.
+- ❌ Never write selectors that try to escape the scope (`body`, `html`, `:root`, `*`, `::backdrop`) — `ComponentSheet` rejects them at process startup.
+- ✅ Use `&` in `ComponentSheet` to reference the marker element itself.
+- ✅ Test CSS without chromedp by building the `ComponentSheet` directly.
 
 ## Runtime data-attributes (do not invent new ones without updating the doc)
 
@@ -60,6 +104,7 @@ code.
 | `data-fui-rpc-signal="<name>"` | Response body becomes the value of signal `<name>` |
 | `data-fui-signal="<name>"` mode=`text\|html\|attr` | Element auto-updates when the signal changes |
 | `data-fui-open="<widget>"` | Opens a mounted widget |
+| `data-fui-comp="<name>"` | Marker for a registered styled component — runtime loads `/__gofastr/comp/<name>.css` once |
 
 The runtime + the data-attributes ARE the API surface for hydration.
 Adding new attributes requires updating `core-ui/ARCHITECTURE.md` and

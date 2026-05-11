@@ -143,6 +143,21 @@ type Definition struct {
 // runtime (window.__gofastr) fetches /__gofastr/widgets at startup and
 // mounts every entry. One scripted runtime URL on the page; arbitrarily
 // many widgets register through the registry.
+//
+// Coexistence with core-ui/registry: this registry is widget-specific
+// (Position, Slots, RPCs, Skeleton, SSE bindings, etc.). The newer
+// core-ui/registry handles per-component CSS for plain styled
+// components and is fetched by the runtime as
+// window.__gofastr_catalog. Both share the data-fui-style="<name>"
+// link dedup key on the client, so a widget and a registered component
+// can't collide on names.
+//
+// TODO(follow-up): consider folding Definition into
+// core-ui/registry.Entry as an opaque Widget *any field once the
+// import graph allows it without cycles. Today widget imports
+// signal, island, component, html, render, style; registry imports
+// only style + component. Inverting that requires a small Widget
+// interface in registry, with widget defining the concrete type.
 var (
 	registryMu sync.Mutex
 	registry   = map[string]*Definition{}

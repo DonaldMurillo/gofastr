@@ -1,5 +1,17 @@
 package style
 
+// Deprecated: the per-screen CSS chunk preload system (RouteGraph,
+// RoutePreload, the /__gofastr/css/<path> endpoint, and the runtime's
+// loadCSS(path)) is superseded by the per-component registry at
+// core-ui/registry. New code should declare CSS via
+// registry.RegisterStyle and wrap renders with Style.WrapHTML; the
+// runtime auto-loads each component's scoped sheet on first
+// appearance and dedups globally across pages.
+//
+// This file is retained for apps still wiring screen-level chunks via
+// uihost.WithRouteGraph; it will be removed once those consumers
+// migrate.
+
 // RouteGraph represents the navigation flow of the application.
 type RouteGraph struct {
 	Routes map[string]RouteInfo // path → info

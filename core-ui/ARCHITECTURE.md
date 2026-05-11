@@ -329,6 +329,13 @@ mounted chrome HTML is scanned in `mountWidget` and any new
 serves from `/core-ui/widget/<name>/style.css` for backwards
 compatibility; future work may collapse the two paths.
 
+Both registries coexist safely: they share the
+`data-fui-style="<name>"` link dedup key on the client, so a widget
+and a registered styled component can never double-load CSS even
+if a future change merges them. Widgets surface through
+`/__gofastr/widgets`; styled components surface through
+`/__gofastr/catalog.js` and `/__gofastr/comp/<name>.css`.
+
 ---
 
 ## What lives where

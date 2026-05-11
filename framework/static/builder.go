@@ -89,6 +89,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if rg := b.Host.RouteGraphJS(); rg != "" {
 		assets = append(assets, asset{urlPath: "/__gofastr/routes.js", body: []byte(rg)})
 	}
+	// Component catalog + per-component scoped sheets. The rendered
+	// HTML references /__gofastr/comp/<name>.css for each registered
+	// component (static export sets bundle=false so the rendered HTML
+	// never references the dynamic comp-bundle.css?names=… URL).
+	if cat := b.Host.CatalogJS(); cat != "" {
+		assets = append(assets, asset{urlPath: "/__gofastr/catalog.js", body: []byte(cat)})
+	}
+	for url, css := range b.Host.ComponentCSSFiles() {
+		assets = append(assets, asset{urlPath: url, body: []byte(css)})
+	}
 	for _, a := range assets {
 		dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(a.urlPath, "/")))
 		if err := writeFile(dst, a.body); err != nil {

@@ -133,6 +133,53 @@ func (ds *UIHost) CustomCSS() string {
 	return ds.customCSS
 }
 
+// ActiveTheme returns the configured theme or the default if unset.
+// Exposed for tooling (e.g. the static-site builder) that needs to
+// resolve theme tokens at build time.
+func (ds *UIHost) ActiveTheme() style.Theme {
+	return ds.activeTheme()
+}
+
+// CatalogJS returns the body of /__gofastr/catalog.js — the
+// window.__gofastr_catalog seed the runtime reads on boot. Used by
+// the static-site builder to emit the same file SSG output expects.
+func (ds *UIHost) CatalogJS() string {
+	all := registry.All()
+	if len(all) == 0 {
+		return ""
+	}
+	theme := ds.activeTheme()
+	cat := make(map[string]map[string]any, len(all))
+	for _, e := range all {
+		cat[e.Name] = map[string]any{
+			"stylePath": "/__gofastr/comp/" + e.Name + ".css",
+			"version":   e.VersionFor(theme),
+			"loadMode":  loadModeString(e.Load),
+		}
+	}
+	buf, err := json.Marshal(cat)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("window.__gofastr_catalog = %s;\n", buf)
+}
+
+// ComponentCSSFiles returns one asset per registered component:
+// urlPath ("/__gofastr/comp/<name>.css") and the scoped CSS body
+// resolved under the active theme. Used by the static-site builder.
+func (ds *UIHost) ComponentCSSFiles() map[string]string {
+	all := registry.All()
+	if len(all) == 0 {
+		return nil
+	}
+	theme := ds.activeTheme()
+	out := make(map[string]string, len(all))
+	for _, e := range all {
+		out["/__gofastr/comp/"+e.Name+".css"] = e.CSSFor(theme)
+	}
+	return out
+}
+
 // RouteGraphJS returns the JS body that bootstraps window.__gofastr_routes
 // (sans <script> tags). Used by the static builder to write the same
 // payload as a real .js file.
@@ -372,6 +419,15 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 // is injected too. SSG output passes "" for sessionID — the client will
 // lazily create a session on first interaction if it ever needs one.
 func (ds *UIHost) injectChrome(page, sessionID string) string {
+	return ds.injectChromeMode(page, sessionID, true)
+}
+
+// injectChromeMode is the underlying chrome injector. bundle=false
+// suppresses the comp-bundle.css endpoint and emits one <link> per
+// component instead — used by static export, since static hosts
+// don't typically serve query-parameterized files. Live HTTP mode
+// always passes bundle=true.
+func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 	// <head>
 	if sessionID != "" {
 		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
@@ -398,7 +454,7 @@ func (ds *UIHost) injectChrome(page, sessionID string) string {
 	// single component) so first paint has every needed sheet in
 	// <head>. LoadAlways entries are included whether the page used
 	// them or not.
-	if tags := ds.componentCSSTags(page); tags != "" {
+	if tags := ds.componentCSSTags(page, bundle); tags != "" {
 		page = strings.Replace(page, "</head>", tags+"\n</head>", 1)
 	}
 	// Inline the runtime catalog so the runtime has it without a
@@ -794,7 +850,10 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	if err != nil {
 		return "", err
 	}
-	return ds.injectChrome(string(html), ""), nil
+	// bundle=false: static hosts don't serve query-paramed files, so
+	// emit one <link rel=stylesheet> per registered component instead
+	// of the comp-bundle.css?names= form.
+	return ds.injectChromeMode(string(html), "", false), nil
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript
@@ -854,7 +913,7 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 // otherwise). Inline emission is forbidden — the bundle endpoint is
 // content-addressed so the browser caches it across pages with the
 // same component set.
-func (ds *UIHost) componentCSSTags(page string) string {
+func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	used := registry.Scan(page)
 	eager := registry.EagerNames()
 	if len(used) == 0 && len(eager) == 0 {
@@ -873,13 +932,22 @@ func (ds *UIHost) componentCSSTags(page string) string {
 	}
 	sort.Strings(names)
 	theme := ds.activeTheme()
-	if len(names) == 1 {
-		e, ok := registry.Lookup(names[0])
-		if !ok {
-			return ""
+	if len(names) == 1 || !bundle {
+		// Static-export path also takes this branch — emit one <link>
+		// per component to avoid the query-paramed bundle URL.
+		var b strings.Builder
+		for i, n := range names {
+			e, ok := registry.Lookup(n)
+			if !ok {
+				continue
+			}
+			if i > 0 {
+				b.WriteByte('\n')
+			}
+			fmt.Fprintf(&b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`,
+				n, e.VersionFor(theme))
 		}
-		v := e.VersionFor(theme)
-		return fmt.Sprintf(`<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`, names[0], v)
+		return b.String()
 	}
 	// Bundle. The hash combines the per-component versions in the
 	// sorted order embedded in `names`, so any change to any included
@@ -1016,6 +1084,12 @@ func hashStrings(parts ...string) string {
 }
 
 // handleCSSChunk serves per-screen CSS chunks for progressive loading.
+//
+// Deprecated: superseded by /__gofastr/comp/<name>.css from
+// core-ui/registry. New code should declare CSS per component and
+// wrap renders with registry.Style.WrapHTML. This handler is kept
+// for apps still wiring uihost.WithRouteGraph + the runtime's
+// loadCSS(path); it will be removed once those consumers migrate.
 func (ds *UIHost) handleCSSChunk(w http.ResponseWriter, r *http.Request) {
 	screenPath := strings.TrimPrefix(r.URL.Path, "/__gofastr/css")
 	if screenPath == "" {
