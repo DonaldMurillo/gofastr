@@ -1,8 +1,32 @@
-.PHONY: build test test-pg test-pg-env test-pg-only test-race lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race lint generate dev clean security security-full hooks install
 
 # ---- Build ----
-build:
-	go build ./...
+#
+# Every build artifact goes into $(DIST_DIR) so the source tree stays clean
+# and a single `make clean` removes everything. The directory is gitignored.
+# Dev-loop binaries (scripts/dev-watch.sh) still write to /tmp because they
+# are ephemeral and watched-tree pollution causes rebuild storms.
+DIST_DIR ?= dist
+
+build: build-cmd
+
+build-cmd: $(DIST_DIR)
+	go build -o $(DIST_DIR)/gofastr ./cmd/gofastr
+	go build -o $(DIST_DIR)/kiln    ./cmd/kiln
+
+build-examples: $(DIST_DIR)
+	@for dir in examples/api-tour examples/blog examples/core-ui-demo \
+	            examples/demo examples/spa examples/static-site \
+	            examples/website examples/widgets-demo; do \
+		name=$$(basename $$dir); \
+		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
+		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
+	done
+
+build-all: build-cmd build-examples
+
+$(DIST_DIR):
+	@mkdir -p $(DIST_DIR)
 
 test:
 	go test -count=1 -short ./...
@@ -50,7 +74,7 @@ dev:
 	@echo "Use: gofastr dev"
 
 clean:
-	rm -rf bin/ .gofastr/
+	rm -rf $(DIST_DIR)/ bin/ .gofastr/
 
 # ---- Security ----
 
