@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 lint generate dev clean security security-full hooks install
 
 # ---- Build ----
 #
@@ -63,6 +63,60 @@ test-pg-only:
 
 test-race:
 	go test -race -count=1 ./...
+
+# ---- Benchmarks ----
+#
+# `make bench` runs every Benchmark across the repo with stable defaults.
+# Postgres tiers are SKIPPED when no PG is reachable — set TEST_POSTGRES_DSN
+# or have Docker running to exercise them.
+#
+# Output is captured to dist/bench/ for diff'ing with benchstat.
+
+BENCH_OUT       ?= $(DIST_DIR)/bench
+BENCH_PKGS      ?= ./framework/... ./core/router/... ./battery/search/...
+BENCHTIME       ?= 1s
+BENCH_COUNT     ?= 3
+BENCH_TIMEOUT   ?= 30m
+
+$(BENCH_OUT):
+	@mkdir -p $(BENCH_OUT)
+
+bench: $(BENCH_OUT)
+	go test -run=^$$ -bench=. -benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) \
+		-timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/all.txt
+
+bench-sqlite: $(BENCH_OUT)
+	@# BENCH_SKIP_PG=1 makes forEachBenchDialect skip the postgres branch even
+	@# when PG is reachable, so SQLite-only runs are deterministic regardless
+	@# of Docker state.
+	BENCH_SKIP_PG=1 go test -run=^$$ -bench=. -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/sqlite.txt
+
+bench-pg: $(BENCH_OUT)
+	@if [ -z "$$TEST_POSTGRES_DSN" ] && ! command -v docker >/dev/null 2>&1; then \
+		echo "✗ Need TEST_POSTGRES_DSN or Docker for Postgres benchmarks"; exit 1; \
+	fi
+	go test -run=^$$ -bench=postgres -benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) \
+		-timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/pg.txt
+
+bench-tier1: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkTier1 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier1.txt
+
+bench-tier2: $(BENCH_OUT)
+	go test -run=^$$ -bench='BenchmarkMiddleware|BenchmarkJSONCasing|BenchmarkDSLParse|BenchmarkRouter' \
+		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
+		./framework/ ./core/router/ | tee $(BENCH_OUT)/tier2.txt
+
+bench-tier3: $(BENCH_OUT)
+	go test -run=^$$ -bench='BenchmarkEventBus|BenchmarkSSE|BenchmarkCron' \
+		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
+		./framework/ | tee $(BENCH_OUT)/tier3.txt
+
+bench-tier4: $(BENCH_OUT)
+	go test -run=^$$ -bench='BenchmarkAutoMigrate|BenchmarkSchemaDiff|BenchmarkMemory' \
+		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
+		./framework/ ./battery/search/ | tee $(BENCH_OUT)/tier4.txt
 
 lint:
 	golangci-lint run ./...

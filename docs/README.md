@@ -57,6 +57,9 @@ ending with a "common mistakes" callout.
 
 - [Kiln (agent-driven build mode)](kiln.md) — separate binary; build a
   GoFastr app live via an agent CLI, then freeze to canonical JSON.
+- [Benchmarks](benchmarks.md) — tiered Go benchmarks covering claims-
+  defending end-to-end paths, hot-path microbenchmarks, concurrency,
+  and startup. `make bench`, output to `dist/bench/`.
 
 ## Maintaining these docs
 
