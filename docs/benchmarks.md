@@ -352,3 +352,10 @@ geometric mean + p-value so noise doesn't show up as a regression.
   use `WithoutDefaultMiddleware()` for hot-path measurements.
 - **Trusting a single run.** Use `BENCH_COUNT=10` + `benchstat` for any
   comparison that matters.
+
+## Improvement opportunities
+
+The prioritized list of optimizations these benchmarks surfaced —
+together with the specific bench that exposed each one and a verify
+step — lives in [`performance-opportunities.md`](performance-opportunities.md).
+Update it whenever a new hotspot appears or a fix lands.

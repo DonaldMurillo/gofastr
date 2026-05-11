@@ -60,6 +60,9 @@ ending with a "common mistakes" callout.
 - [Benchmarks](benchmarks.md) — tiered Go benchmarks covering claims-
   defending end-to-end paths, hot-path microbenchmarks, concurrency,
   and startup. `make bench`, output to `dist/bench/`.
+- [Performance opportunities](performance-opportunities.md) —
+  prioritized improvement list derived from the benchmark results.
+  Each item names the benchmark that surfaced it for verification.
 
 ## Maintaining these docs
 
