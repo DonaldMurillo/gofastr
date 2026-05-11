@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
 
 # ---- Build ----
 #
@@ -142,6 +142,12 @@ bench-tier7: $(BENCH_OUT)
 bench-tier8: $(BENCH_OUT)
 	go test -run=^$$ -bench=BenchmarkT8 -benchmem -benchtime=1x \
 		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier8.txt
+
+# Tier 9 — UI runtime: real-volume streaming list, SSE EventStream
+# end-to-end, island RPC swap, UI host page render.
+bench-tier9: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT9 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier9.txt
 
 # Convenience aliases for the comparable-to-industry slices.
 bench-techempower: bench-tier5

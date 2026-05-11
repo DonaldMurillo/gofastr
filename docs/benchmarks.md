@@ -16,6 +16,7 @@ advertises against both SQLite and Postgres.
 | 6    | Latency percentiles + concurrency (p50/p90/p99/p999 at parallelism 1/8/64) | Both |
 | 7    | Stdlib baselines (`net/http` + `database/sql` paired with framework equivalents) | Both |
 | 8    | Operational (cold start, sustained heap, goroutine leak check) | SQLite |
+| 9    | UI runtime: streaming list at real volume, SSE EventStream end-to-end, island RPC swap, UI host page render | Both |
 
 ## Running
 
@@ -29,6 +30,7 @@ make bench-tier5         # TechEmpower-style endpoints
 make bench-tier6         # latency percentiles + concurrency
 make bench-tier7         # stdlib baselines
 make bench-tier8         # operational (cold start, heap, goroutines)
+make bench-tier9         # UI runtime (streaming, SSE, islands, page render)
 
 make bench-techempower   # alias for tier 5
 make bench-overhead      # alias for tier 7 (framework vs hand-rolled)
@@ -195,7 +197,47 @@ What to look for:
 - **FilteredList delta is the worst case** (allocations dominate).
   This is the hottest optimization target.
 
-## Resource benchmarks (separate from the Tier 1-8 Go bench suite)
+## Tier 9 — UI runtime: streams, islands, full SSR
+
+The framework's value proposition isn't just JSON CRUD — it's the
+SSR-with-hydration runtime, the SSE/island plumbing, and the UI host.
+These benchmarks measure those paths.
+
+| Bench | Workload |
+|-------|----------|
+| `StreamingListRealVolume` | Calls `serveStreamingList` directly with 1k / 5k / 10k row limits — bypasses parsePagination's ≤100 cap. The honest streaming-throughput measurement. |
+| `StreamingVsBuffered_RealVolume` | Buffered (50 paginated requests × 100 rows = 5000) vs streaming (one request × 5000). Apples-to-apples comparison at real volume. |
+| `SSEEventStream` | Subscribes to `/posts/_events` via the real handler, fires 500 events, reports `events_delivered`, `events_dropped`, `delivery_ratio`, `bytes_received`. |
+| `IslandRPC` | One island RPC swap end-to-end: GET against an island endpoint that renders ~10 row fragments. Measures the canonical "click → fetch → swap" pattern. |
+| `IslandRPC_Concurrency` | Same handler under `b.RunParallel` at parallelism 1/8/64, with p50/p90/p99 reporting. |
+| `UIHostPageRender` | Full SSR through `uihost.Mount`: layout + screen + runtime injection. Two screens (simple + 50-item list). |
+
+### What to look for
+
+- **Streaming wins over buffered-paginated** at any volume that pays
+  network round-trips. The first SQLite smoke run showed 14ms vs 15ms
+  (small win); Postgres showed 12ms vs 46ms — a **3.9× win** because
+  one query beats 50 round-trips.
+- **SSE delivery_ratio** ≪ 1.0 under bursty emit. The 32-buffer drops
+  the surplus; this is documented behaviour. A regression means the
+  ratio drops further at a fixed emit rate.
+- **Island RPC** should stay sub-100µs for a small (~10-row) fragment.
+  This is the response-time floor for "click → see new content."
+- **UIHostPageRender** vs `BenchmarkT7_JSON_GoFastr` (~500ns) tells
+  you what SSR + hydration shell adds over a bare framework JSON
+  response — expect 50-100µs at minimum because of the HTML tree
+  build and runtime script injection.
+
+### Caveats
+
+- `httptest.ResponseRecorder` removes wire latency and flushing
+  semantics. SSE numbers are **lower bounds on encoding cost**, not
+  RPS over a real network.
+- Real island deployments include client-side hydration time that
+  these benchmarks don't measure (Go can't time JS). Wire that in via
+  Playwright if it matters.
+
+## Resource benchmarks (separate from the Tier 1-9 Go bench suite)
 
 Resource numbers — binary size, peak RAM during `go build`, idle and
 under-load RAM of each running binary — are produced by a separate
