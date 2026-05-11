@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // buildSpecForBlogApp returns the OpenAPI spec map for an app with two
@@ -11,20 +12,20 @@ import (
 func buildSpecForBlogApp(t *testing.T) map[string]any {
 	t.Helper()
 	app := NewApp()
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
-			BelongsTo("author", "users", "author_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
+			entity.BelongsTo("author", "users", "author_id"),
 		},
 	})
 	app.Registry.Register(posts)
 
-	users := Define("users", EntityConfig{
+	users := entity.Define("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},

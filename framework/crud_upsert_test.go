@@ -6,9 +6,13 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
-func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func upsertApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE posts (
 		id TEXT PRIMARY KEY,
@@ -18,15 +22,15 @@ func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		t.Fatalf("create: %v", err)
 	}
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
 	}.WithTimestamps(false))
-	entity, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(entity, db)
+	ent, _ := app.Registry.Get("posts")
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Registry = app.Registry
 	return app, ch
@@ -68,11 +72,11 @@ func TestUpsert_FiresHooks(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app, ch := upsertApp(t, db)
 		var beforeCalled, afterCalled int
-		app.HookRegistry("posts").RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			beforeCalled++
 			return nil
 		})
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			afterCalled++
 			return nil
 		})
@@ -164,18 +168,18 @@ func TestUpsert_InjectsTenantID(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table:       "posts",
 			MultiTenant: true,
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		entity, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(entity, db)
+		ent, _ := app.Registry.Get("posts")
+		ch := crud.NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 
-		ctx := SetTenantID(context.Background(), "tenant-a")
+		ctx := tenant.SetTenantID(context.Background(), "tenant-a")
 		got, err := ch.UpsertOne(ctx, map[string]any{"id": "p1", "title": "scoped"})
 		if err != nil {
 			t.Fatalf("upsert: %v", err)

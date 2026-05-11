@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // buildDocAsAny serializes and deserializes the spec to normalize all nested
@@ -37,7 +38,7 @@ func getNestedSlice(m map[string]any, key string) []any {
 func TestE2E_OpenAPI_SpecStructure(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -46,7 +47,7 @@ func TestE2E_OpenAPI_SpecStructure(t *testing.T) {
 	})
 	app.Registry.Register(posts)
 
-	comments := Define("comments", EntityConfig{
+	comments := entity.Define("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
@@ -93,7 +94,7 @@ func TestE2E_OpenAPI_SpecStructure(t *testing.T) {
 func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true, Max: ptrFloat64(200)},
@@ -179,7 +180,7 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 func TestE2E_OpenAPI_CRUDPaths(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -291,7 +292,7 @@ func TestE2E_OpenAPI_CRUDPaths(t *testing.T) {
 func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -351,7 +352,7 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -403,13 +404,13 @@ func TestE2E_OpenAPI_MultipleEntityTagsAndPaths(t *testing.T) {
 	app := NewApp()
 
 	for _, name := range []string{"users", "posts", "comments", "tags"} {
-		entity := Define(name, EntityConfig{
+		ent := entity.Define(name, entity.EntityConfig{
 			Table: name,
 			Fields: []schema.Field{
 				{Name: "name", Type: schema.String, Required: true},
 			},
 		})
-		app.Registry.Register(entity)
+		app.Registry.Register(ent)
 	}
 
 	spec := EntityOpenAPI(app.Registry, "Multi API", "1.0.0")
@@ -442,7 +443,7 @@ func TestE2E_OpenAPI_MultipleEntityTagsAndPaths(t *testing.T) {
 func TestE2E_OpenAPI_FilterParameters(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
@@ -491,7 +492,7 @@ func TestE2E_OpenAPI_FilterParameters(t *testing.T) {
 func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	app := NewApp()
 
-	posts := Define("posts", EntityConfig{
+	posts := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -520,7 +521,7 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	app := NewApp()
 
-	entity := Define("everything", EntityConfig{
+	ent := entity.Define("everything", entity.EntityConfig{
 		Table: "everything",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Min: ptrFloat64(1), Max: ptrFloat64(255)},
@@ -539,7 +540,7 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 			{Name: "attachment", Type: schema.File},
 		},
 	})
-	app.Registry.Register(entity)
+	app.Registry.Register(ent)
 
 	spec := EntityOpenAPI(app.Registry, "All Types", "1.0.0")
 	doc := buildDocAsAny(spec)
@@ -631,7 +632,7 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 func TestE2E_OpenAPI_FilterParameters_SnakeCase(t *testing.T) {
 	app := NewApp()
 
-	orders := Define("orders", EntityConfig{
+	orders := entity.Define("orders", entity.EntityConfig{
 		Table: "orders",
 		Fields: []schema.Field{
 			{Name: "customer_name", Type: schema.String},

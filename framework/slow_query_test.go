@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/slowquery"
 )
 
 // slowQueryHarness wires a slow-query logger around a real DB at a known
 // threshold and exposes the captured slog output.
 type slowQueryHarness struct {
 	db      *sql.DB
-	wrapper *SlowQueryLogger
+	wrapper *slowquery.SlowQueryLogger
 	logs    *bytes.Buffer
 }
 
@@ -29,7 +32,7 @@ func newSlowQueryHarness(t *testing.T, db *sql.DB, threshold time.Duration) *slo
 	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	return &slowQueryHarness{
 		db:      db,
-		wrapper: NewSlowQueryLogger(db, threshold, logger),
+		wrapper: slowquery.NewSlowQueryLogger(db, threshold, logger),
 		logs:    buf,
 	}
 }
@@ -111,7 +114,7 @@ func TestSlowQuery_AsCrudHandlerDB(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -121,13 +124,13 @@ func TestSlowQuery_AsCrudHandlerDB(t *testing.T) {
 
 		buf := &bytes.Buffer{}
 		logger := slog.New(slog.NewTextHandler(buf, nil))
-		wrapped := NewSlowQueryLogger(db, time.Nanosecond, logger)
+		wrapped := slowquery.NewSlowQueryLogger(db, time.Nanosecond, logger)
 
-		entity, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(entity, wrapped)
+		ent, _ := app.Registry.Get("posts")
+		ch := crud.NewCrudHandler(ent, wrapped)
 		ch.Registry = app.Registry
 
-		_, err := ch.ListAll(context.Background(), ListOptions{})
+		_, err := ch.ListAll(context.Background(), crud.ListOptions{})
 		if err != nil {
 			t.Fatalf("ListAll: %v", err)
 		}
@@ -138,12 +141,12 @@ func TestSlowQuery_AsCrudHandlerDB(t *testing.T) {
 }
 
 // ============================================================================
-// trimSQL collapses whitespace + truncates at 240 chars.
+// slowquery.TrimSQL collapses whitespace + truncates at 240 chars.
 // ============================================================================
 
 func TestSlowQuery_TrimSQL(t *testing.T) {
 	in := "SELECT  *\n\tFROM\nposts\nWHERE   id = $1"
-	out := trimSQL(in)
+	out := slowquery.TrimSQL(in)
 	if strings.Contains(out, "\t") || strings.Contains(out, "\n") {
 		t.Fatalf("expected whitespace collapsed: %q", out)
 	}
@@ -152,7 +155,7 @@ func TestSlowQuery_TrimSQL(t *testing.T) {
 	}
 	// Truncation
 	long := strings.Repeat("x", 500)
-	trimmed := trimSQL(long)
+	trimmed := slowquery.TrimSQL(long)
 	if len(trimmed) > 250 {
 		t.Fatalf("expected truncated <=250 bytes, got %d", len(trimmed))
 	}

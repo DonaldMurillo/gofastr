@@ -35,7 +35,7 @@ import (
 // 9.1 — Real-volume streaming list (bypasses parsePagination's limit cap)
 // ----------------------------------------------------------------------------
 
-// BenchmarkT9_StreamingListRealVolume calls serveStreamingList directly so
+// BenchmarkT9_StreamingListRealVolume calls ServeStreamingList directly so
 // it can exercise the streaming surface at limits parsePagination would
 // otherwise clamp to ≤100. Measures per-row encode/write cost and
 // throughput for the 1k / 5k / 10k row case.
@@ -45,7 +45,7 @@ func BenchmarkT9_StreamingListRealVolume(b *testing.B) {
 		app := setupBlogDomain(b, db, N, 0)
 		_ = app
 
-		// We need a real CrudHandler for the entity to call serveStreamingList.
+		// We need a real CrudHandler for the entity to call ServeStreamingList.
 		entity, err := app.Registry.Get("posts")
 		if err != nil {
 			b.Fatalf("registry: %v", err)
@@ -56,14 +56,14 @@ func BenchmarkT9_StreamingListRealVolume(b *testing.B) {
 		for _, limit := range []int{1000, 5000, 10000} {
 			limit := limit
 			b.Run(fmt.Sprintf("rows=%d", limit), func(b *testing.B) {
-				cols := ch.visibleFields()
+				cols := ch.VisibleFields()
 				ctx := context.Background()
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
 					req := httptest.NewRequest(http.MethodGet, "/posts", nil)
-					ch.serveStreamingList(ctx, rec, req, cols, nil, nil, nil, limit)
+					ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, limit)
 					if rec.Code != http.StatusOK && rec.Code != 0 {
 						b.Fatalf("status %d", rec.Code)
 					}
@@ -77,7 +77,7 @@ func BenchmarkT9_StreamingListRealVolume(b *testing.B) {
 // BenchmarkT9_StreamingVsBuffered_RealVolume compares the streaming and
 // buffered code paths at a fair workload by calling each handler method
 // directly. Buffered is serveList (via List()); streaming is
-// serveStreamingList. Both bypass the parsePagination cap so the
+// ServeStreamingList. Both bypass the parsePagination cap so the
 // comparison is honest at large N.
 func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
@@ -106,16 +106,16 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 			}
 		})
 
-		// Streaming hits serveStreamingList directly with the real 5000 limit.
+		// Streaming hits ServeStreamingList directly with the real 5000 limit.
 		b.Run("streaming-single-5000", func(b *testing.B) {
-			cols := ch.visibleFields()
+			cols := ch.VisibleFields()
 			ctx := context.Background()
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodGet, "/posts", nil)
-				ch.serveStreamingList(ctx, rec, req, cols, nil, nil, nil, 5000)
+				ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, 5000)
 				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
 			}
 		})
@@ -168,7 +168,7 @@ func BenchmarkT9_SSEEventStream(b *testing.B) {
 			time.Sleep(2 * time.Millisecond)
 
 			for j := 0; j < eventsPerIter; j++ {
-				ch.emitEvent(context.Background(), EntityCreated,
+				ch.EmitEvent(context.Background(), EntityCreated,
 					map[string]any{"id": fmt.Sprintf("p%d_%d", i, j), "title": "x"})
 			}
 			// Drain time so the handler's goroutine writes the buffered events.
@@ -378,10 +378,12 @@ func newBenchRouter() *appRouter {
 	return &appRouter{a.Router}
 }
 
-type appRouter struct{ inner interface {
-	GetFunc(string, http.HandlerFunc)
-	ServeHTTP(http.ResponseWriter, *http.Request)
-} }
+type appRouter struct {
+	inner interface {
+		GetFunc(string, http.HandlerFunc)
+		ServeHTTP(http.ResponseWriter, *http.Request)
+	}
+}
 
 func (a *appRouter) GetFunc(p string, f http.HandlerFunc)             { a.inner.GetFunc(p, f) }
 func (a *appRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.inner.ServeHTTP(w, r) }

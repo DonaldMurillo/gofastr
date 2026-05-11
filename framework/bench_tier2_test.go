@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/router"
+	"github.com/gofastr/gofastr/framework/dsl"
+	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
 // ============================================================================
@@ -88,28 +90,28 @@ func BenchmarkJSONCasing(b *testing.B) {
 	b.Run("snake→camel", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = mapToCamelCase(snakeRow)
+			_ = casing.MapToCamel(snakeRow)
 		}
 	})
 
 	b.Run("camel→snake", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = mapToSnakeCase(camelRow)
+			_ = casing.MapToSnake(camelRow)
 		}
 	})
 
-	b.Run("toCamelCase-single", func(b *testing.B) {
+	b.Run("casing.ToCamel-single", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = toCamelCase("created_at")
+			_ = casing.ToCamel("created_at")
 		}
 	})
 
-	b.Run("toSnakeCase-single", func(b *testing.B) {
+	b.Run("casing.ToSnake-single", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = toSnakeCase("createdAt")
+			_ = casing.ToSnake("createdAt")
 		}
 	})
 }
@@ -118,17 +120,17 @@ func BenchmarkJSONCasing(b *testing.B) {
 // string (the path an LLM-generated query travels every call).
 func BenchmarkDSLParse(b *testing.B) {
 	cases := map[string]string{
-		"trivial":  `posts.limit(10)`,
-		"filter":   `posts.where(status="published", views>=10).limit(20)`,
-		"complex":  `posts.where(status="published", views>=10, title contains "go").include(author,comments).order(created_at DESC).limit(50)`,
-		"in-list":  `posts.where(status in ["draft","published","archived"]).limit(100)`,
+		"trivial": `posts.limit(10)`,
+		"filter":  `posts.where(status="published", views>=10).limit(20)`,
+		"complex": `posts.where(status="published", views>=10, title contains "go").include(author,comments).order(created_at DESC).limit(50)`,
+		"in-list": `posts.where(status in ["draft","published","archived"]).limit(100)`,
 	}
 	for name, q := range cases {
 		q := q
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if _, err := ParseDSL(q); err != nil {
+				if _, err := dsl.ParseDSL(q); err != nil {
 					b.Fatalf("parse: %v", err)
 				}
 			}

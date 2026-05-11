@@ -11,12 +11,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofastr/gofastr/core/openapi"
+	coreoa "github.com/gofastr/gofastr/core/openapi"
 
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/middleware"
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/migrate"
+	"github.com/gofastr/gofastr/framework/openapi"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -26,21 +33,14 @@ type Mountable interface {
 	Mount(*router.Router)
 }
 
-// JSONCase defines the casing convention for JSON keys in API responses.
-type JSONCase string
-
-const (
-	// CaseCamel outputs camelCase (default, web standard).
-	CaseCamel JSONCase = "camelCase"
-	// CaseSnake outputs snake_case (database-style).
-	CaseSnake JSONCase = "snake_case"
-)
+// JSONCase / CaseCamel / CaseSnake moved to framework/crud — see
+// reexports_crud.go for the facade aliases that keep framework.X working.
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name           string   // application name
-	JSONCase       JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
-	DebugEndpoints bool     // opt-in for /.debug/* endpoints
+	Name           string        // application name
+	JSONCase       crud.JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
+	DebugEndpoints bool          // opt-in for /.debug/* endpoints
 }
 
 // App is the top-level application container.
@@ -55,8 +55,8 @@ type App struct {
 	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
 	server     *http.Server
-	events     *EventBus
-	hooks      map[string]*HookRegistry
+	events     *event.EventBus
+	hooks      map[string]*hook.HookRegistry
 	mountables []Mountable
 	mwApplied  bool
 	noDefaults bool
@@ -170,10 +170,10 @@ func NewApp(opts ...AppOption) *App {
 		Registry: NewRegistry(),
 		Router:   router.New(),
 		MCP:      mcp.NewServer(),
-		Config:   AppConfig{JSONCase: CaseCamel},
+		Config:   AppConfig{JSONCase: crud.CaseCamel},
 		Plugins:  NewPluginManager(),
-		events:   NewEventBus(),
-		hooks:    make(map[string]*HookRegistry),
+		events:   event.NewEventBus(),
+		hooks:    make(map[string]*hook.HookRegistry),
 	}
 
 	for _, opt := range opts {
@@ -197,8 +197,8 @@ func NewApp(opts ...AppOption) *App {
 
 // Entity registers an entity with the given name and configuration.
 // Returns the App for fluent chaining.
-func (a *App) Entity(name string, config EntityConfig) *App {
-	e := Define(name, config)
+func (a *App) Entity(name string, config entity.EntityConfig) *App {
+	e := entity.Define(name, config)
 
 	if a.DB != nil {
 		e.SetDB(a.DB)
@@ -218,19 +218,19 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
 	}
 
-	var crudHandler *CrudHandler
+	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		crudHandler = NewCrudHandler(e, a.DB)
+		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
 		crudHandler.Registry = a.Registry
-		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
+		crud.RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
 	}
 
 	if config.MCP && a.DB != nil {
-		if err := RegisterEntityMCPTools(a.MCP, crudHandler, a.Router); err != nil {
+		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.Router); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q: %v", name, err))
 		}
 	}
@@ -245,8 +245,8 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 }
 
 // EntityFromFile loads and registers one JSON entity declaration.
-func (a *App) EntityFromFile(path string) (*Entity, error) {
-	decl, err := LoadEntityDeclaration(path)
+func (a *App) EntityFromFile(path string) (*entity.Entity, error) {
+	decl, err := entity.LoadEntityDeclaration(path)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func (a *App) EntityFromFile(path string) (*Entity, error) {
 
 // EntitiesFromDir loads and registers every *.json declaration in dir.
 func (a *App) EntitiesFromDir(dir string) error {
-	decls, err := LoadEntityDeclarations(dir)
+	decls, err := entity.LoadEntityDeclarations(dir)
 	if err != nil {
 		return err
 	}
@@ -274,13 +274,13 @@ func (a *App) EntitiesFromDir(dir string) error {
 	return nil
 }
 
-func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) error {
+func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
 	for _, endpoint := range endpoints {
 		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		path := entityEndpointPath(entity, endpoint.Path)
+		path := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
 			a.Router.Handle(method, path, endpoint.Handler)
 		}
@@ -290,7 +290,7 @@ func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) erro
 			}
 			name := endpoint.Name
 			if name == "" {
-				name = defaultEndpointToolName(entity.GetName(), method, path)
+				name = openapi.DefaultEndpointToolName(ent.GetName(), method, path)
 			}
 			description := endpoint.Description
 			if description == "" {
@@ -304,38 +304,14 @@ func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) erro
 	return nil
 }
 
-func entityEndpointPath(entity *Entity, path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		path = "/"
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + strings.Trim(entity.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
-	}
-	return normalizePath(convertColonParams(path))
-}
-
-func convertColonParams(path string) string {
-	parts := strings.Split(path, "/")
-	for i, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			parts[i] = "{" + strings.TrimPrefix(part, ":") + "}"
-		}
-	}
-	return strings.Join(parts, "/")
-}
-
-func defaultEndpointToolName(entityName, method, path string) string {
-	cleaned := strings.Trim(path, "/")
-	cleaned = strings.NewReplacer("/", "_", "{", "", "}", "", "-", "_").Replace(cleaned)
-	return strings.ToLower(entityName + "_" + method + "_" + cleaned)
-}
+// openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to
+// framework/openapi (where they're shared with the OpenAPI spec generator).
 
 // JSONCasing returns the configured JSON casing strategy.
 // Defaults to CaseCamel if not explicitly set.
-func (a *App) JSONCasing() JSONCase {
+func (a *App) JSONCasing() crud.JSONCase {
 	if a.Config.JSONCase == "" {
-		return CaseCamel
+		return crud.CaseCamel
 	}
 	return a.Config.JSONCase
 }
@@ -364,20 +340,20 @@ func (a *App) InitPlugins() error {
 }
 
 // Events returns the application's event bus.
-func (a *App) Events() *EventBus {
+func (a *App) Events() *event.EventBus {
 	if a.events == nil {
-		a.events = NewEventBus()
+		a.events = event.NewEventBus()
 	}
 	return a.events
 }
 
 // HookRegistry returns (or creates) the hook registry for a named entity.
-func (a *App) HookRegistry(entityName string) *HookRegistry {
+func (a *App) HookRegistry(entityName string) *hook.HookRegistry {
 	if a.hooks == nil {
-		a.hooks = make(map[string]*HookRegistry)
+		a.hooks = make(map[string]*hook.HookRegistry)
 	}
 	if _, ok := a.hooks[entityName]; !ok {
-		a.hooks[entityName] = NewHookRegistry()
+		a.hooks[entityName] = hook.NewHookRegistry()
 	}
 	return a.hooks[entityName]
 }
@@ -404,7 +380,7 @@ func (a *App) OnStop(fn func() error) *App {
 // AddCron registers a Scheduler with the app's lifecycle: it starts when
 // Start runs and stops when Stop runs. Returns the App for chaining so
 // users can wire several schedulers in one expression.
-func (a *App) AddCron(s *Scheduler) *App {
+func (a *App) AddCron(s *cron.Scheduler) *App {
 	a.OnStart(func(ctx context.Context) error {
 		s.Start(ctx)
 		return nil
@@ -485,7 +461,7 @@ func (a *App) runStartHooks() error {
 func (a *App) Start(addr string) error {
 	// Auto-migrate all registered entities
 	if a.DB != nil {
-		if err := AutoMigrate(a.DB, a.Registry); err != nil {
+		if err := migrate.AutoMigrate(a.DB, a.Registry); err != nil {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 	}
@@ -502,9 +478,9 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := EntityOpenAPI(a.Registry, appName, "1.0.0")
-		a.Router.Get("/openapi.json", openapi.Handler(spec))
-		a.Router.Get("/docs/", openapi.SwaggerUIHandler(spec, "/docs"))
+		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0")
+		a.Router.Get("/openapi.json", coreoa.Handler(spec))
+		a.Router.Get("/docs/", coreoa.SwaggerUIHandler(spec, "/docs"))
 	}
 
 	if a.Config.DebugEndpoints {

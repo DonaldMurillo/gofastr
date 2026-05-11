@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // ============================================================================
@@ -68,13 +71,13 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 	}
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("authors", EntityConfig{
+	app.Entity("authors", entity.EntityConfig{
 		Table: "authors",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -84,12 +87,12 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 		// Composite cursor: order by created_at then id so duplicate
 		// timestamps still produce a stable page boundary.
 		CursorFields: []string{"created_at"},
-		Relations: []Relation{
-			BelongsTo("author", "authors", "author_id"),
-			HasMany("comments", "comments", "post_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("author", "authors", "author_id"),
+			entity.HasMany("comments", "comments", "post_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
@@ -166,7 +169,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			var resp ListResponse
+			var resp crud.ListResponse
 			if err := json.Unmarshal(body, &resp); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
@@ -193,7 +196,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			var resp ListResponse
+			var resp crud.ListResponse
 			json.Unmarshal(body, &resp)
 			for _, row := range resp.Data {
 				kids, _ := row["comments"].([]any)
@@ -246,7 +249,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			var env ListResponse
+			var env crud.ListResponse
 			if err := json.Unmarshal(body, &env); err != nil {
 				t.Fatalf("decode (stream envelope must be valid JSON): %v\nbody: %s", err, body)
 			}
@@ -306,11 +309,11 @@ func TestE2E_NewFeatures(t *testing.T) {
 // ============================================================================
 
 func TestE2E_CronFiresInsideApp(t *testing.T) {
-	s := NewScheduler()
+	s := cron.NewScheduler()
 	var fired atomic.Int32
 	// Match every minute so runOnce always triggers — we drive the tick
 	// manually via runOnce to avoid waiting on the wall clock.
-	if err := s.Register(CronJob{
+	if err := s.Register(cron.CronJob{
 		Name: "tick",
 		Spec: "* * * * *",
 		Run: func(_ context.Context) error {
@@ -320,7 +323,7 @@ func TestE2E_CronFiresInsideApp(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s.runOnce(context.Background(), time.Now())
+	s.RunOnce(context.Background(), time.Now())
 	deadline := time.Now().Add(time.Second)
 	for fired.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)

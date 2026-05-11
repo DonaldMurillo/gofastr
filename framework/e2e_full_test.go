@@ -22,6 +22,9 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/pagination"
 )
 
 // Full-stack E2E: spins up a real httptest.Server with the full middleware
@@ -136,7 +139,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithRouter(r),
 		WithFileStorage(upload.NewLocalStorage(uploadDir)))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -144,11 +147,11 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 			{Name: "author_id", Type: schema.String},
 			{Name: "avatar", Type: schema.Image},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
@@ -338,7 +341,7 @@ func TestE2E_Full(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("list: %d %s", code, body)
 			}
-			var env ListResponse
+			var env crud.ListResponse
 			if err := json.Unmarshal(body, &env); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
@@ -368,7 +371,7 @@ func TestE2E_Full(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("cursor first: %d %s", code, body)
 			}
-			var page CursorPage
+			var page pagination.CursorPage
 			if err := json.Unmarshal(body, &page); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
@@ -382,7 +385,7 @@ func TestE2E_Full(t *testing.T) {
 				if code, _, body := env.doRequest(t, next); code != http.StatusOK {
 					t.Fatalf("cursor walk: %d %s", code, body)
 				} else {
-					page = CursorPage{}
+					page = pagination.CursorPage{}
 					json.Unmarshal(body, &page)
 					seen += len(page.Data)
 				}

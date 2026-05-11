@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // seedBlogDB creates the blog test schema (users, profiles, posts, comments,
@@ -57,45 +59,45 @@ func seedBlogDB(t *testing.T, db *sql.DB) {
 func nestedBlogApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("users", EntityConfig{
+	app.Entity("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			HasOne("profile", "profiles", "user_id"),
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("profiles", EntityConfig{
+	app.Entity("profiles", entity.EntityConfig{
 		Table: "profiles",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "bio", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
-			BelongsTo("author", "users", "author_id"),
-			ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
+			entity.BelongsTo("author", "users", "author_id"),
+			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "post_id", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			BelongsTo("post", "posts", "post_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("post", "posts", "post_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("tags", EntityConfig{
+	app.Entity("tags", entity.EntityConfig{
 		Table: "tags",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
@@ -108,35 +110,35 @@ func nestedBlogApp(t *testing.T, db *sql.DB) *App {
 func blogApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("users", EntityConfig{
+	app.Entity("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			HasOne("profile", "profiles", "user_id"),
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
-			BelongsTo("author", "users", "author_id"),
-			ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
+			entity.BelongsTo("author", "users", "author_id"),
+			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "post_id", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			BelongsTo("post", "posts", "post_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("post", "posts", "post_id"),
 		},
 	}.WithTimestamps(false))
 	return app
@@ -161,19 +163,19 @@ func runIncludeTest(t *testing.T, body func(t *testing.T, ta *TestApp)) {
 func TestInclude_HasMany(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 		resp := ta.Get("/posts/p1?include=comments")
-	resp.AssertStatus(t, http.StatusOK)
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	comments, ok := got["comments"].([]any)
-	if !ok {
-		t.Fatalf("expected comments to be a list, got %T (%v)", got["comments"], got["comments"])
-	}
-	if len(comments) != 2 {
-		t.Fatalf("expected 2 comments, got %d: %v", len(comments), comments)
-	}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		comments, ok := got["comments"].([]any)
+		if !ok {
+			t.Fatalf("expected comments to be a list, got %T (%v)", got["comments"], got["comments"])
+		}
+		if len(comments) != 2 {
+			t.Fatalf("expected 2 comments, got %d: %v", len(comments), comments)
+		}
 	})
 }
 
@@ -184,21 +186,21 @@ func TestInclude_HasMany(t *testing.T) {
 func TestInclude_HasMany_EmptyDefault(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	// p2 has zero comments
-	resp := ta.Get("/posts/p2?include=comments")
-	resp.AssertStatus(t, http.StatusOK)
+		// p2 has zero comments
+		resp := ta.Get("/posts/p2?include=comments")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	comments, ok := got["comments"].([]any)
-	if !ok {
-		t.Fatalf("expected comments key with list value, got %T", got["comments"])
-	}
-	if len(comments) != 0 {
-		t.Fatalf("expected empty slice, got %v", comments)
-	}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		comments, ok := got["comments"].([]any)
+		if !ok {
+			t.Fatalf("expected comments key with list value, got %T", got["comments"])
+		}
+		if len(comments) != 0 {
+			t.Fatalf("expected empty slice, got %v", comments)
+		}
 	})
 }
 
@@ -209,20 +211,20 @@ func TestInclude_HasMany_EmptyDefault(t *testing.T) {
 func TestInclude_BelongsTo(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts/p1?include=author")
-	resp.AssertStatus(t, http.StatusOK)
+		resp := ta.Get("/posts/p1?include=author")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	author, ok := got["author"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected author object, got %T (%v)", got["author"], got["author"])
-	}
-	if author["name"] != "Alice" {
-		t.Fatalf("expected author.name=Alice, got %v", author["name"])
-	}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		author, ok := got["author"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected author object, got %T (%v)", got["author"], got["author"])
+		}
+		if author["name"] != "Alice" {
+			t.Fatalf("expected author.name=Alice, got %v", author["name"])
+		}
 	})
 }
 
@@ -233,20 +235,20 @@ func TestInclude_BelongsTo(t *testing.T) {
 func TestInclude_HasOne(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/users/u1?include=profile")
-	resp.AssertStatus(t, http.StatusOK)
+		resp := ta.Get("/users/u1?include=profile")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	profile, ok := got["profile"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected profile object, got %T (%v)", got["profile"], got["profile"])
-	}
-	if profile["bio"] != "Hello from Alice" {
-		t.Fatalf("expected profile.bio, got %v", profile["bio"])
-	}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		profile, ok := got["profile"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected profile object, got %T (%v)", got["profile"], got["profile"])
+		}
+		if profile["bio"] != "Hello from Alice" {
+			t.Fatalf("expected profile.bio, got %v", profile["bio"])
+		}
 	})
 }
 
@@ -257,17 +259,17 @@ func TestInclude_HasOne(t *testing.T) {
 func TestInclude_HasOne_NilDefault(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	// u2 has no profile
-	resp := ta.Get("/users/u2?include=profile")
-	resp.AssertStatus(t, http.StatusOK)
+		// u2 has no profile
+		resp := ta.Get("/users/u2?include=profile")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if v, present := got["profile"]; !present || v != nil {
-		t.Fatalf("expected profile=nil, got present=%v value=%v", present, v)
-	}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if v, present := got["profile"]; !present || v != nil {
+			t.Fatalf("expected profile=nil, got present=%v value=%v", present, v)
+		}
 	})
 }
 
@@ -278,20 +280,20 @@ func TestInclude_HasOne_NilDefault(t *testing.T) {
 func TestInclude_ManyToMany(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts/p1?include=tags")
-	resp.AssertStatus(t, http.StatusOK)
+		resp := ta.Get("/posts/p1?include=tags")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	tags, ok := got["tags"].([]any)
-	if !ok {
-		t.Fatalf("expected tags list, got %T (%v)", got["tags"], got["tags"])
-	}
-	if len(tags) != 2 {
-		t.Fatalf("expected 2 tags, got %d: %v", len(tags), tags)
-	}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		tags, ok := got["tags"].([]any)
+		if !ok {
+			t.Fatalf("expected tags list, got %T (%v)", got["tags"], got["tags"])
+		}
+		if len(tags) != 2 {
+			t.Fatalf("expected 2 tags, got %d: %v", len(tags), tags)
+		}
 	})
 }
 
@@ -302,24 +304,24 @@ func TestInclude_ManyToMany(t *testing.T) {
 func TestInclude_ListMultipleIncludes(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts?include=comments,author")
-	resp.AssertStatus(t, http.StatusOK)
+		resp := ta.Get("/posts?include=comments,author")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var env ListResponse
-	if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if env.Total != 2 {
-		t.Fatalf("expected 2 posts, got %d", env.Total)
-	}
-	for _, row := range env.Data {
-		if _, ok := row["comments"]; !ok {
-			t.Fatalf("expected comments key on every row, got %v", row)
+		var env crud.ListResponse
+		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
+			t.Fatalf("decode: %v", err)
 		}
-		if _, ok := row["author"]; !ok {
-			t.Fatalf("expected author key on every row, got %v", row)
+		if env.Total != 2 {
+			t.Fatalf("expected 2 posts, got %d", env.Total)
 		}
-	}
+		for _, row := range env.Data {
+			if _, ok := row["comments"]; !ok {
+				t.Fatalf("expected comments key on every row, got %v", row)
+			}
+			if _, ok := row["author"]; !ok {
+				t.Fatalf("expected author key on every row, got %v", row)
+			}
+		}
 	})
 }
 
@@ -330,9 +332,9 @@ func TestInclude_ListMultipleIncludes(t *testing.T) {
 func TestInclude_Unknown_400(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts/p1?include=bogus")
-	resp.AssertStatus(t, http.StatusBadRequest).
-		AssertBodyContains(t, "bogus")
+		resp := ta.Get("/posts/p1?include=bogus")
+		resp.AssertStatus(t, http.StatusBadRequest).
+			AssertBodyContains(t, "bogus")
 	})
 }
 
@@ -343,18 +345,18 @@ func TestInclude_Unknown_400(t *testing.T) {
 func TestInclude_AbsentLeavesResponseUnchanged(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts/p1")
-	resp.AssertStatus(t, http.StatusOK)
+		resp := ta.Get("/posts/p1")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var got map[string]any
-	if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	for _, key := range []string{"comments", "author", "tags"} {
-		if _, present := got[key]; present {
-			t.Fatalf("did not request %q via include, but it appeared in response: %v", key, got)
+		var got map[string]any
+		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
+			t.Fatalf("decode: %v", err)
 		}
-	}
+		for _, key := range []string{"comments", "author", "tags"} {
+			if _, present := got[key]; present {
+				t.Fatalf("did not request %q via include, but it appeared in response: %v", key, got)
+			}
+		}
 	})
 }
 
@@ -450,7 +452,7 @@ func TestInclude_Nested_OnList(t *testing.T) {
 		resp := ta.Get("/posts?include=author.profile")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var env ListResponse
+		var env crud.ListResponse
 		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
 			t.Fatalf("decode: %v", err)
 		}

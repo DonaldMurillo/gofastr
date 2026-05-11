@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gofastr/gofastr/framework/cron"
 )
 
 // ============================================================================
@@ -65,8 +67,8 @@ func TestLifecycle_StartHookErrorAborts(t *testing.T) {
 
 func TestLifecycle_AddCronStopsScheduler(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
-	s := NewScheduler()
-	if err := s.Register(CronJob{
+	s := cron.NewScheduler()
+	if err := s.Register(cron.CronJob{
 		Name: "noop",
 		Spec: "* * * * *",
 		Run:  func(_ context.Context) error { return nil },

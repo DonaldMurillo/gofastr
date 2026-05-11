@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // indexInfo returns the index names + the columns each indexes on the given
@@ -84,14 +85,14 @@ func extractIndexCols(ddl string) []string {
 func TestMigrate_Indices_CreateIndex(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "status", Type: schema.String},
 				{Name: "author_id", Type: schema.String},
 			},
-			Indices: []Index{
+			Indices: []entity.Index{
 				{Columns: []string{"status"}},
 				{Columns: []string{"author_id", "status"}, Name: "idx_posts_author_status"},
 			},
@@ -124,12 +125,12 @@ func TestMigrate_Indices_CreateIndex(t *testing.T) {
 func TestMigrate_Indices_UniqueEnforced(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "slug", Type: schema.String, Required: true},
 			},
-			Indices: []Index{
+			Indices: []entity.Index{
 				{Columns: []string{"slug"}, Unique: true},
 			},
 		}.WithTimestamps(false)))
@@ -154,12 +155,12 @@ func TestMigrate_Indices_UniqueEnforced(t *testing.T) {
 func TestMigrate_Indices_Idempotent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "status", Type: schema.String},
 			},
-			Indices: []Index{{Columns: []string{"status"}}},
+			Indices: []entity.Index{{Columns: []string{"status"}}},
 		}.WithTimestamps(false)))
 		if err := AutoMigrate(db, reg); err != nil {
 			t.Fatalf("first: %v", err)

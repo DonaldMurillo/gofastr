@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // queryTestPost models the posts entity used in typed-query tests.
@@ -19,12 +21,12 @@ type queryTestPost struct {
 // hand-rolled "generated" column constants — a sneak-preview of what codegen
 // will emit per entity once Task #25's generator side lands.
 var (
-	queryPostsTitle = NewStringColumn("title")
-	queryPostsViews = NewIntColumn("views")
-	queryPostsID    = NewStringColumn("id")
+	queryPostsTitle = entity.NewStringColumn("title")
+	queryPostsViews = entity.NewIntColumn("views")
+	queryPostsID    = entity.NewStringColumn("id")
 )
 
-func queryApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func queryApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE posts (
 		id TEXT PRIMARY KEY,
@@ -34,15 +36,15 @@ func queryApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		t.Fatalf("create: %v", err)
 	}
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "views", Type: schema.Int},
 		},
 	}.WithTimestamps(false))
-	entity, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(entity, db)
+	ent, _ := app.Registry.Get("posts")
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Registry = app.Registry
 	return app, ch

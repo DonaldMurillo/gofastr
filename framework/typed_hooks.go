@@ -3,6 +3,9 @@ package framework
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
 // Typed hooks
@@ -16,14 +19,14 @@ import (
 //
 // Casing: hook payloads inside the framework are snake_cased map[string]any
 // (because unconvertMapKeys runs before hooks fire). Generated structs use
-// JSON tags in camelCase. The wrappers translate via mapToCamelCase /
-// mapToSnakeCase so json.Marshal/Unmarshal round-trips correctly.
+// JSON tags in camelCase. The wrappers translate via casing.MapToCamel /
+// casing.MapToSnake so json.Marshal/Unmarshal round-trips correctly.
 
 // OnBeforeCreate registers a typed BeforeCreate hook on the entity named
 // `name`. Mutations the callback makes to *T are reflected back into the
 // pending body so the subsequent INSERT picks them up.
 func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	app.HookRegistry(name).RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
@@ -43,7 +46,7 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 // Mutations are not reflected — Create has already committed the row's
 // shape; modifying the struct is harmless but pointless.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
@@ -55,7 +58,7 @@ func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, va
 // OnBeforeUpdate registers a typed BeforeUpdate hook. *T is sparse — it
 // holds whatever the caller sent, not the full row.
 func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(BeforeUpdate, func(ctx context.Context, data any) error {
+	app.HookRegistry(name).RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
@@ -73,7 +76,7 @@ func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, v
 // OnAfterUpdate registers a typed AfterUpdate hook receiving the post-update
 // row.
 func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(AfterUpdate, func(ctx context.Context, data any) error {
+	app.HookRegistry(name).RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
@@ -85,7 +88,7 @@ func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, va
 // OnBeforeDelete registers a typed BeforeDelete hook. The payload is the
 // record id; no generic parameter needed.
 func OnBeforeDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
-	app.HookRegistry(name).RegisterHook(BeforeDelete, func(ctx context.Context, data any) error {
+	app.HookRegistry(name).RegisterHook(hook.BeforeDelete, func(ctx context.Context, data any) error {
 		id, _ := data.(string)
 		return fn(ctx, id)
 	})
@@ -94,7 +97,7 @@ func OnBeforeDelete(app *App, name string, fn func(ctx context.Context, id strin
 // OnAfterDelete registers a typed AfterDelete hook. Same shape as
 // OnBeforeDelete.
 func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
-	app.HookRegistry(name).RegisterHook(AfterDelete, func(ctx context.Context, data any) error {
+	app.HookRegistry(name).RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 		id, _ := data.(string)
 		return fn(ctx, id)
 	})
@@ -106,7 +109,7 @@ func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string
 // up.
 func unmarshalHookPayload(data any, dest any) error {
 	if m, ok := data.(map[string]any); ok {
-		camel := mapToCamelCase(m)
+		camel := casing.MapToCamel(m)
 		b, err := json.Marshal(camel)
 		if err != nil {
 			return err
@@ -134,7 +137,7 @@ func mergeStructIntoMap(src any, dest map[string]any) error {
 	if err := json.Unmarshal(b, &fresh); err != nil {
 		return err
 	}
-	snake := mapToSnakeCase(fresh)
+	snake := casing.MapToSnake(fresh)
 	for k, v := range snake {
 		dest[k] = v
 	}
