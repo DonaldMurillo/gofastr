@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -78,7 +79,7 @@ func TestProjection_List(t *testing.T) {
 		resp := ta.Get("/posts?fields=title,body")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var env ListResponse
+		var env crud.ListResponse
 		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
 			t.Fatalf("decode: %v", err)
 		}

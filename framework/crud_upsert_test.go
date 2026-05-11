@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
 	"github.com/gofastr/gofastr/framework/tenant"
 )
 
-func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func upsertApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE posts (
 		id TEXT PRIMARY KEY,
@@ -29,7 +30,7 @@ func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		},
 	}.WithTimestamps(false))
 	ent, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(ent, db)
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Registry = app.Registry
 	return app, ch
@@ -175,7 +176,7 @@ func TestUpsert_InjectsTenantID(t *testing.T) {
 			},
 		}.WithTimestamps(false))
 		ent, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(ent, db)
+		ch := crud.NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 
 		ctx := tenant.SetTenantID(context.Background(), "tenant-a")

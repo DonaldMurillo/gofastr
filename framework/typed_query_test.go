@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -25,7 +26,7 @@ var (
 	queryPostsID    = entity.NewStringColumn("id")
 )
 
-func queryApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func queryApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE posts (
 		id TEXT PRIMARY KEY,
@@ -43,7 +44,7 @@ func queryApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		},
 	}.WithTimestamps(false))
 	ent, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(ent, db)
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Registry = app.Registry
 	return app, ch

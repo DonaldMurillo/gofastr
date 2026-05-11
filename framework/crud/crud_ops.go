@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 // tx-derived context. body is the snake_cased payload; this method mutates
 // it in-place when injecting tenant_id and auto-generated values.
 func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[string]any) (map[string]any, error) {
-	ch.injectTenant(body, ctx)
+	ch.InjectTenant(body, ctx)
 	for _, f := range ch.Entity.GetFields() {
 		if f.AutoGenerate != schema.AutoNone {
 			body[f.Name] = generateFieldValue(f.AutoGenerate)
@@ -123,7 +123,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	ub.Where(ch.PrimaryKey+" = $1", id)
-	ch.applyTenantScopeUpdate(ub, r)
+	ch.ApplyTenantScopeUpdate(ub, r)
 	visFields := ch.visibleFields()
 	ub.Returning(visFields...)
 
@@ -160,7 +160,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		ub := query.Update(ch.Entity.GetTable()).
 			Set("deleted_at", time.Now().UTC()).
 			Where(ch.PrimaryKey+" = $1", id)
-		ch.applyTenantScopeUpdate(ub, r)
+		ch.ApplyTenantScopeUpdate(ub, r)
 		sqlStr, args := ub.Build()
 		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {
@@ -170,7 +170,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	} else {
 		db := query.Delete(ch.Entity.GetTable()).
 			Where(ch.PrimaryKey+" = $1", id)
-		ch.applyTenantScopeDelete(db, r)
+		ch.ApplyTenantScopeDelete(db, r)
 		sqlStr, args := db.Build()
 		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/upload"
 	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
@@ -31,21 +32,14 @@ type Mountable interface {
 	Mount(*router.Router)
 }
 
-// JSONCase defines the casing convention for JSON keys in API responses.
-type JSONCase string
-
-const (
-	// CaseCamel outputs camelCase (default, web standard).
-	CaseCamel JSONCase = "camelCase"
-	// CaseSnake outputs snake_case (database-style).
-	CaseSnake JSONCase = "snake_case"
-)
+// JSONCase / CaseCamel / CaseSnake moved to framework/crud — see
+// reexports_crud.go for the facade aliases that keep framework.X working.
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name           string   // application name
-	JSONCase       JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
-	DebugEndpoints bool     // opt-in for /.debug/* endpoints
+	Name           string        // application name
+	JSONCase       crud.JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
+	DebugEndpoints bool          // opt-in for /.debug/* endpoints
 }
 
 // App is the top-level application container.
@@ -175,7 +169,7 @@ func NewApp(opts ...AppOption) *App {
 		Registry: NewRegistry(),
 		Router:   router.New(),
 		MCP:      mcp.NewServer(),
-		Config:   AppConfig{JSONCase: CaseCamel},
+		Config:   AppConfig{JSONCase: crud.CaseCamel},
 		Plugins:  NewPluginManager(),
 		events:   event.NewEventBus(),
 		hooks:    make(map[string]*hook.HookRegistry),
@@ -223,19 +217,19 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
 	}
 
-	var crudHandler *CrudHandler
+	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		crudHandler = NewCrudHandler(e, a.DB)
+		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
 		crudHandler.Registry = a.Registry
-		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
+		crud.RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
 	}
 
 	if config.MCP && a.DB != nil {
-		if err := RegisterEntityMCPTools(a.MCP, crudHandler, a.Router); err != nil {
+		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.Router); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q: %v", name, err))
 		}
 	}
@@ -317,7 +311,7 @@ func entityEndpointPath(ent *entity.Entity, path string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + strings.Trim(ent.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
 	}
-	return normalizePath(convertColonParams(path))
+	return crud.NormalizePath(convertColonParams(path))
 }
 
 func convertColonParams(path string) string {
@@ -338,9 +332,9 @@ func defaultEndpointToolName(entityName, method, path string) string {
 
 // JSONCasing returns the configured JSON casing strategy.
 // Defaults to CaseCamel if not explicitly set.
-func (a *App) JSONCasing() JSONCase {
+func (a *App) JSONCasing() crud.JSONCase {
 	if a.Config.JSONCase == "" {
-		return CaseCamel
+		return crud.CaseCamel
 	}
 	return a.Config.JSONCase
 }

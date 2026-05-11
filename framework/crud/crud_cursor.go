@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -63,8 +63,8 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
-	ch.applyTenantScope(qb, r)
-	ch.applySoftDeleteFilter(qb, r)
+	ch.ApplyTenantScope(qb, r)
+	ch.ApplySoftDeleteFilter(qb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,

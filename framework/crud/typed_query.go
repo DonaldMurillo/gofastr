@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -80,8 +80,8 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 		qb.Offset(*q.offset)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
-	q.handler.applyTenantScope(qb, req)
-	q.handler.applySoftDeleteFilter(qb, req)
+	q.handler.ApplyTenantScope(qb, req)
+	q.handler.ApplySoftDeleteFilter(qb, req)
 	return qb
 }
 
@@ -145,8 +145,8 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 		cb.Where(c.SQL(), c.Args()...)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
-	q.handler.applyTenantScopeCount(cb, req)
-	q.handler.applySoftDeleteFilterCount(cb, req)
+	q.handler.ApplyTenantScopeCount(cb, req)
+	q.handler.ApplySoftDeleteFilterCount(cb, req)
 	sqlStr, args := cb.Build()
 	var n int
 	if err := q.handler.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&n); err != nil {
@@ -236,7 +236,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		ub.Where(c.SQL(), c.Args()...)
 	}
 	req := syntheticRequest(ctx, "PATCH", "/")
-	q.handler.applyTenantScopeUpdate(ub, req)
+	q.handler.ApplyTenantScopeUpdate(ub, req)
 
 	sqlStr, args := ub.Build()
 	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
@@ -257,7 +257,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		for _, c := range q.wheres {
 			ub.Where(c.SQL(), c.Args()...)
 		}
-		q.handler.applyTenantScopeUpdate(ub, req)
+		q.handler.ApplyTenantScopeUpdate(ub, req)
 		sqlStr, args := ub.Build()
 		res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {
@@ -271,7 +271,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	for _, c := range q.wheres {
 		db.Where(c.SQL(), c.Args()...)
 	}
-	q.handler.applyTenantScopeDelete(db, req)
+	q.handler.ApplyTenantScopeDelete(db, req)
 	sqlStr, args := db.Build()
 	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
 	if err != nil {

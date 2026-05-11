@@ -17,3 +17,27 @@ type Executor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
+
+// txKey is the context key for the active CRUD transaction.
+type txKey struct{}
+
+// TxFromContext returns the active *sql.Tx from context when a CRUD handler
+// has wrapped the operation in a transaction. Lifecycle hooks may use it to
+// perform additional database work that is atomic with the parent operation —
+// queries the hook runs through the tx see (and only commit with) the parent
+// write.
+func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
+	tx, ok := ctx.Value(txKey{}).(*sql.Tx)
+	return tx, ok
+}
+
+// WithTx returns a derived context carrying tx for hook consumption.
+func WithTx(ctx context.Context, tx *sql.Tx) context.Context {
+	return context.WithValue(ctx, txKey{}, tx)
+}
+
+// Beginner is satisfied by *sql.DB. *sql.Tx does not satisfy it, which lets
+// inTx skip nested begin attempts.
+type Beginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}

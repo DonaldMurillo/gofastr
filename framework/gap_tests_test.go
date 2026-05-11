@@ -89,7 +89,7 @@ func TestGap_CursorWithIntegerPK(t *testing.T) {
 // ============================================================================
 // Multipart upload over the configured maxMemory still streams correctly
 //
-// MaxMultipartMemory is 32 MiB. A test file the same size would slow CI down,
+// crud.MaxMultipartMemory is 32 MiB. A test file the same size would slow CI down,
 // so use a 64 KiB file (well below the cap) and assert it round-trips
 // byte-perfect to disk. This pins the streaming code path to confirm large
 // files don't get truncated, garbled, or held entirely in memory by accident.

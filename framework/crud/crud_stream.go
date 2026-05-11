@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -29,8 +29,8 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)
-	ch.applyTenantScopeCount(countQb, r)
-	ch.applySoftDeleteFilterCount(countQb, r)
+	ch.ApplyTenantScopeCount(countQb, r)
+	ch.ApplySoftDeleteFilterCount(countQb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { countQb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -44,8 +44,8 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
-	ch.applyTenantScope(qb, r)
-	ch.applySoftDeleteFilter(qb, r)
+	ch.ApplyTenantScope(qb, r)
+	ch.ApplySoftDeleteFilter(qb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,

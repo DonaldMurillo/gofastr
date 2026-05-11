@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -33,8 +33,8 @@ type batchResult struct {
 	Skipped bool                `json:"skipped,omitempty"`
 }
 
-// batchResponse is the standard envelope for all _batch endpoints.
-type batchResponse struct {
+// BatchResponse is the standard envelope for all _batch endpoints.
+type BatchResponse struct {
 	Committed bool          `json:"committed"`
 	Results   []batchResult `json:"results"`
 }
@@ -66,7 +66,7 @@ func initSkipped(n int) []batchResult {
 
 // writeBatchResponse marshals the envelope and selects 200 vs 400 based on
 // whether the tx committed.
-func writeBatchResponse(w http.ResponseWriter, resp batchResponse) {
+func writeBatchResponse(w http.ResponseWriter, resp BatchResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	if !resp.Committed {
 		w.WriteHeader(http.StatusBadRequest)
@@ -128,7 +128,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 				}
 			}
 		}
-		writeBatchResponse(w, batchResponse{Committed: txErr == nil, Results: results})
+		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
@@ -195,7 +195,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				}
 			}
 		}
-		writeBatchResponse(w, batchResponse{Committed: txErr == nil, Results: results})
+		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
@@ -249,6 +249,6 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 				}
 			}
 		}
-		writeBatchResponse(w, batchResponse{Committed: txErr == nil, Results: results})
+		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -18,7 +19,7 @@ type hookTestPost struct {
 }
 
 // hookApp wires a posts entity ready for typed hook tests.
-func hookApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func hookApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	createPostsTestTable(t, db)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
@@ -30,7 +31,7 @@ func hookApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		},
 	}.WithTimestamps(false))
 	ent, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(ent, db)
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	return app, ch
 }

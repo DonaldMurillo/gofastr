@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/gofastr/gofastr/framework/crud"
 )
 
 // ============================================================================
@@ -20,7 +22,7 @@ func TestNestedFilter_BelongsTo(t *testing.T) {
 
 		resp := ta.Get("/posts?author.name=Alice")
 		resp.AssertStatus(t, http.StatusOK)
-		var env ListResponse
+		var env crud.ListResponse
 		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
@@ -45,7 +47,7 @@ func TestNestedFilter_BelongsTo_Like(t *testing.T) {
 
 		resp := ta.Get("/posts?author.name_like=" + url.QueryEscape("A%"))
 		resp.AssertStatus(t, http.StatusOK)
-		var env ListResponse
+		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)
 		if env.Total != 1 {
 			t.Fatalf("expected 1 post for like A%%, got %d", env.Total)
@@ -73,7 +75,7 @@ func TestNestedFilter_HasMany_NoDuplication(t *testing.T) {
 
 		resp := ta.Get("/posts?comments.body_like=" + url.QueryEscape("%nice%"))
 		resp.AssertStatus(t, http.StatusOK)
-		var env ListResponse
+		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)
 		if env.Total != 1 {
 			t.Fatalf("expected 1 post (no dup despite 2 matching comments), got %d", env.Total)
@@ -93,7 +95,7 @@ func TestNestedFilter_ManyToMany(t *testing.T) {
 
 		resp := ta.Get("/posts?tags.name=go")
 		resp.AssertStatus(t, http.StatusOK)
-		var env ListResponse
+		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)
 		if env.Total != 1 {
 			t.Fatalf("expected 1 post tagged go, got %d", env.Total)
@@ -164,7 +166,7 @@ func TestNestedFilter_ComposesWithTopLevel(t *testing.T) {
 
 		resp := ta.Get("/posts?author.name=Alice&title_like=" + url.QueryEscape("Fir%"))
 		resp.AssertStatus(t, http.StatusOK)
-		var env ListResponse
+		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)
 		if env.Total != 1 {
 			t.Fatalf("expected exactly 1 match for Alice+First, got %d", env.Total)

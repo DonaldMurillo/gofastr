@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -306,7 +307,7 @@ func TestInclude_ListMultipleIncludes(t *testing.T) {
 		resp := ta.Get("/posts?include=comments,author")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var env ListResponse
+		var env crud.ListResponse
 		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
@@ -451,7 +452,7 @@ func TestInclude_Nested_OnList(t *testing.T) {
 		resp := ta.Get("/posts?include=author.profile")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var env ListResponse
+		var env crud.ListResponse
 		if err := json.Unmarshal([]byte(resp.Body()), &env); err != nil {
 			t.Fatalf("decode: %v", err)
 		}

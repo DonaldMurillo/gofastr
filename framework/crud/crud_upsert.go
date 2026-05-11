@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
-		ch.injectTenant(body, ctx)
+		ch.InjectTenant(body, ctx)
 		// Auto-generate any field that needs it; on conflict the existing
 		// value stays (we exclude pk + auto fields from the update set).
 		for _, f := range ch.Entity.GetFields() {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/filter"
@@ -15,7 +16,7 @@ import (
 
 // inProcessApp builds a posts entity wired with a HookRegistry, suitable for
 // exercising the in-process CRUD API.
-func inProcessApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func inProcessApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	createPostsTestTable(t, db)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
@@ -30,7 +31,7 @@ func inProcessApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 	if err != nil {
 		t.Fatalf("get entity: %v", err)
 	}
-	ch := NewCrudHandler(ent, db)
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Events = app.Events()
 	ch.Registry = app.Registry
@@ -129,7 +130,7 @@ func TestCRUDApi_GetOne_WithIncludes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get entity: %v", err)
 		}
-		ch := NewCrudHandler(ent, db)
+		ch := crud.NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 		ch.Events = app.Events()
 		ch.Registry = app.Registry
@@ -170,7 +171,7 @@ func TestCRUDApi_ListAll_FilterSortLimit(t *testing.T) {
 		}
 
 		min1 := float64(1)
-		got, err := ch.ListAll(ctx, ListOptions{
+		got, err := ch.ListAll(ctx, crud.ListOptions{
 			Filters: []filter.ParsedFilter{{Field: "title", Op: filter.OpLike, Value: "%a%"}},
 			Sorts:   []filter.ParsedSort{{Field: "title", Desc: false}},
 			Limit:   2,

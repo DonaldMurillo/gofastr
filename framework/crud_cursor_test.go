@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/pagination"
 )
@@ -171,7 +172,7 @@ func TestCursor_InvalidCursor_400(t *testing.T) {
 }
 
 // ============================================================================
-// Test: No cursor key → falls back to offset (ListResponse) — regression pin
+// Test: No cursor key → falls back to offset (crud.ListResponse) — regression pin
 // ============================================================================
 
 func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
@@ -180,9 +181,9 @@ func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
 		resp := ta.Get("/posts?limit=10")
 		resp.AssertStatus(t, http.StatusOK)
 
-		var off ListResponse
+		var off crud.ListResponse
 		if err := json.Unmarshal([]byte(resp.Body()), &off); err != nil {
-			t.Fatalf("decode ListResponse: %v\n%s", err, resp.Body())
+			t.Fatalf("decode crud.ListResponse: %v\n%s", err, resp.Body())
 		}
 		if off.Total != 5 {
 			t.Fatalf("expected total=5 from offset envelope, got %d", off.Total)

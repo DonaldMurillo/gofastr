@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/slowquery"
 )
@@ -126,10 +127,10 @@ func TestSlowQuery_AsCrudHandlerDB(t *testing.T) {
 		wrapped := slowquery.NewSlowQueryLogger(db, time.Nanosecond, logger)
 
 		ent, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(ent, wrapped)
+		ch := crud.NewCrudHandler(ent, wrapped)
 		ch.Registry = app.Registry
 
-		_, err := ch.ListAll(context.Background(), ListOptions{})
+		_, err := ch.ListAll(context.Background(), crud.ListOptions{})
 		if err != nil {
 			t.Fatalf("ListAll: %v", err)
 		}

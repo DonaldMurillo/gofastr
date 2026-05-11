@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
 )
@@ -367,7 +368,7 @@ func TestEagerLoadEmptyIDs(t *testing.T) {
 	ent := entity.Define("users", entity.EntityConfig{Table: "users"})
 	relations := []entity.Relation{entity.HasMany("posts", "posts", "user_id")}
 
-	result, err := EagerLoad(context.Background(), nil, ent, relations, nil)
+	result, err := crud.EagerLoad(context.Background(), nil, ent, relations, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -379,7 +380,7 @@ func TestEagerLoadEmptyIDs(t *testing.T) {
 func TestEagerLoadEmptyRelations(t *testing.T) {
 	ent := entity.Define("users", entity.EntityConfig{Table: "users"})
 
-	result, err := EagerLoad(context.Background(), nil, ent, nil, []string{"1", "2"})
+	result, err := crud.EagerLoad(context.Background(), nil, ent, nil, []string{"1", "2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

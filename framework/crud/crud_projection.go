@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"fmt"

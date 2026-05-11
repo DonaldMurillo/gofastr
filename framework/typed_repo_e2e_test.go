@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -25,7 +26,7 @@ type e2ePost struct {
 
 // e2ePostsRepo mirrors the generator template output.
 type e2ePostsRepo struct {
-	handler *CrudHandler
+	handler *crud.CrudHandler
 }
 
 func newE2EPostsRepo(app *App) *e2ePostsRepo {
@@ -33,7 +34,7 @@ func newE2EPostsRepo(app *App) *e2ePostsRepo {
 	if err != nil {
 		panic("posts not registered: " + err.Error())
 	}
-	h := NewCrudHandler(ent, app.DB)
+	h := crud.NewCrudHandler(ent, app.DB)
 	h.JSONCase = app.JSONCasing()
 	h.Hooks = app.HookRegistry("posts")
 	h.Events = app.Events()
@@ -374,7 +375,7 @@ func TestTypedRepoContract_IncludePopulatesRelationFields(t *testing.T) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
 		ent, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(ent, db)
+		ch := crud.NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 		ch.Registry = app.Registry
 

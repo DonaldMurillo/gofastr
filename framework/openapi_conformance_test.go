@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -65,8 +66,8 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	})
 	app.Registry.Register(postsEntity)
 
-	RegisterCrudRoutes(app.Router, NewCrudHandler(usersEntity, db), "/users")
-	RegisterCrudRoutes(app.Router, NewCrudHandler(postsEntity, db), "/posts")
+	crud.RegisterCrudRoutes(app.Router, crud.NewCrudHandler(usersEntity, db), "/users")
+	crud.RegisterCrudRoutes(app.Router, crud.NewCrudHandler(postsEntity, db), "/posts")
 
 	spec := EntityOpenAPI(app.Registry, "Conformance API", "1.0.0")
 	app.Router.Get("/openapi.json", openapi.Handler(spec))

@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -33,7 +33,7 @@ type IncludeNode struct {
 //
 // Example: "author.profile, comments" against a posts entity yields two
 // roots: author (with profile as a child) and comments (no children).
-func parseIncludeTree(r *http.Request, ent *entity.Entity, registry *Registry) ([]*IncludeNode, error) {
+func parseIncludeTree(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
 	raw := strings.TrimSpace(r.URL.Query().Get("include"))
 	if raw == "" {
 		return nil, nil

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/tenant"
@@ -337,7 +338,7 @@ func TestSSE_NoEventBus_503(t *testing.T) {
 			{Name: "title", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false))
-	ch := NewCrudHandler(ent, nil)
+	ch := crud.NewCrudHandler(ent, nil)
 	ch.Events = nil
 
 	rec := httptest.NewRecorder()

@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"fmt"
@@ -30,7 +30,7 @@ type nestedFilter struct {
 //
 // Unknown relations and unknown fields on the target return an error so
 // the caller can map to 400 — silent ignoring would mask client typos.
-func parseNestedFilters(r *http.Request, ent *entity.Entity, registry *Registry) ([]nestedFilter, error) {
+func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
 	relsByName := map[string]entity.Relation{}
 	for _, rel := range ent.Config.Relations {
 		relsByName[rel.Name] = rel

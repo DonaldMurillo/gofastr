@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"github.com/gofastr/gofastr/core/router"
@@ -21,7 +21,7 @@ import (
 // above the wildcard /{id} so they take precedence over Get/Update/Delete
 // on the same prefix.
 func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string) {
-	path = normalizePath(path)
+	path = NormalizePath(path)
 
 	r.Get(path, handler.List())
 	r.Get(path+"/{id}", handler.Get())
@@ -36,8 +36,8 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string) {
 	r.Get(path+"/_events", handler.EventStream())
 }
 
-// normalizePath strips trailing slashes from a path.
-func normalizePath(path string) string {
+// NormalizePath strips trailing slashes from a path.
+func NormalizePath(path string) string {
 	for len(path) > 1 && path[len(path)-1] == '/' {
 		path = path[:len(path)-1]
 	}

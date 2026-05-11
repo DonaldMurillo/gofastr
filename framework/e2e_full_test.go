@@ -22,6 +22,7 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/pagination"
 )
@@ -340,7 +341,7 @@ func TestE2E_Full(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("list: %d %s", code, body)
 			}
-			var env ListResponse
+			var env crud.ListResponse
 			if err := json.Unmarshal(body, &env); err != nil {
 				t.Fatalf("decode: %v", err)
 			}

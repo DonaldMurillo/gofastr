@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -21,7 +22,7 @@ type columnTestRow struct {
 	JoinedAt string  `json:"joinedAt,omitempty"`
 }
 
-func columnTestApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func columnTestApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE rows (
 		id TEXT PRIMARY KEY,
@@ -45,7 +46,7 @@ func columnTestApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		},
 	}.WithTimestamps(false))
 	ent, _ := app.Registry.Get("rows")
-	ch := NewCrudHandler(ent, db)
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("rows")
 	ch.Registry = app.Registry
 	return app, ch

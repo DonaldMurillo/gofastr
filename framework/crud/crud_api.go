@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -99,8 +99,8 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 		From(ch.Entity.GetTable()).
 		Where(ch.PrimaryKey+" = $1", id)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
-	ch.applyTenantScope(qb, req)
-	ch.applySoftDeleteFilter(qb, req)
+	ch.ApplyTenantScope(qb, req)
+	ch.ApplySoftDeleteFilter(qb, req)
 
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
@@ -142,8 +142,8 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	filter.ApplyToQuery(qb, opts.Filters)
 	filter.ApplySortToQuery(qb, opts.Sorts)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
-	ch.applyTenantScope(qb, req)
-	ch.applySoftDeleteFilter(qb, req)
+	ch.ApplyTenantScope(qb, req)
+	ch.ApplySoftDeleteFilter(qb, req)
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
 	}
@@ -252,8 +252,8 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	cb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(cb, opts.Filters)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
-	ch.applyTenantScopeCount(cb, req)
-	ch.applySoftDeleteFilterCount(cb, req)
+	ch.ApplyTenantScopeCount(cb, req)
+	ch.ApplySoftDeleteFilterCount(cb, req)
 	sqlStr, args := cb.Build()
 	var total int
 	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&total); err != nil {
@@ -265,7 +265,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 // buildIncludeNodesFromNames takes a flat list of include names (possibly
 // dotted) and runs them through the same parser HTTP requests use. Lets
 // in-process callers use ?include= semantics without constructing a URL.
-func buildIncludeNodesFromNames(ent *entity.Entity, registry *Registry, names []string) ([]*IncludeNode, error) {
+func buildIncludeNodesFromNames(ent *entity.Entity, registry entity.Registry, names []string) ([]*IncludeNode, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
@@ -209,7 +210,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			"properties": map[string]any{
 				"items": map[string]any{
 					"type":     "array",
-					"maxItems": MaxBatchSize,
+					"maxItems": crud.MaxBatchSize,
 					"items":    createSchema,
 				},
 			},
@@ -236,7 +237,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			"properties": map[string]any{
 				"items": map[string]any{
 					"type":     "array",
-					"maxItems": MaxBatchSize,
+					"maxItems": crud.MaxBatchSize,
 					"items":    batchUpdateItem,
 				},
 			},
@@ -272,7 +273,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			"properties": map[string]any{
 				"ids": map[string]any{
 					"type":     "array",
-					"maxItems": MaxBatchSize,
+					"maxItems": crud.MaxBatchSize,
 					"items":    map[string]any{"type": "string"},
 				},
 			},

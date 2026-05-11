@@ -1,4 +1,4 @@
-package framework
+package crud
 
 import (
 	"context"
@@ -43,7 +43,7 @@ type CrudHandler struct {
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
 	Events     *event.EventBus    // optional; receives entity.created/updated/deleted on commit
-	Registry   *Registry          // optional; required for nested ?include=author.profile resolution
+	Registry   entity.Registry          // optional; required for nested ?include=author.profile resolution
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -66,10 +66,10 @@ type ListResponse struct {
 	TotalPages int              `json:"totalPages"`
 }
 
-// applyTenantScope adds a tenant_id filter to the query when the entity
+// ApplyTenantScope adds a tenant_id filter to the query when the entity
 // is configured for multi-tenancy and a tenant ID is present in the context.
 // Note: uses PostgreSQL-style $1 placeholders.
-func (ch *CrudHandler) applyTenantScope(qb *query.QueryBuilder, r *http.Request) {
+func (ch *CrudHandler) ApplyTenantScope(qb *query.QueryBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
@@ -78,9 +78,9 @@ func (ch *CrudHandler) applyTenantScope(qb *query.QueryBuilder, r *http.Request)
 	}
 }
 
-// applyTenantScopeCount adds a tenant_id filter to a count query builder.
+// ApplyTenantScopeCount adds a tenant_id filter to a count query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
-func (ch *CrudHandler) applyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
+func (ch *CrudHandler) ApplyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
@@ -89,9 +89,9 @@ func (ch *CrudHandler) applyTenantScopeCount(cb *query.CountBuilder, r *http.Req
 	}
 }
 
-// applyTenantScopeUpdate adds a tenant_id filter to an update query builder.
+// ApplyTenantScopeUpdate adds a tenant_id filter to an update query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
-func (ch *CrudHandler) applyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
+func (ch *CrudHandler) ApplyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
@@ -100,9 +100,9 @@ func (ch *CrudHandler) applyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.R
 	}
 }
 
-// applyTenantScopeDelete adds a tenant_id filter to a delete query builder.
+// ApplyTenantScopeDelete adds a tenant_id filter to a delete query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
-func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
+func (ch *CrudHandler) ApplyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
@@ -111,10 +111,10 @@ func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.R
 	}
 }
 
-// injectTenant injects the tenant_id into a data map when multi-tenancy is
+// InjectTenant injects the tenant_id into a data map when multi-tenancy is
 // enabled. It reads the tenant ID from ctx so it works whether the caller is
 // outside or inside an in-tx context derived from the request.
-func (ch *CrudHandler) injectTenant(data map[string]any, ctx context.Context) {
+func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(ctx)
 		if tenantID != "" {
@@ -123,9 +123,9 @@ func (ch *CrudHandler) injectTenant(data map[string]any, ctx context.Context) {
 	}
 }
 
-// applySoftDeleteFilter adds a deleted_at IS NULL filter unless the caller
+// ApplySoftDeleteFilter adds a deleted_at IS NULL filter unless the caller
 // requests trashed records via ?trashed=true.
-func (ch *CrudHandler) applySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
+func (ch *CrudHandler) ApplySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
 	if ch.Entity.Config.SoftDelete {
 		showTrashed := r.URL.Query().Get("trashed") == "true"
 		if !showTrashed {
@@ -134,8 +134,8 @@ func (ch *CrudHandler) applySoftDeleteFilter(qb *query.QueryBuilder, r *http.Req
 	}
 }
 
-// applySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
-func (ch *CrudHandler) applySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
+// ApplySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
+func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
 	if ch.Entity.Config.SoftDelete {
 		showTrashed := r.URL.Query().Get("trashed") == "true"
 		if !showTrashed {
@@ -254,8 +254,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		filter.ApplyToCountQuery(countQb, filters)
-		ch.applyTenantScopeCount(countQb, r)
-		ch.applySoftDeleteFilterCount(countQb, r)
+		ch.ApplyTenantScopeCount(countQb, r)
+		ch.ApplySoftDeleteFilterCount(countQb, r)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -271,8 +271,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		filter.ApplyToQuery(qb, filters)
-		ch.applyTenantScope(qb, r)
-		ch.applySoftDeleteFilter(qb, r)
+		ch.ApplyTenantScope(qb, r)
+		ch.ApplySoftDeleteFilter(qb, r)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -345,8 +345,8 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		qb.Where(ch.PrimaryKey+" = $1", id)
-		ch.applyTenantScope(qb, r)
-		ch.applySoftDeleteFilter(qb, r)
+		ch.ApplyTenantScope(qb, r)
+		ch.ApplySoftDeleteFilter(qb, r)
 
 		sqlStr, args := qb.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)

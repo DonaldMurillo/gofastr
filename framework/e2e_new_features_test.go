@@ -15,6 +15,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/crud"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
@@ -168,7 +169,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			var resp ListResponse
+			var resp crud.ListResponse
 			if err := json.Unmarshal(body, &resp); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
@@ -195,7 +196,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			var resp ListResponse
+			var resp crud.ListResponse
 			json.Unmarshal(body, &resp)
 			for _, row := range resp.Data {
 				kids, _ := row["comments"].([]any)
@@ -248,7 +249,7 @@ func TestE2E_NewFeatures(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			var env ListResponse
+			var env crud.ListResponse
 			if err := json.Unmarshal(body, &env); err != nil {
 				t.Fatalf("decode (stream envelope must be valid JSON): %v\nbody: %s", err, body)
 			}
