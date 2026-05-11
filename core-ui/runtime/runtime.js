@@ -81,6 +81,14 @@
     const headers = {};
     if (widgetEl) headers['X-FUI-Widget'] = widgetEl.getAttribute('data-fui-widget') || '';
     if (body) headers['Content-Type'] = 'application/json';
+    // Optional pre-flight confirm — useful for destructive RPCs
+    // (delete, revoke, drop). The user gets a native browser confirm
+    // dialog with the supplied message; cancel aborts the dispatch.
+    const confirmMsg = node.getAttribute('data-fui-confirm');
+    if (confirmMsg && typeof window.confirm === 'function') {
+      if (!window.confirm(confirmMsg)) return;
+    }
+
     if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
     try {
       const r = await fetch(resolvedPath, { method, headers, body: body || undefined });

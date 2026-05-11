@@ -117,8 +117,12 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		if c.Key == "" {
 			panic("ui: DataTable Column requires Key")
 		}
-		if c.Header == "" {
-			panic("ui: DataTable Column requires Header")
+		// Header MAY be empty — common for actions / icon columns
+		// where the cells are self-evidently labeled. Sortable columns
+		// still need text content for the sort link, so we panic only
+		// in that case.
+		if c.Header == "" && c.Sortable {
+			panic("ui: DataTable Column with empty Header cannot be Sortable")
 		}
 		if c.Sortable && cfg.SortHrefPattern == "" {
 			panic("ui: DataTable Column.Sortable requires Config.SortHrefPattern")

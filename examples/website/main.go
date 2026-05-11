@@ -75,6 +75,9 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/skeleton", &SkeletonScreen{}, nil)
 	site.Register("/components/breadcrumbs", &BreadcrumbsScreen{}, nil)
 	site.Register("/components/pagination", &PaginationScreen{}, nil)
+	site.Register("/customers", &CustomersListScreen{}, nil)
+	site.Register("/customers/new", &CustomersFormScreen{}, nil)
+	site.Register("/customers/:id", &CustomersFormScreen{}, nil)
 	site.Register("/framework-ui/", &FrameworkUIScreen{}, nil)
 	site.Register("/framework-ui/datatable", &DataTableDemoScreen{}, nil)
 	site.Register("/framework-ui/form", &FormDemoScreen{}, nil)
@@ -96,6 +99,9 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	// demos wire IslandSignal + IslandEndpoint into the rendered HTML.
 	fwApp.Router.Get("/islands/pagination-demo/page", http.HandlerFunc(PaginationIslandHandler))
 	fwApp.Router.Get("/islands/datatable-demo/state", http.HandlerFunc(DataTableIslandHandler))
+	fwApp.Router.Get("/islands/customers/state", http.HandlerFunc(CustomersIslandHandler))
+	fwApp.Router.Post("/islands/customers/delete", http.HandlerFunc(CustomersDeleteHandler))
+	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
 
 	if devMode() {
 		// Dev-only livereload — SSE-driven, not polling. The server

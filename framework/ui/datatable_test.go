@@ -14,10 +14,37 @@ func TestDataTableRequiresColumns(t *testing.T) {
 	t.Fatal("expected panic on empty Columns")
 }
 
-func TestDataTableColumnRequiresKeyAndHeader(t *testing.T) {
+func TestDataTableColumnRequiresKey(t *testing.T) {
 	defer func() { recover() }()
 	DataTable(DataTableConfig{Columns: []Column{{Header: "x"}}})
 	t.Fatal("expected panic on Column without Key")
+}
+
+func TestDataTableSortableEmptyHeaderPanics(t *testing.T) {
+	defer func() { recover() }()
+	DataTable(DataTableConfig{
+		Columns:         []Column{{Key: "x", Header: "", Sortable: true}},
+		Rows:            []Row{{Cells: map[string]render.HTML{"x": render.Text("a")}}},
+		SortHrefPattern: "?s=%s&d=%s",
+	})
+	t.Fatal("expected panic on sortable column with empty header")
+}
+
+func TestDataTableActionsColumnEmptyHeaderOK(t *testing.T) {
+	// Empty Header is allowed on non-sortable columns (actions / icons).
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{
+			{Key: "name", Header: "Name"},
+			{Key: "actions", Header: "", Align: "end"},
+		},
+		Rows: []Row{{Cells: map[string]render.HTML{
+			"name":    render.Text("Alice"),
+			"actions": render.Text("✎"),
+		}}},
+	}))
+	if !strings.Contains(h, "Alice") {
+		t.Errorf("expected row to render: %s", h)
+	}
 }
 
 func TestDataTableSortableRequiresHrefPattern(t *testing.T) {

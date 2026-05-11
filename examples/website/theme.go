@@ -266,6 +266,14 @@ func createStyleSheet(theme style.Theme) string {
 		Set("outline", "2px solid {colors.primary}",
 			"outline-offset", "1px").End()
 
+	// CRUD demo extras.
+	ss.Rule(".ui-button--small").
+		Set("padding", "2px {spacing.sm}", "font-size", "0.8rem").End()
+	ss.Rule(".ui-link").
+		Set("color", "{colors.primary}", "text-decoration", "none",
+			"font-weight", "500").End()
+	ss.Rule(".ui-link:hover").Set("text-decoration", "underline").End()
+
 	// Theme-swap demo: radios + :has() override --color-primary on the
 	// preview wrapper. Pure CSS — no JS — proves the "one-token swap"
 	// re-skin claim viscerally.
