@@ -76,8 +76,16 @@ If the world is empty (`"entities":{}` or absent), there is **no app**. Do not d
 - `delete_field(entity, field, plan_id)` — remove a field. Destructive: target `{op:"delete_field",name:"<entity>.<field>"}`.
 
 ### UI pages
-- `add_page(page)` — register a page. Pages are element trees (`{kind, props, children, bindings, actions}`).
-- `delete_page(path)` — remove a page.
+- `add_page(page)` — register a page. Pages are element trees (`{kind, props, children, bindings, actions}`). Every node is auto-assigned a stable `_id` and the page gets a `version` (starts at 1).
+- `update_page_element(path, element_id, patch, if_match?)` — **surgical edit; prefer this over delete-and-readd for any change to an existing page.** Address one node by its `_id` (read from `/kiln/world/pages.<path>`) and apply ONE atomic patch. Non-destructive, no plan needed. `patch.op` is one of:
+  - `set_props` — merge `set_props` into the element's props (most common — change href, text, class)
+  - `replace_props` — replace props entirely
+  - `replace_subtree` — replace this element + children with `element` (preserves the `_id`)
+  - `remove` — drop this element from its parent (root not allowed)
+  - `insert_before` / `insert_after` — add `element` as a sibling
+  - `append_child` — add `element` as the last child
+  - Pass `if_match: <page.version>` to detect drift; mismatch returns `kind:"conflict"`, refetch and retry.
+- `delete_page(path)` — remove an entire page. Destructive (URL stops responding). Use only when the user really wants the page gone; for any *edit*, use `update_page_element`.
 
 ### Behavior
 - `add_hook(hook)` / `delete_hook(id)` — declarative entity lifecycle hooks.

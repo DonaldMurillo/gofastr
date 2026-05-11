@@ -13,6 +13,12 @@ import (
 
 func runGenerate(args []string) {
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
+		for _, a := range args {
+			if a == "--watch" {
+				runGenerateWatch(args)
+				return
+			}
+		}
 		generateProject(args)
 		return
 	}
@@ -23,6 +29,8 @@ func runGenerate(args []string) {
 		generateEntity(args[1:])
 	case "all":
 		generateProject(args[1:])
+	case "ts", "typescript":
+		runGenerateTS(args[1:])
 	default:
 		fail("Unknown resource type: %s", resourceType)
 		info("Supported: all, entity")
@@ -82,6 +90,12 @@ func generateProject(args []string) {
 	}
 	for _, file := range files {
 		path := filepath.Join(options.outputDir, file.name)
+		// file.name may contain subdirectories (e.g. "client/client.go") so
+		// ensure the parent directory exists before writing.
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			fail("Failed to create %s: %v", filepath.Dir(path), err)
+			os.Exit(1)
+		}
 		if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
 			fail("Failed to write %s: %v", path, err)
 			os.Exit(1)
@@ -168,6 +182,12 @@ func RegisterAll(app *framework.App) {
 	return []generatedFile{
 		{name: "register.go", content: register.String()},
 		{name: "models.go", content: models.String()},
+		{name: "columns.go", content: renderColumns(decls)},
+		{name: "repo.go", content: renderRepos(decls)},
+		{name: "events.go", content: renderEvents(decls)},
+		// Generated client lives in its own package so consumers can import
+		// it without dragging the server-side schema/framework deps along.
+		{name: "client/client.go", content: renderClient(decls)},
 	}, nil
 }
 
@@ -339,6 +359,22 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", toCamelCase(field.Name), goTypeForField(field.Type), toCamelJSON(field.Name)))
+	}
+	// Relation fields — populated by TypedQuery.Include() and Repo.Get(...,
+	// includes...). Singular relations (HasOne/BelongsTo) get *Target;
+	// collections (HasMany/ManyToMany) get []*Target. Pointer so the absent
+	// case marshals as null (matches the framework's nil-for-missing
+	// contract).
+	for _, rel := range decl.Relations {
+		targetStruct := toCamelCase(rel.Entity)
+		fieldName := toCamelCase(rel.Name)
+		jsonTag := toCamelJSON(rel.Name)
+		switch rel.Type {
+		case framework.RelHasOne, framework.RelManyToOne:
+			sb.WriteString(fmt.Sprintf("\t%s *%s `json:\"%s,omitempty\"`\n", fieldName, targetStruct, jsonTag))
+		case framework.RelHasMany, framework.RelManyToMany:
+			sb.WriteString(fmt.Sprintf("\t%s []*%s `json:\"%s,omitempty\"`\n", fieldName, targetStruct, jsonTag))
+		}
 	}
 	sb.WriteString("}\n\n")
 	return sb.String()

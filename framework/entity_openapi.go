@@ -1,6 +1,8 @@
 package framework
 
 import (
+	"strings"
+
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
 )
@@ -22,10 +24,11 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			"error":   map[string]any{"type": "string"},
 			"success": map[string]any{"type": "boolean"},
 			"code":    map[string]any{"type": "integer"},
+			"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
 		},
 	})
 
-	// Add list response schema
+	// Offset-mode list envelope
 	s.AddSchema("ListResponse", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -34,6 +37,38 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			"page":       map[string]any{"type": "integer"},
 			"perPage":    map[string]any{"type": "integer"},
 			"totalPages": map[string]any{"type": "integer"},
+		},
+	})
+
+	// Cursor-mode list envelope (returned when ?cursor= is present)
+	s.AddSchema("CursorPage", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"data":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+			"cursor":  map[string]any{"type": "string", "description": "Opaque cursor for the next page; empty when there are no more results."},
+			"hasMore": map[string]any{"type": "boolean"},
+			"total":   map[string]any{"type": "integer"},
+		},
+	})
+
+	// Per-item shape inside a _batch response
+	s.AddSchema("BatchResult", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"index":   map[string]any{"type": "integer"},
+			"data":    map[string]any{"type": "object"},
+			"error":   map[string]any{"type": "string"},
+			"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+			"skipped": map[string]any{"type": "boolean"},
+		},
+	})
+
+	// Top-level shape for every _batch response
+	s.AddSchema("BatchResponse", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"committed": map[string]any{"type": "boolean"},
+			"results":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/BatchResult"}},
 		},
 	})
 
@@ -72,16 +107,32 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		// Reference to entity schema
 		entityRef := map[string]any{"$ref": "#/components/schemas/" + entityName}
 		listRef := map[string]any{"$ref": "#/components/schemas/ListResponse"}
+		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
+		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
+		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		path := "/" + tableName
+
+		includeNames := make([]string, 0, len(entity.Config.Relations))
+		for _, rel := range entity.Config.Relations {
+			includeNames = append(includeNames, rel.Name)
+		}
+		includeDesc := "Comma-separated list of relations to eager-load."
+		includeSchema := map[string]any{"type": "string"}
+		if len(includeNames) > 0 {
+			includeDesc += " Available: " + strings.Join(includeNames, ", ") + "."
+		}
 
 		// --- GET /{table} — List ---
 		listOp := openapi.NewOperation()
 		listOp.Summary = "List " + entityName
 		listOp.OperationID = "list_" + entityName
 		listOp.Tags = []string{entityName}
-		listOp.AddParameter("page", "query", "Page number", false, map[string]any{"type": "integer", "default": 1})
+		listOp.AddParameter("page", "query", "Page number (offset mode)", false, map[string]any{"type": "integer", "default": 1})
 		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
-		listOp.AddParameter("sort", "query", "Sort field", false, map[string]any{"type": "string"})
+		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})
+		listOp.AddParameter("cursor", "query", "Opaque cursor; presence (even empty) switches the response to CursorPage shape and uses keyset pagination by primary key.", false, map[string]any{"type": "string"})
+		listOp.AddParameter("direction", "query", "Cursor walk direction: forward (default) or backward.", false, map[string]any{"type": "string", "enum": []string{"forward", "backward"}, "default": "forward"})
+		listOp.AddParameter("include", "query", includeDesc, false, includeSchema)
 
 		// Add filter parameters matching the actual filter parser
 		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
@@ -100,10 +151,9 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			listOp.AddParameter(name+"_in", "query", name+" in comma-separated list", false, map[string]any{"type": "string"})
 		}
 
-		listOp.AddResponse(200, "List of "+entityName, listRef)
-		listOp.Responses[400] = map[string]any{
-			"description": "Invalid filters",
-		}
+		// 200 is one of two envelopes — clients pick by whether they sent ?cursor.
+		listOp.AddResponse(200, "List of "+entityName, map[string]any{"oneOf": []any{listRef, cursorRef}})
+		listOp.AddResponse(400, "Invalid filters or unknown include", errorRef)
 		s.AddPath("GET", path, *listOp)
 
 		// --- POST /{table} — Create ---
@@ -116,9 +166,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		createSchema := excludeFieldsByBehavior(entitySchema, fields)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, entityRef)
-		createOp.Responses[400] = map[string]any{
-			"description": "Validation error",
-		}
+		createOp.AddResponse(400, "Validation error", errorRef)
 		s.AddPath("POST", path, *createOp)
 
 		// --- GET /{table}/:id — Get by ID ---
@@ -126,10 +174,10 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		getOp.Summary = "Get " + entityName + " by ID"
 		getOp.OperationID = "get_" + entityName
 		getOp.Tags = []string{entityName}
+		getOp.AddParameter("include", "query", includeDesc, false, includeSchema)
 		getOp.AddResponse(200, "Single "+entityName, entityRef)
-		getOp.Responses[404] = map[string]any{
-			"description": entityName + " not found",
-		}
+		getOp.AddResponse(400, "Unknown include", errorRef)
+		getOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("GET", path+"/:id", *getOp)
 
 		// --- PUT /{table}/:id — Update ---
@@ -139,8 +187,8 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		updateOp.Tags = []string{entityName}
 		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
 		updateOp.AddResponse(200, "Updated "+entityName, entityRef)
-		updateOp.Responses[400] = map[string]any{"description": "Validation error"}
-		updateOp.Responses[404] = map[string]any{"description": entityName + " not found"}
+		updateOp.AddResponse(400, "Validation error", errorRef)
+		updateOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PUT", path+"/:id", *updateOp)
 
 		// --- DELETE /{table}/:id — Delete ---
@@ -150,9 +198,93 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		deleteOp.Tags = []string{entityName}
 		deleteOp.Responses = map[int]map[string]any{
 			204: {"description": "Deleted"},
-			404: {"description": entityName + " not found"},
 		}
+		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
+
+		// --- POST /{table}/_batch — BatchCreate ---
+		batchCreateBody := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"items": map[string]any{
+					"type":     "array",
+					"maxItems": MaxBatchSize,
+					"items":    createSchema,
+				},
+			},
+			"required": []string{"items"},
+		}
+		batchCreateOp := openapi.NewOperation()
+		batchCreateOp.Summary = "Batch create " + entityName + " (atomic)"
+		batchCreateOp.OperationID = "batch_create_" + entityName
+		batchCreateOp.Tags = []string{entityName}
+		batchCreateOp.SetRequestBody("application/json", batchCreateBody, true)
+		batchCreateOp.AddResponse(200, "All items committed", batchRespRef)
+		batchCreateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		s.AddPath("POST", path+"/_batch", *batchCreateOp)
+
+		// --- PATCH /{table}/_batch — BatchUpdate ---
+		batchUpdateItem := map[string]any{
+			"allOf": []any{
+				excludeFieldsByBehavior(entitySchema, fields),
+				map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
+			},
+		}
+		batchUpdateBody := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"items": map[string]any{
+					"type":     "array",
+					"maxItems": MaxBatchSize,
+					"items":    batchUpdateItem,
+				},
+			},
+			"required": []string{"items"},
+		}
+		batchUpdateOp := openapi.NewOperation()
+		batchUpdateOp.Summary = "Batch update " + entityName + " (atomic)"
+		batchUpdateOp.OperationID = "batch_update_" + entityName
+		batchUpdateOp.Tags = []string{entityName}
+		batchUpdateOp.SetRequestBody("application/json", batchUpdateBody, true)
+		batchUpdateOp.AddResponse(200, "All items committed", batchRespRef)
+		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
+
+		// --- GET /{table}/_events — SSE entity subscription stream ---
+		eventsOp := openapi.NewOperation()
+		eventsOp.Summary = "Subscribe to " + entityName + " events (SSE)"
+		eventsOp.OperationID = "events_" + entityName
+		eventsOp.Tags = []string{entityName}
+		eventsOp.Responses[200] = map[string]any{
+			"description": "Server-Sent Events stream of entity.created/updated/deleted",
+			"content": map[string]any{
+				"text/event-stream": map[string]any{
+					"schema": map[string]any{"type": "string"},
+				},
+			},
+		}
+		s.AddPath("GET", path+"/_events", *eventsOp)
+
+		// --- DELETE /{table}/_batch — BatchDelete ---
+		batchDeleteBody := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"ids": map[string]any{
+					"type":     "array",
+					"maxItems": MaxBatchSize,
+					"items":    map[string]any{"type": "string"},
+				},
+			},
+			"required": []string{"ids"},
+		}
+		batchDeleteOp := openapi.NewOperation()
+		batchDeleteOp.Summary = "Batch delete " + entityName + " (atomic)"
+		batchDeleteOp.OperationID = "batch_delete_" + entityName
+		batchDeleteOp.Tags = []string{entityName}
+		batchDeleteOp.SetRequestBody("application/json", batchDeleteBody, true)
+		batchDeleteOp.AddResponse(200, "All items committed", batchRespRef)
+		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
 
 		for _, endpoint := range entity.Config.Endpoints {
 			if endpoint.Method == "" || endpoint.Path == "" {

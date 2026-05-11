@@ -235,6 +235,20 @@ func applyWorldEdit(w *world.World, e Entry) error {
 		delete(w.Pages, p.Path)
 		return nil
 
+	case OpUpdatePageElement:
+		var p UpdatePageElementPayload
+		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		if p.New == nil {
+			return fmt.Errorf("update_page_element: nil new page")
+		}
+		if _, exists := w.Pages[p.Path]; !exists {
+			return fmt.Errorf("update_page_element: page %q not found", p.Path)
+		}
+		w.Pages[p.Path] = p.New
+		return nil
+
 	case OpAddHook:
 		var p AddHookPayload
 		if err := e.Decode(&p); err != nil {

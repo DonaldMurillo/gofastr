@@ -23,6 +23,51 @@ func kilnSkillPath() string {
 	return p
 }
 
+// kilnContractPreamble is the system-level "you are inside kiln" framing
+// every adapter ships with the user's prompt. The world IR is the app —
+// editing files on disk is meaningless and explicitly forbidden. Without
+// this, claude/codex spawned in the user's cwd see a real Go repo and
+// fall back to Read/Edit/Write on those files instead of dispatching
+// kiln tool calls. The kiln SKILL.md describes *how* to call tools; this
+// preamble establishes *that* tool calls are the only legal action.
+const kilnContractPreamble = `You are running inside the Kiln runtime.
+
+Kiln's world IR is the only source of truth for the app being built.
+There is no on-disk codebase to read, edit, or compile. Any files you
+see on the local filesystem are unrelated to this session and reading
+or modifying them does NOTHING — the user is watching the live world,
+not the disk.
+
+The ONLY way to inspect or change the app is HTTP against $KILN_URL:
+
+  - Read state:   curl -s "$KILN_URL/kiln/world"
+  - Call a tool:  curl -s -X POST "$KILN_URL/kiln/tool/<name>" \
+                       -H 'Content-Type: application/json' -d '<json args>'
+
+Do NOT use Read, Write, Edit, or Glob/Grep. Do NOT cd, git, install
+packages, or write source files. The Bash tool exists solely so you
+can curl the kiln HTTP API. If you find yourself reaching for a file
+tool, you are off-script — go back to curl.
+
+The available tools are documented in the kiln skill. Read it before
+acting.`
+
+// kilnSystemPrompt returns the full per-turn system context for an
+// agent: the contract preamble plus the SKILL.md tool surface (when
+// installed). Adapters inject this via whatever system-prompt mechanism
+// the underlying CLI provides (claude --append-system-prompt, codex
+// prompt-prepend, pi --skill + prompt-prepend). Returning a single
+// string keeps the contract identical across adapters.
+func kilnSystemPrompt() string {
+	out := kilnContractPreamble
+	if p := kilnSkillPath(); p != "" {
+		if buf, err := os.ReadFile(p); err == nil {
+			out += "\n\n<kiln-skill>\n" + string(buf) + "\n</kiln-skill>"
+		}
+	}
+	return out
+}
+
 // Adapter describes how to spawn a third-party CLI coding agent for one
 // turn of conversation. Every adapter shares the same contract:
 //
@@ -51,58 +96,67 @@ type Adapter struct {
 var adapters = map[string]Adapter{
 	"claude-code": {
 		Name:    "claude-code",
-		Display: "claude --print --dangerously-skip-permissions  (Claude Code, reads ~/.claude/.credentials.json)",
+		Display: "claude --print --allowedTools Bash --append-system-prompt <kiln contract>  (Claude Code, reads ~/.claude/.credentials.json)",
+		Dir:     filepath.Join(os.TempDir(), "kiln-claude"),
 		Detect:  func() bool { _, err := exec.LookPath("claude"); return err == nil },
 		BuildArgs: func(text string) []string {
 			// --dangerously-skip-permissions is required for non-interactive
-			// runs — without it claude --print hangs at the first Bash/Edit
+			// runs — without it claude --print hangs at the first Bash
 			// tool-use waiting for a permission prompt that nobody can answer.
-			// Kiln invokes Claude in a controlled, kiln-scoped session, and
-			// the only "tool" the agent uses is curl against $KILN_URL, so
-			// bypassing the prompt is correct.
-			return []string{"claude", "--print", "--dangerously-skip-permissions", text}
+			//
+			// --allowedTools Bash strips Read/Write/Edit/Glob/Grep so claude
+			// has no on-disk fallback even if the model reaches for one.
+			// curl is reached via Bash, which is all kiln needs.
+			//
+			// --append-system-prompt installs the kiln contract + skill at
+			// the system level, so it outranks claude's default tool autonomy.
+			// Without this, claude in --print mode auto-discovers the skill
+			// at best advisorily — the model is still free to ignore it. As
+			// a system prompt the contract is non-negotiable.
+			return []string{
+				"claude", "--print", "--dangerously-skip-permissions",
+				"--allowedTools", "Bash",
+				"--append-system-prompt", kilnSystemPrompt(),
+				text,
+			}
 		},
 	},
 	"pi": {
 		Name:    "pi",
-		Display: "pi -p --provider zai --model glm-5.1 --tools bash --skill <kiln SKILL.md>  (Pi coding agent — runs in /tmp/kiln-pi/ to isolate from cwd)",
+		Display: "pi -p --provider zai --model glm-5.1 --tools bash --skill <kiln SKILL.md>  (Pi coding agent — kiln contract + skill, runs in /tmp/kiln-pi/)",
 		Dir:     filepath.Join(os.TempDir(), "kiln-pi"),
 		Detect:  func() bool { _, err := exec.LookPath("pi"); return err == nil },
 		BuildArgs: func(text string) []string {
 			argv := []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1",
 				// Restrict pi to bash only — it dispatches kiln tools
-				// via curl. Without --tools=Bash, pi's Read tool sees
-				// the cwd's Go source (e.g. examples/blog/) and reports
-				// on it as if it were the kiln world, since both look
-				// like 'app code' to the model. The kiln world is the
-				// only source of truth and is reachable solely via
-				// $KILN_URL HTTP — bash is sufficient.
+				// via curl. The kiln world is the only source of truth
+				// and is reachable solely via $KILN_URL HTTP — bash is
+				// sufficient. Without this, pi's Read tool reaches for
+				// cwd files instead of the world IR.
 				"--tools", "bash"}
-			// Pi doesn't auto-load ~/.claude/skills/ — point it at
-			// the kiln skill explicitly so the agent knows about
-			// add_entity / add_page / etc. Without this pi just
-			// hallucinates Go code instead of calling the tool API.
+			// --skill loads SKILL.md (the tool surface). The contract
+			// preamble ("you are inside kiln, no files exist") rides at
+			// the head of the user prompt because pi has no separate
+			// system-prompt flag. Together: skill = how to call tools,
+			// contract = that calling tools is the only legal action.
 			if p := kilnSkillPath(); p != "" {
 				argv = append(argv, "--skill", p)
 			}
-			argv = append(argv, text)
+			argv = append(argv, "<kiln-system>\n"+kilnContractPreamble+"\n</kiln-system>\n\n"+text)
 			return argv
 		},
 	},
 	"codex": {
 		Name:    "codex",
-		Display: "codex exec  (OpenAI Codex CLI; kiln skill prepended to prompt)",
+		Display: "codex exec  (OpenAI Codex CLI; kiln contract + skill prepended to prompt)",
+		Dir:     filepath.Join(os.TempDir(), "kiln-codex"),
 		Detect:  func() bool { _, err := exec.LookPath("codex"); return err == nil },
 		BuildArgs: func(text string) []string {
-			// Codex has no --skill flag — prepend the skill content
-			// to the prompt so the agent has the kiln tool API
-			// in its context.
-			prompt := text
-			if p := kilnSkillPath(); p != "" {
-				if buf, err := os.ReadFile(p); err == nil {
-					prompt = "<kiln-skill>\n" + string(buf) + "\n</kiln-skill>\n\n" + text
-				}
-			}
+			// Codex exposes no --skill or --system-prompt flag, so the
+			// kiln contract + skill ride at the head of the user prompt.
+			// Same content as claude's --append-system-prompt; the
+			// effective system prompt just lives in user-message position.
+			prompt := "<kiln-system>\n" + kilnSystemPrompt() + "\n</kiln-system>\n\n" + text
 			return []string{"codex", "exec", prompt}
 		},
 	},

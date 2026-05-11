@@ -16,6 +16,7 @@ import (
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/middleware"
 	"github.com/gofastr/gofastr/core/router"
+	"github.com/gofastr/gofastr/core/upload"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -51,6 +52,7 @@ type App struct {
 	DB       *sql.DB
 	Config   AppConfig
 	Plugins  *PluginManager
+	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
 	server     *http.Server
 	events     *EventBus
@@ -58,6 +60,13 @@ type App struct {
 	mountables []Mountable
 	mwApplied  bool
 	noDefaults bool
+
+	// Lifecycle hooks fired by Start/Stop. startHooks run with the app's
+	// derived context so workers cancel when Stop is called.
+	startHooks []func(ctx context.Context) error
+	stopHooks  []func() error
+	appCtx     context.Context
+	appCancel  context.CancelFunc
 }
 
 // AppOption is a functional option for configuring an App.
@@ -88,6 +97,16 @@ func WithRouter(r *router.Router) AppOption {
 func WithMCPServer(s *mcp.Server) AppOption {
 	return func(a *App) {
 		a.MCP = s
+	}
+}
+
+// WithFileStorage sets the default upload.Storage used by CRUD handlers
+// to persist files for Image and File entity fields when a multipart
+// request arrives. Without this option, multipart requests on those
+// fields fail with a clear error.
+func WithFileStorage(s upload.Storage) AppOption {
+	return func(a *App) {
+		a.Storage = s
 	}
 }
 
@@ -204,6 +223,9 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 		crudHandler = NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
+		crudHandler.Storage = a.Storage
+		crudHandler.Events = a.Events()
+		crudHandler.Registry = a.Registry
 		RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
 	}
 
@@ -360,6 +382,100 @@ func (a *App) HookRegistry(entityName string) *HookRegistry {
 	return a.hooks[entityName]
 }
 
+// OnStart registers a function to run once during App.Start, before the
+// HTTP server begins accepting connections. The context passed in is
+// cancelled when Stop is called, so workers should respect it.
+//
+// Hooks run in registration order; the first to return a non-nil error
+// aborts Start.
+func (a *App) OnStart(fn func(ctx context.Context) error) *App {
+	a.startHooks = append(a.startHooks, fn)
+	return a
+}
+
+// OnStop registers a function to run during App.Stop, after the HTTP
+// server has shut down. Hooks run in reverse registration order — the
+// last thing started is the first thing stopped.
+func (a *App) OnStop(fn func() error) *App {
+	a.stopHooks = append(a.stopHooks, fn)
+	return a
+}
+
+// AddCron registers a Scheduler with the app's lifecycle: it starts when
+// Start runs and stops when Stop runs. Returns the App for chaining so
+// users can wire several schedulers in one expression.
+func (a *App) AddCron(s *Scheduler) *App {
+	a.OnStart(func(ctx context.Context) error {
+		s.Start(ctx)
+		return nil
+	})
+	a.OnStop(func() error {
+		s.Stop()
+		return nil
+	})
+	return a
+}
+
+// schedulerStartStop is the minimal interface AddQueue needs. We keep it
+// here (not in the queue package) so framework doesn't have to import
+// battery/queue — apps wire their queue manually and just hand the
+// start/stop pair over.
+type schedulerStartStop interface {
+	Start(ctx context.Context)
+	Close() error
+}
+
+// AddQueue registers any queue/worker that exposes Start(ctx) and Close().
+// The DBQueue from battery/queue satisfies this directly; in-memory and
+// Redis variants can be wrapped.
+func (a *App) AddQueue(q schedulerStartStop) *App {
+	a.OnStart(func(ctx context.Context) error {
+		q.Start(ctx)
+		return nil
+	})
+	a.OnStop(func() error {
+		return q.Close()
+	})
+	return a
+}
+
+// Stop shuts down the HTTP server (graceful) and runs every OnStop hook in
+// reverse order. Safe to call multiple times; subsequent calls are no-ops.
+func (a *App) Stop(ctx context.Context) error {
+	if a.appCancel != nil {
+		a.appCancel()
+		a.appCancel = nil
+	}
+	var firstErr error
+	if a.server != nil {
+		if err := a.server.Shutdown(ctx); err != nil {
+			firstErr = err
+		}
+		a.server = nil
+	}
+	// Reverse order — last-started is first-stopped.
+	for i := len(a.stopHooks) - 1; i >= 0; i-- {
+		if err := a.stopHooks[i](); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// runStartHooks fires every OnStart hook with the app's lifecycle context.
+// Returns the first error so Start aborts cleanly before binding the port.
+func (a *App) runStartHooks() error {
+	if a.appCtx == nil {
+		a.appCtx, a.appCancel = context.WithCancel(context.Background())
+	}
+	for _, fn := range a.startHooks {
+		if err := fn(a.appCtx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Start starts the HTTP server on the given address.
 // Auto-migrates tables, registers OpenAPI/Swagger, debug stats, applies
 // the default middleware chain (unless disabled), and calls Mount on
@@ -372,6 +488,12 @@ func (a *App) Start(addr string) error {
 		if err := AutoMigrate(a.DB, a.Registry); err != nil {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
+	}
+
+	// Run OnStart hooks (cron/queue workers, custom setup). Failure here
+	// aborts before we bind the port — better than a half-up server.
+	if err := a.runStartHooks(); err != nil {
+		return fmt.Errorf("start hooks: %w", err)
 	}
 
 	// Auto-generate and serve OpenAPI spec

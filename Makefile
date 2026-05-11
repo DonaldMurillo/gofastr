@@ -1,4 +1,4 @@
-.PHONY: build test lint generate dev clean security security-full hooks install
+.PHONY: build test test-pg test-pg-env test-pg-only test-race lint generate dev clean security security-full hooks install
 
 # ---- Build ----
 build:
@@ -6,6 +6,36 @@ build:
 
 test:
 	go test -count=1 -short ./...
+
+# Run framework tests against Postgres via TEST_POSTGRES_DSN. Set the DSN to
+# point at a local PG you don't mind us creating per-test schemas in.
+# Each test creates and drops its own schema, so leftover state is bounded
+# to the duration of the test.
+test-pg-env:
+	@if [ -z "$$TEST_POSTGRES_DSN" ]; then \
+		echo "✗ TEST_POSTGRES_DSN is not set. Example:"; \
+		echo "    export TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/framework_test?sslmode=disable'"; \
+		exit 1; \
+	fi
+	TEST_POSTGRES_DSN="$$TEST_POSTGRES_DSN" go test -count=1 ./framework/...
+
+# Run framework tests against an ephemeral testcontainers-spawned Postgres.
+# Requires Docker; the container is reused across tests inside a single `go
+# test` invocation, then torn down on exit.
+test-pg:
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "✗ Docker not found. Install Docker or use `make test-pg-env`."; \
+		exit 1; \
+	fi
+	go test -count=1 ./framework/...
+
+# Subset: only the Postgres halves of the dual-dialect subtests. Useful when
+# iterating on a Postgres-specific bug to skip the SQLite branch's noise.
+test-pg-only:
+	@if ! command -v docker >/dev/null 2>&1 && [ -z "$$TEST_POSTGRES_DSN" ]; then \
+		echo "✗ Need Docker or TEST_POSTGRES_DSN."; exit 1; \
+	fi
+	go test -count=1 -run '/postgres' ./framework/...
 
 test-race:
 	go test -race -count=1 ./...
@@ -67,10 +97,6 @@ secret-scan:
 		exit 1; \
 	fi
 	@echo "  ✓ No secrets detected"
-
-test-race:
-	go test -race -count=1 ./...
-	@echo "  ✓ Race detector clean"
 
 vulncheck:
 	@if command -v govulncheck >/dev/null 2>&1; then \

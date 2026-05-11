@@ -83,8 +83,9 @@ func TestPiAdapterIncludesSkillFlag(t *testing.T) {
 	}
 }
 
-// codex has no --skill flag, so the adapter prepends the skill
-// content to the prompt as a tagged block.
+// codex has no --skill flag, so the adapter prepends the kiln contract
+// + skill to the prompt as a tagged block. The contract is what tells
+// the model "files on disk are not the app — only the world IR is".
 func TestCodexAdapterPrependsSkillToPrompt(t *testing.T) {
 	if kilnSkillPath() == "" {
 		t.Skip("kiln skill not installed at ~/.claude/skills/kiln/SKILL.md")
@@ -95,8 +96,99 @@ func TestCodexAdapterPrependsSkillToPrompt(t *testing.T) {
 		t.Fatalf("codex argv too short: %v", argv)
 	}
 	prompt := argv[len(argv)-1]
-	if !strings.Contains(prompt, "<kiln-skill>") || !strings.Contains(prompt, "real prompt") {
-		t.Errorf("codex prompt missing kiln-skill block or original text; got %q", prompt)
+	if !strings.Contains(prompt, "<kiln-system>") {
+		t.Errorf("codex prompt missing <kiln-system> contract block; got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<kiln-skill>") {
+		t.Errorf("codex prompt missing <kiln-skill> tool block; got %q", prompt)
+	}
+	if !strings.Contains(prompt, "real prompt") {
+		t.Errorf("codex prompt dropped the original user text; got %q", prompt)
+	}
+	if a.Dir == "" {
+		t.Error("codex adapter should set Dir to isolate from kiln's cwd")
+	}
+}
+
+// claude-code on main was the worst-off adapter: it inherited kiln's
+// cwd (a real Go repo when kiln serve runs in the gofastr tree) and got
+// nothing but the raw user prompt, so claude --print fell back to
+// Read/Edit/Write on local files instead of calling kiln HTTP tools.
+// This test pins the three things that have to be true for the agent
+// to behave like a kiln client:
+//
+//   - --allowedTools restricts the agent to Bash (curl is the only
+//     thing it needs; Edit/Write/Read are not even available).
+//   - --append-system-prompt installs the kiln contract at the system
+//     level, where it outranks claude's default tool autonomy.
+//   - Dir is set so the agent doesn't see a Go repo as cwd in the
+//     first place.
+func TestClaudeCodeAdapterEnforcesKilnContract(t *testing.T) {
+	a := adapters["claude-code"]
+	argv := a.BuildArgs("real prompt")
+	if len(argv) == 0 || argv[0] != "claude" {
+		t.Fatalf("claude argv malformed: %v", argv)
+	}
+
+	var sawAllowedTools, sawAppendSystem bool
+	var systemPromptValue string
+	for i := 0; i < len(argv)-1; i++ {
+		switch argv[i] {
+		case "--allowedTools":
+			sawAllowedTools = true
+			if argv[i+1] != "Bash" {
+				t.Errorf("--allowedTools = %q, want %q (curl is dispatched via Bash; no other tool is needed)", argv[i+1], "Bash")
+			}
+		case "--append-system-prompt":
+			sawAppendSystem = true
+			systemPromptValue = argv[i+1]
+		}
+	}
+	if !sawAllowedTools {
+		t.Error("claude argv missing --allowedTools — claude can fall back to Read/Edit/Write without it")
+	}
+	if !sawAppendSystem {
+		t.Error("claude argv missing --append-system-prompt — without the kiln contract at system level the model treats kiln as advisory")
+	}
+	// The contract must mention the HTTP boundary: any system prompt
+	// that doesn't tell claude to curl $KILN_URL is just decoration.
+	if sawAppendSystem && !strings.Contains(systemPromptValue, "$KILN_URL") {
+		t.Errorf("--append-system-prompt missing $KILN_URL reference; got %q", systemPromptValue)
+	}
+	if a.Dir == "" {
+		t.Error("claude-code adapter should set Dir to isolate from kiln's cwd")
+	}
+	// Last argv must still be the user prompt (regression pin).
+	if argv[len(argv)-1] != "real prompt" {
+		t.Errorf("last argv = %q, want %q (user prompt must remain trailing)", argv[len(argv)-1], "real prompt")
+	}
+}
+
+// pi already had --skill + /tmp/kiln-pi/ + --tools bash. The remaining
+// gap was the contract preamble — telling pi explicitly that files on
+// disk don't matter — which now rides at the head of the user prompt.
+func TestPiAdapterIncludesContractPreamble(t *testing.T) {
+	a := adapters["pi"]
+	argv := a.BuildArgs("real prompt")
+	last := argv[len(argv)-1]
+	if !strings.Contains(last, "<kiln-system>") {
+		t.Errorf("pi prompt missing <kiln-system> contract block; got %q", last)
+	}
+	if !strings.Contains(last, "real prompt") {
+		t.Errorf("pi prompt dropped the original user text; got %q", last)
+	}
+}
+
+// The contract preamble itself must articulate the kiln model: world
+// IR is the source of truth, $KILN_URL is the only mutation surface,
+// disk tools are forbidden. This is what makes the difference between
+// "agent edits files" and "agent calls kiln tools".
+func TestKilnContractPreambleMentionsTheBoundary(t *testing.T) {
+	must := []string{"$KILN_URL", "world", "Do NOT"}
+	for _, needle := range must {
+		if !strings.Contains(kilnContractPreamble, needle) {
+			t.Errorf("kilnContractPreamble missing %q — agents need this to know the kiln contract", needle)
+		}
 	}
 }
 
@@ -105,13 +197,25 @@ func TestCodexAdapterPrependsSkillToPrompt(t *testing.T) {
 // named adapter — not "custom". Otherwise the gear modal can't mark a
 // "current" radio (curName=="custom" matches none of the listed
 // adapter rows), and the user sees an unselected list.
+//
+// Adapters whose canonical spawn argv contains a token with internal
+// whitespace (e.g. claude-code's --append-system-prompt <multi-line
+// contract>) cannot roundtrip through `strings.Fields`-based shell
+// parsing, so they're skipped. The user is expected to use --agent
+// claude-code (the named form) for those, which goes through direct
+// registry lookup, not freeform parsing.
 func TestResolveAdapterFreeformMatchesBuiltin(t *testing.T) {
 	for name, want := range adapters {
 		// Build the adapter's natural spawn command (argv minus the
 		// trailing prompt) and feed it back through resolveAdapter as
 		// a single string — the same path --agent "<freeform>" takes.
 		argv := want.BuildArgs("")
-		spawn := joinArgv(argv[:len(argv)-1])
+		prefix := argv[:len(argv)-1]
+		if anyTokenHasWhitespace(prefix) {
+			t.Logf("%s: skipping freeform roundtrip (one or more argv tokens contain whitespace and can't survive shell-style splitting)", name)
+			continue
+		}
+		spawn := joinArgv(prefix)
 		got, ok := resolveAdapter(spawn)
 		if !ok {
 			t.Errorf("%s: spawn cmd %q failed to resolve", name, spawn)
@@ -122,6 +226,15 @@ func TestResolveAdapterFreeformMatchesBuiltin(t *testing.T) {
 				name, spawn, got.Name, name)
 		}
 	}
+}
+
+func anyTokenHasWhitespace(args []string) bool {
+	for _, a := range args {
+		if strings.ContainsAny(a, " \t\n\r") {
+			return true
+		}
+	}
+	return false
 }
 
 func joinArgv(argv []string) string {

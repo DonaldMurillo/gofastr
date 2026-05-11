@@ -845,6 +845,7 @@
           opName === "add_page" ||
           opName === "delete_page" ||
           opName === "update_page" ||
+          opName === "update_page_element" ||
           opName === "add_route" ||
           opName === "delete_route"
         );

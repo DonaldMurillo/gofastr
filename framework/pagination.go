@@ -103,6 +103,50 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 	return token.Field, token.Value, nil
 }
 
+// multiCursorToken is the wire shape for cursors that keyset on multiple
+// fields. Each entry pairs the column name with the last row's value as a
+// string so tuple-comparison reconstructs the WHERE clause deterministically.
+type multiCursorToken struct {
+	Fields []multiCursorField `json:"f"`
+}
+
+type multiCursorField struct {
+	Name  string `json:"n"`
+	Value string `json:"v"`
+}
+
+// EncodeMultiCursor builds an opaque cursor from an ordered list of
+// (column, value) pairs. Used for composite cursor pagination — ORDER BY
+// composes the fields in the same order, and the WHERE clause becomes a
+// tuple comparison "(c1, c2, …) > ($1, $2, …)".
+func EncodeMultiCursor(fields []string, row map[string]any) string {
+	tok := multiCursorToken{Fields: make([]multiCursorField, 0, len(fields))}
+	for _, f := range fields {
+		v, ok := row[f]
+		if !ok {
+			continue
+		}
+		tok.Fields = append(tok.Fields, multiCursorField{Name: f, Value: toString(v)})
+	}
+	b, _ := json.Marshal(tok)
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// DecodeMultiCursor returns the ordered list of (column, value) pairs the
+// cursor encoded. Returns the empty slice + an error if the cursor doesn't
+// match the expected shape.
+func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
+	b, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return nil, err
+	}
+	var tok multiCursorToken
+	if err := json.Unmarshal(b, &tok); err != nil {
+		return nil, err
+	}
+	return tok.Fields, nil
+}
+
 // NewCursorPage builds a CursorPage from data. It fetches limit+1 rows to
 // determine HasMore, and encodes the next cursor from the last row's cursorField.
 func NewCursorPage(data []map[string]any, cursorField string, limit int) CursorPage {
