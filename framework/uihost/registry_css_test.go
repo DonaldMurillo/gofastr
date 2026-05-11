@@ -151,6 +151,79 @@ func TestComponentCSS_CatalogJSContainsRegisteredEntries(t *testing.T) {
 	}
 }
 
+func TestComponentCSS_CacheHeaderImmutableOnlyWhenVMatches(t *testing.T) {
+	st := registerTestStyle(t, "cache")
+	ds := newTestUIHostFor(st)
+	theme := ds.ActiveTheme()
+	v := st.Entry().VersionFor(theme)
+
+	// Correct v → immutable.
+	{
+		req := httptest.NewRequest("GET", "/__gofastr/comp/"+st.Name()+".css?v="+v, nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+			t.Errorf("matching v should serve immutable, got %q", got)
+		}
+	}
+	// Mismatched v → no-cache (avoids pinning stale URL to fresh body).
+	{
+		req := httptest.NewRequest("GET", "/__gofastr/comp/"+st.Name()+".css?v=deadbeef", nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		if got := w.Header().Get("Cache-Control"); strings.Contains(got, "immutable") {
+			t.Errorf("mismatched v MUST NOT be immutable, got %q", got)
+		}
+	}
+	// Missing v → no-cache.
+	{
+		req := httptest.NewRequest("GET", "/__gofastr/comp/"+st.Name()+".css", nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		if got := w.Header().Get("Cache-Control"); strings.Contains(got, "immutable") {
+			t.Errorf("no v MUST NOT be immutable, got %q", got)
+		}
+	}
+}
+
+func TestComponentCSS_RejectsInvalidNames(t *testing.T) {
+	ds := newTestUIHost()
+	for _, p := range []string{
+		"/__gofastr/comp/../etc/passwd.css",
+		"/__gofastr/comp/a%2Fb.css",
+		"/__gofastr/comp/.css",
+	} {
+		req := httptest.NewRequest("GET", p, nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		if w.Code != 404 {
+			t.Errorf("expected 404 for %q, got %d", p, w.Code)
+		}
+	}
+}
+
+func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
+	a := registerTestStyle(t, "battr-a")
+	b := registerTestStyle(t, "battr-b")
+	ds := newTestUIHostForMany(a, b)
+	body := pageBody(t, ds, "/")
+	if !strings.Contains(body, `data-fui-bundle="`) {
+		t.Errorf("bundle <link> must carry data-fui-bundle attr for runtime dedup seeding:\n%s", truncate(body, 800))
+	}
+	// Both names must appear in the bundle attribute. Other test-
+	// registered styles (LoadAlways from earlier subtests in the
+	// process-global registry) may also appear; we only assert
+	// inclusion, not exact equality.
+	for _, name := range []string{a.Name(), b.Name()} {
+		needle := name + `,`
+		needleEnd := `,` + name + `"`
+		alone := `"` + name + `"`
+		if !strings.Contains(body, `"`+name) && !strings.Contains(body, needle) && !strings.Contains(body, needleEnd) && !strings.Contains(body, alone) {
+			t.Errorf("bundle attr missing %q: %s", name, truncate(body, 800))
+		}
+	}
+}
+
 func TestComponentCSS_PageLinksCatalogScript(t *testing.T) {
 	st := registerTestStyle(t, "pglink")
 	ds := newTestUIHostFor(st)

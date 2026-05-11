@@ -524,10 +524,13 @@
       const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
       const self = this;
       rIC(() => {
-        const n = self._idleQueue.shift();
-        if (n) self.loadComponentCSS(n);
-        self._idleFlushing = false;
-        if (self._idleQueue.length) self._flushIdle();
+        try {
+          const n = self._idleQueue.shift();
+          if (n) self.loadComponentCSS(n);
+        } finally {
+          self._idleFlushing = false;
+          if (self._idleQueue.length) self._flushIdle();
+        }
       });
     },
 
@@ -1411,17 +1414,12 @@
     if (!G?.scanAndLoadCSS) return;
     // Seed _pendingLinks with names already covered by the SSR
     // bundle link, so the on-demand scanner doesn't redundantly load
-    // per-component sheets for them.
-    document.head.querySelectorAll('link[rel="stylesheet"]').forEach((l) => {
-      const href = l.getAttribute('href') || '';
-      const idx = href.indexOf('/__gofastr/comp-bundle.css');
-      if (idx < 0) return;
-      const q = href.indexOf('names=', idx);
-      if (q < 0) return;
-      const tail = href.slice(q + 6);
-      const end = tail.indexOf('&');
-      const list = (end < 0 ? tail : tail.slice(0, end)).split(',');
-      for (const n of list) if (n) G._pendingLinks.add(n);
+    // per-component sheets. The names live on the bundle <link>'s
+    // data-fui-bundle attribute (a stable contract), not parsed
+    // from the URL.
+    document.head.querySelectorAll('link[data-fui-bundle]').forEach((l) => {
+      const names = (l.getAttribute('data-fui-bundle') || '').split(',');
+      for (const n of names) if (n) G._pendingLinks.add(n);
     });
     G.scanAndLoadCSS(document.documentElement);
     G.scheduleIdleLoads();

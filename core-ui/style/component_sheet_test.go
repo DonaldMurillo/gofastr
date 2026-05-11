@@ -104,6 +104,19 @@ func TestComponentSheetKeyframesUnprefixed(t *testing.T) {
 	}
 }
 
+func TestComponentSheetAmpersandRejectsUnscopableTail(t *testing.T) {
+	cases := []string{"&::backdrop", "&::view-transition-old(*)"}
+	for _, sel := range cases {
+		t.Run(sel, func(t *testing.T) {
+			ss := NewComponentSheet("modal", DefaultTheme())
+			ss.Rule(sel).Set("background", "rgba(0,0,0,0.5)").End()
+			if _, err := ss.Build(); err == nil {
+				t.Errorf("expected error scoping %q (the pseudo lives outside the component subtree)", sel)
+			}
+		})
+	}
+}
+
 func TestComponentSheetAmpersandRefersToMarkerElement(t *testing.T) {
 	ss := NewComponentSheet("modal", DefaultTheme())
 	ss.Rule("&").Set("display", "flex").End()

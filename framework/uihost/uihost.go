@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -961,8 +962,10 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 		versions = append(versions, e.VersionFor(theme))
 	}
 	bundleV := hashStrings(versions...)
-	return fmt.Sprintf(`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s">`,
-		strings.Join(names, ","), bundleV)
+	joined := strings.Join(names, ",")
+	return fmt.Sprintf(
+		`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s" data-fui-bundle="%s">`,
+		joined, bundleV, joined)
 }
 
 // catalogScript returns the <script src=…> tag pointing at the
@@ -977,12 +980,29 @@ func (ds *UIHost) catalogScript() string {
 	return `<script src="/__gofastr/catalog.js"></script>`
 }
 
+// validNameRe restricts component names accepted by the comp CSS
+// endpoint to the same character class registry uses for marker
+// values. Defense-in-depth: any path with /, .., null bytes, etc.
+// fails before reaching Lookup.
+var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
+
 // handleComponentCSS serves a single registered component's scoped
 // stylesheet at /__gofastr/comp/{name}.css.
+//
+// Cache policy: the URL is content-addressed via ?v=<hash>. We only
+// stamp the response as `immutable` when the supplied v matches the
+// current Entry.VersionFor — otherwise a stale cached HTML
+// referencing an old ?v= URL would receive fresh bytes back and
+// the browser would cache the (old-URL, new-body) pair as immutable
+// for a year. On mismatch we serve no-cache so the browser
+// re-fetches next time.
 func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
-	// router param style: trim the prefix and the .css suffix.
 	name := strings.TrimPrefix(r.URL.Path, "/__gofastr/comp/")
 	name = strings.TrimSuffix(name, ".css")
+	if !validNameRe.MatchString(name) {
+		http.NotFound(w, r)
+		return
+	}
 	e, ok := registry.Lookup(name)
 	if !ok {
 		http.NotFound(w, r)
@@ -991,7 +1011,7 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 	theme := ds.activeTheme()
 	css := e.CSSFor(theme)
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	if r.URL.Query().Get("v") != "" {
+	if v := r.URL.Query().Get("v"); v != "" && v == e.VersionFor(theme) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -1000,10 +1020,16 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCompBundleCSS serves /__gofastr/comp-bundle.css?names=a,b,c
-// — concatenates the named components' scoped CSS. Names must come
-// in a stable (sorted) order; the host emits them sorted, so cache
-// keys are stable. Unknown names are skipped silently to be tolerant
-// of catalog drift between sessions.
+// — concatenates the named components' scoped CSS. Names come in
+// sorted order (the host emits them sorted) so cache keys are
+// stable across requests.
+//
+// Cache policy mirrors handleComponentCSS: `immutable` only when
+// the supplied v matches the freshly-computed combined hash;
+// otherwise no-cache to avoid pinning a stale URL to fresh bytes.
+// Unknown names 404 — the contract is that the client requests
+// names it learned from the SSR-emitted <link>, which by
+// construction lists only registered entries.
 func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	namesParam := r.URL.Query().Get("names")
 	if namesParam == "" {
@@ -1012,18 +1038,31 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	}
 	names := strings.Split(namesParam, ",")
 	theme := ds.activeTheme()
+	versions := make([]string, 0, len(names))
+	bodies := make([]string, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if !validNameRe.MatchString(n) {
+			http.NotFound(w, r)
+			return
+		}
+		e, ok := registry.Lookup(n)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		versions = append(versions, e.VersionFor(theme))
+		bodies = append(bodies, e.CSSFor(theme))
+	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	if r.URL.Query().Get("v") != "" {
+	wantV := hashStrings(versions...)
+	if v := r.URL.Query().Get("v"); v != "" && v == wantV {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
-	for _, n := range names {
-		e, ok := registry.Lookup(strings.TrimSpace(n))
-		if !ok {
-			continue
-		}
-		fmt.Fprint(w, e.CSSFor(theme))
+	for _, body := range bodies {
+		fmt.Fprint(w, body)
 		fmt.Fprint(w, "\n")
 	}
 }

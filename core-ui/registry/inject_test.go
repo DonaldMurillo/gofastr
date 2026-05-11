@@ -102,3 +102,31 @@ func TestInjectRejectsEmptyName(t *testing.T) {
 		t.Fatal("expected error on empty name")
 	}
 }
+
+func TestInjectIdempotentWhenAlreadyMarked(t *testing.T) {
+	in := `<div data-fui-comp="modal" class="x">hi</div>`
+	out, err := injectMarker(in, "modal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != in {
+		t.Errorf("idempotent re-injection altered html:\nin:  %s\nout: %s", in, out)
+	}
+	count := strings.Count(string(out), `data-fui-comp=`)
+	if count != 1 {
+		t.Errorf("got %d data-fui-comp attrs, want 1", count)
+	}
+}
+
+func TestInjectSkipsWhenWrappedByDifferentName(t *testing.T) {
+	// Composition: outer Style wraps inner Style's already-wrapped
+	// output. The outer marker would normally win, but with the
+	// existing-marker guard we conservatively don't inject again.
+	// (Authors should compose at the Style.Render level, not double-
+	// wrap pre-rendered HTML.)
+	in := `<div data-fui-comp="inner">hi</div>`
+	out, _ := injectMarker(in, "outer")
+	if strings.Count(string(out), `data-fui-comp=`) != 1 {
+		t.Errorf("double-wrap should leave 1 marker; got %s", out)
+	}
+}

@@ -59,6 +59,15 @@ func injectMarker(html, name string) (render.HTML, error) {
 		return render.HTML(html), fmt.Errorf("registry: component %q produced an unterminated open tag", name)
 	}
 
+	// If the outermost tag already carries data-fui-comp (e.g. the
+	// caller is composing a component wrapped by another Style, or
+	// WrapHTML was already applied), leave the html alone. Double-
+	// marker would inflate Scan output and emit a stray <link>.
+	openTag := html[i:end]
+	if strings.Contains(openTag, " data-fui-comp=") || strings.Contains(openTag, "\tdata-fui-comp=") {
+		return render.HTML(html), nil
+	}
+
 	// If the tag is self-closing (`/>`), splice before the `/`.
 	insertAt := end
 	if end > 0 && html[end-1] == '/' {

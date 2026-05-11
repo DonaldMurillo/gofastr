@@ -110,47 +110,56 @@ func (s *CSSLoadingDemoScreen) ScreenType() app.ScreenType { return app.ScreenPa
 
 func (s *CSSLoadingDemoScreen) Render() render.HTML {
 	header := ui.PageHeader(ui.PageHeaderConfig{
-		Eyebrow:  "framework/ui",
-		Title:    "Component CSS loading",
-		Subtitle: "Every registered component ships its own scoped stylesheet via <link> — never inline, dedup'd globally, served from a content-addressed URL. Three load modes; one runtime entry point.",
+		Eyebrow: "framework/ui",
+		Title:   "Component CSS loading",
+		Subtitle: "Components ship CSS the way they ship HTML — per-render, deduped, content-addressed. " +
+			"No global stylesheet, no FOUC, no manual imports.",
+		Actions: html.LinkHTML(html.LinkHTMLConfig{
+			Href:    "/framework-ui/",
+			Class:   "ui-button",
+			Content: render.Text("← Framework UI"),
+		}),
 	})
 
 	how := ui.Section(ui.SectionConfig{
 		Heading:     "How it works",
-		Description: "The framework injects data-fui-comp=\"<name>\" on a registered component's outermost tag. On SSR, it scans the rendered HTML and emits one bundled <link> for the page's components. After hydration, the runtime scans any newly-inserted DOM and lazy-loads sheets it hasn't seen — dedup'd by <link data-fui-style=\"<name>\">.",
+		Description: `The framework injects data-fui-comp="<name>" on a registered component's outermost tag. On SSR, it scans the rendered HTML and emits one bundled <link> for the page's components. After hydration, the runtime scans any newly-inserted DOM and lazy-loads sheets it hasn't seen — dedup'd by <link data-fui-style="<name>">.`,
 		ID:          "how-it-works",
 	},
-		ui.Callout(ui.CalloutConfig{Title: "DevTools tip", Variant: ui.StatusInfo},
-			render.Text("Open the Network tab and reload. You'll see one /__gofastr/comp-bundle.css?names=… request on first paint, then zero new CSS requests as you navigate around the site.")),
+		ui.Callout(ui.CalloutConfig{Title: "Want to see it work? Open DevTools first.", Variant: ui.StatusInfo},
+			render.Text("DevTools → Network → filter ‘comp’. Reload this page: you'll see one /__gofastr/comp-bundle.css?names=… on first paint, plus a single /__gofastr/comp/demo-command-palette.css fired on idle (LoadPrewarm). The live demos below add one more request on the first click of each — and zero on the second."),
+		),
 	)
 
 	modes := ui.Section(ui.SectionConfig{
 		Heading:     "Three load modes",
-		Description: "Picked per component at registration time. All three share a sync dedup guard — a component can't double-load even if the modes conflict.",
+		Description: "Picked per component at registration time. All three share a sync dedup guard — a component can't double-load even if the modes overlap.",
 		ID:          "load-modes",
 	},
-		ui.Callout(ui.CalloutConfig{Title: "LoadAuto (default)", Variant: ui.StatusNeutral},
-			render.Text("Loaded when the marker first hits the DOM. SSR emits the link on pages that use it; on-demand scan covers cross-page nav and island swaps.")),
-		ui.Callout(ui.CalloutConfig{Title: "LoadPrewarm", Variant: ui.StatusInfo},
-			render.Text("LoadAuto + a throttled requestIdleCallback prefetch after first paint. Use for components that are likely soon — a hotkey palette, a confirm modal — so the eventual click is instant.")),
-		ui.Callout(ui.CalloutConfig{Title: "LoadAlways", Variant: ui.StatusWarning},
-			render.Text("Emit the <link> in <head> on every page, whether the page renders the component or not. Use sparingly — only for chrome that's on essentially every screen (PageHeader is the canonical example).")),
+		renderLoadModesTable(),
 	)
+
+	revealCardBtn := html.Button(html.ButtonConfig{
+		Label: "Reveal fancy card",
+		Class: "ui-button",
+		Attrs: html.Attrs{
+			"data-fui-rpc":          "/islands/css-demo/reveal-card",
+			"data-fui-rpc-method":   "POST",
+			"data-fui-rpc-signal":   "css-demo-card-slot",
+			"data-css-demo-watch":   "/__gofastr/comp/demo-fancy-card.css",
+		},
+	})
 
 	live := ui.Section(ui.SectionConfig{
 		Heading:     "Live: reveal a LoadAuto component",
-		Description: "Click the button. The fancy card's CSS is not in the SSR bundle for this page (verify via DevTools → Network). On click, the runtime sees the new marker, fetches /__gofastr/comp/demo-fancy-card.css, and the card paints styled. A second click does nothing — the dedup guard short-circuits.",
+		Description: "demo-fancy-card is LoadAuto and is NOT rendered server-side on this page, so its CSS isn't in the SSR bundle. Click → island RPC returns HTML with the marker → runtime fetches /__gofastr/comp/demo-fancy-card.css → card paints. Click again — silent no-op because the dedup guard short-circuits.",
 		ID:          "live-load-auto",
 	},
-		html.Button(html.ButtonConfig{
-			Label: "Reveal fancy card",
-			Class: "ui-button",
-			Attrs: html.Attrs{
-				"data-fui-rpc":             "/islands/css-demo/reveal-card",
-				"data-fui-rpc-method":      "POST",
-				"data-fui-rpc-signal":      "css-demo-card-slot",
-			},
-		}),
+		render.Tag("p", map[string]string{"class": "demo-watch-hint"},
+			render.Text("Watch for: "),
+			render.Tag("code", nil, render.Text("/__gofastr/comp/demo-fancy-card.css")),
+		),
+		revealCardBtn,
 		render.Tag("div", map[string]string{
 			"data-fui-signal":      "css-demo-card-slot",
 			"data-fui-signal-mode": "html",
@@ -158,20 +167,28 @@ func (s *CSSLoadingDemoScreen) Render() render.HTML {
 		}),
 	)
 
+	revealPaletteBtn := html.Button(html.ButtonConfig{
+		Label: "Reveal command palette",
+		Class: "ui-button",
+		Attrs: html.Attrs{
+			"data-fui-rpc":          "/islands/css-demo/reveal-palette",
+			"data-fui-rpc-method":   "POST",
+			"data-fui-rpc-signal":   "css-demo-palette-slot",
+			"data-css-demo-watch":   "/__gofastr/comp/demo-command-palette.css",
+		},
+	})
+
 	palette := ui.Section(ui.SectionConfig{
 		Heading:     "Live: LoadPrewarm — already loaded",
-		Description: "The command-palette component is LoadPrewarm: its CSS was fetched on an idle callback after first paint, even though it isn't rendered on this page. Click reveal — the styles apply instantly because the link was already attached.",
+		Description: "demo-command-palette is LoadPrewarm: its CSS was idle-fetched right after first paint, even though the palette is NOT rendered on this page. Click reveal → styles apply instantly. No new network request — the link is already attached.",
 		ID:          "live-load-prewarm",
 	},
-		html.Button(html.ButtonConfig{
-			Label: "Reveal command palette",
-			Class: "ui-button",
-			Attrs: html.Attrs{
-				"data-fui-rpc":             "/islands/css-demo/reveal-palette",
-				"data-fui-rpc-method":      "POST",
-				"data-fui-rpc-signal":      "css-demo-palette-slot",
-			},
-		}),
+		render.Tag("p", map[string]string{"class": "demo-watch-hint"},
+			render.Text("Already loaded: "),
+			render.Tag("code", nil, render.Text("/__gofastr/comp/demo-command-palette.css")),
+			render.Text(" (fired on idle, before you got here)"),
+		),
+		revealPaletteBtn,
 		render.Tag("div", map[string]string{
 			"data-fui-signal":      "css-demo-palette-slot",
 			"data-fui-signal-mode": "html",
@@ -181,13 +198,22 @@ func (s *CSSLoadingDemoScreen) Render() render.HTML {
 
 	catalog := ui.Section(ui.SectionConfig{
 		Heading:     "Registered components on this server",
-		Description: "Every registry.RegisterStyle call surfaces here. Names, load modes, and the content-addressed version pulled from the live catalog.",
+		Description: "Every registry.RegisterStyle call surfaces here. Names, load modes, and the content-addressed version pulled from the live catalog. (Scroll horizontally on narrow screens — content stays readable.)",
 		ID:          "catalog",
 	},
-		renderCatalogTable(),
+		render.Tag("div", map[string]string{"class": "demo-table-scroll"},
+			renderCatalogTable(),
+		),
 	)
 
-	codeRegister := render.HTML(`<pre class="demo-code"><code>// modal/modal.go — register at package init
+	howToRegister := ui.Section(ui.SectionConfig{
+		Heading:     "Adding your own styled component",
+		Description: "RegisterStyle returns a *Style handle; keep it in a package var and call .WrapHTML at every render site. The framework injects the marker, scopes the CSS, hashes the bytes for cache-busting, and the runtime takes over.",
+		ID:          "how-to-register",
+	},
+		ui.CodeBlock(ui.CodeBlockConfig{
+			Language: "go",
+			Code: `// modal/modal.go — register at package init
 var Style = registry.RegisterStyle(
     "ui-modal", modalCSS,
     registry.WithLoad(registry.LoadAuto),
@@ -203,18 +229,66 @@ func modalCSS(t style.Theme) string {
 
 // at any render site
 func (s *Screen) Render() render.HTML {
-    return Style.WrapHTML(&Modal{Title: "Hi"})
-}</code></pre>`)
-
-	howToRegister := ui.Section(ui.SectionConfig{
-		Heading:     "Adding your own styled component",
-		Description: "RegisterStyle returns a *Style handle; keep it in a package var and call .WrapHTML at every render site. The framework injects the marker, scopes the CSS, hashes the bytes for cache-busting, and the runtime takes over.",
-		ID:          "how-to-register",
-	},
-		codeRegister,
+    return Style.WrapHTML(html.Div(html.DivConfig{Class: "modal"}, ...))
+}`,
+		}),
 	)
 
-	return render.Join(header, how, modes, live, palette, catalog, howToRegister)
+	// Inline a small script that adds the "Loaded ✓" feedback after a
+	// successful reveal click. Pure progressive enhancement — without
+	// JS the buttons still work, the user just doesn't see the
+	// post-click label change.
+	enhance := render.HTML(`<script>
+(() => {
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-css-demo-watch]');
+    if (!btn || btn.dataset.cssDemoRevealed === '1') return;
+    requestAnimationFrame(() => {
+      btn.dataset.cssDemoRevealed = '1';
+      btn.setAttribute('aria-disabled', 'true');
+      btn.textContent = 'Revealed ✓ (dedup short-circuit on re-click)';
+      const slot = btn.closest('section')?.querySelector('.demo-css-card-slot');
+      if (slot) setTimeout(() => slot.scrollIntoView({behavior: 'smooth', block: 'nearest'}), 50);
+    });
+  });
+})();
+</script>`)
+
+	return render.Join(header, how, modes, live, palette, catalog, howToRegister, enhance)
+}
+
+// renderLoadModesTable replaces the three-callout stack with a
+// comparison table — the trade-offs land in one glance instead of
+// three paragraphs.
+func renderLoadModesTable() render.HTML {
+	return ui.DataTable(ui.DataTableConfig{
+		Columns: []ui.Column{
+			{Key: "mode", Header: "Mode"},
+			{Key: "when", Header: "When loaded"},
+			{Key: "use", Header: "Use for"},
+			{Key: "cost", Header: "First-paint cost"},
+		},
+		Rows: []ui.Row{
+			{Cells: map[string]render.HTML{
+				"mode": render.HTML(`<code>LoadAuto</code> <small>(default)</small>`),
+				"when": render.Text("Marker first hits the DOM (SSR-on-page or post-hydration scan)."),
+				"use":  render.Text("Anything used on some pages but not all — the typical case."),
+				"cost": render.Text("Zero on pages that don't render it."),
+			}},
+			{Cells: map[string]render.HTML{
+				"mode": render.HTML(`<code>LoadPrewarm</code>`),
+				"when": render.Text("LoadAuto + idle prefetch right after first paint."),
+				"use":  render.Text("Likely-soon components: hotkey palette, confirm modal."),
+				"cost": render.Text("Zero on first paint; one idle-time HTTP request after."),
+			}},
+			{Cells: map[string]render.HTML{
+				"mode": render.HTML(`<code>LoadAlways</code>`),
+				"when": render.Text("SSR emits <link> in <head> on every page, used or not."),
+				"use":  render.Text("Chrome on essentially every screen (PageHeader)."),
+				"cost": render.Text("One render-blocking link on every page."),
+			}},
+		},
+	})
 }
 
 // renderCatalogTable produces a server-side snapshot of every

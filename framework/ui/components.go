@@ -552,3 +552,47 @@ func initials(name string) string {
 	}
 	return strings.ToUpper(string(out))
 }
+
+// ─── CodeBlock ──────────────────────────────────────────────────────
+
+// CodeBlockConfig configures a styled code-sample block.
+type CodeBlockConfig struct {
+	Code     string // raw source to render
+	Language string // optional, used for aria-label only
+	ID       string
+	Class    string
+}
+
+// CodeBlock renders a syntactically un-highlighted but properly
+// styled code sample: dark background, monospaced, horizontal
+// scroll on overflow. Use for documentation / showcase code.
+//
+// The wrapper element carries data-fui-comp="ui-code-block" so the
+// runtime auto-loads the scoped stylesheet on first appearance.
+func CodeBlock(cfg CodeBlockConfig) render.HTML {
+	cls := "ui-code-block"
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+	preAttrs := map[string]string{"class": cls}
+	if cfg.ID != "" {
+		preAttrs["id"] = cfg.ID
+	}
+	if cfg.Language != "" {
+		preAttrs["aria-label"] = cfg.Language + " source"
+	}
+	return codeBlockStyle.WrapHTML(render.Tag("pre", preAttrs,
+		render.Tag("code", nil, render.HTML(escapeHTML(cfg.Code))),
+	))
+}
+
+// escapeHTML is the minimal entity-escape sufficient for code
+// content (we only emit text + tag context — no attribute use here).
+func escapeHTML(s string) string {
+	r := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+	)
+	return r.Replace(s)
+}

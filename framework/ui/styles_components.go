@@ -21,6 +21,7 @@ var (
 	sectionStyle       = registry.RegisterStyle("ui-section", sectionCSS)
 	formFieldStyle     = registry.RegisterStyle("ui-form-field", formFieldCSS)
 	formSectionStyle   = registry.RegisterStyle("ui-form-section", formSectionCSS)
+	buttonStyle        = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
 	dangerButtonStyle  = registry.RegisterStyle("ui-button-danger", dangerButtonCSS)
 	statusBadgeStyle   = registry.RegisterStyle("ui-badge", statusBadgeCSS)
 	emptyStateStyle    = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
@@ -30,7 +31,74 @@ var (
 	formStyle          = registry.RegisterStyle("ui-form", formCSS)
 	notificationStyle  = registry.RegisterStyle("ui-notification", notificationCSS)
 	dataTableStyle     = registry.RegisterStyle("ui-data-table", dataTableCSS)
+	codeBlockStyle     = registry.RegisterStyle("ui-code-block", codeBlockCSS)
 )
+
+// buttonCSS is the base .ui-button styling that several call sites
+// (including html.Button users with class="ui-button") expect. It is
+// LoadAlways because buttons are everywhere — paying the eager link
+// avoids the "looks like a native browser button on first paint"
+// failure mode.
+//
+// .ui-button is class-based, not pure scope-based, because it's
+// applied to <button> tags rendered through core-ui/html (which
+// doesn't go through Style.WrapHTML). The scope still applies to
+// any element with both data-fui-comp="ui-button" AND class="ui-
+// button" — and via the html selector under the scope we cover the
+// plain class usage too.
+func buttonCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-button"], .ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
+  border: 1px solid transparent;
+  border-radius: var(--radii-md, 8px);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-fg, #FFFFFF);
+  text-decoration: none;
+  transition: filter 150ms ease, opacity 150ms ease;
+}
+[data-fui-comp="ui-button"]:hover, .ui-button:hover { filter: brightness(0.95); }
+[data-fui-comp="ui-button"]:focus-visible, .ui-button:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
+[data-fui-comp="ui-button"]:disabled, .ui-button:disabled,
+[data-fui-comp="ui-button"][aria-disabled="true"], .ui-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: none;
+}`
+}
+
+func codeBlockCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-code-block"] {
+  display: block;
+  overflow-x: auto;
+  margin: 0;
+  padding: var(--spacing-lg, 16px);
+  background: var(--color-text, #18181B);
+  color: #E4E4E7;
+  border-radius: var(--radii-md, 8px);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre;
+  -webkit-text-size-adjust: 100%;
+}
+[data-fui-comp="ui-code-block"] .tok-kw     { color: #C792EA; }
+[data-fui-comp="ui-code-block"] .tok-fn     { color: #82AAFF; }
+[data-fui-comp="ui-code-block"] .tok-str    { color: #C3E88D; }
+[data-fui-comp="ui-code-block"] .tok-num    { color: #F78C6C; }
+[data-fui-comp="ui-code-block"] .tok-com    { color: #676E95; font-style: italic; }
+[data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }`
+}
 
 func sectionCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-section"] {

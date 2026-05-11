@@ -115,6 +115,29 @@ func TestScanIgnoresOtherAttrs(t *testing.T) {
 	}
 }
 
+func TestScanRequiresAttributeBoundary(t *testing.T) {
+	// xdata-fui-comp="y" must NOT match — the anchor requires a
+	// preceding whitespace or `/`, so an attribute-name prefix
+	// like xdata-fui-comp doesn't masquerade as the marker.
+	htmlBad := `<div xdata-fui-comp="masquerade"></div>`
+	got := Scan(htmlBad)
+	if len(got) != 0 {
+		t.Errorf("Scan must not match unanchored attribute name, got %v", got)
+	}
+	// A legitimate marker still hits.
+	htmlGood := `<div data-fui-comp="real"></div>`
+	got = Scan(htmlGood)
+	if len(got) != 1 || got[0] != "real" {
+		t.Errorf("Scan must match anchored marker, got %v", got)
+	}
+}
+// Note: free-text occurrences inside <pre>/<code> can still match
+// (the regex can't distinguish "inside an open tag" from "inside
+// text content"). Harmless in practice because componentCSSTags
+// filters every name through registry.Lookup before emitting a
+// <link>, and the runtime's client-side scan uses
+// querySelectorAll('[data-fui-comp]') which is DOM-attribute-only.
+
 func TestEagerNamesOnlyLoadAlways(t *testing.T) {
 	reset()
 	RegisterStyle("auto", func(t style.Theme) string { return "" })

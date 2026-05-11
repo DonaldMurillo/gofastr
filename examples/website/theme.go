@@ -249,6 +249,21 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "block", "margin-bottom", "0.5rem",
 			"font-size", "0.85rem", "color", "{colors.text-muted}").End()
 
+	// CSS loading demo helpers.
+	ss.Rule(".demo-css-card-slot").
+		Set("margin-top", "{spacing.md}", "min-height", "1px").End()
+	ss.Rule(".demo-watch-hint").
+		Set("margin", "0 0 {spacing.sm} 0", "font-size", "0.85rem",
+			"color", "{colors.text-muted}").End()
+	ss.Rule(".demo-watch-hint code").
+		Set("padding", "1px 6px", "border-radius", "{radii.sm}",
+			"background", "{colors.surface-soft}",
+			"color", "{colors.text}",
+			"font-family", "{fonts.mono}",
+			"font-size", "0.85em").End()
+	ss.Rule(".demo-table-scroll").
+		Set("overflow-x", "auto").End()
+
 	// DataTable search demo.
 	ss.Rule(".demo-search-form").
 		Set("display", "flex", "gap", "{spacing.sm}",

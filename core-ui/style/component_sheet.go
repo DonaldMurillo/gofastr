@@ -169,8 +169,18 @@ func scopeSelector(selector, prefix string) (string, error) {
 			return "", fmt.Errorf("empty selector part in %q", selector)
 		}
 		if strings.HasPrefix(trimmed, "&") {
-			rest := trimmed[1:]
-			out[i] = prefix + rest
+			rest := strings.TrimSpace(trimmed[1:])
+			// Apply the same unscopable check to the tail —
+			// `&::backdrop` and `&::view-transition-old(*)` would
+			// otherwise silently produce a rule that targets a
+			// pseudo-element outside the component's subtree, with
+			// no error to tell the author.
+			if rest != "" {
+				if reason, bad := unscopableSelector(rest); bad {
+					return "", fmt.Errorf("selector %q cannot be scoped: %s", trimmed, reason)
+				}
+			}
+			out[i] = prefix + trimmed[1:]
 			continue
 		}
 		if reason, bad := unscopableSelector(trimmed); bad {
@@ -201,7 +211,14 @@ func unscopableSelector(sel string) (string, bool) {
 }
 
 // splitTopLevelCommas splits a selector on commas, ignoring commas
-// inside (), [], or quotes. Cheap state machine; no regex.
+// inside (), [], or quoted strings. Cheap state machine; no regex.
+//
+// Note: CSS escapes inside attribute selectors use the hex form
+// (e.g. `\22` for ", with an optional trailing space), not C-style
+// `\"`. A naive `\` escape would corrupt selectors like
+// `[data-x="a\\b"]`. We simply toggle on the matching quote — that's
+// what CSS parsers do, and any embedded comma inside quotes is
+// already protected by the quote bracket.
 func splitTopLevelCommas(s string) []string {
 	out := []string{}
 	depth := 0
@@ -211,7 +228,7 @@ func splitTopLevelCommas(s string) []string {
 		c := s[i]
 		switch {
 		case inQuote != 0:
-			if c == inQuote && (i == 0 || s[i-1] != '\\') {
+			if c == inQuote {
 				inQuote = 0
 			}
 		case c == '"' || c == '\'':
