@@ -126,12 +126,19 @@ type Middleware struct {
 }
 
 // Page is a UI screen described as an element tree.
+//
+// Version is an optimistic-concurrency etag. It starts at 1 when the
+// page is added and is bumped on every successful mutation (add,
+// update_page_element, etc). update_page_element accepts an optional
+// IfMatch so an agent can verify the page hasn't shifted under it
+// between fetch and patch.
 type Page struct {
 	Path        string  `json:"path"`
 	Name        string  `json:"name,omitempty"`
 	Title       string  `json:"title,omitempty"`
 	Description string  `json:"description,omitempty"`
 	Type        string  `json:"type,omitempty"` // "page" | "drawer" | "sheet" | "dialog"
+	Version     int     `json:"version,omitempty"`
 	Layout      *Layout `json:"layout,omitempty"`
 	Tree        Node    `json:"tree"`
 }
@@ -147,7 +154,14 @@ type Layout struct {
 // ("component:<name>"). Props feed element configuration; Bindings express
 // signal-driven values via expressions; Actions wire events to declarative
 // effects evaluated by kiln/expr.
+//
+// ID is a stable per-element handle assigned by kiln when the page is
+// added. Agents reference it from update_page_element to address the
+// exact element they want to mutate, rather than positional tree
+// paths (which break when siblings shift) or selector queries (which
+// can be ambiguous). The renderer ignores ID — it's pure metadata.
 type Node struct {
+	ID       string            `json:"_id,omitempty"`
 	Kind     string            `json:"kind"`
 	Props    map[string]any    `json:"props,omitempty"`
 	Bindings map[string]string `json:"bindings,omitempty"`
