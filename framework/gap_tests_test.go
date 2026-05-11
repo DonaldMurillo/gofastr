@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // ============================================================================
@@ -41,7 +42,7 @@ func TestGap_CursorWithIntegerPK(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("counters", EntityConfig{
+		app.Entity("counters", entity.EntityConfig{
 			Table: "counters",
 			Fields: []schema.Field{
 				{Name: "id", Type: schema.Int},

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/pagination"
 )
 
@@ -43,7 +44,7 @@ func runCursorTest(t *testing.T, n int, body func(t *testing.T, ta *TestApp)) {
 func cursorApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -246,7 +247,7 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("events", EntityConfig{
+		app.Entity("events", entity.EntityConfig{
 			Table:       "events",
 			CursorField: "created_at",
 			Fields: []schema.Field{
@@ -327,7 +328,7 @@ func TestCursor_Composite(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("feed", EntityConfig{
+		app.Entity("feed", entity.EntityConfig{
 			Table:        "feed",
 			CursorFields: []string{"created_at", "id"},
 			Fields: []schema.Field{

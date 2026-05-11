@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/filter"
 	"github.com/gofastr/gofastr/framework/hook"
@@ -18,18 +19,18 @@ func inProcessApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 	t.Helper()
 	createPostsTestTable(t, db)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
 	}.WithTimestamps(false))
-	entity, err := app.Registry.Get("posts")
+	ent, err := app.Registry.Get("posts")
 	if err != nil {
 		t.Fatalf("get entity: %v", err)
 	}
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Events = app.Events()
 	ch.Registry = app.Registry
@@ -124,11 +125,11 @@ func TestCRUDApi_GetOne_WithIncludes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		entity, err := app.Registry.Get("posts")
+		ent, err := app.Registry.Get("posts")
 		if err != nil {
 			t.Fatalf("get entity: %v", err)
 		}
-		ch := NewCrudHandler(entity, db)
+		ch := NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 		ch.Events = app.Events()
 		ch.Registry = app.Registry

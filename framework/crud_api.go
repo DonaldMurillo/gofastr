@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/filter"
 )
@@ -264,13 +265,13 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 // buildIncludeNodesFromNames takes a flat list of include names (possibly
 // dotted) and runs them through the same parser HTTP requests use. Lets
 // in-process callers use ?include= semantics without constructing a URL.
-func buildIncludeNodesFromNames(entity *Entity, registry *Registry, names []string) ([]*IncludeNode, error) {
+func buildIncludeNodesFromNames(ent *entity.Entity, registry *Registry, names []string) ([]*IncludeNode, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
 	// Synthesize a request whose ?include= we'll re-use parseIncludeTree on.
 	r := httptest.NewRequest(http.MethodGet, "/?include="+joinNonEmpty(names, ","), nil)
-	return parseIncludeTree(r, entity, registry)
+	return parseIncludeTree(r, ent, registry)
 }
 
 // joinNonEmpty is strings.Join but trims and drops empties.

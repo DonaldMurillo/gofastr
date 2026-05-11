@@ -1,4 +1,4 @@
-package framework
+package entity
 
 import (
 	"fmt"
@@ -28,6 +28,14 @@ type Condition struct {
 func (c Condition) Apply(qb *query.QueryBuilder) {
 	qb.Where(c.sql, c.args...)
 }
+
+// SQL returns the where-clause fragment. Exported so callers outside the
+// entity package (typed_query, etc.) can compose conditions onto query
+// builders directly.
+func (c Condition) SQL() string { return c.sql }
+
+// Args returns the bound arguments for the fragment. Pair with SQL().
+func (c Condition) Args() []any { return c.args }
 
 // Order is an order-by-clause fragment.
 type Order struct {

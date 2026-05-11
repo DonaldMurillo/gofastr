@@ -2,6 +2,7 @@ package framework
 
 import (
 	"github.com/gofastr/gofastr/core/router"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // RegisterCrudRoutes registers the standard CRUD routes plus batch endpoints
@@ -45,8 +46,8 @@ func normalizePath(path string) string {
 
 // RegisterCrudRoutesFunc is a convenience that creates a CrudHandler and
 // registers routes in one call.
-func RegisterCrudRoutesFunc(r *router.Router, entity *Entity, db DBExecutor, path string) *CrudHandler {
-	handler := NewCrudHandler(entity, db)
+func RegisterCrudRoutesFunc(r *router.Router, ent *entity.Entity, db DBExecutor, path string) *CrudHandler {
+	handler := NewCrudHandler(ent, db)
 	RegisterCrudRoutes(r, handler, path)
 	return handler
 }

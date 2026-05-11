@@ -11,6 +11,7 @@ import (
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
 )
@@ -372,7 +373,7 @@ func TestPluginNames(t *testing.T) {
 func TestIntegrationDefineEntityRegisterRoutesHTTP(t *testing.T) {
 	// Define entity
 	app := NewApp()
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},

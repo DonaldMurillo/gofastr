@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/slowquery"
 )
 
@@ -112,7 +113,7 @@ func TestSlowQuery_AsCrudHandlerDB(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -124,8 +125,8 @@ func TestSlowQuery_AsCrudHandlerDB(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(buf, nil))
 		wrapped := slowquery.NewSlowQueryLogger(db, time.Nanosecond, logger)
 
-		entity, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(entity, wrapped)
+		ent, _ := app.Registry.Get("posts")
+		ch := NewCrudHandler(ent, wrapped)
 		ch.Registry = app.Registry
 
 		_, err := ch.ListAll(context.Background(), ListOptions{})

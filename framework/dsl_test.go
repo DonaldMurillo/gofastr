@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 func TestParseDSL(t *testing.T) {
@@ -30,7 +31,7 @@ func TestParseDSL(t *testing.T) {
 }
 
 func TestBuildDSLQuery(t *testing.T) {
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "status", Type: schema.String},
@@ -40,7 +41,7 @@ func TestBuildDSLQuery(t *testing.T) {
 		},
 	})
 	registry := NewRegistry()
-	if err := registry.Register(entity); err != nil {
+	if err := registry.Register(ent); err != nil {
 		t.Fatal(err)
 	}
 
@@ -60,7 +61,7 @@ func TestBuildDSLQuery(t *testing.T) {
 
 func TestBuildDSLQueryRejectsUnknownField(t *testing.T) {
 	registry := NewRegistry()
-	if err := registry.Register(Define("posts", EntityConfig{
+	if err := registry.Register(entity.Define("posts", entity.EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	})); err != nil {
 		t.Fatal(err)

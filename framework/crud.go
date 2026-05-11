@@ -15,6 +15,7 @@ import (
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
 	"github.com/gofastr/gofastr/framework/db"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/filter"
 	"github.com/gofastr/gofastr/framework/hook"
@@ -34,7 +35,7 @@ type DBExecutor = db.Executor
 
 // CrudHandler provides auto-generated CRUD HTTP handlers for an Entity.
 type CrudHandler struct {
-	Entity     *Entity
+	Entity     *entity.Entity
 	DB         DBExecutor
 	PrimaryKey string             // defaults to "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
@@ -45,8 +46,8 @@ type CrudHandler struct {
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
-func NewCrudHandler(entity *Entity, db DBExecutor) *CrudHandler {
-	return &CrudHandler{Entity: entity, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
+func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
+	return &CrudHandler{Entity: ent, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
 }
 
 // WithJSONCase sets the JSON casing strategy for the handler.
@@ -616,4 +617,4 @@ func generateUUID() string {
 }
 
 // compile-time check
-var _ fmt.Stringer = (*Entity)(nil)
+var _ fmt.Stringer = (*entity.Entity)(nil)

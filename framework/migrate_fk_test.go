@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // usersAndPostsRegistry returns a registry where posts.author_id is a
@@ -13,20 +14,20 @@ import (
 // FK column so a bogus insert reliably trips the constraint.
 func usersAndPostsRegistry() *Registry {
 	reg := NewRegistry()
-	reg.Register(Define("users", EntityConfig{
+	reg.Register(entity.Define("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false)))
-	reg.Register(Define("posts", EntityConfig{
+	reg.Register(entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			BelongsTo("author", "users", "author_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("author", "users", "author_id"),
 		},
 	}.WithTimestamps(false)))
 	return reg
@@ -75,15 +76,15 @@ func TestMigrate_FK_TopologicallySorted(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
 		// Register in reverse dependency order to prove the sort works.
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "author_id", Type: schema.String},
 			},
-			Relations: []Relation{BelongsTo("author", "users", "author_id")},
+			Relations: []entity.Relation{entity.BelongsTo("author", "users", "author_id")},
 		}.WithTimestamps(false)))
-		reg.Register(Define("users", EntityConfig{
+		reg.Register(entity.Define("users", entity.EntityConfig{
 			Table: "users",
 			Fields: []schema.Field{
 				{Name: "name", Type: schema.String, Required: true},
@@ -103,14 +104,14 @@ func TestMigrate_FK_TopologicallySorted(t *testing.T) {
 func TestMigrate_FK_MissingTarget_Errors(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "author_id", Type: schema.String},
 			},
-			Relations: []Relation{
-				BelongsTo("author", "users_does_not_exist", "author_id"),
+			Relations: []entity.Relation{
+				entity.BelongsTo("author", "users_does_not_exist", "author_id"),
 			},
 		}.WithTimestamps(false)))
 
@@ -134,23 +135,23 @@ func TestMigrate_FK_MissingTarget_Errors(t *testing.T) {
 func TestMigrate_FK_HasManyDoesNotAddSourceFK(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
-		reg.Register(Define("users", EntityConfig{
+		reg.Register(entity.Define("users", entity.EntityConfig{
 			Table: "users",
 			Fields: []schema.Field{
 				{Name: "name", Type: schema.String, Required: true},
 			},
-			Relations: []Relation{
-				HasMany("posts", "posts", "author_id"), // FK lives on posts, not users
+			Relations: []entity.Relation{
+				entity.HasMany("posts", "posts", "author_id"), // FK lives on posts, not users
 			},
 		}.WithTimestamps(false)))
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "author_id", Type: schema.String},
 			},
-			Relations: []Relation{
-				BelongsTo("author", "users", "author_id"),
+			Relations: []entity.Relation{
+				entity.BelongsTo("author", "users", "author_id"),
 			},
 		}.WithTimestamps(false)))
 

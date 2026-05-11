@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
@@ -21,8 +22,8 @@ import (
 // and runs the same eager-load helpers when Include() is set.
 type TypedQuery[T any] struct {
 	handler  *CrudHandler
-	wheres   []Condition
-	orders   []Order
+	wheres   []entity.Condition
+	orders   []entity.Order
 	limit    *int
 	offset   *int
 	includes []string
@@ -35,14 +36,14 @@ func NewTypedQuery[T any](h *CrudHandler) *TypedQuery[T] {
 }
 
 // Where appends an AND condition. Multiple Where calls AND together.
-func (q *TypedQuery[T]) Where(c Condition) *TypedQuery[T] {
+func (q *TypedQuery[T]) Where(c entity.Condition) *TypedQuery[T] {
 	q.wheres = append(q.wheres, c)
 	return q
 }
 
 // Order appends an ORDER BY clause. Multiple Order calls compose in input
 // order (first declared = primary sort).
-func (q *TypedQuery[T]) Order(o Order) *TypedQuery[T] {
+func (q *TypedQuery[T]) Order(o entity.Order) *TypedQuery[T] {
 	q.orders = append(q.orders, o)
 	return q
 }
@@ -141,7 +142,7 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	cb := query.Count(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
-		cb.Where(c.sql, c.args...)
+		cb.Where(c.SQL(), c.Args()...)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.applyTenantScopeCount(cb, req)
@@ -232,7 +233,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		ub.Set(k, v)
 	}
 	for _, c := range q.wheres {
-		ub.Where(c.sql, c.args...)
+		ub.Where(c.SQL(), c.Args()...)
 	}
 	req := syntheticRequest(ctx, "PATCH", "/")
 	q.handler.applyTenantScopeUpdate(ub, req)
@@ -254,7 +255,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		ub := query.Update(q.handler.Entity.GetTable()).
 			Set("deleted_at", time.Now().UTC())
 		for _, c := range q.wheres {
-			ub.Where(c.sql, c.args...)
+			ub.Where(c.SQL(), c.Args()...)
 		}
 		q.handler.applyTenantScopeUpdate(ub, req)
 		sqlStr, args := ub.Build()
@@ -268,7 +269,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 
 	db := query.Delete(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
-		db.Where(c.sql, c.args...)
+		db.Where(c.SQL(), c.Args()...)
 	}
 	q.handler.applyTenantScopeDelete(db, req)
 	sqlStr, args := db.Build()

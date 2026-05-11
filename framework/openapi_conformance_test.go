@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -43,7 +44,7 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 
 	app := NewApp(WithDB(db))
 
-	usersEntity := Define("users", EntityConfig{
+	usersEntity := entity.Define("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
@@ -53,7 +54,7 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	})
 	app.Registry.Register(usersEntity)
 
-	postsEntity := Define("posts", EntityConfig{
+	postsEntity := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},

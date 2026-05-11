@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // columnTestRow is the model the column-coverage tests use. Mirrors the
@@ -33,7 +34,7 @@ func columnTestApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		t.Fatalf("create: %v", err)
 	}
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("rows", EntityConfig{
+	app.Entity("rows", entity.EntityConfig{
 		Table: "rows",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
@@ -43,8 +44,8 @@ func columnTestApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 			{Name: "joined_at", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	entity, _ := app.Registry.Get("rows")
-	ch := NewCrudHandler(entity, db)
+	ent, _ := app.Registry.Get("rows")
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("rows")
 	ch.Registry = app.Registry
 	return app, ch
@@ -75,12 +76,12 @@ func seedColumnTestRows(t *testing.T, db *sql.DB) {
 
 // "Generated"-style column constants — one of each numeric/bool/temporal type.
 var (
-	colName     = NewStringColumn("name")
-	colScore    = NewIntColumn("score")
-	colRating   = NewFloatColumn("rating")
-	colActive   = NewBoolColumn("active")
-	colJoinedAt = NewTimestampColumn("joined_at")
-	colID       = NewUUIDColumn("id")
+	colName     = entity.NewStringColumn("name")
+	colScore    = entity.NewIntColumn("score")
+	colRating   = entity.NewFloatColumn("rating")
+	colActive   = entity.NewBoolColumn("active")
+	colJoinedAt = entity.NewTimestampColumn("joined_at")
+	colID       = entity.NewUUIDColumn("id")
 )
 
 // ============================================================================
@@ -91,7 +92,7 @@ func TestColumn_Int_Methods(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		_, ch := columnTestApp(t, db)
 		seedColumnTestRows(t, db)
-		find := func(cond Condition) []*columnTestRow {
+		find := func(cond entity.Condition) []*columnTestRow {
 			out, err := NewTypedQuery[columnTestRow](ch).Where(cond).Order(colScore.Asc()).Find(context.Background())
 			if err != nil {
 				t.Fatalf("find: %v", err)
@@ -130,7 +131,7 @@ func TestColumn_Float_Methods(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		_, ch := columnTestApp(t, db)
 		seedColumnTestRows(t, db)
-		find := func(cond Condition) []*columnTestRow {
+		find := func(cond entity.Condition) []*columnTestRow {
 			out, err := NewTypedQuery[columnTestRow](ch).Where(cond).Find(context.Background())
 			if err != nil {
 				t.Fatalf("find: %v", err)
@@ -246,7 +247,7 @@ func TestColumn_AndOrNot(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		_, ch := columnTestApp(t, db)
 		seedColumnTestRows(t, db)
-		find := func(cond Condition) []*columnTestRow {
+		find := func(cond entity.Condition) []*columnTestRow {
 			out, err := NewTypedQuery[columnTestRow](ch).Where(cond).Order(colScore.Asc()).Find(context.Background())
 			if err != nil {
 				t.Fatalf("find: %v", err)
@@ -255,28 +256,28 @@ func TestColumn_AndOrNot(t *testing.T) {
 		}
 
 		// (name=alice OR name=dave) — heterogeneous values
-		got := find(Or(colName.Eq("alice"), colName.Eq("dave")))
+		got := find(entity.Or(colName.Eq("alice"), colName.Eq("dave")))
 		if len(got) != 2 || got[0].Name != "alice" || got[1].Name != "dave" {
 			t.Fatalf("Or: %+v", got)
 		}
 
 		// And(score>=20, active) — both conjuncts must hold
-		got = find(And(colScore.Gte(20), colActive.IsTrue()))
+		got = find(entity.And(colScore.Gte(20), colActive.IsTrue()))
 		if len(got) != 1 || got[0].Name != "carol" {
 			t.Fatalf("And: %+v", got)
 		}
 
 		// Or(And(a, b), And(c, d)) — nested
-		got = find(Or(
-			And(colScore.Lt(15), colActive.IsTrue()),  // alice (10, true)
-			And(colScore.Gt(35), colActive.IsFalse()), // dave (40, false)
+		got = find(entity.Or(
+			entity.And(colScore.Lt(15), colActive.IsTrue()),  // alice (10, true)
+			entity.And(colScore.Gt(35), colActive.IsFalse()), // dave (40, false)
 		))
 		if len(got) != 2 || got[0].Name != "alice" || got[1].Name != "dave" {
 			t.Fatalf("nested Or(And, And): %+v", got)
 		}
 
 		// Not — invert "active"
-		got = find(Not(colActive.IsTrue()))
+		got = find(entity.Not(colActive.IsTrue()))
 		if len(got) != 2 {
 			t.Fatalf("Not: %+v", got)
 		}

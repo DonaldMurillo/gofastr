@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
 )
@@ -144,8 +145,8 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 // isAutoField reports whether a field name corresponds to an auto-generated
 // column on the entity (UUID, timestamp, increment). Used by UpsertOne to
 // avoid clobbering id/created_at when the same row already exists.
-func isAutoField(entity *Entity, col string) bool {
-	for _, f := range entity.GetFields() {
+func isAutoField(ent *entity.Entity, col string) bool {
+	for _, f := range ent.GetFields() {
 		if f.Name == col && f.AutoGenerate != schema.AutoNone {
 			return true
 		}

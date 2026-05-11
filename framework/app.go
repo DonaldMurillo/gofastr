@@ -18,6 +18,7 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/upload"
 	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
 )
@@ -200,8 +201,8 @@ func NewApp(opts ...AppOption) *App {
 
 // Entity registers an entity with the given name and configuration.
 // Returns the App for fluent chaining.
-func (a *App) Entity(name string, config EntityConfig) *App {
-	e := Define(name, config)
+func (a *App) Entity(name string, config entity.EntityConfig) *App {
+	e := entity.Define(name, config)
 
 	if a.DB != nil {
 		e.SetDB(a.DB)
@@ -248,8 +249,8 @@ func (a *App) Entity(name string, config EntityConfig) *App {
 }
 
 // EntityFromFile loads and registers one JSON entity declaration.
-func (a *App) EntityFromFile(path string) (*Entity, error) {
-	decl, err := LoadEntityDeclaration(path)
+func (a *App) EntityFromFile(path string) (*entity.Entity, error) {
+	decl, err := entity.LoadEntityDeclaration(path)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +264,7 @@ func (a *App) EntityFromFile(path string) (*Entity, error) {
 
 // EntitiesFromDir loads and registers every *.json declaration in dir.
 func (a *App) EntitiesFromDir(dir string) error {
-	decls, err := LoadEntityDeclarations(dir)
+	decls, err := entity.LoadEntityDeclarations(dir)
 	if err != nil {
 		return err
 	}
@@ -277,13 +278,13 @@ func (a *App) EntitiesFromDir(dir string) error {
 	return nil
 }
 
-func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) error {
+func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
 	for _, endpoint := range endpoints {
 		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		path := entityEndpointPath(entity, endpoint.Path)
+		path := entityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
 			a.Router.Handle(method, path, endpoint.Handler)
 		}
@@ -293,7 +294,7 @@ func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) erro
 			}
 			name := endpoint.Name
 			if name == "" {
-				name = defaultEndpointToolName(entity.GetName(), method, path)
+				name = defaultEndpointToolName(ent.GetName(), method, path)
 			}
 			description := endpoint.Description
 			if description == "" {
@@ -307,13 +308,13 @@ func (a *App) registerEntityEndpoints(entity *Entity, endpoints []Endpoint) erro
 	return nil
 }
 
-func entityEndpointPath(entity *Entity, path string) string {
+func entityEndpointPath(ent *entity.Entity, path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		path = "/"
 	}
 	if !strings.HasPrefix(path, "/") {
-		path = "/" + strings.Trim(entity.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
+		path = "/" + strings.Trim(ent.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
 	}
 	return normalizePath(convertColonParams(path))
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // hookTestPost is a minimal generated-style model for the tests below.
@@ -21,15 +22,15 @@ func hookApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 	t.Helper()
 	createPostsTestTable(t, db)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
 	}.WithTimestamps(false))
-	entity, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(entity, db)
+	ent, _ := app.Registry.Get("posts")
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	return app, ch
 }

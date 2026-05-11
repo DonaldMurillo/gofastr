@@ -11,6 +11,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/file"
 )
 
@@ -112,12 +113,12 @@ func TestSoftDeleteWithTrashed(t *testing.T) {
 }
 
 func TestSoftDeleteWithSoftDeleteConfig(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	if entity.Config.SoftDelete {
+	ent := entity.Define("posts", entity.EntityConfig{})
+	if ent.Config.SoftDelete {
 		t.Error("expected SoftDelete=false by default")
 	}
-	WithSoftDelete(entity)
-	if !entity.Config.SoftDelete {
+	WithSoftDelete(ent)
+	if !ent.Config.SoftDelete {
 		t.Error("expected SoftDelete=true after WithSoftDelete")
 	}
 }
@@ -241,12 +242,12 @@ func TestTenantDefaultConfig(t *testing.T) {
 }
 
 func TestTenantWithMultiTenant(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	if entity.Config.MultiTenant {
+	ent := entity.Define("posts", entity.EntityConfig{})
+	if ent.Config.MultiTenant {
 		t.Error("expected MultiTenant=false by default")
 	}
-	WithMultiTenant(entity, TenantConfig{Field: "org_id", Header: "X-Org-ID"})
-	if !entity.Config.MultiTenant {
+	WithMultiTenant(ent, TenantConfig{Field: "org_id", Header: "X-Org-ID"})
+	if !ent.Config.MultiTenant {
 		t.Error("expected MultiTenant=true after WithMultiTenant")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
 )
 
@@ -28,7 +29,7 @@ func createPostsTestTable(t *testing.T, db *sql.DB) {
 func newPostsApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},

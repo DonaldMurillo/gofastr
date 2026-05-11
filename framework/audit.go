@@ -86,11 +86,11 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		want[name] = true
 	}
 
-	for name, entity := range a.Registry.All() {
+	for name, ent := range a.Registry.All() {
 		if len(want) > 0 && !want[name] {
 			continue
 		}
-		ent := entity
+		ent := ent
 		pk := "id"
 		hr := a.HookRegistry(name)
 
@@ -137,7 +137,7 @@ func stringifyPK(row map[string]any, pk string) string {
 	return ""
 }
 
-func writeAuditRow(ctx context.Context, db *sql.DB, table, entity string, op auditOp, recordID, actor string, diff []byte) error {
+func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditOp, recordID, actor string, diff []byte) error {
 	id := fmt.Sprintf("aud_%d", time.Now().UnixNano())
 	var diffArg any
 	if diff != nil {
@@ -154,7 +154,7 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, entity string, op aud
 	}
 	_, err := exec.ExecContext(ctx,
 		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7)", table),
-		id, entity, string(op), recordID, nullIfEmpty(actor), time.Now().UTC(), diffArg,
+		id, ent, string(op), recordID, nullIfEmpty(actor), time.Now().UTC(), diffArg,
 	)
 	return err
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // This file is the contract test for the public typed-API surface that
@@ -28,11 +29,11 @@ type e2ePostsRepo struct {
 }
 
 func newE2EPostsRepo(app *App) *e2ePostsRepo {
-	entity, err := app.Registry.Get("posts")
+	ent, err := app.Registry.Get("posts")
 	if err != nil {
 		panic("posts not registered: " + err.Error())
 	}
-	h := NewCrudHandler(entity, app.DB)
+	h := NewCrudHandler(ent, app.DB)
 	h.JSONCase = app.JSONCasing()
 	h.Hooks = app.HookRegistry("posts")
 	h.Events = app.Events()
@@ -92,14 +93,14 @@ func (r *e2ePostsRepo) WithTx(tx *sql.Tx) *e2ePostsRepo {
 // ---- Phase D/E additions to the contract repo ----
 
 func (r *e2ePostsRepo) Exists(ctx context.Context, id string) (bool, error) {
-	return r.Query().Where(NewUUIDColumn("id").Eq(id)).Exists(ctx)
+	return r.Query().Where(entity.NewUUIDColumn("id").Eq(id)).Exists(ctx)
 }
 
 func (r *e2ePostsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-func (r *e2ePostsRepo) FirstOrCreate(ctx context.Context, row *e2ePost, match Condition) (*e2ePost, error) {
+func (r *e2ePostsRepo) FirstOrCreate(ctx context.Context, row *e2ePost, match entity.Condition) (*e2ePost, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -163,8 +164,8 @@ func (r *e2ePostsRepo) BatchDelete(ctx context.Context, ids []string) error {
 
 // "Generated" column constants — same shape codegen emits.
 var (
-	e2ePostsTitle = NewStringColumn("title")
-	e2ePostsBody  = NewStringColumn("body")
+	e2ePostsTitle = entity.NewStringColumn("title")
+	e2ePostsBody  = entity.NewStringColumn("body")
 )
 
 // ============================================================================
@@ -175,7 +176,7 @@ func TestTypedRepoContract_RoundTrip(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		createPostsTestTable(t, db)
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -241,7 +242,7 @@ func TestTypedRepoContract_ExistsCountFirstOrCreate(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		createPostsTestTable(t, db)
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -261,7 +262,7 @@ func TestTypedRepoContract_ExistsCountFirstOrCreate(t *testing.T) {
 
 		// FirstOrCreate when missing → creates.
 		row := &e2ePost{Title: "fresh", Body: "body"}
-		got, err := repo.FirstOrCreate(ctx, row, NewStringColumn("title").Eq("fresh"))
+		got, err := repo.FirstOrCreate(ctx, row, entity.NewStringColumn("title").Eq("fresh"))
 		if err != nil {
 			t.Fatalf("FirstOrCreate create: %v", err)
 		}
@@ -271,7 +272,7 @@ func TestTypedRepoContract_ExistsCountFirstOrCreate(t *testing.T) {
 
 		// FirstOrCreate when found → returns existing without inserting again.
 		row2 := &e2ePost{Title: "ignored"}
-		got2, err := repo.FirstOrCreate(ctx, row2, NewStringColumn("title").Eq("fresh"))
+		got2, err := repo.FirstOrCreate(ctx, row2, entity.NewStringColumn("title").Eq("fresh"))
 		if err != nil {
 			t.Fatalf("FirstOrCreate find: %v", err)
 		}
@@ -296,7 +297,7 @@ func TestTypedRepoContract_BatchOps(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		createPostsTestTable(t, db)
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -372,13 +373,13 @@ func TestTypedRepoContract_IncludePopulatesRelationFields(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		entity, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(entity, db)
+		ent, _ := app.Registry.Get("posts")
+		ch := NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 		ch.Registry = app.Registry
 
 		got, err := NewTypedQuery[modelPost](ch).
-			Where(NewStringColumn("id").Eq("p1")).
+			Where(entity.NewStringColumn("id").Eq("p1")).
 			Include("author", "comments").
 			First(context.Background())
 		if err != nil {
@@ -404,7 +405,7 @@ func TestTypedRepoContract_WithTx(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		createPostsTestTable(t, db)
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},

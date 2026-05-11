@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
 )
 
@@ -19,15 +20,15 @@ func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
 		t.Fatalf("create: %v", err)
 	}
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
 	}.WithTimestamps(false))
-	entity, _ := app.Registry.Get("posts")
-	ch := NewCrudHandler(entity, db)
+	ent, _ := app.Registry.Get("posts")
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Registry = app.Registry
 	return app, ch
@@ -165,15 +166,15 @@ func TestUpsert_InjectsTenantID(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table:       "posts",
 			MultiTenant: true,
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		entity, _ := app.Registry.Get("posts")
-		ch := NewCrudHandler(entity, db)
+		ent, _ := app.Registry.Get("posts")
+		ch := NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 
 		ctx := SetTenantID(context.Background(), "tenant-a")

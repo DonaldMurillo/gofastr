@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // Schema diff
@@ -42,10 +43,10 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry *Registry) ([]SchemaCh
 	}
 
 	var out []SchemaChange
-	for _, entity := range ordered {
-		changes, err := diffEntity(ctx, db, entity, all, dialect)
+	for _, ent := range ordered {
+		changes, err := diffEntity(ctx, db, ent, all, dialect)
 		if err != nil {
-			return nil, fmt.Errorf("diff %s: %w", entity.GetName(), err)
+			return nil, fmt.Errorf("diff %s: %w", ent.GetName(), err)
 		}
 		out = append(out, changes...)
 	}
@@ -78,33 +79,33 @@ func ApplySchemaDiff(ctx context.Context, db *sql.DB, changes []SchemaChange) (i
 // diffEntity diffs one entity against the live schema. If the table doesn't
 // exist at all, returns a single CREATE TABLE change. Otherwise compares
 // columns and emits ADD/DROP fragments.
-func diffEntity(ctx context.Context, db *sql.DB, entity *Entity, all map[string]*Entity, dialect Dialect) ([]SchemaChange, error) {
-	live, err := readLiveColumns(ctx, db, entity.GetTable(), dialect)
+func diffEntity(ctx context.Context, db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]SchemaChange, error) {
+	live, err := readLiveColumns(ctx, db, ent.GetTable(), dialect)
 	if err != nil {
 		return nil, err
 	}
 	if len(live) == 0 {
 		// Table missing entirely — emit a CREATE TABLE via the same path
 		// AutoMigrate uses, captured as SQL string.
-		ddl, err := buildCreateTableSQL(entity, all, dialect)
+		ddl, err := buildCreateTableSQL(ent, all, dialect)
 		if err != nil {
 			return nil, err
 		}
 		return []SchemaChange{{
-			Summary: fmt.Sprintf("%s: create table", entity.GetName()),
+			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
 			SQL:     ddl,
 		}}, nil
 	}
 
-	declared := make(map[string]schema.Field, len(entity.GetFields()))
-	for _, f := range entity.GetFields() {
+	declared := make(map[string]schema.Field, len(ent.GetFields()))
+	for _, f := range ent.GetFields() {
 		declared[f.Name] = f
 	}
 
 	var changes []SchemaChange
 
 	// ADD COLUMN for declared-but-missing fields.
-	for _, f := range entity.GetFields() {
+	for _, f := range ent.GetFields() {
 		if _, ok := live[f.Name]; ok {
 			continue
 		}
@@ -118,9 +119,9 @@ func diffEntity(ctx context.Context, db *sql.DB, entity *Entity, all map[string]
 			defaultClause = fmt.Sprintf(" DEFAULT %s", sqlDefault(f, dialect))
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
-			entity.GetTable(), f.Name, colType, nullable, defaultClause)
+			ent.GetTable(), f.Name, colType, nullable, defaultClause)
 		changes = append(changes, SchemaChange{
-			Summary: fmt.Sprintf("%s: add column %s %s", entity.GetName(), f.Name, colType),
+			Summary: fmt.Sprintf("%s: add column %s %s", ent.GetName(), f.Name, colType),
 			SQL:     ddl,
 		})
 	}
@@ -136,12 +137,12 @@ func diffEntity(ctx context.Context, db *sql.DB, entity *Entity, all map[string]
 		if _, ok := declared[name]; ok {
 			continue
 		}
-		if isFrameworkManagedColumn(name, entity) {
+		if isFrameworkManagedColumn(name, ent) {
 			continue
 		}
-		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", entity.GetTable(), name)
+		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ent.GetTable(), name)
 		changes = append(changes, SchemaChange{
-			Summary: fmt.Sprintf("%s: drop column %s", entity.GetName(), name),
+			Summary: fmt.Sprintf("%s: drop column %s", ent.GetName(), name),
 			SQL:     ddl,
 		})
 	}
@@ -152,14 +153,14 @@ func diffEntity(ctx context.Context, db *sql.DB, entity *Entity, all map[string]
 // isFrameworkManagedColumn reports whether a column is auto-managed by the
 // framework (timestamps, tenant_id, deleted_at) and should NOT be dropped
 // just because it isn't declared on the entity.
-func isFrameworkManagedColumn(name string, entity *Entity) bool {
+func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 	switch name {
 	case "created_at", "updated_at":
-		return entity.Config.Timestamps
+		return ent.Config.Timestamps
 	case "deleted_at":
-		return entity.Config.SoftDelete
+		return ent.Config.SoftDelete
 	case "tenant_id":
-		return entity.Config.MultiTenant
+		return ent.Config.MultiTenant
 	}
 	return false
 }
@@ -221,15 +222,15 @@ func readLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[s
 // buildCreateTableSQL renders the CREATE TABLE statement for an entity,
 // identical to what AutoMigrate would emit. Used when the table is missing
 // entirely.
-func buildCreateTableSQL(entity *Entity, all map[string]*Entity, dialect Dialect) (string, error) {
-	fields := entity.GetFields()
+func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) (string, error) {
+	fields := ent.GetFields()
 	if len(fields) == 0 {
-		return "", fmt.Errorf("entity %s has no fields", entity.GetName())
+		return "", fmt.Errorf("entity %s has no fields", ent.GetName())
 	}
 	var columns []string
 	for _, f := range fields {
 		col := fmt.Sprintf("%s %s", f.Name, sqlType(f, dialect))
-		if f.Name == entity.PrimaryKey {
+		if f.Name == ent.PrimaryKey {
 			col += " PRIMARY KEY"
 		}
 		if f.Unique {
@@ -244,12 +245,12 @@ func buildCreateTableSQL(entity *Entity, all map[string]*Entity, dialect Dialect
 		columns = append(columns, col)
 	}
 	if all != nil {
-		fks, err := foreignKeyClauses(entity, all)
+		fks, err := foreignKeyClauses(ent, all)
 		if err != nil {
 			return "", err
 		}
 		columns = append(columns, fks...)
 	}
 	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		entity.GetTable(), strings.Join(columns, ",\n\t")), nil
+		ent.GetTable(), strings.Join(columns, ",\n\t")), nil
 }

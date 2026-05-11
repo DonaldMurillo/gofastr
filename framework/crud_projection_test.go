@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 func projectionApp(t *testing.T, db *sql.DB) *App {
@@ -23,7 +24,7 @@ func projectionApp(t *testing.T, db *sql.DB) *App {
 		t.Fatalf("seed: %v", err)
 	}
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -114,7 +115,7 @@ func TestProjection_CamelCaseInput(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},

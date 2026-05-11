@@ -1,4 +1,4 @@
-package framework
+package entity
 
 import (
 	"encoding/json"

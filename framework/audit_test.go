@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // auditApp builds a single-entity app with the audit helper enabled.
@@ -15,7 +16,7 @@ import (
 func auditApp(t *testing.T, db *sql.DB, actor string) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -41,14 +42,14 @@ func readAuditRows(t *testing.T, db *sql.DB) []map[string]any {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var entity, op, recordID string
+		var ent, op, recordID string
 		var actor sql.NullString
 		var diff sql.NullString
-		if err := rows.Scan(&entity, &op, &recordID, &actor, &diff); err != nil {
+		if err := rows.Scan(&ent, &op, &recordID, &actor, &diff); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		row := map[string]any{
-			"entity":    entity,
+			"entity":    ent,
 			"op":        op,
 			"record_id": recordID,
 		}
@@ -205,13 +206,13 @@ func TestAudit_AnonymousActor(t *testing.T) {
 func TestAudit_EntityFilter(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		app.Entity("notes", EntityConfig{
+		app.Entity("notes", entity.EntityConfig{
 			Table: "notes",
 			Fields: []schema.Field{
 				{Name: "body", Type: schema.String, Required: true},

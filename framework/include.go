@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/filter"
 )
 
@@ -20,8 +21,8 @@ import (
 // way they do for top-level filters.
 type IncludeNode struct {
 	Name     string                // segment name (matches the relation's Name)
-	Relation Relation              // relation declared on the parent entity
-	Target   *Entity               // the entity Reached by following Relation
+	Relation entity.Relation       // relation declared on the parent entity
+	Target   *entity.Entity        // the entity Reached by following Relation
 	Filters  []filter.ParsedFilter // scoped filters applied during eager-load
 	Children []*IncludeNode        // deeper includes, e.g. for "author.profile" the "profile" child of "author"
 	childMap map[string]*IncludeNode
@@ -32,7 +33,7 @@ type IncludeNode struct {
 //
 // Example: "author.profile, comments" against a posts entity yields two
 // roots: author (with profile as a child) and comments (no children).
-func parseIncludeTree(r *http.Request, entity *Entity, registry *Registry) ([]*IncludeNode, error) {
+func parseIncludeTree(r *http.Request, ent *entity.Entity, registry *Registry) ([]*IncludeNode, error) {
 	raw := strings.TrimSpace(r.URL.Query().Get("include"))
 	if raw == "" {
 		return nil, nil
@@ -40,7 +41,7 @@ func parseIncludeTree(r *http.Request, entity *Entity, registry *Registry) ([]*I
 	if registry == nil {
 		// Fall back gracefully: dotted paths require the registry, but flat
 		// paths can still be resolved against the request's entity directly.
-		return parseIncludesFlat(raw, entity)
+		return parseIncludesFlat(raw, ent)
 	}
 
 	var roots []*IncludeNode
@@ -54,7 +55,7 @@ func parseIncludeTree(r *http.Request, entity *Entity, registry *Registry) ([]*I
 
 		siblings := &roots
 		siblingMap := rootMap
-		currentEntity := entity
+		currentEntity := ent
 
 		for i, segRaw := range segments {
 			seg, filterClause := splitSegmentFilter(segRaw)
@@ -239,13 +240,13 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 
 // parseIncludesFlat is the no-registry fallback: only top-level relation
 // names are supported (no dots). Dotted paths produce an error.
-func parseIncludesFlat(raw string, entity *Entity) ([]*IncludeNode, error) {
+func parseIncludesFlat(raw string, ent *entity.Entity) ([]*IncludeNode, error) {
 	var out []*IncludeNode
 	for _, p := range splitNonEmpty(raw, ",") {
 		if strings.Contains(p, ".") {
 			return nil, fmt.Errorf("nested include %q requires a registry", p)
 		}
-		rel, ok := relationByName(entity, p)
+		rel, ok := relationByName(ent, p)
 		if !ok {
 			return nil, fmt.Errorf("unknown include %q", p)
 		}
@@ -268,13 +269,13 @@ func splitNonEmpty(s, sep string) []string {
 }
 
 // relationByName looks up a Relation on an entity by name.
-func relationByName(entity *Entity, name string) (Relation, bool) {
-	for _, rel := range entity.Config.Relations {
+func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
+	for _, rel := range ent.Config.Relations {
 		if rel.Name == name {
 			return rel, true
 		}
 	}
-	return Relation{}, false
+	return entity.Relation{}, false
 }
 
 // applyIncludeTree eager-loads the include forest onto the parent rows. Top-
@@ -336,7 +337,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 // recurseLoadOnRawRows operates on rows that are still in raw DB casing — the
 // nested data EagerLoad produced. It re-runs EagerLoad with each child's
 // target relation against those rows, then recurses again.
-func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *Entity, children []*IncludeNode, rawRows []map[string]any) error {
+func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.Entity, children []*IncludeNode, rawRows []map[string]any) error {
 	pk := target.PrimaryKey
 	if pk == "" {
 		pk = "id"
@@ -417,9 +418,9 @@ func collectStringIDs(rows []map[string]any, pkKey string) []string {
 
 // rawRelationValue normalises a relation-attached value while keeping raw DB
 // keys (no JSON casing). Used during recursive nested loading.
-func rawRelationValue(rel Relation, val any, present bool) any {
+func rawRelationValue(rel entity.Relation, val any, present bool) any {
 	switch rel.Type {
-	case RelHasMany, RelManyToMany:
+	case entity.RelHasMany, entity.RelManyToMany:
 		if !present {
 			return []map[string]any{}
 		}
@@ -443,9 +444,9 @@ func rawRelationValue(rel Relation, val any, present bool) any {
 // formatRelationValueDeep is like formatRelationValue but recursively
 // converts every nested map's keys to JSON case, including any subtrees
 // previously attached during recurseLoadOnRawRows.
-func (ch *CrudHandler) formatRelationValueDeep(rel Relation, val any, present bool) any {
+func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, present bool) any {
 	switch rel.Type {
-	case RelHasMany, RelManyToMany:
+	case entity.RelHasMany, entity.RelManyToMany:
 		if !present {
 			return []map[string]any{}
 		}

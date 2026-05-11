@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 func seedStreamableRows(t *testing.T, db *sql.DB, n int) {
@@ -27,7 +28,7 @@ func seedStreamableRows(t *testing.T, db *sql.DB, n int) {
 func streamingApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},

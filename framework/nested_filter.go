@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/filter"
 )
 
 // nestedFilter is one parsed `?author.name=alice` style predicate.
 type nestedFilter struct {
-	Relation Relation
+	Relation entity.Relation
 	Field    string
 	Op       filter.FilterOp
 	Value    string
@@ -29,9 +30,9 @@ type nestedFilter struct {
 //
 // Unknown relations and unknown fields on the target return an error so
 // the caller can map to 400 — silent ignoring would mask client typos.
-func parseNestedFilters(r *http.Request, entity *Entity, registry *Registry) ([]nestedFilter, error) {
-	relsByName := map[string]Relation{}
-	for _, rel := range entity.Config.Relations {
+func parseNestedFilters(r *http.Request, ent *entity.Entity, registry *Registry) ([]nestedFilter, error) {
+	relsByName := map[string]entity.Relation{}
+	for _, rel := range ent.Config.Relations {
 		relsByName[rel.Name] = rel
 	}
 
@@ -125,21 +126,21 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 	args := []any{nf.Value}
 
 	switch rel.Type {
-	case RelManyToOne:
+	case entity.RelManyToOne:
 		// posts.author_id → users.id
 		sub := fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM %s WHERE %s.id = %s.%s AND %s.%s %s $1)",
 			rel.Entity, rel.Entity, parentTable, rel.ForeignKey, rel.Entity, col, predicate,
 		)
 		return sub, args
-	case RelHasOne, RelHasMany:
+	case entity.RelHasOne, entity.RelHasMany:
 		// target.fk = parent.pk
 		sub := fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s.%s %s $1)",
 			rel.Entity, rel.Entity, rel.ForeignKey, parentTable, parentPK, rel.Entity, col, predicate,
 		)
 		return sub, args
-	case RelManyToMany:
+	case entity.RelManyToMany:
 		// parent → pivot → target
 		sub := fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s = %s.%s AND %s.%s %s $1)",

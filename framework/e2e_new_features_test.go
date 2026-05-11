@@ -15,6 +15,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // ============================================================================
@@ -69,13 +70,13 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 	}
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("authors", EntityConfig{
+	app.Entity("authors", entity.EntityConfig{
 		Table: "authors",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -85,12 +86,12 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 		// Composite cursor: order by created_at then id so duplicate
 		// timestamps still produce a stable page boundary.
 		CursorFields: []string{"created_at"},
-		Relations: []Relation{
-			BelongsTo("author", "authors", "author_id"),
-			HasMany("comments", "comments", "post_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("author", "authors", "author_id"),
+			entity.HasMany("comments", "comments", "post_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},

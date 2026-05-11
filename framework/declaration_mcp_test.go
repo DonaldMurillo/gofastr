@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 func TestEntityFromFileRegistersJSONDeclaration(t *testing.T) {
@@ -30,20 +31,20 @@ func TestEntityFromFileRegistersJSONDeclaration(t *testing.T) {
 	}
 
 	app := NewApp()
-	entity, err := app.EntityFromFile(path)
+	ent, err := app.EntityFromFile(path)
 	if err != nil {
 		t.Fatalf("EntityFromFile: %v", err)
 	}
-	if entity.GetName() != "posts" {
-		t.Fatalf("entity name = %q", entity.GetName())
+	if ent.GetName() != "posts" {
+		t.Fatalf("entity name = %q", ent.GetName())
 	}
 	if _, err := app.Registry.Get("posts"); err != nil {
 		t.Fatalf("registry missing posts: %v", err)
 	}
-	if _, ok := entity.Schema().FieldByName("deleted_at"); !ok {
+	if _, ok := ent.Schema().FieldByName("deleted_at"); !ok {
 		t.Fatal("soft delete field was not injected")
 	}
-	status, ok := entity.Schema().FieldByName("status")
+	status, ok := ent.Schema().FieldByName("status")
 	if !ok || status.Type != schema.Enum || len(status.Values) != 2 {
 		t.Fatalf("status field not decoded correctly: %#v", status)
 	}
@@ -78,7 +79,7 @@ func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 		createPostsTable(t, db)
 
 		app := NewApp(WithDB(db))
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -128,10 +129,10 @@ func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 
 func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 	app := NewApp()
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		CRUD:   boolPtr(false),
-		Endpoints: []Endpoint{
+		Endpoints: []entity.Endpoint{
 			{
 				Method:      http.MethodPost,
 				Path:        "{id}/publish",

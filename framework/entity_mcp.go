@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // RegisterEntityMCPTools exposes a CRUD handler through MCP tools.
@@ -31,18 +32,18 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 	if router == nil {
 		return fmt.Errorf("entity mcp: router is nil — MCP CRUD tools must dispatch through the app router so middleware applies")
 	}
-	entity := crud.Entity.GetName()
+	ent := crud.Entity.GetName()
 	defs := []struct {
 		name        string
 		description string
 		schema      map[string]any
 		handler     mcp.ToolHandler
 	}{
-		{entity + "_list", "List " + entity + " records", listToolSchema(crud.Entity), crud.listTool(router)},
-		{entity + "_get", "Get one " + entity + " record by id", idToolSchema(), crud.getTool(router)},
-		{entity + "_create", "Create a " + entity + " record", writeToolSchema(crud.Entity), crud.createTool(router)},
-		{entity + "_update", "Update a " + entity + " record", updateToolSchema(crud.Entity), crud.updateTool(router)},
-		{entity + "_delete", "Delete a " + entity + " record by id", idToolSchema(), crud.deleteTool(router)},
+		{ent + "_list", "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router)},
+		{ent + "_get", "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router)},
+		{ent + "_create", "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router)},
+		{ent + "_update", "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router)},
+		{ent + "_delete", "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router)},
 	}
 	for _, def := range defs {
 		if err := server.RegisterTool(def.name, def.description, def.schema, def.handler); err != nil {
@@ -175,13 +176,13 @@ func idToolSchema() map[string]any {
 	}
 }
 
-func listToolSchema(entity *Entity) map[string]any {
+func listToolSchema(ent *entity.Entity) map[string]any {
 	props := map[string]any{
 		"page":  map[string]any{"type": "integer", "minimum": 1},
 		"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
 		"sort":  map[string]any{"type": "string"},
 	}
-	for _, field := range entity.GetFields() {
+	for _, field := range ent.GetFields() {
 		if field.Hidden {
 			continue
 		}
@@ -190,10 +191,10 @@ func listToolSchema(entity *Entity) map[string]any {
 	return map[string]any{"type": "object", "properties": props}
 }
 
-func writeToolSchema(entity *Entity) map[string]any {
+func writeToolSchema(ent *entity.Entity) map[string]any {
 	props := make(map[string]any)
 	var required []string
-	for _, field := range entity.GetFields() {
+	for _, field := range ent.GetFields() {
 		if field.AutoGenerate != schema.AutoNone || field.ReadOnly || field.Hidden {
 			continue
 		}
@@ -209,8 +210,8 @@ func writeToolSchema(entity *Entity) map[string]any {
 	return out
 }
 
-func updateToolSchema(entity *Entity) map[string]any {
-	out := writeToolSchema(entity)
+func updateToolSchema(ent *entity.Entity) map[string]any {
+	out := writeToolSchema(ent)
 	props := out["properties"].(map[string]any)
 	props["id"] = map[string]any{"type": "string"}
 	out["required"] = []string{"id"}

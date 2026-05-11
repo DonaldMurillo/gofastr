@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 )
 
@@ -28,7 +29,7 @@ func seedEventsDB(t *testing.T, db *sql.DB) {
 func eventsApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -150,8 +151,8 @@ func TestSSE_FiltersByEntity(t *testing.T) {
 			}
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}.WithTimestamps(false))
-		app.Entity("comments", EntityConfig{Table: "comments", Fields: []schema.Field{{Name: "body", Type: schema.String, Required: true}}}.WithTimestamps(false))
+		app.Entity("posts", entity.EntityConfig{Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}.WithTimestamps(false))
+		app.Entity("comments", entity.EntityConfig{Table: "comments", Fields: []schema.Field{{Name: "body", Type: schema.String, Required: true}}}.WithTimestamps(false))
 
 		srv := httptest.NewServer(app.Router)
 		t.Cleanup(srv.Close)
@@ -244,7 +245,7 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 		app.Use(TenantMiddleware("X-Tenant-ID"))
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table:       "posts",
 			MultiTenant: true,
 			Fields: []schema.Field{
@@ -329,13 +330,13 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 // ============================================================================
 
 func TestSSE_NoEventBus_503(t *testing.T) {
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 		},
 	}.WithTimestamps(false))
-	ch := NewCrudHandler(entity, nil)
+	ch := NewCrudHandler(ent, nil)
 	ch.Events = nil
 
 	rec := httptest.NewRecorder()

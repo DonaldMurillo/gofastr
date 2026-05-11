@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // SoftDeleteScope is a query scope that filters out soft-deleted records.
@@ -14,9 +15,9 @@ type SoftDeleteScope struct{}
 
 // WithSoftDelete configures an entity for soft delete support.
 // Sets the SoftDelete flag so the framework knows to use UPDATE instead of DELETE.
-func WithSoftDelete(entity *Entity) *Entity {
-	entity.Config.SoftDelete = true
-	return entity
+func WithSoftDelete(ent *entity.Entity) *entity.Entity {
+	ent.Config.SoftDelete = true
+	return ent
 }
 
 // SoftDelete marks a record as deleted by setting deleted_at to NOW().

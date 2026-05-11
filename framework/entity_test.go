@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 func TestDefineEntityWithFields(t *testing.T) {
-	e := Define("users", EntityConfig{
+	e := entity.Define("users", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: ptrFloat(200)},
 			{Name: "email", Type: schema.String, Required: true, Unique: true},
@@ -35,7 +36,7 @@ func TestDefineEntityWithFields(t *testing.T) {
 }
 
 func TestDefineEntityWithExplicitTable(t *testing.T) {
-	e := Define("User", EntityConfig{
+	e := entity.Define("User", entity.EntityConfig{
 		Table:  "app_users",
 		Fields: []schema.Field{},
 	})
@@ -46,7 +47,7 @@ func TestDefineEntityWithExplicitTable(t *testing.T) {
 }
 
 func TestDefineEntityTimestampsOptOut(t *testing.T) {
-	e := Define("logs", EntityConfig{
+	e := entity.Define("logs", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "message", Type: schema.Text},
 		},
@@ -60,7 +61,7 @@ func TestDefineEntityTimestampsOptOut(t *testing.T) {
 func TestRegisterEntityInRegistry(t *testing.T) {
 	reg := NewRegistry()
 
-	e := Define("posts", EntityConfig{
+	e := entity.Define("posts", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 		},
@@ -74,7 +75,7 @@ func TestRegisterEntityInRegistry(t *testing.T) {
 func TestGetEntityFromRegistry(t *testing.T) {
 	reg := NewRegistry()
 
-	e := Define("comments", EntityConfig{
+	e := entity.Define("comments", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.Text, Required: true},
 		},
@@ -102,8 +103,8 @@ func TestGetEntityNotFound(t *testing.T) {
 func TestDuplicateNameReturnsError(t *testing.T) {
 	reg := NewRegistry()
 
-	e1 := Define("tags", EntityConfig{})
-	e2 := Define("tags", EntityConfig{})
+	e1 := entity.Define("tags", entity.EntityConfig{})
+	e2 := entity.Define("tags", entity.EntityConfig{})
 
 	if err := reg.Register(e1); err != nil {
 		t.Fatalf("first register should succeed: %v", err)
@@ -116,8 +117,8 @@ func TestDuplicateNameReturnsError(t *testing.T) {
 func TestRegistryAll(t *testing.T) {
 	reg := NewRegistry()
 
-	reg.Register(Define("users", EntityConfig{}))
-	reg.Register(Define("posts", EntityConfig{}))
+	reg.Register(entity.Define("users", entity.EntityConfig{}))
+	reg.Register(entity.Define("posts", entity.EntityConfig{}))
 
 	all := reg.All()
 	if len(all) != 2 {
@@ -134,7 +135,7 @@ func TestRegistryAll(t *testing.T) {
 func TestAppFluentAPI(t *testing.T) {
 	app := NewApp()
 
-	result := app.Entity("articles", EntityConfig{
+	result := app.Entity("articles", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
@@ -172,7 +173,7 @@ func TestAppFluentAPI(t *testing.T) {
 func TestAppFluentChaining(t *testing.T) {
 	app := NewApp()
 
-	app.Entity("users", EntityConfig{}).Entity("posts", EntityConfig{}).Entity("comments", EntityConfig{})
+	app.Entity("users", entity.EntityConfig{}).Entity("posts", entity.EntityConfig{}).Entity("comments", entity.EntityConfig{})
 
 	all := app.Registry.All()
 	if len(all) != 3 {
@@ -184,7 +185,7 @@ func TestAppWithDB(t *testing.T) {
 	app := NewApp()
 
 	// Should not panic when no DB is set
-	app.Entity("items", EntityConfig{})
+	app.Entity("items", entity.EntityConfig{})
 
 	e, _ := app.Registry.Get("items")
 	if e.DB != nil {
@@ -195,12 +196,12 @@ func TestAppWithDB(t *testing.T) {
 func TestEntityValidation(t *testing.T) {
 	tests := []struct {
 		name    string
-		entity  *Entity
+		ent     *entity.Entity
 		wantErr bool
 	}{
 		{
 			name: "valid entity",
-			entity: Define("valid", EntityConfig{
+			ent: entity.Define("valid", entity.EntityConfig{
 				Fields: []schema.Field{
 					{Name: "name", Type: schema.String},
 				},
@@ -209,21 +210,21 @@ func TestEntityValidation(t *testing.T) {
 		},
 		{
 			name: "empty name",
-			entity: &Entity{
-				Config: EntityConfig{},
+			ent: &entity.Entity{
+				Config: entity.EntityConfig{},
 			},
 			wantErr: true,
 		},
 		{
 			name: "no fields",
-			entity: Define("empty", EntityConfig{
+			ent: entity.Define("empty", entity.EntityConfig{
 				Fields: []schema.Field{},
 			}),
 			wantErr: false, // auto-injected id + timestamps count as fields
 		},
 		{
 			name: "duplicate field name",
-			entity: Define("dup", EntityConfig{
+			ent: entity.Define("dup", entity.EntityConfig{
 				Fields: []schema.Field{
 					{Name: "id", Type: schema.Int},
 				},
@@ -232,7 +233,7 @@ func TestEntityValidation(t *testing.T) {
 		},
 		{
 			name: "relation without target",
-			entity: Define("badrel", EntityConfig{
+			ent: entity.Define("badrel", entity.EntityConfig{
 				Fields: []schema.Field{
 					{Name: "author", Type: schema.Relation},
 				},
@@ -241,7 +242,7 @@ func TestEntityValidation(t *testing.T) {
 		},
 		{
 			name: "relation with target",
-			entity: Define("goodrel", EntityConfig{
+			ent: entity.Define("goodrel", entity.EntityConfig{
 				Fields: []schema.Field{
 					{Name: "author", Type: schema.Relation, To: "users"},
 				},
@@ -252,7 +253,7 @@ func TestEntityValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.entity.Validate()
+			err := tt.ent.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}

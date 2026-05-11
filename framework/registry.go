@@ -4,52 +4,54 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // Registry stores and retrieves Entity definitions by name.
 // It is safe for concurrent use.
 type Registry struct {
 	mu       sync.RWMutex
-	entities map[string]*Entity
+	entities map[string]*entity.Entity
 	db       *sql.DB
 }
 
 // NewRegistry creates a new empty entity registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		entities: make(map[string]*Entity),
+		entities: make(map[string]*entity.Entity),
 	}
 }
 
 // Register adds an Entity to the registry.
 // Returns an error if an entity with the same name already exists.
-func (r *Registry) Register(entity *Entity) error {
-	if entity == nil {
+func (r *Registry) Register(ent *entity.Entity) error {
+	if ent == nil {
 		return fmt.Errorf("registry: entity must not be nil")
 	}
-	if entity.Config.Name == "" {
+	if ent.Config.Name == "" {
 		return fmt.Errorf("registry: entity name must not be empty")
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.entities[entity.Config.Name]; exists {
-		return fmt.Errorf("registry: entity %q already registered", entity.Config.Name)
+	if _, exists := r.entities[ent.Config.Name]; exists {
+		return fmt.Errorf("registry: entity %q already registered", ent.Config.Name)
 	}
 
 	// Propagate registry-level DB if the entity doesn't have one
-	if entity.DB == nil && r.db != nil {
-		entity.DB = r.db
+	if ent.DB == nil && r.db != nil {
+		ent.DB = r.db
 	}
 
-	r.entities[entity.Config.Name] = entity
+	r.entities[ent.Config.Name] = ent
 	return nil
 }
 
 // Get retrieves an Entity by name.
 // Returns an error if no entity with that name is registered.
-func (r *Registry) Get(name string) (*Entity, error) {
+func (r *Registry) Get(name string) (*entity.Entity, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -61,11 +63,11 @@ func (r *Registry) Get(name string) (*Entity, error) {
 }
 
 // All returns a copy of the map of all registered entities.
-func (r *Registry) All() map[string]*Entity {
+func (r *Registry) All() map[string]*entity.Entity {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	out := make(map[string]*Entity, len(r.entities))
+	out := make(map[string]*entity.Entity, len(r.entities))
 	for k, v := range r.entities {
 		out[k] = v
 	}

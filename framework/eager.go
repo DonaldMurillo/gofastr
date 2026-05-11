@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // EagerLoad fetches related data for a set of parent IDs in batched queries,
 // avoiding N+1 problems. Returns a map keyed by parent ID to relation name to related data.
-func EagerLoad(ctx context.Context, db DBExecutor, entity *Entity, relations []Relation, ids []string) (map[string]map[string]any, error) {
+func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations []entity.Relation, ids []string) (map[string]map[string]any, error) {
 	if len(ids) == 0 || len(relations) == 0 {
 		return make(map[string]map[string]any), nil
 	}
@@ -20,19 +22,19 @@ func EagerLoad(ctx context.Context, db DBExecutor, entity *Entity, relations []R
 		result[id] = make(map[string]any)
 	}
 
-	tableName := entity.GetTable()
+	tableName := ent.GetTable()
 
 	for _, rel := range relations {
 		switch rel.Type {
-		case RelHasOne, RelHasMany:
+		case entity.RelHasOne, entity.RelHasMany:
 			if err := eagerLoadHasMany(ctx, db, tableName, rel, ids, pkCol, result); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
-		case RelManyToOne:
+		case entity.RelManyToOne:
 			if err := eagerLoadBelongsTo(ctx, db, tableName, rel, ids, result); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
-		case RelManyToMany:
+		case entity.RelManyToMany:
 			if err := eagerLoadManyToMany(ctx, db, tableName, rel, ids, pkCol, result); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
@@ -43,7 +45,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, entity *Entity, relations []R
 }
 
 // eagerLoadHasMany handles HasOne and HasMany: target table has a FK pointing back to us.
-func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel Relation, ids []string, pkCol string, result map[string]map[string]any) error {
+func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -82,7 +84,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel Rela
 
 		parentID := fmt.Sprintf("%v", row[rel.ForeignKey])
 		if existing, ok := result[parentID]; ok {
-			if rel.Type == RelHasOne {
+			if rel.Type == entity.RelHasOne {
 				existing[rel.Name] = row
 			} else {
 				var slice []map[string]any
@@ -99,7 +101,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel Rela
 }
 
 // eagerLoadBelongsTo handles BelongsTo (ManyToOne): we hold a FK pointing to the target.
-func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel Relation, ids []string, result map[string]map[string]any) error {
+func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel entity.Relation, ids []string, result map[string]map[string]any) error {
 	pkCol := "id"
 
 	placeholders := make([]string, len(ids))
@@ -198,7 +200,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel Re
 }
 
 // eagerLoadManyToMany handles ManyToMany through a pivot table.
-func eagerLoadManyToMany(ctx context.Context, db DBExecutor, table string, rel Relation, ids []string, pkCol string, result map[string]map[string]any) error {
+func eagerLoadManyToMany(ctx context.Context, db DBExecutor, table string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/handler"
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // tenantIDKey is the context key for the string tenant identifier
@@ -38,9 +39,9 @@ func DefaultTenantConfig() TenantConfig {
 // WithMultiTenant configures an entity for multi-tenancy.
 // Sets the MultiTenant flag on the entity config and stores the tenant config
 // in the entity metadata.
-func WithMultiTenant(entity *Entity, config TenantConfig) *Entity {
-	entity.Config.MultiTenant = true
-	return entity
+func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
+	ent.Config.MultiTenant = true
+	return ent
 }
 
 // ApplyTenantFilter adds a WHERE tenant_id = ? clause to the query builder.

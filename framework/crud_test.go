@@ -14,6 +14,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
 )
 
@@ -22,10 +23,10 @@ import (
 // ============================================================================
 
 func TestCrudApplyTenantScope_QueryBuilder(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	WithMultiTenant(entity, DefaultTenantConfig())
+	ent := entity.Define("posts", entity.EntityConfig{})
+	WithMultiTenant(ent, DefaultTenantConfig())
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-123"))
@@ -49,10 +50,10 @@ func TestCrudApplyTenantScope_QueryBuilder(t *testing.T) {
 }
 
 func TestCrudApplyTenantScope_NotMultiTenant(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
+	ent := entity.Define("posts", entity.EntityConfig{})
 	// NOT multi-tenant
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-123"))
@@ -70,10 +71,10 @@ func TestCrudApplyTenantScope_NotMultiTenant(t *testing.T) {
 }
 
 func TestCrudApplyTenantScope_EmptyTenantID(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	WithMultiTenant(entity, DefaultTenantConfig())
+	ent := entity.Define("posts", entity.EntityConfig{})
+	WithMultiTenant(ent, DefaultTenantConfig())
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 	// No tenant ID in context
@@ -91,10 +92,10 @@ func TestCrudApplyTenantScope_EmptyTenantID(t *testing.T) {
 }
 
 func TestCrudInjectTenant(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	WithMultiTenant(entity, DefaultTenantConfig())
+	ent := entity.Define("posts", entity.EntityConfig{})
+	WithMultiTenant(ent, DefaultTenantConfig())
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("POST", "/posts", nil)
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-abc"))
@@ -108,9 +109,9 @@ func TestCrudInjectTenant(t *testing.T) {
 }
 
 func TestCrudInjectTenant_NotMultiTenant(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
+	ent := entity.Define("posts", entity.EntityConfig{})
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("POST", "/posts", nil)
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-abc"))
@@ -124,10 +125,10 @@ func TestCrudInjectTenant_NotMultiTenant(t *testing.T) {
 }
 
 func TestCrudApplyTenantScopeCount(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	WithMultiTenant(entity, DefaultTenantConfig())
+	ent := entity.Define("posts", entity.EntityConfig{})
+	WithMultiTenant(ent, DefaultTenantConfig())
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 	req = req.WithContext(SetTenantID(context.Background(), "tenant-xyz"))
@@ -155,9 +156,9 @@ func TestCrudApplyTenantScopeCount(t *testing.T) {
 // ============================================================================
 
 func TestCrudApplySoftDeleteFilter(t *testing.T) {
-	entity := Define("posts", EntityConfig{SoftDelete: true})
+	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 
@@ -171,9 +172,9 @@ func TestCrudApplySoftDeleteFilter(t *testing.T) {
 }
 
 func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
-	entity := Define("posts", EntityConfig{SoftDelete: true})
+	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts?trashed=true", nil)
 
@@ -187,9 +188,9 @@ func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 }
 
 func TestCrudApplySoftDeleteFilter_NotSoftDelete(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
+	ent := entity.Define("posts", entity.EntityConfig{})
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 
@@ -203,9 +204,9 @@ func TestCrudApplySoftDeleteFilter_NotSoftDelete(t *testing.T) {
 }
 
 func TestCrudApplySoftDeleteFilterCount(t *testing.T) {
-	entity := Define("posts", EntityConfig{SoftDelete: true})
+	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
 
-	ch := &CrudHandler{Entity: entity}
+	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
 
@@ -229,7 +230,7 @@ func TestCrudCreate_SkipsReadOnlyFields(t *testing.T) {
 	}
 	defer db.Close()
 
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -237,7 +238,7 @@ func TestCrudCreate_SkipsReadOnlyFields(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 
 	// Expect INSERT to only have "title" columns, not "status"
 	mock.ExpectBegin()
@@ -274,7 +275,7 @@ func TestCrudCreate_SkipsHiddenFields(t *testing.T) {
 	}
 	defer db.Close()
 
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -282,7 +283,7 @@ func TestCrudCreate_SkipsHiddenFields(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO posts .*`).
@@ -319,7 +320,7 @@ func TestCrudCreate_ExecutesHooks(t *testing.T) {
 	}
 	defer db.Close()
 
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -342,7 +343,7 @@ func TestCrudCreate_ExecutesHooks(t *testing.T) {
 		return nil
 	})
 
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = hooks
 
 	mock.ExpectBegin()
@@ -379,7 +380,7 @@ func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
 	}
 	defer db.Close()
 
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -391,7 +392,7 @@ func TestCrudCreate_BeforeCreateHookRejects(t *testing.T) {
 		return fmt.Errorf("rejected by policy")
 	})
 
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = hooks
 
 	// BeforeCreate fires inside the tx; rejection rolls back without an INSERT.
@@ -422,7 +423,7 @@ func TestCrudUpdate_ExecutesHooks(t *testing.T) {
 	}
 	defer db.Close()
 
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
@@ -441,7 +442,7 @@ func TestCrudUpdate_ExecutesHooks(t *testing.T) {
 		return nil
 	})
 
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = hooks
 
 	mock.ExpectBegin()
@@ -475,7 +476,7 @@ func TestCrudDelete_ExecutesHooks(t *testing.T) {
 	}
 	defer db.Close()
 
-	entity := Define("posts", EntityConfig{
+	ent := entity.Define("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
@@ -494,7 +495,7 @@ func TestCrudDelete_ExecutesHooks(t *testing.T) {
 		return nil
 	})
 
-	ch := NewCrudHandler(entity, db)
+	ch := NewCrudHandler(ent, db)
 	ch.Hooks = hooks
 
 	mock.ExpectBegin()
@@ -601,7 +602,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		entity := Define("posts", EntityConfig{
+		ent := entity.Define("posts", entity.EntityConfig{
 			Table:      "posts",
 			SoftDelete: true,
 			Fields: []schema.Field{
@@ -611,9 +612,9 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 				{Name: "author_id", Type: schema.String},
 			},
 		})
-		app.Registry.Register(entity)
+		app.Registry.Register(ent)
 
-		crud := NewCrudHandler(entity, db)
+		crud := NewCrudHandler(ent, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
 
 		ta := TestHarness(t, app)
@@ -680,16 +681,16 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		entity := Define("posts", EntityConfig{
+		ent := entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 				{Name: "slug", Type: schema.String, ReadOnly: true},
 			},
 		})
-		app.Registry.Register(entity)
+		app.Registry.Register(ent)
 
-		crud := NewCrudHandler(entity, db)
+		crud := NewCrudHandler(ent, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
 
 		ta := TestHarness(t, app)
@@ -737,7 +738,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		entity := Define("posts", EntityConfig{
+		ent := entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -746,7 +747,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 				{Name: "author_id", Type: schema.String},
 			},
 		})
-		app.Registry.Register(entity)
+		app.Registry.Register(ent)
 
 		var beforeCreateCalled, afterCreateCalled bool
 		hooks := app.HookRegistry("posts")
@@ -763,7 +764,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 			return nil
 		})
 
-		crud := NewCrudHandler(entity, db)
+		crud := NewCrudHandler(ent, db)
 		crud.Hooks = hooks
 		RegisterCrudRoutes(app.Router, crud, "/posts")
 
@@ -829,7 +830,7 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		entity := Define("posts", EntityConfig{
+		ent := entity.Define("posts", entity.EntityConfig{
 			Table:       "posts",
 			MultiTenant: true,
 			Fields: []schema.Field{
@@ -839,14 +840,14 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 				{Name: "author_id", Type: schema.String},
 			},
 		})
-		WithMultiTenant(entity, DefaultTenantConfig())
-		app.Registry.Register(entity)
+		WithMultiTenant(ent, DefaultTenantConfig())
+		app.Registry.Register(ent)
 
 		// Apply tenant middleware BEFORE registering routes
 		// (Router.wrap bakes in middleware at registration time)
 		app.Router.Use(TenantMiddleware("X-Tenant-ID"))
 
-		crud := NewCrudHandler(entity, db)
+		crud := NewCrudHandler(ent, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
 
 		ta := TestHarness(t, app)
@@ -910,16 +911,16 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db))
-		entity := Define("posts", EntityConfig{
+		ent := entity.Define("posts", entity.EntityConfig{
 			Table:      "posts",
 			SoftDelete: true,
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
 			},
 		})
-		app.Registry.Register(entity)
+		app.Registry.Register(ent)
 
-		crud := NewCrudHandler(entity, db)
+		crud := NewCrudHandler(ent, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")
 
 		ta := TestHarness(t, app)

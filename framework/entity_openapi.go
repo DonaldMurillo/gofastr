@@ -74,10 +74,10 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 	})
 
 	// Generate schema + paths for each entity
-	for _, entity := range registry.All() {
-		entityName := entity.GetName()
-		tableName := entity.GetTable()
-		fields := entity.GetFields()
+	for _, ent := range registry.All() {
+		entityName := ent.GetName()
+		tableName := ent.GetTable()
+		fields := ent.GetFields()
 
 		// Generate entity schema (excluding hidden fields from response)
 		visibleFields := make([]schema.Field, 0, len(fields))
@@ -113,8 +113,8 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		path := "/" + tableName
 
-		includeNames := make([]string, 0, len(entity.Config.Relations))
-		for _, rel := range entity.Config.Relations {
+		includeNames := make([]string, 0, len(ent.Config.Relations))
+		for _, rel := range ent.Config.Relations {
 			includeNames = append(includeNames, rel.Name)
 		}
 		includeDesc := "Comma-separated list of relations to eager-load."
@@ -287,7 +287,7 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
 
-		for _, endpoint := range entity.Config.Endpoints {
+		for _, endpoint := range ent.Config.Endpoints {
 			if endpoint.Method == "" || endpoint.Path == "" {
 				continue
 			}
@@ -296,10 +296,10 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			if customOp.Summary == "" {
 				customOp.Summary = endpoint.Method + " " + endpoint.Path
 			}
-			customOp.OperationID = defaultEndpointToolName(entityName, endpoint.Method, entityEndpointPath(entity, endpoint.Path))
+			customOp.OperationID = defaultEndpointToolName(entityName, endpoint.Method, entityEndpointPath(ent, endpoint.Path))
 			customOp.Tags = []string{entityName}
 			customOp.AddResponse(200, "OK", map[string]any{"type": "object"})
-			s.AddPath(endpoint.Method, entityEndpointPath(entity, endpoint.Path), *customOp)
+			s.AddPath(endpoint.Method, entityEndpointPath(ent, endpoint.Path), *customOp)
 		}
 	}
 

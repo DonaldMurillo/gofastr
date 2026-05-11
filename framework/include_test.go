@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // seedBlogDB creates the blog test schema (users, profiles, posts, comments,
@@ -57,45 +58,45 @@ func seedBlogDB(t *testing.T, db *sql.DB) {
 func nestedBlogApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("users", EntityConfig{
+	app.Entity("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			HasOne("profile", "profiles", "user_id"),
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("profiles", EntityConfig{
+	app.Entity("profiles", entity.EntityConfig{
 		Table: "profiles",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "bio", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
-			BelongsTo("author", "users", "author_id"),
-			ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
+			entity.BelongsTo("author", "users", "author_id"),
+			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "post_id", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			BelongsTo("post", "posts", "post_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("post", "posts", "post_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("tags", EntityConfig{
+	app.Entity("tags", entity.EntityConfig{
 		Table: "tags",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
@@ -108,35 +109,35 @@ func nestedBlogApp(t *testing.T, db *sql.DB) *App {
 func blogApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("users", EntityConfig{
+	app.Entity("users", entity.EntityConfig{
 		Table: "users",
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			HasOne("profile", "profiles", "user_id"),
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "author_id", Type: schema.String},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
-			BelongsTo("author", "users", "author_id"),
-			ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
+			entity.BelongsTo("author", "users", "author_id"),
+			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "post_id", Type: schema.String, Required: true},
 		},
-		Relations: []Relation{
-			BelongsTo("post", "posts", "post_id"),
+		Relations: []entity.Relation{
+			entity.BelongsTo("post", "posts", "post_id"),
 		},
 	}.WithTimestamps(false))
 	return app

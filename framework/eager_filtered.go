@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/filter"
 )
 
@@ -23,17 +24,17 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 	rel := node.Relation
 
 	switch rel.Type {
-	case RelHasOne, RelHasMany:
+	case entity.RelHasOne, entity.RelHasMany:
 		return loadHasManyFiltered(ctx, db, rel, node.Filters, ids, result)
-	case RelManyToOne:
+	case entity.RelManyToOne:
 		return loadBelongsToFiltered(ctx, db, parentTable, parentPK, rel, node.Filters, ids, result)
-	case RelManyToMany:
+	case entity.RelManyToMany:
 		return loadManyToManyFiltered(ctx, db, rel, node.Filters, ids, result)
 	}
 	return nil
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -71,7 +72,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filte
 		}
 		parentID := fmt.Sprintf("%v", row[rel.ForeignKey])
 		if existing, ok := result[parentID]; ok {
-			if rel.Type == RelHasOne {
+			if rel.Type == entity.RelHasOne {
 				existing[rel.Name] = row
 			} else {
 				var slice []map[string]any
@@ -86,7 +87,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filte
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, parentPK string, rel Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, parentPK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -179,7 +180,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, pare
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {

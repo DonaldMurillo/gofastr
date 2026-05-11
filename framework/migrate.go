@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/migrate"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // Dialect identifies the SQL dialect the migrator emits for. It's an alias
@@ -45,9 +46,9 @@ func AutoMigrate(db *sql.DB, registry *Registry) error {
 		return err
 	}
 	dialect := detectDialect(db)
-	for _, entity := range ordered {
-		if err := migrateEntityWithRegistry(db, entity, all, dialect); err != nil {
-			return fmt.Errorf("migrate %s: %w", entity.GetName(), err)
+	for _, ent := range ordered {
+		if err := migrateEntityWithRegistry(db, ent, all, dialect); err != nil {
+			return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 		}
 	}
 	return nil
@@ -57,21 +58,21 @@ func AutoMigrate(db *sql.DB, registry *Registry) error {
 // It does not emit FK constraints since it has no view of the wider registry;
 // callers that need foreign keys should call AutoMigrate. The dialect is
 // auto-detected from db.
-func MigrateEntity(db *sql.DB, entity *Entity) error {
-	return migrateEntityWithRegistry(db, entity, nil, detectDialect(db))
+func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
+	return migrateEntityWithRegistry(db, ent, nil, detectDialect(db))
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
-func MigrateEntityDialect(db *sql.DB, entity *Entity, dialect Dialect) error {
-	return migrateEntityWithRegistry(db, entity, nil, dialect)
+func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
+	return migrateEntityWithRegistry(db, ent, nil, dialect)
 }
 
 // migrateEntityWithRegistry is the shared implementation. When `all` is
 // non-nil it is consulted for FK target tables; missing targets return an
 // error before any DDL runs.
-func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entity, dialect Dialect) error {
-	fields := entity.GetFields()
+func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) error {
+	fields := ent.GetFields()
 	if len(fields) == 0 {
 		return nil
 	}
@@ -79,7 +80,7 @@ func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entit
 	var columns []string
 	for _, f := range fields {
 		col := fmt.Sprintf("%s %s", f.Name, sqlType(f, dialect))
-		if f.Name == entity.PrimaryKey {
+		if f.Name == ent.PrimaryKey {
 			col += " PRIMARY KEY"
 		}
 		if f.Unique {
@@ -95,7 +96,7 @@ func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entit
 	}
 
 	if all != nil {
-		fks, err := foreignKeyClauses(entity, all)
+		fks, err := foreignKeyClauses(ent, all)
 		if err != nil {
 			return err
 		}
@@ -103,7 +104,7 @@ func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entit
 	}
 
 	stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		entity.GetTable(),
+		ent.GetTable(),
 		strings.Join(columns, ",\n\t"),
 	)
 
@@ -113,12 +114,12 @@ func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entit
 
 	// Secondary indices — emit AFTER the table exists. CREATE INDEX IF NOT
 	// EXISTS works on both engines so re-running AutoMigrate is idempotent.
-	for _, idx := range entity.Config.Indices {
+	for _, idx := range ent.Config.Indices {
 		if len(idx.Columns) == 0 {
 			continue
 		}
-		if _, err := db.Exec(indexDDL(entity.GetTable(), idx)); err != nil {
-			return fmt.Errorf("create index on %s: %w", entity.GetTable(), err)
+		if _, err := db.Exec(indexDDL(ent.GetTable(), idx)); err != nil {
+			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
 		}
 	}
 	return nil
@@ -126,7 +127,7 @@ func migrateEntityWithRegistry(db *sql.DB, entity *Entity, all map[string]*Entit
 
 // indexDDL builds the CREATE INDEX statement for one declared Index. Name
 // is synthesised from the table + columns when empty.
-func indexDDL(table string, idx Index) string {
+func indexDDL(table string, idx entity.Index) string {
 	name := idx.Name
 	if name == "" {
 		name = "idx_" + table + "_" + strings.Join(idx.Columns, "_")
@@ -142,11 +143,11 @@ func indexDDL(table string, idx Index) string {
 // foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
 // fragments for every BelongsTo relation declared on the entity. Targets
 // must exist in `all` or the function returns an error.
-func foreignKeyClauses(entity *Entity, all map[string]*Entity) ([]string, error) {
+func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]string, error) {
 	var out []string
 	seen := make(map[string]bool)
-	for _, rel := range entity.Config.Relations {
-		if rel.Type != RelManyToOne || rel.ForeignKey == "" {
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
 			continue
 		}
 		if seen[rel.ForeignKey] {
@@ -167,7 +168,7 @@ func foreignKeyClauses(entity *Entity, all map[string]*Entity) ([]string, error)
 // referencers. Cycles are broken by name-sorted insertion at the cycle
 // detection point — this is conservative; SQLite tolerates forward refs in
 // CREATE TABLE because FK enforcement is per-statement, not at create time.
-func topoSortEntities(all map[string]*Entity) ([]*Entity, error) {
+func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 	// Stable input order
 	names := make([]string, 0, len(all))
 	for n := range all {
@@ -177,7 +178,7 @@ func topoSortEntities(all map[string]*Entity) ([]*Entity, error) {
 
 	visited := make(map[string]bool)
 	tempMark := make(map[string]bool)
-	out := make([]*Entity, 0, len(all))
+	out := make([]*entity.Entity, 0, len(all))
 
 	var visit func(name string) error
 	visit = func(name string) error {
@@ -193,7 +194,7 @@ func topoSortEntities(all map[string]*Entity) ([]*Entity, error) {
 		}
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
-			if rel.Type == RelManyToOne {
+			if rel.Type == entity.RelManyToOne {
 				if _, ok := all[rel.Entity]; !ok {
 					return fmt.Errorf("entity %q has BelongsTo to unknown entity %q", name, rel.Entity)
 				}

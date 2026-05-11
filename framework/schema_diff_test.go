@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // ============================================================================
@@ -16,7 +17,7 @@ import (
 func TestSchemaDiff_NewTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -70,7 +71,7 @@ func TestSchemaDiff_AddColumn(t *testing.T) {
 		}
 
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -130,7 +131,7 @@ func TestSchemaDiff_DropColumn(t *testing.T) {
 		}
 
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -169,7 +170,7 @@ func TestSchemaDiff_KeepsFrameworkManagedColumns(t *testing.T) {
 		}
 
 		reg := NewRegistry()
-		reg.Register(Define("posts", EntityConfig{
+		reg.Register(entity.Define("posts", entity.EntityConfig{
 			Table:       "posts",
 			SoftDelete:  true,
 			MultiTenant: true,

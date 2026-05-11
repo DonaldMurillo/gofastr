@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/file"
 )
 
@@ -117,8 +118,8 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fh *multipar
 // coerceFormValue attempts a minimal type coercion based on the schema field
 // type so an int or bool field doesn't end up as a string. Unknown fields and
 // String/Text/Enum stay as strings.
-func coerceFormValue(entity *Entity, name, raw string) any {
-	for _, f := range entity.GetFields() {
+func coerceFormValue(ent *entity.Entity, name, raw string) any {
+	for _, f := range ent.GetFields() {
 		if f.Name != name {
 			continue
 		}

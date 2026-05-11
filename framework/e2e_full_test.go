@@ -22,6 +22,7 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/pagination"
 )
 
@@ -137,7 +138,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithRouter(r),
 		WithFileStorage(upload.NewLocalStorage(uploadDir)))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -145,11 +146,11 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 			{Name: "author_id", Type: schema.String},
 			{Name: "avatar", Type: schema.Image},
 		},
-		Relations: []Relation{
-			HasMany("comments", "comments", "post_id"),
+		Relations: []entity.Relation{
+			entity.HasMany("comments", "comments", "post_id"),
 		},
 	}.WithTimestamps(false))
-	app.Entity("comments", EntityConfig{
+	app.Entity("comments", entity.EntityConfig{
 		Table: "comments",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},

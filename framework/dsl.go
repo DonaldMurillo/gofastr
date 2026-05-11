@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // DSLQuery is the parsed representation of a GoFastr query DSL string.
@@ -41,11 +42,11 @@ func ParseDSL(input string) (DSLQuery, error) {
 	if input == "" {
 		return DSLQuery{}, fmt.Errorf("dsl: query is empty")
 	}
-	entity, rest, _ := strings.Cut(input, ".")
-	if entity == "" {
+	ent, rest, _ := strings.Cut(input, ".")
+	if ent == "" {
 		return DSLQuery{}, fmt.Errorf("dsl: entity is required")
 	}
-	out := DSLQuery{Entity: entity}
+	out := DSLQuery{Entity: ent}
 	if rest == "" {
 		return out, nil
 	}
@@ -94,15 +95,15 @@ func BuildDSLQuery(registry *Registry, input string) (*query.QueryBuilder, error
 	if err != nil {
 		return nil, err
 	}
-	entity, err := registry.Get(parsed.Entity)
+	ent, err := registry.Get(parsed.Entity)
 	if err != nil {
 		return nil, err
 	}
-	entitySchema := entity.Schema()
-	qb := query.Select(entitySchema.Names()...).From(entity.GetTable())
+	entitySchema := ent.Schema()
+	qb := query.Select(entitySchema.Names()...).From(ent.GetTable())
 
 	for _, include := range parsed.Includes {
-		if !hasRelation(entity, include) {
+		if !hasRelation(ent, include) {
 			return nil, fmt.Errorf("dsl: relation %q not found on %s", include, parsed.Entity)
 		}
 	}
@@ -304,13 +305,13 @@ func dslTypedValue(field schema.Field, value string) any {
 	return value
 }
 
-func hasRelation(entity *Entity, name string) bool {
-	for _, relation := range entity.Config.Relations {
+func hasRelation(ent *entity.Entity, name string) bool {
+	for _, relation := range ent.Config.Relations {
 		if relation.Name == name {
 			return true
 		}
 	}
-	for _, field := range entity.GetFields() {
+	for _, field := range ent.GetFields() {
 		if field.Type == schema.Relation && relationNameFromField(field.Name) == name {
 			return true
 		}
