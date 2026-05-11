@@ -100,12 +100,12 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			))
 	}
 
-	return html.Form(html.FormConfig{
+	return formStyle.WrapHTML(html.Form(html.FormConfig{
 		Method: method,
 		Action: cfg.Action,
 		Class:  cls,
 		ID:     cfg.ID,
-	}, children...)
+	}, children...))
 }
 
 // FormFieldFor is a convenience wrapper that pre-fills FormFieldConfig.Error

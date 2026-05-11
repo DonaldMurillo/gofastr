@@ -52,7 +52,9 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 		body = append(body, html.Div(
 			html.DivConfig{Class: "ui-page-header__actions"}, cfg.Actions))
 	}
-	return html.Header(html.HeaderConfig{Class: cls, ID: cfg.ID}, body...)
+	return pageHeaderStyle.WrapHTML(
+		html.Header(html.HeaderConfig{Class: cls, ID: cfg.ID}, body...),
+	)
 }
 
 // slug normalizes text into a URL/id-safe slug.
@@ -129,7 +131,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		// at least announced, rather than panicking on every call site.
 		secCfg.Label = "Section"
 	}
-	return html.Section(secCfg, out...)
+	return sectionStyle.WrapHTML(html.Section(secCfg, out...))
 }
 
 // ─── FormField ──────────────────────────────────────────────────────
@@ -193,7 +195,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 			Attrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	}
-	return html.Div(html.DivConfig{Class: cls}, out...)
+	return formFieldStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, out...))
 }
 
 // ─── FormSection ────────────────────────────────────────────────────
@@ -226,7 +228,7 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 		}
 		out = append(out, html.Div(
 			html.DivConfig{Class: "ui-form-section__fields"}, fields...))
-		return html.Div(html.DivConfig{Class: cls}, out...)
+		return formSectionStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, out...))
 	}
 	out := []render.HTML{}
 	if cfg.Description != "" {
@@ -236,9 +238,9 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 	}
 	out = append(out, html.Div(
 		html.DivConfig{Class: "ui-form-section__fields"}, fields...))
-	return html.FieldSet(
+	return formSectionStyle.WrapHTML(html.FieldSet(
 		html.FieldSetConfig{Legend: cfg.Heading, Class: cls},
-		out...)
+		out...))
 }
 
 // ─── DangerButton ───────────────────────────────────────────────────
@@ -263,13 +265,13 @@ func DangerButton(cfg DangerButtonConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return html.Button(html.ButtonConfig{
+	return dangerButtonStyle.WrapHTML(html.Button(html.ButtonConfig{
 		Label: cfg.Label,
 		Type:  cfg.Type,
 		Class: cls,
 		ID:    cfg.ID,
 		Attrs: cfg.Attrs,
-	})
+	}))
 }
 
 // ─── StatusBadge ────────────────────────────────────────────────────
@@ -306,8 +308,8 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return html.Span(html.TextConfig{Class: cls, ID: cfg.ID},
-		render.Text(cfg.Label))
+	return statusBadgeStyle.WrapHTML(html.Span(html.TextConfig{Class: cls, ID: cfg.ID},
+		render.Text(cfg.Label)))
 }
 
 // ─── EmptyState ─────────────────────────────────────────────────────
@@ -348,7 +350,7 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 		out = append(out, html.Div(
 			html.DivConfig{Class: "ui-empty-state__action"}, cfg.Action))
 	}
-	return html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...)
+	return emptyStateStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...))
 }
 
 // ─── Callout ────────────────────────────────────────────────────────
@@ -394,9 +396,9 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	// a div + explicit role via html.Div+Attrs.
 	role := calloutRole(v)
 	if role == "alert" {
-		return html.Div(html.DivConfig{
+		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
 			Class: cls, ID: cfg.ID, Role: "alert",
-		}, out...)
+		}, out...))
 	}
 	// Note "info" role: html.Aside requires Label/LabelledBy. Use
 	// the variant name as a safe fallback when no Title is provided.
@@ -404,9 +406,9 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	if label == "" {
 		label = string(v) + " note"
 	}
-	return html.Aside(html.AsideConfig{
+	return calloutStyle.WrapHTML(html.Aside(html.AsideConfig{
 		Class: cls, ID: cfg.ID, Label: label,
-	}, out...)
+	}, out...))
 }
 
 func calloutRole(v StatusVariant) string {
@@ -467,7 +469,7 @@ func StatCard(cfg StatCardConfig) render.HTML {
 			html.TextConfig{Class: "ui-stat-card__trend ui-stat-card__trend--" + string(dir)},
 			render.Text(cfg.Trend)))
 	}
-	return html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...)
+	return statCardStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, out...))
 }
 
 // ─── Avatar ─────────────────────────────────────────────────────────
@@ -512,19 +514,19 @@ func Avatar(cfg AvatarConfig) render.HTML {
 		Class: cls, ID: cfg.ID,
 	}
 	if cfg.Src != "" {
-		return html.Span(spanCfg,
+		return avatarStyle.WrapHTML(html.Span(spanCfg,
 			html.Image(html.ImageConfig{
 				Src: cfg.Src, Alt: cfg.Name, Class: "ui-avatar__img",
-			}))
+			})))
 	}
-	return html.Span(spanCfg,
+	return avatarStyle.WrapHTML(html.Span(spanCfg,
 		html.Span(html.TextConfig{
 			Class: "ui-avatar__initials",
 			Attrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text(initials(cfg.Name))),
 		html.Span(html.TextConfig{Class: "ui-visually-hidden"},
 			render.Text(cfg.Name)),
-	)
+	))
 }
 
 func initials(name string) string {

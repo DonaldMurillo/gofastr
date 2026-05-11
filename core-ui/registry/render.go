@@ -24,7 +24,18 @@ import (
 // component never re-fetches across the SSR + hydration handoff or
 // across page-to-page navigations.
 func (s *Style) Render(c component.Component) render.HTML {
-	html := component.RenderComponent(c)
+	return s.WrapHTML(component.RenderComponent(c))
+}
+
+// WrapHTML is the function-level form of Render. Use it when the
+// component renders via a helper function returning render.HTML
+// (most of framework/ui), so you can adopt the registry without
+// restructuring into a Component type.
+//
+//	func PageHeader(cfg PageHeaderConfig) render.HTML {
+//	    return Style.WrapHTML(/* existing render */)
+//	}
+func (s *Style) WrapHTML(html render.HTML) render.HTML {
 	out, err := injectMarker(string(html), s.e.Name)
 	if err != nil {
 		panic(err)

@@ -104,6 +104,27 @@ func TestComponentSheetKeyframesUnprefixed(t *testing.T) {
 	}
 }
 
+func TestComponentSheetAmpersandRefersToMarkerElement(t *testing.T) {
+	ss := NewComponentSheet("modal", DefaultTheme())
+	ss.Rule("&").Set("display", "flex").End()
+	ss.Rule("&.open").Set("opacity", "1").End()
+	ss.Rule("& .header").Set("font-weight", "700").End()
+	got, err := ss.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	wants := []string{
+		`[data-fui-comp="modal"] {`,                       // & alone
+		`[data-fui-comp="modal"].open`,                    // & combined
+		`[data-fui-comp="modal"] .header`,                 // & descendant
+	}
+	for _, w := range wants {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q:\n%s", w, got)
+		}
+	}
+}
+
 func TestComponentSheetRejectsUnscopableSelectors(t *testing.T) {
 	cases := []string{"body", "html", ":root", "*", "::backdrop", "::view-transition-old(*)"}
 	for _, sel := range cases {

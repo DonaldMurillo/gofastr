@@ -138,10 +138,10 @@ func DataTable(cfg DataTableConfig) render.HTML {
 				empty.Description = "Adjust your filters or add new entries."
 			}
 		}
-		return html.Div(html.DivConfig{
+		return dataTableStyle.WrapHTML(html.Div(html.DivConfig{
 			Class: wrapClass(cfg.Class, "ui-data-table is-empty"),
 			ID:    cfg.ID,
-		}, EmptyState(empty))
+		}, EmptyState(empty)))
 	}
 
 	// Header — composed via html.TR + html.TH so ARIA scope
@@ -203,9 +203,9 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			html.Div(html.DivConfig{Class: "ui-data-table__footer"},
 				pagination.New(pagCfg)))
 	}
-	return html.Div(html.DivConfig{
+	return dataTableStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: wrapClass(cfg.Class, "ui-data-table"), ID: cfg.ID,
-	}, children...)
+	}, children...))
 }
 
 // wrapClass concatenates a base class with optional caller-supplied

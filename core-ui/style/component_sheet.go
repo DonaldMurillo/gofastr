@@ -155,6 +155,11 @@ func scopeRules(rules []cssRule, prefix string) error {
 
 // scopeSelector prepends prefix to every comma-separated selector
 // part. Returns an error if any part is on the unscopable list.
+//
+// Ampersand handling: `&` refers to the marker element itself
+// (CSS-nesting style). `&` alone → prefix. `&.active` →
+// prefix.active. `& .foo` → prefix .foo (same as bare `.foo`).
+// Use & whenever you want a rule on the component root.
 func scopeSelector(selector, prefix string) (string, error) {
 	parts := splitTopLevelCommas(selector)
 	out := make([]string, len(parts))
@@ -162,6 +167,11 @@ func scopeSelector(selector, prefix string) (string, error) {
 		trimmed := strings.TrimSpace(p)
 		if trimmed == "" {
 			return "", fmt.Errorf("empty selector part in %q", selector)
+		}
+		if strings.HasPrefix(trimmed, "&") {
+			rest := trimmed[1:]
+			out[i] = prefix + rest
+			continue
 		}
 		if reason, bad := unscopableSelector(trimmed); bad {
 			return "", fmt.Errorf("selector %q cannot be scoped: %s", trimmed, reason)

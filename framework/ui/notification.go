@@ -112,10 +112,10 @@ func Notification(cfg NotificationConfig) render.HTML {
 			Content: render.Text("×"),
 		}))
 	}
-	return html.Div(html.DivConfig{
+	return notificationStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: cls, ID: cfg.ID,
 		Attrs: attrs,
-	}, children...)
+	}, children...))
 }
 
 func notificationGlyph(v StatusVariant) string {
