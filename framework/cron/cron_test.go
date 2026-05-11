@@ -10,7 +10,7 @@ import (
 )
 
 // ============================================================================
-// parseCron — accepts standard 5-field syntax + the @shortcuts.
+// ParseCron — accepts standard 5-field syntax + the @shortcuts.
 // ============================================================================
 
 func TestCron_Parse_StandardAndShortcuts(t *testing.T) {
@@ -29,14 +29,14 @@ func TestCron_Parse_StandardAndShortcuts(t *testing.T) {
 		"@yearly",
 	}
 	for _, spec := range cases {
-		if _, err := parseCron(spec); err != nil {
-			t.Errorf("parseCron(%q): %v", spec, err)
+		if _, err := ParseCron(spec); err != nil {
+			t.Errorf("ParseCron(%q): %v", spec, err)
 		}
 	}
 }
 
 // ============================================================================
-// parseCron rejects malformed input cleanly.
+// ParseCron rejects malformed input cleanly.
 // ============================================================================
 
 func TestCron_Parse_RejectsBadInput(t *testing.T) {
@@ -53,8 +53,8 @@ func TestCron_Parse_RejectsBadInput(t *testing.T) {
 		"*/0 * * * *", // step 0
 	}
 	for _, spec := range bad {
-		if _, err := parseCron(spec); err == nil {
-			t.Errorf("parseCron(%q): expected error, got nil", spec)
+		if _, err := ParseCron(spec); err == nil {
+			t.Errorf("ParseCron(%q): expected error, got nil", spec)
 		}
 	}
 }
@@ -79,7 +79,7 @@ func TestCron_Matches(t *testing.T) {
 		{"*/15 * * * *", true},
 	}
 	for _, c := range cases {
-		e, err := parseCron(c.spec)
+		e, err := ParseCron(c.spec)
 		if err != nil {
 			t.Fatalf("parse %q: %v", c.spec, err)
 		}

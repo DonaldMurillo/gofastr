@@ -53,7 +53,7 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	ch.emitEvent(ctx, event.EntityCreated, result)
+	ch.EmitEvent(ctx, event.EntityCreated, result)
 	return result, nil
 }
 
@@ -73,7 +73,7 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 	if err != nil {
 		return nil, err
 	}
-	ch.emitEvent(ctx, event.EntityUpdated, result)
+	ch.EmitEvent(ctx, event.EntityUpdated, result)
 	return result, nil
 }
 
@@ -86,7 +86,7 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ch.emitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+	ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 	return nil
 }
 
@@ -94,7 +94,7 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 // includes. Returns sql.ErrNoRows when the record doesn't exist (or is
 // soft-deleted, unless options ask otherwise).
 func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string) (map[string]any, error) {
-	cols := ch.visibleFields()
+	cols := ch.VisibleFields()
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
 		Where(ch.PrimaryKey+" = $1", id)
@@ -137,7 +137,7 @@ type ListOptions struct {
 // and returns the matching rows. Caller is responsible for paging if the
 // result set is large.
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
-	cols := ch.visibleFields()
+	cols := ch.VisibleFields()
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, opts.Filters)
 	filter.ApplySortToQuery(qb, opts.Sorts)
@@ -194,7 +194,7 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 		return nil, txErr
 	}
 	for _, res := range results {
-		ch.emitEvent(ctx, event.EntityCreated, res)
+		ch.EmitEvent(ctx, event.EntityCreated, res)
 	}
 	return results, nil
 }
@@ -220,7 +220,7 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 		return nil, txErr
 	}
 	for _, res := range results {
-		ch.emitEvent(ctx, event.EntityUpdated, res)
+		ch.EmitEvent(ctx, event.EntityUpdated, res)
 	}
 	return results, nil
 }
@@ -241,7 +241,7 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 		return nil, txErr
 	}
 	for _, id := range ids {
-		ch.emitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 	}
 	return ids, nil
 }

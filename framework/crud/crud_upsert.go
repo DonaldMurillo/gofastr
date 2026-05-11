@@ -99,7 +99,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			placeholders[i] = fmt.Sprintf("$%d", i+1)
 		}
 
-		visFields := ch.visibleFields()
+		visFields := ch.VisibleFields()
 		var sb strings.Builder
 		sb.WriteString("INSERT INTO ")
 		sb.WriteString(ch.Entity.GetTable())
@@ -139,7 +139,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	ch.emitEvent(ctx, event.EntityCreated, result)
+	ch.EmitEvent(ctx, event.EntityCreated, result)
 	return result, nil
 }
 

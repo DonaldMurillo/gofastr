@@ -69,7 +69,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		}
 	}
 
-	visFields := ch.visibleFields()
+	visFields := ch.VisibleFields()
 	ib := query.Insert(ch.Entity.GetTable()).
 		Columns(cols...).
 		Values(vals...).
@@ -124,7 +124,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 
 	ub.Where(ch.PrimaryKey+" = $1", id)
 	ch.ApplyTenantScopeUpdate(ub, r)
-	visFields := ch.visibleFields()
+	visFields := ch.VisibleFields()
 	ub.Returning(visFields...)
 
 	sqlStr, args := ub.Build()

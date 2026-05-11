@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gofastr/gofastr/framework/cron"
 )
 
 // ============================================================================
@@ -75,7 +77,7 @@ func BenchmarkSSE_BackpressureDropRate(b *testing.B) {
 	const totalEvents = 5000
 
 	var (
-		dropped uint64
+		dropped   uint64
 		delivered uint64
 	)
 	bus := NewEventBus()
@@ -170,7 +172,7 @@ func BenchmarkCronTick(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				sched.runOnce(ctx, now)
+				sched.RunOnce(ctx, now)
 			}
 		})
 	}
@@ -192,7 +194,7 @@ func BenchmarkCronParse(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if _, err := parseCron(spec); err != nil {
+				if _, err := cron.ParseCron(spec); err != nil {
 					b.Fatalf("parse: %v", err)
 				}
 			}

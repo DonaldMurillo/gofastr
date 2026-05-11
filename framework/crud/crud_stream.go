@@ -16,7 +16,7 @@ import (
 // ?stream=true regardless of limit.
 const streamListThreshold = 1000
 
-// serveStreamingList writes the list response row-by-row through a
+// ServeStreamingList writes the list response row-by-row through a
 // json.Encoder rather than buffering everything into a slice first. Used
 // for very large pages (limit ≥ streamListThreshold) or when the caller
 // asks for it via ?stream=true.
@@ -25,7 +25,7 @@ const streamListThreshold = 1000
 // clients keep working: {"data": [...], "total": N, "page": 1, "perPage":
 // N, "totalPages": 1}. Streaming applies only to the data array — the
 // envelope fields are written before the rows start flowing.
-func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int) {
+func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int) {
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)

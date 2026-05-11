@@ -56,7 +56,7 @@ func NewScheduler() *Scheduler {
 // Register adds a job. Returns an error if the spec is invalid so callers
 // catch typos at registration time rather than silently failing forever.
 func (s *Scheduler) Register(job CronJob) error {
-	expr, err := parseCron(job.Spec)
+	expr, err := ParseCron(job.Spec)
 	if err != nil {
 		return fmt.Errorf("cron %q: %w", job.Name, err)
 	}
@@ -149,22 +149,22 @@ func (e cronExpr) matches(t time.Time) bool {
 		e.dow&(1<<uint(t.Weekday())) != 0
 }
 
-// parseCron accepts the standard 5-field syntax plus the shortcuts
+// ParseCron accepts the standard 5-field syntax plus the shortcuts
 // @hourly / @daily / @weekly / @monthly / @yearly. Step values (*/N) and
 // ranges (a-b) are supported.
-func parseCron(spec string) (cronExpr, error) {
+func ParseCron(spec string) (cronExpr, error) {
 	spec = strings.TrimSpace(spec)
 	switch spec {
 	case "@hourly":
-		return parseCron("0 * * * *")
+		return ParseCron("0 * * * *")
 	case "@daily", "@midnight":
-		return parseCron("0 0 * * *")
+		return ParseCron("0 0 * * *")
 	case "@weekly":
-		return parseCron("0 0 * * 0")
+		return ParseCron("0 0 * * 0")
 	case "@monthly":
-		return parseCron("0 0 1 * *")
+		return ParseCron("0 0 1 * *")
 	case "@yearly", "@annually":
-		return parseCron("0 0 1 1 *")
+		return ParseCron("0 0 1 1 *")
 	}
 
 	fields := strings.Fields(spec)

@@ -154,8 +154,8 @@ func (ch *CrudHandler) entityFields() []string {
 	return names
 }
 
-// visibleFields returns field names that are not Hidden.
-func (ch *CrudHandler) visibleFields() []string {
+// VisibleFields returns field names that are not Hidden.
+func (ch *CrudHandler) VisibleFields() []string {
 	var names []string
 	for _, f := range ch.Entity.GetFields() {
 		if !f.Hidden {
@@ -247,7 +247,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// requested limit is huge. Skips include resolution to keep memory
 		// bounded.
 		if r.URL.Query().Get("stream") == "true" || perPage >= streamListThreshold {
-			ch.serveStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage)
+			ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage)
 			return
 		}
 
@@ -401,7 +401,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return
 		}
 
-		ch.emitEvent(r.Context(), event.EntityCreated, result)
+		ch.EmitEvent(r.Context(), event.EntityCreated, result)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -440,7 +440,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return
 		}
 
-		ch.emitEvent(r.Context(), event.EntityUpdated, result)
+		ch.EmitEvent(r.Context(), event.EntityUpdated, result)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
@@ -466,7 +466,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return
 		}
 
-		ch.emitEvent(r.Context(), event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.EmitEvent(r.Context(), event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 
 		w.WriteHeader(http.StatusNoContent)
 	}

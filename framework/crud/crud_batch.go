@@ -124,7 +124,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		if txErr == nil {
 			for _, res := range results {
 				if res.Data != nil {
-					ch.emitEvent(r.Context(), event.EntityCreated, res.Data)
+					ch.EmitEvent(r.Context(), event.EntityCreated, res.Data)
 				}
 			}
 		}
@@ -191,7 +191,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		if txErr == nil {
 			for _, res := range results {
 				if res.Data != nil {
-					ch.emitEvent(r.Context(), event.EntityUpdated, res.Data)
+					ch.EmitEvent(r.Context(), event.EntityUpdated, res.Data)
 				}
 			}
 		}
@@ -245,7 +245,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		if txErr == nil {
 			for _, res := range results {
 				if res.Data != nil {
-					ch.emitEvent(r.Context(), event.EntityDeleted, res.Data)
+					ch.EmitEvent(r.Context(), event.EntityDeleted, res.Data)
 				}
 			}
 		}

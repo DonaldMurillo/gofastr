@@ -19,10 +19,10 @@ const (
 	eventKeyTenantID = "tenantId"
 )
 
-// emitEvent fires an entity lifecycle event (asynchronously). No-op when the
+// EmitEvent fires an entity lifecycle event (asynchronously). No-op when the
 // handler has no event bus attached. The payload is shaped so SSE subscribers
 // can filter by entity name and tenant without unmarshalling the record.
-func (ch *CrudHandler) emitEvent(ctx context.Context, eventType string, record any) {
+func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record any) {
 	if ch.Events == nil {
 		return
 	}

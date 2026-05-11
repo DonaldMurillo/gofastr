@@ -17,10 +17,10 @@ import (
 func (ch *CrudHandler) projectFromRequest(r *http.Request) ([]string, error) {
 	raw := strings.TrimSpace(r.URL.Query().Get("fields"))
 	if raw == "" {
-		return ch.visibleFields(), nil
+		return ch.VisibleFields(), nil
 	}
 
-	visible := ch.visibleFields()
+	visible := ch.VisibleFields()
 	visibleSet := make(map[string]struct{}, len(visible))
 	jsonToDB := make(map[string]string, len(visible))
 	for _, c := range visible {
