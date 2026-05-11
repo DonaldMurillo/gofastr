@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/pagination"
 )
 
 // seedCursorDB creates the posts table on db and inserts N rows whose ids
@@ -42,7 +45,7 @@ func runCursorTest(t *testing.T, n int, body func(t *testing.T, ta *TestApp)) {
 func cursorApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -51,9 +54,9 @@ func cursorApp(t *testing.T, db *sql.DB) *App {
 	return app
 }
 
-func decodeCursorPage(t *testing.T, body string) CursorPage {
+func decodeCursorPage(t *testing.T, body string) pagination.CursorPage {
 	t.Helper()
-	var p CursorPage
+	var p pagination.CursorPage
 	if err := json.Unmarshal([]byte(body), &p); err != nil {
 		t.Fatalf("decode CursorPage: %v\n%s", err, body)
 	}
@@ -95,35 +98,35 @@ func TestCursor_FirstPage(t *testing.T) {
 func TestCursor_WalksToLastPage(t *testing.T) {
 	runCursorTest(t, 25, func(t *testing.T, ta *TestApp) {
 
-	cursor := ""
-	seen := []string{}
-	for page := 0; page < 5; page++ {
-		// Always include cursor= so cursor mode is engaged
-		path := "/posts?limit=10&cursor=" + url.QueryEscape(cursor)
-		resp := ta.Get(path)
-		resp.AssertStatus(t, http.StatusOK)
-		got := decodeCursorPage(t, resp.Body())
-		for _, row := range got.Data {
-			seen = append(seen, fmt.Sprintf("%v", row["id"]))
-		}
-		if !got.HasMore {
-			// final page
+		cursor := ""
+		seen := []string{}
+		for page := 0; page < 5; page++ {
+			// Always include cursor= so cursor mode is engaged
+			path := "/posts?limit=10&cursor=" + url.QueryEscape(cursor)
+			resp := ta.Get(path)
+			resp.AssertStatus(t, http.StatusOK)
+			got := decodeCursorPage(t, resp.Body())
+			for _, row := range got.Data {
+				seen = append(seen, fmt.Sprintf("%v", row["id"]))
+			}
+			if !got.HasMore {
+				// final page
+				cursor = got.Cursor
+				break
+			}
 			cursor = got.Cursor
-			break
 		}
-		cursor = got.Cursor
-	}
 
-	if len(seen) != 25 {
-		t.Fatalf("expected to walk 25 rows, walked %d (last cursor=%q)", len(seen), cursor)
-	}
-	// Order check: lexical
-	for i := 1; i <= 25; i++ {
-		want := fmt.Sprintf("p%03d", i)
-		if seen[i-1] != want {
-			t.Fatalf("row %d: expected %s, got %s", i, want, seen[i-1])
+		if len(seen) != 25 {
+			t.Fatalf("expected to walk 25 rows, walked %d (last cursor=%q)", len(seen), cursor)
 		}
-	}
+		// Order check: lexical
+		for i := 1; i <= 25; i++ {
+			want := fmt.Sprintf("p%03d", i)
+			if seen[i-1] != want {
+				t.Fatalf("row %d: expected %s, got %s", i, want, seen[i-1])
+			}
+		}
 	})
 }
 
@@ -134,24 +137,24 @@ func TestCursor_WalksToLastPage(t *testing.T) {
 func TestCursor_LastPageHasNoMore(t *testing.T) {
 	runCursorTest(t, 12, func(t *testing.T, ta *TestApp) {
 
-	first := decodeCursorPage(t, ta.Get("/posts?cursor=&limit=10").Body())
-	if !first.HasMore {
-		t.Fatal("expected first page hasMore=true")
-	}
-	if first.Cursor == "" {
-		t.Fatal("expected first page cursor non-empty")
-	}
+		first := decodeCursorPage(t, ta.Get("/posts?cursor=&limit=10").Body())
+		if !first.HasMore {
+			t.Fatal("expected first page hasMore=true")
+		}
+		if first.Cursor == "" {
+			t.Fatal("expected first page cursor non-empty")
+		}
 
-	second := decodeCursorPage(t, ta.Get("/posts?cursor="+url.QueryEscape(first.Cursor)+"&limit=10").Body())
-	if len(second.Data) != 2 {
-		t.Fatalf("expected 2 items on last page, got %d", len(second.Data))
-	}
-	if second.HasMore {
-		t.Fatal("expected hasMore=false on last page")
-	}
-	if second.Cursor != "" {
-		t.Fatalf("expected empty cursor on last page, got %q", second.Cursor)
-	}
+		second := decodeCursorPage(t, ta.Get("/posts?cursor="+url.QueryEscape(first.Cursor)+"&limit=10").Body())
+		if len(second.Data) != 2 {
+			t.Fatalf("expected 2 items on last page, got %d", len(second.Data))
+		}
+		if second.HasMore {
+			t.Fatal("expected hasMore=false on last page")
+		}
+		if second.Cursor != "" {
+			t.Fatalf("expected empty cursor on last page, got %q", second.Cursor)
+		}
 	})
 }
 
@@ -162,32 +165,32 @@ func TestCursor_LastPageHasNoMore(t *testing.T) {
 func TestCursor_InvalidCursor_400(t *testing.T) {
 	runCursorTest(t, 5, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts?cursor=" + url.QueryEscape("not-base64-!@#"))
-	resp.AssertStatus(t, http.StatusBadRequest).
-		AssertBodyContains(t, "invalid cursor")
+		resp := ta.Get("/posts?cursor=" + url.QueryEscape("not-base64-!@#"))
+		resp.AssertStatus(t, http.StatusBadRequest).
+			AssertBodyContains(t, "invalid cursor")
 	})
 }
 
 // ============================================================================
-// Test: No cursor key → falls back to offset (ListResponse) — regression pin
+// Test: No cursor key → falls back to offset (crud.ListResponse) — regression pin
 // ============================================================================
 
 func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
 	runCursorTest(t, 5, func(t *testing.T, ta *TestApp) {
 
-	resp := ta.Get("/posts?limit=10")
-	resp.AssertStatus(t, http.StatusOK)
+		resp := ta.Get("/posts?limit=10")
+		resp.AssertStatus(t, http.StatusOK)
 
-	var off ListResponse
-	if err := json.Unmarshal([]byte(resp.Body()), &off); err != nil {
-		t.Fatalf("decode ListResponse: %v\n%s", err, resp.Body())
-	}
-	if off.Total != 5 {
-		t.Fatalf("expected total=5 from offset envelope, got %d", off.Total)
-	}
-	if off.Page != 1 || off.PerPage != 10 {
-		t.Fatalf("expected page=1 perPage=10 (offset shape), got %+v", off)
-	}
+		var off crud.ListResponse
+		if err := json.Unmarshal([]byte(resp.Body()), &off); err != nil {
+			t.Fatalf("decode crud.ListResponse: %v\n%s", err, resp.Body())
+		}
+		if off.Total != 5 {
+			t.Fatalf("expected total=5 from offset envelope, got %d", off.Total)
+		}
+		if off.Page != 1 || off.PerPage != 10 {
+			t.Fatalf("expected page=1 perPage=10 (offset shape), got %+v", off)
+		}
 	})
 }
 
@@ -198,19 +201,19 @@ func TestCursor_AbsentCursor_UsesOffset(t *testing.T) {
 func TestCursor_RespectsFilters(t *testing.T) {
 	runCursorTest(t, 25, func(t *testing.T, ta *TestApp) {
 
-	// Filter title_like contains "Post 2" → matches p002, p020-p025 (7 rows)
-	resp := ta.Get("/posts?cursor=&limit=10&title_like=" + url.QueryEscape("Post 2"))
-	resp.AssertStatus(t, http.StatusOK)
-	page := decodeCursorPage(t, resp.Body())
-	if len(page.Data) == 0 {
-		t.Fatal("expected filtered cursor results, got 0")
-	}
-	for _, row := range page.Data {
-		title := fmt.Sprintf("%v", row["title"])
-		if !contains(title, "Post 2") {
-			t.Fatalf("filter violated: row title=%q does not contain 'Post 2'", title)
+		// Filter title_like contains "Post 2" → matches p002, p020-p025 (7 rows)
+		resp := ta.Get("/posts?cursor=&limit=10&title_like=" + url.QueryEscape("Post 2"))
+		resp.AssertStatus(t, http.StatusOK)
+		page := decodeCursorPage(t, resp.Body())
+		if len(page.Data) == 0 {
+			t.Fatal("expected filtered cursor results, got 0")
 		}
-	}
+		for _, row := range page.Data {
+			title := fmt.Sprintf("%v", row["title"])
+			if !contains(title, "Post 2") {
+				t.Fatalf("filter violated: row title=%q does not contain 'Post 2'", title)
+			}
+		}
 	})
 }
 
@@ -245,7 +248,7 @@ func TestCursor_PerEntityCursorField(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("events", EntityConfig{
+		app.Entity("events", entity.EntityConfig{
 			Table:       "events",
 			CursorField: "created_at",
 			Fields: []schema.Field{
@@ -326,7 +329,7 @@ func TestCursor_Composite(t *testing.T) {
 		}
 
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("feed", EntityConfig{
+		app.Entity("feed", entity.EntityConfig{
 			Table:        "feed",
 			CursorFields: []string{"created_at", "id"},
 			Fields: []schema.Field{

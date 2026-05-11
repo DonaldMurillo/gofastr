@@ -11,6 +11,9 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // seedBatchDB creates a minimal posts table with a unique title column so we
@@ -29,7 +32,7 @@ func seedBatchDB(t *testing.T, db *sql.DB) {
 func batchApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -68,9 +71,9 @@ func runBatchTestWithApp(t *testing.T, configure func(*App), body func(t *testin
 	})
 }
 
-func decodeBatchResponse(t *testing.T, body string) batchResponse {
+func decodeBatchResponse(t *testing.T, body string) crud.BatchResponse {
 	t.Helper()
-	var resp batchResponse
+	var resp crud.BatchResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		t.Fatalf("decode: %v\n%s", err, body)
 	}
@@ -220,7 +223,7 @@ func TestBatchCreate_EmptyRejected(t *testing.T) {
 func TestBatchCreate_OversizeRejected(t *testing.T) {
 	runBatchTest(t, func(t *testing.T, db *sql.DB, ta *TestApp) {
 
-		items := make([]map[string]any, MaxBatchSize+1)
+		items := make([]map[string]any, crud.MaxBatchSize+1)
 		for i := range items {
 			items[i] = map[string]any{"title": fmt.Sprintf("Item %d", i)}
 		}
@@ -374,7 +377,7 @@ func TestBatchDelete_MissingID_RollsBack(t *testing.T) {
 func TestBatchCreate_AfterHookError_RollsBack(t *testing.T) {
 	var calls int
 	configure := func(app *App) {
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			calls++
 			if calls == 2 {
 				return errors.New("policy reject")
@@ -409,4 +412,3 @@ func TestBatchCreate_AfterHookError_RollsBack(t *testing.T) {
 		}
 	})
 }
-

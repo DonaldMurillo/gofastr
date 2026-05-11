@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // createPostsTestTable creates a portable posts table for tx tests. TEXT and
@@ -27,7 +29,7 @@ func createPostsTestTable(t *testing.T, db *sql.DB) {
 func newPostsApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -56,7 +58,7 @@ func TestTx_AfterCreateError_RollsBackInsert(t *testing.T) {
 		createPostsTestTable(t, db)
 		app := newPostsApp(t, db)
 
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			return errors.New("boom")
 		})
 
@@ -82,7 +84,7 @@ func TestTx_AfterUpdateError_RollsBackUpdate(t *testing.T) {
 		}
 
 		app := newPostsApp(t, db)
-		app.HookRegistry("posts").RegisterHook(AfterUpdate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			return errors.New("boom")
 		})
 
@@ -112,7 +114,7 @@ func TestTx_AfterDeleteError_RollsBackDelete(t *testing.T) {
 		}
 
 		app := newPostsApp(t, db)
-		app.HookRegistry("posts").RegisterHook(AfterDelete, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			return errors.New("boom")
 		})
 
@@ -138,7 +140,7 @@ func TestTx_FromContext_HookSeesPendingWrite(t *testing.T) {
 		var pendingTitle string
 		// AfterCreate runs after INSERT but before COMMIT. A query through the tx
 		// must see the new row; a query through the raw DB must not.
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			tx, ok := TxFromContext(ctx)
 			if !ok {
 				return errors.New("no tx in context")
@@ -173,7 +175,7 @@ func TestTx_BeforeCreateRejection_NoInsert(t *testing.T) {
 		createPostsTestTable(t, db)
 		app := newPostsApp(t, db)
 
-		app.HookRegistry("posts").RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			return errors.New("policy says no")
 		})
 

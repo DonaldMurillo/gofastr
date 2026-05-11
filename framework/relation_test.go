@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // --- Relation tests ---
 
 func TestRelationHasOne(t *testing.T) {
-	r := HasOne("profile", "profiles", "user_id")
-	if r.Type != RelHasOne {
+	r := entity.HasOne("profile", "profiles", "user_id")
+	if r.Type != entity.RelHasOne {
 		t.Errorf("expected RelHasOne, got %d", r.Type)
 	}
 	if r.Name != "profile" {
@@ -27,8 +31,8 @@ func TestRelationHasOne(t *testing.T) {
 }
 
 func TestRelationBelongsTo(t *testing.T) {
-	r := BelongsTo("author", "users", "user_id")
-	if r.Type != RelManyToOne {
+	r := entity.BelongsTo("author", "users", "user_id")
+	if r.Type != entity.RelManyToOne {
 		t.Errorf("expected RelManyToOne, got %d", r.Type)
 	}
 	if r.Name != "author" {
@@ -43,8 +47,8 @@ func TestRelationBelongsTo(t *testing.T) {
 }
 
 func TestRelationHasMany(t *testing.T) {
-	r := HasMany("comments", "comments", "post_id")
-	if r.Type != RelHasMany {
+	r := entity.HasMany("comments", "comments", "post_id")
+	if r.Type != entity.RelHasMany {
 		t.Errorf("expected RelHasMany, got %d", r.Type)
 	}
 	if r.Name != "comments" {
@@ -59,8 +63,8 @@ func TestRelationHasMany(t *testing.T) {
 }
 
 func TestRelationManyToMany(t *testing.T) {
-	r := ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")
-	if r.Type != RelManyToMany {
+	r := entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")
+	if r.Type != entity.RelManyToMany {
 		t.Errorf("expected RelManyToMany, got %d", r.Type)
 	}
 	if r.Name != "tags" {
@@ -83,23 +87,23 @@ func TestRelationManyToMany(t *testing.T) {
 // --- Hook tests ---
 
 func TestHookRegistrationAndExecution(t *testing.T) {
-	hr := NewHookRegistry()
+	hr := hook.NewHookRegistry()
 	var order []string
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "first")
 		return nil
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "second")
 		return nil
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "third")
 		return nil
 	})
 
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, nil)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,23 +117,23 @@ func TestHookRegistrationAndExecution(t *testing.T) {
 }
 
 func TestHookStopsOnFirstError(t *testing.T) {
-	hr := NewHookRegistry()
+	hr := hook.NewHookRegistry()
 	var order []string
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "first")
 		return nil
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "second")
 		return errors.New("hook failed")
 	})
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		order = append(order, "third")
 		return nil
 	})
 
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, nil)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, nil)
 	if err == nil {
 		t.Fatal("expected error from ExecuteHooks")
 	}
@@ -146,9 +150,9 @@ func TestHookStopsOnFirstError(t *testing.T) {
 }
 
 func TestHookCanModifyData(t *testing.T) {
-	hr := NewHookRegistry()
+	hr := hook.NewHookRegistry()
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		if m, ok := data.(map[string]any); ok {
 			m["modified"] = true
 		}
@@ -156,7 +160,7 @@ func TestHookCanModifyData(t *testing.T) {
 	})
 
 	data := map[string]any{"name": "test"}
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, data)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,25 +171,25 @@ func TestHookCanModifyData(t *testing.T) {
 }
 
 func TestHookDifferentTypes(t *testing.T) {
-	hr := NewHookRegistry()
-	var called HookType
+	hr := hook.NewHookRegistry()
+	var called hook.HookType
 
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
-		called = BeforeCreate
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
+		called = hook.BeforeCreate
 		return nil
 	})
-	hr.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
-		called = AfterCreate
+	hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
+		called = hook.AfterCreate
 		return nil
 	})
 
-	_ = hr.ExecuteHooks(context.Background(), BeforeCreate, nil)
-	if called != BeforeCreate {
+	_ = hr.ExecuteHooks(context.Background(), hook.BeforeCreate, nil)
+	if called != hook.BeforeCreate {
 		t.Errorf("expected BeforeCreate hook, got %d", called)
 	}
 
-	_ = hr.ExecuteHooks(context.Background(), AfterCreate, nil)
-	if called != AfterCreate {
+	_ = hr.ExecuteHooks(context.Background(), hook.AfterCreate, nil)
+	if called != hook.AfterCreate {
 		t.Errorf("expected AfterCreate hook, got %d", called)
 	}
 }
@@ -193,7 +197,7 @@ func TestHookDifferentTypes(t *testing.T) {
 // --- Validator tests ---
 
 func TestValidatorCollectsAllErrors(t *testing.T) {
-	vr := NewValidationRegistry()
+	vr := entity.NewValidationRegistry()
 
 	vr.RegisterValidator(func(ctx context.Context, data map[string]any) map[string]string {
 		errs := make(map[string]string)
@@ -236,8 +240,8 @@ func TestValidatorCollectsAllErrors(t *testing.T) {
 }
 
 func TestValidatorNoErrorsWhenValid(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Required("name", "email"))
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Required("name", "email"))
 
 	data := map[string]any{
 		"name":  "Alice",
@@ -251,8 +255,8 @@ func TestValidatorNoErrorsWhenValid(t *testing.T) {
 }
 
 func TestRequiredValidatorDetectsMissingFields(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Required("name", "email", "age"))
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Required("name", "email", "age"))
 
 	// Missing all fields
 	errs := vr.Validate(context.Background(), map[string]any{})
@@ -267,8 +271,8 @@ func TestRequiredValidatorDetectsMissingFields(t *testing.T) {
 }
 
 func TestRequiredValidatorDetectsEmptyStrings(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Required("name"))
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Required("name"))
 
 	errs := vr.Validate(context.Background(), map[string]any{
 		"name": "",
@@ -282,8 +286,8 @@ func TestRequiredValidatorDetectsEmptyStrings(t *testing.T) {
 }
 
 func TestRequiredValidatorDetectsNilValues(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Required("field"))
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Required("field"))
 
 	errs := vr.Validate(context.Background(), map[string]any{
 		"field": nil,
@@ -294,8 +298,8 @@ func TestRequiredValidatorDetectsNilValues(t *testing.T) {
 }
 
 func TestUniqueValidator(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Unique("email", func(ctx context.Context, value any) bool {
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Unique("email", func(ctx context.Context, value any) bool {
 		// Simulate: "taken@example.com" already exists
 		return value != "taken@example.com"
 	}))
@@ -321,8 +325,8 @@ func TestUniqueValidator(t *testing.T) {
 }
 
 func TestCustomValidator(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Custom("password_strength", func(ctx context.Context, data map[string]any) map[string]string {
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Custom("password_strength", func(ctx context.Context, data map[string]any) map[string]string {
 		errs := make(map[string]string)
 		pw, _ := data["password"].(string)
 		if len(pw) < 8 {
@@ -347,7 +351,7 @@ func TestFormatValidationErrors(t *testing.T) {
 		"name":  "is required",
 		"email": "must be unique",
 	}
-	formatted := FormatValidationErrors(errs)
+	formatted := entity.FormatValidationErrors(errs)
 	if len(formatted) != 2 {
 		t.Fatalf("expected 2 formatted errors, got %d", len(formatted))
 	}
@@ -361,10 +365,10 @@ func TestFormatValidationErrors(t *testing.T) {
 // --- EagerLoad edge case tests ---
 
 func TestEagerLoadEmptyIDs(t *testing.T) {
-	entity := Define("users", EntityConfig{Table: "users"})
-	relations := []Relation{HasMany("posts", "posts", "user_id")}
+	ent := entity.Define("users", entity.EntityConfig{Table: "users"})
+	relations := []entity.Relation{entity.HasMany("posts", "posts", "user_id")}
 
-	result, err := EagerLoad(context.Background(), nil, entity, relations, nil)
+	result, err := crud.EagerLoad(context.Background(), nil, ent, relations, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -374,9 +378,9 @@ func TestEagerLoadEmptyIDs(t *testing.T) {
 }
 
 func TestEagerLoadEmptyRelations(t *testing.T) {
-	entity := Define("users", EntityConfig{Table: "users"})
+	ent := entity.Define("users", entity.EntityConfig{Table: "users"})
 
-	result, err := EagerLoad(context.Background(), nil, entity, nil, []string{"1", "2"})
+	result, err := crud.EagerLoad(context.Background(), nil, ent, nil, []string{"1", "2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -387,34 +391,34 @@ func TestEagerLoadEmptyRelations(t *testing.T) {
 }
 
 func TestEntityTableName(t *testing.T) {
-	e := Define("users", EntityConfig{})
+	e := entity.Define("users", entity.EntityConfig{})
 	if e.GetTable() != "users" {
 		t.Errorf("expected table 'users', got %s", e.GetTable())
 	}
 }
 
 func TestHooksForEmpty(t *testing.T) {
-	hr := NewHookRegistry()
-	hooks := hr.HooksFor(BeforeCreate)
+	hr := hook.NewHookRegistry()
+	hooks := hr.HooksFor(hook.BeforeCreate)
 	if len(hooks) != 0 {
 		t.Errorf("expected 0 hooks, got %d", len(hooks))
 	}
 }
 
 func TestValidatorsCount(t *testing.T) {
-	vr := NewValidationRegistry()
+	vr := entity.NewValidationRegistry()
 	if vr.Validators() != 0 {
 		t.Errorf("expected 0 validators, got %d", vr.Validators())
 	}
-	vr.RegisterValidator(Required("name"))
+	vr.RegisterValidator(entity.Required("name"))
 	if vr.Validators() != 1 {
 		t.Errorf("expected 1 validator, got %d", vr.Validators())
 	}
 }
 
 func TestUniqueValidatorMissingField(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Unique("email", func(ctx context.Context, value any) bool {
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Unique("email", func(ctx context.Context, value any) bool {
 		return true
 	}))
 
@@ -426,11 +430,11 @@ func TestUniqueValidatorMissingField(t *testing.T) {
 }
 
 func TestFormatValidationErrorsEmpty(t *testing.T) {
-	result := FormatValidationErrors(nil)
+	result := entity.FormatValidationErrors(nil)
 	if result != nil {
 		t.Errorf("expected nil for empty errors, got %v", result)
 	}
-	result = FormatValidationErrors(map[string]string{})
+	result = entity.FormatValidationErrors(map[string]string{})
 	if result != nil {
 		t.Errorf("expected nil for empty map, got %v", result)
 	}
@@ -439,11 +443,11 @@ func TestFormatValidationErrorsEmpty(t *testing.T) {
 // --- Integration: Hooks + Validators together ---
 
 func TestHooksAndValidatorsIntegration(t *testing.T) {
-	vr := NewValidationRegistry()
-	vr.RegisterValidator(Required("title"))
+	vr := entity.NewValidationRegistry()
+	vr.RegisterValidator(entity.Required("title"))
 
-	hr := NewHookRegistry()
-	hr.RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+	hr := hook.NewHookRegistry()
+	hr.RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		if m, ok := data.(map[string]any); ok {
 			m["slug"] = fmt.Sprintf("%v-slug", m["title"])
 		}
@@ -461,7 +465,7 @@ func TestHooksAndValidatorsIntegration(t *testing.T) {
 	}
 
 	// Then run hooks
-	err := hr.ExecuteHooks(context.Background(), BeforeCreate, data)
+	err := hr.ExecuteHooks(context.Background(), hook.BeforeCreate, data)
 	if err != nil {
 		t.Fatalf("hook failed: %v", err)
 	}

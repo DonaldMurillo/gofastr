@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // seedUploadDB creates a posts table with an avatar TEXT column to receive
@@ -36,7 +37,7 @@ func uploadAppOnDB(t *testing.T, db *sql.DB) (*App, string) {
 	dir := t.TempDir()
 	store := upload.NewLocalStorage(dir)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithFileStorage(store))
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
@@ -130,7 +131,7 @@ func TestUpload_NoStorage_RejectsMultipart(t *testing.T) {
 		seedUploadDB(t, db)
 		// Build app without WithFileStorage
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},
@@ -238,7 +239,7 @@ func TestUpload_CoercesFormValues(t *testing.T) {
 		dir := t.TempDir()
 		store := upload.NewLocalStorage(dir)
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithFileStorage(store))
-		app.Entity("posts", EntityConfig{
+		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",
 			Fields: []schema.Field{
 				{Name: "title", Type: schema.String, Required: true},

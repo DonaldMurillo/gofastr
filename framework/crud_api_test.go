@@ -7,26 +7,31 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/filter"
+	"github.com/gofastr/gofastr/framework/hook"
 )
 
 // inProcessApp builds a posts entity wired with a HookRegistry, suitable for
 // exercising the in-process CRUD API.
-func inProcessApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
+func inProcessApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	t.Helper()
 	createPostsTestTable(t, db)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", EntityConfig{
+	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "body", Type: schema.Text},
 		},
 	}.WithTimestamps(false))
-	entity, err := app.Registry.Get("posts")
+	ent, err := app.Registry.Get("posts")
 	if err != nil {
 		t.Fatalf("get entity: %v", err)
 	}
-	ch := NewCrudHandler(entity, db)
+	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Events = app.Events()
 	ch.Registry = app.Registry
@@ -42,18 +47,18 @@ func TestCRUDApi_CreateOne_FullPipeline(t *testing.T) {
 		app, ch := inProcessApp(t, db)
 
 		var beforeRan, afterRan, eventReceived bool
-		app.HookRegistry("posts").RegisterHook(BeforeCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			beforeRan = true
 			return nil
 		})
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			afterRan = true
 			return nil
 		})
 		// EmitAsync fires events in a goroutine; we use Events().Subscribe for
 		// the test so we get a synchronous notification we can wait on.
 		done := make(chan struct{}, 1)
-		cancel := app.Events().Subscribe(EntityCreated, func(ctx context.Context, ev Event) error {
+		cancel := app.Events().Subscribe(event.EntityCreated, func(ctx context.Context, ev event.Event) error {
 			eventReceived = true
 			select {
 			case done <- struct{}{}:
@@ -93,7 +98,7 @@ func TestCRUDApi_CreateOne_FullPipeline(t *testing.T) {
 func TestCRUDApi_CreateOne_HookRollback(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app, ch := inProcessApp(t, db)
-		app.HookRegistry("posts").RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			return errors.New("boom")
 		})
 
@@ -121,11 +126,11 @@ func TestCRUDApi_GetOne_WithIncludes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBlogDB(t, db)
 		app := nestedBlogApp(t, db)
-		entity, err := app.Registry.Get("posts")
+		ent, err := app.Registry.Get("posts")
 		if err != nil {
 			t.Fatalf("get entity: %v", err)
 		}
-		ch := NewCrudHandler(entity, db)
+		ch := crud.NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 		ch.Events = app.Events()
 		ch.Registry = app.Registry
@@ -166,9 +171,9 @@ func TestCRUDApi_ListAll_FilterSortLimit(t *testing.T) {
 		}
 
 		min1 := float64(1)
-		got, err := ch.ListAll(ctx, ListOptions{
-			Filters: []ParsedFilter{{Field: "title", Op: OpLike, Value: "%a%"}},
-			Sorts:   []ParsedSort{{Field: "title", Desc: false}},
+		got, err := ch.ListAll(ctx, crud.ListOptions{
+			Filters: []filter.ParsedFilter{{Field: "title", Op: filter.OpLike, Value: "%a%"}},
+			Sorts:   []filter.ParsedSort{{Field: "title", Desc: false}},
 			Limit:   2,
 		})
 		if err != nil {

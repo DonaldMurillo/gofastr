@@ -11,6 +11,10 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/file"
+	"github.com/gofastr/gofastr/framework/softdelete"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // --- Soft Delete Tests ---
@@ -26,7 +30,7 @@ func TestSoftDelete(t *testing.T) {
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = SoftDelete(context.Background(), db, "posts", "123")
+	err = softdelete.SoftDelete(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("SoftDelete returned error: %v", err)
 	}
@@ -47,7 +51,7 @@ func TestSoftRestore(t *testing.T) {
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = Restore(context.Background(), db, "posts", "123")
+	err = softdelete.Restore(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("Restore returned error: %v", err)
 	}
@@ -68,7 +72,7 @@ func TestSoftForceDelete(t *testing.T) {
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = ForceDelete(context.Background(), db, "posts", "123")
+	err = softdelete.ForceDelete(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("ForceDelete returned error: %v", err)
 	}
@@ -80,7 +84,7 @@ func TestSoftForceDelete(t *testing.T) {
 
 func TestSoftDeleteFilterExcludes(t *testing.T) {
 	qb := query.Select("*").From("posts")
-	ApplySoftDeleteFilter(qb, false)
+	softdelete.ApplySoftDeleteFilter(qb, false)
 	sqlStr, _ := qb.Build()
 
 	if !strings.Contains(sqlStr, "deleted_at IS NULL") {
@@ -91,7 +95,7 @@ func TestSoftDeleteFilterExcludes(t *testing.T) {
 func TestSoftDeleteWithTrashed(t *testing.T) {
 	// When showTrashed is true, no filter should be added
 	qb := query.Select("*").From("posts")
-	ApplySoftDeleteFilter(qb, true)
+	softdelete.ApplySoftDeleteFilter(qb, true)
 	sqlStr, _ := qb.Build()
 
 	if strings.Contains(sqlStr, "deleted_at") {
@@ -100,23 +104,23 @@ func TestSoftDeleteWithTrashed(t *testing.T) {
 
 	// Test WithTrashed helper with query param
 	r := httptest.NewRequest("GET", "/posts?trashed=true", nil)
-	if !WithTrashed(r) {
+	if !softdelete.WithTrashed(r) {
 		t.Error("expected WithTrashed=true when ?trashed=true")
 	}
 
 	r2 := httptest.NewRequest("GET", "/posts", nil)
-	if WithTrashed(r2) {
+	if softdelete.WithTrashed(r2) {
 		t.Error("expected WithTrashed=false when no trashed param")
 	}
 }
 
 func TestSoftDeleteWithSoftDeleteConfig(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	if entity.Config.SoftDelete {
+	ent := entity.Define("posts", entity.EntityConfig{})
+	if ent.Config.SoftDelete {
 		t.Error("expected SoftDelete=false by default")
 	}
-	WithSoftDelete(entity)
-	if !entity.Config.SoftDelete {
+	softdelete.WithSoftDelete(ent)
+	if !ent.Config.SoftDelete {
 		t.Error("expected SoftDelete=true after WithSoftDelete")
 	}
 }
@@ -125,7 +129,7 @@ func TestSoftDeleteWithSoftDeleteConfig(t *testing.T) {
 
 func TestTenantFilter(t *testing.T) {
 	qb := query.Select("*").From("posts")
-	ApplyTenantFilter(qb, "tenant-abc123")
+	tenant.ApplyTenantFilter(qb, "tenant-abc123")
 	sqlStr, args := qb.Build()
 
 	if !strings.Contains(sqlStr, "tenant_id = $") {
@@ -145,7 +149,7 @@ func TestTenantFilter(t *testing.T) {
 
 func TestTenantFilterEmptyID(t *testing.T) {
 	qb := query.Select("*").From("posts")
-	ApplyTenantFilter(qb, "")
+	tenant.ApplyTenantFilter(qb, "")
 	sqlStr, args := qb.Build()
 
 	if strings.Contains(sqlStr, "tenant_id") {
@@ -159,10 +163,10 @@ func TestTenantFilterEmptyID(t *testing.T) {
 func TestTenantMiddleware(t *testing.T) {
 	var capturedTenantID string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedTenantID = GetTenantID(r.Context())
+		capturedTenantID = tenant.GetTenantID(r.Context())
 	})
 
-	mw := TenantMiddleware("X-Tenant-ID")
+	mw := tenant.TenantMiddleware("X-Tenant-ID")
 	handler := mw(next)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -179,10 +183,10 @@ func TestTenantMiddleware(t *testing.T) {
 func TestTenantMiddlewareMissingHeader(t *testing.T) {
 	var capturedTenantID string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedTenantID = GetTenantID(r.Context())
+		capturedTenantID = tenant.GetTenantID(r.Context())
 	})
 
-	mw := TenantMiddleware("X-Tenant-ID")
+	mw := tenant.TenantMiddleware("X-Tenant-ID")
 	handler := mw(next)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -197,20 +201,20 @@ func TestTenantMiddlewareMissingHeader(t *testing.T) {
 
 func TestTenantSetGetID(t *testing.T) {
 	ctx := context.Background()
-	if id := GetTenantID(ctx); id != "" {
+	if id := tenant.GetTenantID(ctx); id != "" {
 		t.Errorf("expected empty ID from background context, got %q", id)
 	}
 
-	ctx = SetTenantID(ctx, "tenant-789")
-	if id := GetTenantID(ctx); id != "tenant-789" {
+	ctx = tenant.SetTenantID(ctx, "tenant-789")
+	if id := tenant.GetTenantID(ctx); id != "tenant-789" {
 		t.Errorf("expected tenant-789, got %q", id)
 	}
 }
 
 func TestTenantInjectID(t *testing.T) {
-	ctx := SetTenantID(context.Background(), "tenant-inject")
+	ctx := tenant.SetTenantID(context.Background(), "tenant-inject")
 	data := map[string]any{"title": "Hello"}
-	InjectTenantID(data, ctx)
+	tenant.InjectTenantID(data, ctx)
 
 	if v, ok := data["tenant_id"]; !ok || v != "tenant-inject" {
 		t.Errorf("expected tenant_id to be injected, got: %v", data)
@@ -219,7 +223,7 @@ func TestTenantInjectID(t *testing.T) {
 
 func TestTenantInjectIDEmpty(t *testing.T) {
 	data := map[string]any{"title": "Hello"}
-	InjectTenantID(data, context.Background())
+	tenant.InjectTenantID(data, context.Background())
 
 	if _, ok := data["tenant_id"]; ok {
 		t.Error("expected no tenant_id injection when context has no tenant")
@@ -227,7 +231,7 @@ func TestTenantInjectIDEmpty(t *testing.T) {
 }
 
 func TestTenantDefaultConfig(t *testing.T) {
-	cfg := DefaultTenantConfig()
+	cfg := tenant.DefaultTenantConfig()
 	if cfg.Field != "tenant_id" {
 		t.Errorf("expected Field 'tenant_id', got %q", cfg.Field)
 	}
@@ -240,12 +244,12 @@ func TestTenantDefaultConfig(t *testing.T) {
 }
 
 func TestTenantWithMultiTenant(t *testing.T) {
-	entity := Define("posts", EntityConfig{})
-	if entity.Config.MultiTenant {
+	ent := entity.Define("posts", entity.EntityConfig{})
+	if ent.Config.MultiTenant {
 		t.Error("expected MultiTenant=false by default")
 	}
-	WithMultiTenant(entity, TenantConfig{Field: "org_id", Header: "X-Org-ID"})
-	if !entity.Config.MultiTenant {
+	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id", Header: "X-Org-ID"})
+	if !ent.Config.MultiTenant {
 		t.Error("expected MultiTenant=true after WithMultiTenant")
 	}
 }
@@ -253,7 +257,7 @@ func TestTenantWithMultiTenant(t *testing.T) {
 // --- File Field Tests ---
 
 func TestFilePathGeneration(t *testing.T) {
-	path := GenerateFilePath("posts", "avatar", "photo.png")
+	path := file.GenerateFilePath("posts", "avatar", "photo.png")
 
 	if !strings.HasPrefix(path, "uploads/posts/avatar/") {
 		t.Errorf("expected path under uploads/posts/avatar/, got: %s", path)
@@ -280,7 +284,7 @@ func TestFilePathSanitizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := GenerateFilePath("posts", "file", tt.filename)
+			path := file.GenerateFilePath("posts", "file", tt.filename)
 			for _, bad := range tt.bad {
 				if strings.Contains(path, bad) {
 					t.Errorf("path should not contain %q, got: %s", bad, path)
@@ -291,12 +295,12 @@ func TestFilePathSanitizes(t *testing.T) {
 }
 
 func TestFilePathMultipleFiles(t *testing.T) {
-	path1 := GenerateFilePath("posts", "avatar", "photo.png")
+	path1 := file.GenerateFilePath("posts", "avatar", "photo.png")
 
 	// Ensure unique nanosecond timestamps between calls
 	time.Sleep(time.Microsecond)
 
-	path2 := GenerateFilePath("posts", "avatar", "photo.png")
+	path2 := file.GenerateFilePath("posts", "avatar", "photo.png")
 
 	// Paths should be unique due to nanosecond timestamp
 	if path1 == path2 {
@@ -309,7 +313,7 @@ func TestFileFieldProcess(t *testing.T) {
 	store := &mockStorage{}
 	content := strings.NewReader("hello world file content")
 
-	ff, err := ProcessFileField(context.Background(), store, content, "document.txt", "posts", "attachment")
+	ff, err := file.ProcessFileField(context.Background(), store, content, "document.txt", "posts", "attachment")
 	if err != nil {
 		t.Fatalf("ProcessFileField returned error: %v", err)
 	}
@@ -334,21 +338,21 @@ func TestFileFieldProcess(t *testing.T) {
 
 func TestFileFieldDeleteNil(t *testing.T) {
 	store := &mockStorage{}
-	if err := DeleteFileField(context.Background(), store, nil); err != nil {
+	if err := file.DeleteFileField(context.Background(), store, nil); err != nil {
 		t.Errorf("expected nil error for nil FileField, got: %v", err)
 	}
 
-	ff := &FileField{StorageRef: ""}
-	if err := DeleteFileField(context.Background(), store, ff); err != nil {
+	ff := &file.FileField{StorageRef: ""}
+	if err := file.DeleteFileField(context.Background(), store, ff); err != nil {
 		t.Errorf("expected nil error for empty StorageRef, got: %v", err)
 	}
 }
 
 func TestFileFieldDeleteWithRef(t *testing.T) {
 	store := &mockStorage{}
-	ff := &FileField{StorageRef: "uploads/test/file.txt"}
+	ff := &file.FileField{StorageRef: "uploads/test/file.txt"}
 
-	if err := DeleteFileField(context.Background(), store, ff); err != nil {
+	if err := file.DeleteFileField(context.Background(), store, ff); err != nil {
 		t.Errorf("expected nil error, got: %v", err)
 	}
 
@@ -359,15 +363,15 @@ func TestFileFieldDeleteWithRef(t *testing.T) {
 
 func TestFileFieldProcessNilStorage(t *testing.T) {
 	content := strings.NewReader("test")
-	_, err := ProcessFileField(context.Background(), nil, content, "test.txt", "posts", "file")
+	_, err := file.ProcessFileField(context.Background(), nil, content, "test.txt", "posts", "file")
 	if err == nil {
 		t.Error("expected error with nil storage")
 	}
 }
 
 func TestFileFieldDeleteNilStorage(t *testing.T) {
-	ff := &FileField{StorageRef: "test"}
-	if err := DeleteFileField(context.Background(), nil, ff); err == nil {
+	ff := &file.FileField{StorageRef: "test"}
+	if err := file.DeleteFileField(context.Background(), nil, ff); err == nil {
 		t.Error("expected error with nil storage")
 	}
 }

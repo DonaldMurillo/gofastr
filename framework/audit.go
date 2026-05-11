@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/migrate"
 )
 
 // AuditConfig configures the audit log helper.
@@ -37,15 +40,15 @@ const (
 )
 
 // EnsureAuditTable creates the audit_log table if it does not exist. Idempotent.
-// Dialect-aware via the existing detectDialect helper.
+// Dialect-aware via the existing migrate.DetectDialect helper.
 func EnsureAuditTable(db *sql.DB, table string) error {
 	if table == "" {
 		table = "audit_log"
 	}
-	dialect := detectDialect(db)
+	dialect := migrate.DetectDialect(db)
 
 	tsType := "DATETIME"
-	if dialect == DialectPostgres {
+	if dialect == migrate.DialectPostgres {
 		tsType = "TIMESTAMPTZ"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -84,27 +87,27 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		want[name] = true
 	}
 
-	for name, entity := range a.Registry.All() {
+	for name, ent := range a.Registry.All() {
 		if len(want) > 0 && !want[name] {
 			continue
 		}
-		ent := entity
+		ent := ent
 		pk := "id"
 		hr := a.HookRegistry(name)
 
-		hr.RegisterHook(AfterCreate, func(ctx context.Context, data any) error {
+		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
 			diff, _ := json.Marshal(map[string]any{"new": row})
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpCreate, id, cfg.actor(ctx), diff)
 		})
-		hr.RegisterHook(AfterUpdate, func(ctx context.Context, data any) error {
+		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
 			diff, _ := json.Marshal(map[string]any{"new": row})
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpUpdate, id, cfg.actor(ctx), diff)
 		})
-		hr.RegisterHook(AfterDelete, func(ctx context.Context, data any) error {
+		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			id, _ := data.(string)
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpDelete, id, cfg.actor(ctx), nil)
 		})
@@ -135,7 +138,7 @@ func stringifyPK(row map[string]any, pk string) string {
 	return ""
 }
 
-func writeAuditRow(ctx context.Context, db *sql.DB, table, entity string, op auditOp, recordID, actor string, diff []byte) error {
+func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditOp, recordID, actor string, diff []byte) error {
 	id := fmt.Sprintf("aud_%d", time.Now().UnixNano())
 	var diffArg any
 	if diff != nil {
@@ -152,7 +155,7 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, entity string, op aud
 	}
 	_, err := exec.ExecContext(ctx,
 		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7)", table),
-		id, entity, string(op), recordID, nullIfEmpty(actor), time.Now().UTC(), diffArg,
+		id, ent, string(op), recordID, nullIfEmpty(actor), time.Now().UTC(), diffArg,
 	)
 	return err
 }
