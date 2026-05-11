@@ -1,4 +1,4 @@
-package framework
+package openapi
 
 import (
 	"strings"
@@ -6,6 +6,7 @@ import (
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
@@ -15,7 +16,7 @@ import (
 //   - CRUD paths (GET, POST, PUT, DELETE) with request/response schemas
 //   - List endpoint with pagination parameters
 //   - Proper error response schemas
-func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
+func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
 	s.AddServer("/", "current")
 
@@ -297,10 +298,10 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 			if customOp.Summary == "" {
 				customOp.Summary = endpoint.Method + " " + endpoint.Path
 			}
-			customOp.OperationID = defaultEndpointToolName(entityName, endpoint.Method, entityEndpointPath(ent, endpoint.Path))
+			customOp.OperationID = DefaultEndpointToolName(entityName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
 			customOp.Tags = []string{entityName}
 			customOp.AddResponse(200, "OK", map[string]any{"type": "object"})
-			s.AddPath(endpoint.Method, entityEndpointPath(ent, endpoint.Path), *customOp)
+			s.AddPath(endpoint.Method, EntityEndpointPath(ent, endpoint.Path), *customOp)
 		}
 	}
 

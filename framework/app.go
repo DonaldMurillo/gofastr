@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofastr/gofastr/core/openapi"
+	coreoa "github.com/gofastr/gofastr/core/openapi"
 
 	"github.com/gofastr/gofastr/core/mcp"
 	"github.com/gofastr/gofastr/core/middleware"
@@ -23,6 +23,7 @@ import (
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
 	"github.com/gofastr/gofastr/framework/migrate"
+	"github.com/gofastr/gofastr/framework/openapi"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -279,7 +280,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		path := entityEndpointPath(ent, endpoint.Path)
+		path := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
 			a.Router.Handle(method, path, endpoint.Handler)
 		}
@@ -289,7 +290,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			}
 			name := endpoint.Name
 			if name == "" {
-				name = defaultEndpointToolName(ent.GetName(), method, path)
+				name = openapi.DefaultEndpointToolName(ent.GetName(), method, path)
 			}
 			description := endpoint.Description
 			if description == "" {
@@ -303,32 +304,8 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 	return nil
 }
 
-func entityEndpointPath(ent *entity.Entity, path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		path = "/"
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + strings.Trim(ent.GetTable(), "/") + "/" + strings.TrimPrefix(path, "/")
-	}
-	return crud.NormalizePath(convertColonParams(path))
-}
-
-func convertColonParams(path string) string {
-	parts := strings.Split(path, "/")
-	for i, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			parts[i] = "{" + strings.TrimPrefix(part, ":") + "}"
-		}
-	}
-	return strings.Join(parts, "/")
-}
-
-func defaultEndpointToolName(entityName, method, path string) string {
-	cleaned := strings.Trim(path, "/")
-	cleaned = strings.NewReplacer("/", "_", "{", "", "}", "", "-", "_").Replace(cleaned)
-	return strings.ToLower(entityName + "_" + method + "_" + cleaned)
-}
+// openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to
+// framework/openapi (where they're shared with the OpenAPI spec generator).
 
 // JSONCasing returns the configured JSON casing strategy.
 // Defaults to CaseCamel if not explicitly set.
@@ -501,9 +478,9 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := EntityOpenAPI(a.Registry, appName, "1.0.0")
-		a.Router.Get("/openapi.json", openapi.Handler(spec))
-		a.Router.Get("/docs/", openapi.SwaggerUIHandler(spec, "/docs"))
+		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0")
+		a.Router.Get("/openapi.json", coreoa.Handler(spec))
+		a.Router.Get("/docs/", coreoa.SwaggerUIHandler(spec, "/docs"))
 	}
 
 	if a.Config.DebugEndpoints {
