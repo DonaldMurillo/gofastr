@@ -249,6 +249,23 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "block", "margin-bottom", "0.5rem",
 			"font-size", "0.85rem", "color", "{colors.text-muted}").End()
 
+	// DataTable search demo.
+	ss.Rule(".demo-search-form").
+		Set("display", "flex", "gap", "{spacing.sm}",
+			"align-items", "center").End()
+	ss.Rule(".demo-search-input").
+		Set("flex", "1", "max-inline-size", "24rem",
+			"padding", "{spacing.sm} {spacing.md}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"background", "{colors.surface}",
+			"color", "{colors.text}",
+			"font", "inherit",
+			"font-size", "0.95rem").End()
+	ss.Rule(".demo-search-input:focus-visible").
+		Set("outline", "2px solid {colors.primary}",
+			"outline-offset", "1px").End()
+
 	// Theme-swap demo: radios + :has() override --color-primary on the
 	// preview wrapper. Pure CSS — no JS — proves the "one-token swap"
 	// re-skin claim viscerally.

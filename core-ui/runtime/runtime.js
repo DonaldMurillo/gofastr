@@ -59,10 +59,23 @@
     const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
     let body = node.getAttribute('data-fui-rpc-body');
+    let resolvedPath = path;
     if (!body && node.tagName === 'FORM') {
       const fd = new FormData(node);
-      const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-      body = JSON.stringify(obj);
+      // For GET, encode form data as the query string of the RPC
+      // path. POST/PUT/PATCH send as JSON body so the server reads
+      // r.Body. This matches normal HTML form semantics.
+      if (method === 'GET') {
+        const params = new URLSearchParams();
+        fd.forEach((v, k) => { if (v != null) params.set(k, String(v)); });
+        const qs = params.toString();
+        if (qs) {
+          resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
+        }
+      } else {
+        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+        body = JSON.stringify(obj);
+      }
     }
     const widgetEl = node.closest('[data-fui-widget]');
     const headers = {};
@@ -70,7 +83,7 @@
     if (body) headers['Content-Type'] = 'application/json';
     if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
     try {
-      const r = await fetch(path, { method, headers, body: body || undefined });
+      const r = await fetch(resolvedPath, { method, headers, body: body || undefined });
       if (!r.ok) {
         const txt = await r.text();
         if (responseSignal) window.__gofastr.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
@@ -98,6 +111,9 @@
       if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
     }
   }
+
+  // Per-form debounce timers for data-fui-rpc-trigger="input".
+  const inputDebounceTimers = new WeakMap();
 
   // Global click+submit dispatcher — installed once at module load.
   // Catches data-fui-rpc on any element NOT inside a widget. Widget
@@ -171,6 +187,26 @@
           });
         } catch (_) {}
       }
+    });
+
+    // Debounced input-driven RPC: a form with
+    // data-fui-rpc-trigger="input" fires its RPC each time an input
+    // inside it changes, after a debounce window. Useful for
+    // type-ahead search where the server is the source of truth for
+    // filtered results (see core-ui/ARCHITECTURE.md — search is an
+    // island state change, not a route).
+    document.addEventListener('input', (e) => {
+      const form = e.target.closest('form[data-fui-rpc][data-fui-rpc-trigger="input"]');
+      if (!form) return;
+      // Skip if inside a widget — widget owns its own input handling.
+      if (form.closest('[data-fui-widget]')) return;
+      const ms = parseInt(form.getAttribute('data-fui-rpc-debounce-ms') || '250', 10) || 250;
+      const prev = inputDebounceTimers.get(form);
+      if (prev) clearTimeout(prev);
+      inputDebounceTimers.set(form, setTimeout(() => {
+        inputDebounceTimers.delete(form);
+        dispatchRPC(form);
+      }, ms));
     });
   }
 
