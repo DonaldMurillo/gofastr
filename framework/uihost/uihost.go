@@ -181,14 +181,10 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	return out
 }
 
-// RouteGraphJS returns the JS body that bootstraps window.__gofastr_routes
-// (sans <script> tags). Used by the static builder to write the same
-// payload as a real .js file.
+// RouteGraphJS returns the JS body that bootstraps window.__gofastr_routes.
+// Used by the static builder to write the same payload as a real .js file.
 func (ds *UIHost) RouteGraphJS() string {
-	body := ds.buildRouteScript()
-	body = strings.TrimPrefix(body, "<script>")
-	body = strings.TrimSuffix(body, "</script>")
-	return strings.TrimSpace(body)
+	return strings.TrimSpace(ds.buildRouteScript())
 }
 
 // RegisterSignal registers a signal with the devserver so the signal update
@@ -305,7 +301,11 @@ func (ds *UIHost) buildRouteScript() string {
 		infos[i] = info
 	}
 	rgJSON, _ := json.Marshal(infos)
-	return fmt.Sprintf(`<script>window.__gofastr_routes = %s;</script>`, string(rgJSON))
+	// JS body only — no <script> wrapper. The body is served as an
+	// external file via /__gofastr/routes.js (CSP-safe under
+	// default-src 'self'); injectChrome references it with
+	// <script src="…">. SSG writes the same body to disk.
+	return fmt.Sprintf("window.__gofastr_routes = %s;", string(rgJSON))
 }
 
 // pathToChunkName derives a CSS chunk filename from a route path.
@@ -507,16 +507,12 @@ func (ds *UIHost) handleStylesCSS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ds.customCSS)
 }
 
-// handleRoutesJS serves the route-graph bootstrap as an external JS file
-// instead of an inline <script>. The body is a normal assignment to
-// window.__gofastr_routes; the runtime reads it on load.
+// handleRoutesJS serves the route-graph bootstrap as an external JS file.
+// The body is a normal assignment to window.__gofastr_routes; the
+// runtime reads it on load. Never inlined — strict CSP would block it.
 func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
-	body := ds.buildRouteScript()
-	// buildRouteScript returns "<script>window.__gofastr_routes = …;</script>".
-	// Strip the wrapping tags so the same payload is valid as an external file.
-	body = strings.TrimPrefix(body, "<script>")
-	body = strings.TrimSuffix(body, "</script>")
-	if strings.TrimSpace(body) == "" {
+	body := strings.TrimSpace(ds.buildRouteScript())
+	if body == "" {
 		http.NotFound(w, r)
 		return
 	}

@@ -35,6 +35,7 @@ func pagesToScan() []string {
 		"/framework-ui/form",
 		"/framework-ui/notification",
 		"/framework-ui/theme",
+		"/framework-ui/css-loading",
 		"/customers",
 		"/customers/new",
 		"/customers/1",

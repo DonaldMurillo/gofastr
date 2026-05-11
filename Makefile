@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
 
 # ---- Build ----
 #
@@ -8,13 +8,13 @@
 # are ephemeral and watched-tree pollution causes rebuild storms.
 DIST_DIR ?= dist
 
-build: build-cmd
+build: csp-check build-cmd
 
 build-cmd: $(DIST_DIR)
 	go build -o $(DIST_DIR)/gofastr ./cmd/gofastr
 	go build -o $(DIST_DIR)/kiln    ./cmd/kiln
 
-build-examples: $(DIST_DIR)
+build-examples: csp-check $(DIST_DIR)
 	@for dir in examples/api-tour examples/blog examples/core-ui-demo \
 	            examples/demo examples/spa examples/static-site \
 	            examples/website examples/widgets-demo; do \
@@ -23,7 +23,15 @@ build-examples: $(DIST_DIR)
 		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
 	done
 
-build-all: build-cmd build-examples
+build-all: csp-check build-cmd build-examples
+
+# csp-check refuses to build when production source emits inline
+# <script> blocks. The framework's default Content-Security-Policy
+# (default-src 'self') blocks inline JS, so an inline emission
+# silently breaks the page in the browser. Make build depends on
+# this so a regression fails the build, not the eyeball test.
+csp-check:
+	@go run ./cmd/check-csp .
 
 $(DIST_DIR):
 	@mkdir -p $(DIST_DIR)

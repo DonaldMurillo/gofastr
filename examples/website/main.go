@@ -105,6 +105,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
+	fwApp.Router.Get("/css-demo-enhance.js", http.HandlerFunc(CSSLoadingEnhanceJSHandler))
 
 	if devMode() {
 		// Dev-only livereload — SSE-driven, not polling. The server
