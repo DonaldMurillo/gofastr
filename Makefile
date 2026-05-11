@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-techempower bench-overhead lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
 
 # ---- Build ----
 #
@@ -146,6 +146,14 @@ bench-tier8: $(BENCH_OUT)
 # Convenience aliases for the comparable-to-industry slices.
 bench-techempower: bench-tier5
 bench-overhead: bench-tier7
+
+# Resource benchmarks: bundle size, peak RAM during `go build`, idle/loaded
+# RAM of each running app. Builds three bench apps (minimal, crud, full) and
+# the two cmd/* binaries. Output is Markdown to stdout + dist/bench/resources.md.
+bench-resources: $(BENCH_OUT)
+	@mkdir -p $(BENCH_OUT)/resources
+	go run ./cmd/bench-resources -load=$${LOAD:-200} -out=$(BENCH_OUT)/resources \
+		| tee $(BENCH_OUT)/resources.md
 
 lint:
 	golangci-lint run ./...

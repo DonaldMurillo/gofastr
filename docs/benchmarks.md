@@ -195,6 +195,62 @@ What to look for:
 - **FilteredList delta is the worst case** (allocations dominate).
   This is the hottest optimization target.
 
+## Resource benchmarks (separate from the Tier 1-8 Go bench suite)
+
+Resource numbers — binary size, peak RAM during `go build`, idle and
+under-load RAM of each running binary — are produced by a separate
+runner under `cmd/bench-resources/` rather than `go test`. They aren't
+expressed as Go benchmarks because the unit of measurement is "one
+fully-built and warmed binary", not "one operation".
+
+```bash
+make bench-resources             # default LOAD=200 requests per app
+LOAD=500 make bench-resources    # override
+```
+
+Three bench apps under `benchmarks/apps/<name>/`:
+
+| App       | Surface                                                              |
+|-----------|----------------------------------------------------------------------|
+| `minimal` | `NewApp` + one plaintext route. No DB, no entities. Establishes the floor. |
+| `crud`    | One entity, SQLite + auto-migrate + CRUD routes.                     |
+| `full`    | Three related entities (includes), audit log, cron job, MCP enabled. |
+
+Plus the two cmd binaries (`gofastr`, `kiln`) for build-only comparison.
+
+Output is Markdown to stdout and `dist/bench/resources.md`:
+
+```
+| App         | Bin size | Build wall | Build peak RAM | Idle RAM | Loaded RAM | Load reqs/dur |
+| minimal     | 8.8 MB   |  5.4s      | 313.7 MB       | 10.9 MB  | 11.8 MB    | 200 / 17ms    |
+| crud        | 12.9 MB  | 18.7s      | 753.1 MB       | 13.8 MB  | 14.4 MB    | 200 / 18ms    |
+| full        | 12.9 MB  | 16.6s      | 753.5 MB       | 14.6 MB  | 15.3 MB    | 200 / 18ms    |
+```
+
+### What to look for
+
+- **Bin size delta `crud` − `minimal`** is the cost of the SQLite cgo
+  driver. Switching to a pure-Go driver (`modernc.org/sqlite`) would
+  cut this in half but slow the binary a few %.
+- **Bin size delta `full` − `crud`** is what the framework's optional
+  features (audit, cron, MCP, includes) actually cost in shipped
+  bytes. Tiny — they're code paths inside `framework/`, not separate
+  binaries' worth of code.
+- **Build peak RAM** is mostly the cgo toolchain. CI machines need to
+  budget ~1 GB headroom for the compile step.
+- **Idle vs Loaded RAM** should be roughly equal after a warmup. A
+  significant climb under load means GC pressure, retained slices, or
+  goroutine leaks — pair with Tier 8's `HeapAfterLoad`.
+
+### Dev-server RAM
+
+`scripts/dev-watch.sh` rebuilds the compiled binary on change and
+re-runs it. Its long-running RAM is the same as the running binary
+(see Idle RAM column for `full`), with brief spikes to the build peak
+(~750 MB on cgo builds) during rebuilds. There is no separate
+dev-server overhead worth measuring — it's a thin shell loop around
+`go build` + `exec`.
+
 ## Tier 8 — operational
 
 - **`ColdStart_*`** — time from `NewApp` through first request served.
