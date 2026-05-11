@@ -389,25 +389,29 @@ func TestUIHostCustomCSS(t *testing.T) {
 func TestUIHostRouteGraph(t *testing.T) {
 	ds := newTestUIHostWithRouteGraph()
 
-	// Page references routes.js externally.
+	// Page embeds the route graph as inline JSON (CSP-safe; no round-
+	// trip; no executable inline script).
 	pageReq := httptest.NewRequest("GET", "/", nil)
 	pageRec := httptest.NewRecorder()
 	ds.ServeHTTP(pageRec, pageReq)
 	page := pageRec.Body.String()
-	assertContains(t, page, `<script src="/__gofastr/routes.js"></script>`)
-	if strings.Contains(page, "window.__gofastr_routes") {
-		t.Errorf("route-graph payload should not be inline in the page; expected external <script src>. got:\n%s", page)
+	assertContains(t, page, `<script type="application/json" id="gofastr-routes">`)
+	assertContains(t, page, `"path":"/"`)
+	assertContains(t, page, `"title":"Home"`)
+	assertContains(t, page, `"title":"About"`)
+	// Legacy external script reference must be gone.
+	if strings.Contains(page, `src="/__gofastr/routes.js"`) {
+		t.Errorf("page must NOT reference legacy /__gofastr/routes.js — route graph ships inline:\n%s", page)
 	}
 
-	// /routes.js carries the actual bootstrap.
+	// The legacy endpoint exists only to surface stale browser
+	// references as a clean 410 GONE.
 	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
 	jsRec := httptest.NewRecorder()
 	ds.ServeHTTP(jsRec, jsReq)
-	body := jsRec.Body.String()
-	assertContains(t, body, "window.__gofastr_routes")
-	assertContains(t, body, `"path":"/"`)
-	assertContains(t, body, `"title":"Home"`)
-	assertContains(t, body, `"title":"About"`)
+	if jsRec.Code != http.StatusGone {
+		t.Errorf("/__gofastr/routes.js should be 410 GONE, got %d", jsRec.Code)
+	}
 }
 
 // ---------------------------------------------------------------------------

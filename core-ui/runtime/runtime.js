@@ -228,6 +228,26 @@
     }
   };
 
+  // Hydrate routes + catalog from inline <script type="application/json">
+  // blocks the SSR emits. The browser treats them as inert data (not
+  // executable), so they pass strict CSP. Reading happens before
+  // first paint of any non-trivial component because runtime.js is
+  // injected at the end of <body>, after the JSON blocks in <head>.
+  const _readInlineJSON = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    try { return JSON.parse(el.textContent || 'null'); }
+    catch (_) { return null; }
+  };
+  if (!window.__gofastr_routes) {
+    const r = _readInlineJSON('gofastr-routes');
+    if (r) window.__gofastr_routes = r;
+  }
+  if (!window.__gofastr_catalog) {
+    const c = _readInlineJSON('gofastr-catalog');
+    if (c) window.__gofastr_catalog = c;
+  }
+
   // Bootstrap routes from injected data
   if (Array.isArray(window.__gofastr_routes)) {
     registerRoutes(window.__gofastr_routes);

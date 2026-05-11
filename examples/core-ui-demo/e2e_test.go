@@ -948,11 +948,12 @@ func TestDevServerHomePageHasRuntimeAndSSE(t *testing.T) {
 	}
 	body := w.Body.String()
 
-	// Core framework injections — runtime + SSE meta inline; route graph
-	// is now an external <script src="/__gofastr/routes.js">.
+	// Core framework injections — runtime is an external <script src>;
+	// route graph now ships inline as <script type="application/json">
+	// (CSP-safe inert data block, parsed by runtime.js at boot).
 	assertContainsAll(t, render.HTML(body),
 		`<script src="/__gofastr/runtime.js"></script>`,
-		`<script src="/__gofastr/routes.js"></script>`,
+		`<script type="application/json" id="gofastr-routes">`,
 		`name="gofastr-sse"`,
 		"/__gofastr/sse?session=",
 	)
@@ -1178,23 +1179,32 @@ func TestDevServerSignalUpdatePushesIsland(t *testing.T) {
 func TestDevServerRouteGraphPreload(t *testing.T) {
 	ds := createTestHost()
 
-	// The page no longer inlines the route graph — it pulls /__gofastr/routes.js
-	// via a <script src> tag. Verify the script tag is present, then fetch the
-	// external JS body and assert on its contents.
+	// The route graph ships inline as <script type="application/json"
+	// id="gofastr-routes">. runtime.js parses it at boot. CSP-safe;
+	// no separate /__gofastr/routes.js round-trip.
 	pageReq := httptest.NewRequest("GET", "/", nil)
 	pageRec := httptest.NewRecorder()
 	ds.ServeHTTP(pageRec, pageReq)
-	if !strings.Contains(pageRec.Body.String(), `<script src="/__gofastr/routes.js"></script>`) {
-		t.Errorf("page should reference /__gofastr/routes.js")
+	body := pageRec.Body.String()
+	if !strings.Contains(body, `<script type="application/json" id="gofastr-routes">`) {
+		t.Errorf("page should embed inline route-graph JSON block; got:\n%s", body[:min(len(body), 800)])
 	}
-
-	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
-	jsRec := httptest.NewRecorder()
-	ds.ServeHTTP(jsRec, jsReq)
-	assertContainsAll(t, render.HTML(jsRec.Body.String()),
-		"window.__gofastr_routes",
+	for _, want := range []string{
 		`"preload":true`,
 		`"title":"Home"`,
 		`"title":"Products"`,
-	)
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing route-graph entry %q", want)
+		}
+	}
+
+	// The legacy endpoint surfaces as 410 GONE so any cached browser
+	// reference fails loudly instead of silently 404'ing.
+	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
+	jsRec := httptest.NewRecorder()
+	ds.ServeHTTP(jsRec, jsReq)
+	if jsRec.Code != 410 {
+		t.Errorf("/__gofastr/routes.js should be 410 GONE, got %d", jsRec.Code)
+	}
 }

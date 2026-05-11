@@ -141,30 +141,6 @@ func (ds *UIHost) ActiveTheme() style.Theme {
 	return ds.activeTheme()
 }
 
-// CatalogJS returns the body of /__gofastr/catalog.js — the
-// window.__gofastr_catalog seed the runtime reads on boot. Used by
-// the static-site builder to emit the same file SSG output expects.
-func (ds *UIHost) CatalogJS() string {
-	all := registry.All()
-	if len(all) == 0 {
-		return ""
-	}
-	theme := ds.activeTheme()
-	cat := make(map[string]map[string]any, len(all))
-	for _, e := range all {
-		cat[e.Name] = map[string]any{
-			"stylePath": "/__gofastr/comp/" + e.Name + ".css",
-			"version":   e.VersionFor(theme),
-			"loadMode":  loadModeString(e.Load),
-		}
-	}
-	buf, err := json.Marshal(cat)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("window.__gofastr_catalog = %s;\n", buf)
-}
-
 // ComponentCSSFiles returns one asset per registered component:
 // urlPath ("/__gofastr/comp/<name>.css") and the scoped CSS body
 // resolved under the active theme. Used by the static-site builder.
@@ -181,10 +157,16 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	return out
 }
 
-// RouteGraphJS returns the JS body that bootstraps window.__gofastr_routes.
-// Used by the static builder to write the same payload as a real .js file.
+// RouteGraphJS is deprecated and retained for compatibility with
+// callers that still expect a JS body for the route graph. The
+// route graph now ships inline as <script type="application/json"
+// id="gofastr-routes"> directly inside each SSR'd page, so no
+// external file needs to be written.
+//
+// Deprecated: returns the empty string. Use RenderStaticPage /
+// RenderPage output directly — the route graph is already inlined.
 func (ds *UIHost) RouteGraphJS() string {
-	return strings.TrimSpace(ds.buildRouteScript())
+	return ""
 }
 
 // RegisterSignal registers a signal with the devserver so the signal update
@@ -444,10 +426,14 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 			"</head>",
 			`<link rel="stylesheet" href="/__gofastr/styles.css">`+"\n</head>", 1)
 	}
-	if ds.buildRouteScript() != "" {
-		page = strings.Replace(page,
-			"</head>",
-			`<script src="/__gofastr/routes.js"></script>`+"\n</head>", 1)
+	// Route graph + component catalog ship as inline JSON in
+	// <script type="application/json"> blocks — the browser treats
+	// these as inert data (NOT scripts) so they pass under strict
+	// CSP (default-src 'self'). runtime.js reads + parses them on
+	// boot. Saves two HTTP requests per page load vs separate
+	// /__gofastr/{routes,catalog}.js files.
+	if routes := routesJSONScript(ds); routes != "" {
+		page = strings.Replace(page, "</head>", routes+"\n</head>", 1)
 	}
 
 	// Component CSS: scan the rendered page for data-fui-comp markers
@@ -458,11 +444,7 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 	if tags := ds.componentCSSTags(page, bundle); tags != "" {
 		page = strings.Replace(page, "</head>", tags+"\n</head>", 1)
 	}
-	// Inline the runtime catalog so the runtime has it without a
-	// round-trip. The catalog is small JSON, cache-busted via its own
-	// hash, and CSP-safe because it's a JSON-assignment script with
-	// no executable user data (only registered names/versions/modes).
-	if catalog := ds.catalogScript(); catalog != "" {
+	if catalog := catalogJSONScript(ds); catalog != "" {
 		page = strings.Replace(page, "</head>", catalog+"\n</head>", 1)
 	}
 
@@ -507,18 +489,13 @@ func (ds *UIHost) handleStylesCSS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ds.customCSS)
 }
 
-// handleRoutesJS serves the route-graph bootstrap as an external JS file.
-// The body is a normal assignment to window.__gofastr_routes; the
-// runtime reads it on load. Never inlined — strict CSP would block it.
+// handleRoutesJS is retained as a 410 GONE so any stale browser
+// reference to /__gofastr/routes.js surfaces clearly instead of
+// silently 404'ing alongside other static assets. The route graph
+// now ships inline as a <script type="application/json"> block
+// inside the SSR'd page.
 func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
-	body := strings.TrimSpace(ds.buildRouteScript())
-	if body == "" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, body)
+	http.Error(w, "/__gofastr/routes.js was removed — routes ship inline as JSON in the page", http.StatusGone)
 }
 
 // handlePartialPage returns just the screen content for client-side navigation.
@@ -964,16 +941,67 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 		joined, bundleV, joined)
 }
 
-// catalogScript returns the <script src=…> tag pointing at the
-// catalog JS file. The runtime reads window.__gofastr_catalog from
-// that file on first load. Empty when no components are registered.
-// Served as JS (not inline JSON-as-script) so it works under a
-// strict CSP that forbids inline script.
-func (ds *UIHost) catalogScript() string {
-	if len(registry.All()) == 0 {
+// catalogJSONScript returns the inline JSON block embedding the
+// component catalog into the SSR'd page. The browser parses it as
+// inert data because of type="application/json" — no JS execution,
+// so strict CSP (default-src 'self') is happy.
+//
+// runtime.js reads it on boot:
+//   const el = document.getElementById('gofastr-catalog');
+//   if (el) window.__gofastr_catalog = JSON.parse(el.textContent);
+func catalogJSONScript(ds *UIHost) string {
+	all := registry.All()
+	if len(all) == 0 {
 		return ""
 	}
-	return `<script src="/__gofastr/catalog.js"></script>`
+	theme := ds.activeTheme()
+	cat := make(map[string]map[string]any, len(all))
+	for _, e := range all {
+		cat[e.Name] = map[string]any{
+			"stylePath": "/__gofastr/comp/" + e.Name + ".css",
+			"version":   e.VersionFor(theme),
+			"loadMode":  loadModeString(e.Load),
+		}
+	}
+	buf, err := json.Marshal(cat)
+	if err != nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-catalog">` +
+		escapeJSONForScript(buf) +
+		`</script>`
+}
+
+// routesJSONScript embeds the route graph as inert JSON. Same model
+// as catalogJSONScript. Returns "" when no routes are registered
+// (e.g. a host used standalone in tests without a real app).
+func routesJSONScript(ds *UIHost) string {
+	body := strings.TrimSpace(ds.buildRouteScript())
+	if body == "" {
+		return ""
+	}
+	// buildRouteScript returns `window.__gofastr_routes = <JSON>;`.
+	// Strip the wrapper to get just the JSON payload.
+	body = strings.TrimPrefix(body, "window.__gofastr_routes =")
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, ";")
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-routes">` +
+		escapeJSONForScript([]byte(body)) +
+		`</script>`
+}
+
+// escapeJSONForScript escapes the one HTML sequence that can
+// prematurely terminate an inline <script>…</script> block: the
+// closing `</` characters. JSON itself never produces `</` (no
+// language feature emits it), but URL strings in the payload might
+// (e.g. a path like `/foo</bar` — exotic, but defending against it
+// is cheap).
+func escapeJSONForScript(buf []byte) string {
+	return strings.ReplaceAll(string(buf), "</", `<\/`)
 }
 
 // validNameRe restricts component names accepted by the comp CSS
@@ -1063,30 +1091,13 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleCatalogJS serves the inlined-script form of the component
-// catalog: window.__gofastr_catalog = {name: {stylePath, version,
-// loadMode}}. The runtime reads this on first load. Served as JS
-// (not JSON) so it can be referenced via <script src=…> under a
-// strict CSP that forbids inline script and inline JSON-as-script.
+// handleCatalogJS is retained as a 410 GONE so any stale browser
+// reference to /__gofastr/catalog.js surfaces clearly instead of
+// silently 404'ing alongside other static assets. The catalog now
+// ships inline as a <script type="application/json"> block inside
+// the SSR'd page.
 func (ds *UIHost) handleCatalogJS(w http.ResponseWriter, r *http.Request) {
-	all := registry.All()
-	theme := ds.activeTheme()
-	cat := make(map[string]map[string]any, len(all))
-	for _, e := range all {
-		cat[e.Name] = map[string]any{
-			"stylePath": "/__gofastr/comp/" + e.Name + ".css",
-			"version":   e.VersionFor(theme),
-			"loadMode":  loadModeString(e.Load),
-		}
-	}
-	buf, err := json.Marshal(cat)
-	if err != nil {
-		http.Error(w, "catalog encode error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprintf(w, "window.__gofastr_catalog = %s;\n", buf)
+	http.Error(w, "/__gofastr/catalog.js was removed — catalog ships inline as JSON in the page", http.StatusGone)
 }
 
 // activeTheme returns the configured theme or the default if unset.

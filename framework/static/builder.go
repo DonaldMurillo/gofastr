@@ -86,16 +86,12 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if css := b.Host.CustomCSS(); css != "" {
 		assets = append(assets, asset{urlPath: "/__gofastr/styles.css", body: []byte(css)})
 	}
-	if rg := b.Host.RouteGraphJS(); rg != "" {
-		assets = append(assets, asset{urlPath: "/__gofastr/routes.js", body: []byte(rg)})
-	}
-	// Component catalog + per-component scoped sheets. The rendered
-	// HTML references /__gofastr/comp/<name>.css for each registered
-	// component (static export sets bundle=false so the rendered HTML
-	// never references the dynamic comp-bundle.css?names=… URL).
-	if cat := b.Host.CatalogJS(); cat != "" {
-		assets = append(assets, asset{urlPath: "/__gofastr/catalog.js", body: []byte(cat)})
-	}
+	// Route graph + component catalog ship INLINE in each rendered
+	// HTML page as <script type="application/json"> blocks. No
+	// separate .js files are emitted — the SSG output is fully
+	// self-contained per page, no extra round-trips required.
+	// Per-component CSS still ships as standalone files because the
+	// runtime fetches them on demand.
 	for url, css := range b.Host.ComponentCSSFiles() {
 		assets = append(assets, asset{urlPath: url, body: []byte(css)})
 	}

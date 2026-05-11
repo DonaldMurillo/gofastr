@@ -51,20 +51,7 @@ func TestSSGEmitsCatalogAndPerComponentCSS(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	// 1. catalog.js exists and seeds window.__gofastr_catalog.
-	catalogPath := filepath.Join(out, "__gofastr", "catalog.js")
-	catBody, err := os.ReadFile(catalogPath)
-	if err != nil {
-		t.Fatalf("catalog.js missing: %v", err)
-	}
-	if !strings.Contains(string(catBody), "window.__gofastr_catalog") {
-		t.Errorf("catalog.js must define window.__gofastr_catalog: %s", catBody)
-	}
-	if !strings.Contains(string(catBody), `"`+name+`"`) {
-		t.Errorf("catalog.js must include %q: %s", name, catBody)
-	}
-
-	// 2. /__gofastr/comp/<name>.css exists with scoped content.
+	// 1. /__gofastr/comp/<name>.css exists with scoped content.
 	cssPath := filepath.Join(out, "__gofastr", "comp", name+".css")
 	cssBody, err := os.ReadFile(cssPath)
 	if err != nil {
@@ -75,21 +62,38 @@ func TestSSGEmitsCatalogAndPerComponentCSS(t *testing.T) {
 		t.Errorf("comp CSS not scoped: %s", cssBody)
 	}
 
-	// 3. Rendered HTML references the per-component file directly,
-	//    NOT the dynamic comp-bundle.css?names=… URL (static hosts
-	//    don't serve query-paramed files).
+	// 2. Rendered HTML embeds the catalog inline as JSON (no separate
+	//    catalog.js file gets written anymore — the SSG output is
+	//    fully self-contained per page).
 	indexPath := filepath.Join(out, "index.html")
 	idx, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("index.html: %v", err)
 	}
+	if !strings.Contains(string(idx), `<script type="application/json" id="gofastr-catalog">`) {
+		t.Errorf("index.html missing inline catalog JSON block: %s", idx)
+	}
+	if !strings.Contains(string(idx), `"`+name+`"`) {
+		t.Errorf("inline catalog must include %q: %s", name, idx)
+	}
+
+	// 3. No separate catalog.js / routes.js file written.
+	for _, gone := range []string{
+		filepath.Join(out, "__gofastr", "catalog.js"),
+		filepath.Join(out, "__gofastr", "routes.js"),
+	} {
+		if _, err := os.Stat(gone); err == nil {
+			t.Errorf("SSG should not emit %s — data is inlined in the page now", gone)
+		}
+	}
+
+	// 4. Rendered HTML still references the per-component file directly
+	//    (NOT the dynamic comp-bundle.css?names=… URL — static hosts
+	//    don't serve query-paramed files).
 	if strings.Contains(string(idx), "/__gofastr/comp-bundle.css") {
 		t.Error("SSG output must not reference the bundle endpoint (query-paramed URLs don't serve from static hosts)")
 	}
 	if !strings.Contains(string(idx), "/__gofastr/comp/"+name+".css") {
 		t.Errorf("index.html missing direct <link> to comp/%s.css: %s", name, idx)
-	}
-	if !strings.Contains(string(idx), `<script src="/__gofastr/catalog.js"></script>`) {
-		t.Errorf("index.html missing catalog.js script: %s", idx)
 	}
 }

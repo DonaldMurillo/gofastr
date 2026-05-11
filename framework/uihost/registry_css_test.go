@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -130,24 +131,25 @@ func TestComponentCSS_BundleConcatenates(t *testing.T) {
 	}
 }
 
-func TestComponentCSS_CatalogJSContainsRegisteredEntries(t *testing.T) {
+func TestComponentCSS_CatalogShipsInlineJSON(t *testing.T) {
 	st := registerTestStyle(t, "cat")
 	ds := newTestUIHostFor(st)
+	body := pageBody(t, ds, "/")
+	if !strings.Contains(body, `<script type="application/json" id="gofastr-catalog">`) {
+		t.Error("page must embed an inline JSON catalog block")
+	}
+	if !strings.Contains(body, `"`+st.Name()+`"`) {
+		t.Errorf("inline catalog must include %q: %s", st.Name(), truncate(body, 800))
+	}
+	if !strings.Contains(body, `"loadMode":"auto"`) {
+		t.Errorf("default loadMode should be auto: %s", truncate(body, 800))
+	}
+	// Old endpoint must be gone (410 GONE for compat with stale browsers).
 	req := httptest.NewRequest("GET", "/__gofastr/catalog.js", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("status=%d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "window.__gofastr_catalog =") {
-		t.Error("catalog.js must define window.__gofastr_catalog")
-	}
-	if !strings.Contains(body, `"`+st.Name()+`"`) {
-		t.Errorf("catalog must include %q: %s", st.Name(), body)
-	}
-	if !strings.Contains(body, `"loadMode":"auto"`) {
-		t.Errorf("default loadMode should be auto: %s", body)
+	if w.Code != http.StatusGone {
+		t.Errorf("catalog.js endpoint should be 410 GONE, got %d", w.Code)
 	}
 }
 
@@ -224,12 +226,18 @@ func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
 	}
 }
 
-func TestComponentCSS_PageLinksCatalogScript(t *testing.T) {
+func TestComponentCSS_PageEmbedsInlineCatalogJSON(t *testing.T) {
 	st := registerTestStyle(t, "pglink")
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
-	if !strings.Contains(body, `<script src="/__gofastr/catalog.js"></script>`) {
-		t.Error("page must include catalog.js script")
+	want := `<script type="application/json" id="gofastr-catalog">`
+	if !strings.Contains(body, want) {
+		t.Errorf("page must embed inline catalog JSON block %q:\n%s", want, truncate(body, 800))
+	}
+	// The page must NOT reference the legacy external catalog.js
+	// (CSP-blocked + extra round-trip).
+	if strings.Contains(body, `src="/__gofastr/catalog.js"`) {
+		t.Error("page must NOT reference the legacy /__gofastr/catalog.js external file")
 	}
 }
 
