@@ -14,14 +14,19 @@ func (s *SkeletonScreen) ScreenDescription() string  { return "Pure-CSS shimmer 
 func (s *SkeletonScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *SkeletonScreen) Render() render.HTML {
+	// CSP-strict environments forbid inline style="…" attributes, so
+	// the demo sticks to defaults. Hosts that need arbitrary
+	// Width/Height can still set them; the skeleton package emits
+	// them as inline style which works under permissive CSP. See
+	// core-ui/ARCHITECTURE.md for the strict-CSP contract.
 	multiline := skeleton.New(skeleton.Config{Variant: skeleton.Line, Count: 4})
-	block := skeleton.New(skeleton.Config{Variant: skeleton.Block, Width: "100%", Height: "120px"})
-	circle := skeleton.New(skeleton.Config{Variant: skeleton.Circle, Width: "3rem"})
+	block := skeleton.New(skeleton.Config{Variant: skeleton.Block})
+	circle := skeleton.New(skeleton.Config{Variant: skeleton.Circle})
 
 	avatarRow := render.Tag("div", map[string]string{"class": "demo-row-tight"},
 		circle,
 		render.Tag("div", map[string]string{"class": "demo-flex-1"},
-			skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "40%"}),
+			skeleton.New(skeleton.Config{Variant: skeleton.Line}),
 		),
 	)
 

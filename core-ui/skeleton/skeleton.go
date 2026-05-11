@@ -7,6 +7,13 @@
 // All variants are visually-only: aria-hidden="true" so screen readers
 // skip them and assistive tech announces the surrounding container's
 // loading state instead.
+//
+// CSP note: when Width or Height is set on Config, the resulting HTML
+// carries a `style="inline-size:…;block-size:…"` attribute which a
+// strict CSP (`default-src 'self'` without `style-src 'unsafe-inline'`)
+// will block. For strict-CSP hosts, leave Width/Height empty (use the
+// CSS defaults) or pass a custom Class and define the size in your
+// stylesheet.
 package skeleton
 
 import (
@@ -61,15 +68,15 @@ func New(cfg Config) render.HTML {
 	}
 	children := make([]render.HTML, count)
 	for i := 0; i < count; i++ {
-		// Last line is shorter (visually mimics a paragraph).
-		w := cfg.Width
-		if w == "" && i == count-1 {
-			w = "65%"
-		}
 		c := cfg
 		c.Class = ""
 		c.ID = ""
-		c.Width = w
+		// Last line gets a "is-short" modifier class; CSS shrinks
+		// it to 65% via a stylesheet rule rather than inline style
+		// (strict-CSP environments block style="…" attributes).
+		if i == count-1 && cfg.Width == "" {
+			c.Class = "skeleton-line--short"
+		}
 		children[i] = shape(v, c)
 	}
 	return render.Tag("div", wrapAttrs, children...)
@@ -95,24 +102,31 @@ func shape(v Variant, cfg Config) render.HTML {
 }
 
 func skeletonStyle(v Variant, w, h string) string {
+	// Only emit inline style when the caller passed an explicit
+	// dimension. Defaults come from CSS (.skeleton-line, -block,
+	// -circle) so strict-CSP hosts that pass no Width/Height stay
+	// clean. Circle treats the larger of w/h as the side length.
 	var parts []string
-	if w != "" {
-		parts = append(parts, fmt.Sprintf("inline-size:%s", w))
-	}
-	if h != "" {
-		parts = append(parts, fmt.Sprintf("block-size:%s", h))
-	}
 	if v == Circle {
-		side := "2.5rem"
+		side := ""
 		if w != "" {
 			side = w
 		}
 		if h != "" {
 			side = h
 		}
-		parts = []string{
-			fmt.Sprintf("inline-size:%s", side),
-			fmt.Sprintf("block-size:%s", side),
+		if side != "" {
+			parts = []string{
+				fmt.Sprintf("inline-size:%s", side),
+				fmt.Sprintf("block-size:%s", side),
+			}
+		}
+	} else {
+		if w != "" {
+			parts = append(parts, fmt.Sprintf("inline-size:%s", w))
+		}
+		if h != "" {
+			parts = append(parts, fmt.Sprintf("block-size:%s", h))
 		}
 	}
 	return strings.Join(parts, ";")
@@ -151,6 +165,11 @@ func BaseCSS() string {
 .skeleton-stack {
   display: grid;
   gap: var(--spacing-sm, 4px);
+}
+.skeleton-line--short {
+  /* Shorter last line in a multi-line stack — replaces a previous
+     inline style="inline-size:65%" so strict CSP stays clean. */
+  inline-size: 65%;
 }
 @keyframes skeleton-shimmer {
   0%   { background-position: 200% 0; }

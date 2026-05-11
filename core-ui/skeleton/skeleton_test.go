@@ -42,16 +42,24 @@ func TestCountRendersStack(t *testing.T) {
 	if !strings.Contains(h, "skeleton-stack") {
 		t.Errorf("expected skeleton-stack, got: %s", h)
 	}
-	if strings.Count(h, "skeleton-line") != 3 {
-		t.Errorf("expected 3 skeleton-line, got %d in: %s",
-			strings.Count(h, "skeleton-line"), h)
+	// Count distinct <div> elements (each starts with `<div`) — the
+	// .skeleton-line--short modifier on the last line makes a naive
+	// substring count of "skeleton-line" double-match it.
+	if strings.Count(h, "<div") != 4 { // 1 wrapper + 3 lines
+		t.Errorf("expected wrapper + 3 lines, got %d <div in: %s",
+			strings.Count(h, "<div"), h)
 	}
 }
 
 func TestStackLastLineShortened(t *testing.T) {
+	// The shortened last line is now driven by a CSS class so strict
+	// CSP environments stay clean (no inline style="…" attribute).
 	h := string(New(Config{Count: 3}))
-	if !strings.Contains(h, "inline-size:65%") {
-		t.Errorf("expected last line to default to 65%% width, got: %s", h)
+	if !strings.Contains(h, "skeleton-line--short") {
+		t.Errorf("expected last line to carry skeleton-line--short, got: %s", h)
+	}
+	if strings.Contains(h, "inline-size:65%") {
+		t.Errorf("last line should NOT use inline style — see CSS .skeleton-line--short")
 	}
 }
 
