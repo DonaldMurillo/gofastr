@@ -12,18 +12,29 @@ advertises against both SQLite and Postgres.
 | 2    | Hot-path microbenchmarks (router lookup, middleware chain, JSON casing, DSL parse) | No  |
 | 3    | Concurrency & background (event bus fan-out, SSE drop rate, cron tick) | No  |
 | 4    | Startup & infra (AutoMigrate idempotent, schema diff, in-memory search) | Both (search is in-memory) |
+| 5    | TechEmpower-style endpoints (Plaintext, JSON, SingleQuery, MultiQuery, Fortunes-like, Updates) | Both |
+| 6    | Latency percentiles + concurrency (p50/p90/p99/p999 at parallelism 1/8/64) | Both |
+| 7    | Stdlib baselines (`net/http` + `database/sql` paired with framework equivalents) | Both |
+| 8    | Operational (cold start, sustained heap, goroutine leak check) | SQLite |
 
 ## Running
 
 ```bash
-make bench           # everything, BENCHTIME=1s BENCH_COUNT=3
-make bench-tier1     # just Tier 1 (the claims)
-make bench-tier2     # just Tier 2
-make bench-tier3     # just Tier 3
-make bench-tier4     # just Tier 4
+make bench               # everything, BENCHTIME=1s BENCH_COUNT=3
+make bench-tier1         # claims-defending end-to-end
+make bench-tier2         # hot-path microbenchmarks
+make bench-tier3         # concurrency & background
+make bench-tier4         # startup & infra
+make bench-tier5         # TechEmpower-style endpoints
+make bench-tier6         # latency percentiles + concurrency
+make bench-tier7         # stdlib baselines
+make bench-tier8         # operational (cold start, heap, goroutines)
 
-make bench-sqlite    # everything, skipping Postgres sub-benchmarks
-make bench-pg        # only the /postgres/ sub-benchmarks
+make bench-techempower   # alias for tier 5
+make bench-overhead      # alias for tier 7 (framework vs hand-rolled)
+
+make bench-sqlite        # everything, BENCH_SKIP_PG=1
+make bench-pg            # only the /postgres/ sub-benchmarks
 ```
 
 Tunable via env:
@@ -120,6 +131,86 @@ overhead but does not show the bounded-memory advantage. Worth fixing.
   lookup. Acceptable as a one-shot CLI command, not as a hot path.
 - **In-memory search** — confirms O(corpus) scan. 10k docs ≈ 3ms per
   query is fine for tests/demos; production needs a real backend.
+
+## Tier 5 — TechEmpower-style endpoints
+
+The six canonical comparable workloads. Numbers here can be cross-
+referenced with the published TechEmpower Framework Benchmarks
+(techempower.com/benchmarks) to see roughly where GoFastr sits next to
+Gin/Echo/Fiber/Actix/etc.
+
+| Bench               | Workload                                            |
+|---------------------|-----------------------------------------------------|
+| `Plaintext`         | Return `Hello, World!`. Pure routing + write cost. |
+| `Plaintext_WithDefaults` | Same, through default middleware chain.       |
+| `JSON`              | Encode `{"message":"Hello, World!"}`.              |
+| `SingleQuery`       | `GET /worlds/{id}` — one row by PK.                |
+| `MultiQuery`        | Same, N times per request (1/5/10/20).             |
+| `FortunesLike`      | List a small full table — closest API analogue.    |
+| `Updates`           | GET-modify-PUT N rows (1/5/10/20).                 |
+
+Throughput in req/s = `1e9 / ns_per_op`. Compare with caution: the
+TechEmpower harness uses real network listeners + multiple client
+connections, while these run through `httptest`'s in-memory `ResponseRecorder`,
+which is faster than the wire. The relative shape (Plaintext > JSON >
+SingleQuery > MultiQuery > Updates) holds; absolute numbers don't
+translate one-to-one.
+
+## Tier 6 — latency percentiles + concurrency
+
+`BenchmarkT6_*` benchmarks record per-operation latencies and emit
+`p50_ns`, `p90_ns`, `p99_ns`, `p999_ns`, and `max_ns` via
+`b.ReportMetric`. Mean ns/op hides the tail; the percentiles surface it.
+
+Parallelism is exercised via `b.RunParallel` + `b.SetParallelism(N)`,
+where N is the multiplier over `GOMAXPROCS`. So `parallelism=8` on an
+8-core machine gives 64 worker goroutines.
+
+What to look for:
+
+- **p99 ÷ p50 ratio** — under load, anything above 3× means significant
+  tail growth. SQLite write-heavy workloads will hit this immediately
+  because writes serialise.
+- **List concurrency slope** — read-only list endpoints should scale
+  near-linearly on Postgres (no write lock) but stay flat (or get worse)
+  on SQLite (single connection).
+- **Mixed RW reads vs writes ratio** — should match the 9:1 mix the
+  benchmark drives. If reads drastically outnumber that, writes are
+  starving on the lock.
+
+## Tier 7 — stdlib baselines (the overhead tax)
+
+Hand-rolled `net/http` + `database/sql` implementations of plaintext,
+JSON, single-query, and filtered list endpoints — paired with the same
+endpoints expressed through the framework. The delta is what the
+declare-once surface actually costs.
+
+What to look for:
+
+- **Plaintext + JSON deltas should be in the 5-15% range.** These paths
+  go through the router and not much else; bigger overhead suggests
+  router work that should be inlined.
+- **SingleQuery delta exposes the entity + CRUD machinery.** Expect 20-
+  30% overhead from filter parsing, case conversion, projection logic.
+- **FilteredList delta is the worst case** (allocations dominate).
+  This is the hottest optimization target.
+
+## Tier 8 — operational
+
+- **`ColdStart_*`** — time from `NewApp` through first request served.
+  Reported as ns/op; with `benchtime=1x` that's effectively the cold-
+  start latency for a single binary instance.
+- **`HeapAfterLoad`** — drives 5000 list requests, then reads
+  `runtime.MemStats`. Reports `heap_alloc_bytes` (live heap),
+  `heap_objects`, `mallocs`, `frees`, `gc_pause_total_ms`, `gc_cycles`.
+  A regression in live heap means we're retaining state across
+  requests; a regression in pause time means GC pressure grew.
+- **`GoroutinesAfterLoad`** — sanity check for goroutine leaks.
+  `gor_delta` should always be 0 (or very small).
+
+The Tier 8 benchmarks deliberately use `-benchtime=1x` because they're
+property assertions, not iteration timings. Reading per-run values is
+the point.
 
 ## Adding a benchmark
 

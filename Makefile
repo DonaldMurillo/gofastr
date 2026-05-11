@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-techempower bench-overhead lint generate dev clean security security-full hooks install
 
 # ---- Build ----
 #
@@ -117,6 +117,35 @@ bench-tier4: $(BENCH_OUT)
 	go test -run=^$$ -bench='BenchmarkAutoMigrate|BenchmarkSchemaDiff|BenchmarkMemory' \
 		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
 		./framework/ ./battery/search/ | tee $(BENCH_OUT)/tier4.txt
+
+# Tier 5 — TechEmpower-style endpoints (Plaintext, JSON, SingleQuery,
+# MultiQuery, Fortunes-like, Updates). Numbers here are cross-comparable
+# with the published TechEmpower Framework Benchmarks.
+bench-tier5: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT5 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier5.txt
+
+# Tier 6 — Latency percentiles + concurrency. Reports p50/p90/p99/p999_ns
+# per concurrency level via b.ReportMetric.
+bench-tier6: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT6 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier6.txt
+
+# Tier 7 — Stdlib baselines (net/http + database/sql) paired with the
+# framework equivalents. The delta is the framework's overhead tax.
+bench-tier7: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT7 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier7.txt
+
+# Tier 8 — Operational (cold start, sustained memory, goroutine leaks).
+# Use benchtime=1x for property-style metrics.
+bench-tier8: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT8 -benchmem -benchtime=1x \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier8.txt
+
+# Convenience aliases for the comparable-to-industry slices.
+bench-techempower: bench-tier5
+bench-overhead: bench-tier7
 
 lint:
 	golangci-lint run ./...

@@ -27,6 +27,11 @@ func openBenchDB(b *testing.B, dialect Dialect) *sql.DB {
 		if err != nil {
 			b.Fatalf("open sqlite: %v", err)
 		}
+		// In-memory SQLite without shared cache gives each connection its own
+		// private database. Cap to a single connection so concurrent
+		// benchmarks see one consistent DB (and serialise on writes the way
+		// SQLite does in practice anyway).
+		db.SetMaxOpenConns(1)
 		if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 			b.Fatalf("pragma fk: %v", err)
 		}
