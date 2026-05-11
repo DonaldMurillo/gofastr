@@ -11,6 +11,7 @@ import (
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // doCreate runs the BeforeCreate → INSERT → AfterCreate chain for a single
@@ -62,7 +63,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Entity.Config.MultiTenant {
-		if tenantID := GetTenantID(ctx); tenantID != "" {
+		if tenantID := tenant.GetTenantID(ctx); tenantID != "" {
 			cols = append(cols, "tenant_id")
 			vals = append(vals, tenantID)
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/stream"
 	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // eventPayloadEntity is the map key under which CRUD events stamp the entity
@@ -31,7 +32,7 @@ func (ch *CrudHandler) emitEvent(ctx context.Context, eventType string, record a
 		eventKeyRecord: record,
 	}
 	if ch.Entity.Config.MultiTenant {
-		if tid := GetTenantID(ctx); tid != "" {
+		if tid := tenant.GetTenantID(ctx); tid != "" {
 			data[eventKeyTenantID] = tid
 		}
 	}
@@ -63,7 +64,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 
 		entityName := ch.Entity.GetName()
 		tenantScope := ch.Entity.Config.MultiTenant
-		tenantID := GetTenantID(r.Context())
+		tenantID := tenant.GetTenantID(r.Context())
 
 		buf := make(chan event.Event, 32)
 

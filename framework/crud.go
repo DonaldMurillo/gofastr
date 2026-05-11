@@ -20,6 +20,7 @@ import (
 	"github.com/gofastr/gofastr/framework/filter"
 	"github.com/gofastr/gofastr/framework/hook"
 	"github.com/gofastr/gofastr/framework/internal/casing"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
@@ -70,7 +71,7 @@ type ListResponse struct {
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) applyTenantScope(qb *query.QueryBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(r.Context())
+		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			qb.Where("tenant_id = $1", tenantID)
 		}
@@ -81,7 +82,7 @@ func (ch *CrudHandler) applyTenantScope(qb *query.QueryBuilder, r *http.Request)
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) applyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(r.Context())
+		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			cb.Where("tenant_id = $1", tenantID)
 		}
@@ -92,7 +93,7 @@ func (ch *CrudHandler) applyTenantScopeCount(cb *query.CountBuilder, r *http.Req
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) applyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(r.Context())
+		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			ub.Where("tenant_id = $1", tenantID)
 		}
@@ -103,7 +104,7 @@ func (ch *CrudHandler) applyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.R
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(r.Context())
+		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
 			db.Where("tenant_id = $1", tenantID)
 		}
@@ -115,7 +116,7 @@ func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.R
 // outside or inside an in-tx context derived from the request.
 func (ch *CrudHandler) injectTenant(data map[string]any, ctx context.Context) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(ctx)
+		tenantID := tenant.GetTenantID(ctx)
 		if tenantID != "" {
 			data["tenant_id"] = tenantID
 		}

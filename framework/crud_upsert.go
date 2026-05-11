@@ -10,6 +10,7 @@ import (
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
@@ -73,7 +74,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			vals = append(vals, val)
 		}
 		if ch.Entity.Config.MultiTenant {
-			if tid := GetTenantID(ctx); tid != "" {
+			if tid := tenant.GetTenantID(ctx); tid != "" {
 				cols = append(cols, "tenant_id")
 				vals = append(vals, tid)
 			}

@@ -8,6 +8,7 @@ import (
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 func upsertApp(t *testing.T, db *sql.DB) (*App, *CrudHandler) {
@@ -177,7 +178,7 @@ func TestUpsert_InjectsTenantID(t *testing.T) {
 		ch := NewCrudHandler(ent, db)
 		ch.Hooks = app.HookRegistry("posts")
 
-		ctx := SetTenantID(context.Background(), "tenant-a")
+		ctx := tenant.SetTenantID(context.Background(), "tenant-a")
 		got, err := ch.UpsertOne(ctx, map[string]any{"id": "p1", "title": "scoped"})
 		if err != nil {
 			t.Fatalf("upsert: %v", err)

@@ -16,6 +16,7 @@ import (
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // ============================================================================
@@ -24,12 +25,12 @@ import (
 
 func TestCrudApplyTenantScope_QueryBuilder(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{})
-	WithMultiTenant(ent, DefaultTenantConfig())
+	tenant.WithMultiTenant(ent, tenant.DefaultTenantConfig())
 
 	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
-	req = req.WithContext(SetTenantID(context.Background(), "tenant-123"))
+	req = req.WithContext(tenant.SetTenantID(context.Background(), "tenant-123"))
 
 	qb := query.Select("*").From("posts")
 	ch.applyTenantScope(qb, req)
@@ -56,7 +57,7 @@ func TestCrudApplyTenantScope_NotMultiTenant(t *testing.T) {
 	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
-	req = req.WithContext(SetTenantID(context.Background(), "tenant-123"))
+	req = req.WithContext(tenant.SetTenantID(context.Background(), "tenant-123"))
 
 	qb := query.Select("*").From("posts")
 	ch.applyTenantScope(qb, req)
@@ -72,7 +73,7 @@ func TestCrudApplyTenantScope_NotMultiTenant(t *testing.T) {
 
 func TestCrudApplyTenantScope_EmptyTenantID(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{})
-	WithMultiTenant(ent, DefaultTenantConfig())
+	tenant.WithMultiTenant(ent, tenant.DefaultTenantConfig())
 
 	ch := &CrudHandler{Entity: ent}
 
@@ -93,12 +94,12 @@ func TestCrudApplyTenantScope_EmptyTenantID(t *testing.T) {
 
 func TestCrudInjectTenant(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{})
-	WithMultiTenant(ent, DefaultTenantConfig())
+	tenant.WithMultiTenant(ent, tenant.DefaultTenantConfig())
 
 	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("POST", "/posts", nil)
-	req = req.WithContext(SetTenantID(context.Background(), "tenant-abc"))
+	req = req.WithContext(tenant.SetTenantID(context.Background(), "tenant-abc"))
 
 	data := map[string]any{"title": "Hello"}
 	ch.injectTenant(data, req.Context())
@@ -114,7 +115,7 @@ func TestCrudInjectTenant_NotMultiTenant(t *testing.T) {
 	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("POST", "/posts", nil)
-	req = req.WithContext(SetTenantID(context.Background(), "tenant-abc"))
+	req = req.WithContext(tenant.SetTenantID(context.Background(), "tenant-abc"))
 
 	data := map[string]any{"title": "Hello"}
 	ch.injectTenant(data, req.Context())
@@ -126,12 +127,12 @@ func TestCrudInjectTenant_NotMultiTenant(t *testing.T) {
 
 func TestCrudApplyTenantScopeCount(t *testing.T) {
 	ent := entity.Define("posts", entity.EntityConfig{})
-	WithMultiTenant(ent, DefaultTenantConfig())
+	tenant.WithMultiTenant(ent, tenant.DefaultTenantConfig())
 
 	ch := &CrudHandler{Entity: ent}
 
 	req := httptest.NewRequest("GET", "/posts", nil)
-	req = req.WithContext(SetTenantID(context.Background(), "tenant-xyz"))
+	req = req.WithContext(tenant.SetTenantID(context.Background(), "tenant-xyz"))
 
 	cb := query.Count("posts")
 	ch.applyTenantScopeCount(cb, req)
@@ -840,12 +841,12 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 				{Name: "author_id", Type: schema.String},
 			},
 		})
-		WithMultiTenant(ent, DefaultTenantConfig())
+		tenant.WithMultiTenant(ent, tenant.DefaultTenantConfig())
 		app.Registry.Register(ent)
 
 		// Apply tenant middleware BEFORE registering routes
 		// (Router.wrap bakes in middleware at registration time)
-		app.Router.Use(TenantMiddleware("X-Tenant-ID"))
+		app.Router.Use(tenant.TenantMiddleware("X-Tenant-ID"))
 
 		crud := NewCrudHandler(ent, db)
 		RegisterCrudRoutes(app.Router, crud, "/posts")

@@ -17,6 +17,7 @@ import (
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 func seedEventsDB(t *testing.T, db *sql.DB) {
@@ -244,7 +245,7 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Use(TenantMiddleware("X-Tenant-ID"))
+		app.Use(tenant.TenantMiddleware("X-Tenant-ID"))
 		app.Entity("posts", entity.EntityConfig{
 			Table:       "posts",
 			MultiTenant: true,

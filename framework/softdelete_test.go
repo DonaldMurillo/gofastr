@@ -13,6 +13,8 @@ import (
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/file"
+	"github.com/gofastr/gofastr/framework/softdelete"
+	"github.com/gofastr/gofastr/framework/tenant"
 )
 
 // --- Soft Delete Tests ---
@@ -28,7 +30,7 @@ func TestSoftDelete(t *testing.T) {
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = SoftDelete(context.Background(), db, "posts", "123")
+	err = softdelete.SoftDelete(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("SoftDelete returned error: %v", err)
 	}
@@ -49,7 +51,7 @@ func TestSoftRestore(t *testing.T) {
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = Restore(context.Background(), db, "posts", "123")
+	err = softdelete.Restore(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("Restore returned error: %v", err)
 	}
@@ -70,7 +72,7 @@ func TestSoftForceDelete(t *testing.T) {
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = ForceDelete(context.Background(), db, "posts", "123")
+	err = softdelete.ForceDelete(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("ForceDelete returned error: %v", err)
 	}
@@ -82,7 +84,7 @@ func TestSoftForceDelete(t *testing.T) {
 
 func TestSoftDeleteFilterExcludes(t *testing.T) {
 	qb := query.Select("*").From("posts")
-	ApplySoftDeleteFilter(qb, false)
+	softdelete.ApplySoftDeleteFilter(qb, false)
 	sqlStr, _ := qb.Build()
 
 	if !strings.Contains(sqlStr, "deleted_at IS NULL") {
@@ -93,7 +95,7 @@ func TestSoftDeleteFilterExcludes(t *testing.T) {
 func TestSoftDeleteWithTrashed(t *testing.T) {
 	// When showTrashed is true, no filter should be added
 	qb := query.Select("*").From("posts")
-	ApplySoftDeleteFilter(qb, true)
+	softdelete.ApplySoftDeleteFilter(qb, true)
 	sqlStr, _ := qb.Build()
 
 	if strings.Contains(sqlStr, "deleted_at") {
@@ -102,12 +104,12 @@ func TestSoftDeleteWithTrashed(t *testing.T) {
 
 	// Test WithTrashed helper with query param
 	r := httptest.NewRequest("GET", "/posts?trashed=true", nil)
-	if !WithTrashed(r) {
+	if !softdelete.WithTrashed(r) {
 		t.Error("expected WithTrashed=true when ?trashed=true")
 	}
 
 	r2 := httptest.NewRequest("GET", "/posts", nil)
-	if WithTrashed(r2) {
+	if softdelete.WithTrashed(r2) {
 		t.Error("expected WithTrashed=false when no trashed param")
 	}
 }
@@ -117,7 +119,7 @@ func TestSoftDeleteWithSoftDeleteConfig(t *testing.T) {
 	if ent.Config.SoftDelete {
 		t.Error("expected SoftDelete=false by default")
 	}
-	WithSoftDelete(ent)
+	softdelete.WithSoftDelete(ent)
 	if !ent.Config.SoftDelete {
 		t.Error("expected SoftDelete=true after WithSoftDelete")
 	}
@@ -127,7 +129,7 @@ func TestSoftDeleteWithSoftDeleteConfig(t *testing.T) {
 
 func TestTenantFilter(t *testing.T) {
 	qb := query.Select("*").From("posts")
-	ApplyTenantFilter(qb, "tenant-abc123")
+	tenant.ApplyTenantFilter(qb, "tenant-abc123")
 	sqlStr, args := qb.Build()
 
 	if !strings.Contains(sqlStr, "tenant_id = $") {
@@ -147,7 +149,7 @@ func TestTenantFilter(t *testing.T) {
 
 func TestTenantFilterEmptyID(t *testing.T) {
 	qb := query.Select("*").From("posts")
-	ApplyTenantFilter(qb, "")
+	tenant.ApplyTenantFilter(qb, "")
 	sqlStr, args := qb.Build()
 
 	if strings.Contains(sqlStr, "tenant_id") {
@@ -161,10 +163,10 @@ func TestTenantFilterEmptyID(t *testing.T) {
 func TestTenantMiddleware(t *testing.T) {
 	var capturedTenantID string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedTenantID = GetTenantID(r.Context())
+		capturedTenantID = tenant.GetTenantID(r.Context())
 	})
 
-	mw := TenantMiddleware("X-Tenant-ID")
+	mw := tenant.TenantMiddleware("X-Tenant-ID")
 	handler := mw(next)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -181,10 +183,10 @@ func TestTenantMiddleware(t *testing.T) {
 func TestTenantMiddlewareMissingHeader(t *testing.T) {
 	var capturedTenantID string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedTenantID = GetTenantID(r.Context())
+		capturedTenantID = tenant.GetTenantID(r.Context())
 	})
 
-	mw := TenantMiddleware("X-Tenant-ID")
+	mw := tenant.TenantMiddleware("X-Tenant-ID")
 	handler := mw(next)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -199,20 +201,20 @@ func TestTenantMiddlewareMissingHeader(t *testing.T) {
 
 func TestTenantSetGetID(t *testing.T) {
 	ctx := context.Background()
-	if id := GetTenantID(ctx); id != "" {
+	if id := tenant.GetTenantID(ctx); id != "" {
 		t.Errorf("expected empty ID from background context, got %q", id)
 	}
 
-	ctx = SetTenantID(ctx, "tenant-789")
-	if id := GetTenantID(ctx); id != "tenant-789" {
+	ctx = tenant.SetTenantID(ctx, "tenant-789")
+	if id := tenant.GetTenantID(ctx); id != "tenant-789" {
 		t.Errorf("expected tenant-789, got %q", id)
 	}
 }
 
 func TestTenantInjectID(t *testing.T) {
-	ctx := SetTenantID(context.Background(), "tenant-inject")
+	ctx := tenant.SetTenantID(context.Background(), "tenant-inject")
 	data := map[string]any{"title": "Hello"}
-	InjectTenantID(data, ctx)
+	tenant.InjectTenantID(data, ctx)
 
 	if v, ok := data["tenant_id"]; !ok || v != "tenant-inject" {
 		t.Errorf("expected tenant_id to be injected, got: %v", data)
@@ -221,7 +223,7 @@ func TestTenantInjectID(t *testing.T) {
 
 func TestTenantInjectIDEmpty(t *testing.T) {
 	data := map[string]any{"title": "Hello"}
-	InjectTenantID(data, context.Background())
+	tenant.InjectTenantID(data, context.Background())
 
 	if _, ok := data["tenant_id"]; ok {
 		t.Error("expected no tenant_id injection when context has no tenant")
@@ -229,7 +231,7 @@ func TestTenantInjectIDEmpty(t *testing.T) {
 }
 
 func TestTenantDefaultConfig(t *testing.T) {
-	cfg := DefaultTenantConfig()
+	cfg := tenant.DefaultTenantConfig()
 	if cfg.Field != "tenant_id" {
 		t.Errorf("expected Field 'tenant_id', got %q", cfg.Field)
 	}
@@ -246,7 +248,7 @@ func TestTenantWithMultiTenant(t *testing.T) {
 	if ent.Config.MultiTenant {
 		t.Error("expected MultiTenant=false by default")
 	}
-	WithMultiTenant(ent, TenantConfig{Field: "org_id", Header: "X-Org-ID"})
+	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id", Header: "X-Org-ID"})
 	if !ent.Config.MultiTenant {
 		t.Error("expected MultiTenant=true after WithMultiTenant")
 	}

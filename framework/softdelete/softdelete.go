@@ -1,4 +1,4 @@
-package framework
+package softdelete
 
 import (
 	"context"
