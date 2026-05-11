@@ -143,10 +143,12 @@ func (s *CSSLoadingDemoScreen) Render() render.HTML {
 		Label: "Reveal fancy card",
 		Class: "ui-button",
 		Attrs: html.Attrs{
-			"data-fui-rpc":          "/islands/css-demo/reveal-card",
-			"data-fui-rpc-method":   "POST",
-			"data-fui-rpc-signal":   "css-demo-card-slot",
-			"data-css-demo-watch":   "/__gofastr/comp/demo-fancy-card.css",
+			"data-fui-rpc":                "/islands/css-demo/reveal-card",
+			"data-fui-rpc-method":         "POST",
+			"data-fui-rpc-signal":         "css-demo-card-slot",
+			"data-fui-rpc-after-text":     "Revealed ✓ (dedup short-circuit on re-click)",
+			"data-fui-rpc-after-disable":  "",
+			"data-fui-rpc-scroll-to":      "#live-load-auto .demo-css-card-slot",
 		},
 	})
 
@@ -171,10 +173,12 @@ func (s *CSSLoadingDemoScreen) Render() render.HTML {
 		Label: "Reveal command palette",
 		Class: "ui-button",
 		Attrs: html.Attrs{
-			"data-fui-rpc":          "/islands/css-demo/reveal-palette",
-			"data-fui-rpc-method":   "POST",
-			"data-fui-rpc-signal":   "css-demo-palette-slot",
-			"data-css-demo-watch":   "/__gofastr/comp/demo-command-palette.css",
+			"data-fui-rpc":                "/islands/css-demo/reveal-palette",
+			"data-fui-rpc-method":         "POST",
+			"data-fui-rpc-signal":         "css-demo-palette-slot",
+			"data-fui-rpc-after-text":     "Revealed ✓ (palette CSS was already loaded)",
+			"data-fui-rpc-after-disable":  "",
+			"data-fui-rpc-scroll-to":      "#live-load-prewarm .demo-css-card-slot",
 		},
 	})
 
@@ -234,45 +238,7 @@ func (s *Screen) Render() render.HTML {
 		}),
 	)
 
-	// External script handles the "Revealed ✓" feedback + scrollIntoView
-	// after a successful reveal click. Served from /css-demo-enhance.js
-	// (see CSSLoadingEnhanceJS) so the page works under a strict CSP
-	// that forbids inline <script>. Pure progressive enhancement — the
-	// buttons still work without it.
-	enhance := render.Tag("script", map[string]string{"src": "/css-demo-enhance.js"})
-
-	return render.Join(header, how, modes, live, palette, catalog, howToRegister, enhance)
-}
-
-// cssDemoEnhanceJS is the small progressive-enhancement script that
-// adds disabled-state feedback to the LoadAuto / LoadPrewarm reveal
-// buttons. Served externally so a CSP without 'unsafe-inline' still
-// permits it. Tagged with `data-css-demo-watch="<url>"` on the
-// trigger button — the script looks for the data attribute, not for
-// specific selectors, so the page can grow more reveal buttons without
-// touching the JS.
-const cssDemoEnhanceJS = `(() => {
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-css-demo-watch]');
-    if (!btn || btn.dataset.cssDemoRevealed === '1') return;
-    requestAnimationFrame(() => {
-      btn.dataset.cssDemoRevealed = '1';
-      btn.setAttribute('aria-disabled', 'true');
-      btn.textContent = 'Revealed ✓ (dedup short-circuit on re-click)';
-      const slot = btn.closest('section') &&
-        btn.closest('section').querySelector('.demo-css-card-slot');
-      if (slot) setTimeout(() => slot.scrollIntoView({behavior: 'smooth', block: 'nearest'}), 50);
-    });
-  });
-})();
-`
-
-// CSSLoadingEnhanceJSHandler serves the progressive-enhancement JS at
-// /css-demo-enhance.js. CSP-safe; no inline script needed.
-func CSSLoadingEnhanceJSHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	_, _ = w.Write([]byte(cssDemoEnhanceJS))
+	return render.Join(header, how, modes, live, palette, catalog, howToRegister)
 }
 
 // renderLoadModesTable replaces the three-callout stack with a

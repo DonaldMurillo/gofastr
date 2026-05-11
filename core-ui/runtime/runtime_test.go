@@ -56,11 +56,12 @@ func TestRuntimeSize(t *testing.T) {
 	// clear-on-esc, shortcut-focus, shortcut-click, fill-input,
 	// scroll-bottom-on-update, flash-on-update, tick-elapsed,
 	// charcount-source, persist-storage, copy-text-from, data-fui-
-	// comp). Cap at 68KB uncompressed (~16-18KB gzip), still
-	// comfortably under the typical TCP slow-start initial window
-	// after compression.
-	if size > 68000 {
-		t.Errorf("runtime too large: %d bytes (max 68000)", size)
+	// comp, rpc-after-text, rpc-after-disable, rpc-scroll-to,
+	// inline-JSON catalog/routes hydration). Cap at 70KB
+	// uncompressed (~17-19KB gzip), still comfortably under typical
+	// TCP slow-start initial windows after compression.
+	if size > 70000 {
+		t.Errorf("runtime too large: %d bytes (max 70000)", size)
 	}
 }
 

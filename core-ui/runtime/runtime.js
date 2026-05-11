@@ -115,8 +115,32 @@
       // Widget-scoped helpers (close/reset) — only valid when inside a widget.
       if (closeOnSuccess && widgetEl && widgetEl.__fuiDismiss) widgetEl.__fuiDismiss();
       if (resetOnSuccess) node.reset();
+      // Post-success primitives — declared on the trigger so app code
+      // never has to ship JS for "show 'Done ✓' on the button" or
+      // "scroll to the new content". Idempotent (afterText only sets
+      // once via data-fui-rpc-after-done="1").
+      if (!node.dataset.fuiRpcAfterDone) {
+        const afterText = node.getAttribute('data-fui-rpc-after-text');
+        if (afterText !== null) node.textContent = afterText;
+        if (node.hasAttribute('data-fui-rpc-after-disable')) {
+          node.setAttribute('aria-disabled', 'true');
+          if ('disabled' in node) node.disabled = true;
+        }
+        node.dataset.fuiRpcAfterDone = '1';
+      }
+      const scrollSel = node.getAttribute('data-fui-rpc-scroll-to');
+      if (scrollSel) {
+        const target = document.querySelector(scrollSel);
+        if (target) Promise.resolve().then(() => {
+          try { target.scrollIntoView({behavior: 'smooth', block: 'nearest'}); }
+          catch (_) {}
+        });
+      }
     } finally {
-      if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
+      // Re-enable unless data-fui-rpc-after-disable wanted a sticky
+      // disabled state (e.g. "Revealed ✓" demo button).
+      const sticky = node.hasAttribute('data-fui-rpc-after-disable') && node.dataset.fuiRpcAfterDone === '1';
+      if (!sticky && (node.tagName === 'BUTTON' || node.tagName === 'INPUT')) node.disabled = false;
     }
   }
 
