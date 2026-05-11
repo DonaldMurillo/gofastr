@@ -323,14 +323,29 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	createSchemaRef := getNestedMap(createJSON, "schema")
 	assertEqual(t, "create 201 schema ref", "#/components/schemas/posts", createSchemaRef["$ref"])
 
-	// List 200 should reference ListResponse
+	// List 200 is now oneOf [ListResponse, CursorPage] — verify ListResponse
+	// is one of the variants.
 	listGet := getNestedMap(listPath, "get")
 	listResponses := getNestedMap(listGet, "responses")
 	listResp200 := getNestedMap(listResponses, "200")
 	listContent := getNestedMap(listResp200, "content")
 	listJSON := getNestedMap(listContent, "application/json")
 	listSchemaRef := getNestedMap(listJSON, "schema")
-	assertEqual(t, "list 200 schema ref", "#/components/schemas/ListResponse", listSchemaRef["$ref"])
+	oneOf, ok := listSchemaRef["oneOf"].([]any)
+	if !ok {
+		t.Fatalf("expected list 200 to be oneOf, got %v", listSchemaRef)
+	}
+	foundList := false
+	for _, v := range oneOf {
+		m, _ := v.(map[string]any)
+		if m["$ref"] == "#/components/schemas/ListResponse" {
+			foundList = true
+			break
+		}
+	}
+	if !foundList {
+		t.Fatalf("expected ListResponse among oneOf variants, got %v", oneOf)
+	}
 }
 
 func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
@@ -406,21 +421,21 @@ func TestE2E_OpenAPI_MultipleEntityTagsAndPaths(t *testing.T) {
 		t.Fatalf("expected 4 tags, got %d", len(tags))
 	}
 
-	// Should have 8 paths (4 list + 4 detail)
+	// Should have 16 paths per entity (list, detail, _batch, _events) × 4
 	paths := doc["paths"].(map[string]any)
 	expectedPaths := []string{
-		"/users", "/users/{id}",
-		"/posts", "/posts/{id}",
-		"/comments", "/comments/{id}",
-		"/tags", "/tags/{id}",
+		"/users", "/users/{id}", "/users/_batch", "/users/_events",
+		"/posts", "/posts/{id}", "/posts/_batch", "/posts/_events",
+		"/comments", "/comments/{id}", "/comments/_batch", "/comments/_events",
+		"/tags", "/tags/{id}", "/tags/_batch", "/tags/_events",
 	}
 	for _, p := range expectedPaths {
 		if _, ok := paths[p]; !ok {
 			t.Errorf("missing path %q", p)
 		}
 	}
-	if len(paths) != 8 {
-		t.Errorf("expected 8 paths, got %d: %v", len(paths), mapKeys(paths))
+	if len(paths) != 16 {
+		t.Errorf("expected 16 paths, got %d: %v", len(paths), mapKeys(paths))
 	}
 }
 

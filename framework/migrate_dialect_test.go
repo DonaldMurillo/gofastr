@@ -1,0 +1,65 @@
+package framework
+
+import (
+	"testing"
+
+	"github.com/gofastr/gofastr/core/schema"
+)
+
+// TestSqlType_DialectMatrix locks in the SQL types emitted per (FieldType,
+// Dialect). The Postgres-specific changes (TIMESTAMPTZ, DOUBLE PRECISION,
+// JSONB) are the load-bearing ones; SQLite-side rows pin behaviour we don't
+// want to drift.
+func TestSqlType_DialectMatrix(t *testing.T) {
+	cases := []struct {
+		field        schema.Field
+		wantSQLite   string
+		wantPostgres string
+	}{
+		{schema.Field{Type: schema.String}, "TEXT", "TEXT"},
+		{schema.Field{Type: schema.Text}, "TEXT", "TEXT"},
+		{schema.Field{Type: schema.Int}, "INTEGER", "INTEGER"},
+		{schema.Field{Type: schema.Float}, "REAL", "DOUBLE PRECISION"},
+		{schema.Field{Type: schema.Bool}, "BOOLEAN", "BOOLEAN"},
+		{schema.Field{Type: schema.Decimal}, "DECIMAL(19,4)", "DECIMAL(19,4)"},
+		{schema.Field{Type: schema.Enum}, "TEXT", "TEXT"},
+		{schema.Field{Type: schema.UUID}, "TEXT", "TEXT"},
+		{schema.Field{Type: schema.Timestamp}, "DATETIME", "TIMESTAMPTZ"},
+		{schema.Field{Type: schema.Date}, "DATE", "DATE"},
+		{schema.Field{Type: schema.JSON}, "TEXT", "JSONB"},
+		{schema.Field{Type: schema.Relation}, "TEXT", "TEXT"},
+		{schema.Field{Type: schema.Image}, "TEXT", "TEXT"},
+		{schema.Field{Type: schema.File}, "TEXT", "TEXT"},
+	}
+	for _, c := range cases {
+		if got := sqlType(c.field, DialectSQLite); got != c.wantSQLite {
+			t.Errorf("sqlType(%v, sqlite) = %q, want %q", c.field.Type, got, c.wantSQLite)
+		}
+		if got := sqlType(c.field, DialectPostgres); got != c.wantPostgres {
+			t.Errorf("sqlType(%v, postgres) = %q, want %q", c.field.Type, got, c.wantPostgres)
+		}
+	}
+}
+
+// TestSqlDefault_BoolDialectIdiom pins the bool rendering: SQLite keeps the
+// historic 1/0 form, Postgres emits TRUE/FALSE so pg_dump round-trips
+// idiomatically.
+func TestSqlDefault_BoolDialectIdiom(t *testing.T) {
+	cases := []struct {
+		v            bool
+		wantSQLite   string
+		wantPostgres string
+	}{
+		{true, "1", "TRUE"},
+		{false, "0", "FALSE"},
+	}
+	for _, c := range cases {
+		f := schema.Field{Default: c.v}
+		if got := sqlDefault(f, DialectSQLite); got != c.wantSQLite {
+			t.Errorf("sqlDefault(%v, sqlite) = %q, want %q", c.v, got, c.wantSQLite)
+		}
+		if got := sqlDefault(f, DialectPostgres); got != c.wantPostgres {
+			t.Errorf("sqlDefault(%v, postgres) = %q, want %q", c.v, got, c.wantPostgres)
+		}
+	}
+}

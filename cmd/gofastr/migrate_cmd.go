@@ -26,10 +26,12 @@ func runMigrate(args []string) {
 		runMigrateDown(args[1:])
 	case "status":
 		runMigrateStatus(args[1:])
+	case "diff":
+		runMigrateDiff(args[1:])
 	default:
 		fail("Unknown migrate subcommand: %q", subcmd)
-		info("Available: up, down, status")
-		info("Usage: gofastr migrate [up|down|status]")
+		info("Available: up, down, status, diff")
+		info("Usage: gofastr migrate [up|down|status|diff]")
 		os.Exit(1)
 	}
 }

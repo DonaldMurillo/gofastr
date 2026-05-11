@@ -89,18 +89,84 @@ Both forms produce the exact same routes, OpenAPI, and MCP tools.
 
 ## What you get from one entity declaration
 
-| Surface       | Auto-generated                                                    |
-|---------------|-------------------------------------------------------------------|
-| HTTP          | `GET / POST /posts`, `GET / PUT / DELETE /posts/{id}`             |
-| Filtering     | `?status=published&views_gte=10&sort=-created_at&page=2`          |
-| Validation    | Required, unique, enum, min/max, regex pattern, multi-tenant scope |
-| Migrations    | Versioned SQL with up/down, applied via `gofastr migrate`         |
-| OpenAPI 3     | `/openapi.json` and Swagger UI at `/openapi`                      |
-| MCP           | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete` |
-| Soft delete   | `deleted_at` column + automatic filter                            |
-| Multi-tenant  | `tenant_id` column + automatic scope from request context         |
-| Hooks         | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour          |
-| Custom routes | `EntityConfig.Endpoints` with optional MCP exposure               |
+| Surface          | Auto-generated                                                                  |
+|------------------|---------------------------------------------------------------------------------|
+| HTTP             | `GET / POST /posts`, `GET / PUT / DELETE /posts/{id}`                           |
+| Batch endpoints  | `POST / PATCH / DELETE /posts/_batch` — atomic; one tx for all items            |
+| SSE stream       | `GET /posts/_events` — entity.created/updated/deleted, scoped per tenant        |
+| Filtering        | `?status=published&views_gte=10&sort=-created_at&page=2`                        |
+| Eager loading    | `?include=author.profile,comments` — flat or nested, validated against the registry |
+| Cursor paging    | `?cursor=&limit=50` — keyset by `EntityConfig.CursorField` (defaults to PK)     |
+| Multipart upload | `multipart/form-data` on `Image`/`File` fields → streamed through `WithFileStorage` |
+| Validation       | Required, unique, enum, min/max, regex pattern, multi-tenant scope              |
+| Migrations       | Versioned SQL with up/down, applied via `gofastr migrate`                       |
+| FK constraints   | BelongsTo relations emit `FOREIGN KEY` clauses; `AutoMigrate` topo-sorts tables |
+| Transactions     | `Create/Update/Delete` + hooks share one tx; `TxFromContext(ctx)` exposes it    |
+| OpenAPI 3        | `/openapi.json` and Swagger UI at `/docs/`                                      |
+| MCP              | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`       |
+| Soft delete      | `deleted_at` column + automatic filter                                          |
+| Multi-tenant     | `tenant_id` column + automatic scope from request context                       |
+| Hooks            | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour                        |
+| Custom routes    | `EntityConfig.Endpoints` with optional MCP exposure                             |
+
+### Walkthrough: the v2 read/write surface
+
+Every endpoint below is auto-generated from a registered entity. There's a
+runnable demo in [`examples/api-tour`](examples/api-tour/README.md) that
+exercises all of it end-to-end against SQLite.
+
+```bash
+# Eager-load a relation graph in one round trip (no N+1):
+curl 'http://localhost:8080/posts/p1?include=author.profile,comments'
+
+# Cursor pagination — opt in by sending the cursor key (even empty):
+curl 'http://localhost:8080/posts?cursor=&limit=20'
+# → {"data":[…], "cursor":"<opaque>", "hasMore":true}
+curl 'http://localhost:8080/posts?cursor=<opaque>&limit=20'
+
+# Atomic batch — all items succeed or none do:
+curl -X POST http://localhost:8080/posts/_batch -d '{"items":[
+  {"title":"A"}, {"title":"B"}, {"title":"C"}
+]}'
+# → {"committed":true, "results":[{"index":0,"data":{…}}, …]}
+
+# Server-sent events for entity lifecycle:
+curl -N http://localhost:8080/posts/_events
+# event: entity.created
+# data: {"type":"entity.created","data":{"entity":"posts","record":{…}}}
+
+# Multipart upload to an Image field:
+curl -X POST http://localhost:8080/users \
+  -F 'name=Carol' -F 'avatar=@/path/photo.png'
+```
+
+Hooks now run inside the same transaction as the write:
+
+```go
+app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
+  func(ctx context.Context, data any) error {
+    tx, _ := framework.TxFromContext(ctx)        // *sql.Tx — atomic with the parent INSERT
+    _, err := tx.ExecContext(ctx, "INSERT INTO audit_log …")
+    return err
+  })
+```
+
+If the hook errors, the parent write is rolled back.
+
+### Testing against Postgres
+
+The framework's tests fan over both SQLite and Postgres. With Docker
+running, every dialect-aware test runs on both engines automatically:
+
+```bash
+make test            # SQLite only, fast
+make test-pg         # both dialects via testcontainers (Docker)
+make test-pg-env     # both dialects, points at TEST_POSTGRES_DSN
+make test-race       # race detector across the whole repo
+```
+
+Each Postgres test gets its own schema for isolation; the container is
+shared across the whole `go test` invocation so cold-start is amortised.
 
 ## Surfaces
 
@@ -203,7 +269,7 @@ battery/     pluggable infra (auth, cache, email, queue, search, storage)
 cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
 docs/        feature docs (entity declarations, migrations, query DSL, …)
-examples/    blog, core-ui-demo, demo, spa, static-site
+examples/    blog, api-tour (cursor/include/batch/SSE/uploads), core-ui-demo, demo, spa, static-site
 plan/        proposal-driven task tracker
 ```
 

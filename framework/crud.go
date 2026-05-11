@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,7 +13,15 @@ import (
 
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/core/upload"
 )
+
+// beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
+// rejection so the caller can map it to 400 instead of 500.
+type beforeHookError struct{ err error }
+
+func (e *beforeHookError) Error() string { return e.err.Error() }
+func (e *beforeHookError) Unwrap() error { return e.err }
 
 // DBExecutor is the interface for database operations. Both *sql.DB and *sql.Tx satisfy it.
 type DBExecutor interface {
@@ -25,9 +34,12 @@ type DBExecutor interface {
 type CrudHandler struct {
 	Entity     *Entity
 	DB         DBExecutor
-	PrimaryKey string        // defaults to "id"
-	JSONCase   JSONCase      // casing strategy for JSON keys
-	Hooks      *HookRegistry // optional lifecycle hooks
+	PrimaryKey string             // defaults to "id"
+	JSONCase   JSONCase           // casing strategy for JSON keys
+	Hooks      *HookRegistry      // optional lifecycle hooks
+	Storage    upload.Storage // optional; enables multipart uploads for Image/File fields
+	Events     *EventBus      // optional; receives entity.created/updated/deleted on commit
+	Registry   *Registry      // optional; required for nested ?include=author.profile resolution
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
@@ -95,10 +107,12 @@ func (ch *CrudHandler) applyTenantScopeDelete(db *query.DeleteBuilder, r *http.R
 	}
 }
 
-// injectTenant injects the tenant_id into a data map when multi-tenancy is enabled.
-func (ch *CrudHandler) injectTenant(data map[string]any, r *http.Request) {
+// injectTenant injects the tenant_id into a data map when multi-tenancy is
+// enabled. It reads the tenant ID from ctx so it works whether the caller is
+// outside or inside an in-tx context derived from the request.
+func (ch *CrudHandler) injectTenant(data map[string]any, ctx context.Context) {
 	if ch.Entity.Config.MultiTenant {
-		tenantID := GetTenantID(r.Context())
+		tenantID := GetTenantID(ctx)
 		if tenantID != "" {
 			data["tenant_id"] = tenantID
 		}
@@ -183,24 +197,65 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 }
 
 // List returns an http.HandlerFunc that lists entity records with filtering,
-// sorting, and pagination.
+// sorting, pagination, and optional ?include= eager-loaded relations.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		page, perPage := parsePagination(r)
+
+		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		filters, err := ParseFilters(r, ch.Entity.GetFields())
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
 			return
 		}
+
+		// Nested filters like ?author.name=alice. Parsed once and applied to
+		// both the count + data queries below.
+		nested, err := parseNestedFilters(r, ch.Entity, ch.Registry)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		// Cursor pagination is opt-in: presence of the ?cursor key (even
+		// empty for first-page) switches to keyset mode and emits the
+		// CursorPage envelope.
+		if r.URL.Query().Has("cursor") {
+			ch.serveCursorList(ctx, w, r, includes, filters, nested)
+			return
+		}
+
 		sorts := ParseSort(r, ch.Entity.GetFields())
+
+		cols, err := ch.projectFromRequest(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
+		// requested limit is huge. Skips include resolution to keep memory
+		// bounded.
+		if r.URL.Query().Get("stream") == "true" || perPage >= streamListThreshold {
+			ch.serveStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage)
+			return
+		}
 
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		applyFiltersToCountQuery(countQb, filters)
 		ch.applyTenantScopeCount(countQb, r)
 		ch.applySoftDeleteFilterCount(countQb, r)
+		applyNestedFilters(
+			func(sql string, args ...any) { countQb.Where(sql, args...) },
+			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		)
 		countSQL, countArgs := countQb.Build()
 		var total int
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
@@ -208,13 +263,16 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// Build data query — select only visible fields
-		cols := ch.visibleFields()
+		// Build data query — select only projected (or all visible by default).
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		applyFiltersToQuery(qb, filters)
 		ch.applyTenantScope(qb, r)
 		ch.applySoftDeleteFilter(qb, r)
+		applyNestedFilters(
+			func(sql string, args ...any) { qb.Where(sql, args...) },
+			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		)
 		applySortToQuery(qb, sorts)
 
 		offset := (page - 1) * perPage
@@ -232,6 +290,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		results, err := scanRows(rows, cols, ch.convertKey)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "scan failed: "+err.Error())
+			return
+		}
+
+		if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
 			return
 		}
 
@@ -254,6 +317,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 }
 
 // Get returns an http.HandlerFunc that fetches a single entity by ID.
+// Honours ?include= eager-loaded relations.
 func (ch *CrudHandler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -263,7 +327,17 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		cols := ch.visibleFields()
+		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		cols, err := ch.projectFromRequest(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		qb.Where(ch.PrimaryKey+" = $1", id)
@@ -283,110 +357,47 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
+		if err := ch.applyIncludeTree(ctx, []map[string]any{result}, includes); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	}
 }
 
 // Create returns an http.HandlerFunc that creates a new entity record.
-// Auto-generated fields are populated server-side and excluded from the request body.
+// Auto-generated fields are populated server-side and excluded from the
+// request body. The hook chain (BeforeCreate → INSERT → AfterCreate) runs
+// inside a single transaction; if any step errors the write is rolled back.
+//
+// Accepts application/json or multipart/form-data. When the request is
+// multipart, parts whose name matches an Image/File field are streamed
+// through the handler's Storage backend and persisted as a URL string.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		body = ch.unconvertMapKeys(body)
-
-		// Inject tenant_id for multi-tenant entities
-		ch.injectTenant(body, r)
-
-		// Generate values for all auto-generated fields
-		for _, f := range ch.Entity.GetFields() {
-			if f.AutoGenerate != schema.AutoNone {
-				body[f.Name] = generateFieldValue(f.AutoGenerate)
-			}
-		}
-
-		// Execute BeforeCreate hooks
-		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(r.Context(), BeforeCreate, body); err != nil {
-				writeJSONError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-		}
-
-		// Validate only writable fields
-		vr := schema.ValidateAll(ch.entitySchema(), body)
-		if !vr.Valid {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{
-				"error":   "validation failed",
-				"success": false,
-				"fields":  vr.Errors,
-			})
-			return
-		}
-
-		// Build INSERT — skip auto-generated, read-only, and hidden fields
-		var cols []string
-		var vals []any
-		for _, f := range ch.Entity.GetFields() {
-			if f.AutoGenerate != schema.AutoNone {
-				// Already handled above
-				val := body[f.Name]
-				cols = append(cols, f.Name)
-				vals = append(vals, val)
-				continue
-			}
-			if f.ReadOnly || f.Hidden {
-				continue // clients should not set these
-			}
-			val, ok := body[f.Name]
-			if !ok {
-				if f.Default != nil {
-					val = f.Default
-				} else {
-					continue
-				}
-			}
-			cols = append(cols, f.Name)
-			vals = append(vals, val)
-		}
-
-		// Ensure tenant_id is included for multi-tenant entities.
-		// It may not be in the entity's field list, so we add it explicitly.
-		if ch.Entity.Config.MultiTenant {
-			if tenantID := GetTenantID(r.Context()); tenantID != "" {
-				cols = append(cols, "tenant_id")
-				vals = append(vals, tenantID)
-			}
-		}
-
-		// Return only visible fields
-		visFields := ch.visibleFields()
-		ib := query.Insert(ch.Entity.GetTable()).
-			Columns(cols...).
-			Values(vals...).
-			Returning(visFields...)
-
-		sqlStr, args := ib.Build()
-		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-		result, err := scanRow(row, visFields, ch.convertKey)
+		body, err := ch.readRequestBody(r)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		// Execute AfterCreate hooks
-		if ch.Hooks != nil {
-			ch.Hooks.ExecuteHooks(r.Context(), AfterCreate, result)
+		var result map[string]any
+		err = ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+			res, err := ch.doCreate(ctx, r, body)
+			if err != nil {
+				return err
+			}
+			result = res
+			return nil
+		})
+		if err != nil {
+			writeCRUDError(w, err)
+			return
 		}
+
+		ch.emitEvent(r.Context(), EntityCreated, result)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -394,149 +405,110 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 	}
 }
 
-// Update returns an http.HandlerFunc that updates an entity by ID.
+// Update returns an http.HandlerFunc that updates an entity by ID. The hook
+// chain (BeforeUpdate → UPDATE → AfterUpdate) runs inside a transaction.
+// Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
 		id := r.PathValue("id")
 		if id == "" {
 			writeJSONError(w, http.StatusBadRequest, "missing id")
 			return
 		}
 
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-		body = ch.unconvertMapKeys(body)
-
-		// Execute BeforeUpdate hooks
-		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(r.Context(), BeforeUpdate, body); err != nil {
-				writeJSONError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-		}
-
-		vr := schema.ValidateAll(ch.entitySchema(), body)
-		if !vr.Valid {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{
-				"error":   "validation failed",
-				"success": false,
-				"fields":  vr.Errors,
-			})
-			return
-		}
-
-		ub := query.Update(ch.Entity.GetTable())
-		anySet := false
-		for _, f := range ch.Entity.GetFields() {
-			if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
-				continue
-			}
-			val, ok := body[f.Name]
-			if !ok {
-				continue
-			}
-			ub.Set(f.Name, val)
-			anySet = true
-		}
-
-		if !anySet {
-			writeJSONError(w, http.StatusBadRequest, "no fields to update")
-			return
-		}
-
-		ub.Where(ch.PrimaryKey+" = $1", id)
-		ch.applyTenantScopeUpdate(ub, r)
-		visFields := ch.visibleFields()
-		ub.Returning(visFields...)
-
-		sqlStr, args := ub.Build()
-		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-		result, err := scanRow(row, visFields, ch.convertKey)
+		body, err := ch.readRequestBody(r)
 		if err != nil {
-			if err == sql.ErrNoRows {
-				writeJSONError(w, http.StatusNotFound, "not found")
-				return
-			}
-			writeJSONError(w, http.StatusInternalServerError, "update failed: "+err.Error())
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		// Execute AfterUpdate hooks
-		if ch.Hooks != nil {
-			ch.Hooks.ExecuteHooks(r.Context(), AfterUpdate, result)
+		var result map[string]any
+		err = ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+			res, err := ch.doUpdate(ctx, r, id, body)
+			if err != nil {
+				return err
+			}
+			result = res
+			return nil
+		})
+		if err != nil {
+			writeCRUDError(w, err)
+			return
 		}
+
+		ch.emitEvent(r.Context(), EntityUpdated, result)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	}
 }
 
-// Delete returns an http.HandlerFunc that deletes an entity by ID.
-// If the entity has SoftDelete=true, it sets deleted_at instead.
+// Delete returns an http.HandlerFunc that deletes an entity by ID. If the
+// entity has SoftDelete=true, it sets deleted_at instead. The hook chain
+// (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
 		id := r.PathValue("id")
 		if id == "" {
 			writeJSONError(w, http.StatusBadRequest, "missing id")
 			return
 		}
 
-		// Execute BeforeDelete hooks
-		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(r.Context(), BeforeDelete, id); err != nil {
-				writeJSONError(w, http.StatusBadRequest, err.Error())
-				return
-			}
+		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+			return ch.doDelete(ctx, r, id)
+		})
+		if err != nil {
+			writeCRUDError(w, err)
+			return
 		}
 
-		if ch.Entity.Config.SoftDelete {
-			ub := query.Update(ch.Entity.GetTable()).
-				Set("deleted_at", time.Now().UTC()).
-				Where(ch.PrimaryKey+" = $1", id)
-			ch.applyTenantScopeUpdate(ub, r)
-			sqlStr, args := ub.Build()
-			res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
-			if err != nil {
-				writeJSONError(w, http.StatusInternalServerError, "delete failed: "+err.Error())
-				return
-			}
-			affected, _ := res.RowsAffected()
-			if affected == 0 {
-				writeJSONError(w, http.StatusNotFound, "not found")
-				return
-			}
-		} else {
-			db := query.Delete(ch.Entity.GetTable()).
-				Where(ch.PrimaryKey+" = $1", id)
-			ch.applyTenantScopeDelete(db, r)
-			sqlStr, args := db.Build()
-			res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
-			if err != nil {
-				writeJSONError(w, http.StatusInternalServerError, "delete failed: "+err.Error())
-				return
-			}
-			affected, _ := res.RowsAffected()
-			if affected == 0 {
-				writeJSONError(w, http.StatusNotFound, "not found")
-				return
-			}
-		}
-
-		// Execute AfterDelete hooks
-		if ch.Hooks != nil {
-			ch.Hooks.ExecuteHooks(r.Context(), AfterDelete, id)
-		}
+		ch.emitEvent(r.Context(), EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// validationError carries field-level validation errors from inside inTx
+// out to the response writer.
+type validationError struct{ fields map[string][]string }
+
+func (e *validationError) Error() string { return "validation failed" }
+
+// Sentinel errors for CRUD flows.
+var (
+	errNotFound         = errors.New("not found")
+	errNoFieldsToUpdate = errors.New("no fields to update")
+)
+
+// writeCRUDError maps a CRUD-flow error to the appropriate HTTP response.
+// Sentinel and typed errors are translated to specific status codes; anything
+// else becomes a 500.
+func writeCRUDError(w http.ResponseWriter, err error) {
+	var bhe *beforeHookError
+	if errors.As(err, &bhe) {
+		writeJSONError(w, http.StatusBadRequest, bhe.Error())
+		return
+	}
+	var ve *validationError
+	if errors.As(err, &ve) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   "validation failed",
+			"success": false,
+			"fields":  ve.fields,
+		})
+		return
+	}
+	if errors.Is(err, errNotFound) {
+		writeJSONError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if errors.Is(err, errNoFieldsToUpdate) {
+		writeJSONError(w, http.StatusBadRequest, "no fields to update")
+		return
+	}
+	writeJSONError(w, http.StatusInternalServerError, err.Error())
 }
 
 // parsePagination extracts page and per_page from query params.
