@@ -29,20 +29,46 @@ func TestE2E_ComponentCSS_FirstPaintUsesBundle(t *testing.T) {
 	}
 
 	bundleCount := 0
-	directCompCount := 0
+	var bundleNames []string
+	directLinkedNames := []string{}
 	for _, h := range hrefs {
 		switch {
 		case strings.Contains(h, "/__gofastr/comp-bundle.css"):
 			bundleCount++
+			// Extract names=… for the next assertion.
+			if i := strings.Index(h, "names="); i >= 0 {
+				tail := h[i+6:]
+				if amp := strings.Index(tail, "&"); amp >= 0 {
+					tail = tail[:amp]
+				}
+				bundleNames = strings.Split(tail, ",")
+			}
 		case strings.Contains(h, "/__gofastr/comp/"):
-			directCompCount++
+			// Extract the component name out of /__gofastr/comp/<name>.css[?…].
+			p := strings.TrimPrefix(h, "/__gofastr/comp/")
+			if q := strings.Index(p, "?"); q >= 0 {
+				p = p[:q]
+			}
+			p = strings.TrimSuffix(p, ".css")
+			directLinkedNames = append(directLinkedNames, p)
 		}
 	}
 	if bundleCount != 1 {
 		t.Errorf("expected exactly 1 bundle <link>, got %d (hrefs=%v)", bundleCount, hrefs)
 	}
-	if directCompCount != 0 {
-		t.Errorf("framework-ui page should bundle, not ship %d direct comp links (hrefs=%v)", directCompCount, hrefs)
+	// A direct comp <link> for a component ALSO in the bundle is a
+	// dedup bug. A direct comp <link> for a component NOT in the
+	// bundle is legitimate — that's the LoadPrewarm idle prefetch
+	// path arriving after first paint (the demo-command-palette is
+	// the canonical example).
+	bundleSet := map[string]struct{}{}
+	for _, n := range bundleNames {
+		bundleSet[n] = struct{}{}
+	}
+	for _, n := range directLinkedNames {
+		if _, dup := bundleSet[n]; dup {
+			t.Errorf("component %q linked both as direct <link> and in the bundle — dedup bug", n)
+		}
 	}
 }
 

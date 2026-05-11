@@ -83,6 +83,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/framework-ui/form", &FormDemoScreen{}, nil)
 	site.Register("/framework-ui/theme", &ThemeSwapDemoScreen{}, nil)
 	site.Register("/framework-ui/notification", &NotificationDemoScreen{}, nil)
+	site.Register("/framework-ui/css-loading", &CSSLoadingDemoScreen{}, nil)
 	site.Register("/about", &AboutScreen{}, nil)
 
 	cssStr := createStyleSheet(*site.Theme)
@@ -102,6 +103,8 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp.Router.Get("/islands/customers/state", http.HandlerFunc(CustomersIslandHandler))
 	fwApp.Router.Post("/islands/customers/delete", http.HandlerFunc(CustomersDeleteHandler))
 	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
+	fwApp.Router.Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
+	fwApp.Router.Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
 
 	if devMode() {
 		// Dev-only livereload — SSE-driven, not polling. The server

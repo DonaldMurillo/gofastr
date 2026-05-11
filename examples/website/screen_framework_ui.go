@@ -162,6 +162,13 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 							render.Tag("span", nil, render.Text("One-token-swap re-skin demo — pick a primary color and watch the whole page re-skin via :has().")),
 						)}),
 				),
+				render.Tag("li", nil,
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/css-loading",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("Component CSS loading")),
+							render.Tag("span", nil, render.Text("Three load modes (Auto / Prewarm / Always), per-component <link> dedup, bundle endpoint — with live demos and DevTools instructions.")),
+						)}),
+				),
 			),
 		),
 
