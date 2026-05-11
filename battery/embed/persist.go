@@ -105,11 +105,19 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 	if header.Version != snapshotVersion {
 		return fmt.Errorf("embed: snapshot version %d, this build supports %d", header.Version, snapshotVersion)
 	}
-	if header.Model != s.model || header.Dim != s.dim {
+	// The store can be constructed with dim=0 when the embedder defers
+	// dimension discovery to first use (OllamaEmbedder probes lazily).
+	// In that case adopt the snapshot's dim — it's the source of truth.
+	// A non-zero store dim that disagrees with the snapshot is still a
+	// loud refusal.
+	if header.Model != s.model || (s.dim != 0 && header.Dim != s.dim) {
 		return &ModelMismatchError{
 			SnapshotModel: header.Model, SnapshotDim: header.Dim,
 			StoreModel: s.model, StoreDim: s.dim,
 		}
+	}
+	if s.dim == 0 {
+		s.dim = header.Dim
 	}
 
 	chunks := make([]Chunk, 0, header.ChunkCount)
