@@ -82,6 +82,7 @@ server side and the runtime does the work.
 | `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
 | `data-fui-rpc-trigger="input"` | On a `<form data-fui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
 | `data-fui-rpc-debounce-ms="<ms>"` | Debounce window for `data-fui-rpc-trigger="input"`. Default 250. |
+| `data-fui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-fui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
 
 **Response headers the runtime understands:**
 
@@ -227,6 +228,106 @@ re-fetch for popstate". You do not need to re-implement state in JS.
 You do not need to teach the runtime about pagination. The runtime
 just knows: *RPC response can carry a `pushState` header; popstate
 triggers a screen-partial fetch.*
+
+---
+
+## Component CSS
+
+Every component-owned stylesheet ships as a real `<link>` —
+**never inline** — loaded lazily per-component, dedup'd globally,
+and **always scoped** to `[data-fui-comp="<name>"]`. There is no
+"unscoped component CSS"; global rules (resets, typography, theme
+tokens) live in `theme.css` / `WithCustomCSS`.
+
+### The model in one paragraph
+
+A component declares its CSS by calling
+`registry.RegisterStyle(name, fn)` in a package var; the handle's
+`.Render(c)` wraps the component's output and injects
+`data-fui-comp="<name>"` onto its outermost tag (no extra DOM
+node). The SSR host string-scans the final rendered HTML for those
+markers and emits **one** `<link rel="stylesheet">` in `<head>` for
+the page's exact set of components. After hydration, the runtime
+scans newly inserted DOM (cross-page swap, island response, widget
+mount) and lazy-loads any new component's CSS as a `<link>` once
+per session, dedup'd by `data-fui-style="<name>"`. The browser
+caches the stylesheet by URL (`/__gofastr/comp/<name>.css?v=<hash>`)
+under `immutable` headers in prod — content-addressed via the
+component's CSS hash, so a deploy that changes the sheet busts the
+URL automatically.
+
+### Three load modes
+
+| Mode         | First-paint cost           | Behavior                                                                              |
+| ------------ | -------------------------- | ------------------------------------------------------------------------------------- |
+| `LoadAlways` | 1 request, render-blocking | SSR emits `<link>` in `<head>` on every page, regardless of whether the page renders the component. Use for chrome that's on essentially every screen. |
+| `LoadAuto` (default) | 0 (deferred)               | SSR collector emits `<link>` only on pages that actually render the component. After hydration, the on-demand scanner picks up newly-inserted markers from partial responses. |
+| `LoadPrewarm`| 0 (deferred)               | `LoadAuto` plus a throttled `requestIdleCallback` prefetch (serialized, one in flight). Use for components that are likely soon (a hotkey-opened palette). |
+
+All three converge on `loadComponentCSS(name)`. The function is
+**synchronous** — no `await` between the existence check and
+`appendChild`, plus a `_pendingLinks` guard — so promoting a
+component across modes or having two scans race never produces a
+duplicate request.
+
+### The bundle endpoint
+
+When a single SSR page references ≥2 components, the host emits
+one bundled `<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=a,b,c&v=<combinedHash>">`
+instead of N individual links. The bundle handler concatenates the
+per-component scoped CSS in the sorted order embedded in the URL.
+Content-addressed via the SHA of the concatenated component
+versions, served `immutable` in prod. After hydration, the on-
+demand path uses single-component `<link>`s; the bundle is just a
+first-paint optimization.
+
+### Runtime catalog
+
+`/__gofastr/catalog.js` defines `window.__gofastr_catalog =
+{ "<name>": { stylePath, version, loadMode } }`. The host emits a
+`<script src="/__gofastr/catalog.js">` tag in `<head>` before
+`runtime.js`, so the runtime sees the catalog at boot. This is
+how `loadComponentCSS` resolves a marker name to a URL.
+
+### Adding a styled component
+
+```go
+// modal/modal.go
+var Style = registry.RegisterStyle("modal", modalCSS)
+
+func modalCSS(t style.Theme) string {
+    return style.NewComponentSheet("modal", t).
+        Rule(".header").Set("font-weight", "{fonts.weight.bold}").End().
+        Rule(".body").  Set("padding",     "{spacing.lg}").End().
+        MustBuild()
+}
+
+type Modal struct { Title string }
+func (m *Modal) Render() render.HTML {
+    return render.Tag("div", attrs("modal"), render.HTML(`
+        <div class="header">`+m.Title+`</div>
+        <div class="body">…</div>`))
+}
+
+// at a render site:
+modal.Style.Render(&modal.Modal{Title: "Hi"})
+```
+
+`registry.RegisterStyle` panics at process startup on conflicting
+re-registration (different StyleFn under the same name) and on
+unscopable selectors (`body`, `html`, `:root`, `*`, `::backdrop`,
+`::view-transition-*`). Authors `go test` a sheet without chromedp
+by building the `ComponentSheet` directly and asserting on bytes.
+
+### What about widgets?
+
+The `core-ui/widget` registry continues to drive widgets (their
+position chrome, slot composition, RPC endpoints). Widgets that
+host styled components benefit from the same on-demand loader: the
+mounted chrome HTML is scanned in `mountWidget` and any new
+`data-fui-comp` triggers a load. Widget chrome CSS itself still
+serves from `/core-ui/widget/<name>/style.css` for backwards
+compatibility; future work may collapse the two paths.
 
 ---
 

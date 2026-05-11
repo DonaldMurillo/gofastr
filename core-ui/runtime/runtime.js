@@ -484,6 +484,53 @@
       }
     },
 
+    // Component CSS — three modes share _pendingLinks + data-fui-style dedup.
+    // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
+    _pendingLinks: new Set(),
+    loadComponentCSS(name) {
+      if (!name || this._pendingLinks.has(name)) return;
+      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
+      const e = (window.__gofastr_catalog || {})[name];
+      if (!e) return;
+      this._pendingLinks.add(name);
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = e.stylePath + (e.version ? '?v=' + e.version : '');
+      link.setAttribute('data-fui-style', name);
+      link.id = 'fui-css-' + name;
+      document.head.appendChild(link);
+    },
+    scanAndLoadCSS(root) {
+      if (!root) return;
+      const html = root.outerHTML || root.innerHTML;
+      if (typeof html === 'string' && html.indexOf('data-fui-comp') < 0) return;
+      if (!root.querySelectorAll) return;
+      root.querySelectorAll('[data-fui-comp]').forEach((el) => {
+        this.loadComponentCSS(el.getAttribute('data-fui-comp'));
+      });
+    },
+    _idleQueue: [],
+    _idleFlushing: false,
+    scheduleIdleLoads() {
+      const cat = window.__gofastr_catalog || {};
+      for (const name in cat) {
+        if (cat[name].loadMode === 'prewarm') this._idleQueue.push(name);
+      }
+      this._flushIdle();
+    },
+    _flushIdle() {
+      if (this._idleFlushing || !this._idleQueue.length) return;
+      this._idleFlushing = true;
+      const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+      const self = this;
+      rIC(() => {
+        const n = self._idleQueue.shift();
+        if (n) self.loadComponentCSS(n);
+        self._idleFlushing = false;
+        if (self._idleQueue.length) self._flushIdle();
+      });
+    },
+
     formatInt: (n) => String(n),
     formatFloat: (n, d) => Number(n).toFixed(d),
 
@@ -515,6 +562,7 @@
         const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
           node.innerHTML = (typeof value === 'string') ? value : (value == null ? '' : JSON.stringify(value));
+          window.__gofastr.scanAndLoadCSS(node);
         } else if (mode === 'attr') {
           const attr = node.getAttribute('data-fui-signal-attr') || 'value';
           node.setAttribute(attr, String(value ?? ''));
@@ -601,6 +649,7 @@
       document.body.appendChild(widgetEl);
       NS._widgets[cfg.name].root = widgetEl;
       NS._widgets[cfg.name].backdrop = backdrop;
+      NS.scanAndLoadCSS(widgetEl);
 
       function dismiss() {
         if (widgetEl?.parentNode) widgetEl.parentNode.removeChild(widgetEl);
@@ -1172,7 +1221,10 @@
 
   const swapMainContent = (html) => {
     const main = document.querySelector('[role="main"]') ?? document.querySelector('main');
-    if (main) main.innerHTML = html;
+    if (main) {
+      main.innerHTML = html;
+      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
+    }
   };
 
   const updateActiveLink = (path) => {
@@ -1354,6 +1406,13 @@
 
   window.addEventListener('gofastr:navigate', () => { closeAllOverlays(); });
 
+  const _bootstrapComponentCSS = () => {
+    if (window.__gofastr?.scanAndLoadCSS) {
+      window.__gofastr.scanAndLoadCSS(document.documentElement);
+      window.__gofastr.scheduleIdleLoads();
+    }
+  };
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', connectSSE);
 
@@ -1365,8 +1424,10 @@
     document.addEventListener('DOMContentLoaded', () => {
       updateActiveLink(location.pathname);
     });
+    document.addEventListener('DOMContentLoaded', _bootstrapComponentCSS);
   } else {
     connectSSE();
+    _bootstrapComponentCSS();
   }
 
   // Overlay manager: Dialog, Sheet, Drawer — all use a full-screen backdrop wrapper.

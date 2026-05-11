@@ -29,6 +29,12 @@ func TestRuntimeJS(t *testing.T) {
 		"swapMainContent",    // partial content swapping
 		"X-Gofastr-Navigate", // client-side navigation header
 		"X-Gofastr-Partial",  // server partial response header
+		"loadComponentCSS",   // per-component CSS loader
+		"scanAndLoadCSS",     // marker scan post-swap/post-mount
+		"_pendingLinks",      // sync dedup guard
+		"data-fui-style",     // <link> dedup key
+		"scheduleIdleLoads",  // LoadPrewarm idle queue
+		"data-fui-comp",      // marker attr the scanner reads
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
@@ -44,14 +50,17 @@ func TestRuntimeSize(t *testing.T) {
 	}
 	t.Logf("Runtime size: %d bytes", size)
 	// Reasonably small for: router + DOM helpers + SSE + hydration +
-	// widget mounting + the data-fui-* primitive set (rpc-reset,
-	// disable-when-invalid, submit-on-enter, autogrow, clear-on-esc,
-	// shortcut-focus, shortcut-click, fill-input, scroll-bottom-on-
-	// update, flash-on-update, tick-elapsed, charcount-source,
-	// persist-storage, copy-text-from). Cap at 64KB so the runtime
-	// still fits under most CDN single-RTT thresholds.
-	if size > 64000 {
-		t.Errorf("runtime too large: %d bytes (max 64000)", size)
+	// widget mounting + per-component CSS loader (catalog + bundle
+	// dedup + idle prefetch) + the data-fui-* primitive set
+	// (rpc-reset, disable-when-invalid, submit-on-enter, autogrow,
+	// clear-on-esc, shortcut-focus, shortcut-click, fill-input,
+	// scroll-bottom-on-update, flash-on-update, tick-elapsed,
+	// charcount-source, persist-storage, copy-text-from, data-fui-
+	// comp). Cap at 68KB uncompressed (~16-18KB gzip), still
+	// comfortably under the typical TCP slow-start initial window
+	// after compression.
+	if size > 68000 {
+		t.Errorf("runtime too large: %d bytes (max 68000)", size)
 	}
 }
 

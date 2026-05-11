@@ -6,12 +6,15 @@ package uihost
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +22,7 @@ import (
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/component"
 	"github.com/gofastr/gofastr/core-ui/island"
+	"github.com/gofastr/gofastr/core-ui/registry"
 	"github.com/gofastr/gofastr/core-ui/runtime"
 	"github.com/gofastr/gofastr/core-ui/style"
 	"github.com/gofastr/gofastr/core/router"
@@ -389,6 +393,22 @@ func (ds *UIHost) injectChrome(page, sessionID string) string {
 			`<script src="/__gofastr/routes.js"></script>`+"\n</head>", 1)
 	}
 
+	// Component CSS: scan the rendered page for data-fui-comp markers
+	// and emit a single bundled <link> (or one direct <link> for a
+	// single component) so first paint has every needed sheet in
+	// <head>. LoadAlways entries are included whether the page used
+	// them or not.
+	if tags := ds.componentCSSTags(page); tags != "" {
+		page = strings.Replace(page, "</head>", tags+"\n</head>", 1)
+	}
+	// Inline the runtime catalog so the runtime has it without a
+	// round-trip. The catalog is small JSON, cache-busted via its own
+	// hash, and CSP-safe because it's a JSON-assignment script with
+	// no executable user data (only registered names/versions/modes).
+	if catalog := ds.catalogScript(); catalog != "" {
+		page = strings.Replace(page, "</head>", catalog+"\n</head>", 1)
+	}
+
 	// <body>
 	page = strings.Replace(page,
 		"</body>",
@@ -705,6 +725,11 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/action", http.HandlerFunc(methodNotAllowed))
 	r.Get("/__gofastr/widget/{id}", http.HandlerFunc(ds.handleWidgetJS))
 	r.Get("/__gofastr/css/{path...}", http.HandlerFunc(ds.handleCSSChunk))
+	// Per-component scoped CSS + bundle endpoint for first paint.
+	// See core-ui/registry and core-ui/ARCHITECTURE.md.
+	r.Get("/__gofastr/comp/{path...}", http.HandlerFunc(ds.handleComponentCSS))
+	r.Get("/__gofastr/comp-bundle.css", http.HandlerFunc(ds.handleCompBundleCSS))
+	r.Get("/__gofastr/catalog.js", http.HandlerFunc(ds.handleCatalogJS))
 	// runtime.js auto-discovers core-ui/widget widgets at /__gofastr/widgets;
 	// for plain framework apps that don't mount any widgets, serve an empty
 	// list so the discovery fetch doesn't 404 in the browser console.
@@ -820,6 +845,174 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 		IslandID: islandID,
 		HTML:     html,
 	}, sessionID)
+}
+
+// componentCSSTags returns the <link> tags to inject into <head> for
+// the components rendered on this page. It scans page for
+// data-fui-comp markers, adds every LoadAlways entry, and emits one
+// bundled link when ≥2 names are involved (single direct link
+// otherwise). Inline emission is forbidden — the bundle endpoint is
+// content-addressed so the browser caches it across pages with the
+// same component set.
+func (ds *UIHost) componentCSSTags(page string) string {
+	used := registry.Scan(page)
+	eager := registry.EagerNames()
+	if len(used) == 0 && len(eager) == 0 {
+		return ""
+	}
+	seen := make(map[string]struct{}, len(used)+len(eager))
+	for _, n := range used {
+		seen[n] = struct{}{}
+	}
+	for _, n := range eager {
+		seen[n] = struct{}{}
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	theme := ds.activeTheme()
+	if len(names) == 1 {
+		e, ok := registry.Lookup(names[0])
+		if !ok {
+			return ""
+		}
+		v := e.VersionFor(theme)
+		return fmt.Sprintf(`<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`, names[0], v)
+	}
+	// Bundle. The hash combines the per-component versions in the
+	// sorted order embedded in `names`, so any change to any included
+	// component busts the bundle URL.
+	versions := make([]string, 0, len(names))
+	for _, n := range names {
+		e, ok := registry.Lookup(n)
+		if !ok {
+			continue
+		}
+		versions = append(versions, e.VersionFor(theme))
+	}
+	bundleV := hashStrings(versions...)
+	return fmt.Sprintf(`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s">`,
+		strings.Join(names, ","), bundleV)
+}
+
+// catalogScript returns the <script src=…> tag pointing at the
+// catalog JS file. The runtime reads window.__gofastr_catalog from
+// that file on first load. Empty when no components are registered.
+// Served as JS (not inline JSON-as-script) so it works under a
+// strict CSP that forbids inline script.
+func (ds *UIHost) catalogScript() string {
+	if len(registry.All()) == 0 {
+		return ""
+	}
+	return `<script src="/__gofastr/catalog.js"></script>`
+}
+
+// handleComponentCSS serves a single registered component's scoped
+// stylesheet at /__gofastr/comp/{name}.css.
+func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
+	// router param style: trim the prefix and the .css suffix.
+	name := strings.TrimPrefix(r.URL.Path, "/__gofastr/comp/")
+	name = strings.TrimSuffix(name, ".css")
+	e, ok := registry.Lookup(name)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	theme := ds.activeTheme()
+	css := e.CSSFor(theme)
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	if r.URL.Query().Get("v") != "" {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	fmt.Fprint(w, css)
+}
+
+// handleCompBundleCSS serves /__gofastr/comp-bundle.css?names=a,b,c
+// — concatenates the named components' scoped CSS. Names must come
+// in a stable (sorted) order; the host emits them sorted, so cache
+// keys are stable. Unknown names are skipped silently to be tolerant
+// of catalog drift between sessions.
+func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
+	namesParam := r.URL.Query().Get("names")
+	if namesParam == "" {
+		http.NotFound(w, r)
+		return
+	}
+	names := strings.Split(namesParam, ",")
+	theme := ds.activeTheme()
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	if r.URL.Query().Get("v") != "" {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	for _, n := range names {
+		e, ok := registry.Lookup(strings.TrimSpace(n))
+		if !ok {
+			continue
+		}
+		fmt.Fprint(w, e.CSSFor(theme))
+		fmt.Fprint(w, "\n")
+	}
+}
+
+// handleCatalogJS serves the inlined-script form of the component
+// catalog: window.__gofastr_catalog = {name: {stylePath, version,
+// loadMode}}. The runtime reads this on first load. Served as JS
+// (not JSON) so it can be referenced via <script src=…> under a
+// strict CSP that forbids inline script and inline JSON-as-script.
+func (ds *UIHost) handleCatalogJS(w http.ResponseWriter, r *http.Request) {
+	all := registry.All()
+	theme := ds.activeTheme()
+	cat := make(map[string]map[string]any, len(all))
+	for _, e := range all {
+		cat[e.Name] = map[string]any{
+			"stylePath": "/__gofastr/comp/" + e.Name + ".css",
+			"version":   e.VersionFor(theme),
+			"loadMode":  loadModeString(e.Load),
+		}
+	}
+	buf, err := json.Marshal(cat)
+	if err != nil {
+		http.Error(w, "catalog encode error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprintf(w, "window.__gofastr_catalog = %s;\n", buf)
+}
+
+// activeTheme returns the configured theme or the default if unset.
+func (ds *UIHost) activeTheme() style.Theme {
+	if ds.App != nil && ds.App.Theme != nil {
+		return *ds.App.Theme
+	}
+	return style.DefaultTheme()
+}
+
+func loadModeString(m registry.LoadMode) string {
+	switch m {
+	case registry.LoadAlways:
+		return "always"
+	case registry.LoadPrewarm:
+		return "prewarm"
+	default:
+		return "auto"
+	}
+}
+
+func hashStrings(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		_, _ = h.Write([]byte(p))
+		_, _ = h.Write([]byte{0})
+	}
+	sum := h.Sum(nil)
+	return hex.EncodeToString(sum[:6])
 }
 
 // handleCSSChunk serves per-screen CSS chunks for progressive loading.

@@ -65,18 +65,30 @@ func (t Theme) ComponentCSS(name string) string {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, ".comp-%s {\n", name)
-	for prop, value := range def {
-		resolved := t.ResolveAll(value)
-		fmt.Fprintf(&b, "  %s: %s;\n", prop, resolved)
+	props := make([]string, 0, len(def))
+	for prop := range def {
+		props = append(props, prop)
+	}
+	sort.Strings(props)
+	for _, prop := range props {
+		fmt.Fprintf(&b, "  %s: %s;\n", prop, t.ResolveAll(def[prop]))
 	}
 	b.WriteString("}")
 	return b.String()
 }
 
 // AllComponentCSS generates CSS for all defined component styles.
+// Component names are emitted in sorted order so output is byte-stable
+// across process restarts — load-bearing for content-addressed CSS URLs
+// (see core-ui/registry).
 func (t Theme) AllComponentCSS() string {
-	var parts []string
+	names := make([]string, 0, len(t.Components))
 	for name := range t.Components {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
 		parts = append(parts, t.ComponentCSS(name))
 	}
 	return strings.Join(parts, "\n\n")
