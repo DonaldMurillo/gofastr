@@ -129,10 +129,9 @@ Each user turn re-queries the index against the latest user message and injects 
 | --- | --- |
 | M1 — package skeleton, types, stub embedder, flat store, chunker | ✅ |
 | M1.5 — real semantic embedder (Ollama-compatible HTTP) | ✅ |
-| M1.6 — in-process ONNX embedder behind CGO build tag | ⏳ |
 | M2 — gob snapshot + WAL, plugin + HTTP routes | ✅ |
 | M3 — hybrid retrieval, filters, MMR, rerank hook | ✅ |
 | M4 — polling watcher, `gofastr embed` CLI | ✅ |
 | M5 — Kiln context hook, lang-aware chunker, example app, benches, docs | ✅ |
 
-**Why Ollama over ONNX-direct for M1.5:** the original questionnaire chose "pure-Go ONNX runtime", but in practice that requires CGO (`onnxruntime_go`) + a platform-specific shared library at runtime + a WordPiece tokenizer + a ~23 MB bundled model — all to replace one HTTP call. The Ollama path delivers real semantic embeddings today with zero CGO, zero binary bloat, and a one-line swap from the stub. The same `Embedder` interface means a future in-process ONNX implementation (M1.6, build-tag-gated) drops in additively without touching the rest of the package.
+The default production embedder is `OllamaEmbedder`. Users who want a different model wire any `Embedder` implementation (OpenAI Embeddings API, a private microservice, etc.) — the interface is three methods and the rest of the package is embedder-agnostic.

@@ -184,13 +184,12 @@ Numbers above are from the `BenchmarkEmbed_*` family in `battery/embed/bench_tes
 
 ## Embedders
 
-Three are wired:
+Two are wired:
 
 - **`StubEmbedder`** — deterministic FNV bag-of-words, no deps, low retrieval quality. Fine for tests and offline development. Not a real model.
 - **`OllamaEmbedder`** — HTTP client against a locally running Ollama-compatible server. Default `nomic-embed-text` (768-dim) gives real semantic retrieval. Recommended production default.
-- **User-supplied** — implement the three-method `Embedder` interface against whatever you want (OpenAI Embeddings API, a private microservice, a CGO-bound model).
 
-In-process ONNX (`all-MiniLM-L6-v2` bundled via `go:embed` + pure-Go tokenizer + CGO `onnxruntime_go`) is the planned M1.6 work, gated behind a build tag so the default build stays dep-free.
+For anything else (OpenAI Embeddings API, a private microservice, a CGO-bound model), implement the three-method `Embedder` interface and pass it via `Options.Embedder`. The rest of the package is embedder-agnostic.
 
 ```go
 // Swap from stub to Ollama:
@@ -207,7 +206,6 @@ if err := embedder.Probe(ctx); err != nil {
 
 ## Limitations and follow-ups
 
-- In-process ONNX is M1.6 work (see `Embedders` above).
 - The watcher does not honour `.gitignore` — only an explicit `ExcludeDirs` list. Glob-level ignore parsing is deferred.
 - The flat store is the only backend. ANN backends (HNSW, IVF) are intentional non-goals until benchmarks show brute-force losing.
 - Multiple named indexes per process are not supported; the design is one index per app, mirroring the `Options.Keyword` and `Options.Path` shape.
