@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/gofastr/gofastr/framework/filter"
 )
 
 // loadIncludeNode is the filter-aware sibling of EagerLoad. It runs a single
@@ -31,7 +33,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 	return nil
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filters []ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -84,7 +86,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filte
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, parentPK string, rel Relation, filters []ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, parentPK string, rel Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -177,7 +179,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, pare
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filters []ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -240,7 +242,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel Relation, fi
 // the SQL suffix + the bound arguments. startIdx is the first $N to use
 // (callers know how many placeholders precede this fragment in the outer
 // query).
-func filterClause(filters []ParsedFilter, startIdx int) (string, []any) {
+func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
 	if len(filters) == 0 {
 		return "", nil
 	}
@@ -258,7 +260,7 @@ func filterClause(filters []ParsedFilter, startIdx int) (string, []any) {
 // filterClauseQualified is like filterClause but prefixes each column with
 // the given table name. Used by the ManyToMany loader where the SELECT
 // JOINs the target + pivot — bare column names would be ambiguous.
-func filterClauseQualified(filters []ParsedFilter, table string, startIdx int) (string, []any) {
+func filterClauseQualified(filters []filter.ParsedFilter, table string, startIdx int) (string, []any) {
 	if len(filters) == 0 {
 		return "", nil
 	}

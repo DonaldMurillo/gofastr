@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/filter"
+	"github.com/gofastr/gofastr/framework/pagination"
 )
 
 // cursorFields returns the ordered list of columns the handler keysets on.
@@ -49,8 +51,8 @@ func (ch *CrudHandler) cursorFields() []string {
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
 // ordered, unique-enough key, so the cursor field(s) control ORDER BY.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []ParsedFilter, nested []nestedFilter) {
-	cursor, limit, direction := ParseCursorPagination(r)
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter) {
+	cursor, limit, direction := pagination.ParseCursorPagination(r)
 	if direction != "forward" && direction != "backward" {
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")
 		return
@@ -60,7 +62,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	cols := ch.visibleFields()
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
-	applyFiltersToQuery(qb, filters)
+	filter.ApplyToQuery(qb, filters)
 	ch.applyTenantScope(qb, r)
 	ch.applySoftDeleteFilter(qb, r)
 	applyNestedFilters(
@@ -137,14 +139,14 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 	out := map[string]string{}
 
 	// Try multi-cursor first; if it has fields, prefer it.
-	if mf, err := DecodeMultiCursor(cursor); err == nil && len(mf) > 0 {
+	if mf, err := pagination.DecodeMultiCursor(cursor); err == nil && len(mf) > 0 {
 		for _, kv := range mf {
 			out[kv.Name] = kv.Value
 		}
 		return out, nil
 	}
 	// Fall back to single-field cursor.
-	if _, val, err := DecodeCursor(cursor); err == nil && len(fields) > 0 {
+	if _, val, err := pagination.DecodeCursor(cursor); err == nil && len(fields) > 0 {
 		out[fields[0]] = val
 		return out, nil
 	}
@@ -154,12 +156,12 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 // buildCursorPage assembles the CursorPage envelope. For single-field
 // cursors it uses the legacy EncodeCursor shape so existing clients keep
 // working; for composite cursors it emits the multi-field encoding.
-func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, limit int) CursorPage {
+func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, limit int) pagination.CursorPage {
 	hasMore := len(data) > limit
 	if hasMore {
 		data = data[:limit]
 	}
-	page := CursorPage{Data: data, HasMore: hasMore}
+	page := pagination.CursorPage{Data: data, HasMore: hasMore}
 	if !hasMore || len(data) == 0 {
 		return page
 	}
@@ -167,7 +169,7 @@ func buildCursorPage(data []map[string]any, fields []string, convertKey func(str
 	if len(fields) == 1 {
 		key := convertKey(fields[0])
 		if val, ok := last[key]; ok {
-			page.Cursor = EncodeCursor(fields[0], val)
+			page.Cursor = pagination.EncodeCursor(fields[0], val)
 		}
 		return page
 	}
@@ -178,6 +180,6 @@ func buildCursorPage(data []map[string]any, fields []string, convertKey func(str
 			dbRow[f] = v
 		}
 	}
-	page.Cursor = EncodeMultiCursor(fields, dbRow)
+	page.Cursor = pagination.EncodeMultiCursor(fields, dbRow)
 	return page
 }

@@ -1,4 +1,4 @@
-package framework
+package slowquery
 
 import (
 	"context"
@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"sync/atomic"
 	"time"
+
+	"github.com/gofastr/gofastr/framework/db"
 )
 
 // SlowQueryLogger emits a slog warning for any DB query whose execution time
 // exceeds Threshold. Wrap the framework's *sql.DB at construction time
-// (or any DBExecutor) and pass the result into NewCrudHandler in place of
+// (or any db.Executor) and pass the result into NewCrudHandler in place of
 // the raw DB.
 //
 // Threshold of 0 disables logging entirely (default zero-value).
@@ -19,16 +21,16 @@ import (
 // QueryRowContext / ExecContext on the underlying connection and emits a
 // structured log line when the duration crosses the threshold.
 type SlowQueryLogger struct {
-	inner     DBExecutor
+	inner     db.Executor
 	threshold time.Duration
 	logger    *slog.Logger
 	hits      atomic.Uint64
 }
 
 // NewSlowQueryLogger wraps inner with a slow-query observer. When threshold
-// is zero, the wrapper is a no-op pass-through (the same DBExecutor with no
+// is zero, the wrapper is a no-op pass-through (the same db.Executor with no
 // instrumentation cost).
-func NewSlowQueryLogger(inner DBExecutor, threshold time.Duration, logger *slog.Logger) *SlowQueryLogger {
+func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog.Logger) *SlowQueryLogger {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -84,7 +86,7 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	attrs := []any{
 		slog.String("kind", kind),
 		slog.Duration("dur", dur),
-		slog.String("sql", trimSQL(query)),
+		slog.String("sql", TrimSQL(query)),
 		slog.Int("args", len(args)),
 	}
 	if err != nil {
@@ -93,9 +95,9 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	s.logger.LogAttrs(ctx, slog.LevelWarn, "slow query", asSlogAttrs(attrs)...)
 }
 
-// trimSQL collapses internal whitespace so log lines stay readable. Caps the
+// TrimSQL collapses internal whitespace so log lines stay readable. Caps the
 // printed query at 240 chars to keep logs from exploding on big builders.
-func trimSQL(q string) string {
+func TrimSQL(q string) string {
 	out := make([]byte, 0, len(q))
 	lastSpace := false
 	for i := 0; i < len(q); i++ {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/openapi"
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
 // EntityOpenAPI generates a full OpenAPI Spec from all registered entities.
@@ -90,13 +91,13 @@ func EntityOpenAPI(registry *Registry, title, version string) *openapi.Spec {
 		if props, ok := entitySchema["properties"].(map[string]any); ok {
 			camelProps := make(map[string]any, len(props))
 			for k, v := range props {
-				camelProps[toCamelCase(k)] = v
+				camelProps[casing.ToCamel(k)] = v
 			}
 			entitySchema["properties"] = camelProps
 		}
 		if reqs, ok := entitySchema["required"].([]string); ok {
 			for i, r := range reqs {
-				reqs[i] = toCamelCase(r)
+				reqs[i] = casing.ToCamel(r)
 			}
 		}
 		s.AddSchema(entityName, entitySchema)
@@ -335,7 +336,7 @@ func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) m
 	exclude := make(map[string]bool)
 	for _, f := range fields {
 		if f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
-			exclude[toCamelCase(f.Name)] = true
+			exclude[casing.ToCamel(f.Name)] = true
 		}
 	}
 

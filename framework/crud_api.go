@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/filter"
 )
 
 // In-process typed CRUD API
@@ -124,8 +125,8 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 
 // ListOptions controls ListAll.
 type ListOptions struct {
-	Filters  []ParsedFilter
-	Sorts    []ParsedSort
+	Filters  []filter.ParsedFilter
+	Sorts    []filter.ParsedSort
 	Limit    int
 	Offset   int
 	Includes []string
@@ -137,8 +138,8 @@ type ListOptions struct {
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
 	cols := ch.visibleFields()
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
-	applyFiltersToQuery(qb, opts.Filters)
-	applySortToQuery(qb, opts.Sorts)
+	filter.ApplyToQuery(qb, opts.Filters)
+	filter.ApplySortToQuery(qb, opts.Sorts)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.applyTenantScope(qb, req)
 	ch.applySoftDeleteFilter(qb, req)
@@ -248,7 +249,7 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 // helper for typed repos that want a totals figure without hitting List.
 func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, error) {
 	cb := query.Count(ch.Entity.GetTable())
-	applyFiltersToCountQuery(cb, opts.Filters)
+	filter.ApplyToCountQuery(cb, opts.Filters)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.applyTenantScopeCount(cb, req)
 	ch.applySoftDeleteFilterCount(cb, req)

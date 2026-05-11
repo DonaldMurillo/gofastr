@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/filter"
 )
 
 // streamListThreshold is the limit beyond which the List handler
@@ -24,10 +25,10 @@ const streamListThreshold = 1000
 // clients keep working: {"data": [...], "total": N, "page": 1, "perPage":
 // N, "totalPages": 1}. Streaming applies only to the data array — the
 // envelope fields are written before the rows start flowing.
-func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []ParsedFilter, nested []nestedFilter, sorts []ParsedSort, limit int) {
+func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int) {
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
-	applyFiltersToCountQuery(countQb, filters)
+	filter.ApplyToCountQuery(countQb, filters)
 	ch.applyTenantScopeCount(countQb, r)
 	ch.applySoftDeleteFilterCount(countQb, r)
 	applyNestedFilters(
@@ -42,14 +43,14 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	}
 
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
-	applyFiltersToQuery(qb, filters)
+	filter.ApplyToQuery(qb, filters)
 	ch.applyTenantScope(qb, r)
 	ch.applySoftDeleteFilter(qb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
-	applySortToQuery(qb, sorts)
+	filter.ApplySortToQuery(qb, sorts)
 	qb.Limit(limit)
 
 	dataSQL, dataArgs := qb.Build()

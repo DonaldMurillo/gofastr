@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofastr/gofastr/framework/access"
 	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/pagination"
 )
 
 // --- Access Control Tests ---
@@ -187,9 +188,9 @@ func TestEventEmitStopsOnError(t *testing.T) {
 
 func TestCursorEncodeDecodeRoundTrip(t *testing.T) {
 	field, value := "id", "abc123"
-	encoded := EncodeCursor(field, value)
+	encoded := pagination.EncodeCursor(field, value)
 
-	decodedField, decodedValue, err := DecodeCursor(encoded)
+	decodedField, decodedValue, err := pagination.DecodeCursor(encoded)
 	if err != nil {
 		t.Fatalf("DecodeCursor error: %v", err)
 	}
@@ -202,9 +203,9 @@ func TestCursorEncodeDecodeRoundTrip(t *testing.T) {
 }
 
 func TestCursorEncodeDecodeIntValue(t *testing.T) {
-	encoded := EncodeCursor("created_at", 12345)
+	encoded := pagination.EncodeCursor("created_at", 12345)
 
-	field, value, err := DecodeCursor(encoded)
+	field, value, err := pagination.DecodeCursor(encoded)
 	if err != nil {
 		t.Fatalf("DecodeCursor error: %v", err)
 	}
@@ -224,7 +225,7 @@ func TestCursorPageWithMore(t *testing.T) {
 		{"id": 4, "name": "d"},
 	}
 	// Request limit=3, so we get 4 rows back (3+1 for hasMore check)
-	page := NewCursorPage(data, "id", 3)
+	page := pagination.NewCursorPage(data, "id", 3)
 
 	if !page.HasMore {
 		t.Error("expected HasMore=true")
@@ -236,7 +237,7 @@ func TestCursorPageWithMore(t *testing.T) {
 		t.Error("expected a next cursor")
 	}
 	// Cursor should encode the last item's id (3)
-	field, val, _ := DecodeCursor(page.Cursor)
+	field, val, _ := pagination.DecodeCursor(page.Cursor)
 	if field != "id" {
 		t.Errorf("cursor field: expected id, got %s", field)
 	}
@@ -251,7 +252,7 @@ func TestCursorPageNoMore(t *testing.T) {
 		{"id": 2},
 	}
 	// Only 2 rows, limit=3 → no more
-	page := NewCursorPage(data, "id", 3)
+	page := pagination.NewCursorPage(data, "id", 3)
 
 	if page.HasMore {
 		t.Error("expected HasMore=false")
@@ -266,7 +267,7 @@ func TestOffsetPageCalculation(t *testing.T) {
 		{"id": 1},
 		{"id": 2},
 	}
-	page := NewOffsetPage(data, 2, 10, 55)
+	page := pagination.NewOffsetPage(data, 2, 10, 55)
 
 	if page.Page != 2 {
 		t.Errorf("page: expected 2, got %d", page.Page)
@@ -284,7 +285,7 @@ func TestOffsetPageCalculation(t *testing.T) {
 
 func TestOffsetPageExactFit(t *testing.T) {
 	data := []map[string]any{{"id": 1}}
-	page := NewOffsetPage(data, 1, 10, 20)
+	page := pagination.NewOffsetPage(data, 1, 10, 20)
 
 	if page.TotalPages != 2 {
 		t.Errorf("total_pages: expected 2, got %d", page.TotalPages)
@@ -292,7 +293,7 @@ func TestOffsetPageExactFit(t *testing.T) {
 }
 
 func TestOffsetPageZeroTotal(t *testing.T) {
-	page := NewOffsetPage(nil, 1, 10, 0)
+	page := pagination.NewOffsetPage(nil, 1, 10, 0)
 
 	if page.TotalPages != 0 {
 		t.Errorf("total_pages: expected 0, got %d", page.TotalPages)

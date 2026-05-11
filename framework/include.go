@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/filter"
 )
 
 // IncludeNode represents one segment of a (possibly nested) ?include=
@@ -18,11 +19,11 @@ import (
 // published comments. Suffixes (_gt/_gte/_lt/_lte/_like/_in) work the same
 // way they do for top-level filters.
 type IncludeNode struct {
-	Name     string         // segment name (matches the relation's Name)
-	Relation Relation       // relation declared on the parent entity
-	Target   *Entity        // the entity Reached by following Relation
-	Filters  []ParsedFilter // scoped filters applied during eager-load
-	Children []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
+	Name     string                // segment name (matches the relation's Name)
+	Relation Relation              // relation declared on the parent entity
+	Target   *Entity               // the entity Reached by following Relation
+	Filters  []filter.ParsedFilter // scoped filters applied during eager-load
+	Children []*IncludeNode        // deeper includes, e.g. for "author.profile" the "profile" child of "author"
 	childMap map[string]*IncludeNode
 }
 
@@ -189,20 +190,20 @@ func splitIncludePath(s string) []string {
 // of ParsedFilter, honouring the same suffix operators (_gt/_gte/_lt/_lte/
 // _like/_in) that top-level filters do. fields can be nil — in that case
 // every field name is accepted at parse time.
-func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]ParsedFilter, error) {
+func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
 	for _, f := range fields {
 		knownField[f.Name] = true
 	}
 	suffixes := []struct {
 		suffix string
-		op     FilterOp
+		op     filter.FilterOp
 	}{
-		{"_gte", OpGte}, {"_lte", OpLte},
-		{"_gt", OpGt}, {"_lt", OpLt},
-		{"_like", OpLike}, {"_in", OpIn},
+		{"_gte", filter.OpGte}, {"_lte", filter.OpLte},
+		{"_gt", filter.OpGt}, {"_lt", filter.OpLt},
+		{"_like", filter.OpLike}, {"_in", filter.OpIn},
 	}
-	var out []ParsedFilter
+	var out []filter.ParsedFilter
 	for _, kv := range strings.Split(raw, ",") {
 		kv = strings.TrimSpace(kv)
 		if kv == "" {
@@ -214,7 +215,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		key, value := kv[:eq], kv[eq+1:]
 		field := key
-		op := OpEq
+		op := filter.OpEq
 		for _, s := range suffixes {
 			if strings.HasSuffix(key, s.suffix) {
 				field = strings.TrimSuffix(key, s.suffix)
@@ -225,12 +226,12 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		if fields != nil && !knownField[field] {
 			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
 		}
-		if op == OpIn {
+		if op == filter.OpIn {
 			for _, v := range strings.Split(value, "|") {
-				out = append(out, ParsedFilter{Field: field, Op: OpIn, Value: v})
+				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v})
 			}
 		} else {
-			out = append(out, ParsedFilter{Field: field, Op: op, Value: value})
+			out = append(out, filter.ParsedFilter{Field: field, Op: op, Value: value})
 		}
 	}
 	return out, nil

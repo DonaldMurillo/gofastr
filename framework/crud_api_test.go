@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/filter"
 	"github.com/gofastr/gofastr/framework/hook"
 )
 
@@ -169,8 +170,8 @@ func TestCRUDApi_ListAll_FilterSortLimit(t *testing.T) {
 
 		min1 := float64(1)
 		got, err := ch.ListAll(ctx, ListOptions{
-			Filters: []ParsedFilter{{Field: "title", Op: OpLike, Value: "%a%"}},
-			Sorts:   []ParsedSort{{Field: "title", Desc: false}},
+			Filters: []filter.ParsedFilter{{Field: "title", Op: filter.OpLike, Value: "%a%"}},
+			Sorts:   []filter.ParsedSort{{Field: "title", Desc: false}},
 			Limit:   2,
 		})
 		if err != nil {

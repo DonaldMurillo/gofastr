@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/pagination"
 )
 
 // seedCursorDB creates the posts table on db and inserts N rows whose ids
@@ -51,9 +52,9 @@ func cursorApp(t *testing.T, db *sql.DB) *App {
 	return app
 }
 
-func decodeCursorPage(t *testing.T, body string) CursorPage {
+func decodeCursorPage(t *testing.T, body string) pagination.CursorPage {
 	t.Helper()
-	var p CursorPage
+	var p pagination.CursorPage
 	if err := json.Unmarshal([]byte(body), &p); err != nil {
 		t.Fatalf("decode CursorPage: %v\n%s", err, body)
 	}

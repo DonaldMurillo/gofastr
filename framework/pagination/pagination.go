@@ -1,4 +1,4 @@
-package framework
+package pagination
 
 import (
 	"encoding/base64"

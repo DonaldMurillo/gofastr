@@ -14,8 +14,11 @@ import (
 	"github.com/gofastr/gofastr/core/query"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/db"
 	"github.com/gofastr/gofastr/framework/event"
+	"github.com/gofastr/gofastr/framework/filter"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
 // beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
@@ -25,12 +28,9 @@ type beforeHookError struct{ err error }
 func (e *beforeHookError) Error() string { return e.err.Error() }
 func (e *beforeHookError) Unwrap() error { return e.err }
 
-// DBExecutor is the interface for database operations. Both *sql.DB and *sql.Tx satisfy it.
-type DBExecutor interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
+// DBExecutor is an alias for db.Executor, retained so existing callers keep
+// using framework.DBExecutor. New code should reference framework/db directly.
+type DBExecutor = db.Executor
 
 // CrudHandler provides auto-generated CRUD HTTP handlers for an Entity.
 type CrudHandler struct {
@@ -169,7 +169,7 @@ func (ch *CrudHandler) convertKey(col string) string {
 	case CaseSnake:
 		return col
 	default: // CaseCamel
-		return toCamelCase(col)
+		return casing.ToCamel(col)
 	}
 }
 
@@ -179,7 +179,7 @@ func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
 	case CaseSnake:
 		return m
 	default: // CaseCamel
-		return mapToCamelCase(m)
+		return casing.MapToCamel(m)
 	}
 }
 
@@ -189,7 +189,7 @@ func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
 	case CaseSnake:
 		return m
 	default: // CaseCamel
-		return mapToSnakeCase(m)
+		return casing.MapToSnake(m)
 	}
 }
 
@@ -211,7 +211,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		filters, err := ParseFilters(r, ch.Entity.GetFields())
+		filters, err := filter.ParseFilters(r, ch.Entity.GetFields())
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
 			return
@@ -233,7 +233,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		sorts := ParseSort(r, ch.Entity.GetFields())
+		sorts := filter.ParseSort(r, ch.Entity.GetFields())
 
 		cols, err := ch.projectFromRequest(r)
 		if err != nil {
@@ -251,7 +251,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
-		applyFiltersToCountQuery(countQb, filters)
+		filter.ApplyToCountQuery(countQb, filters)
 		ch.applyTenantScopeCount(countQb, r)
 		ch.applySoftDeleteFilterCount(countQb, r)
 		applyNestedFilters(
@@ -268,14 +268,14 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// Build data query — select only projected (or all visible by default).
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
-		applyFiltersToQuery(qb, filters)
+		filter.ApplyToQuery(qb, filters)
 		ch.applyTenantScope(qb, r)
 		ch.applySoftDeleteFilter(qb, r)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
 		)
-		applySortToQuery(qb, sorts)
+		filter.ApplySortToQuery(qb, sorts)
 
 		offset := (page - 1) * perPage
 		qb.Limit(perPage)

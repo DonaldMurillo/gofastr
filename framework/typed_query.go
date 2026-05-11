@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/core/query"
+	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
 // TypedQuery is a generic, fluent query builder that returns []*T from the
@@ -176,7 +177,7 @@ func MarshalEntity(src any) (map[string]any, error) {
 // transform the typed-hooks helpers use — kept symmetric so generated repo
 // code can rely on either path.
 func unmarshalRowToStruct(m map[string]any, dest any) error {
-	camel := mapToCamelCase(m)
+	camel := casing.MapToCamel(m)
 	b, err := json.Marshal(camel)
 	if err != nil {
 		return err
@@ -195,7 +196,7 @@ func marshalStructToRow(src any) (map[string]any, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
-	return mapToSnakeCase(m), nil
+	return casing.MapToSnake(m), nil
 }
 
 // Exists returns true if at least one row matches the current WHERE chain.

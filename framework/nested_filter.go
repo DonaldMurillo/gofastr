@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/gofastr/gofastr/framework/filter"
 )
 
 // nestedFilter is one parsed `?author.name=alice` style predicate.
 type nestedFilter struct {
 	Relation Relation
 	Field    string
-	Op       FilterOp
+	Op       filter.FilterOp
 	Value    string
 }
 
@@ -35,14 +37,14 @@ func parseNestedFilters(r *http.Request, entity *Entity, registry *Registry) ([]
 
 	suffixes := []struct {
 		suffix string
-		op     FilterOp
+		op     filter.FilterOp
 	}{
-		{"_gte", OpGte},
-		{"_lte", OpLte},
-		{"_gt", OpGt},
-		{"_lt", OpLt},
-		{"_like", OpLike},
-		{"_in", OpIn},
+		{"_gte", filter.OpGte},
+		{"_lte", filter.OpLte},
+		{"_gt", filter.OpGt},
+		{"_lt", filter.OpLt},
+		{"_like", filter.OpLike},
+		{"_in", filter.OpIn},
 	}
 
 	var out []nestedFilter
@@ -61,7 +63,7 @@ func parseNestedFilters(r *http.Request, entity *Entity, registry *Registry) ([]
 		}
 
 		fieldName := fieldRaw
-		op := OpEq
+		op := filter.OpEq
 		for _, s := range suffixes {
 			if strings.HasSuffix(fieldRaw, s.suffix) {
 				fieldName = strings.TrimSuffix(fieldRaw, s.suffix)
@@ -87,7 +89,7 @@ func parseNestedFilters(r *http.Request, entity *Entity, registry *Registry) ([]
 			}
 		}
 
-		if op == OpIn {
+		if op == filter.OpIn {
 			for _, p := range strings.Split(values[0], ",") {
 				out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Value: p})
 			}
@@ -152,21 +154,21 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 }
 
 // opToSQL maps a FilterOp to its SQL operator.
-func opToSQL(op FilterOp) string {
+func opToSQL(op filter.FilterOp) string {
 	switch op {
-	case OpEq:
+	case filter.OpEq:
 		return "="
-	case OpGt:
+	case filter.OpGt:
 		return ">"
-	case OpGte:
+	case filter.OpGte:
 		return ">="
-	case OpLt:
+	case filter.OpLt:
 		return "<"
-	case OpLte:
+	case filter.OpLte:
 		return "<="
-	case OpLike:
+	case filter.OpLike:
 		return "LIKE"
-	case OpIn:
+	case filter.OpIn:
 		// IN is handled by parser splitting values; we still emit "=" per row.
 		return "="
 	}

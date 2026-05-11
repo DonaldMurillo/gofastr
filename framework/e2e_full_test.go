@@ -22,6 +22,7 @@ import (
 	"github.com/gofastr/gofastr/core/router"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/core/upload"
+	"github.com/gofastr/gofastr/framework/pagination"
 )
 
 // Full-stack E2E: spins up a real httptest.Server with the full middleware
@@ -368,7 +369,7 @@ func TestE2E_Full(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("cursor first: %d %s", code, body)
 			}
-			var page CursorPage
+			var page pagination.CursorPage
 			if err := json.Unmarshal(body, &page); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
@@ -382,7 +383,7 @@ func TestE2E_Full(t *testing.T) {
 				if code, _, body := env.doRequest(t, next); code != http.StatusOK {
 					t.Fatalf("cursor walk: %d %s", code, body)
 				} else {
-					page = CursorPage{}
+					page = pagination.CursorPage{}
 					json.Unmarshal(body, &page)
 					seen += len(page.Data)
 				}

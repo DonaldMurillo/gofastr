@@ -1,4 +1,4 @@
-package framework
+package filter
 
 import (
 	"net/http"
@@ -141,7 +141,7 @@ func ParseSort(r *http.Request, fields []schema.Field) []ParsedSort {
 }
 
 // applyFiltersToCountQuery applies parsed filters to a count builder.
-func applyFiltersToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
+func ApplyToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
 	for _, f := range filters {
 		switch f.Op {
 		case OpEq:
@@ -163,7 +163,7 @@ func applyFiltersToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
 }
 
 // applyFiltersToQuery applies parsed filters to a query builder.
-func applyFiltersToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
+func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 	for _, f := range filters {
 		switch f.Op {
 		case OpEq:
@@ -185,7 +185,7 @@ func applyFiltersToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 }
 
 // applySortToQuery applies parsed sorts to a query builder.
-func applySortToQuery(qb *query.QueryBuilder, sorts []ParsedSort) {
+func ApplySortToQuery(qb *query.QueryBuilder, sorts []ParsedSort) {
 	for _, s := range sorts {
 		dir := "ASC"
 		if s.Desc {

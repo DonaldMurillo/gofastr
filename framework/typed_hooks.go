@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/internal/casing"
 )
 
 // Typed hooks
@@ -18,8 +19,8 @@ import (
 //
 // Casing: hook payloads inside the framework are snake_cased map[string]any
 // (because unconvertMapKeys runs before hooks fire). Generated structs use
-// JSON tags in camelCase. The wrappers translate via mapToCamelCase /
-// mapToSnakeCase so json.Marshal/Unmarshal round-trips correctly.
+// JSON tags in camelCase. The wrappers translate via casing.MapToCamel /
+// casing.MapToSnake so json.Marshal/Unmarshal round-trips correctly.
 
 // OnBeforeCreate registers a typed BeforeCreate hook on the entity named
 // `name`. Mutations the callback makes to *T are reflected back into the
@@ -108,7 +109,7 @@ func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string
 // up.
 func unmarshalHookPayload(data any, dest any) error {
 	if m, ok := data.(map[string]any); ok {
-		camel := mapToCamelCase(m)
+		camel := casing.MapToCamel(m)
 		b, err := json.Marshal(camel)
 		if err != nil {
 			return err
@@ -136,7 +137,7 @@ func mergeStructIntoMap(src any, dest map[string]any) error {
 	if err := json.Unmarshal(b, &fresh); err != nil {
 		return err
 	}
-	snake := mapToSnakeCase(fresh)
+	snake := casing.MapToSnake(fresh)
 	for k, v := range snake {
 		dest[k] = v
 	}
