@@ -1,8 +1,32 @@
-.PHONY: build test test-pg test-pg-env test-pg-only test-race lint generate dev clean security security-full hooks install
+.PHONY: build build-all build-cmd build-examples test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install
 
 # ---- Build ----
-build:
-	go build ./...
+#
+# Every build artifact goes into $(DIST_DIR) so the source tree stays clean
+# and a single `make clean` removes everything. The directory is gitignored.
+# Dev-loop binaries (scripts/dev-watch.sh) still write to /tmp because they
+# are ephemeral and watched-tree pollution causes rebuild storms.
+DIST_DIR ?= dist
+
+build: build-cmd
+
+build-cmd: $(DIST_DIR)
+	go build -o $(DIST_DIR)/gofastr ./cmd/gofastr
+	go build -o $(DIST_DIR)/kiln    ./cmd/kiln
+
+build-examples: $(DIST_DIR)
+	@for dir in examples/api-tour examples/blog examples/core-ui-demo \
+	            examples/demo examples/spa examples/static-site \
+	            examples/website examples/widgets-demo; do \
+		name=$$(basename $$dir); \
+		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
+		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
+	done
+
+build-all: build-cmd build-examples
+
+$(DIST_DIR):
+	@mkdir -p $(DIST_DIR)
 
 test:
 	go test -count=1 -short ./...
@@ -40,6 +64,103 @@ test-pg-only:
 test-race:
 	go test -race -count=1 ./...
 
+# ---- Benchmarks ----
+#
+# `make bench` runs every Benchmark across the repo with stable defaults.
+# Postgres tiers are SKIPPED when no PG is reachable — set TEST_POSTGRES_DSN
+# or have Docker running to exercise them.
+#
+# Output is captured to dist/bench/ for diff'ing with benchstat.
+
+BENCH_OUT       ?= $(DIST_DIR)/bench
+BENCH_PKGS      ?= ./framework/... ./core/router/... ./battery/search/...
+BENCHTIME       ?= 1s
+BENCH_COUNT     ?= 3
+BENCH_TIMEOUT   ?= 30m
+
+$(BENCH_OUT):
+	@mkdir -p $(BENCH_OUT)
+
+bench: $(BENCH_OUT)
+	go test -run=^$$ -bench=. -benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) \
+		-timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/all.txt
+
+bench-sqlite: $(BENCH_OUT)
+	@# BENCH_SKIP_PG=1 makes forEachBenchDialect skip the postgres branch even
+	@# when PG is reachable, so SQLite-only runs are deterministic regardless
+	@# of Docker state.
+	BENCH_SKIP_PG=1 go test -run=^$$ -bench=. -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/sqlite.txt
+
+bench-pg: $(BENCH_OUT)
+	@if [ -z "$$TEST_POSTGRES_DSN" ] && ! command -v docker >/dev/null 2>&1; then \
+		echo "✗ Need TEST_POSTGRES_DSN or Docker for Postgres benchmarks"; exit 1; \
+	fi
+	go test -run=^$$ -bench=postgres -benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) \
+		-timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/pg.txt
+
+bench-tier1: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkTier1 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier1.txt
+
+bench-tier2: $(BENCH_OUT)
+	go test -run=^$$ -bench='BenchmarkMiddleware|BenchmarkJSONCasing|BenchmarkDSLParse|BenchmarkRouter' \
+		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
+		./framework/ ./core/router/ | tee $(BENCH_OUT)/tier2.txt
+
+bench-tier3: $(BENCH_OUT)
+	go test -run=^$$ -bench='BenchmarkEventBus|BenchmarkSSE|BenchmarkCron' \
+		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
+		./framework/ | tee $(BENCH_OUT)/tier3.txt
+
+bench-tier4: $(BENCH_OUT)
+	go test -run=^$$ -bench='BenchmarkAutoMigrate|BenchmarkSchemaDiff|BenchmarkMemory' \
+		-benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) \
+		./framework/ ./battery/search/ | tee $(BENCH_OUT)/tier4.txt
+
+# Tier 5 — TechEmpower-style endpoints (Plaintext, JSON, SingleQuery,
+# MultiQuery, Fortunes-like, Updates). Numbers here are cross-comparable
+# with the published TechEmpower Framework Benchmarks.
+bench-tier5: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT5 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier5.txt
+
+# Tier 6 — Latency percentiles + concurrency. Reports p50/p90/p99/p999_ns
+# per concurrency level via b.ReportMetric.
+bench-tier6: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT6 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier6.txt
+
+# Tier 7 — Stdlib baselines (net/http + database/sql) paired with the
+# framework equivalents. The delta is the framework's overhead tax.
+bench-tier7: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT7 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier7.txt
+
+# Tier 8 — Operational (cold start, sustained memory, goroutine leaks).
+# Use benchtime=1x for property-style metrics.
+bench-tier8: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT8 -benchmem -benchtime=1x \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier8.txt
+
+# Tier 9 — UI runtime: real-volume streaming list, SSE EventStream
+# end-to-end, island RPC swap, UI host page render.
+bench-tier9: $(BENCH_OUT)
+	go test -run=^$$ -bench=BenchmarkT9 -benchmem -benchtime=$(BENCHTIME) \
+		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier9.txt
+
+# Convenience aliases for the comparable-to-industry slices.
+bench-techempower: bench-tier5
+bench-overhead: bench-tier7
+
+# Resource benchmarks: bundle size, peak RAM during `go build`, idle/loaded
+# RAM of each running app. Builds three bench apps (minimal, crud, full) and
+# the two cmd/* binaries. Output is Markdown to stdout + dist/bench/resources.md.
+bench-resources: $(BENCH_OUT)
+	@mkdir -p $(BENCH_OUT)/resources
+	go run ./cmd/bench-resources -load=$${LOAD:-200} -out=$(BENCH_OUT)/resources \
+		| tee $(BENCH_OUT)/resources.md
+
 lint:
 	golangci-lint run ./...
 
@@ -50,7 +171,7 @@ dev:
 	@echo "Use: gofastr dev"
 
 clean:
-	rm -rf bin/ .gofastr/
+	rm -rf $(DIST_DIR)/ bin/ .gofastr/
 
 # ---- Security ----
 

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -28,7 +28,7 @@ func (s *DocsIndexScreen) Load(ctx context.Context) error {
 func (s *DocsIndexScreen) Render() render.HTML {
 	if s.err != nil {
 		return render.Tag("main", nil,
-			elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Docs")),
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text("Docs")),
 			render.Tag("p", nil, render.Text("Failed to load docs: "+s.err.Error())),
 		)
 	}
@@ -42,7 +42,7 @@ func (s *DocsIndexScreen) Render() render.HTML {
 	}
 
 	return render.Tag("main", nil,
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Documentation")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Documentation")),
 		render.Tag("p", nil, render.Text(
 			"Long-form docs covering each part of the framework. Generated from "+
 				"the Markdown files in the project's docs/ directory.")),

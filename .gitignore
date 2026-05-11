@@ -84,6 +84,14 @@ logs/
 *.tgz
 
 # ---- Build artifacts ----
+# Canonical output directory for `make build`, `make build-all`,
+# `make build-examples`. Anything you `go build` for this repo should land
+# here; never commit binaries from the worktree root.
+dist/
+
+# Belt-and-braces: still ignore any stray binaries that appear at the root
+# from someone running `go build` directly. The convention is `make build`
+# → dist/, but ad-hoc builds shouldn't trip the audit either.
 demo_server
 /gofastr
 /gofastr-*

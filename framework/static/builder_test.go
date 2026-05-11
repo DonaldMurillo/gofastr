@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	coreapp "github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/uihost"
 )
@@ -19,7 +19,7 @@ type homeScreen struct{}
 func (homeScreen) ScreenTitle() string                { return "Home" }
 func (homeScreen) ScreenDescription() string          { return "" }
 func (homeScreen) ScreenType() coreapp.ScreenType     { return coreapp.ScreenPage }
-func (homeScreen) Render() render.HTML                { return elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Home")) }
+func (homeScreen) Render() render.HTML                { return html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home")) }
 
 // loadingScreen sets a body string from Load(ctx) — ensures Load runs at SSG time.
 type loadingScreen struct {

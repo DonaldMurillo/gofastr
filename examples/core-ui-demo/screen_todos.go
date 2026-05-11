@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -22,13 +22,13 @@ func (s *TodosScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *TodosScreen) ComponentID() string        { return "todos" }
 
 func (s *TodosScreen) Render() render.HTML {
-	return elements.Div(elements.DivConfig{Attrs: elements.Attrs{"data-component": "todos"}, Class: "todos-screen"},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Todos")),
-		elements.Paragraph(elements.TextConfig{},
+	return html.Div(html.DivConfig{Attrs: html.Attrs{"data-component": "todos"}, Class: "todos-screen"},
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Todos")),
+		html.Paragraph(html.TextConfig{},
 			render.Text("Add a task, toggle it complete, or delete it. State persists in the browser via the runtime's state helpers.")),
 
-		elements.Section(elements.SectionConfig{Label: "New todo"},
-			elements.Div(elements.DivConfig{Class: "todo-form"},
+		html.Section(html.SectionConfig{Label: "New todo"},
+			html.Div(html.DivConfig{Class: "todo-form"},
 				render.Tag("input", map[string]string{
 					"id":          "todo-input",
 					"type":        "text",
@@ -37,21 +37,21 @@ func (s *TodosScreen) Render() render.HTML {
 					"aria-label":  "New todo description",
 					"onkeydown":   "if(event.key==='Enter'){event.preventDefault();G.trigger('todos','todo-add');}",
 				}),
-				elements.Button(elements.ButtonConfig{
+				html.Button(html.ButtonConfig{
 					Label: "Add",
 					Class: "cta-button",
-					Attrs: elements.Attrs{"data-action": "todo-add"},
+					Attrs: html.Attrs{"data-action": "todo-add"},
 				}),
 			),
 		),
 
-		elements.Section(elements.SectionConfig{Label: "Todo list"},
-			elements.Div(elements.DivConfig{Class: "todo-stats"},
+		html.Section(html.SectionConfig{Label: "Todo list"},
+			html.Div(html.DivConfig{Class: "todo-stats"},
 				render.Tag("span", map[string]string{"id": "todo-count", "aria-live": "polite"}, render.Text("0 todos")),
-				elements.Button(elements.ButtonConfig{
+				html.Button(html.ButtonConfig{
 					Label: "Clear completed",
 					Class: "todo-clear",
-					Attrs: elements.Attrs{"data-action": "todo-clear-completed"},
+					Attrs: html.Attrs{"data-action": "todo-clear-completed"},
 				}),
 			),
 			render.Tag("ul", map[string]string{

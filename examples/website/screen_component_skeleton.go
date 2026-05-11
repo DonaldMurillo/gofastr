@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
-	"github.com/gofastr/gofastr/core-ui/skeleton"
+	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/gofastr/gofastr/core-ui/patterns/skeleton"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -52,12 +52,12 @@ skeleton.New(skeleton.Config{Variant: skeleton.Circle, Width: "3rem"})`
 	return render.Tag("main", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Skeleton")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Skeleton")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"Three shimmer placeholders rendered with pure CSS. Variants: Line, Block, Circle.")),
 		demoFrame(stack, source),
 
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Accessibility")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Accessibility")),
 		render.Tag("p", nil, render.Text(
 			"Every skeleton is aria-hidden=\"true\". Surface the loading state on the parent container (e.g. aria-busy=\"true\") so screen readers announce it once, not for every shimmer block.")),
 	)

@@ -14,7 +14,7 @@
 //  1. Hosts (kiln, future feature packages) describe widgets
 //     declaratively via WidgetDef. They never write DOM/CSS by hand.
 //
-//  2. The runtime (core-ui/runtime + core-ui/elements/Overlay) owns
+//  2. The runtime (core-ui/runtime + core-ui/html/Overlay) owns
 //     mounting, stacking, focus management, SSE wiring, and RPC
 //     dispatch. Hosts only fill slots and declare server-side signals
 //     + RPC handlers.

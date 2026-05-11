@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
-	"github.com/gofastr/gofastr/core-ui/tabs"
+	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/gofastr/gofastr/core-ui/patterns/tabs"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -39,16 +39,16 @@ func (s *TabsScreen) Render() render.HTML {
 	return render.Tag("main", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Tabs")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Tabs")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"A tabbed-content layout built from native <details> elements with a shared name= attribute. Zero JavaScript, full keyboard accessibility.")),
 		demoFrame(demo, source),
 
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("How it works")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("How it works")),
 		render.Tag("p", nil, render.Text(
 			"Each tab is a <details> element. They share a name= attribute, so the browser closes the previously-open one when a new one opens — same mechanic as accordion.Group. CSS Grid arranges summaries in row 1 and panels in row 2 spanning all columns.")),
 
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("API")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
 		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
 			`type Config struct {
     Name  string // required

@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -41,7 +41,7 @@ func (s *ThemeSwapDemoScreen) Render() render.HTML {
 		ui.Callout(ui.CalloutConfig{Title: "Heads up", Variant: ui.StatusInfo},
 			render.Text("Callouts and Buttons inherit --color-primary too — flip the radio to confirm.")),
 		render.Tag("div", map[string]string{"class": "theme-swap__row"},
-			elements.Button(elements.ButtonConfig{Label: "Primary action", Class: "ui-button"}),
+			html.Button(html.ButtonConfig{Label: "Primary action", Class: "ui-button"}),
 			ui.DangerButton(ui.DangerButtonConfig{Label: "Destructive"}),
 		),
 	)
@@ -68,7 +68,7 @@ func (s *ThemeSwapDemoScreen) Render() render.HTML {
 
 func themeOption(value, label string, checked bool) render.HTML {
 	id := "theme-" + value
-	inputAttrs := elements.Attrs{
+	inputAttrs := html.Attrs{
 		"type":  "radio",
 		"name":  "theme",
 		"value": value,

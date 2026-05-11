@@ -5,7 +5,7 @@ import (
 
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core-ui/signal"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -36,29 +36,29 @@ func (s *SignalDemoScreen) Render() render.HTML {
 	currentTotal := total.Get()
 	currentLog := log.Get()
 
-	return elements.Div(elements.DivConfig{Attrs: elements.Attrs{"data-component": "signal-demo"}},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Signal Demo")),
-		elements.Paragraph(elements.TextConfig{}, render.Text("Demonstrates Computed and Effect signals working together.")),
-		elements.Section(
-			elements.SectionConfig{Label: "Price calculator"},
-			elements.Div(elements.DivConfig{Class: "counter-display"},
-				elements.Button(elements.ButtonConfig{
+	return html.Div(html.DivConfig{Attrs: html.Attrs{"data-component": "signal-demo"}},
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Signal Demo")),
+		html.Paragraph(html.TextConfig{}, render.Text("Demonstrates Computed and Effect signals working together.")),
+		html.Section(
+			html.SectionConfig{Label: "Price calculator"},
+			html.Div(html.DivConfig{Class: "counter-display"},
+				html.Button(html.ButtonConfig{
 					Label: "−",
 					Class: "counter-btn",
-					Attrs: elements.Attrs{"data-action": "signal-decrement", "aria-label": "Decrease quantity"},
+					Attrs: html.Attrs{"data-action": "signal-decrement", "aria-label": "Decrease quantity"},
 				}),
 				render.Tag("span", map[string]string{"class": "counter-value", "id": "signal-qty"}, render.Text(fmt.Sprintf("%d", quantity.Get()))),
-				elements.Button(elements.ButtonConfig{
+				html.Button(html.ButtonConfig{
 					Label: "+",
 					Class: "counter-btn",
-					Attrs: elements.Attrs{"data-action": "signal-increment", "aria-label": "Increase quantity"},
+					Attrs: html.Attrs{"data-action": "signal-increment", "aria-label": "Increase quantity"},
 				}),
 			),
-			elements.Paragraph(elements.TextConfig{}, render.Text(fmt.Sprintf("Unit price: $%.2f", unitPrice))),
-			elements.Paragraph(elements.TextConfig{Class: "product-detail-price"}, render.HTML(fmt.Sprintf(`<span id="signal-total">Total: %s</span>`, currentTotal))),
-			elements.Paragraph(elements.TextConfig{Attrs: elements.Attrs{"aria-live": "polite"}}, render.HTML(fmt.Sprintf(`<span id="signal-log">%s</span>`, currentLog))),
+			html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Unit price: $%.2f", unitPrice))),
+			html.Paragraph(html.TextConfig{Class: "product-detail-price"}, render.HTML(fmt.Sprintf(`<span id="signal-total">Total: %s</span>`, currentTotal))),
+			html.Paragraph(html.TextConfig{Attrs: html.Attrs{"aria-live": "polite"}}, render.HTML(fmt.Sprintf(`<span id="signal-log">%s</span>`, currentLog))),
 		),
-		elements.Paragraph(elements.TextConfig{}, render.Text("The Computed signal auto-derives the total. The Effect signal reacts to changes and logs them.")),
+		html.Paragraph(html.TextConfig{}, render.Text("The Computed signal auto-derives the total. The Effect signal reacts to changes and logs them.")),
 	)
 }
 

@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -23,8 +23,8 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		Title:    "Semantic components",
 		Subtitle: "Building blocks expressing product intent — composed from core-ui primitives, styled via framework/ui/theme tokens.",
 		Actions: render.Join(
-			elements.Link(elements.LinkConfig{Href: "https://github.com/DonaldMurillo/gofastr/tree/main/framework/ui",
-				Text: "Source", Class: "ui-button", Attrs: elements.Attrs{"rel": "external"}}),
+			html.Link(html.LinkConfig{Href: "https://github.com/DonaldMurillo/gofastr/tree/main/framework/ui",
+				Text: "Source", Class: "ui-button", Attrs: html.Attrs{"rel": "external"}}),
 		),
 	})
 
@@ -64,7 +64,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		Title:       "No customers yet",
 		Description: "Once your team adds the first customer, they'll appear here. You can also import from CSV.",
 		Action: render.Tag("div", map[string]string{"class": "demo-row-flex"},
-			elements.Button(elements.ButtonConfig{Label: "Import CSV", Class: "ui-button"}),
+			html.Button(html.ButtonConfig{Label: "Import CSV", Class: "ui-button"}),
 			ui.DangerButton(ui.DangerButtonConfig{Label: "Reset all"}),
 		),
 	})
@@ -76,17 +76,17 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		ui.FormField(ui.FormFieldConfig{
 			Label: "Display name", For: "name", Required: true,
 			Help:  "Shown next to your messages.",
-			Input: elements.Input(elements.InputConfig{Type: "text", Name: "name", ID: "name"}),
+			Input: html.Input(html.InputConfig{Type: "text", Name: "name", ID: "name"}),
 		}),
 		ui.FormField(ui.FormFieldConfig{
 			Label: "Email", For: "email", Required: true,
 			Error: "Please enter a valid email address.",
-			Input: elements.Input(elements.InputConfig{Type: "email", Name: "email", ID: "email"}),
+			Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "email"}),
 		}),
 		ui.FormField(ui.FormFieldConfig{
 			Label: "Bio", For: "bio",
 			Help:  "Markdown supported. Max 500 characters.",
-			Input: elements.TextArea(elements.TextAreaConfig{Name: "bio", ID: "bio"}),
+			Input: html.TextArea(html.TextAreaConfig{Name: "bio", ID: "bio"}),
 		}),
 	)
 
@@ -135,28 +135,28 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		},
 			render.Tag("ul", map[string]string{"class": "doc-list"},
 				render.Tag("li", nil,
-					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/datatable",
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/datatable",
 						Content: render.Join(
 							render.Tag("strong", nil, render.Text("DataTable")),
-							render.Tag("span", nil, render.Text("Sortable headers, pagination footer, empty state, ARIA-correct via core-ui elements.")),
+							render.Tag("span", nil, render.Text("Sortable headers, pagination footer, empty state, ARIA-correct via core-ui html.")),
 						)}),
 				),
 				render.Tag("li", nil,
-					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/form",
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/form",
 						Content: render.Join(
 							render.Tag("strong", nil, render.Text("Form & validation")),
 							render.Tag("span", nil, render.Text("FieldErrors round-trip; pristine vs validation-failed states side by side.")),
 						)}),
 				),
 				render.Tag("li", nil,
-					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/notification",
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/notification",
 						Content: render.Join(
 							render.Tag("strong", nil, render.Text("Notification")),
 							render.Tag("span", nil, render.Text("Styled toast row — five variants, optional dismiss link, role=alert auto-applied.")),
 						)}),
 				),
 				render.Tag("li", nil,
-					elements.LinkHTML(elements.LinkHTMLConfig{Href: "/framework-ui/theme",
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/theme",
 						Content: render.Join(
 							render.Tag("strong", nil, render.Text("Theme swap")),
 							render.Tag("span", nil, render.Text("One-token-swap re-skin demo — pick a primary color and watch the whole page re-skin via :has().")),

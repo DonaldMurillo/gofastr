@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -77,27 +77,27 @@ func Notification(cfg NotificationConfig) render.HTML {
 		role = "alert"
 	}
 
-	// elements.Div applies class/id; we attach role + aria-live via Attrs.
-	attrs := elements.Attrs{
+	// html.Div applies class/id; we attach role + aria-live via Attrs.
+	attrs := html.Attrs{
 		"role":      role,
 		"aria-live": "polite",
 	}
 
-	icon := elements.Span(elements.TextConfig{
+	icon := html.Span(html.TextConfig{
 		Class: "ui-notification__icon",
-		Attrs: elements.Attrs{"aria-hidden": "true"},
+		Attrs: html.Attrs{"aria-hidden": "true"},
 	}, render.Text(notificationGlyph(v)))
 
 	textChildren := []render.HTML{
-		elements.Strong(elements.TextConfig{Class: "ui-notification__title"},
+		html.Strong(html.TextConfig{Class: "ui-notification__title"},
 			render.Text(cfg.Title)),
 	}
 	if cfg.Body != "" {
 		textChildren = append(textChildren,
-			elements.Paragraph(elements.TextConfig{Class: "ui-notification__body"},
+			html.Paragraph(html.TextConfig{Class: "ui-notification__body"},
 				render.Text(cfg.Body)))
 	}
-	textBlock := elements.Div(elements.DivConfig{Class: "ui-notification__text"}, textChildren...)
+	textBlock := html.Div(html.DivConfig{Class: "ui-notification__text"}, textChildren...)
 
 	children := []render.HTML{icon, textBlock}
 	if cfg.DismissHref != "" {
@@ -105,14 +105,14 @@ func Notification(cfg NotificationConfig) render.HTML {
 		if label == "" {
 			label = "Dismiss notification"
 		}
-		children = append(children, elements.LinkHTML(elements.LinkHTMLConfig{
+		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
 			Href:    cfg.DismissHref,
 			Class:   "ui-notification__dismiss",
-			Attrs:   elements.Attrs{"aria-label": label},
+			Attrs:   html.Attrs{"aria-label": label},
 			Content: render.Text("×"),
 		}))
 	}
-	return elements.Div(elements.DivConfig{
+	return html.Div(html.DivConfig{
 		Class: cls, ID: cfg.ID,
 		Attrs: attrs,
 	}, children...)

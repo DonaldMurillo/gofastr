@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 	"github.com/gofastr/gofastr/framework/ui"
 )
@@ -22,11 +22,11 @@ func (s *FormDemoScreen) Render() render.HTML {
 			ui.FormField(ui.FormFieldConfig{
 				Label: "Display name", For: "u-name", Required: true,
 				Help:  "Shown next to your messages.",
-				Input: elements.Input(elements.InputConfig{Type: "text", Name: "name", ID: "u-name"}),
+				Input: html.Input(html.InputConfig{Type: "text", Name: "name", ID: "u-name"}),
 			}),
 			ui.FormField(ui.FormFieldConfig{
 				Label: "Email", For: "u-email", Required: true,
-				Input: elements.Input(elements.InputConfig{Type: "email", Name: "email", ID: "u-email"}),
+				Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "u-email"}),
 			}),
 		),
 	)
@@ -43,11 +43,11 @@ func (s *FormDemoScreen) Render() render.HTML {
 		ui.FormSection(ui.FormSectionConfig{Heading: "Profile"},
 			ui.FormFieldFor(errs, "name", ui.FormFieldConfig{
 				Label: "Display name", For: "e-name", Required: true,
-				Input: elements.Input(elements.InputConfig{Type: "text", Name: "name", ID: "e-name"}),
+				Input: html.Input(html.InputConfig{Type: "text", Name: "name", ID: "e-name"}),
 			}),
 			ui.FormFieldFor(errs, "email", ui.FormFieldConfig{
 				Label: "Email", For: "e-email", Required: true,
-				Input: elements.Input(elements.InputConfig{Type: "email", Name: "email", ID: "e-email"}),
+				Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "e-email"}),
 			}),
 		),
 	)

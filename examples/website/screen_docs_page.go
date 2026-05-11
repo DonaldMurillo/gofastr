@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/markdown"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -81,13 +81,13 @@ func (s *DocsPageScreen) StaticPaths(ctx context.Context) []map[string]string {
 func (s *DocsPageScreen) Render() render.HTML {
 	if s.err != nil {
 		return render.Tag("main", nil,
-			elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Doc not found")),
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text("Doc not found")),
 			render.Tag("p", nil, render.Text(s.err.Error())),
-			elements.Link(elements.LinkConfig{Href: "/docs/", Text: "← Back to docs", Class: "doc-back"}),
+			html.Link(html.LinkConfig{Href: "/docs/", Text: "← Back to docs", Class: "doc-back"}),
 		)
 	}
 	return render.Tag("main", map[string]string{"class": "doc-body"},
-		elements.Link(elements.LinkConfig{Href: "/docs/", Text: "← Back to docs", Class: "doc-back"}),
+		html.Link(html.LinkConfig{Href: "/docs/", Text: "← Back to docs", Class: "doc-back"}),
 		s.body,
 	)
 }

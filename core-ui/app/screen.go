@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -183,7 +183,7 @@ func (s *Screen) Render() render.HTML {
 
 	switch s.Type {
 	case ScreenPage:
-		return elements.Main(elements.MainConfig{}, content)
+		return html.Main(html.MainConfig{}, content)
 
 	case ScreenDrawer:
 		return render.Tag("div", map[string]string{
@@ -206,7 +206,7 @@ func (s *Screen) Render() render.HTML {
 
 	default:
 		// Fallback: treat as page.
-		return elements.Main(elements.MainConfig{}, content)
+		return html.Main(html.MainConfig{}, content)
 	}
 }
 

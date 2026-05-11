@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -11,19 +11,19 @@ type HeaderComponent struct{}
 
 func (h *HeaderComponent) Render() render.HTML {
 	return render.Tag("header", map[string]string{"class": "site-header"},
-		elements.Link(elements.LinkConfig{Href: "/", Text: "GoFastr", Class: "brand"}),
-		elements.Nav(elements.NavConfig{Label: "Main"},
-			elements.Link(elements.LinkConfig{Href: "/", Text: "Home"}),
-			elements.Link(elements.LinkConfig{Href: "/docs/", Text: "Docs"}),
-			elements.Link(elements.LinkConfig{Href: "/components/", Text: "Components"}),
-			elements.Link(elements.LinkConfig{Href: "/framework-ui/", Text: "Framework UI"}),
-			elements.Link(elements.LinkConfig{Href: "/customers", Text: "Customers (CRUD)"}),
-			elements.Link(elements.LinkConfig{Href: "/examples/", Text: "Examples"}),
-			elements.Link(elements.LinkConfig{Href: "/about", Text: "About"}),
-			elements.Link(elements.LinkConfig{
+		html.Link(html.LinkConfig{Href: "/", Text: "GoFastr", Class: "brand"}),
+		html.Nav(html.NavConfig{Label: "Main"},
+			html.Link(html.LinkConfig{Href: "/", Text: "Home"}),
+			html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs"}),
+			html.Link(html.LinkConfig{Href: "/components/", Text: "Components"}),
+			html.Link(html.LinkConfig{Href: "/framework-ui/", Text: "Framework UI"}),
+			html.Link(html.LinkConfig{Href: "/customers", Text: "Customers (CRUD)"}),
+			html.Link(html.LinkConfig{Href: "/examples/", Text: "Examples"}),
+			html.Link(html.LinkConfig{Href: "/about", Text: "About"}),
+			html.Link(html.LinkConfig{
 				Href:  "https://github.com/DonaldMurillo/gofastr",
 				Text:  "GitHub",
-				Attrs: elements.Attrs{"rel": "external"},
+				Attrs: html.Attrs{"rel": "external"},
 			}),
 		),
 	)

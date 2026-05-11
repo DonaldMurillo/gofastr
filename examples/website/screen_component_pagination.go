@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
-	"github.com/gofastr/gofastr/core-ui/pagination"
+	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -111,7 +111,7 @@ func paginationIslandHandler(w http.ResponseWriter, r *http.Request) {
 	return render.Tag("main", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Pagination")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Pagination")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"A numeric pagination nav. Renders as plain <a href> links by default; pass IslandSignal+IslandEndpoint to switch to island mode (data-fui-rpc buttons that swap just the island, no page reload).")),
 		demoFrame(stack, source),

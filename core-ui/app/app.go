@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gofastr/gofastr/core-ui/component"
+	"github.com/gofastr/gofastr/core-ui/di"
 	"github.com/gofastr/gofastr/core-ui/style"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -15,7 +16,7 @@ type App struct {
 	// Name is the application name, used in the page title.
 	Name string
 	// Container is the dependency injection container.
-	Container *Container
+	Container *di.Container
 	// Router maps paths to screens and layouts.
 	Router *Router
 	// Theme holds optional theme configuration (can be nil).
@@ -26,7 +27,7 @@ type App struct {
 func NewApp(name string) *App {
 	return &App{
 		Name:      name,
-		Container: NewContainer(),
+		Container: di.NewContainer(),
 		Router:    NewRouter(),
 	}
 }

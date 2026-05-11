@@ -160,7 +160,9 @@ server do the math.
 ### How to build a page
 
 1. Implement `Screen` (`Render() render.HTML`, optionally `Load(ctx)` and `SetParams`).
-2. Inside Render, compose `core-ui/elements` + `framework/ui` semantic components.
+2. Inside Render, compose `core-ui/html` (1:1 tag primitives) +
+   `core-ui/patterns` (accordion, tabs, pagination…) + `framework/ui`
+   (semantic components like PageHeader, FormField, DataTable).
 3. Anything that changes state in response to a user action → wrap it in
    an **island** (see below).
 4. Register on the app router.
@@ -232,8 +234,16 @@ triggers a screen-partial fetch.*
 
 ```
 core-ui/
-  app/         — screen/router/app abstractions, request-in-context helpers
-  elements/    — semantic HTML primitives (Heading, Button, Form, Table…)
+  app/         — screen + router + layout + request-in-context helpers
+                 (the URL → rendered page pipeline)
+  di/          — dependency injection container (used by app)
+  html/        — semantic HTML primitives, 1:1 with HTML tags
+                 (Div, Button, Heading, Form, Table…)
+  patterns/    — composed UI patterns (not 1:1 with HTML):
+                 accordion, breadcrumbs, pagination, progress,
+                 skeleton, tabs
+  component/   — Component / InteractiveComponent interfaces (the contract
+                 every renderable satisfies)
   widget/      — island/widget builder + registration
   widget/preset/ — opinionated mounting shortcuts (Modal, Toast, Drawer…)
   widget/theme/ — page-level theme tokens + utility classes
@@ -241,8 +251,7 @@ core-ui/
   island/      — runtime-side island manager
   runtime/     — runtime.js (client) + Go embed wrapper
   style/       — theme structs, stylesheet builder, token resolution
-  component/   — component interfaces (Component, InteractiveComponent)
-  compile/     — Go-action-to-JS compiler (legacy; islands are preferred)
+  check/       — .ui.go linter
 
 framework/
   uihost/      — wires core-ui app onto framework.App router; serves

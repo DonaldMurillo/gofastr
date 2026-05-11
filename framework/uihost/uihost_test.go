@@ -13,7 +13,7 @@ import (
 
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core-ui/island"
 	"github.com/gofastr/gofastr/core/render"
 )
@@ -25,7 +25,7 @@ import (
 type testHeaderComp struct{}
 
 func (t *testHeaderComp) Render() render.HTML {
-	return elements.Header(elements.HeaderConfig{},
+	return html.Header(html.HeaderConfig{},
 		render.Text("Test Site"),
 	)
 }
@@ -33,7 +33,7 @@ func (t *testHeaderComp) Render() render.HTML {
 type testFooterComp struct{}
 
 func (t *testFooterComp) Render() render.HTML {
-	return elements.Footer(elements.FooterConfig{},
+	return html.Footer(html.FooterConfig{},
 		render.Text("© 2025"),
 	)
 }
@@ -41,9 +41,9 @@ func (t *testFooterComp) Render() render.HTML {
 type testHomeComp struct{}
 
 func (t *testHomeComp) Render() render.HTML {
-	return elements.Div(elements.DivConfig{},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Home Page")),
-		elements.Paragraph(elements.TextConfig{}, render.Text("Welcome!")),
+	return html.Div(html.DivConfig{},
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home Page")),
+		html.Paragraph(html.TextConfig{}, render.Text("Welcome!")),
 	)
 }
 
@@ -52,7 +52,7 @@ type testClickButton struct {
 }
 
 func (b *testClickButton) Render() render.HTML {
-	return elements.Button(elements.ButtonConfig{Label: b.Label, Attrs: elements.OnClick("do-click")})
+	return html.Button(html.ButtonConfig{Label: b.Label, Attrs: html.OnClick("do-click")})
 }
 
 func (b *testClickButton) Actions() {

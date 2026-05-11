@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -15,13 +15,13 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *HomeScreen) Render() render.HTML {
 	hero := render.Tag("section", map[string]string{"class": "hero", "aria-label": "Hero"},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("GoFastr")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("GoFastr")),
 		render.Tag("p", map[string]string{"class": "subtitle"},
 			render.Text("A Go full-stack framework for the AI era. Declare your entities once, "+
 				"get a working app: typed CRUD, migrations, OpenAPI, MCP tools, and a server-driven UI runtime.")),
 		render.Tag("div", map[string]string{"class": "cta-row"},
-			elements.Link(elements.LinkConfig{Href: "/docs/", Text: "Read the docs", Class: "cta-button"}),
-			elements.Link(elements.LinkConfig{
+			html.Link(html.LinkConfig{Href: "/docs/", Text: "Read the docs", Class: "cta-button"}),
+			html.Link(html.LinkConfig{
 				Href: "https://github.com/DonaldMurillo/gofastr", Text: "GitHub",
 				Class: "cta-button secondary",
 			}),
@@ -29,7 +29,7 @@ func (s *HomeScreen) Render() render.HTML {
 	)
 
 	features := render.Tag("section", map[string]string{"aria-label": "Features"},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("What you get")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("What you get")),
 		render.Tag("div", map[string]string{"class": "feature-grid"},
 			featureCard("Entity declarations",
 				"Describe your domain in JSON or Go and the framework generates SQL tables, REST routes, OpenAPI ops, MCP tools, and typed Go models — all from one source."),
@@ -47,7 +47,7 @@ func (s *HomeScreen) Render() render.HTML {
 	)
 
 	quickstart := render.Tag("section", map[string]string{"aria-label": "Quickstart"},
-		elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Quickstart")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Quickstart")),
 		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
 			"git clone https://github.com/DonaldMurillo/gofastr.git\n"+
 				"cd gofastr\n"+
@@ -63,7 +63,7 @@ func (s *HomeScreen) Render() render.HTML {
 
 func featureCard(title, body string) render.HTML {
 	return render.Tag("article", map[string]string{"class": "feature-card"},
-		elements.Heading(elements.HeadingConfig{Level: 3}, render.Text(title)),
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
 		render.Tag("p", nil, render.Text(body)),
 	)
 }

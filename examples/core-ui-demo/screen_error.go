@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -15,20 +15,20 @@ func (s *ErrorBoundaryDemoScreen) ScreenDescription() string  { return "Error bo
 func (s *ErrorBoundaryDemoScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ErrorBoundaryDemoScreen) Render() render.HTML {
-	return elements.Div(elements.DivConfig{},
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Error Boundary Demo")),
-		elements.Paragraph(elements.TextConfig{}, render.Text("Error boundaries catch panics in component Render() and show a fallback UI.")),
-		elements.Section(
-			elements.SectionConfig{Label: "Safe component"},
-			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Working Component")),
-			elements.Paragraph(elements.TextConfig{}, render.Text("This component renders normally.")),
+	return html.Div(html.DivConfig{},
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Error Boundary Demo")),
+		html.Paragraph(html.TextConfig{}, render.Text("Error boundaries catch panics in component Render() and show a fallback UI.")),
+		html.Section(
+			html.SectionConfig{Label: "Safe component"},
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Working Component")),
+			html.Paragraph(html.TextConfig{}, render.Text("This component renders normally.")),
 		),
-		elements.Section(
-			elements.SectionConfig{Label: "Broken component with error boundary"},
-			elements.Heading(elements.HeadingConfig{Level: 2}, render.Text("Panicking Component")),
+		html.Section(
+			html.SectionConfig{Label: "Broken component with error boundary"},
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Panicking Component")),
 			renderHTMLWithErrorBoundary(),
 		),
-		elements.Paragraph(elements.TextConfig{}, render.Text("The red box above is the default error boundary fallback. Components can implement ErrorBoundary for custom fallback UI.")),
+		html.Paragraph(html.TextConfig{}, render.Text("The red box above is the default error boundary fallback. Components can implement ErrorBoundary for custom fallback UI.")),
 	)
 }
 
@@ -39,9 +39,9 @@ func (b *brokenComponent) Render() render.HTML {
 }
 
 func renderHTMLWithErrorBoundary() render.HTML {
-	html, err := component.SafeRender(&brokenComponent{})
+	rendered, err := component.SafeRender(&brokenComponent{})
 	if err != nil {
-		return elements.Div(elements.DivConfig{Class: "error-boundary-result"}, html)
+		return html.Div(html.DivConfig{Class: "error-boundary-result"}, rendered)
 	}
-	return html
+	return rendered
 }

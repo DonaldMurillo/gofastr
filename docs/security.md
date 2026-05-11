@@ -1,22 +1,122 @@
-# Security Defaults
+# Security defaults
 
-GoFastr provides defensive middleware in `core/middleware`.
+`core/middleware` provides the defensive HTTP primitives the framework
+composes by default. Most apps should accept the defaults and override
+specific knobs rather than rebuild the chain.
+
+## The default stack
+
+`framework.NewApp` installs this middleware chain on `app.Router` unless
+you pass `WithoutDefaultMiddleware()` (or call `app.Use(...)` before
+registering entities, which also disables it):
 
 ```go
-handler := middleware.Chain(
-    middleware.RequestID(),
-    middleware.Recovery(),
-    middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}),
-)(router)
+middleware.Recovery()
+middleware.RequestID()
+middleware.Logging()
+middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
+middleware.Timeout(30 * time.Second)
 ```
 
-`SecurityHeaders` sets conservative defaults:
+`Recovery` is outermost so a panic anywhere below it produces a clean
+`500`. `RequestID` runs next so every later log line carries the trace
+ID. `Timeout` is innermost — a `30s` deadline that cancels the request
+context if the handler hangs.
 
-- `Content-Security-Policy`
-- `X-Content-Type-Options: nosniff`
-- `Referrer-Policy: no-referrer`
-- `X-Frame-Options: DENY`
-- `Permissions-Policy`
+## SecurityHeaders
 
-Applications that embed third-party scripts, frames, images, or fonts should
-override `ContentSecurityPolicy` explicitly instead of weakening it globally.
+```go
+middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
+    ContentSecurityPolicy: "default-src 'self'; img-src 'self' https://cdn.example.com",
+    ReferrerPolicy:        "strict-origin-when-cross-origin",
+    FrameOptions:          "SAMEORIGIN",
+    PermissionsPolicy:     "geolocation=(self)",
+})
+```
+
+| Header                    | Default                                                                          |
+|---------------------------|----------------------------------------------------------------------------------|
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'` |
+| `X-Content-Type-Options`  | `nosniff` (always, not configurable)                                            |
+| `Referrer-Policy`         | `no-referrer`                                                                    |
+| `X-Frame-Options`         | `DENY`                                                                           |
+| `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
+
+The CSP default works with the built-in UI runtime because all CSS and
+scripts are served as external resources under `/__gofastr/*`. If you
+embed third-party scripts, fonts, or frames you must override
+`ContentSecurityPolicy` explicitly — do not relax it with
+`'unsafe-inline'` globally.
+
+## CORS
+
+```go
+middleware.CORS(middleware.CORSConfig{
+    AllowedOrigins:   []string{"https://app.example.com"},
+    AllowedMethods:   []string{http.MethodGet, http.MethodPost},
+    AllowedHeaders:   []string{"Authorization", "Content-Type"},
+    AllowCredentials: true,
+    MaxAge:           600,
+})
+```
+
+CORS is **not** in the default chain. Add it explicitly if your API
+serves browser clients on another origin.
+
+## CSRF
+
+```go
+middleware.CSRF(middleware.CSRFConfig{
+    CookieName: "fui_csrf",
+    HeaderName: "X-CSRF-Token",
+    Skip:       middleware.SkipBearerAuth(),
+})
+```
+
+Issues a cookie on safe requests; requires the matching header on
+mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
+`SkipBearerAuth()` is the shipped helper that bypasses CSRF on
+requests with `Authorization: Bearer …` — appropriate for pure API
+deployments where the browser is not involved.
+
+## Rate limiting
+
+```go
+middleware.RateLimit(middleware.RateLimitConfig{
+    Requests: 100,
+    Window:   time.Minute,
+    KeyFunc:  func(r *http.Request) string { return r.RemoteAddr },
+})
+```
+
+Token-bucket per key. `KeyFunc` defaults to `RemoteAddr`. Tune
+`Requests`/`Window` per route by composing two `RateLimit` middlewares
+in different `middleware.Chain` calls.
+
+## The full inventory
+
+`core/middleware` exports:
+
+- `RequestID()` — generates or echoes `X-Request-ID`.
+- `Recovery()` — turns panics into `500` with structured log line.
+- `Logging()` / `LoggingWithWriter(io.Writer)` — structured request log.
+- `SecurityHeaders(SecurityHeadersConfig)` — defensive headers above.
+- `CORS(CORSConfig)` — cross-origin headers + preflight.
+- `CSRF(CSRFConfig)` — double-submit cookie pattern.
+- `RateLimit(RateLimitConfig)` — token-bucket per key.
+- `Timeout(d)` — per-request deadline; cancels context on expiry.
+- `NewMetrics()` + `MetricsMiddleware` + `MetricsHandler` — RED metrics.
+- `Tracing(TracingConfig)` — OpenTelemetry span around each request.
+
+Each has a `*_test.go` you can read for the exact behaviour.
+
+## Common mistakes
+
+- **Relaxing CSP to fix a broken third-party script.** Override only
+  the directive you need (`script-src`, `style-src`) — never replace
+  `default-src 'self'` with `'unsafe-inline'`.
+- **Skipping `Recovery` because the app doesn't panic.** It does
+  eventually. Without it, a single panic terminates the request handler
+  goroutine without writing a response, leaving the client hanging.
+- **Composing CORS before `RequestID`.** Preflights still need trace
+  IDs; keep `RequestID` first.

@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/elements"
+	"github.com/gofastr/gofastr/core-ui/html"
 	"github.com/gofastr/gofastr/core/render"
 )
 
@@ -57,7 +57,7 @@ func (s *ExamplesScreen) Render() render.HTML {
 		))
 	}
 	return render.Tag("main", nil,
-		elements.Heading(elements.HeadingConfig{Level: 1}, render.Text("Examples")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Examples")),
 		render.Tag("p", nil, render.Text(
 			"Self-contained reference apps under examples/ in the repo. Each is a normal "+
 				"Go module that imports the framework — clone the repo and run them locally.")),

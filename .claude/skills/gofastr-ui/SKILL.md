@@ -45,7 +45,8 @@ code.
 
 | Need | Use |
 |---|---|
-| Static HTML primitive (`<button>`, `<h1>`, `<table>`) | `core-ui/elements` |
+| Static HTML primitive (`<button>`, `<h1>`, `<table>`) | `core-ui/html` |
+| A composed UI pattern (accordion, tabs, pagination, breadcrumbs) | `core-ui/patterns/<name>` |
 | A semantic component (PageHeader, FormField, DataTable) | `framework/ui/` |
 | An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPCWithSignal(...)`) |
 | A theme token | `framework/ui/theme` |

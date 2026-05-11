@@ -452,7 +452,7 @@ func TestBrowserSessionCookie(t *testing.T) {
 }
 
 // TestBrowserStylesApplied verifies that theme CSS variables are injected
-// and that key visual styles are actually applied to elements.
+// and that key visual styles are actually applied to html.
 func TestBrowserStylesApplied(t *testing.T) {
 	base := startTestServer(t)
 	ctx, cancel := chromedp.NewContext(context.Background())
