@@ -1,4 +1,4 @@
-package framework
+package migrate
 
 import (
 	"database/sql"
@@ -6,27 +6,27 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/migrate"
+	coremig "github.com/gofastr/gofastr/core/migrate"
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/entity"
 )
 
 // Dialect identifies the SQL dialect the migrator emits for. It's an alias
-// for migrate.Dialect so framework code and the lower-level migration system
+// for coremig.Dialect so framework code and the lower-level migration system
 // share one source of truth for dialect identity.
-type Dialect = migrate.Dialect
+type Dialect = coremig.Dialect
 
 // Dialect identifiers re-exported from core/migrate for ergonomic use inside
 // the framework package and in tests.
 const (
-	DialectSQLite   = migrate.DialectSQLite
-	DialectPostgres = migrate.DialectPostgres
+	DialectSQLite   = coremig.DialectSQLite
+	DialectPostgres = coremig.DialectPostgres
 )
 
-// detectDialect returns the dialect of an open *sql.DB. It probes for
+// DetectDialect returns the dialect of an open *sql.DB. It probes for
 // PostgreSQL via SELECT version() (cheap, no side effects) and falls back to
 // SQLite when that fails. The probe runs once per AutoMigrate call.
-func detectDialect(db *sql.DB) Dialect {
+func DetectDialect(db *sql.DB) Dialect {
 	var v string
 	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
 		if strings.Contains(strings.ToLower(v), "postgresql") {
@@ -36,16 +36,24 @@ func detectDialect(db *sql.DB) Dialect {
 	return DialectSQLite
 }
 
+// EntityRegistry is the minimal contract AutoMigrate (and DiffSchema) need
+// from the framework's Registry: a way to enumerate every registered entity
+// in stable order. Anything that returns the registered entities map
+// satisfies this — the *framework.Registry type does so implicitly.
+type EntityRegistry interface {
+	All() map[string]*entity.Entity
+}
+
 // AutoMigrate creates tables for all registered entities. Entities are
 // migrated in dependency order so FK targets exist before referencing
 // tables. Uses CREATE TABLE IF NOT EXISTS so re-running is safe.
-func AutoMigrate(db *sql.DB, registry *Registry) error {
+func AutoMigrate(db *sql.DB, registry EntityRegistry) error {
 	all := registry.All()
 	ordered, err := topoSortEntities(all)
 	if err != nil {
 		return err
 	}
-	dialect := detectDialect(db)
+	dialect := DetectDialect(db)
 	for _, ent := range ordered {
 		if err := migrateEntityWithRegistry(db, ent, all, dialect); err != nil {
 			return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
@@ -59,7 +67,7 @@ func AutoMigrate(db *sql.DB, registry *Registry) error {
 // callers that need foreign keys should call AutoMigrate. The dialect is
 // auto-detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
-	return migrateEntityWithRegistry(db, ent, nil, detectDialect(db))
+	return migrateEntityWithRegistry(db, ent, nil, DetectDialect(db))
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
@@ -79,7 +87,7 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 
 	var columns []string
 	for _, f := range fields {
-		col := fmt.Sprintf("%s %s", f.Name, sqlType(f, dialect))
+		col := fmt.Sprintf("%s %s", f.Name, SQLType(f, dialect))
 		if f.Name == ent.PrimaryKey {
 			col += " PRIMARY KEY"
 		}
@@ -90,7 +98,7 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 			col += " NOT NULL"
 		}
 		if f.Default != nil {
-			col += fmt.Sprintf(" DEFAULT %v", sqlDefault(f, dialect))
+			col += fmt.Sprintf(" DEFAULT %v", SQLDefault(f, dialect))
 		}
 		columns = append(columns, col)
 	}
@@ -217,10 +225,10 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 	return out, nil
 }
 
-// sqlType maps a schema FieldType to a SQL column type for the given dialect.
+// SQLType maps a schema FieldType to a SQL column type for the given dialect.
 // Postgres needs concrete types (TIMESTAMPTZ, REAL, BOOLEAN); SQLite is more
 // permissive but still benefits from explicit declarations.
-func sqlType(f schema.Field, dialect Dialect) string {
+func SQLType(f schema.Field, dialect Dialect) string {
 	switch f.Type {
 	case schema.String:
 		if f.Max != nil && *f.Max > 0 {
@@ -267,11 +275,11 @@ func sqlType(f schema.Field, dialect Dialect) string {
 	}
 }
 
-// sqlDefault returns the SQL DEFAULT value for a field. Booleans render as
+// SQLDefault returns the SQL DEFAULT value for a field. Booleans render as
 // TRUE/FALSE for Postgres and 1/0 for SQLite (both engines accept either,
 // but emitting the native form keeps DDL idiomatic and avoids surprises in
 // pg_dump output).
-func sqlDefault(f schema.Field, dialect Dialect) string {
+func SQLDefault(f schema.Field, dialect Dialect) string {
 	switch v := f.Default.(type) {
 	case string:
 		return "'" + strings.ReplaceAll(v, "'", "''") + "'"

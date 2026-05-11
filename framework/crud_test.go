@@ -16,6 +16,7 @@ import (
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/migrate"
 	"github.com/gofastr/gofastr/framework/tenant"
 )
 
@@ -538,9 +539,9 @@ func TestSqlDefault_StringEscapesSingleQuotes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := schema.Field{Default: tt.input}
-			result := sqlDefault(f, DialectSQLite)
+			result := migrate.SQLDefault(f, DialectSQLite)
 			if result != tt.expected {
-				t.Errorf("sqlDefault(%q) = %q, want %q", tt.input, result, tt.expected)
+				t.Errorf("migrate.SQLDefault(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
 	}
@@ -561,9 +562,9 @@ func TestSqlDefault_NonStringTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := schema.Field{Default: tt.input}
-			result := sqlDefault(f, DialectSQLite)
+			result := migrate.SQLDefault(f, DialectSQLite)
 			if result != tt.expected {
-				t.Errorf("sqlDefault(%v) = %q, want %q", tt.input, result, tt.expected)
+				t.Errorf("migrate.SQLDefault(%v) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/migrate"
 )
 
 // AuditConfig configures the audit log helper.
@@ -39,15 +40,15 @@ const (
 )
 
 // EnsureAuditTable creates the audit_log table if it does not exist. Idempotent.
-// Dialect-aware via the existing detectDialect helper.
+// Dialect-aware via the existing migrate.DetectDialect helper.
 func EnsureAuditTable(db *sql.DB, table string) error {
 	if table == "" {
 		table = "audit_log"
 	}
-	dialect := detectDialect(db)
+	dialect := migrate.DetectDialect(db)
 
 	tsType := "DATETIME"
-	if dialect == DialectPostgres {
+	if dialect == migrate.DialectPostgres {
 		tsType = "TIMESTAMPTZ"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (

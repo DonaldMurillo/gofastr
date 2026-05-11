@@ -1,4 +1,4 @@
-package framework
+package migrate
 
 import (
 	"context"
@@ -32,8 +32,8 @@ type SchemaChange struct {
 // entity in the registry. Auto-detects dialect from the open DB; tables
 // missing entirely from the DB are reported as CREATE TABLE statements
 // (delegates to the same builder AutoMigrate uses).
-func DiffSchema(ctx context.Context, db *sql.DB, registry *Registry) ([]SchemaChange, error) {
-	dialect := detectDialect(db)
+func DiffSchema(ctx context.Context, db *sql.DB, registry EntityRegistry) ([]SchemaChange, error) {
+	dialect := DetectDialect(db)
 	all := registry.All()
 
 	// Walk entities in topo order so referenced tables get diffed first.
@@ -80,7 +80,7 @@ func ApplySchemaDiff(ctx context.Context, db *sql.DB, changes []SchemaChange) (i
 // exist at all, returns a single CREATE TABLE change. Otherwise compares
 // columns and emits ADD/DROP fragments.
 func diffEntity(ctx context.Context, db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]SchemaChange, error) {
-	live, err := readLiveColumns(ctx, db, ent.GetTable(), dialect)
+	live, err := ReadLiveColumns(ctx, db, ent.GetTable(), dialect)
 	if err != nil {
 		return nil, err
 	}
@@ -109,14 +109,14 @@ func diffEntity(ctx context.Context, db *sql.DB, ent *entity.Entity, all map[str
 		if _, ok := live[f.Name]; ok {
 			continue
 		}
-		colType := sqlType(f, dialect)
+		colType := SQLType(f, dialect)
 		nullable := ""
 		if f.Required && f.AutoGenerate == schema.AutoNone {
 			nullable = " NOT NULL"
 		}
 		defaultClause := ""
 		if f.Default != nil {
-			defaultClause = fmt.Sprintf(" DEFAULT %s", sqlDefault(f, dialect))
+			defaultClause = fmt.Sprintf(" DEFAULT %s", SQLDefault(f, dialect))
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
 			ent.GetTable(), f.Name, colType, nullable, defaultClause)
@@ -165,16 +165,16 @@ func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 	return false
 }
 
-// readLiveColumns returns a map of column_name → data_type from the live
+// ReadLiveColumns returns a map of column_name → data_type from the live
 // DB. Empty map means "table doesn't exist".
-func readLiveColumns(ctx context.Context, db *sql.DB, table string, dialect Dialect) (map[string]string, error) {
+func ReadLiveColumns(ctx context.Context, db *sql.DB, table string, dialect Dialect) (map[string]string, error) {
 	if dialect == DialectPostgres {
-		return readLiveColumnsPostgres(ctx, db, table)
+		return ReadLiveColumnsPostgres(ctx, db, table)
 	}
-	return readLiveColumnsSQLite(ctx, db, table)
+	return ReadLiveColumnsSQLite(ctx, db, table)
 }
 
-func readLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
+func ReadLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT column_name, data_type
 		FROM information_schema.columns
@@ -195,7 +195,7 @@ func readLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map
 	return out, rows.Err()
 }
 
-func readLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
+func ReadLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
 	// PRAGMA can't be parameterised; the table name is taken from our own
 	// registry, not user input, so injection isn't a concern.
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
@@ -229,7 +229,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 	}
 	var columns []string
 	for _, f := range fields {
-		col := fmt.Sprintf("%s %s", f.Name, sqlType(f, dialect))
+		col := fmt.Sprintf("%s %s", f.Name, SQLType(f, dialect))
 		if f.Name == ent.PrimaryKey {
 			col += " PRIMARY KEY"
 		}
@@ -240,7 +240,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 			col += " NOT NULL"
 		}
 		if f.Default != nil {
-			col += fmt.Sprintf(" DEFAULT %v", sqlDefault(f, dialect))
+			col += fmt.Sprintf(" DEFAULT %v", SQLDefault(f, dialect))
 		}
 		columns = append(columns, col)
 	}

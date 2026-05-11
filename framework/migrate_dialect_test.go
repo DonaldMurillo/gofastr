@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gofastr/gofastr/core/schema"
+	"github.com/gofastr/gofastr/framework/migrate"
 )
 
 // TestSqlType_DialectMatrix locks in the SQL types emitted per (FieldType,
@@ -32,11 +33,11 @@ func TestSqlType_DialectMatrix(t *testing.T) {
 		{schema.Field{Type: schema.File}, "TEXT", "TEXT"},
 	}
 	for _, c := range cases {
-		if got := sqlType(c.field, DialectSQLite); got != c.wantSQLite {
-			t.Errorf("sqlType(%v, sqlite) = %q, want %q", c.field.Type, got, c.wantSQLite)
+		if got := migrate.SQLType(c.field, DialectSQLite); got != c.wantSQLite {
+			t.Errorf("migrate.SQLType(%v, sqlite) = %q, want %q", c.field.Type, got, c.wantSQLite)
 		}
-		if got := sqlType(c.field, DialectPostgres); got != c.wantPostgres {
-			t.Errorf("sqlType(%v, postgres) = %q, want %q", c.field.Type, got, c.wantPostgres)
+		if got := migrate.SQLType(c.field, DialectPostgres); got != c.wantPostgres {
+			t.Errorf("migrate.SQLType(%v, postgres) = %q, want %q", c.field.Type, got, c.wantPostgres)
 		}
 	}
 }
@@ -55,11 +56,11 @@ func TestSqlDefault_BoolDialectIdiom(t *testing.T) {
 	}
 	for _, c := range cases {
 		f := schema.Field{Default: c.v}
-		if got := sqlDefault(f, DialectSQLite); got != c.wantSQLite {
-			t.Errorf("sqlDefault(%v, sqlite) = %q, want %q", c.v, got, c.wantSQLite)
+		if got := migrate.SQLDefault(f, DialectSQLite); got != c.wantSQLite {
+			t.Errorf("migrate.SQLDefault(%v, sqlite) = %q, want %q", c.v, got, c.wantSQLite)
 		}
-		if got := sqlDefault(f, DialectPostgres); got != c.wantPostgres {
-			t.Errorf("sqlDefault(%v, postgres) = %q, want %q", c.v, got, c.wantPostgres)
+		if got := migrate.SQLDefault(f, DialectPostgres); got != c.wantPostgres {
+			t.Errorf("migrate.SQLDefault(%v, postgres) = %q, want %q", c.v, got, c.wantPostgres)
 		}
 	}
 }

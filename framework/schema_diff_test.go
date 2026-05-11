@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofastr/gofastr/core/schema"
 	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/gofastr/gofastr/framework/migrate"
 )
 
 // ============================================================================
@@ -210,7 +211,7 @@ func TestSchemaDiff_ApplyTransactional(t *testing.T) {
 			t.Fatal("expected apply error")
 		}
 		// The first ALTER should NOT have committed.
-		cols, err := readLiveColumns(context.Background(), db, "posts", detectDialect(db))
+		cols, err := migrate.ReadLiveColumns(context.Background(), db, "posts", migrate.DetectDialect(db))
 		if err != nil {
 			t.Fatalf("readLive: %v", err)
 		}

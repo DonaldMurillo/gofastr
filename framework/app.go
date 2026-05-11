@@ -21,6 +21,7 @@ import (
 	"github.com/gofastr/gofastr/framework/entity"
 	"github.com/gofastr/gofastr/framework/event"
 	"github.com/gofastr/gofastr/framework/hook"
+	"github.com/gofastr/gofastr/framework/migrate"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -489,7 +490,7 @@ func (a *App) runStartHooks() error {
 func (a *App) Start(addr string) error {
 	// Auto-migrate all registered entities
 	if a.DB != nil {
-		if err := AutoMigrate(a.DB, a.Registry); err != nil {
+		if err := migrate.AutoMigrate(a.DB, a.Registry); err != nil {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 	}
