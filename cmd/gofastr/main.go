@@ -99,6 +99,8 @@ func main() {
 	switch cmd {
 	case "init":
 		runInit(cmdArgs)
+	case "theme":
+		runTheme(cmdArgs)
 	case "generate", "gen", "g":
 		runGenerate(cmdArgs)
 	case "build":
