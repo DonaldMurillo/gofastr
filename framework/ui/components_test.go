@@ -88,7 +88,30 @@ func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
 	mustContain(t, h, "ui-form-field__help")
 }
 
-// ─── DangerButton ───
+// ─── Button (typed variants) ───
+func TestButtonVariantsRenderClass(t *testing.T) {
+	for _, v := range []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost} {
+		h := Button(ButtonConfig{Label: "Action", Variant: v})
+		want := "ui-button--" + string(v)
+		mustContain(t, h, want)
+		mustContain(t, h, "Action")
+	}
+}
+
+func TestButtonDefaultsToPrimary(t *testing.T) {
+	h := Button(ButtonConfig{Label: "x"})
+	mustContain(t, h, "ui-button--primary")
+}
+
+func TestDangerButtonAliasMatchesButtonDanger(t *testing.T) {
+	a := string(DangerButton(DangerButtonConfig{Label: "Delete"}))
+	b := string(Button(ButtonConfig{Label: "Delete", Variant: ButtonDanger}))
+	if a != b {
+		t.Errorf("DangerButton alias should match Button{Variant: ButtonDanger}\n--- DangerButton ---\n%s\n--- Button ---\n%s", a, b)
+	}
+}
+
+// Pre-existing test kept for back-compat coverage of the alias.
 func TestDangerButtonHasDangerVariantClass(t *testing.T) {
 	h := DangerButton(DangerButtonConfig{Label: "Delete"})
 	mustContain(t, h, "ui-button--danger")

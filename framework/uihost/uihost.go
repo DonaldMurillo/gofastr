@@ -135,12 +135,17 @@ func (ds *UIHost) CustomCSS() string {
 }
 
 // AppCSS returns the merged app-level stylesheet body: theme :root
-// custom properties + customCSS concatenated. Used by the SSG so
-// static export ships the same single asset the live server serves.
+// custom properties + every registered theme override
+// (.fui-theme-<hash> blocks for ui.Themed wrappers) + customCSS,
+// in that order. Used by the SSG so static export ships the same
+// single asset the live server serves.
 func (ds *UIHost) AppCSS() string {
 	var out string
 	if ds.App != nil && ds.App.Theme != nil {
 		out = ds.App.Theme.CSSCustomProperties() + "\n"
+	}
+	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
+		out += overrides + "\n"
 	}
 	out += ds.customCSS
 	return out
@@ -478,18 +483,13 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 }
 
 // handleAppCSS serves the app-level CSS asset: theme :root custom
-// properties + WithCustomCSS payload concatenated. One request
-// per page replaces the legacy theme.css + styles.css split.
+// properties + registered .fui-theme-<hash> override blocks +
+// WithCustomCSS payload concatenated. One request per page replaces
+// the legacy theme.css + styles.css split.
 func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	if ds.App != nil && ds.App.Theme != nil {
-		fmt.Fprint(w, ds.App.Theme.CSSCustomProperties())
-		fmt.Fprint(w, "\n")
-	}
-	if ds.customCSS != "" {
-		fmt.Fprint(w, ds.customCSS)
-	}
+	fmt.Fprint(w, ds.AppCSS())
 }
 
 // handleThemeCSS / handleStylesCSS — retained as 410 GONE so any

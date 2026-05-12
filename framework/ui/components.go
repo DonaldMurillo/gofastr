@@ -243,35 +243,89 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 		out...))
 }
 
-// ─── DangerButton ───────────────────────────────────────────────────
+// ─── Button ─────────────────────────────────────────────────────────
 
-// DangerButtonConfig configures a destructive-action button.
-type DangerButtonConfig struct {
-	Label string // required visible text + aria-label
-	Type  string // "button" (default) | "submit" | "reset"
-	Attrs html.Attrs
-	ID    string
-	Class string
+// ButtonVariant is the semantic variant of a Button. String-typed
+// for ergonomic Go enums + readable serialization.
+type ButtonVariant string
+
+const (
+	ButtonPrimary   ButtonVariant = "primary"
+	ButtonSecondary ButtonVariant = "secondary"
+	ButtonDanger    ButtonVariant = "danger"
+	ButtonGhost     ButtonVariant = "ghost"
+)
+
+// ButtonConfig configures a button.
+type ButtonConfig struct {
+	Label   string        // required visible text + aria-label
+	Variant ButtonVariant // defaults to ButtonPrimary
+	Type    string        // "button" (default) | "submit" | "reset"
+	Attrs   html.Attrs
+	ID      string
+	Class   string
 }
 
-// DangerButton renders a button styled with the danger token. Use for
-// destructive actions (delete, revoke, drop) so the visual weight
-// matches the semantic.
-func DangerButton(cfg DangerButtonConfig) render.HTML {
+// Button renders a semantic button with a typed variant. Variant
+// maps to .ui-button--<variant> in the registered ui-button CSS;
+// the framework's styled component handles the visual rules.
+//
+// Authors never reach for raw class strings — pick a variant.
+func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" {
-		panic("ui: DangerButton requires Label")
+		panic("ui: Button requires Label")
 	}
-	cls := "ui-button ui-button--danger"
+	v := cfg.Variant
+	if v == "" {
+		v = ButtonPrimary
+	}
+	cls := "ui-button ui-button--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return dangerButtonStyle.WrapHTML(html.Button(html.ButtonConfig{
+	wrap := buttonStyle.WrapHTML
+	if v == ButtonDanger {
+		// The dangerButtonStyle handle predates Button — kept so
+		// existing app CSS keyed on data-fui-comp="ui-button-danger"
+		// keeps working. New code should rely on the ButtonVariant
+		// modifier class via the canonical ui-button style.
+		wrap = dangerButtonStyle.WrapHTML
+	}
+	return wrap(html.Button(html.ButtonConfig{
 		Label: cfg.Label,
 		Type:  cfg.Type,
 		Class: cls,
 		ID:    cfg.ID,
 		Attrs: cfg.Attrs,
 	}))
+}
+
+// ─── DangerButton (deprecated alias for Button{Variant: ButtonDanger}) ─
+
+// DangerButtonConfig is preserved for backwards compatibility.
+//
+// Deprecated: use Button{Variant: ButtonDanger}. Same render output,
+// consistent variant API across the framework.
+type DangerButtonConfig struct {
+	Label string
+	Type  string
+	Attrs html.Attrs
+	ID    string
+	Class string
+}
+
+// DangerButton renders a button with the danger variant.
+//
+// Deprecated: use Button(ButtonConfig{Variant: ButtonDanger, …}).
+func DangerButton(cfg DangerButtonConfig) render.HTML {
+	return Button(ButtonConfig{
+		Label:   cfg.Label,
+		Variant: ButtonDanger,
+		Type:    cfg.Type,
+		Attrs:   cfg.Attrs,
+		ID:      cfg.ID,
+		Class:   cfg.Class,
+	})
 }
 
 // ─── StatusBadge ────────────────────────────────────────────────────

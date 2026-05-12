@@ -51,22 +51,22 @@ func buttonCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-sm, 4px);
-  padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
   border: 1px solid transparent;
-  border-radius: var(--radii-md, 8px);
+  border-radius: var(--radii-md);
   font: inherit;
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-fg, #FFFFFF);
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
   text-decoration: none;
   transition: filter 150ms ease, opacity 150ms ease;
 }
 [data-fui-comp="ui-button"]:hover, .ui-button:hover { filter: brightness(0.95); }
 [data-fui-comp="ui-button"]:focus-visible, .ui-button:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 [data-fui-comp="ui-button"]:disabled, .ui-button:disabled,
@@ -74,7 +74,30 @@ func buttonCSS(_ style.Theme) string {
   cursor: not-allowed;
   opacity: 0.6;
   filter: none;
-}`
+}
+
+/* Variants — Primary is the default style above. */
+.ui-button--secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.ui-button--secondary:hover { filter: none; background: var(--color-surface-soft); }
+.ui-button--secondary:focus-visible { outline-color: var(--color-border-strong); }
+
+.ui-button--danger {
+  background: var(--color-danger);
+  color: #FFFFFF;
+}
+.ui-button--danger:focus-visible { outline-color: var(--color-danger); }
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--color-text);
+  border-color: transparent;
+}
+.ui-button--ghost:hover { filter: none; background: var(--color-surface-soft); }
+.ui-button--ghost:focus-visible { outline-color: var(--color-border-strong); }`
 }
 
 func codeBlockCSS(_ style.Theme) string {
