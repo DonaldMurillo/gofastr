@@ -246,6 +246,42 @@ func TestThemeValidate_RejectsMissingValue(t *testing.T) {
 	}
 }
 
+func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
+	// A populated Name but a zero Value on numeric token types
+	// silently emits `--spacing-md: 0px` etc. and breaks layout —
+	// exactly what Validate was added to prevent.
+	cases := []struct {
+		name  string
+		setup func(*Theme)
+	}{
+		{"Spacing.MD=0", func(t *Theme) { t.Spacing.MD = Spacing{Name: "md", Value: 0} }},
+		{"Radii.MD=0", func(t *Theme) { t.Radii.MD = Radius{Name: "md", Value: 0} }},
+		{"Breakpoints.MD=0", func(t *Theme) { t.Breakpoints.MD = Breakpoint{Name: "md", Value: 0} }},
+		{"ZIndex.Modal=0", func(t *Theme) { t.ZIndex.Modal = ZIndexValue{Name: "modal", Value: 0} }},
+		{"Durations.Normal=0", func(t *Theme) { t.Durations.Normal = Duration{Name: "normal", Value: 0} }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			th := DefaultTheme()
+			c.setup(&th)
+			if err := th.Validate(); err == nil {
+				t.Errorf("%s should fail validation (zero Value)", c.name)
+			}
+		})
+	}
+}
+
+// "none" / "0" radii are a real use case (sharp corners).
+// Validate must accept Radius{Name: "none", Value: 0} when the Name
+// is "none" — the special sentinel that documents intent.
+func TestThemeValidate_AllowsNoneRadius(t *testing.T) {
+	th := DefaultTheme()
+	// none already exists; just confirm the default theme passes.
+	if err := th.Validate(); err != nil {
+		t.Errorf("default theme should pass: %v", err)
+	}
+}
+
 // --- RouteGraph preload (deprecated but still works) ----------------------
 
 func TestRouteGraphPreloadManifest(t *testing.T) {

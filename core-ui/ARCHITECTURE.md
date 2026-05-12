@@ -309,8 +309,9 @@ var Dark = style.RegisterThemeOverride(func() style.Theme {
 
 // Wrap any subtree to apply the override.
 ui.Themed(Dark,
-    ui.Card{...},     // every Card's var(--color-text) reads dark theme
-    ui.Button{...},   // ditto
+    ui.Section(ui.SectionConfig{Heading: "Settings"},
+        ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary}),
+    ),
 )
 ```
 

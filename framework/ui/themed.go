@@ -17,8 +17,9 @@ import (
 //	var Dark = style.RegisterThemeOverride(darkTheme)
 //
 //	ui.Themed(Dark,
-//	    ui.Card{...},     // every Card.color: var(--color-text) reads dark theme
-//	    ui.Button{...},   // ditto
+//	    ui.Section(ui.SectionConfig{Heading: "Settings"},
+//	        ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary}),
+//	    ),
 //	)
 //
 // The override class block lives in /__gofastr/app.css; registering

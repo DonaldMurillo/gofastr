@@ -84,6 +84,77 @@ func TestE2E_Chaos_ResizeWhileToggling(t *testing.T) {
 	}
 }
 
+// TestE2E_Chaos_FocusRingContrastsWithButton checks that focus
+// outline on .ui-button is visually distinct from the button's
+// own background. The earlier implementation set both to
+// var(--color-primary), making the focus indicator nearly
+// invisible against the same-colored button — fail for keyboard
+// users. (WCAG 2.4.7)
+func TestE2E_Chaos_FocusRingContrastsWithButton(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var result map[string]string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/framework-ui/"),
+		pageReady(),
+		chromedp.Evaluate(`(() => {
+            // Measure :focus-visible styles by reading the rule
+            // set rather than relying on actual focus state
+            // (chromedp's headless focus is unreliable). We resolve
+            // the computed background of the button + the
+            // matching .ui-button:focus-visible rule's outline
+            // declarations from document.styleSheets.
+            const btn = document.querySelector('button.ui-button');
+            if (!btn) return {error: "no button on page"};
+            const cs = getComputedStyle(btn);
+            // Search stylesheets for the focus-visible rule.
+            let outlineColor = '', boxShadow = '';
+            for (const sheet of document.styleSheets) {
+                let rules;
+                try { rules = sheet.cssRules; } catch { continue; }
+                if (!rules) continue;
+                for (const r of rules) {
+                    if (!r.selectorText) continue;
+                    if (!r.selectorText.includes('.ui-button:focus-visible') &&
+                        !r.selectorText.includes('[data-fui-comp="ui-button"]:focus-visible')) continue;
+                    const s = r.style;
+                    if (s.outlineColor) outlineColor = s.outlineColor;
+                    if (s.boxShadow) boxShadow = s.boxShadow;
+                }
+            }
+            return {
+                bg: cs.backgroundColor,
+                outlineColor: outlineColor || 'none',
+                boxShadow: boxShadow || 'none',
+            };
+        })()`, &result),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if result["error"] != "" {
+		t.Skipf("setup failed: %s", result["error"])
+	}
+	// The focus signal must come from EITHER:
+	//   - an outline color resolving to something other than the
+	//     button's own background, OR
+	//   - a box-shadow ring (layered offset shadow trick).
+	// If the focus-visible rule sets outline-color to a var that
+	// resolves to the button bg AND there's no box-shadow ring,
+	// the focus indicator is invisible.
+	bg := result["bg"]
+	// outlineColor from the CSS rule is typically `var(--color-primary)`
+	// (a literal string, NOT a resolved color). If it's the same
+	// token name as the button's bg... we can't be sure without
+	// resolving. So the test sticks to the observable rule: if
+	// outline-color is `var(--color-primary)` (matches bg token) AND
+	// no box-shadow, fail.
+	if strings.Contains(result["outlineColor"], "--color-primary") && result["boxShadow"] == "none" {
+		t.Errorf("focus ring invisible on primary button: outline uses --color-primary (same as button bg=%s) with no box-shadow fallback", bg)
+	}
+}
+
 // TestE2E_Chaos_NoMobileHorizontalScroll loads the css-loading
 // showcase at 375px viewport (iPhone SE width) and asserts the
 // document doesn't overflow horizontally. Catches regressions where

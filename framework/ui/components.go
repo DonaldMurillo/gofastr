@@ -224,16 +224,26 @@ func injectAriaDescribedBy(input render.HTML, helpID string) render.HTML {
 
 func injectAttrs(input render.HTML, attrs string) render.HTML {
 	s := string(input)
-	// Locate the first `>` that isn't inside an attribute value;
-	// splice attrs before it. Skips if attrs already substring-
-	// present (idempotent).
-	if strings.Contains(s, strings.TrimSpace(attrs)) {
+	// Idempotence: skip if the exact attribute (name="...") is
+	// already present. Compare the leading attribute name, not the
+	// whole attrs string, so multiple injections at different ids
+	// don't both land on the same element.
+	if attrName := leadingAttrName(attrs); attrName != "" && strings.Contains(s, attrName+`=`) {
 		return input
 	}
-	end := findFirstTagClose(s)
+	// Find the real open tag, skipping leading whitespace and HTML
+	// comments. The splice target is the `>` that closes that tag,
+	// respecting attribute quotes (so `>` inside `title="a > b"`
+	// doesn't terminate the tag prematurely).
+	start := skipNonTagPreamble(s)
+	if start < 0 || start >= len(s) || s[start] != '<' {
+		return input
+	}
+	end := findFirstTagClose(s[start:])
 	if end < 0 {
 		return input
 	}
+	end += start
 	insertAt := end
 	if end > 0 && s[end-1] == '/' {
 		insertAt = end - 1
@@ -241,8 +251,40 @@ func injectAttrs(input render.HTML, attrs string) render.HTML {
 	return render.HTML(s[:insertAt] + attrs + s[insertAt:])
 }
 
+// skipNonTagPreamble returns the index of the first byte of the
+// outermost real open tag, skipping whitespace + HTML comments.
+// Returns -1 if no open tag is found.
+func skipNonTagPreamble(s string) int {
+	i := 0
+	for i < len(s) {
+		// whitespace
+		for i < len(s) {
+			c := s[i]
+			if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+				i++
+				continue
+			}
+			break
+		}
+		// HTML comment
+		if i+4 <= len(s) && s[i:i+4] == "<!--" {
+			end := strings.Index(s[i+4:], "-->")
+			if end < 0 {
+				return -1
+			}
+			i = i + 4 + end + 3
+			continue
+		}
+		break
+	}
+	if i >= len(s) {
+		return -1
+	}
+	return i
+}
+
 // findFirstTagClose returns the index of the first `>` that closes
-// an open tag, respecting attribute quotes.
+// the open tag at offset 0 of s, respecting attribute quotes.
 func findFirstTagClose(s string) int {
 	var quote byte
 	for i := 0; i < len(s); i++ {
@@ -261,6 +303,19 @@ func findFirstTagClose(s string) int {
 		}
 	}
 	return -1
+}
+
+// leadingAttrName extracts the attribute name from an attrs string
+// like ` aria-invalid="true" aria-describedby="x"` — returns
+// "aria-invalid". Used for idempotence: if a tag already has the
+// named attribute, skip injection.
+func leadingAttrName(attrs string) string {
+	a := strings.TrimSpace(attrs)
+	eq := strings.IndexByte(a, '=')
+	if eq <= 0 {
+		return ""
+	}
+	return a[:eq]
 }
 
 // ─── FormSection ────────────────────────────────────────────────────
@@ -336,6 +391,8 @@ type ButtonConfig struct {
 // the framework's styled component handles the visual rules.
 //
 // Authors never reach for raw class strings — pick a variant.
+// Unknown variants panic at render time so typos surface
+// immediately rather than silently rendering an unstyled button.
 func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Button requires Label")
@@ -343,6 +400,13 @@ func Button(cfg ButtonConfig) render.HTML {
 	v := cfg.Variant
 	if v == "" {
 		v = ButtonPrimary
+	}
+	switch v {
+	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
+		// recognized
+	default:
+		panic("ui: Button unknown Variant " + string(v) +
+			" — pick one of: primary, secondary, danger, ghost")
 	}
 	cls := "ui-button ui-button--" + string(v)
 	if cfg.Class != "" {

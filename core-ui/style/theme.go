@@ -134,10 +134,20 @@ func validateTokens(v reflect.Value, path string) error {
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Spacing.Name is empty", path)
 		}
+		// Allow xs/sm zero only if the name is "0" or "none"; a
+		// scaled token (md/lg/xl) at Value=0 is almost always a
+		// configuration mistake.
+		if tk.Value == 0 && tk.Name != "none" && tk.Name != "0" {
+			return fmt.Errorf("%s: Spacing.Value is 0 (Name=%q) — emits `--spacing-%s: 0px;` and breaks layout", path, tk.Name, tk.Name)
+		}
 		return nil
 	case Radius:
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Radius.Name is empty", path)
+		}
+		// "none" / "0" is a legitimate sharp-corner sentinel.
+		if tk.Value == 0 && tk.Name != "none" && tk.Name != "0" {
+			return fmt.Errorf("%s: Radius.Value is 0 (Name=%q) — use Radius{Name: \"none\"} for sharp corners explicitly", path, tk.Name)
 		}
 		return nil
 	case Font:
@@ -152,6 +162,9 @@ func validateTokens(v reflect.Value, path string) error {
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Breakpoint.Name is empty", path)
 		}
+		if tk.Value <= 0 {
+			return fmt.Errorf("%s: Breakpoint.Value must be > 0 (Name=%q)", path, tk.Name)
+		}
 		return nil
 	case Shadow:
 		if tk.Name == "" {
@@ -165,10 +178,19 @@ func validateTokens(v reflect.Value, path string) error {
 		if tk.Name == "" {
 			return fmt.Errorf("%s: ZIndex.Name is empty", path)
 		}
+		// Z-index 0 is legitimate (base layer); negative is also
+		// valid CSS. Only flag the all-zero default that signals
+		// "I forgot to set this".
+		if tk.Value == 0 && tk.Name != "base" && tk.Name != "0" {
+			return fmt.Errorf("%s: ZIndex.Value is 0 (Name=%q) — use Name \"base\"/\"0\" if intentional", path, tk.Name)
+		}
 		return nil
 	case Duration:
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Duration.Name is empty", path)
+		}
+		if tk.Value <= 0 {
+			return fmt.Errorf("%s: Duration.Value must be > 0 (Name=%q)", path, tk.Name)
 		}
 		return nil
 	case FontSize:

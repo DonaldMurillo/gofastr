@@ -261,6 +261,36 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".demo-table-scroll").
 		Set("overflow-x", "auto").End()
 
+	// Themed section-override demo grid.
+	ss.Rule(".themed-demo__grid").
+		Set("display", "grid",
+			"grid-template-columns", "1fr 1fr",
+			"gap", "{spacing.lg}",
+			"margin-top", "{spacing.lg}").End()
+	ss.Rule(".themed-demo__panel").
+		Set("background", "{colors.background}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.lg}",
+			"padding", "{spacing.lg}").End()
+	ss.Rule(".themed-demo__label").
+		Set("margin", "0 0 {spacing.md} 0",
+			"font-size", "0.75rem",
+			"text-transform", "uppercase",
+			"letter-spacing", "0.06em",
+			"color", "{colors.text-subtle}").End()
+	ss.Rule(".themed-demo__sample").
+		Set("display", "grid",
+			"gap", "{spacing.md}").End()
+	ss.Rule(".themed-demo__actions").
+		Set("display", "flex",
+			"gap", "{spacing.sm}",
+			"margin-top", "{spacing.md}").End()
+	ss.Rule(".themed-demo__grid").
+		Media("(max-width: 768px)", func(ss *style.StyleSheet) {
+			ss.Rule(".themed-demo__grid").
+				Set("grid-template-columns", "1fr").End()
+		}).End()
+
 	// DataTable search demo.
 	ss.Rule(".demo-search-form").
 		Set("display", "flex", "gap", "{spacing.sm}",

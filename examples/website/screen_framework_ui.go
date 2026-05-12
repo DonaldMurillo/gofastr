@@ -169,6 +169,13 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 							render.Tag("span", nil, render.Text("Three load modes (Auto / Prewarm / Always), per-component <link> dedup, bundle endpoint — with live demos and DevTools instructions.")),
 						)}),
 				),
+				render.Tag("li", nil,
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/themed",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("Section-level theme overrides")),
+							render.Tag("span", nil, render.Text("ui.Themed(ref, …) wraps a subtree with a scoped CSS variable cascade — same components, different palette.")),
+						)}),
+				),
 			),
 		),
 

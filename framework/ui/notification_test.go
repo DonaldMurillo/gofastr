@@ -26,6 +26,12 @@ func TestNotificationDangerGetsAlertRole(t *testing.T) {
 	if !strings.Contains(h, `role="alert"`) {
 		t.Errorf("expected role=alert for danger, got: %s", h)
 	}
+	// Severity-correct: alert implies assertive announcement; the
+	// earlier code paired alert with polite which contradicts the
+	// role.
+	if !strings.Contains(h, `aria-live="assertive"`) {
+		t.Errorf("danger notification must be aria-live=assertive (matches role=alert), got: %s", h)
+	}
 	if !strings.Contains(h, "ui-notification--danger") {
 		t.Errorf("expected danger variant, got: %s", h)
 	}

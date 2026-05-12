@@ -103,6 +103,27 @@ func TestFormFieldErrorAddsAriaInvalid(t *testing.T) {
 	}
 }
 
+func TestInjectAttrsHandlesLeadingComment(t *testing.T) {
+	// Input wrapped in an HTML comment must not splice into the
+	// comment terminator. The attrs land on the real <input>.
+	in := render.HTML(`<!-- preset --><input type="text" name="n" id="n">`)
+	out := string(injectAttrs(in, ` aria-invalid="true"`))
+	if !strings.Contains(out, `<input type="text" name="n" id="n" aria-invalid="true">`) {
+		t.Errorf("injectAttrs should splice into the real <input> tag, not the comment:\n%s", out)
+	}
+	if strings.Contains(out, `comment --aria-invalid`) {
+		t.Errorf("injectAttrs corrupted the comment:\n%s", out)
+	}
+}
+
+func TestInjectAttrsHandlesLeadingWhitespace(t *testing.T) {
+	in := render.HTML("\n  <input type=\"text\" name=\"n\">")
+	out := string(injectAttrs(in, ` aria-invalid="true"`))
+	if !strings.Contains(out, `aria-invalid="true"`) {
+		t.Errorf("injectAttrs missed the input after whitespace:\n%s", out)
+	}
+}
+
 func TestFormFieldHelpAddsAriaDescribedBy(t *testing.T) {
 	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
@@ -127,6 +148,28 @@ func TestButtonVariantsRenderClass(t *testing.T) {
 func TestButtonDefaultsToPrimary(t *testing.T) {
 	h := Button(ButtonConfig{Label: "x"})
 	mustContain(t, h, "ui-button--primary")
+}
+
+func TestButtonRejectsUnknownVariant(t *testing.T) {
+	// String-typed const enums don't prevent arbitrary string
+	// values at the call site. The framework validates at render
+	// time so a typo like ButtonVariant("tertiary") panics with a
+	// useful message instead of silently rendering an unstyled
+	// button.
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Button with unknown Variant should panic")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("panic was %T, want string: %v", r, r)
+		}
+		if !strings.Contains(msg, "tertiary") {
+			t.Errorf("panic message should name the bogus variant: %q", msg)
+		}
+	}()
+	Button(ButtonConfig{Label: "Save", Variant: ButtonVariant("tertiary")})
 }
 
 func TestDangerButtonAliasMatchesButtonDanger(t *testing.T) {

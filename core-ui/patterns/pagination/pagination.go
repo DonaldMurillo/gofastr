@@ -298,8 +298,9 @@ func BaseCSS() string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-inline-size: 2.25rem;
-  block-size: 2.25rem;
+  /* WCAG 2.5.5: 44×44 minimum tap target. */
+  min-inline-size: 44px;
+  min-block-size: 44px;
   padding: 0 var(--spacing-sm, 4px);
   border-radius: var(--radii-md, 8px);
   border: 1px solid transparent;

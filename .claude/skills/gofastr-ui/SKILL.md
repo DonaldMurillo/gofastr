@@ -76,7 +76,11 @@ which is what lets section-level theme overrides cascade.
 ```go
 var Dark = style.RegisterThemeOverride(darkTheme)
 
-ui.Themed(Dark, ui.Card{...}, ui.Button{...})  // wrapped subtree uses dark vars
+ui.Themed(Dark,
+    ui.Section(ui.SectionConfig{Heading: "Dark"},
+        ui.Button(ui.ButtonConfig{Label: "OK"}),
+    ),
+) // wrapped subtree's var(--color-*) reads from Dark via CSS cascade
 ```
 
 Framework emits a `.fui-theme-<hash>` block in `app.css`; the CSS cascade does the rest. Content-addressed — registering the same theme twice ships CSS once.

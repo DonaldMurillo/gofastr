@@ -18,20 +18,19 @@ import (
 // registry.WithLoad(registry.LoadPrewarm).
 
 var (
-	sectionStyle       = registry.RegisterStyle("ui-section", sectionCSS)
-	formFieldStyle     = registry.RegisterStyle("ui-form-field", formFieldCSS)
-	formSectionStyle   = registry.RegisterStyle("ui-form-section", formSectionCSS)
-	buttonStyle        = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
-	dangerButtonStyle  = registry.RegisterStyle("ui-button-danger", dangerButtonCSS)
-	statusBadgeStyle   = registry.RegisterStyle("ui-badge", statusBadgeCSS)
-	emptyStateStyle    = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
-	calloutStyle       = registry.RegisterStyle("ui-callout", calloutCSS)
-	statCardStyle      = registry.RegisterStyle("ui-stat-card", statCardCSS)
-	avatarStyle        = registry.RegisterStyle("ui-avatar", avatarCSS)
-	formStyle          = registry.RegisterStyle("ui-form", formCSS)
-	notificationStyle  = registry.RegisterStyle("ui-notification", notificationCSS)
-	dataTableStyle     = registry.RegisterStyle("ui-data-table", dataTableCSS)
-	codeBlockStyle     = registry.RegisterStyle("ui-code-block", codeBlockCSS)
+	sectionStyle      = registry.RegisterStyle("ui-section", sectionCSS)
+	formFieldStyle    = registry.RegisterStyle("ui-form-field", formFieldCSS)
+	formSectionStyle  = registry.RegisterStyle("ui-form-section", formSectionCSS)
+	buttonStyle       = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
+	statusBadgeStyle  = registry.RegisterStyle("ui-badge", statusBadgeCSS)
+	emptyStateStyle   = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
+	calloutStyle      = registry.RegisterStyle("ui-callout", calloutCSS)
+	statCardStyle     = registry.RegisterStyle("ui-stat-card", statCardCSS)
+	avatarStyle       = registry.RegisterStyle("ui-avatar", avatarCSS)
+	formStyle         = registry.RegisterStyle("ui-form", formCSS)
+	notificationStyle = registry.RegisterStyle("ui-notification", notificationCSS)
+	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
+	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
 )
 
 // buttonCSS is the base .ui-button styling that several call sites
@@ -69,9 +68,13 @@ func buttonCSS(_ style.Theme) string {
   transition: filter 150ms ease, opacity 150ms ease;
 }
 [data-fui-comp="ui-button"]:hover, .ui-button:hover { filter: brightness(0.95); }
+/* Layered focus ring: inner halo in the surface color creates a
+   visible gap between the button and the outer primary ring, so
+   keyboard focus stays visible regardless of the button's own
+   background color. */
 [data-fui-comp="ui-button"]:focus-visible, .ui-button:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
 }
 [data-fui-comp="ui-button"]:disabled, .ui-button:disabled,
 [data-fui-comp="ui-button"][aria-disabled="true"], .ui-button[aria-disabled="true"] {
@@ -87,13 +90,17 @@ func buttonCSS(_ style.Theme) string {
   border-color: var(--color-border);
 }
 .ui-button--secondary:hover { filter: none; background: var(--color-surface-soft); }
-.ui-button--secondary:focus-visible { outline-color: var(--color-border-strong); }
+.ui-button--secondary:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+}
 
 .ui-button--danger {
   background: var(--color-danger);
   color: #FFFFFF;
 }
-.ui-button--danger:focus-visible { outline-color: var(--color-danger); }
+.ui-button--danger:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+}
 
 .ui-button--ghost {
   background: transparent;
@@ -101,7 +108,9 @@ func buttonCSS(_ style.Theme) string {
   border-color: transparent;
 }
 .ui-button--ghost:hover { filter: none; background: var(--color-surface-soft); }
-.ui-button--ghost:focus-visible { outline-color: var(--color-border-strong); }`
+.ui-button--ghost:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+}`
 }
 
 func codeBlockCSS(_ style.Theme) string {
@@ -223,35 +232,6 @@ func formSectionCSS(_ style.Theme) string {
 [data-fui-comp="ui-form-section"] .ui-form-section__fields {
   display: grid;
   gap: var(--spacing-md, 8px);
-}`
-}
-
-// dangerButtonCSS — base .ui-button rules + the --danger variant.
-// .ui-button base styling is shared by every button; it ships with
-// DangerButton because that's the only registered button helper today.
-// If another button variant lands, the base rules should move to its
-// own LoadAlways component.
-func dangerButtonCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-button-danger"] {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm, 4px);
-  padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
-  border: 1px solid transparent;
-  border-radius: var(--radii-md, 8px);
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--color-danger, #DC2626);
-  color: white;
-  transition: filter 150ms ease;
-}
-[data-fui-comp="ui-button-danger"]:hover { filter: brightness(0.95); }
-[data-fui-comp="ui-button-danger"]:focus-visible {
-  outline: 2px solid var(--color-danger, #DC2626);
-  outline-offset: 2px;
 }`
 }
 
@@ -564,6 +544,9 @@ func dataTableCSS(_ style.Theme) string {
 [data-fui-comp="ui-data-table"] button.ui-data-table__sort {
   display: inline-flex;
   align-items: center;
+  /* min-height 44px = WCAG 2.5.5 tap target. Sort headers are the
+     most-tapped element in a data table on mobile. */
+  min-height: 44px;
   gap: 0.25rem;
   background: transparent;
   border: 0;

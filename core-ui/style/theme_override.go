@@ -76,10 +76,17 @@ func AllThemeOverrides() map[string]Theme {
 //	  --color-primary: …;
 //	  --color-text: …;
 //	  …
+//	  color: var(--color-text);
+//	  background: var(--color-background);
 //	}
 //
-// The class wraps a subtree; descendant components reading
-// var(--color-primary) get the overridden value via cascade.
+// The block re-declares every typed token, AND sets `color` +
+// `background` on the wrapper itself. The `color` declaration is
+// load-bearing: text inside the wrapper inherits the overridden
+// color, so plain `<p>` / `<span>` elements (which don't carry
+// their own `color: var(--*)` rule) still pick up the dark theme.
+// Descendant components reading `var(--color-primary)` get the
+// overridden value via the CSS variable cascade.
 func ThemeOverrideCSS(hash string, t Theme) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(t), &lines)
@@ -91,6 +98,12 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
+	// The wrapper itself adopts the overridden palette so inherited
+	// `color` flows down. Without this, descendants that don't
+	// explicitly set color: var(--color-text) inherit from outside
+	// the wrapper.
+	b.WriteString("  color: var(--color-text);\n")
+	b.WriteString("  background: var(--color-background);\n")
 	b.WriteString("}")
 	return b.String()
 }
