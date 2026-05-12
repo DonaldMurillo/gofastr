@@ -313,9 +313,9 @@ func TestStrictCSPWithExternalResources(t *testing.T) {
 	// /__gofastr/routes.js and /__gofastr/catalog.js are intentionally
 	// gone — the route graph and component catalog now ship inline as
 	// <script type="application/json"> blocks in the SSR'd page.
+	// /__gofastr/{theme,styles}.css collapsed into /__gofastr/app.css.
 	for _, endpoint := range []string{
-		"/__gofastr/theme.css",
-		"/__gofastr/styles.css",
+		"/__gofastr/app.css",
 		"/__gofastr/runtime.js",
 	} {
 		r, err := http.Get(srv.URL + endpoint)

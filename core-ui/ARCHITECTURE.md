@@ -235,6 +235,73 @@ triggers a screen-partial fetch.*
 
 ---
 
+## Theme
+
+The framework's design tokens live in `core-ui/style.Theme` — a
+**typed Go struct** with a fixed canonical field set: `Colors`,
+`Spacing`, `Radii`, `Fonts`, `Breakpoints`, `Shadows`, `ZIndex`,
+`Durations`, `Typography`. Every token carries a `Name` (the CSS
+custom property identifier) and a `Value` (the concrete value):
+
+```go
+t := style.DefaultTheme()
+t.Colors.Primary // → style.Color{Name: "primary", Value: "#4F46E5"}
+t.Colors.Primary.CSS()   // → "var(--color-primary)"
+t.Colors.Primary.Value   // → "#4F46E5"
+```
+
+### The var-only contract
+
+**Components always emit `var(--*)` references.** Build-time
+resolution of `{tokens.text}` to literal hex values has been
+removed; every reference is a CSS variable indirection. This is
+required for section-level theme overrides via the CSS cascade —
+a parent `.fui-theme-dark { --color-text: #f4f4f5 }` overrides
+every descendant's `var(--color-text)` automatically.
+
+### Overriding tokens
+
+Apps mutate fields directly — there's no MergeThemes helper:
+
+```go
+t := style.DefaultTheme()
+t.Colors.Primary = style.Color{Name: "primary", Value: "#14B8A6"}
+app.WithTheme(t)
+```
+
+`framework/ui/theme.Default(theme.Overrides{Primary: "#…"})`
+wraps this pattern as a convenience for the most common cases.
+
+### Apps with extra tokens
+
+Embed `style.Theme` in your own type and add fields:
+
+```go
+type AppTheme struct {
+    style.Theme
+    Brand struct { Logo, Glow style.Color }
+}
+
+var App = AppTheme{Theme: style.DefaultTheme()}
+App.Brand.Logo = style.Color{Name: "brand-logo", Value: "#FF00FF"}
+```
+
+`style.CSSCustomPropertiesOf(App)` walks both canonical and
+embedded fields via reflection, emitting a unified `:root` block.
+Framework code only sees the embedded `style.Theme`; app-local
+components reference `theme.App.Brand.Logo` directly.
+
+### app.css — one asset, one request
+
+The framework serves a single `/__gofastr/app.css` per app:
+theme :root custom properties concatenated with `WithCustomCSS`
+payload. Replaces the legacy `theme.css` + `styles.css` split.
+SSG output emits the same single file. (`/__gofastr/theme.css`
+and `/__gofastr/styles.css` are retained as `410 GONE` so stale
+references surface clearly.)
+
+---
+
 ## Component CSS
 
 Every component-owned stylesheet ships as a real `<link>` —

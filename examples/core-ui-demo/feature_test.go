@@ -793,9 +793,9 @@ func TestFeature_ARIALandmarks(t *testing.T) {
 func TestFeature_AnimationTransitions(t *testing.T) {
 	base := startTestServer(t)
 
-	resp, err := http.Get(base + "/__gofastr/styles.css")
+	resp, err := http.Get(base + "/__gofastr/app.css")
 	if err != nil {
-		t.Fatalf("GET styles.css: %v", err)
+		t.Fatalf("GET app.css: %v", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)

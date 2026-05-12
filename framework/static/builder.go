@@ -80,11 +80,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if js := b.Host.GetActionJS(); js != "" {
 		assets = append(assets, asset{urlPath: "/__gofastr/actions.js", body: []byte(js)})
 	}
-	if app := b.Host.App; app != nil && app.Theme != nil {
-		assets = append(assets, asset{urlPath: "/__gofastr/theme.css", body: []byte(app.Theme.CSSCustomProperties())})
-	}
-	if css := b.Host.CustomCSS(); css != "" {
-		assets = append(assets, asset{urlPath: "/__gofastr/styles.css", body: []byte(css)})
+	// Single app-level CSS asset: theme :root vars + customCSS
+	// concatenated. Matches the live server's /__gofastr/app.css.
+	if appBody := b.Host.AppCSS(); appBody != "" {
+		assets = append(assets, asset{urlPath: "/__gofastr/app.css", body: []byte(appBody)})
 	}
 	// Route graph + component catalog ship INLINE in each rendered
 	// HTML page as <script type="application/json"> blocks. No

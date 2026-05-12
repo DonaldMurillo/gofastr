@@ -359,27 +359,37 @@ func TestUIHostNoExtraScriptsByDefault(t *testing.T) {
 func TestUIHostCustomCSS(t *testing.T) {
 	ds := newTestUIHostWithCSS()
 
-	// The page references the styles via <link> rather than inlining.
+	// Page references the single merged app.css.
 	pageReq := httptest.NewRequest("GET", "/", nil)
 	pageRec := httptest.NewRecorder()
 	ds.ServeHTTP(pageRec, pageReq)
 	page := pageRec.Body.String()
-	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/styles.css">`)
+	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/app.css">`)
 	if strings.Contains(page, "body { background: red; }") {
 		t.Errorf("custom CSS should not be inlined; expected external <link>. got:\n%s", page)
 	}
 
-	// And the styles endpoint serves the actual CSS body.
-	cssReq := httptest.NewRequest("GET", "/__gofastr/styles.css", nil)
+	// app.css carries both the theme :root vars AND the customCSS body.
+	cssReq := httptest.NewRequest("GET", "/__gofastr/app.css", nil)
 	cssRec := httptest.NewRecorder()
 	ds.ServeHTTP(cssRec, cssReq)
 	if cssRec.Code != 200 {
-		t.Fatalf("/__gofastr/styles.css = %d, want 200", cssRec.Code)
+		t.Fatalf("/__gofastr/app.css = %d, want 200", cssRec.Code)
 	}
 	if got := cssRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/css") {
 		t.Errorf("Content-Type = %q, want text/css", got)
 	}
 	assertContains(t, cssRec.Body.String(), "body { background: red; }")
+
+	// Legacy endpoints surface stale references as 410 GONE.
+	for _, gone := range []string{"/__gofastr/theme.css", "/__gofastr/styles.css"} {
+		req := httptest.NewRequest("GET", gone, nil)
+		rec := httptest.NewRecorder()
+		ds.ServeHTTP(rec, req)
+		if rec.Code != http.StatusGone {
+			t.Errorf("%s should be 410 GONE, got %d", gone, rec.Code)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

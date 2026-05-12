@@ -49,9 +49,27 @@ code.
 | A composed UI pattern (accordion, tabs, pagination, breadcrumbs) | `core-ui/patterns/<name>` |
 | A semantic component (PageHeader, FormField, DataTable) | `framework/ui/` |
 | An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPCWithSignal(...)`) |
-| A theme token | `framework/ui/theme` |
+| A theme token | `framework/ui/theme` (canonical typed `style.Theme`; mutate fields directly) |
 | A reactive value pushed by the server | `core-ui/signal` + an SSE binding on the widget |
 | **Per-component CSS** (loaded on demand, dedup'd, never re-fetched) | `core-ui/registry` (`RegisterStyle` + `Style.WrapHTML`) |
+
+## Theme — typed, always emits var()
+
+The framework's design tokens live in `style.Theme` — a typed Go struct.
+Every token (`style.Color`, `style.Spacing`, `style.Shadow`, etc.) has a
+`.CSS()` method that returns `var(--<category>-<name>)`. Build-time
+literal resolution is gone — every reference goes through a CSS variable,
+which is what lets section-level theme overrides cascade.
+
+**Common patterns:**
+- Override one token: `t.Colors.Primary = style.Color{Name: "primary", Value: "#14B8A6"}`.
+- App-extended tokens: embed `style.Theme` in an `AppTheme` struct + add brand fields.
+- `style.CSSCustomPropertiesOf(theme)` walks the canonical + embedded fields, emits `:root { --…: ...; }`.
+
+**Hard rules:**
+- ❌ Never write literal `#hex` colors in component CSS. Always `var(--color-x)` or `t.Colors.X.CSS()`.
+- ❌ Don't try `MergeThemes(...)` — it was removed. Mutate fields directly.
+- ✅ `app.WithTheme(theme)` is the binding pattern. The host emits `:root` from the theme and components reference it.
 
 ## Per-component CSS — the registry pattern
 

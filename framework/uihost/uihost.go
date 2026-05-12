@@ -134,6 +134,18 @@ func (ds *UIHost) CustomCSS() string {
 	return ds.customCSS
 }
 
+// AppCSS returns the merged app-level stylesheet body: theme :root
+// custom properties + customCSS concatenated. Used by the SSG so
+// static export ships the same single asset the live server serves.
+func (ds *UIHost) AppCSS() string {
+	var out string
+	if ds.App != nil && ds.App.Theme != nil {
+		out = ds.App.Theme.CSSCustomProperties() + "\n"
+	}
+	out += ds.customCSS
+	return out
+}
+
 // ActiveTheme returns the configured theme or the default if unset.
 // Exposed for tooling (e.g. the static-site builder) that needs to
 // resolve theme tokens at build time.
@@ -416,15 +428,14 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
 		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
 	}
-	if ds.App != nil && ds.App.Theme != nil {
+	// Single app-level CSS asset: theme :root vars + the host's
+	// customCSS payload concatenated. One request instead of two.
+	// Both legacy endpoints stay as 410 GONE so stale bookmarks /
+	// cached HTML surface clearly.
+	if ds.App != nil && (ds.App.Theme != nil || ds.customCSS != "") {
 		page = strings.Replace(page,
 			"</head>",
-			`<link rel="stylesheet" href="/__gofastr/theme.css">`+"\n</head>", 1)
-	}
-	if ds.customCSS != "" {
-		page = strings.Replace(page,
-			"</head>",
-			`<link rel="stylesheet" href="/__gofastr/styles.css">`+"\n</head>", 1)
+			`<link rel="stylesheet" href="/__gofastr/app.css">`+"\n</head>", 1)
 	}
 	// Route graph + component catalog ship as inline JSON in
 	// <script type="application/json"> blocks — the browser treats
@@ -466,27 +477,29 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 	return page
 }
 
-// handleThemeCSS serves the active theme as a real CSS resource so the
-// page can reference it via <link>.
-func (ds *UIHost) handleThemeCSS(w http.ResponseWriter, r *http.Request) {
-	if ds.App == nil || ds.App.Theme == nil {
-		http.NotFound(w, r)
-		return
-	}
+// handleAppCSS serves the app-level CSS asset: theme :root custom
+// properties + WithCustomCSS payload concatenated. One request
+// per page replaces the legacy theme.css + styles.css split.
+func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, ds.App.Theme.CSSCustomProperties())
+	if ds.App != nil && ds.App.Theme != nil {
+		fmt.Fprint(w, ds.App.Theme.CSSCustomProperties())
+		fmt.Fprint(w, "\n")
+	}
+	if ds.customCSS != "" {
+		fmt.Fprint(w, ds.customCSS)
+	}
 }
 
-// handleStylesCSS serves the WithCustomCSS payload.
-func (ds *UIHost) handleStylesCSS(w http.ResponseWriter, r *http.Request) {
-	if ds.customCSS == "" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, ds.customCSS)
+// handleThemeCSS / handleStylesCSS — retained as 410 GONE so any
+// stale browser reference fails loudly instead of silently 404'ing.
+// New code should reference /__gofastr/app.css instead.
+func (ds *UIHost) handleThemeCSS(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, "/__gofastr/theme.css was removed — use /__gofastr/app.css", http.StatusGone)
+}
+func (ds *UIHost) handleStylesCSS(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, "/__gofastr/styles.css was removed — use /__gofastr/app.css", http.StatusGone)
 }
 
 // handleRoutesJS is retained as a 410 GONE so any stale browser
@@ -743,6 +756,8 @@ func (ds *UIHost) PushIsland(islandID string) error {
 func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
+	r.Get("/__gofastr/app.css", http.HandlerFunc(ds.handleAppCSS))
+	// Legacy endpoints — 410 GONE redirects.
 	r.Get("/__gofastr/theme.css", http.HandlerFunc(ds.handleThemeCSS))
 	r.Get("/__gofastr/styles.css", http.HandlerFunc(ds.handleStylesCSS))
 	r.Get("/__gofastr/routes.js", http.HandlerFunc(ds.handleRoutesJS))
