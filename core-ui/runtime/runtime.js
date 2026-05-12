@@ -325,7 +325,11 @@
   const screenCache = new Map(); // path → { html, title, timestamp }
   const MAX_CACHE_SIZE = 20;
 
+  // True LRU: Map preserves insertion order, so delete+set on every
+  // write/read promotes the path to most-recently-used; oldest entry
+  // is always keys().next() when we exceed the cap.
   const cacheScreen = (path, html, title) => {
+    if (screenCache.has(path)) screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
       const oldest = screenCache.keys().next().value;
       screenCache.delete(oldest);
@@ -333,14 +337,11 @@
     screenCache.set(path, { html, title, timestamp: Date.now() });
   };
 
-  // Cache the initial page so back-navigation to it works instantly
+  // Cache the initial page so back-navigation to it works instantly.
+  // Route through cacheScreen() so the LRU cap is enforced uniformly.
   const initialMain = document.querySelector('[role="main"]') ?? document.querySelector('main');
   if (initialMain) {
-    screenCache.set(location.pathname, {
-      html: initialMain.innerHTML,
-      title: document.title,
-      timestamp: Date.now(),
-    });
+    cacheScreen(location.pathname, initialMain.innerHTML, document.title);
   }
 
   // -----------------------------------------------------------------------
@@ -489,44 +490,12 @@
       return null;
     },
 
-    /** Load CSS for a screen path if not already loaded */
-    loadCSS(screenPath) {
-      const makeId = (p) => 'gofastr-css-' + p.replace(/[^a-zA-Z0-9]/g, '-');
-      // Build parent paths (closest first, then up to root)
-      const parents = [];
-      let p = screenPath;
-      while (p !== '/' && p.includes('/')) {
-        p = p.substring(0, p.lastIndexOf('/')) || '/';
-        parents.push(p);
-      }
-      // Try parent paths first (they have registered CSS), skip dynamic sub-routes
-      for (const path of parents) {
-        const linkId = makeId(path);
-        if (document.getElementById(linkId)) return;
-      }
-      // Load only the closest parent that isn't already loaded
-      for (const path of parents) {
-        const linkId = makeId(path);
-        const link = document.createElement('link');
-        link.id = linkId;
-        link.rel = 'stylesheet';
-        link.href = '/__gofastr/css' + path;
-        link.onerror = () => link.remove();
-        document.head.appendChild(link);
-        return;
-      }
-      // If screenPath itself is a root or known route, load it
-      if (screenPath === '/' || parents.length === 0) {
-        const linkId = makeId(screenPath);
-        if (!document.getElementById(linkId)) {
-          const link = document.createElement('link');
-          link.id = linkId;
-          link.rel = 'stylesheet';
-          link.href = '/__gofastr/css' + screenPath;
-          document.head.appendChild(link);
-        }
-      }
-    },
+    /** loadCSS is a no-op kept for external callers that still invoke
+     * window.__gofastr.loadCSS(path). The per-screen chunk endpoint
+     * (/__gofastr/css/<path>) now returns 410 GONE — declare CSS per
+     * component via registry.RegisterStyle and the runtime loads
+     * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
+    loadCSS(_screenPath) { /* no-op */ },
 
     // Component CSS — three modes share _pendingLinks + data-fui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
@@ -1214,7 +1183,12 @@
   // Client-side navigation — fetch partial HTML, swap <main> content
   // -----------------------------------------------------------------------
 
-  const getCachedScreen = (path) => screenCache.get(path);
+  // Reading promotes the entry to most-recently-used (LRU semantics).
+  const getCachedScreen = (path) => {
+    const v = screenCache.get(path);
+    if (v) { screenCache.delete(path); screenCache.set(path, v); }
+    return v;
+  };
 
   /** Fetch page, swap <main>. Caches for instant back-nav. */
   const loadPage = async (path) => {
@@ -1226,6 +1200,7 @@
       if (cached) {
         swapMainContent(cached.html);
         document.title = cached.title;
+        announceRoute(cached.title);
         updateActiveLink(path);
         window.scrollTo(0, 0);
         window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
@@ -1243,8 +1218,8 @@
         swapMainContent(html);
         const title = resp.headers.get('X-Gofastr-Title') || document.title;
         document.title = title;
+        announceRoute(title);
         cacheScreen(path, html, title);
-        window.__gofastr.loadCSS(path);
       } else {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const nm = doc.querySelector('main');
@@ -1252,13 +1227,10 @@
         const title = doc.querySelector('title')?.textContent ?? document.title;
         cacheScreen(path, nm?.innerHTML ?? '', title);
         document.title = title;
+        announceRoute(title);
       }
       updateActiveLink(path);
       window.scrollTo(0, 0);
-      if (Array.isArray(window.__gofastr_routes)) {
-        const cur = window.__gofastr_routes.find(r => r.path === path);
-        if (cur?.cssChunk) window.__gofastr.loadCSS(path);
-      }
       window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
     } catch (err) {
       console.error('[gofastr] Nav failed:', err);
@@ -1266,11 +1238,46 @@
     }
   };
 
+  // Announce the new page title via aria-live region so assistive
+  // technology hears the route change (document.title mutations alone
+  // aren't reported on most screen readers).
+  let _announceTimer = 0;
+  const announceRoute = (title) => {
+    const r = document.getElementById('fui-route-announce');
+    if (!r || !title) return;
+    // Cancel any in-flight timer from a previous nav so rapid A→B→C
+    // navs don't race and leave the live region on the wrong title.
+    if (_announceTimer) { clearTimeout(_announceTimer); _announceTimer = 0; }
+    // If the region already holds this title, do nothing — clearing
+    // and re-setting would open a 50ms empty-textContent window for
+    // a same-title repeat with no upside (AT already announced it).
+    if (r.textContent === title) return;
+    // Touch the textContent twice (clear, then set) so AT re-announces
+    // when the title actually changes — defensive; cheap.
+    r.textContent = '';
+    _announceTimer = setTimeout(() => {
+      r.textContent = title;
+      _announceTimer = 0;
+    }, 50);
+  };
+
   const swapMainContent = (html) => {
     const main = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (main) {
       main.innerHTML = html;
       if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
+    }
+    // Close any open dismissible disclosure (e.g. mobile nav hamburger)
+    // so it doesn't float over the destination page. Opt-in via
+    // <details data-fui-disclosure>.
+    for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
+      d.removeAttribute('open');
+    }
+    // Move focus into the new <main> so keyboard users land on the
+    // fresh content rather than being stranded on a now-detached node.
+    // Relies on the tabindex="-1" set by html.Main().
+    if (main && typeof main.focus === 'function') {
+      try { main.focus({ preventScroll: true }); } catch (_) { /* older Safari */ }
     }
   };
 
@@ -1314,6 +1321,11 @@
       return;
     }
     e.preventDefault();
+    // Eagerly close an enclosing dismissible disclosure (mobile nav
+    // hamburger). Without this, the menu floats over stale content
+    // for the entire SPA fetch duration — the user perceives the
+    // click as "didn't take".
+    anchor.closest('details[data-fui-disclosure]')?.removeAttribute('open');
     history.pushState(null, '', fullPath);
     loadPage(fullPath);
   });
@@ -1481,6 +1493,24 @@
       updateActiveLink(location.pathname);
     });
     document.addEventListener('DOMContentLoaded', _bootstrapComponentCSS);
+    // Escape closes any open <details data-fui-disclosure>. Native
+    // <details> only handles Escape when the summary itself has
+    // focus; this extends it to "Escape anywhere on the page". An
+    // open modal/sheet overlay takes precedence — its own Escape
+    // handler runs and we defer so a single Escape doesn't close
+    // both.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (overlayStack.length > 0) return;
+      for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
+        // Only refocus the summary if focus is already inside this
+        // disclosure — otherwise we'd yank focus away from whatever
+        // the user was actually doing in main content.
+        const wasInside = d.contains(document.activeElement);
+        d.removeAttribute('open');
+        if (wasInside) d.querySelector('summary')?.focus();
+      }
+    });
   } else {
     connectSSE();
     _bootstrapComponentCSS();
@@ -1495,17 +1525,32 @@
   const focusSel='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
   // Close all open overlays (used on navigation).
   const closeAllOverlays=()=>{
-    [...overlayStack].forEach(ov=>ov.remove());
+    // Cancel any in-flight 300ms close timers so they don't fire on
+    // detached nodes and reset body.style.overflow when a NEW overlay
+    // opened in the meantime.
+    [...overlayStack].forEach(ov=>{
+      if(ov._fuiCloseTimer){ clearTimeout(ov._fuiCloseTimer); ov._fuiCloseTimer=0; }
+      ov.remove();
+    });
     overlayStack.length=0;
     document.body.style.overflow='';
   };
 
   // Inject built-in overlay CSS on first use (apps can override via theme).
   let _overlayCSSInjected=false;
-  /** Strip <script> tags and event handler attributes from HTML to mitigate XSS */
+  /** Strip <script> elements (open tag + body + close tag) and inline
+   * event-handler attributes (on*=…) from HTML to mitigate XSS. Note
+   * this is a belt-and-suspenders pass against fragments coming from
+   * trusted-by-default server responses — the framework's strict CSP
+   * already blocks inline scripts at the browser layer. */
   const _sanitizeHTML=(html)=>{
     return html
-      .replace(/<script\b[^<]*(?:<\/script>)?/gi,'')
+      // Match <script…>…</script>, including across newlines, body
+      // content removed. The previous regex stopped at the first `<`,
+      // leaving the body as visible plaintext.
+      .replace(/<script\b[\s\S]*?<\/script\s*>/gi,'')
+      // Catch orphan <script…> or </script> with no pair.
+      .replace(/<\/?script\b[^>]*>/gi,'')
       .replace(/\bon\w+\s*=\s*(["'][^"']*["']|\S+)/gi,'');
   };
 
@@ -1605,12 +1650,15 @@
       else if(content.classList.contains('sheet'))content.classList.add('sheet-closing');
     }
     ov.classList.add('backdrop-closing');
-    setTimeout(()=>{
+    ov._fuiCloseTimer=setTimeout(()=>{
+      ov._fuiCloseTimer=0;
       ov.remove();
-      document.body.style.overflow='';
       const i=overlayStack.indexOf(ov);
       if(i>-1)overlayStack.splice(i,1);
-      if(overlayStack.length>0)document.body.style.overflow='hidden';
+      // Restore scroll only if no other overlay is open; otherwise
+      // the next overlay's hidden state should remain in effect.
+      if(overlayStack.length===0)document.body.style.overflow='';
+      else document.body.style.overflow='hidden';
     },300);
   };
   document.addEventListener('click',(e)=>{

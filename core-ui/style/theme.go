@@ -3,6 +3,7 @@ package style
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,7 @@ type Theme struct {
 	ZIndex      ZIndexSet
 	Durations   DurationSet
 	Typography  FontSizeSet
+	Layout      LayoutSet
 }
 
 // ColorSet is the canonical palette. Every theme must declare every
@@ -89,6 +91,96 @@ type DurationSet struct {
 // FontSizeSet — typography size scale.
 type FontSizeSet struct {
 	XS, SM, Base, LG, XL, XXL, XXXL FontSize
+}
+
+// LayoutSet — interaction-affordance dimensions. TouchTarget is
+// the WCAG 2.5.5 minimum tap target (default 44px); buttons and
+// form inputs reference var(--spacing-touch-target) to land on it.
+type LayoutSet struct {
+	TouchTarget Spacing
+}
+
+// AutoFillNames walks every typed token field of t and, for any
+// token whose Name is empty, assigns it from the Go struct-field
+// path in kebab-case. Authors can write
+//
+//	t.Colors.Primary = style.Color{Value: "#FF0000"}
+//
+// — the Name "primary" is filled in automatically. Explicit Name
+// values are preserved (handy for app extensions that need a
+// non-canonical CSS var identifier).
+//
+// Called automatically by App.WithTheme before validation, so
+// authors never have to invoke it directly.
+func AutoFillNames(t *Theme) {
+	autofillTokens(reflect.ValueOf(t).Elem(), nil)
+}
+
+// autofillTokens walks the struct, recursing into named sub-structs
+// (Colors, Spacing, …). When it reaches a typed-token leaf (Color,
+// Spacing, …) with an empty Name, it assigns a kebab-case name
+// derived from the most-recent struct field name visited.
+//
+// path[len-1] is the immediate field name (e.g. "Primary"); the
+// kebab-case of that is the canonical CSS variable suffix.
+func autofillTokens(v reflect.Value, path []string) {
+	if v.Kind() != reflect.Struct {
+		return
+	}
+	// Token leaf? Fill Name if empty.
+	switch v.Type() {
+	case reflect.TypeOf(Color{}), reflect.TypeOf(Spacing{}),
+		reflect.TypeOf(Radius{}), reflect.TypeOf(Font{}),
+		reflect.TypeOf(Breakpoint{}), reflect.TypeOf(Shadow{}),
+		reflect.TypeOf(ZIndexValue{}), reflect.TypeOf(Duration{}),
+		reflect.TypeOf(FontSize{}):
+		nameField := v.FieldByName("Name")
+		if !nameField.IsValid() || nameField.String() != "" {
+			return
+		}
+		if len(path) == 0 || !nameField.CanSet() {
+			return
+		}
+		nameField.SetString(camelToKebab(path[len(path)-1]))
+		return
+	}
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		if !f.CanInterface() {
+			continue
+		}
+		fieldName := v.Type().Field(i).Name
+		// Skip the bookkeeping `Name string` on Theme itself.
+		if fieldName == "Name" && f.Kind() == reflect.String {
+			continue
+		}
+		autofillTokens(f, append(path, fieldName))
+	}
+}
+
+// camelToKebab converts "PrimaryFg" → "primary-fg", "XXXL" → "xxxl",
+// "XS" → "xs", "Background" → "background". Handles ALL-CAPS runs as
+// a single segment so canonical acronyms don't sprout dashes between
+// every letter.
+func camelToKebab(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		isUpper := r >= 'A' && r <= 'Z'
+		if i > 0 && isUpper {
+			// Insert dash unless the previous letter is also upper
+			// (we're inside an acronym like XL / XXL).
+			prev := rune(s[i-1])
+			if !(prev >= 'A' && prev <= 'Z') {
+				b.WriteByte('-')
+			}
+		}
+		if isUpper {
+			b.WriteRune(r + 32)
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // Validate walks every typed token field of the theme and ensures
@@ -236,12 +328,12 @@ func DefaultTheme() Theme {
 			SurfaceSoft:  Color{Name: "surface-soft", Value: "#F4F4F5"},
 			Text:         Color{Name: "text", Value: "#18181B"},
 			TextMuted:    Color{Name: "text-muted", Value: "#52525B"},
-			TextSubtle:   Color{Name: "text-subtle", Value: "#A1A1AA"},
+			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface — was #A1A1AA (2.56:1, fails AA)
 			Border:       Color{Name: "border", Value: "#E4E4E7"},
 			BorderStrong: Color{Name: "border-strong", Value: "#A1A1AA"},
 			Danger:       Color{Name: "danger", Value: "#DC2626"},
-			Success:      Color{Name: "success", Value: "#16A34A"},
-			Warning:      Color{Name: "warning", Value: "#CA8A04"},
+			Success:      Color{Name: "success", Value: "#15803D"}, // 4.55:1 with white — was #16A34A (3.30:1)
+			Warning:      Color{Name: "warning", Value: "#A16207"}, // 4.59:1 with white — was #CA8A04 (2.94:1)
 			Info:         Color{Name: "info", Value: "#2563EB"},
 			Accent:       Color{Name: "accent", Value: "#7C3AED"},
 		},
@@ -301,6 +393,9 @@ func DefaultTheme() Theme {
 			XL:   FontSize{Name: "xl", Value: "1.25rem"},
 			XXL:  FontSize{Name: "2xl", Value: "1.5rem"},
 			XXXL: FontSize{Name: "3xl", Value: "1.875rem"},
+		},
+		Layout: LayoutSet{
+			TouchTarget: Spacing{Name: "touch-target", Value: 44},
 		},
 	}
 }

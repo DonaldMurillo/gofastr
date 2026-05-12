@@ -14,10 +14,26 @@
 //
 // # Quick Start
 //
-//	app := app.NewApp("MyApp")
-//	screen := app.NewScreen("/", myComponent)
-//	app.RegisterScreen(screen, nil)
-//	html, _ := app.RenderPage(ctx, "/")
+// Components that implement ScreenSpec carry their own metadata
+// (title, description, type), so Register reads it directly:
+//
+//	import (
+//	    "github.com/gofastr/gofastr/core-ui/app"
+//	    "github.com/gofastr/gofastr/core/render"
+//	)
+//
+//	type Home struct{}
+//	func (h *Home) Render() render.HTML         { return render.Text("hi") }
+//	func (h *Home) ScreenTitle() string         { return "Home" }
+//	func (h *Home) ScreenDescription() string   { return "" }
+//	func (h *Home) ScreenType() app.ScreenType  { return app.ScreenPage }
+//
+//	application := app.NewApp("MyApp")
+//	application.Register("/", &Home{}, nil)
+//	html, _ := application.RenderPage(ctx, "/")
+//
+// For components without ScreenSpec, use RegisterScreen with the
+// builder: app.RegisterScreen(app.NewScreen("/", comp).WithTitle("Home"), nil).
 //
 // # Screen Types
 //

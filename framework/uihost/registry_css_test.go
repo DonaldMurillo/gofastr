@@ -131,6 +131,28 @@ func TestComponentCSS_BundleConcatenates(t *testing.T) {
 	}
 }
 
+// TestComponentCSS_BundleDedupesNames guards against a duplicated
+// ?names= entry shipping the same component's CSS twice. Bytes shipped
+// twice = wasted bandwidth + a real risk that some property cascade
+// gets reset by the duplicate.
+func TestComponentCSS_BundleDedupesNames(t *testing.T) {
+	a := registerTestStyle(t, "dup-a")
+	ds := newTestUIHostFor(a)
+	// "a,a" should produce exactly one body block, not two.
+	url := "/__gofastr/comp-bundle.css?names=" + a.Name() + "," + a.Name()
+	req := httptest.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	count := strings.Count(body, `[data-fui-comp="`+a.Name()+`"]`)
+	if count != 1 {
+		t.Errorf("bundle should ship %s exactly once, got %d occurrences", a.Name(), count)
+	}
+}
+
 func TestComponentCSS_CatalogShipsInlineJSON(t *testing.T) {
 	st := registerTestStyle(t, "cat")
 	ds := newTestUIHostFor(st)

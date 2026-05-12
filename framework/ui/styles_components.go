@@ -51,10 +51,11 @@ func buttonCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
-  /* min-height 44px = WCAG 2.5.5 minimum touch target.
-     The horizontal padding stays on the canonical spacing scale;
-     vertical padding bumps to 10px to balance the floor visually. */
-  min-height: 44px;
+  /* Token-scaled touch target: --spacing-touch-target defaults to
+     44px (WCAG 2.5.5 floor). Apps that want a larger tap zone for
+     accessibility-mode skins can bump it via theme.Layout.
+     TouchTarget without forking the component. */
+  min-height: var(--spacing-touch-target);
   padding: 10px var(--spacing-lg);
   border: 1px solid transparent;
   border-radius: var(--radii-md);
@@ -90,8 +91,13 @@ func buttonCSS(_ style.Theme) string {
   border-color: var(--color-border);
 }
 .ui-button--secondary:hover { filter: none; background: var(--color-surface-soft); }
+/* secondary's bg IS --color-surface, so the layered-shadow inner halo
+   would be invisible. Use a plain outline with offset instead — it
+   contrasts against any page background. */
 .ui-button--secondary:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+  box-shadow: none;
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
 }
 
 .ui-button--danger {
@@ -99,7 +105,7 @@ func buttonCSS(_ style.Theme) string {
   color: #FFFFFF;
 }
 .ui-button--danger:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-danger);
 }
 
 .ui-button--ghost {
@@ -108,8 +114,12 @@ func buttonCSS(_ style.Theme) string {
   border-color: transparent;
 }
 .ui-button--ghost:hover { filter: none; background: var(--color-surface-soft); }
+/* ghost sits on --color-background; a halo of --color-surface collapses
+   to near-invisible. Plain outline + offset is reliable on any bg. */
 .ui-button--ghost:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+  box-shadow: none;
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
 }`
 }
 
@@ -186,13 +196,18 @@ func formFieldCSS(_ style.Theme) string {
 [data-fui-comp="ui-form-field"].is-error input,
 [data-fui-comp="ui-form-field"].is-error textarea,
 [data-fui-comp="ui-form-field"].is-error select {
+  /* Non-color affordance: stack an inset 1px ring so the error state
+     reads as a thicker border without bumping border-width and
+     shifting the input's internal text by 1px on every validation
+     toggle (WCAG 1.4.1 — info conveyed by more than color alone). */
   border-color: var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-form-field"] input,
 [data-fui-comp="ui-form-field"] textarea,
 [data-fui-comp="ui-form-field"] select {
-  /* min-height 44px = WCAG 2.5.5 minimum tap target. */
-  min-height: 44px;
+  /* Token-scaled touch target (see ui-button). */
+  min-height: var(--spacing-touch-target);
   padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -544,9 +559,9 @@ func dataTableCSS(_ style.Theme) string {
 [data-fui-comp="ui-data-table"] button.ui-data-table__sort {
   display: inline-flex;
   align-items: center;
-  /* min-height 44px = WCAG 2.5.5 tap target. Sort headers are the
-     most-tapped element in a data table on mobile. */
-  min-height: 44px;
+  /* Token-scaled tap target. Sort headers are the most-tapped
+     element in a data table on mobile. */
+  min-height: var(--spacing-touch-target);
   gap: 0.25rem;
   background: transparent;
   border: 0;

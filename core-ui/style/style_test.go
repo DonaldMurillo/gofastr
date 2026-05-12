@@ -1,6 +1,7 @@
 package style
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -208,6 +209,131 @@ func TestStyleSheetSetEmitsVarRefs(t *testing.T) {
 	if !strings.Contains(got, "padding: var(--spacing-md)") {
 		t.Errorf("Set should emit var ref for spacing: %q", got)
 	}
+}
+
+// --- Reflection-derived token names ---------------------------------------
+
+func TestThemeAutoFillsTokenNames(t *testing.T) {
+	// Authors should be able to declare typed tokens with just a
+	// Value — the Name auto-derives from the struct-field path in
+	// kebab-case. AutoFillNames walks the theme and assigns names
+	// to any token with an empty Name. After autofill, the theme
+	// passes Validate.
+	th := Theme{
+		Colors: ColorSet{
+			Primary:    Color{Value: "#FF0000"},  // no Name; should fill "primary"
+			Text:       Color{Value: "#000000"},  // → "text"
+			PrimaryFg:  Color{Value: "#FFFFFF"},  // → "primary-fg" (kebab from CamelCase)
+		},
+	}
+	AutoFillNames(&th)
+	if got := th.Colors.Primary.Name; got != "primary" {
+		t.Errorf("Primary.Name = %q, want %q", got, "primary")
+	}
+	if got := th.Colors.PrimaryFg.Name; got != "primary-fg" {
+		t.Errorf("PrimaryFg.Name = %q, want %q (kebab-case from CamelCase)", got, "primary-fg")
+	}
+}
+
+func TestThemeAutoFillPreservesExplicitNames(t *testing.T) {
+	// If the author specified Name explicitly (legacy or for an
+	// override that needs a non-canonical CSS var name), autofill
+	// must NOT clobber it.
+	th := Theme{
+		Colors: ColorSet{
+			Primary: Color{Name: "brand-blue", Value: "#0000FF"},
+		},
+	}
+	AutoFillNames(&th)
+	if got := th.Colors.Primary.Name; got != "brand-blue" {
+		t.Errorf("explicit Name overwritten: got %q", got)
+	}
+}
+
+// --- WCAG contrast (DefaultTheme) ----------------------------------------
+
+func TestDefaultTheme_WCAGContrast(t *testing.T) {
+	// Token pairs that absolutely must hit WCAG AA (4.5:1 for body
+	// text, 3:1 for large text / non-text). These are the live
+	// failure modes from the UX review: small body text in
+	// text-subtle was 2.56:1; status-colored backgrounds were 2.9:1.
+	cases := []struct {
+		name    string
+		fg, bg  string
+		minPair float64
+		why     string
+	}{
+		{"text-on-surface", DefaultTheme().Colors.Text.Value, DefaultTheme().Colors.Surface.Value, 4.5, "body text"},
+		{"text-muted-on-surface", DefaultTheme().Colors.TextMuted.Value, DefaultTheme().Colors.Surface.Value, 4.5, "secondary body text"},
+		{"text-subtle-on-surface", DefaultTheme().Colors.TextSubtle.Value, DefaultTheme().Colors.Surface.Value, 4.5, "subtle text (was 2.56:1)"},
+		{"primary-fg-on-primary", DefaultTheme().Colors.PrimaryFg.Value, DefaultTheme().Colors.Primary.Value, 4.5, "button label on primary bg"},
+		{"white-on-warning", "#FFFFFF", DefaultTheme().Colors.Warning.Value, 4.5, "white label on warning solid (was 2.94:1)"},
+		{"white-on-success", "#FFFFFF", DefaultTheme().Colors.Success.Value, 4.5, "white label on success solid (was 3.30:1)"},
+		{"white-on-danger", "#FFFFFF", DefaultTheme().Colors.Danger.Value, 4.5, "white label on danger solid"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := contrastRatio(c.fg, c.bg)
+			if got < c.minPair {
+				t.Errorf("%s (%s on %s) contrast = %.2f:1, want >= %.1f:1 (%s)",
+					c.name, c.fg, c.bg, got, c.minPair, c.why)
+			}
+		})
+	}
+}
+
+// contrastRatio computes the WCAG 2.x relative luminance contrast
+// between two hex colors. Inlined to keep the test self-contained.
+func contrastRatio(hexA, hexB string) float64 {
+	la := relativeLuminance(hexA)
+	lb := relativeLuminance(hexB)
+	if la > lb {
+		return (la + 0.05) / (lb + 0.05)
+	}
+	return (lb + 0.05) / (la + 0.05)
+}
+
+func relativeLuminance(hex string) float64 {
+	r, g, b := parseHex(hex)
+	conv := func(v float64) float64 {
+		v /= 255.0
+		if v <= 0.03928 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	return 0.2126*conv(float64(r)) + 0.7152*conv(float64(g)) + 0.0722*conv(float64(b))
+}
+
+func parseHex(s string) (int, int, int) {
+	if len(s) > 0 && s[0] == '#' {
+		s = s[1:]
+	}
+	if len(s) != 6 {
+		return 0, 0, 0
+	}
+	r := hex2(s[0:2])
+	g := hex2(s[2:4])
+	b := hex2(s[4:6])
+	return r, g, b
+}
+
+func hex2(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		v := 0
+		switch {
+		case c >= '0' && c <= '9':
+			v = int(c - '0')
+		case c >= 'a' && c <= 'f':
+			v = int(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			v = int(c-'A') + 10
+		}
+		n = n*16 + v
+	}
+	return n
 }
 
 // --- Theme.Validate ------------------------------------------------------

@@ -64,6 +64,11 @@ func Notification(cfg NotificationConfig) render.HTML {
 	if v == "" {
 		v = StatusInfo
 	}
+	switch v {
+	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
+	default:
+		panic("ui: Notification unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
+	}
 	cls := "ui-notification ui-notification--" + string(v)
 	if cfg.Position != NotificationInline {
 		cls += " ui-notification--floating ui-notification--at-" + string(cfg.Position)

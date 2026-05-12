@@ -65,6 +65,7 @@ func runInit(args []string) {
 		name,
 		filepath.Join(name, "entities"),
 		filepath.Join(name, "migrations"),
+		filepath.Join(name, "screens"),
 		filepath.Join(name, "static"),
 		filepath.Join(name, ".gofastr"),
 	}
@@ -75,7 +76,10 @@ func runInit(args []string) {
 		}
 	}
 
-	// Write main.go
+	// Write main.go — wires CRUD entities AND a minimal UI home page so
+	// `/` returns 200 with a friendly placeholder, not 404. New projects
+	// can delete the screens import + uihost.Mount(host) calls if they
+	// only want a JSON API.
 	mainContent := fmt.Sprintf(`package main
 
 import (
@@ -86,11 +90,14 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gofastr/gofastr/core-ui/app"
 	"github.com/gofastr/gofastr/core/migrate"
 	"github.com/gofastr/gofastr/framework"
+	"github.com/gofastr/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
 
 	"%s/entities"
+	"%s/screens"
 )
 
 func main() {
@@ -100,13 +107,18 @@ func main() {
 	}
 	defer db.Close()
 
-	app := framework.NewApp(
+	fwApp := framework.NewApp(
 		framework.WithDB(db),
 		framework.WithConfig(framework.AppConfig{Name: "%s"}),
 	)
 
-	// Register entities from the entities package
-	entities.RegisterAll(app)
+	// Register entities from the entities package.
+	entities.RegisterAll(fwApp)
+
+	// Wire the UI layer: site app + home screen + host.
+	site := app.NewApp("%s")
+	site.Register("/", &screens.HomeScreen{}, nil)
+	fwApp.Mount(uihost.New(site))
 
 	// Run migrations
 	migrator := migrate.New(db, migrate.WithTableName("_migrations"))
@@ -117,7 +129,7 @@ func main() {
 
 	addr := getEnv("PORT", "localhost:8080")
 	fmt.Printf("  %%s Server starting at http://%%s\n", "✓", addr)
-	if err := app.Start(addr); err != nil && err != http.ErrServerClosed {
+	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }
@@ -128,10 +140,42 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
-`, modulePath, name, name)
+`, modulePath, modulePath, name, name, name)
 
 	if err := os.WriteFile(filepath.Join(name, "main.go"), []byte(mainContent), 0o644); err != nil {
 		fail("Failed to write main.go: %v", err)
+		os.Exit(1)
+	}
+
+	// Write screens/home.go — minimal HomeScreen so `/` works on first
+	// boot. Implements component.Component + ScreenSpec so app.Register
+	// reads its metadata directly.
+	homeContent := fmt.Sprintf(`package screens
+
+import (
+	"github.com/gofastr/gofastr/core-ui/app"
+	"github.com/gofastr/gofastr/core/render"
+)
+
+type HomeScreen struct{}
+
+func (h *HomeScreen) Render() render.HTML {
+	return render.Tag("div", map[string]string{"style": "padding:2rem;font-family:system-ui,sans-serif;max-width:640px;margin:0 auto"},
+		render.Tag("h1", nil, render.Text("%s")),
+		render.Tag("p", nil, render.Text("Your GoFastr app is running. Edit screens/home.go to replace this page.")),
+		render.Tag("p", nil,
+			render.Text("Next steps: "),
+			render.Tag("code", nil, render.Text("gofastr theme init")),
+			render.Text(" scaffolds a typed theme; entities live in entities/entities.go and serve at /posts.")),
+	)
+}
+
+func (h *HomeScreen) ScreenTitle() string        { return "%s" }
+func (h *HomeScreen) ScreenDescription() string  { return "" }
+func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+`, name, name)
+	if err := os.WriteFile(filepath.Join(name, "screens", "home.go"), []byte(homeContent), 0o644); err != nil {
+		fail("Failed to write screens/home.go: %v", err)
 		os.Exit(1)
 	}
 
@@ -234,15 +278,25 @@ bin/
 	success("Created project %s in ./%s/", name, name)
 	fmt.Println()
 	fmt.Printf("  %s:\n", bold("Generated"))
-	fmt.Println("    main.go              — Application entry point")
-	fmt.Println("    entities/entities.go — Sample entity (posts)")
+	fmt.Println("    main.go              — Application entry point (UI + entities)")
+	fmt.Println("    screens/home.go      — Sample UI page served at /")
+	fmt.Println("    entities/entities.go — Sample entity (posts) served at /posts")
 	fmt.Println("    .env                 — Environment configuration")
 	fmt.Println("    .gitignore           — Git ignore rules")
 	fmt.Println()
 	fmt.Printf("  %s:\n", bold("Next steps"))
 	fmt.Printf("    cd %s\n", name)
+	fmt.Println("    go mod tidy          — Resolve dependencies")
 	fmt.Println("    gofastr dev          — Start development server with hot-reload")
+	fmt.Println()
+	fmt.Println("  Also try:")
+	fmt.Println("    gofastr theme init   — Scaffold a typed theme.go")
 	fmt.Println("    gofastr build        — Build production binary")
+	fmt.Println()
+	fmt.Println("  Note: gofastr is pre-alpha and unpublished. If `go mod tidy`")
+	fmt.Println("  fails with \"Repository not found\", add a `replace` directive")
+	fmt.Println("  pointing at your local clone:")
+	fmt.Println("    go mod edit -replace github.com/gofastr/gofastr=/path/to/clone")
 	fmt.Println()
 }
 

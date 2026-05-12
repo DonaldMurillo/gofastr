@@ -136,7 +136,7 @@ func (cs *ComponentSheet) MustBuild() string {
 func scopeRules(rules []cssRule, prefix string) error {
 	for i := range rules {
 		r := &rules[i]
-		if strings.HasPrefix(r.parent, "@keyframes") {
+		if strings.HasPrefix(r.outerParent(), "@keyframes") {
 			continue
 		}
 		if r.selector != "" {
@@ -166,7 +166,7 @@ func scopeSelector(selector, prefix string) (string, error) {
 	for i, p := range parts {
 		trimmed := strings.TrimSpace(p)
 		if trimmed == "" {
-			return "", fmt.Errorf("empty selector part in %q", selector)
+			return "", fmt.Errorf("empty selector part in %q (trailing or doubled comma?): %w", selector, ErrUnscopable)
 		}
 		if strings.HasPrefix(trimmed, "&") {
 			rest := strings.TrimSpace(trimmed[1:])
@@ -177,14 +177,14 @@ func scopeSelector(selector, prefix string) (string, error) {
 			// no error to tell the author.
 			if rest != "" {
 				if reason, bad := unscopableSelector(rest); bad {
-					return "", fmt.Errorf("selector %q cannot be scoped: %s", trimmed, reason)
+					return "", fmt.Errorf("selector %q cannot be scoped: %s: %w", trimmed, reason, ErrUnscopable)
 				}
 			}
 			out[i] = prefix + trimmed[1:]
 			continue
 		}
 		if reason, bad := unscopableSelector(trimmed); bad {
-			return "", fmt.Errorf("selector %q cannot be scoped: %s", trimmed, reason)
+			return "", fmt.Errorf("selector %q cannot be scoped: %s: %w", trimmed, reason, ErrUnscopable)
 		}
 		out[i] = prefix + " " + trimmed
 	}

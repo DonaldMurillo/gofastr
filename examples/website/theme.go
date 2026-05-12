@@ -46,7 +46,10 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".skip-link").
 		Set("position", "absolute", "left", "-9999px",
 			"background", "{colors.primary}", "color", "white",
-			"padding", "{spacing.sm} {spacing.md}").
+			"padding", "{spacing.sm} {spacing.md}",
+			// Must sit above .site-header (z-index: 10) so the focused
+			// link is visible, not tucked under the sticky banner.
+			"z-index", "100").
 		End()
 	ss.Rule(".skip-link:focus").Set("left", "{spacing.sm}", "top", "{spacing.sm}").End()
 
@@ -68,6 +71,69 @@ func createStyleSheet(theme style.Theme) string {
 		Set("color", "{colors.text}", "font-weight", "500").End()
 	ss.Rule(".site-header nav a[aria-current='page']").
 		Set("color", "{colors.primary}").End()
+
+	// Mobile hamburger: <details class="site-nav"> wraps <summary> + <nav>.
+	// Below 640px the summary is a 44px tap target and the nav stacks
+	// vertically when details is open. `.site-header nav { display: flex }`
+	// above overrides the native details-closed hide, so we force hide
+	// explicitly when not [open].
+	ss.Rule(".site-nav").Set("position", "relative").End()
+	ss.Rule(".site-nav:not([open]) nav").Set("display", "none").End()
+	ss.Rule(".site-nav__toggle").
+		Set("display", "inline-flex", "align-items", "center", "justify-content", "center",
+			"min-height", "var(--spacing-touch-target)",
+			"min-width", "var(--spacing-touch-target)",
+			"padding", "0 {spacing.md}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"background", "{colors.surface}",
+			"color", "{colors.text}",
+			"font-weight", "600",
+			"cursor", "pointer",
+			"list-style", "none",
+			"-webkit-tap-highlight-color", "transparent").End()
+	ss.Rule(".site-nav__toggle::-webkit-details-marker").
+		Set("display", "none").End()
+	// :focus-visible is critical — we hide the native disclosure marker
+	// above, so without an explicit ring the keyboard user gets no
+	// affordance on Safari/iOS where the UA default is suppressed.
+	ss.Rule(".site-nav__toggle:focus-visible").
+		Set("outline", "2px solid {colors.primary}",
+			"outline-offset", "2px").End()
+	ss.Rule(".site-nav[open] .site-nav__toggle").
+		Set("background", "{colors.primary}", "color", "white",
+			"border-color", "{colors.primary}").End()
+	ss.Rule(".site-nav[open] nav").
+		Set("position", "absolute", "top", "calc(100% + {spacing.xs})",
+			"right", "0", "left", "auto",
+			"flex-direction", "column", "align-items", "stretch",
+			"min-width", "240px",
+			"max-width", "calc(100vw - 2 * {spacing.md})",
+			"padding", "{spacing.sm}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"box-shadow", "{shadows.md}",
+			"z-index", "20").End()
+	ss.Rule(".site-nav[open] nav a").
+		Set("padding", "{spacing.sm} {spacing.md}",
+			"min-height", "var(--spacing-touch-target)",
+			"display", "flex", "align-items", "center").End()
+	// >=640px: hide the toggle and unwrap details so nav renders inline.
+	ss.Media("(min-width: 640px)", func(ss *style.StyleSheet) {
+		ss.Rule(".site-nav").Set("display", "contents").End()
+		ss.Rule(".site-nav__toggle").Set("display", "none").End()
+		// Override the mobile :not([open]) hide so nav always renders.
+		ss.Rule(".site-nav nav, .site-nav:not([open]) nav, .site-nav[open] nav").
+			Set("display", "flex",
+				"position", "static",
+				"flex-direction", "row", "align-items", "center",
+				"min-width", "0", "padding", "0",
+				"background", "transparent", "border", "0",
+				"box-shadow", "none").End()
+		ss.Rule(".site-nav nav a").
+			Set("padding", "0", "min-height", "0", "display", "inline-flex").End()
+	})
 
 	// Footer.
 	ss.Rule(".site-footer").
@@ -91,12 +157,19 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".hero .cta-row").
 		Set("display", "flex", "justify-content", "center", "gap", "{spacing.md}").End()
 	ss.Rule(".cta-button").
-		Set("display", "inline-block", "padding", "{spacing.sm} {spacing.lg}",
+		Set("display", "inline-flex", "align-items", "center", "justify-content", "center",
+			"min-height", "44px", // WCAG 2.5.5 tap target
+			"padding", "10px {spacing.lg}",
 			"border-radius", "{radii.md}", "font-weight", "600",
 			"background", "white", "color", "{colors.primary}").End()
 	ss.Rule(".cta-button.secondary").
 		Set("background", "transparent", "color", "white",
 			"border", "1px solid white").End()
+	// :focus-visible — both CTAs sit on the indigo/slate hero gradient,
+	// so a white outline is the only high-contrast option (~12:1 vs
+	// either gradient stop). WCAG 2.4.7 — focus indicator visible.
+	ss.Rule(".cta-button:focus-visible, .cta-button.secondary:focus-visible").
+		Set("outline", "2px solid white", "outline-offset", "2px").End()
 
 	// Generic content container.
 	ss.Rule("main").

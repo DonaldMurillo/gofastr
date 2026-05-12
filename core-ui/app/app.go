@@ -33,12 +33,14 @@ func NewApp(name string) *App {
 }
 
 // WithTheme sets the application theme and returns the app for
-// chaining. The theme is validated at boot — passing a partially-
-// populated theme (e.g. a Color with empty Name or Value) panics
-// with the field path naming the missing piece. This catches
-// "silently broken styling" failures at startup, not at the first
-// page render.
+// chaining. Auto-fills missing token Names from struct-field paths
+// (Colors.Primary → "primary", Colors.PrimaryFg → "primary-fg"),
+// then validates — passing a partially-populated theme (e.g. a
+// Color with empty Value) panics with the field path naming the
+// missing piece. This catches "silently broken styling" failures at
+// startup, not at the first page render.
 func (a *App) WithTheme(theme style.Theme) *App {
+	style.AutoFillNames(&theme)
 	theme.MustValidate()
 	a.Theme = &theme
 	return a
@@ -231,7 +233,19 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 		"class": "skip-link",
 	}, render.Text("Skip to main content"))
 
-	body := render.Tag("body", nil, skipLink, wrapped)
+	// Polite live region for SPA route changes. document.title mutations
+	// aren't announced by screen readers; the runtime writes the new
+	// page title into here after each partial-nav so AT users hear it.
+	// role="status" implicitly maps to aria-live="polite" and
+	// aria-atomic="true" per ARIA 1.2 — declaring both explicitly
+	// triggers double-announce on JAWS. Keep role only.
+	routeAnnounce := render.Tag("div", map[string]string{
+		"id":    "fui-route-announce",
+		"role":  "status",
+		"class": "fui-visually-hidden",
+	}, render.Text(""))
+
+	body := render.Tag("body", nil, skipLink, routeAnnounce, wrapped)
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")

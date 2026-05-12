@@ -189,10 +189,14 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 ### `cmd/gofastr` — CLI
 
 ```text
+gofastr init <name>                 Scaffold a new project (UI + entities + migrations)
+gofastr theme init                  Scaffold a typed theme/theme.go you own
 gofastr generate                    Generate Go from entities/*.json
 gofastr generate entity post t:s    Scaffold a single entity in code
 gofastr build                       Generate then go build
+gofastr dev                         Start dev server with hot-reload
 gofastr migrate up | down | status  Run versioned migrations
+gofastr test                        Run project tests
 ```
 
 ### `kiln/` — agent-driven build-mode runtime
@@ -275,6 +279,9 @@ plan/        proposal-driven task tracker
 
 ## Documentation
 
+- [UI getting started](docs/ui-getting-started.md) — **the 15-minute path**: scaffold → theme → screen → custom-styled component
+- [core-ui architecture](core-ui/ARCHITECTURE.md) — **deeper UI/runtime reference** (SSR, hydration, islands, component CSS, data-fui-* primitives)
+- [framework architecture](framework/ARCHITECTURE.md) — package layout, layering rules, cycle-breaking interfaces
 - [Entity declarations](docs/entity-declarations.md) — JSON schema reference
 - [Migrations](docs/migrations.md) — versioned migrations and the CLI
 - [Query DSL](docs/query-dsl.md) — `Entity.where(...).order(...).limit(N)`

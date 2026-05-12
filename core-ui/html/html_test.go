@@ -399,6 +399,15 @@ func TestDetails(t *testing.T) {
 	assertContains(t, d, "<details>")
 }
 
+// TestDetailsDisclosure asserts the Disclosure shortcut writes the
+// data-fui-disclosure attribute so the runtime closes it on SPA
+// navigation and Escape (per ARCHITECTURE.md primitives table).
+func TestDetailsDisclosure(t *testing.T) {
+	d := Details(DetailsConfig{Disclosure: true, Open: true})
+	assertContains(t, d, `data-fui-disclosure=""`)
+	assertContains(t, d, `open=""`)
+}
+
 func TestSummary(t *testing.T) {
 	s := Summary(SummaryConfig{}, render.Text("click to expand"))
 	assertContains(t, s, "<summary>")

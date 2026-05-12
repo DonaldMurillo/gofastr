@@ -87,6 +87,27 @@ server side and the runtime does the work.
 | `data-fui-rpc-scroll-to="<selector>"` | On 2xx RPC, smooth-scroll the matching element into view. Use to direct the user's eye at newly-inserted content. |
 | `data-fui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-fui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
 | `data-fui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
+| `data-fui-disclosure` | Marks a `<details>` element as a dismissible disclosure (mobile hamburger nav, popover, etc.). The runtime closes it automatically on SPA navigation and when Escape is pressed anywhere on the page (native `<details>` only handles Escape when the `<summary>` itself has focus). |
+| `data-fui-action="<name>"` | Marks an element as a server-action trigger. Used together with `data-fui-rpc` to dispatch a named action. |
+| `data-fui-widget="<name>"` | Marks a registered widget instance — the runtime mounts behavior on it after first paint. |
+| `data-fui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-fui-open` to make the floating surface dismissible. |
+| `data-fui-style="<name>"` | Set on the runtime-injected `<link rel="stylesheet">` so duplicates are dedup'd by component name. |
+| `data-fui-shortcut-click="<chord>"` / `data-fui-shortcut-focus="<chord>"` | Global keyboard shortcut: e.g. `Meta+K` or `/` focuses or clicks the target element. |
+| `data-fui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form. |
+| `data-fui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value. |
+| `data-fui-autogrow` | On a `<textarea>`, height auto-grows with content. |
+| `data-fui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |
+| `data-fui-copy-text-from="<selector>"` | A button that copies the source element's text to the clipboard on click. |
+| `data-fui-fill-input="<selector>"` / `data-fui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
+| `data-fui-disable-when-invalid` | On a submit button: disabled while any field in the surrounding `<form>` reports `:invalid`. |
+| `data-fui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage` under the given key. |
+| `data-fui-flash-on-update` / `data-fui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `is-fui-flash`) for `<ms>` after each update. |
+| `data-fui-scroll-bottom-on-update` | A signal-bound scroll container auto-scrolls to the bottom on each update (chat / log views). |
+| `data-fui-tick-elapsed="<unix-ms>"` | Element's text updates once per second with the elapsed human-readable interval since the given epoch. |
+| `data-fui-rpc-body="<json>"` | Static JSON body for `data-fui-rpc` requests that don't come from a `<form>`. |
+| `data-fui-rpc-after-done` | Internal marker — set by the runtime after a one-shot `after-text` / `after-disable` fires so re-clicks are idempotent. |
+
+For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
 
 **Response headers the runtime understands:**
 
@@ -164,7 +185,11 @@ server do the math.
 
 ### How to build a page
 
-1. Implement `Screen` (`Render() render.HTML`, optionally `Load(ctx)` and `SetParams`).
+1. Implement `component.Component` (`Render() render.HTML`). Optionally also:
+   - `app.ScreenSpec` — `ScreenTitle()/Description()/Type()` so `app.Register(path, comp, layout)` reads metadata
+   - `app.ScreenLoader` — `Load(ctx) error` runs once per request after DI injection, before render
+   - `app.ParamSetter` — `SetParams(map[string]string)` receives route params from dynamic paths
+   (`Screen` itself is a struct value the router holds — not the interface you implement on your component.)
 2. Inside Render, compose `core-ui/html` (1:1 tag primitives) +
    `core-ui/patterns` (accordion, tabs, pagination…) + `framework/ui`
    (semantic components like PageHeader, FormField, DataTable).
@@ -256,8 +281,11 @@ t.Colors.Primary.Value   // → "#4F46E5"
 resolution of `{tokens.text}` to literal hex values has been
 removed; every reference is a CSS variable indirection. This is
 required for section-level theme overrides via the CSS cascade —
-a parent `.fui-theme-dark { --color-text: #f4f4f5 }` overrides
-every descendant's `var(--color-text)` automatically.
+a parent `.fui-theme-<hash> { --color-text: #f4f4f5 }` overrides
+every descendant's `var(--color-text)` automatically. The hash is
+content-derived from the overridden tokens (see `RegisterThemeOverride`),
+so apps don't pick the class name — they pass an override struct and
+get a stable hash back.
 
 ### Overriding tokens
 
@@ -384,11 +412,18 @@ first-paint optimization.
 
 ### Runtime catalog
 
-`/__gofastr/catalog.js` defines `window.__gofastr_catalog =
-{ "<name>": { stylePath, version, loadMode } }`. The host emits a
-`<script src="/__gofastr/catalog.js">` tag in `<head>` before
-`runtime.js`, so the runtime sees the catalog at boot. This is
-how `loadComponentCSS` resolves a marker name to a URL.
+The host SSR-embeds an inert JSON block in `<head>`:
+
+```html
+<script type="application/json" id="gofastr-catalog">
+{ "<name>": { "stylePath": "/__gofastr/comp/<name>.css", "version": "…", "loadMode": "auto" } }
+</script>
+```
+
+The runtime reads `JSON.parse(document.getElementById('gofastr-catalog').textContent)`
+at boot, so `loadComponentCSS` can resolve a marker name to a URL.
+This is strict-CSP-clean (no inline JS, no separate script src) —
+the legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### Adding a styled component
 
@@ -435,7 +470,7 @@ Both registries coexist safely: they share the
 and a registered styled component can never double-load CSS even
 if a future change merges them. Widgets surface through
 `/__gofastr/widgets`; styled components surface through
-`/__gofastr/catalog.js` and `/__gofastr/comp/<name>.css`.
+the inline `<script id="gofastr-catalog">` JSON block and `/__gofastr/comp/<name>.css`.
 
 ---
 

@@ -216,6 +216,17 @@ func TestStatusBadgeDefaultsToNeutral(t *testing.T) {
 	mustContain(t, h, "ui-badge--neutral")
 }
 
+// TestStatusBadgeRejectsUnknownVariant mirrors Button — a typo like
+// "succes" must panic instead of silently emitting an unmatched class.
+func TestStatusBadgeRejectsUnknownVariant(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic for unknown StatusBadge Variant, got none")
+		}
+	}()
+	_ = StatusBadge(StatusBadgeConfig{Label: "x", Variant: "succes"})
+}
+
 // ─── EmptyState ───
 func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 	h := EmptyState(EmptyStateConfig{
@@ -229,6 +240,17 @@ func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 }
 
 // ─── Callout ───
+// TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge — typo
+// must panic instead of silently emitting an unmatched class.
+func TestCalloutRejectsUnknownVariant(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic for unknown Callout Variant, got none")
+		}
+	}()
+	_ = Callout(CalloutConfig{Variant: "succes"}, render.Text("hi"))
+}
+
 func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
 	// Danger/warning callouts must announce assertively → role=alert
 	// (rendered as a <div role="alert">).

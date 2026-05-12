@@ -64,13 +64,14 @@ func injectMarker(html, name string) (render.HTML, error) {
 	// WrapHTML was already applied), leave the html alone. Double-
 	// marker would inflate Scan output and emit a stray <link>.
 	openTag := html[i:end]
-	if strings.Contains(openTag, " data-fui-comp=") || strings.Contains(openTag, "\tdata-fui-comp=") {
+	if hasAttribute(openTag, "data-fui-comp") {
 		return render.HTML(html), nil
 	}
 
 	// If the tag is self-closing (`/>`), splice before the `/`.
 	insertAt := end
-	if end > 0 && html[end-1] == '/' {
+	selfClose := end > 0 && html[end-1] == '/'
+	if selfClose {
 		insertAt = end - 1
 	}
 
@@ -81,8 +82,57 @@ func injectMarker(html, name string) (render.HTML, error) {
 	}
 
 	attr := sep + `data-fui-comp="` + name + `"`
+	// Preserve a trailing space before `/>` if the source had one
+	// — `<br />` should stay `<br data-fui-comp="…" />`, not collapse
+	// to `<br data-fui-comp="…"/>`. We detect this by checking the
+	// character we're about to splice before.
+	if selfClose && insertAt > 0 && html[insertAt-1] == ' ' {
+		attr += " "
+	}
 	out := html[:insertAt] + attr + html[insertAt:]
 	return render.HTML(out), nil
+}
+
+// hasAttribute reports whether the given opening-tag slice already
+// contains the named attribute. Quote-aware: matches inside quoted
+// attribute values (e.g. `class="x data-fui-comp x"`) don't count.
+// Boundary before the attr name must be whitespace; boundary after
+// must be `=`, whitespace, `/`, or `>` so we don't match prefix
+// collisions like `data-fui-comp-extra`.
+func hasAttribute(openTag, name string) bool {
+	var quote byte
+	for at := 0; at+len(name) <= len(openTag); at++ {
+		c := openTag[at]
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+			continue
+		}
+		// Only treat positions outside a quoted value as candidates.
+		if at == 0 {
+			continue // index 0 is the tag-name char, not an attribute
+		}
+		if openTag[at:at+len(name)] != name {
+			continue
+		}
+		prev := openTag[at-1]
+		if prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' {
+			continue
+		}
+		var next byte
+		if at+len(name) < len(openTag) {
+			next = openTag[at+len(name)]
+		}
+		if next == '=' || next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '/' || next == '>' || next == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func skipWhitespace(s string, i int) int {

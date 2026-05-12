@@ -104,6 +104,199 @@ func TestStyleSheetMedia(t *testing.T) {
 	}
 }
 
+// TestStyleSheetMediaDoesNotLeak guards against a regression where
+// .Pseudo() called AFTER .Media() inside the same Rule chain ended up
+// nested inside the @media block — silently changing the selector's
+// meaning (hover only above 640px).
+func TestStyleSheetMediaDoesNotLeak(t *testing.T) {
+	theme := DefaultTheme()
+	ss := NewStyleSheet(theme)
+	ss.Rule(".btn").
+		Set("color", "red").
+		Media("(min-width: 640px)", func(ss *StyleSheet) {
+			ss.Rule(".btn").Set("color", "blue").End()
+		}).
+		Pseudo(":hover", "color", "green").
+		End()
+
+	css := ss.CSS()
+	// Count braces between the @media start and .btn:hover. If
+	// open == close, the :hover sits OUTSIDE the @media block.
+	mediaIdx := strings.Index(css, "@media (min-width: 640px)")
+	hoverIdx := strings.Index(css, ".btn:hover")
+	if mediaIdx < 0 || hoverIdx < 0 {
+		t.Fatalf("expected both @media and :hover; got\n%s", css)
+	}
+	if hoverIdx > mediaIdx {
+		between := css[mediaIdx:hoverIdx]
+		open := strings.Count(between, "{")
+		close := strings.Count(between, "}")
+		if open > close {
+			t.Errorf(":hover leaked INSIDE @media block; got:\n%s", css)
+		}
+	}
+}
+
+// TestStyleSheetNestedMediaPreservesInner asserts that Media() inside
+// a Media() callback produces a nested @media block — the outer
+// Media() must not overwrite the inner rule's parent.
+func TestStyleSheetNestedMediaPreservesInner(t *testing.T) {
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Media("(min-width: 640px)", func(outer *StyleSheet) {
+		outer.Rule(".x").Set("color", "red").End()
+		outer.Media("(prefers-color-scheme: dark)", func(inner *StyleSheet) {
+			inner.Rule(".x").Set("color", "blue").End()
+		})
+	})
+	css := ss.CSS()
+	outerIdx := strings.Index(css, "@media (min-width: 640px)")
+	innerIdx := strings.Index(css, "@media (prefers-color-scheme: dark)")
+	if outerIdx < 0 {
+		t.Fatalf("expected outer @media; got\n%s", css)
+	}
+	if innerIdx < 0 {
+		t.Fatalf("nested @media silently collapsed — inner rule lost its parent; got\n%s", css)
+	}
+	if outerIdx >= innerIdx {
+		t.Errorf("outer @media must appear BEFORE inner @media in serialized CSS; got outer=%d inner=%d:\n%s", outerIdx, innerIdx, css)
+	}
+}
+
+// TestStyleSheetMediaMixedOrder covers the case where a Media block
+// wraps three siblings: a plain rule, an inner Media, and another
+// plain rule. The output must preserve source order — the trailing
+// rule must come AFTER the inner @media closes, not get sucked into
+// the inner block.
+func TestStyleSheetMediaMixedOrder(t *testing.T) {
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Media("(min-width: 640px)", func(outer *StyleSheet) {
+		outer.Rule(".a").Set("color", "red").End()
+		outer.Media("(prefers-color-scheme: dark)", func(inner *StyleSheet) {
+			outer.Rule(".b").Set("color", "blue").End()
+			_ = inner // satisfy linter — we intentionally use outer here
+		})
+		outer.Rule(".c").Set("color", "green").End()
+	})
+	css := ss.CSS()
+	aIdx := strings.Index(css, ".a {")
+	bIdx := strings.Index(css, ".b {")
+	cIdx := strings.Index(css, ".c {")
+	if aIdx < 0 || bIdx < 0 || cIdx < 0 {
+		t.Fatalf("missing rule in output:\n%s", css)
+	}
+	if !(aIdx < bIdx && bIdx < cIdx) {
+		t.Errorf("rules must serialize in source order .a < .b < .c; got a=%d b=%d c=%d:\n%s", aIdx, bIdx, cIdx, css)
+	}
+}
+
+// TestStyleSheetMediaTopLevel covers Media() called at the top level
+// (no enclosing Rule). Previously a silent no-op.
+func TestStyleSheetMediaTopLevel(t *testing.T) {
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Rule(".x").Set("color", "red").End()
+	ss.Media("(min-width: 640px)", func(ss *StyleSheet) {
+		ss.Rule(".x").Set("color", "blue").End()
+	})
+	css := ss.CSS()
+	if !strings.Contains(css, "@media (min-width: 640px)") {
+		t.Errorf("expected top-level @media, got:\n%s", css)
+	}
+	if !strings.Contains(css, "color: blue") {
+		t.Errorf("expected nested rule body inside @media, got:\n%s", css)
+	}
+}
+
+// TestStyleSheetContainerTopLevel mirrors Media — Container() called
+// at the top level must produce real @container output.
+func TestStyleSheetContainerTopLevel(t *testing.T) {
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Container("layout", "(min-width: 400px)", func(ss *StyleSheet) {
+		ss.Rule(".card").Set("padding", "16px").End()
+	})
+	css := ss.CSS()
+	if !strings.Contains(css, "@container layout (min-width: 400px)") {
+		t.Errorf("expected top-level @container, got:\n%s", css)
+	}
+	if !strings.Contains(css, "padding: 16px") {
+		t.Errorf("expected nested rule body, got:\n%s", css)
+	}
+}
+
+// TestStyleSheetSetOddCountPanics catches the silent-drop footgun
+// where ss.Set("padding") (no value) was ignored without warning.
+// TestStyleSheetSetBeforeRulePanics guards against the silent no-op
+// where ss.Set(...) called BEFORE any ss.Rule(...) just drops the
+// properties on the floor. A typo'd builder chain should fail loud.
+func TestStyleSheetSetBeforeRulePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on Set before Rule, got none")
+		}
+	}()
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Set("color", "red")
+}
+
+func TestStyleSheetPseudoBeforeRulePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on Pseudo before Rule, got none")
+		}
+	}()
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Pseudo(":hover", "color", "red")
+}
+
+func TestStyleSheetChildBeforeRulePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on Child before Rule, got none")
+		}
+	}()
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Child(".x", "color", "red")
+}
+
+func TestStyleSheetSetOddCountPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on odd-count Set, got none")
+		}
+	}()
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Rule(".x").Set("color", "red", "padding").End()
+}
+
+func TestStyleSheetPseudoOddCountPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on odd-count Pseudo, got none")
+		}
+	}()
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Rule(".x").Pseudo(":hover", "color").End()
+}
+
+// TestStyleSheetDeterministic asserts CSS() is byte-stable across
+// repeated calls. Load-bearing for content-addressed cache keys.
+func TestStyleSheetDeterministic(t *testing.T) {
+	build := func() string {
+		ss := NewStyleSheet(DefaultTheme())
+		ss.Rule(".a").Set("color", "red").End()
+		ss.Rule(".b").Set("color", "blue").End()
+		ss.Media("(min-width: 640px)", func(ss *StyleSheet) {
+			ss.Rule(".a").Set("color", "green").End()
+		})
+		return ss.CSS()
+	}
+	first := build()
+	for i := 0; i < 20; i++ {
+		if build() != first {
+			t.Fatalf("non-deterministic CSS() on iteration %d", i)
+		}
+	}
+}
+
 func TestStyleSheetEmptyRule(t *testing.T) {
 	theme := DefaultTheme()
 	ss := NewStyleSheet(theme)

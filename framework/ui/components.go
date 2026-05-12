@@ -483,6 +483,11 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if v == "" {
 		v = StatusNeutral
 	}
+	switch v {
+	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
+	default:
+		panic("ui: StatusBadge unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
+	}
 	cls := "ui-badge ui-badge--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -554,6 +559,11 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	v := cfg.Variant
 	if v == "" {
 		v = StatusInfo
+	}
+	switch v {
+	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
+	default:
+		panic("ui: Callout unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
 	}
 	cls := "ui-callout ui-callout--" + string(v)
 	if cfg.Class != "" {

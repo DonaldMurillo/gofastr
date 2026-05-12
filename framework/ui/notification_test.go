@@ -21,6 +21,18 @@ func TestNotificationDefaultsToInfo(t *testing.T) {
 	}
 }
 
+// TestNotificationRejectsUnknownVariant mirrors Button/StatusBadge/
+// Callout — a typo'd variant must panic instead of silently emitting
+// an unmatched class.
+func TestNotificationRejectsUnknownVariant(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic for unknown Notification Variant, got none")
+		}
+	}()
+	_ = Notification(NotificationConfig{Title: "x", Variant: "succss"})
+}
+
 func TestNotificationDangerGetsAlertRole(t *testing.T) {
 	h := string(Notification(NotificationConfig{Title: "x", Variant: StatusDanger}))
 	if !strings.Contains(h, `role="alert"`) {

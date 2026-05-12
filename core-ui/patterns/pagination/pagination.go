@@ -298,9 +298,9 @@ func BaseCSS() string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* WCAG 2.5.5: 44×44 minimum tap target. */
-  min-inline-size: 44px;
-  min-block-size: 44px;
+  /* Token-scaled tap target (default 44px, WCAG 2.5.5). */
+  min-inline-size: var(--spacing-touch-target);
+  min-block-size: var(--spacing-touch-target);
   padding: 0 var(--spacing-sm, 4px);
   border-radius: var(--radii-md, 8px);
   border: 1px solid transparent;
@@ -316,6 +316,14 @@ func BaseCSS() string {
 .pagination button:hover {
   background: var(--color-surface, #FFFFFF);
   border-color: var(--color-border, #E5E7EB);
+}
+/* :focus-visible is critical — without an explicit rule the focus
+   indicator on the active page (white-on-primary) is invisible because
+   the UA default outline blends with the primary background. */
+.pagination a:focus-visible,
+.pagination button:focus-visible {
+  outline: 2px solid var(--color-text, #1F2937);
+  outline-offset: 2px;
 }
 .pagination [aria-current="page"] {
   background: var(--color-primary, #4F46E5);

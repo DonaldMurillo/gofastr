@@ -52,6 +52,7 @@ func printHelp() {
 %s:
   init <name>           Scaffold a new GoFastr project
   generate entity <n>   Generate an entity definition file
+  theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go build
   dev                   Start dev server with auto-restart
   migrate [up|down|status]  Run database migrations
@@ -65,6 +66,7 @@ func printHelp() {
 %s:
   gofastr init myapp
   gofastr generate entity user name:string email:string:unique
+  gofastr theme init
   gofastr build
   gofastr dev
   gofastr migrate up

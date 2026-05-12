@@ -51,11 +51,38 @@ func TestConflictingRegistrationPanics(t *testing.T) {
 		if r == nil {
 			t.Fatal("expected panic on conflicting re-registration")
 		}
-		if !strings.Contains(r.(string), "duplicate name \"a\"") {
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "duplicate name \"a\"") {
 			t.Errorf("panic message: %v", r)
+		}
+		// The panic must name file:line of both call sites so the
+		// dev knows which Register to rename. Raw uintptrs are
+		// useless. We check for "registry_test.go:" in the message
+		// — it must point back to this very test file twice.
+		if strings.Count(msg, "registry_test.go:") < 2 {
+			t.Errorf("panic message must include file:line for both styleFns, got:\n%s", msg)
 		}
 	}()
 	RegisterStyle("a", fn2)
+}
+
+// TestStyleRenderNilPanicHelpful checks Style.Render(nil) panics with
+// a message that points the developer at WrapHTML rather than a raw
+// nil-pointer dereference.
+func TestStyleRenderNilPanicHelpful(t *testing.T) {
+	reset()
+	s := RegisterStyle("nilc", func(t style.Theme) string { return "" })
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on Render(nil)")
+		}
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "Render(nil)") || !strings.Contains(msg, "WrapHTML") {
+			t.Errorf("panic must mention Render(nil) and suggest WrapHTML; got %v", r)
+		}
+	}()
+	s.Render(nil)
 }
 
 func TestRenderInjectsMarker(t *testing.T) {

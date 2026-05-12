@@ -6,6 +6,7 @@ package uihost
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -148,12 +149,32 @@ func (ds *UIHost) CustomCSS() string {
 func (ds *UIHost) AppCSS() string {
 	t := ds.activeTheme() // falls back to DefaultTheme() when App.Theme nil
 	out := t.CSSCustomProperties() + "\n"
+	// Framework-built-in helpers: visually-hidden for skip links, live
+	// regions, etc. Inlined here (not via WithCustomCSS) so apps don't
+	// have to opt in to have working accessibility primitives.
+	out += frameworkBuiltinCSS
 	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
 		out += overrides + "\n"
 	}
 	out += ds.customCSS
 	return out
 }
+
+// frameworkBuiltinCSS ships with every app — minimal helpers the
+// framework's own SSR output relies on (skip link, polite live
+// region). Apps can override these classes; the framework just
+// guarantees the defaults exist.
+const frameworkBuiltinCSS = `
+.fui-visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+`
 
 // ActiveTheme returns the configured theme or the default if unset.
 // Exposed for tooling (e.g. the static-site builder) that needs to
@@ -178,21 +199,12 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	return out
 }
 
-// RouteGraphJS is deprecated and retained for compatibility with
-// callers that still expect a JS body for the route graph. The
-// route graph now ships inline as <script type="application/json"
-// id="gofastr-routes"> directly inside each SSR'd page, so no
-// external file needs to be written.
-//
-// Deprecated: returns the empty string. Use RenderStaticPage /
-// RenderPage output directly — the route graph is already inlined.
-func (ds *UIHost) RouteGraphJS() string {
-	return ""
-}
-
 // RegisterSignal registers a signal with the devserver so the signal update
-// endpoint can apply client-sent values.
+// endpoint can apply client-sent values. Safe for concurrent use; the
+// signal-update HTTP handler reads the same map.
 func (ds *UIHost) RegisterSignal(id string, s SignalAny) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
 	if ds.signals == nil {
 		ds.signals = make(map[string]SignalAny)
 	}
@@ -336,9 +348,12 @@ func (ds *UIHost) GetActionJS() string {
 	return sb.String()
 }
 
-// CreateSession creates a new browser session.
+// CreateSession creates a new browser session. The ID is 16 bytes of
+// crypto/rand encoded as hex — the prior `sess-<UnixNano()>` form
+// could collide under load when two CreateSession calls landed in
+// the same nanosecond.
 func (ds *UIHost) CreateSession() *Session {
-	id := fmt.Sprintf("sess-%d", time.Now().UnixNano())
+	id := "sess-" + newSessionID()
 	sess := &Session{
 		ID:      id,
 		Created: time.Now(),
@@ -347,6 +362,17 @@ func (ds *UIHost) CreateSession() *Session {
 	ds.sessions[id] = sess
 	ds.mu.Unlock()
 	return sess
+}
+
+func newSessionID() string {
+	var b [16]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		// crypto/rand on supported platforms cannot fail; fall back
+		// to the timestamp-based ID rather than panic on a wedged
+		// kernel CSPRNG.
+		return fmt.Sprintf("ts-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // GetSession retrieves a session by ID.
@@ -606,18 +632,25 @@ func (ds *UIHost) handleSignalUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Push island updates for this session
+	// Apply the signal update once. The previous in-loop version
+	// applied the update N times (once per subscribing island) and
+	// also read ds.signals without holding ds.mu while RegisterSignal
+	// writes it — a real data race under concurrent registration.
+	ds.mu.RLock()
+	sig, sigOK := ds.signals[signalID]
+	ds.mu.RUnlock()
+	if sigOK {
+		if val, exists := body["value"]; exists {
+			sig.UpdateAsInterface(val)
+		}
+	}
+
+	// Push island updates for this session.
 	islandIDs := ds.Islands.ListBySession(sessionID)
 	for _, id := range islandIDs {
 		isl, ok := ds.Islands.Get(id)
 		if !ok {
 			continue
-		}
-		// Re-render island with updated signal
-		if s, ok := ds.signals[signalID]; ok {
-			if val, exists := body["value"]; exists {
-				s.UpdateAsInterface(val)
-			}
 		}
 		html := isl.Update()
 		ds.Islands.PushUpdate(island.IslandUpdate{
@@ -717,19 +750,6 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	ds.mu.RLock()
 	js, ok := ds.actionJS[widgetID]
 	ds.mu.RUnlock()
-
-	if !ok {
-		// Try to find by prefix match (e.g., "home-counter" matches "home-counter")
-		ds.mu.RLock()
-		for id, compiledJS := range ds.actionJS {
-			if id == widgetID {
-				js = compiledJS
-				ok = true
-				break
-			}
-		}
-		ds.mu.RUnlock()
-	}
 
 	if !ok {
 		http.Error(w, "widget not found: "+widgetID, http.StatusNotFound)
@@ -1083,12 +1103,17 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	theme := ds.activeTheme()
 	versions := make([]string, 0, len(names))
 	bodies := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
 	for _, n := range names {
 		n = strings.TrimSpace(n)
 		if !validNameRe.MatchString(n) {
 			http.NotFound(w, r)
 			return
 		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
 		e, ok := registry.Lookup(n)
 		if !ok {
 			http.NotFound(w, r)
@@ -1148,24 +1173,15 @@ func hashStrings(parts ...string) string {
 	return hex.EncodeToString(sum[:6])
 }
 
-// handleCSSChunk serves per-screen CSS chunks for progressive loading.
-//
-// Deprecated: superseded by /__gofastr/comp/<name>.css from
-// core-ui/registry. New code should declare CSS per component and
-// wrap renders with registry.Style.WrapHTML. This handler is kept
-// for apps still wiring uihost.WithRouteGraph + the runtime's
-// loadCSS(path); it will be removed once those consumers migrate.
-func (ds *UIHost) handleCSSChunk(w http.ResponseWriter, r *http.Request) {
-	screenPath := strings.TrimPrefix(r.URL.Path, "/__gofastr/css")
-	if screenPath == "" {
-		screenPath = "/"
-	}
-
-	// In dev mode, serve the full custom CSS for any requested chunk.
-	// In production, these would be pre-extracted per-screen CSS files.
-	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(w, ds.customCSS)
+// handleCSSChunk responds 410 GONE for any /__gofastr/css/<path>
+// request. The per-screen CSS chunk system has been replaced by
+// per-component scoped sheets at /__gofastr/comp/<name>.css. Apps
+// declare CSS on the component via registry.RegisterStyle; the
+// runtime loads it on demand from the SSR-emitted <link>. Returning
+// 410 (instead of silently 404'ing) surfaces stale wiring so it gets
+// fixed rather than masked.
+func (ds *UIHost) handleCSSChunk(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, "/__gofastr/css/<path> was removed — declare CSS per component via registry.RegisterStyle and the runtime will load /__gofastr/comp/<name>.css on demand", http.StatusGone)
 }
 
 // ReadCustomCSSFile reads a CSS file and returns its content.

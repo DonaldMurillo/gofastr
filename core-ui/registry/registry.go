@@ -37,6 +37,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sort"
 	"sync"
 
@@ -148,10 +149,10 @@ func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *St
 	if existing, ok := entries[name]; ok {
 		if !sameEntry(existing, e) {
 			panic(fmt.Sprintf(
-				"registry.RegisterStyle: duplicate name %q with different definition\n"+
-					"  existing: load=%d styleFn=%v\n"+
-					"  new:      load=%d styleFn=%v",
-				name, existing.Load, fnPtr(existing.StyleFn), e.Load, fnPtr(e.StyleFn),
+				"registry.RegisterStyle: duplicate name %q with different definition — pick a unique name in one of the two call sites\n"+
+					"  existing: load=%d styleFn=%s\n"+
+					"  new:      load=%d styleFn=%s",
+				name, existing.Load, fnLocation(existing.StyleFn), e.Load, fnLocation(e.StyleFn),
 			))
 		}
 		return &Style{e: existing}
@@ -195,6 +196,19 @@ func sameEntry(a, b *Entry) bool {
 
 func fnPtr(fn func(style.Theme) string) uintptr {
 	return reflect.ValueOf(fn).Pointer()
+}
+
+// fnLocation returns "name (file:line)" for the given function value,
+// so duplicate-registration panics tell the user which call site to
+// rename instead of printing raw uintptrs.
+func fnLocation(fn func(style.Theme) string) string {
+	pc := reflect.ValueOf(fn).Pointer()
+	rf := runtime.FuncForPC(pc)
+	if rf == nil {
+		return fmt.Sprintf("0x%x", pc)
+	}
+	file, line := rf.FileLine(pc)
+	return fmt.Sprintf("%s (%s:%d)", rf.Name(), file, line)
 }
 
 // themeHash hashes the theme's deterministic CSS custom properties.

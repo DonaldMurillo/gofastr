@@ -17,7 +17,23 @@ type cssRule struct {
 	selector string
 	props    []cssProp
 	children []cssRule
-	parent   string // "@media ..." or "@keyframes name"
+	// parents holds at-rule wrappers from outer-most to inner-most.
+	// e.g. ["@media (min-width: 640px)", "@media (prefers-color-scheme: dark)"]
+	// emits `@media (min-width: 640px) { @media (prefers-color-scheme: dark) { … } }`.
+	// Single-string parent (the common case) is just len(parents) == 1.
+	parents []string
+}
+
+// outerParent returns the outermost at-rule wrapper, or "" if none.
+// Used by the coalescing emitter to group adjacent same-query rules
+// into a single @media/@container block. The name makes it explicit
+// that only the outermost wrapper is returned — len(r.parents) may
+// be >1 for nested Media/Container.
+func (r *cssRule) outerParent() string {
+	if len(r.parents) == 0 {
+		return ""
+	}
+	return r.parents[0]
 }
 
 // cssProp is a single CSS property declaration.
@@ -43,11 +59,18 @@ func (ss *StyleSheet) Rule(selector string) *StyleSheet {
 
 // Set adds one or more CSS properties to the current rule.
 // Values can reference theme tokens like {spacing.md} or {colors.primary}.
+// Args alternate prop, value, prop, value …; an odd-count slice
+// panics so a typo like Set("color","red","padding") fails loud
+// instead of silently dropping the trailing argument.
 func (ss *StyleSheet) Set(props ...string) *StyleSheet {
 	if ss.during == nil {
-		return ss
+		panic("stylesheet: Set called before any Rule(); call .Rule(\"…\") first")
 	}
-	for i := 0; i+1 < len(props); i += 2 {
+	if len(props)%2 != 0 {
+		panic(fmt.Sprintf("stylesheet: Set on %q expects pairs of prop, value; got %d args (odd) — last arg %q has no value",
+			ss.during.selector, len(props), props[len(props)-1]))
+	}
+	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
 		ss.during.props = append(ss.during.props, cssProp{prop: props[i], value: val})
 	}
@@ -67,12 +90,17 @@ func (ss *StyleSheet) Transition(transitions ...string) *StyleSheet {
 }
 
 // Pseudo adds a pseudo-class/element rule nested under the current selector.
+// Args alternate prop, value, … (odd count panics — see Set).
 func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 	if ss.during == nil {
-		return ss
+		panic("stylesheet: Pseudo(" + pseudo + ") called before any Rule(); call .Rule(\"…\") first")
+	}
+	if len(props)%2 != 0 {
+		panic(fmt.Sprintf("stylesheet: Pseudo(%q) expects pairs of prop, value; got %d args (odd) — last arg %q has no value",
+			pseudo, len(props), props[len(props)-1]))
 	}
 	child := cssRule{selector: ss.during.selector + pseudo}
-	for i := 0; i+1 < len(props); i += 2 {
+	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
 		child.props = append(child.props, cssProp{prop: props[i], value: val})
 	}
@@ -81,12 +109,17 @@ func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 }
 
 // Child adds a descendant selector rule under the current rule.
+// Args alternate prop, value, … (odd count panics — see Set).
 func (ss *StyleSheet) Child(descendant string, props ...string) *StyleSheet {
 	if ss.during == nil {
-		return ss
+		panic("stylesheet: Child(" + descendant + ") called before any Rule(); call .Rule(\"…\") first")
+	}
+	if len(props)%2 != 0 {
+		panic(fmt.Sprintf("stylesheet: Child(%q) expects pairs of prop, value; got %d args (odd) — last arg %q has no value",
+			descendant, len(props), props[len(props)-1]))
 	}
 	child := cssRule{selector: ss.during.selector + " " + descendant}
-	for i := 0; i+1 < len(props); i += 2 {
+	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
 		child.props = append(child.props, cssProp{prop: props[i], value: val})
 	}
@@ -95,16 +128,26 @@ func (ss *StyleSheet) Child(descendant string, props ...string) *StyleSheet {
 }
 
 // Media adds a @media query wrapping rules built in the callback.
+// Works both nested (inside a Rule before End()) and at the top
+// level (after End() / before any Rule).
 func (ss *StyleSheet) Media(query string, fn func(ss *StyleSheet)) *StyleSheet {
-	parent := ss.during
-	if parent == nil {
-		return ss
-	}
 	child := &StyleSheet{theme: ss.theme}
 	fn(child)
+	outer := "@media " + query
+	// The inner stylesheet is now unreachable, so r.children / r.props
+	// slice aliasing is safe in practice. If a future refactor retains
+	// `child` (memoization, async building, etc.), promote these to
+	// full deep copies.
 	for _, r := range child.rules {
-		r.parent = "@media " + query
-		parent.children = append(parent.children, r)
+		// Preserve nested at-rules: prepend our query to whatever the
+		// inner callback already assigned (Media inside Media). The
+		// emitter (writeRule / CSS) walks parents outer-first.
+		r.parents = append([]string{outer}, r.parents...)
+		if ss.during != nil {
+			ss.during.children = append(ss.during.children, r)
+		} else {
+			ss.rules = append(ss.rules, r)
+		}
 	}
 	return ss
 }
@@ -121,27 +164,27 @@ func (ss *StyleSheet) Media(query string, fn func(ss *StyleSheet)) *StyleSheet {
 //		}).
 //		End()
 func (ss *StyleSheet) Container(name string, query string, fn func(ss *StyleSheet)) *StyleSheet {
-	parent := ss.during
-	if parent == nil {
-		return ss
-	}
 	child := &StyleSheet{theme: ss.theme}
 	fn(child)
-	parentQuery := "@container "
+	outer := "@container "
 	if name != "" {
-		parentQuery += name + " "
+		outer += name + " "
 	}
-	parentQuery += query
+	outer += query
 	for _, r := range child.rules {
-		r.parent = parentQuery
-		parent.children = append(parent.children, r)
+		r.parents = append([]string{outer}, r.parents...)
+		if ss.during != nil {
+			ss.during.children = append(ss.during.children, r)
+		} else {
+			ss.rules = append(ss.rules, r)
+		}
 	}
 	return ss
 }
 
 // Keyframes adds a @keyframes animation.
 func (ss *StyleSheet) Keyframes(name string, steps ...KeyframeStep) *StyleSheet {
-	r := cssRule{parent: "@keyframes " + name}
+	r := cssRule{parents: []string{"@keyframes " + name}}
 	for _, step := range steps {
 		stepRule := cssRule{selector: step.Selector}
 		for i := 0; i+1 < len(step.Props); i += 2 {
@@ -174,30 +217,66 @@ func (ss *StyleSheet) End() *StyleSheet {
 // CSS generates the complete CSS string from all rules.
 func (ss *StyleSheet) CSS() string {
 	var b strings.Builder
+	atParent := ""
 	for _, r := range ss.rules {
-		ss.writeRule(&b, r, "")
+		// Top-level @media/@container rules: wrap with the outermost
+		// at-rule and coalesce adjacent same-query rules into one block.
+		// Inner at-rules (nested Media within Media) are emitted by
+		// writeRule via the parents slice.
+		top := r.outerParent()
+		if strings.HasPrefix(top, "@media") || strings.HasPrefix(top, "@container") {
+			if atParent != top {
+				if atParent != "" {
+					b.WriteString("}\n")
+				}
+				fmt.Fprintf(&b, "%s {\n", top)
+				atParent = top
+			}
+			ss.writeRuleInner(&b, r, 1) // skip the outermost — we just emitted it
+			continue
+		}
+		if atParent != "" {
+			b.WriteString("}\n")
+			atParent = ""
+		}
+		ss.writeRuleInner(&b, r, 0)
+	}
+	if atParent != "" {
+		b.WriteString("}\n")
 	}
 	return b.String()
 }
 
-func (ss *StyleSheet) writeRule(b *strings.Builder, r cssRule, parentSelector string) {
-	// @keyframes — special handling
-	if strings.HasPrefix(r.parent, "@keyframes") {
-		fmt.Fprintf(b, "%s {\n", r.parent)
+// writeRule emits r including all its at-rule parents (from outermost
+// to innermost). Used by callers that don't know whether the parent
+// block is already open.
+func (ss *StyleSheet) writeRule(b *strings.Builder, r cssRule) {
+	ss.writeRuleInner(b, r, 0)
+}
+
+// writeRuleInner emits the rule with parents[start:] as wrappers.
+// start=0 means "open every wrapper"; start=1 means "the outermost
+// is already open, skip it".
+func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
+	// @keyframes — special handling. Always the outermost wrapper.
+	if start == 0 && len(r.parents) > 0 && strings.HasPrefix(r.parents[0], "@keyframes") {
+		fmt.Fprintf(b, "%s {\n", r.parents[0])
 		for _, child := range r.children {
-			ss.writeRule(b, child, "")
+			ss.writeRule(b, child)
 		}
 		b.WriteString("}\n")
 		return
 	}
 
-	selector := r.selector
-	if parentSelector != "" {
-		selector = parentSelector
+	// Open any not-yet-open at-rule wrappers (Media inside Media etc.).
+	openedHere := 0
+	for i := start; i < len(r.parents); i++ {
+		fmt.Fprintf(b, "%s {\n", r.parents[i])
+		openedHere++
 	}
 
 	if len(r.props) > 0 {
-		fmt.Fprintf(b, "%s {\n", selector)
+		fmt.Fprintf(b, "%s {\n", r.selector)
 		for _, p := range r.props {
 			fmt.Fprintf(b, "  %s: %s;\n", p.prop, p.value)
 		}
@@ -207,20 +286,32 @@ func (ss *StyleSheet) writeRule(b *strings.Builder, r cssRule, parentSelector st
 	// Write children (pseudo-classes, descendants, media/container queries)
 	atParent := ""
 	for _, child := range r.children {
-		if child.parent != "" && (strings.HasPrefix(child.parent, "@media") || strings.HasPrefix(child.parent, "@container")) {
-			if atParent != child.parent {
+		cp := child.outerParent()
+		if cp != "" && (strings.HasPrefix(cp, "@media") || strings.HasPrefix(cp, "@container")) {
+			if atParent != cp {
 				if atParent != "" {
 					b.WriteString("}\n")
 				}
-				fmt.Fprintf(b, "%s {\n", child.parent)
-				atParent = child.parent
+				fmt.Fprintf(b, "%s {\n", cp)
+				atParent = cp
 			}
-			ss.writeRule(b, child, "")
+			ss.writeRuleInner(b, child, 1)
 			continue
 		}
-		ss.writeRule(b, child, child.selector)
+		// Non-media child after an open @media block — close the
+		// at-rule first so this child doesn't get nested inside it.
+		if atParent != "" {
+			b.WriteString("}\n")
+			atParent = ""
+		}
+		ss.writeRule(b, child)
 	}
 	if atParent != "" {
+		b.WriteString("}\n")
+	}
+
+	// Close the at-rule wrappers we opened above.
+	for i := 0; i < openedHere; i++ {
 		b.WriteString("}\n")
 	}
 }

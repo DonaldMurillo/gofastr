@@ -16,5 +16,9 @@
 // acceptable progressive-enhancement fallback.
 //
 // Call [BaseCSS] once at app startup and append it to your stylesheet
-// to enable the animation styles.
+// (typically via uihost.WithCustomCSS(...)) to enable the animation
+// styles. Authors who prefer per-component scoped CSS with lazy load
+// can wrap their own Accordion with [registry.RegisterStyle] +
+// [registry.Style.WrapHTML] — see core-ui/ARCHITECTURE.md "Component
+// CSS" for the registry path.
 package accordion

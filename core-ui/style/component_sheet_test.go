@@ -1,6 +1,7 @@
 package style
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -138,14 +139,35 @@ func TestComponentSheetAmpersandRefersToMarkerElement(t *testing.T) {
 	}
 }
 
+// TestComponentSheetEmptySelectorPartWraps ensures the empty-part error
+// (e.g. `, .b` or `.a, , .b`) also wraps ErrUnscopable so callers can
+// detect "this selector list can't be scoped" via one errors.Is check.
+func TestComponentSheetEmptySelectorPartWraps(t *testing.T) {
+	ss := NewComponentSheet("modal", DefaultTheme())
+	ss.Rule(".a, , .b").Set("color", "red").End()
+	_, err := ss.Build()
+	if err == nil {
+		t.Fatal("expected error on doubled comma")
+	}
+	if !errors.Is(err, ErrUnscopable) {
+		t.Errorf("empty-part error must wrap ErrUnscopable; got %v", err)
+	}
+}
+
 func TestComponentSheetRejectsUnscopableSelectors(t *testing.T) {
 	cases := []string{"body", "html", ":root", "*", "::backdrop", "::view-transition-old(*)"}
 	for _, sel := range cases {
 		t.Run(sel, func(t *testing.T) {
 			ss := NewComponentSheet("modal", DefaultTheme())
 			ss.Rule(sel).Set("color", "red").End()
-			if _, err := ss.Build(); err == nil {
+			_, err := ss.Build()
+			if err == nil {
 				t.Fatalf("expected error scoping %q", sel)
+			}
+			// Callers must be able to detect this category of failure
+			// via errors.Is — that's what the exported sentinel is for.
+			if !errors.Is(err, ErrUnscopable) {
+				t.Errorf("scope error for %q must wrap ErrUnscopable; got %v", sel, err)
 			}
 		})
 	}

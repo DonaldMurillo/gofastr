@@ -24,6 +24,9 @@ import (
 // component never re-fetches across the SSR + hydration handoff or
 // across page-to-page navigations.
 func (s *Style) Render(c component.Component) render.HTML {
+	if c == nil {
+		panic("registry: Style(" + s.e.Name + ").Render(nil) — pass a Component, or use Style.WrapHTML(html) for function-style components")
+	}
 	return s.WrapHTML(component.RenderComponent(c))
 }
 

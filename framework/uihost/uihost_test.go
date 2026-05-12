@@ -259,6 +259,21 @@ func TestUIHostCreatesSession(t *testing.T) {
 	}
 }
 
+// TestUIHostSessionIDsUniqueAtScale asserts crypto/rand-derived session
+// IDs don't collide even when thousands are minted back-to-back. The
+// prior `sess-<UnixNano()>` form could repeat under load.
+func TestUIHostSessionIDsUniqueAtScale(t *testing.T) {
+	ds := newTestUIHost()
+	seen := make(map[string]struct{}, 5000)
+	for i := 0; i < 5000; i++ {
+		s := ds.CreateSession()
+		if _, dup := seen[s.ID]; dup {
+			t.Fatalf("session ID collision at i=%d: %q", i, s.ID)
+		}
+		seen[s.ID] = struct{}{}
+	}
+}
+
 func TestUIHostAutoSessionCookie(t *testing.T) {
 	ds := newTestUIHost()
 	req := httptest.NewRequest("GET", "/", nil)
@@ -380,6 +395,27 @@ func TestUIHostAppCSSAlwaysEmitsRootVars(t *testing.T) {
 			t.Errorf("app.css missing %q — components emit bare var() refs that need this floor:\n%s",
 				want, truncate(body, 600))
 		}
+	}
+}
+
+// TestUIHostAppCSSShipsFrameworkBuiltinCSS asserts that framework-
+// built-in helpers (visually-hidden class) ride in /__gofastr/app.css
+// so the SSR-emitted live region and skip-link work without the app
+// opting in via WithCustomCSS. Removing the const would silently make
+// the route-announce div visible on screen.
+func TestUIHostAppCSSShipsFrameworkBuiltinCSS(t *testing.T) {
+	application := app.NewApp("BuiltinApp")
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+	ds := New(application)
+
+	req := httptest.NewRequest("GET", "/__gofastr/app.css", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, ".fui-visually-hidden") {
+		t.Errorf("app.css must ship .fui-visually-hidden helper — without it the polite live region for SPA-nav and the skip link become visible on screen; got:\n%s",
+			truncate(body, 600))
 	}
 }
 

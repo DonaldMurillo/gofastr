@@ -93,6 +93,13 @@ type DetailsConfig struct {
 	Class string
 	ID    string
 	Attrs Attrs
+	// Disclosure marks this details element as a dismissible disclosure
+	// (mobile hamburger nav, popover, etc.). The runtime will close it
+	// automatically on SPA navigation and on Escape. See ARCHITECTURE.md
+	// data-fui-disclosure.
+	Disclosure bool
+	// Open opens the details element on initial render.
+	Open bool
 }
 
 // SummaryConfig configures a <summary> element. No required fields.
@@ -156,6 +163,12 @@ func Main(cfg MainConfig, children ...render.HTML) render.HTML {
 	setAttr(attrs, "role", RoleMain)
 	if _, ok := attrs["id"]; !ok {
 		attrs["id"] = "main-content"
+	}
+	// tabindex=-1 makes the element programmatically focusable so the
+	// "Skip to main content" link actually moves focus on Safari/iOS,
+	// which won't focus a non-tabbable hash target.
+	if _, ok := attrs["tabindex"]; !ok {
+		attrs["tabindex"] = "-1"
 	}
 	return render.Tag("main", attrs, children...)
 }
@@ -226,6 +239,12 @@ func FigCaption(cfg FigCaptionConfig, children ...render.HTML) render.HTML {
 // Details produces a <details> element for a disclosure widget.
 func Details(cfg DetailsConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	if cfg.Disclosure {
+		attrs["data-fui-disclosure"] = ""
+	}
+	if cfg.Open {
+		attrs["open"] = ""
+	}
 	return render.Tag("details", attrs, children...)
 }
 
