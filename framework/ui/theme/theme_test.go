@@ -7,27 +7,37 @@ import (
 
 func TestDefaultHasCanonicalTokens(t *testing.T) {
 	th := Default()
-	for _, k := range []string{
-		"background", "surface", "surface-soft", "border", "border-strong",
-		"text", "text-muted", "text-subtle", "primary", "primary-fg",
-		"accent", "success", "warning", "danger", "info",
-	} {
-		if _, ok := th.Colors[k]; !ok {
-			t.Errorf("Default theme missing color token %q", k)
+	// Every canonical typed color token must have a non-empty Name.
+	colors := []struct {
+		name string
+		got  string
+	}{
+		{"Primary", th.Colors.Primary.Name},
+		{"Background", th.Colors.Background.Name},
+		{"Surface", th.Colors.Surface.Name},
+		{"Border", th.Colors.Border.Name},
+		{"Text", th.Colors.Text.Name},
+		{"Danger", th.Colors.Danger.Name},
+		{"Success", th.Colors.Success.Name},
+		{"Warning", th.Colors.Warning.Name},
+		{"Info", th.Colors.Info.Name},
+		{"Accent", th.Colors.Accent.Name},
+	}
+	for _, c := range colors {
+		if c.got == "" {
+			t.Errorf("Default theme Color %s missing Name", c.name)
 		}
 	}
-	for _, k := range []string{"xs", "sm", "md", "lg", "xl", "2xl", "3xl"} {
-		if _, ok := th.Spacing[k]; !ok {
-			t.Errorf("Default theme missing spacing token %q", k)
-		}
+	if th.Spacing.MD.Name == "" || th.Spacing.XL.Name == "" {
+		t.Errorf("Default theme missing canonical spacing tokens")
 	}
 }
 
 func TestSinglePrimaryOverrideSwapsToken(t *testing.T) {
-	indigo := Default().Colors["primary"]
-	teal := Default(Overrides{Primary: "#14B8A6"}).Colors["primary"]
+	indigo := Default().Colors.Primary.Value
+	teal := Default(Overrides{Primary: "#14B8A6"}).Colors.Primary.Value
 	if teal != "#14B8A6" {
-		t.Errorf("expected primary=#14B8A6, got %q", teal)
+		t.Errorf("expected primary value=#14B8A6, got %q", teal)
 	}
 	if indigo == teal {
 		t.Errorf("override did not change value")
@@ -37,7 +47,7 @@ func TestSinglePrimaryOverrideSwapsToken(t *testing.T) {
 func TestEmptyOverridesUnchanged(t *testing.T) {
 	a := Default()
 	b := Default(Overrides{})
-	if a.Colors["primary"] != b.Colors["primary"] {
+	if a.Colors.Primary.Value != b.Colors.Primary.Value {
 		t.Errorf("empty overrides should not change tokens")
 	}
 }

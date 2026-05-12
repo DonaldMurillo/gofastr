@@ -471,11 +471,7 @@ func TestRouteGraphPreload(t *testing.T) {
 }
 
 func TestUtilityClass(t *testing.T) {
-	theme := createTheme()
-	cls := theme.UtilityClass("p", "md")
-	if cls != "p-8" {
-		t.Errorf("expected 'p-8', got %q", cls)
-	}
+	t.Skip("Theme.UtilityClass removed alongside the typed-theme migration; utility classes resolve through GenerateUtilityCSS which emits var() refs against the theme. See core-ui/style/classes.go.")
 }
 
 func TestClassesMap(t *testing.T) {
@@ -727,18 +723,28 @@ func TestDIContainer(t *testing.T) {
 }
 
 func TestThemeResolution(t *testing.T) {
+	// Var-only contract: Resolve* now returns CSS variable
+	// references, not literal values. The literal still lives on
+	// the typed token's .Value field for non-CSS contexts.
 	theme := createTheme()
-	color := theme.ResolveColor("primary")
-	if color != "#6366F1" {
-		t.Errorf("expected primary color #6366F1, got %q", color)
+	if got := theme.ResolveColor("primary"); got != "var(--color-primary)" {
+		t.Errorf("ResolveColor: %q", got)
 	}
-	spacing := theme.ResolveSpacing("md")
-	if spacing != "8px" {
-		t.Errorf("expected 8px spacing for md, got %q", spacing)
+	if got := theme.ResolveSpacing("md"); got != "var(--spacing-md)" {
+		t.Errorf("ResolveSpacing: %q", got)
 	}
-	radius := theme.ResolveRadius("lg")
-	if radius != "12px" {
-		t.Errorf("expected 12px radius for lg, got %q", radius)
+	if got := theme.ResolveRadius("lg"); got != "var(--radii-lg)" {
+		t.Errorf("ResolveRadius: %q", got)
+	}
+	// Literal values stay accessible via typed token fields.
+	if theme.Colors.Primary.Value != "#6366F1" {
+		t.Errorf("Colors.Primary.Value: %q", theme.Colors.Primary.Value)
+	}
+	if theme.Spacing.MD.Value != 8 {
+		t.Errorf("Spacing.MD.Value: %d", theme.Spacing.MD.Value)
+	}
+	if theme.Radii.LG.Value != 12 {
+		t.Errorf("Radii.LG.Value: %d", theme.Radii.LG.Value)
 	}
 }
 
@@ -849,38 +855,23 @@ func TestEventHelperAttrs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// M. Use() Semantic Style Tests
+// M. Use() Semantic Style Tests — removed alongside typed-theme migration.
+// Components are now registered via core-ui/registry and resolve their
+// scoped CSS through the registry catalog. The style.Use / UseWith /
+// ComponentCSS / StyleDef APIs no longer exist. Tests stay as TODOs so
+// future maintainers see the migration trail.
 // ---------------------------------------------------------------------------
 
 func TestUseComponentStyle(t *testing.T) {
-	attrs := style.Use("card")
-	if attrs["class"] != "comp-card" {
-		t.Errorf("expected class=comp-card, got %v", attrs)
-	}
+	t.Skip("style.Use removed — components register via core-ui/registry now")
 }
 
 func TestUseWith(t *testing.T) {
-	attrs := style.UseWith("card", style.Classes{"highlighted": true, "hidden": false})
-	s := attrs["class"]
-	if !strings.Contains(s, "comp-card") {
-		t.Errorf("expected comp-card, got %s", s)
-	}
-	if !strings.Contains(s, "highlighted") {
-		t.Errorf("expected highlighted, got %s", s)
-	}
-	if strings.Contains(s, "hidden") {
-		t.Errorf("should not include false classes, got %s", s)
-	}
+	t.Skip("style.UseWith removed — components register via core-ui/registry now")
 }
 
 func TestComponentCSSGeneration(t *testing.T) {
-	theme := createTheme()
-	theme.Components["card"] = style.StyleDef{
-		"padding": "{spacing.md} {spacing.lg}",
-	}
-	css := theme.ComponentCSS("card")
-	assertContains(t, render.HTML(css), ".comp-card")
-	assertContains(t, render.HTML(css), "padding: 8px 16px")
+	t.Skip("Theme.ComponentCSS / StyleDef removed — components register via core-ui/registry now")
 }
 
 // ---------------------------------------------------------------------------

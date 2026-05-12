@@ -12,7 +12,6 @@ import (
 type Classes map[string]bool
 
 // ToAttr converts Classes to an Attrs map with the "class" key.
-// If no classes are active, returns an empty map.
 func (c Classes) ToAttr() map[string]string {
 	s := c.String()
 	if s == "" {
@@ -21,7 +20,8 @@ func (c Classes) ToAttr() map[string]string {
 	return map[string]string{"class": s}
 }
 
-// String returns the space-separated class list from all true keys, sorted for determinism.
+// String returns the space-separated class list from all true keys,
+// sorted for determinism.
 func (c Classes) String() string {
 	active := make([]string, 0, len(c))
 	for k, v := range c {
@@ -33,103 +33,23 @@ func (c Classes) String() string {
 	return strings.Join(active, " ")
 }
 
-// Use returns an Attrs (map[string]string) with a "class" attribute set to the
-// component style name. This is resolved at render time using the theme's
-// ComponentStyles map. The generated class name follows the pattern "comp-{name}".
-//
-// Example: Use("card") → Attrs{"class": "comp-card"}
-func Use(name string) map[string]string {
-	return map[string]string{"class": "comp-" + name}
-}
-
-// UseWith merges a component style class with additional classes.
-// Example: UseWith("card", Classes{"highlighted": true}) → Attrs{"class": "comp-card highlighted"}
-func UseWith(name string, extra Classes) map[string]string {
-	cls := "comp-" + name
-	for c, include := range extra {
-		if include {
-			cls += " " + c
-		}
-	}
-	return map[string]string{"class": cls}
-}
-
-// ComponentCSS generates the CSS rules for a named component style.
-// It resolves all token references in the style definition.
-// Returns empty string if the component style is not defined.
-func (t Theme) ComponentCSS(name string) string {
-	def, ok := t.Components[name]
-	if !ok {
-		return ""
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, ".comp-%s {\n", name)
-	props := make([]string, 0, len(def))
-	for prop := range def {
-		props = append(props, prop)
-	}
-	sort.Strings(props)
-	for _, prop := range props {
-		fmt.Fprintf(&b, "  %s: %s;\n", prop, t.ResolveAll(def[prop]))
-	}
-	b.WriteString("}")
-	return b.String()
-}
-
-// AllComponentCSS generates CSS for all defined component styles.
-// Component names are emitted in sorted order so output is byte-stable
-// across process restarts — load-bearing for content-addressed CSS URLs
-// (see core-ui/registry).
-func (t Theme) AllComponentCSS() string {
-	names := make([]string, 0, len(t.Components))
-	for name := range t.Components {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	parts := make([]string, 0, len(names))
-	for _, name := range names {
-		parts = append(parts, t.ComponentCSS(name))
-	}
-	return strings.Join(parts, "\n\n")
-}
-
-// UtilityClass generates a utility class name from a property and token.
-// For spacing tokens: UtilityClass("p", "md") → "p-8" (resolved from spacing.md = 8).
-// For color tokens: the raw token value is used.
-func (t Theme) UtilityClass(property, token string) string {
-	// Check if this is a spacing-based property
-	if isSpacingProperty(property) {
-		if v, ok := t.Spacing[token]; ok {
-			return fmt.Sprintf("%s-%d", property, v)
-		}
-	}
-	// Check if this is a radius property
-	if isRadiusProperty(property) {
-		if v, ok := t.Radii[token]; ok {
-			return fmt.Sprintf("%s-%d", property, v)
-		}
-	}
-	// Fallback: use raw token
-	return fmt.Sprintf("%s-%s", property, token)
-}
-
-// GenerateUtilityCSS generates CSS rules for a set of utility class names using the theme.
-// Each class name is parsed and mapped to its CSS properties.
+// GenerateUtilityCSS generates CSS rules for a set of utility class
+// names. Each class resolves to one CSS declaration referencing
+// theme variables via var(--*).
 func GenerateUtilityCSS(classes []string, theme Theme) string {
 	var b strings.Builder
-
 	for _, class := range classes {
 		props := resolveUtilityClass(class, theme)
 		if props != "" {
 			fmt.Fprintf(&b, ".%s { %s }\n", class, props)
 		}
 	}
-
 	return b.String()
 }
 
-// resolveUtilityClass maps a utility class name to its CSS properties string.
+// resolveUtilityClass maps a utility class name to its CSS property
+// declarations. Theme tokens always resolve to `var(--…)` so cascade
+// overrides keep working.
 func resolveUtilityClass(class string, theme Theme) string {
 	// Display utilities
 	switch class {
@@ -189,72 +109,55 @@ func resolveUtilityClass(class string, theme Theme) string {
 	if class == "h-full" {
 		return "height: 100%;"
 	}
-
-	// Width with token
 	if strings.HasPrefix(class, "w-") {
 		token := strings.TrimPrefix(class, "w-")
-		if v, ok := theme.Spacing[token]; ok {
-			return fmt.Sprintf("width: %dpx;", v)
-		}
+		return fmt.Sprintf("width: var(--spacing-%s);", token)
 	}
-
-	// Height with token
 	if strings.HasPrefix(class, "h-") {
 		token := strings.TrimPrefix(class, "h-")
-		if v, ok := theme.Spacing[token]; ok {
-			return fmt.Sprintf("height: %dpx;", v)
-		}
+		return fmt.Sprintf("height: var(--spacing-%s);", token)
 	}
 
 	// Padding utilities
-	if props := paddingCSS(class, theme); props != "" {
+	if props := paddingCSS(class); props != "" {
 		return props
 	}
-
 	// Margin utilities
-	if props := marginCSS(class, theme); props != "" {
+	if props := marginCSS(class); props != "" {
 		return props
 	}
-
 	// Gap utilities
-	if props := gapCSS(class, theme); props != "" {
+	if props := gapCSS(class); props != "" {
 		return props
 	}
 
-	// Font size utilities
+	// Font size utilities — `text-base`, `text-lg`, etc. → font-size token.
 	if strings.HasPrefix(class, "text-") {
 		token := strings.TrimPrefix(class, "text-")
-		if size, ok := fontSizeMap()[token]; ok {
-			return fmt.Sprintf("font-size: %s;", size)
+		if isFontSizeToken(token) {
+			return fmt.Sprintf("font-size: var(--text-%s);", token)
 		}
 		// Otherwise treat as color
-		if color := theme.ResolveColor(token); color != "" {
-			return fmt.Sprintf("color: %s;", color)
-		}
+		return fmt.Sprintf("color: var(--color-%s);", token)
 	}
 
 	// Background color
 	if strings.HasPrefix(class, "bg-") {
 		token := strings.TrimPrefix(class, "bg-")
-		if color := theme.ResolveColor(token); color != "" {
-			return fmt.Sprintf("background-color: %s;", color)
-		}
+		return fmt.Sprintf("background-color: var(--color-%s);", token)
 	}
 
-	// Border color
+	// Border color / width
 	if strings.HasPrefix(class, "border-") {
 		token := strings.TrimPrefix(class, "border-")
-		// Check for color
-		if color := theme.ResolveColor(token); color != "" {
-			return fmt.Sprintf("border-color: %s;", color)
+		if _, err := strconv.Atoi(token); err == nil {
+			return fmt.Sprintf("border-width: %spx;", token)
 		}
-		// Check for width (spacing token)
-		if v, ok := theme.Spacing[token]; ok {
-			return fmt.Sprintf("border-width: %dpx;", v)
+		if isSpacingToken(token) {
+			return fmt.Sprintf("border-width: var(--spacing-%s);", token)
 		}
+		return fmt.Sprintf("border-color: var(--color-%s);", token)
 	}
-
-	// Plain border
 	if class == "border" {
 		return "border-width: 1px;"
 	}
@@ -262,9 +165,7 @@ func resolveUtilityClass(class string, theme Theme) string {
 	// Border radius
 	if strings.HasPrefix(class, "rounded-") {
 		token := strings.TrimPrefix(class, "rounded-")
-		if v, ok := theme.Radii[token]; ok {
-			return fmt.Sprintf("border-radius: %dpx;", v)
-		}
+		return fmt.Sprintf("border-radius: var(--radii-%s);", token)
 	}
 
 	// Font weight
@@ -273,13 +174,13 @@ func resolveUtilityClass(class string, theme Theme) string {
 		if w, ok := fontWeightMap()[weight]; ok {
 			return fmt.Sprintf("font-weight: %s;", w)
 		}
+		return fmt.Sprintf("font-family: var(--font-%s);", weight)
 	}
 
 	return ""
 }
 
-// paddingCSS resolves padding utility classes.
-func paddingCSS(class string, theme Theme) string {
+func paddingCSS(class string) string {
 	prefixes := map[string]string{
 		"p-":  "padding",
 		"px-": "padding-left",
@@ -289,33 +190,24 @@ func paddingCSS(class string, theme Theme) string {
 		"pb-": "padding-bottom",
 		"pl-": "padding-left",
 	}
-
 	for prefix, prop := range prefixes {
-		if strings.HasPrefix(class, prefix) {
-			token := strings.TrimPrefix(class, prefix)
-			v, ok := theme.Spacing[token]
-			if !ok {
-				// Try parsing as raw number
-				if n, err := strconv.Atoi(token); err == nil {
-					v = n
-				} else {
-					return ""
-				}
-			}
-			if prefix == "px-" {
-				return fmt.Sprintf("padding-left: %dpx; padding-right: %dpx;", v, v)
-			}
-			if prefix == "py-" {
-				return fmt.Sprintf("padding-top: %dpx; padding-bottom: %dpx;", v, v)
-			}
-			return fmt.Sprintf("%s: %dpx;", prop, v)
+		if !strings.HasPrefix(class, prefix) {
+			continue
 		}
+		token := strings.TrimPrefix(class, prefix)
+		val := tokenOrPx(token, "spacing")
+		switch prefix {
+		case "px-":
+			return fmt.Sprintf("padding-left: %s; padding-right: %s;", val, val)
+		case "py-":
+			return fmt.Sprintf("padding-top: %s; padding-bottom: %s;", val, val)
+		}
+		return fmt.Sprintf("%s: %s;", prop, val)
 	}
 	return ""
 }
 
-// marginCSS resolves margin utility classes.
-func marginCSS(class string, theme Theme) string {
+func marginCSS(class string) string {
 	prefixes := map[string]string{
 		"m-":  "margin",
 		"mx-": "margin-left",
@@ -325,67 +217,50 @@ func marginCSS(class string, theme Theme) string {
 		"mb-": "margin-bottom",
 		"ml-": "margin-left",
 	}
-
 	for prefix, prop := range prefixes {
-		if strings.HasPrefix(class, prefix) {
-			token := strings.TrimPrefix(class, prefix)
-			v, ok := theme.Spacing[token]
-			if !ok {
-				if n, err := strconv.Atoi(token); err == nil {
-					v = n
-				} else {
-					return ""
-				}
-			}
-			if prefix == "mx-" {
-				return fmt.Sprintf("margin-left: %dpx; margin-right: %dpx;", v, v)
-			}
-			if prefix == "my-" {
-				return fmt.Sprintf("margin-top: %dpx; margin-bottom: %dpx;", v, v)
-			}
-			return fmt.Sprintf("%s: %dpx;", prop, v)
+		if !strings.HasPrefix(class, prefix) {
+			continue
 		}
+		token := strings.TrimPrefix(class, prefix)
+		val := tokenOrPx(token, "spacing")
+		switch prefix {
+		case "mx-":
+			return fmt.Sprintf("margin-left: %s; margin-right: %s;", val, val)
+		case "my-":
+			return fmt.Sprintf("margin-top: %s; margin-bottom: %s;", val, val)
+		}
+		return fmt.Sprintf("%s: %s;", prop, val)
 	}
 	return ""
 }
 
-// gapCSS resolves gap utility classes.
-func gapCSS(class string, theme Theme) string {
+func gapCSS(class string) string {
 	if strings.HasPrefix(class, "gap-x-") {
 		token := strings.TrimPrefix(class, "gap-x-")
-		if v, ok := theme.Spacing[token]; ok {
-			return fmt.Sprintf("column-gap: %dpx;", v)
-		}
+		return fmt.Sprintf("column-gap: var(--spacing-%s);", token)
 	}
 	if strings.HasPrefix(class, "gap-y-") {
 		token := strings.TrimPrefix(class, "gap-y-")
-		if v, ok := theme.Spacing[token]; ok {
-			return fmt.Sprintf("row-gap: %dpx;", v)
-		}
+		return fmt.Sprintf("row-gap: var(--spacing-%s);", token)
 	}
 	if strings.HasPrefix(class, "gap-") {
 		token := strings.TrimPrefix(class, "gap-")
-		if v, ok := theme.Spacing[token]; ok {
-			return fmt.Sprintf("gap: %dpx;", v)
-		}
+		return fmt.Sprintf("gap: var(--spacing-%s);", token)
 	}
 	return ""
 }
 
-// fontSizeMap returns a mapping of font size tokens to CSS values.
-func fontSizeMap() map[string]string {
-	return map[string]string{
-		"xs":   "0.75rem",
-		"sm":   "0.875rem",
-		"base": "1rem",
-		"lg":   "1.125rem",
-		"xl":   "1.25rem",
-		"2xl":  "1.5rem",
-		"3xl":  "1.875rem",
+// tokenOrPx returns either a CSS var reference (when token is a
+// named scale value) or a literal pixel size (when token parses as
+// a plain int).
+func tokenOrPx(token, category string) string {
+	if n, err := strconv.Atoi(token); err == nil {
+		return fmt.Sprintf("%dpx", n)
 	}
+	return fmt.Sprintf("var(--%s-%s)", category, token)
 }
 
-// fontWeightMap returns a mapping of font weight tokens to CSS values.
+// fontWeightMap — keyword → numeric weight.
 func fontWeightMap() map[string]string {
 	return map[string]string{
 		"normal":   "400",
@@ -395,7 +270,24 @@ func fontWeightMap() map[string]string {
 	}
 }
 
-// alignValue maps shorthand alignment values to CSS.
+// isFontSizeToken — known typography-scale names.
+func isFontSizeToken(token string) bool {
+	switch token {
+	case "xs", "sm", "base", "lg", "xl", "2xl", "3xl":
+		return true
+	}
+	return false
+}
+
+// isSpacingToken — known spacing-scale names.
+func isSpacingToken(token string) bool {
+	switch token {
+	case "xs", "sm", "md", "lg", "xl", "2xl", "3xl":
+		return true
+	}
+	return false
+}
+
 func alignValue(val string) string {
 	m := map[string]string{
 		"start":   "flex-start",
@@ -406,7 +298,6 @@ func alignValue(val string) string {
 	return m[val]
 }
 
-// justifyValue maps shorthand justify values to CSS.
 func justifyValue(val string) string {
 	m := map[string]string{
 		"start":   "flex-start",
@@ -416,20 +307,4 @@ func justifyValue(val string) string {
 		"around":  "space-around",
 	}
 	return m[val]
-}
-
-// isSpacingProperty returns true if the property uses spacing tokens.
-func isSpacingProperty(prop string) bool {
-	spacing := map[string]bool{
-		"p": true, "px": true, "py": true, "pt": true, "pr": true, "pb": true, "pl": true,
-		"m": true, "mx": true, "my": true, "mt": true, "mr": true, "mb": true, "ml": true,
-		"gap": true, "gap-x": true, "gap-y": true,
-		"w": true, "h": true,
-	}
-	return spacing[prop]
-}
-
-// isRadiusProperty returns true if the property uses radius tokens.
-func isRadiusProperty(prop string) bool {
-	return prop == "rounded"
 }

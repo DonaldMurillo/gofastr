@@ -5,14 +5,10 @@ import (
 )
 
 func createTheme() style.Theme {
-	base := style.DefaultTheme()
-	custom := style.Theme{
-		Colors: style.Colors{
-			"primary":   "#6366F1", // indigo
-			"secondary": "#8B5CF6", // violet
-		},
-	}
-	return style.MergeThemes(base, custom)
+	t := style.DefaultTheme()
+	t.Colors.Primary = style.Color{Name: "primary", Value: "#6366F1"}     // indigo
+	t.Colors.Secondary = style.Color{Name: "secondary", Value: "#8B5CF6"} // violet
+	return t
 }
 
 // createStyleSheet builds the complete demo stylesheet using Go + theme tokens.

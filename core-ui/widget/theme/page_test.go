@@ -8,28 +8,32 @@ import (
 	"github.com/gofastr/gofastr/core-ui/widget/theme"
 )
 
-func TestPageThemeIncludesDefaults(t *testing.T) {
+func TestPageThemeIncludesCanonicalDefaults(t *testing.T) {
 	tt := theme.PageTheme()
-	wantColors := []string{"page-bg", "page-fg", "page-primary", "page-accent"}
-	for _, k := range wantColors {
-		if _, ok := tt.Colors[k]; !ok {
-			t.Errorf("default page theme missing color %q", k)
-		}
+	// PageTheme now layers on top of canonical style.DefaultTheme(),
+	// so every typed color/spacing field must be populated.
+	if tt.Colors.Background.Name == "" {
+		t.Errorf("page theme missing canonical Background token")
+	}
+	if tt.Colors.Text.Name == "" {
+		t.Errorf("page theme missing canonical Text token")
+	}
+	if tt.Colors.Primary.Name == "" {
+		t.Errorf("page theme missing canonical Primary token")
 	}
 }
 
-func TestPageThemeMergesOverrides(t *testing.T) {
-	override := style.Theme{Colors: style.Colors{"page-bg": "#000000", "page-primary": "#FF00FF"}}
-	tt := theme.PageTheme(override)
-	if got := tt.Colors["page-bg"]; got != "#000000" {
-		t.Errorf("page-bg = %q, want #000000 after override", got)
+func TestPageThemeOverridesViaDirectAssignment(t *testing.T) {
+	tt := theme.PageTheme()
+	// Apps override by directly assigning typed values — no
+	// MergeThemes helper.
+	tt.Colors.Background = style.Color{Name: "background", Value: "#000000"}
+	tt.Colors.Primary = style.Color{Name: "primary", Value: "#FF00FF"}
+	if tt.Colors.Background.Value != "#000000" {
+		t.Errorf("override Background.Value didn't take")
 	}
-	if got := tt.Colors["page-primary"]; got != "#FF00FF" {
-		t.Errorf("page-primary = %q, want #FF00FF after override", got)
-	}
-	// Untouched keys should keep defaults.
-	if tt.Colors["page-fg"] == "" {
-		t.Errorf("page-fg lost on override merge")
+	if tt.Colors.Primary.Value != "#FF00FF" {
+		t.Errorf("override Primary.Value didn't take")
 	}
 }
 
@@ -37,9 +41,9 @@ func TestPageCSSEmitsRootVarsAndUtilities(t *testing.T) {
 	css := theme.PageCSS(theme.PageTheme())
 	for _, want := range []string{
 		":root",
-		"--color-page-bg",
-		"--color-page-primary",
-		"--spacing-page-lg",
+		"--color-background",
+		"--color-primary",
+		"--spacing-lg",
 		"body.kiln-app",
 		".kiln-section",
 		".kiln-card",
@@ -54,9 +58,10 @@ func TestPageCSSEmitsRootVarsAndUtilities(t *testing.T) {
 }
 
 func TestPageCSSReflectsOverrideValues(t *testing.T) {
-	override := style.Theme{Colors: style.Colors{"page-bg": "#123456"}}
-	css := theme.PageCSS(theme.PageTheme(override))
-	if !strings.Contains(css, "--color-page-bg: #123456") {
+	tt := theme.PageTheme()
+	tt.Colors.Background = style.Color{Name: "background", Value: "#123456"}
+	css := theme.PageCSS(tt)
+	if !strings.Contains(css, "--color-background: #123456") {
 		t.Errorf(":root var didn't reflect override; css head:\n%s", head(css, 800))
 	}
 }

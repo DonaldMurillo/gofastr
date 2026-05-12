@@ -2,34 +2,36 @@ package chat
 
 import "github.com/gofastr/gofastr/core-ui/style"
 
-// widgetTheme tokens for the floating chat widget. Built on top of
-// core-ui's DefaultTheme.
+// widgetTheme returns the canonical theme — the chat widget defines
+// its own kiln-* visual tokens via kilnVars() (emitted as a literal
+// :root augmentation) since they aren't part of the typed canonical
+// palette.
 func widgetTheme() style.Theme {
-	base := style.DefaultTheme()
-	overrides := style.Theme{
-		Colors: style.Colors{
-			"kiln-fg":         "#e6e8eb",
-			"kiln-fg-muted":   "rgba(230, 232, 235, 0.65)",
-			"kiln-glass":      "rgba(14, 15, 18, 0.72)",
-			"kiln-glass-edge": "rgba(255, 255, 255, 0.08)",
-			"kiln-accent":     "#4f8cff",
-			"kiln-user-bg":    "rgba(76, 88, 110, 0.55)",
-			"kiln-assist-bg":  "rgba(38, 60, 110, 0.55)",
-			"kiln-tool-fg":    "rgba(180, 200, 230, 0.55)",
-			"kiln-bad":        "#ff6f6f",
-		},
-		Spacing: style.Spacing{
-			"kiln-pad-sm": 8,
-			"kiln-pad":    12,
-			"kiln-pad-lg": 18,
-		},
-		Radii: style.Radii{
-			"kiln-sm": 6,
-			"kiln-md": 10,
-			"kiln-lg": 14,
-		},
-	}
-	return style.MergeThemes(base, overrides)
+	return style.DefaultTheme()
+}
+
+// kilnVars returns the kiln-widget-specific CSS custom properties.
+// Emitted alongside the canonical theme's :root block so widget CSS
+// using var(--color-kiln-fg) etc. resolves correctly.
+func kilnVars() string {
+	return `:root {
+  --color-kiln-fg: #e6e8eb;
+  --color-kiln-fg-muted: rgba(230, 232, 235, 0.65);
+  --color-kiln-glass: rgba(14, 15, 18, 0.72);
+  --color-kiln-glass-edge: rgba(255, 255, 255, 0.08);
+  --color-kiln-accent: #4f8cff;
+  --color-kiln-user-bg: rgba(76, 88, 110, 0.55);
+  --color-kiln-assist-bg: rgba(38, 60, 110, 0.55);
+  --color-kiln-tool-fg: rgba(180, 200, 230, 0.55);
+  --color-kiln-bad: #ff6f6f;
+  --spacing-kiln-pad-sm: 8px;
+  --spacing-kiln-pad: 12px;
+  --spacing-kiln-pad-lg: 18px;
+  --radii-kiln-sm: 6px;
+  --radii-kiln-md: 10px;
+  --radii-kiln-lg: 14px;
+}
+`
 }
 
 // widgetCSS builds the widget stylesheet using the framework's stylesheet
@@ -39,7 +41,11 @@ func widgetTheme() style.Theme {
 // soft borders, subtle elevation. Designed not to compete with the host
 // page underneath.
 func widgetCSS() string {
+	// Hand-emit kiln-specific custom properties before the rest of
+	// the CSS so var(--color-kiln-*) references resolve.
+	prefix := kilnVars()
 	ss := style.NewStyleSheet(widgetTheme())
+	_ = prefix // appended at return below
 
 	// --- Root container -------------------------------------------------
 	ss.Rule(".kiln-widget").
@@ -1051,13 +1057,14 @@ func widgetCSS() string {
 		style.Step("100%", "opacity", "1", "transform", "translateY(0)"),
 	)
 
-	return ss.CSS()
+	return prefix + ss.CSS()
 }
 
 // baseCSS is loaded by every Kiln-rendered page so agent-built UIs are
 // readable during build mode. The freeze step does NOT include this —
 // users' real apps bring their own stylesheets.
 func baseCSS() string {
+	prefix := kilnVars()
 	ss := style.NewStyleSheet(widgetTheme())
 
 	ss.Rule("*, *::before, *::after").
@@ -1187,5 +1194,5 @@ func baseCSS() string {
 		Set("margin", "32px 0", "padding", "16px 0").
 		End()
 
-	return ss.CSS()
+	return prefix + ss.CSS()
 }

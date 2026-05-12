@@ -1,81 +1,54 @@
 // Package theme provides the framework's default page theme — the
-// visual identity for any app built via core-ui (or its consumers like
-// kiln). Hosts get token-driven palette/spacing/typography out of the
-// box, plus utility classes (kiln-section, kiln-card, kiln-button,
-// kiln-grid-*, …) that reference the tokens.
+// visual identity for any app built via core-ui (or its consumers
+// like kiln). Hosts get token-driven palette/spacing/typography out
+// of the box, plus utility classes (kiln-section, kiln-card,
+// kiln-button, kiln-grid-*, …) that reference canonical theme
+// tokens.
 //
-// A host can override individual tokens by passing a custom Theme to
-// PageTheme — every utility class re-resolves to the new value, so a
-// single token swap re-skins the whole app.
+// A host can override individual tokens by passing a custom Theme
+// to PageTheme — every utility class re-resolves to the new value,
+// so a single token swap re-skins the whole app.
 package theme
 
 import "github.com/gofastr/gofastr/core-ui/style"
 
-// PageTheme returns the page theme, optionally merged with overrides.
-// Override entries replace base tokens of the same name.
+// PageTheme returns the page theme. Overrides directly mutate the
+// returned theme value before it's emitted; callers compose by
+// assigning to the typed fields:
 //
-// Tokens are exposed as `:root` CSS custom properties via
-// theme.CSSCustomProperties() (e.g. --color-page-bg). The utility
-// classes below reference them with `var(--<token>)` indirection so
-// any future override re-skins all pages without touching rules.
-func PageTheme(overrides ...style.Theme) style.Theme {
-	base := style.DefaultTheme()
-	t := style.MergeThemes(base, defaultPageOverlay())
-	for _, o := range overrides {
-		t = style.MergeThemes(t, o)
-	}
+//	t := theme.PageTheme()
+//	t.Colors.Primary = style.Color{Name: "primary", Value: "#0F172A"}
+func PageTheme() style.Theme {
+	t := style.DefaultTheme()
+	t.Name = "page"
+	// Page-theme adjustments to the canonical palette.
+	t.Colors.Background = style.Color{Name: "background", Value: "#FAF9F6"}
+	t.Colors.SurfaceSoft = style.Color{Name: "surface-soft", Value: "#F5F4F1"}
+	t.Colors.Border = style.Color{Name: "border", Value: "#E5E1DA"}
+	t.Colors.Text = style.Color{Name: "text", Value: "#0F172A"}
+	t.Colors.TextMuted = style.Color{Name: "text-muted", Value: "#37352F"}
+	t.Colors.TextSubtle = style.Color{Name: "text-subtle", Value: "#9B9A97"}
+	t.Colors.Primary = style.Color{Name: "primary", Value: "#0F172A"}
+	t.Colors.Accent = style.Color{Name: "accent", Value: "#4F8CFF"}
+	t.Fonts.Body = style.Font{Name: "body", Value: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, Roboto, sans-serif"}
+	t.Fonts.Mono = style.Font{Name: "mono", Value: "ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace"}
 	return t
 }
 
-func defaultPageOverlay() style.Theme {
-	return style.Theme{
-		Name: "page",
-		Colors: style.Colors{
-			"page-bg":           "#FAF9F6",
-			"page-surface":      "#FFFFFF",
-			"page-surface-soft": "#F5F4F1",
-			"page-border":       "#E5E1DA",
-			"page-fg":           "#0F172A",
-			"page-fg-soft":      "#37352F",
-			"page-fg-muted":     "#6B7280",
-			"page-fg-subtle":    "#9B9A97",
-			"page-primary":      "#0F172A",
-			"page-primary-fg":   "#FFFFFF",
-			"page-accent":       "#4F8CFF",
-		},
-		Spacing: style.Spacing{
-			"page-xs": 4,
-			"page-sm": 8,
-			"page-md": 12,
-			"page-lg": 24,
-			"page-xl": 48,
-		},
-		Radii: style.Radii{
-			"page-sm": 4,
-			"page-md": 8,
-			"page-lg": 14,
-		},
-		Fonts: style.Fonts{
-			"page": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, Roboto, sans-serif",
-			"mono": "ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace",
-		},
-	}
-}
-
-// PageCSS builds the page stylesheet by resolving theme tokens through
-// core-ui/style. Output:
+// PageCSS builds the kiln-page stylesheet by resolving canonical
+// theme tokens through core-ui/style. Output:
 //
-//	1. :root CSS custom properties (every token in the theme)
-//	2. body.kiln-app reset + base typography
-//	3. Layout primitives:  kiln-container[-{sm,md,lg}], kiln-section[-{soft,inverse}]
-//	4. Stacks/rows/grids:  kiln-stack[-{sm,lg}], kiln-row[-{end,between,wrap}], kiln-grid-{2,3,4,auto}
-//	5. Components:         kiln-card[-soft], kiln-button[-{secondary,ghost}], kiln-nav,
-//	                       kiln-footer, kiln-pill, kiln-quote, kiln-hero, kiln-eyebrow
-//	6. Default styles for native form controls + tables on body.kiln-app
+//  1. :root CSS custom properties (every canonical token)
+//  2. body.kiln-app reset + base typography
+//  3. Layout primitives:  kiln-container[-{sm,md,lg}], kiln-section[-{soft,inverse}]
+//  4. Stacks/rows/grids:  kiln-stack[-{sm,lg}], kiln-row[-{end,between,wrap}], kiln-grid-{2,3,4,auto}
+//  5. Components:         kiln-card[-soft], kiln-button[-{secondary,ghost}], kiln-nav,
+//     kiln-footer, kiln-pill, kiln-quote, kiln-hero, kiln-eyebrow
+//  6. Default styles for native form controls + tables on body.kiln-app
 //
 // Class names use the kiln- prefix for backwards compatibility with
-// pages already authored against them. The framework owns these names
-// going forward.
+// pages already authored against them. The framework owns these
+// names going forward.
 func PageCSS(t style.Theme) string {
 	ss := style.NewStyleSheet(t)
 
@@ -84,15 +57,15 @@ func PageCSS(t style.Theme) string {
 	ss.Rule("body.kiln-app").
 		Set(
 			"margin", "0",
-			"background", "{colors.page-bg}",
-			"color", "{colors.page-fg}",
-			"font-family", "{fonts.page}",
+			"background", "{colors.background}",
+			"color", "{colors.text}",
+			"font-family", "{fonts.body}",
 			"font-size", "16px",
 			"line-height", "1.5",
 			"-webkit-font-smoothing", "antialiased",
 		).
 		End()
-	ss.Rule("body.kiln-app a").Set("color", "{colors.page-fg}", "text-decoration", "none").End()
+	ss.Rule("body.kiln-app a").Set("color", "{colors.text}", "text-decoration", "none").End()
 	ss.Rule("body.kiln-app a:hover").Set("text-decoration", "underline").End()
 	ss.Rule("body.kiln-app h1, body.kiln-app h2, body.kiln-app h3, body.kiln-app h4, body.kiln-app h5, body.kiln-app h6").
 		Set("margin", "0", "line-height", "1.2", "letter-spacing", "-0.02em").
@@ -107,22 +80,22 @@ func PageCSS(t style.Theme) string {
 		{"kiln-container-lg", "1200px"},
 	} {
 		ss.Rule("." + c.cls).
-			Set("max-width", c.width, "margin", "0 auto", "padding", "0 {spacing.page-lg}").
+			Set("max-width", c.width, "margin", "0 auto", "padding", "0 {spacing.lg}").
 			End()
 	}
 
-	ss.Rule(".kiln-section").Set("padding", "{spacing.page-xl} {spacing.page-lg}").End()
-	ss.Rule(".kiln-section-soft").Set("background", "{colors.page-surface-soft}").End()
+	ss.Rule(".kiln-section").Set("padding", "{spacing.3xl} {spacing.lg}").End()
+	ss.Rule(".kiln-section-soft").Set("background", "{colors.surface-soft}").End()
 	ss.Rule(".kiln-section-inverse").
-		Set("background", "{colors.page-primary}", "color", "{colors.page-primary-fg}").
+		Set("background", "{colors.primary}", "color", "{colors.primary-fg}").
 		End()
-	ss.Rule(".kiln-section-inverse a").Set("color", "{colors.page-primary-fg}").End()
+	ss.Rule(".kiln-section-inverse a").Set("color", "{colors.primary-fg}").End()
 
 	// Stacks / rows / grids.
 	for _, s := range []struct{ cls, gap string }{
-		{"kiln-stack", "{spacing.page-md}"},
-		{"kiln-stack-sm", "{spacing.page-sm}"},
-		{"kiln-stack-lg", "{spacing.page-lg}"},
+		{"kiln-stack", "{spacing.md}"},
+		{"kiln-stack-sm", "{spacing.sm}"},
+		{"kiln-stack-lg", "{spacing.lg}"},
 	} {
 		ss.Rule("." + s.cls).Set("display", "flex", "flex-direction", "column", "gap", s.gap).End()
 	}
@@ -132,7 +105,7 @@ func PageCSS(t style.Theme) string {
 		{"kiln-row-between", "space-between"},
 		{"kiln-row-wrap", ""},
 	} {
-		props := []string{"display", "flex", "align-items", "center", "gap", "{spacing.page-md}"}
+		props := []string{"display", "flex", "align-items", "center", "gap", "{spacing.md}"}
 		if r.justify != "" {
 			props = append(props, "justify-content", r.justify)
 		}
@@ -141,23 +114,23 @@ func PageCSS(t style.Theme) string {
 		}
 		ss.Rule("." + r.cls).Set(props...).End()
 	}
-	ss.Rule(".kiln-grid-2").Set("display", "grid", "grid-template-columns", "repeat(2, 1fr)", "gap", "{spacing.page-lg}").End()
-	ss.Rule(".kiln-grid-3").Set("display", "grid", "grid-template-columns", "repeat(3, 1fr)", "gap", "{spacing.page-lg}").End()
-	ss.Rule(".kiln-grid-4").Set("display", "grid", "grid-template-columns", "repeat(4, 1fr)", "gap", "{spacing.page-md}").End()
-	ss.Rule(".kiln-grid-auto").Set("display", "grid", "grid-template-columns", "repeat(auto-fit, minmax(220px, 1fr))", "gap", "{spacing.page-md}").End()
+	ss.Rule(".kiln-grid-2").Set("display", "grid", "grid-template-columns", "repeat(2, 1fr)", "gap", "{spacing.lg}").End()
+	ss.Rule(".kiln-grid-3").Set("display", "grid", "grid-template-columns", "repeat(3, 1fr)", "gap", "{spacing.lg}").End()
+	ss.Rule(".kiln-grid-4").Set("display", "grid", "grid-template-columns", "repeat(4, 1fr)", "gap", "{spacing.md}").End()
+	ss.Rule(".kiln-grid-auto").Set("display", "grid", "grid-template-columns", "repeat(auto-fit, minmax(220px, 1fr))", "gap", "{spacing.md}").End()
 
 	// Typography helpers.
 	ss.Rule(".kiln-center").Set("text-align", "center").End()
-	ss.Rule(".kiln-muted").Set("color", "{colors.page-fg-muted}").End()
-	ss.Rule(".kiln-subtle").Set("color", "{colors.page-fg-subtle}").End()
+	ss.Rule(".kiln-muted").Set("color", "{colors.text-muted}").End()
+	ss.Rule(".kiln-subtle").Set("color", "{colors.text-subtle}").End()
 	ss.Rule(".kiln-eyebrow").
 		Set(
 			"text-transform", "uppercase",
 			"letter-spacing", "0.08em",
 			"font-size", "0.75rem",
 			"font-weight", "700",
-			"color", "{colors.page-fg}",
-			"margin", "0 0 {spacing.page-sm}",
+			"color", "{colors.text}",
+			"margin", "0 0 {spacing.sm}",
 		).
 		End()
 	ss.Rule(".kiln-display").Set("font-size", "3rem", "font-weight", "700").End()
@@ -166,31 +139,31 @@ func PageCSS(t style.Theme) string {
 
 	// Hero.
 	ss.Rule(".kiln-hero").
-		Set("text-align", "center", "padding", "calc({spacing.page-xl} * 1.5) {spacing.page-lg} {spacing.page-xl}").
+		Set("text-align", "center", "padding", "calc({spacing.3xl} * 1.5) {spacing.lg} {spacing.3xl}").
 		End()
 	ss.Rule(".kiln-hero h1").
-		Set("font-size", "3rem", "font-weight", "700", "max-width", "24ch", "margin", "0 auto {spacing.page-md}").
+		Set("font-size", "3rem", "font-weight", "700", "max-width", "24ch", "margin", "0 auto {spacing.md}").
 		End()
 	ss.Rule(".kiln-hero p").
-		Set("font-size", "1.125rem", "color", "{colors.page-fg-soft}", "max-width", "60ch", "margin", "0 auto {spacing.page-lg}").
+		Set("font-size", "1.125rem", "color", "{colors.text-muted}", "max-width", "60ch", "margin", "0 auto {spacing.lg}").
 		End()
 
 	// Cards.
 	ss.Rule(".kiln-card").
 		Set(
-			"background", "{colors.page-surface}",
-			"border", "1px solid {colors.page-border}",
-			"border-radius", "{radii.page-lg}",
-			"padding", "{spacing.page-lg}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.lg}",
+			"padding", "{spacing.lg}",
 			"box-shadow", "0 1px 2px rgba(15, 23, 42, 0.06)",
 		).
 		End()
 	ss.Rule(".kiln-card-soft").
 		Set(
-			"background", "{colors.page-surface-soft}",
-			"border", "1px solid {colors.page-border}",
-			"border-radius", "{radii.page-lg}",
-			"padding", "{spacing.page-lg}",
+			"background", "{colors.surface-soft}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.lg}",
+			"padding", "{spacing.lg}",
 		).
 		End()
 
@@ -199,12 +172,12 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"display", "inline-flex",
 			"align-items", "center",
-			"gap", "{spacing.page-sm}",
-			"background", "{colors.page-primary}",
-			"color", "{colors.page-primary-fg}",
-			"border", "1px solid {colors.page-primary}",
+			"gap", "{spacing.sm}",
+			"background", "{colors.primary}",
+			"color", "{colors.primary-fg}",
+			"border", "1px solid {colors.primary}",
 			"padding", "10px 18px",
-			"border-radius", "{radii.page-md}",
+			"border-radius", "{radii.md}",
 			"font-weight", "600",
 			"cursor", "pointer",
 			"text-decoration", "none",
@@ -212,10 +185,10 @@ func PageCSS(t style.Theme) string {
 		End()
 	ss.Rule(".kiln-button:hover").Set("filter", "brightness(1.08)", "text-decoration", "none").End()
 	ss.Rule(".kiln-button-secondary").
-		Set("background", "{colors.page-surface}", "color", "{colors.page-fg}", "border-color", "{colors.page-border}").
+		Set("background", "{colors.surface}", "color", "{colors.text}", "border-color", "{colors.border}").
 		End()
 	ss.Rule(".kiln-button-ghost").
-		Set("background", "transparent", "color", "{colors.page-fg}", "border-color", "transparent").
+		Set("background", "transparent", "color", "{colors.text}", "border-color", "transparent").
 		End()
 
 	// Nav / footer.
@@ -224,20 +197,20 @@ func PageCSS(t style.Theme) string {
 			"display", "flex",
 			"align-items", "center",
 			"justify-content", "space-between",
-			"gap", "{spacing.page-lg}",
-			"padding", "{spacing.page-md} {spacing.page-lg}",
-			"border-bottom", "1px solid {colors.page-border}",
+			"gap", "{spacing.lg}",
+			"padding", "{spacing.md} {spacing.lg}",
+			"border-bottom", "1px solid {colors.border}",
 		).
 		End()
 	ss.Rule(".kiln-nav-links").
-		Set("display", "flex", "gap", "{spacing.page-lg}", "align-items", "center").
+		Set("display", "flex", "gap", "{spacing.lg}", "align-items", "center").
 		End()
-	ss.Rule(".kiln-nav-links a").Set("color", "{colors.page-fg-soft}").End()
+	ss.Rule(".kiln-nav-links a").Set("color", "{colors.text-muted}").End()
 	ss.Rule(".kiln-footer").
 		Set(
-			"border-top", "1px solid {colors.page-border}",
-			"background", "{colors.page-surface-soft}",
-			"padding", "{spacing.page-xl} {spacing.page-lg} {spacing.page-lg}",
+			"border-top", "1px solid {colors.border}",
+			"background", "{colors.surface-soft}",
+			"padding", "{spacing.3xl} {spacing.lg} {spacing.lg}",
 		).
 		End()
 
@@ -247,13 +220,13 @@ func PageCSS(t style.Theme) string {
 			"display", "inline-flex",
 			"align-items", "center",
 			"gap", "6px",
-			"background", "{colors.page-surface-soft}",
-			"border", "1px solid {colors.page-border}",
+			"background", "{colors.surface-soft}",
+			"border", "1px solid {colors.border}",
 			"border-radius", "999px",
 			"padding", "4px 10px",
 			"font-size", "0.75rem",
 			"font-weight", "600",
-			"color", "{colors.page-fg-soft}",
+			"color", "{colors.text-muted}",
 		).
 		End()
 	ss.Rule(".kiln-badge-success").Set("color", "{colors.success}", "font-weight", "600").End()
@@ -265,10 +238,10 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"font-size", "1.5rem",
 			"line-height", "1.5",
-			"color", "{colors.page-fg}",
+			"color", "{colors.text}",
 			"font-weight", "500",
 			"max-width", "60ch",
-			"margin", "0 auto {spacing.page-lg}",
+			"margin", "0 auto {spacing.lg}",
 			"text-align", "center",
 		).
 		End()
@@ -284,27 +257,27 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(formInputs).
 		Set(
 			"width", "100%",
-			"background", "{colors.page-surface}",
-			"border", "1px solid {colors.page-border}",
-			"border-radius", "{radii.page-md}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
 			"padding", "8px 12px",
-			"color", "{colors.page-fg}",
+			"color", "{colors.text}",
 			"font", "inherit",
 		).
 		End()
 	ss.Rule(`body.kiln-app input:focus, body.kiln-app textarea:focus, body.kiln-app select:focus`).
-		Set("outline", "none", "border-color", "{colors.page-accent}").
+		Set("outline", "none", "border-color", "{colors.accent}").
 		End()
 	ss.Rule("body.kiln-app table").Set("width", "100%", "border-collapse", "collapse").End()
 	ss.Rule("body.kiln-app th, body.kiln-app td").
 		Set(
-			"padding", "{spacing.page-sm} {spacing.page-md}",
-			"border-bottom", "1px solid {colors.page-border}",
+			"padding", "{spacing.sm} {spacing.md}",
+			"border-bottom", "1px solid {colors.border}",
 			"text-align", "left",
 		).
 		End()
 	ss.Rule("body.kiln-app th").
-		Set("font-weight", "600", "color", "{colors.page-fg-soft}", "background", "{colors.page-surface-soft}").
+		Set("font-weight", "600", "color", "{colors.text-muted}", "background", "{colors.surface-soft}").
 		End()
 
 	return t.CSSCustomProperties() + "\n" + ss.CSS()

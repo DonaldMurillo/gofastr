@@ -15,19 +15,14 @@ import (
 // createTheme builds the website's visual language. The website
 // dogfoods framework/ui/theme — every page renders against the same
 // canonical token set every consumer would use.
-//
-// The "secondary" token isn't part of framework/ui/theme yet; we keep
-// it locally for the hero gradient until framework/ui needs it.
 func createTheme() style.Theme {
-	base := theme.Default(theme.Overrides{
+	t := theme.Default(theme.Overrides{
 		Primary: "#2563EB", // blue-600 — GoFastr brand
 		Accent:  "#10B981", // emerald-500
 	})
-	return style.MergeThemes(base, style.Theme{
-		Colors: style.Colors{
-			"secondary": "#0F172A", // slate-900 — used by the hero gradient
-		},
-	})
+	// Used by the hero gradient. Keeps the canonical Secondary slot.
+	t.Colors.Secondary = style.Color{Name: "secondary", Value: "#0F172A"} // slate-900
+	return t
 }
 
 // createStyleSheet emits all the site's CSS as a string. Generated via

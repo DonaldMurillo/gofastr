@@ -5,168 +5,101 @@ import "github.com/gofastr/gofastr/core-ui/style"
 // Default returns the canonical framework theme.
 //
 // Pass an Overrides value to swap individual tokens. Overrides are
-// merged on top of the defaults; unset fields keep their defaults.
+// applied on top of the typed style.DefaultTheme(); unset fields keep
+// their defaults.
 //
 // Example — swap primary from indigo to teal:
 //
 //	t := theme.Default(theme.Overrides{Primary: "#14B8A6"})
 //
-// Every component that references --color-primary updates without
-// any code change.
+// Every component referencing --color-primary updates without any
+// code change.
 func Default(overrides ...Overrides) style.Theme {
 	t := baseTheme()
 	for _, o := range overrides {
-		t = applyOverrides(t, o)
+		applyOverrides(&t, o)
 	}
 	return t
 }
 
 // Overrides is the set of tokens a host can swap to re-skin the
-// framework theme. All fields are optional. Empty strings are ignored.
+// framework theme. All fields are optional. Empty strings are
+// ignored — zero-value RadiusXX ints likewise.
 type Overrides struct {
 	// Color tokens (CSS hex values).
-	Background    string // page backdrop
-	Surface       string // card / widget background
-	SurfaceSoft   string // muted surface (callouts, hover states)
-	Border        string // hairline borders
-	BorderStrong  string // emphasized borders (active states)
-	Text          string // body text
-	TextMuted     string // secondary text
-	TextSubtle    string // tertiary text (timestamps, hints)
-	Primary       string // brand color
-	PrimaryFg     string // text/icon color on primary
-	Accent        string // secondary accent
-	Success       string // positive state
-	Warning       string // caution state
-	Danger        string // destructive state
-	Info          string // informational state
+	Background, Surface, SurfaceSoft        string
+	Border, BorderStrong                    string
+	Text, TextMuted, TextSubtle             string
+	Primary, PrimaryFg                      string
+	Accent                                  string
+	Success, Warning, Danger, Info          string
 
 	// Font families.
-	FontBody    string
-	FontHeading string
-	FontMono    string
+	FontBody, FontHeading, FontMono string
 
 	// Reskin extras — only apply if you really need them.
-	RadiusSm  int // px
-	RadiusMd  int // px
-	RadiusLg  int // px
+	RadiusSm, RadiusMd, RadiusLg int // px
 }
 
+// baseTheme is the framework's opinionated default — a clean
+// neutral palette with indigo primary. Identical shape to
+// style.DefaultTheme(), but framework-ui has its own slight
+// adjustments to colors and fonts.
 func baseTheme() style.Theme {
-	return style.Theme{
-		Name: "framework-ui",
-		Colors: style.Colors{
-			"background":    "#FAFAF9",
-			"surface":       "#FFFFFF",
-			"surface-soft":  "#F4F4F5",
-			"border":        "#E4E4E7",
-			"border-strong": "#A1A1AA",
-			"text":          "#18181B",
-			"text-muted":    "#52525B",
-			"text-subtle":   "#A1A1AA",
-			"primary":       "#4F46E5",
-			"primary-fg":    "#FFFFFF",
-			"accent":        "#0891B2",
-			"success":       "#16A34A",
-			"warning":       "#CA8A04",
-			"danger":        "#DC2626",
-			"info":          "#2563EB",
-		},
-		Spacing: style.Spacing{
-			"xs":  2,
-			"sm":  4,
-			"md":  8,
-			"lg":  16,
-			"xl":  24,
-			"2xl": 32,
-			"3xl": 48,
-		},
-		Radii: style.Radii{
-			"none": 0,
-			"sm":   4,
-			"md":   8,
-			"lg":   12,
-			"xl":   16,
-			"full": 9999,
-		},
-		Fonts: style.Fonts{
-			"body":    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif",
-			"heading": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif",
-			"mono":    "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
-		},
-		Breakpoints: style.Breakpoints{
-			"sm": 640,
-			"md": 768,
-			"lg": 1024,
-			"xl": 1280,
-		},
-	}
+	t := style.DefaultTheme()
+	t.Name = "framework-ui"
+	// Override a few values where framework-ui differs from the
+	// generic style defaults.
+	t.Colors.Background = style.Color{Name: "background", Value: "#FAFAF9"}
+	t.Colors.Accent = style.Color{Name: "accent", Value: "#0891B2"}
+	t.Fonts.Body = style.Font{Name: "body", Value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"}
+	t.Fonts.Heading = style.Font{Name: "heading", Value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"}
+	t.Fonts.Mono = style.Font{Name: "mono", Value: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"}
+	return t
 }
 
-func applyOverrides(t style.Theme, o Overrides) style.Theme {
-	custom := style.Theme{Colors: style.Colors{}, Fonts: style.Fonts{}, Radii: style.Radii{}}
-	if o.Background != "" {
-		custom.Colors["background"] = o.Background
+// applyOverrides mutates t in place — only non-zero override fields
+// touch the theme. Token Name preserved; only Value swaps.
+func applyOverrides(t *style.Theme, o Overrides) {
+	setColor := func(c *style.Color, v string) {
+		if v == "" {
+			return
+		}
+		c.Value = v
 	}
-	if o.Surface != "" {
-		custom.Colors["surface"] = o.Surface
+	setColor(&t.Colors.Background, o.Background)
+	setColor(&t.Colors.Surface, o.Surface)
+	setColor(&t.Colors.SurfaceSoft, o.SurfaceSoft)
+	setColor(&t.Colors.Border, o.Border)
+	setColor(&t.Colors.BorderStrong, o.BorderStrong)
+	setColor(&t.Colors.Text, o.Text)
+	setColor(&t.Colors.TextMuted, o.TextMuted)
+	setColor(&t.Colors.TextSubtle, o.TextSubtle)
+	setColor(&t.Colors.Primary, o.Primary)
+	setColor(&t.Colors.PrimaryFg, o.PrimaryFg)
+	setColor(&t.Colors.Accent, o.Accent)
+	setColor(&t.Colors.Success, o.Success)
+	setColor(&t.Colors.Warning, o.Warning)
+	setColor(&t.Colors.Danger, o.Danger)
+	setColor(&t.Colors.Info, o.Info)
+
+	setFont := func(f *style.Font, v string) {
+		if v == "" {
+			return
+		}
+		f.Value = v
 	}
-	if o.SurfaceSoft != "" {
-		custom.Colors["surface-soft"] = o.SurfaceSoft
-	}
-	if o.Border != "" {
-		custom.Colors["border"] = o.Border
-	}
-	if o.BorderStrong != "" {
-		custom.Colors["border-strong"] = o.BorderStrong
-	}
-	if o.Text != "" {
-		custom.Colors["text"] = o.Text
-	}
-	if o.TextMuted != "" {
-		custom.Colors["text-muted"] = o.TextMuted
-	}
-	if o.TextSubtle != "" {
-		custom.Colors["text-subtle"] = o.TextSubtle
-	}
-	if o.Primary != "" {
-		custom.Colors["primary"] = o.Primary
-	}
-	if o.PrimaryFg != "" {
-		custom.Colors["primary-fg"] = o.PrimaryFg
-	}
-	if o.Accent != "" {
-		custom.Colors["accent"] = o.Accent
-	}
-	if o.Success != "" {
-		custom.Colors["success"] = o.Success
-	}
-	if o.Warning != "" {
-		custom.Colors["warning"] = o.Warning
-	}
-	if o.Danger != "" {
-		custom.Colors["danger"] = o.Danger
-	}
-	if o.Info != "" {
-		custom.Colors["info"] = o.Info
-	}
-	if o.FontBody != "" {
-		custom.Fonts["body"] = o.FontBody
-	}
-	if o.FontHeading != "" {
-		custom.Fonts["heading"] = o.FontHeading
-	}
-	if o.FontMono != "" {
-		custom.Fonts["mono"] = o.FontMono
-	}
+	setFont(&t.Fonts.Body, o.FontBody)
+	setFont(&t.Fonts.Heading, o.FontHeading)
+	setFont(&t.Fonts.Mono, o.FontMono)
+
 	if o.RadiusSm > 0 {
-		custom.Radii["sm"] = o.RadiusSm
+		t.Radii.SM.Value = o.RadiusSm
 	}
 	if o.RadiusMd > 0 {
-		custom.Radii["md"] = o.RadiusMd
+		t.Radii.MD.Value = o.RadiusMd
 	}
 	if o.RadiusLg > 0 {
-		custom.Radii["lg"] = o.RadiusLg
+		t.Radii.LG.Value = o.RadiusLg
 	}
-	return style.MergeThemes(t, custom)
 }

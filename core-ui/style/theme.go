@@ -1,168 +1,173 @@
 package style
 
-// Theme defines the complete visual design system.
+import "time"
+
+// Theme is the canonical typed design system.
+//
+// Every field is required: apps must define every primitive token.
+// The framework ships a fully-populated DefaultTheme() so the
+// scaffold can start from a working baseline; users edit values,
+// not whether the field exists.
+//
+// Apps that need extra tokens beyond the canonical set embed Theme
+// in their own struct:
+//
+//	type AppTheme struct {
+//	    style.Theme
+//	    Brand struct{ Logo, Glow style.Color }
+//	}
+//
+// Framework code (framework/ui components, widget theming, the
+// catalog endpoint) only sees the embedded canonical fields. App-
+// specific components reference theme.App.Brand.Logo directly.
 type Theme struct {
-	Name        string
-	Colors      Colors
-	Spacing     Spacing
-	Radii       Radii
-	Fonts       Fonts
-	Breakpoints Breakpoints
-	Components  ComponentStyles // named component style definitions
+	Name string // theme identifier — used for telemetry and the class-scoped block name
+
+	Colors      ColorSet
+	Spacing     SpacingScale
+	Radii       RadiusSet
+	Fonts       FontSet
+	Breakpoints BreakpointSet
+	Shadows     ShadowSet
+	ZIndex      ZIndexSet
+	Durations   DurationSet
+	Typography  FontSizeSet
 }
 
-// Colors maps color names to CSS color values.
-type Colors map[string]string // e.g., "primary": "#4F46E5"
+// ColorSet is the canonical palette. Every theme must declare every
+// field; framework/ui components reference them by name.
+type ColorSet struct {
+	Primary, PrimaryFg               Color
+	Secondary, SecondaryFg           Color
+	Background, Surface, SurfaceSoft Color
+	Text, TextMuted, TextSubtle      Color
+	Border, BorderStrong             Color
+	Danger, Success, Warning, Info   Color
+	Accent                           Color
+}
 
-// Spacing maps spacing token names to pixel values.
-type Spacing map[string]int // e.g., "md": 8
+// SpacingScale — pixel-valued spacing scale.
+type SpacingScale struct {
+	XS, SM, MD, LG, XL, XXL, XXXL Spacing
+}
 
-// Radii maps border-radius token names to pixel values.
-type Radii map[string]int // e.g., "lg": 12
+// RadiusSet — border-radius scale.
+type RadiusSet struct {
+	None, SM, MD, LG, XL, Full Radius
+}
 
-// Fonts maps font role names to CSS font-family values.
-type Fonts map[string]string // e.g., "body": "'Inter', sans-serif"
+// FontSet — font-family stacks.
+type FontSet struct {
+	Body, Heading, Mono Font
+}
 
-// Breakpoints maps breakpoint names to pixel values.
-type Breakpoints map[string]int // e.g., "md": 768
+// BreakpointSet — viewport-width thresholds, in pixels.
+type BreakpointSet struct {
+	SM, MD, LG, XL, XXL Breakpoint
+}
 
-// ComponentStyles maps component style names to their style definitions.
-type ComponentStyles map[string]StyleDef
+// ShadowSet — box-shadow depth scale.
+type ShadowSet struct {
+	None, SM, MD, LG, XL Shadow
+}
 
-// StyleDef defines CSS properties for a named component style.
-type StyleDef map[string]string // e.g., "padding": "{spacing.md} {spacing.lg}"
+// ZIndexSet — named layers. Prevents the `z-index: 9999` arms race
+// — every elevated surface picks a layer by name.
+type ZIndexSet struct {
+	Dropdown, Sticky, Modal, Popover, Toast ZIndexValue
+}
 
-// DefaultTheme returns a sensible default theme with a complete set of design tokens.
+// DurationSet — animation / transition timing scale.
+type DurationSet struct {
+	Fast, Normal, Slow Duration
+}
+
+// FontSizeSet — typography size scale.
+type FontSizeSet struct {
+	XS, SM, Base, LG, XL, XXL, XXXL FontSize
+}
+
+// DefaultTheme returns a fully-populated baseline theme suitable
+// for every framework/ui component. The scaffold (`gofastr theme
+// init`) writes this as the user's starting theme.go.
 func DefaultTheme() Theme {
 	return Theme{
 		Name: "default",
-		Colors: Colors{
-			"primary":    "#4F46E5",
-			"secondary":  "#6B7280",
-			"danger":     "#EF4444",
-			"success":    "#10B981",
-			"warning":    "#F59E0B",
-			"info":       "#3B82F6",
-			"surface":    "#FFFFFF",
-			"background": "#F9FAFB",
-			"text":       "#1F2937",
-			"text-muted": "#6B7280",
-			"border":     "#E5E7EB",
+		Colors: ColorSet{
+			Primary:      Color{Name: "primary", Value: "#4F46E5"},
+			PrimaryFg:    Color{Name: "primary-fg", Value: "#FFFFFF"},
+			Secondary:    Color{Name: "secondary", Value: "#6B7280"},
+			SecondaryFg:  Color{Name: "secondary-fg", Value: "#FFFFFF"},
+			Background:   Color{Name: "background", Value: "#F9FAFB"},
+			Surface:      Color{Name: "surface", Value: "#FFFFFF"},
+			SurfaceSoft:  Color{Name: "surface-soft", Value: "#F4F4F5"},
+			Text:         Color{Name: "text", Value: "#18181B"},
+			TextMuted:    Color{Name: "text-muted", Value: "#52525B"},
+			TextSubtle:   Color{Name: "text-subtle", Value: "#A1A1AA"},
+			Border:       Color{Name: "border", Value: "#E4E4E7"},
+			BorderStrong: Color{Name: "border-strong", Value: "#A1A1AA"},
+			Danger:       Color{Name: "danger", Value: "#DC2626"},
+			Success:      Color{Name: "success", Value: "#16A34A"},
+			Warning:      Color{Name: "warning", Value: "#CA8A04"},
+			Info:         Color{Name: "info", Value: "#2563EB"},
+			Accent:       Color{Name: "accent", Value: "#7C3AED"},
 		},
-		Spacing: Spacing{
-			"xs":  2,
-			"sm":  4,
-			"md":  8,
-			"lg":  16,
-			"xl":  24,
-			"2xl": 32,
-			"3xl": 48,
+		Spacing: SpacingScale{
+			XS:   Spacing{Name: "xs", Value: 2},
+			SM:   Spacing{Name: "sm", Value: 4},
+			MD:   Spacing{Name: "md", Value: 8},
+			LG:   Spacing{Name: "lg", Value: 16},
+			XL:   Spacing{Name: "xl", Value: 24},
+			XXL:  Spacing{Name: "2xl", Value: 32},
+			XXXL: Spacing{Name: "3xl", Value: 48},
 		},
-		Radii: Radii{
-			"none": 0,
-			"sm":   4,
-			"md":   8,
-			"lg":   12,
-			"xl":   16,
-			"full": 9999,
+		Radii: RadiusSet{
+			None: Radius{Name: "none", Value: 0},
+			SM:   Radius{Name: "sm", Value: 4},
+			MD:   Radius{Name: "md", Value: 8},
+			LG:   Radius{Name: "lg", Value: 12},
+			XL:   Radius{Name: "xl", Value: 16},
+			Full: Radius{Name: "full", Value: 9999},
 		},
-		Fonts: Fonts{
-			"body":    "'Inter', system-ui, sans-serif",
-			"heading": "'Inter', system-ui, sans-serif",
-			"mono":    "'JetBrains Mono', monospace",
+		Fonts: FontSet{
+			Body:    Font{Name: "body", Value: "'Inter', system-ui, sans-serif"},
+			Heading: Font{Name: "heading", Value: "'Inter', system-ui, sans-serif"},
+			Mono:    Font{Name: "mono", Value: "'JetBrains Mono', monospace"},
 		},
-		Breakpoints: Breakpoints{
-			"sm":  640,
-			"md":  768,
-			"lg":  1024,
-			"xl":  1280,
-			"2xl": 1536,
+		Breakpoints: BreakpointSet{
+			SM:  Breakpoint{Name: "sm", Value: 640},
+			MD:  Breakpoint{Name: "md", Value: 768},
+			LG:  Breakpoint{Name: "lg", Value: 1024},
+			XL:  Breakpoint{Name: "xl", Value: 1280},
+			XXL: Breakpoint{Name: "2xl", Value: 1536},
 		},
-		Components: ComponentStyles{},
+		Shadows: ShadowSet{
+			None: Shadow{Name: "none", Value: "none"},
+			SM:   Shadow{Name: "sm", Value: "0 1px 2px 0 rgba(0,0,0,0.05)"},
+			MD:   Shadow{Name: "md", Value: "0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -1px rgba(0,0,0,0.06)"},
+			LG:   Shadow{Name: "lg", Value: "0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -2px rgba(0,0,0,0.05)"},
+			XL:   Shadow{Name: "xl", Value: "0 20px 25px -5px rgba(0,0,0,0.10), 0 10px 10px -5px rgba(0,0,0,0.04)"},
+		},
+		ZIndex: ZIndexSet{
+			Dropdown: ZIndexValue{Name: "dropdown", Value: 100},
+			Sticky:   ZIndexValue{Name: "sticky", Value: 200},
+			Modal:    ZIndexValue{Name: "modal", Value: 300},
+			Popover:  ZIndexValue{Name: "popover", Value: 400},
+			Toast:    ZIndexValue{Name: "toast", Value: 500},
+		},
+		Durations: DurationSet{
+			Fast:   Duration{Name: "fast", Value: 150 * time.Millisecond},
+			Normal: Duration{Name: "normal", Value: 250 * time.Millisecond},
+			Slow:   Duration{Name: "slow", Value: 400 * time.Millisecond},
+		},
+		Typography: FontSizeSet{
+			XS:   FontSize{Name: "xs", Value: "0.75rem"},
+			SM:   FontSize{Name: "sm", Value: "0.875rem"},
+			Base: FontSize{Name: "base", Value: "1rem"},
+			LG:   FontSize{Name: "lg", Value: "1.125rem"},
+			XL:   FontSize{Name: "xl", Value: "1.25rem"},
+			XXL:  FontSize{Name: "2xl", Value: "1.5rem"},
+			XXXL: FontSize{Name: "3xl", Value: "1.875rem"},
+		},
 	}
-}
-
-// MergeThemes overlays custom on top of base, returning a new Theme.
-// For map fields, individual entries are merged (custom entries override base).
-// Scalar fields (Name) are taken from custom if non-empty.
-func MergeThemes(base, custom Theme) Theme {
-	result := Theme{
-		Name:        base.Name,
-		Colors:      mergeColors(base.Colors, custom.Colors),
-		Spacing:     mergeSpacing(base.Spacing, custom.Spacing),
-		Radii:       mergeRadii(base.Radii, custom.Radii),
-		Fonts:       mergeFonts(base.Fonts, custom.Fonts),
-		Breakpoints: mergeBreakpoints(base.Breakpoints, custom.Breakpoints),
-		Components:  mergeComponentStyles(base.Components, custom.Components),
-	}
-	if custom.Name != "" {
-		result.Name = custom.Name
-	}
-	return result
-}
-
-func mergeColors(base, custom Colors) Colors {
-	result := make(Colors, len(base)+len(custom))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range custom {
-		result[k] = v
-	}
-	return result
-}
-
-func mergeSpacing(base, custom Spacing) Spacing {
-	result := make(Spacing, len(base)+len(custom))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range custom {
-		result[k] = v
-	}
-	return result
-}
-
-func mergeRadii(base, custom Radii) Radii {
-	result := make(Radii, len(base)+len(custom))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range custom {
-		result[k] = v
-	}
-	return result
-}
-
-func mergeFonts(base, custom Fonts) Fonts {
-	result := make(Fonts, len(base)+len(custom))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range custom {
-		result[k] = v
-	}
-	return result
-}
-
-func mergeBreakpoints(base, custom Breakpoints) Breakpoints {
-	result := make(Breakpoints, len(base)+len(custom))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range custom {
-		result[k] = v
-	}
-	return result
-}
-
-func mergeComponentStyles(base, custom ComponentStyles) ComponentStyles {
-	result := make(ComponentStyles, len(base)+len(custom))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range custom {
-		result[k] = v
-	}
-	return result
 }

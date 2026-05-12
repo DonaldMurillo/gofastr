@@ -17,11 +17,14 @@ func TestStyleSheetBasic(t *testing.T) {
 	if !strings.Contains(css, ".test {") {
 		t.Errorf("expected .test rule, got: %s", css)
 	}
-	if !strings.Contains(css, "color: #4F46E5") {
-		t.Errorf("expected resolved color token, got: %s", css)
+	// Var-only contract: tokens resolve to CSS variable references,
+	// never to literal values. The browser dereferences via the
+	// :root block emitted by Theme.CSSCustomProperties().
+	if !strings.Contains(css, "color: var(--color-primary)") {
+		t.Errorf("expected var ref for color token, got: %s", css)
 	}
-	if !strings.Contains(css, "padding: 8px") {
-		t.Errorf("expected resolved spacing token, got: %s", css)
+	if !strings.Contains(css, "padding: var(--spacing-md)") {
+		t.Errorf("expected var ref for spacing token, got: %s", css)
 	}
 }
 

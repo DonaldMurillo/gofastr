@@ -19,8 +19,8 @@ func TestComponentSheetScopesSimpleSelectors(t *testing.T) {
 	if !strings.Contains(got, `[data-fui-comp="modal"] .body`) {
 		t.Errorf("missing scoped .body: %s", got)
 	}
-	if !strings.Contains(got, "padding: 16px") {
-		t.Errorf("theme token not resolved: %s", got)
+	if !strings.Contains(got, "padding: var(--spacing-lg)") {
+		t.Errorf("theme token should resolve to var ref: %s", got)
 	}
 }
 
