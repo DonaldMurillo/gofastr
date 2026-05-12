@@ -182,7 +182,18 @@ func FormField(cfg FormFieldConfig) render.HTML {
 				Attrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
-	out := []render.HTML{labelHTML, cfg.Input}
+	// When the field is in an error state, inject aria-invalid +
+	// aria-describedby into the input's first open tag so SR users
+	// hear "invalid entry" and the error message text. Without this
+	// the visual error (red border) is the only signal — fails
+	// WCAG 1.3.1 / 4.1.2 / 1.4.1.
+	input := cfg.Input
+	if cfg.Error != "" {
+		input = injectAriaInvalid(input, cfg.For+"-error")
+	} else if cfg.Help != "" {
+		input = injectAriaDescribedBy(input, cfg.For+"-help")
+	}
+	out := []render.HTML{labelHTML, input}
 	if cfg.Help != "" && cfg.Error == "" {
 		out = append(out, html.Paragraph(html.TextConfig{
 			Class: "ui-form-field__help", ID: cfg.For + "-help",
@@ -196,6 +207,60 @@ func FormField(cfg FormFieldConfig) render.HTML {
 		}, render.Text(cfg.Error)))
 	}
 	return formFieldStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, out...))
+}
+
+// injectAriaInvalid splices ` aria-invalid="true" aria-describedby="<id>"`
+// into the first open tag of the input HTML. Idempotent — won't
+// add duplicates.
+func injectAriaInvalid(input render.HTML, errID string) render.HTML {
+	return injectAttrs(input, ` aria-invalid="true" aria-describedby="`+errID+`"`)
+}
+
+// injectAriaDescribedBy splices ` aria-describedby="<id>"` for the
+// non-error help text case.
+func injectAriaDescribedBy(input render.HTML, helpID string) render.HTML {
+	return injectAttrs(input, ` aria-describedby="`+helpID+`"`)
+}
+
+func injectAttrs(input render.HTML, attrs string) render.HTML {
+	s := string(input)
+	// Locate the first `>` that isn't inside an attribute value;
+	// splice attrs before it. Skips if attrs already substring-
+	// present (idempotent).
+	if strings.Contains(s, strings.TrimSpace(attrs)) {
+		return input
+	}
+	end := findFirstTagClose(s)
+	if end < 0 {
+		return input
+	}
+	insertAt := end
+	if end > 0 && s[end-1] == '/' {
+		insertAt = end - 1
+	}
+	return render.HTML(s[:insertAt] + attrs + s[insertAt:])
+}
+
+// findFirstTagClose returns the index of the first `>` that closes
+// an open tag, respecting attribute quotes.
+func findFirstTagClose(s string) int {
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '>':
+			return i
+		}
+	}
+	return -1
 }
 
 // ─── FormSection ────────────────────────────────────────────────────
@@ -283,15 +348,11 @@ func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	wrap := buttonStyle.WrapHTML
-	if v == ButtonDanger {
-		// The dangerButtonStyle handle predates Button — kept so
-		// existing app CSS keyed on data-fui-comp="ui-button-danger"
-		// keeps working. New code should rely on the ButtonVariant
-		// modifier class via the canonical ui-button style.
-		wrap = dangerButtonStyle.WrapHTML
-	}
-	return wrap(html.Button(html.ButtonConfig{
+	// All variants share the single canonical ui-button marker; the
+	// .ui-button--<variant> class on the same element drives the
+	// visual delta via buttonCSS's variant rules. No legacy per-
+	// variant marker / sheet.
+	return buttonStyle.WrapHTML(html.Button(html.ButtonConfig{
 		Label: cfg.Label,
 		Type:  cfg.Type,
 		Class: cls,

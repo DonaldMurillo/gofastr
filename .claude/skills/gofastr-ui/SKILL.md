@@ -71,6 +71,16 @@ which is what lets section-level theme overrides cascade.
 - ❌ Don't try `MergeThemes(...)` — it was removed. Mutate fields directly.
 - ✅ `app.WithTheme(theme)` is the binding pattern. The host emits `:root` from the theme and components reference it.
 
+**Section-level theme overrides** (dark sidebar in a light app, branded sections, multi-tenant subtrees) — use `style.RegisterThemeOverride` + `ui.Themed`:
+
+```go
+var Dark = style.RegisterThemeOverride(darkTheme)
+
+ui.Themed(Dark, ui.Card{...}, ui.Button{...})  // wrapped subtree uses dark vars
+```
+
+Framework emits a `.fui-theme-<hash>` block in `app.css`; the CSS cascade does the rest. Content-addressed — registering the same theme twice ships CSS once.
+
 ## Per-component CSS — the registry pattern
 
 Component-owned CSS ships as a real `<link>` (never inline), loaded

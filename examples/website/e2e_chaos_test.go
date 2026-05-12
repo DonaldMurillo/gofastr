@@ -84,6 +84,63 @@ func TestE2E_Chaos_ResizeWhileToggling(t *testing.T) {
 	}
 }
 
+// TestE2E_Chaos_NoMobileHorizontalScroll loads the css-loading
+// showcase at 375px viewport (iPhone SE width) and asserts the
+// document doesn't overflow horizontally. Catches regressions where
+// fixed-width content (the catalog table, the top nav) blows out
+// the layout.
+func TestE2E_Chaos_NoMobileHorizontalScroll(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var dims map[string]float64
+	err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(375, 800),
+		chromedp.Navigate(base+"/framework-ui/css-loading"),
+		pageReady(),
+		chromedp.Evaluate(`(() => {
+            const d = document.documentElement;
+            return {scrollWidth: d.scrollWidth, clientWidth: d.clientWidth};
+        })()`, &dims),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if dims["scrollWidth"] > dims["clientWidth"] {
+		t.Errorf("/framework-ui/css-loading overflows at 375px viewport: scrollWidth=%.0f clientWidth=%.0f", dims["scrollWidth"], dims["clientWidth"])
+	}
+}
+
+// TestE2E_Chaos_TouchTargetsAt44 checks every interactive button on
+// the framework-ui index renders at >= 44 CSS pixels tall (WCAG
+// 2.5.5 minimum). Catches regressions where the spacing scale gets
+// too tight to be tappable.
+func TestE2E_Chaos_TouchTargetsAt44(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var heights []float64
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/framework-ui/"),
+		pageReady(),
+		chromedp.Evaluate(`(() => {
+            return [...document.querySelectorAll('button.ui-button, a.ui-button')]
+                .map(el => el.getBoundingClientRect().height);
+        })()`, &heights),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if len(heights) == 0 {
+		t.Skip("no ui-button elements on /framework-ui/ — test premise invalid")
+	}
+	for i, h := range heights {
+		if h < 44 {
+			t.Errorf("ui-button[%d] height=%.1fpx, want >= 44 (WCAG 2.5.5 minimum)", i, h)
+		}
+	}
+}
+
 // TestE2E_Chaos_FrameworkUIPageRendersWithoutOverlaps walks the kitchen
 // sink page (/framework-ui/) and confirms every component class has a
 // non-zero render box. Catches CSS regressions where a component

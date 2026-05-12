@@ -1,6 +1,10 @@
 package style
 
-import "time"
+import (
+	"fmt"
+	"reflect"
+	"time"
+)
 
 // Theme is the canonical typed design system.
 //
@@ -85,6 +89,113 @@ type DurationSet struct {
 // FontSizeSet — typography size scale.
 type FontSizeSet struct {
 	XS, SM, Base, LG, XL, XXL, XXXL FontSize
+}
+
+// Validate walks every typed token field of the theme and ensures
+// each has a non-empty Name + a non-zero Value. Returns the first
+// field path that fails, naming the missing piece, so authors see:
+//
+//	theme.Colors.Primary: Color.Name is empty
+//
+// MustValidate is the panicking variant used by App.WithTheme so a
+// bad theme fails at boot, not at first request.
+func (t Theme) Validate() error {
+	return validateTokens(reflect.ValueOf(t), "Theme")
+}
+
+// MustValidate panics if validation fails. Wraps Validate.
+func (t Theme) MustValidate() {
+	if err := t.Validate(); err != nil {
+		panic("style.Theme: invalid — " + err.Error())
+	}
+}
+
+func validateTokens(v reflect.Value, path string) error {
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+	// Typed token leaves — check fields are populated.
+	switch tk := v.Interface().(type) {
+	case Color:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Color.Name is empty", path)
+		}
+		if tk.Value == "" {
+			return fmt.Errorf("%s: Color.Value is empty (Name=%q)", path, tk.Name)
+		}
+		return nil
+	case Spacing:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Spacing.Name is empty", path)
+		}
+		return nil
+	case Radius:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Radius.Name is empty", path)
+		}
+		return nil
+	case Font:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Font.Name is empty", path)
+		}
+		if tk.Value == "" {
+			return fmt.Errorf("%s: Font.Value is empty (Name=%q)", path, tk.Name)
+		}
+		return nil
+	case Breakpoint:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Breakpoint.Name is empty", path)
+		}
+		return nil
+	case Shadow:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Shadow.Name is empty", path)
+		}
+		if tk.Value == "" {
+			return fmt.Errorf("%s: Shadow.Value is empty (Name=%q)", path, tk.Name)
+		}
+		return nil
+	case ZIndexValue:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: ZIndex.Name is empty", path)
+		}
+		return nil
+	case Duration:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Duration.Name is empty", path)
+		}
+		return nil
+	case FontSize:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: FontSize.Name is empty", path)
+		}
+		if tk.Value == "" {
+			return fmt.Errorf("%s: FontSize.Value is empty (Name=%q)", path, tk.Name)
+		}
+		return nil
+	}
+	// Recurse into struct fields.
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		if !f.CanInterface() {
+			continue
+		}
+		fieldName := v.Type().Field(i).Name
+		// Skip the bookkeeping `Name string` on Theme itself.
+		if fieldName == "Name" && f.Kind() == reflect.String {
+			continue
+		}
+		if err := validateTokens(f, path+"."+fieldName); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DefaultTheme returns a fully-populated baseline theme suitable

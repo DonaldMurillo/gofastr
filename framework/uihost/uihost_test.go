@@ -356,6 +356,33 @@ func TestUIHostNoExtraScriptsByDefault(t *testing.T) {
 	assertNotContains(t, rec.Body.String(), `/__livereload.js`)
 }
 
+// Even when the app sets no explicit theme, /__gofastr/app.css must
+// still emit a canonical :root block so components' bare var(--*)
+// references resolve. The migration dropped most `var(--x, #hex)`
+// fallbacks; the :root floor is now load-bearing.
+func TestUIHostAppCSSAlwaysEmitsRootVars(t *testing.T) {
+	application := app.NewApp("NoThemeApp")
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+	ds := New(application) // no WithTheme
+
+	req := httptest.NewRequest("GET", "/__gofastr/app.css", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	for _, want := range []string{
+		":root",
+		"--color-primary:",
+		"--color-text:",
+		"--spacing-md:",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("app.css missing %q — components emit bare var() refs that need this floor:\n%s",
+				want, truncate(body, 600))
+		}
+	}
+}
+
 func TestUIHostCustomCSS(t *testing.T) {
 	ds := newTestUIHostWithCSS()
 

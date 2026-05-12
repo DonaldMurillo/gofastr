@@ -139,11 +139,15 @@ func (ds *UIHost) CustomCSS() string {
 // (.fui-theme-<hash> blocks for ui.Themed wrappers) + customCSS,
 // in that order. Used by the SSG so static export ships the same
 // single asset the live server serves.
+//
+// The :root block is ALWAYS emitted, even when the host has no
+// explicit App.Theme. Per-component CSS emits bare var(--*)
+// references (no in-CSS fallbacks); without the :root floor every
+// component would render with UA defaults. The DefaultTheme()
+// floor guarantees var() resolution.
 func (ds *UIHost) AppCSS() string {
-	var out string
-	if ds.App != nil && ds.App.Theme != nil {
-		out = ds.App.Theme.CSSCustomProperties() + "\n"
-	}
+	t := ds.activeTheme() // falls back to DefaultTheme() when App.Theme nil
+	out := t.CSSCustomProperties() + "\n"
 	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
 		out += overrides + "\n"
 	}
@@ -434,10 +438,10 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
 	}
 	// Single app-level CSS asset: theme :root vars + the host's
-	// customCSS payload concatenated. One request instead of two.
-	// Both legacy endpoints stay as 410 GONE so stale bookmarks /
-	// cached HTML surface clearly.
-	if ds.App != nil && (ds.App.Theme != nil || ds.customCSS != "") {
+	// customCSS payload concatenated. Always emitted — the :root
+	// floor is load-bearing for component CSS that uses bare
+	// var(--*) refs. Legacy endpoints stay 410 GONE.
+	if ds.App != nil {
 		page = strings.Replace(page,
 			"</head>",
 			`<link rel="stylesheet" href="/__gofastr/app.css">`+"\n</head>", 1)

@@ -19,7 +19,7 @@
 //	page := ui.PageHeader(ui.PageHeaderConfig{
 //	    Title:    "Customers",
 //	    Subtitle: "1,283 active",
-//	    Actions:  ui.DangerButton(ui.DangerButtonConfig{Label: "Delete all"}),
+//	    Actions:  ui.Button(ui.ButtonConfig{Label: "Delete all", Variant: ui.ButtonDanger}),
 //	})
 //
 // If a piece of work maps 1:1 to an HTML element or ARIA pattern, it

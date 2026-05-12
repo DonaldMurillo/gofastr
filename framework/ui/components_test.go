@@ -88,6 +88,32 @@ func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
 	mustContain(t, h, "ui-form-field__help")
 }
 
+// ─── FormField a11y ───
+func TestFormFieldErrorAddsAriaInvalid(t *testing.T) {
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
+	h := FormField(FormFieldConfig{
+		Label: "Name", For: "n", Error: "Required", Input: in,
+	})
+	s := string(h)
+	if !strings.Contains(s, `aria-invalid="true"`) {
+		t.Errorf("error-state FormField must add aria-invalid:\n%s", s)
+	}
+	if !strings.Contains(s, `aria-describedby="n-error"`) {
+		t.Errorf("error-state FormField must link to error message via aria-describedby:\n%s", s)
+	}
+}
+
+func TestFormFieldHelpAddsAriaDescribedBy(t *testing.T) {
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
+	h := FormField(FormFieldConfig{
+		Label: "Name", For: "n", Help: "Use your full name.", Input: in,
+	})
+	s := string(h)
+	if !strings.Contains(s, `aria-describedby="n-help"`) {
+		t.Errorf("help-state FormField must link to help text via aria-describedby:\n%s", s)
+	}
+}
+
 // ─── Button (typed variants) ───
 func TestButtonVariantsRenderClass(t *testing.T) {
 	for _, v := range []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost} {
@@ -108,6 +134,21 @@ func TestDangerButtonAliasMatchesButtonDanger(t *testing.T) {
 	b := string(Button(ButtonConfig{Label: "Delete", Variant: ButtonDanger}))
 	if a != b {
 		t.Errorf("DangerButton alias should match Button{Variant: ButtonDanger}\n--- DangerButton ---\n%s\n--- Button ---\n%s", a, b)
+	}
+}
+
+// Button{Variant: ButtonDanger} must emit ONE data-fui-comp marker
+// (ui-button), not two. The legacy dangerButtonStyle was wrapping
+// the same element with its own marker, causing two scoped CSS files
+// to ship and compete via specificity. Variant class alone handles it.
+func TestButtonDangerEmitsSingleMarker(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "Delete", Variant: ButtonDanger}))
+	count := strings.Count(h, "data-fui-comp=")
+	if count != 1 {
+		t.Errorf("Button{Variant: ButtonDanger} should emit exactly 1 data-fui-comp marker, got %d in:\n%s", count, h)
+	}
+	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
+		t.Errorf("Button{Variant: ButtonDanger} should mark as ui-button (not ui-button-danger):\n%s", h)
 	}
 }
 

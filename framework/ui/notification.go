@@ -72,15 +72,18 @@ func Notification(cfg NotificationConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
+	// Pair role with the matching aria-live politeness so SR
+	// behavior matches the implied severity. role="alert" implies
+	// assertive; "polite" would contradict it.
 	role := "status"
+	live := "polite"
 	if v == StatusDanger || v == StatusWarning {
 		role = "alert"
+		live = "assertive"
 	}
-
-	// html.Div applies class/id; we attach role + aria-live via Attrs.
 	attrs := html.Attrs{
 		"role":      role,
-		"aria-live": "polite",
+		"aria-live": live,
 	}
 
 	icon := html.Span(html.TextConfig{

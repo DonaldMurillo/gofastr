@@ -210,6 +210,42 @@ func TestStyleSheetSetEmitsVarRefs(t *testing.T) {
 	}
 }
 
+// --- Theme.Validate ------------------------------------------------------
+
+func TestThemeValidate_AcceptsDefault(t *testing.T) {
+	if err := DefaultTheme().Validate(); err != nil {
+		t.Errorf("DefaultTheme should pass validation: %v", err)
+	}
+}
+
+func TestThemeValidate_RejectsZeroValue(t *testing.T) {
+	err := Theme{}.Validate()
+	if err == nil {
+		t.Fatal("zero-valued Theme should fail validation")
+	}
+	if !strings.Contains(err.Error(), "Primary") {
+		t.Errorf("error should name the missing field (e.g. Primary): %v", err)
+	}
+}
+
+func TestThemeValidate_RejectsMissingName(t *testing.T) {
+	th := DefaultTheme()
+	th.Colors.Primary = Color{Value: "#FF0000"} // missing Name
+	err := th.Validate()
+	if err == nil {
+		t.Fatal("Color with empty Name should fail validation")
+	}
+}
+
+func TestThemeValidate_RejectsMissingValue(t *testing.T) {
+	th := DefaultTheme()
+	th.Colors.Primary = Color{Name: "primary"} // missing Value
+	err := th.Validate()
+	if err == nil {
+		t.Fatal("Color with empty Value should fail validation")
+	}
+}
+
 // --- RouteGraph preload (deprecated but still works) ----------------------
 
 func TestRouteGraphPreloadManifest(t *testing.T) {

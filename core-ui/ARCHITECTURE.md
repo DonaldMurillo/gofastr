@@ -291,6 +291,35 @@ embedded fields via reflection, emitting a unified `:root` block.
 Framework code only sees the embedded `style.Theme`; app-local
 components reference `theme.App.Brand.Logo` directly.
 
+### Section-level theme overrides
+
+Need a dark sidebar in an otherwise-light app? Branded callouts?
+Per-tenant subtree theming? Use `style.RegisterThemeOverride` +
+`ui.Themed`:
+
+```go
+// Register at package init — content-addressed, so re-registering
+// the same theme returns the same handle and ships CSS only once.
+var Dark = style.RegisterThemeOverride(func() style.Theme {
+    t := style.DefaultTheme()
+    t.Colors.Background = style.Color{Name: "background", Value: "#0a0a0a"}
+    t.Colors.Text       = style.Color{Name: "text",       Value: "#f4f4f5"}
+    return t
+}())
+
+// Wrap any subtree to apply the override.
+ui.Themed(Dark,
+    ui.Card{...},     // every Card's var(--color-text) reads dark theme
+    ui.Button{...},   // ditto
+)
+```
+
+The framework emits one `.fui-theme-<hash> { --color-…: …; }` block
+in `app.css` for every registered override. The wrapped `<div
+class="fui-theme-<hash>">` scopes the override via CSS variable
+cascade — no per-component changes, no inline `<style>`, no extra
+HTTP requests beyond the always-present app.css.
+
 ### app.css — one asset, one request
 
 The framework serves a single `/__gofastr/app.css` per app:

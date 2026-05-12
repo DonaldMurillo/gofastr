@@ -65,7 +65,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		Description: "Once your team adds the first customer, they'll appear here. You can also import from CSV.",
 		Action: render.Tag("div", map[string]string{"class": "demo-row-flex"},
 			html.Button(html.ButtonConfig{Label: "Import CSV", Class: "ui-button"}),
-			ui.DangerButton(ui.DangerButtonConfig{Label: "Reset all"}),
+			ui.Button(ui.ButtonConfig{Label: "Reset all", Variant: ui.ButtonDanger}),
 		),
 	})
 

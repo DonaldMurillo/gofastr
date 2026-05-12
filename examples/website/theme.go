@@ -53,6 +53,8 @@ func createStyleSheet(theme style.Theme) string {
 	// Header.
 	ss.Rule(".site-header").
 		Set("display", "flex", "align-items", "center", "justify-content", "space-between",
+			"flex-wrap", "wrap", // wrap on narrow viewports so nav doesn't overflow
+			"gap", "{spacing.sm}",
 			"padding", "{spacing.md} {spacing.xl}",
 			"border-bottom", "1px solid {colors.border}",
 			"background", "{colors.surface}", "position", "sticky", "top", "0", "z-index", "10").
@@ -61,7 +63,7 @@ func createStyleSheet(theme style.Theme) string {
 		Set("font-weight", "700", "font-size", "1.125rem", "color", "{colors.secondary}").
 		End()
 	ss.Rule(".site-header nav").
-		Set("display", "flex", "gap", "{spacing.lg}").End()
+		Set("display", "flex", "flex-wrap", "wrap", "gap", "{spacing.lg}").End()
 	ss.Rule(".site-header nav a").
 		Set("color", "{colors.text}", "font-weight", "500").End()
 	ss.Rule(".site-header nav a[aria-current='page']").

@@ -41,8 +41,8 @@ func (s *ThemeSwapDemoScreen) Render() render.HTML {
 		ui.Callout(ui.CalloutConfig{Title: "Heads up", Variant: ui.StatusInfo},
 			render.Text("Callouts and Buttons inherit --color-primary too — flip the radio to confirm.")),
 		render.Tag("div", map[string]string{"class": "theme-swap__row"},
-			html.Button(html.ButtonConfig{Label: "Primary action", Class: "ui-button"}),
-			ui.DangerButton(ui.DangerButtonConfig{Label: "Destructive"}),
+			ui.Button(ui.ButtonConfig{Label: "Primary action", Variant: ui.ButtonPrimary}),
+			ui.Button(ui.ButtonConfig{Label: "Destructive", Variant: ui.ButtonDanger}),
 		),
 	)
 

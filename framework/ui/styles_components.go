@@ -52,7 +52,11 @@ func buttonCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-lg);
+  /* min-height 44px = WCAG 2.5.5 minimum touch target.
+     The horizontal padding stays on the canonical spacing scale;
+     vertical padding bumps to 10px to balance the floor visually. */
+  min-height: 44px;
+  padding: 10px var(--spacing-lg);
   border: 1px solid transparent;
   border-radius: var(--radii-md);
   font: inherit;
@@ -178,7 +182,9 @@ func formFieldCSS(_ style.Theme) string {
 [data-fui-comp="ui-form-field"] input,
 [data-fui-comp="ui-form-field"] textarea,
 [data-fui-comp="ui-form-field"] select {
-  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  /* min-height 44px = WCAG 2.5.5 minimum tap target. */
+  min-height: 44px;
+  padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);

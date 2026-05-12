@@ -32,8 +32,14 @@ func NewApp(name string) *App {
 	}
 }
 
-// WithTheme sets the application theme and returns the app for chaining.
+// WithTheme sets the application theme and returns the app for
+// chaining. The theme is validated at boot — passing a partially-
+// populated theme (e.g. a Color with empty Name or Value) panics
+// with the field path naming the missing piece. This catches
+// "silently broken styling" failures at startup, not at the first
+// page render.
 func (a *App) WithTheme(theme style.Theme) *App {
+	theme.MustValidate()
 	a.Theme = &theme
 	return a
 }
