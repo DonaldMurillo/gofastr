@@ -6,7 +6,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 // TestSetThemeUpdatesWorldAppTheme is the protocol-level guarantee:

@@ -1,4 +1,4 @@
-module github.com/gofastr/gofastr
+module github.com/DonaldMurillo/gofastr
 
 go 1.26
 

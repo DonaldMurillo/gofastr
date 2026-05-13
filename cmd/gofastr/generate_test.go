@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
@@ -107,7 +107,7 @@ func TestGenerateProjectE2EGeneratedPackageBuilds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
-	goMod := "module example.com/generated\n\ngo " + goVersion + "\n\nrequire github.com/gofastr/gofastr v0.0.0\n\nreplace github.com/gofastr/gofastr => " + repoRoot + "\n"
+	goMod := "module example.com/generated\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatal(err)
 	}

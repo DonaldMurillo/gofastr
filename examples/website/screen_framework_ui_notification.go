@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/render"
-	"github.com/gofastr/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // NotificationDemoScreen lets you see Notification in two modes:

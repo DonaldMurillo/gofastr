@@ -1,7 +1,7 @@
 package html
 
 import (
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // SelectOption represents a single <option> within a <select> element.

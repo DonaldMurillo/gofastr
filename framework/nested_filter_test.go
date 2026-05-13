@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gofastr/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
 // ============================================================================

@@ -1,6 +1,6 @@
 package chat
 
-import "github.com/gofastr/gofastr/core-ui/style"
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
 
 // widgetTheme returns the canonical theme — the chat widget defines
 // its own kiln-* visual tokens via kilnVars() (emitted as a literal

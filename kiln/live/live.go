@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/gofastr/gofastr/core/openapi"
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/framework"
-	kilndb "github.com/gofastr/gofastr/kiln/db"
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/world"
-	kilnrender "github.com/gofastr/gofastr/kiln/render"
+	"github.com/DonaldMurillo/gofastr/core/openapi"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework"
+	kilndb "github.com/DonaldMurillo/gofastr/kiln/db"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
+	kilnrender "github.com/DonaldMurillo/gofastr/kiln/render"
 )
 
 // AppFactory builds a fresh framework.App. Kiln calls it on every rebuild

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/crud"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // queryTestPost models the posts entity used in typed-query tests.

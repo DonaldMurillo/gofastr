@@ -41,7 +41,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // LoadMode controls when a component's CSS is fetched by the browser.

@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/html"
-	coresignal "github.com/gofastr/gofastr/core-ui/signal"
-	"github.com/gofastr/gofastr/core/render"
-	"github.com/gofastr/gofastr/framework"
-	"github.com/gofastr/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	coresignal "github.com/DonaldMurillo/gofastr/core-ui/signal"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 //go:embed static

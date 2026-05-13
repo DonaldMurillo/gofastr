@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/registry"
-	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // Per-component CSS handles. Each function returns a self-contained

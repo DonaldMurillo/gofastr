@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gofastr/gofastr/battery/search"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/battery/search"
+	"github.com/DonaldMurillo/gofastr/framework"
 	_ "github.com/mattn/go-sqlite3"
 )
 

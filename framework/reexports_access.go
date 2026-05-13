@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/gofastr/gofastr/framework/access"
+import "github.com/DonaldMurillo/gofastr/framework/access"
 
 // Re-exports of framework/access so callers using framework.X (benchmarks,
 // example apps) keep compiling after the access package extraction.

@@ -13,12 +13,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/core-ui/widget"
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/live"
-	"github.com/gofastr/gofastr/kiln/protocol"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/live"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 //go:embed assets/host.html

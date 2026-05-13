@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // TestLookForGofastr_AbsentReturnsError confirms the soft-detect helper

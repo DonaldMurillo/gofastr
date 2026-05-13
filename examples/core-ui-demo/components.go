@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core-ui/signal"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/signal"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Product holds product data for display in cards and detail pages.

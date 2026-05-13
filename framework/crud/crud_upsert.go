@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/event"
-	"github.com/gofastr/gofastr/framework/hook"
-	"github.com/gofastr/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's

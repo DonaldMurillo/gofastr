@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // HeaderComponent is the site nav. Re-rendered on every page so the

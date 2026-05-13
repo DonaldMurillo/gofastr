@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/core/upload"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // seedUploadDB creates a posts table with an avatar TEXT column to receive

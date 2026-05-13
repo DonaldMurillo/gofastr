@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 func TestPrintFreezeDiffEmpty(t *testing.T) {

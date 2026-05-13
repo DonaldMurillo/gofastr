@@ -6,7 +6,7 @@
 Initialize the GoFastr project with proper Go module structure, folder layout, CI, and tooling.
 
 ## Deliverables
-- [ ] `go.mod` initialized as `github.com/gofastr/gofastr`
+- [ ] `go.mod` initialized as `github.com/DonaldMurillo/gofastr`
 - [ ] Folder structure:
   ```
   core/

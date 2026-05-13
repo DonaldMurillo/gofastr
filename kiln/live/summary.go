@@ -3,7 +3,7 @@ package live
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
 )
 
 // summarizeEntry builds a one-line, human-readable digest of e for the

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/core/migrate"
 	_ "github.com/mattn/go-sqlite3"
 )
 

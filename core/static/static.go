@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // Config holds the configuration for serving static files.

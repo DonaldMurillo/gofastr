@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gofastr/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // Claims represents the data embedded in a JWT token.

@@ -3,8 +3,8 @@ package framework
 import (
 	"testing"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 func TestDefineEntityWithFields(t *testing.T) {

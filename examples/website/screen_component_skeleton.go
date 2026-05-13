@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core-ui/patterns/skeleton"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 type SkeletonScreen struct{}

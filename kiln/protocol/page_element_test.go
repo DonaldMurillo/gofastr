@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gofastr/gofastr/kiln/protocol"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // makeDashboard adds a small page to the world and returns the live

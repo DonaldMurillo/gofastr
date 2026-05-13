@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofastr/gofastr/battery/auth"
-	"github.com/gofastr/gofastr/core/middleware"
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/core/upload"
-	"github.com/gofastr/gofastr/framework/crud"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/pagination"
+	"github.com/DonaldMurillo/gofastr/battery/auth"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // Full-stack E2E: spins up a real httptest.Server with the full middleware

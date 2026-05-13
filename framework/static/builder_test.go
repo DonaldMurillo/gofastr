@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	coreapp "github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/render"
-	"github.com/gofastr/gofastr/framework/uihost"
+	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 // homeScreen renders a fixed HTML body.

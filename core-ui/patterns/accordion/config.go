@@ -1,6 +1,6 @@
 package accordion
 
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 
 // Item is a single disclosure entry inside a [Group] or [Stack].
 //

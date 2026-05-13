@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // Registry stores and retrieves Entity definitions by name.

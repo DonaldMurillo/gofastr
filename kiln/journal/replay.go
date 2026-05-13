@@ -3,7 +3,7 @@ package journal
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Replay reads every entry from j and applies it to a fresh Session.

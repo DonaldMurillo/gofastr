@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // FreezeAndGenerate writes the world to dir (entities/*.json + world.json)

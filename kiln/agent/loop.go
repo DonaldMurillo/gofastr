@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 // Loop runs a multi-turn tool-use conversation against a Provider.

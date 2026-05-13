@@ -16,14 +16,14 @@ import (
 	"github.com/chromedp/chromedp/kb"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/gofastr/gofastr/kiln/chat"
-	kilnmcp "github.com/gofastr/gofastr/kiln/agent/mcp"
-	"github.com/gofastr/gofastr/kiln/db"
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/live"
-	"github.com/gofastr/gofastr/kiln/protocol"
-	"github.com/gofastr/gofastr/kiln/world"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/kiln/chat"
+	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
+	"github.com/DonaldMurillo/gofastr/kiln/db"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/live"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // testInFlight is the integration-test handle for the simulated

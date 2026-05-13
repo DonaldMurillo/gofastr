@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofastr/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 )
 
 // SlowQueryLogger emits a slog warning for any DB query whose execution time

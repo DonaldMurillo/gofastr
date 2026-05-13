@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofastr/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // testUser is a helper User implementation for tests.

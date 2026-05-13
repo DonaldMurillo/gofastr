@@ -3,7 +3,7 @@ package component
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Component is the base interface for all UI components.

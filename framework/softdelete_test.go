@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/file"
-	"github.com/gofastr/gofastr/framework/softdelete"
-	"github.com/gofastr/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/file"
+	"github.com/DonaldMurillo/gofastr/framework/softdelete"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // --- Soft Delete Tests ---

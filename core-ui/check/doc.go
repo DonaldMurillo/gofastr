@@ -7,5 +7,5 @@
 //
 // Allowed imports are limited to a safe subset of the standard library
 // (fmt, strings, strconv, html/template, html, math, time, errors)
-// and any package under github.com/gofastr/gofastr/.
+// and any package under github.com/DonaldMurillo/gofastr/.
 package check

@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/gofastr/gofastr/framework/migrate"
+import "github.com/DonaldMurillo/gofastr/framework/migrate"
 
 // Re-exports of framework/migrate so tests, generated code, and external
 // callers using framework.X keep compiling after the migrate package

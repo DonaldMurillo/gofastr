@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofastr/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/battery/embed"
 )
 
 // NewEmbedContextHook returns a [Loop.ContextHook] that queries the

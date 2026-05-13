@@ -9,10 +9,10 @@ import (
 	"os"
 	"sort"
 
-	"github.com/gofastr/gofastr/core-ui/widget"
-	"github.com/gofastr/gofastr/framework"
-	"github.com/gofastr/gofastr/kiln/effect"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/kiln/effect"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Apply registers every world surface onto app. Equivalent to calling

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // Column-typed query primitives

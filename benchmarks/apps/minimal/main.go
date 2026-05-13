@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func main() {

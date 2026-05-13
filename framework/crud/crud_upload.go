@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/file"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
 // MaxMultipartMemory is the in-memory portion of a multipart upload before

@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/gofastr/gofastr/core/render"
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
 // Position is where the widget's root anchors itself when mounted.

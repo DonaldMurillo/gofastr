@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
 // ssePayload is the JSON payload sent as SSE data for island updates.

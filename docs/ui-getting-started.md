@@ -13,7 +13,7 @@ gofastr init myapp
 cd myapp
 
 # gofastr is pre-alpha and unpublished. Point go.mod at your local clone:
-go mod edit -replace github.com/gofastr/gofastr=/path/to/gofastr
+go mod edit -replace github.com/DonaldMurillo/gofastr=/path/to/gofastr
 go mod tidy
 
 go run .
@@ -65,8 +65,8 @@ A screen is just a Go type implementing `component.Component`. Add `screens/abou
 package screens
 
 import (
-    "github.com/gofastr/gofastr/core-ui/app"
-    "github.com/gofastr/gofastr/core/render"
+    "github.com/DonaldMurillo/gofastr/core-ui/app"
+    "github.com/DonaldMurillo/gofastr/core/render"
 )
 
 type AboutScreen struct{}
@@ -101,9 +101,9 @@ A component with its own scoped CSS, lazy-loaded on first use. Add `components/s
 package components
 
 import (
-    "github.com/gofastr/gofastr/core-ui/registry"
-    "github.com/gofastr/gofastr/core-ui/style"
-    "github.com/gofastr/gofastr/core/render"
+    "github.com/DonaldMurillo/gofastr/core-ui/registry"
+    "github.com/DonaldMurillo/gofastr/core-ui/style"
+    "github.com/DonaldMurillo/gofastr/core/render"
 )
 
 var statCardStyle = registry.RegisterStyle("stat-card", statCardCSS)
@@ -162,7 +162,7 @@ What happened:
 The runtime understands `data-fui-disclosure` on a `<details>` element — closes on SPA navigation and on Escape automatically. Use the `html.Details` shortcut:
 
 ```go
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 
 html.Details(html.DetailsConfig{Disclosure: true},
     html.Summary(html.SummaryConfig{Class: "site-nav__toggle"}, render.Text("☰ Menu")),

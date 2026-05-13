@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // StatsService is a singleton that tracks app-wide stats.

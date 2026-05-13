@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	"github.com/gofastr/gofastr/core/render"
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/core-ui/widget"
-	"github.com/gofastr/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 )
 
 // counter is a simple shared signal source.

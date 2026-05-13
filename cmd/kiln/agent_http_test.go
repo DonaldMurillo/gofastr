@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 func TestAgentHTTPGetReturnsCurrentAndAvailable(t *testing.T) {

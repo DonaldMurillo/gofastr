@@ -35,8 +35,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gofastr/gofastr/battery/embed"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func main() {

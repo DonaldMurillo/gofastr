@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
 // sessionCtxKey carries the resolved *Session on the request context.

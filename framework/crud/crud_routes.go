@@ -1,8 +1,8 @@
 package crud
 
 import (
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // RegisterCrudRoutes registers the standard CRUD routes plus batch endpoints

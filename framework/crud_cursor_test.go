@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/crud"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/pagination"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // seedCursorDB creates the posts table on db and inserts N rows whose ids

@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	coremig "github.com/gofastr/gofastr/core/migrate"
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
+	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // Dialect identifies the SQL dialect the migrator emits for. It's an alias

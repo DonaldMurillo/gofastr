@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // ============================================================================

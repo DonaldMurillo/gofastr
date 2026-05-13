@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // runGenerateTS implements `gofastr generate ts [--entities=...] [--out=...]`.

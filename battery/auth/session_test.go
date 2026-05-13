@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // fakeUser is the minimal User impl for these tests.

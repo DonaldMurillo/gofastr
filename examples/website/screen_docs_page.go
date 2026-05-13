@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/markdown"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/markdown"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // DocsPageScreen is the dynamic /docs/:slug screen. It pulls slug out of

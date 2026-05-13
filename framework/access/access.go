@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // Permission represents an action permission string (e.g. "posts:read", "posts:write").

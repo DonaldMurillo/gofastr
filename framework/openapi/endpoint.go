@@ -3,8 +3,8 @@ package openapi
 import (
 	"strings"
 
-	"github.com/gofastr/gofastr/framework/crud"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // EntityEndpointPath builds the absolute URL path for a custom Endpoint

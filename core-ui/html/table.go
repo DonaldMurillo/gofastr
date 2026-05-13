@@ -1,6 +1,6 @@
 package html
 
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 
 // TableConfig configures a <table> element. Automatically adds role="table".
 type TableConfig struct {

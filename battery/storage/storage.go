@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/gofastr/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // Storage is a re-export of the upload.Storage interface for convenience.

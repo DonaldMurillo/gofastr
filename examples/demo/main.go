@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"log"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 	_ "github.com/mattn/go-sqlite3"
 )
 

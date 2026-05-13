@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gofastr/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // Customer is the entity for the CRUD demo. Kept intentionally tiny so

@@ -1,8 +1,8 @@
 package framework
 
 import (
-	"github.com/gofastr/gofastr/framework/crud"
-	"github.com/gofastr/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 )
 
 // Re-exports of framework/crud + framework/db so existing callers, generated

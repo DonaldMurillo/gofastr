@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // renderClient builds .gofastr/client/client.go — a standalone Go client for

@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/gofastr/gofastr/framework/hook"
+import "github.com/DonaldMurillo/gofastr/framework/hook"
 
 // Re-exports of framework/hook so existing callers using framework.X
 // keep compiling after the hook package extraction.

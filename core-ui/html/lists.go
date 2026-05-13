@@ -1,6 +1,6 @@
 package html
 
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 
 // ListConfig configures a list element (<ul> or <ol>). No required fields.
 type ListConfig struct {

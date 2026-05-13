@@ -1,6 +1,6 @@
 package html
 
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 
 // ImageConfig configures a void <img> element.
 // Required: Src and Alt (empty Alt = decorative, gets role="presentation").

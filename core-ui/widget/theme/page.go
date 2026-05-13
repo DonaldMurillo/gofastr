@@ -10,7 +10,7 @@
 // so a single token swap re-skins the whole app.
 package theme
 
-import "github.com/gofastr/gofastr/core-ui/style"
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
 
 // PageTheme returns the page theme. Overrides directly mutate the
 // returned theme value before it's emitted; callers compose by

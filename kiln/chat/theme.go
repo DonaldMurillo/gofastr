@@ -1,9 +1,9 @@
 package chat
 
 import (
-	"github.com/gofastr/gofastr/core-ui/style"
-	"github.com/gofastr/gofastr/core-ui/widget/theme"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/theme"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // pageCSS resolves the kiln page stylesheet through core-ui/widget/theme.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gofastr/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
 // MaxBatchSize caps how many items a single _batch request may contain.

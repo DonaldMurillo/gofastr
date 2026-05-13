@@ -3,8 +3,8 @@ package framework
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core/mcp"
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // Plugin is the base interface for GoFastr plugins.

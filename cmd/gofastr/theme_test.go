@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // TestThemeStarterPassesValidation guards against the regression where

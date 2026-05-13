@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func runGenerate(args []string) {
@@ -149,8 +149,8 @@ func renderGeneratedProject(decls []framework.EntityDeclaration) ([]generatedFil
 package entities
 
 import (
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func boolPtr(v bool) *bool { return &v }
@@ -599,8 +599,8 @@ func generateEntity(args []string) {
 	sb.WriteString(fmt.Sprintf(`package entities
 
 import (
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // %s is auto-generated. Edit freely.

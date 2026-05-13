@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/kiln/effect"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/effect"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 func newEffect(kind string, params map[string]any) world.Action {

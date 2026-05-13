@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // renderColumns builds entities/columns.go — typed column constants and
@@ -16,7 +16,7 @@ func renderColumns(decls []framework.EntityDeclaration) string {
 package entities
 
 import (
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 `)
@@ -83,7 +83,7 @@ package entities
 import (
 	"context"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 `)
@@ -183,7 +183,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 `)

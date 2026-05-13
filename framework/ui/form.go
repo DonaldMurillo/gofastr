@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // FieldErrors maps form field names to user-visible error messages.

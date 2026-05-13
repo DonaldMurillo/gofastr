@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // EagerLoad fetches related data for a set of parent IDs in batched queries,

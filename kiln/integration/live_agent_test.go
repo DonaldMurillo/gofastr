@@ -1254,7 +1254,7 @@ Stop after the two add_entity calls.`,
 			// Build it in-place into the test's temp space.
 			gofastrPath = filepath.Join(srv.Dir, "gofastr")
 			build := exec.Command("go", "build", "-o", gofastrPath,
-				"github.com/gofastr/gofastr/cmd/gofastr")
+				"github.com/DonaldMurillo/gofastr/cmd/gofastr")
 			build.Stdout = newLogPipe(t, "go-build")
 			build.Stderr = newLogPipe(t, "go-build")
 			if err := build.Run(); err != nil {
@@ -1311,8 +1311,8 @@ Stop after the two add_entity calls.`,
 
 	goMod := "module compile-check\n\n" +
 		"go 1.26\n\n" +
-		"require github.com/gofastr/gofastr v0.0.0-00010101000000-000000000000\n\n" +
-		"replace github.com/gofastr/gofastr => " + repoRootStr + "\n"
+		"require github.com/DonaldMurillo/gofastr v0.0.0-00010101000000-000000000000\n\n" +
+		"replace github.com/DonaldMurillo/gofastr => " + repoRootStr + "\n"
 	if err := os.WriteFile(filepath.Join(freezeDir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}

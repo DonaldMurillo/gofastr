@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 // Provider is the LLM transport. Implementations talk to Claude,

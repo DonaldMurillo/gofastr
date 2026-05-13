@@ -10,7 +10,7 @@
 ## 2026-05-07 - architecture-review
 
 - Scope: `testing`, `core-ui`, `framework`
-- Symptom: `go test ./...` needs permission to bind local `httptest` ports, and the current real failure is `github.com/gofastr/gofastr/core-ui/app` overlay wrapper expectations.
+- Symptom: `go test ./...` needs permission to bind local `httptest` ports, and the current real failure is `github.com/DonaldMurillo/gofastr/core-ui/app` overlay wrapper expectations.
 - Evidence: `go test ./core-ui/app` fails `TestNewDrawer`, `TestNewSheet`, and `TestNewDialog`; `go test ./core/query ./framework ./core/middleware ./cmd/gofastr` passes.
 - Next time: run focused package tests first, then escalate the full suite only when browser/httptest packages are required.
 

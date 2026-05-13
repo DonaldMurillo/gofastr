@@ -70,7 +70,7 @@ runner in your own command.
 ## Programmatic API
 
 ```go
-import "github.com/gofastr/gofastr/core/migrate"
+import "github.com/DonaldMurillo/gofastr/core/migrate"
 
 m := migrate.New(db,
     migrate.WithDialect(migrate.DialectPostgres),

@@ -1,6 +1,6 @@
 package theme
 
-import "github.com/gofastr/gofastr/core-ui/style"
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
 
 // Default returns the canonical framework theme.
 //

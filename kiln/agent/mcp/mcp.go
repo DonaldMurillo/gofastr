@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	mcpcore "github.com/gofastr/gofastr/core/mcp"
-	"github.com/gofastr/gofastr/kiln/agent"
-	"github.com/gofastr/gofastr/kiln/protocol"
+	mcpcore "github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/kiln/agent"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 // Register registers every Kiln tool against an MCP server.

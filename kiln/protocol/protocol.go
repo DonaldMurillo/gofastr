@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/live"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/live"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Result is the structured response every tool returns. The shape is the

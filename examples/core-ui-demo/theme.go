@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func createTheme() style.Theme {

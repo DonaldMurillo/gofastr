@@ -36,7 +36,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofastr/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/battery/embed"
 )
 
 type query struct {

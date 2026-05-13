@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/mcp"
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // RegisterEntityMCPTools exposes a CRUD handler through MCP tools.

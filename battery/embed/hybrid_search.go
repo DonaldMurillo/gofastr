@@ -3,7 +3,7 @@ package embed
 import (
 	"context"
 
-	"github.com/gofastr/gofastr/battery/search"
+	"github.com/DonaldMurillo/gofastr/battery/search"
 )
 
 // WrapSearchBackend adapts a [battery/search].Backend to the

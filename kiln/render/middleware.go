@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // middlewareBuilder produces a router.Middleware from declarative config.

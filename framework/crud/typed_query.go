@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // TypedQuery is a generic, fluent query builder that returns []*T from the

@@ -15,7 +15,7 @@
 package breadcrumbs
 
 import (
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Crumb is one step in the breadcrumb trail.

@@ -93,7 +93,7 @@ module <module-path>
 
 go 1.22
 
-require github.com/gofastr/gofastr v0.1.0
+require github.com/DonaldMurillo/gofastr v0.1.0
 ```
 
 (Use the actual module path and version.)
@@ -104,7 +104,7 @@ require github.com/gofastr/gofastr v0.1.0
 package main
 
 import (
-    "github.com/gofastr/gofastr"
+    "github.com/DonaldMurillo/gofastr"
     _ "<module-path>/entities"  // if using Go entity files
 )
 

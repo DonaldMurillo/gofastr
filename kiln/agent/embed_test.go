@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/battery/embed"
 )
 
 func TestEmbedContextHookInjectsRelevantChunks(t *testing.T) {

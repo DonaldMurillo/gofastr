@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/framework/dsl"
-	"github.com/gofastr/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/dsl"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // ============================================================================

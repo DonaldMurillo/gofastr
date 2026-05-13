@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/gofastr/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/framework/entity"
 
 // Re-exports of framework/entity so existing callers, generated code, and
 // example apps using framework.X keep compiling after the entity package

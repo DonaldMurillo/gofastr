@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofastr/gofastr/framework/cron"
+	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
 // ============================================================================

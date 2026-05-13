@@ -8,7 +8,7 @@ record.
 ## Wire it up
 
 ```go
-import "github.com/gofastr/gofastr/core/upload"
+import "github.com/DonaldMurillo/gofastr/core/upload"
 
 storage, _ := upload.NewLocal("./uploads", "/uploads/")
 app := framework.NewApp(

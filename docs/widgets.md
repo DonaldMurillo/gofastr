@@ -24,8 +24,8 @@ chat panel is implemented as a `FloatingPanel` widget.
 
 ```go
 import (
-    "github.com/gofastr/gofastr/core-ui/widget"
-    "github.com/gofastr/gofastr/core-ui/widget/preset"
+    "github.com/DonaldMurillo/gofastr/core-ui/widget"
+    "github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 )
 
 panel := preset.FloatingPanel("my-panel").

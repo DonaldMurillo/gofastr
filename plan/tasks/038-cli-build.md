@@ -153,7 +153,7 @@ Parse `go build` output and enhance:
 
   This is likely a code generation issue.
   Try: gofastr build --clean to regenerate all files.
-  If the issue persists, report a bug: https://github.com/gofastr/gofastr/issues
+  If the issue persists, report a bug: https://github.com/DonaldMurillo/gofastr/issues
 ```
 
 #### JSON error output
@@ -168,7 +168,7 @@ Parse `go build` output and enhance:
     "output": ".gofastr/entities/posts_routes.go:42: undefined: PostHandler",
     "suggestions": [
       "Run 'gofastr build --clean' to regenerate all files",
-      "Report a bug at https://github.com/gofastr/gofastr/issues"
+      "Report a bug at https://github.com/DonaldMurillo/gofastr/issues"
     ]
   }
 }

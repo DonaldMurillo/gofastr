@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // TestDefaultMiddlewareWrapsExplicitRoutes pins the bug fixed in

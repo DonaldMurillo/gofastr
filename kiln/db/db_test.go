@@ -6,7 +6,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/gofastr/gofastr/kiln/db"
+	"github.com/DonaldMurillo/gofastr/kiln/db"
 )
 
 func TestEphemeralSQLiteCreatesUsableDB(t *testing.T) {

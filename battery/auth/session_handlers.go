@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // UserRepository is what the session login flow needs from the host app:

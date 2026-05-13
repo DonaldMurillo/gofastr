@@ -1,7 +1,7 @@
 package openapi
 
 import (
-	"github.com/gofastr/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // FieldToSchema converts a single schema.Field into an OpenAPI-compatible

@@ -12,7 +12,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/gofastr/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // --- helpers ---

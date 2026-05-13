@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // testComponent is a simple component for testing.

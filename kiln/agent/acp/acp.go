@@ -8,8 +8,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/gofastr/gofastr/kiln/agent"
-	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/agent"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 // Server speaks the JSON-RPC subset of ACP needed to drive Kiln.

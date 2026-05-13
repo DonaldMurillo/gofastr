@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // DSLQuery is the parsed representation of a GoFastr query DSL string.

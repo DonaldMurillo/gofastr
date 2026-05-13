@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // auditApp builds a single-entity app with the audit helper enabled.

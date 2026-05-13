@@ -11,8 +11,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gofastr/gofastr/kiln/expr"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/expr"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Scope is the runtime context an action sees. Entity is the data being

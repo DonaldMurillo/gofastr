@@ -58,11 +58,11 @@ var allowedImports = map[string]bool{
 	"time":          true,
 	"errors":        true,
 
-	"github.com/gofastr/gofastr/core/render":       true,
-	"github.com/gofastr/gofastr/core-ui/html":  true,
-	"github.com/gofastr/gofastr/core-ui/component": true,
-	"github.com/gofastr/gofastr/core-ui/signal":    true,
-	"github.com/gofastr/gofastr/core-ui/style":     true,
+	"github.com/DonaldMurillo/gofastr/core/render":       true,
+	"github.com/DonaldMurillo/gofastr/core-ui/html":  true,
+	"github.com/DonaldMurillo/gofastr/core-ui/component": true,
+	"github.com/DonaldMurillo/gofastr/core-ui/signal":    true,
+	"github.com/DonaldMurillo/gofastr/core-ui/style":     true,
 }
 
 // forbiddenBuiltinCalls maps built-in function names to violation messages.

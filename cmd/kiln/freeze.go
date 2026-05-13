@@ -7,8 +7,8 @@ import (
 	"os"
 	"sort"
 
-	"github.com/gofastr/gofastr/kiln/freeze"
-	"github.com/gofastr/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/freeze"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
 )
 
 // runFreeze: kiln freeze --journal .kiln.session.jsonl --dir build/

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/handler"
-	"github.com/gofastr/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
 // RequireAuth returns middleware that validates a Bearer JWT token

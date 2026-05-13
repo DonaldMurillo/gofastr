@@ -18,8 +18,8 @@
 // (title, description, type), so Register reads it directly:
 //
 //	import (
-//	    "github.com/gofastr/gofastr/core-ui/app"
-//	    "github.com/gofastr/gofastr/core/render"
+//	    "github.com/DonaldMurillo/gofastr/core-ui/app"
+//	    "github.com/DonaldMurillo/gofastr/core/render"
 //	)
 //
 //	type Home struct{}

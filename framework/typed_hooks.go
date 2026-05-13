@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/gofastr/gofastr/framework/hook"
-	"github.com/gofastr/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // Typed hooks

@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gofastr/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/battery/embed"
 )
 
 // runEmbed dispatches `gofastr embed <subcommand>`.

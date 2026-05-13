@@ -11,19 +11,19 @@ import (
 	"strings"
 	"time"
 
-	coreoa "github.com/gofastr/gofastr/core/openapi"
+	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
-	"github.com/gofastr/gofastr/core/mcp"
-	"github.com/gofastr/gofastr/core/middleware"
-	"github.com/gofastr/gofastr/core/router"
-	"github.com/gofastr/gofastr/core/upload"
-	"github.com/gofastr/gofastr/framework/cron"
-	"github.com/gofastr/gofastr/framework/crud"
-	"github.com/gofastr/gofastr/framework/entity"
-	"github.com/gofastr/gofastr/framework/event"
-	"github.com/gofastr/gofastr/framework/hook"
-	"github.com/gofastr/gofastr/framework/migrate"
-	"github.com/gofastr/gofastr/framework/openapi"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/framework/cron"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/framework/openapi"
 )
 
 // Mountable is anything that can register routes on the framework's router.

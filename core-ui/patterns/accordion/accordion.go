@@ -1,7 +1,7 @@
 package accordion
 
 import (
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Group renders an exclusive accordion: at most one item open at a time.

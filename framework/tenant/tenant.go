@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/handler"
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // tenantIDKey is the context key for the string tenant identifier

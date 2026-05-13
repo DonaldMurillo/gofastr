@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Notification is the styled content for an ephemeral toast. Drop it

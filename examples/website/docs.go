@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gofastr/gofastr/core/markdown"
+	"github.com/DonaldMurillo/gofastr/core/markdown"
 )
 
 // docCatalog is a process-scoped index of available docs. It scans the docs

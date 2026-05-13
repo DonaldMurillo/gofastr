@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/gofastr/gofastr/framework/event"
+import "github.com/DonaldMurillo/gofastr/framework/event"
 
 // Re-exports of framework/event so existing callers and generated code
 // using framework.X keep compiling after the event package extraction.

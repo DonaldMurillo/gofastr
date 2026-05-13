@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/live"
-	"github.com/gofastr/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/live"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 // countToolsAndErrors snapshots the journaled tool counts so the

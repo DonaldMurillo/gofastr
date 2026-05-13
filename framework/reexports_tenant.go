@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/gofastr/gofastr/framework/tenant"
+import "github.com/DonaldMurillo/gofastr/framework/tenant"
 
 // Re-exports of framework/tenant so callers using framework.X (benchmarks,
 // example apps) keep compiling after the tenant package extraction.

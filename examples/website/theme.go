@@ -1,15 +1,15 @@
 package main
 
 import (
-	"github.com/gofastr/gofastr/core-ui/patterns/accordion"
-	"github.com/gofastr/gofastr/core-ui/patterns/breadcrumbs"
-	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
-	"github.com/gofastr/gofastr/core-ui/patterns/progress"
-	"github.com/gofastr/gofastr/core-ui/patterns/skeleton"
-	"github.com/gofastr/gofastr/core-ui/style"
-	"github.com/gofastr/gofastr/core-ui/patterns/tabs"
-	"github.com/gofastr/gofastr/framework/ui"
-	"github.com/gofastr/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/tabs"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // createTheme builds the website's visual language. The website

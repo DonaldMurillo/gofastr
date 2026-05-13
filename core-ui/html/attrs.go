@@ -3,7 +3,7 @@ package html
 import (
 	"strings"
 
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Attrs is a type alias for map[string]string, matching [render.Attrs].

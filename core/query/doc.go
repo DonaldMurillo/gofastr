@@ -1,3 +1,3 @@
 // Package query is part of the GoFastr framework.
-// See https://github.com/gofastr/gofastr for documentation.
+// See https://github.com/DonaldMurillo/gofastr for documentation.
 package query

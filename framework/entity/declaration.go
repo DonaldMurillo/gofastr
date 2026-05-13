@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // EntityDeclaration is the JSON shape accepted by EntityFromFile and the CLI

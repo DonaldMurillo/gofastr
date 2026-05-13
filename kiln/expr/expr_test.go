@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/kiln/expr"
+	"github.com/DonaldMurillo/gofastr/kiln/expr"
 )
 
 func eval(t *testing.T, src string, scope expr.MapScope) any {

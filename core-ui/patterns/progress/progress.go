@@ -15,7 +15,7 @@ package progress
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Config configures a progress bar.

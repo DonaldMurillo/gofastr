@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // FilterOp represents a comparison operator for query filtering.

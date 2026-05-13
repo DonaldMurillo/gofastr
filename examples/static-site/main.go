@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gofastr/gofastr/core/static"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/static"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func main() {

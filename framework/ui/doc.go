@@ -13,8 +13,8 @@
 //
 // Consumers import this package directly:
 //
-//	import "github.com/gofastr/gofastr/framework/ui"
-//	import "github.com/gofastr/gofastr/framework/ui/theme"
+//	import "github.com/DonaldMurillo/gofastr/framework/ui"
+//	import "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 //
 //	page := ui.PageHeader(ui.PageHeaderConfig{
 //	    Title:    "Customers",

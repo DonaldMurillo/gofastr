@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/registry"
-	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // pageHeaderStyle registers PageHeader's CSS with the framework

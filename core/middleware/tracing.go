@@ -30,7 +30,7 @@ import (
 // drops everything. Callers wire up Jaeger / OTLP / etc. via the standard
 // otel.SetTracerProvider.
 func Tracing() Middleware {
-	tracer := otel.Tracer("github.com/gofastr/gofastr/core/middleware")
+	tracer := otel.Tracer("github.com/DonaldMurillo/gofastr/core/middleware")
 	// Always use W3C TraceContext + Baggage as the propagator. Apps that
 	// want a custom propagator should wire one before adding this middleware
 	// and we'll honour the global; the composite below is the canonical

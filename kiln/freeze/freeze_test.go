@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gofastr/gofastr/kiln/freeze"
-	"github.com/gofastr/gofastr/kiln/world"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/kiln/freeze"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func TestFreezeWritesEntities(t *testing.T) {

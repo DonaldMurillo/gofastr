@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/gofastr/gofastr/core-ui/style"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Themed wraps children in a <div class="fui-theme-<hash>"> so the

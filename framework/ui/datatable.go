@@ -5,9 +5,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core-ui/patterns/pagination"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // DataTable is a server-rendered list view that composes core-ui's

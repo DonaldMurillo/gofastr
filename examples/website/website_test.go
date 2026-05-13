@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/framework/static"
+	"github.com/DonaldMurillo/gofastr/framework/static"
 )
 
 // TestSetupServerWiresAllExpectedRoutes ensures the website's screen

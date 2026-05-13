@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gofastr/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // ToolHandler is the function signature for MCP tool handlers.

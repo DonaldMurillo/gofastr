@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/html"
-	"github.com/gofastr/gofastr/core-ui/signal"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/signal"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // CartDrawer is a full-page cart view that uses a Signal for count.

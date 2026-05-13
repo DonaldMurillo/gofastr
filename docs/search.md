@@ -8,7 +8,7 @@ a real engine (Postgres FTS, Bleve, Meilisearch, etc.) behind the same
 ## Quickstart
 
 ```go
-import "github.com/gofastr/gofastr/battery/search"
+import "github.com/DonaldMurillo/gofastr/battery/search"
 
 index := search.NewMemory()
 

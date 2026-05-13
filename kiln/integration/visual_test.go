@@ -11,9 +11,9 @@ import (
 	"github.com/chromedp/chromedp"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/gofastr/gofastr/kiln/journal"
-	"github.com/gofastr/gofastr/kiln/protocol"
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // screenshotDir is where we drop captured PNGs for human review.

@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/framework"
-	"github.com/gofastr/gofastr/framework/static"
-	"github.com/gofastr/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/static"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 func main() {

@@ -1,6 +1,6 @@
 package html
 
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 
 // DivConfig configures a <div> element. No required fields.
 type DivConfig struct {

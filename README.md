@@ -21,6 +21,15 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 
 Requires Go 1.26+.
 
+Install the CLIs straight from GitHub:
+
+```bash
+go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
+go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest
+```
+
+Or clone for development on the framework itself:
+
 ```bash
 git clone https://github.com/DonaldMurillo/gofastr.git
 cd gofastr
@@ -304,7 +313,6 @@ GoFastr is pre-1.0 and explicitly not stable:
 - The `framework/` entity layer is solid for SQLite + Postgres CRUD apps.
 - `core-ui/` is the active research frontier — APIs change between commits.
 - The CLI binary blank-imports only `github.com/mattn/go-sqlite3`. To run migrations against Postgres, build a custom binary that imports your driver of choice.
-- The module path in `go.mod` (`github.com/gofastr/gofastr`) does not yet match this repository's path; clone the repo locally and use a `replace` directive until the module is published.
 
 ## Contributing
 

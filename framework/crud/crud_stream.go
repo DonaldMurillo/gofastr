@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // streamListThreshold is the limit beyond which the List handler

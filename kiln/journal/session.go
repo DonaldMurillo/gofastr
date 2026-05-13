@@ -3,7 +3,7 @@ package journal
 import (
 	"time"
 
-	"github.com/gofastr/gofastr/kiln/world"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Session is the materialized state derived from replaying a journal.

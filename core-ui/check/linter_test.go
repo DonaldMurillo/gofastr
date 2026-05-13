@@ -20,7 +20,7 @@ func TestLintValidFile(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
 import "fmt"
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Render() string { return fmt.Sprintf("hello") }
 `
 	path := writeTempGoFile(t, dir, "valid.ui.go", content)
@@ -176,8 +176,8 @@ func Ok() {
 func TestLintFrameworkImports(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
-import "github.com/gofastr/gofastr/core-ui/component"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/component"
 func Ok() { _ = html.Div() }
 `
 	path := writeTempGoFile(t, dir, "framework.ui.go", content)
@@ -363,7 +363,7 @@ func Bad() { _ = context.Background() }
 func TestLintNavMissingLabel(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Nav(html.NavConfig{Class: "main"})
 }
@@ -390,7 +390,7 @@ func Bad() {
 func TestLintNavWithLabel(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Nav(html.NavConfig{Label: "Main"})
 }
@@ -408,7 +408,7 @@ func Ok() {
 func TestLintSectionMissingLabel(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Section(html.SectionConfig{Class: "intro"})
 }
@@ -426,7 +426,7 @@ func Bad() {
 func TestLintSectionWithLabelledBy(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Section(html.SectionConfig{LabelledBy: "heading-1"})
 }
@@ -444,7 +444,7 @@ func Ok() {
 func TestLintHeadingMissingLevel(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Heading(html.HeadingConfig{Class: "title"})
 }
@@ -462,7 +462,7 @@ func Bad() {
 func TestLintHeadingWithLevel(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Heading(html.HeadingConfig{Level: 2})
 }
@@ -480,7 +480,7 @@ func Ok() {
 func TestLintButtonMissingLabel(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Button(html.ButtonConfig{Class: "btn"})
 }
@@ -498,7 +498,7 @@ func Bad() {
 func TestLintLinkMissingHref(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Link(html.LinkConfig{Text: "Click"})
 }
@@ -526,7 +526,7 @@ func Bad() {
 func TestLintLinkComplete(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Link(html.LinkConfig{Href: "/about", Text: "About"})
 }
@@ -544,7 +544,7 @@ func Ok() {
 func TestLintImageMissingSrc(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Image(html.ImageConfig{Alt: "photo"})
 }
@@ -562,7 +562,7 @@ func Bad() {
 func TestLintImageComplete(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Image(html.ImageConfig{Src: "/img.jpg", Alt: "Photo"})
 }
@@ -580,7 +580,7 @@ func Ok() {
 func TestLintInputMissingFields(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Input(html.InputConfig{Class: "field"})
 }
@@ -614,7 +614,7 @@ func Bad() {
 func TestLintGroupMissingRole(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Group(html.GroupConfig{AriaLabel: "info"})
 }
@@ -632,7 +632,7 @@ func Bad() {
 func TestLintGroupWithRole(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Group(html.GroupConfig{Role: "status"})
 }
@@ -650,7 +650,7 @@ func Ok() {
 func TestLintDivNoRequiredFields(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Div(html.DivConfig{})
 }
@@ -669,7 +669,7 @@ func TestLintConfigPassedAsVariable(t *testing.T) {
 	dir := t.TempDir()
 	// When config is a variable (not a struct literal), linter can't check it
 	content := `package test
-import "github.com/gofastr/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok(cfg html.NavConfig) {
 	html.Nav(cfg)
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gofastr/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 )
 
 // inTx executes fn within a database transaction. On error, the transaction

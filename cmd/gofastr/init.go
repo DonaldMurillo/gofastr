@@ -90,10 +90,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core/migrate"
-	"github.com/gofastr/gofastr/framework"
-	"github.com/gofastr/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
 
 	"%s/entities"
@@ -153,8 +153,8 @@ func getEnv(key, fallback string) string {
 	homeContent := fmt.Sprintf(`package screens
 
 import (
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 type HomeScreen struct{}
@@ -183,9 +183,9 @@ func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 	entitiesContent := `package entities
 
 import (
-	"github.com/gofastr/gofastr/core/migrate"
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // RegisterAll registers all entity definitions with the app.
@@ -296,7 +296,7 @@ bin/
 	fmt.Println("  Note: gofastr is pre-alpha and unpublished. If `go mod tidy`")
 	fmt.Println("  fails with \"Repository not found\", add a `replace` directive")
 	fmt.Println("  pointing at your local clone:")
-	fmt.Println("    go mod edit -replace github.com/gofastr/gofastr=/path/to/clone")
+	fmt.Println("    go mod edit -replace github.com/DonaldMurillo/gofastr=/path/to/clone")
 	fmt.Println()
 }
 

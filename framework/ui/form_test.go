@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 )
 
 func TestFormRequiresAction(t *testing.T) {

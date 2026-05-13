@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // Entity ties a table name to a schema.Schema for diff purposes.

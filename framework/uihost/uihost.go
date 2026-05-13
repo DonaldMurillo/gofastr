@@ -22,13 +22,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/component"
-	"github.com/gofastr/gofastr/core-ui/island"
-	"github.com/gofastr/gofastr/core-ui/registry"
-	"github.com/gofastr/gofastr/core-ui/runtime"
-	"github.com/gofastr/gofastr/core-ui/style"
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/island"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // UIHost mounts a core-ui application onto a router. It serves rendered

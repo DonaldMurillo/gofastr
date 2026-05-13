@@ -79,9 +79,9 @@ func runThemeInit(args []string) {
 	fmt.Println("Next — wire it into main.go:")
 	fmt.Println()
 	fmt.Println("    import (")
-	fmt.Println("        \"github.com/gofastr/gofastr/core-ui/app\"")
-	fmt.Println("        \"github.com/gofastr/gofastr/framework\"")
-	fmt.Println("        \"github.com/gofastr/gofastr/framework/uihost\"")
+	fmt.Println("        \"github.com/DonaldMurillo/gofastr/core-ui/app\"")
+	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework\"")
+	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework/uihost\"")
 	fmt.Println("        \"<your-module>/theme\"")
 	fmt.Println("    )")
 	fmt.Println()
@@ -123,7 +123,7 @@ package theme
 import (
 	"time"
 
-	"github.com/gofastr/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // App is the app's design system. Pass it to the host:

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/core-ui/style"
-	"github.com/gofastr/gofastr/core-ui/widget/theme"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/theme"
 )
 
 func TestPageThemeIncludesCanonicalDefaults(t *testing.T) {

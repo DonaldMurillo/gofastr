@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/stream"
-	"github.com/gofastr/gofastr/framework/event"
-	"github.com/gofastr/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // eventPayloadEntity is the map key under which CRUD events stamp the entity

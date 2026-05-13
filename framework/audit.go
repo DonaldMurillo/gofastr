@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gofastr/gofastr/framework/hook"
-	"github.com/gofastr/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // AuditConfig configures the audit log helper.

@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/core/static"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/static"
+	"github.com/DonaldMurillo/gofastr/framework"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -119,7 +119,7 @@ func seed(db *sql.DB) {
 	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a2', 'Why We Built GoFastr', 'The story behind the framework.', 'Every framework we tried assumed humans write every route by hand. We wanted something designed for AI coding agents as the primary author. GoFastr is a two-layer framework: core primitives for control, entity system for speed.', 'story')`)
 	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a3', 'MCP-Native Apps', 'Making your app an MCP server.', 'The Model Context Protocol lets AI tools interact with your app directly. With GoFastr, every entity can auto-generate MCP tools — list, get, create, update, delete — so any MCP client can work with your data out of the box.', 'tutorial')`)
 
-	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p1', 'GoFastr', 'Go fullstack framework for the AI era', 'https://github.com/gofastr/gofastr')`)
-	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p2', 'GoFastr CLI', 'Command-line tools for scaffolding and dev', 'https://github.com/gofastr/gofastr')`)
-	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p3', 'Example Apps', 'Reference applications built with GoFastr', 'https://github.com/gofastr/gofastr/tree/main/examples')`)
+	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p1', 'GoFastr', 'Go fullstack framework for the AI era', 'https://github.com/DonaldMurillo/gofastr')`)
+	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p2', 'GoFastr CLI', 'Command-line tools for scaffolding and dev', 'https://github.com/DonaldMurillo/gofastr')`)
+	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p3', 'Example Apps', 'Reference applications built with GoFastr', 'https://github.com/DonaldMurillo/gofastr/tree/main/examples')`)
 }

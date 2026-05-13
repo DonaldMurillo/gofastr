@@ -21,7 +21,7 @@ func writeFixture(t *testing.T, dir, name, body string) {
 func TestLintNoInlineScripts_FlagsInlineBlock(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var x = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)
 	res, err := LintNoInlineScripts(dir)
@@ -36,7 +36,7 @@ var x = render.HTML(`+"`<script>alert(1)</script>`"+`)
 func TestLintNoInlineScripts_AllowsExternalSrc(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "ok.go", `package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var x = render.HTML(`+"`<script src=\"/x.js\"></script>`"+`)
 `)
 	res, err := LintNoInlineScripts(dir)
@@ -51,7 +51,7 @@ var x = render.HTML(`+"`<script src=\"/x.js\"></script>`"+`)
 func TestLintNoInlineScripts_FlagsTagCallWithChildren(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.Tag("script", nil, render.HTML("alert(1)"))
 `)
 	res, err := LintNoInlineScripts(dir)
@@ -66,7 +66,7 @@ var _ = render.Tag("script", nil, render.HTML("alert(1)"))
 func TestLintNoInlineScripts_AllowsTagCallWithSrc(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "ok.go", `package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.Tag("script", map[string]string{"src": "/x.js"})
 `)
 	res, err := LintNoInlineScripts(dir)
@@ -81,7 +81,7 @@ var _ = render.Tag("script", map[string]string{"src": "/x.js"})
 func TestLintNoInlineScripts_SkipsTestFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad_test.go", `package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)
 	res, err := LintNoInlineScripts(dir)
@@ -97,7 +97,7 @@ func TestLintNoInlineScripts_HonorsIgnoreDirective(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `//check-csp:ignore-file
 package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)
 	res, err := LintNoInlineScripts(dir)
@@ -112,7 +112,7 @@ var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 func TestLintNoInlineScripts_ReportsLineNumber(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `package x
-import "github.com/gofastr/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML("ok")
 var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)

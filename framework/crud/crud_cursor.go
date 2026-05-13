@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/framework/filter"
-	"github.com/gofastr/gofastr/framework/pagination"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // cursorFields returns the ordered list of columns the handler keysets on.

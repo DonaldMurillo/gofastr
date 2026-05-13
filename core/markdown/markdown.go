@@ -3,7 +3,7 @@ package markdown
 import (
 	"strings"
 
-	"github.com/gofastr/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Document is the result of parsing a Markdown source.

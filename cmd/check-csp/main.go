@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gofastr/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/core-ui/check"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // runMigrateDiff prints the ALTER TABLE statements needed to reconcile the

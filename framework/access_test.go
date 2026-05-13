@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gofastr/gofastr/framework/access"
-	"github.com/gofastr/gofastr/framework/event"
-	"github.com/gofastr/gofastr/framework/pagination"
+	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // --- Access Control Tests ---

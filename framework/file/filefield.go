@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofastr/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // FileField holds metadata about an uploaded file associated with an entity field.

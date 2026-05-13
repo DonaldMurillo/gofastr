@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofastr/gofastr/battery/embed"
-	"github.com/gofastr/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/battery/embed"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // TestEmbedDemoSmoke wires the demo's plugin onto a fresh App + Router

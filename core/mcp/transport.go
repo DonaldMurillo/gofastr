@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/gofastr/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // ServeHTTP handles HTTP POST requests for MCP JSON-RPC calls.

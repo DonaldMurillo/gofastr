@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	coreapp "github.com/gofastr/gofastr/core-ui/app"
-	"github.com/gofastr/gofastr/core-ui/runtime"
-	"github.com/gofastr/gofastr/framework/uihost"
+	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 // Builder generates a static-site snapshot from a UIHost.

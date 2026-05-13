@@ -6,7 +6,7 @@
 // customize (slots, signals, RPCs) before .Build()ing.
 package preset
 
-import "github.com/gofastr/gofastr/core-ui/widget"
+import "github.com/DonaldMurillo/gofastr/core-ui/widget"
 
 // FloatingPanel is a corner-anchored, persistent panel — useful for
 // chat surfaces, devtools, build status. Defaults to BottomRight.

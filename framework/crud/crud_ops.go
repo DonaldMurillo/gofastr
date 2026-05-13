@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gofastr/gofastr/core/query"
-	"github.com/gofastr/gofastr/core/schema"
-	"github.com/gofastr/gofastr/framework/hook"
-	"github.com/gofastr/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // doCreate runs the BeforeCreate → INSERT → AfterCreate chain for a single

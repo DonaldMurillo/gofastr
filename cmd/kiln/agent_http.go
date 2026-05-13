@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/gofastr/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // mountAgentRoutes registers the runtime agent-control endpoints on r.
