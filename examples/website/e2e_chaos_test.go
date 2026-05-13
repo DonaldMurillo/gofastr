@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -472,6 +473,124 @@ func TestE2E_Chaos_HamburgerClosesOnNavAndEscape(t *testing.T) {
 	}
 	if afterEsc["open"] != false {
 		t.Errorf("hamburger menu should close on Escape; got open=%v", afterEsc["open"])
+	}
+}
+
+// TestE2E_Chaos_PaginationRapidClickWins asserts that under rapid
+// rage-clicking across pagination buttons, the FINAL aria-current
+// matches the last button clicked — not whatever response happened
+// to arrive last. The chaos run found page 5 winning when the last
+// click was page 1. Fix: per-signal AbortController dedup in runtime.
+func TestE2E_Chaos_PaginationRapidClickWins(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var info map[string]any
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/pagination"),
+		pageReady(),
+		chromedp.Evaluate(`(() => {
+            const btns = [...document.querySelectorAll('[data-fui-rpc]')].filter(e => /^[0-9]+$/.test(e.textContent.trim()));
+            if (btns.length < 5) return {missing: true, found: btns.length};
+            // Click pages in order: 1,2,3,4,5,2,3,4,5,1 — last click is page 1.
+            for (const i of [0,1,2,3,4,1,2,3,4,0]) btns[i].click();
+            return new Promise(resolve => setTimeout(() => {
+                const cur = document.querySelector('[aria-current="page"]');
+                resolve({
+                    finalCurrent: cur?.textContent?.trim() ?? '',
+                    found: btns.length,
+                });
+            }, 1500));
+        })()`, &info,
+			func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if info["missing"] == true {
+		t.Skipf("pagination demo not present (%v buttons found)", info["found"])
+	}
+	if got, _ := info["finalCurrent"].(string); got != "1" {
+		t.Errorf("after 10 rapid clicks ending on page 1, aria-current must be '1'; got %q", got)
+	}
+}
+
+// TestE2E_Chaos_HomeNoMobileScroll asserts the home page contains no
+// horizontal overflow at 320/375/414 viewports. The chaos run found
+// the quickstart <pre> was overflowing because of a missing
+// overflow-x rule.
+func TestE2E_Chaos_HomeNoMobileScroll(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	for _, w := range []int{320, 375, 414} {
+		w := w
+		t.Run(fmt.Sprintf("%dpx", w), func(t *testing.T) {
+			var dims map[string]float64
+			err := chromedp.Run(ctx,
+				chromedp.EmulateViewport(int64(w), 800),
+				chromedp.Navigate(base+"/"),
+				pageReady(),
+				chromedp.Evaluate(`(() => ({sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth}))()`, &dims),
+			)
+			if err != nil {
+				t.Fatalf("chromedp: %v", err)
+			}
+			if dims["sw"] > dims["cw"] {
+				t.Errorf("/ at %dpx: scrollWidth=%.0f > clientWidth=%.0f (horizontal overflow)", w, dims["sw"], dims["cw"])
+			}
+		})
+	}
+}
+
+// TestE2E_Chaos_SingleLandmarkPerPage asserts each page emits exactly
+// ONE <main>, <header role=banner>, and <footer role=contentinfo>.
+// The chaos run found nested duplicates on every route (outer
+// landmark wraps inner copy) — invalid HTML and confuses screen-
+// reader landmark navigation.
+func TestE2E_Chaos_SingleLandmarkPerPage(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	// /examples/ has a long-poll SSE island; pageReady is insufficient
+	// and the chromedp context times out before assertions run. The
+	// landmark fix applies uniformly across all screens so 6 routes
+	// is more than enough coverage.
+	routes := []string{"/", "/about", "/docs/", "/components/", "/framework-ui/", "/customers"}
+	for _, route := range routes {
+		t.Run(route, func(t *testing.T) {
+			var counts map[string]float64
+			err := chromedp.Run(ctx,
+				chromedp.Navigate(base+route),
+				pageReady(),
+				chromedp.Evaluate(`(() => ({
+                    mainEl: document.querySelectorAll('main').length,
+                    mainRole: document.querySelectorAll('[role="main"]').length,
+                    headerEl: document.querySelectorAll('header').length,
+                    bannerRole: document.querySelectorAll('[role="banner"]').length,
+                    footerEl: document.querySelectorAll('footer').length,
+                    contentinfoRole: document.querySelectorAll('[role="contentinfo"]').length,
+                }))()`, &counts),
+			)
+			if err != nil {
+				t.Fatalf("chromedp: %v", err)
+			}
+			// HTML5 permits multiple <header> and <footer> elements
+			// (article/section headers). The landmark uniqueness
+			// constraint is on the role attribute, not the element.
+			// <main> however is constrained to ONE per document by spec.
+			for _, c := range []struct {
+				key, label string
+			}{
+				{"mainEl", "<main> elements"},
+				{"mainRole", "[role=main]"},
+				{"bannerRole", "[role=banner]"},
+				{"contentinfoRole", "[role=contentinfo]"},
+			} {
+				if counts[c.key] != 1 {
+					t.Errorf("%s %s on %s: got %.0f, want 1 (landmark duplication or missing)", route, c.label, route, counts[c.key])
+				}
+			}
+		})
 	}
 }
 

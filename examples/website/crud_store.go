@@ -106,15 +106,27 @@ func (s *crudStore) Delete(id int64) error {
 func validateCustomer(c Customer) ui.FieldErrors {
 	errs := ui.FieldErrors{}
 	name := strings.TrimSpace(c.Name)
-	if name == "" {
+	switch {
+	case name == "":
 		errs["name"] = "Name is required."
-	} else if len(name) < 2 {
+	case len(name) < 2:
 		errs["name"] = "Name must be at least 2 characters."
+	case len(name) > 200:
+		// Hard cap defends against (1) row-overflow in the list view
+		// when the value is rendered in a <td>, (2) a flash redirect
+		// that puts the value into a Location header — unbounded input
+		// produced 600KB headers in chaos testing, breaking reverse
+		// proxies. 200 chars is generous; a real app might be stricter.
+		errs["name"] = "Name must be 200 characters or fewer."
 	}
 	email := strings.TrimSpace(c.Email)
-	if email == "" {
+	switch {
+	case email == "":
 		errs["email"] = "Email is required."
-	} else if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+	case len(email) > 254:
+		// RFC 5321 limits the entire address to 254 chars.
+		errs["email"] = "Email must be 254 characters or fewer."
+	case !strings.Contains(email, "@") || !strings.Contains(email, "."):
 		errs["email"] = "Please enter a valid email address."
 	}
 	if c.Status != "" {

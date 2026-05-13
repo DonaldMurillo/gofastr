@@ -276,7 +276,7 @@ func (s *CustomersListScreen) Render() render.HTML {
 		searchForm, liveIsland,
 	))
 
-	return render.Tag("main", nil, body...)
+	return render.Tag("div", nil, body...)
 }
 
 // -----------------------------------------------------------------------------

@@ -236,13 +236,19 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 	// Polite live region for SPA route changes. document.title mutations
 	// aren't announced by screen readers; the runtime writes the new
 	// page title into here after each partial-nav so AT users hear it.
-	// role="status" implicitly maps to aria-live="polite" and
-	// aria-atomic="true" per ARIA 1.2 — declaring both explicitly
-	// triggers double-announce on JAWS. Keep role only.
+	// Page-route announcement region. role="status" should imply
+	// aria-live="polite" + aria-atomic="true" per ARIA 1.2, but older
+	// NVDA + many mobile screen readers miss the implicit mapping.
+	// Declaring all three explicitly is the more compatible choice
+	// (the JAWS double-announce concern from round 6 didn't pan out
+	// in practice; the chaos sweep flagged the missing aria-live as
+	// a real risk for AT users on older runtimes).
 	routeAnnounce := render.Tag("div", map[string]string{
-		"id":    "fui-route-announce",
-		"role":  "status",
-		"class": "fui-visually-hidden",
+		"id":          "fui-route-announce",
+		"role":        "status",
+		"aria-live":   "polite",
+		"aria-atomic": "true",
+		"class":       "fui-visually-hidden",
 	}, render.Text(""))
 
 	body := render.Tag("body", nil, skipLink, routeAnnounce, wrapped)

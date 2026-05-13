@@ -25,7 +25,7 @@ func (s *BreadcrumbsScreen) Render() render.HTML {
     breadcrumbs.Crumb{Text: "Breadcrumbs"}, // current — no Href
 )`
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Breadcrumbs")),

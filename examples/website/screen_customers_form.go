@@ -74,7 +74,7 @@ func (s *CustomersFormScreen) Load(ctx context.Context) error {
 
 func (s *CustomersFormScreen) Render() render.HTML {
 	if s.notFound {
-		return render.Tag("main", nil,
+		return render.Tag("div", nil,
 			ui.PageHeader(ui.PageHeaderConfig{
 				Eyebrow: "CRUD demo", Title: "Customer not found",
 			}),
@@ -142,7 +142,7 @@ func (s *CustomersFormScreen) Render() render.HTML {
 		),
 	)
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		render.Tag("a", map[string]string{
 			"href": "/customers", "class": "doc-back",
 		}, render.Text("← Customers")),

@@ -46,7 +46,7 @@ func (s *ThemeSwapDemoScreen) Render() render.HTML {
 		),
 	)
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		render.Tag("a", map[string]string{"href": "/framework-ui/", "class": "doc-back"},
 			render.Text("← Framework UI")),
 		ui.PageHeader(ui.PageHeaderConfig{

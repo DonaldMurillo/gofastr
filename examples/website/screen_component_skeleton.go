@@ -49,7 +49,7 @@ func (s *SkeletonScreen) Render() render.HTML {
 skeleton.New(skeleton.Config{Variant: skeleton.Block, Height: "120px"})
 skeleton.New(skeleton.Config{Variant: skeleton.Circle, Width: "3rem"})`
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Skeleton")),

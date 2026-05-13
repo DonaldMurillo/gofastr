@@ -37,19 +37,27 @@ type MainConfig struct {
 }
 
 // HeaderConfig configures a <header> element.
-// Automatically adds role="banner".
+// Set Banner=true to mark it as the page-wide banner (adds
+// role="banner"). Defaults to false because a page may have multiple
+// <header> elements (article headers, section headers, page-content
+// headers) and only ONE should carry the banner role.
 type HeaderConfig struct {
-	Class string
-	ID    string
-	Attrs Attrs
+	Class  string
+	ID     string
+	Attrs  Attrs
+	Banner bool // explicit opt-in for role="banner"
 }
 
 // FooterConfig configures a <footer> element.
-// Automatically adds role="contentinfo".
+// Set ContentInfo=true to mark it as the page-wide footer (adds
+// role="contentinfo"). Defaults to false because a page may have
+// multiple <footer> elements (article footers, section footers) and
+// only ONE should carry the contentinfo role.
 type FooterConfig struct {
-	Class string
-	ID    string
-	Attrs Attrs
+	Class       string
+	ID          string
+	Attrs       Attrs
+	ContentInfo bool // explicit opt-in for role="contentinfo"
 }
 
 // NavConfig configures a <nav> element.
@@ -173,19 +181,25 @@ func Main(cfg MainConfig, children ...render.HTML) render.HTML {
 	return render.Tag("main", attrs, children...)
 }
 
-// Header produces a <header> element. It adds role="banner" to signal
-// a top-level banner landmark.
+// Header produces a <header> element. When cfg.Banner is true it
+// also carries role="banner" (use this for the page-wide banner only;
+// nested page-content headers should leave Banner=false).
 func Header(cfg HeaderConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
-	setAttr(attrs, "role", RoleBanner)
+	if cfg.Banner {
+		setAttr(attrs, "role", RoleBanner)
+	}
 	return render.Tag("header", attrs, children...)
 }
 
-// Footer produces a <footer> element. It adds role="contentinfo" to signal
-// a top-level contentinfo landmark.
+// Footer produces a <footer> element. When cfg.ContentInfo is true it
+// also carries role="contentinfo" (use this for the page-wide footer
+// only; nested article/section footers should leave it false).
 func Footer(cfg FooterConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
-	setAttr(attrs, "role", RoleContentinfo)
+	if cfg.ContentInfo {
+		setAttr(attrs, "role", RoleContentinfo)
+	}
 	return render.Tag("footer", attrs, children...)
 }
 

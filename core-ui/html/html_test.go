@@ -360,13 +360,33 @@ func TestMain(t *testing.T) {
 }
 
 func TestHeader(t *testing.T) {
+	// Default: bare <header>, no role (multiple <header>s per page is
+	// valid; only one should carry the banner role).
 	h := Header(HeaderConfig{}, render.Text("header"))
+	assertContains(t, h, "<header")
+	if strings.Contains(string(h), `role="banner"`) {
+		t.Errorf("Header should NOT default to role=banner; got: %s", h)
+	}
+}
+
+func TestHeaderBanner(t *testing.T) {
+	// Banner=true opts in to the landmark role (the page-wide banner).
+	h := Header(HeaderConfig{Banner: true}, render.Text("header"))
 	assertContains(t, h, "<header")
 	assertContains(t, h, `role="banner"`)
 }
 
 func TestFooter(t *testing.T) {
+	// Default: bare <footer>, no role.
 	f := Footer(FooterConfig{}, render.Text("footer"))
+	assertContains(t, f, "<footer")
+	if strings.Contains(string(f), `role="contentinfo"`) {
+		t.Errorf("Footer should NOT default to role=contentinfo; got: %s", f)
+	}
+}
+
+func TestFooterContentInfo(t *testing.T) {
+	f := Footer(FooterConfig{ContentInfo: true}, render.Text("footer"))
 	assertContains(t, f, "<footer")
 	assertContains(t, f, `role="contentinfo"`)
 }

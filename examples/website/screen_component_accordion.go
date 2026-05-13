@@ -75,7 +75,7 @@ func (s *AccordionScreen) Render() render.HTML {
     accordion.Item{Summary: "Notifications", Content: notifications},
 )`
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
 

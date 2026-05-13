@@ -73,7 +73,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 			),
 		}))
 	}
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		ui.PageHeader(ui.PageHeaderConfig{
 			Eyebrow: "core-ui",
 			Title:   "Components",

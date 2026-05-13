@@ -80,13 +80,13 @@ func (s *DocsPageScreen) StaticPaths(ctx context.Context) []map[string]string {
 
 func (s *DocsPageScreen) Render() render.HTML {
 	if s.err != nil {
-		return render.Tag("main", nil,
+		return render.Tag("div", nil,
 			html.Heading(html.HeadingConfig{Level: 1}, render.Text("Doc not found")),
 			render.Tag("p", nil, render.Text(s.err.Error())),
 			html.Link(html.LinkConfig{Href: "/docs/", Text: "← Back to docs", Class: "doc-back"}),
 		)
 	}
-	return render.Tag("main", map[string]string{"class": "doc-body"},
+	return render.Tag("div", map[string]string{"class": "doc-body"},
 		html.Link(html.LinkConfig{Href: "/docs/", Text: "← Back to docs", Class: "doc-back"}),
 		s.body,
 	)

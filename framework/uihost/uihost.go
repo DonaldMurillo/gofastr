@@ -9,6 +9,7 @@ import (
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	stdhtml "html"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -173,6 +174,49 @@ const frameworkBuiltinCSS = `
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+/* SPA-nav failure toast — shown when loadPage can't fetch the new
+   page (offline, server error). Positioned bottom-right; auto-hides
+   after 4s via the runtime. Strict-CSP-clean (no inline styles). */
+.fui-nav-toast {
+  position: fixed;
+  right: 16px; bottom: 16px;
+  z-index: 9999;
+  max-width: calc(100vw - 32px);
+  padding: 12px 16px;
+  background: #18181B;
+  color: #FAFAFA;
+  border-radius: 8px;
+  font: 0.9rem system-ui, -apple-system, sans-serif;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+}
+.fui-nav-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* Progress indicator on slow SPA navigation. Apps can override the
+   color via .fui-nav-busy { background: ... } */
+html[aria-busy="true"] {
+  cursor: progress;
+}
+html[aria-busy="true"]::after {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
+  animation: fui-nav-progress 1s linear infinite;
+  z-index: 9999;
+  pointer-events: none;
+  color: #4F46E5;
+}
+@keyframes fui-nav-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 `
 
@@ -412,7 +456,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	ctx := app.WithRequest(r.Context(), r)
 	html, err := ds.App.RenderPage(ctx, path)
 	if err != nil {
-		http.Error(w, "Page not found: "+path, http.StatusNotFound)
+		ds.serveNotFound(w, path)
 		return
 	}
 
@@ -541,6 +585,24 @@ func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "/__gofastr/routes.js was removed — routes ship inline as JSON in the page", http.StatusGone)
 }
 
+// serveNotFound writes a minimal HTML 404 with a real <title>. The
+// previous http.Error path returned text/plain with no <title>, which
+// left document.title="" on SPA-nav errors and bled into subsequent
+// page navs.
+func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	appName := "GoFastr"
+	if ds.App != nil && ds.App.Name != "" {
+		appName = ds.App.Name
+	}
+	fmt.Fprintf(w,
+		`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Not found — %s</title></head>`+
+			`<body><main role="main"><h1>404 — Page not found</h1><p>No route matched <code>%s</code>.</p>`+
+			`<p><a href="/">Back to home</a></p></main></body></html>`,
+		stdhtml.EscapeString(appName), stdhtml.EscapeString(path))
+}
+
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
@@ -550,7 +612,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	ctx := app.WithRequest(r.Context(), r)
 	html, err := ds.App.RenderPartial(ctx, path)
 	if err != nil {
-		http.Error(w, "Page not found: "+path, http.StatusNotFound)
+		ds.serveNotFound(w, path)
 		return
 	}
 

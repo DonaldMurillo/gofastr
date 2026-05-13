@@ -58,7 +58,7 @@ func (s *HomeScreen) Render() render.HTML {
 		render.Tag("p", nil, render.Text("Then visit http://localhost:8080.")),
 	)
 
-	return render.Tag("div", nil, hero, render.Tag("main", nil, features, quickstart))
+	return render.Tag("div", nil, hero, features, quickstart)
 }
 
 func featureCard(title, body string) render.HTML {

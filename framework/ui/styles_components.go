@@ -454,8 +454,10 @@ func notificationCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
+  /* WCAG 2.5.5 — 44×44 tap target. The 24×24 in chaos sweep was
+     <30% of WCAG's 1936px² floor. */
+  min-inline-size: var(--spacing-touch-target);
+  min-block-size: var(--spacing-touch-target);
   border-radius: var(--radii-full, 9999px);
   font-size: 1.1rem;
   line-height: 1;
@@ -560,12 +562,14 @@ func dataTableCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   /* Token-scaled tap target. Sort headers are the most-tapped
-     element in a data table on mobile. */
-  min-height: var(--spacing-touch-target);
+     element in a data table on mobile. Both axes — short column
+     labels like "Email" (38px wide) failed the 44px width floor. */
+  min-block-size: var(--spacing-touch-target);
+  min-inline-size: var(--spacing-touch-target);
   gap: 0.25rem;
   background: transparent;
   border: 0;
-  padding: 0;
+  padding: 0 0.25rem;
   color: inherit;
   font: inherit;
   text-decoration: none;

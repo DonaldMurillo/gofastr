@@ -27,7 +27,7 @@ func (s *DocsIndexScreen) Load(ctx context.Context) error {
 
 func (s *DocsIndexScreen) Render() render.HTML {
 	if s.err != nil {
-		return render.Tag("main", nil,
+		return render.Tag("div", nil,
 			html.Heading(html.HeadingConfig{Level: 1}, render.Text("Docs")),
 			render.Tag("p", nil, render.Text("Failed to load docs: "+s.err.Error())),
 		)
@@ -41,7 +41,7 @@ func (s *DocsIndexScreen) Render() render.HTML {
 		))
 	}
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Documentation")),
 		render.Tag("p", nil, render.Text(
 			"Long-form docs covering each part of the framework. Generated from "+

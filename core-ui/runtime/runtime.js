@@ -52,12 +52,29 @@
   // data-fui-widget context, omitted otherwise. The server doesn't
   // require it.
   // -----------------------------------------------------------------------
+  // Per-signal abort controllers so rapid clicks targeting the same
+  // signal-bound region don't race. Each new dispatch aborts the
+  // previous in-flight one — last-click wins by the time the runtime
+  // sees the response, not by network arrival order. This is what
+  // pagination spam-click protection needs: 10 clicks ending on page
+  // 1 must settle on page 1, not whichever response landed last.
+  const _rpcInFlight = new Map(); // signal name → AbortController
+
   async function dispatchRPC(node) {
     const path = node.getAttribute('data-fui-rpc');
     const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
     const responseSignal = node.getAttribute('data-fui-rpc-signal');
     const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
+
+    // Abort any in-flight dispatch for this signal. The previous
+    // fetch will reject with AbortError; we ignore that branch below.
+    if (responseSignal) {
+      const prev = _rpcInFlight.get(responseSignal);
+      if (prev) prev.abort();
+    }
+    const ctl = new AbortController();
+    if (responseSignal) _rpcInFlight.set(responseSignal, ctl);
     let body = node.getAttribute('data-fui-rpc-body');
     let resolvedPath = path;
     if (!body && node.tagName === 'FORM') {
@@ -89,9 +106,15 @@
       if (!window.confirm(confirmMsg)) return;
     }
 
-    if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
+    // Disable the trigger during the in-flight request — but only
+    // when we DON'T have abort-dedup via a signal. Signal-based RPCs
+    // (pagination buttons, etc.) need the user to be able to click
+    // again instantly; the AbortController guarantees only the last
+    // click's response reaches setSignal.
+    const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
+    if (wantDisable) node.disabled = true;
     try {
-      const r = await fetch(resolvedPath, { method, headers, body: body || undefined });
+      const r = await fetch(resolvedPath, { method, headers, body: body || undefined, signal: ctl.signal });
       if (!r.ok) {
         const txt = await r.text();
         if (responseSignal) window.__gofastr.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
@@ -136,11 +159,21 @@
           catch (_) {}
         });
       }
+    } catch (err) {
+      // Swallow AbortError — it just means a newer dispatch superseded
+      // us before the response arrived. Any other error propagates.
+      if (err && err.name !== 'AbortError') throw err;
     } finally {
+      // Clear the in-flight slot only if WE are still the latest
+      // dispatch — a later click may have replaced us, in which case
+      // _rpcInFlight already holds its controller.
+      if (responseSignal && _rpcInFlight.get(responseSignal) === ctl) {
+        _rpcInFlight.delete(responseSignal);
+      }
       // Re-enable unless data-fui-rpc-after-disable wanted a sticky
       // disabled state (e.g. "Revealed ✓" demo button).
       const sticky = node.hasAttribute('data-fui-rpc-after-disable') && node.dataset.fuiRpcAfterDone === '1';
-      if (!sticky && (node.tagName === 'BUTTON' || node.tagName === 'INPUT')) node.disabled = false;
+      if (!sticky && wantDisable) node.disabled = false;
     }
   }
 
@@ -1190,17 +1223,48 @@
     return v;
   };
 
+  // In-flight dedup: if a SPA-nav to the same path is already
+  // running, drop the redundant call. Matches the DataTable + search
+  // dedup pattern (one click = one request).
+  const _pendingNav = new Set();
+  // Mini toast used by loadPage failures — strict-CSP-clean (no
+  // inline styles since the .fui-nav-toast class is shipped via
+  // frameworkBuiltinCSS).
+  const _showNavToast = (msg) => {
+    let t = document.getElementById('fui-nav-toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'fui-nav-toast';
+      t.className = 'fui-nav-toast';
+      t.setAttribute('role', 'alert');
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('is-visible');
+    clearTimeout(t._fuiTimer);
+    t._fuiTimer = setTimeout(() => t.classList.remove('is-visible'), 4000);
+  };
+
   /** Fetch page, swap <main>. Caches for instant back-nav. */
   const loadPage = async (path) => {
+    // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
+    if (_pendingNav.has(path)) return;
+    _pendingNav.add(path);
     const prevPath = currentPath;
     currentPath = path;
+    // Surface "I heard you" feedback to assistive tech and screen
+    // readers while the fetch is in flight. The CSS hook can show a
+    // progress strip via [aria-busy="true"] on documentElement.
+    document.documentElement.setAttribute('aria-busy', 'true');
 
     try {
       const cached = getCachedScreen(path);
       if (cached) {
-        swapMainContent(cached.html);
+        // Title first so SR + browser-history see the new title
+        // before pushState fires (the click handler does pushState).
         document.title = cached.title;
         announceRoute(cached.title);
+        swapMainContent(cached.html);
         updateActiveLink(path);
         window.scrollTo(0, 0);
         window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
@@ -1214,27 +1278,37 @@
 
       const html = await resp.text();
 
-      if (resp.headers.get('X-Gofastr-Partial') === 'true') {
-        swapMainContent(html);
-        const title = resp.headers.get('X-Gofastr-Title') || document.title;
-        document.title = title;
-        announceRoute(title);
-        cacheScreen(path, html, title);
+      // Compute title BEFORE swapping content so document.title is
+      // already correct when AT or extensions observe the new state.
+      let title, body, partial = resp.headers.get('X-Gofastr-Partial') === 'true';
+      if (partial) {
+        title = resp.headers.get('X-Gofastr-Title') || document.title;
+        body = html;
       } else {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const nm = doc.querySelector('main');
-        if (nm) swapMainContent(nm.innerHTML);
-        const title = doc.querySelector('title')?.textContent ?? document.title;
-        cacheScreen(path, nm?.innerHTML ?? '', title);
-        document.title = title;
-        announceRoute(title);
+        title = doc.querySelector('title')?.textContent || document.title;
+        body = nm?.innerHTML ?? '';
       }
+      document.title = title;
+      announceRoute(title);
+      swapMainContent(body);
+      cacheScreen(path, body, title);
+
       updateActiveLink(path);
       window.scrollTo(0, 0);
       window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
     } catch (err) {
-      console.error('[gofastr] Nav failed:', err);
-      location.href = path;
+      // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
+      // toast and stay on the current page; URL has already been
+      // pushState'd by the click handler so revert it.
+      console.warn('[gofastr] Nav failed:', err);
+      _showNavToast('Could not load ' + path + ' — check your connection');
+      try { history.replaceState(null, '', prevPath || location.pathname); } catch (_) {}
+      currentPath = prevPath;
+    } finally {
+      _pendingNav.delete(path);
+      document.documentElement.removeAttribute('aria-busy');
     }
   };
 
@@ -1493,6 +1567,29 @@
       updateActiveLink(location.pathname);
     });
     document.addEventListener('DOMContentLoaded', _bootstrapComponentCSS);
+
+    // Mirror details.open → summary aria-expanded for screen readers.
+    // Native <summary> reports as "button" without an expanded state.
+    // We run it once at boot for every disclosure, plus on every
+    // toggle event thereafter.
+    const _mirrorDisclosure = (d) => {
+      const s = d.querySelector(':scope > summary');
+      if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
+    };
+    document.addEventListener('DOMContentLoaded', () => {
+      for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
+        _mirrorDisclosure(d);
+      }
+    });
+    // 'toggle' fires on every open/close. Delegate at document level
+    // so dynamically-inserted disclosures are covered.
+    document.addEventListener('toggle', (e) => {
+      const d = e.target;
+      if (d && d.tagName === 'DETAILS' && d.hasAttribute('data-fui-disclosure')) {
+        _mirrorDisclosure(d);
+      }
+    }, true); // capture phase — toggle doesn't bubble
+
     // Escape closes any open <details data-fui-disclosure>. Native
     // <details> only handles Escape when the summary itself has
     // focus; this extends it to "Escape anywhere on the page". An

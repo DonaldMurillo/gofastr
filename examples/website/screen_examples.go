@@ -56,7 +56,7 @@ func (s *ExamplesScreen) Render() render.HTML {
 			render.Tag("span", nil, render.Text(ex.Body)),
 		))
 	}
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Examples")),
 		render.Tag("p", nil, render.Text(
 			"Self-contained reference apps under examples/ in the repo. Each is a normal "+

@@ -90,7 +90,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		}),
 	)
 
-	return render.Tag("main", nil,
+	return render.Tag("div", nil,
 		pageHeader,
 
 		ui.Section(ui.SectionConfig{

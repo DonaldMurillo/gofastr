@@ -63,7 +63,10 @@ func createStyleSheet(theme style.Theme) string {
 			"background", "{colors.surface}", "position", "sticky", "top", "0", "z-index", "10").
 		End()
 	ss.Rule(".site-header .brand").
-		Set("font-weight", "700", "font-size", "1.125rem", "color", "{colors.secondary}").
+		Set("font-weight", "700", "font-size", "1.125rem", "color", "{colors.secondary}",
+			// WCAG 2.5.5 — brand is a tappable link, must be >= 44×44.
+			"display", "inline-flex", "align-items", "center",
+			"min-height", "var(--spacing-touch-target)").
 		End()
 	ss.Rule(".site-header nav").
 		Set("display", "flex", "flex-wrap", "wrap", "gap", "{spacing.lg}").End()
@@ -224,6 +227,11 @@ func createStyleSheet(theme style.Theme) string {
 			"padding", "1px 6px", "border-radius", "{radii.sm}",
 			"font-size", "0.9em",
 			"font-family", "ui-monospace, 'SF Mono', Menlo, monospace").End()
+	// Generic <pre> overflow guard — long code lines (esp. on home
+	// page quickstart) must not drag the body wider than the viewport.
+	// Each specialized .doc-body / .demo-source rule below can still
+	// override visuals; this rule just guarantees containment.
+	ss.Rule("main pre").Set("overflow-x", "auto", "max-width", "100%").End()
 	ss.Rule(".doc-body pre").
 		Set("background", "{colors.secondary}", "color", "white",
 			"padding", "{spacing.md}", "border-radius", "{radii.md}",
@@ -248,8 +256,11 @@ func createStyleSheet(theme style.Theme) string {
 
 	// Doc-page back link.
 	ss.Rule(".doc-back").
-		Set("display", "inline-block", "color", "{colors.text-muted}",
-			"font-size", "0.9rem", "margin-bottom", "{spacing.lg}").End()
+		Set("display", "inline-flex", "align-items", "center",
+			"color", "{colors.text-muted}",
+			"font-size", "0.9rem", "margin-bottom", "{spacing.lg}",
+			// WCAG 2.5.5 tap target.
+			"min-height", "var(--spacing-touch-target)").End()
 
 	// Component index — tag chip on each card.
 	ss.Rule(".component-tag").
@@ -376,7 +387,9 @@ func createStyleSheet(theme style.Theme) string {
 			"background", "{colors.surface}",
 			"color", "{colors.text}",
 			"font", "inherit",
-			"font-size", "0.95rem").End()
+			"font-size", "0.95rem",
+			// WCAG 2.5.5 — text inputs are tappable; meet the 44px floor.
+			"min-block-size", "var(--spacing-touch-target)").End()
 	ss.Rule(".demo-search-input:focus-visible").
 		Set("outline", "2px solid {colors.primary}",
 			"outline-offset", "1px").End()
@@ -386,7 +399,14 @@ func createStyleSheet(theme style.Theme) string {
 		Set("padding", "2px {spacing.sm}", "font-size", "0.8rem").End()
 	ss.Rule(".ui-link").
 		Set("color", "{colors.primary}", "text-decoration", "none",
-			"font-weight", "500").End()
+			"font-weight", "500",
+			// WCAG 2.5.5 — .ui-link is used as a row-action ("Edit"/"Delete")
+			// on customer rows; the bare text link was 27×18.
+			"display", "inline-flex", "align-items", "center",
+			"min-block-size", "var(--spacing-touch-target)",
+			"min-inline-size", "var(--spacing-touch-target)",
+			"justify-content", "center",
+			"padding", "0 {spacing.xs}").End()
 	ss.Rule(".ui-link:hover").Set("text-decoration", "underline").End()
 
 	// Theme-swap demo: radios + :has() override --color-primary on the

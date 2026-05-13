@@ -24,11 +24,11 @@ func (h *HeaderComponent) Render() render.HTML {
 			Attrs: html.Attrs{"rel": "external"},
 		}),
 	)
-	// <details>/<summary>: JS-free disclosure. CSS at >=640px hides
-	// the summary and unwraps the details (display: contents), so the
-	// nav renders inline. Below 640px the summary becomes a 44px tap
-	// target and the nav stacks vertically when open.
-	return render.Tag("header", map[string]string{"class": "site-header"},
+	// Inner content only — Layout wraps the result in <header role=banner>.
+	// We add the .site-header class to a wrapper div so the existing CSS
+	// rules (positioning, padding, etc.) keep working without changes.
+	// <details>/<summary>: JS-free disclosure that closes on SPA-nav + Esc.
+	return render.Tag("div", map[string]string{"class": "site-header"},
 		html.Link(html.LinkConfig{Href: "/", Text: "GoFastr", Class: "brand"}),
 		render.Tag("details", map[string]string{
 			"class":               "site-nav",
@@ -44,10 +44,12 @@ func (h *HeaderComponent) Render() render.HTML {
 }
 
 // FooterComponent — single-line attribution.
+//
+// Returns inner content only; Layout wraps in <footer role=contentinfo>.
 type FooterComponent struct{}
 
 func (f *FooterComponent) Render() render.HTML {
-	return render.Tag("footer", map[string]string{"class": "site-footer"},
+	return render.Tag("div", map[string]string{"class": "site-footer"},
 		render.Text("Built with GoFastr — pre-alpha research, no license yet."),
 	)
 }

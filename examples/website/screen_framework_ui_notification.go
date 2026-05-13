@@ -125,7 +125,7 @@ func (s *NotificationDemoScreen) Render() render.HTML {
 	if floating != "" {
 		body = append(body, floating)
 	}
-	return render.Tag("main", nil, body...)
+	return render.Tag("div", nil, body...)
 }
 
 func linkButton(href, label string) render.HTML {

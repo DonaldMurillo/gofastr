@@ -66,18 +66,19 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 
 	var wrapperChildren []render.HTML
 
-	// Header (optional).
+	// Header (optional). Banner=true — the page-wide banner role lives
+	// here; the component supplies inner content only.
 	if l.Header != nil {
-		header := html.Header(html.HeaderConfig{}, l.Header.Render())
+		header := html.Header(html.HeaderConfig{Banner: true}, l.Header.Render())
 		wrapperChildren = append(wrapperChildren, header)
 	}
 
 	// Body.
 	wrapperChildren = append(wrapperChildren, body)
 
-	// Footer (optional).
+	// Footer (optional). ContentInfo=true — page-wide footer role.
 	if l.Footer != nil {
-		footer := html.Footer(html.FooterConfig{}, l.Footer.Render())
+		footer := html.Footer(html.FooterConfig{ContentInfo: true}, l.Footer.Render())
 		wrapperChildren = append(wrapperChildren, footer)
 	}
 

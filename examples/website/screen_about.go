@@ -17,7 +17,7 @@ func (s *AboutScreen) ScreenDescription() string  { return "Project status, scop
 func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *AboutScreen) Render() render.HTML {
-	return render.Tag("main", map[string]string{"class": "doc-body"},
+	return render.Tag("div", map[string]string{"class": "doc-body"},
 		ui.PageHeader(ui.PageHeaderConfig{
 			Eyebrow: "About",
 			Title:   "GoFastr",
