@@ -9,9 +9,9 @@ import (
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	stdhtml "html"
 	"encoding/json"
 	"fmt"
+	stdhtml "html"
 	"io/fs"
 	"net/http"
 	"os"
@@ -31,6 +31,26 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
+// OG holds Open Graph meta tag values for social sharing.
+// Zero-value fields are omitted from output.
+type OG struct {
+	Title       string
+	Description string
+	Image       string
+	URL         string
+	Type        string
+}
+
+// TwitterCard holds Twitter Card meta tag values.
+// Zero-value fields are omitted from output.
+type TwitterCard struct {
+	Card        string // e.g. "summary", "summary_large_image"
+	Title       string
+	Description string
+	Image       string
+	Site        string // @username
+}
+
 // UIHost mounts a core-ui application onto a router. It serves rendered
 // pages with runtime.js, compiled action JS, SSE streaming for islands,
 // sessions, and signal-driven live updates. The framework.App is
@@ -48,6 +68,8 @@ type UIHost struct {
 	staticFS       fs.FS                                // embedded filesystem for static files
 	routeGraph     *style.RouteGraph                    // route graph for progressive CSS loading
 	signals        map[string]SignalAny                 // signalID → signal for live updates
+	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
+	headTags       []string                             // typed head tags built from convenience options
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -67,6 +89,19 @@ type SignalAny interface {
 	GetAsInterface() interface{}
 	UpdateAsInterface(v interface{})
 	Subscribe() <-chan struct{}
+}
+
+// SEOScreen is an optional interface that screens can implement to
+// inject per-screen HTML into <head>. This enables per-page SEO:
+// Open Graph tags, description meta, structured data, etc. The
+// returned HTML is injected alongside any global head tags from
+// WithHeadHTML / WithFavicon / etc.
+//
+// WARNING: the returned HTML is injected verbatim. Implementers must
+// escape any dynamic content (e.g. html.EscapeString for user-supplied
+// titles or descriptions) to prevent XSS.
+type SEOScreen interface {
+	HeadHTML() string
 }
 
 // routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
@@ -101,6 +136,100 @@ func WithExtraScripts(urls ...string) Option {
 func WithRouteGraph(rg *style.RouteGraph) Option {
 	return func(ds *UIHost) {
 		ds.routeGraph = rg
+	}
+}
+
+// WithHeadHTML injects raw HTML into every page's <head>. This is the
+// escape hatch for arbitrary head content. The HTML is injected verbatim
+// — callers must ensure it is CSP-compatible (no inline <script> or
+// <style> tags). For safe, auto-escaped alternatives, see WithFavicon,
+// WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
+// WithCanonicalURL, and WithPreconnect.
+func WithHeadHTML(html string) Option {
+	return func(ds *UIHost) {
+		ds.headHTML = html
+	}
+}
+
+// WithFavicon adds a <link rel="icon"> tag to <head>.
+func WithFavicon(href string) Option {
+	return func(ds *UIHost) {
+		ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="icon" href="%s">`, stdhtml.EscapeString(href)))
+	}
+}
+
+// WithThemeColor adds a <meta name="theme-color"> tag to <head>.
+func WithThemeColor(color string) Option {
+	return func(ds *UIHost) {
+		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="theme-color" content="%s">`, stdhtml.EscapeString(color)))
+	}
+}
+
+// WithDescription adds a <meta name="description"> tag to <head>.
+func WithDescription(desc string) Option {
+	return func(ds *UIHost) {
+		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(desc)))
+	}
+}
+
+// WithOpenGraph adds Open Graph <meta property="og:..."> tags to <head>.
+// Zero-value fields are omitted.
+func WithOpenGraph(og OG) Option {
+	return func(ds *UIHost) {
+		if og.Title != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:title" content="%s">`, stdhtml.EscapeString(og.Title)))
+		}
+		if og.Description != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:description" content="%s">`, stdhtml.EscapeString(og.Description)))
+		}
+		if og.Image != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:image" content="%s">`, stdhtml.EscapeString(og.Image)))
+		}
+		if og.URL != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:url" content="%s">`, stdhtml.EscapeString(og.URL)))
+		}
+		if og.Type != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:type" content="%s">`, stdhtml.EscapeString(og.Type)))
+		}
+	}
+}
+
+// WithTwitterCard adds Twitter Card <meta name="twitter:..."> tags to <head>.
+// Zero-value fields are omitted.
+func WithTwitterCard(tc TwitterCard) Option {
+	return func(ds *UIHost) {
+		if tc.Card != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:card" content="%s">`, stdhtml.EscapeString(tc.Card)))
+		}
+		if tc.Title != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:title" content="%s">`, stdhtml.EscapeString(tc.Title)))
+		}
+		if tc.Description != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:description" content="%s">`, stdhtml.EscapeString(tc.Description)))
+		}
+		if tc.Image != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:image" content="%s">`, stdhtml.EscapeString(tc.Image)))
+		}
+		if tc.Site != "" {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:site" content="%s">`, stdhtml.EscapeString(tc.Site)))
+		}
+	}
+}
+
+// WithCanonicalURL adds a <link rel="canonical"> tag to <head>.
+func WithCanonicalURL(url string) Option {
+	return func(ds *UIHost) {
+		ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="canonical" href="%s">`, stdhtml.EscapeString(url)))
+	}
+}
+
+// WithPreconnect adds <link rel="preconnect"> tags for the given origins.
+// Use for early DNS/TCP/TLS connections to external resources (fonts, CDNs).
+func WithPreconnect(origins ...string) Option {
+	return func(ds *UIHost) {
+		for _, o := range origins {
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="preconnect" href="%s">`, stdhtml.EscapeString(o)))
+		}
 	}
 }
 
@@ -507,30 +636,40 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	page := ds.injectChrome(string(html), sessionID)
+	page := ds.injectChrome(string(html), path, sessionID)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, page)
 }
 
 // injectChrome adds links and scripts pointing at the host's served
-// endpoints. Everything stays as external resources — no inline <style>
-// or inline <script> — so the default strict Content-Security-Policy
-// (default-src 'self') works without 'unsafe-inline'.
-//
-// When sessionID is non-empty, an SSE meta tag pointing at this session
-// is injected too. SSG output passes "" for sessionID — the client will
-// lazily create a session on first interaction if it ever needs one.
-func (ds *UIHost) injectChrome(page, sessionID string) string {
-	return ds.injectChromeMode(page, sessionID, true)
+// endpoints. pagePath is the route path used for SEOScreen resolution.
+func (ds *UIHost) injectChrome(page, pagePath, sessionID string) string {
+	return ds.injectChromeMode(page, pagePath, sessionID, true)
+}
+
+// screenHeadHTML returns per-screen head content from the SEOScreen
+// interface. pagePath is the route path used to resolve the screen.
+func (ds *UIHost) screenHeadHTML(pagePath string) string {
+	if ds.App == nil || pagePath == "" {
+		return ""
+	}
+	screen, _, ok := ds.App.Router.Resolve(pagePath)
+	if !ok {
+		return ""
+	}
+	if seo, ok := screen.Component.(SEOScreen); ok {
+		return seo.HeadHTML()
+	}
+	return ""
 }
 
 // injectChromeMode is the underlying chrome injector. bundle=false
 // suppresses the comp-bundle.css endpoint and emits one <link> per
 // component instead — used by static export, since static hosts
 // don't typically serve query-parameterized files. Live HTTP mode
-// always passes bundle=true.
-func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
+// always passes bundle=true. pagePath is used for SEOScreen resolution.
+func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool) string {
 	// <head>
 	if sessionID != "" {
 		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
@@ -544,6 +683,23 @@ func (ds *UIHost) injectChromeMode(page, sessionID string, bundle bool) string {
 		page = strings.Replace(page,
 			"</head>",
 			`<link rel="stylesheet" href="/__gofastr/app.css">`+"\n</head>", 1)
+	}
+
+	// Head injection: global typed tags + raw HTML + per-screen SEOScreen.
+	// Order: typed helpers → WithHeadHTML → SEOScreen. Typed helpers are
+	// set at New() time; SEOScreen is per-request.
+	var headParts []string
+	for _, tag := range ds.headTags {
+		headParts = append(headParts, tag)
+	}
+	if ds.headHTML != "" {
+		headParts = append(headParts, ds.headHTML)
+	}
+	if screenHead := ds.screenHeadHTML(pagePath); screenHead != "" {
+		headParts = append(headParts, screenHead)
+	}
+	if len(headParts) > 0 {
+		page = strings.Replace(page, "</head>", strings.Join(headParts, "\n")+"\n</head>", 1)
 	}
 	// Route graph + component catalog ship as inline JSON in
 	// <script type="application/json"> blocks — the browser treats
@@ -957,7 +1113,7 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	return ds.injectChromeMode(string(html), "", false), nil
+	return ds.injectChromeMode(string(html), path, "", false), nil
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript
