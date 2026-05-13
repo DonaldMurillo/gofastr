@@ -57,6 +57,7 @@ func printHelp() {
   dev                   Start dev server with auto-restart
   migrate [up|down|status]  Run database migrations
   test                  Run project tests
+  embed <sub>           Local semantic index (index/watch/query/stats/clear)
   version               Print version info
 
 %s:
@@ -113,12 +114,14 @@ func main() {
 		runMigrate(cmdArgs)
 	case "test", "t":
 		runTest(cmdArgs)
+	case "embed":
+		runEmbed(cmdArgs)
 	case "version":
 		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "generate", "build", "dev", "migrate", "test", "version"}
+		suggestions := []string{"init", "generate", "build", "dev", "migrate", "test", "embed", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

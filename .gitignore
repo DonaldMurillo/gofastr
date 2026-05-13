@@ -9,6 +9,7 @@
 .claude/settings.local.json
 .claude/worktrees/
 .claude/projects/
+.claude/scheduled_tasks.lock
 
 # Binaries
 bin/
@@ -20,6 +21,10 @@ bin/
 
 # Codegen output
 .gofastr/
+
+# Local Ollama model cache (bind-mount target of docker-compose.yml).
+# Pulled models are ~hundreds of MB; never commit.
+.ollama/
 
 # Test binary
 *.test

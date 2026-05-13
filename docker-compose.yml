@@ -1,0 +1,27 @@
+# Dev-only Docker services for GoFastr.
+#
+# Today this is just Ollama — a local embedding/model server consumed
+# by battery/embed.OllamaEmbedder and the live-tagged test suite.
+#
+# Bring up:    make ollama-up         (or: docker compose up -d ollama)
+# Run tests:   make embed-live
+# Tear down:   make ollama-down       (or: docker compose down)
+#
+# Model files persist in ./.ollama/ (bind-mounted, gitignored) so
+# `ollama pull <model>` is a one-time cost per workstation.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gofastr-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./.ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
