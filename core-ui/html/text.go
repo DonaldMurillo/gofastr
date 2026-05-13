@@ -2,6 +2,7 @@ package html
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 
@@ -47,7 +48,11 @@ type TimeConfig struct {
 var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
 // slugify converts a string to a URL-friendly slug for use as an HTML id.
+// It first unescapes HTML entities (e.g. &#39; → ') so that escaped
+// apostrophes and other characters don't leak numeric entity codes
+// into the slug.
 func slugify(s string) string {
+	s = html.UnescapeString(s)
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = nonAlphaNum.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
