@@ -175,6 +175,35 @@ const frameworkBuiltinCSS = `
   white-space: nowrap;
   border: 0;
 }
+/* Skip-link: visually hidden until focused, then revealed as a
+   visible overlay so keyboard users can jump to #main-content.
+   Apps can override via their own .skip-link / .skip-link:focus
+   rules. */
+.skip-link {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link:focus {
+  position: fixed !important;
+  top: 8px; left: 8px;
+  width: auto; height: auto;
+  padding: 8px 16px;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  z-index: 9999;
+  background: #18181B;
+  color: #FAFAFA;
+  border-radius: 4px;
+  font: 0.9rem system-ui, -apple-system, sans-serif;
+  text-decoration: none;
+}
 /* SPA-nav failure toast — shown when loadPage can't fetch the new
    page (offline, server error). Positioned bottom-right; auto-hides
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */

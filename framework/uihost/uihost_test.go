@@ -417,6 +417,14 @@ func TestUIHostAppCSSShipsFrameworkBuiltinCSS(t *testing.T) {
 		t.Errorf("app.css must ship .fui-visually-hidden helper — without it the polite live region for SPA-nav and the skip link become visible on screen; got:\n%s",
 			truncate(body, 600))
 	}
+	if !strings.Contains(body, ".skip-link") {
+		t.Errorf("app.css must ship .skip-link default styles — without it the skip-to-content link is visible on every page; got:\n%s",
+			truncate(body, 600))
+	}
+	if !strings.Contains(body, ".skip-link:focus") {
+		t.Errorf("app.css must ship .skip-link:focus styles — without them the skip link cannot be revealed to keyboard users; got:\n%s",
+			truncate(body, 600))
+	}
 }
 
 func TestUIHostCustomCSS(t *testing.T) {

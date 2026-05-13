@@ -197,6 +197,25 @@ func TestHeading(t *testing.T) {
 		}
 	})
 
+	t.Run("slug strips HTML entities from escaped text", func(t *testing.T) {
+		// render.Text escapes apostrophe to &#39; — slug must unescape
+		// before slugifying so we get "hi-im-donald" not "hi-i-39-m-donald".
+		h := Heading(HeadingConfig{Level: 2}, render.Text("Hi, I'm Donald"))
+		if strings.Contains(string(h), "-39-") {
+			t.Errorf("slug should not contain -39- from HTML entity escaping, got %q", h)
+		}
+		if !strings.Contains(string(h), `id="heading-hi-i-m-donald"`) {
+			t.Errorf("expected id heading-hi-i-m-donald, got %q", h)
+		}
+	})
+
+	t.Run("slug handles ampersands and quotes", func(t *testing.T) {
+		h := Heading(HeadingConfig{Level: 2}, render.Text("Tom & Jerry \"the best\""))
+		if !strings.Contains(string(h), `id="heading-tom-jerry-the-best"`) {
+			t.Errorf("expected id heading-tom-jerry-the-best, got %q", h)
+		}
+	})
+
 	t.Run("preserves explicit id", func(t *testing.T) {
 		h := Heading(HeadingConfig{Level: 1, ID: "custom-id"}, render.Text("Title"))
 		assertContains(t, h, `id="custom-id"`)

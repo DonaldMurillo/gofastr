@@ -121,7 +121,7 @@ func main() {
 	fwApp.Mount(uihost.New(site))
 
 	// Run migrations
-	migrator := migrate.New(db, migrate.WithTableName("_migrations"))
+	migrator := migrate.New(db, migrate.WithTableName("_migrations"), migrate.WithDialect(migrate.DialectSQLite))
 	entities.RegisterMigrations(migrator)
 	if err := migrator.Up(context.Background()); err != nil {
 		log.Printf("Migration warning: %%v", err)
