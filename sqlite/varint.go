@@ -76,25 +76,22 @@ func EncodeVarintRaw(v uint64) []byte {
 	}
 
 	n := VarintSize(v)
-	result := make([]byte, n)
+	var buf [9]byte
 
 	for i := n - 1; i >= 0; i-- {
 		if i == 8 {
-			// 9th byte: all 8 bits
-			result[i] = byte(v)
+			buf[i] = byte(v)
 			v >>= 8
 		} else if i == n-1 {
-			// Last byte: no continuation bit
-			result[i] = byte(v & 0x7F)
+			buf[i] = byte(v & 0x7F)
 			v >>= 7
 		} else {
-			// Earlier bytes: set continuation bit
-			result[i] = byte(v&0x7F) | 0x80
+			buf[i] = byte(v&0x7F) | 0x80
 			v >>= 7
 		}
 	}
 
-	return result
+	return append([]byte(nil), buf[:n]...)
 }
 
 // VarintSize returns the number of bytes needed to encode v as a raw varint.

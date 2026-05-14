@@ -32,6 +32,9 @@ type PagerInterface interface {
 	Restore([]byte) error
 	GetSchemaPage() int
 	SetSchemaPage(page int)
+	BeginTxn()
+	CommitTxn()
+	RollbackTxn() error
 }
 
 // BTreeInterface abstracts B-tree operations.
@@ -291,6 +294,20 @@ func (e *Engine) ExecuteStatement(stmt Statement, params ...Value) (*Result, err
 		return e.executeSelect(s, params)
 	case *CompoundSelect:
 		return e.executeCompoundSelect(s, params)
+	case *BeginStmt:
+		return e.executeBegin()
+	case *CommitStmt:
+		return e.executeCommit()
+	case *RollbackStmt:
+		return e.executeRollback()
+	default:
+		// All other statements are mutations — ensure COW is active
+		return e.executeMutation(stmt, s, params)
+	}
+}
+
+func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*Result, error) {
+	switch s := s.(type) {
 	case *InsertStmt:
 		return e.executeInsert(s, params)
 	case *UpdateStmt:
@@ -357,12 +374,6 @@ func (e *Engine) ExecuteStatement(stmt Statement, params ...Value) (*Result, err
 			e.SaveSchema()
 		}
 		return res, err
-	case *BeginStmt:
-		return e.executeBegin()
-	case *CommitStmt:
-		return e.executeCommit()
-	case *RollbackStmt:
-		return e.executeRollback()
 	default:
 		return nil, &engineError{"unsupported statement type"}
 	}
@@ -2034,29 +2045,28 @@ func valueEqual(a, b Value) bool {
 
 // txnSnapshot holds state for transaction rollback.
 type txnSnapshot struct {
-	data   []byte
+	data   []byte // unused with page-level COW
 	schema *Schema
 }
 
 func (e *Engine) executeBegin() (*Result, error) {
 	e.txnSnap = &txnSnapshot{
-		data:   e.pager.Snapshot(),
+		data:   nil,
 		schema: e.schema.Copy(),
 	}
+	e.pager.BeginTxn()
 	return &Result{}, nil
 }
-
 func (e *Engine) executeCommit() (*Result, error) {
+	e.pager.CommitTxn()
 	e.txnSnap = nil
 	return &Result{}, nil
 }
 
 func (e *Engine) executeRollback() (*Result, error) {
 	if e.txnSnap != nil {
-		if e.txnSnap.data != nil {
-			if err := e.pager.Restore(e.txnSnap.data); err != nil {
-				return nil, err
-			}
+		if err := e.pager.RollbackTxn(); err != nil {
+			return nil, err
 		}
 		e.schema = e.txnSnap.schema
 		e.txnSnap = nil

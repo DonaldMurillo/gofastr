@@ -186,6 +186,10 @@ type Pager struct {
 	pages     [][]byte // page cache (0=unused, 1-indexed)
 	dirty     []bool   // tracks which pages need flushing
 	pool      *pagePool
+
+	// Transaction COW: maps page number -> original page data (before first mutation in txn)
+	txnOrigPages map[int][]byte
+	inTxn        bool
 }
 
 // pagePool manages reusable page-sized buffers.
@@ -373,6 +377,14 @@ func (p *Pager) GetPageDataMutable(num int) ([]byte, error) {
 		if num < len(p.dirty) {
 			p.dirty[num] = true
 		}
+		// COW: save original on first mutation in transaction
+		if p.inTxn && p.txnOrigPages != nil {
+			if _, saved := p.txnOrigPages[num]; !saved {
+				orig := make([]byte, p.pageSize)
+				copy(orig, data)
+				p.txnOrigPages[num] = orig
+			}
+		}
 		return data, nil
 	}
 
@@ -382,6 +394,15 @@ func (p *Pager) GetPageDataMutable(num int) ([]byte, error) {
 	if err != nil {
 		p.pool.Put(data)
 		return nil, err
+	}
+
+	// COW: save original before we mutate
+	if p.inTxn && p.txnOrigPages != nil {
+		if _, saved := p.txnOrigPages[num]; !saved {
+			orig := make([]byte, p.pageSize)
+			copy(orig, data)
+			p.txnOrigPages[num] = orig
+		}
 	}
 
 	p.ensureCapacity(num)
@@ -483,6 +504,33 @@ func (p *Pager) Restore(data []byte) error {
 	return nil
 }
 
+// BeginTxn starts a page-level COW transaction.
+func (p *Pager) BeginTxn() {
+	p.inTxn = true
+	p.txnOrigPages = make(map[int][]byte)
+}
+
+// CommitTxn finishes a COW transaction, discarding saved originals.
+func (p *Pager) CommitTxn() {
+	p.inTxn = false
+	p.txnOrigPages = nil
+}
+
+// RollbackTxn restores only the pages that were modified during the transaction.
+func (p *Pager) RollbackTxn() error {
+	for pageNum, orig := range p.txnOrigPages {
+		if pageNum < len(p.pages) && p.pages[pageNum] != nil {
+			copy(p.pages[pageNum], orig)
+			p.dirty[pageNum] = true
+		}
+	}
+	if err := p.Flush(); err != nil {
+		return err
+	}
+	p.inTxn = false
+	p.txnOrigPages = nil
+	return nil
+}
 
 // InitNew initializes a new database with a valid header on page 1.
 func (p *Pager) InitNew() error {
