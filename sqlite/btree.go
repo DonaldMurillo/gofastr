@@ -589,6 +589,32 @@ func (b *BTree) parseCellRecord(cellData []byte) (*Record, error) {
 	return ReadRecord(cellData[recordStart:])
 }
 
+// parseCellRecordInto reuses the cursor's recordBuf to avoid allocation.
+func (c *BTreeCursor) parseCellRecordInto(cellData []byte) error {
+	_, n1, err := DecodeVarint(cellData)
+	if err != nil {
+		return err
+	}
+	_, n2, err := DecodeVarint(cellData[n1:])
+	if err != nil {
+		return err
+	}
+
+	recordStart := n1 + n2
+	if recordStart >= len(cellData) {
+		c.record = &Record{}
+		return nil
+	}
+
+	rec, err := ReadRecordInto(cellData[recordStart:], c.recordBuf)
+	if err != nil {
+		return err
+	}
+	c.recordBuf = rec.Columns
+	c.record = rec
+	return nil
+}
+
 // Scan returns a cursor for iterating all rows in the B-tree.
 // SeekToRowid positions the cursor at the first row with rowid >= target.
 // This is equivalent to a B-tree seek followed by sequential scan.
@@ -687,6 +713,9 @@ type BTreeCursor struct {
 	eof     bool
 	rowid   int64
 	record  *Record
+
+	// Reusable buffer for ReadRecordInto to avoid per-row allocation
+	recordBuf []Value
 }
 
 type cursorNavEntry struct {
@@ -823,12 +852,10 @@ func (c *BTreeCursor) Next() bool {
 	if c.index < len(c.cells) {
 		cell := c.cells[c.index]
 		c.rowid = cell.rowid
-		rec, err := c.btree.parseCellRecord(cell.data)
-		if err != nil {
+		if err := c.parseCellRecordInto(cell.data); err != nil {
 			c.eof = true
 			return false
 		}
-		c.record = rec
 		c.index++
 		return true
 	}
@@ -843,12 +870,10 @@ func (c *BTreeCursor) Next() bool {
 	if c.index < len(c.cells) {
 		cell := c.cells[c.index]
 		c.rowid = cell.rowid
-		rec, err := c.btree.parseCellRecord(cell.data)
-		if err != nil {
+		if err := c.parseCellRecordInto(cell.data); err != nil {
 			c.eof = true
 			return false
 		}
-		c.record = rec
 		c.index++
 		return true
 	}

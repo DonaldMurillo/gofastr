@@ -609,6 +609,82 @@ func ReadRecord(data []byte) (*Record, error) {
 	return &Record{Columns: columns}, nil
 }
 
+// ReadRecordInto parses a record from payload bytes, reusing an existing slice.
+// If buf has sufficient capacity, it is reused (resliced). Otherwise a new slice is allocated.
+func ReadRecordInto(data []byte, buf []Value) (*Record, error) {
+	if len(data) == 0 {
+		return nil, ErrRecordTooSmall
+	}
+
+	off := 0
+
+	headerSizeVal, n, err := DecodeVarintRaw(data[off:])
+	if err != nil {
+		return nil, err
+	}
+	off += n
+
+	if headerSizeVal < uint64(n) {
+		return nil, ErrRecordTooSmall
+	}
+	if headerSizeVal > uint64(len(data)) {
+		return nil, ErrTruncatedRecord
+	}
+
+	headerEnd := int(headerSizeVal)
+
+	// Count serial types
+	numCols := 0
+	for scanOff := off; scanOff < headerEnd; {
+		_, sn, err := DecodeVarintRaw(data[scanOff:])
+		if err != nil {
+			break
+		}
+		scanOff += sn
+		numCols++
+	}
+
+	if numCols == 0 {
+		return &Record{Columns: nil}, nil
+	}
+
+	// Use stack array for serial types
+	var serialTypesBuf [16]uint64
+	serialTypes := serialTypesBuf[:0]
+	if numCols > 16 {
+		serialTypes = make([]uint64, 0, numCols)
+	}
+
+	for off < headerEnd {
+		st, sn, err := DecodeVarintRaw(data[off:])
+		if err != nil {
+			return nil, err
+		}
+		off += sn
+		serialTypes = append(serialTypes, st)
+	}
+
+	// Reuse buf if possible
+	var columns []Value
+	if cap(buf) >= numCols {
+		columns = buf[:numCols]
+	} else {
+		columns = make([]Value, numCols)
+	}
+
+	bodyOff := headerEnd
+	for i, st := range serialTypes {
+		val, size, err := decodeSerialValue(data, bodyOff, st)
+		if err != nil {
+			return nil, err
+		}
+		columns[i] = val
+		bodyOff += size
+	}
+
+	return &Record{Columns: columns}, nil
+}
+
 // WriteRecord serializes a Record to bytes.
 func WriteRecord(r *Record) []byte {
 	ncols := len(r.Columns)
