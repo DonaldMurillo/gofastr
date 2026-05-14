@@ -88,7 +88,23 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/about", &AboutScreen{}, nil)
 
 	cssStr := createStyleSheet(*site.Theme)
-	hostOpts := []uihost.Option{uihost.WithCustomCSS(cssStr)}
+	hostOpts := []uihost.Option{
+		uihost.WithCustomCSS(cssStr),
+		uihost.WithFavicon("/static/favicon.ico"),
+		uihost.WithDescription("GoFastr demo website — SSR framework with islands, signals, and themes"),
+		uihost.WithThemeColor("#f7f5ee"),
+		uihost.WithOpenGraph(uihost.OG{
+			Title: "GoFastr",
+			URL:   "https://gofastr.dev",
+			Type:  "website",
+		}),
+		uihost.WithTwitterCard(uihost.TwitterCard{
+			Card:  "summary_large_image",
+			Title: "GoFastr",
+		}),
+		uihost.WithCanonicalURL("https://gofastr.dev"),
+		uihost.WithPreconnect("https://fonts.googleapis.com", "https://fonts.gstatic.com"),
+	}
 	if devMode() {
 		hostOpts = append(hostOpts, uihost.WithExtraScripts("/__livereload.js"))
 	}
