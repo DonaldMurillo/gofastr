@@ -183,9 +183,9 @@ type Pager struct {
 	pageSize  int
 	pageCount int
 	header    *DatabaseHeader
-	pages     map[int][]byte // page cache (1-indexed)
-	dirty     map[int]bool   // tracks which pages need flushing
-	pool      *pagePool      // buffer pool for page-sized allocations
+	pages     [][]byte // page cache (0=unused, 1-indexed)
+	dirty     []bool   // tracks which pages need flushing
+	pool      *pagePool
 }
 
 // pagePool manages reusable page-sized buffers.
@@ -225,8 +225,8 @@ func NewPager(file FileBackend, pageSize int) (*Pager, error) {
 	p := &Pager{
 		file:     file,
 		pageSize: pageSize,
-		pages:    make(map[int][]byte),
-		dirty:    make(map[int]bool),
+		pages:    make([][]byte, 0, 64), // 0=unused, pages are 1-indexed
+		dirty:    make([]bool, 0, 64),
 		pool:     newPagePool(pageSize),
 	}
 
@@ -245,6 +245,14 @@ func NewPager(file FileBackend, pageSize int) (*Pager, error) {
 	return p, nil
 }
 
+// cachedPage returns the cached page data or nil if not cached.
+func (p *Pager) cachedPage(num int) []byte {
+	if num < len(p.pages) {
+		return p.pages[num]
+	}
+	return nil
+}
+
 // GetPageDataReadOnly returns the page data without copying.
 // Caller must not modify the returned slice.
 func (p *Pager) GetPageDataReadOnly(num int) ([]byte, error) {
@@ -252,7 +260,7 @@ func (p *Pager) GetPageDataReadOnly(num int) ([]byte, error) {
 		return nil, errors.New("page number out of range")
 	}
 
-	if data, ok := p.pages[num]; ok {
+	if data := p.cachedPage(num); data != nil {
 		return data, nil
 	}
 
@@ -264,6 +272,7 @@ func (p *Pager) GetPageDataReadOnly(num int) ([]byte, error) {
 		return nil, err
 	}
 
+	p.ensureCapacity(num)
 	p.pages[num] = data
 	return data, nil
 }
@@ -288,6 +297,26 @@ func (p *Pager) PageCount() int {
 	return p.pageCount
 }
 
+func (p *Pager) ensureCapacity(need int) {
+	if need < len(p.pages) {
+		return
+	}
+	newCap := cap(p.pages)
+	if newCap < need+1 {
+		for newCap < need+1 {
+			newCap = newCap*2 + 1
+		}
+		newPages := make([][]byte, len(p.pages), newCap)
+		copy(newPages, p.pages)
+		p.pages = newPages
+		newDirty := make([]bool, len(p.dirty), newCap)
+		copy(newDirty, p.dirty)
+		p.dirty = newDirty
+	}
+	p.pages = p.pages[:need+1]
+	p.dirty = p.dirty[:need+1]
+}
+
 // AllocatePage allocates a new page and returns its page number (1-indexed).
 func (p *Pager) AllocatePage() (int, error) {
 	p.pageCount++
@@ -297,6 +326,7 @@ func (p *Pager) AllocatePage() (int, error) {
 	pageNum := p.pageCount
 
 	data := p.pool.Get()
+	p.ensureCapacity(pageNum)
 	p.pages[pageNum] = data
 	p.dirty[pageNum] = true
 
@@ -309,7 +339,7 @@ func (p *Pager) GetPageData(num int) ([]byte, error) {
 		return nil, errors.New("page number out of range")
 	}
 
-	if data, ok := p.pages[num]; ok {
+	if data := p.cachedPage(num); data != nil {
 		cp := p.pool.Get()
 		copy(cp, data)
 		return cp, nil
@@ -323,6 +353,7 @@ func (p *Pager) GetPageData(num int) ([]byte, error) {
 		return nil, err
 	}
 
+	p.ensureCapacity(num)
 	p.pages[num] = data
 	cp := p.pool.Get()
 	copy(cp, data)
@@ -338,8 +369,10 @@ func (p *Pager) GetPageDataMutable(num int) ([]byte, error) {
 		return nil, errors.New("page number out of range")
 	}
 
-	if data, ok := p.pages[num]; ok {
-		p.dirty[num] = true
+	if data := p.cachedPage(num); data != nil {
+		if num < len(p.dirty) {
+			p.dirty[num] = true
+		}
 		return data, nil
 	}
 
@@ -351,6 +384,7 @@ func (p *Pager) GetPageDataMutable(num int) ([]byte, error) {
 		return nil, err
 	}
 
+	p.ensureCapacity(num)
 	p.pages[num] = data
 	p.dirty[num] = true
 	return data, nil
@@ -366,6 +400,7 @@ func (p *Pager) SetPageData(num int, data []byte) error {
 
 	cp := p.pool.Get()
 	copy(cp, data)
+	p.ensureCapacity(num)
 	p.pages[num] = cp
 	p.dirty[num] = true
 	return nil
@@ -373,14 +408,17 @@ func (p *Pager) SetPageData(num int, data []byte) error {
 
 // Flush writes all dirty pages back to the file.
 func (p *Pager) Flush() error {
-	if p.dirty == nil || len(p.dirty) == 0 {
+	if len(p.dirty) == 0 {
 		return nil
 	}
-	for num := range p.dirty {
-		data, ok := p.pages[num]
-		if !ok {
+	for num := 1; num < len(p.dirty); num++ {
+		if !p.dirty[num] {
 			continue
 		}
+		if num >= len(p.pages) || p.pages[num] == nil {
+			continue
+		}
+		data := p.pages[num]
 
 		offset := int64(num-1) * int64(p.pageSize)
 		end := offset + int64(len(data))
@@ -395,7 +433,10 @@ func (p *Pager) Flush() error {
 		}
 	}
 
-	p.dirty = make(map[int]bool)
+	// Reset dirty flags
+	for i := range p.dirty {
+		p.dirty[i] = false
+	}
 	return nil
 }
 
@@ -423,8 +464,8 @@ func (p *Pager) Snapshot() []byte {
 // Restore restores pager state from a snapshot.
 func (p *Pager) Restore(data []byte) error {
 	// Clear cache
-	p.pages = make(map[int][]byte)
-	p.dirty = make(map[int]bool)
+	p.pages = make([][]byte, 0, 64)
+	p.dirty = make([]bool, 0, 64)
 	// Write data back to file
 	if err := p.file.Truncate(int64(len(data))); err != nil {
 		return err
@@ -473,6 +514,7 @@ func (p *Pager) InitNew() error {
 	headerBuf := WriteHeader(hdr)
 	copy(page1, headerBuf)
 
+	p.ensureCapacity(1)
 	p.pages[1] = page1
 	p.dirty[1] = true
 
@@ -599,9 +641,11 @@ func (p *Pager) SetSchemaPage(page int) {
 	p.header.ReservedExpansion[3] = byte(page)
 	// Write updated header back to page 1
 	hdrBuf := WriteHeader(p.header)
-	if page1, ok := p.pages[1]; ok {
+	if page1 := p.cachedPage(1); page1 != nil {
 		copy(page1, hdrBuf)
-		p.dirty[1] = true
+		if 1 < len(p.dirty) {
+			p.dirty[1] = true
+		}
 	} else if p.file != nil {
 		p.file.WriteAt(hdrBuf, 0)
 	}

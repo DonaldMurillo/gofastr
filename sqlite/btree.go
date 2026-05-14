@@ -369,13 +369,15 @@ func (b *BTree) splitAndInsert(pageNum int, cells []leafCell) error {
 		return err
 	}
 
-	// Initialize both as leaf pages
+	// Initialize both as leaf pages — AllocatePage already gave us zeroed buffers
 	for _, pn := range []int{leftPageNum, rightPageNum} {
-		d := make([]byte, b.pager.GetPageSize())
+		d, err := b.pager.GetPageDataMutable(pn)
+		if err != nil {
+			return err
+		}
 		o := b.pager.PageHeaderOffset(pn)
 		d[o] = pageTypeLeafTable
 		binary.BigEndian.PutUint16(d[o+5:], uint16(b.pager.GetPageSize()))
-		b.pager.SetPageData(pn, d)
 	}
 
 	if err := b.writeLeafPage(leftPageNum, cells[:mid]); err != nil {
@@ -385,9 +387,17 @@ func (b *BTree) splitAndInsert(pageNum int, cells []leafCell) error {
 		return err
 	}
 
-	// Convert the original page into an interior node
-	interiorData := make([]byte, b.pager.GetPageSize())
+	// Convert the original page into an interior node (reuse existing buffer)
+	interiorData, err := b.pager.GetPageDataMutable(pageNum)
+	if err != nil {
+		return err
+	}
 	interiorOffset := b.pager.PageHeaderOffset(pageNum)
+
+	// Clear the page
+	for i := interiorOffset; i < len(interiorData); i++ {
+		interiorData[i] = 0
+	}
 
 	interiorData[interiorOffset] = pageTypeInteriorTable
 	binary.BigEndian.PutUint16(interiorData[interiorOffset+3:], 1) // 1 cell
@@ -404,8 +414,6 @@ func (b *BTree) splitAndInsert(pageNum int, cells []leafCell) error {
 	headerEnd := interiorOffset + 12
 	binary.BigEndian.PutUint16(interiorData[headerEnd:], uint16(cellStart))
 	binary.BigEndian.PutUint16(interiorData[interiorOffset+5:], uint16(cellStart))
-
-	b.pager.SetPageData(pageNum, interiorData)
 
 	return nil
 }
