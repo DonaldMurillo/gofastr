@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -24,20 +25,41 @@ const (
 	ScreenDialog
 )
 
-// ScreenSpec is an optional interface that components can implement to
-// self-declare their screen metadata. When a component implements ScreenSpec,
-// the app reads title, description, and screen type directly from it — no
-// need for WithTitle/WithDescription/WithScreenType builder chaining.
-//
-// Implement only the methods you need; the builder methods still work as overrides.
-type ScreenSpec interface {
-	// ScreenTitle returns the page title for <title> and route metadata.
+// ScreenTitler is an optional interface for components that declare their
+// own page title. The returned string is the page-specific portion — the
+// framework appends the app name from AppConfig.Name to produce the full
+// <title>. For example, ScreenTitle() returning "Dashboard" with
+// AppConfig.Name "MyApp" produces <title>Dashboard — MyApp</title>.
+type ScreenTitler interface {
 	ScreenTitle() string
-	// ScreenDescription returns a short description for route preloading.
+}
+
+// ScreenDescriber is an optional interface for components that declare their
+// own page description (used for route preloading metadata and SEO).
+type ScreenDescriber interface {
 	ScreenDescription() string
-	// ScreenType returns the type of screen (page, drawer, sheet, dialog).
-	// Return ScreenPage for normal full-page views.
+}
+
+// ScreenTyper is an optional interface for components that declare their
+// screen type. If not implemented, the screen defaults to ScreenPage.
+// Most screens can omit this — only implement it for drawers, sheets, or dialogs.
+type ScreenTyper interface {
 	ScreenType() ScreenType
+}
+
+// ScreenSpec is a convenience interface that groups ScreenTitler,
+// ScreenDescriber, and ScreenTyper. Components can implement the full
+// interface, or implement just the individual interfaces they need.
+// For example, a component that only needs ScreenTitle can implement
+// ScreenTitler alone — ScreenType defaults to ScreenPage and description
+// defaults to empty.
+//
+// The builder methods (WithTitle, WithDescription, WithScreenType) still
+// work as overrides when using RegisterScreen instead of Register.
+type ScreenSpec interface {
+	ScreenTitler
+	ScreenDescriber
+	ScreenTyper
 }
 
 // ScreenComponentID is an optional extension of ScreenSpec that lets a screen
@@ -224,4 +246,30 @@ func (t ScreenType) String() string {
 	default:
 		return fmt.Sprintf("unknown(%d)", t)
 	}
+}
+
+// ValidateScreenOutput checks a screen's rendered output for common mistakes
+// and returns a slice of warning strings. An empty slice means no issues.
+// This is intended for dev-mode linting — it does not affect production
+// rendering.
+//
+// Currently checks:
+//   - Nested <main> elements: ScreenPage screens are already wrapped in <main>
+//     by the framework, so including <main> in the component output creates
+//     nested <main> elements (invalid HTML).
+func ValidateScreenOutput(screen *Screen, output string) []string {
+	var warnings []string
+
+	// Only check <main> nesting for page-type screens. Drawers, sheets,
+	// and dialogs don't get the <main> wrapper, so <main> in their output
+	// is fine.
+	if screen.Type == ScreenPage {
+		if strings.Contains(output, "<main") {
+			warnings = append(warnings,
+				fmt.Sprintf("screen %q: component output contains <main> but the framework already wraps ScreenPage in <main> — this creates nested <main> elements (invalid HTML). Return the content without the <main> wrapper.",
+					screen.Path))
+		}
+	}
+
+	return warnings
 }

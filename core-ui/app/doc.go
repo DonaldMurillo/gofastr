@@ -14,26 +14,22 @@
 //
 // # Quick Start
 //
-// Components that implement ScreenSpec carry their own metadata
-// (title, description, type), so Register reads it directly:
-//
-//	import (
-//	    "github.com/DonaldMurillo/gofastr/core-ui/app"
-//	    "github.com/DonaldMurillo/gofastr/core/render"
-//	)
+// Components can implement ScreenTitler, ScreenDescriber, and ScreenTyper
+// individually, or the combined ScreenSpec interface. Register detects
+// each interface independently — implement only what you need:
 //
 //	type Home struct{}
-//	func (h *Home) Render() render.HTML         { return render.Text("hi") }
-//	func (h *Home) ScreenTitle() string         { return "Home" }
-//	func (h *Home) ScreenDescription() string   { return "" }
-//	func (h *Home) ScreenType() app.ScreenType  { return app.ScreenPage }
+//	func (h *Home) Render() render.HTML        { return render.Text("hi") }
+//	func (h *Home) ScreenTitle() string        { return "Home" }
+//	// That's it — ScreenType defaults to ScreenPage, description defaults to empty.
 //
 //	application := app.NewApp("MyApp")
 //	application.Register("/", &Home{}, nil)
 //	html, _ := application.RenderPage(ctx, "/")
 //
-// For components without ScreenSpec, use RegisterScreen with the
-// builder: app.RegisterScreen(app.NewScreen("/", comp).WithTitle("Home"), nil).
+// For full control, implement ScreenSpec (all three methods). For components
+// without any metadata interfaces, use RegisterScreen with the builder:
+// app.RegisterScreen(app.NewScreen("/", comp).WithTitle("Home"), nil).
 //
 // # Screen Types
 //

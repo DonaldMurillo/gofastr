@@ -62,13 +62,14 @@ func (a *App) RegisterScreen(screen *Screen, layout *Layout) {
 }
 
 // Register adds a screen to the app by reading metadata from the component
-// if it implements ScreenSpec. This is the preferred registration API — the
-// component declares its own title, description, and type.
+// if it implements ScreenTitler, ScreenDescriber, or ScreenTyper. This is
+// the preferred registration API — the component declares its own metadata.
 //
-//	application.Register("/", &HomeScreen{})  // HomeScreen implements ScreenSpec
+//	application.Register("/", &HomeScreen{})  // HomeScreen implements ScreenTitler
 //
-// If the component does not implement ScreenSpec, it defaults to ScreenPage
-// with empty title/description (use RegisterScreen with builder for that case).
+// If the component does not implement ScreenTyper, it defaults to ScreenPage.
+// If it does not implement ScreenTitler, the title defaults to empty.
+// If it does not implement ScreenDescriber, the description defaults to empty.
 func (a *App) Register(path string, comp component.Component, layout *Layout) {
 	screen := &Screen{
 		Path:      path,
@@ -77,11 +78,17 @@ func (a *App) Register(path string, comp component.Component, layout *Layout) {
 		Component: comp,
 	}
 
-	// Read metadata from ScreenSpec if implemented
-	if spec, ok := comp.(ScreenSpec); ok {
-		screen.Title = spec.ScreenTitle()
-		screen.Description = spec.ScreenDescription()
-		screen.Type = spec.ScreenType()
+	// Read metadata from individual interfaces when implemented.
+	// Each is detected independently — a component can implement
+	// ScreenTitler alone, or ScreenTitler + ScreenDescriber, etc.
+	if titler, ok := comp.(ScreenTitler); ok {
+		screen.Title = titler.ScreenTitle()
+	}
+	if describer, ok := comp.(ScreenDescriber); ok {
+		screen.Description = describer.ScreenDescription()
+	}
+	if typer, ok := comp.(ScreenTyper); ok {
+		screen.Type = typer.ScreenType()
 	}
 
 	a.Router.Screen(screen, layout)
@@ -207,8 +214,8 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 	// Falls back to the registration-time title, then to the app name alone.
 	titleText := a.Name
 	effectiveTitle := screen.Title
-	if spec, ok := screen.Component.(ScreenSpec); ok {
-		if t := spec.ScreenTitle(); t != "" {
+	if titler, ok := screen.Component.(ScreenTitler); ok {
+		if t := titler.ScreenTitle(); t != "" {
 			effectiveTitle = t
 		}
 	}
