@@ -186,7 +186,7 @@ server do the math.
 ### How to build a page
 
 1. Implement `component.Component` (`Render() render.HTML`). Optionally also:
-   - `app.ScreenSpec` — `ScreenTitle()/Description()/Type()` so `app.Register(path, comp, layout)` reads metadata
+   - `app.ScreenTitler` / `app.ScreenDescriber` / `app.ScreenTyper` — individual optional interfaces so `app.Register(path, comp, layout)` reads just the metadata the component declares. Implement one, two, or all three (the combined `app.ScreenSpec` embeds all three for convenience). `ScreenTyper` defaults to `ScreenPage` when not implemented.
    - `app.ScreenLoader` — `Load(ctx) error` runs once per request after DI injection, before render
    - `app.ParamSetter` — `SetParams(map[string]string)` receives route params from dynamic paths
    (`Screen` itself is a struct value the router holds — not the interface you implement on your component.)
