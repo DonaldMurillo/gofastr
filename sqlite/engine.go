@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -552,7 +553,20 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 	// Pre-evaluate LIMIT and OFFSET for early termination
 	var limitN, offsetN int
 	hasLimit := false
-	canEarlyExit := len(s.OrderBy) == 0 && !hasAgg
+
+	// Check if ORDER BY is just rowid/primary key — B-tree scan is already ordered
+	orderByIsRowid := len(s.OrderBy) == 1 && !hasAgg && !s.OrderBy[0].Desc
+	if orderByIsRowid {
+		if colRef, ok := s.OrderBy[0].Expr.(ColumnRef); ok {
+			colName := strings.ToLower(colRef.Column)
+			if colName != "rowid" && (driveInfo.PrimaryKey < 0 || colName != strings.ToLower(driveInfo.Columns[driveInfo.PrimaryKey].Name)) {
+				orderByIsRowid = false
+			}
+		} else {
+			orderByIsRowid = false
+		}
+	}
+	canEarlyExit := (len(s.OrderBy) == 0 || orderByIsRowid) && !hasAgg
 
 	if s.Limit != nil {
 		limitEval := &ExprEval{Params: params}
@@ -735,8 +749,8 @@ doneScan:
 		rows = grouped
 	}
 
-	// Apply ORDER BY
-	if len(s.OrderBy) > 0 {
+	// Apply ORDER BY (skip if ORDER BY is rowid — already sorted by B-tree scan)
+	if len(s.OrderBy) > 0 && !orderByIsRowid {
 		rows = e.sortRows(rows, s.OrderBy, columns, driveInfo, params, outputCols)
 	}
 
@@ -2093,14 +2107,9 @@ func (e *Engine) sortRows(rows [][]Value, orderBy []OrderItem, columns []string,
 		return rows
 	}
 
-	// Simple insertion sort for now
-	for i := 1; i < len(rows); i++ {
-		for j := i; j > 0; j-- {
-			if e.compareRows(rows[j-1], rows[j], orderBy, columns, params, outputCols) > 0 {
-				rows[j-1], rows[j] = rows[j], rows[j-1]
-			}
-		}
-	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		return e.compareRows(rows[i], rows[j], orderBy, columns, params, outputCols) < 0
+	})
 	return rows
 }
 
