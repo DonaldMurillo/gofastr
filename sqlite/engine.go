@@ -591,13 +591,6 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 		indexRows = e.tryIndexScan(driveInfo.Name, s.Where, params)
 	}
 
-	// Open driving cursor
-	driveCursor, err := e.btree.Scan(driveInfo.RootPage)
-	if err != nil {
-		return nil, err
-	}
-	defer driveCursor.Close()
-
 	rowLen := combinedRowLen(tables)
 	if rowLen == 0 {
 		rowLen = 1 + len(driveInfo.Columns)
@@ -608,22 +601,44 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 	var groupKeys []string // pre-computed GROUP BY keys per row
 	matched := 0
 
+	// Open driving cursor — use seek when ORDER BY rowid + OFFSET to skip rows
+	var driveCursor CursorInterface
+	if canEarlyExit && offsetN > 0 && orderByIsRowid {
+		bc, err := e.btree.Scan(driveInfo.RootPage)
+		if err != nil {
+			return nil, err
+		}
+		if err := bc.(*BTreeCursor).SeekToRowid(int64(offsetN + 1)); err != nil {
+			bc.Close()
+			return nil, err
+		}
+		driveCursor = bc
+		// We've skipped offsetN rows via seek
+		matched = offsetN
+	} else {
+		driveCursor, err = e.btree.Scan(driveInfo.RootPage)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer driveCursor.Close()
+
 	// If index scan produced results, use those directly
 	if indexRows != nil {
+		idxEval := &ExprEval{
+			ColumnMap: flatColumnMap,
+			TableMap:  tableMap,
+			Params:   params,
+		}
 		for _, combined := range indexRows {
 			matched++
 			if canEarlyExit && offsetN > 0 && matched <= offsetN {
 				continue
 			}
 			resultRow := make([]Value, len(outputCols))
-			eval := &ExprEval{
-				Row:       combined,
-				ColumnMap: flatColumnMap,
-				TableMap:  tableMap,
-				Params:   params,
-			}
+			idxEval.Row = combined
 			for i, col := range outputCols {
-				val, err := eval.Eval(col.expr)
+				val, err := idxEval.Eval(col.expr)
 				if err != nil {
 					return nil, err
 				}
@@ -639,17 +654,19 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 		}
 	} else {
 
+	// Pre-allocate eval for reuse across rows
+	emitEval := &ExprEval{
+		ColumnMap: flatColumnMap,
+		TableMap:  tableMap,
+		Params:   params,
+		Engine:   e,
+	}
+
 	emitRow := func(combined []Value) error {
-		eval := &ExprEval{
-			Row:       combined,
-			ColumnMap: flatColumnMap,
-			TableMap:  tableMap,
-			Params:   params,
-			Engine:   e,
-		}
+		emitEval.Row = combined
 
 		if s.Where != nil {
-			val, err := eval.Eval(s.Where)
+			val, err := emitEval.Eval(s.Where)
 			if err != nil {
 				return err
 			}
@@ -668,7 +685,7 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 
 		resultRow := make([]Value, len(outputCols))
 		for i, col := range outputCols {
-			val, err := eval.Eval(col.expr)
+			val, err := emitEval.Eval(col.expr)
 			if err != nil {
 				return err
 			}

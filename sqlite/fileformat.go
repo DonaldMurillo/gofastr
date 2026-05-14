@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"sync"
 )
 
 // ---------------------------------------------------------------------------
@@ -516,6 +517,26 @@ func WriteInteriorTableCell(c *Cell) []byte {
 // by the body (the actual column values).
 type Record struct {
 	Columns []Value
+}
+
+// recordPool caches Record objects to reduce GC pressure during scans.
+var recordPool = sync.Pool{
+	New: func() interface{} { return &Record{} },
+}
+
+// GetRecord fetches a Record from the pool.
+func GetRecord() *Record {
+	return recordPool.Get().(*Record)
+}
+
+// PutRecord returns a Record to the pool.
+func PutRecord(r *Record) {
+	// Clear to help GC
+	for i := range r.Columns {
+		r.Columns[i] = Value{}
+	}
+	r.Columns = r.Columns[:0]
+	recordPool.Put(r)
 }
 
 // ReadRecord parses a record from payload bytes.

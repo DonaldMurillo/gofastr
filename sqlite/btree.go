@@ -590,6 +590,70 @@ func (b *BTree) parseCellRecord(cellData []byte) (*Record, error) {
 }
 
 // Scan returns a cursor for iterating all rows in the B-tree.
+// SeekToRowid positions the cursor at the first row with rowid >= target.
+// This is equivalent to a B-tree seek followed by sequential scan.
+func (c *BTreeCursor) SeekToRowid(target int64) error {
+	c.navStack = nil
+	c.currentPage = 0
+	c.cells = nil
+	c.index = 0
+	c.eof = false
+	return c.descendToRowid(c.rootPage, target)
+}
+
+func (c *BTreeCursor) descendToRowid(pageNum int, target int64) error {
+	data, err := c.btree.pager.GetPageDataReadOnly(pageNum)
+	if err != nil {
+		return err
+	}
+	offset := c.btree.pager.PageHeaderOffset(pageNum)
+	ph := ReadPageHeaderFrom(data[offset:])
+
+	if ph.PageType == pageTypeLeafTable {
+		c.currentPage = pageNum
+		c.cells = c.btree.readLeafCells(data, offset, ph)
+		// Binary search to find first cell >= target
+		idx := sort.Search(len(c.cells), func(i int) bool {
+			return c.cells[i].rowid >= target
+		})
+		c.index = idx
+		if idx >= len(c.cells) {
+			// Need to advance to next leaf
+			if err := c.advanceToNextLeaf(); err != nil {
+				c.eof = true
+			}
+		}
+		return nil
+	}
+
+	if ph.PageType != pageTypeInteriorTable {
+		return fmt.Errorf("unexpected page type %d", ph.PageType)
+	}
+
+	intCells := c.btree.readInteriorCells(data, offset, ph)
+
+	// Find the child to descend into
+	// Interior cells are sorted by rowid. Each cell has leftChild.
+	// If target < cells[0].rowid, go to cells[0].leftChild
+	// If target >= cells[i].rowid and target < cells[i+1].rowid, go to cells[i+1].leftChild
+	// If target >= cells[last].rowid, go to rightMostPtr
+	childIdx := sort.Search(len(intCells), func(i int) bool {
+		return intCells[i].rowid >= target
+	})
+
+	var childPage int
+	if childIdx < len(intCells) {
+		childPage = int(intCells[childIdx].leftChild)
+	} else {
+		childPage = int(ph.RightMostPtr)
+	}
+
+	// Push this interior node onto nav stack for advanceToNextLeaf
+	c.navStack = append(c.navStack, cursorNavEntry{pageNum: pageNum, childIdx: childIdx})
+
+	return c.descendToRowid(childPage, target)
+}
+
 func (b *BTree) Scan(rootPage int) (CursorInterface, error) {
 	cursor := &BTreeCursor{
 		btree:    b,
@@ -752,7 +816,7 @@ func (c *BTreeCursor) Next() bool {
 
 	if !c.started {
 		c.started = true
-		c.index = 0
+		// Note: don't reset c.index here — SeekToRowid may have set it
 	}
 
 	// Try current page
