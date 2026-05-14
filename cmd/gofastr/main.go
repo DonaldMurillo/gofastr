@@ -51,6 +51,10 @@ func printHelp() {
 
 %s:
   init <name>           Scaffold a new GoFastr project
+    Flags:
+      --module=<path>  Set Go module path (default: local/<name>)
+      --no-entity      Skip sample entity scaffolding
+      --db=<driver>    Database driver: sqlite (default) or postgres
   generate entity <n>   Generate an entity definition file
   theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go build
@@ -66,6 +70,8 @@ func printHelp() {
 
 %s:
   gofastr init myapp
+  gofastr init myapp --module=github.com/me/myapp
+  gofastr init myapp --no-entity
   gofastr generate entity user name:string email:string:unique
   gofastr theme init
   gofastr build
