@@ -602,16 +602,15 @@ func (c *BTreeCursor) parseCellRecordInto(cellData []byte) error {
 
 	recordStart := n1 + n2
 	if recordStart >= len(cellData) {
-		c.record = &Record{}
+		c.record = Record{}
 		return nil
 	}
 
-	rec, err := ReadRecordInto(cellData[recordStart:], c.recordBuf)
+	err = ReadRecordIntoRecord(cellData[recordStart:], &c.record, c.recordBuf)
 	if err != nil {
 		return err
 	}
-	c.recordBuf = rec.Columns
-	c.record = rec
+	c.recordBuf = c.record.Columns
 	return nil
 }
 
@@ -712,7 +711,7 @@ type BTreeCursor struct {
 	started bool
 	eof     bool
 	rowid   int64
-	record  *Record
+	record  Record // embedded — no per-row *Record alloc
 
 	// Reusable buffer for ReadRecordInto to avoid per-row allocation
 	recordBuf []Value
@@ -887,7 +886,7 @@ func (c *BTreeCursor) Get() (int64, *Record, error) {
 	if c.eof || !c.started {
 		return 0, nil, nil
 	}
-	return c.rowid, c.record, nil
+	return c.rowid, &c.record, nil
 }
 
 // Close releases cursor resources.
