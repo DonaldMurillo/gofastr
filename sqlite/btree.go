@@ -66,15 +66,50 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 	ph := ReadPageHeaderFrom(data[offset:])
 
 	if ph.PageType == pageTypeInteriorTable {
-		// Navigate to the correct child page
-		intCells := b.readInteriorCells(data, offset, ph)
-		childPage := int(ph.RightMostPtr)
-		for _, c := range intCells {
-			if rowid <= c.rowid {
-				childPage = int(c.leftChild)
+		// Binary search interior cells directly on raw page data
+		// without allocating a slice.
+		headerEnd := offset + 12
+		cellCount := int(ph.CellCount)
+		childPage := int(ph.RightMostPtr) // default: rightmost child for rowid > all
+
+		// Decode a cell rowid at a given index
+		cellRowid := func(idx int) (int64, uint32, bool) {
+			ptrOff := headerEnd + idx*2
+			if ptrOff+2 > len(data) {
+				return 0, 0, false
+			}
+			cellOff := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
+			if cellOff == 0 || cellOff+4 >= len(data) {
+				return 0, 0, false
+			}
+			lc := binary.BigEndian.Uint32(data[cellOff : cellOff+4])
+			rid, _, err := DecodeVarint(data[cellOff+4:])
+			if err != nil {
+				return 0, 0, false
+			}
+			return rid, lc, true
+		}
+
+		// Find the correct child: left child of first cell where rowid <= cell.rowid
+		found := false
+		lo, hi := 0, cellCount
+		for lo < hi {
+			mid := lo + (hi-lo)/2
+			rid, lc, ok := cellRowid(mid)
+			if !ok {
 				break
 			}
+			if rowid <= rid {
+				childPage = int(lc)
+				found = true
+				hi = mid // keep searching left for smaller match
+			} else {
+				lo = mid + 1
+			}
 		}
+		// If no cell matched (rowid > all), childPage stays as RightMostPtr
+		_ = found
+
 		if childPage == 0 {
 			return errors.New("no child page found")
 		}
@@ -451,12 +486,27 @@ func (b *BTree) searchLeaf(data []byte, offset int, ph PageHeader, rowid int64) 
 }
 
 func (b *BTree) searchInterior(pageNum int, data []byte, offset int, ph PageHeader, rowid int64) (*Record, error) {
-	cells := b.readInteriorCells(data, offset, ph)
+	// Zero-alloc binary search on interior cells
+	headerEnd := offset + 12
+	cellCount := int(ph.CellCount)
+	childPage := int(ph.RightMostPtr) // default: rightmost child
 
-	childPage := int(ph.RightMostPtr)
-	for _, c := range cells {
-		if rowid < c.rowid {
-			childPage = int(c.leftChild)
+	for i := 0; i < cellCount; i++ {
+		ptrOff := headerEnd + i*2
+		if ptrOff+2 > len(data) {
+			break
+		}
+		cellOff := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
+		if cellOff == 0 || cellOff+4 >= len(data) {
+			continue
+		}
+		lc := binary.BigEndian.Uint32(data[cellOff : cellOff+4])
+		rid, _, err := DecodeVarint(data[cellOff+4:])
+		if err != nil {
+			continue
+		}
+		if rowid < rid {
+			childPage = int(lc)
 			break
 		}
 	}
@@ -495,9 +545,20 @@ func (b *BTree) readInteriorCells(data []byte, offset int, ph PageHeader) []inte
 		cells = append(cells, interiorCell{rowid: rowid, leftChild: leftChild})
 	}
 
-	sort.Slice(cells, func(i, j int) bool {
-		return cells[i].rowid < cells[j].rowid
-	})
+	// Cells are written in rowid order during insert/split.
+	// Only sort if disorder detected (defensive).
+	needSort := false
+	for i := 1; i < len(cells); i++ {
+		if cells[i].rowid < cells[i-1].rowid {
+			needSort = true
+			break
+		}
+	}
+	if needSort {
+		sort.Slice(cells, func(i, j int) bool {
+			return cells[i].rowid < cells[j].rowid
+		})
+	}
 
 	return cells
 }

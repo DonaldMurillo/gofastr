@@ -305,6 +305,7 @@ func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 		return nil, err
 	}
 
+	c.shared.inTxn = true
 	c.tx = &tx{conn: c}
 	return c.tx, nil
 }
@@ -382,6 +383,7 @@ func (t *tx) Commit() error {
 	}
 	t.finished = true
 	t.conn.tx = nil
+	t.conn.shared.inTxn = false
 	_, err := t.conn.shared.engine.ExecuteStatement(&CommitStmt{})
 	t.conn.shared.mu.Unlock() // release lock held since Begin
 	return err
@@ -393,6 +395,7 @@ func (t *tx) Rollback() error {
 	}
 	t.finished = true
 	t.conn.tx = nil
+	t.conn.shared.inTxn = false
 	_, err := t.conn.shared.engine.ExecuteStatement(&RollbackStmt{})
 	t.conn.shared.mu.Unlock() // release lock held since Begin
 	return err
