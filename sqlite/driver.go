@@ -109,6 +109,7 @@ func newDiskEngine(path string) (*Engine, error) {
 type sharedEngine struct {
 	engine *Engine
 	mu     sync.RWMutex
+	inTxn  bool
 }
 
 func newSharedEngine(e *Engine) *sharedEngine {
@@ -125,7 +126,7 @@ func (se *sharedEngine) executeWrite(query string, params ...Value) (*Result, er
 	se.mu.Lock()
 	defer se.mu.Unlock()
 	result, err := se.engine.Execute(query, params...)
-	if err == nil && se.engine.pager != nil {
+	if err == nil && se.engine.pager != nil && !se.inTxn {
 		se.engine.pager.Flush()
 	}
 	return result, err
@@ -141,7 +142,7 @@ func (se *sharedEngine) executeStmtWrite(stmt Statement, params ...Value) (*Resu
 	se.mu.Lock()
 	defer se.mu.Unlock()
 	result, err := se.engine.ExecuteStatement(stmt, params...)
-	if err == nil && se.engine.pager != nil {
+	if err == nil && se.engine.pager != nil && !se.inTxn {
 		se.engine.pager.Flush()
 	}
 	return result, err
@@ -151,22 +152,37 @@ func (se *sharedEngine) begin() error {
 	se.mu.Lock()
 	defer se.mu.Unlock()
 	_, err := se.engine.ExecuteStatement(&BeginStmt{})
+	if err == nil {
+		se.inTxn = true
+	}
 	return err
 }
 
 func (se *sharedEngine) commit() error {
 	_, err := se.engine.ExecuteStatement(&CommitStmt{})
+	if err == nil {
+		se.inTxn = false
+		if se.engine.pager != nil {
+			se.engine.pager.Flush()
+		}
+	}
 	return err
 }
 
 func (se *sharedEngine) rollback() error {
 	_, err := se.engine.ExecuteStatement(&RollbackStmt{})
+	if err == nil {
+		se.inTxn = false
+	}
 	return err
 }
 
 func (se *sharedEngine) close() error {
 	se.mu.Lock()
 	defer se.mu.Unlock()
+	if se.engine.pager != nil {
+		se.engine.pager.Flush()
+	}
 	return se.engine.Close()
 }
 
@@ -208,7 +224,7 @@ func (c *sharedConnector) Driver() driver.Driver {
 	return &sqliteDriver{}
 }
 
-// CloseDB flushes and closes the underlying engine. Call this after sql.DB.Close().
+// CloseDB closes the sql.DB and flushes the underlying engine to disk.
 func CloseDB(db *sql.DB) {
 	db.Close()
 }
@@ -266,9 +282,6 @@ func (c *conn) Close() error {
 		return nil
 	}
 	c.closed = true
-	// Don't close the shared engine — other connections may use it.
-	// The engine is closed when the connector is garbage collected
-	// or explicitly via CloseDB.
 	return nil
 }
 

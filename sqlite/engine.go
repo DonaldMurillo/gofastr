@@ -23,11 +23,14 @@ type PagerInterface interface {
 	PageCount() int
 	AllocatePage() (int, error)
 	GetPageData(num int) ([]byte, error)
+	GetPageDataMutable(num int) ([]byte, error)
 	SetPageData(num int, data []byte) error
 	Flush() error
 	Close() error
 	Snapshot() []byte
 	Restore([]byte) error
+	GetSchemaPage() int
+	SetSchemaPage(page int)
 }
 
 // BTreeInterface abstracts B-tree operations.
@@ -60,14 +63,29 @@ func (e *Engine) Schema() *Schema {
 	return e.schema
 }
 
-const schemaPageStart = 1000 // Schema stored at high page numbers to avoid B-tree conflict
+// Schema page storage:
+//   - Schema start page is stored in header ReservedExpansion[0:4] (big-endian uint32)
+//   - Schema pages are allocated right after the last data page
+//   - Page 0 of schema = 4-byte total JSON length + JSON chunk
+//   - Additional pages: 4-byte chunk length + JSON chunk
+//   - A schema start of 0 means no schema exists
 
-// ensureSchemaPages allocates pages up to at least schemaPageStart + count.
-func (e *Engine) ensureSchemaPages(count int) {
-	target := schemaPageStart + count
-	for e.pager.PageCount() < target {
-		e.pager.AllocatePage()
+const schemaPageSignature uint32 = 0x5343484D // "SCHM" magic
+
+// schemaStartPage returns the page number where schema begins, or 0 if none.
+func (e *Engine) schemaStartPage() int {
+	if e.pager == nil {
+		return 0
 	}
+	return e.pager.GetSchemaPage()
+}
+
+// setSchemaStartPage writes the schema start page into the header.
+func (e *Engine) setSchemaStartPage(page int) {
+	if e.pager == nil {
+		return
+	}
+	e.pager.SetSchemaPage(page)
 }
 
 // LoadSchema loads the schema from the database.
@@ -75,12 +93,14 @@ func (e *Engine) LoadSchema() error {
 	if e.pager == nil {
 		return nil
 	}
-	if e.pager.PageCount() < schemaPageStart {
+
+	startPage := e.schemaStartPage()
+	if startPage == 0 || startPage > e.pager.PageCount() {
 		return nil
 	}
 
 	var data []byte
-	for pn := schemaPageStart; pn <= e.pager.PageCount(); pn++ {
+	for pn := startPage; pn <= e.pager.PageCount(); pn++ {
 		page, err := e.pager.GetPageData(pn)
 		if err != nil {
 			break
@@ -191,9 +211,17 @@ func (e *Engine) SaveSchema() error {
 	if needed == 0 {
 		needed = 1
 	}
-	e.ensureSchemaPages(needed)
 
-	pn := schemaPageStart
+	// Allocate schema pages right after current last page
+	startPage := e.pager.PageCount() + 1
+	for i := 0; i < needed; i++ {
+		e.pager.AllocatePage()
+	}
+
+	// Store schema start page in header
+	e.setSchemaStartPage(startPage)
+
+	pn := startPage
 	for len(data) > 0 {
 		var chunk []byte
 		if len(data) > chunkSize {

@@ -56,7 +56,7 @@ func (b *BTree) buildLeafCell(rowid int64, payload []byte) []byte {
 }
 
 func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
-	data, err := b.pager.GetPageData(pageNum)
+	data, err := b.pager.GetPageDataMutable(pageNum)
 	if err != nil {
 		return err
 	}
@@ -89,35 +89,52 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 	headerEnd := offset + 8
 	cellPtrStart := headerEnd // cell pointer array starts here
 
-	// Binary search for insert position using rowids from cell data
+	// Binary search for insert position
 	insertIdx := cellCount
 	replaceIdx := -1
-	for i := 0; i < cellCount && i < maxCellsPerPage; i++ {
-		ptrOff := cellPtrStart + i*2
+
+	// Helper to extract rowid from cell pointer
+	cellRowid := func(idx int) (int64, bool) {
+		ptrOff := cellPtrStart + idx*2
 		if ptrOff+2 > len(data) {
-			break
+			return 0, false
 		}
 		cellOff := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
 		if cellOff == 0 || cellOff >= len(data) {
-			continue
+			return 0, false
 		}
-		// Decode rowid from cell
 		_, n1, err := DecodeVarint(data[cellOff:])
 		if err != nil {
-			continue
+			return 0, false
 		}
-		cellRowid, _, err := DecodeVarint(data[cellOff+n1:])
+		rid, _, err := DecodeVarint(data[cellOff+n1:])
 		if err != nil {
-			continue
+			return 0, false
 		}
-		if cellRowid == rowid {
-			replaceIdx = i
-			insertIdx = i
+		return rid, true
+	}
+
+	// True binary search
+	lo, hi := 0, cellCount
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		rid, ok := cellRowid(mid)
+		if !ok {
 			break
 		}
-		if cellRowid > rowid && i < insertIdx {
-			insertIdx = i
+		if rid == rowid {
+			replaceIdx = mid
+			insertIdx = mid
+			break
 		}
+		if rid < rowid {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	if replaceIdx < 0 {
+		insertIdx = lo
 	}
 
 	// Calculate free space
@@ -158,7 +175,7 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 			for i := oldCellOff + cellLen; i < oldCellEnd; i++ {
 				data[i] = 0
 			}
-			return b.pager.SetPageData(pageNum, data)
+			return nil
 		}
 		// New cell is larger — fall through to slow path (rewrite page)
 	}
@@ -179,7 +196,7 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 		// Update cell count
 		binary.BigEndian.PutUint16(data[offset+3:], uint16(cellCount+1))
 
-		return b.pager.SetPageData(pageNum, data)
+		return nil
 	}
 
 	// Slow path: need to read all cells and possibly split

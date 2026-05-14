@@ -330,6 +330,32 @@ func (p *Pager) GetPageData(num int) ([]byte, error) {
 }
 
 // SetPageData sets the page data for the given page number.
+// GetPageDataMutable returns a direct reference to the page buffer for in-place modification.
+// The caller MUST NOT hold the reference after calling any other pager methods.
+// The page is automatically marked dirty.
+func (p *Pager) GetPageDataMutable(num int) ([]byte, error) {
+	if num < 1 || num > p.pageCount {
+		return nil, errors.New("page number out of range")
+	}
+
+	if data, ok := p.pages[num]; ok {
+		p.dirty[num] = true
+		return data, nil
+	}
+
+	offset := int64(num-1) * int64(p.pageSize)
+	data := p.pool.Get()
+	_, err := p.file.ReadAt(data, offset)
+	if err != nil {
+		p.pool.Put(data)
+		return nil, err
+	}
+
+	p.pages[num] = data
+	p.dirty[num] = true
+	return data, nil
+}
+
 func (p *Pager) SetPageData(num int, data []byte) error {
 	if num < 1 || num > p.pageCount {
 		return errors.New("page number out of range")
@@ -552,5 +578,31 @@ func WritePageHeaderTo(data []byte, h PageHeader) {
 	data[7] = h.FragmentedBytes
 	if h.PageType == pageTypeInteriorTable || h.PageType == pageTypeInteriorIndex {
 		binary.BigEndian.PutUint32(data[8:12], h.RightMostPtr)
+	}
+}
+
+func (p *Pager) GetSchemaPage() int {
+	if p.header == nil {
+		return 0
+	}
+	buf := p.header.ReservedExpansion[:4]
+	return int(buf[0])<<24 | int(buf[1])<<16 | int(buf[2])<<8 | int(buf[3])
+}
+
+func (p *Pager) SetSchemaPage(page int) {
+	if p.header == nil {
+		return
+	}
+	p.header.ReservedExpansion[0] = byte(page >> 24)
+	p.header.ReservedExpansion[1] = byte(page >> 16)
+	p.header.ReservedExpansion[2] = byte(page >> 8)
+	p.header.ReservedExpansion[3] = byte(page)
+	// Write updated header back to page 1
+	hdrBuf := WriteHeader(p.header)
+	if page1, ok := p.pages[1]; ok {
+		copy(page1, hdrBuf)
+		p.dirty[1] = true
+	} else if p.file != nil {
+		p.file.WriteAt(hdrBuf, 0)
 	}
 }
