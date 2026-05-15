@@ -819,6 +819,74 @@ func WriteRecord(r *Record) []byte {
 }
 
 // decodeSerialValue decodes a single value from the record body given a serial type.
+// DecodeRecordColumn decodes a single column by index from raw record bytes.
+// Returns the Value without decoding other columns.
+// Returns error if colIdx is out of range.
+func DecodeRecordColumn(data []byte, colIdx int) (Value, error) {
+	if len(data) == 0 {
+		return NullValue, ErrRecordTooSmall
+	}
+
+	off := 0
+	headerSizeVal, n, err := DecodeVarintRaw(data[off:])
+	if err != nil {
+		return NullValue, err
+	}
+	off += n
+	headerEnd := int(headerSizeVal)
+
+	// First pass: collect serial types and compute body offsets
+	curCol := 0
+	bodyOff := headerEnd
+	for off < headerEnd {
+		st, sn, err := DecodeVarintRaw(data[off:])
+		if err != nil {
+			return NullValue, err
+		}
+
+		if curCol == colIdx {
+			val, _, err := decodeSerialValue(data, bodyOff, st)
+			return val, err
+		}
+
+		off += sn
+		bodyOff += serialTypeBodySize(st)
+		curCol++
+	}
+
+	return NullValue, nil // column not found
+}
+
+// serialTypeBodySize returns the byte size of a value given its serial type.
+func serialTypeBodySize(st uint64) int {
+	switch {
+	case st == 0:
+		return 0
+	case st == 1:
+		return 1
+	case st == 2:
+		return 2
+	case st == 3:
+		return 3
+	case st == 4:
+		return 4
+	case st == 5:
+		return 6
+	case st == 6:
+		return 8
+	case st == 7:
+		return 8
+	case st == 8, st == 9:
+		return 0
+	case st >= 12 && st%2 == 0:
+		return int((st - 12) / 2)
+	case st >= 13 && st%2 == 1:
+		return int((st - 13) / 2)
+	default:
+		return 0
+	}
+}
+
 // Returns the Value and the number of bytes consumed.
 func decodeSerialValue(data []byte, off int, serialType uint64) (Value, int, error) {
 	switch serialType {

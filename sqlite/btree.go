@@ -889,6 +889,24 @@ func (c *BTreeCursor) Get() (int64, *Record, error) {
 	return c.rowid, &c.record, nil
 }
 
+// RawRecordData returns the raw record bytes for the current cell,
+// skipping the payload-size and rowid varint prefixes.
+func (c *BTreeCursor) RawRecordData() []byte {
+	if c.eof || !c.started || c.index-1 < 0 || c.index-1 >= len(c.cells) {
+		return nil
+	}
+	cellData := c.cells[c.index-1].data
+	_, n1, err := DecodeVarint(cellData)
+	if err != nil {
+		return nil
+	}
+	_, n2, err := DecodeVarint(cellData[n1:])
+	if err != nil {
+		return nil
+	}
+	return cellData[n1+n2:]
+}
+
 // Close releases cursor resources.
 func (c *BTreeCursor) Close() error {
 	c.cells = nil

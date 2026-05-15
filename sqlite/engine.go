@@ -50,6 +50,7 @@ type BTreeInterface interface {
 type CursorInterface interface {
 	Next() bool
 	Get() (int64, *Record, error)
+	RawRecordData() []byte
 	Close() error
 }
 
@@ -734,10 +735,71 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 			return nil, err
 		}
 	} else {
+	// Compute WHERE column indices for lazy evaluation (only worthwhile
+	// when table has many columns but WHERE only needs a few)
+	var whereRecordCols []int // record column indices needed by WHERE
+	var whereOnlyRefs bool
+	if s.Where != nil && !hasJoins && len(driveInfo.Columns) > 4 {
+		whereRefs := CollectColumnRefs(s.Where)
+		for _, ref := range whereRefs {
+			if ref.Table != "" {
+				if tmap, ok := tableMap[strings.ToLower(ref.Table)]; ok {
+					if idx, ok := tmap[strings.ToLower(ref.Column)]; ok {
+						recIdx := idx - tables[0].offset
+						if recIdx >= 0 {
+							whereRecordCols = append(whereRecordCols, recIdx)
+						}
+					}
+				}
+			} else {
+				colName := strings.ToLower(ref.Column)
+				if colName == "rowid" {
+					continue
+				}
+				if idx, ok := flatColumnMap[colName]; ok {
+					recIdx := idx - tables[0].offset
+					if recIdx >= 0 {
+						whereRecordCols = append(whereRecordCols, recIdx)
+					}
+				}
+			}
+		}
+		whereOnlyRefs = len(whereRecordCols) > 0 && len(driveInfo.Columns) > len(whereRecordCols)+2
+	}
+
 	for driveCursor.Next() {
 		rowid, record, err := driveCursor.Get()
 		if err != nil {
 			return nil, err
+		}
+
+		// Lazy WHERE eval: if WHERE only needs a subset of columns,
+		// evaluate it from raw record data before decoding all columns
+		if whereOnlyRefs && !hasJoins && s.Where != nil {
+			// Build partial combined row with only WHERE columns
+			partialCombined := make([]Value, rowLen)
+			partialCombined[0] = IntegerValue(rowid)
+
+			rawData := driveCursor.RawRecordData()
+			if rawData != nil {
+				for _, recIdx := range whereRecordCols {
+					val, _ := DecodeRecordColumn(rawData, recIdx)
+					partialCombined[tables[0].offset+recIdx] = val
+				}
+
+				// Evaluate WHERE with partial row
+				emitEval.Row = partialCombined
+				whereVal, wErr := emitEval.Eval(s.Where)
+				if wErr == nil {
+					if whereVal.IsNull() {
+						continue
+					}
+					if b, ok := whereVal.AsInt64(); !ok || b == 0 {
+						continue
+					}
+				}
+			}
+			// WHERE passed — fall through to full decode
 		}
 
 		combined := make([]Value, rowLen)

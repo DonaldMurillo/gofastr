@@ -972,3 +972,60 @@ func computeAggregateFunc(fc FunctionCall, rows [][]Value) (Value, error) {
 type evalError struct{ msg string }
 
 func (e *evalError) Error() string { return e.msg }
+
+// CollectColumnRefs walks an expression tree and collects all ColumnRef nodes.
+func CollectColumnRefs(expr Expr) []ColumnRef {
+	if expr == nil {
+		return nil
+	}
+	switch ex := expr.(type) {
+	case ColumnRef:
+		return []ColumnRef{ex}
+	case BinaryExpr:
+		return append(CollectColumnRefs(ex.Left), CollectColumnRefs(ex.Right)...)
+	case UnaryExpr:
+		return CollectColumnRefs(ex.Expr)
+	case FunctionCall:
+		var refs []ColumnRef
+		for _, arg := range ex.Args {
+			refs = append(refs, CollectColumnRefs(arg)...)
+		}
+		return refs
+	case *FunctionCall:
+		var refs []ColumnRef
+		for _, arg := range ex.Args {
+			refs = append(refs, CollectColumnRefs(arg)...)
+		}
+		return refs
+	case ParenExpr:
+		return CollectColumnRefs(ex.Expr)
+	case BetweenExpr:
+		refs := CollectColumnRefs(ex.Expr)
+		refs = append(refs, CollectColumnRefs(ex.Low)...)
+		refs = append(refs, CollectColumnRefs(ex.High)...)
+		return refs
+	case InExpr:
+		refs := CollectColumnRefs(ex.Expr)
+		for _, v := range ex.Values {
+			refs = append(refs, CollectColumnRefs(v)...)
+		}
+		return refs
+	case IsNullExpr:
+		return CollectColumnRefs(ex.Expr)
+	case LikeExpr:
+		refs := CollectColumnRefs(ex.Expr)
+		refs = append(refs, CollectColumnRefs(ex.Pattern)...)
+		return refs
+	case CaseExpr:
+		var refs []ColumnRef
+		refs = append(refs, CollectColumnRefs(ex.Operand)...)
+		for _, w := range ex.Whens {
+			refs = append(refs, CollectColumnRefs(w.Condition)...)
+			refs = append(refs, CollectColumnRefs(w.Result)...)
+		}
+		refs = append(refs, CollectColumnRefs(ex.Else)...)
+		return refs
+	default:
+		return nil
+	}
+}
