@@ -769,7 +769,14 @@ func WriteRecord(r *Record) []byte {
 	}
 
 	// Phase 1: compute serial types to determine header size
-	serialTypes := make([]uint64, ncols)
+	// Use stack-allocated array for common case (≤16 columns)
+	var stackSerial [16]uint64
+	var serialTypes []uint64
+	if ncols <= len(stackSerial) {
+		serialTypes = stackSerial[:ncols]
+	} else {
+		serialTypes = make([]uint64, ncols)
+	}
 	totalBody := 0
 	for i, col := range r.Columns {
 		st := computeSerialType(col)

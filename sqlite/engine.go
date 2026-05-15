@@ -7,15 +7,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Engine is the SQL execution engine.
 // It coordinates between the pager, B-tree, schema, and parser.
 type Engine struct {
-	pager   PagerInterface
-	btree   BTreeInterface
-	schema  *Schema
-	txnSnap *txnSnapshot
+	pager       PagerInterface
+	btree       BTreeInterface
+	schema      *Schema
+	txnSnap     *txnSnapshot
+	stmtCache   map[string]Statement
+	stmtCacheMu sync.RWMutex
 }
 
 // PagerInterface abstracts pager operations the engine needs.
@@ -57,9 +60,10 @@ type CursorInterface interface {
 // NewEngine creates a new execution engine.
 func NewEngine(pager PagerInterface, btree BTreeInterface) *Engine {
 	return &Engine{
-		pager:  pager,
-		btree:  btree,
-		schema: NewSchema(),
+		pager:     pager,
+		btree:     btree,
+		schema:    NewSchema(),
+		stmtCache: make(map[string]Statement, 64),
 	}
 }
 
@@ -261,10 +265,24 @@ func (e *Engine) Close() error {
 
 // Execute parses and executes a SQL statement.
 func (e *Engine) Execute(sql string, params ...Value) (*Result, error) {
-	parser := NewParser(sql)
-	stmt, err := parser.Parse()
-	if err != nil {
-		return nil, err
+	// Try prepared statement cache (read lock)
+	e.stmtCacheMu.RLock()
+	stmt, cached := e.stmtCache[sql]
+	e.stmtCacheMu.RUnlock()
+
+	if !cached {
+		parser := NewParser(sql)
+		var err error
+		stmt, err = parser.Parse()
+		if err != nil {
+			return nil, err
+		}
+		// Cache the parsed statement (write lock)
+		e.stmtCacheMu.Lock()
+		if len(e.stmtCache) < 256 {
+			e.stmtCache[sql] = stmt
+		}
+		e.stmtCacheMu.Unlock()
 	}
 	return e.ExecuteStatement(stmt, params...)
 }
@@ -307,6 +325,16 @@ func (e *Engine) ExecuteStatement(stmt Statement, params ...Value) (*Result, err
 	}
 }
 
+// invalidateStmtCache clears the prepared statement cache.
+// Called when DDL changes the schema.
+func (e *Engine) invalidateStmtCache() {
+	e.stmtCacheMu.Lock()
+	for k := range e.stmtCache {
+		delete(e.stmtCache, k)
+	}
+	e.stmtCacheMu.Unlock()
+}
+
 func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*Result, error) {
 	switch s := s.(type) {
 	case *InsertStmt:
@@ -318,42 +346,49 @@ func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*
 	case *CreateTableStmt:
 		res, err := e.executeCreateTable(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *CreateIndexStmt:
 		res, err := e.executeCreateIndex(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *DropTableStmt:
 		res, err := e.executeDropTable(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *DropIndexStmt:
 		res, err := e.executeDropIndex(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *AlterAddColumnStmt:
 		res, err := e.executeAlterAddColumn(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *AlterRenameTableStmt:
 		res, err := e.executeAlterRenameTable(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *AlterRenameColumnStmt:
 		res, err := e.executeAlterRenameColumn(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
@@ -366,12 +401,14 @@ func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*
 	case *CreateViewStmt:
 		res, err := e.executeCreateView(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err
 	case *DropViewStmt:
 		res, err := e.executeDropView(s)
 		if err == nil {
+			e.invalidateStmtCache()
 			e.SaveSchema()
 		}
 		return res, err

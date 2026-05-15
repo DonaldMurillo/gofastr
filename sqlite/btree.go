@@ -63,14 +63,21 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 
 	offset := b.pager.PageHeaderOffset(pageNum)
 	pageSize := b.pager.GetPageSize()
-	ph := ReadPageHeaderFrom(data[offset:])
 
-	if ph.PageType == pageTypeInteriorTable {
+	// Read page type and cell count inline — avoids ReadPageHeaderFrom struct overhead.
+	// Direct big-endian decode avoids binary.BigEndian method call overhead.
+	hdr := data[offset:]
+	pageType := hdr[0]
+	cellCount := int(uint16(hdr[3])<<8 | uint16(hdr[4]))
+	contentOffset := uint16(hdr[5])<<8 | uint16(hdr[6])
+
+	if pageType == pageTypeInteriorTable {
 		// Binary search interior cells directly on raw page data
 		// without allocating a slice.
 		headerEnd := offset + 12
-		cellCount := int(ph.CellCount)
-		childPage := int(ph.RightMostPtr) // default: rightmost child for rowid > all
+		intCellCount := cellCount
+		intRightMost := int(binary.BigEndian.Uint32(hdr[8:12]))
+		childPage := intRightMost // default: rightmost child for rowid > all
 
 		// Decode a cell rowid at a given index
 		cellRowid := func(idx int) (int64, uint32, bool) {
@@ -92,7 +99,7 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 
 		// Find the correct child: left child of first cell where rowid <= cell.rowid
 		found := false
-		lo, hi := 0, cellCount
+		lo, hi := 0, intCellCount
 		for lo < hi {
 			mid := lo + (hi-lo)/2
 			rid, lc, ok := cellRowid(mid)
@@ -116,11 +123,10 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 		return b.insertIntoPage(childPage, rowid, cell)
 	}
 
-	if ph.PageType != pageTypeLeafTable {
+	if pageType != pageTypeLeafTable {
 		return errors.New("expected leaf table page")
 	}
 
-	cellCount := int(ph.CellCount)
 	headerEnd := offset + 8
 	cellPtrStart := headerEnd // cell pointer array starts here
 
@@ -172,21 +178,24 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 		insertIdx = lo
 	}
 
-	// Calculate free space
-	// Cell content area grows from the end of the page toward the beginning.
-	// Free space = space between cell pointer array end and first cell content.
-	cellPtrEnd := cellPtrStart + cellCount*2
-	firstContent := pageSize
-	for i := 0; i < cellCount; i++ {
-		ptrOff := cellPtrStart + i*2
-		if ptrOff+2 <= len(data) {
-			co := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
-			if co > 0 && co < firstContent {
-				firstContent = co
+	// Use ContentOffset from page header (maintained by writeLeafPage)
+	// to find where cell content area starts — avoids scanning all cell pointers.
+	firstContent := int(contentOffset)
+	if firstContent == 0 || firstContent > pageSize {
+		firstContent = pageSize
+		// Fallback: scan cell pointers for minimum offset
+		for i := 0; i < cellCount; i++ {
+			ptrOff := cellPtrStart + i*2
+			if ptrOff+2 <= len(data) {
+				co := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
+				if co > 0 && co < firstContent {
+					firstContent = co
+				}
 			}
 		}
 	}
 
+	cellPtrEnd := cellPtrStart + cellCount*2
 	cellLen := len(cell)
 	newPtrEnd := cellPtrEnd
 	if replaceIdx < 0 {
@@ -196,7 +205,7 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 	// For replaces, check if new cell fits at the same position
 	if replaceIdx >= 0 {
 		replacePtrOff := cellPtrStart + replaceIdx*2
-		oldCellOff := int(binary.BigEndian.Uint16(data[replacePtrOff : replacePtrOff+2]))
+		oldCellOff := int(uint16(data[replacePtrOff])<<8 | uint16(data[replacePtrOff+1]))
 		// Decode old cell size
 		oldPayloadSize, n1, _ := DecodeVarint(data[oldCellOff:])
 		_, n2, _ := DecodeVarint(data[oldCellOff+n1:])
@@ -223,18 +232,34 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 		// Shift pointers from insertIdx onward right by 2 bytes
 		for j := cellCount; j > insertIdx; j-- {
 			srcOff := cellPtrStart + (j-1)*2
-			binary.BigEndian.PutUint16(data[cellPtrStart+j*2:], binary.BigEndian.Uint16(data[srcOff:srcOff+2]))
+			v := uint16(data[srcOff])<<8 | uint16(data[srcOff+1])
+			dstOff := cellPtrStart + j*2
+			data[dstOff] = byte(v >> 8)
+			data[dstOff+1] = byte(v)
 		}
 		copy(data[cellWriteOff:], cell)
-		binary.BigEndian.PutUint16(data[cellPtrStart+insertIdx*2:], uint16(cellWriteOff))
+		dstOff := cellPtrStart + insertIdx*2
+		data[dstOff] = byte(cellWriteOff >> 8)
+		data[dstOff+1] = byte(cellWriteOff)
 
 		// Update cell count
-		binary.BigEndian.PutUint16(data[offset+3:], uint16(cellCount+1))
+		cnt := uint16(cellCount + 1)
+		data[offset+3] = byte(cnt >> 8)
+		data[offset+4] = byte(cnt)
+
+		// Update ContentOffset to reflect new cell position
+		data[offset+5] = byte(cellWriteOff >> 8)
+		data[offset+6] = byte(cellWriteOff)
 
 		return nil
 	}
 
 	// Slow path: need to read all cells and possibly split
+	ph := PageHeader{
+		PageType:      pageType,
+		CellCount:      uint16(cellCount),
+		ContentOffset:  contentOffset,
+	}
 	cells := b.readLeafCells(data, offset, ph)
 
 	if replaceIdx >= 0 {
@@ -430,9 +455,11 @@ func (b *BTree) deleteFromPage(pageNum int, rowid int64) error {
 	}
 
 	offset := b.pager.PageHeaderOffset(pageNum)
-	ph := ReadPageHeaderFrom(data[offset:])
+	hdr := data[offset:]
+	pageType := hdr[0]
 
-	if ph.PageType == pageTypeInteriorTable {
+	if pageType == pageTypeInteriorTable {
+		ph := ReadPageHeaderFrom(hdr)
 		intCells := b.readInteriorCells(data, offset, ph)
 		childPage := int(ph.RightMostPtr)
 		for _, c := range intCells {
@@ -447,6 +474,7 @@ func (b *BTree) deleteFromPage(pageNum int, rowid int64) error {
 		return b.deleteFromPage(childPage, rowid)
 	}
 
+	ph := PageHeader{PageType: pageType, CellCount: binary.BigEndian.Uint16(hdr[3:5]), ContentOffset: binary.BigEndian.Uint16(hdr[5:7])}
 	cells := b.readLeafCells(data, offset, ph)
 
 	for i, c := range cells {
@@ -467,12 +495,21 @@ func (b *BTree) Search(rootPage int, rowid int64) (*Record, error) {
 	}
 
 	offset := b.pager.PageHeaderOffset(rootPage)
-	ph := ReadPageHeaderFrom(data[offset:])
+	pageType := data[offset]
 
-	if ph.PageType == pageTypeLeafTable {
+	ph := PageHeader{
+		PageType:     pageType,
+		CellCount:    binary.BigEndian.Uint16(data[offset+3 : offset+5]),
+		ContentOffset: binary.BigEndian.Uint16(data[offset+5 : offset+7]),
+	}
+	if pageType == pageTypeInteriorTable {
+		ph.RightMostPtr = binary.BigEndian.Uint32(data[offset+8 : offset+12])
+	}
+
+	if pageType == pageTypeLeafTable {
 		return b.searchLeaf(data, offset, ph, rowid)
 	}
-	if ph.PageType == pageTypeInteriorTable {
+	if pageType == pageTypeInteriorTable {
 		return b.searchInterior(rootPage, data, offset, ph, rowid)
 	}
 
@@ -739,19 +776,26 @@ func (c *BTreeCursor) descendToLeftmost(pageNum int) error {
 			return err
 		}
 		offset := c.btree.pager.PageHeaderOffset(pageNum)
-		ph := ReadPageHeaderFrom(data[offset:])
+		hdr := data[offset:]
+		pageType := hdr[0]
 
-		if ph.PageType == pageTypeLeafTable {
+		if pageType == pageTypeLeafTable {
+			ph := PageHeader{
+				PageType:      pageType,
+				CellCount:     binary.BigEndian.Uint16(hdr[3:5]),
+				ContentOffset: binary.BigEndian.Uint16(hdr[5:7]),
+			}
 			c.currentPage = pageNum
 			c.cells = c.btree.readLeafCells(data, offset, ph)
 			c.index = 0
 			return nil
 		}
 
-		if ph.PageType != pageTypeInteriorTable {
-			return fmt.Errorf("unexpected page type %d", ph.PageType)
+		if pageType != pageTypeInteriorTable {
+			return fmt.Errorf("unexpected page type %d", pageType)
 		}
 
+		ph := ReadPageHeaderFrom(hdr)
 		intCells := c.btree.readInteriorCells(data, offset, ph)
 
 		// Push all children onto nav stack in reverse order (rightmost first)
@@ -812,14 +856,21 @@ func (c *BTreeCursor) collectLeaves(pageNum int) error {
 	}
 
 	offset := c.btree.pager.PageHeaderOffset(pageNum)
-	ph := ReadPageHeaderFrom(data[offset:])
+	hdr := data[offset:]
+	pageType := hdr[0]
 
-	if ph.PageType == pageTypeLeafTable {
+	if pageType == pageTypeLeafTable {
+		ph := PageHeader{
+			PageType:      pageType,
+			CellCount:     binary.BigEndian.Uint16(hdr[3:5]),
+			ContentOffset: binary.BigEndian.Uint16(hdr[5:7]),
+		}
 		c.cells = c.btree.readLeafCells(data, offset, ph)
 		return nil
 	}
 
-	if ph.PageType == pageTypeInteriorTable {
+	if pageType == pageTypeInteriorTable {
+		ph := ReadPageHeaderFrom(hdr)
 		intCells := c.btree.readInteriorCells(data, offset, ph)
 
 		for _, ic := range intCells {
