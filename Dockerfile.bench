@@ -1,0 +1,27 @@
+FROM golang:1.24-alpine AS bench
+
+ENV GOTOOLCHAIN=auto
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY sqlite/ sqlite/
+
+# Install mattn/go-sqlite3 for CGO comparison
+RUN go get github.com/mattn/go-sqlite3
+
+CMD ["sh", "-c", "\
+echo '========================================' && \
+echo '  PURE GO BENCHMARKS (linux/arm64)' && \
+echo '========================================' && \
+go test ./sqlite/ -count=1 -race -timeout 120s && \
+go test ./sqlite/ -bench='BenchmarkEngine|BenchmarkDriver' -benchtime=500ms -count=1 -benchmem -run='^$' -timeout 120s && \
+echo '' && \
+echo '========================================' && \
+echo '  CGO (mattn/go-sqlite3) BENCHMARKS' && \
+echo '========================================' && \
+go test ./sqlite/ -tags=cgo -bench='BenchmarkCGO' -benchtime=500ms -count=1 -benchmem -run='^$' -timeout 120s \
+"]
