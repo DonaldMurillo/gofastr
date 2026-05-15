@@ -667,6 +667,28 @@ func BenchmarkDriverTransaction(b *testing.B) {
 	}
 }
 
+// BenchmarkDriverTransactionFixed has a fixed table size — deletes the batch after each tx.
+// This measures steady-state insert performance without tree growth.
+func BenchmarkDriverTransactionFixed(b *testing.B) {
+	db := openBenchDB(b)
+	db.Exec("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
+	// Pre-populate
+	for i := 0; i < 500; i++ {
+		db.Exec("INSERT INTO t (id, val) VALUES (?, ?)", i, fmt.Sprintf("v_%d", i))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tx, _ := db.Begin()
+		base := int64(1000000 + i*50)
+		for j := 0; j < 50; j++ {
+			tx.Exec("INSERT INTO t (id, val) VALUES (?, ?)", base+int64(j), fmt.Sprintf("v_%d", base+int64(j)))
+		}
+		tx.Commit()
+		// Delete the batch to keep table size stable
+		db.Exec("DELETE FROM t WHERE id >= ?", base)
+	}
+}
+
 func BenchmarkDriverRoundTrip(b *testing.B) {
 	// Measures full round-trip: prepare -> exec -> query -> scan
 	db := openBenchDB(b)

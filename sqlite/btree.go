@@ -287,11 +287,16 @@ type leafCell struct {
 }
 
 func (b *BTree) readLeafCells(data []byte, offset int, ph PageHeader) []leafCell {
+	return b.readLeafCellsInto(nil, data, offset, ph)
+}
+
+// readLeafCellsInto reuses the provided buffer (resliced to [:0]) to avoid allocation.
+func (b *BTree) readLeafCellsInto(buf []leafCell, data []byte, offset int, ph PageHeader) []leafCell {
 	if ph.CellCount == 0 {
-		return nil
+		return buf[:0]
 	}
 
-	var cells []leafCell
+	cells := buf[:0]
 	headerEnd := offset + 8
 
 	for i := 0; i < int(ph.CellCount) && i < maxCellsPerPage; i++ {
@@ -299,7 +304,7 @@ func (b *BTree) readLeafCells(data []byte, offset int, ph PageHeader) []leafCell
 		if ptrOff+2 > len(data) {
 			break
 		}
-		cellOff := int(binary.BigEndian.Uint16(data[ptrOff : ptrOff+2]))
+		cellOff := int(uint16(data[ptrOff])<<8 | uint16(data[ptrOff+1]))
 		if cellOff == 0 || cellOff >= len(data) {
 			continue
 		}
@@ -340,6 +345,9 @@ func (b *BTree) cellsFitInPage(cells []leafCell, pageSize int, headerOffset int)
 }
 
 func (b *BTree) writeLeafPage(pageNum int, cells []leafCell) error {
+	// Use GetPageData (returns a copy) because we need to read cell data
+	// from the existing buffer while writing the new layout. A mutable
+	// reference would alias the cell sub-slices and corrupt them on clear.
 	data, err := b.pager.GetPageData(pageNum)
 	if err != nil {
 		return err
@@ -449,7 +457,7 @@ func (b *BTree) Delete(rootPage int, rowid int64) error {
 }
 
 func (b *BTree) deleteFromPage(pageNum int, rowid int64) error {
-	data, err := b.pager.GetPageData(pageNum)
+	data, err := b.pager.GetPageDataMutable(pageNum)
 	if err != nil {
 		return err
 	}
@@ -673,7 +681,7 @@ func (c *BTreeCursor) descendToRowid(pageNum int, target int64) error {
 
 	if ph.PageType == pageTypeLeafTable {
 		c.currentPage = pageNum
-		c.cells = c.btree.readLeafCells(data, offset, ph)
+		c.cells = c.btree.readLeafCellsInto(c.cells[:0], data, offset, ph)
 		// Binary search to find first cell >= target
 		idx := sort.Search(len(c.cells), func(i int) bool {
 			return c.cells[i].rowid >= target
@@ -786,7 +794,7 @@ func (c *BTreeCursor) descendToLeftmost(pageNum int) error {
 				ContentOffset: binary.BigEndian.Uint16(hdr[5:7]),
 			}
 			c.currentPage = pageNum
-			c.cells = c.btree.readLeafCells(data, offset, ph)
+			c.cells = c.btree.readLeafCellsInto(c.cells[:0], data, offset, ph)
 			c.index = 0
 			return nil
 		}
@@ -865,7 +873,7 @@ func (c *BTreeCursor) collectLeaves(pageNum int) error {
 			CellCount:     binary.BigEndian.Uint16(hdr[3:5]),
 			ContentOffset: binary.BigEndian.Uint16(hdr[5:7]),
 		}
-		c.cells = c.btree.readLeafCells(data, offset, ph)
+		c.cells = c.btree.readLeafCellsInto(c.cells[:0], data, offset, ph)
 		return nil
 	}
 
