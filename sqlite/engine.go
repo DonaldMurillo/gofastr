@@ -767,6 +767,7 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 		whereOnlyRefs = len(whereRecordCols) > 0 && len(driveInfo.Columns) > len(whereRecordCols)+2
 	}
 
+	var combined []Value // reusable buffer for scan loop
 	for driveCursor.Next() {
 		rowid, record, err := driveCursor.Get()
 		if err != nil {
@@ -802,7 +803,9 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 			// WHERE passed — fall through to full decode
 		}
 
-		combined := make([]Value, rowLen)
+		if combined == nil {
+			combined = make([]Value, rowLen)
+		}
 		vals := recordToValues(record, driveInfo)
 		combined[0] = IntegerValue(rowid)
 		for i, v := range vals {
