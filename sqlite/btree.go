@@ -327,9 +327,13 @@ func (b *BTree) readLeafCellsInto(buf []leafCell, data []byte, offset int, ph Pa
 		cells = append(cells, leafCell{rowid: rowid, data: cellData})
 	}
 
-	sort.Slice(cells, func(i, j int) bool {
-		return cells[i].rowid < cells[j].rowid
-	})
+	// Insertion sort — cells are nearly sorted from page order.
+	// Avoids sort.Slice closure + interface allocation.
+	for i := 1; i < len(cells); i++ {
+		for j := i; j > 0 && cells[j].rowid < cells[j-1].rowid; j-- {
+			cells[j], cells[j-1] = cells[j-1], cells[j]
+		}
+	}
 
 	return cells
 }
@@ -608,9 +612,11 @@ func (b *BTree) readInteriorCells(data []byte, offset int, ph PageHeader) []inte
 		}
 	}
 	if needSort {
-		sort.Slice(cells, func(i, j int) bool {
-			return cells[i].rowid < cells[j].rowid
-		})
+		for i := 1; i < len(cells); i++ {
+			for j := i; j > 0 && cells[j].rowid < cells[j-1].rowid; j-- {
+				cells[j], cells[j-1] = cells[j-1], cells[j]
+			}
+		}
 	}
 
 	return cells
