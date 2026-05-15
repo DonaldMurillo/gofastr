@@ -735,3 +735,190 @@ func BenchmarkFullPipeline(b *testing.B) {
 		e.Execute("SELECT COUNT(*) FROM t")
 	}
 }
+
+// ============================================================================
+// FAIR COMPARISON BENCHMARKS
+//
+// These are EXACT structural mirrors of the CGO benchmarks in
+// cgo_bench_test.go. Same DB lifecycle, same queries, same data,
+// same number of columns. The ONLY difference is the driver.
+//
+// When adding/changing benchmarks here, update cgo_bench_test.go too.
+// ============================================================================
+
+func openBenchDBForCompare(b *testing.B) *sql.DB {
+	b.Helper()
+	db, err := Open()
+	if err != nil {
+		b.Fatal(err)
+	}
+	return db
+}
+
+// Fair_CreateTable: fresh DB per iteration, exact mirror of CGO.
+func BenchmarkFair_CreateTable(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		db := openBenchDBForCompare(b)
+		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+		db.Close()
+	}
+}
+
+// Fair_Insert: 1 DB, loop INSERT with inline values, exact mirror of CGO.
+func BenchmarkFair_Insert(b *testing.B) {
+	db := openBenchDBForCompare(b)
+	defer db.Close()
+	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		db.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
+	}
+}
+
+// Fair_InsertPrepared: prepared statement, exact mirror of CGO.
+func BenchmarkFair_InsertPrepared(b *testing.B) {
+	db := openBenchDBForCompare(b)
+	defer db.Close()
+	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+	stmt, _ := db.Prepare("INSERT INTO t(name, score) VALUES(?, ?)")
+	defer stmt.Close()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		stmt.Exec("hello", 1.5)
+	}
+}
+
+// Fair_SelectAll: 1000 rows, 3 cols, scan all, exact mirror of CGO.
+func BenchmarkFair_SelectAll(b *testing.B) {
+	db := openBenchDBForCompare(b)
+	defer db.Close()
+	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+	for i := 0; i < 1000; i++ {
+		db.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rows, _ := db.Query("SELECT * FROM t")
+		for rows.Next() {
+			var id int
+			var name string
+			var score float64
+			rows.Scan(&id, &name, &score)
+		}
+		rows.Close()
+	}
+}
+
+// Fair_SelectWhere: 1000 rows, name = 'user_a' filter, exact mirror of CGO.
+func BenchmarkFair_SelectWhere(b *testing.B) {
+	db := openBenchDBForCompare(b)
+	defer db.Close()
+	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+	for i := 0; i < 1000; i++ {
+		name := "user_a"
+		if i%2 == 0 {
+			name = "user_b"
+		}
+		db.Exec("INSERT INTO t(name, score) VALUES(?, 1.5)", name)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rows, _ := db.Query("SELECT * FROM t WHERE name = 'user_a'")
+		for rows.Next() {
+			var id int
+			var name string
+			var score float64
+			rows.Scan(&id, &name, &score)
+		}
+		rows.Close()
+	}
+}
+
+// Fair_Delete: fresh DB per iteration, exact mirror of CGO.
+func BenchmarkFair_Delete(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		db := openBenchDBForCompare(b)
+		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)")
+		db.Exec("INSERT INTO t(name) VALUES('hello')")
+		b.StopTimer()
+		// reset for next iter
+		db.Close()
+		db = openBenchDBForCompare(b)
+		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)")
+		db.Exec("INSERT INTO t(name) VALUES('hello')")
+		b.StartTimer()
+		db.Exec("DELETE FROM t WHERE id = 1")
+		db.Close()
+	}
+}
+
+// Fair_Transaction: fresh DB per iteration, 50 inserts, exact mirror of CGO.
+func BenchmarkFair_Transaction(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		db := openBenchDBForCompare(b)
+		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+		tx, _ := db.Begin()
+		for j := 0; j < 50; j++ {
+			tx.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
+		}
+		tx.Commit()
+		db.Close()
+	}
+}
+
+// Fair_OLTP: single-row table, prepared point query, exact mirror of CGO.
+func BenchmarkFair_OLTP(b *testing.B) {
+	db := openBenchDBForCompare(b)
+	defer db.Close()
+	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+	db.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
+	stmt, _ := db.Prepare("SELECT * FROM t WHERE id = ?")
+	defer stmt.Close()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rows, _ := stmt.Query(1)
+		rows.Next()
+		var id int
+		var name string
+		var score float64
+		rows.Scan(&id, &name, &score)
+		rows.Close()
+	}
+}
+
+// Fair_OrderByLimit: 100 rows, ORDER BY id LIMIT 10, exact mirror of CGO.
+func BenchmarkFair_OrderByLimit(b *testing.B) {
+	db := openBenchDBForCompare(b)
+	defer db.Close()
+	db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)")
+	for i := 0; i < 100; i++ {
+		db.Exec("INSERT INTO t(name) VALUES('hello')")
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rows, _ := db.Query("SELECT * FROM t ORDER BY id LIMIT 10")
+		for rows.Next() {
+			var id int
+			var name string
+			rows.Scan(&id, &name)
+		}
+		rows.Close()
+	}
+}
+
+// Fair_DriverTransaction: fresh DB per iteration, uses tx.Exec (not tx.Prepare)
+// because our driver is single-connection and tx.Prepare deadlocks.
+// CGO version uses tx.Prepare because it supports multiple connections.
+// Both do 50 inserts per tx.
+func BenchmarkFair_DriverTransaction(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		db := openBenchDBForCompare(b)
+		db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+		tx, _ := db.Begin()
+		for j := 0; j < 50; j++ {
+			tx.Exec("INSERT INTO t(name, score) VALUES('hello', 1.5)")
+		}
+		tx.Commit()
+		db.Close()
+	}
+}
