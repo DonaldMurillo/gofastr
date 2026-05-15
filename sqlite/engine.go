@@ -265,6 +265,11 @@ func (e *Engine) Close() error {
 
 // Execute parses and executes a SQL statement.
 func (e *Engine) Execute(sql string, params ...Value) (*Result, error) {
+	return e.ExecuteWithCache(sql, params...)
+}
+
+// ExecuteWithCache uses the statement cache to avoid re-parsing.
+func (e *Engine) ExecuteWithCache(sql string, params ...Value) (*Result, error) {
 	// Try prepared statement cache (read lock)
 	e.stmtCacheMu.RLock()
 	stmt, cached := e.stmtCache[sql]
@@ -334,6 +339,8 @@ func (e *Engine) invalidateStmtCache() {
 	}
 	e.stmtCacheMu.Unlock()
 }
+
+// isReadStmt returns true if the statement is a SELECT (read-only).
 
 func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*Result, error) {
 	switch s := s.(type) {

@@ -318,21 +318,16 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 
 	params := namedValuesToValues(args)
 
-	// Parse to determine if read or write
-	parser := NewParser(query)
-	stmt, err := parser.Parse()
-	if err != nil {
-		return nil, err
-	}
-
 	var result *Result
+	var err error
 	if c.tx != nil {
-		// Already holding write lock from Begin()
-		result, err = c.shared.engine.ExecuteStatement(stmt, params...)
-	} else if isReadStmt(stmt) {
-		result, err = c.shared.executeStmtRead(stmt, params...)
+		// Already holding write lock from Begin().
+		// Use the engine cache to skip parsing for repeated statements.
+		result, err = c.shared.engine.ExecuteWithCache(query, params...)
 	} else {
-		result, err = c.shared.executeStmtWrite(stmt, params...)
+		// Use engine cache for auto-commit writes. The cache
+		// avoids re-parsing and handles read/write classification.
+		result, err = c.shared.executeWrite(query, params...)
 	}
 	if err != nil {
 		return nil, err
