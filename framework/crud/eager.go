@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -23,19 +24,33 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 	}
 
 	tableName := ent.GetTable()
+	// Validate the parent table name once upfront.
+	if _, err := query.SafeIdent(tableName); err != nil {
+		return nil, fmt.Errorf("eager load: invalid parent table %q: %w", tableName, err)
+	}
 
 	for _, rel := range relations {
+		// Validate all relation-derived identifiers before building SQL.
+		safeRelEntity, err := query.SafeIdent(rel.Entity)
+		if err != nil {
+			return nil, fmt.Errorf("eager load %s: invalid relation entity %q: %w", rel.Name, rel.Entity, err)
+		}
+		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		if err != nil {
+			return nil, fmt.Errorf("eager load %s: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
+		}
+
 		switch rel.Type {
 		case entity.RelHasOne, entity.RelHasMany:
-			if err := eagerLoadHasMany(ctx, db, tableName, rel, ids, pkCol, result); err != nil {
+			if err := eagerLoadHasMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToOne:
-			if err := eagerLoadBelongsTo(ctx, db, tableName, rel, ids, result); err != nil {
+			if err := eagerLoadBelongsTo(ctx, db, tableName, safeRelEntity, safeFK, rel, ids, result); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToMany:
-			if err := eagerLoadManyToMany(ctx, db, tableName, rel, ids, pkCol, result); err != nil {
+			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		}
@@ -45,7 +60,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 }
 
 // eagerLoadHasMany handles HasOne and HasMany: target table has a FK pointing back to us.
-func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any) error {
+func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -54,7 +69,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel enti
 	}
 
 	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)",
-		rel.Entity, rel.ForeignKey, strings.Join(placeholders, ", "))
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "))
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -82,7 +97,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel enti
 			row[c] = vals[i]
 		}
 
-		parentID := fmt.Sprintf("%v", row[rel.ForeignKey])
+		parentID := fmt.Sprintf("%v", row[safeFK])
 		if existing, ok := result[parentID]; ok {
 			if rel.Type == entity.RelHasOne {
 				existing[rel.Name] = row
@@ -101,7 +116,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, table string, rel enti
 }
 
 // eagerLoadBelongsTo handles BelongsTo (ManyToOne): we hold a FK pointing to the target.
-func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel entity.Relation, ids []string, result map[string]map[string]any) error {
+func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, safeFK string, rel entity.Relation, ids []string, result map[string]map[string]any) error {
 	pkCol := "id"
 
 	placeholders := make([]string, len(ids))
@@ -112,7 +127,9 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel en
 	}
 
 	srcQuery := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s IN (%s)",
-		pkCol, rel.ForeignKey, table, pkCol, strings.Join(placeholders, ", "))
+		query.QuoteIdent(pkCol), query.QuoteIdent(safeFK),
+		query.QuoteIdent(table), query.QuoteIdent(pkCol),
+		strings.Join(placeholders, ", "))
 
 	rows, err := db.QueryContext(ctx, srcQuery, args...)
 	if err != nil {
@@ -155,7 +172,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel en
 	}
 
 	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)",
-		rel.Entity, strings.Join(fkPlaceholders, ", "))
+		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "))
 
 	tgtRows, err := db.QueryContext(ctx, tgtQuery, fkArgs...)
 	if err != nil {
@@ -200,7 +217,20 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, rel en
 }
 
 // eagerLoadManyToMany handles ManyToMany through a pivot table.
-func eagerLoadManyToMany(ctx context.Context, db DBExecutor, table string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any) error {
+func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any) error {
+	safeThrough, err := query.SafeIdent(rel.Through)
+	if err != nil {
+		return fmt.Errorf("invalid through table %q: %w", rel.Through, err)
+	}
+	safeLocalKey, err := query.SafeIdent(rel.LocalKey)
+	if err != nil {
+		return fmt.Errorf("invalid local key %q: %w", rel.LocalKey, err)
+	}
+	safeFKTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
+	if err != nil {
+		return fmt.Errorf("invalid FK target %q: %w", rel.ForeignKeyTarget, err)
+	}
+
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -210,10 +240,12 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, table string, rel e
 
 	q := fmt.Sprintf(
 		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)",
-		rel.Entity, rel.Through, rel.LocalKey,
-		rel.Entity, rel.Through,
-		rel.Entity, rel.Through, rel.ForeignKeyTarget,
-		rel.Through, rel.LocalKey,
+		query.QuoteIdent(safeEntity),
+		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
+		query.QuoteIdent(safeEntity),
+		query.QuoteIdent(safeThrough),
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough), query.QuoteIdent(safeFKTarget),
+		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
 		strings.Join(placeholders, ", "),
 	)
 

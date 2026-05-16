@@ -42,11 +42,9 @@ import (
 
 // e2eApp wires every relevant feature into one app.
 type e2eEnv struct {
-	app          *App
-	server       *httptest.Server
-	client       *http.Client
-	sessionStore auth.SessionStore
-	repo         *e2eMemUserRepo
+	app    *App
+	server *httptest.Server
+	client *http.Client
 }
 
 // fullTestUser implements auth.User for the e2e flow.
@@ -59,38 +57,67 @@ func (u fullTestUser) GetID() string      { return u.id }
 func (u fullTestUser) GetEmail() string   { return u.email }
 func (u fullTestUser) GetRoles() []string { return u.roles }
 
-// e2eMemUserRepo is a tiny in-memory UserRepository for the auth flow.
-type e2eMemUserRepo struct {
-	users map[string]struct {
+// e2eMemUserStore implements auth.UserStore (the modern interface) for
+// the e2e flow. Exposes FindByEmail / FindByID / CreateUser.
+type e2eMemUserStore struct {
+	byEmail map[string]struct {
+		user auth.User
+		hash string
+	}
+	byID map[string]struct {
 		user auth.User
 		hash string
 	}
 }
 
-func (r *e2eMemUserRepo) FindByEmail(_ context.Context, email string) (auth.User, string, error) {
-	entry, ok := r.users[email]
-	if !ok {
-		return nil, "", auth.ErrInvalidCredentials
+func (s *e2eMemUserStore) FindByEmail(_ context.Context, email string) (auth.User, string, error) {
+	if e, ok := s.byEmail[email]; ok {
+		return e.user, e.hash, nil
 	}
-	return entry.user, entry.hash, nil
+	return nil, "", auth.ErrUserNotFound
 }
 
-func newE2EUserRepo(t *testing.T) *e2eMemUserRepo {
+func (s *e2eMemUserStore) FindByID(_ context.Context, id string) (auth.User, error) {
+	if e, ok := s.byID[id]; ok {
+		return e.user, nil
+	}
+	return nil, auth.ErrUserNotFound
+}
+
+func (s *e2eMemUserStore) CreateUser(_ context.Context, email, hashedPassword string, roles []string) (auth.User, error) {
+	if _, exists := s.byEmail[email]; exists {
+		return nil, auth.ErrEmailTaken
+	}
+	u := fullTestUser{id: "u-" + email, email: email, roles: roles}
+	entry := struct {
+		user auth.User
+		hash string
+	}{user: u, hash: hashedPassword}
+	s.byEmail[email] = entry
+	s.byID[u.id] = entry
+	return u, nil
+}
+
+func newE2EUserStore(t *testing.T) *e2eMemUserStore {
 	t.Helper()
 	hash, err := auth.HashPassword("hunter2")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
-	return &e2eMemUserRepo{
-		users: map[string]struct {
+	u := fullTestUser{id: "u1", email: "alice@x.com", roles: []string{"admin"}}
+	entry := struct {
+		user auth.User
+		hash string
+	}{user: u, hash: hash}
+	return &e2eMemUserStore{
+		byEmail: map[string]struct {
 			user auth.User
 			hash string
-		}{
-			"alice@x.com": {
-				user: fullTestUser{id: "u1", email: "alice@x.com", roles: []string{"admin"}},
-				hash: hash,
-			},
-		},
+		}{"alice@x.com": entry},
+		byID: map[string]struct {
+			user auth.User
+			hash string
+		}{"u1": entry},
 	}
 }
 
@@ -118,10 +145,9 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 		}
 	}
 
-	// Pre-route middleware: metrics + ratelimit + session hydration.
+	// Pre-route middleware: metrics + ratelimit + csrf.
 	r := router.New()
-	store := auth.NewMemorySessionStore()
-	repo := newE2EUserRepo(t)
+	userStore := newE2EUserStore(t)
 
 	metrics := middleware.NewMetrics()
 	r.Use(
@@ -133,8 +159,17 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 			RefillEvery: time.Minute,
 			RefillBy:    200,
 		})),
-		router.Middleware(middleware.CSRF(middleware.CSRFConfig{Skip: middleware.SkipBearerAuth()})),
-		router.Middleware(auth.SessionMiddleware(store, "")),
+		// SecretKey makes the CSRF cookie HMAC-signed and pins this test
+		// to the production wiring pattern. In production you want a
+		// stable key sourced from config (env / secret manager) so
+		// tokens survive deploys and the signing seam is auditable. The
+		// fixed test key here documents that pattern; the per-process
+		// autogen path is acceptable for the simplest dev setups but
+		// rotates on every restart and is not the recommended posture.
+		router.Middleware(middleware.CSRF(middleware.CSRFConfig{
+			Skip:      middleware.SkipBearerAuth(),
+			SecretKey: []byte("e2e-test-csrf-key-32-bytes-long!!"),
+		})),
 	)
 
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithRouter(r),
@@ -159,7 +194,21 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 		},
 	}.WithTimestamps(false))
 
-	auth.MountAuthRoutes(r, store, repo, auth.SessionConfig{TTL: time.Hour})
+	// Auth wiring: AuthManager + CorePlugin.
+	mgr := auth.New(auth.AuthConfig{
+		SessionTTL:    time.Hour,
+		SessionCookie: "session_id",
+		UserStore:     userStore,
+		// httptest serves over plain HTTP — DevMode keeps the cookie
+		// readable (no __Host- prefix) and Secure=false.
+		DevMode: true,
+	})
+	mgr.Use(auth.NewCorePlugin())
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("auth init: %v", err)
+	}
+	mgr.RegisterRoutes(r)
+
 	r.Get("/metrics", middleware.MetricsHandler(metrics))
 
 	srv := httptest.NewServer(r)
@@ -168,7 +217,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
 
-	return &e2eEnv{app: app, server: srv, client: client, sessionStore: store, repo: repo}
+	return &e2eEnv{app: app, server: srv, client: client}
 }
 
 // doRequest sends req through the env's client + cookie jar, captures + returns

@@ -139,7 +139,7 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20)) // 10 MB max
 	if err != nil {
 		return nil, fmt.Errorf("embed: read ollama response: %w", err)
 	}

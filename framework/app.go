@@ -54,6 +54,8 @@ type App struct {
 	Plugins  *PluginManager
 	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
+	Batteries *BatteryManager
+
 	server     *http.Server
 	events     *event.EventBus
 	hooks      map[string]*hook.HookRegistry
@@ -172,6 +174,7 @@ func NewApp(opts ...AppOption) *App {
 		MCP:      mcp.NewServer(),
 		Config:   AppConfig{JSONCase: crud.CaseCamel},
 		Plugins:  NewPluginManager(),
+		Batteries: NewBatteryManager(),
 		events:   event.NewEventBus(),
 		hooks:    make(map[string]*hook.HookRegistry),
 	}
@@ -325,10 +328,31 @@ func (a *App) RegisterPlugin(plugin Plugin) *App {
 	return a
 }
 
-// InitPlugins initializes all registered plugins and calls their optional
-// interface methods (HasRoutes, HasMiddleware, HasTools, HasHooks).
-// This should be called after all plugins are registered and before the server starts.
+// RegisterBattery registers a heavyweight, lifecycle-aware battery module
+// (auth, search, cache, etc.) with the application. deps lists battery names
+// that must be initialized before this one. Returns the App for chaining.
+//
+// Batteries are initialized in dependency order during App.Start, before the
+// HTTP server binds. The battery's optional interfaces (BatteryRoutes,
+// BatteryMiddleware, BatteryHooks, BatteryTools, BatteryLifecycle) are called
+// automatically at the appropriate lifecycle stage.
+//
+// Example:
+//
+//	app.RegisterBattery(auth.New(auth.Config{...}), "search") // depends on search battery
+func (a *App) RegisterBattery(b Battery, deps ...string) *App {
+	if err := a.Batteries.Register(b, deps...); err != nil {
+		panic(fmt.Sprintf("framework: failed to register battery %q: %v", b.Name(), err))
+	}
+	return a
+}
+
+// InitPlugins initializes all registered plugins and batteries, and calls
+// their optional interface methods (HasRoutes, BatteryRoutes, etc.).
+// This should be called after all plugins/batteries are registered and
+// before the server starts.
 func (a *App) InitPlugins() error {
+	// Initialize lightweight plugins first
 	if err := a.Plugins.InitAll(a); err != nil {
 		return err
 	}
@@ -336,6 +360,16 @@ func (a *App) InitPlugins() error {
 	a.Plugins.RegisterMiddleware(a)
 	a.Plugins.RegisterTools(a.MCP)
 	a.Plugins.RegisterHooks(a)
+
+	// Initialize batteries (dependency-ordered)
+	if err := a.Batteries.InitAll(a); err != nil {
+		return err
+	}
+	a.Batteries.RegisterRoutes(a.Router)
+	a.Batteries.RegisterMiddleware(a)
+	a.Batteries.RegisterTools(a.MCP)
+	a.Batteries.RegisterHooks(a)
+
 	return nil
 }
 
@@ -416,7 +450,8 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 }
 
 // Stop shuts down the HTTP server (graceful) and runs every OnStop hook in
-// reverse order. Safe to call multiple times; subsequent calls are no-ops.
+// reverse order. Batteries stop before app-level hooks. Safe to call multiple
+// times; subsequent calls are no-ops.
 func (a *App) Stop(ctx context.Context) error {
 	if a.appCancel != nil {
 		a.appCancel()
@@ -429,6 +464,12 @@ func (a *App) Stop(ctx context.Context) error {
 		}
 		a.server = nil
 	}
+
+	// Stop batteries in reverse dependency order (dependents first)
+	if err := a.Batteries.StopAll(ctx); err != nil && firstErr == nil {
+		firstErr = err
+	}
+
 	// Reverse order — last-started is first-stopped.
 	for i := len(a.stopHooks) - 1; i >= 0; i-- {
 		if err := a.stopHooks[i](); err != nil && firstErr == nil {
@@ -439,11 +480,19 @@ func (a *App) Stop(ctx context.Context) error {
 }
 
 // runStartHooks fires every OnStart hook with the app's lifecycle context.
+// Battery lifecycle hooks are called first, then app-level start hooks.
 // Returns the first error so Start aborts cleanly before binding the port.
 func (a *App) runStartHooks() error {
 	if a.appCtx == nil {
 		a.appCtx, a.appCancel = context.WithCancel(context.Background())
 	}
+
+	// Start batteries in dependency order
+	if err := a.Batteries.StartAll(a.appCtx); err != nil {
+		return err
+	}
+
+	// Then app-level start hooks (cron, queues, custom)
 	for _, fn := range a.startHooks {
 		if err := fn(a.appCtx); err != nil {
 			return err
@@ -464,6 +513,13 @@ func (a *App) Start(addr string) error {
 		if err := migrate.AutoMigrate(a.DB, a.Registry); err != nil {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
+	}
+
+	// Initialize plugins and batteries (routes, middleware, tools, hooks).
+	// Must happen after auto-migrate (so entity tables exist) but before
+	// start hooks (so batteries can reference their routes).
+	if err := a.InitPlugins(); err != nil {
+		return fmt.Errorf("init plugins: %w", err)
 	}
 
 	// Run OnStart hooks (cron/queue workers, custom setup). Failure here

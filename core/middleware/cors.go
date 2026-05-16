@@ -37,7 +37,9 @@ func CORS(cfg CORSConfig) Middleware {
 	}
 
 	// Build a set of allowed origins for O(1) lookup.
-	allowAll := len(cfg.AllowedOrigins) == 0 // empty config = allow all
+	// SECURITY: empty AllowedOrigins means deny-all (not allow-all).
+	// Callers must explicitly set ["*"] or specific origins.
+	allowAll := false
 	originSet := make(map[string]bool, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
 		if o == "*" {

@@ -47,7 +47,7 @@ func Handler(cfg Config) http.HandlerFunc {
 
 		// Parse multipart form
 		if err := r.ParseMultipartForm(cfg.MaxSize); err != nil {
-			http.Error(w, fmt.Sprintf("failed to parse form: %v", err), http.StatusBadRequest)
+			http.Error(w, "failed to parse form", http.StatusBadRequest)
 			return
 		}
 
@@ -85,7 +85,7 @@ func Handler(cfg Config) http.HandlerFunc {
 
 		// Save via storage backend
 		if err := cfg.Storage.Save(r.Context(), key, file); err != nil {
-			http.Error(w, fmt.Sprintf("save failed: %v", err), http.StatusInternalServerError)
+			http.Error(w, "save failed", http.StatusInternalServerError)
 			return
 		}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -51,6 +52,10 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 	if dialect == migrate.DialectPostgres {
 		tsType = "TIMESTAMPTZ"
 	}
+	safeTable, err := query.SafeIdent(table)
+	if err != nil {
+		return fmt.Errorf("audit: invalid table name %q: %w", table, err)
+	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id          TEXT PRIMARY KEY,
 		entity      TEXT NOT NULL,
@@ -59,8 +64,8 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 		actor_id    TEXT,
 		created_at  %s NOT NULL,
 		diff        TEXT
-	)`, table, tsType)
-	_, err := db.Exec(stmt)
+	)`, query.QuoteIdent(safeTable), tsType)
+	_, err = db.Exec(stmt)
 	return err
 }
 
@@ -153,8 +158,12 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditO
 	if tx, ok := TxFromContext(ctx); ok {
 		exec = tx
 	}
-	_, err := exec.ExecContext(ctx,
-		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7)", table),
+	safeTable, err := query.SafeIdent(table)
+	if err != nil {
+		return fmt.Errorf("audit: invalid table name %q: %w", table, err)
+	}
+	_, err = exec.ExecContext(ctx,
+		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7)", query.QuoteIdent(safeTable)),
 		id, ent, string(op), recordID, nullIfEmpty(actor), time.Now().UTC(), diffArg,
 	)
 	return err

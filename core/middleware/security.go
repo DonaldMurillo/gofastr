@@ -1,6 +1,9 @@
 package middleware
 
-import "net/http"
+import (
+	"net/http"
+	"strconv"
+)
 
 // SecurityHeadersConfig controls defensive HTTP response headers.
 type SecurityHeadersConfig struct {
@@ -8,6 +11,20 @@ type SecurityHeadersConfig struct {
 	ReferrerPolicy        string
 	FrameOptions          string
 	PermissionsPolicy     string
+
+	// HSTS enables the Strict-Transport-Security header.
+	// When set (non-zero), browsers will only use HTTPS for this duration.
+	// Requires HTTPS to be active; the header is silently skipped on plain HTTP.
+	// Recommended: 31536000 seconds (1 year) for production.
+	// Only takes effect when Secure is true.
+	HSTSMaxAge    int
+	HSTSIncludeSub bool
+	HSTSPreload   bool
+
+	// Secure indicates whether the connection is over HTTPS.
+	// When true AND HSTSMaxAge > 0, the Strict-Transport-Security header is added.
+	// Defaults to true.
+	Secure bool
 }
 
 // SecurityHeaders adds conservative browser security headers.
@@ -43,6 +60,25 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 			h.Set("Referrer-Policy", referrer)
 			h.Set("X-Frame-Options", frameOptions)
 			h.Set("Permissions-Policy", permissions)
+			h.Set("X-XSS-Protection", "0") // disabled per modern guidance (CSP supersedes it)
+
+			// HSTS — only emit over HTTPS. When HSTSMaxAge is set and
+			// Secure is true (default), add the Strict-Transport-Security header.
+			secure := cfg.Secure
+			if !secure && r.TLS != nil {
+				secure = true // auto-detect TLS
+			}
+			if secure && cfg.HSTSMaxAge > 0 {
+				val := "max-age=" + strconv.Itoa(cfg.HSTSMaxAge)
+				if cfg.HSTSIncludeSub {
+					val += "; includeSubDomains"
+				}
+				if cfg.HSTSPreload {
+					val += "; preload"
+				}
+				h.Set("Strict-Transport-Security", val)
+			}
+
 			next.ServeHTTP(w, r)
 		})
 	}

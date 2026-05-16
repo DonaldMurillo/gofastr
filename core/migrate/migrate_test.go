@@ -35,7 +35,11 @@ func newTestMigratorWithDialect(t *testing.T, d Dialect) (*Migrator, sqlmock.Sql
 // expectCreateTable expects the CREATE TABLE IF NOT EXISTS for _migrations.
 func expectCreateTable(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(regexp.QuoteMeta(
-		"CREATE TABLE IF NOT EXISTS _migrations (\n\t\tversion BIGINT NOT NULL PRIMARY KEY,\n\t\tname    TEXT    NOT NULL DEFAULT '',\n\t\tapplied_at TIMESTAMP NOT NULL DEFAULT NOW()\n\t)",
+		`CREATE TABLE IF NOT EXISTS "_migrations" (
+		version BIGINT NOT NULL PRIMARY KEY,
+		name    TEXT    NOT NULL DEFAULT '',
+		applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+	)`,
 	)).WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
@@ -47,7 +51,7 @@ func expectSelectApplied(mock sqlmock.Sqlmock, versions []uint64) {
 		rows.AddRow(v, fmt.Sprintf("migration_%d", v), time.Now().UTC())
 	}
 	mock.ExpectQuery(regexp.QuoteMeta(
-		"SELECT version, name, applied_at FROM _migrations ORDER BY version",
+		`SELECT version, name, applied_at FROM "_migrations" ORDER BY version`,
 	)).WillReturnRows(rows)
 }
 
@@ -56,7 +60,7 @@ func expectMigrationUp(mock sqlmock.Sqlmock, version uint64, upSQL string) {
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta(upSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(
-		"INSERT INTO _migrations (version, name, applied_at) VALUES ($1, $2, $3)",
+		`INSERT INTO "_migrations" (version, name, applied_at) VALUES ($1, $2, $3)`,
 	)).WithArgs(version, sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 }
@@ -66,7 +70,7 @@ func expectMigrationDown(mock sqlmock.Sqlmock, downSQL string, version uint64) {
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta(downSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(
-		"DELETE FROM _migrations WHERE version = $1",
+		`DELETE FROM "_migrations" WHERE version = $1`,
 	)).WithArgs(version).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 }
@@ -624,16 +628,16 @@ func TestGenerateCreateTable(t *testing.T) {
 
 	ddl := m.generateCreateTable("users", s)
 
-	if !strings.Contains(ddl, "CREATE TABLE users") {
+	if !strings.Contains(ddl, `CREATE TABLE "users"`) {
 		t.Errorf("missing CREATE TABLE users in: %s", ddl)
 	}
 	if !strings.Contains(ddl, "id BIGSERIAL PRIMARY KEY") {
 		t.Errorf("missing auto id column in: %s", ddl)
 	}
-	if !strings.Contains(ddl, "name VARCHAR(255) NOT NULL") {
+	if !strings.Contains(ddl, `"name" VARCHAR(255) NOT NULL`) {
 		t.Errorf("missing name column in: %s", ddl)
 	}
-	if !strings.Contains(ddl, "age BIGINT") {
+	if !strings.Contains(ddl, `"age" BIGINT`) {
 		t.Errorf("missing age column in: %s", ddl)
 	}
 	if !strings.Contains(ddl, "created_at TIMESTAMP") {

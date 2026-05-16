@@ -324,11 +324,12 @@ func TestCORSSetsHeaders(t *testing.T) {
 }
 
 func TestCORSPreflight(t *testing.T) {
-	handler := CORS(CORSConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS(CORSConfig{AllowedOrigins: []string{"*"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("next handler should not be called for preflight")
 	}))
 
 	req := httptest.NewRequest(http.MethodOptions, "/api", nil)
+	req.Header.Set("Origin", "http://example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

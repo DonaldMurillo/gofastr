@@ -3,6 +3,7 @@ package softdelete
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -23,24 +24,36 @@ func WithSoftDelete(ent *entity.Entity) *entity.Entity {
 // SoftDelete marks a record as deleted by setting deleted_at to NOW().
 // The record remains in the database but will be excluded from normal queries.
 func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error {
-	q := "UPDATE " + table + " SET deleted_at = NOW() WHERE id = $1"
-	_, err := db.ExecContext(ctx, q, id)
+	safeTable, err := query.SafeIdent(table)
+	if err != nil {
+		return fmt.Errorf("softdelete: %w", err)
+	}
+	q := fmt.Sprintf("UPDATE %s SET deleted_at = NOW() WHERE id = $1", query.QuoteIdent(safeTable))
+	_, err = db.ExecContext(ctx, q, id)
 	return err
 }
 
 // Restore clears the deleted_at field, making a soft-deleted record visible again.
 func Restore(ctx context.Context, db *sql.DB, table string, id string) error {
-	q := "UPDATE " + table + " SET deleted_at = NULL WHERE id = $1"
-	_, err := db.ExecContext(ctx, q, id)
+	safeTable, err := query.SafeIdent(table)
+	if err != nil {
+		return fmt.Errorf("softdelete: restore: %w", err)
+	}
+	q := fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = $1", query.QuoteIdent(safeTable))
+	_, err = db.ExecContext(ctx, q, id)
 	return err
 }
 
 // ForceDelete permanently removes a record from the database.
 // This bypasses soft delete and performs a real DELETE.
 func ForceDelete(ctx context.Context, db *sql.DB, table string, id string) error {
-	qb := query.Delete(table).Where("id = $1", id)
+	safeTable, err := query.SafeIdent(table)
+	if err != nil {
+		return fmt.Errorf("softdelete: force: %w", err)
+	}
+	qb := query.Delete(safeTable).Where("id = $1", id)
 	q, args := qb.Build()
-	_, err := db.ExecContext(ctx, q, args...)
+	_, err = db.ExecContext(ctx, q, args...)
 	return err
 }
 

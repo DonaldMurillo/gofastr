@@ -585,7 +585,7 @@ func createStyleSheet(theme style.Theme) string {
 		Set("list-style", "none", "padding", "0", "margin", "{spacing.md} 0").
 		End()
 	ss.Rule(".drawer-nav-list li").
-		Set("padding", "{spacing.sm}", "0", "border-bottom", "1px solid {colors.border}").
+		Set("padding", "{spacing.sm} 0", "border-bottom", "1px solid {colors.border}").
 		End()
 	ss.Rule(".drawer-nav-list a").
 		Set("color", "{colors.primary}", "text-decoration", "none", "font-weight", "500").

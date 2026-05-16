@@ -67,9 +67,11 @@ serves browser clients on another origin.
 
 ```go
 middleware.CSRF(middleware.CSRFConfig{
-    CookieName: "fui_csrf",
-    HeaderName: "X-CSRF-Token",
-    Skip:       middleware.SkipBearerAuth(),
+    CookieName:   "fui_csrf",
+    HeaderName:   "X-CSRF-Token",
+    Skip:         middleware.SkipBearerAuth(),
+    SecretKey:    loadCSRFKeyFromEnv(), // 32+ random bytes
+    CookieSecure: true,                 // production HTTPS
 })
 ```
 
@@ -78,6 +80,15 @@ mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
 `SkipBearerAuth()` is the shipped helper that bypasses CSRF on
 requests with `Authorization: Bearer …` — appropriate for pure API
 deployments where the browser is not involved.
+
+**Always set `SecretKey` explicitly in production.** The middleware
+will autogenerate one if omitted, but that key rotates every process
+restart — meaning every active CSRF cookie is invalidated on deploy
+and the auditable signing seam moves into the binary instead of into
+your secret store. Source it from your config / secret manager the
+same way you'd source `SessionSecret`. With `SecretKey` set AND
+`CookieSecure=true`, the cookie also gets the `__Host-` prefix in
+production, blocking subdomain cookie-injection attacks.
 
 ## Rate limiting
 
@@ -92,6 +103,26 @@ middleware.RateLimit(middleware.RateLimitConfig{
 Token-bucket per key. `KeyFunc` defaults to `RemoteAddr`. Tune
 `Requests`/`Window` per route by composing two `RateLimit` middlewares
 in different `middleware.Chain` calls.
+
+## OpenAPI coverage for auth endpoints
+
+Auth endpoints registered by `AuthManager.RegisterRoutes` (login,
+register, logout, /auth/me, /auth/2fa/*, /auth/oauth/*, magic-link,
+verify-email, forgot-password, reset-password, /auth/accounts,
+/auth/unlink/{provider}) are **not** currently part of the
+auto-generated OpenAPI spec.
+
+`framework/openapi.EntityOpenAPI` walks the entity registry to emit
+schemas for entity CRUD routes. Plugin-registered HTTP handlers go
+through `router.Post / router.Get / …` directly and don't carry
+schema metadata that the spec generator can consume. There is no
+plugin → OpenAPI extension hook today.
+
+Until that hook lands, the auth surface is documented through this
+file, the plugin source comments, and integration tests. If your
+deployment needs an OpenAPI document that includes the auth routes,
+hand-write them into a sibling spec and merge with the generated one
+in the gateway / docs pipeline.
 
 ## The full inventory
 

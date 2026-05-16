@@ -67,13 +67,19 @@ func Bind(r *http.Request, dst any) error {
 }
 
 // bindBody decodes JSON body into dst.
+// Limits the request body to 1MB to prevent DoS via oversized payloads.
+const maxBodyBytes = 1 << 20 // 1 MB
+
 func bindBody(r *http.Request, dst any) error {
 	if r.Body == nil {
 		return nil
 	}
 	defer r.Body.Close()
 
-	decoder := json.NewDecoder(r.Body)
+	// Cap the body reader to prevent memory exhaustion attacks.
+	limited := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
+
+	decoder := json.NewDecoder(limited)
 	if err := decoder.Decode(dst); err != nil {
 		return Errorf(400, "invalid JSON: %s", err.Error())
 	}

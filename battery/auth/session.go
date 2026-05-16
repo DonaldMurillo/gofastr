@@ -12,11 +12,22 @@ import (
 // Session represents an authenticated cookie-bound session. UserID is the
 // stable identifier the application's User repo uses to look up a row;
 // Token is the opaque cookie value the browser sends back.
+//
+// TwoFactorVerified is set by the 2FA challenge handler after a successful
+// TOTP / backup-code verification. The RequireTwoFA middleware uses it to
+// gate access for users who have enrolled in 2FA.
+//
+// PendingTwoFactor is set when the login flow detects an enrolled user
+// and means the session is ONLY valid for /auth/2fa/challenge. Every
+// other handler refuses it. The successful challenge clears Pending and
+// sets Verified.
 type Session struct {
-	Token     string
-	UserID    string
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	Token             string
+	UserID            string
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+	TwoFactorVerified bool
+	PendingTwoFactor  bool
 }
 
 // Expired reports whether s has passed its ExpiresAt boundary.
@@ -32,6 +43,33 @@ type SessionStore interface {
 	Get(ctx context.Context, token string) (*Session, error)
 	Delete(ctx context.Context, token string) error
 	Cleanup(ctx context.Context) (int, error) // returns count removed
+}
+
+// SessionTwoFAMarker is the optional SessionStore extension that lets the
+// 2FA challenge handler mark a session as having completed the second
+// factor. The implementation MUST set TwoFactorVerified=true AND clear
+// PendingTwoFactor — the two are inverses in the post-login state model.
+// RequireTwoFA refuses access if a 2FA-enabled user's session is not
+// marked. Stores that don't implement this method effectively cannot
+// participate in 2FA enforcement (RequireTwoFA will fail-closed).
+type SessionTwoFAMarker interface {
+	MarkTwoFactorVerified(ctx context.Context, token string) error
+}
+
+// SessionPendingMarker is the optional SessionStore extension that lets
+// CorePlugin's login handler mark a freshly-minted session as awaiting
+// a 2FA challenge. Without this, login of a 2FA-enrolled user produces a
+// fully-authenticated session and 2FA enforcement is opt-in per route.
+type SessionPendingMarker interface {
+	MarkPendingTwoFactor(ctx context.Context, token string) error
+}
+
+// TwoFactorChecker is the optional plugin extension that lets CorePlugin
+// know whether to mint a PendingTwoFactor session at login time. The
+// 2FA plugin implements this. Other plugins (WebAuthn, SMS) can
+// implement it too to participate in the same gating.
+type TwoFactorChecker interface {
+	HasTwoFactorEnabled(ctx context.Context, userID string) (bool, error)
 }
 
 // ErrSessionNotFound is returned by SessionStore.Get when the token is
@@ -99,6 +137,30 @@ func (m *MemorySessionStore) Delete(_ context.Context, token string) error {
 	m.mu.Lock()
 	delete(m.sessions, token)
 	m.mu.Unlock()
+	return nil
+}
+
+// MarkTwoFactorVerified flips TwoFactorVerified=true and clears
+// PendingTwoFactor on the session. No-op (and no error) if the session
+// is unknown.
+func (m *MemorySessionStore) MarkTwoFactorVerified(_ context.Context, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess, ok := m.sessions[token]; ok {
+		sess.TwoFactorVerified = true
+		sess.PendingTwoFactor = false
+	}
+	return nil
+}
+
+// MarkPendingTwoFactor flips PendingTwoFactor=true on the session.
+// No-op if the session is unknown.
+func (m *MemorySessionStore) MarkPendingTwoFactor(_ context.Context, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess, ok := m.sessions[token]; ok {
+		sess.PendingTwoFactor = true
+	}
 	return nil
 }
 

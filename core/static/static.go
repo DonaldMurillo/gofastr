@@ -124,7 +124,8 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	}
 
 	// Read file content for ETag generation.
-	data, err := io.ReadAll(f)
+	// Limit to 32 MB — files served statically should not be huge.
+	data, err := io.ReadAll(io.LimitReader(f, 32<<20))
 	if err != nil {
 		return false
 	}

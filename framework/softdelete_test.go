@@ -26,7 +26,7 @@ func TestSoftDelete(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE posts SET deleted_at = NOW\(\) WHERE id = \$1`).
+	mock.ExpectExec(`UPDATE "posts" SET deleted_at = NOW\(\) WHERE id = \$1`).
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -47,7 +47,7 @@ func TestSoftRestore(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE posts SET deleted_at = NULL WHERE id = \$1`).
+	mock.ExpectExec(`UPDATE "posts" SET deleted_at = NULL WHERE id = \$1`).
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 

@@ -263,8 +263,9 @@ func TestFeature_SignalDemoPage(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('[role="main"]')?.textContent ?? 'NO_MAIN'`, &mainText),
 		// Check computed total
 		chromedp.Evaluate(`document.querySelector('.product-detail-price')?.textContent ?? 'NONE'`, &totalText),
-		// Check effect log
-		chromedp.Evaluate(`document.querySelector('[aria-live="polite"]')?.textContent ?? 'NONE'`, &logText),
+		// Check effect log — target the signals-page log specifically;
+		// other aria-live="polite" regions exist (e.g. the LiveFeed island).
+		chromedp.Evaluate(`document.querySelector('#signal-log')?.textContent ?? 'NONE'`, &logText),
 	)
 	if err != nil {
 		t.Fatalf("signal demo page: %v", err)

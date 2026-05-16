@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
@@ -23,18 +24,47 @@ import (
 func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK string, node *IncludeNode, ids []string, result map[string]map[string]any) error {
 	rel := node.Relation
 
+	// Validate relation-derived identifiers before dispatching.
+	safeEntity, err := query.SafeIdent(rel.Entity)
+	if err != nil {
+		return fmt.Errorf("eager filtered: invalid relation entity %q: %w", rel.Entity, err)
+	}
+	safeParentTable, err := query.SafeIdent(parentTable)
+	if err != nil {
+		return fmt.Errorf("eager filtered: invalid parent table %q: %w", parentTable, err)
+	}
+	safeParentPK, err := query.SafeIdent(parentPK)
+	if err != nil {
+		return fmt.Errorf("eager filtered: invalid parent PK %q: %w", parentPK, err)
+	}
+
+	// Validate filter field names up front.
+	for _, f := range node.Filters {
+		if _, err := query.SafeIdent(f.Field); err != nil {
+			return fmt.Errorf("eager filtered: invalid filter field %q: %w", f.Field, err)
+		}
+	}
+
 	switch rel.Type {
 	case entity.RelHasOne, entity.RelHasMany:
-		return loadHasManyFiltered(ctx, db, rel, node.Filters, ids, result)
+		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		if err != nil {
+			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
+		}
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Filters, ids, result)
 	case entity.RelManyToOne:
-		return loadBelongsToFiltered(ctx, db, parentTable, parentPK, rel, node.Filters, ids, result)
+		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		if err != nil {
+			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
+		}
+		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Filters, ids, result)
 	case entity.RelManyToMany:
-		return loadManyToManyFiltered(ctx, db, rel, node.Filters, ids, result)
+		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Filters, ids, result)
 	}
 	return nil
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -44,7 +74,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation
 
 	extra, extraArgs := filterClause(filters, len(ids)+1)
 	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s",
-		rel.Entity, rel.ForeignKey, strings.Join(placeholders, ", "), extra)
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "), extra)
 	args = append(args, extraArgs...)
 
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -70,7 +100,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation
 		for i, c := range cols {
 			row[c] = vals[i]
 		}
-		parentID := fmt.Sprintf("%v", row[rel.ForeignKey])
+		parentID := fmt.Sprintf("%v", row[safeFK])
 		if existing, ok := result[parentID]; ok {
 			if rel.Type == entity.RelHasOne {
 				existing[rel.Name] = row
@@ -87,7 +117,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, parentPK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -95,7 +125,9 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, pare
 		args[i] = id
 	}
 	srcQuery := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s IN (%s)",
-		parentPK, rel.ForeignKey, parentTable, parentPK, strings.Join(placeholders, ", "))
+		query.QuoteIdent(safeParentPK), query.QuoteIdent(safeFK),
+		query.QuoteIdent(safeParentTable), query.QuoteIdent(safeParentPK),
+		strings.Join(placeholders, ", "))
 
 	rows, err := db.QueryContext(ctx, srcQuery, args...)
 	if err != nil {
@@ -137,7 +169,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, pare
 	}
 	extra, extraArgs := filterClause(filters, len(unique)+1)
 	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)%s",
-		rel.Entity, strings.Join(fkPlaceholders, ", "), extra)
+		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "), extra)
 	fkArgs = append(fkArgs, extraArgs...)
 
 	tgtRows, err := db.QueryContext(ctx, tgtQuery, fkArgs...)
@@ -180,7 +212,20 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable, pare
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+	safeThrough, err := query.SafeIdent(rel.Through)
+	if err != nil {
+		return fmt.Errorf("eager filtered: invalid through table %q: %w", rel.Through, err)
+	}
+	safeLocalKey, err := query.SafeIdent(rel.LocalKey)
+	if err != nil {
+		return fmt.Errorf("eager filtered: invalid local key %q: %w", rel.LocalKey, err)
+	}
+	safeFKTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
+	if err != nil {
+		return fmt.Errorf("eager filtered: invalid FK target %q: %w", rel.ForeignKeyTarget, err)
+	}
+
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -188,13 +233,14 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relat
 		args[i] = id
 	}
 
-	extra, extraArgs := filterClauseQualified(filters, rel.Entity, len(ids)+1)
+	extra, extraArgs := filterClauseQualified(filters, safeEntity, len(ids)+1)
 	q := fmt.Sprintf(
 		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)%s",
-		rel.Entity, rel.Through, rel.LocalKey,
-		rel.Entity, rel.Through,
-		rel.Entity, rel.Through, rel.ForeignKeyTarget,
-		rel.Through, rel.LocalKey,
+		query.QuoteIdent(safeEntity),
+		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough),
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough), query.QuoteIdent(safeFKTarget),
+		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
 		strings.Join(placeholders, ", "),
 		extra,
 	)
@@ -243,6 +289,8 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, rel entity.Relat
 // the SQL suffix + the bound arguments. startIdx is the first $N to use
 // (callers know how many placeholders precede this fragment in the outer
 // query).
+//
+// f.Field values MUST be validated before calling this function.
 func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
 	if len(filters) == 0 {
 		return "", nil
@@ -251,7 +299,7 @@ func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
 	var args []any
 	idx := startIdx
 	for _, f := range filters {
-		parts = append(parts, fmt.Sprintf("%s %s $%d", f.Field, opToSQL(f.Op), idx))
+		parts = append(parts, fmt.Sprintf("%s %s $%d", query.QuoteIdent(f.Field), opToSQL(f.Op), idx))
 		args = append(args, f.Value)
 		idx++
 	}
@@ -261,6 +309,8 @@ func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
 // filterClauseQualified is like filterClause but prefixes each column with
 // the given table name. Used by the ManyToMany loader where the SELECT
 // JOINs the target + pivot — bare column names would be ambiguous.
+//
+// Both `table` and f.Field values MUST be validated before calling.
 func filterClauseQualified(filters []filter.ParsedFilter, table string, startIdx int) (string, []any) {
 	if len(filters) == 0 {
 		return "", nil
@@ -269,7 +319,7 @@ func filterClauseQualified(filters []filter.ParsedFilter, table string, startIdx
 	var args []any
 	idx := startIdx
 	for _, f := range filters {
-		parts = append(parts, fmt.Sprintf("%s.%s %s $%d", table, f.Field, opToSQL(f.Op), idx))
+		parts = append(parts, fmt.Sprintf("%s.%s %s $%d", query.QuoteIdent(table), query.QuoteIdent(f.Field), opToSQL(f.Op), idx))
 		args = append(args, f.Value)
 		idx++
 	}

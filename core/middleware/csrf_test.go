@@ -37,8 +37,13 @@ func TestCSRF_PostBlockedWithoutToken(t *testing.T) {
 }
 
 func TestCSRF_PostAllowedWithMatchingHeader(t *testing.T) {
-	h := CSRF(CSRFConfig{})(csrfHandler())
-	tok := "secret-csrf-value"
+	// Tokens are signed (P1-8 hardening) — generate a real one.
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	h := CSRF(CSRFConfig{SecretKey: secret})(csrfHandler())
+	tok, err := generateSignedCSRFToken(secret)
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 	r.AddCookie(&http.Cookie{Name: "csrf_token", Value: tok})

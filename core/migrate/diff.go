@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -77,11 +78,16 @@ func (m *Migrator) Diff(ctx context.Context, entities []Entity) ([]Migration, er
 	for _, ent := range entities {
 		tableName := strings.ToLower(ent.Name)
 
+		table, err := query.SafeIdent(tableName)
+		if err != nil {
+			return nil, fmt.Errorf("diff: invalid table name %q: %w", tableName, err)
+		}
+
 		columns, exists := existingTables[tableName]
 		if !exists {
 			// Generate CREATE TABLE.
-			upSQL := m.generateCreateTable(tableName, ent.Schema)
-			downSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+			upSQL := m.generateCreateTable(table, ent.Schema)
+			downSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", query.QuoteIdent(table))
 			migrations = append(migrations, Migration{
 				Version: version,
 				Name:    fmt.Sprintf("auto_create_%s", tableName),
@@ -102,8 +108,16 @@ func (m *Migrator) Diff(ctx context.Context, entities []Entity) ([]Migration, er
 		}
 
 		if len(missingColumns) > 0 {
+			safeTable, err := query.SafeIdent(tableName)
+			if err != nil {
+				return nil, fmt.Errorf("diff: invalid table name %q: %w", tableName, err)
+			}
 			var alterStmts []string
 			for _, f := range missingColumns {
+				safeCol, err := query.SafeIdent(f.Name)
+				if err != nil {
+					return nil, fmt.Errorf("diff: invalid column name %q: %w", f.Name, err)
+				}
 				colType := fieldTypeToSQL(f.Type)
 				var constraints []string
 				if f.Required {
@@ -118,15 +132,19 @@ func (m *Migrator) Diff(ctx context.Context, entities []Entity) ([]Migration, er
 				}
 				alterStmts = append(alterStmts,
 					fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s",
-						tableName, f.Name, colType, extra))
+						query.QuoteIdent(safeTable), query.QuoteIdent(safeCol), colType, extra))
 			}
 
 			upSQL := strings.Join(alterStmts, ";\n") + ";"
 			// Generate down: drop the added columns.
 			var dropStmts []string
 			for _, f := range missingColumns {
+				safeCol, err := query.SafeIdent(f.Name)
+				if err != nil {
+					return nil, fmt.Errorf("diff: invalid column name %q: %w", f.Name, err)
+				}
 				dropStmts = append(dropStmts,
-					fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s", tableName, f.Name))
+					fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s", query.QuoteIdent(safeTable), query.QuoteIdent(safeCol)))
 			}
 			downSQL := strings.Join(dropStmts, ";\n") + ";"
 
@@ -207,6 +225,7 @@ func (m *Migrator) discoverTables(ctx context.Context) (map[string]map[string]co
 }
 
 // generateCreateTable builds a CREATE TABLE statement from a schema.
+// The tableName must already be validated via SafeIdent.
 func (m *Migrator) generateCreateTable(tableName string, s schema.Schema) string {
 	var cols []string
 
@@ -217,6 +236,7 @@ func (m *Migrator) generateCreateTable(tableName string, s schema.Schema) string
 
 	for _, f := range s.Fields {
 		colType := fieldTypeToSQL(f.Type)
+		safeCol := query.MustIdent(f.Name)
 		var constraints []string
 		if f.Required {
 			constraints = append(constraints, "NOT NULL")
@@ -231,7 +251,7 @@ func (m *Migrator) generateCreateTable(tableName string, s schema.Schema) string
 		if len(constraints) > 0 {
 			extra = " " + strings.Join(constraints, " ")
 		}
-		cols = append(cols, fmt.Sprintf("%s %s%s", f.Name, colType, extra))
+		cols = append(cols, fmt.Sprintf("%s %s%s", query.QuoteIdent(safeCol), colType, extra))
 	}
 
 	// Add timestamps if not present.
@@ -242,7 +262,7 @@ func (m *Migrator) generateCreateTable(tableName string, s schema.Schema) string
 		cols = append(cols, "updated_at TIMESTAMP NOT NULL DEFAULT NOW()")
 	}
 
-	return fmt.Sprintf("CREATE TABLE %s (\n\t%s\n)", tableName, strings.Join(cols, ",\n\t"))
+	return fmt.Sprintf("CREATE TABLE %s (\n\t%s\n)", query.QuoteIdent(tableName), strings.Join(cols, ",\n\t"))
 }
 
 // SortedEntities returns entities sorted by name for deterministic output.

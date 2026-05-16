@@ -31,15 +31,22 @@ func NewMemoryStorage() *MemoryStorage {
 	}
 }
 
+// maxMemoryFileSize is the default upper bound for MemoryStorage.Save.
+const maxMemoryFileSize int64 = 50 << 20 // 50 MB
+
 // Save stores the contents of r under the given key.
+// Reads at most maxMemoryFileSize bytes to prevent unbounded memory allocation.
 func (ms *MemoryStorage) Save(_ context.Context, key string, r io.Reader) error {
 	if key == "" {
 		return fmt.Errorf("storage: empty key")
 	}
 
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(io.LimitReader(r, maxMemoryFileSize+1))
 	if err != nil {
 		return fmt.Errorf("storage: read content: %w", err)
+	}
+	if int64(len(data)) > maxMemoryFileSize {
+		return fmt.Errorf("storage: file too large (max %d bytes)", maxMemoryFileSize)
 	}
 
 	ms.mu.Lock()

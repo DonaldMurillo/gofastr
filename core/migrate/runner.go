@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // MigrationRecord is a row in the _migrations tracking table.
@@ -39,19 +41,27 @@ func (m *Migrator) placeholder(n int) string {
 
 // CreateMigrationsTable ensures the migrations tracking table exists.
 func (m *Migrator) CreateMigrationsTable(ctx context.Context) error {
+	safeTable, err := query.SafeIdent(m.tableName)
+	if err != nil {
+		return fmt.Errorf("migrate: invalid table name %q: %w", m.tableName, err)
+	}
 	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		version BIGINT NOT NULL PRIMARY KEY,
 		name    TEXT    NOT NULL DEFAULT '',
 		applied_at TIMESTAMP NOT NULL DEFAULT %s
-	)`, m.tableName, m.nowFunc())
-	_, err := m.db.ExecContext(ctx, ddl)
+	)`, query.QuoteIdent(safeTable), m.nowFunc())
+	_, err = m.db.ExecContext(ctx, ddl)
 	return err
 }
 
 // appliedVersions returns the set of already-applied migration versions.
 func (m *Migrator) appliedVersions(ctx context.Context) (map[uint64]MigrationRecord, error) {
-	query := fmt.Sprintf("SELECT version, name, applied_at FROM %s ORDER BY version", m.tableName)
-	rows, err := m.db.QueryContext(ctx, query)
+	safeTable, err := query.SafeIdent(m.tableName)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: invalid table name %q: %w", m.tableName, err)
+	}
+	q := fmt.Sprintf("SELECT version, name, applied_at FROM %s ORDER BY version", query.QuoteIdent(safeTable))
+	rows, err := m.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +123,11 @@ func (m *Migrator) Up(ctx context.Context) error {
 // runMigrationUp executes a single migration's Up SQL inside a transaction
 // and records it in the tracking table.
 func (m *Migrator) runMigrationUp(ctx context.Context, mig Migration) error {
+	safeTable, err := query.SafeIdent(m.tableName)
+	if err != nil {
+		return fmt.Errorf("migrate: invalid table name %q: %w", m.tableName, err)
+	}
+
 	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -125,7 +140,7 @@ func (m *Migrator) runMigrationUp(ctx context.Context, mig Migration) error {
 
 	insertSQL := fmt.Sprintf(
 		"INSERT INTO %s (version, name, applied_at) VALUES (%s, %s, %s)",
-		m.tableName,
+		query.QuoteIdent(safeTable),
 		m.placeholder(1), m.placeholder(2), m.placeholder(3),
 	)
 	if _, err := tx.ExecContext(ctx, insertSQL, mig.Version, mig.Name, time.Now().UTC()); err != nil {
@@ -193,7 +208,12 @@ func (m *Migrator) runMigrationDown(ctx context.Context, mig Migration) error {
 		return fmt.Errorf("exec down: %w", err)
 	}
 
-	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE version = %s", m.tableName, m.placeholder(1))
+	// Validate table name for the DELETE query.
+	safeTable, err := query.SafeIdent(m.tableName)
+	if err != nil {
+		return fmt.Errorf("migrate: invalid table name %q: %w", m.tableName, err)
+	}
+	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE version = %s", query.QuoteIdent(safeTable), m.placeholder(1))
 	if _, err := tx.ExecContext(ctx, deleteSQL, mig.Version); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("delete migration record: %w", err)

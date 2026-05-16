@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // DBQueue is a SQL-backed queue. Jobs persist in a single table; Dequeue
@@ -50,6 +52,7 @@ func WithWorkers(n int) DBQueueOption {
 
 // NewDBQueue constructs a DBQueue and ensures its backing table exists.
 // Probes the dialect once via SELECT version(); falls back to SQLite.
+// Panics if the table name contains unsafe characters.
 func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	q := &DBQueue{
 		db:       db,
@@ -62,6 +65,8 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	for _, opt := range opts {
 		opt(q)
 	}
+	// Validate table name once at construction time.
+	query.MustIdent(q.table)
 	q.dialect = detectDBDialect(db)
 	if err := q.ensureTable(); err != nil {
 		return nil, fmt.Errorf("ensure table: %w", err)
@@ -79,6 +84,11 @@ func detectDBDialect(db *sql.DB) dbDialect {
 	return dialectSQLite
 }
 
+// qt returns the validated, quoted table name. Validated once at construction.
+func (q *DBQueue) qt() string {
+	return query.QuoteIdent(q.table)
+}
+
 func (q *DBQueue) ensureTable() error {
 	tsType := "DATETIME"
 	if q.dialect == dialectPostgres {
@@ -94,17 +104,21 @@ func (q *DBQueue) ensureTable() error {
 		created_at    %s NOT NULL,
 		scheduled_at  %s NOT NULL,
 		status        TEXT NOT NULL DEFAULT 'pending'
-	)`, q.table, tsType, tsType)
+	)`, q.qt(), tsType, tsType)
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
 	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together.
 	idxName := q.table + "_dequeue_idx"
+	safeIdx, err := query.SafeIdent(idxName)
+	if err != nil {
+		return fmt.Errorf("queue: invalid index name %q: %w", idxName, err)
+	}
 	idx := fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s ON %s (status, scheduled_at, priority)",
-		idxName, q.table,
+		query.QuoteIdent(safeIdx), q.qt(),
 	)
-	_, err := q.db.Exec(idx)
+	_, err = q.db.Exec(idx)
 	return err
 }
 
@@ -140,7 +154,7 @@ func (q *DBQueue) Enqueue(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
 		fmt.Sprintf(`INSERT INTO %s
 			(id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at, status)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`, q.table),
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`, q.qt()),
 		job.ID, job.Type, payload, job.Priority, job.Attempts, job.MaxAttempts,
 		job.CreatedAt, job.ScheduledAt,
 	)
@@ -173,7 +187,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, types []string) (Job, err
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at`,
-		q.table, q.table, where)
+		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, args...)
 	return scanJob(row)
 }
@@ -189,14 +203,14 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 
 	where, args := q.eligibleWhere(types, 1)
 	pickSQL := fmt.Sprintf(`SELECT id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at
-		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.table, where)
+		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
 	row := tx.QueryRowContext(ctx, pickSQL, args...)
 	job, err := scanJob(row)
 	if err != nil {
 		return Job{}, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='claimed', attempts = attempts + 1 WHERE id = $1`, q.table),
+		fmt.Sprintf(`UPDATE %s SET status='claimed', attempts = attempts + 1 WHERE id = $1`, q.qt()),
 		job.ID,
 	); err != nil {
 		return Job{}, err
@@ -231,7 +245,7 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int) (string, []any) {
 // Ack permanently removes the job — work is done, no replay needed.
 func (q *DBQueue) Ack(ctx context.Context, jobID string) error {
 	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, q.table), jobID)
+		fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, q.qt()), jobID)
 	return err
 }
 
@@ -242,7 +256,7 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 	// and dead-letter based on the row's current attempts vs max_attempts.
 	stmt := fmt.Sprintf(`UPDATE %s
 		SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END
-		WHERE id = $1`, q.table)
+		WHERE id = $1`, q.qt())
 	_, err := q.db.ExecContext(ctx, stmt, jobID)
 	return err
 }

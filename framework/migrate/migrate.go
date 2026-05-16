@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -104,8 +105,13 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 		columns = append(columns, fks...)
 	}
 
+	safeTable, err := query.SafeIdent(ent.GetTable())
+	if err != nil {
+		return fmt.Errorf("migrate %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
+	}
+
 	stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		ent.GetTable(),
+		query.QuoteIdent(safeTable),
 		strings.Join(columns, ",\n\t"),
 	)
 
@@ -119,7 +125,7 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 		if len(idx.Columns) == 0 {
 			continue
 		}
-		if _, err := db.Exec(indexDDL(ent.GetTable(), idx)); err != nil {
+		if _, err := db.Exec(indexDDL(safeTable, idx)); err != nil {
 			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
 		}
 	}
@@ -127,18 +133,27 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 }
 
 // indexDDL builds the CREATE INDEX statement for one declared Index. Name
-// is synthesised from the table + columns when empty.
+// is synthesised from the table + columns when empty. The table parameter
+// must already be validated via SafeIdent.
 func indexDDL(table string, idx entity.Index) string {
 	name := idx.Name
 	if name == "" {
 		name = "idx_" + table + "_" + strings.Join(idx.Columns, "_")
+	}
+	safeName, err := query.SafeIdent(name)
+	if err != nil {
+		panic(fmt.Sprintf("migrate: invalid index name %q: %v", name, err))
+	}
+	safeCols := make([]string, len(idx.Columns))
+	for i, col := range idx.Columns {
+		safeCols[i] = query.QuoteIdent(query.MustIdent(col))
 	}
 	unique := ""
 	if idx.Unique {
 		unique = "UNIQUE "
 	}
 	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)",
-		unique, name, table, strings.Join(idx.Columns, ", "))
+		unique, query.QuoteIdent(safeName), query.QuoteIdent(table), strings.Join(safeCols, ", "))
 }
 
 // foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
@@ -159,8 +174,20 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if !ok {
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
-		out = append(out, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-			rel.ForeignKey, target.GetTable(), target.PrimaryKey))
+	safeRelFK, err := query.SafeIdent(rel.ForeignKey)
+	if err != nil {
+		return nil, fmt.Errorf("relation %q: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
+	}
+	safeTargetTable, err := query.SafeIdent(target.GetTable())
+	if err != nil {
+		return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
+	}
+	safeTargetPK, err := query.SafeIdent(target.PrimaryKey)
+	if err != nil {
+		return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, target.PrimaryKey, err)
+	}
+	out = append(out, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+		query.QuoteIdent(safeRelFK), query.QuoteIdent(safeTargetTable), query.QuoteIdent(safeTargetPK)))
 	}
 	return out, nil
 }
