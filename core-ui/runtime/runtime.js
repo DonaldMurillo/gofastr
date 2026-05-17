@@ -132,6 +132,18 @@
           currentPath = location.pathname + location.search;
         } catch (_) {}
       }
+      // X-Gofastr-Toast header fires toasts on success — same
+      // contract as the widget-scoped dispatchRPC. The server emits a
+      // JSON array of ToastTrigger objects (single object tolerated);
+      // each fires through __gofastr.toast().
+      const toastHeader = r.headers.get('X-Gofastr-Toast');
+      if (toastHeader && window.__gofastr.toast) {
+        try {
+          const parsed = JSON.parse(toastHeader);
+          const arr = Array.isArray(parsed) ? parsed : [parsed];
+          for (const cfg of arr) window.__gofastr.toast(cfg);
+        } catch (_) {}
+      }
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
       if (responseSignal) window.__gofastr.setSignal(responseSignal, data);
@@ -327,24 +339,86 @@
         // Stash every widget's payload so openWidget can retrieve a
         // hidden one on demand.
         window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
+        // Build a deep-link index: key -> [{value, name, params}, ...]
+        // so URL parsing on boot / popstate is O(1) per registered key.
+        window.__gofastr._widgetDeepLinks = window.__gofastr._widgetDeepLinks || {};
         for (const item of list) {
           window.__gofastr._widgetCatalog[item.cfg.name] = item;
+          const cfg = item.cfg;
+          if (cfg.deepLinkKey && cfg.deepLinkValue) {
+            const idx = window.__gofastr._widgetDeepLinks;
+            (idx[cfg.deepLinkKey] = idx[cfg.deepLinkKey] || []).push({
+              value: cfg.deepLinkValue,
+              name: cfg.name,
+              params: cfg.deepLinkParams || [],
+            });
+          }
           if (item.hidden) continue; // open later via openWidget(name)
-          try {
-            window.__gofastr.mountWidget(item.cfg, item.chrome);
-          } catch (_) {}
+          // Non-hidden widgets auto-mount at boot. Chrome HTML is
+          // fetched lazily from cfg.chromePath so the registry stays
+          // small; if the page already SSR-inlined this widget (root
+          // element exists in DOM), mountWidget short-circuits to a
+          // hydrate-only path. Either way, the result is a wired
+          // widget root.
+          window.__gofastr._mountByName(item.cfg.name);
         }
+        // Open any widget whose deep link matches the current URL. Pure
+        // post-hydration — there's a single-frame window where the page
+        // paints without the modal. SSR pre-rendering is a future
+        // optimization; correctness (refresh / share / back-button) is
+        // already covered by this open-on-boot pass.
+        window.__gofastr._syncDeepLinks();
+
         // Global click delegation for data-fui-open buttons. Bound
-        // ONCE per document (idempotent flag).
+        // ONCE per document (idempotent flag). Buttons can carry
+        // data-fui-deeplink="user_id=42&tab=profile" to seed the
+        // widget's signals from per-click values (e.g. row clicks).
         if (!document.__fuiOpenDispatch) {
           document.__fuiOpenDispatch = true;
           document.addEventListener('click', (e) => {
+            // Toast trigger: data-fui-toast='<json>' fires a client
+            // toast. Cheaper than data-fui-rpc when no server work is
+            // needed (form-validation hint, copy-to-clipboard ack, …).
+            const toastBtn = e.target.closest('[data-fui-toast]');
+            if (toastBtn) {
+              try {
+                const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
+                window.__gofastr.toast(cfg);
+              } catch (_) {}
+              e.preventDefault();
+              return;
+            }
             const btn = e.target.closest('[data-fui-open]');
             if (!btn) return;
             const name = btn.getAttribute('data-fui-open');
             if (!name) return;
             e.preventDefault();
-            window.__gofastr.openWidget(name);
+            const raw = btn.getAttribute('data-fui-deeplink') || '';
+            const overrides = {};
+            if (raw) {
+              for (const pair of raw.split('&')) {
+                if (!pair) continue;
+                const eq = pair.indexOf('=');
+                if (eq < 0) continue;
+                overrides[decodeURIComponent(pair.slice(0, eq))] =
+                  decodeURIComponent(pair.slice(eq + 1));
+              }
+            }
+            window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+          });
+        }
+
+        // Browser back/forward: re-sync widgets against the URL. The
+        // SPA navigation path (popstate handler near the bottom of this
+        // file) already swaps <main>; this listener focuses on widget
+        // open/close state, which is independent of <main>'s content.
+        if (!window.__fuiDeepLinkPopstate) {
+          window.__fuiDeepLinkPopstate = true;
+          window.addEventListener('popstate', () => {
+            // Defer so this fires AFTER the main popstate handler has
+            // (potentially) swapped <main> — otherwise we'd open a
+            // widget against a stale DOM.
+            setTimeout(() => window.__gofastr._syncDeepLinks(), 0);
           });
         }
       };
@@ -462,21 +536,10 @@
       document.querySelector(selector)?.classList.toggle(cls);
     },
 
-    /** Show a toast notification */
-    toast(msg) {
-      document.querySelector('.gofastr-toast')?.remove();
-      const t = document.createElement('div');
-      t.className = 'gofastr-toast';
-      t.setAttribute('role', 'status');
-      t.setAttribute('aria-live', 'polite');
-      t.textContent = msg;
-      t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#10B981;color:white;padding:12px 24px;border-radius:8px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:9999;transition:opacity 0.3s;font-family:system-ui,sans-serif;';
-      document.body.appendChild(t);
-      setTimeout(() => {
-        t.style.opacity = '0';
-        setTimeout(() => t.remove(), 300);
-      }, 2000);
-    },
+    /** Legacy toast — kept as a forwarding shim so older callers
+        (string-only arg) continue to work. The real implementation
+        is the cfg-object version defined below; it owns the stack
+        widget + lifecycle. */
 
     /** Fetch partial HTML from server and inject into selector */
     async fetchPage(url, selector) {
@@ -596,6 +659,16 @@
     _widgets: {},
     _signals: {},
 
+    /** Names of currently-mounted modal (backdrop'd) widgets, oldest
+        at index 0. Drives body-scroll lock + the Tab focus trap so a
+        modal opened from inside another modal traps Tab to itself
+        rather than to the outer one. */
+    _modalStack: [],
+
+    /** Selector for focusable elements inside a modal — used by the
+        initial-focus pass and the Tab focus trap. */
+    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+
     /** Push a value into a named signal and reflect it into all
         [data-fui-signal="<name>"] DOM nodes. Mode is read from the
         node's data-fui-signal-mode attr ("text" default, "html",
@@ -612,6 +685,12 @@
         if (mode === 'html') {
           node.innerHTML = (typeof value === 'string') ? value : (value == null ? '' : JSON.stringify(value));
           window.__gofastr.scanAndLoadCSS(node);
+          // Wire any toast items the freshly-swapped HTML brought in.
+          // Pure no-op for non-toast signals — the querySelector finds
+          // nothing and returns early.
+          if (node.querySelector && node.querySelector('[data-fui-toast-id]')) {
+            window.__gofastr._initToasts(node);
+          }
         } else if (mode === 'attr') {
           const attr = node.getAttribute('data-fui-signal-attr') || 'value';
           node.setAttribute(attr, String(value ?? ''));
@@ -651,13 +730,243 @@
       return this._signals[name]?.value;
     },
 
+    /** Toast TTL bookkeeping: id -> { timer, remaining, startedAt }. */
+    _toastTimers: {},
+
+    /** Wire freshly-swapped toast items inside `root`: schedule auto
+        dismiss via data-fui-toast-ttl-ms, pause on hover/focus, resume
+        on leave, click-to-dismiss via [data-fui-toast-dismiss]. The
+        same toast HTML re-rendered should NOT reset existing timers
+        — we key by toast id and skip already-known ones. */
+    _initToasts(root) {
+      const NS = this;
+      const items = root.querySelectorAll('[data-fui-toast-id]');
+      // Track which ids are present in the current DOM. Anything in
+      // _toastTimers but absent here was dismissed — cancel its timer.
+      const present = {};
+      items.forEach((item) => {
+        const id = item.getAttribute('data-fui-toast-id');
+        present[id] = true;
+        if (NS._toastTimers[id]) return; // already wired
+        const ttl = parseInt(item.getAttribute('data-fui-toast-ttl-ms') || '0', 10);
+        if (ttl > 0) {
+          const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
+          NS._toastTimers[id] = rec;
+          const arm = () => {
+            rec.startedAt = Date.now();
+            rec.timer = setTimeout(() => NS._dismissToast(item, id), rec.remaining);
+          };
+          const pause = () => {
+            if (!rec.timer) return;
+            clearTimeout(rec.timer);
+            rec.timer = 0;
+            rec.remaining -= Date.now() - rec.startedAt;
+            if (rec.remaining < 100) rec.remaining = 100;
+          };
+          item.addEventListener('mouseenter', pause);
+          item.addEventListener('focusin', pause);
+          item.addEventListener('mouseleave', arm);
+          item.addEventListener('focusout', arm);
+          arm();
+        }
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('[data-fui-toast-dismiss]')) {
+            e.preventDefault();
+            NS._dismissToast(item, id);
+          }
+        });
+      });
+      // Cancel timers for toasts that are no longer in the DOM
+      // (server-side dismissal / replacement).
+      for (const id in NS._toastTimers) {
+        if (!present[id]) {
+          clearTimeout(NS._toastTimers[id].timer);
+          delete NS._toastTimers[id];
+        }
+      }
+    },
+
+    /** Add the leave class, remove from DOM after the CSS animation
+        finishes. Idempotent: a second dismiss on a leaving toast is
+        a no-op. */
+    _dismissToast(item, id) {
+      if (!item || item.classList.contains('is-leaving')) return;
+      item.classList.add('is-leaving');
+      const rec = this._toastTimers[id];
+      if (rec) { clearTimeout(rec.timer); delete this._toastTimers[id]; }
+      // Read duration from the computed style so theme overrides apply.
+      // Fall back to 200ms if unset / unparseable.
+      const cs = getComputedStyle(item);
+      const ms = parseFloat(cs.animationDuration) * 1000 || 200;
+      setTimeout(() => { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
+    },
+
+    /** Counter for client-generated toast ids — unique within a page. */
+    _toastSeq: 0,
+
+    /** Push a toast onto a stack. cfg = { variant, title, body, ttl, stack }
+        OR a bare string treated as { title: <string>, ttl: 4000 } for
+        ergonomic ad-hoc calls.
+
+        variant: info|success|warning|danger|neutral (default info)
+        title:   required string
+        body:    optional supporting text
+        ttl:     milliseconds; 0 (or omitted with cfg-object) = persistent.
+                 String-arg shorthand defaults to a 4s auto-dismiss.
+        stack:   name of the toast-stack widget to push into; defaults
+                 to the first stack present in the DOM (auto-creates a
+                 plain top-right container if none is mounted).
+        Returns the new item's id. */
+    toast(cfg) {
+      if (cfg == null) return null;
+      // String shorthand: __gofastr.toast("Saved") → info toast, 4s ttl.
+      if (typeof cfg === 'string') cfg = { title: cfg, ttl: 4000 };
+      if (!cfg.title) return null;
+      // Locate the target stack container. Explicit cfg.stack wins,
+      // otherwise pick the first stack on the page. If no stack is
+      // mounted (apps that haven't registered a preset.ToastStack),
+      // auto-create one and append it to <body> — toasts always fire.
+      let container = null;
+      if (cfg.stack) {
+        container = document.querySelector(
+          '[data-fui-toast-stack="' + CSS.escape(cfg.stack) + '"]');
+      }
+      if (!container) {
+        container = document.querySelector('[data-fui-toast-stack]');
+      }
+      if (!container) {
+        container = document.createElement('div');
+        container.className = 'ui-toast-stack';
+        container.setAttribute('data-fui-comp', 'ui-toast-stack');
+        container.setAttribute('data-fui-toast-stack', '__auto');
+        container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;pointer-events:none;max-width:min(360px,calc(100vw - 2rem));';
+        document.body.appendChild(container);
+        if (this.scanAndLoadCSS) this.scanAndLoadCSS(container);
+      }
+
+      const id = 't' + (++this._toastSeq);
+      const variant = cfg.variant || 'info';
+      const isAssertive = variant === 'warning' || variant === 'danger';
+      const role = isAssertive ? 'alert' : 'status';
+      const live = isAssertive ? 'assertive' : 'polite';
+      const glyph = ({success:'✓', warning:'!', danger:'✕', info:'i', neutral:'•'})[variant] || 'i';
+
+      const ttl = parseInt(cfg.ttl || 0, 10);
+      const item = document.createElement('div');
+      item.className = 'ui-toast-stack__item';
+      item.setAttribute('data-fui-toast-id', id);
+      if (ttl > 0) item.setAttribute('data-fui-toast-ttl-ms', String(ttl));
+
+      const wrap = document.createElement('div');
+      wrap.className = 'ui-notification ui-notification--' + variant;
+      wrap.setAttribute('data-fui-comp', 'ui-notification');
+      wrap.setAttribute('role', role);
+      wrap.setAttribute('aria-live', live);
+
+      // Use textContent on the title/body to insulate from XSS — cfg
+      // values may originate from server responses or page scripts;
+      // the runtime never interprets them as HTML.
+      const icon = document.createElement('span');
+      icon.className = 'ui-notification__icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = glyph;
+
+      const text = document.createElement('div');
+      text.className = 'ui-notification__text';
+      const titleEl = document.createElement('strong');
+      titleEl.className = 'ui-notification__title';
+      titleEl.textContent = cfg.title;
+      text.appendChild(titleEl);
+      if (cfg.body) {
+        const bodyEl = document.createElement('p');
+        bodyEl.className = 'ui-notification__body';
+        bodyEl.textContent = cfg.body;
+        text.appendChild(bodyEl);
+      }
+
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.className = 'ui-notification__dismiss';
+      dismiss.setAttribute('aria-label', 'Dismiss notification');
+      dismiss.setAttribute('data-fui-toast-dismiss', '');
+      dismiss.textContent = '×';
+
+      wrap.appendChild(icon);
+      wrap.appendChild(text);
+      wrap.appendChild(dismiss);
+      item.appendChild(wrap);
+      container.appendChild(item);
+
+      // The notification's `data-fui-comp="ui-notification"` marker is
+      // emitted on the wrap element. Trigger the CSS catalog scanner
+      // so the per-component stylesheet loads (no-op if already
+      // loaded once this session).
+      if (this.scanAndLoadCSS) this.scanAndLoadCSS(item);
+
+      // Reuse the existing TTL/hover-pause/click-dismiss wiring so
+      // header-driven and JS-driven toasts behave identically.
+      this._initToasts(container);
+      return id;
+    },
+
     /** Mount a hidden widget by name. Looks up the entry stashed by
         the auto-discovery fetch and delegates to mountWidget. No-op
-        if the widget is already mounted (mountWidget is idempotent). */
-    openWidget(name) {
+        if the widget is already mounted (mountWidget is idempotent).
+
+        opts:
+          params: { [key]: value } — extra values mirrored into named
+                  signals after mount (deep-link seeding).
+          pushUrl: when true (and the widget is deep-linked), update
+                  the browser URL via pushState so refresh / share /
+                  back-button stay consistent.
+    */
+    async openWidget(name, opts) {
       const entry = this._widgetCatalog && this._widgetCatalog[name];
       if (!entry) return;
-      this.mountWidget(entry.cfg, entry.chrome);
+      const o = opts || {};
+      const params = o.params || {};
+      await this._mountByName(name);
+      // Seed signals from URL params or click overrides — bound to the
+      // declared deepLinkParams so untrusted query values can't write
+      // arbitrary signal keys.
+      const declared = entry.cfg.deepLinkParams || [];
+      if (declared.length) {
+        const url = new URL(window.location.href);
+        for (const k of declared) {
+          const v = (k in params) ? params[k] : url.searchParams.get(k);
+          if (v != null) this.setSignal(k, v);
+        }
+      }
+      if (o.pushUrl && entry.cfg.deepLinkKey && entry.cfg.deepLinkValue) {
+        this._deepLinkPushUrl(entry.cfg, params);
+      }
+    },
+
+    /** Lazy chrome cache: name → Promise<HTMLString>. Each widget's
+        chrome is fetched once per page session and reused. */
+    _chromeCache: {},
+
+    /** Mount a widget by name. Resolves the chrome HTML — preferring
+        an SSR-inlined root if one already exists in the DOM, otherwise
+        lazily fetching cfg.chromePath. Idempotent across both. */
+    async _mountByName(name) {
+      const entry = this._widgetCatalog && this._widgetCatalog[name];
+      if (!entry) return;
+      if (this._widgets[name]) return; // already mounted (hydrate or click)
+      const cfg = entry.cfg;
+      // SSR-inline path: server already put the chrome in the page.
+      const existing = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
+      if (existing) {
+        this.mountWidget(cfg, null, existing);
+        return;
+      }
+      // Lazy fetch path: hit cfg.chromePath, cache the response.
+      if (!this._chromeCache[name]) {
+        this._chromeCache[name] = fetch(cfg.chromePath || ('/core-ui/widget/' + name + '/chrome'))
+          .then((r) => (r.ok ? r.text() : ''));
+      }
+      const html = await this._chromeCache[name];
+      if (html) this.mountWidget(cfg, html);
     },
 
     /** Dismiss a mounted widget by name. */
@@ -666,11 +975,72 @@
       if (w && typeof w.dismiss === 'function') w.dismiss();
     },
 
-    /** Mount a widget. cfg comes from the per-widget bootstrap;
-        chromeHTML is the host-rendered slot DOM as an HTML string.
+    /** Update window.location with a widget's deep-link params via
+        pushState — no fetch, no reload. Strips the previous deep-link
+        key on the same URL key so reopening from URL A to URL B works
+        cleanly. */
+    _deepLinkPushUrl(cfg, params) {
+      const url = new URL(window.location.href);
+      url.searchParams.set(cfg.deepLinkKey, cfg.deepLinkValue);
+      for (const k of cfg.deepLinkParams || []) {
+        if (k in params) url.searchParams.set(k, params[k]);
+      }
+      if (url.href !== window.location.href) {
+        history.pushState(null, '', url.pathname + url.search + url.hash);
+      }
+    },
+
+    /** Strip a widget's deep-link params from the URL via pushState.
+        Called from dismiss() when the closed widget was opened via
+        deep-link OR was URL-bound at boot. */
+    _deepLinkStripUrl(cfg) {
+      const url = new URL(window.location.href);
+      let touched = false;
+      if (url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue) {
+        url.searchParams.delete(cfg.deepLinkKey);
+        touched = true;
+      }
+      for (const k of cfg.deepLinkParams || []) {
+        if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
+      }
+      if (touched) {
+        const s = url.searchParams.toString();
+        history.pushState(null, '', url.pathname + (s ? '?' + s : '') + url.hash);
+      }
+    },
+
+    /** Compare current URL to the deep-link index; mount any widget
+        whose deep-link is now in the URL, dismiss any whose deep-link
+        is no longer present. Called on boot and on popstate. */
+    _syncDeepLinks() {
+      const idx = this._widgetDeepLinks || {};
+      const url = new URL(window.location.href);
+      // Open any matches not yet mounted.
+      for (const key in idx) {
+        const got = url.searchParams.get(key);
+        for (const entry of idx[key]) {
+          const mounted = !!this._widgets[entry.name];
+          if (got === entry.value && !mounted) {
+            // No pushUrl: the URL already carries the deep link; we'd
+            // just be replacing it with itself.
+            this.openWidget(entry.name, { pushUrl: false });
+          } else if (got !== entry.value && mounted) {
+            // Widget is mounted but the URL no longer wants it open.
+            this.closeWidget(entry.name);
+          }
+        }
+      }
+    },
+
+    /** Mount a widget. cfg is the registry metadata. The chrome can
+        arrive three ways:
+          - SSR-inlined: existingEl is the root already in the DOM
+            (preferred — no construction, hydrate only).
+          - Lazy fetch: chromeHTML is the rendered HTML to insert.
+          - Both null: skip (mountWidget is a no-op).
         Idempotent — a widget already mounted (same cfg.name) is a
         no-op. */
-    mountWidget(cfg, chromeHTML) {
+    mountWidget(cfg, chromeHTML, existingEl) {
       const NS = this;
       if (NS._widgets[cfg.name]) return; // already mounted
       NS._widgets[cfg.name] = { cfg };
@@ -684,36 +1054,106 @@
         document.head.appendChild(link);
       }
 
-      // Backdrop + chrome
+      // Backdrop + chrome. For SSR-inlined widgets the backdrop may
+      // already be a sibling of the root; otherwise we create one.
       let backdrop = null;
       if (cfg.backdrop) {
-        backdrop = document.createElement('div');
-        backdrop.className = 'fui-backdrop';
-        backdrop.setAttribute('data-fui-backdrop', cfg.name);
-        document.body.appendChild(backdrop);
+        backdrop = document.querySelector('[data-fui-backdrop="' + CSS.escape(cfg.name) + '"]');
+        if (!backdrop) {
+          backdrop = document.createElement('div');
+          backdrop.className = 'fui-backdrop overlay-backdrop';
+          backdrop.setAttribute('data-fui-backdrop', cfg.name);
+          document.body.appendChild(backdrop);
+        }
       }
-      const tmp = document.createElement('div');
-      tmp.innerHTML = chromeHTML;
-      const widgetEl = tmp.firstElementChild;
-      document.body.appendChild(widgetEl);
+      let widgetEl;
+      if (existingEl) {
+        widgetEl = existingEl;
+        // Strip the `hidden` attribute that the SSR layer uses to
+        // keep click-to-open widgets out of the layout until needed.
+        widgetEl.removeAttribute('hidden');
+      } else if (chromeHTML) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = chromeHTML;
+        widgetEl = tmp.firstElementChild;
+        document.body.appendChild(widgetEl);
+      } else {
+        // Neither path supplied — nothing to mount.
+        delete NS._widgets[cfg.name];
+        return;
+      }
       NS._widgets[cfg.name].root = widgetEl;
       NS._widgets[cfg.name].backdrop = backdrop;
+      NS._widgets[cfg.name].hydrated = !!existingEl;
       NS.scanAndLoadCSS(widgetEl);
 
+      // Backdrop'd widgets are modal — lock body scroll, focus first
+      // focusable, push onto the modal stack so nested modals unwind
+      // correctly. Non-backdrop widgets (panels, toasts, banners) do
+      // none of this.
+      const isModal = !!cfg.backdrop;
+      const previousFocus = isModal ? document.activeElement : null;
+      if (isModal) {
+        if (NS._modalStack.length === 0) document.body.style.overflow = 'hidden';
+        NS._modalStack.push(cfg.name);
+        // Defer focus by a microtask so any post-mount DOM updates
+        // (signal seed, slot innerHTML swaps) finish first.
+        Promise.resolve().then(() => {
+          const focusables = widgetEl.querySelectorAll(NS._focusSel);
+          if (focusables.length > 0) focusables[0].focus();
+        });
+      }
+
       function dismiss() {
-        if (widgetEl?.parentNode) widgetEl.parentNode.removeChild(widgetEl);
+        // SSR-inlined widgets stay in the DOM across open/close —
+        // we just hide them with the `hidden` attribute instead of
+        // detaching, so reopening doesn't require a fresh fetch and
+        // the chrome stays available for the next deep-link hit.
+        const wasHydrated = NS._widgets[cfg.name]?.hydrated;
+        if (wasHydrated && widgetEl) {
+          widgetEl.setAttribute('hidden', '');
+        } else if (widgetEl?.parentNode) {
+          widgetEl.parentNode.removeChild(widgetEl);
+        }
         if (backdrop?.parentNode) backdrop.parentNode.removeChild(backdrop);
         delete NS._widgets[cfg.name];
+        if (isModal) {
+          const idx = NS._modalStack.indexOf(cfg.name);
+          if (idx >= 0) NS._modalStack.splice(idx, 1);
+          if (NS._modalStack.length === 0) document.body.style.overflow = '';
+          if (previousFocus && typeof previousFocus.focus === 'function') {
+            try { previousFocus.focus(); } catch (_) {}
+          }
+        }
+        // If this widget owns its deep-link in the URL, strip the
+        // params on close so refresh/share land back on the parent
+        // page. _syncDeepLinks (popstate) calls closeWidget which
+        // reaches us; in that case the URL was already updated by the
+        // browser — _deepLinkStripUrl is a no-op.
+        if (cfg.deepLinkKey && cfg.deepLinkValue) NS._deepLinkStripUrl(cfg);
       }
       NS._widgets[cfg.name].dismiss = dismiss;
 
-      // Initial state hydration
-      fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
-        .then((r) => (r.ok ? r.json() : {}))
-        .then((state) => {
-          for (const k in state) NS.setSignal(k, state[k]);
-        })
-        .catch(() => {});
+      // Initial state hydration — only when the widget actually has
+      // signals (the registry omits statePath otherwise so a modal
+      // with zero signals doesn't pay for an empty round-trip on
+      // every open). We apply each value only if a signal hasn't
+      // already been written by the deep-link seed path; the seed
+      // path runs synchronously after mountWidget while this fetch
+      // resolves later, and we don't want it to clobber URL-derived
+      // values with the SignalFunc default.
+      if (cfg.statePath) {
+        fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+          .then((r) => (r.ok ? r.json() : {}))
+          .then((state) => {
+            for (const k in state) {
+              const existing = NS._signals[k];
+              if (existing && existing.value !== undefined) continue;
+              NS.setSignal(k, state[k]);
+            }
+          })
+          .catch(() => {});
+      }
 
       // SSE bindings
       const seenStreams = {};
@@ -793,6 +1233,18 @@
             const txt = await r.text();
             if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
             return;
+          }
+          // X-Gofastr-Toast header fires toasts on success. The server
+          // emits a JSON-encoded array of ToastTrigger objects (single
+          // object also tolerated for hand-set headers); the runtime
+          // dispatches each into the client toast stack.
+          const toastHeader = r.headers.get('X-Gofastr-Toast');
+          if (toastHeader && NS.toast) {
+            try {
+              const parsed = JSON.parse(toastHeader);
+              const arr = Array.isArray(parsed) ? parsed : [parsed];
+              for (const cfg of arr) NS.toast(cfg);
+            } catch (_) {}
           }
           const ct = r.headers.get('content-type') || '';
           const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
@@ -1080,11 +1532,13 @@
       });
 
       if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);
-      if (cfg.closeOnEscape) {
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && document.body.contains(widgetEl)) dismiss();
-        });
-      }
+      // closeOnEscape is handled globally on the modal stack (see the
+      // single document-level handler in the boot section). Per-widget
+      // listeners would all fire on a single Escape and close every
+      // open modal at once instead of just the topmost. The cfg flag
+      // is recorded on the _widgets entry so the global handler can
+      // honour an opt-out (panel widgets, banners, etc.).
+      if (isModal) NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
 
       // Global click+submit dispatcher (idempotent across widgets).
       // Handles agent-rendered page buttons + plain forms + legacy
@@ -1355,10 +1809,16 @@
     }
   };
 
+  // Links with an exact-href match get aria-current=page; non-matching
+  // links with a non-empty href get it cleared. Links with NO href
+  // (e.g. server-rendered MatchPath items in a sidebar where the
+  // active determination is prefix-based) are left untouched — only
+  // the server has the prefix-match context, so the runtime defers.
   const updateActiveLink = (path) => {
     const navLinks = document.querySelectorAll('nav a');
     for (const link of navLinks) {
       const href = link.getAttribute('href');
+      if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (href === path) {
         link.setAttribute('aria-current', 'page');
         link.classList.add('active');
@@ -1537,7 +1997,14 @@
     };
   };
 
-  window.addEventListener('gofastr:navigate', () => { closeAllOverlays(); });
+  // Close any open modal widgets on SPA navigation. Toasts/panels
+  // (non-backdrop'd widgets) survive — they're page-independent
+  // UI like build-progress banners.
+  window.addEventListener('gofastr:navigate', () => {
+    const G = window.__gofastr;
+    if (!G || !G._modalStack) return;
+    for (const name of [...G._modalStack]) G.closeWidget(name);
+  });
 
   const _bootstrapComponentCSS = () => {
     const G = window.__gofastr;
@@ -1587,18 +2054,115 @@
       const d = e.target;
       if (d && d.tagName === 'DETAILS' && d.hasAttribute('data-fui-disclosure')) {
         _mirrorDisclosure(d);
+        // Menu disclosure (data-fui-menu): on open, focus the first
+        // menuitem so keyboard users land inside the panel without an
+        // extra Tab. The native <summary> retains visible focus until
+        // the user moves it with ArrowDown.
+        if (d.open && d.hasAttribute('data-fui-menu')) {
+          const first = d.querySelector('[role="menuitem"]:not([aria-disabled="true"])');
+          if (first) first.focus();
+        }
       }
     }, true); // capture phase — toggle doesn't bubble
+
+    // Modal Escape close — fires once per Escape and closes only the
+    // topmost modal in the stack, so stacked modals unwind in LIFO
+    // order rather than all collapsing at once. Per-widget listeners
+    // would all fire simultaneously and close every open modal.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const G = window.__gofastr;
+      if (!G._modalStack || G._modalStack.length === 0) return;
+      const topName = G._modalStack[G._modalStack.length - 1];
+      const top = G._widgets[topName];
+      if (top && top.closeOnEscape) {
+        e.stopPropagation();
+        G.closeWidget(topName);
+      }
+    });
+
+    // Modal Tab focus trap. When any backdrop'd widget is open, Tab
+    // (and Shift+Tab) cycle focus within the topmost modal rather
+    // than escaping to the surrounding page. Runs in capture so it
+    // beats the menu/disclosure handlers.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const G = window.__gofastr;
+      if (!G._modalStack || G._modalStack.length === 0) return;
+      const topName = G._modalStack[G._modalStack.length - 1];
+      const root = G._widgets[topName]?.root;
+      if (!root) return;
+      const focusables = Array.from(root.querySelectorAll(G._focusSel))
+        .filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (focusables.length === 0) return;
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      } else if (!root.contains(document.activeElement)) {
+        // Focus escaped (e.g. user clicked outside, then pressed Tab).
+        // Pull it back to the first focusable in the modal.
+        e.preventDefault(); first.focus();
+      }
+    }, true);
+
+    // Menu keyboard nav. Lives at document level so newly-inserted
+    // menus pick it up for free. Handles: ArrowDown/Up roving focus,
+    // Home/End, Tab (close + escape), printable-key type-ahead. Esc
+    // is owned by the data-fui-disclosure handler below.
+    let _menuTypeBuf = '', _menuTypeAt = 0;
+    document.addEventListener('keydown', (e) => {
+      const item = e.target && e.target.closest && e.target.closest('[role="menuitem"]');
+      if (!item) return;
+      const panel = item.closest('[role="menu"]');
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])'));
+      if (items.length === 0) return;
+      const idx = items.indexOf(item);
+      const move = (to) => {
+        e.preventDefault();
+        items[(to + items.length) % items.length].focus();
+      };
+      if (e.key === 'ArrowDown') return move(idx + 1);
+      if (e.key === 'ArrowUp')   return move(idx - 1);
+      if (e.key === 'Home')      return move(0);
+      if (e.key === 'End')       return move(items.length - 1);
+      if (e.key === 'Tab') {
+        // Close the surrounding disclosure so focus escapes naturally.
+        const d = panel.closest('details[data-fui-disclosure]');
+        if (d) d.removeAttribute('open');
+        return; // do NOT preventDefault — let Tab move focus
+      }
+      // Type-ahead: a printable single-character key jumps to the
+      // next item whose label starts with the accumulated prefix.
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const now = Date.now();
+        if (now - _menuTypeAt > 800) _menuTypeBuf = '';
+        _menuTypeAt = now;
+        _menuTypeBuf += e.key.toLowerCase();
+        for (let i = 1; i <= items.length; i++) {
+          const cand = items[(idx + i) % items.length];
+          const label = (cand.textContent || '').trim().toLowerCase();
+          if (label.startsWith(_menuTypeBuf)) {
+            e.preventDefault();
+            cand.focus();
+            return;
+          }
+        }
+      }
+    });
 
     // Escape closes any open <details data-fui-disclosure>. Native
     // <details> only handles Escape when the summary itself has
     // focus; this extends it to "Escape anywhere on the page". An
-    // open modal/sheet overlay takes precedence — its own Escape
+    // open modal widget takes precedence — its own CloseOnEscape
     // handler runs and we defer so a single Escape doesn't close
     // both.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (overlayStack.length > 0) return;
+      const G = window.__gofastr;
+      if (G && G._modalStack && G._modalStack.length > 0) return;
       for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
         // Only refocus the summary if focus is already inside this
         // disclosure — otherwise we'd yank focus away from whatever
@@ -1613,167 +2177,5 @@
     _bootstrapComponentCSS();
   }
 
-  // Overlay manager: Dialog, Sheet, Drawer — all use a full-screen backdrop wrapper.
-  // The backdrop (ov) covers the viewport. The content (.dialog/.sheet/.drawer) is a child.
-  // Click on backdrop → close. Click on content → does NOT close.
-  // Escape → close topmost. Tab → trapped inside topmost overlay.
-  const overlayCache={};
-  const overlayStack=[];
-  const focusSel='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
-  // Close all open overlays (used on navigation).
-  const closeAllOverlays=()=>{
-    // Cancel any in-flight 300ms close timers so they don't fire on
-    // detached nodes and reset body.style.overflow when a NEW overlay
-    // opened in the meantime.
-    [...overlayStack].forEach(ov=>{
-      if(ov._fuiCloseTimer){ clearTimeout(ov._fuiCloseTimer); ov._fuiCloseTimer=0; }
-      ov.remove();
-    });
-    overlayStack.length=0;
-    document.body.style.overflow='';
-  };
-
-  // Inject built-in overlay CSS on first use (apps can override via theme).
-  let _overlayCSSInjected=false;
-  /** Strip <script> elements (open tag + body + close tag) and inline
-   * event-handler attributes (on*=…) from HTML to mitigate XSS. Note
-   * this is a belt-and-suspenders pass against fragments coming from
-   * trusted-by-default server responses — the framework's strict CSP
-   * already blocks inline scripts at the browser layer. */
-  const _sanitizeHTML=(html)=>{
-    return html
-      // Match <script…>…</script>, including across newlines, body
-      // content removed. The previous regex stopped at the first `<`,
-      // leaving the body as visible plaintext.
-      .replace(/<script\b[\s\S]*?<\/script\s*>/gi,'')
-      // Catch orphan <script…> or </script> with no pair.
-      .replace(/<\/?script\b[^>]*>/gi,'')
-      .replace(/\bon\w+\s*=\s*(["'][^"']*["']|\S+)/gi,'');
-  };
-
-  const _injectOverlayCSS=()=>{
-    if(_overlayCSSInjected)return;
-    _overlayCSSInjected=true;
-    const s=document.createElement('style');
-    s.setAttribute('data-gofastr-overlays','');
-    s.textContent=`
-[data-overlay]{box-sizing:border-box}
-.overlay-backdrop{position:fixed;inset:0;display:flex;z-index:1000;background:rgba(0,0,0,0.5);transition:opacity 0.3s}
-.backdrop-closing{opacity:0}
-.dialog-overlay{align-items:center;justify-content:center}
-.dialog{position:relative;background:var(--surface,#fff);border-radius:var(--radius-lg,12px);padding:var(--spacing-xl,24px);max-width:90vw;width:480px;transition:transform 0.2s,opacity 0.2s}
-.dialog.dialog-opening,.dialog.dialog-closing{transform:scale(0.95);opacity:0}
-.sheet-backdrop{align-items:flex-end;justify-content:center}
-.sheet{position:relative;background:var(--surface,#fff);border-radius:var(--radius-lg,12px) var(--radius-lg,12px) 0 0;padding:var(--spacing-lg,16px);max-height:70vh;overflow-y:auto;width:100%;max-width:100%;transition:transform 0.3s}
-.sheet.sheet-opening,.sheet.sheet-closing{transform:translateY(100%)}
-.sheet-handle{width:40px;height:4px;background:var(--border,#E5E7EB);border-radius:2px;margin:0 auto 8px}
-.drawer-backdrop{align-items:stretch;justify-content:flex-start}
-.drawer{position:relative;background:var(--surface,#fff);width:320px;max-width:85vw;height:100vh;overflow-y:auto;padding:var(--spacing-xl,24px);transition:transform 0.3s}
-.drawer.drawer-opening,.drawer.drawer-closing{transform:translateX(-100%)}
-.overlay-close{position:absolute;top:8px;right:8px;background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted,#6B7280);line-height:1;padding:4px 8px;border-radius:4px}
-.overlay-close:hover{background:var(--background,#F9FAFB)}
-.dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
-.dialog-cancel-btn{padding:8px 16px;border:1px solid var(--border,#E5E7EB);border-radius:var(--radius-sm,4px);background:transparent;color:var(--text,#1F2937);cursor:pointer;font-size:14px}
-.dialog-cancel-btn:hover{background:var(--background,#F9FAFB)}
-.confirm-btn{padding:8px 16px;border:none;border-radius:var(--radius-sm,4px);background:var(--primary,#4F46E5);color:#fff;cursor:pointer;font-size:14px;font-weight:600}
-.confirm-btn:hover{opacity:0.9}
-`;
-    document.head.appendChild(s);
-  };
-
-  const _pendingOverlays=new Set();
-  window.__gofastr.openOverlay=async(type,path)=>{
-    const key=type+':'+path;
-    if(_pendingOverlays.has(key)) return;
-    _pendingOverlays.add(key);
-    _injectOverlayCSS();
-    try {
-    let html;
-    if(overlayCache[path]){
-      html=overlayCache[path];
-    } else {
-      const resp=await fetch(path,{headers:{'X-Gofastr-Navigate':'1'}});
-      if(!resp.ok) return;
-      html=await resp.text();
-      html=_sanitizeHTML(html);
-      overlayCache[path]=html;
-    }
-    // Hydrate cached HTML with current client state
-    const cartCount=window.__gofastr.getState('cart-count',0);
-    let hydrated=html;
-    if(cartCount>0){
-      const items=Array.from({length:cartCount},(_,i)=>'<li>Cart item '+(i+1)+'</li>').join('');
-      hydrated=hydrated.replace(/Your cart is empty\./,'<ul>'+items+'</ul>');
-      hydrated=hydrated.replace(/\d+\s*items?/g,cartCount+' item'+(cartCount!==1?'s':''));
-      hydrated=hydrated.replace(/(<span[^>]*cart-badge[^>]*>)([\s\S]*?)(<\/span>)/,'$1'+cartCount+' items$3');
-    }
-    const isSheet=type==='sheet';
-    const isDrawer=type==='drawer';
-    // All types: full-screen backdrop with content child inside
-    const backdrop=document.createElement('div');
-    backdrop.setAttribute('data-overlay','');
-    const cb='<button class="overlay-close" aria-label="Close" data-overlay-close>\u00d7</button>';
-    if(isDrawer){
-      backdrop.className='overlay-backdrop drawer-backdrop';
-      backdrop.innerHTML=`<nav class="drawer drawer-opening">${hydrated}<button class="drawer-close-btn" data-overlay-close style='width:100%;margin-top:1rem;padding:0.5rem;text-align:center;background:transparent;border:1px solid var(--border);border-radius:4px;cursor:pointer'>Close</button>${cb}</nav>`;
-    } else if(isSheet){
-      backdrop.className='overlay-backdrop sheet-backdrop';
-      backdrop.innerHTML=`<div class="sheet sheet-opening"><div class="sheet-handle"></div>${hydrated}<button class="sheet-close-btn cta-button" data-overlay-close style="width:100%;margin-top:0.5rem">Close</button>${cb}</div>`;
-    } else {
-      backdrop.className='overlay-backdrop dialog-overlay';
-      backdrop.innerHTML=`<div class="dialog dialog-opening">${hydrated}${cb}</div>`;
-    }
-    document.body.appendChild(backdrop);
-    document.body.style.overflow='hidden';
-    // Force reflow so the browser paints the "opening" state, then remove
-    // the class to trigger the CSS transition (slide-in / fade-in).
-    backdrop.offsetHeight;
-    const content=backdrop.querySelector('.dialog,.drawer,.sheet');
-    if(content) content.classList.remove('dialog-opening','sheet-opening','drawer-opening');
-    const f=backdrop.querySelectorAll(focusSel);
-    if(f.length>0)f[0].focus();
-    overlayStack.push(backdrop);
-    return backdrop;
-    } finally { _pendingOverlays.delete(key); }
-  };
-  window.__gofastr.closeOverlay=(ov)=>{
-    if(!ov)ov=overlayStack[overlayStack.length-1];
-    if(!ov)return;
-    // Add closing animation class to the content element, not the backdrop
-    const content=ov.querySelector('.dialog,.drawer,.sheet');
-    if(content){
-      if(content.classList.contains('dialog'))content.classList.add('dialog-closing');
-      else if(content.classList.contains('drawer'))content.classList.add('drawer-closing');
-      else if(content.classList.contains('sheet'))content.classList.add('sheet-closing');
-    }
-    ov.classList.add('backdrop-closing');
-    ov._fuiCloseTimer=setTimeout(()=>{
-      ov._fuiCloseTimer=0;
-      ov.remove();
-      const i=overlayStack.indexOf(ov);
-      if(i>-1)overlayStack.splice(i,1);
-      // Restore scroll only if no other overlay is open; otherwise
-      // the next overlay's hidden state should remain in effect.
-      if(overlayStack.length===0)document.body.style.overflow='';
-      else document.body.style.overflow='hidden';
-    },300);
-  };
-  document.addEventListener('click',(e)=>{
-    if(e.target.matches('[data-overlay-close]')){
-      window.__gofastr.closeOverlay(e.target.closest('[data-overlay]'));
-      return;
-    }
-    // Only clicking the backdrop itself (not content inside it) should close
-    if(e.target.matches('.overlay-backdrop'))window.__gofastr.closeOverlay(e.target);
-  });
-  document.addEventListener('keydown',(e)=>{
-    if(e.key==='Escape'&&overlayStack.length>0)window.__gofastr.closeOverlay();
-    if(e.key==='Tab'&&overlayStack.length>0){
-      const top=overlayStack[overlayStack.length-1],f=top.querySelectorAll(focusSel);
-      if(!f.length)return;
-      if(e.shiftKey&&document.activeElement===f[0]){e.preventDefault();f[f.length-1].focus();}
-      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){e.preventDefault();f[0].focus();}
-    }
-  });
   window.G=window.__gofastr;
 })();

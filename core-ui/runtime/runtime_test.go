@@ -61,11 +61,15 @@ func TestRuntimeSize(t *testing.T) {
 	// region, overlay timer cleanup, LRU screen cache, full-script
 	// sanitization, inline-JSON catalog/routes hydration, per-signal
 	// RPC abort dedup, aria-busy progress + nav-failure toast,
-	// summary aria-expanded mirror). Cap at 78KB uncompressed
-	// (~20-22KB gzip), still well under typical TCP slow-start
-	// initial windows after compression.
-	if size > 78000 {
-		t.Errorf("runtime too large: %d bytes (max 78000)", size)
+	// summary aria-expanded mirror, widget deep-link sync via
+	// pushState/popstate + click-time signal seeding, toast stack TTL
+	// + hover-pause + click-to-dismiss + JS API + header dispatch,
+	// menu type-ahead + roving focus, modal scroll lock + Tab focus
+	// trap + return-focus). Cap at 92KB uncompressed (~24-26KB gzip),
+	// still well under typical TCP slow-start initial windows after
+	// compression.
+	if size > 96000 {
+		t.Errorf("runtime too large: %d bytes (max 96000)", size)
 	}
 }
 

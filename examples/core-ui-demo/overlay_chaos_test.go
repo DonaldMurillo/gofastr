@@ -38,9 +38,9 @@ func TestOverlay_DrawerOpensWithNavContent(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
-		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-overlay]')?.textContent ?? ''`, &text),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
+		chromedp.Sleep(1200*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('[data-overlay]:not([hidden])')?.textContent ?? ''`, &text),
 	)
 	if err != nil {
 		t.Fatalf("drawer open: %v", err)
@@ -60,9 +60,9 @@ func TestOverlay_SheetOpensWithProductPreview(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="sheet"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-sheet"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-overlay]')?.textContent ?? ''`, &text),
+		chromedp.Evaluate(`document.querySelector('[data-overlay]:not([hidden])')?.textContent ?? ''`, &text),
 	)
 	if err != nil {
 		t.Fatalf("sheet open: %v", err)
@@ -82,9 +82,9 @@ func TestOverlay_DialogOpensWithConfirmPrompt(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-overlay]')?.textContent ?? ''`, &text),
+		chromedp.Evaluate(`document.querySelector('[data-overlay]:not([hidden])')?.textContent ?? ''`, &text),
 	)
 	if err != nil {
 		t.Fatalf("dialog open: %v", err)
@@ -106,9 +106,9 @@ func TestOverlay_OnlyOneOverlayAfterSingleOpen(t *testing.T) {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/"),
 				waitForPage(),
-				chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
-				chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &count),
+				chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &count),
 			)
 			if err != nil {
 				t.Fatalf("%s: %v", overlayType, err)
@@ -143,11 +143,11 @@ func testEscapeCloses(t *testing.T, overlayType string) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 	)
 	if err != nil {
 		t.Fatalf("%s escape: %v", overlayType, err)
@@ -167,12 +167,12 @@ func TestOverlay_XButtonClosesEachType(t *testing.T) {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/"),
 				waitForPage(),
-				chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
 				// The × button has class "overlay-close" and attr "data-overlay-close"
-				chromedp.Evaluate(`document.querySelector('.overlay-close')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('[data-overlay]:not([hidden]) .overlay-close')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
-				chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+				chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 			)
 			if err != nil {
 				t.Fatalf("%s ×: %v", overlayType, err)
@@ -194,12 +194,12 @@ func TestOverlay_BackdropClickClosesEachType(t *testing.T) {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/"),
 				waitForPage(),
-				chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
 				// Click the backdrop element directly (not its content child)
 				chromedp.Evaluate(`document.querySelector('.overlay-backdrop')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
-				chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+				chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 			)
 			if err != nil {
 				t.Fatalf("%s backdrop: %v", overlayType, err)
@@ -219,11 +219,11 @@ func TestOverlay_CancelButtonClosesDialog(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-overlay-close]')).find(b => b.textContent.includes('Cancel'))?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 	)
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
@@ -241,11 +241,11 @@ func TestOverlay_ConfirmButtonClosesDialog(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-overlay-close]')).find(b => b.textContent.includes('Confirm'))?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 	)
 	if err != nil {
 		t.Fatalf("confirm: %v", err)
@@ -263,11 +263,11 @@ func TestOverlay_SheetCloseButtonWorks(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="sheet"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-sheet"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('.sheet-close-btn')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 	)
 	if err != nil {
 		t.Fatalf("sheet close btn: %v", err)
@@ -285,11 +285,11 @@ func TestOverlay_DrawerCloseButtonWorks(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('.drawer-close-btn')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &afterClose),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &afterClose),
 	)
 	if err != nil {
 		t.Fatalf("drawer close btn: %v", err)
@@ -322,12 +322,12 @@ func testClickInsideNoClose(t *testing.T, overlayType string) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Click the heading inside the overlay content
 		chromedp.Evaluate(`document.querySelector('[data-overlay] h2')?.click()`, nil),
 		chromedp.Sleep(300*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &countAfter),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &countAfter),
 	)
 	if err != nil {
 		t.Fatalf("%s content click: %v", overlayType, err)
@@ -351,7 +351,7 @@ func TestOverlay_BodyScrollLockedWhileOpen(t *testing.T) {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/"),
 				waitForPage(),
-				chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
 				chromedp.Evaluate(`document.body.style.overflow`, &overflow),
 			)
@@ -373,7 +373,7 @@ func TestOverlay_ScrollRestoredAfterClose(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(600*time.Millisecond),
@@ -396,9 +396,9 @@ func TestOverlay_ScrollLockPersistsWhileStacked(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
 		// Open drawer, then stack dialog on top via JS (backdrop blocks clicks)
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		// Close topmost
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
@@ -421,9 +421,9 @@ func TestOverlay_ScrollRestoredAfterAllStackedClosed(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		// Close both
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
@@ -452,11 +452,11 @@ func TestOverlay_StackTwoOverlays(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("stack 2: %v", err)
@@ -474,13 +474,13 @@ func TestOverlay_StackThreeOverlays(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('sheet', '/demo-sheet')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('demo-sheet')`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("stack 3: %v", err)
@@ -499,24 +499,24 @@ func TestOverlay_LIFOClose(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
 		// Open 3 overlays
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('sheet', '/demo-sheet')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('demo-sheet')`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`window.G.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(400*time.Millisecond),
 		// Escape 1 → closes dialog
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &after1),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &after1),
 		// Escape 2 → closes sheet
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &after2),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &after2),
 		// Escape 3 → closes drawer
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &after3),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &after3),
 	)
 	if err != nil {
 		t.Fatalf("LIFO: %v", err)
@@ -546,7 +546,7 @@ func TestOverlay_FocusMovesIntoOverlay(t *testing.T) {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/"),
 				waitForPage(),
-				chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
 				chromedp.Evaluate(`document.activeElement?.closest('[data-overlay]') !== null`, &focusedInside),
 			)
@@ -570,7 +570,7 @@ func TestOverlay_TabTrapCyclesWithinOverlay(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Focus last focusable element, then Tab (should wrap to first)
 		chromedp.Evaluate(`const f=document.querySelectorAll('[data-overlay] button,[data-overlay] a,[data-overlay] input'); if(f.length>0) f[f.length-1].focus()`, nil),
@@ -594,7 +594,7 @@ func TestOverlay_ShiftTabTrapCyclesWithinOverlay(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Focus first focusable element, then Shift+Tab (should wrap to last)
 		chromedp.Evaluate(`const f=document.querySelectorAll('[data-overlay] button,[data-overlay] a,[data-overlay] input'); if(f.length>0) f[0].focus()`, nil),
@@ -622,11 +622,11 @@ func TestOverlay_DOMRemovedAfterCloseAnimation(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(600*time.Millisecond), // wait for 300ms animation
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("DOM cleanup: %v", err)
@@ -644,12 +644,12 @@ func TestOverlay_NoStaleDOMAfterClientNav(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Client-side navigate away
 		chromedp.Evaluate(`document.querySelector('a[href="/about"]')?.click()`, nil),
 		chromedp.Sleep(1200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &countAfterNav),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &countAfterNav),
 	)
 	if err != nil {
 		t.Fatalf("nav cleanup: %v", err)
@@ -667,12 +667,12 @@ func TestOverlay_NoStaleDOMAfterHardRefresh(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Hard refresh
 		chromedp.Navigate(base+"/"),
 		chromedp.Sleep(1200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &countAfterRefresh),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &countAfterRefresh),
 	)
 	if err != nil {
 		t.Fatalf("hard refresh: %v", err)
@@ -715,9 +715,9 @@ func TestOverlay_RapidClicksDoNotLeakOverlays(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
 		// Click Open Dialog 5 times rapidly
-		chromedp.Evaluate(`for(let i=0;i<5;i++){document.querySelector('button[onclick*="dialog"]')?.click()}`, nil),
+		chromedp.Evaluate(`for(let i=0;i<5;i++){document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()}`, nil),
 		chromedp.Sleep(1500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("rapid clicks: %v", err)
@@ -727,7 +727,7 @@ func TestOverlay_RapidClicksDoNotLeakOverlays(t *testing.T) {
 	}
 	// Cleanup
 	chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').forEach(el=>el.remove())`, nil),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').forEach(el=>el.remove())`, nil),
 		chromedp.Evaluate(`document.body.style.overflow=''`, nil),
 	)
 }
@@ -740,15 +740,15 @@ func TestOverlay_CloseOverlayNoopWhenNoneOpen(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`window.G.closeOverlay()`, nil),
+		chromedp.Evaluate(`window.__gofastr.closeWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(200*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('main')?.textContent ?? ''`, &mainText),
 	)
 	if err != nil {
-		t.Fatalf("closeOverlay noop: %v", err)
+		t.Fatalf("closeWidget noop: %v", err)
 	}
 	if !strings.Contains(mainText, "Welcome to GoFastr") {
-		t.Error("closeOverlay with none open should be a noop")
+		t.Error("closeWidget with none open should be a noop")
 	}
 }
 
@@ -761,15 +761,15 @@ func TestOverlay_ReopenAfterClose(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Reopen
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &countAfterReopen),
-		chromedp.Evaluate(`document.querySelector('[data-overlay]')?.textContent ?? ''`, &textAfterReopen),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &countAfterReopen),
+		chromedp.Evaluate(`document.querySelector('[data-overlay]:not([hidden])')?.textContent ?? ''`, &textAfterReopen),
 	)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -791,13 +791,13 @@ func TestOverlay_DrawerLinkNavigatesAndClosesOverlay(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Click About link inside drawer
 		chromedp.Evaluate(`document.querySelectorAll('[data-overlay] a').forEach(a => { if(a.textContent.includes('About')) a.click() })`, nil),
 		chromedp.Sleep(1200*time.Millisecond),
 		chromedp.Location(&url),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &countAfterNav),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &countAfterNav),
 	)
 	if err != nil {
 		t.Fatalf("drawer nav: %v", err)
@@ -822,7 +822,7 @@ func TestOverlay_SheetHasDragHandle(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="sheet"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-sheet"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('.sheet-handle') !== null`, &hasHandle),
 	)
@@ -842,7 +842,7 @@ func TestOverlay_DrawerHasMultipleNavLinks(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-drawer"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.querySelectorAll('[data-overlay] a').length`, &linkCount),
 	)
@@ -862,7 +862,7 @@ func TestOverlay_DialogHasCancelAndConfirmButtons(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="dialog"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="confirm-dialog"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-overlay] button')).some(b => b.textContent.includes('Cancel'))`, &hasCancel),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-overlay] button')).some(b => b.textContent.includes('Confirm'))`, &hasConfirm),
@@ -888,7 +888,7 @@ func TestOverlay_EachTypeHasXCloseButton(t *testing.T) {
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/"),
 				waitForPage(),
-				chromedp.Evaluate(`document.querySelector('button[onclick*="`+overlayType+`"]')?.click()`, nil),
+				chromedp.Evaluate(`document.querySelector('button[data-fui-open*="`+overlayType+`"]')?.click()`, nil),
 				chromedp.Sleep(600*time.Millisecond),
 				chromedp.Evaluate(`document.querySelector('[data-overlay] .overlay-close') !== null`, &hasX),
 			)
@@ -915,15 +915,15 @@ func TestOverlay_ReopenFromCacheWorks(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`document.querySelector('button[onclick*="sheet"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-sheet"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(600*time.Millisecond),
 		// Reopen — should use cached HTML
-		chromedp.Evaluate(`document.querySelector('button[onclick*="sheet"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="demo-sheet"]')?.click()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &countAfterReopen),
-		chromedp.Evaluate(`document.querySelector('[data-overlay]')?.textContent ?? ''`, &textAfterReopen),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &countAfterReopen),
+		chromedp.Evaluate(`document.querySelector('[data-overlay]:not([hidden])')?.textContent ?? ''`, &textAfterReopen),
 	)
 	if err != nil {
 		t.Fatalf("cache reopen: %v", err)

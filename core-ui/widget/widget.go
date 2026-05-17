@@ -15,15 +15,17 @@ import (
 type Position string
 
 const (
-	BottomRight Position = "bottom-right"
-	BottomLeft  Position = "bottom-left"
-	TopRight    Position = "top-right"
-	TopLeft     Position = "top-left"
-	Center      Position = "center"  // modal — backdrop + focus trap
-	Top         Position = "top"     // banner across the top
-	Bottom      Position = "bottom"  // banner across the bottom
-	Edge        Position = "edge-left" // drawer-style edge mount
-	EdgeRight   Position = "edge-right"
+	BottomRight  Position = "bottom-right"
+	BottomCenter Position = "bottom-center" // toast / banner stack mid-edge
+	BottomLeft   Position = "bottom-left"
+	TopRight     Position = "top-right"
+	TopCenter    Position = "top-center" // toast / banner stack mid-edge
+	TopLeft      Position = "top-left"
+	Center       Position = "center"    // modal — backdrop + focus trap
+	Top          Position = "top"       // banner across the top
+	Bottom       Position = "bottom"    // banner across the bottom
+	Edge         Position = "edge-left" // drawer-style edge mount
+	EdgeRight    Position = "edge-right"
 )
 
 // BootstrapMode selects how the widget injects itself onto a page.
@@ -127,11 +129,51 @@ type Definition struct {
 	CloseOnEscape bool // ESC closes the widget
 	CloseOnClickOutside bool
 
+	// Role is the ARIA role applied to the widget root element.
+	// Defaults to "dialog" for backdrop'd widgets and is left empty
+	// for plain panels / floating surfaces. Use "alertdialog" for
+	// widgets that demand the user's immediate attention.
+	Role string
+
+	// LabelledBy is the id of an element (typically a heading) inside
+	// the slot HTML that names this widget for screen readers. Becomes
+	// aria-labelledby on the widget root. The host is responsible for
+	// putting a matching id on the element.
+	LabelledBy string
+
+	// DescribedBy is the id of an element inside the slot HTML that
+	// provides supplementary description for the widget. Becomes
+	// aria-describedby on the widget root.
+	DescribedBy string
+
 	// Hidden=true means the widget is registered but NOT auto-mounted
 	// on page load. A button with data-fui-open="<name>" calls
 	// __gofastr.openWidget(name) to mount it on demand. Use for
 	// modals + drawers that should appear in response to user action.
 	Hidden bool
+
+	// DeepLinkKey is the URL query parameter that controls open state
+	// for this widget — e.g. "modal". When the request URL contains
+	// `?<DeepLinkKey>=<DeepLinkValue>`, the SSR layer renders the
+	// widget open at first paint AND the runtime mirrors open/close to
+	// pushState so refresh/share/back-button all stay consistent.
+	//
+	// Empty (the default) disables deep-linking — the widget remains
+	// purely click-driven via data-fui-open.
+	//
+	// Only meaningful for Hidden widgets (modal / drawer). Toasts and
+	// dropdowns intentionally do NOT support deep links.
+	DeepLinkKey string
+	// DeepLinkValue is the literal value of DeepLinkKey that opens
+	// THIS widget. Multiple widgets can share the same DeepLinkKey
+	// ("modal") as long as their DeepLinkValue is distinct
+	// ("user-edit", "confirm-delete").
+	DeepLinkValue string
+	// DeepLinkParams lists additional query parameters whose values
+	// should be mirrored into named signals when the widget opens via
+	// deep link. e.g. ["user_id"] with URL `?modal=user-edit&user_id=42`
+	// seeds signal "user_id"="42" before the slot renders.
+	DeepLinkParams []string
 
 	// Asset path overrides. Default routes are derived from Name.
 	BootstrapPath string // default: /core-ui/widget/<name>/bootstrap.js
@@ -174,6 +216,20 @@ func allWidgets() []*Definition {
 	return out
 }
 
+// AllForSSR returns a snapshot of every registered widget. Exported
+// so SSR hosts (framework/uihost) can walk the registry and inline
+// chrome HTML on the page response. The returned slice is a copy of
+// the live registry; callers may iterate freely.
+func AllForSSR() []*Definition { return allWidgets() }
+
+// RenderChrome returns the rendered chrome HTML for a single widget,
+// using its registered Skeleton or the framework's defaultSkeleton.
+// Exported so SSR hosts can inline chrome without instantiating
+// `server` themselves.
+func RenderChrome(d *Definition) string {
+	return string((&server{def: *d}).renderSkeleton())
+}
+
 // New starts a builder for a widget Definition with sensible defaults.
 func New(name string) *Builder {
 	return &Builder{
@@ -197,6 +253,9 @@ func (b *Builder) Mount(p Position) *Builder {
 		b.def.Backdrop = true
 		b.def.CloseOnEscape = true
 		b.def.CloseOnClickOutside = true
+		if b.def.Role == "" {
+			b.def.Role = "dialog"
+		}
 	}
 	return b
 }
@@ -285,15 +344,65 @@ func (b *Builder) RPCWithSignal(method, path string, h http.Handler, signal stri
 // Backdrop forces a backdrop regardless of position.
 func (b *Builder) Backdrop() *Builder { b.def.Backdrop = true; return b }
 
+// Role sets the ARIA role on the widget root (e.g. "dialog",
+// "alertdialog", "menu"). Pair with LabelledBy / DescribedBy for a
+// complete a11y label.
+func (b *Builder) Role(r string) *Builder { b.def.Role = r; return b }
+
+// LabelledBy sets aria-labelledby on the widget root. The id MUST
+// match an element in the rendered slot HTML.
+func (b *Builder) LabelledBy(id string) *Builder { b.def.LabelledBy = id; return b }
+
+// DescribedBy sets aria-describedby on the widget root. The id MUST
+// match an element in the rendered slot HTML.
+func (b *Builder) DescribedBy(id string) *Builder { b.def.DescribedBy = id; return b }
+
 // Hidden marks the widget as registered-but-not-auto-mounted. Open
 // it from a button with data-fui-open="<name>".
 func (b *Builder) Hidden() *Builder { b.def.Hidden = true; return b }
+
+// DeepLink wires this widget to a query-string pair. When the URL
+// includes `?key=value`, the SSR layer opens the widget at first paint
+// and the runtime mirrors open/close as pushState updates — so refresh,
+// share, and the browser back button all work.
+//
+// Pair with DeepLinkParam to pass extra data into the widget's signals.
+//
+// Intended for modal/drawer presets; not for toasts or dropdowns.
+func (b *Builder) DeepLink(key, value string) *Builder {
+	b.def.DeepLinkKey = key
+	b.def.DeepLinkValue = value
+	return b
+}
+
+// DeepLinkParam registers a query-string key whose value is mirrored
+// into a same-named signal whenever this widget opens via deep link.
+// Call once per param. Example:
+//
+//	preset.Modal("user-edit").
+//	    Hidden().
+//	    DeepLink("modal", "user-edit").
+//	    DeepLinkParam("user_id").
+//	    Signal("user_id", widget.SignalFunc(func() (any, error) { ... })).
+//
+// Visiting `/users?modal=user-edit&user_id=42` opens the modal with
+// signal "user_id" pre-seeded to "42".
+func (b *Builder) DeepLinkParam(key string) *Builder {
+	b.def.DeepLinkParams = append(b.def.DeepLinkParams, key)
+	return b
+}
 
 // Skeleton overrides the default chrome wrapper.
 func (b *Builder) Skeleton(fn func(slots map[string]render.HTML) render.HTML) *Builder {
 	b.def.Skeleton = fn
 	return b
 }
+
+// Definition returns a pointer to the in-progress Definition so
+// preset builders (drawer / modal / toast) can tweak fields the
+// fluent API doesn't expose setters for. Callers building widgets by
+// hand should still finish with .Build().
+func (b *Builder) Definition() *Definition { return &b.def }
 
 // Build returns the assembled Definition.
 func (b *Builder) Build() Definition { return b.def }
@@ -309,6 +418,7 @@ func (b *Builder) Build() Definition { return b.def }
 //
 //	GET  <StylePath>         widget styles (theme-resolved CSS)
 //	GET  <StatePath>         JSON snapshot of all signals (initial render)
+//	GET  /core-ui/widget/<name>/chrome   rendered chrome HTML (lazy)
 //	*    <RPC.Path>          for each RPC, the host's handler
 //
 // Default paths are filled in on def if unset so the caller can read
@@ -324,6 +434,10 @@ func Mount(r *router.Router, def *Definition) {
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
 	r.Get(def.StatePath, http.HandlerFunc(srv.serveState))
+	// Chrome endpoint — runtime fetches HTML lazily on first open
+	// instead of receiving it inline in the /widgets catalog. Keeps
+	// the registry small and lets browsers cache by URL.
+	r.Get(chromePathFor(def), http.HandlerFunc(srv.serveChrome))
 
 	for _, rpc := range def.RPCs {
 		method := rpc.Method

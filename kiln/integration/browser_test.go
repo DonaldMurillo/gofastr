@@ -933,15 +933,26 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 	listBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	// Registry is metadata-only — chrome HTML (including kiln-log-wrap,
+	// kiln-input, RPC paths) lives at /core-ui/widget/<name>/chrome.
 	for _, want := range []string{
 		`"name":"kiln-panel"`,
 		`"signal":"chat_html"`,
-		`kiln-log-wrap`,
-		`kiln-input`,
-		`/kiln/panel/send`,
+		`"chromePath":"/core-ui/widget/kiln-panel/chrome"`,
 	} {
 		if !strings.Contains(string(listBody), want) {
 			t.Errorf("widget discovery list missing %q", want)
+		}
+	}
+	resp, err = http.Get(urlBase + "/core-ui/widget/kiln-panel/chrome")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("new panel chrome not reachable: status=%d err=%v", resp.StatusCode, err)
+	}
+	chromeBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	for _, want := range []string{"kiln-log-wrap", "kiln-input", "/kiln/panel/send"} {
+		if !strings.Contains(string(chromeBody), want) {
+			t.Errorf("kiln chrome missing %q", want)
 		}
 	}
 
@@ -1541,18 +1552,17 @@ func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
 // And the kiln chat panel must opt in via the attribute on its log
 // container — otherwise even a working runtime feature won't help
 // users in the actual chat UI. The framework serves the panel's
-// chrome HTML via /__gofastr/widgets; assert the attribute is in
-// that payload.
+// chrome HTML at /core-ui/widget/<name>/chrome (registry is
+// metadata-only); assert the attribute is on the rendered chrome.
 func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	resp, err := http.Get(urlBase + "/__gofastr/widgets")
+	resp, err := http.Get(urlBase + "/core-ui/widget/kiln-panel/chrome")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	page := string(body)
-	if !strings.Contains(page, `data-fui-scroll-bottom-on-update`) {
+	if !strings.Contains(string(body), `data-fui-scroll-bottom-on-update`) {
 		t.Errorf("kiln chat panel does not declare data-fui-scroll-bottom-on-update on its log container")
 	}
 }

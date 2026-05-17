@@ -59,6 +59,36 @@ var componentEntries = []componentEntry{
 		Tag:   "Numeric nav",
 		Intro: "Numeric page navigation with first/last anchors and ellipses for gaps. ARIA-correct (<nav aria-label=\"Pagination\">, aria-current=\"page\"), prev/next disabled at boundaries.",
 	},
+	{
+		Slug:  "modal",
+		Name:  "Modal",
+		Tag:   "Dialog · Deeplink",
+		Intro: "Center-mounted surface with backdrop, focus trap, scroll lock, return-focus on close. Optional DeepLink wiring pushes ?modal=name onto the URL so refresh / share / back-button preserve the open state — and per-row data passed via data-fui-deeplink.",
+	},
+	{
+		Slug:  "drawer",
+		Name:  "Drawer",
+		Tag:   "Edge panel · Deeplink",
+		Intro: "Edge-mounted sliding panel. Same dismiss affordances as Modal plus URL deeplinking. Good for filter forms, settings, detail views you want to bookmark.",
+	},
+	{
+		Slug:  "toast",
+		Name:  "Toast",
+		Tag:   "Stack · SSE-pushed",
+		Intro: "Server-side ToastBus queues notifications and broadcasts via SSE. The client renders a slide-in stack with hover-pause TTL, click-to-dismiss × buttons, and theme-driven animation. No URL state by design.",
+	},
+	{
+		Slug:  "menu",
+		Name:  "Menu",
+		Tag:   "Dropdown · Keyboard",
+		Intro: "Dropdown menu built on <details>. Arrow keys / Home / End / type-ahead navigate, Esc returns focus to the trigger, Tab closes + escapes. Items support icons, separators, danger styling, and RPC hooks.",
+	},
+	{
+		Slug:  "sidebar",
+		Name:  "Sidebar",
+		Tag:   "Responsive nav",
+		Intro: "Primary-nav column: inline ≥ md, hamburger + drawer < md, single content tree. Active-route highlighting from the current URL, nested groups via <details> that auto-open when a descendant matches.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

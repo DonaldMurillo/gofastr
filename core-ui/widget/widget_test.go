@@ -95,6 +95,51 @@ func TestRPCDefaultMethodIsPOST(t *testing.T) {
 	}
 }
 
+func TestDeepLinkBuilder(t *testing.T) {
+	def := widget.New("user-edit").
+		Hidden().
+		DeepLink("modal", "user-edit").
+		DeepLinkParam("user_id").
+		DeepLinkParam("tab").
+		Build()
+	if def.DeepLinkKey != "modal" || def.DeepLinkValue != "user-edit" {
+		t.Errorf("DeepLink not recorded: key=%q value=%q", def.DeepLinkKey, def.DeepLinkValue)
+	}
+	if len(def.DeepLinkParams) != 2 || def.DeepLinkParams[0] != "user_id" || def.DeepLinkParams[1] != "tab" {
+		t.Errorf("DeepLinkParams wrong: %+v", def.DeepLinkParams)
+	}
+	if !def.Hidden {
+		t.Errorf("DeepLink widget should still respect Hidden")
+	}
+}
+
+func TestDeepLinkSurfacesInWidgetList(t *testing.T) {
+	def := widget.New("user-edit").
+		Hidden().
+		DeepLink("modal", "user-edit").
+		DeepLinkParam("user_id").
+		Build()
+	r := router.New()
+	widget.Mount(r, &def)
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/__gofastr/widgets")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("widget-list: %v code=%d", err, resp.StatusCode)
+	}
+	body := readAll(t, resp)
+	for _, want := range []string{
+		`"deepLinkKey":"modal"`,
+		`"deepLinkValue":"user-edit"`,
+		`"deepLinkParams":["user_id"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("widget-list missing %q\nbody=%s", want, body)
+		}
+	}
+}
+
 func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	def := widget.New("kiln-test").
 		Slot("header", stubComponent{`<span class="hi">hi</span>`}).
@@ -127,14 +172,29 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 		t.Fatalf("widget-list status: %v code=%d", err, resp.StatusCode)
 	}
 	body := readAll(t, resp)
+	// The registry is metadata-only — chrome HTML lives at chromePath.
 	for _, want := range []string{
 		`"name":"kiln-test"`,
 		`"signal":"page"`,
-		`fui-slot-header`,
-		`<span class=\"hi\">hi</span>`,
+		`"chromePath":"/core-ui/widget/kiln-test/chrome"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("bootstrap missing %q", want)
+			t.Errorf("registry missing %q", want)
+		}
+	}
+	if strings.Contains(body, `<span class=\"hi\">hi</span>`) {
+		t.Error("chrome HTML should NOT be inlined in the registry — fetch via chromePath")
+	}
+
+	// Chrome endpoint — runtime fetches lazily on first mount.
+	resp, err = http.Get(srv.URL + "/core-ui/widget/kiln-test/chrome")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("chrome status: %v code=%d", err, resp.StatusCode)
+	}
+	chrome := readAll(t, resp)
+	for _, want := range []string{`fui-slot-header`, `<span class="hi">hi</span>`} {
+		if !strings.Contains(chrome, want) {
+			t.Errorf("chrome missing %q", want)
 		}
 	}
 

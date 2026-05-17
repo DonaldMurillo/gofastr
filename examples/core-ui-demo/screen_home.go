@@ -36,9 +36,9 @@ func (s *HomeScreen) Render() render.HTML {
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Overlays")),
 			html.Paragraph(html.TextConfig{}, render.Text("Drawers, sheets, and dialogs — all powered by the runtime overlay manager.")),
 			html.Div(html.DivConfig{Class: "overlay-demo-buttons"},
-				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('drawer','/demo-drawer')"}, render.Text("Open Drawer")),
-				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('sheet','/demo-sheet')"}, render.Text("Open Sheet")),
-				render.Tag("button", map[string]string{"class": "cta-button", "onclick": "G.openOverlay('dialog','/confirm-dialog')"}, render.Text("Open Dialog")),
+				render.Tag("button", map[string]string{"class": "cta-button", "data-fui-open": "demo-drawer"}, render.Text("Open Drawer")),
+				render.Tag("button", map[string]string{"class": "cta-button", "data-fui-open": "demo-sheet"}, render.Text("Open Sheet")),
+				render.Tag("button", map[string]string{"class": "cta-button", "data-fui-open": "confirm-dialog"}, render.Text("Open Dialog")),
 			),
 		),
 		html.Section(

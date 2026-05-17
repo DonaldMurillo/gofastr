@@ -593,11 +593,9 @@ func TestRuntimeSize(t *testing.T) {
 	if size == 0 {
 		t.Error("RuntimeSize returned 0")
 	}
-	// Cap aligned with core-ui/runtime/runtime_test.go: 78000 bytes
-	// uncompressed (~20-22KB gzip) is comfortably within typical
-	// TCP slow-start initial windows after compression.
-	if size > 78000 {
-		t.Errorf("runtime is %d bytes, expected under 78000", size)
+	// Cap aligned with core-ui/runtime/runtime_test.go: 96000 bytes.
+	if size > 96000 {
+		t.Errorf("runtime is %d bytes, expected under 96000", size)
 	}
 }
 

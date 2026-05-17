@@ -29,6 +29,7 @@ var (
 	avatarStyle       = registry.RegisterStyle("ui-avatar", avatarCSS)
 	formStyle         = registry.RegisterStyle("ui-form", formCSS)
 	notificationStyle = registry.RegisterStyle("ui-notification", notificationCSS)
+	_                 = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
 	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
 	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
 )
@@ -506,6 +507,44 @@ func notificationCSS(_ style.Theme) string {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-fui-comp="ui-notification"].ui-notification--floating { animation: none; }
+}`
+}
+
+// toastStackCSS styles the vertical stack of toast items rendered by
+// preset.ToastStack. The stack itself is `display: grid` so successive
+// items reflow with a height transition; each item slides + fades in.
+// All animation values come from theme tokens so a single theme tweak
+// retunes every toast at once.
+func toastStackCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-toast-stack"] {
+  display: grid;
+  gap: var(--spacing-md, 8px);
+  pointer-events: none;
+  max-width: min(360px, calc(100vw - 2rem));
+}
+[data-fui-comp="ui-toast-stack"] .ui-toast-stack__item {
+  pointer-events: auto;
+  animation: ui-toast-stack-in var(--duration-toast-enter, 220ms)
+    var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  will-change: transform, opacity;
+}
+[data-fui-comp="ui-toast-stack"] .ui-toast-stack__item.is-leaving {
+  animation: ui-toast-stack-out var(--duration-toast-exit, 180ms)
+    var(--easing-ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
+}
+@keyframes ui-toast-stack-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+@keyframes ui-toast-stack-out {
+  from { opacity: 1; transform: translateY(0)   scale(1);    }
+  to   { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fui-comp="ui-toast-stack"] .ui-toast-stack__item,
+  [data-fui-comp="ui-toast-stack"] .ui-toast-stack__item.is-leaving {
+    animation: none;
+  }
 }`
 }
 

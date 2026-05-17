@@ -15,10 +15,13 @@ import (
 )
 
 // startTestServer starts the demo app on a random port and returns the base URL.
+// Serves through the framework.App router so widget-registered routes
+// (/__gofastr/widgets, /core-ui/widget/<name>/chrome, /style.css, /state,
+// and RPC handlers) are reachable alongside the uihost-served pages.
 func startTestServer(t *testing.T) string {
 	t.Helper()
-	ds := setupHost()
-	srv := httptest.NewServer(ds)
+	fwApp, _ := setupServer()
+	srv := httptest.NewServer(fwApp.Router)
 	t.Cleanup(srv.Close)
 	return srv.URL
 }
@@ -580,12 +583,15 @@ func TestClientSideNavigationWithCache(t *testing.T) {
 		// The nav HTML changes because updateActiveLink() adds aria-current/class.
 		// Verify the nav still has the same links (structure persisted).
 		var navLinkCount int
+		// Scope to header nav only — SSR-inlined drawer widgets also
+		// contain <nav> elements (out of layout via `hidden`), so a
+		// bare `nav a` count picks them up too.
 		chromedp.Run(ctx,
-			chromedp.Evaluate(`document.querySelectorAll('nav a').length`, &navLinkCount),
+			chromedp.Evaluate(`document.querySelectorAll('header nav a, [role="banner"] nav a').length`, &navLinkCount),
 		)
 		var hasActive bool
 		chromedp.Run(ctx,
-			chromedp.Evaluate(`document.querySelector('nav a[aria-current="page"]') !== null`, &hasActive),
+			chromedp.Evaluate(`document.querySelector('header nav a[aria-current="page"], [role="banner"] nav a[aria-current="page"]') !== null`, &hasActive),
 		)
 		if navLinkCount != 8 || !hasActive {
 			t.Errorf("nav should have 8 links with active state, got %d links, active=%v", navLinkCount, hasActive)

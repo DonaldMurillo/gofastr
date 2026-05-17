@@ -33,15 +33,31 @@ func main() {
 	if len(os.Args) > 1 {
 		root = os.Args[1]
 	}
-	result, err := check.LintNoInlineScriptsRecursive(root)
+	scriptRes, err := check.LintNoInlineScriptsRecursive(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "check-csp: %v\n", err)
 		os.Exit(2)
 	}
-	if result.HasErrors() {
-		fmt.Fprintf(os.Stderr, "check-csp: %d inline-script violation(s):\n\n%s\n", len(result.Violations), result.Error())
-		fmt.Fprintln(os.Stderr, "Fix: move the script body to an external file and reference it via <script src=\"…\">.")
-		os.Exit(1)
+	styleRes, err := check.LintNoInlineStylesRecursive(root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "check-csp: %v\n", err)
+		os.Exit(2)
 	}
-	fmt.Println("  ✓ no inline <script> blocks")
+	exitCode := 0
+	if scriptRes.HasErrors() {
+		fmt.Fprintf(os.Stderr, "check-csp: %d inline-script violation(s):\n\n%s\n",
+			len(scriptRes.Violations), scriptRes.Error())
+		fmt.Fprintln(os.Stderr, "Fix: move the script body to an external file and reference it via <script src=\"…\">.")
+		exitCode = 1
+	}
+	if styleRes.HasErrors() {
+		fmt.Fprintf(os.Stderr, "check-csp: %d inline-style violation(s):\n\n%s\n",
+			len(styleRes.Violations), styleRes.Error())
+		fmt.Fprintln(os.Stderr, "Fix: move the rules into a registered stylesheet and reference via a class name.")
+		exitCode = 1
+	}
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+	fmt.Println("  ✓ no inline <script> blocks or style=\"…\" attributes")
 }

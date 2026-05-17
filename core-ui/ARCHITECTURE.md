@@ -106,6 +106,13 @@ server side and the runtime does the work.
 | `data-fui-tick-elapsed="<unix-ms>"` | Element's text updates once per second with the elapsed human-readable interval since the given epoch. |
 | `data-fui-rpc-body="<json>"` | Static JSON body for `data-fui-rpc` requests that don't come from a `<form>`. |
 | `data-fui-rpc-after-done` | Internal marker — set by the runtime after a one-shot `after-text` / `after-disable` fires so re-clicks are idempotent. |
+| `data-fui-deeplink="<k1=v1&k2=v2>"` | On a `data-fui-open` button: per-click overrides for the opened widget's declared `DeepLinkParams`. The runtime mirrors the pairs into the widget's signals on open AND pushes them onto the URL (alongside the widget's `DeepLinkKey=DeepLinkValue`) so refresh / share / back-button preserve the open modal AND its data. Used for row-level "Edit user 42" flows. |
+| `data-fui-toast="<json>"` | On a clickable element: clicking fires a toast with the given config (variant/title/body/ttl/stack). The runtime's global click delegator parses + dispatches via `__gofastr.toast()`. |
+| `data-fui-toast-id="<id>"` | Marks one item inside a `preset.ToastStack` rendered list. The value is the toast id assigned by `__gofastr.toast()`; click-to-dismiss targets it. |
+| `data-fui-toast-stack="<name>"` | Marks the container into which `__gofastr.toast()` appends items. The name matches the widget name passed to `preset.ToastStack`. |
+| `data-fui-toast-ttl-ms="<n>"` | On a toast item: auto-dismiss after `n` milliseconds. Hovering or focusing the item pauses the timer; leaving resumes from where it stopped. Omit (or 0) for persistent toasts that require explicit dismissal. |
+| `data-fui-toast-dismiss` | Click target inside a toast item that triggers dismiss. Pairs with the runtime's CSS-driven fade-out animation. |
+| `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown. The runtime focuses the first `[role=menuitem]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the panel; Tab closes the menu and lets focus escape naturally. |
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
 
@@ -518,3 +525,48 @@ framework/
 5. **Never** add new `data-fui-*` attributes without updating this doc and the runtime test suite.
 6. **Always** start with `Screen.Load(ctx)` reading initial state (route params, query) and SSR-ing the first paint correctly.
 7. **Always** prefer composing existing widget/preset shortcuts over building a new island from scratch.
+8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop — toasts are ephemeral by definition.
+9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS — read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
+
+---
+
+## UI primitive cheat sheet
+
+The framework ships base surfaces (`core-ui/widget/preset.*`) and
+opinionated facilities (`framework/ui.*`). Pick the layer that matches
+your need:
+
+| You want | Use | Notes |
+| --- | --- | --- |
+| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmModal` *(planned)* | Or skip the modal entirely and put `data-fui-confirm="…"` on the button. |
+| Edit/show entity detail | `preset.Modal` with `DeepLink("modal", "<name>").DeepLinkParam("id")` | URL stays consistent across refresh/share/back. Buttons opening it carry `data-fui-deeplink="id=<row-id>"`. |
+| Secondary nav / filters | `preset.Drawer` | Edge-anchored, backdrop'd. Same deep-link wiring as modals. |
+| Action menu on a row | `framework/ui.Menu` | Built on `<details data-fui-disclosure>` so Esc / SPA-nav close come free. Keyboard nav handled by the runtime. |
+| Background events ("Saved", "Build failed") | `preset.ToastStack` + `framework/ui.ToastBus` | Server pushes via SSE; the runtime stacks + auto-dismisses with hover-pause. No URL state. |
+| Primary navigation | `framework/ui.Sidebar` | Inline column ≥ md, hamburger + `preset.Drawer` < md, same content tree, active-route highlighting from the current URL. |
+
+### Deep-linking modals + drawers
+
+Wire a deep link on a widget:
+
+```go
+preset.Modal("user-edit").
+    Hidden().
+    DeepLink("modal", "user-edit").
+    DeepLinkParam("user_id").
+    Signal("user_id", widget.SignalFunc(func() (any, error) { return "", nil })).
+    Slot("body", &UserEditForm{}).
+    Build()
+```
+
+Open from a row click that carries per-row data:
+
+```html
+<button data-fui-open="user-edit" data-fui-deeplink="user_id=42">Edit</button>
+```
+
+Result: clicking the button opens the modal AND pushes
+`?modal=user-edit&user_id=42` onto the URL. Refresh, share, and the
+browser back button all keep the modal open / closed correctly. The
+signal seed runs before the modal becomes visible so the form is
+already filled in.

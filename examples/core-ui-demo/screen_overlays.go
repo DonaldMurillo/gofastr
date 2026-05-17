@@ -67,7 +67,10 @@ func (s *ConfirmDialogScreen) Render() render.HTML {
 			html.Button(html.ButtonConfig{
 				Label: "Cancel",
 				Class: "dialog-cancel-btn",
-				Attrs: html.Attrs{"data-overlay-close": ""},
+				Attrs: html.Attrs{
+					"data-overlay-close": "",
+					"data-fui-action":    "close",
+				},
 			}),
 			html.Button(html.ButtonConfig{
 				Label: "Confirm",
@@ -75,6 +78,7 @@ func (s *ConfirmDialogScreen) Render() render.HTML {
 				Attrs: html.Attrs{
 					"data-action":        "confirm-action",
 					"data-overlay-close": "",
+					"data-fui-action":    "close",
 				},
 			}),
 		),

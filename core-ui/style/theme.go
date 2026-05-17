@@ -36,6 +36,7 @@ type Theme struct {
 	Shadows     ShadowSet
 	ZIndex      ZIndexSet
 	Durations   DurationSet
+	Easings     EasingSet
 	Typography  FontSizeSet
 	Layout      LayoutSet
 }
@@ -84,8 +85,32 @@ type ZIndexSet struct {
 }
 
 // DurationSet — animation / transition timing scale.
+//
+// The generic Fast/Normal/Slow are everyday tokens. The named overlay
+// and toast/dropdown values are referenced by core-ui widget chrome so
+// every modal, drawer, dropdown, and toast respects the same motion
+// budget — and a single override on the theme retunes them all.
 type DurationSet struct {
 	Fast, Normal, Slow Duration
+
+	// OverlayEnter is how long modal/drawer surfaces take to slide
+	// or fade in. OverlayExit covers the matching close animation.
+	OverlayEnter, OverlayExit Duration
+
+	// ToastEnter / ToastExit cover slide-in and dismiss of toast items.
+	ToastEnter, ToastExit Duration
+
+	// DropdownEnter covers fade/scale-in for anchored dropdown menus.
+	DropdownEnter Duration
+}
+
+// EasingSet — CSS timing-function tokens. Widget chrome references
+// these so motion curves stay theme-driven.
+type EasingSet struct {
+	// EaseOut decelerates — the default for elements entering view.
+	// EaseIn accelerates — used when elements leave view.
+	// EaseInOut for symmetric transitions. Spring overshoots slightly.
+	EaseOut, EaseIn, EaseInOut, Spring Easing
 }
 
 // FontSizeSet — typography size scale.
@@ -133,7 +158,7 @@ func autofillTokens(v reflect.Value, path []string) {
 		reflect.TypeOf(Radius{}), reflect.TypeOf(Font{}),
 		reflect.TypeOf(Breakpoint{}), reflect.TypeOf(Shadow{}),
 		reflect.TypeOf(ZIndexValue{}), reflect.TypeOf(Duration{}),
-		reflect.TypeOf(FontSize{}):
+		reflect.TypeOf(Easing{}), reflect.TypeOf(FontSize{}):
 		nameField := v.FieldByName("Name")
 		if !nameField.IsValid() || nameField.String() != "" {
 			return
@@ -285,6 +310,14 @@ func validateTokens(v reflect.Value, path string) error {
 			return fmt.Errorf("%s: Duration.Value must be > 0 (Name=%q)", path, tk.Name)
 		}
 		return nil
+	case Easing:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Easing.Name is empty", path)
+		}
+		if tk.Value == "" {
+			return fmt.Errorf("%s: Easing.Value is empty (Name=%q)", path, tk.Name)
+		}
+		return nil
 	case FontSize:
 		if tk.Name == "" {
 			return fmt.Errorf("%s: FontSize.Name is empty", path)
@@ -384,6 +417,18 @@ func DefaultTheme() Theme {
 			Fast:   Duration{Name: "fast", Value: 150 * time.Millisecond},
 			Normal: Duration{Name: "normal", Value: 250 * time.Millisecond},
 			Slow:   Duration{Name: "slow", Value: 400 * time.Millisecond},
+
+			OverlayEnter:  Duration{Name: "overlay-enter", Value: 200 * time.Millisecond},
+			OverlayExit:   Duration{Name: "overlay-exit", Value: 160 * time.Millisecond},
+			ToastEnter:    Duration{Name: "toast-enter", Value: 220 * time.Millisecond},
+			ToastExit:     Duration{Name: "toast-exit", Value: 180 * time.Millisecond},
+			DropdownEnter: Duration{Name: "dropdown-enter", Value: 120 * time.Millisecond},
+		},
+		Easings: EasingSet{
+			EaseOut:   Easing{Name: "ease-out", Value: "cubic-bezier(0.16, 1, 0.3, 1)"},
+			EaseIn:    Easing{Name: "ease-in", Value: "cubic-bezier(0.4, 0, 1, 1)"},
+			EaseInOut: Easing{Name: "ease-in-out", Value: "cubic-bezier(0.4, 0, 0.2, 1)"},
+			Spring:    Easing{Name: "spring", Value: "cubic-bezier(0.34, 1.56, 0.64, 1)"},
 		},
 		Typography: FontSizeSet{
 			XS:   FontSize{Name: "xs", Value: "0.75rem"},

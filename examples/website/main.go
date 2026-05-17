@@ -75,6 +75,11 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/skeleton", &SkeletonScreen{}, nil)
 	site.Register("/components/breadcrumbs", &BreadcrumbsScreen{}, nil)
 	site.Register("/components/pagination", &PaginationScreen{}, nil)
+	site.Register("/components/modal", &ModalScreen{}, nil)
+	site.Register("/components/drawer", &DrawerScreen{}, nil)
+	site.Register("/components/toast", &ToastScreen{}, nil)
+	site.Register("/components/menu", &MenuScreen{}, nil)
+	site.Register("/components/sidebar", &SidebarScreen{}, nil)
 	site.Register("/customers", &CustomersListScreen{}, nil)
 	site.Register("/customers/new", &CustomersFormScreen{}, nil)
 	site.Register("/customers/:id", &CustomersFormScreen{}, nil)
@@ -122,6 +127,10 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
+
+	// /components/{modal,drawer,toast} demos — register hidden widgets
+	// + a ToastBus + a tiny push endpoint that the live demo buttons hit.
+	registerComponentDemos(fwApp)
 
 	if devMode() {
 		// Dev-only livereload — SSE-driven, not polling. The server

@@ -30,7 +30,7 @@ func TestFeature_DialogOverlay(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
 		// Open dialog via runtime API
-		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		// Verify overlay element exists
 		chromedp.Evaluate(`document.querySelectorAll('.dialog-overlay[data-overlay]').length`, &overlayCount),
@@ -61,7 +61,7 @@ func TestFeature_DialogOverlay(t *testing.T) {
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelector('[data-overlay-close]').click()`, nil),
 		chromedp.Sleep(400*time.Millisecond), // wait for close animation
-		chromedp.Evaluate(`document.querySelectorAll('.dialog-overlay').length`, &overlayCountAfterClose),
+		chromedp.Evaluate(`document.querySelectorAll('.dialog-overlay:not([hidden])').length`, &overlayCountAfterClose),
 	)
 	if err != nil {
 		t.Fatalf("dialog close: %v", err)
@@ -80,12 +80,12 @@ func TestFeature_DialogEscapeClose(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		// Press Escape
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('.dialog-overlay').length`, &overlayCount),
+		chromedp.Evaluate(`document.querySelectorAll('.dialog-overlay:not([hidden])').length`, &overlayCount),
 	)
 	if err != nil {
 		t.Fatalf("dialog escape: %v", err)
@@ -106,7 +106,7 @@ func TestFeature_DialogFocusTrap(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		// Get the first focusable element's text
 		chromedp.Evaluate(`document.activeElement?.textContent ?? 'none'`, &firstFocused),
@@ -157,8 +157,8 @@ func TestFeature_AddToCartUpdatesBadge(t *testing.T) {
 		chromedp.Sleep(500*time.Millisecond),
 		// Check badge updated
 		chromedp.Evaluate(`document.querySelector('.cart-badge')?.textContent ?? 'none'`, &badgeText),
-		// Check toast appeared
-		chromedp.Evaluate(`document.querySelector('.gofastr-toast')?.textContent ?? 'none'`, &toastText),
+		// Check toast appeared (new stack-based toast surface)
+		chromedp.Evaluate(`document.querySelector('.ui-toast-stack__item .ui-notification__title')?.textContent ?? 'none'`, &toastText),
 	)
 	if err != nil {
 		t.Fatalf("add-to-cart: %v", err)
@@ -410,13 +410,13 @@ func TestFeature_ToastNotification(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		// Trigger a toast
+		// Trigger a toast (string shorthand: __gofastr.toast("msg"))
 		chromedp.Evaluate(`window.__gofastr.toast('Test notification!')`, nil),
-		chromedp.Sleep(100*time.Millisecond),
-		// Verify toast element exists
-		chromedp.Evaluate(`document.querySelector('.gofastr-toast') !== null`, &toastExists),
-		chromedp.Evaluate(`document.querySelector('.gofastr-toast')?.textContent ?? 'none'`, &toastText),
-		chromedp.Evaluate(`document.querySelector('.gofastr-toast')?.getAttribute('role') ?? 'none'`, &toastRole),
+		chromedp.Sleep(200*time.Millisecond),
+		// Verify the toast item (stack-based notification surface)
+		chromedp.Evaluate(`document.querySelector('.ui-toast-stack__item') !== null`, &toastExists),
+		chromedp.Evaluate(`document.querySelector('.ui-toast-stack__item .ui-notification__title')?.textContent ?? 'none'`, &toastText),
+		chromedp.Evaluate(`document.querySelector('.ui-toast-stack__item .ui-notification')?.getAttribute('role') ?? 'none'`, &toastRole),
 	)
 	if err != nil {
 		t.Fatalf("toast: %v", err)
@@ -672,14 +672,16 @@ func TestFeature_OverlayStack(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		waitForPage(),
-		// Open first dialog
-		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
+		// Open first overlay (drawer)
+		chromedp.Evaluate(`window.__gofastr.openWidget('demo-drawer')`, nil),
 		chromedp.Sleep(300*time.Millisecond),
-		// Open second dialog on top
-		chromedp.Evaluate(`window.__gofastr.openOverlay('dialog', '/confirm-dialog')`, nil),
+		// Open a different overlay on top (confirm-dialog). The widget
+		// system keys mounted instances by name, so stacking the same
+		// widget twice is a no-op — stacking tests must mix names.
+		chromedp.Evaluate(`window.__gofastr.openWidget('confirm-dialog')`, nil),
 		chromedp.Sleep(300*time.Millisecond),
 		// Check both exist
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &stackCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &stackCount),
 	)
 	if err != nil {
 		t.Fatalf("overlay stack: %v", err)
@@ -693,7 +695,7 @@ func TestFeature_OverlayStack(t *testing.T) {
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))`, nil),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]').length`, &remainingCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-overlay]:not([hidden])').length`, &remainingCount),
 	)
 	if err != nil {
 		t.Fatalf("overlay stack close: %v", err)

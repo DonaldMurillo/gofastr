@@ -293,7 +293,11 @@ func splitTableRow(line string) []string {
 
 func writeCell(sb *strings.Builder, tag, text, align string) {
 	if align != "" {
-		fmt.Fprintf(sb, "<%s style=\"text-align:%s\">%s</%s>", tag, align, renderInline(text), tag)
+		// Emit `class="md-align-<dir>"` instead of inline style so the
+		// markdown output stays compatible with strict-CSP hosts (the
+		// framework default). Host stylesheets / a future markdown
+		// preset map .md-align-{left,right,center} → text-align.
+		fmt.Fprintf(sb, "<%s class=\"md-align-%s\">%s</%s>", tag, align, renderInline(text), tag)
 		return
 	}
 	fmt.Fprintf(sb, "<%s>%s</%s>", tag, renderInline(text), tag)

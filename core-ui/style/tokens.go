@@ -54,6 +54,8 @@ func categoryPrefix(category string) string {
 		return "z"
 	case "durations", "duration":
 		return "duration"
+	case "easings", "easing":
+		return "easing"
 	case "typography", "text":
 		return "text"
 	}
@@ -183,6 +185,11 @@ func tokenDecl(v reflect.Value) string {
 			return ""
 		}
 		return fmt.Sprintf("--duration-%s: %s;", t.Name, t.FormattedValue())
+	case Easing:
+		if t.Name == "" {
+			return ""
+		}
+		return fmt.Sprintf("--easing-%s: %s;", t.Name, t.Value)
 	case FontSize:
 		if t.Name == "" {
 			return ""

@@ -112,6 +112,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	// transparent floating text — looks like the gear "doesn't work".
 	settings := preset.Modal("kiln-agent-settings").
 		Hidden().
+		DeepLink("modal", "agent-settings").
 		Slot("body", htmlComp{html: pe.agentSettingsHTML()}).
 		// Server-rendered HTML for the adapter list. The runtime
 		// hydrates [data-fui-signal="agent_list_html"][mode="html"]
@@ -126,6 +127,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	// Hidden Modal: keyboard-shortcuts help.
 	help := preset.Modal("kiln-help").
 		Hidden().
+		DeepLink("modal", "help").
 		Slot("body", htmlComp{html: pe.helpHTML()}).
 		Build()
 	help.ExtraCSS = widgetCSS
@@ -137,6 +139,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	// shouldn't lose work — the modal forces an explicit Confirm.
 	resetConfirm := preset.Modal("kiln-reset-confirm").
 		Hidden().
+		DeepLink("modal", "reset-confirm").
 		Slot("body", htmlComp{html: pe.resetConfirmHTML()}).
 		Build()
 	resetConfirm.ExtraCSS = widgetCSS

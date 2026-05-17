@@ -14,6 +14,7 @@ import (
 	stdhtml "html"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,6 +29,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -638,8 +640,52 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 
 	page := ds.injectChrome(string(html), path, sessionID)
 
+	// SSR-inline registered widgets — open ones whose deep-link
+	// matches the request URL go in unhidden; hidden ones are
+	// preloaded so the runtime can hydrate without a chrome fetch
+	// when the user clicks. The widget chrome lives just inside
+	// </body>; the runtime's _mountByName checks for an existing
+	// root before fetching cfg.chromePath.
+	page = injectWidgetSSR(page, r.URL)
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, page)
+}
+
+// injectWidgetSSR inlines ONLY the widgets the page actually wants
+// open at first paint: deep-link matches or non-hidden auto-mount.
+// Hidden click-to-open widgets are NOT inlined — the runtime
+// fetches their chrome lazily from cfg.chromePath the first time
+// the user clicks data-fui-open. That keeps page responses minimal
+// (no payload for surfaces the user may never trigger) while
+// preserving the SSR contract for surfaces that are visible on
+// arrival (deep-linked modals, persistent panels, sidebars).
+func injectWidgetSSR(page string, u *url.URL) string {
+	var b strings.Builder
+	q := u.Query()
+	for _, d := range widget.AllForSSR() {
+		// Decide: should this widget be open on this page load?
+		var open bool
+		switch {
+		case d.DeepLinkKey != "" && d.DeepLinkValue != "":
+			// Deep-link widget — open iff the URL says so.
+			open = q.Get(d.DeepLinkKey) == d.DeepLinkValue
+		case !d.Hidden:
+			// Non-hidden auto-mount widget (toast stack, banner, panel).
+			open = true
+		default:
+			// Hidden click-to-open widget — skip; runtime lazy-fetches.
+			continue
+		}
+		if !open {
+			continue
+		}
+		b.WriteString(widget.RenderChrome(d))
+	}
+	if b.Len() == 0 {
+		return page
+	}
+	return strings.Replace(page, "</body>", b.String()+"</body>", 1)
 }
 
 // injectChrome adds links and scripts pointing at the host's served
@@ -1046,13 +1092,13 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/comp/{path...}", http.HandlerFunc(ds.handleComponentCSS))
 	r.Get("/__gofastr/comp-bundle.css", http.HandlerFunc(ds.handleCompBundleCSS))
 	r.Get("/__gofastr/catalog.js", http.HandlerFunc(ds.handleCatalogJS))
-	// runtime.js auto-discovers core-ui/widget widgets at /__gofastr/widgets;
-	// for plain framework apps that don't mount any widgets, serve an empty
-	// list so the discovery fetch doesn't 404 in the browser console.
-	r.Get("/__gofastr/widgets", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("[]"))
-	}))
+	// runtime.js auto-discovers core-ui/widget widgets at
+	// /__gofastr/widgets. Delegate to the widget registry so apps that
+	// mount widgets (preset.Modal, ToastStack, …) are visible to the
+	// runtime; the registry returns an empty list when nothing has
+	// been registered, so plain framework apps still get the safe
+	// "no widgets" response that prevents a 404 in the console.
+	r.Get("/__gofastr/widgets", http.HandlerFunc(widget.ServeWidgetList))
 
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 }

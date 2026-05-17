@@ -53,6 +53,167 @@ func createStyleSheet(theme style.Theme) string {
 		End()
 	ss.Rule(".skip-link:focus").Set("left", "{spacing.sm}", "top", "{spacing.sm}").End()
 
+	// --- Component demo helpers (no inline styles — page CSP is strict).
+	ss.Rule(".demo-button-row").
+		Set("display", "flex", "gap", "{spacing.sm}", "flex-wrap", "wrap").
+		End()
+	ss.Rule(".demo-toast-grid").
+		Set("display", "grid",
+			"grid-template-columns", "repeat(3, minmax(0, 1fr))",
+			"gap", "{spacing.sm}").
+		End()
+	// Sidebar demo — app-shell mockup (sidebar | main pane). The
+	// wide variant stacks live + source vertically even at desktop
+	// widths so the app-shell has room to render in its native
+	// horizontal layout.
+	ss.Rule(".demo-frame.demo-frame--wide").
+		Set("grid-template-columns", "1fr").End()
+	ss.Media("(min-width: 880px)", func(ss *style.StyleSheet) {
+		ss.Rule(".demo-frame.demo-frame--wide").
+			Set("grid-template-columns", "1fr").End()
+	})
+	ss.Rule(".demo-app-shell").
+		Set("display", "grid",
+			"grid-template-columns", "240px 1fr",
+			"min-height", "320px",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"background", "{colors.surface}",
+			"overflow", "hidden").
+		End()
+	ss.Rule(".demo-app-shell__sidebar").
+		Set("border-right", "1px solid {colors.border}",
+			"background", "{colors.surface-soft}",
+			"overflow", "auto").
+		End()
+	ss.Rule(".demo-app-shell__main").
+		Set("padding", "{spacing.lg}", "display", "grid",
+			"gap", "{spacing.md}", "align-content", "start").
+		End()
+	ss.Rule(".demo-app-shell__main-header h3").
+		Set("margin", "0 0 {spacing.xs}", "font-size", "1.125rem").
+		End()
+	ss.Rule(".demo-app-shell__main-header p").
+		Set("margin", "0", "color", "{colors.text-muted}", "font-size", "0.875rem").
+		End()
+	ss.Rule(".demo-app-shell__cards").
+		Set("display", "grid",
+			"grid-template-columns", "repeat(3, minmax(0, 1fr))",
+			"gap", "{spacing.sm}").
+		End()
+	ss.Rule(".demo-stat-card").
+		Set("background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.sm}",
+			"padding", "{spacing.md}", "display", "grid",
+			"gap", "2px").
+		End()
+	ss.Rule(".demo-stat-card__label").
+		Set("font-size", "0.75rem", "color", "{colors.text-muted}",
+			"text-transform", "uppercase", "letter-spacing", "0.04em").
+		End()
+	ss.Rule(".demo-stat-card__value").
+		Set("font-size", "1.25rem", "font-weight", "700").
+		End()
+	ss.Rule(".demo-stat-card__delta").
+		Set("font-size", "0.75rem", "color", "{colors.text-muted}").
+		End()
+	// Responsive — mobile collapses the shell to a single column,
+	// matches the sidebar's own < md drawer behaviour.
+	ss.Media("(max-width: 47.99rem)", func(ss *style.StyleSheet) {
+		ss.Rule(".demo-app-shell").
+			Set("grid-template-columns", "1fr").End()
+		ss.Rule(".demo-app-shell__sidebar").
+			Set("display", "none").End()
+	})
+	ss.Media("(max-width: 30rem)", func(ss *style.StyleSheet) {
+		ss.Rule(".demo-app-shell__cards").
+			Set("grid-template-columns", "1fr").End()
+	})
+	// Variant cards.
+	ss.Rule(".demo-variant-cards").
+		Set("display", "grid",
+			"grid-template-columns", "repeat(3, minmax(0, 1fr))",
+			"gap", "{spacing.md}",
+			"margin", "{spacing.md} 0").
+		End()
+	ss.Rule(".demo-variant-card").
+		Set("background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"padding", "{spacing.md}").
+		End()
+	ss.Rule(".demo-variant-card__header").
+		Set("display", "flex", "align-items", "center",
+			"justify-content", "space-between",
+			"margin-bottom", "{spacing.xs}").
+		End()
+	ss.Rule(".demo-variant-card__status").
+		Set("font-size", "0.7rem", "color", "{colors.text-muted}",
+			"text-transform", "uppercase", "letter-spacing", "0.05em",
+			"padding", "2px 6px",
+			"background", "{colors.surface-soft}",
+			"border-radius", "{radii.sm}").
+		End()
+	ss.Rule(".demo-variant-card p").
+		Set("margin", "0", "font-size", "0.875rem",
+			"color", "{colors.text-muted}").
+		End()
+	ss.Media("(max-width: 47.99rem)", func(ss *style.StyleSheet) {
+		ss.Rule(".demo-variant-cards").
+			Set("grid-template-columns", "1fr").End()
+	})
+	ss.Rule(".demo-modal-body").
+		Set("padding", "{spacing.xl}", "display", "grid",
+			"gap", "{spacing.md}", "min-width", "320px",
+			"background", "{colors.surface}",
+			"border-radius", "{radii.lg}", "box-shadow", "{shadows.lg}").
+		End()
+	ss.Rule(".demo-modal-body h2").
+		Set("margin", "0", "font-size", "1.125rem", "font-weight", "600").
+		End()
+	ss.Rule(".demo-modal-body p").
+		Set("margin", "0", "color", "{colors.text-muted}", "font-size", "0.95rem").
+		End()
+	ss.Rule(".demo-modal-actions").
+		Set("display", "flex", "gap", "{spacing.sm}", "justify-content", "flex-end").
+		End()
+	ss.Rule(".demo-modal-field").
+		Set("display", "grid", "gap", "{spacing.xs}", "font-size", "0.875rem").
+		End()
+	ss.Rule(".demo-modal-field input").
+		Set("padding", "{spacing.sm}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.sm}",
+			"font", "inherit").
+		End()
+	ss.Rule(".demo-drawer-body").
+		Set("padding", "{spacing.xl}", "display", "grid",
+			"gap", "{spacing.md}", "height", "100%",
+			"background", "{colors.surface}").
+		End()
+	ss.Rule(".demo-drawer-body h2").
+		Set("margin", "0", "font-size", "1.125rem", "font-weight", "600").
+		End()
+	ss.Rule(".demo-drawer-body nav ul").
+		Set("list-style", "none", "padding", "0", "margin", "0",
+			"display", "grid", "gap", "{spacing.xs}").
+		End()
+	ss.Rule(".demo-drawer-body nav a").
+		Set("display", "block", "padding", "{spacing.sm}",
+			"border-radius", "{radii.sm}", "color", "{colors.text}").
+		End()
+	ss.Rule(".demo-drawer-body nav a:hover").
+		Set("background", "{colors.surface-soft}", "text-decoration", "none").
+		End()
+	ss.Rule(".demo-drawer-spacer").
+		Set("margin-top", "auto").
+		End()
+	ss.Rule(".demo-meta").
+		Set("margin", "0", "color", "{colors.text-muted}",
+			"font-size", "0.875rem").
+		End()
+
 	// Header.
 	ss.Rule(".site-header").
 		Set("display", "flex", "align-items", "center", "justify-content", "space-between",

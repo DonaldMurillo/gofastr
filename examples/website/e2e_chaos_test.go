@@ -762,7 +762,11 @@ func TestE2E_Chaos_TouchTargetsAt44(t *testing.T) {
 		chromedp.Navigate(base+"/framework-ui/"),
 		pageReady(),
 		chromedp.Evaluate(`(() => {
+            // Filter out elements inside SSR-inlined hidden widgets —
+            // their display:none means a 0-height bounding box that
+            // would falsely fail the WCAG check.
             return [...document.querySelectorAll('button.ui-button, a.ui-button')]
+                .filter(el => !el.closest('[hidden]'))
                 .map(el => el.getBoundingClientRect().height);
         })()`, &heights),
 	)

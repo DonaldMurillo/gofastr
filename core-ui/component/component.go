@@ -93,8 +93,11 @@ func SafeRender(c Component) (html render.HTML, err error) {
 			if eb, ok := c.(ErrorBoundary); ok {
 				html = eb.RenderError(err)
 			} else {
+				// Class name only — strict-CSP host stylesheets ship
+				// .fui-render-error styling; apps without it still see
+				// a legible inline-flow error message.
 				html = render.HTML(fmt.Sprintf(
-					`<div style="border:2px solid #EF4444;padding:16px;border-radius:8px;background:#FEF2F2;color:#991B1B;"><strong>Error:</strong> %s</div>`,
+					`<div class="fui-render-error" role="alert"><strong>Error:</strong> %s</div>`,
 					err.Error(),
 				))
 			}

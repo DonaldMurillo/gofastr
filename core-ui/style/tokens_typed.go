@@ -109,6 +109,17 @@ func (d Duration) FormattedValue() string {
 	return fmt.Sprintf("%dms", ms)
 }
 
+// Easing is a CSS timing-function token (e.g. "cubic-bezier(...)",
+// "linear", "ease-out"). Used by widget chrome to keep animation
+// curves theme-driven rather than hard-coded in stylesheets.
+type Easing struct {
+	Name  string
+	Value string
+}
+
+func (e Easing) CSS() string    { return varRef("easing", e.Name) }
+func (e Easing) String() string { return e.CSS() }
+
 // FontSize is a typography-scale token. Value is the CSS size string
 // (e.g. "1rem", "0.875rem", "clamp(...)" for fluid scales).
 type FontSize struct {
