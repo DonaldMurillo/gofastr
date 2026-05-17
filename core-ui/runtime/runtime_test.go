@@ -144,6 +144,29 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_Popover(t *testing.T) {
+	src, ok := Module("popover")
+	if !ok {
+		t.Fatal("popover module not embedded")
+	}
+	for _, want := range []string{
+		"_anchorPopover",              // exported entry on __gofastr
+		"data-fui-popover-side",       // chosen-side attr the CSS reads
+		"is-popover-trigger-active",   // trigger highlight class
+		"anchorTrigger",               // per-widget anchor state
+		"--ui-popover-arrow-x",        // arrow CSS variable
+		"requestAnimationFrame",       // scroll/resize throttle
+		"loadedModules",               // self-registers as loaded
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("popover module missing %q", want)
+		}
+	}
+	if size := ModuleSize("popover"); size > 8000 {
+		t.Errorf("popover module is %d bytes — budget is 8000", size)
+	}
+}
+
 func TestRuntimeModuleNames(t *testing.T) {
 	names := ModuleNames()
 	if len(names) == 0 {
