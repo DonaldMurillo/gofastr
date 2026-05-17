@@ -144,6 +144,53 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_Widgets(t *testing.T) {
+	src, ok := Module("widgets")
+	if !ok {
+		t.Fatal("widgets module not embedded")
+	}
+	for _, want := range []string{
+		"NS.mountWidget",
+		"NS.openWidget",
+		"NS.closeWidget",
+		"NS._mountByName",
+		"NS._deepLinkPushUrl",
+		"NS._deepLinkStripUrl",
+		"NS._syncDeepLinks",
+		"NS._modalStack",                  // reads state from core
+		"NS._popoverStack",
+		"data-fui-backdrop",
+		"data-fui-widget",
+		"data-fui-rpc",
+		"data-fui-autogrow",
+		"data-fui-persist-storage",
+		"data-fui-copy-text-from",
+		"data-fui-charcount-source",
+		"data-fui-clear-on-esc",
+		"data-fui-submit-on-enter",
+		"data-fui-disable-when-invalid",
+		"data-fui-fill-input",
+		"data-fui-shortcut-click",
+		"data-fui-shortcut-focus",
+		"data-fui-tick-elapsed",
+		"X-Gofastr-Toast",                 // header path awaits toasts
+		"__fuiModalEsc",                   // installed once at module load
+		"__fuiModalTab",
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("widgets module missing %q", want)
+		}
+	}
+	// Widgets is the biggest demand-loaded module. Budget is generous
+	// because it carries the entire mountWidget chrome + dispatch +
+	// every primitive scanner. Final target is ~30 KB after the
+	// per-widget primitives split into a forms module.
+	if size := ModuleSize("widgets"); size > 32000 {
+		t.Errorf("widgets module is %d bytes — budget is 32000", size)
+	}
+}
+
 func TestRuntimeModule_SSE(t *testing.T) {
 	src, ok := Module("sse")
 	if !ok {
