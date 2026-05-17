@@ -189,7 +189,7 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ### `core-ui/` — server-driven UI runtime
 
-A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a 670-line vanilla-JS runtime. See `examples/core-ui-demo` for an app that exercises every feature.
+A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a vanilla-JS runtime. See `examples/website` for an app that exercises every feature — including the 10 `framework/ui` primitives, modal/drawer/popover/toast widgets, and CRUD-by-island patterns.
 
 ### `battery/` — pluggable infrastructure
 
@@ -287,7 +287,7 @@ battery/     pluggable infra (auth, cache, email, queue, search, storage)
 cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
 docs/        feature docs (entity declarations, migrations, query DSL, …)
-examples/    blog, api-tour (cursor/include/batch/SSE/uploads), core-ui-demo, demo, spa, static-site
+examples/    website (SSR + 10 UI primitives), blog (JSON-declared entities), api-tour (cursor/include/batch/SSE/uploads), embed-demo, spa (Vue+API), static-site
 plan/        proposal-driven task tracker
 ```
 

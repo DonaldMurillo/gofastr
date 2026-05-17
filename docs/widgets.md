@@ -215,16 +215,17 @@ source of truth.
 
 ## Testing
 
-`examples/widgets-demo` is the canonical end-to-end exercise:
-
-- `TestWidgetMountsAndHydrates` — bootstrap mounts chrome onto a
-  vanilla page and hydrates `[data-fui-signal]` from `/state`.
-- `TestWidgetRPCUpdatesSignal` — clicking a `data-fui-rpc` button
-  POSTs to the server; the response flows into the bound signal
-  with no page reload.
-- `TestModalWidgetClosesOnAction` — a center-mounted modal renders
-  with a backdrop and dismisses on `data-fui-action="close"`.
+`examples/website` exercises every widget surface end-to-end —
+Modal (`/components/modal`), Drawer (`/components/drawer`), Toast
+(`/components/toast`), Menu (`/components/menu`), Sidebar
+(`/components/sidebar`), and the trigger-anchored Popover preset
+(`/components/popover`). The chromedp tests in
+`examples/website/e2e_*_test.go` cover open + dismiss flows, focus
+trap, scroll lock, deep-linking, anchored placement + auto-flip,
+scroll-tracking, and the trigger-active highlight contract.
 
 For backend-only verification (no chromedp), see
-`core-ui/widget/widget_test.go` — covers the builder semantics,
-mounted route surface, and JSON state encoding.
+`core-ui/widget/widget_test.go` and
+`core-ui/widget/preset/preset_test.go` — they cover the builder
+semantics, mounted route surface, preset defaults, and JSON state
+encoding.

@@ -15,9 +15,8 @@ build-cmd: $(DIST_DIR)
 	go build -o $(DIST_DIR)/kiln    ./cmd/kiln
 
 build-examples: csp-check $(DIST_DIR)
-	@for dir in examples/api-tour examples/blog examples/core-ui-demo \
-	            examples/demo examples/spa examples/static-site \
-	            examples/website examples/widgets-demo; do \
+	@for dir in examples/api-tour examples/blog examples/embed-demo \
+	            examples/spa examples/static-site examples/website; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \

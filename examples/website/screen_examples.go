@@ -21,29 +21,34 @@ type exampleEntry struct {
 
 var exampleEntries = []exampleEntry{
 	{
-		Name: "blog",
-		Path: "examples/blog",
-		Body: "Auto-CRUD with the entity framework. Three JSON declarations under entities/ produce SQL tables, REST endpoints, OpenAPI/Swagger UI, and an MCP tool surface. Backed by SQLite by default.",
+		Name: "website",
+		Path: "examples/website",
+		Body: "This site. The canonical SSR + islands + 10 UI primitives showcase. Every framework/ui component and every widget preset is dogfooded under /components/<slug>. Ships statically via --build-static.",
 	},
 	{
-		Name: "core-ui-demo",
-		Path: "examples/core-ui-demo",
-		Body: "Server-driven UI playground. Demonstrates signals, components, islands, SSE streaming, the Go→JS action compiler, and the new SSR Loader hook + SSG build pipeline.",
+		Name: "api-tour",
+		Path: "examples/api-tour",
+		Body: "Tour of the CRUD API surface — include= (eager loading), cursor= (keyset pagination), POST /_batch (atomic batches), GET /_events (SSE), multipart uploads, and BelongsTo FK constraints.",
+	},
+	{
+		Name: "blog",
+		Path: "examples/blog",
+		Body: "Auto-CRUD with JSON-declared entities. Three JSON declarations under entities/ produce SQL tables, REST endpoints, OpenAPI/Swagger UI, and an MCP tool surface. Backed by SQLite by default.",
+	},
+	{
+		Name: "embed-demo",
+		Path: "examples/embed-demo",
+		Body: "Runnable example of battery/embed — in-process semantic index with the dependency-free stub embedder. Demonstrates registering Plugin on a framework.App to auto-mount the /embed/* routes.",
 	},
 	{
 		Name: "spa",
 		Path: "examples/spa",
-		Body: "Single-page application skeleton.",
+		Body: "Single-page application skeleton. Vue frontend hitting the Go entity API; demonstrates the 'use GoFastr just for the API' pattern with static SPA fallback.",
 	},
 	{
 		Name: "static-site",
 		Path: "examples/static-site",
-		Body: "Static-site generation example.",
-	},
-	{
-		Name: "website",
-		Path: "examples/website",
-		Body: "This site. Renders the project's Markdown docs through the framework, ships statically via gofastr's --build-static.",
+		Body: "Static HTML-only pages served via core/static.Mount. Demonstrates the simplest possible deployment: no DB, no UI runtime, just a file server.",
 	},
 }
 

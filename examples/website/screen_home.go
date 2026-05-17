@@ -54,7 +54,7 @@ func (s *HomeScreen) Render() render.HTML {
 				"go test ./...                        # everything green on a fresh clone\n"+
 				"go run ./cmd/gofastr -- help         # CLI overview\n"+
 				"go run ./examples/blog               # auto-CRUD blog with Swagger UI\n"+
-				"go run ./examples/core-ui-demo       # server-driven UI playground"))),
+				"go run ./examples/website            # SSR site with the 10 UI primitives"))),
 		render.Tag("p", nil, render.Text("Then visit http://localhost:8080.")),
 	)
 

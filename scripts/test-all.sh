@@ -1,13 +1,13 @@
 #!/bin/bash
 # Run every Go test in the repo. Use before/after large refactors to
-# verify nothing regressed — including the slow chromedp suites in
-# examples/website and examples/core-ui-demo and the long
-# kiln/integration suite.
+# verify nothing regressed — including the slow chromedp suite in
+# examples/website and the long kiln/integration suite.
 #
 # Flags:
 #   -count=1   bypass the test cache so the run is authoritative
-#   -timeout   bumped past the default 10m to cover core-ui-demo (~5m)
-#              and kiln/integration (~1.5m) on slower machines
+#   -timeout   bumped past the default 10m to cover examples/website
+#              chromedp (~2.5m) and kiln/integration (~1.5m) on
+#              slower machines
 #   -race      optional, opt-in via RACE=1 (slows full run ~2x)
 #
 # Usage:

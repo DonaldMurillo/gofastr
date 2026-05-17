@@ -275,8 +275,9 @@ If you add a subpackage, grep `core/` for name conflicts first.
 
 8. **Run the full suite, including external consumers**:
    `go test ./framework/... ./cmd/... ./kiln/... ./examples/...`.
-   The `examples/core-ui-demo` chromedp test is environment-flaky;
-   unrelated to package layout.
+   The `examples/website` chromedp suite is the slow one (~2.5 min)
+   and the only thing that exercises the full SSR + island + widget
+   stack end-to-end.
 
 ---
 
