@@ -144,6 +144,27 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_SSE(t *testing.T) {
+	src, ok := Module("sse")
+	if !ok {
+		t.Fatal("sse module not embedded")
+	}
+	for _, want := range []string{
+		`meta[name="gofastr-sse"]`,
+		"EventSource",
+		"data-island",
+		"NS.connectSSE",
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("sse module missing %q", want)
+		}
+	}
+	if size := ModuleSize("sse"); size > 2500 {
+		t.Errorf("sse module is %d bytes — budget is 2500", size)
+	}
+}
+
 func TestRuntimeModule_Toasts(t *testing.T) {
 	src, ok := Module("toasts")
 	if !ok {

@@ -1955,30 +1955,11 @@
     document.addEventListener('DOMContentLoaded', setupMutationObserver);
   }
 
-  // SSE Island Support
-  const connectSSE = () => {
-    const sseUrl = document.querySelector('meta[name="gofastr-sse"]')?.getAttribute('content');
-    if (!sseUrl) return;
-
-    const source = new EventSource(sseUrl);
-
-    source.addEventListener('island', (event) => {
-      try {
-        const { island, html } = JSON.parse(event.data);
-        if (island === undefined || html === undefined) return;
-        const el = document.querySelector(`[data-island="${island}"]`);
-        if (!el) return;
-        el.innerHTML = html;
-        el.classList.add('island-updated');
-        setTimeout(() => el.classList.remove('island-updated'), 1000);
-      } catch { /* ignore malformed SSE */ }
-    });
-
-    source.onerror = () => {
-      source.close();
-      setTimeout(connectSSE, 3000);
-    };
-  };
+  // SSE Island Support ships in core-ui/runtime/src/sse.js, loaded on
+  // demand when <meta name="gofastr-sse"> is present on the page.
+  // The module self-installs an EventSource and reflects "island"
+  // events into matching [data-island] regions. Reconnect lives in
+  // the module too.
 
   // FileUpload runtime has moved to its own demand-loaded module at
   // /__gofastr/runtime/fileupload.js. Core ships the loader + the
@@ -2057,6 +2038,7 @@
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
     { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
+    { name: 'sse',        selector: 'meta[name="gofastr-sse"]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
@@ -2106,7 +2088,6 @@
   };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', connectSSE);
 
     // Hydration-on-SSR: every fresh page render runs through here on
     // load. Apply aria-current to the matching nav link so the active
@@ -2234,7 +2215,11 @@
       }
     });
   } else {
-    connectSSE();
+    // Document already past parsing — run the same hooks the
+    // DOMContentLoaded branch installs. SSE connection is handled
+    // by the module loader (the marker scanner detects
+    // <meta name="gofastr-sse"> and idle-loads the sse module).
+    _scanForModules(document);
     _bootstrapComponentCSS();
   }
 
