@@ -144,6 +144,28 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_Menu(t *testing.T) {
+	src, ok := Module("menu")
+	if !ok {
+		t.Fatal("menu module not embedded")
+	}
+	for _, want := range []string{
+		`role="menuitem"`,
+		`role="menu"`,
+		"ArrowDown",
+		"ArrowUp",
+		"_menuTypeBuf",
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("menu module missing %q", want)
+		}
+	}
+	if size := ModuleSize("menu"); size > 4000 {
+		t.Errorf("menu module is %d bytes — budget is 4000", size)
+	}
+}
+
 func TestRuntimeModule_Popover(t *testing.T) {
 	src, ok := Module("popover")
 	if !ok {

@@ -2209,6 +2209,7 @@
   const _moduleMarkers = [
     { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
+    { name: 'menu',       selector: '[data-fui-menu]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
@@ -2360,51 +2361,11 @@
       }
     }, true);
 
-    // Menu keyboard nav. Lives at document level so newly-inserted
-    // menus pick it up for free. Handles: ArrowDown/Up roving focus,
-    // Home/End, Tab (close + escape), printable-key type-ahead. Esc
-    // is owned by the data-fui-disclosure handler below.
-    let _menuTypeBuf = '', _menuTypeAt = 0;
-    document.addEventListener('keydown', (e) => {
-      const item = e.target && e.target.closest && e.target.closest('[role="menuitem"]');
-      if (!item) return;
-      const panel = item.closest('[role="menu"]');
-      if (!panel) return;
-      const items = Array.from(panel.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])'));
-      if (items.length === 0) return;
-      const idx = items.indexOf(item);
-      const move = (to) => {
-        e.preventDefault();
-        items[(to + items.length) % items.length].focus();
-      };
-      if (e.key === 'ArrowDown') return move(idx + 1);
-      if (e.key === 'ArrowUp')   return move(idx - 1);
-      if (e.key === 'Home')      return move(0);
-      if (e.key === 'End')       return move(items.length - 1);
-      if (e.key === 'Tab') {
-        // Close the surrounding disclosure so focus escapes naturally.
-        const d = panel.closest('details[data-fui-disclosure]');
-        if (d) d.removeAttribute('open');
-        return; // do NOT preventDefault — let Tab move focus
-      }
-      // Type-ahead: a printable single-character key jumps to the
-      // next item whose label starts with the accumulated prefix.
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const now = Date.now();
-        if (now - _menuTypeAt > 800) _menuTypeBuf = '';
-        _menuTypeAt = now;
-        _menuTypeBuf += e.key.toLowerCase();
-        for (let i = 1; i <= items.length; i++) {
-          const cand = items[(idx + i) % items.length];
-          const label = (cand.textContent || '').trim().toLowerCase();
-          if (label.startsWith(_menuTypeBuf)) {
-            e.preventDefault();
-            cand.focus();
-            return;
-          }
-        }
-      }
-    });
+    // Menu keyboard navigation (roving focus, Home/End, Tab close,
+    // type-ahead) ships in core-ui/runtime/src/menu.js — loaded on
+    // demand when the page contains a [data-fui-menu] element. The
+    // "focus first menuitem on open" 4-liner above stays in core
+    // since it's integrated with the disclosure toggle handler.
 
     // Escape closes any open <details data-fui-disclosure>. Native
     // <details> only handles Escape when the summary itself has
