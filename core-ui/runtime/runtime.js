@@ -145,12 +145,18 @@
       // JSON array of ToastTrigger objects (single object tolerated);
       // each fires through __gofastr.toast().
       const toastHeader = r.headers.get('X-Gofastr-Toast');
-      if (toastHeader && window.__gofastr.toast) {
-        try {
-          const parsed = JSON.parse(toastHeader);
-          const arr = Array.isArray(parsed) ? parsed : [parsed];
-          for (const cfg of arr) window.__gofastr.toast(cfg);
-        } catch (_) {}
+      if (toastHeader) {
+        // Await the toasts module — the header may arrive before the
+        // user has hovered any toast trigger, so we may need to fetch
+        // it on the fly. Errors swallowed so a missing module doesn't
+        // break the response handling.
+        window.__gofastr.loadModule('toasts').then(() => {
+          try {
+            const parsed = JSON.parse(toastHeader);
+            const arr = Array.isArray(parsed) ? parsed : [parsed];
+            for (const cfg of arr) window.__gofastr.toast(cfg);
+          } catch (_) {}
+        }).catch(() => {});
       }
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
@@ -394,11 +400,13 @@
             // needed (form-validation hint, copy-to-clipboard ack, …).
             const toastBtn = e.target.closest('[data-fui-toast]');
             if (toastBtn) {
-              try {
-                const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
-                window.__gofastr.toast(cfg);
-              } catch (_) {}
               e.preventDefault();
+              window.__gofastr.loadModule('toasts').then(() => {
+                try {
+                  const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
+                  window.__gofastr.toast(cfg);
+                } catch (_) {}
+              }).catch(() => {});
               return;
             }
             const btn = e.target.closest('[data-fui-open]');
@@ -603,7 +611,9 @@
       if (resp.ok) {
         const result = await resp.json();
         if (result.message) {
-          window.__gofastr.toast(result.message);
+          window.__gofastr.loadModule('toasts').then(() => {
+            window.__gofastr.toast(result.message);
+          }).catch(() => {});
         }
         return result;
       }
@@ -721,10 +731,13 @@
           node.innerHTML = (typeof value === 'string') ? value : (value == null ? '' : JSON.stringify(value));
           window.__gofastr.scanAndLoadCSS(node);
           // Wire any toast items the freshly-swapped HTML brought in.
-          // Pure no-op for non-toast signals — the querySelector finds
-          // nothing and returns early.
+          // Awaits the toasts module — when an island-driven update
+          // injects a toast for the first time, the module loads,
+          // then _initToasts runs against the new content.
           if (node.querySelector && node.querySelector('[data-fui-toast-id]')) {
-            window.__gofastr._initToasts(node);
+            window.__gofastr.loadModule('toasts').then(() => {
+              window.__gofastr._initToasts(node);
+            }).catch(() => {});
           }
         } else if (mode === 'attr') {
           const attr = node.getAttribute('data-fui-signal-attr') || 'value';
@@ -765,184 +778,13 @@
       return this._signals[name]?.value;
     },
 
-    /** Toast TTL bookkeeping: id -> { timer, remaining, startedAt }. */
-    _toastTimers: {},
-
-    /** Wire freshly-swapped toast items inside `root`: schedule auto
-        dismiss via data-fui-toast-ttl-ms, pause on hover/focus, resume
-        on leave, click-to-dismiss via [data-fui-toast-dismiss]. The
-        same toast HTML re-rendered should NOT reset existing timers
-        — we key by toast id and skip already-known ones. */
-    _initToasts(root) {
-      const NS = this;
-      const items = root.querySelectorAll('[data-fui-toast-id]');
-      // Track which ids are present in the current DOM. Anything in
-      // _toastTimers but absent here was dismissed — cancel its timer.
-      const present = {};
-      items.forEach((item) => {
-        const id = item.getAttribute('data-fui-toast-id');
-        present[id] = true;
-        if (NS._toastTimers[id]) return; // already wired
-        const ttl = parseInt(item.getAttribute('data-fui-toast-ttl-ms') || '0', 10);
-        if (ttl > 0) {
-          const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
-          NS._toastTimers[id] = rec;
-          const arm = () => {
-            rec.startedAt = Date.now();
-            rec.timer = setTimeout(() => NS._dismissToast(item, id), rec.remaining);
-          };
-          const pause = () => {
-            if (!rec.timer) return;
-            clearTimeout(rec.timer);
-            rec.timer = 0;
-            rec.remaining -= Date.now() - rec.startedAt;
-            if (rec.remaining < 100) rec.remaining = 100;
-          };
-          item.addEventListener('mouseenter', pause);
-          item.addEventListener('focusin', pause);
-          item.addEventListener('mouseleave', arm);
-          item.addEventListener('focusout', arm);
-          arm();
-        }
-        item.addEventListener('click', (e) => {
-          if (e.target.closest('[data-fui-toast-dismiss]')) {
-            e.preventDefault();
-            NS._dismissToast(item, id);
-          }
-        });
-      });
-      // Cancel timers for toasts that are no longer in the DOM
-      // (server-side dismissal / replacement).
-      for (const id in NS._toastTimers) {
-        if (!present[id]) {
-          clearTimeout(NS._toastTimers[id].timer);
-          delete NS._toastTimers[id];
-        }
-      }
-    },
-
-    /** Add the leave class, remove from DOM after the CSS animation
-        finishes. Idempotent: a second dismiss on a leaving toast is
-        a no-op. */
-    _dismissToast(item, id) {
-      if (!item || item.classList.contains('is-leaving')) return;
-      item.classList.add('is-leaving');
-      const rec = this._toastTimers[id];
-      if (rec) { clearTimeout(rec.timer); delete this._toastTimers[id]; }
-      // Read duration from the computed style so theme overrides apply.
-      // Fall back to 200ms if unset / unparseable.
-      const cs = getComputedStyle(item);
-      const ms = parseFloat(cs.animationDuration) * 1000 || 200;
-      setTimeout(() => { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
-    },
-
-    /** Counter for client-generated toast ids — unique within a page. */
-    _toastSeq: 0,
-
-    /** Push a toast onto a stack. cfg = { variant, title, body, ttl, stack }
-        OR a bare string treated as { title: <string>, ttl: 4000 } for
-        ergonomic ad-hoc calls.
-
-        variant: info|success|warning|danger|neutral (default info)
-        title:   required string
-        body:    optional supporting text
-        ttl:     milliseconds; 0 (or omitted with cfg-object) = persistent.
-                 String-arg shorthand defaults to a 4s auto-dismiss.
-        stack:   name of the toast-stack widget to push into; defaults
-                 to the first stack present in the DOM (auto-creates a
-                 plain top-right container if none is mounted).
-        Returns the new item's id. */
-    toast(cfg) {
-      if (cfg == null) return null;
-      // String shorthand: __gofastr.toast("Saved") → info toast, 4s ttl.
-      if (typeof cfg === 'string') cfg = { title: cfg, ttl: 4000 };
-      if (!cfg.title) return null;
-      // Locate the target stack container. Explicit cfg.stack wins,
-      // otherwise pick the first stack on the page. If no stack is
-      // mounted (apps that haven't registered a preset.ToastStack),
-      // auto-create one and append it to <body> — toasts always fire.
-      let container = null;
-      if (cfg.stack) {
-        container = document.querySelector(
-          '[data-fui-toast-stack="' + CSS.escape(cfg.stack) + '"]');
-      }
-      if (!container) {
-        container = document.querySelector('[data-fui-toast-stack]');
-      }
-      if (!container) {
-        container = document.createElement('div');
-        container.className = 'ui-toast-stack';
-        container.setAttribute('data-fui-comp', 'ui-toast-stack');
-        container.setAttribute('data-fui-toast-stack', '__auto');
-        container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;pointer-events:none;max-width:min(360px,calc(100vw - 2rem));';
-        document.body.appendChild(container);
-        if (this.scanAndLoadCSS) this.scanAndLoadCSS(container);
-      }
-
-      const id = 't' + (++this._toastSeq);
-      const variant = cfg.variant || 'info';
-      const isAssertive = variant === 'warning' || variant === 'danger';
-      const role = isAssertive ? 'alert' : 'status';
-      const live = isAssertive ? 'assertive' : 'polite';
-      const glyph = ({success:'✓', warning:'!', danger:'✕', info:'i', neutral:'•'})[variant] || 'i';
-
-      const ttl = parseInt(cfg.ttl || 0, 10);
-      const item = document.createElement('div');
-      item.className = 'ui-toast-stack__item';
-      item.setAttribute('data-fui-toast-id', id);
-      if (ttl > 0) item.setAttribute('data-fui-toast-ttl-ms', String(ttl));
-
-      const wrap = document.createElement('div');
-      wrap.className = 'ui-notification ui-notification--' + variant;
-      wrap.setAttribute('data-fui-comp', 'ui-notification');
-      wrap.setAttribute('role', role);
-      wrap.setAttribute('aria-live', live);
-
-      // Use textContent on the title/body to insulate from XSS — cfg
-      // values may originate from server responses or page scripts;
-      // the runtime never interprets them as HTML.
-      const icon = document.createElement('span');
-      icon.className = 'ui-notification__icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = glyph;
-
-      const text = document.createElement('div');
-      text.className = 'ui-notification__text';
-      const titleEl = document.createElement('strong');
-      titleEl.className = 'ui-notification__title';
-      titleEl.textContent = cfg.title;
-      text.appendChild(titleEl);
-      if (cfg.body) {
-        const bodyEl = document.createElement('p');
-        bodyEl.className = 'ui-notification__body';
-        bodyEl.textContent = cfg.body;
-        text.appendChild(bodyEl);
-      }
-
-      const dismiss = document.createElement('button');
-      dismiss.type = 'button';
-      dismiss.className = 'ui-notification__dismiss';
-      dismiss.setAttribute('aria-label', 'Dismiss notification');
-      dismiss.setAttribute('data-fui-toast-dismiss', '');
-      dismiss.textContent = '×';
-
-      wrap.appendChild(icon);
-      wrap.appendChild(text);
-      wrap.appendChild(dismiss);
-      item.appendChild(wrap);
-      container.appendChild(item);
-
-      // The notification's `data-fui-comp="ui-notification"` marker is
-      // emitted on the wrap element. Trigger the CSS catalog scanner
-      // so the per-component stylesheet loads (no-op if already
-      // loaded once this session).
-      if (this.scanAndLoadCSS) this.scanAndLoadCSS(item);
-
-      // Reuse the existing TTL/hover-pause/click-dismiss wiring so
-      // header-driven and JS-driven toasts behave identically.
-      this._initToasts(container);
-      return id;
-    },
+    // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
+    // _toastTimers, _toastSeq) lives in the split-runtime toasts module
+    // at core-ui/runtime/src/toasts.js. The module self-registers
+    // those on window.__gofastr when it loads. Core code that calls
+    // them (the click delegator for data-fui-toast, the X-Gofastr-Toast
+    // header dispatch in dispatchRPC) awaits loadModule('toasts')
+    // first so the very first toast on a cold cache still fires.
 
     /** Mount a hidden widget by name. Looks up the entry stashed by
         the auto-discovery fetch and delegates to mountWidget. No-op
@@ -1331,14 +1173,18 @@
           // X-Gofastr-Toast header fires toasts on success. The server
           // emits a JSON-encoded array of ToastTrigger objects (single
           // object also tolerated for hand-set headers); the runtime
-          // dispatches each into the client toast stack.
+          // dispatches each into the client toast stack. Awaits the
+          // toasts module so a header can fire even on the first
+          // RPC of a cold cache.
           const toastHeader = r.headers.get('X-Gofastr-Toast');
-          if (toastHeader && NS.toast) {
-            try {
-              const parsed = JSON.parse(toastHeader);
-              const arr = Array.isArray(parsed) ? parsed : [parsed];
-              for (const cfg of arr) NS.toast(cfg);
-            } catch (_) {}
+          if (toastHeader) {
+            NS.loadModule('toasts').then(() => {
+              try {
+                const parsed = JSON.parse(toastHeader);
+                const arr = Array.isArray(parsed) ? parsed : [parsed];
+                for (const cfg of arr) NS.toast(cfg);
+              } catch (_) {}
+            }).catch(() => {});
           }
           const ct = r.headers.get('content-type') || '';
           const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
@@ -2210,6 +2056,7 @@
     { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
+    { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

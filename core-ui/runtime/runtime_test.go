@@ -144,6 +144,30 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_Toasts(t *testing.T) {
+	src, ok := Module("toasts")
+	if !ok {
+		t.Fatal("toasts module not embedded")
+	}
+	for _, want := range []string{
+		"NS.toast",
+		"NS._initToasts",
+		"NS._dismissToast",
+		"data-fui-toast-id",
+		"data-fui-toast-stack",
+		"data-fui-toast-dismiss",
+		"data-fui-toast-ttl-ms",
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("toasts module missing %q", want)
+		}
+	}
+	if size := ModuleSize("toasts"); size > 8000 {
+		t.Errorf("toasts module is %d bytes — budget is 8000", size)
+	}
+}
+
 func TestRuntimeModule_Menu(t *testing.T) {
 	src, ok := Module("menu")
 	if !ok {
