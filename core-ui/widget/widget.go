@@ -553,13 +553,21 @@ func RuntimeTag() string {
 
 // MountRuntime registers the framework runtime endpoints on r:
 //
-//	GET /__gofastr/runtime.js   the shared runtime (one URL, every page)
-//	GET /__gofastr/widgets      JSON list of registered widgets, used by
-//	                            the runtime at startup to auto-mount
+//	GET /__gofastr/runtime.js                 the legacy bundled runtime
+//	                                          (back-compat; single payload)
+//	GET /__gofastr/runtime/<name>.js          one split runtime module
+//	                                          (loaded on demand by the core
+//	                                          module-loader; see
+//	                                          docs/runtime-code-split-plan.md)
+//	GET /__gofastr/widgets                    JSON list of registered widgets
 //
 // Call this once per host (kiln serve, examples/website, etc.).
 // The runtime IIFE is idempotent, so re-mounting on rebuilds is safe.
 func MountRuntime(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(serveRuntime))
 	r.Get("/__gofastr/widgets", http.HandlerFunc(serveWidgetList))
+	// Per-module URL pattern. Router supports parameter capture via the
+	// trailing wildcard; the handler validates the name + extracts it
+	// from the path itself so we accept .js suffix uniformly.
+	r.Get("/__gofastr/runtime/{name}", http.HandlerFunc(serveRuntimeModule))
 }

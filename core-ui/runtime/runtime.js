@@ -685,6 +685,17 @@
         rather than to the outer one. */
     _modalStack: [],
 
+    /** Tracks split runtime modules already loaded. The loader checks
+        this map before injecting a <script>; modules set their own
+        entry to true on load. */
+    loadedModules: {},
+
+    /** Load a split runtime module by name (e.g. "fileupload",
+        "popover"). Returns a cached Promise that resolves once the
+        module's IIFE has executed. Safe to call concurrently — the
+        first call wins, all callers await the same fetch. */
+    loadModule,
+
     /** Selector for focusable elements inside a modal — used by the
         initial-focus pass and the Tab focus trap. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
@@ -2248,103 +2259,107 @@
     };
   };
 
-  // FileUpload runtime — wire every [data-fui-fileupload] zone in a
-  // subtree. Idempotent: zones already wired carry a __fuiWired flag.
-  // Reads dropped files into the inner <input type="file">, renders
-  // a filename + size summary (plus an image thumbnail for the first
-  // picked image) into the embedded .ui-fileupload__filename element.
-  function _wireFileUploads(root) {
+  // FileUpload runtime has moved to its own demand-loaded module at
+  // /__gofastr/runtime/fileupload.js. Core ships the loader + the
+  // page-scan trigger below; the actual drag/drop wiring + filename
+  // preview ships only when the page contains a [data-fui-fileupload]
+  // zone (or when a `data-fui-prefetch="fileupload"` trigger is
+  // hovered, whichever comes first).
+  //
+  // The legacy `window.__fuiWireFileUploads` is preserved by the
+  // module itself for back-compat with external callers.
+
+  // === MODULE LOADER ===================================================
+  // loadModule(name) returns a cached Promise that resolves once the
+  // named split-runtime module is loaded. Multiple callers for the
+  // same name share one fetch. Modules self-register by setting
+  // window.__gofastr.loadedModules[name] = true; the loader polls that
+  // flag while the <script> downloads.
+  //
+  // Cache-busting: the host SSRs the per-module hash into a JSON
+  // manifest under <script id="gofastr-runtime-modules">. The loader
+  // reads it once; if a name is missing from the manifest, we fall
+  // back to an un-versioned URL (works in dev, may pollute caches in
+  // prod — the manifest is the source of truth).
+  const _moduleManifest = (() => {
+    try {
+      const el = document.getElementById('gofastr-runtime-modules');
+      if (!el) return {};
+      return JSON.parse(el.textContent || '{}');
+    } catch (_) { return {}; }
+  })();
+  const _modulePromises = {};
+  function loadModule(name) {
+    if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[name]) {
+      return Promise.resolve();
+    }
+    if (_modulePromises[name]) return _modulePromises[name];
+    _modulePromises[name] = new Promise((resolve, reject) => {
+      const v = _moduleManifest[name] || '';
+      const url = '/__gofastr/runtime/' + name + '.js' + (v ? '?v=' + v : '');
+      const s = document.createElement('script');
+      s.src = url;
+      s.async = false;
+      s.onload = () => resolve();
+      s.onerror = () => {
+        // Drop the cached promise so a retry fires a fresh request.
+        delete _modulePromises[name];
+        reject(new Error('failed to load runtime module: ' + name));
+      };
+      document.head.appendChild(s);
+    });
+    return _modulePromises[name];
+  }
+  // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
+  // kicks off the module fetch as soon as the user hovers or
+  // keyboard-focuses it. By the time they click, the module is
+  // resolved. Capture-phase + once-per-element so we don't churn on
+  // every mouse move.
+  const _prefetchAttempted = new WeakSet();
+  function _prefetch(e) {
+    const node = e.target && e.target.closest && e.target.closest('[data-fui-prefetch]');
+    if (!node || _prefetchAttempted.has(node)) return;
+    _prefetchAttempted.add(node);
+    const names = (node.getAttribute('data-fui-prefetch') || '').split(/\s+/).filter(Boolean);
+    for (const n of names) { loadModule(n).catch(() => {}); }
+  }
+  document.addEventListener('pointerover', _prefetch, { capture: true, passive: true });
+  document.addEventListener('focusin', _prefetch, { capture: true });
+
+  // === DEMAND-LOAD SCANNERS ===========================================
+  // Each split module has a marker attribute that, when found in the
+  // DOM, triggers a load. Scanners run after DOMContentLoaded + after
+  // every SPA-nav swap (`gofastr:navigate`) + when the MutationObserver
+  // sees newly inserted DOM.
+  const _moduleMarkers = [
+    { name: 'fileupload', selector: '[data-fui-fileupload]' },
+  ];
+  function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    const zones = scope.querySelectorAll('[data-fui-fileupload]');
-    for (const zone of zones) {
-      if (zone.__fuiWired) continue;
-      zone.__fuiWired = true;
-      const input = zone.querySelector('input[type="file"]');
-      if (!input) continue;
-      const filename = zone.querySelector('.ui-fileupload__filename');
-
-      const fmtBytes = (n) => {
-        if (n < 1024) return n + ' B';
-        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-        return (n / (1024 * 1024)).toFixed(2) + ' MB';
-      };
-      const render = () => {
-        if (!filename) return;
-        filename.innerHTML = '';
-        const files = input.files;
-        if (!files || files.length === 0) return;
-        filename.classList.add('is-populated');
-        // Optional thumbnail — use the first IMAGE in the picked set
-        // (not necessarily files[0], which could be a non-image like
-        // a doc submitted alongside screenshots). Keeps payload small
-        // (don't load N data URLs at once for 50 photos).
-        const firstImage = Array.from(files).find(f => f.type && f.type.startsWith('image/'));
-        if (firstImage) {
-          const img = document.createElement('img');
-          img.className = 'ui-fileupload__thumb';
-          img.alt = '';
-          const reader = new FileReader();
-          reader.onload = (e) => { img.src = e.target.result; };
-          reader.readAsDataURL(firstImage);
-          filename.appendChild(img);
-        }
-        // Filenames list
-        const list = document.createElement('ul');
-        list.className = 'ui-fileupload__list';
-        for (const f of files) {
-          const li = document.createElement('li');
-          li.textContent = f.name + ' · ' + fmtBytes(f.size);
-          list.appendChild(li);
-        }
-        filename.appendChild(list);
-      };
-      input.addEventListener('change', render);
-      // Initial render for SSR-restored states (some browsers
-      // restore input.files on back-nav).
-      render();
-
-      const onEnter = (e) => {
-        e.preventDefault();
-        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.add('is-dragover');
-      };
-      const onLeave = (e) => {
-        e.preventDefault();
-        // dragleave fires when moving to a child — guard via relatedTarget.
-        if (zone.contains(e.relatedTarget)) return;
-        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.remove('is-dragover');
-      };
-      const onDrop = (e) => {
-        e.preventDefault();
-        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.remove('is-dragover');
-        const files = e.dataTransfer && e.dataTransfer.files;
-        if (!files || files.length === 0) return;
-        if (input.disabled) return;
-        // Assign via DataTransfer so the input's `files` becomes the
-        // dropped list — required because input.files is read-only
-        // except via a DataTransfer object.
-        const dt = new DataTransfer();
-        for (const f of files) {
-          if (!input.multiple && dt.items.length > 0) break;
-          dt.items.add(f);
-        }
-        input.files = dt.files;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      };
-      zone.addEventListener('dragenter', onEnter);
-      zone.addEventListener('dragover', onEnter);
-      zone.addEventListener('dragleave', onLeave);
-      zone.addEventListener('drop', onDrop);
+    for (const m of _moduleMarkers) {
+      // Skip if the module is already loaded — its own internal scanner
+      // takes care of newly inserted DOM via the MutationObserver.
+      if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[m.name]) continue;
+      if (scope.querySelector(m.selector)) loadModule(m.name).catch(() => {});
     }
   }
-  // Make it available for the SPA-nav swap path.
-  window.__fuiWireFileUploads = _wireFileUploads;
+  // Re-scan after SPA-nav swaps content; modules that are already
+  // loaded re-run their own scanner via the gofastr:navigate hook
+  // they install themselves.
+  window.addEventListener('gofastr:navigate', () => _scanForModules(document));
 
   // Close any open modal widgets on SPA navigation. Toasts/panels
   // (non-backdrop'd widgets) survive — they're page-independent
   // UI like build-progress banners.
   window.addEventListener('gofastr:navigate', () => {
-    // Re-wire file uploads on the new page content.
-    setTimeout(() => _wireFileUploads(document), 0);
+    // Re-wire any already-loaded module that exposes a scanner. The
+    // fileupload module sets window.__gofastr.scanFileUploads on
+    // load; other split modules follow the same convention.
+    setTimeout(() => {
+      const G = window.__gofastr;
+      if (!G) return;
+      if (typeof G.scanFileUploads === 'function') G.scanFileUploads(document);
+    }, 0);
     const G = window.__gofastr;
     if (!G || !G._modalStack) return;
     for (const name of [...G._modalStack]) G.closeWidget(name);
@@ -2379,13 +2394,11 @@
     });
     document.addEventListener('DOMContentLoaded', _bootstrapComponentCSS);
 
-    // FileUpload: wire drag/drop on every [data-fui-fileupload] zone
-    // and render a filename + size preview into the embedded
-    // .ui-fileupload__filename element after every change. Native
-    // <input type="file"> is the source of truth; the runtime just
-    // forwards dropped File objects into it so the form-POST flow
-    // and the picker flow share one code path.
-    document.addEventListener('DOMContentLoaded', _wireFileUploads);
+    // Demand-load split runtime modules: scan the page for known
+    // marker attributes (data-fui-fileupload, etc.) and kick off
+    // loadModule() for whichever ones are present. Each module
+    // self-wires when it loads — core just decides whether to fetch.
+    document.addEventListener('DOMContentLoaded', () => _scanForModules(document));
 
     // Mirror details.open → summary aria-expanded for screen readers.
     // Native <summary> reports as "button" without an expanded state.

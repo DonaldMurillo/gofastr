@@ -36,6 +36,65 @@ func runtimeHash() string {
 	return runtimeHashVal
 }
 
+// Per-module content-addressed hashes for the split runtime modules.
+// Each module URL ships with ?v=<hash>; the response uses
+// `Cache-Control: public, max-age=31536000, immutable` so the browser
+// caches it forever and a new build (different hash → different URL)
+// busts cleanly.
+var (
+	moduleHashesOnce sync.Once
+	moduleHashes     = map[string]string{}
+)
+
+// RuntimeModuleHash returns the content-addressed hash for a split
+// runtime module. Used by client-side preload tags + by the loader
+// to construct `?v=<hash>` URLs. Empty string if the module isn't
+// embedded.
+func RuntimeModuleHash(name string) string {
+	moduleHashesOnce.Do(func() {
+		for _, n := range runtime.ModuleNames() {
+			src, ok := runtime.Module(n)
+			if !ok {
+				continue
+			}
+			sum := sha256.Sum256([]byte(src))
+			moduleHashes[n] = hex.EncodeToString(sum[:8])
+		}
+	})
+	return moduleHashes[name]
+}
+
+// ServeRuntimeModule is the exported handler for /__gofastr/runtime/<name>.js.
+// Hosts that mount routes via uihost get it through framework/uihost;
+// kiln and standalone hosts can wire it themselves alongside MountRuntime.
+func ServeRuntimeModule(w http.ResponseWriter, r *http.Request) {
+	serveRuntimeModule(w, r)
+}
+
+// serveRuntimeModule returns one split runtime module by name. URL
+// shape: /__gofastr/runtime/<name>.js?v=<hash>. Served with
+// long-lived immutable cache headers since the URL itself busts on
+// a new build.
+func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
+	// URL path: /__gofastr/runtime/<name>.js → strip prefix + .js.
+	const prefix = "/__gofastr/runtime/"
+	path := r.URL.Path
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, ".js") {
+		http.NotFound(w, r)
+		return
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(path, prefix), ".js")
+	src, ok := runtime.Module(name)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// Content-addressed URL (?v=<hash>) → safe to cache forever.
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	fmt.Fprint(w, src)
+}
+
 // server is the per-widget HTTP plumbing: stylesheet + signal state
 // snapshot. One instance per Mount call.
 type server struct {

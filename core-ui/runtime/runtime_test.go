@@ -68,8 +68,12 @@ func TestRuntimeSize(t *testing.T) {
 	// trap + return-focus). Cap at 92KB uncompressed (~24-26KB gzip),
 	// still well under typical TCP slow-start initial windows after
 	// compression.
-	if size > 110000 {
-		t.Errorf("runtime too large: %d bytes (max 110000)", size)
+	// Cap stays generous during the code-split transition. As each
+	// runtime module (fileupload, popover, toasts, menu, sse, forms,
+	// widgets) moves to core-ui/runtime/src/, this cap will tighten.
+	// Final target: core ≤ 36 KB raw, each split module ≤ 8 KB.
+	if size > 112000 {
+		t.Errorf("runtime too large: %d bytes (max 112000)", size)
 	}
 }
 
@@ -110,4 +114,53 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// Split-runtime modules under core-ui/runtime/src/ ship as
+// individually-loadable bundles.
+
+func TestRuntimeModule_Fileupload(t *testing.T) {
+	src, ok := Module("fileupload")
+	if !ok {
+		t.Fatal("fileupload module not embedded")
+	}
+	for _, want := range []string{
+		"data-fui-fileupload",         // marker the scanner reads
+		"input[type=\"file\"]",        // wires the inner native input
+		"DataTransfer",                // drop path
+		"FileReader",                  // image thumbnail
+		"__gofastr.scanFileUploads",   // exposed scanner for SPA re-wire
+		"loadedModules",               // self-registers as loaded
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("fileupload module missing %q", want)
+		}
+	}
+	// Per-module size budget. Fileupload is small (drag/drop +
+	// preview only); cap stays generous so a future feature add
+	// still has headroom. Raw bytes, not gzip.
+	if size := ModuleSize("fileupload"); size > 6000 {
+		t.Errorf("fileupload module is %d bytes — budget is 6000", size)
+	}
+}
+
+func TestRuntimeModuleNames(t *testing.T) {
+	names := ModuleNames()
+	if len(names) == 0 {
+		t.Fatal("no runtime modules embedded")
+	}
+	// Sorted invariant — the HTTP server relies on it for stable URLs.
+	for i := 1; i < len(names); i++ {
+		if names[i-1] >= names[i] {
+			t.Errorf("ModuleNames() not sorted at index %d: %v", i, names)
+		}
+	}
+}
+
+func TestRuntimeModuleRejectsBadName(t *testing.T) {
+	for _, bad := range []string{"", "..", "../core", "name with space", "name/with/slash", "name.ext"} {
+		if _, ok := Module(bad); ok {
+			t.Errorf("Module(%q) should reject invalid name", bad)
+		}
+	}
 }

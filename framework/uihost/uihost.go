@@ -771,6 +771,12 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	if catalog := catalogJSONScript(ds); catalog != "" {
 		page = strings.Replace(page, "</head>", catalog+"\n</head>", 1)
 	}
+	// Runtime module manifest — name → ?v=<hash> for every split
+	// module under core-ui/runtime/src/. The client-side loader reads
+	// this on boot to cache-bust per-module URLs.
+	if manifest := runtimeModuleManifestScript(); manifest != "" {
+		page = strings.Replace(page, "</head>", manifest+"\n</head>", 1)
+	}
 
 	// <body>
 	page = strings.Replace(page,
@@ -1103,6 +1109,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// "no widgets" response that prevents a 404 in the console.
 	r.Get("/__gofastr/widgets", http.HandlerFunc(widget.ServeWidgetList))
 
+	// Split runtime modules — /__gofastr/runtime/<name>.js. core.js's
+	// loader fetches them on demand (hover prefetch, idle, or click
+	// await). Delegated to core-ui/widget so back-compat for hosts that
+	// already call widget.MountRuntime keeps a single source of truth.
+	r.Get("/__gofastr/runtime/{name}", http.HandlerFunc(widget.ServeRuntimeModule))
+
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 }
 
@@ -1303,6 +1315,30 @@ func catalogJSONScript(ds *UIHost) string {
 		return ""
 	}
 	return `<script type="application/json" id="gofastr-catalog">` +
+		escapeJSONForScript(buf) +
+		`</script>`
+}
+
+// runtimeModuleManifestScript emits an inert JSON manifest mapping
+// each split runtime module (fileupload, popover, …) to its current
+// content-addressed hash. The client-side loader reads it to
+// construct cache-busted URLs (`/__gofastr/runtime/<name>.js?v=<hash>`).
+// Hashes come from core-ui/widget.RuntimeModuleHash so a deploy
+// auto-busts.
+func runtimeModuleManifestScript() string {
+	names := runtime.ModuleNames()
+	if len(names) == 0 {
+		return ""
+	}
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		out[n] = widget.RuntimeModuleHash(n)
+	}
+	buf, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-runtime-modules">` +
 		escapeJSONForScript(buf) +
 		`</script>`
 }
