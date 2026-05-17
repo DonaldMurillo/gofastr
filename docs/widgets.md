@@ -16,6 +16,7 @@ Examples of widgets the framework already supports:
 - **Toast** — ephemeral bottom notifications
 - **Drawer** — edge-mounted sliding panel
 - **Banner** — top strip for build progress, version warnings, etc.
+- **Popover** — click-triggered anchored surface, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
 
 `kiln/chat/panel.go` is the canonical real-world consumer: the agent
 chat panel is implemented as a `FloatingPanel` widget.

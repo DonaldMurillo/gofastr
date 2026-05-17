@@ -89,6 +89,66 @@ var componentEntries = []componentEntry{
 		Tag:   "Responsive nav",
 		Intro: "Primary-nav column: inline ≥ md, hamburger + drawer < md, single content tree. Active-route highlighting from the current URL, nested groups via <details> that auto-open when a descendant matches.",
 	},
+	{
+		Slug:  "layout",
+		Name:  "Layout",
+		Tag:   "Stack · Cluster · Grid",
+		Intro: "Six small spatial primitives — Stack (column), Cluster (row), Grid (auto-fit), Center, Spacer, Box — that cover the boring layout decisions every page makes. One stylesheet, six wrappers.",
+	},
+	{
+		Slug:  "card",
+		Name:  "Card",
+		Tag:   "Surface · Interactive",
+		Intro: "Labelled <section> shell with header / body / footer regions. Three variants (elevated, outlined, flat) plus an interactive (linked) form whose entire surface activates.",
+	},
+	{
+		Slug:  "image",
+		Name:  "Optimized Image",
+		Tag:   "Responsive · Lazy · CLS-safe",
+		Intro: "Responsive <picture> with srcset, lazy loading, and mandatory Width/Height to eliminate layout shift. Decorative images opt in explicitly — no silent CLS regressions.",
+	},
+	{
+		Slug:  "toggle",
+		Name:  "Toggle controls",
+		Tag:   "Checkbox · Radio · Switch",
+		Intro: "Three labelled form controls wrapping native <input> elements. FieldErrors-aware, keyboard/screen-reader/form-POST ready without JavaScript.",
+	},
+	{
+		Slug:  "tooltip",
+		Name:  "Tooltip",
+		Tag:   "Hover · Focus",
+		Intro: "A CSS-only hover/focus tooltip with aria-describedby wiring. No JavaScript, no runtime callouts. Four placements (top default, bottom, left, right).",
+	},
+	{
+		Slug:  "popover",
+		Name:  "Popover",
+		Tag:   "Anchored · Dismissible",
+		Intro: "Click-triggered floating surface — like Modal without the backdrop dim or focus trap. Closes on Escape and click-outside. Use for help panels, share menus, per-row expanders.",
+	},
+	{
+		Slug:  "tag",
+		Name:  "Tag / Chip",
+		Tag:   "Filter · Removable",
+		Intro: "Interactive pill — linked for filter chips, removable for applied filters, status-variant coded to match StatusBadge. Distinct from StatusBadge: tags can be removed or linked.",
+	},
+	{
+		Slug:  "spinner",
+		Name:  "Spinner",
+		Tag:   "Ring · Dots",
+		Intro: "Inline CSS loading indicator. role=\"status\" + aria-busy announces 'loading' once; prefers-reduced-motion slows the spin rather than stopping it.",
+	},
+	{
+		Slug:  "divider",
+		Name:  "Divider",
+		Tag:   "Horizontal · Vertical · Labelled",
+		Intro: "Semantic separator. Plain horizontal dividers emit a native <hr>; vertical and labelled variants use role=\"separator\" so orientation / label gets announced.",
+	},
+	{
+		Slug:  "fileupload",
+		Name:  "File Upload",
+		Tag:   "Drag-drop · Native",
+		Intro: "Drag-and-drop file picker over a native <input type=\"file\">. Keyboard, screen-reader, and form-POST flows work without JavaScript; drag zone is progressive enhancement via data-fui-fileupload.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

@@ -179,5 +179,36 @@ Pair with media-query CSS that hides the toggle and shows the nav inline above y
 - Section-level theme overrides — see `framework/ui.Themed` (and ARCHITECTURE.md "Themed sections")
 - Islands (in-page state changes without a route change) — see [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) "In-page state change"
 - The full `data-fui-*` primitive table is in [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md)
+- Component primitive cheat sheet (Layout, Card, Tooltip, Toggle, Spinner, …) is in [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) "UI primitive cheat sheet"
 
 For a complete worked example, read `examples/website/main.go` (45 lines of wiring) and `examples/website/screen_framework_ui.go` (one screen using every framework/ui component).
+
+## Primitives reference
+
+The `framework/ui` package ships ten small primitives that cover the
+boring decisions every UI makes. Each emits one stylesheet, loads
+on first appearance, and is dogfooded under `/components/<slug>` on
+the example website:
+
+- `Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` — six
+  spatial wrappers covering vertical stacking, horizontal flow, CSS
+  grid, centring, flex filler, and padded surface.
+- `Card` — labelled `<section>` with header / body / footer slots
+  and elevated / outlined / flat / interactive variants.
+- `OptimizedImage` — responsive `<picture>` with `srcset`, lazy
+  loading, and mandatory `Width`+`Height` (no silent CLS).
+- `Checkbox` / `Radio` / `Switch` — labelled, FieldErrors-aware
+  native inputs.
+- `Tooltip` — CSS-only hover/focus reveal with auto-wired
+  `aria-describedby`.
+- `Tag` — interactive pill (filter-link or × dismiss), status-coded.
+- `Spinner` — inline `role="status"` indicator with ring / dots
+  variants and reduced-motion fallback.
+- `Divider` — native `<hr>` for plain horizontal; `role="separator"`
+  for vertical / labelled (e.g. "OR" between options).
+- `FileUpload` — drag-drop zone over a native `<input type="file">`
+  via `data-fui-fileupload`.
+
+The matching widget preset is `preset.Popover` — a click-triggered
+anchored surface without backdrop dim or focus trap. Closes on ESC
+and click-outside.

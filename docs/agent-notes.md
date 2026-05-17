@@ -77,6 +77,13 @@
 - Evidence: commit `b691506` adds drift checks that fail CI if any of the three failure modes from `core-ui/ARCHITECTURE.md` reappear (verified by `go test ./examples/website/ -run TestE2E`).
 - Next time: every documented rule that's been broken before needs a test that fails when it's broken again. The architecture doc itself shouldn't be relied on as the enforcement mechanism.
 
+## 2026-05-17 - ten-ui-primitives
+
+- Scope: `framework/ui/`, `core-ui/widget/preset/`, `core-ui/runtime/runtime.js`, `examples/website`, `core-ui/ARCHITECTURE.md`, `docs/ui-getting-started.md`, `docs/widgets.md`
+- Symptom: the `framework/ui` package shipped Avatar / Button / Callout / StatCard / DataTable / Form / Menu / Notification / PageHeader / Sidebar / Toast — solid as far as it went, but a real app reaching for "card", "stack/grid layout", "tag chip", "tooltip", "checkbox/switch", "spinner", "divider", "file upload", "popover", or "responsive lazy image" had to hand-roll the HTML+CSS each time. Three example screens already had bespoke `display:flex` divs with inconsistent spacing.
+- Evidence: this commit adds ten primitives (`Stack`/`Cluster`/`Grid`/`Center`/`Spacer`/`Box`, `Card`, `OptimizedImage`, `Checkbox`/`Radio`/`Switch`, `Tooltip`, `Popover`, `Tag`, `Spinner`, `Divider`, `FileUpload`) plus dogfooded demo screens at `/components/{layout,card,image,toggle,tooltip,popover,tag,spinner,divider,fileupload}`. 95 new unit tests under `framework/ui/`, 14 new chromedp E2E tests under `examples/website/`. Runtime gains a `_popoverStack` so non-modal floating surfaces honour CloseOnEscape + CloseOnClickOutside (previously modal-only — see `core-ui/runtime/runtime.js` lines ~1559–1605, ~2087–2110). Cheat sheet rows added to `core-ui/ARCHITECTURE.md`; `framework/ui/doc.go` lists the full component inventory.
+- Next time: when extending a runtime feature (Escape / outside-click) so a new primitive can deliver on its docstring promise, the docstring change ships in the same commit as the runtime change. Don't ship a preset whose comments lie about behaviour.
+
 ## 2026-05-11 - docs-restructure
 
 - Scope: `docs/`, `.claude/skills/`

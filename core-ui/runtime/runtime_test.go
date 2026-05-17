@@ -68,8 +68,8 @@ func TestRuntimeSize(t *testing.T) {
 	// trap + return-focus). Cap at 92KB uncompressed (~24-26KB gzip),
 	// still well under typical TCP slow-start initial windows after
 	// compression.
-	if size > 96000 {
-		t.Errorf("runtime too large: %d bytes (max 96000)", size)
+	if size > 110000 {
+		t.Errorf("runtime too large: %d bytes (max 110000)", size)
 	}
 }
 

@@ -77,6 +77,7 @@
     if (responseSignal) _rpcInFlight.set(responseSignal, ctl);
     let body = node.getAttribute('data-fui-rpc-body');
     let resolvedPath = path;
+    let bodyIsFormData = false;
     if (!body && node.tagName === 'FORM') {
       const fd = new FormData(node);
       // For GET, encode form data as the query string of the RPC
@@ -89,6 +90,13 @@
         if (qs) {
           resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
         }
+      } else if (node.enctype === 'multipart/form-data' || node.querySelector('input[type="file"]')) {
+        // Forms with files OR an explicit multipart enctype need to
+        // ship as multipart/form-data so File objects survive. fetch
+        // sets the right Content-Type (with boundary) automatically
+        // when body is a FormData instance.
+        body = fd;
+        bodyIsFormData = true;
       } else {
         const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
         body = JSON.stringify(obj);
@@ -97,7 +105,7 @@
     const widgetEl = node.closest('[data-fui-widget]');
     const headers = {};
     if (widgetEl) headers['X-FUI-Widget'] = widgetEl.getAttribute('data-fui-widget') || '';
-    if (body) headers['Content-Type'] = 'application/json';
+    if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
     // Optional pre-flight confirm — useful for destructive RPCs
     // (delete, revoke, drop). The user gets a native browser confirm
     // dialog with the supplied message; cancel aborts the dispatch.
@@ -409,7 +417,14 @@
                   decodeURIComponent(pair.slice(eq + 1));
               }
             }
-            window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+            const anchorPref = btn.getAttribute('data-fui-popover-anchor');
+            Promise.resolve(
+              window.__gofastr.openWidget(name, { params: overrides, pushUrl: true })
+            ).then(() => {
+              if (anchorPref !== null) {
+                window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
+              }
+            });
           });
         }
 
@@ -994,6 +1009,141 @@
       if (w && typeof w.dismiss === 'function') w.dismiss();
     },
 
+    /** Position a freshly-opened popover-style widget next to its
+        trigger element. The preferred placement is the value of the
+        trigger's `data-fui-popover-anchor` attribute — one of
+        "top", "bottom", "left", "right", or "auto" (= bottom-first
+        with fallback). When the preferred side would overflow the
+        viewport, the algorithm tries the opposite side and finally
+        clamps inside an 8px viewport margin.
+
+        Side-effects on top of position:
+
+         - Adds `data-fui-popover-trigger="<name>"` and `class:
+           is-popover-trigger-active` on the trigger so the
+           originating button can highlight while its popover is
+           open. Cleared on dismiss.
+         - Adds `data-fui-popover-side="top|bottom|left|right"` on
+           the widget root reflecting the chosen side (post-flip).
+           CSS uses it to position the arrow / pointer.
+         - Repositions on `window.resize` until dismissed. */
+    _anchorPopover(name, trigger, preferred) {
+      const NS = this;
+      const widget = NS._widgets[name];
+      if (!widget || !widget.root) return;
+      const root = widget.root;
+      const pref = (preferred || 'auto').toLowerCase();
+      // If we were already anchored to a different trigger (popover
+      // re-opened from a sibling), clear the previous trigger's
+      // active state + resize listener before rebinding.
+      const prevTrigger = widget.anchorTrigger;
+      if (prevTrigger && prevTrigger !== trigger) {
+        prevTrigger.classList.remove('is-popover-trigger-active');
+        prevTrigger.removeAttribute('data-fui-popover-trigger');
+      }
+      if (widget.anchorResize) {
+        window.removeEventListener('resize', widget.anchorResize);
+        widget.anchorResize = null;
+      }
+      if (widget.anchorScroll) {
+        window.removeEventListener('scroll', widget.anchorScroll, { capture: true });
+        widget.anchorScroll = null;
+      }
+      // Mark trigger as the currently-active source.
+      trigger.classList.add('is-popover-trigger-active');
+      trigger.setAttribute('data-fui-popover-trigger', name);
+      const place = () => {
+        const gap = 10; // gap >= arrow-size so the pointer fits cleanly
+        const margin = 8;
+        const tr = trigger.getBoundingClientRect();
+        // Set the anchored marker BEFORE measuring so the chrome's
+        // border + shadow + max-inline-size are reflected in the
+        // bounding rect — without this the measurement is from the
+        // un-styled chrome and the placement misses by a few pixels.
+        if (!root.hasAttribute('data-fui-popover-side')) {
+          root.setAttribute('data-fui-popover-side', 'bottom');
+        }
+        // Reset overrides so we measure the widget at its natural size.
+        root.style.left = '';
+        root.style.top = '';
+        root.style.right = '';
+        root.style.bottom = '';
+        const wr = root.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const order = (pref === 'auto')
+          ? ['bottom', 'top', 'right', 'left']
+          : [pref, 'bottom', 'top', 'right', 'left'].filter((s, i, a) => a.indexOf(s) === i);
+        let x = tr.left;
+        let y = tr.bottom + gap;
+        let chosen = order[0];
+        for (const side of order) {
+          if (side === 'bottom') {
+            x = tr.left;
+            y = tr.bottom + gap;
+            if (y + wr.height <= vh - margin) { chosen = 'bottom'; break; }
+          } else if (side === 'top') {
+            x = tr.left;
+            y = tr.top - gap - wr.height;
+            if (y >= margin) { chosen = 'top'; break; }
+          } else if (side === 'right') {
+            x = tr.right + gap;
+            y = tr.top;
+            if (x + wr.width <= vw - margin) { chosen = 'right'; break; }
+          } else if (side === 'left') {
+            x = tr.left - gap - wr.width;
+            y = tr.top;
+            if (x >= margin) { chosen = 'left'; break; }
+          }
+          chosen = side;
+        }
+        // Clamp into the viewport.
+        x = Math.max(margin, Math.min(x, vw - wr.width - margin));
+        y = Math.max(margin, Math.min(y, vh - wr.height - margin));
+        root.style.position = 'fixed';
+        root.style.left = x + 'px';
+        root.style.top = y + 'px';
+        root.style.right = 'auto';
+        root.style.bottom = 'auto';
+        root.setAttribute('data-fui-popover-side', chosen);
+        // Arrow offset — distance from popover's anchored edge to
+        // the center of the trigger, so the arrow always sits below
+        // the originating button regardless of clamping.
+        if (chosen === 'top' || chosen === 'bottom') {
+          const arrowX = (tr.left + tr.width / 2) - x;
+          root.style.setProperty('--ui-popover-arrow-x', Math.max(12, Math.min(arrowX, wr.width - 12)) + 'px');
+        } else {
+          const arrowY = (tr.top + tr.height / 2) - y;
+          root.style.setProperty('--ui-popover-arrow-y', Math.max(12, Math.min(arrowY, wr.height - 12)) + 'px');
+        }
+      };
+      place();
+      // Reposition on viewport resize AND on scroll — the popover is
+      // position:fixed, so without these the trigger moves under the
+      // page scroll while the popover stays glued to the viewport.
+      // Listeners run via requestAnimationFrame so we get one place()
+      // per frame even on a furious wheel-spin. capture:true picks up
+      // scroll events from ANY ancestor (overflow:auto containers)
+      // without listing them explicitly. passive:true preserves
+      // smooth scrolling.
+      let rafPending = false;
+      const schedulePlace = () => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+          rafPending = false;
+          place();
+        });
+      };
+      const onResize = schedulePlace;
+      const onScroll = schedulePlace;
+      window.addEventListener('resize', onResize);
+      window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+      widget.anchorResize = onResize;
+      widget.anchorScroll = onScroll;
+      widget.anchorTrigger = trigger;
+    },
+
     /** Update window.location with a widget's deep-link params via
         pushState — no fetch, no reload. Strips the previous deep-link
         key on the same URL key so reopening from URL A to URL B works
@@ -1129,6 +1279,35 @@
         // detaching, so reopening doesn't require a fresh fetch and
         // the chrome stays available for the next deep-link hit.
         const wasHydrated = NS._widgets[cfg.name]?.hydrated;
+        const outsideHandler = NS._widgets[cfg.name]?.outsideHandler;
+        const anchorResize = NS._widgets[cfg.name]?.anchorResize;
+        const anchorScroll = NS._widgets[cfg.name]?.anchorScroll;
+        const anchorTrigger = NS._widgets[cfg.name]?.anchorTrigger;
+        if (outsideHandler) {
+          document.removeEventListener('click', outsideHandler);
+        }
+        if (anchorResize) {
+          window.removeEventListener('resize', anchorResize);
+        }
+        if (anchorScroll) {
+          window.removeEventListener('scroll', anchorScroll, { capture: true });
+        }
+        if (anchorTrigger) {
+          anchorTrigger.classList.remove('is-popover-trigger-active');
+          anchorTrigger.removeAttribute('data-fui-popover-trigger');
+        }
+        // Clear anchor-driven inline positioning so a re-open from a
+        // non-anchor trigger picks up the chrome's default placement.
+        if (widgetEl && widgetEl.style) {
+          widgetEl.style.left = '';
+          widgetEl.style.top = '';
+          widgetEl.style.right = '';
+          widgetEl.style.bottom = '';
+          widgetEl.style.position = '';
+          widgetEl.style.removeProperty('--ui-popover-arrow-x');
+          widgetEl.style.removeProperty('--ui-popover-arrow-y');
+          widgetEl.removeAttribute('data-fui-popover-side');
+        }
         if (wasHydrated && widgetEl) {
           widgetEl.setAttribute('hidden', '');
         } else if (widgetEl?.parentNode) {
@@ -1136,6 +1315,10 @@
         }
         if (backdrop?.parentNode) backdrop.parentNode.removeChild(backdrop);
         delete NS._widgets[cfg.name];
+        if (NS._popoverStack && NS._popoverStack.length) {
+          const pIdx = NS._popoverStack.indexOf(cfg.name);
+          if (pIdx >= 0) NS._popoverStack.splice(pIdx, 1);
+        }
         if (isModal) {
           const idx = NS._modalStack.indexOf(cfg.name);
           if (idx >= 0) NS._modalStack.splice(idx, 1);
@@ -1238,13 +1421,19 @@
         const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
         const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
         let body = node.getAttribute('data-fui-rpc-body');
+        let bodyIsFormData = false;
         if (!body && node.tagName === 'FORM') {
           const fd = new FormData(node);
-          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-          body = JSON.stringify(obj);
+          if (node.enctype === 'multipart/form-data' || node.querySelector('input[type="file"]')) {
+            body = fd;
+            bodyIsFormData = true;
+          } else {
+            const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+            body = JSON.stringify(obj);
+          }
         }
         const headers = { 'X-FUI-Widget': cfg.name };
-        if (body) headers['Content-Type'] = 'application/json';
+        if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
         if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
         try {
           const r = await fetch(path, { method, headers, body: body || undefined });
@@ -1559,6 +1748,34 @@
       // honour an opt-out (panel widgets, banners, etc.).
       if (isModal) NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
 
+      // Non-modal popover dismissal — separate from the modal stack so
+      // focus trap / scroll lock semantics stay backdrop-gated. A
+      // floating panel that declares closeOnEscape or closeOnClickOutside
+      // is pushed onto _popoverStack; document-level handlers (boot
+      // section) close the topmost on Escape / outside-click.
+      if (!isModal && (cfg.closeOnEscape || cfg.closeOnClick)) {
+        NS._widgets[cfg.name].closeOnEscape = !!cfg.closeOnEscape;
+        NS._widgets[cfg.name].closeOnClickOutside = !!cfg.closeOnClick;
+        (NS._popoverStack ||= []).push(cfg.name);
+        // Track this widget's outside-click handler so dismiss() can
+        // detach it. Defer attachment by a microtask so the click that
+        // opened us doesn't itself trigger an immediate close — the
+        // open-click bubbles to document AFTER mountWidget returns.
+        if (cfg.closeOnClick) {
+          const outsideHandler = (e) => {
+            if (widgetEl.contains(e.target)) return;
+            // The trigger button that opened us is allowed to toggle —
+            // ignore clicks on any element with data-fui-open targeting
+            // this widget.
+            const trigger = e.target.closest('[data-fui-open="' + cfg.name + '"]');
+            if (trigger) return;
+            dismiss();
+          };
+          NS._widgets[cfg.name].outsideHandler = outsideHandler;
+          setTimeout(() => document.addEventListener('click', outsideHandler), 0);
+        }
+      }
+
       // Global click+submit dispatcher (idempotent across widgets).
       // Handles agent-rendered page buttons + plain forms + legacy
       // data-kiln-tool attributes.
@@ -1828,17 +2045,32 @@
     }
   };
 
-  // Links with an exact-href match get aria-current=page; non-matching
-  // links with a non-empty href get it cleared. Links with NO href
-  // (e.g. server-rendered MatchPath items in a sidebar where the
-  // active determination is prefix-based) are left untouched — only
-  // the server has the prefix-match context, so the runtime defers.
+  // Links with an exact-href match get aria-current=page. A link can
+  // opt in to prefix matching via data-fui-match-prefix — useful for
+  // primary nav entries like "Components" (href="/components/") that
+  // should light up on /components/accordion, /components/card, etc.
+  // Prefix matching is OFF by default so breadcrumbs and sidebars (where
+  // multiple links share a path prefix) keep their server-rendered
+  // single aria-current. Non-matching links get aria-current cleared.
+  // Links with NO href (server-rendered MatchPath items in a sidebar
+  // where the active determination is prefix-based) are left untouched
+  // — only the server has the prefix-match context for those.
   const updateActiveLink = (path) => {
     const navLinks = document.querySelectorAll('nav a');
     for (const link of navLinks) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
-      if (href === path) {
+      let active = href === path;
+      if (!active && link.hasAttribute('data-fui-match-prefix')) {
+        const hrefPath = href.split('?')[0].split('#')[0];
+        const pathOnly = (path || '').split('?')[0].split('#')[0];
+        // "/" is never used as a prefix — otherwise every nav link
+        // would match every page.
+        if (hrefPath !== '/' && hrefPath.endsWith('/') && pathOnly.startsWith(hrefPath)) {
+          active = true;
+        }
+      }
+      if (active) {
         link.setAttribute('aria-current', 'page');
         link.classList.add('active');
       } else {
@@ -2016,10 +2248,103 @@
     };
   };
 
+  // FileUpload runtime — wire every [data-fui-fileupload] zone in a
+  // subtree. Idempotent: zones already wired carry a __fuiWired flag.
+  // Reads dropped files into the inner <input type="file">, renders
+  // a filename + size summary (plus an image thumbnail for the first
+  // picked image) into the embedded .ui-fileupload__filename element.
+  function _wireFileUploads(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const zones = scope.querySelectorAll('[data-fui-fileupload]');
+    for (const zone of zones) {
+      if (zone.__fuiWired) continue;
+      zone.__fuiWired = true;
+      const input = zone.querySelector('input[type="file"]');
+      if (!input) continue;
+      const filename = zone.querySelector('.ui-fileupload__filename');
+
+      const fmtBytes = (n) => {
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+        return (n / (1024 * 1024)).toFixed(2) + ' MB';
+      };
+      const render = () => {
+        if (!filename) return;
+        filename.innerHTML = '';
+        const files = input.files;
+        if (!files || files.length === 0) return;
+        filename.classList.add('is-populated');
+        // Optional thumbnail — use the first IMAGE in the picked set
+        // (not necessarily files[0], which could be a non-image like
+        // a doc submitted alongside screenshots). Keeps payload small
+        // (don't load N data URLs at once for 50 photos).
+        const firstImage = Array.from(files).find(f => f.type && f.type.startsWith('image/'));
+        if (firstImage) {
+          const img = document.createElement('img');
+          img.className = 'ui-fileupload__thumb';
+          img.alt = '';
+          const reader = new FileReader();
+          reader.onload = (e) => { img.src = e.target.result; };
+          reader.readAsDataURL(firstImage);
+          filename.appendChild(img);
+        }
+        // Filenames list
+        const list = document.createElement('ul');
+        list.className = 'ui-fileupload__list';
+        for (const f of files) {
+          const li = document.createElement('li');
+          li.textContent = f.name + ' · ' + fmtBytes(f.size);
+          list.appendChild(li);
+        }
+        filename.appendChild(list);
+      };
+      input.addEventListener('change', render);
+      // Initial render for SSR-restored states (some browsers
+      // restore input.files on back-nav).
+      render();
+
+      const onEnter = (e) => {
+        e.preventDefault();
+        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.add('is-dragover');
+      };
+      const onLeave = (e) => {
+        e.preventDefault();
+        // dragleave fires when moving to a child — guard via relatedTarget.
+        if (zone.contains(e.relatedTarget)) return;
+        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.remove('is-dragover');
+      };
+      const onDrop = (e) => {
+        e.preventDefault();
+        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.remove('is-dragover');
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        if (input.disabled) return;
+        // Assign via DataTransfer so the input's `files` becomes the
+        // dropped list — required because input.files is read-only
+        // except via a DataTransfer object.
+        const dt = new DataTransfer();
+        for (const f of files) {
+          if (!input.multiple && dt.items.length > 0) break;
+          dt.items.add(f);
+        }
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      zone.addEventListener('dragenter', onEnter);
+      zone.addEventListener('dragover', onEnter);
+      zone.addEventListener('dragleave', onLeave);
+      zone.addEventListener('drop', onDrop);
+    }
+  }
+  // Make it available for the SPA-nav swap path.
+  window.__fuiWireFileUploads = _wireFileUploads;
+
   // Close any open modal widgets on SPA navigation. Toasts/panels
   // (non-backdrop'd widgets) survive — they're page-independent
   // UI like build-progress banners.
   window.addEventListener('gofastr:navigate', () => {
+    // Re-wire file uploads on the new page content.
+    setTimeout(() => _wireFileUploads(document), 0);
     const G = window.__gofastr;
     if (!G || !G._modalStack) return;
     for (const name of [...G._modalStack]) G.closeWidget(name);
@@ -2054,6 +2379,14 @@
     });
     document.addEventListener('DOMContentLoaded', _bootstrapComponentCSS);
 
+    // FileUpload: wire drag/drop on every [data-fui-fileupload] zone
+    // and render a filename + size preview into the embedded
+    // .ui-fileupload__filename element after every change. Native
+    // <input type="file"> is the source of truth; the runtime just
+    // forwards dropped File objects into it so the form-POST flow
+    // and the picker flow share one code path.
+    document.addEventListener('DOMContentLoaded', _wireFileUploads);
+
     // Mirror details.open → summary aria-expanded for screen readers.
     // Native <summary> reports as "button" without an expanded state.
     // We run it once at boot for every disclosure, plus on every
@@ -2084,19 +2417,31 @@
       }
     }, true); // capture phase — toggle doesn't bubble
 
-    // Modal Escape close — fires once per Escape and closes only the
-    // topmost modal in the stack, so stacked modals unwind in LIFO
-    // order rather than all collapsing at once. Per-widget listeners
-    // would all fire simultaneously and close every open modal.
+    // Escape close — fires once per Escape and closes the topmost
+    // dismissable surface. Modals take priority (focus trap + backdrop
+    // semantics), then non-modal popovers. Both stacks are LIFO so
+    // nested surfaces unwind in the order they were opened. Per-widget
+    // listeners would all fire simultaneously and close every open
+    // surface at once instead of just the topmost.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       const G = window.__gofastr;
-      if (!G._modalStack || G._modalStack.length === 0) return;
-      const topName = G._modalStack[G._modalStack.length - 1];
-      const top = G._widgets[topName];
-      if (top && top.closeOnEscape) {
-        e.stopPropagation();
-        G.closeWidget(topName);
+      if (G._modalStack && G._modalStack.length > 0) {
+        const topName = G._modalStack[G._modalStack.length - 1];
+        const top = G._widgets[topName];
+        if (top && top.closeOnEscape) {
+          e.stopPropagation();
+          G.closeWidget(topName);
+          return;
+        }
+      }
+      if (G._popoverStack && G._popoverStack.length > 0) {
+        const topName = G._popoverStack[G._popoverStack.length - 1];
+        const top = G._widgets[topName];
+        if (top && top.closeOnEscape) {
+          e.stopPropagation();
+          G.closeWidget(topName);
+        }
       }
     });
 

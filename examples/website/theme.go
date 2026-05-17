@@ -235,6 +235,13 @@ func createStyleSheet(theme style.Theme) string {
 		Set("color", "{colors.text}", "font-weight", "500").End()
 	ss.Rule(".site-header nav a[aria-current='page']").
 		Set("color", "{colors.primary}").End()
+	// Two nav copies live in the header — the inline `.site-nav-desktop`
+	// (visible ≥ 640px) and the `<details class="site-nav">` hamburger
+	// (visible < 640px). Default: hide the desktop nav and show the
+	// disclosure. Scoped to .site-header so the specificity beats the
+	// generic `.site-header nav { display: flex }` rule above. The
+	// @media (min-width: 640px) block below flips it.
+	ss.Rule(".site-header .site-nav-desktop").Set("display", "none").End()
 
 	// Mobile hamburger: <details class="site-nav"> wraps <summary> + <nav>.
 	// Below 640px the summary is a 44px tap target and the nav stacks
@@ -283,19 +290,18 @@ func createStyleSheet(theme style.Theme) string {
 		Set("padding", "{spacing.sm} {spacing.md}",
 			"min-height", "var(--spacing-touch-target)",
 			"display", "flex", "align-items", "center").End()
-	// >=640px: hide the toggle and unwrap details so nav renders inline.
+	// >=640px: show the inline desktop nav, hide the hamburger details.
+	// We render two nav copies in the DOM so we can avoid the long-
+	// standing Chrome layout bug where a nav inside a closed <details>
+	// (with details using display:contents) collapses to zero
+	// inline-size. The two copies share the same link list but only
+	// one is in the visual layout per viewport.
 	ss.Media("(min-width: 640px)", func(ss *style.StyleSheet) {
-		ss.Rule(".site-nav").Set("display", "contents").End()
-		ss.Rule(".site-nav__toggle").Set("display", "none").End()
-		// Override the mobile :not([open]) hide so nav always renders.
-		ss.Rule(".site-nav nav, .site-nav:not([open]) nav, .site-nav[open] nav").
-			Set("display", "flex",
-				"position", "static",
-				"flex-direction", "row", "align-items", "center",
-				"min-width", "0", "padding", "0",
-				"background", "transparent", "border", "0",
-				"box-shadow", "none").End()
-		ss.Rule(".site-nav nav a").
+		ss.Rule(".site-header .site-nav").Set("display", "none").End()
+		ss.Rule(".site-header .site-nav-desktop").
+			Set("display", "flex", "align-items", "center", "gap", "{spacing.lg}",
+				"flex-wrap", "wrap").End()
+		ss.Rule(".site-header .site-nav-desktop a").
 			Set("padding", "0", "min-height", "0", "display", "inline-flex").End()
 	})
 
@@ -446,11 +452,17 @@ func createStyleSheet(theme style.Theme) string {
 	})
 	ss.Rule(".demo-live").
 		Set("padding", "{spacing.lg}", "background", "{colors.background}").End()
+	// .demo-source uses the near-black --color-text token instead of
+	// --color-secondary (mid-gray). Mid-gray next to the light page
+	// surface reads as "washed out" and triggers a Mach-band contrast
+	// illusion that looks like a horizontal gradient even though the
+	// pixels are uniform. Near-black gives the panel a stronger,
+	// inkier feel and matches .ui-code-block.
 	ss.Rule(".demo-source").
-		Set("padding", "{spacing.lg}", "background", "{colors.secondary}", "color", "white",
+		Set("padding", "{spacing.lg}", "background", "{colors.text}", "color", "#E4E4E7",
 			"overflow-x", "auto").End()
 	ss.Rule(".demo-source pre, .demo-source code").
-		Set("background", "transparent", "color", "white", "border", "0",
+		Set("background", "transparent", "color", "#E4E4E7", "border", "0",
 			"padding", "0", "font-size", "0.85em",
 			"font-family", "ui-monospace, 'SF Mono', Menlo, monospace").End()
 	ss.Rule(".demo-label").
@@ -480,6 +492,95 @@ func createStyleSheet(theme style.Theme) string {
 		Set("display", "grid", "gap", "1rem").End()
 	ss.Rule(".demo-stack--sm").Set("gap", "0.75rem").End()
 	ss.Rule(".demo-stack--lg").Set("gap", "1.25rem").End()
+
+	// Popover demo — vertical spacer that pushes the next row down
+	// near the viewport bottom so anchored popovers from those
+	// triggers have to flip up to fit. Constrained to leave headroom
+	// at 800h viewports (used by chromedp/e2e tests).
+	ss.Rule(".popover-demo-spacer").
+		Set("block-size", "40vh", "min-block-size", "320px").End()
+
+	// .popover-demo-sides — four buttons centered, each demonstrating
+	// a specific side. Spacing wide enough that the popover doesn't
+	// overlap a sibling button.
+	ss.Rule(".popover-demo-sides").
+		Set("display", "grid", "grid-template-columns", "repeat(4, minmax(0, 1fr))",
+			"gap", "{spacing.md}", "place-items", "center",
+			"padding", "{spacing.lg} 0").End()
+	// Narrower viewports: collapse to 2 columns so the row fits.
+	ss.Media("(max-width: 720px)", func(ss *style.StyleSheet) {
+		ss.Rule(".popover-demo-sides").
+			Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End()
+	})
+
+	// .popover-demo-edges — tall frame with a trigger in each corner.
+	// Frame height is sized so bottom-corner triggers actually sit
+	// near the viewport bottom (so auto-flip flips them UP), not just
+	// the page-middle. 90vh gives the demo room without forcing
+	// overflow on portrait phones.
+	ss.Rule(".popover-demo-edges").
+		Set("padding", "{spacing.md} 0").End()
+	ss.Rule(".popover-demo-edges__inner").
+		Set("position", "relative",
+			"block-size", "min(90vh, 720px)",
+			"min-block-size", "420px",
+			"max-inline-size", "100%",
+			"background", "{colors.surface-soft}",
+			"border", "1px dashed {colors.border}",
+			"border-radius", "{radii.md}").End()
+	ss.Rule(".popover-demo-edges__tl, .popover-demo-edges__tr, .popover-demo-edges__bl, .popover-demo-edges__br").
+		Set("position", "absolute").End()
+	ss.Rule(".popover-demo-edges__tl").
+		Set("inset-block-start", "12px", "inset-inline-start", "12px").End()
+	ss.Rule(".popover-demo-edges__tr").
+		Set("inset-block-start", "12px", "inset-inline-end", "12px").End()
+	ss.Rule(".popover-demo-edges__bl").
+		Set("inset-block-end", "12px", "inset-inline-start", "12px").End()
+	ss.Rule(".popover-demo-edges__br").
+		Set("inset-block-end", "12px", "inset-inline-end", "12px").End()
+
+	// Popover body — show "Opened from: X"
+	ss.Rule(".popover-demo-body__from").
+		Set("margin", "0 0 {spacing.sm} 0", "color", "{colors.text-muted}",
+			"font-size", "0.85rem").End()
+	ss.Rule(".popover-demo-body__from strong").
+		Set("color", "{colors.primary}", "font-weight", "600").End()
+
+	// Anchored-popover chrome, arrow, and trigger-active highlight now
+	// ship as framework defaults in core-ui/widget/server.go's
+	// widgetCSS. Apps that want a different look override those rules
+	// here instead of redefining them.
+
+	// Spinner demo — opt-in container that simulates
+	// prefers-reduced-motion locally so users can see the
+	// motion-reduced variant without changing their OS setting.
+	// We slow the keyframe animation by overriding the duration via
+	// a CSS custom property the spinner stylesheet reads.
+	ss.Rule(".demo-spinner-reduced [data-fui-comp=\"ui-spinner\"] .ui-spinner__ring").
+		Set("animation-duration", "3s").End()
+	ss.Rule(".demo-spinner-reduced [data-fui-comp=\"ui-spinner\"] .ui-spinner__dot").
+		Set("animation-duration", "3s").End()
+	ss.Rule(".demo-spinner-reduced").
+		Set("padding", "{spacing.md}", "background", "{colors.surface-soft}",
+			"border", "1px dashed {colors.border}", "border-radius", "{radii.md}").End()
+
+	// FileUpload demo — server-response island styling.
+	ss.Rule(".demo-upload-result").
+		Set("margin-top", "{spacing.md}", "padding", "{spacing.lg}",
+			"background", "{colors.surface}", "border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}").End()
+	ss.Rule(".demo-upload-result__empty").
+		Set("margin", "0", "color", "{colors.text-muted}", "font-size", "0.9rem").End()
+	ss.Rule(".demo-upload-result__error").
+		Set("margin", "0", "color", "{colors.danger}", "font-weight", "600").End()
+	ss.Rule(".demo-upload-result__title").
+		Set("margin", "0 0 {spacing.sm} 0", "color", "{colors.text}",
+			"font-weight", "600").End()
+	ss.Rule(".demo-upload-result__list").
+		Set("margin", "0", "padding-inline-start", "{spacing.lg}",
+			"color", "{colors.text}", "font-size", "0.9rem").End()
+	ss.Rule(".fileupload-hint").
+		Set("color", "{colors.text-muted}", "font-size", "0.85rem").End()
 	ss.Rule(".demo-stack--toast").
 		Set("display", "grid", "gap", "0.75rem", "max-inline-size", "28rem").End()
 	ss.Rule(".demo-row-flex").

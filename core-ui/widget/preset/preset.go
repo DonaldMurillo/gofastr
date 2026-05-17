@@ -119,3 +119,46 @@ func Banner(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.Top)
 }
+
+// Popover is a click-triggered floating surface with no backdrop dim.
+// Hidden by default — opened with data-fui-open="<name>" — and
+// dismisses on Escape or click-outside.
+//
+// Two placement modes share the same widget definition; the choice
+// is per-trigger:
+//
+//  1. Corner-anchored (default). Without extra attributes the popover
+//     renders at the widget's declared Position (TopRight by default;
+//     override via .Mount(widget.BottomLeft) etc). Predictable global
+//     placement — good for a toolbar "Share" / "Help" surface.
+//
+//  2. Trigger-anchored. Add data-fui-popover-anchor to the trigger
+//     button (with an optional preferred side — "top", "bottom",
+//     "left", "right", or "auto"). The runtime measures both rects
+//     after open and positions the popover next to the trigger; when
+//     the preferred side would overflow the viewport it auto-flips
+//     to the opposite. Use for inline per-row "more details"
+//     expanders or any UI where the popover should feel attached to
+//     its trigger.
+//
+// Distinct from Modal in two ways:
+//
+//   - No backdrop. The popover floats above page content without
+//     dimming the rest of the UI, so the user keeps spatial context.
+//   - No focus trap. Tab moves out of the popover naturally. Use
+//     preset.Modal for richer surfaces that demand the user finish a
+//     flow before continuing.
+//
+// Typical use: a help panel, a per-row "more details" expand, a
+// utility palette opened by a toolbar button.
+func Popover(name string) *widget.Builder {
+	b := widget.New(name).
+		Mount(widget.TopRight).
+		Hidden()
+	d := b.Definition()
+	// Same dismissal affordances as Drawer / Modal — no backdrop dim,
+	// but ESC and outside-click still close the popover.
+	d.CloseOnEscape = true
+	d.CloseOnClickOutside = true
+	return b
+}

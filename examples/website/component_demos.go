@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	stdhtml "html"
 	"net/http"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -154,6 +156,81 @@ func registerComponentDemos(fwApp *framework.App) {
 		},
 	}
 	ui.MountSidebar(routerMounter{r}, sidebarCfg, "/components/sidebar")
+
+	// --- FileUpload echo demo ---------------------------------------
+	// POST handler reads the multipart form, returns an HTML fragment
+	// listing the received files. The fragment lands in the
+	// data-fui-signal="fileupload-echo" island on /components/fileupload.
+	r.Post("/components/fileupload/echo", http.HandlerFunc(fileUploadEchoHandler))
+
+	// --- Popover demo -------------------------------------------------
+	pop := preset.Popover("components-popover").
+		Pages("/components/popover").
+		LabelledBy("components-popover-title").
+		// `from` signal carries the trigger's identifier so the body
+		// can show "Opened from: X". Triggers seed it via
+		// data-fui-deeplink="from=<key>".
+		Signal("from", widget.SignalFunc(func() (any, error) { return "(default trigger)", nil })).
+		Slot("body", popoverDemoBody{}).
+		Build()
+	pop.DeepLinkParams = append(pop.DeepLinkParams, "from")
+	widget.Mount(r, &pop)
+}
+
+// fileUploadEchoHandler reads the multipart form, returns an HTML
+// fragment listing the received files. The fragment is HTML-mode
+// signal content for the data-fui-signal="fileupload-echo" island.
+// Cap at 10MB total so the demo can't OOM the dev server.
+func fileUploadEchoHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<p class="demo-upload-result__error">Upload failed: ` + stdhtml.EscapeString(err.Error()) + `</p>`))
+		return
+	}
+	files := r.MultipartForm.File["files"]
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if len(files) == 0 {
+		_, _ = w.Write([]byte(`<p class="demo-upload-result__empty">No files in the request. Pick or drop something, then click Upload.</p>`))
+		return
+	}
+	// Build a tiny rows list. No persistence — the demo server
+	// discards the payload after echoing its metadata.
+	body := `<p class="demo-upload-result__title">Received ` + strconv.Itoa(len(files)) + ` file(s):</p><ul class="demo-upload-result__list">`
+	for _, fh := range files {
+		body += `<li><strong>` + stdhtml.EscapeString(fh.Filename) + `</strong> — ` + uploadFormatBytes(fh.Size) + ` (` + stdhtml.EscapeString(fh.Header.Get("Content-Type")) + `)</li>`
+	}
+	body += `</ul>`
+	_, _ = w.Write([]byte(body))
+}
+
+func uploadFormatBytes(n int64) string {
+	if n < 1024 {
+		return strconv.FormatInt(n, 10) + " B"
+	}
+	if n < 1024*1024 {
+		return strconv.FormatInt(n/1024, 10) + " KB"
+	}
+	return strconv.FormatInt(n/(1024*1024), 10) + " MB"
+}
+
+type popoverDemoBody struct{}
+
+func (popoverDemoBody) Render() render.HTML {
+	closeAttr := html.Attrs{"data-fui-action": "close"}
+	return html.Div(html.DivConfig{Class: "demo-modal-body popover-demo-body"},
+		html.Heading(html.HeadingConfig{Level: 2, ID: "components-popover-title"},
+			render.Text("Share this page")),
+		html.Paragraph(html.TextConfig{Class: "popover-demo-body__from"},
+			render.Text("Opened from: "),
+			html.Strong(html.TextConfig{Attrs: html.Attrs{"data-fui-signal": "from"}}),
+		),
+		html.Paragraph(html.TextConfig{},
+			render.Text("Anchored, dismiss-on-outside, no backdrop dim. Tab moves out naturally — there's no focus trap.")),
+		html.Div(html.DivConfig{Class: "demo-modal-actions"},
+			ui.Button(ui.ButtonConfig{Label: "Copy link", Variant: ui.ButtonSecondary, Attrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Done", Variant: ui.ButtonPrimary, Attrs: closeAttr}),
+		),
+	)
 }
 
 // routerMounter adapts framework's *router.Router to the

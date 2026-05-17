@@ -113,6 +113,9 @@ server side and the runtime does the work.
 | `data-fui-toast-ttl-ms="<n>"` | On a toast item: auto-dismiss after `n` milliseconds. Hovering or focusing the item pauses the timer; leaving resumes from where it stopped. Omit (or 0) for persistent toasts that require explicit dismissal. |
 | `data-fui-toast-dismiss` | Click target inside a toast item that triggers dismiss. Pairs with the runtime's CSS-driven fade-out animation. |
 | `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown. The runtime focuses the first `[role=menuitem]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the panel; Tab closes the menu and lets focus escape naturally. |
+| `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` whenever the current URL starts with the link's href (only when href ends in `/` — `/components/` lights up on `/components/accordion`). Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-fui-fileupload` | Marks the drag-drop zone surrounding a `framework/ui.FileUpload` `<input type="file">`. The runtime wires dragover/dragleave/drop handlers that forward dropped File objects into the input's `files` property and dispatch a `change` event so form RPC pipelines fire uniformly whether the user clicked-to-pick or dragged-to-drop. |
+| `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side — `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` until dismissed. Distinct from `preset.Modal`'s deep-link affordances — popovers are click-driven and don't deep-link. |
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
 
@@ -541,9 +544,19 @@ your need:
 | Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmModal` *(planned)* | Or skip the modal entirely and put `data-fui-confirm="…"` on the button. |
 | Edit/show entity detail | `preset.Modal` with `DeepLink("modal", "<name>").DeepLinkParam("id")` | URL stays consistent across refresh/share/back. Buttons opening it carry `data-fui-deeplink="id=<row-id>"`. |
 | Secondary nav / filters | `preset.Drawer` | Edge-anchored, backdrop'd. Same deep-link wiring as modals. |
+| Click-triggered help / share / inline expander | `preset.Popover` | Anchored floating surface, no backdrop dim, no focus trap. Escape and click-outside dismiss. |
 | Action menu on a row | `framework/ui.Menu` | Built on `<details data-fui-disclosure>` so Esc / SPA-nav close come free. Keyboard nav handled by the runtime. |
 | Background events ("Saved", "Build failed") | `preset.ToastStack` + `framework/ui.ToastBus` | Server pushes via SSE; the runtime stacks + auto-dismisses with hover-pause. No URL state. |
 | Primary navigation | `framework/ui.Sidebar` | Inline column ≥ md, hamburger + `preset.Drawer` < md, same content tree, active-route highlighting from the current URL. |
+| Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six small spatial primitives sharing one stylesheet. Replace hand-rolled `display:flex` divs. |
+| Labelled content surface | `framework/ui.Card` | Header / body / footer regions, elevated / outlined / flat variants, optional interactive (whole surface is an `<a>`) form. |
+| Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
+| Form toggles (boolean / single-select / setting) | `framework/ui.Checkbox` / `Radio` / `Switch` | Labelled native inputs, `FieldErrors`-aware, focus ring + touch target token-driven. |
+| Hover/focus hint on a control | `framework/ui.Tooltip` | CSS-only reveal, `aria-describedby` auto-wired. No JavaScript. |
+| Pill — filter chip / applied filter / multi-select selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
+| Inline loading indicator | `framework/ui.Spinner` | `role="status"` + `aria-busy`, ring / dots variants. Pairs with `aria-busy` on the containing form during RPC. |
+| Section break | `framework/ui.Divider` | Native `<hr>` for plain horizontal dividers; `role="separator"` for vertical or labelled (e.g. "OR" between auth options). |
+| Drag-drop file picker | `framework/ui.FileUpload` | Native `<input type="file">` is the source of truth; `data-fui-fileupload` adds drag-zone enhancement on top. |
 
 ### Deep-linking modals + drawers
 

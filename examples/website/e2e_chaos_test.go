@@ -203,7 +203,8 @@ func TestE2E_Chaos_MobileHamburgerNav(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`(() => {
             const toggle = document.querySelector('.site-header summary.site-nav__toggle');
-            const nav = document.querySelector('.site-header nav');
+            // Mobile flow uses the disclosure-wrapped nav (inside <details class="site-nav">).
+            const nav = document.querySelector('.site-header .site-nav nav');
             if (!toggle || !nav) return {missing: true};
             const toggleVisible = toggle.getBoundingClientRect().height > 0;
             const navHiddenInitially = nav.getBoundingClientRect().height === 0;
@@ -228,7 +229,7 @@ func TestE2E_Chaos_MobileHamburgerNav(t *testing.T) {
 		chromedp.Click(".site-header summary.site-nav__toggle", chromedp.ByQuery),
 		pageReady(),
 		chromedp.Evaluate(`(() => {
-            const nav = document.querySelector('.site-header nav');
+            const nav = document.querySelector('.site-header .site-nav nav');
             return {height: nav.getBoundingClientRect().height};
         })()`, &opened),
 	)
@@ -248,7 +249,8 @@ func TestE2E_Chaos_MobileHamburgerNav(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`(() => {
             const toggle = document.querySelector('.site-header summary.site-nav__toggle');
-            const nav = document.querySelector('.site-header nav');
+            // Desktop nav is the inline copy outside the disclosure.
+            const nav = document.querySelector('.site-header .site-nav-desktop');
             return {
                 toggleHidden: !toggle || toggle.getBoundingClientRect().height === 0,
                 navVisible: nav.getBoundingClientRect().height > 0,
@@ -495,7 +497,11 @@ func TestE2E_Chaos_PaginationRapidClickWins(t *testing.T) {
             // Click pages in order: 1,2,3,4,5,2,3,4,5,1 — last click is page 1.
             for (const i of [0,1,2,3,4,1,2,3,4,0]) btns[i].click();
             return new Promise(resolve => setTimeout(() => {
-                const cur = document.querySelector('[aria-current="page"]');
+                // Scope to the pagination island — the header nav can
+                // also carry aria-current="page" on the active "/components/"
+                // entry, and querySelector would return that one first.
+                const cur = document.querySelector('main [aria-current="page"]')
+                          || document.querySelector('.ui-pagination [aria-current="page"]');
                 resolve({
                     finalCurrent: cur?.textContent?.trim() ?? '',
                     found: btns.length,

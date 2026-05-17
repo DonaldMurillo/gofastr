@@ -366,6 +366,90 @@ func widgetCSS(def Definition) string {
 	// Slots are pure containers — no styling.
 	ss.Rule(".fui-slot").Set("display", "block").End()
 
+	// ─── Anchored popover chrome ────────────────────────────────────
+	// When the runtime positions a popover next to its trigger
+	// (data-fui-popover-anchor on the trigger), it sets
+	// data-fui-popover-side="top|bottom|left|right" on the widget
+	// root after picking the final placement (post auto-flip). The
+	// rules below paint the surface, constrain its size so it can
+	// actually fit beside small triggers on small viewports, and
+	// draw a directional arrow back to the trigger via a ::before
+	// pseudo-element. All values come from the canonical theme so a
+	// single token tweak retunes every popover surface.
+	// Popover root keeps overflow visible so the arrow ::before (sitting
+	// outside the root's box at -7px) renders. The scroll cap moves
+	// to the inner .fui-slot below — a tall slot scrolls inside the
+	// popover, the arrow stays visible.
+	ss.Rule("[data-fui-widget][data-fui-popover-side]").
+		Set("border-radius", "{radii.md}",
+			"box-shadow", "{shadows.lg}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"max-inline-size", "min(360px, calc(100vw - 32px))",
+			"max-block-size", "calc(100vh - 32px)",
+			"display", "flex",
+			"flex-direction", "column").
+		End()
+	// Inner slot scrolls when content exceeds the popover's
+	// max-block-size. flex: 1 1 auto + min-block-size: 0 lets the
+	// slot consume whatever the parent allows; overflow-y: auto then
+	// engages on tall content. Keeps the arrow on the root visible.
+	ss.Rule(`[data-fui-widget][data-fui-popover-side] > .fui-slot`).
+		Set("flex", "1 1 auto",
+			"min-block-size", "0",
+			"max-block-size", "100%",
+			"overflow-y", "auto").
+		End()
+	ss.Rule(`[data-fui-widget][data-fui-popover-side]::before`).
+		Set("content", "''",
+			"position", "absolute",
+			"inline-size", "12px",
+			"block-size", "12px",
+			"background", "{colors.surface}",
+			"border-inline-start", "1px solid {colors.border}",
+			"border-block-start", "1px solid {colors.border}").
+		End()
+	// side="top" → popover sits ABOVE trigger → arrow at its
+	// bottom edge, pointing DOWN.
+	ss.Rule(`[data-fui-widget][data-fui-popover-side="top"]::before`).
+		Set("inset-block-end", "-7px",
+			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
+			"transform", "translateX(-50%) rotate(225deg)").
+		End()
+	// side="bottom" → popover sits BELOW trigger → arrow at its
+	// top edge, pointing UP.
+	ss.Rule(`[data-fui-widget][data-fui-popover-side="bottom"]::before`).
+		Set("inset-block-start", "-7px",
+			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
+			"transform", "translateX(-50%) rotate(45deg)").
+		End()
+	// side="left" → popover sits LEFT of trigger → arrow at its
+	// right edge, pointing RIGHT.
+	ss.Rule(`[data-fui-widget][data-fui-popover-side="left"]::before`).
+		Set("inset-inline-end", "-7px",
+			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
+			"transform", "translateY(-50%) rotate(135deg)").
+		End()
+	// side="right" → popover sits RIGHT of trigger → arrow at its
+	// left edge, pointing LEFT.
+	ss.Rule(`[data-fui-widget][data-fui-popover-side="right"]::before`).
+		Set("inset-inline-start", "-7px",
+			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
+			"transform", "translateY(-50%) rotate(-45deg)").
+		End()
+
+	// Trigger highlight: the runtime adds .is-popover-trigger-active
+	// to the originating button while its popover is open. Default
+	// styling: invert background to the primary color so the user
+	// can clearly tell which trigger fired the surface. Apps that
+	// want a different highlight can override the rule at site level.
+	ss.Rule(".is-popover-trigger-active").
+		Set("background", "{colors.primary}",
+			"color", "{colors.primary-fg}",
+			"border-color", "{colors.primary}",
+			"box-shadow", "0 0 0 3px color-mix(in oklab, {colors.primary} 25%, transparent)").
+		End()
+
 	// Keyframes + reduced-motion suppression. Emitted as raw CSS
 	// because the StyleSheet builder doesn't yet model @keyframes /
 	// @media — small targeted escape hatch.
