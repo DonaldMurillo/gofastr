@@ -2,12 +2,20 @@ package widget
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
+
+// RouteMatcher decides whether a widget is available on a given
+// request path. A Definition with one or more matchers is filtered
+// out of catalogs + SSR-inlining for paths that no matcher accepts.
+// A Definition with NO matchers is available on every path (the
+// historical default).
+type RouteMatcher func(path string) bool
 
 // Position is where the widget's root anchors itself when mounted.
 // Modal/Center implies a backdrop and focus trap; Corner positions
@@ -175,6 +183,16 @@ type Definition struct {
 	// seeds signal "user_id"="42" before the slot renders.
 	DeepLinkParams []string
 
+	// Routes scopes the widget to specific request paths. When non-
+	// empty, the SSR layer and the runtime catalog only expose this
+	// widget on pages whose path is accepted by at least one matcher.
+	// Empty (the default) means "available on every page" — the
+	// behaviour before per-page scoping shipped.
+	//
+	// Constructed via the Builder methods .Pages, .PagesPrefix,
+	// .PagesMatch (or manually for advanced cases).
+	Routes []RouteMatcher
+
 	// Asset path overrides. Default routes are derived from Name.
 	BootstrapPath string // default: /core-ui/widget/<name>/bootstrap.js
 	StylePath     string // default: /core-ui/widget/<name>/style.css
@@ -221,6 +239,36 @@ func allWidgets() []*Definition {
 // chrome HTML on the page response. The returned slice is a copy of
 // the live registry; callers may iterate freely.
 func AllForSSR() []*Definition { return allWidgets() }
+
+// IsAvailableOn returns true when the widget is registered for the
+// given request path. Widgets with no Routes (the default) are
+// available everywhere; widgets with one or more matchers are
+// available on paths accepted by at least one matcher.
+func (d *Definition) IsAvailableOn(path string) bool {
+	if len(d.Routes) == 0 {
+		return true
+	}
+	for _, m := range d.Routes {
+		if m != nil && m(path) {
+			return true
+		}
+	}
+	return false
+}
+
+// AvailableOn returns the subset of registered widgets visible on
+// the given request path. The SSR host + per-request catalog handler
+// use this to keep page-scoped widgets out of unrelated pages.
+func AvailableOn(path string) []*Definition {
+	all := allWidgets()
+	out := make([]*Definition, 0, len(all))
+	for _, d := range all {
+		if d.IsAvailableOn(path) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
 
 // RenderChrome returns the rendered chrome HTML for a single widget,
 // using its registered Skeleton or the framework's defaultSkeleton.
@@ -360,6 +408,38 @@ func (b *Builder) DescribedBy(id string) *Builder { b.def.DescribedBy = id; retu
 // Hidden marks the widget as registered-but-not-auto-mounted. Open
 // it from a button with data-fui-open="<name>".
 func (b *Builder) Hidden() *Builder { b.def.Hidden = true; return b }
+
+// Pages scopes the widget to exact path matches. The widget is
+// hidden from the catalog + SSR-inlining on every page whose path
+// isn't in the list. Stack with PagesPrefix / PagesMatch to combine
+// rules.
+func (b *Builder) Pages(paths ...string) *Builder {
+	for _, p := range paths {
+		target := p
+		b.def.Routes = append(b.def.Routes, func(path string) bool { return path == target })
+	}
+	return b
+}
+
+// PagesPrefix scopes the widget to paths that start with any of the
+// given prefixes. Useful for section-wide modals (e.g. every
+// /customers/* page).
+func (b *Builder) PagesPrefix(prefixes ...string) *Builder {
+	for _, p := range prefixes {
+		target := p
+		b.def.Routes = append(b.def.Routes, func(path string) bool {
+			return strings.HasPrefix(path, target)
+		})
+	}
+	return b
+}
+
+// PagesMatch scopes the widget to paths accepted by the supplied
+// matcher. Use for non-trivial rules (e.g. regex, glob, denylist).
+func (b *Builder) PagesMatch(fn func(path string) bool) *Builder {
+	b.def.Routes = append(b.def.Routes, fn)
+	return b
+}
 
 // DeepLink wires this widget to a query-string pair. When the URL
 // includes `?key=value`, the SSR layer opens the widget at first paint

@@ -78,10 +78,22 @@ func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w
 // runtime needs to insert the widget. Same pattern as styles +
 // state: minimal index, fetch on demand.
 //
+// The runtime appends `?page=<pathname>` when fetching the catalog
+// so widgets scoped via .Pages / .PagesPrefix / .PagesMatch are
+// filtered out of pages they don't belong to. A request with no
+// page parameter returns the unfiltered registry — backwards-compat
+// for static catalog inspection.
+//
 // statePath is only emitted when the widget declared signals — the
 // runtime skips the /state hydrate fetch when this field is absent.
-func serveWidgetList(w http.ResponseWriter, _ *http.Request) {
-	defs := allWidgets()
+func serveWidgetList(w http.ResponseWriter, r *http.Request) {
+	page := r.URL.Query().Get("page")
+	var defs []*Definition
+	if page != "" {
+		defs = AvailableOn(page)
+	} else {
+		defs = allWidgets()
+	}
 	out := make([]map[string]any, 0, len(defs))
 	for _, d := range defs {
 		cfg := map[string]any{

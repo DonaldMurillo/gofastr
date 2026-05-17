@@ -220,17 +220,23 @@ func (s sidebarDrawerSlot) Render() render.HTML {
 // Generic signature: `r` is anything widget.Mount accepts (the
 // gofastr router). We use a tiny adapter type so this package doesn't
 // need to import the router directly.
-func MountSidebar(r WidgetMounter, cfg SidebarConfig) widget.Definition {
+func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.Definition {
 	if cfg.Variant == "" {
 		cfg.Variant = SidebarPersistent
 	}
 	if cfg.DrawerName == "" {
 		cfg.DrawerName = "ui-sidebar-drawer"
 	}
-	def := preset.Drawer(cfg.DrawerName).
+	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
-		Slot("body", sidebarDrawerSlot{cfg: cfg}).
-		Build()
+		Slot("body", sidebarDrawerSlot{cfg: cfg})
+	// Optional page scoping — apps that only use the sidebar on a
+	// subset of routes can declare them explicitly; omitting `pages`
+	// keeps the drawer globally available.
+	if len(pages) > 0 {
+		b = b.Pages(pages...)
+	}
+	def := b.Build()
 	r.MountWidget(&def)
 	return def
 }

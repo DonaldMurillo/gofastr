@@ -130,6 +130,55 @@ func TestArchSSR_BareURLHasNoHiddenWidgets(t *testing.T) {
 	}
 }
 
+// CONTRACT: Per-page scoping flows through the SSR-inline path AND
+// the catalog endpoint. Page-scoped widgets (.Pages / .PagesPrefix)
+// don't appear in unrelated pages' HTML or catalog. site-toasts
+// stays global; demo widgets are scoped to their specific pages.
+func TestArchSSR_ScopedWidgetsAbsentFromOtherPages(t *testing.T) {
+	base := archStartServer(t)
+
+	// components-confirm is scoped to /components/modal.
+	// On /components/drawer it should be absent from BOTH the page
+	// HTML and the catalog endpoint.
+	drawerPage := archFetch(t, base, "/components/drawer")
+	if strings.Contains(drawerPage, `data-fui-widget="components-confirm"`) {
+		t.Error("scoped widget components-confirm leaked onto /components/drawer SSR")
+	}
+	catalog := archFetch(t, base, "/__gofastr/widgets?page=/components/drawer")
+	if strings.Contains(catalog, `"name":"components-confirm"`) {
+		t.Error("scoped widget components-confirm leaked into /components/drawer catalog")
+	}
+
+	// components-drawer is scoped to /components/drawer. Absent on
+	// /components/modal.
+	modalPage := archFetch(t, base, "/components/modal")
+	if strings.Contains(modalPage, `data-fui-widget="components-drawer"`) {
+		t.Error("scoped widget components-drawer leaked onto /components/modal SSR")
+	}
+
+	// site-toasts is global — appears on every page.
+	for _, page := range []string{"/", "/about", "/components/modal", "/components/drawer"} {
+		body := archFetch(t, base, page)
+		if !strings.Contains(body, `data-fui-widget="site-toasts"`) {
+			t.Errorf("global widget site-toasts missing from %s", page)
+		}
+	}
+
+	// 6 positioned demo stacks scoped to /components/toast — absent
+	// elsewhere.
+	for _, page := range []string{"/", "/components/modal"} {
+		body := archFetch(t, base, page)
+		for _, scoped := range []string{
+			"toasts-top-left", "toasts-top-center", "toasts-top-right",
+			"toasts-bottom-left", "toasts-bottom-center", "toasts-bottom-right",
+		} {
+			if strings.Contains(body, `data-fui-widget="`+scoped+`"`) {
+				t.Errorf("scoped toast stack %s leaked onto %s", scoped, page)
+			}
+		}
+	}
+}
+
 // CONTRACT: Widgets are inlined just before </body>, not anywhere
 // else. Apps' layout/CSS expects the widget chrome to live at body
 // level (position: fixed surfaces); putting them mid-page would

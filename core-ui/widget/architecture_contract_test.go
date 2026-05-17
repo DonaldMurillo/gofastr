@@ -266,6 +266,142 @@ func TestArchContract_AllForSSRReturnsRegisteredWidgets(t *testing.T) {
 	}
 }
 
+// CONTRACT 8: Per-page scoping — a widget with no Routes declared
+// is available on every path; widgets with Routes are visible only
+// on paths their matchers accept. Apps relying on .Pages() /
+// .PagesPrefix() / .PagesMatch() expect both the catalog endpoint
+// and the SSR-inline pass to honour the filter.
+func TestArchContract_GlobalWidgetAvailableEverywhere(t *testing.T) {
+	def := widget.New("arch-global-scope").
+		Hidden().
+		Slot("body", chromeStub{html: `<p>x</p>`}).
+		Build()
+	r := router.New()
+	widget.Mount(r, &def)
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	for _, page := range []string{"/", "/anywhere", "/deep/nested"} {
+		resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=" + page)
+		body := readBody(t, resp)
+		if !strings.Contains(body, `"name":"arch-global-scope"`) {
+			t.Errorf("contract violation: global widget (no Routes) must appear on every page; missing on %s", page)
+		}
+	}
+}
+
+func TestArchContract_ExactPageScoping(t *testing.T) {
+	def := widget.New("arch-exact-scope").
+		Hidden().
+		Pages("/foo").
+		Slot("body", chromeStub{html: `<p>x</p>`}).
+		Build()
+	r := router.New()
+	widget.Mount(r, &def)
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=/foo")
+	if !strings.Contains(readBody(t, resp), `"name":"arch-exact-scope"`) {
+		t.Error("contract violation: widget with .Pages(\"/foo\") must appear on /foo")
+	}
+	resp, _ = http.Get(srv.URL + "/__gofastr/widgets?page=/bar")
+	if strings.Contains(readBody(t, resp), `"name":"arch-exact-scope"`) {
+		t.Error("contract violation: widget with .Pages(\"/foo\") must NOT appear on /bar")
+	}
+}
+
+func TestArchContract_PrefixPageScoping(t *testing.T) {
+	def := widget.New("arch-prefix-scope").
+		Hidden().
+		PagesPrefix("/components/").
+		Slot("body", chromeStub{html: `<p>x</p>`}).
+		Build()
+	r := router.New()
+	widget.Mount(r, &def)
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	for _, page := range []string{"/components/modal", "/components/drawer", "/components/anything"} {
+		resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=" + page)
+		if !strings.Contains(readBody(t, resp), `"name":"arch-prefix-scope"`) {
+			t.Errorf("contract violation: PagesPrefix(\"/components/\") must match %s", page)
+		}
+	}
+	for _, page := range []string{"/about", "/docs/", "/components"} {
+		// "/components" (no trailing slash) shouldn't prefix-match
+		// "/components/".
+		resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=" + page)
+		if strings.Contains(readBody(t, resp), `"name":"arch-prefix-scope"`) {
+			t.Errorf("contract violation: PagesPrefix(\"/components/\") must NOT match %s", page)
+		}
+	}
+}
+
+func TestArchContract_MatchFnPageScoping(t *testing.T) {
+	def := widget.New("arch-match-scope").
+		Hidden().
+		PagesMatch(func(p string) bool { return strings.HasSuffix(p, ".admin") }).
+		Slot("body", chromeStub{html: `<p>x</p>`}).
+		Build()
+	r := router.New()
+	widget.Mount(r, &def)
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=/users.admin")
+	if !strings.Contains(readBody(t, resp), `"name":"arch-match-scope"`) {
+		t.Error("PagesMatch must accept /users.admin")
+	}
+	resp, _ = http.Get(srv.URL + "/__gofastr/widgets?page=/users")
+	if strings.Contains(readBody(t, resp), `"name":"arch-match-scope"`) {
+		t.Error("PagesMatch must reject /users")
+	}
+}
+
+func TestArchContract_AvailableOnHelper(t *testing.T) {
+	scoped := widget.New("arch-helper-scoped").
+		Pages("/yes").
+		Slot("body", chromeStub{html: `<p>x</p>`}).
+		Build()
+	global := widget.New("arch-helper-global").
+		Slot("body", chromeStub{html: `<p>x</p>`}).
+		Build()
+	r := router.New()
+	widget.Mount(r, &scoped)
+	widget.Mount(r, &global)
+
+	yes := widget.AvailableOn("/yes")
+	no := widget.AvailableOn("/no")
+
+	gotScopedOnYes := contains(yes, "arch-helper-scoped")
+	gotScopedOnNo := contains(no, "arch-helper-scoped")
+	gotGlobalOnYes := contains(yes, "arch-helper-global")
+	gotGlobalOnNo := contains(no, "arch-helper-global")
+
+	if !gotScopedOnYes {
+		t.Error("AvailableOn(/yes) missing scoped widget that matches")
+	}
+	if gotScopedOnNo {
+		t.Error("AvailableOn(/no) leaked scoped widget that should be filtered out")
+	}
+	if !gotGlobalOnYes || !gotGlobalOnNo {
+		t.Error("global widget must appear on every path via AvailableOn")
+	}
+}
+
+func contains(defs []*widget.Definition, name string) bool {
+	for _, d := range defs {
+		if d.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // CONTRACT 7: RenderChrome produces identical HTML to what the
 // chrome endpoint serves — single source of truth, so SSR-inlined
 // and lazy-fetched widgets are byte-for-byte the same.

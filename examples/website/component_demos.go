@@ -20,8 +20,11 @@ func registerComponentDemos(fwApp *framework.App) {
 	r := fwApp.Router
 
 	// --- Modal demos --------------------------------------------------
+	// Page-scoped: only available on /components/modal so other
+	// pages don't ship references to demo-only widgets.
 	confirm := preset.Modal("components-confirm").
 		Hidden().
+		Pages("/components/modal").
 		LabelledBy("components-confirm-title").
 		DescribedBy("components-confirm-desc").
 		Slot("body", htmlSlot{html: `<div class="demo-modal-body">
@@ -36,6 +39,7 @@ func registerComponentDemos(fwApp *framework.App) {
 
 	userEdit := preset.Modal("components-user-edit").
 		Hidden().
+		Pages("/components/modal").
 		DeepLink("modal", "user-edit").
 		DeepLinkParam("user_id").
 		LabelledBy("components-user-edit-title").
@@ -54,8 +58,10 @@ func registerComponentDemos(fwApp *framework.App) {
 	widget.Mount(r, &userEdit)
 
 	// --- Drawer demos -------------------------------------------------
+	// Page-scoped: only relevant on /components/drawer.
 	plainDrawer := preset.Drawer("components-drawer").
 		Hidden().
+		Pages("/components/drawer").
 		LabelledBy("components-drawer-title").
 		Slot("body", htmlSlot{html: `<div class="demo-drawer-body">
 <h2 id="components-drawer-title">Quick nav</h2>
@@ -71,6 +77,7 @@ func registerComponentDemos(fwApp *framework.App) {
 
 	filters := preset.Drawer("components-filter-drawer").
 		Hidden().
+		Pages("/components/drawer").
 		DeepLink("drawer", "filters").
 		DeepLinkParam("status").
 		DeepLinkParam("tag").
@@ -95,11 +102,18 @@ func registerComponentDemos(fwApp *framework.App) {
 	// register one (or zero — __gofastr.toast() will auto-create a
 	// container when none exists), but the demo registers all six so
 	// users can click a corner and see toasts fire there.
+	// site-toasts is the catch-all default stack — global so any
+	// server-header push reaches a mounted container regardless of
+	// which page the user is on.
+	siteToasts := preset.ToastStack("site-toasts").Build()
+	widget.Mount(r, &siteToasts)
+
+	// The 6 positioned demo stacks are only relevant on the toast
+	// demo page; scope them so they don't bloat every other page.
 	for _, p := range []struct {
 		name string
 		pos  widget.Position
 	}{
-		{"site-toasts", widget.TopRight}, // default for the demo's server-header path
 		{"toasts-top-left", widget.TopLeft},
 		{"toasts-top-center", widget.TopCenter},
 		{"toasts-top-right", widget.TopRight},
@@ -107,7 +121,9 @@ func registerComponentDemos(fwApp *framework.App) {
 		{"toasts-bottom-center", widget.BottomCenter},
 		{"toasts-bottom-right", widget.BottomRight},
 	} {
-		stack := preset.ToastStack(p.name).Mount(p.pos).Build()
+		stack := preset.ToastStack(p.name).Mount(p.pos).
+			Pages("/components/toast").
+			Build()
 		widget.Mount(r, &stack)
 	}
 
@@ -166,7 +182,7 @@ func registerComponentDemos(fwApp *framework.App) {
 			}},
 		},
 	}
-	ui.MountSidebar(routerMounter{r}, sidebarCfg)
+	ui.MountSidebar(routerMounter{r}, sidebarCfg, "/components/sidebar")
 }
 
 // routerMounter adapts framework's *router.Router to the

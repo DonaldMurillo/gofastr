@@ -327,7 +327,12 @@
   // the server registers in a process-global map; this fetch picks the
   // list up and mounts every widget. 404 means no widgets registered
   // — silently skip (the runtime works for plain pages too).
-  fetch('/__gofastr/widgets', { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
+  // Per-page scoped widget discovery — apps that constrain widgets
+  // to specific routes via .Pages / .PagesPrefix / .PagesMatch get
+  // a filtered catalog. Widgets with no Routes declared appear on
+  // every page (the backwards-compatible default).
+  fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
+        { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
     .then((list) => {
       if (!Array.isArray(list)) return;

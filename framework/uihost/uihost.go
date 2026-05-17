@@ -663,7 +663,10 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 func injectWidgetSSR(page string, u *url.URL) string {
 	var b strings.Builder
 	q := u.Query()
-	for _, d := range widget.AllForSSR() {
+	// Per-page filter — widgets scoped via .Pages / .PagesPrefix /
+	// .PagesMatch only appear on paths they declared. Empty Routes
+	// (the default) means the widget is global.
+	for _, d := range widget.AvailableOn(u.Path) {
 		// Decide: should this widget be open on this page load?
 		var open bool
 		switch {
