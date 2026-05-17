@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -21,19 +22,14 @@ func registerComponentDemos(fwApp *framework.App) {
 
 	// --- Modal demos --------------------------------------------------
 	// Page-scoped: only available on /components/modal so other
-	// pages don't ship references to demo-only widgets.
+	// pages don't ship references to demo-only widgets. Slot bodies
+	// are Components composed from html.* / ui.* — no raw HTML.
 	confirm := preset.Modal("components-confirm").
 		Hidden().
 		Pages("/components/modal").
 		LabelledBy("components-confirm-title").
 		DescribedBy("components-confirm-desc").
-		Slot("body", htmlSlot{html: `<div class="demo-modal-body">
-<h2 id="components-confirm-title">Delete this thing?</h2>
-<p id="components-confirm-desc">This will free up disk space but cannot be undone.</p>
-<div class="demo-modal-actions">
-<button class="ui-button" type="button" data-fui-action="close">Cancel</button>
-<button class="ui-button ui-button--danger" type="button" data-fui-action="close">Delete</button>
-</div></div>`}).
+		Slot("body", confirmModalBody{}).
 		Build()
 	widget.Mount(r, &confirm)
 
@@ -44,16 +40,7 @@ func registerComponentDemos(fwApp *framework.App) {
 		DeepLinkParam("user_id").
 		LabelledBy("components-user-edit-title").
 		Signal("user_id", widget.SignalFunc(func() (any, error) { return "", nil })).
-		Slot("body", htmlSlot{html: `<div class="demo-modal-body">
-<h2 id="components-user-edit-title">Edit user <span data-fui-signal="user_id"></span></h2>
-<p>Signal user_id was seeded from the URL — refresh and watch it survive.</p>
-<label class="demo-modal-field">Display name
-<input type="text" value="">
-</label>
-<div class="demo-modal-actions">
-<button class="ui-button" type="button" data-fui-action="close">Cancel</button>
-<button class="ui-button ui-button--primary" type="button" data-fui-action="close">Save</button>
-</div></div>`}).
+		Slot("body", userEditModalBody{}).
 		Build()
 	widget.Mount(r, &userEdit)
 
@@ -63,15 +50,7 @@ func registerComponentDemos(fwApp *framework.App) {
 		Hidden().
 		Pages("/components/drawer").
 		LabelledBy("components-drawer-title").
-		Slot("body", htmlSlot{html: `<div class="demo-drawer-body">
-<h2 id="components-drawer-title">Quick nav</h2>
-<nav><ul>
-<li><a href="/">Home</a></li>
-<li><a href="/components/">Components</a></li>
-<li><a href="/docs/">Docs</a></li>
-</ul></nav>
-<button class="ui-button demo-drawer-spacer" type="button" data-fui-action="close">Close</button>
-</div>`}).
+		Slot("body", quickNavDrawerBody{}).
 		Build()
 	widget.Mount(r, &plainDrawer)
 
@@ -84,15 +63,7 @@ func registerComponentDemos(fwApp *framework.App) {
 		LabelledBy("components-filter-drawer-title").
 		Signal("status", widget.SignalFunc(func() (any, error) { return "", nil })).
 		Signal("tag", widget.SignalFunc(func() (any, error) { return "", nil })).
-		Slot("body", htmlSlot{html: `<div class="demo-drawer-body">
-<h2 id="components-filter-drawer-title">Filters</h2>
-<dl>
-<dt>Status</dt><dd><strong data-fui-signal="status"></strong></dd>
-<dt>Tag</dt><dd><strong data-fui-signal="tag"></strong></dd>
-</dl>
-<p class="demo-meta">These bound signals were seeded from <code>?status=…&amp;tag=…</code> on the URL.</p>
-<button class="ui-button demo-drawer-spacer" type="button" data-fui-action="close">Close</button>
-</div>`}).
+		Slot("body", filterDrawerBody{}).
 		Build()
 	widget.Mount(r, &filters)
 
@@ -193,9 +164,108 @@ func (m routerMounter) MountWidget(def *widget.Definition) {
 	widget.Mount(m.r, def)
 }
 
-// htmlSlot wraps a literal HTML string as a Component for use as a widget Slot.
-type htmlSlot struct{ html string }
+// ─── widget slot Components ──────────────────────────────────────────
+// Each demo widget's body is a typed Component composed from
+// core-ui/html + framework/ui. No raw HTML strings — the renderer's
+// API is the only entry point so a11y attrs, theme tokens, and the
+// CSP linter all apply.
 
-func (h htmlSlot) Render() render.HTML { return render.HTML(h.html) }
+type confirmModalBody struct{}
 
-var _ component.Component = htmlSlot{}
+func (confirmModalBody) Render() render.HTML {
+	closeAttr := html.Attrs{"data-fui-action": "close"}
+	return html.Div(html.DivConfig{Class: "demo-modal-body"},
+		html.Heading(html.HeadingConfig{Level: 2, ID: "components-confirm-title"},
+			render.Text("Delete this thing?")),
+		html.Paragraph(html.TextConfig{ID: "components-confirm-desc"},
+			render.Text("This will free up disk space but cannot be undone.")),
+		html.Div(html.DivConfig{Class: "demo-modal-actions"},
+			ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonSecondary, Attrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, Attrs: closeAttr}),
+		),
+	)
+}
+
+type userEditModalBody struct{}
+
+func (userEditModalBody) Render() render.HTML {
+	closeAttr := html.Attrs{"data-fui-action": "close"}
+	return html.Div(html.DivConfig{Class: "demo-modal-body"},
+		html.Heading(html.HeadingConfig{Level: 2, ID: "components-user-edit-title"},
+			render.Text("Edit user "),
+			html.Span(html.TextConfig{Attrs: html.Attrs{"data-fui-signal": "user_id"}}),
+		),
+		html.Paragraph(html.TextConfig{},
+			render.Text("Signal user_id was seeded from the URL — refresh and watch it survive.")),
+		render.Tag("label", map[string]string{"class": "demo-modal-field"},
+			render.Text("Display name"),
+			render.Tag("input", map[string]string{"type": "text", "value": ""}),
+		),
+		html.Div(html.DivConfig{Class: "demo-modal-actions"},
+			ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonSecondary, Attrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, Attrs: closeAttr}),
+		),
+	)
+}
+
+type quickNavDrawerBody struct{}
+
+func (quickNavDrawerBody) Render() render.HTML {
+	link := func(href, label string) render.HTML {
+		return render.Tag("li", nil,
+			html.LinkHTML(html.LinkHTMLConfig{Href: href, Content: render.Text(label)}),
+		)
+	}
+	return html.Div(html.DivConfig{Class: "demo-drawer-body"},
+		html.Heading(html.HeadingConfig{Level: 2, ID: "components-drawer-title"},
+			render.Text("Quick nav")),
+		html.Nav(html.NavConfig{Label: "Quick navigation"},
+			html.UnorderedList(html.ListConfig{},
+				link("/", "Home"),
+				link("/components/", "Components"),
+				link("/docs/", "Docs"),
+			),
+		),
+		ui.Button(ui.ButtonConfig{
+			Label: "Close", Variant: ui.ButtonSecondary,
+			Class: "demo-drawer-spacer",
+			Attrs: html.Attrs{"data-fui-action": "close"},
+		}),
+	)
+}
+
+type filterDrawerBody struct{}
+
+func (filterDrawerBody) Render() render.HTML {
+	signalSpan := func(name string) render.HTML {
+		return html.Strong(html.TextConfig{Attrs: html.Attrs{"data-fui-signal": name}})
+	}
+	return html.Div(html.DivConfig{Class: "demo-drawer-body"},
+		html.Heading(html.HeadingConfig{Level: 2, ID: "components-filter-drawer-title"},
+			render.Text("Filters")),
+		render.Tag("dl", nil,
+			render.Tag("dt", nil, render.Text("Status")),
+			render.Tag("dd", nil, signalSpan("status")),
+			render.Tag("dt", nil, render.Text("Tag")),
+			render.Tag("dd", nil, signalSpan("tag")),
+		),
+		html.Paragraph(html.TextConfig{Class: "demo-meta"},
+			render.Text("These bound signals were seeded from "),
+			render.Tag("code", nil, render.Text("?status=…&tag=…")),
+			render.Text(" on the URL."),
+		),
+		ui.Button(ui.ButtonConfig{
+			Label: "Close", Variant: ui.ButtonSecondary,
+			Class: "demo-drawer-spacer",
+			Attrs: html.Attrs{"data-fui-action": "close"},
+		}),
+	)
+}
+
+// Compile-time guarantees every body satisfies the Component contract.
+var (
+	_ component.Component = confirmModalBody{}
+	_ component.Component = userEditModalBody{}
+	_ component.Component = quickNavDrawerBody{}
+	_ component.Component = filterDrawerBody{}
+)

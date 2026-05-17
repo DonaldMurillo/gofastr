@@ -965,12 +965,26 @@
         this.mountWidget(cfg, null, existing);
         return;
       }
-      // Lazy fetch path: hit cfg.chromePath, cache the response.
+      // Lazy fetch path: hit cfg.chromePath, cache only successful
+      // responses so a transient failure (server restart, offline,
+      // 5xx) doesn't poison the cache for the rest of the session.
+      const path = cfg.chromePath || ('/core-ui/widget/' + name + '/chrome');
       if (!this._chromeCache[name]) {
-        this._chromeCache[name] = fetch(cfg.chromePath || ('/core-ui/widget/' + name + '/chrome'))
-          .then((r) => (r.ok ? r.text() : ''));
+        this._chromeCache[name] = (async () => {
+          try {
+            const r = await fetch(path);
+            if (!r.ok) throw new Error('chrome fetch ' + r.status);
+            return await r.text();
+          } catch (err) {
+            // Drop the cache entry so a retry on the next openWidget
+            // call attempts a fresh fetch.
+            delete this._chromeCache[name];
+            throw err;
+          }
+        })();
       }
-      const html = await this._chromeCache[name];
+      let html = '';
+      try { html = await this._chromeCache[name]; } catch (_) {}
       if (html) this.mountWidget(cfg, html);
     },
 
