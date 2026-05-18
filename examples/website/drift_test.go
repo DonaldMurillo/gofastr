@@ -475,6 +475,57 @@ func TestDrift_EveryComponentPageHasE2ETest(t *testing.T) {
 	}
 }
 
+// TestDrift_DocsIndexListsEveryComponent enforces that every
+// /components/<slug> route registered in main.go is mentioned in
+// docs/ui-new-components.md. The doc is a one-page catalog meant
+// to point readers at the live demo + Go docs; if a new component
+// lands without an index entry, readers can't find it without
+// grepping main.go.
+var docsIndexAllowlist = map[string]bool{}
+
+func TestDrift_DocsIndexListsEveryComponent(t *testing.T) {
+	mainGo, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	rx := regexp.MustCompile(`site\.Register\("/components/([a-z0-9-]+)"`)
+	matches := rx.FindAllStringSubmatch(string(mainGo), -1)
+	slugs := map[string]bool{}
+	for _, m := range matches {
+		slugs[m[1]] = true
+	}
+	if len(slugs) == 0 {
+		t.Fatal("no /components/<slug> routes found in main.go — drift test broken")
+	}
+
+	doc, err := os.ReadFile("../../docs/ui-new-components.md")
+	if err != nil {
+		t.Fatalf("read docs/ui-new-components.md: %v", err)
+	}
+	docText := string(doc)
+
+	var missing []string
+	for slug := range slugs {
+		if docsIndexAllowlist[slug] {
+			continue
+		}
+		// Look for `**<slug>**` (the bullet anchor) — guarantees the
+		// match is a real list entry, not an incidental mention.
+		needle := "**" + slug + "**"
+		if !strings.Contains(docText, needle) {
+			missing = append(missing, slug)
+		}
+	}
+	if len(missing) > 0 {
+		sortStrings(missing)
+		t.Errorf("docs/ui-new-components.md is missing entries for: %v\n"+
+			"Each slug registered in main.go must appear as `**<slug>**` "+
+			"in the catalog section of the index doc. Add a one-line "+
+			"bullet referencing the constructor + a short description.",
+			missing)
+	}
+}
+
 func dirOf(path string) string {
 	if i := strings.LastIndex(path, "/"); i >= 0 {
 		return path[:i]

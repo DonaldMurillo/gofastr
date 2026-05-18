@@ -1,277 +1,176 @@
-# New UI components
+# UI components — index
 
-A reference for the 11 components added together — accessibility,
-keyboard contract, and RPC shape per component.
-
-All examples assume:
-
-```go
-import (
-    "github.com/DonaldMurillo/gofastr/core-ui/html"
-    "github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
-    "github.com/DonaldMurillo/gofastr/core-ui/patterns/infinitescroll"
-    "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
-    "github.com/DonaldMurillo/gofastr/core-ui/widget"
-    "github.com/DonaldMurillo/gofastr/framework/ui"
-)
-```
-
-See [`docs/proposals/ui-components-in-flight-spec.md`](proposals/ui-components-in-flight-spec.md)
-for the full implementation contract.
+This is a one-page index of every UI component the framework ships.
+The canonical reference for any given component is its **live demo
+page** at `/components/<slug>` plus the Go doc comments on the
+component's `Config` / constructor — those stay current automatically
+because each release lands the demo + the code together.
 
 ---
 
-## 1. `<kbd>` primitive — `core-ui/html.Kbd`
+## Where to look for what
 
-Semantic markup for keyboard input. Use inside docs or paired with
-`ui.ShortcutHint`.
+| You want…                            | Look at                                                          |
+| ------------------------------------ | ---------------------------------------------------------------- |
+| Live behavior (click it, drag it)    | Run the website: `./scripts/dev-watch.sh` → `/components/<slug>` |
+| Constructor signature + every field  | `go doc github.com/DonaldMurillo/gofastr/framework/ui.<Name>`    |
+| Pattern packages (Combobox, Tree, …) | `go doc github.com/DonaldMurillo/gofastr/core-ui/patterns/<pkg>` |
+| Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
+| Runtime data-fui-\* attributes       | [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md)          |
+| What's coming / deferred             | [`docs/proposals/ui-component-roadmap.md`](proposals/ui-component-roadmap.md) |
 
-```go
-html.Paragraph(html.TextConfig{},
-    render.Text("Press "),
-    html.Kbd(html.TextConfig{}, render.Text("Esc")),
-    render.Text(" to dismiss."),
-)
-```
+The website's components index page lists every component with a
+one-line description ([`examples/website/screen_components.go`](../examples/website/screen_components.go)
+is the source of truth). A drift test in `examples/website/drift_test.go`
+keeps every registered `/components/<slug>` paired with:
 
-## 2. AvatarGroup — `framework/ui.AvatarGroup`
-
-Overlapping avatar stack with `+N` overflow.
-
-```go
-ui.AvatarGroup(ui.AvatarGroupConfig{
-    Avatars: []ui.AvatarConfig{
-        {Name: "Ada Lovelace"}, {Name: "Grace Hopper"},
-        {Name: "Alan Turing"},  {Name: "Edsger Dijkstra"},
-        {Name: "Margaret Hamilton"}, {Name: "Linus Torvalds"},
-    },
-    Max:   4,           // → renders 4 avatars + "+2"
-    Label: "Project team",
-})
-```
-
-ARIA: `role="group"`, `aria-label`, overflow chip has `aria-label="N more"`.
-
-## 3. CopyButton — `framework/ui.CopyButton`
-
-Clipboard button wired through the existing `data-fui-copy-text-from`
-runtime hook + new SR announcement hook.
-
-```go
-ui.CopyButton(ui.CopyButtonConfig{
-    Target:       "#api-token",
-    Label:        "Copy token",
-    CopiedLabel:  "Copied!",
-    AnnounceText: "Token copied to clipboard",
-})
-```
-
-Keyboard: Tab focus, Enter/Space to copy. Screen readers hear the
-`role="status"` `aria-live="polite"` sibling announce the copied state.
-
-Runtime attributes used: `data-fui-copy-text-from`, `data-fui-copy-status`,
-`data-fui-copy-announce`.
-
-## 4. ShortcutHint — `framework/ui.ShortcutHint`
-
-Renders a chord as styled `<kbd>` chips. The Mod key auto-resolves
-to ⌘ on Mac / Ctrl elsewhere (via `<html data-fui-os>`).
-
-```go
-ui.ShortcutHint(ui.ShortcutHintConfig{Chord: "Mod+K"})
-ui.ShortcutHint(ui.ShortcutHintConfig{Chord: "/"})
-ui.ShortcutHint(ui.ShortcutHintConfig{Chord: "Shift+Tab"})
-```
-
-Hidden on touch-only devices via `@media (pointer: coarse)`.
-
-## 5. SegmentedControl — `framework/ui.SegmentedControl`
-
-Native radiogroup styled as a pill toggle bar with a sliding
-indicator. Browser provides Arrow-key + Space/Enter nav for free.
-
-```go
-ui.SegmentedControl(ui.SegmentedControlConfig{
-    Name:     "view-mode",
-    Label:    "View mode",
-    Selected: "week",
-    Options: []ui.SegmentedOption{
-        {Label: "Day",   Value: "day"},
-        {Label: "Week",  Value: "week"},
-        {Label: "Month", Value: "month"},
-    },
-    // Optional RPC: fire on every change.
-    RPCPath:   "/views/set",
-    RPCSignal: "current-view",
-})
-```
-
-## 6. ConfirmAction — `framework/ui.ConfirmAction`
-
-Trigger button + alertdialog Modal preset for destructive
-confirmations. Cancel autofocus by default; opt in to `AutofocusConfirm: true`
-for non-destructive prompts.
-
-```go
-trigger, modalBuilder := ui.ConfirmAction(ui.ConfirmActionConfig{
-    Name:         "delete-user-42",
-    TriggerLabel: "Delete",
-    Title:        "Delete user?",
-    Body:         "This permanently removes the user and their data.",
-    ConfirmLabel: "Yes, delete",
-    CancelLabel:  "Cancel",
-    RPCPath:      "/users/42/delete",
-})
-def := modalBuilder.Build()
-widget.Mount(r, &def)
-// render `trigger` inline wherever the destructive button belongs
-```
-
-ARIA: `role="alertdialog"`, `aria-modal="true"`, `aria-labelledby`,
-`aria-describedby`. Escape closes; backdrop click closes; focus returns
-to trigger.
-
-## 7. FilterChipBar — `framework/ui.FilterChipBar`
-
-Toolbar of dismissible filter chips above a table/search result.
-
-```go
-ui.FilterChipBar(ui.FilterChipBarConfig{
-    Filters: []ui.FilterChip{
-        {Label: "Status: Active",  DismissPath: "/filters/status/clear"},
-        {Label: "Tag: urgent",     DismissPath: "/filters/tag/urgent/clear", Variant: ui.StatusWarning},
-    },
-    ClearAllPath: "/filters/clear-all",
-    Label:        "Active filters",
-    RPCSignal:    "filter-bar",
-    SignalName:   "filter-bar", // pair with server re-render
-})
-```
-
-ARIA: `role="toolbar"`. Each chip's × button has `aria-label="Remove <label>"`.
-
-## 8. InfiniteScroll — `core-ui/patterns/infinitescroll.Render`
-
-Sentinel-based infinite scroll with `<noscript>` fallback "Load more".
-
-```go
-infinitescroll.Render(infinitescroll.Config{
-    ID:        "feed",
-    RPCPath:   "/feed/page",
-    AriaLabel: "Activity feed",
-    Items:     firstPageHTML, // SSR-rendered first page
-    Cursor:    "page-1-end",
-})
-```
-
-Server contract for the RPC:
-
-```go
-// Request: form-encoded body `cursor=<token>` (POST).
-// Response: HTML fragment (appended into the items container).
-//           Header X-Gofastr-Infinite-Cursor: <next> — empty/missing = end of feed.
-http.HandleFunc("/feed/page", func(w http.ResponseWriter, r *http.Request) {
-    cursor := r.FormValue("cursor")
-    // … fetch next page …
-    w.Header().Set("X-Gofastr-Infinite-Cursor", nextCursor)
-    w.Write(htmlFragment)
-})
-```
-
-`aria-busy` flips true → false across each fetch. End-of-feed removes the sentinel.
-
-New runtime attributes: `data-fui-infinite-scroll`, `data-fui-infinite-sentinel`,
-`data-fui-infinite-cursor`, `data-fui-infinite-items`, `data-fui-infinite-root-margin`.
-
-## 9. Combobox — `core-ui/patterns/combobox.Render`
-
-WAI-ARIA 1.2 combobox: debounced input + RPC dropdown listbox.
-
-```go
-combobox.Render(combobox.Config{
-    ID:          "city",
-    Name:        "q",
-    Label:       "Pick a city",
-    RPCPath:     "/cities/search",
-    SignalName:  "city-results",
-    DebounceMs:  250,
-    Placeholder: "Type to search…",
-})
-```
-
-Server returns `<li role="option" id="...">…</li>` fragments. Options
-SHOULD carry `data-value` (used as the input's selected value); without
-it the option's textContent is used.
-
-Keyboard (handled at runtime): ArrowUp/Down/Home/End move the highlight,
-Enter selects, Esc closes/clears, Tab closes naturally. The runtime
-maintains `aria-expanded` and `aria-activedescendant`.
-
-## 10. TreeView — `core-ui/patterns/tree.Render`
-
-WAI-ARIA tree with optional RPC lazy-load on expand.
-
-```go
-tree.Render(tree.Config{
-    ID:           "files",
-    Label:        "Project files",
-    SignalPrefix: "files-tree",
-    Nodes: []tree.Node{
-        {ID: "src", Label: "src", Expanded: true, Children: []tree.Node{
-            {ID: "src-main", Label: "main.go", Href: "/files/src/main.go"},
-        }},
-        {ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"},
-    },
-})
-```
-
-Server lazy-load handler returns `<li role="treeitem" …>…</li>`
-fragments that get swapped into the child `<ul role="group">` via the
-signal binding.
-
-Keyboard: Up/Down (next/prev visible), Right (expand or focus first child),
-Left (collapse or focus parent), Home/End, Enter/Space (toggle), type-ahead.
-
-New runtime attribute: `data-fui-tree-toggle`.
-
-## 11. CommandPalette — `framework/ui.CommandPalette`
-
-⌘K-triggered modal-backed combobox for fuzzy command/search.
-
-```go
-trigger, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
-    Name:        "command-palette", // default value, can be omitted
-    RPCPath:     "/commands/search",
-    Placeholder: "Type a command…",
-    Shortcut:    "Meta+K",       // default; the runtime accepts either Cmd or Ctrl
-})
-def := paletteBuilder.Build()
-widget.Mount(r, &def)
-// render `trigger` somewhere in your global chrome (Sidebar, top nav)
-```
-
-The trigger is screen-reader-only — keyboard shortcut + AT users reach
-it; sighted mouse users discover it via the visible chord hint shipped
-next to the search input.
-
-Modal: `role="dialog"`, `aria-modal="true"`, focus trap, Esc closes,
-backdrop click closes, focus returns to trigger.
-
-Internal combobox: `role="combobox"` + listbox; same RPC-and-pick
-contract as the standalone Combobox.
+- at least one chromedp e2e test
+- zero axe-core violations against the default WCAG 2.0/2.1 A/AA rule set
+- at least one `*_test.go` for the package that defines it
 
 ---
 
-## Done means
+## Catalog
 
-For each component:
+Live demos at `http://localhost:8082/components/<slug>` once the
+dev server is up.
 
-- [x] Unit tests green
-- [x] chromedp e2e tests green for `/components/new`
-- [x] Renders the right ARIA roles + labels
-- [x] Keyboard nav handled by runtime (where applicable)
-- [x] Mobile / touch: ≥ 44×44 px targets via `--spacing-touch-target`
-- [x] Docs (this file)
-- [x] Example wiring in `examples/website/screen_new_components.go`
-- [x] New runtime attrs documented in `core-ui/ARCHITECTURE.md`
-- [x] Runtime drift test green
+### Primitives & semantic markup
+
+- **kbd** — `core-ui/html.Kbd` — semantic `<kbd>` for keyboard input
+- **shortcuthint** — `framework/ui.ShortcutHint` — OS-aware chord chips (⌘ on Mac / Ctrl elsewhere)
+- **avatargroup** — `framework/ui.AvatarGroup` — overlapping avatar stack with overflow chip
+
+### Buttons & form controls
+
+- **toggle** — `framework/ui.Checkbox` / `Radio` / `Switch` — labelled native inputs, FieldErrors-aware
+- **segmented** — `framework/ui.Segmented` — radio-group styled as a sliding pill bar
+- **rating** — `framework/ui.RatingInput` — 1-N star/heart with Size / Gap / Shape / Icon knobs
+- **slider** — `framework/ui.Slider` — `<input type=range>` with optional live value mirror
+- **rangeslider** — `framework/ui.RangeSlider` — dual-thumb range with cross-clamp
+- **numberinput** — `framework/ui.NumberInput` — number field with explicit +/- buttons
+- **textarea** — `framework/ui.TextArea` — multi-line input with typed Autogrow
+- **colorpicker** — `framework/ui.ColorPicker` — styled native `<input type=color>`
+- **timepicker** — `framework/ui.TimePicker` — styled native `<input type=time>`
+- **taginput** — `framework/ui.TagInput` — free-form chips, Enter/comma to commit, Backspace to remove
+- **multiselect** — `core-ui/patterns/multiselect` — checkbox group with chip display above
+
+### Selection & input composition
+
+- **combobox** — `core-ui/patterns/combobox` — debounced search with RPC-driven listbox
+- **commandpalette** — `framework/ui.CommandPalette` — ⌘K modal + combobox composition
+- **globalsearch** — `framework/ui.GlobalSearch` — sticky inline `/`-shortcut search bar
+- **dropzone** — `framework/ui.FileDropzone` — hero file-drop surface with image previews
+- **fileupload** — `framework/ui.FileUpload` — drag-drop file picker over native `<input type=file>`
+
+### Navigation
+
+- **breadcrumbs** — `core-ui/patterns/breadcrumbs` — `<nav aria-label=Breadcrumb>` trail
+- **pagination** — `core-ui/patterns/pagination` — numeric page navigation
+- **sidebar** — `framework/ui.Sidebar` — responsive primary nav (inline ≥ md, drawer < md)
+- **menu** — `framework/ui.Menu` — keyboard-driven dropdown built on `<details>`
+- **tabs** — `core-ui/patterns/tabs` — `<details>`-based tab strip, zero JS
+- **tree** — `core-ui/patterns/tree` — recursive tree with roving tabindex + lazy-load
+- **toc** — `framework/ui.TableOfContents` — auto-built sticky nav from `<h2>` / `<h3>`
+- **steps** — `framework/ui.ProgressSteps` — linear step indicator (horizontal + vertical)
+
+### Disclosure / surface widgets
+
+- **accordion** — `core-ui/patterns/accordion` — Group + Stack disclosure variants
+- **disclosure** — `core-ui/patterns/disclosure` — single styled `<details>`
+- **modal** — `core-ui/widget/preset.Modal` — focus-trapped dialog with deeplink
+- **drawer** — `core-ui/widget/preset.Drawer` — edge-mounted sliding panel
+- **bottomsheet** — `core-ui/widget/preset.BottomSheet` — bottom-anchored Drawer variant
+- **popover** — `core-ui/widget/preset.Popover` — click-triggered floating surface
+- **tooltip** — `framework/ui.Tooltip` — CSS-only hover/focus reveal
+- **toast** — `core-ui/widget/preset.ToastStack` — SSE-pushed slide-in notifications
+- **notificationbell** — `framework/ui.NotificationBell` — bell + unread badge + popover dropdown
+- **confirmaction** — `framework/ui.ConfirmAction` — trigger + alertdialog Modal
+- **commandpalette** — *(also under Selection — same component)*
+
+### Layout & display
+
+- **layout** — `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`
+- **container** — `framework/ui.Container` — max-width page wrapper with breakpoint padding
+- **card** — `framework/ui.Card` — labelled `<section>` with header/body/footer
+- **image** — `framework/ui.OptimizedImage` — responsive `<picture>` with CLS-safe Width/Height
+- **divider** — `framework/ui.Divider` — semantic separator (horizontal, vertical, labelled)
+- **gallery** — `framework/ui.Gallery` — Grid / Strip / Masonry thumbnail surface
+- **lightbox** — `framework/ui.Lightbox` — zoom-overlay modal; pairs with Gallery
+- **carousel** — `framework/ui.Carousel` — horizontal scroll-snap slider
+- **infinitescroll** — `core-ui/patterns/infinitescroll` — IntersectionObserver-driven lazy feed
+- **sortablelist** — `core-ui/patterns/sortablelist` — drag-and-drop + keyboard reorderable list
+
+### Data display
+
+- **datatable** — `framework/ui.DataTable` — sortable / paginated / island-swappable rows
+- **statcard** — `framework/ui.StatCard` — metric card with label/value/trend
+- **animatedcounter** — `framework/ui.AnimatedCounter` — IntersectionObserver-driven tick
+- **timeline** — `framework/ui.Timeline` — vertical event rail
+- **sparkline** — `framework/ui.Sparkline` — pure-SVG inline trend chart
+- **piechart** — `framework/ui.PieChart` — SVG ratio chart (donut variant via InnerRadius)
+- **barchart** — `framework/ui.BarChart` — categorical SVG bar chart
+- **linechart** — `framework/ui.LineChart` — multi-series time-series chart with area + legend
+- **jsonviewer** — `framework/ui.JSONViewer` — collapsible tree of arbitrary values
+- **diffviewer** — `framework/ui.DiffViewer` — unified or split diff renderer
+- **markdown** — `framework/ui.Markdown` — themed wrapper over `core/markdown`
+- **progress** — `core-ui/patterns/progress` — native `<progress>` with theme styling
+- **skeleton** — `core-ui/patterns/skeleton` — pure-CSS shimmer placeholders
+- **spinner** — `framework/ui.Spinner` — inline CSS loading indicator
+
+### Tags, badges, filters
+
+- **tag** — `framework/ui.Tag` — interactive pill (linked / removable / status-variant)
+- **filterchipbar** — `framework/ui.FilterChipBar` — `role=toolbar` of removable filter chips
+- **copybutton** — `framework/ui.CopyButton` — clipboard button with SR-announced confirmation
+- **toolbar** — `framework/ui.Toolbar` — `role=toolbar` wrapper for grouped actions
+
+### Status & banners
+
+- **banner** — `framework/ui.Banner` — page-level persistent status strip
+
+---
+
+## Adding a new component — checklist
+
+The framework's drift tests catch most of these; this list is a
+helpful pre-flight read for human reviewers.
+
+1. **Implementation**: `framework/ui/<name>.go` (or `core-ui/patterns/<name>/`).
+2. **Theme-token CSS only**: register your own `RegisterStyle`; use
+   `var(--color-*, fallback)` etc. No top-level `.ui-*` rules in
+   `examples/website/theme.go` — the website chrome is page-only.
+3. **Unit tests**: `<name>_test.go` exercising panic paths + emitted
+   markup + variant classes.
+4. **`/components/<slug>` screen** in `examples/website/`:
+   register in `main.go`, add an entry to `componentEntries` in
+   `screen_components.go`. The `TestDrift_EveryComponentPageHasE2ETest`
+   gate fails until you also add at least one chromedp test.
+5. **Chromedp e2e** in `examples/website/e2e_new_components_test.go`
+   or `e2e_new_components_interactions_test.go` — ARIA shape for
+   static components, real interaction (click / type / drag) for
+   runtime-driven ones.
+6. **`core-ui/ARCHITECTURE.md`**: any new `data-fui-*` attribute the
+   runtime reads must land in the table here OR in the drift-test
+   whitelist (with a justification comment). The
+   `TestDrift_RuntimeDataFuiAttributesDocumented` gate enforces it.
+7. **Axe**: `TestAxe_AllComponentPagesAreClean` runs axe-core against
+   every page and fails on any violation. The most common authoring
+   mistakes it catches: missing tap target floor (44×44),
+   role/`aria-allowed-role` mismatches, color-contrast on tinted
+   backgrounds, scrollable regions without `tabindex="0"`.
+8. **Composition first**: before writing a new runtime module, see if
+   `preset.Modal` / `preset.Popover` / `preset.Drawer` +
+   `data-fui-open` + `data-fui-deeplink` + signal-binding already
+   covers the case. Lightbox and NotificationBell each ship without
+   a runtime module by composing existing primitives.
+
+---
+
+## See also
+
+- [`docs/widgets.md`](widgets.md) — widget framework (mount, deeplink, signal lifecycle).
+- [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time setup for the UI layer.
+- [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — runtime contract + `data-fui-*` attribute reference.
+- [`framework/ARCHITECTURE.md`](../framework/ARCHITECTURE.md) — package layout + extraction rules.
+- [`docs/proposals/ui-component-roadmap.md`](proposals/ui-component-roadmap.md) — shipped + deferred components.
