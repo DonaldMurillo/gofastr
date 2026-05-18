@@ -416,12 +416,24 @@ func widgetCSS(def Definition) string {
 	// Center / modal: framework provides a backdrop + centered content
 	// wrapper. The wrapper itself stays transparent so the slot
 	// component (e.g. demo-modal-body) owns the visual card chrome.
+	//
+	// `pointer-events: none` on the wrapper is load-bearing: the
+	// wrapper IS the full viewport (top/left/right/bottom: 0) and sits
+	// ABOVE the backdrop in the z-order, so without it real mouse
+	// clicks on the dim area always land on the wrapper and never
+	// reach the backdrop's click handler — the "backdrop-click closes"
+	// affordance breaks silently. Direct children are flipped back to
+	// `pointer-events: auto` so the slot content stays interactive.
 	ss.Rule(".fui-pos-center").
 		Set(
 			"top", "0", "left", "0", "right", "0", "bottom", "0",
 			"display", "flex", "align-items", "center", "justify-content", "center",
 			"padding", "{spacing.lg}",
+			"pointer-events", "none",
 		).
+		End()
+	ss.Rule(".fui-pos-center > *").
+		Set("pointer-events", "auto").
 		End()
 
 	// Backdrop overlay sits behind any widget that requested it. The

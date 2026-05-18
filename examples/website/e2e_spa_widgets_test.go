@@ -115,3 +115,49 @@ func TestE2E_SPA_ColorSchemeRespondsToToggle(t *testing.T) {
 		t.Errorf("set('auto') should fall back to OS preference (light or dark), got %q", afterAuto)
 	}
 }
+
+func TestE2E_Regression_ModalBackdropClickCloses(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var modalVisibleBeforeClick, modalVisibleAfterBackdropClick bool
+	var backdropExists bool
+	// Pick a point that's IN the dim area but OUTSIDE the modal card.
+	// 12,12 is 12px from the viewport corner — well clear of the
+	// centered modal content at 1280x800.
+	var x, y float64 = 12, 12
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/confirmaction"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-open="demo-confirm-delete"]').click()`, nil),
+		chromedp.Sleep(500*1e6),
+		chromedp.Evaluate(`(() => {
+			const el = document.querySelector('[data-fui-widget="demo-confirm-delete"]');
+			return !!el && !el.hasAttribute('hidden');
+		})()`, &modalVisibleBeforeClick),
+		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="demo-confirm-delete"]')`, &backdropExists),
+		// REAL mouse click — must actually hit the backdrop element via
+		// the browser's hit-testing, not bypass stacking like .click().
+		// This is the regression: full-viewport .fui-pos-center sits on
+		// top of the backdrop and absorbs every real click, even though
+		// the backdrop has a listener attached.
+		chromedp.MouseClickXY(x, y),
+		chromedp.Sleep(400*1e6),
+		chromedp.Evaluate(`(() => {
+			const el = document.querySelector('[data-fui-widget="demo-confirm-delete"]');
+			return !!el && !el.hasAttribute('hidden');
+		})()`, &modalVisibleAfterBackdropClick),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !backdropExists {
+		t.Fatal("backdrop element should exist when the modal is open")
+	}
+	if !modalVisibleBeforeClick {
+		t.Fatal("modal should be visible after trigger click")
+	}
+	if modalVisibleAfterBackdropClick {
+		t.Error("real backdrop click should dismiss the modal (regression — full-viewport .fui-pos-center wrapper was intercepting clicks)")
+	}
+}
