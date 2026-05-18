@@ -540,15 +540,25 @@ func Mount(r *router.Router, def *Definition) {
 	registryMu.Unlock()
 }
 
-// RuntimeTag returns the single <script> tag a host page embeds to load
-// the framework runtime + auto-mount every registered widget. The URL
-// includes a content-hash query param so a new server build invalidates
-// any cached runtime in the browser without manual hard-reload.
+// RuntimeTag returns the markup a host page embeds to load the framework
+// runtime + auto-mount every registered widget. The URL includes a
+// content-hash query param so a new server build invalidates any cached
+// runtime in the browser without manual hard-reload.
 //
-// Implemented as a func, not a const, because the hash is computed lazily
-// from the embedded runtime.js bytes.
+// Also emits an inert <script type="application/json"
+// id="gofastr-runtime-modules"> manifest mapping each split runtime module
+// (popover, toasts, widgets, …) to its content-addressed hash. The
+// client-side module loader reads this manifest to build cache-busted
+// `?v=<hash>` URLs. Without it, kiln-style hosts that don't go through
+// framework/uihost would fall through to un-versioned URLs and end up
+// poisoning the browser cache (server returns `Cache-Control: ...immutable`
+// unconditionally).
+//
+// Implemented as a func, not a const, because the hashes are computed
+// lazily from the embedded JS bytes.
 func RuntimeTag() string {
-	return `<script src="/__gofastr/runtime.js?v=` + runtimeHash() + `"></script>`
+	return `<script src="/__gofastr/runtime.js?v=` + runtimeHash() + `"></script>` +
+		RuntimeModuleManifestScript()
 }
 
 // MountRuntime registers the framework runtime endpoints on r:

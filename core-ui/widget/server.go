@@ -64,6 +64,40 @@ func RuntimeModuleHash(name string) string {
 	return moduleHashes[name]
 }
 
+// RuntimeModuleManifestScript emits an inert JSON manifest mapping every
+// split runtime module to its content-addressed hash. Returns "" when no
+// modules are embedded.
+//
+// Both RuntimeTag (kiln + manual hosts) and framework/uihost embed this
+// script. Pages without the manifest fall through to un-versioned module
+// URLs and then collide with the immutable cache headers — see
+// TestRuntimeTagEmbedsModuleManifest for the regression that motivated this.
+func RuntimeModuleManifestScript() string {
+	names := runtime.ModuleNames()
+	if len(names) == 0 {
+		return ""
+	}
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		out[n] = RuntimeModuleHash(n)
+	}
+	buf, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-runtime-modules">` +
+		escapeJSONForScript(buf) +
+		`</script>`
+}
+
+// escapeJSONForScript neutralises the one HTML sequence that can
+// prematurely terminate an inline <script>…</script> block: closing `</`.
+// JSON itself never produces it, but URL strings or user-controlled
+// payloads can.
+func escapeJSONForScript(buf []byte) string {
+	return strings.ReplaceAll(string(buf), `</`, `<\/`)
+}
+
 // ServeRuntimeModule is the exported handler for /__gofastr/runtime/<name>.js.
 // Hosts that mount routes via uihost get it through framework/uihost;
 // kiln and standalone hosts can wire it themselves alongside MountRuntime.

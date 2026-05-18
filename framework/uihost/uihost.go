@@ -1319,28 +1319,11 @@ func catalogJSONScript(ds *UIHost) string {
 		`</script>`
 }
 
-// runtimeModuleManifestScript emits an inert JSON manifest mapping
-// each split runtime module (fileupload, popover, …) to its current
-// content-addressed hash. The client-side loader reads it to
-// construct cache-busted URLs (`/__gofastr/runtime/<name>.js?v=<hash>`).
-// Hashes come from core-ui/widget.RuntimeModuleHash so a deploy
-// auto-busts.
+// runtimeModuleManifestScript delegates to widget.RuntimeModuleManifestScript
+// so the same JSON manifest ships from both framework/uihost-rendered pages
+// and kiln-style hosts that consume widget.RuntimeTag() directly.
 func runtimeModuleManifestScript() string {
-	names := runtime.ModuleNames()
-	if len(names) == 0 {
-		return ""
-	}
-	out := make(map[string]string, len(names))
-	for _, n := range names {
-		out[n] = widget.RuntimeModuleHash(n)
-	}
-	buf, err := json.Marshal(out)
-	if err != nil {
-		return ""
-	}
-	return `<script type="application/json" id="gofastr-runtime-modules">` +
-		escapeJSONForScript(buf) +
-		`</script>`
+	return widget.RuntimeModuleManifestScript()
 }
 
 // routesJSONScript embeds the route graph as inert JSON. Same model
