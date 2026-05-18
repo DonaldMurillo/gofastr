@@ -407,6 +407,24 @@ var componentEntries = []componentEntry{
 		Tag:   "Scroll-snap · Prev/Next · AutoRotate",
 		Intro: "Horizontal scroll-snap slider with Prev/Next + pagination dots + ArrowLeft/Right keyboard nav. Opt-in AutoRotate pauses on hover, focus, reduced-motion, and background tabs. Users can drag/swipe natively too.",
 	},
+	{
+		Slug:  "skiplink",
+		Name:  "SkipLink",
+		Tag:   "Accessibility · WCAG 2.4.1",
+		Intro: "Visually-hidden skip-navigation link that appears on keyboard focus, letting users jump past repetitive navigation to main content. Required for WCAG 2.1 Level A (Bypass Blocks).",
+	},
+	{
+		Slug:  "themetoggle",
+		Name:  "ThemeToggle",
+		Tag:   "Dark mode · Color scheme",
+		Intro: "Dark/light/auto toggle that persists to localStorage and applies immediately via colorscheme.js. Three variants: icon (sun/moon), label (Light/Dark text), pill (segmented Light/Auto/Dark).",
+	},
+	{
+		Slug:  "sticky",
+		Name:  "Sticky",
+		Tag:   "Layout · position:sticky",
+		Intro: "position:sticky wrapper with theme-token z-index and named offset presets. Sticks to top or bottom edge on scroll. Pure CSS, no runtime.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {
