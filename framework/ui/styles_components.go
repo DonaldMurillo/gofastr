@@ -32,6 +32,8 @@ var (
 	_                 = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
 	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
 	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
+	skipLinkStyle     = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
+	themeToggleStyle = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
 )
 
 // buttonCSS is the base .ui-button styling that several call sites
@@ -656,5 +658,97 @@ func dataTableCSS(_ style.Theme) string {
 [data-fui-comp="ui-data-table"] .ui-data-table__footer {
   display: flex;
   justify-content: flex-end;
+}`
+}
+
+func skipLinkCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-skip-link"] .ui-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 9999;
+}
+[data-fui-comp="ui-skip-link"] .ui-skip-link:focus {
+  position: fixed;
+  top: var(--spacing-sm, 0.5rem);
+  left: var(--spacing-sm, 0.5rem);
+  width: auto;
+  height: auto;
+  padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-foreground, #fff);
+  border-radius: var(--radius-md, 0.375rem);
+  font-weight: 600;
+  font-size: var(--text-sm, 0.875rem);
+  text-decoration: none;
+  z-index: 9999;
+}`
+}
+
+func themeToggleCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-theme-toggle"] {
+  display: inline-flex;
+}
+[data-fui-comp="ui-theme-toggle"] button {
+  cursor: pointer;
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radius-md, 0.375rem);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #18181B);
+  padding: var(--spacing-xs, 0.25rem);
+  min-block-size: var(--spacing-touch-target, 44px);
+  min-inline-size: var(--spacing-touch-target, 44px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+[data-fui-comp="ui-theme-toggle"] button:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+}
+[data-fui-comp="ui-theme-toggle"] button:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 1px;
+}
+
+/* Icon variant: sun/moon */
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle--icon svg {
+  width: 18px;
+  height: 18px;
+}
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__moon { display: none; }
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__sun  { display: block; }
+html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__moon { display: block; }
+html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__sun  { display: none; }
+
+/* Label variant: show correct text */
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__dark  { display: none; }
+html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__light { display: none; }
+html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__dark  { display: inline; }
+
+/* Pill variant */
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle--pill {
+  display: inline-flex;
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-surface, #fff);
+}
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__opt {
+  border: none;
+  border-radius: 999px;
+  padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 500;
+  min-inline-size: auto;
+  min-block-size: 36px;
+  background: transparent;
+}
+[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__opt[aria-pressed="true"] {
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-foreground, #fff);
 }`
 }

@@ -812,6 +812,59 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	))
 }
 
+// ─── SkipLink ──────────────────────────────────────────────────────
+
+// SkipLinkConfig configures a skip-navigation link.
+//
+// Renders a visually-hidden anchor that becomes visible on keyboard
+// focus, letting users jump past repetitive navigation to the main
+// content area. Required for WCAG 2.1 Level A (criterion 2.4.1
+// "Bypass Blocks").
+//
+// Place SkipLink as the first element inside <body>.
+//
+// Usage:
+//
+//	ui.SkipLink(ui.SkipLinkConfig{Target: "main-content"})
+//	// … then on the main element:
+//	// <main id="main-content"> ...
+//	// Or with no Target — defaults to "main-content".
+//	ui.SkipLink(ui.SkipLinkConfig{})
+type SkipLinkConfig struct {
+	// Target is the id of the element to jump to.
+	// Defaults to "main-content" when empty.
+	Target string
+	// Text is the visible label shown on focus.
+	// Defaults to "Skip to main content" when empty.
+	Text string
+	Class string
+	ID    string
+}
+
+// SkipLink renders a WCAG 2.4.1 skip-navigation link.
+func SkipLink(cfg SkipLinkConfig) render.HTML {
+	target := cfg.Target
+	if target == "" {
+		target = "main-content"
+	}
+	text := cfg.Text
+	if text == "" {
+		text = "Skip to main content"
+	}
+	cls := "ui-skip-link"
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+	return skipLinkStyle.WrapHTML(
+		html.Link(html.LinkConfig{
+			Href:  "#" + target,
+			Text:  text,
+			Class: cls,
+			ID:    cfg.ID,
+		}),
+	)
+}
+
 // escapeHTML is the minimal entity-escape sufficient for code
 // content (we only emit text + tag context — no attribute use here).
 func escapeHTML(s string) string {

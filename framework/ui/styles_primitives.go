@@ -13,6 +13,7 @@ import (
 
 var (
 	layoutStyle     = registry.RegisterStyle("ui-layout", layoutCSS)
+	stickyStyle     = registry.RegisterStyle("ui-sticky", stickyCSS)
 	cardStyle       = registry.RegisterStyle("ui-card", cardCSS)
 	imageStyle      = registry.RegisterStyle("ui-image", imageCSS)
 	toggleStyle     = registry.RegisterStyle("ui-toggle", toggleCSS)
@@ -732,4 +733,36 @@ func fileUploadCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__help  { color: var(--color-text-muted, #52525B); }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__error { color: var(--color-danger, #DC2626); }`
+}
+
+func stickyCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-sticky"] {
+  position: -webkit-sticky;
+  position: sticky;
+  z-index: var(--z-index-sticky, 100);
+}
+[data-fui-comp="ui-sticky"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--color-border, #E4E4E7);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+/* Edge offsets */
+[data-fui-comp="ui-sticky"].ui-sticky--top { top: 0; }
+[data-fui-comp="ui-sticky"].ui-sticky--bottom { bottom: 0; }
+[data-fui-comp="ui-sticky"].ui-sticky--offset-sm { top: var(--spacing-sm, 0.5rem); }
+[data-fui-comp="ui-sticky"].ui-sticky--offset-md { top: var(--spacing-md, 1rem); }
+[data-fui-comp="ui-sticky"].ui-sticky--offset-lg { top: var(--spacing-lg, 1.5rem); }
+[data-fui-comp="ui-sticky"].ui-sticky--offset-xl { top: var(--spacing-xl, 2rem); }
+/* Show a subtle bottom border when the element is stuck (only top-sticky) */
+@supports ((position: -webkit-sticky) or (position: sticky)) {
+  [data-fui-comp="ui-sticky"].ui-sticky--top:not(:is(:first-child))::after {
+    opacity: 1;
+  }
+}`
 }

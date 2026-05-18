@@ -211,6 +211,88 @@ func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, children...))
 }
 
+// ─── Sticky ────────────────────────────────────────────────────────
+
+// StickyEdge selects which edge the element sticks to.
+type StickyEdge string
+
+const (
+	StickyTop    StickyEdge = "top"
+	StickyBottom StickyEdge = "bottom"
+)
+
+// StickyOffset presets for common sticky offsets.
+type StickyOffset string
+
+const (
+	StickyOffsetNone StickyOffset = "0"
+	StickyOffsetSm   StickyOffset = "sm"
+	StickyOffsetMd   StickyOffset = "md"
+	StickyOffsetLg   StickyOffset = "lg"
+	StickyOffsetXl   StickyOffset = "xl"
+)
+
+// StickyConfig configures a position:sticky wrapper.
+//
+// Wraps children in a div that sticks to the chosen viewport edge
+// on scroll. Uses theme tokens for z-index so sticky elements
+// layer consistently with modals, widgets, and other surfaces.
+//
+// Usage:
+//
+//	ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop},
+//		ui.Button(ui.ButtonConfig{Label: "Save"}),
+//	)
+//	ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop, Offset: ui.StickyOffsetLg}, header)
+//	ui.Sticky(ui.StickyConfig{Edge: ui.StickyBottom}, toolbar)
+type StickyConfig struct {
+	// Edge selects which edge to stick to.
+	// Defaults to StickyTop when empty.
+	Edge StickyEdge
+
+	// Offset selects the distance preset from the edge.
+	// Defaults to StickyOffsetNone when empty.
+	Offset StickyOffset
+
+	// ZIndexTier selects the z-index tier from the theme token
+	// system. Defaults to "sticky" when empty.
+	// Common values: "sticky", "dropdown", "overlay", "modal".
+	ZIndexTier string
+
+	ID    string
+	Class string
+}
+
+// Sticky wraps children in a position:sticky container.
+func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
+	edge := cfg.Edge
+	if edge == "" {
+		edge = StickyTop
+	}
+	offset := cfg.Offset
+	if offset == "" {
+		offset = StickyOffsetNone
+	}
+	tier := cfg.ZIndexTier
+	if tier == "" {
+		tier = "sticky"
+	}
+
+	cls := "ui-sticky ui-sticky--" + string(edge) + " ui-sticky--offset-" + string(offset)
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+	attrs := map[string]string{
+		"class":           cls,
+		"data-fui-sticky":  string(edge),
+		"data-fui-z-tier":  tier,
+	}
+	if cfg.ID != "" {
+		attrs["id"] = cfg.ID
+	}
+	return stickyStyle.WrapHTML(render.Tag("div", attrs, children...))
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 func layoutClass(base, extra string, gap Gap, align Align, justify Justify) string {
