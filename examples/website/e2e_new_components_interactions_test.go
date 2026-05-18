@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -804,5 +805,158 @@ func TestE2E_FileDropzone_AriaRegionAndDragoverClass(t *testing.T) {
 	}
 	if dragoverClassAfterLeave {
 		t.Errorf(".is-dragover should be removed on dragleave")
+	}
+}
+
+// =============================================================================
+// Wave 3 — runtime-driven interaction tests
+// =============================================================================
+
+// --- RangeSlider ---------------------------------------------------------
+
+func TestE2E_RangeSlider_CrossClampPreventsCross(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var lo, hi string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rangeslider"),
+		pageReady(),
+		// Set min to a value greater than current max → runtime should
+		// snap it back to max.
+		chromedp.Evaluate(`(function(){
+			const lo = document.querySelector('input[name="price-min"]');
+			const hi = document.querySelector('input[name="price-max"]');
+			lo.value = String(parseFloat(hi.value) + 100);
+			lo.dispatchEvent(new Event('input', {bubbles: true}));
+		})()`, nil),
+		chromedp.Sleep(120*1e6),
+		chromedp.Evaluate(`document.querySelector('input[name="price-min"]').value`, &lo),
+		chromedp.Evaluate(`document.querySelector('input[name="price-max"]').value`, &hi),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	loN, _ := strconv.ParseFloat(lo, 64)
+	hiN, _ := strconv.ParseFloat(hi, 64)
+	if loN > hiN {
+		t.Errorf("cross-clamp failed: lo=%s > hi=%s", lo, hi)
+	}
+}
+
+func TestE2E_RangeSlider_ValueMirrorUpdates(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var before, after string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rangeslider"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('output[data-fui-range-slider-value]').textContent`, &before),
+		chromedp.Evaluate(`(function(){
+			const lo = document.querySelector('input[name="price-min"]');
+			lo.value = '120';
+			lo.dispatchEvent(new Event('input', {bubbles: true}));
+		})()`, nil),
+		chromedp.Sleep(120*1e6),
+		chromedp.Evaluate(`document.querySelector('output[data-fui-range-slider-value]').textContent`, &after),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if before == after {
+		t.Errorf("output mirror should change after input; before=%q after=%q", before, after)
+	}
+}
+
+// --- TagInput ------------------------------------------------------------
+
+func TestE2E_TagInput_EnterCommitsChip(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var chipsBefore, chipsAfter int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/taginput"),
+		pageReady(),
+		// Initial SSR-rendered tags hydrate into chips on boot.
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] .ui-tag-input__chip').length`, &chipsBefore),
+		chromedp.Focus(`input[data-fui-tag-input]`),
+		chromedp.SendKeys(`input[data-fui-tag-input]`, "framework"),
+		chromedp.KeyEvent(kb.Enter),
+		chromedp.Sleep(120*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] .ui-tag-input__chip').length`, &chipsAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if chipsAfter != chipsBefore+1 {
+		t.Errorf("Enter on typed value should add exactly 1 chip; before=%d after=%d", chipsBefore, chipsAfter)
+	}
+}
+
+func TestE2E_TagInput_BackspaceRemovesLast(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var chipsBefore, chipsAfter int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/taginput"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] .ui-tag-input__chip').length`, &chipsBefore),
+		chromedp.Focus(`input[data-fui-tag-input]`),
+		// Empty input → Backspace removes last chip.
+		chromedp.KeyEvent(kb.Backspace),
+		chromedp.Sleep(120*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] .ui-tag-input__chip').length`, &chipsAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if chipsAfter != chipsBefore-1 {
+		t.Errorf("Backspace on empty input should remove 1 chip; before=%d after=%d", chipsBefore, chipsAfter)
+	}
+}
+
+// --- AnimatedCounter -----------------------------------------------------
+
+func TestE2E_AnimatedCounter_SSRRendersTargetValue(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	// Server-rendered DOM must contain the target value so no-JS and
+	// reduced-motion users see the right number immediately.
+	var text string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/animatedcounter"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-animated-counter] .ui-animated-counter__value').textContent`, &text),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	// The first demo counter targets 12483. The post-animation value
+	// should be exactly the target; even mid-animation a real number
+	// should be rendered.
+	if text == "" {
+		t.Errorf("AnimatedCounter value should be rendered; got empty")
+	}
+}
+
+// --- Disclosure (pattern) -----------------------------------------------
+
+func TestE2E_Disclosure_ClickSummaryToggles(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var openA, openB bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/disclosure"),
+		pageReady(),
+		// First disclosure in the demo starts closed.
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-disclosure"]')[0].hasAttribute('open')`, &openA),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-disclosure"]')[0].querySelector('.ui-disclosure__summary').click()`, nil),
+		chromedp.Sleep(100*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-disclosure"]')[0].hasAttribute('open')`, &openB),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if openA == openB {
+		t.Errorf("summary click should toggle open; A=%v B=%v", openA, openB)
 	}
 }

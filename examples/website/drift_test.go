@@ -376,6 +376,105 @@ func walkDir(root string, fn func(path string, isDir bool)) error {
 	return nil
 }
 
+// TestDrift_EveryComponentPageHasE2ETest enforces that every
+// /components/<slug> route registered in main.go is referenced by at
+// least one chromedp e2e test in this directory. Unit tests prove
+// the render math; e2e tests prove the page actually loads + the
+// runtime hydrates the interactive parts. The drift gate fails the
+// moment a new component page lands without a paired e2e test.
+//
+// Allowlisted slugs (intentionally e2e-less pages) live in
+// componentE2EAllowlist below.
+var componentE2EAllowlist = map[string]bool{
+	// "" is the components index page — its content is the list of
+	// other component cards and doesn't need its own behavioural test.
+	"": true,
+}
+
+func TestDrift_EveryComponentPageHasE2ETest(t *testing.T) {
+	// 1. Parse main.go for every site.Register("/components/<slug>", …).
+	mainGo, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	rx := regexp.MustCompile(`site\.Register\("/components/([a-z0-9-]*)"`)
+	matches := rx.FindAllStringSubmatch(string(mainGo), -1)
+	slugs := map[string]bool{}
+	for _, m := range matches {
+		slugs[m[1]] = true
+	}
+	if len(slugs) == 0 {
+		t.Fatal("no /components/<slug> routes found in main.go — drift test broken")
+	}
+
+	// 2. Read every *_test.go in this directory and concat.
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	var allTests []byte
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(e.Name())
+		if err != nil {
+			t.Errorf("read %s: %v", e.Name(), err)
+			continue
+		}
+		allTests = append(allTests, data...)
+		allTests = append(allTests, '\n')
+	}
+
+	// 3. For each slug, check the test corpus references
+	// "/components/<slug>" somewhere.
+	var missing []string
+	for slug := range slugs {
+		if componentE2EAllowlist[slug] {
+			continue
+		}
+		needle := `/components/` + slug
+		// Guard against substring matches (e.g. /components/menu vs
+		// /components/menubar): require the slug to be followed by a
+		// non-letter / non-digit / non-dash character (or end-of-string).
+		idx := 0
+		found := false
+		for {
+			i := strings.Index(string(allTests[idx:]), needle)
+			if i < 0 {
+				break
+			}
+			pos := idx + i + len(needle)
+			if pos >= len(allTests) {
+				found = true
+				break
+			}
+			c := allTests[pos]
+			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+				found = true
+				break
+			}
+			idx = pos
+		}
+		if !found {
+			missing = append(missing, slug)
+		}
+	}
+	if len(missing) > 0 {
+		sortStrings(missing)
+		t.Errorf("component pages have NO e2e test referencing their route: %v\n"+
+			"Every /components/<slug> route registered in main.go must be "+
+			"navigated to by at least one chromedp test in this directory "+
+			"(either ARIA-shape or interaction). Add a TestE2E_… that hits "+
+			"the page, or — if zero behavioural surface is intentional — "+
+			"add the slug to componentE2EAllowlist in drift_test.go with "+
+			"a justification comment.", missing)
+	}
+}
+
 func dirOf(path string) string {
 	if i := strings.LastIndex(path, "/"); i >= 0 {
 		return path[:i]

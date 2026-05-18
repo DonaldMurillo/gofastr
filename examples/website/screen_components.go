@@ -275,6 +275,90 @@ var componentEntries = []componentEntry{
 		Tag:   "Drag-drop · Preview",
 		Intro: "Hero file-drop surface with the existing data-fui-fileupload drag-drop hook. Adds filename display after pick + an optional image preview strip via FileReader.",
 	},
+	{
+		Slug:  "container",
+		Name:  "Container",
+		Tag:   "Layout · Max-width",
+		Intro: "Max-width page wrapper with breakpoint-aware horizontal padding. Pairs with Stack/Cluster/Grid (internal spacing) — Container manages the outer bounds: gutter against the viewport.",
+	},
+	{
+		Slug:  "disclosure",
+		Name:  "Disclosure",
+		Tag:   "Single details · Primitive",
+		Intro: "Single styled <details>/<summary>. Native semantics; keyboard, screen reader, browser find-in-page expansion all work without JavaScript. The primitive Accordion composes groups of these.",
+	},
+	{
+		Slug:  "timepicker",
+		Name:  "Time Picker",
+		Tag:   "Native · Themed chrome",
+		Intro: "Native <input type=\"time\"> with theme chrome. Browser handles the actual picker; we own the label, 44×44 touch target, focus ring, and error state. Twin of ColorPicker.",
+	},
+	{
+		Slug:  "rangeslider",
+		Name:  "Range Slider",
+		Tag:   "Dual thumb · Cross-clamp",
+		Intro: "Two overlaid <input type=\"range\"> elements representing low + high bounds. Runtime cross-clamps min ≤ max on every input event. Form submits Name+\"-min\" and Name+\"-max\" so the server gets explicit lo/hi values.",
+	},
+	{
+		Slug:  "taginput",
+		Name:  "Tag Input",
+		Tag:   "Free-form · Chips",
+		Intro: "Free-form chips. Enter or comma commits; Backspace on empty removes the last. Each chip becomes its own <input type=hidden> sharing the same Name — standard repeated-key form submit.",
+	},
+	{
+		Slug:  "toolbar",
+		Name:  "Toolbar",
+		Tag:   "role=toolbar · Grouped",
+		Intro: "role=\"toolbar\" wrapper with optional logical groups. Groups render side-by-side with a thin separator; labeled groups become role=group + aria-label.",
+	},
+	{
+		Slug:  "sparkline",
+		Name:  "Sparkline",
+		Tag:   "Inline SVG · Trend",
+		Intro: "Inline SVG trend chart. Pure render — no JS, no hydration. Normalizes the y-axis to its own min/max so the silhouette is what matters. Pairs with StatCard.",
+	},
+	{
+		Slug:  "piechart",
+		Name:  "Pie / Donut Chart",
+		Tag:   "SVG · Ratio",
+		Intro: "Pure-SVG ratio chart. Slice colors cycle through the theme palette; InnerRadius (0–1) cuts the center out for a donut variant with optional center label.",
+	},
+	{
+		Slug:  "barchart",
+		Name:  "Bar Chart",
+		Tag:   "SVG · Categorical",
+		Intro: "Categorical SVG bar chart. Per-bar Color overrides apply. ShowAxis adds min/max value labels; ShowLabels adds x-axis category labels. Each bar's Label becomes a <title> for AT.",
+	},
+	{
+		Slug:  "linechart",
+		Name:  "Line Chart",
+		Tag:   "SVG · Multi-series",
+		Intro: "Multi-series SVG line chart. Each series can opt into Area fill. Palette cycles through theme tokens; per-series Color overrides apply. Optional Labels + ShowLegend.",
+	},
+	{
+		Slug:  "jsonviewer",
+		Name:  "JSON Viewer",
+		Tag:   "Tree · Collapsible",
+		Intro: "Collapsible tree for arbitrary Go values. Native <details>/<summary> — keyboard, find-in-page, and screen reader all work. OpenDepth controls initial expansion.",
+	},
+	{
+		Slug:  "diffviewer",
+		Name:  "Diff Viewer",
+		Tag:   "Unified · Split",
+		Intro: "Renders unified-diff text. Two modes — Unified (single column, +/− gutter) and Split (two-column with old/new side-by-side). Hunk + file headers styled distinctly.",
+	},
+	{
+		Slug:  "markdown",
+		Name:  "Markdown",
+		Tag:   "Themed · core/markdown",
+		Intro: "Themed wrapper over core/markdown. Wraps rendered HTML in a prose container so headings, lists, links, code blocks, blockquotes, and tables all get theme-token styling.",
+	},
+	{
+		Slug:  "animatedcounter",
+		Name:  "Animated Counter",
+		Tag:   "IntersectionObserver · Reduced-motion",
+		Intro: "Number that ticks from From to To over DurationMs. SSR renders the final value (no-JS + reduced-motion users see target immediately); the runtime hooks IntersectionObserver so animation fires exactly once when scrolled into view.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

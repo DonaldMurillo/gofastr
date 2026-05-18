@@ -11,7 +11,37 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Shipped
 
-The first wave is on `main` (2026-05-17):
+### Wave 3 (2026-05-18) — Tier 1 + Tier 2
+
+- Container (max-width wrapper) — `framework/ui/`
+- Disclosure (single styled `<details>`) — `core-ui/patterns/disclosure/`
+- TimePicker — `framework/ui/`
+- RangeSlider (dual thumb, cross-clamp) — `framework/ui/`
+- TagInput (free-form chips, Enter/comma/Backspace) — `framework/ui/`
+- Toolbar (`role=toolbar` + grouped buttons) — `framework/ui/`
+- Sparkline (pure-SVG trend) — `framework/ui/`
+- PieChart / DonutChart — `framework/ui/`
+- BarChart — `framework/ui/`
+- LineChart (multi-series + area + legend) — `framework/ui/`
+- JSONViewer (collapsible tree) — `framework/ui/`
+- DiffViewer (unified + split modes) — `framework/ui/`
+- Markdown (themed wrapper over `core/markdown`) — `framework/ui/`
+- AnimatedCounter (IntersectionObserver tick + reduced-motion guard) — `framework/ui/`
+
+### Wave 2 (2026-05-17 / 2026-05-18)
+
+- Banner / InlineAlert — `framework/ui/`
+- Timeline — `framework/ui/`
+- ProgressSteps — `framework/ui/`
+- RatingInput (Size/Gap/Shape/Icon knobs) — `framework/ui/`
+- ColorPicker (native `<input type=color>` wrapper) — `framework/ui/`
+- Slider (single-thumb with live value mirror) — `framework/ui/`
+- NumberInput (stepper with cross-platform +/− buttons) — `framework/ui/`
+- TextArea (typed Autogrow) — `framework/ui/`
+- MultiSelect (checkbox group in disclosure with chip rendering) — `core-ui/patterns/multiselect/`
+- FileDropzone (hero file-drop, drag-drop hook, image preview) — `framework/ui/`
+
+### Wave 1 (2026-05-17)
 
 - Async Combobox / Typeahead — `core-ui/patterns/combobox/`
 - Tree View — `core-ui/patterns/tree/`
@@ -27,6 +57,124 @@ The first wave is on `main` (2026-05-17):
   LinkInline / LinkAction / LinkMuted variants — landed during the
   website-CSS audit (2026-05-18) to eliminate `.ui-button--small` /
   `.ui-link` leakage from `examples/website/theme.go`.
+
+---
+
+## Deferred — Wave 4 candidates (Tier 3 composite & navigation)
+
+### SortableList
+
+- **Layer:** `core-ui/patterns/sortablelist/`
+- **Shape sketch:** Native HTML5 drag-handle reorderable list with
+  keyboard fallback (Space to grab, Arrow keys to move, Space to drop).
+  Each item carries `data-fui-sort-key` so the post-drop RPC can submit
+  the new order array.
+- **Pre-reqs:** None.
+
+### NotificationBell
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Bell icon button with unread-count badge + a
+  `preset.Popover` anchored to it. The Popover slot is an
+  RPC-driven list of recent items. Marker the unread state with a
+  small dot until the popover is opened.
+- **Pre-reqs:** Popover preset (shipped), Tag/Badge (shipped).
+
+### GlobalSearch
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Sticky search bar with `/`-shortcut focus + a
+  Combobox-driven dropdown of results. Distinct from CommandPalette
+  (⌘K, full-screen modal) — GlobalSearch is inline, persistent, and
+  per-page. RPC fetches results as you type.
+- **Pre-reqs:** Combobox pattern (shipped), data-fui-shortcut-focus (shipped).
+
+### TableOfContents
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Auto-extracts `<h2>` / `<h3>` from a target
+  region; renders a sticky nav with scroll-position tracking
+  (IntersectionObserver) to highlight the current section.
+- **Pre-reqs:** None.
+
+### Lightbox
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Click an `<img>` to open a centered overlay with
+  the full-resolution image. Arrow keys navigate prev/next within a
+  named gallery; Esc dismisses; click-outside dismisses.
+- **Pre-reqs:** Modal preset (shipped).
+
+### Mobile bottom-sheet preset
+
+- **Layer:** `core-ui/widget/preset/`
+- **Shape sketch:** Drawer mounted to bottom edge with mobile-only
+  drag handle, snap points (peek / half / full), and a swipe-down
+  dismiss gesture. Pure CSS scroll-snap for the snap points where
+  possible; small runtime module for the drag.
+- **Pre-reqs:** Drawer preset (shipped).
+
+---
+
+## Deferred — Wave 5 candidates (Tier 4 form helpers / async)
+
+### InlineValidationSummary
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Top-of-form alert that lists every field error
+  with an anchor link to the bad input. Server returns
+  `{field: error}` map; component renders a Banner-variant `danger`
+  block with `<a href="#field-id">label — error</a>` per row.
+- **Pre-reqs:** Banner (shipped).
+
+### ConditionalField
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** CSS-`:has()` driven show/hide wrapper that
+  reveals a child field based on another field's value. Zero JS —
+  pure selector logic. The wrapper takes `When` (selector chain like
+  `[name=plan]:checked[value=pro]`) and a body slot.
+- **Pre-reqs:** None.
+
+### OptimisticAction
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Wraps a trigger (Button, Link) with optimistic UI:
+  declares the success-state DOM ("Following ✓"), flips immediately on
+  click, fires the RPC underneath, rolls back if the response is non-2xx.
+- **Pre-reqs:** Runtime RPC pipeline (shipped).
+
+### NetworkRetryBanner
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Persistent top banner that auto-shows when the SSE
+  stream goes silent or N consecutive RPCs fail. Auto-dismisses when
+  connectivity recovers. Renders a "Retry now" button that pings a
+  health endpoint.
+- **Pre-reqs:** Banner (shipped), runtime SSE hook (shipped).
+
+### PollingIndicator
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Tiny pulsing dot + "Live" label that confirms a
+  polling RPC is firing. Pairs with `data-fui-rpc-trigger="input"`
+  patterns to give users feedback that the live-search is actually
+  searching.
+- **Pre-reqs:** None.
+
+---
+
+## Deferred — Wave 6 candidates (Tier 5 Skeleton compositions)
+
+### SkeletonCard / SkeletonRow / SkeletonAvatar
+
+- **Layer:** `framework/ui/`
+- **Shape sketch:** Preset compositions over the existing Skeleton
+  primitives. SkeletonCard = title line + 2 body lines + footer line
+  inside a Card surface; SkeletonRow = label + value + chevron;
+  SkeletonAvatar = circle + 2 stacked lines. One-liner shortcuts so
+  loading layouts don't reinvent the wheel.
+- **Pre-reqs:** Skeleton primitives (shipped), Card (shipped).
 
 ---
 

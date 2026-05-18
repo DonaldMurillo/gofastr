@@ -433,3 +433,232 @@ func TestE2E_NewComponents_CommandPaletteOpens(t *testing.T) {
 		t.Errorf("expected palette visible after trigger click")
 	}
 }
+
+// =============================================================================
+// Wave 3 — Tier 1 + Tier 2 static-shape e2e
+// =============================================================================
+
+func TestE2E_Container_RendersDivWithMaxWidth(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var count int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/container"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-container"]').length`, &count),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if count < 4 {
+		t.Errorf("expected ≥4 Container demo wrappers, got %d", count)
+	}
+}
+
+func TestE2E_Disclosure_OpenAndKeyboard(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var openBefore, openAfter bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/disclosure"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-disclosure"]').hasAttribute('open')`, &openBefore),
+		// Click the summary to toggle.
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-disclosure"] .ui-disclosure__summary').click()`, nil),
+		chromedp.Sleep(100*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-disclosure"]').hasAttribute('open')`, &openAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if openBefore == openAfter {
+		t.Errorf("clicking summary should toggle open; before=%v after=%v", openBefore, openAfter)
+	}
+}
+
+func TestE2E_TimePicker_NativeInputAndLabel(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var inputs int
+	var labelFor string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/timepicker"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-time-picker"] input[type=time]').length`, &inputs),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-time-picker"] label')?.getAttribute('for') || ''`, &labelFor),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if inputs < 1 {
+		t.Errorf("expected ≥1 native time input, got %d", inputs)
+	}
+	if labelFor == "" {
+		t.Errorf("expected <label for=…> wired to the time input")
+	}
+}
+
+func TestE2E_Toolbar_RoleAndGroups(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var role, ariaLabel string
+	var groups int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/toolbar"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-toolbar"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-toolbar"]')?.getAttribute('aria-label') || ''`, &ariaLabel),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-toolbar"] [role="group"]').length`, &groups),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if role != "toolbar" {
+		t.Errorf("expected role=toolbar, got %q", role)
+	}
+	if ariaLabel == "" {
+		t.Errorf("expected aria-label on toolbar")
+	}
+	if groups < 2 {
+		t.Errorf("expected ≥2 role=group children, got %d", groups)
+	}
+}
+
+func TestE2E_Sparkline_RendersSVGPath(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var sparks, paths int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/sparkline"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-sparkline"]').length`, &sparks),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-sparkline"] path').length`, &paths),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if sparks < 3 {
+		t.Errorf("expected ≥3 sparklines on demo, got %d", sparks)
+	}
+	if paths < 3 {
+		t.Errorf("expected ≥3 line paths total, got %d", paths)
+	}
+}
+
+func TestE2E_PieChart_DonutCenterLabel(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var pies, hasCenter int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/piechart"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-pie-chart"]').length`, &pies),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-pie-chart"] .ui-pie-chart__center-label').length`, &hasCenter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if pies < 2 {
+		t.Errorf("expected pie + donut (2 charts), got %d", pies)
+	}
+	if hasCenter < 1 {
+		t.Errorf("donut should emit center label, got %d", hasCenter)
+	}
+}
+
+func TestE2E_BarChart_RendersBars(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var bars int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/barchart"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-bar-chart"] rect.ui-bar-chart__bar').length`, &bars),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if bars < 7 {
+		t.Errorf("expected ≥7 bars on weekday demo, got %d", bars)
+	}
+}
+
+func TestE2E_LineChart_MultiSeriesAndLegend(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var lines, legendCircles int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/linechart"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-line-chart"] path.ui-line-chart__line').length`, &lines),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-line-chart"] circle').length`, &legendCircles),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if lines < 3 {
+		t.Errorf("expected ≥3 line paths (3 series), got %d", lines)
+	}
+	if legendCircles < 3 {
+		t.Errorf("expected ≥3 legend swatches, got %d", legendCircles)
+	}
+}
+
+func TestE2E_JSONViewer_DetailsNodes(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var nodes int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/jsonviewer"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-json-viewer"] details.ui-json-viewer__node').length`, &nodes),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if nodes < 2 {
+		t.Errorf("expected ≥2 collapsible nodes, got %d", nodes)
+	}
+}
+
+func TestE2E_DiffViewer_BothModesPresent(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var unified, split int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/diffviewer"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-diff-viewer"]:not(.ui-diff-viewer--split)').length`, &unified),
+		chromedp.Evaluate(`document.querySelectorAll('.ui-diff-viewer--split').length`, &split),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if unified < 1 {
+		t.Errorf("expected ≥1 unified diff viewer, got %d", unified)
+	}
+	if split < 1 {
+		t.Errorf("expected ≥1 split diff viewer, got %d", split)
+	}
+}
+
+func TestE2E_Markdown_RendersHeadingsAndCode(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var headings, code int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/markdown"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-markdown"] h1').length`, &headings),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-markdown"] pre code').length`, &code),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if headings < 1 {
+		t.Errorf("expected ≥1 <h1> from rendered markdown, got %d", headings)
+	}
+	if code < 1 {
+		t.Errorf("expected ≥1 <pre><code> from rendered markdown, got %d", code)
+	}
+}

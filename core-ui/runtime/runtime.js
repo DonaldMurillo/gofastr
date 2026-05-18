@@ -1522,6 +1522,12 @@
     { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
     // FileDropzone: filename display + optional image preview strip.
     { name: 'dropzone',       selector: '[data-fui-comp="ui-dropzone"]' },
+    // RangeSlider: cross-clamp min/max thumbs + optional value mirror.
+    { name: 'rangeslider',    selector: 'input[data-fui-range-slider]' },
+    // TagInput: commit on Enter/comma, backspace removes last, chip ×.
+    { name: 'taginput',       selector: '[data-fui-tag-input]' },
+    // AnimatedCounter: IntersectionObserver-driven tick on first view.
+    { name: 'animatedcounter', selector: '[data-fui-animated-counter]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
