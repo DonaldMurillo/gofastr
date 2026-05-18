@@ -565,7 +565,10 @@ func createStyleSheet(theme style.Theme) string {
 			"align-items", "center",
 			"justify-content", "center",
 			"font-weight", "600",
-			"color", "{colors.text-muted}").End()
+			"color", "{colors.text-muted}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}").End()
 
 	// Framework-UI demo helpers — small layout shims used only on the
 	// /framework-ui/ page to align rows nicely.

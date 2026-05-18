@@ -662,7 +662,7 @@ func dataTableCSS(_ style.Theme) string {
 }
 
 func skipLinkCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-skip-link"] .ui-skip-link {
+	return `[data-fui-comp="ui-skip-link"] {
   position: absolute;
   left: -9999px;
   top: auto;
@@ -671,7 +671,7 @@ func skipLinkCSS(_ style.Theme) string {
   overflow: hidden;
   z-index: 9999;
 }
-[data-fui-comp="ui-skip-link"] .ui-skip-link:focus {
+[data-fui-comp="ui-skip-link"]:focus {
   position: fixed;
   top: var(--spacing-sm, 0.5rem);
   left: var(--spacing-sm, 0.5rem);

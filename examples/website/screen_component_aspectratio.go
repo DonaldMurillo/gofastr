@@ -17,8 +17,7 @@ func (s *AspectRatioScreen) Render() render.HTML {
 	// Use a colored box inside each aspect ratio to show the proportions
 	innerBox := func(text string) render.HTML {
 		return html.Div(html.DivConfig{
-			Class: "ui-box--surface",
-			Attrs: map[string]string{"class": "demo-ar-box"},
+			Class: "demo-ar-box",
 		},
 			render.Text(text),
 		)

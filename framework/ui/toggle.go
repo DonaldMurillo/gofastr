@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -232,7 +234,11 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 	}
 
 	children := []render.HTML{legend}
-	for _, opt := range cfg.Options {
+	for i, opt := range cfg.Options {
+		rbID := id + "-" + slug(opt.Value)
+		if opt.Value == "" {
+			rbID = fmt.Sprintf("%s-%d", id, i)
+		}
 		children = append(children, Radio(ToggleConfig{
 			Name:     cfg.Name,
 			Label:    opt.Label,
@@ -240,6 +246,7 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 			Checked:  opt.Checked,
 			Disabled: opt.Disabled,
 			Required: cfg.Required,
+			ID:       rbID,
 		}))
 	}
 	if cfg.Error != "" {
@@ -329,14 +336,19 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 	}
 
 	children := []render.HTML{legend}
-	for _, opt := range cfg.Options {
+	for i, opt := range cfg.Options {
+		cbID := id + "-" + slug(opt.Value)
+		if opt.Value == "" {
+			cbID = fmt.Sprintf("%s-%d", id, i)
+		}
 		children = append(children, Checkbox(ToggleConfig{
-			Name:     cfg.Name + "[]",
+			Name:     cfg.Name,
 			Label:    opt.Label,
 			Value:    opt.Value,
 			Checked:  opt.Checked,
 			Disabled: opt.Disabled,
 			Required: cfg.Required,
+			ID:       cbID,
 		}))
 	}
 	if cfg.Error != "" {

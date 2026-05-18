@@ -66,4 +66,7 @@
   } else {
     syncAllPills();
   }
+
+  // Signal to the module loader that this module is loaded.
+  (window.__gofastr.loadedModules = window.__gofastr.loadedModules || {}).themeswitch = true;
 })();
