@@ -107,33 +107,18 @@ func TestConfirmActionSlotRendersAlertdialog(t *testing.T) {
 		`data-fui-rpc-method="POST"`,
 		`ui-button--danger`,
 		`ui-button--ghost`,
-		`autofocus="`, // on Cancel by default
 	}
 	for _, w := range wants {
 		if !strings.Contains(body, w) {
 			t.Errorf("body missing %q\nbody: %s", w, body)
 		}
 	}
-	// Cancel button must carry autofocus by default; Confirm must not.
-	// Attrs are alphabetized; autofocus comes before class.
-	if !strings.Contains(body, `autofocus=""`) {
-		t.Errorf("default: expected autofocus attr present, body: %s", body)
-	}
-	// Locate the ghost button substring and confirm it contains autofocus.
-	ghostIdx := strings.Index(body, "ui-button--ghost")
-	dangerIdx := strings.Index(body, "ui-button--danger")
-	if ghostIdx < 0 || dangerIdx < 0 {
-		t.Fatalf("missing variant classes, body: %s", body)
-	}
-	// Walk back from each variant marker to the preceding "<button" and
-	// check whether autofocus sits inside that button tag.
-	ghostTag := substringFromTag(body, "<button", ghostIdx)
-	dangerTag := substringFromTag(body, "<button", dangerIdx)
-	if !strings.Contains(ghostTag, "autofocus") {
-		t.Errorf("default: expected autofocus on Cancel (ghost), got tag: %s", ghostTag)
-	}
-	if strings.Contains(dangerTag, "autofocus") {
-		t.Errorf("default: did NOT expect autofocus on Confirm (danger), got tag: %s", dangerTag)
+	// Default (AutofocusConfirm=false): NEITHER button carries autofocus.
+	// Cancel renders first in DOM order, so the Modal preset's
+	// "focus first focusable" pass lands on it naturally — no need to
+	// race with the platform's native autofocus pass.
+	if strings.Contains(body, "autofocus") {
+		t.Errorf("default ConfirmAction must not emit an autofocus attribute (would race with the Modal preset's focus pass and trigger Chrome's 'Autofocus processing was blocked' info message); body: %s", body)
 	}
 }
 

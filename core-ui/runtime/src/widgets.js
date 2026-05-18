@@ -171,6 +171,20 @@
       if (NS._modalStack.length === 0) document.body.style.overflow = 'hidden';
       NS._modalStack.push(cfg.name);
       Promise.resolve().then(() => {
+        // Prefer an explicit [autofocus] element if the slot author
+        // marked one — that's how ui.ConfirmAction opts into focusing
+        // the Confirm button instead of Cancel. We also strip the
+        // attribute after focusing so the platform's native autofocus
+        // pass (which runs when the element next enters the DOM, e.g.
+        // after re-open) doesn't race with this focus() call. Chrome
+        // logs "Autofocus processing was blocked because a document
+        // already has a focused element" when both fire.
+        const explicit = widgetEl.querySelector('[autofocus]');
+        if (explicit) {
+          explicit.removeAttribute('autofocus');
+          explicit.focus();
+          return;
+        }
         const focusables = widgetEl.querySelectorAll(NS._focusSel);
         if (focusables.length > 0) focusables[0].focus();
       });

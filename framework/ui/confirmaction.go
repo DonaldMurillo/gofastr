@@ -170,10 +170,15 @@ func (s *confirmDialogSlot) Render() render.HTML {
 		"data-fui-rpc-method": s.rpcMethod,
 		"data-fui-rpc-close":  "",
 	}
+	// Only the OPT-IN case carries an autofocus attribute. Cancel is
+	// rendered first in DOM order so the Modal preset's "focus the
+	// first focusable" pass already lands on it — adding autofocus
+	// there would race with the preset's focus() call and emit
+	// Chrome's "Autofocus processing was blocked" info message. The
+	// preset's focus pass also explicitly prefers any [autofocus]
+	// element when one is present, so AutofocusConfirm still wins.
 	if s.autofocusConfirm {
 		confirmAttrs["autofocus"] = ""
-	} else {
-		cancelAttrs["autofocus"] = ""
 	}
 
 	return confirmActionStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-confirm-action"},
