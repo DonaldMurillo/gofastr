@@ -12,8 +12,9 @@ import (
 // screen.
 
 var (
-	layoutStyle     = registry.RegisterStyle("ui-layout", layoutCSS)
-	stickyStyle     = registry.RegisterStyle("ui-sticky", stickyCSS)
+	layoutStyle      = registry.RegisterStyle("ui-layout", layoutCSS)
+	stickyStyle      = registry.RegisterStyle("ui-sticky", stickyCSS)
+	aspectRatioStyle = registry.RegisterStyle("ui-aspect-ratio", aspectRatioCSS)
 	cardStyle       = registry.RegisterStyle("ui-card", cardCSS)
 	imageStyle      = registry.RegisterStyle("ui-image", imageCSS)
 	toggleStyle     = registry.RegisterStyle("ui-toggle", toggleCSS)
@@ -356,7 +357,33 @@ func toggleCSS(_ style.Theme) string {
   font-size: 0.85rem;
 }
 [data-fui-comp="ui-toggle"] .ui-toggle__help  { color: var(--color-text-muted, #52525B); }
-[data-fui-comp="ui-toggle"] .ui-toggle__error { color: var(--color-danger, #DC2626); }`
+[data-fui-comp="ui-toggle"] .ui-toggle__error { color: var(--color-danger, #DC2626); }
+
+/* ─── Toggle Group (fieldset wrapper for RadioGroup / CheckboxGroup) ─── */
+.ui-toggle-group {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--spacing-sm, 8px);
+}
+.ui-toggle-group .ui-toggle-group__legend {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--color-text, #18181B);
+  padding: 0;
+  margin-bottom: var(--spacing-xs, 4px);
+}
+.ui-toggle-group .ui-toggle-group__help {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #52525B);
+}
+.ui-toggle-group .ui-toggle-group__error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-danger, #DC2626);
+}`
 }
 
 // ─── Tooltip ────────────────────────────────────────────────────────
@@ -764,5 +791,31 @@ func stickyCSS(_ style.Theme) string {
   [data-fui-comp="ui-sticky"].ui-sticky--top:not(:is(:first-child))::after {
     opacity: 1;
   }
+}`
+}
+
+func aspectRatioCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-aspect-ratio"] {
+  position: relative;
+  width: 100%;
+}
+[data-fui-comp="ui-aspect-ratio"] > * {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+[data-fui-comp="ui-aspect-ratio"].ui-ar--1-1  { aspect-ratio: 1 / 1; }
+[data-fui-comp="ui-aspect-ratio"].ui-ar--4-3  { aspect-ratio: 4 / 3; }
+[data-fui-comp="ui-aspect-ratio"].ui-ar--16-9 { aspect-ratio: 16 / 9; }
+[data-fui-comp="ui-aspect-ratio"].ui-ar--21-9 { aspect-ratio: 21 / 9; }
+[data-fui-comp="ui-aspect-ratio"].ui-ar--3-4  { aspect-ratio: 3 / 4; }
+[data-fui-comp="ui-aspect-ratio"].ui-ar--3-2  { aspect-ratio: 3 / 2; }
+[data-fui-comp="ui-aspect-ratio"].ui-ar--2-3  { aspect-ratio: 2 / 3; }
+/* auto: no aspect-ratio, child sizes naturally */
+[data-fui-comp="ui-aspect-ratio"].ui-ar--auto > * {
+  position: static;
+  width: auto;
+  height: auto;
 }`
 }

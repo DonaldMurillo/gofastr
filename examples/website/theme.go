@@ -555,6 +555,18 @@ func createStyleSheet(theme style.Theme) string {
 		Set("padding", "{spacing.sm} {spacing.md}",
 			"border-bottom", "1px solid {colors.border}").End()
 
+	// AspectRatio demo grid
+	ss.Rule(".demo-ar-grid").
+		Set("display", "grid",
+			"grid-template-columns", "repeat(auto-fill, minmax(220px, 1fr))",
+			"gap", "{spacing.md}").End()
+	ss.Rule(".demo-ar-box").
+		Set("display", "flex",
+			"align-items", "center",
+			"justify-content", "center",
+			"font-weight", "600",
+			"color", "{colors.text-muted}").End()
+
 	// Framework-UI demo helpers — small layout shims used only on the
 	// /framework-ui/ page to align rows nicely.
 	ss.Rule(".demo-stat-row").

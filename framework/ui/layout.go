@@ -293,6 +293,59 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	return stickyStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
+// ─── AspectRatio ───────────────────────────────────────────────────
+//
+// Pure-CSS aspect-ratio wrapper that prevents layout shift for images,
+// videos, and embeds whose dimensions aren't known at SSR time.
+
+// AspectRatio selects a CSS aspect-ratio bucket.
+type AspectRatio string
+
+const (
+	AspectRatio1_1  AspectRatio = "1-1"
+	AspectRatio4_3  AspectRatio = "4-3"
+	AspectRatio16_9 AspectRatio = "16-9"
+	AspectRatio21_9 AspectRatio = "21-9"
+	AspectRatio3_4  AspectRatio = "3-4"
+	AspectRatio3_2  AspectRatio = "3-2"
+	AspectRatio2_3  AspectRatio = "2-3"
+	AspectRatioAuto AspectRatio = "auto"
+)
+
+// AspectRatioConfig configures an aspect-ratio wrapper.
+type AspectRatioConfig struct {
+	// Ratio is the aspect-ratio bucket (required). Use one of the
+	// AspectRatio* constants.
+	Ratio AspectRatio
+
+	// Class adds extra CSS classes.
+	Class string
+
+	// ID sets the element id.
+	ID string
+}
+
+// AspectRatio wraps a single child in a container with the given
+// aspect ratio. The child is absolutely positioned to fill the box.
+//
+// Use for responsive images, video embeds, placeholder skeletons
+// with known proportions, or any content whose intrinsic size is
+// unknown at SSR time.
+func AspectRatioComponent(cfg AspectRatioConfig, child render.HTML) render.HTML {
+	cls := "ui-ar--" + string(cfg.Ratio)
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+	attrs := map[string]string{
+		"data-fui-comp": "ui-aspect-ratio",
+		"class":         cls,
+	}
+	if cfg.ID != "" {
+		attrs["id"] = cfg.ID
+	}
+	return aspectRatioStyle.WrapHTML(render.Tag("div", attrs, child))
+}
+
 // ─── helpers ────────────────────────────────────────────────────────
 
 func layoutClass(base, extra string, gap Gap, align Align, justify Justify) string {

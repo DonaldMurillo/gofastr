@@ -425,6 +425,24 @@ var componentEntries = []componentEntry{
 		Tag:   "Layout · position:sticky",
 		Intro: "position:sticky wrapper with theme-token z-index and named offset presets. Sticks to top or bottom edge on scroll. Pure CSS, no runtime.",
 	},
+	{
+		Slug:  "select",
+		Name:  "Select",
+		Tag:   "Form · <select>",
+		Intro: "Labelled native <select> dropdown with FormField-style label, help, error, placeholder, and required marker. Custom chevron arrow via CSS.",
+	},
+	{
+		Slug:  "radiogroup",
+		Name:  "RadioGroup & CheckboxGroup",
+		Tag:   "Form · <fieldset>",
+		Intro: "<fieldset> wrappers for grouped radio buttons and checkboxes with shared legend, help text, error state, and ARIA grouping.",
+	},
+	{
+		Slug:  "aspectratio",
+		Name:  "AspectRatio",
+		Tag:   "Layout · aspect-ratio",
+		Intro: "Pure-CSS aspect-ratio wrapper that prevents layout shift for images, videos, and embeds. Child is absolutely positioned to fill the box.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

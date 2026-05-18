@@ -166,3 +166,202 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 		"for":   id,
 	}, children...))
 }
+
+// ─── RadioGroup / CheckboxGroup ───────────────────────────────────────
+//
+// <fieldset> + <legend> wrappers around N existing Radio/Checkbox
+// controls with group-level help and error wiring.
+
+// RadioGroupOption describes one radio button in a RadioGroup.
+type RadioGroupOption struct {
+	Value   string
+	Label   string
+	Checked bool
+	Disabled bool
+}
+
+// RadioGroupConfig configures a group of radio buttons.
+type RadioGroupConfig struct {
+	// Name is the shared form-field name for all radios (required).
+	Name string
+	// Legend is the group label rendered as <legend> (required).
+	Legend string
+	// Options is the list of radio options (required, at least one).
+	Options []RadioGroupOption
+	// Help renders supporting text under the group.
+	Help string
+	// Error overrides Help with an error message.
+	Error string
+	// Required marks the group as required.
+	Required bool
+	ID      string
+	Class   string
+}
+
+// RadioGroup renders a <fieldset> of radio buttons with a shared
+// name, group-level legend, and optional help/error text.
+func RadioGroup(cfg RadioGroupConfig) render.HTML {
+	if cfg.Name == "" {
+		panic("ui: RadioGroup requires Name")
+	}
+	if cfg.Legend == "" {
+		panic("ui: RadioGroup requires Legend")
+	}
+
+	id := cfg.ID
+	if id == "" {
+		id = cfg.Name + "-group"
+	}
+
+	cls := "ui-toggle-group"
+	if cfg.Error != "" {
+		cls += " is-error"
+	}
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+
+	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"},
+		render.Text(cfg.Legend))
+	if cfg.Required {
+		legend = render.Join(legend,
+			html.Span(html.TextConfig{
+				Class: "ui-form-field__required",
+				Attrs: html.Attrs{"aria-hidden": "true"},
+			}, render.Text(" *")))
+	}
+
+	children := []render.HTML{legend}
+	for _, opt := range cfg.Options {
+		children = append(children, Radio(ToggleConfig{
+			Name:     cfg.Name,
+			Label:    opt.Label,
+			Value:    opt.Value,
+			Checked:  opt.Checked,
+			Disabled: opt.Disabled,
+			Required: cfg.Required,
+		}))
+	}
+	if cfg.Error != "" {
+		children = append(children, html.Paragraph(html.TextConfig{
+			ID:    id + "-error",
+			Class: "ui-toggle-group__error",
+			Attrs: html.Attrs{"role": "alert"},
+		}, render.Text(cfg.Error)))
+	} else if cfg.Help != "" {
+		children = append(children, html.Paragraph(html.TextConfig{
+			ID:    id + "-help",
+			Class: "ui-toggle-group__help",
+		}, render.Text(cfg.Help)))
+	}
+
+	attrs := map[string]string{
+		"class": cls,
+		"id":    id,
+		"role":  "radiogroup",
+	}
+	if cfg.Error != "" {
+		attrs["aria-describedby"] = id + "-error"
+	} else if cfg.Help != "" {
+		attrs["aria-describedby"] = id + "-help"
+	}
+
+	return toggleStyle.WrapHTML(render.Tag("fieldset", attrs, children...))
+}
+
+// CheckboxGroupOption describes one checkbox in a CheckboxGroup.
+type CheckboxGroupOption struct {
+	Value    string
+	Label    string
+	Checked  bool
+	Disabled bool
+}
+
+// CheckboxGroupConfig configures a group of checkboxes.
+type CheckboxGroupConfig struct {
+	// Name is the shared form-field name for all checkboxes (required).
+	Name string
+	// Legend is the group label rendered as <legend> (required).
+	Legend string
+	// Options is the list of checkbox options (required, at least one).
+	Options []CheckboxGroupOption
+	// Help renders supporting text under the group.
+	Help string
+	// Error overrides Help with an error message.
+	Error string
+	// Required marks the group as required.
+	Required bool
+	ID      string
+	Class   string
+}
+
+// CheckboxGroup renders a <fieldset> of checkboxes with a shared
+// name, group-level legend, and optional help/error text.
+func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
+	if cfg.Name == "" {
+		panic("ui: CheckboxGroup requires Name")
+	}
+	if cfg.Legend == "" {
+		panic("ui: CheckboxGroup requires Legend")
+	}
+
+	id := cfg.ID
+	if id == "" {
+		id = cfg.Name + "-group"
+	}
+
+	cls := "ui-toggle-group"
+	if cfg.Error != "" {
+		cls += " is-error"
+	}
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+
+	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"},
+		render.Text(cfg.Legend))
+	if cfg.Required {
+		legend = render.Join(legend,
+			html.Span(html.TextConfig{
+				Class: "ui-form-field__required",
+				Attrs: html.Attrs{"aria-hidden": "true"},
+			}, render.Text(" *")))
+	}
+
+	children := []render.HTML{legend}
+	for _, opt := range cfg.Options {
+		children = append(children, Checkbox(ToggleConfig{
+			Name:     cfg.Name + "[]",
+			Label:    opt.Label,
+			Value:    opt.Value,
+			Checked:  opt.Checked,
+			Disabled: opt.Disabled,
+			Required: cfg.Required,
+		}))
+	}
+	if cfg.Error != "" {
+		children = append(children, html.Paragraph(html.TextConfig{
+			ID:    id + "-error",
+			Class: "ui-toggle-group__error",
+			Attrs: html.Attrs{"role": "alert"},
+		}, render.Text(cfg.Error)))
+	} else if cfg.Help != "" {
+		children = append(children, html.Paragraph(html.TextConfig{
+			ID:    id + "-help",
+			Class: "ui-toggle-group__help",
+		}, render.Text(cfg.Help)))
+	}
+
+	attrs := map[string]string{
+		"class": cls,
+		"id":    id,
+		"role":  "group",
+	}
+	if cfg.Error != "" {
+		attrs["aria-describedby"] = id + "-error"
+	} else if cfg.Help != "" {
+		attrs["aria-describedby"] = id + "-help"
+	}
+
+	return toggleStyle.WrapHTML(render.Tag("fieldset", attrs, children...))
+}
