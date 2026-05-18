@@ -177,9 +177,28 @@ var dataFuiWhitelist = map[string]bool{
 }
 
 func TestDrift_RuntimeDataFuiAttributesDocumented(t *testing.T) {
-	runtime, err := os.ReadFile("../../core-ui/runtime/runtime.js")
-	if err != nil {
-		t.Skipf("can't read runtime.js: %v", err)
+	// Scan the bundled core runtime AND every demand-loaded module under
+	// core-ui/runtime/src/. After the runtime code-split, new attributes
+	// frequently land inside per-module files (popover.js, widgets.js,
+	// toasts.js, …); a drift test that reads only runtime.js would let
+	// them ship undocumented.
+	sources := []string{"../../core-ui/runtime/runtime.js"}
+	moduleEntries, mErr := os.ReadDir("../../core-ui/runtime/src")
+	if mErr == nil {
+		for _, e := range moduleEntries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
+				sources = append(sources, "../../core-ui/runtime/src/"+e.Name())
+			}
+		}
+	}
+	var allBytes []byte
+	for _, p := range sources {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Skipf("can't read %s: %v", p, err)
+		}
+		allBytes = append(allBytes, data...)
+		allBytes = append(allBytes, '\n')
 	}
 	doc, err := os.ReadFile("../../core-ui/ARCHITECTURE.md")
 	if err != nil {
@@ -189,7 +208,7 @@ func TestDrift_RuntimeDataFuiAttributesDocumented(t *testing.T) {
 	// Match every data-fui-* attribute name appearing in the runtime
 	// (in string literals or DOM queries).
 	attrRx := regexp.MustCompile(`data-fui-[a-z][a-z0-9-]*`)
-	runtimeAttrs := uniqStrings(attrRx.FindAllString(string(runtime), -1))
+	runtimeAttrs := uniqStrings(attrRx.FindAllString(string(allBytes), -1))
 	docText := string(doc)
 
 	var undocumented []string
