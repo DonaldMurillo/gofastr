@@ -590,3 +590,211 @@ func TestE2E_Sticky_BottomSticky(t *testing.T) {
 		t.Errorf("expected bottom != auto on bottom-sticky element, got %q", bottom)
 	}
 }
+
+// ─── BackToTop ──────────────────────────────────────────────────────
+
+func TestE2E_BackToTop_Renders(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var exists bool
+	var tag string
+	var ariaLabel string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		// Check the default BackToTop button exists
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]') !== null`, &exists),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.tagName?.toLowerCase() || ''`, &tag),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.getAttribute('aria-label') || ''`, &ariaLabel),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Error("expected [data-fui-back-to-top] element to exist")
+	}
+	if tag != "button" {
+		t.Errorf("expected tag button, got %q", tag)
+	}
+	if ariaLabel != "Back to top" {
+		t.Errorf("expected aria-label 'Back to top', got %q", ariaLabel)
+	}
+}
+
+func TestE2E_BackToTop_HiddenByDefault(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var ariaHidden string
+	var visibleAttr bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		// The button should have aria-hidden="true" and no data-fui-btt-visible
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.getAttribute('aria-hidden') || ''`, &ariaHidden),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('data-fui-btt-visible')`, &visibleAttr),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ariaHidden != "true" {
+		t.Errorf("expected aria-hidden=true initially, got %q", ariaHidden)
+	}
+	if visibleAttr {
+		t.Error("expected no data-fui-btt-visible attribute initially")
+	}
+}
+
+func TestE2E_BackToTop_CustomIcon(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	// The page has multiple BackToTop buttons. Find the one with a filled arrow (custom icon).
+	var hasCustomIcon bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		// The custom icon uses fill="currentColor" — check that one exists
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-back-to-top] svg')).some(s => s.getAttribute('fill') === 'currentColor')`, &hasCustomIcon),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasCustomIcon {
+		t.Error("expected at least one BackToTop with custom icon (fill=currentColor)")
+	}
+}
+
+func TestE2E_BackToTop_SizeClasses(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hasSM bool
+	var hasLG bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top].ui-back-to-top--sm') !== null`, &hasSM),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top].ui-back-to-top--lg') !== null`, &hasLG),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSM {
+		t.Error("expected a BackToTop with --sm class")
+	}
+	if !hasLG {
+		t.Error("expected a BackToTop with --lg class")
+	}
+}
+
+func TestE2E_BackToTop_VariantClasses(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hasSecondary bool
+	var hasGhost bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top].ui-back-to-top--secondary') !== null`, &hasSecondary),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top].ui-back-to-top--ghost') !== null`, &hasGhost),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSecondary {
+		t.Error("expected a BackToTop with --secondary class")
+	}
+	if !hasGhost {
+		t.Error("expected a BackToTop with --ghost class")
+	}
+}
+
+func TestE2E_BackToTop_PositionClasses(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hasBL bool
+	var hasTR bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top].ui-back-to-top--bl') !== null`, &hasBL),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top].ui-back-to-top--tr') !== null`, &hasTR),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasBL {
+		t.Error("expected a BackToTop with --bl class")
+	}
+	if !hasTR {
+		t.Error("expected a BackToTop with --tr class")
+	}
+}
+
+func TestE2E_BackToTop_RuntimeModuleLoads(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var loaded bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		// Wait for module to load
+		chromedp.Sleep(1500*time.Millisecond),
+		chromedp.Evaluate(`(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.backtotop) || false`, &loaded),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded {
+		t.Error("expected backtotop runtime module to be loaded")
+	}
+}
+
+func TestE2E_BackToTop_ScrollShowsButton(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var visible bool
+	var ariaHidden string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		// Scroll down to trigger the sentinel IntersectionObserver
+		chromedp.Evaluate(`window.scrollTo(0, 600)`, nil),
+		// Give IntersectionObserver time to fire
+		chromedp.Sleep(500*time.Millisecond),
+		// Check the first (default) BackToTop button
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('data-fui-btt-visible') || false`, &visible),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.getAttribute('aria-hidden') || ''`, &ariaHidden),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !visible {
+		t.Error("expected data-fui-btt-visible after scrolling past threshold")
+	}
+	if ariaHidden == "true" {
+		t.Error("expected aria-hidden to be removed after scrolling, still 'true'")
+	}
+}
+
+func TestE2E_BackToTop_ClickScrollsToTop(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var scrollY int64
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/backtotop"),
+		pageReady(),
+		// Scroll down first
+		chromedp.Evaluate(`window.scrollTo(0, 800)`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		// Click the first BackToTop button
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top][data-fui-btt-visible]')?.click()`, nil),
+		// Wait for smooth scroll
+		chromedp.Sleep(800*time.Millisecond),
+		// Check scroll position
+		chromedp.Evaluate(`window.scrollY`, &scrollY),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scrollY > 50 {
+		t.Errorf("expected scrollY near 0 after clicking BackToTop, got %d", scrollY)
+	}
+}

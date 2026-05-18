@@ -1541,6 +1541,8 @@
     { name: 'carousel',        selector: '[data-fui-carousel]' },
     // ThemeToggle: dark/light/auto cycle button + pill sync.
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
+    // BackToTop: scroll-past-threshold reveal + smooth scroll.
+    { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

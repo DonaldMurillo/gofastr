@@ -426,6 +426,12 @@ var componentEntries = []componentEntry{
 		Intro: "position:sticky wrapper with theme-token z-index and named offset presets. Sticks to top or bottom edge on scroll. Pure CSS, no runtime.",
 	},
 	{
+		Slug:  "backtotop",
+		Name:  "BackToTop",
+		Tag:   "Navigation · scroll",
+		Intro: "Fixed-position button that appears after scrolling past a threshold and smooth-scrolls to top. Configurable icon, size, variant, position, and offset. IntersectionObserver-driven.",
+	},
+	{
 		Slug:  "select",
 		Name:  "Select",
 		Tag:   "Form · <select>",

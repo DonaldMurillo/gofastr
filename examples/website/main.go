@@ -136,6 +136,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/skiplink", &SkipLinkScreen{}, nil)
 	site.Register("/components/themetoggle", &ThemeToggleScreen{}, nil)
 	site.Register("/components/sticky", &StickyScreen{}, nil)
+	site.Register("/components/backtotop", &BackToTopScreen{}, nil)
 	site.Register("/components/select", &SelectScreen{}, nil)
 	site.Register("/components/aspectratio", &AspectRatioScreen{}, nil)
 	site.Register("/customers", &CustomersListScreen{}, nil)

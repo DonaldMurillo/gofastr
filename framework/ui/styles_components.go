@@ -34,6 +34,7 @@ var (
 	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
 	skipLinkStyle     = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
 	themeToggleStyle = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
+	backToTopStyle   = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
 )
 
 // buttonCSS is the base .ui-button styling that several call sites
@@ -750,5 +751,164 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggl
 [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__opt[aria-pressed="true"] {
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-foreground, #fff);
+}`
+}
+
+func backToTopCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-back-to-top"] {
+  position: fixed;
+  z-index: var(--z-sticky, 100);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-foreground, #fff);
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(0.5rem);
+  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+/* ── Visible state (toggled by runtime) ── */
+[data-fui-comp="ui-back-to-top"][data-fui-btt-visible] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* ── Interaction ── */
+[data-fui-comp="ui-back-to-top"]:hover {
+  background: var(--color-primary-hover, #4338CA);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
+}
+[data-fui-comp="ui-back-to-top"]:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--color-ring, #4F46E5);
+  outline-offset: 2px;
+}
+[data-fui-comp="ui-back-to-top"] svg {
+  pointer-events: none;
+}
+
+/* ── Positions (defaults to bottom-right) ── */
+.ui-back-to-top--br {
+  right: var(--spacing-lg, 1.5rem);
+  bottom: var(--spacing-lg, 1.5rem);
+}
+.ui-back-to-top--bl {
+  left: var(--spacing-lg, 1.5rem);
+  bottom: var(--spacing-lg, 1.5rem);
+}
+.ui-back-to-top--tr {
+  right: var(--spacing-lg, 1.5rem);
+  top: var(--spacing-lg, 1.5rem);
+}
+.ui-back-to-top--tl {
+  left: var(--spacing-lg, 1.5rem);
+  top: var(--spacing-lg, 1.5rem);
+}
+
+/* ── Sizes ── */
+.ui-back-to-top--sm {
+  width: 2rem;
+  height: 2rem;
+}
+.ui-back-to-top--sm svg {
+  width: 14px;
+  height: 14px;
+}
+.ui-back-to-top--lg {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+.ui-back-to-top--lg svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* ── Variants ── */
+.ui-back-to-top--secondary {
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+.ui-back-to-top--secondary:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+  border-color: var(--color-border-hover, #d1d5db);
+}
+.ui-back-to-top--ghost {
+  background: transparent;
+  color: var(--color-text-muted, #6b7280);
+  box-shadow: none;
+}
+.ui-back-to-top--ghost:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text, #1a1a1a);
+}
+
+/* ── Offset presets ── */
+.ui-back-to-top--offset-none {
+  --btt-offset: 0;
+}
+.ui-back-to-top--offset-sm {
+  --btt-offset: var(--spacing-sm, 0.5rem);
+}
+/* md is the default (spacing-lg) — no override class needed */
+.ui-back-to-top--offset-lg {
+  --btt-offset: var(--spacing-xl, 2rem);
+}
+.ui-back-to-top--offset-xl {
+  --btt-offset: var(--spacing-2xl, 3rem);
+}
+
+/* When an offset custom property is set, override position coords. */
+.ui-back-to-top--offset-none,
+.ui-back-to-top--offset-sm,
+.ui-back-to-top--offset-lg,
+.ui-back-to-top--offset-xl {
+  --btt-right: var(--btt-offset);
+  --btt-left: var(--btt-offset);
+  --btt-bottom: var(--btt-offset);
+  --btt-top: var(--btt-offset);
+}
+.ui-back-to-top--offset-none.ui-back-to-top--br,
+.ui-back-to-top--offset-sm.ui-back-to-top--br,
+.ui-back-to-top--offset-lg.ui-back-to-top--br,
+.ui-back-to-top--offset-xl.ui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 1.5rem)); bottom: var(--btt-bottom, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-none.ui-back-to-top--bl,
+.ui-back-to-top--offset-sm.ui-back-to-top--bl,
+.ui-back-to-top--offset-lg.ui-back-to-top--bl,
+.ui-back-to-top--offset-xl.ui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 1.5rem)); bottom: var(--btt-bottom, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-none.ui-back-to-top--tr,
+.ui-back-to-top--offset-sm.ui-back-to-top--tr,
+.ui-back-to-top--offset-lg.ui-back-to-top--tr,
+.ui-back-to-top--offset-xl.ui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 1.5rem)); top: var(--btt-top, var(--spacing-lg, 1.5rem)); }
+.ui-back-to-top--offset-none.ui-back-to-top--tl,
+.ui-back-to-top--offset-sm.ui-back-to-top--tl,
+.ui-back-to-top--offset-lg.ui-back-to-top--tl,
+.ui-back-to-top--offset-xl.ui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 1.5rem)); top: var(--btt-top, var(--spacing-lg, 1.5rem)); }
+
+/* ── Dark mode adjustments ── */
+[data-color-scheme="dark"] .ui-back-to-top--secondary {
+  background: var(--color-surface, #1e1e2e);
+  color: var(--color-text, #e5e7eb);
+  border-color: var(--color-border, #374151);
+}
+[data-color-scheme="dark"] .ui-back-to-top--secondary:hover {
+  background: var(--color-surface-hover, #2d2d3f);
+}
+[data-color-scheme="dark"] .ui-back-to-top--ghost {
+  color: var(--color-text-muted, #9ca3af);
+}
+[data-color-scheme="dark"] .ui-back-to-top--ghost:hover {
+  background: var(--color-surface-hover, #2d2d3f);
+  color: var(--color-text, #e5e7eb);
 }`
 }
