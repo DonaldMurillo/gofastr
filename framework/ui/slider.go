@@ -93,6 +93,11 @@ func Slider(cfg SliderConfig) render.HTML {
 		"max":   strconv.Itoa(max),
 		"step":  strconv.Itoa(step),
 		"value": strconv.Itoa(val),
+		// <label for=…> wires the visible label as the input's
+		// accessible name, but some AT scanners (and the rendered
+		// screenshot tooling) miss the association. aria-label
+		// guarantees the name is on the input itself.
+		"aria-label": cfg.Label,
 	}
 	if cfg.Disabled {
 		inputAttrs["disabled"] = ""

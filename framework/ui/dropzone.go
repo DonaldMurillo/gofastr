@@ -117,6 +117,11 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	zoneAttrs := map[string]string{
 		"class":              "ui-dropzone__zone",
 		"data-fui-fileupload": "true", // reuse the existing drag-drop runtime hook
+		// role=region + aria-label so AT users hear "<Label>, region"
+		// when the focus passes through the dropzone container,
+		// distinct from the inner file input.
+		"role":               "region",
+		"aria-label":         cfg.Label,
 	}
 
 	zoneChildren := []render.HTML{

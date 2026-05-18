@@ -158,12 +158,17 @@ func RatingInput(cfg RatingConfig) render.HTML {
 	items := make([]render.HTML, 0, max*2)
 	for i := max; i >= 1; i-- {
 		idV := cfg.Name + "-" + strconv.Itoa(i)
+		// Belt-and-suspenders accessible name: <label for=…>
+		// associates the label's aria-label with the input, but some
+		// screen readers fall back to scanning the input's own attrs.
+		// An explicit aria-label here guarantees a name in every AT.
 		inputAttrs := map[string]string{
-			"type":  "radio",
-			"name":  cfg.Name,
-			"id":    idV,
-			"value": strconv.Itoa(i),
-			"class": "ui-rating__input",
+			"type":       "radio",
+			"name":       cfg.Name,
+			"id":         idV,
+			"value":      strconv.Itoa(i),
+			"class":      "ui-rating__input",
+			"aria-label": pluralStars(i) + " out of " + strconv.Itoa(max),
 		}
 		if cfg.Value == i {
 			inputAttrs["checked"] = ""
