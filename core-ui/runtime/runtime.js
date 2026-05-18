@@ -1508,6 +1508,20 @@
     // localStorage-backed hide pass for already-dismissed banners and
     // wires the delegated click handler for the X button.
     { name: 'banner',         selector: '[data-fui-banner-dismiss]' },
+    // Slider: mirrors <input type="range"> value into the associated
+    // <output> on input events. Loaded only when ShowValue=true (the
+    // mirror marker is on the input then).
+    { name: 'slider',         selector: '[data-fui-slider-mirror]' },
+    // NumberInput: wires the +/- step buttons of framework/ui.NumberInput
+    // to the associated <input type="number">.
+    { name: 'numberinput',    selector: '[data-fui-number-step]' },
+    // TextArea autogrow: applies the same auto-resize handler the
+    // widget runtime uses for textareas anywhere on the page.
+    { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
+    // MultiSelect: chip rendering for checked options + chip removal.
+    { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
+    // FileDropzone: filename display + optional image preview strip.
+    { name: 'dropzone',       selector: '[data-fui-comp="ui-dropzone"]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

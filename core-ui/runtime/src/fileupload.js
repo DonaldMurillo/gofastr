@@ -66,19 +66,28 @@
       // restore input.files on back-nav).
       render();
 
+      // Dragover state is added to the zone itself (always) AND to
+      // any owning component wrapper (ui-fileupload / ui-dropzone /
+      // …) so each component's stylesheet can style whichever it
+      // prefers. The wrapper-class lookup walks the closest matching
+      // [data-fui-comp^="ui-"] ancestor.
+      const wrapperFor = (el) => el.closest('[data-fui-comp]');
       const onEnter = (e) => {
         e.preventDefault();
-        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.add('is-dragover');
+        zone.classList.add('is-dragover');
+        wrapperFor(zone)?.classList.add('is-dragover');
       };
       const onLeave = (e) => {
         e.preventDefault();
         // dragleave fires when moving to a child — guard via relatedTarget.
         if (zone.contains(e.relatedTarget)) return;
-        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.remove('is-dragover');
+        zone.classList.remove('is-dragover');
+        wrapperFor(zone)?.classList.remove('is-dragover');
       };
       const onDrop = (e) => {
         e.preventDefault();
-        zone.closest('[data-fui-comp="ui-fileupload"]')?.classList.remove('is-dragover');
+        zone.classList.remove('is-dragover');
+        wrapperFor(zone)?.classList.remove('is-dragover');
         const files = e.dataTransfer && e.dataTransfer.files;
         if (!files || files.length === 0) return;
         if (input.disabled) return;

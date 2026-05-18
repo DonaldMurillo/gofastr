@@ -245,6 +245,36 @@ var componentEntries = []componentEntry{
 		Tag:   "Native · Themed chrome",
 		Intro: "Styled wrapper around <input type=\"color\">. The browser handles the actual color UI; we own the label, the 44×44 swatch size, and the focus ring. Preset swatches are on the roadmap.",
 	},
+	{
+		Slug:  "slider",
+		Name:  "Slider",
+		Tag:   "Range · Live value",
+		Intro: "Styled <input type=\"range\"> with optional live value display + Min/Max edge labels. Native keyboard support (Arrow/PageUp-Down/Home/End); ShowValue uses a small runtime hook to mirror the live value into <output>.",
+	},
+	{
+		Slug:  "numberinput",
+		Name:  "Number Input",
+		Tag:   "Stepper · Min/Max",
+		Intro: "Native <input type=\"number\"> flanked by explicit +/- buttons. The runtime increments by Step, clamps to Min/Max, and dispatches input + change events so form-RPC pipelines see the new value.",
+	},
+	{
+		Slug:  "textarea",
+		Name:  "Text Area",
+		Tag:   "Multi-line · Autogrow",
+		Intro: "Labelled multi-line text input. Help / Error states, error styling, and the typed Autogrow toggle that hooks into the runtime's data-fui-autogrow primitive to resize the height to fit content.",
+	},
+	{
+		Slug:  "multiselect",
+		Name:  "Multi-Select",
+		Tag:   "Checkbox group · Chips",
+		Intro: "Checkbox-group inside a <details> disclosure with chip rendering above. Native form-submit semantics (repeated Name); the runtime rebuilds the chip strip on every change and ×-removes unchecked options.",
+	},
+	{
+		Slug:  "dropzone",
+		Name:  "File Dropzone",
+		Tag:   "Drag-drop · Preview",
+		Intro: "Hero file-drop surface with the existing data-fui-fileupload drag-drop hook. Adds filename display after pick + an optional image preview strip via FileReader.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {
