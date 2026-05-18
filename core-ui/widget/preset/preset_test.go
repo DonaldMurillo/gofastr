@@ -74,3 +74,19 @@ func TestBannerDefaults(t *testing.T) {
 		t.Errorf("Banner position = %q", d.Position)
 	}
 }
+
+func TestBottomSheetDefaults(t *testing.T) {
+	d := BottomSheet("bs").Build()
+	if d.Position != widget.Bottom {
+		t.Errorf("BottomSheet Position = %q, want %q", d.Position, widget.Bottom)
+	}
+	if !d.Backdrop {
+		t.Errorf("BottomSheet must have Backdrop=true")
+	}
+	if d.Role != "dialog" {
+		t.Errorf("BottomSheet Role = %q, want dialog", d.Role)
+	}
+	if !d.CloseOnEscape || !d.CloseOnClickOutside {
+		t.Errorf("BottomSheet must close on ESC + click-outside")
+	}
+}

@@ -120,6 +120,31 @@ func Banner(name string) *widget.Builder {
 		Mount(widget.Top)
 }
 
+// BottomSheet is a mobile-friendly bottom-edge variant of Drawer.
+// Same dismiss affordances (backdrop + ESC + click-outside) but
+// mounted on the bottom edge with a visible drag-handle bar at the
+// top of the panel. Slide-from-bottom animation; on small viewports
+// the sheet rises ~75vh; on larger viewports it caps to a more
+// conservative ~50vh.
+//
+// Use for mobile detail panels, share sheets, action menus — any
+// content surface that on small screens makes more sense rising
+// from the bottom than sliding in from the left.
+//
+// The drag-to-dismiss gesture is NOT yet wired (touch event story
+// is its own design pass). ESC + backdrop click cover keyboard +
+// pointer dismiss in the meantime.
+func BottomSheet(name string) *widget.Builder {
+	b := widget.New(name).
+		Mount(widget.Bottom).
+		Backdrop().
+		Role("dialog")
+	d := b.Definition()
+	d.CloseOnEscape = true
+	d.CloseOnClickOutside = true
+	return b
+}
+
 // Popover is a click-triggered floating surface with no backdrop dim.
 // Hidden by default — opened with data-fui-open="<name>" — and
 // dismisses on Escape or click-outside.

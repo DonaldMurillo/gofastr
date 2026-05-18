@@ -11,6 +11,15 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Shipped
 
+### Wave 4 (2026-05-18) — Tier 3 composite & navigation
+
+- TableOfContents — `framework/ui/` (auto-built nav from h2/h3 + IntersectionObserver active-section tracking)
+- Lightbox — `framework/ui/` (click-to-zoom; composes preset.Modal — ZERO new runtime module)
+- NotificationBell — `framework/ui/` (bell + unread badge + paired preset.Popover)
+- SortableList — `core-ui/patterns/sortablelist/` (HTML5 drag + keyboard Space-grab/Arrow-move/Esc-cancel)
+- GlobalSearch — `framework/ui/` (sticky bar with `/`-shortcut focus + Combobox results)
+- BottomSheet preset — `core-ui/widget/preset.BottomSheet` (bottom-anchored Drawer variant)
+
 ### Wave 3 (2026-05-18) — Tier 1 + Tier 2
 
 - Container (max-width wrapper) — `framework/ui/`
@@ -62,59 +71,13 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Deferred — Wave 4 candidates (Tier 3 composite & navigation)
 
-### SortableList
+All Wave 4 / Tier-3 items shipped (see Wave 4 section above). Open
+follow-ups carried into the deferred list at the bottom of this doc:
 
-- **Layer:** `core-ui/patterns/sortablelist/`
-- **Shape sketch:** Native HTML5 drag-handle reorderable list with
-  keyboard fallback (Space to grab, Arrow keys to move, Space to drop).
-  Each item carries `data-fui-sort-key` so the post-drop RPC can submit
-  the new order array.
-- **Pre-reqs:** None.
-
-### NotificationBell
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Bell icon button with unread-count badge + a
-  `preset.Popover` anchored to it. The Popover slot is an
-  RPC-driven list of recent items. Marker the unread state with a
-  small dot until the popover is opened.
-- **Pre-reqs:** Popover preset (shipped), Tag/Badge (shipped).
-
-### GlobalSearch
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Sticky search bar with `/`-shortcut focus + a
-  Combobox-driven dropdown of results. Distinct from CommandPalette
-  (⌘K, full-screen modal) — GlobalSearch is inline, persistent, and
-  per-page. RPC fetches results as you type.
-- **Pre-reqs:** Combobox pattern (shipped), data-fui-shortcut-focus (shipped).
-
-### TableOfContents
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Auto-extracts `<h2>` / `<h3>` from a target
-  region; renders a sticky nav with scroll-position tracking
-  (IntersectionObserver) to highlight the current section.
-- **Pre-reqs:** None.
-
-### Lightbox
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Click an `<img>` to open a centered overlay with
-  the full-resolution image. Arrow keys navigate prev/next within a
-  named gallery; Esc dismisses; click-outside dismisses.
-- **Pre-reqs:** Modal preset (shipped).
-
-### Mobile bottom-sheet preset
-
-- **Layer:** `core-ui/widget/preset/`
-- **Shape sketch:** Drawer mounted to bottom edge with mobile-only
-  drag handle, snap points (peek / half / full), and a swipe-down
-  dismiss gesture. Pure CSS scroll-snap for the snap points where
-  possible; small runtime module for the drag.
-- **Pre-reqs:** Drawer preset (shipped).
-
----
+- Lightbox arrow-key prev/next nav within an open gallery (v1 ships
+  with ESC + tab-to-thumb only — sufficient but minimal).
+- BottomSheet drag-to-dismiss gesture (touch event story is its own
+  design pass).
 
 ## Deferred — Wave 5 candidates (Tier 4 form helpers / async)
 

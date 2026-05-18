@@ -359,6 +359,42 @@ var componentEntries = []componentEntry{
 		Tag:   "IntersectionObserver · Reduced-motion",
 		Intro: "Number that ticks from From to To over DurationMs. SSR renders the final value (no-JS + reduced-motion users see target immediately); the runtime hooks IntersectionObserver so animation fires exactly once when scrolled into view.",
 	},
+	{
+		Slug:  "toc",
+		Name:  "Table of Contents",
+		Tag:   "Auto-built · Sticky · IntersectionObserver",
+		Intro: "Auto-built from h2/h3 inside the Target selector. Renders a sticky nav with active-section tracking. No-JS users see in-document headings as the navigation primitive.",
+	},
+	{
+		Slug:  "lightbox",
+		Name:  "Lightbox",
+		Tag:   "preset.Modal · Signal binding",
+		Intro: "Click-to-zoom image gallery built on top of preset.Modal — ESC, click-outside, focus-trap all free. Each thumb's data-fui-deeplink mirrors src/alt onto the modal's signals on open. No bespoke runtime module.",
+	},
+	{
+		Slug:  "notificationbell",
+		Name:  "Notification Bell",
+		Tag:   "preset.Popover · Live signals",
+		Intro: "Bell button + unread-count badge + popover dropdown of recent items. Composes preset.Popover. Optional SignalUnread + SignalList bind the badge and list HTML to runtime signals for SSE-driven live updates.",
+	},
+	{
+		Slug:  "sortablelist",
+		Name:  "Sortable List",
+		Tag:   "HTML5 drag · Keyboard reorder",
+		Intro: "Drag-and-drop reorderable list with keyboard fallback (Space grab, Arrow Up/Down move, Esc cancel). After a successful reorder the runtime POSTs the new key sequence to RPCPath; non-2xx reverts the DOM.",
+	},
+	{
+		Slug:  "globalsearch",
+		Name:  "Global Search",
+		Tag:   "/-shortcut · Combobox · Sticky",
+		Intro: "Sticky inline search bar with /-shortcut focus + a Combobox-driven results dropdown. Distinct from CommandPalette (⌘K focus-trapped modal) — GlobalSearch is persistent and inline.",
+	},
+	{
+		Slug:  "bottomsheet",
+		Name:  "Bottom Sheet",
+		Tag:   "Drawer variant · Mobile-friendly",
+		Intro: "preset.BottomSheet — bottom-anchored sibling of Drawer. Same dismiss affordances (backdrop, ESC, click-outside, focus-trap), mounted on the bottom edge with slide-from-bottom animation. Ideal for mobile detail panels.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

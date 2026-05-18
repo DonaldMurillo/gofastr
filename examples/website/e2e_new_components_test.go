@@ -662,3 +662,132 @@ func TestE2E_Markdown_RendersHeadingsAndCode(t *testing.T) {
 		t.Errorf("expected ≥1 <pre><code> from rendered markdown, got %d", code)
 	}
 }
+
+// =============================================================================
+// Wave 4 — Tier 3 composite & navigation
+// =============================================================================
+
+func TestE2E_TOC_PageLoadsAndShellRenders(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var navCount int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/toc"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-toc"]').length`, &navCount),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if navCount < 1 {
+		t.Errorf("expected ≥1 ui-toc nav shell, got %d", navCount)
+	}
+}
+
+func TestE2E_Lightbox_ThumbsAreAnchors(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var n int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/lightbox"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-lightbox"] a[data-fui-open]').length`, &n),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if n < 4 {
+		t.Errorf("expected ≥4 lightbox thumbs as <a>, got %d", n)
+	}
+}
+
+func TestE2E_NotificationBell_TriggerOpensPopover(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hiddenAfter string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/notificationbell"),
+		pageReady(),
+		// Catalog-lazy popover — not in DOM until first opened.
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-notification-bell"]').click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`(document.querySelector('[data-fui-widget="components-bell-demo"]')?.hasAttribute('hidden') ?? null) + ''`, &hiddenAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if hiddenAfter != "false" {
+		t.Errorf("clicking the bell should mount + open the popover; after=%q", hiddenAfter)
+	}
+}
+
+func TestE2E_SortableList_RowsAreDraggable(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var drag, list int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/sortablelist"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-sortable] [data-fui-sortable-item][draggable="true"]').length`, &drag),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-sortable][role="listbox"]').length`, &list),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if drag < 5 {
+		t.Errorf("expected ≥5 draggable items, got %d", drag)
+	}
+	if list < 1 {
+		t.Errorf("expected ≥1 sortable listbox, got %d", list)
+	}
+}
+
+func TestE2E_GlobalSearch_ShortcutWiringPresent(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var sc, tg string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/globalsearch"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-global-search"]')?.getAttribute('data-fui-shortcut-focus') || ''`, &sc),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-global-search"]')?.getAttribute('data-fui-shortcut-target') || ''`, &tg),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if sc != "/" {
+		t.Errorf("expected shortcut focus chord '/', got %q", sc)
+	}
+	if tg == "" {
+		t.Errorf("expected shortcut target selector to be set")
+	}
+}
+
+func TestE2E_BottomSheet_TriggerOpensBottomMounted(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hiddenAfter, position string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/bottomsheet"),
+		pageReady(),
+		// Catalog-lazy widget — not in DOM until first opened.
+		chromedp.Evaluate(`document.querySelector('[data-fui-open="components-bottomsheet-demo"]').click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`(document.querySelector('[data-fui-widget="components-bottomsheet-demo"]')?.hasAttribute('hidden') ?? null) + ''`, &hiddenAfter),
+		chromedp.Evaluate(`(function(){
+			const w = document.querySelector('[data-fui-widget="components-bottomsheet-demo"]');
+			if (!w) return '';
+			for (const c of w.classList) { if (c.startsWith('fui-pos-')) return c; }
+			return '';
+		})()`, &position),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if hiddenAfter != "false" {
+		t.Errorf("trigger click should open the sheet (hidden=false expected); after=%q", hiddenAfter)
+	}
+	if position != "fui-pos-bottom" {
+		t.Errorf("bottom sheet should mount at bottom; class=%q", position)
+	}
+}

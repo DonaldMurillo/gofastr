@@ -5,6 +5,7 @@ import (
 	stdhtml "html"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -175,6 +176,110 @@ func registerComponentDemos(fwApp *framework.App) {
 		Build()
 	pop.DeepLinkParams = append(pop.DeepLinkParams, "from")
 	widget.Mount(r, &pop)
+
+	// --- Wave 4: Lightbox modal --------------------------------------
+	// Mount once so the per-page LightboxScreen demo can open it.
+	// Reuses the same Lightbox() helper the demo screen calls — passing
+	// the same config keeps the gallery list in sync.
+	_, lightboxModal := ui.Lightbox(ui.LightboxConfig{
+		Name:  "components-lightbox-demo",
+		Label: "Sample gallery",
+		Pages: []string{"/components/lightbox"},
+		// Image set duplicated from the screen — single source of truth
+		// would be nicer but cross-package state is heavier than worth.
+		// Image content is irrelevant for the mount; only Name + Pages matter.
+		Images: []ui.LightboxImage{
+			{Src: "x", Alt: "x"},
+		},
+	})
+	lbBuilt := lightboxModal.Build()
+	widget.Mount(r, &lbBuilt)
+
+	// --- Wave 4: NotificationBell popover ----------------------------
+	_, bellPop := ui.NotificationBell(ui.NotificationBellConfig{
+		Name:  "components-bell-demo",
+		Label: "Notifications",
+		Pages: []string{"/components/notificationbell"},
+		Items: []ui.NotificationItem{{Title: "x"}},
+	})
+	bellBuilt := bellPop.Build()
+	widget.Mount(r, &bellBuilt)
+	_, bellEmptyPop := ui.NotificationBell(ui.NotificationBellConfig{
+		Name:  "components-bell-empty",
+		Label: "Notifications",
+		Pages: []string{"/components/notificationbell"},
+	})
+	bellEmptyBuilt := bellEmptyPop.Build()
+	widget.Mount(r, &bellEmptyBuilt)
+
+	// --- Wave 4: BottomSheet demo ------------------------------------
+	bottomSheet := preset.BottomSheet("components-bottomsheet-demo").
+		Hidden().
+		Pages("/components/bottomsheet").
+		LabelledBy("components-bottomsheet-title").
+		Slot("body", bottomSheetBody{}).
+		Build()
+	widget.Mount(r, &bottomSheet)
+
+	// --- Wave 4: SortableList reorder RPC ----------------------------
+	// Accepts POST `order=<comma-keys>`; the demo just echoes 200 OK so
+	// the runtime's commit/revert pipeline can be observed without
+	// persisting state.
+	r.Post("/components/sortablelist/reorder", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = req.ParseForm()
+		// Accept any non-empty order string. Real apps would persist.
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// --- Wave 4: GlobalSearch results RPC ----------------------------
+	// Returns a static <li> list filtered by the query — keeps the demo
+	// hermetic. The signal-bound listbox swaps to this HTML.
+	r.Post("/components/globalsearch/results", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = req.ParseForm()
+		q := strings.ToLower(req.FormValue("q"))
+		items := []string{
+			"Accordion", "Banner", "Button", "CodeBlock", "Combobox",
+			"DiffViewer", "Drawer", "InfiniteScroll", "LineChart", "Modal",
+			"MultiSelect", "Pagination", "PieChart", "Popover", "Rating",
+			"Sidebar", "Slider", "TextArea", "Tooltip", "TreeView",
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if q == "" {
+			_, _ = w.Write([]byte(`<li class="combobox__opt">Type to search…</li>`))
+			return
+		}
+		var b strings.Builder
+		for _, it := range items {
+			if strings.Contains(strings.ToLower(it), q) {
+				b.WriteString(`<li class="combobox__opt"><a href="/components/`)
+				b.WriteString(strings.ToLower(it))
+				b.WriteString(`">`)
+				b.WriteString(it)
+				b.WriteString(`</a></li>`)
+			}
+		}
+		if b.Len() == 0 {
+			b.WriteString(`<li class="combobox__opt">No matches.</li>`)
+		}
+		_, _ = w.Write([]byte(b.String()))
+	}))
+}
+
+// bottomSheetBody renders the /components/bottomsheet demo content.
+type bottomSheetBody struct{}
+
+func (bottomSheetBody) Render() render.HTML {
+	return render.Tag("div", map[string]string{"class": "demo-modal-body"},
+		html.Heading(html.HeadingConfig{Level: 2, ID: "components-bottomsheet-title"},
+			render.Text("Share this post")),
+		html.Paragraph(html.TextConfig{},
+			render.Text("Pick a destination. Standard ESC + backdrop-click dismiss; mobile drag-to-dismiss is on the deferred list.")),
+		render.Tag("div", map[string]string{"class": "demo-button-row"},
+			ui.Button(ui.ButtonConfig{Label: "Copy link", Variant: ui.ButtonSecondary}),
+			ui.Button(ui.ButtonConfig{Label: "Send via email", Variant: ui.ButtonSecondary}),
+			ui.Button(ui.ButtonConfig{Label: "Share to chat"}),
+		),
+	)
 }
 
 // fileUploadEchoHandler reads the multipart form, returns an HTML

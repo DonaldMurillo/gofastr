@@ -1528,6 +1528,13 @@
     { name: 'taginput',       selector: '[data-fui-tag-input]' },
     // AnimatedCounter: IntersectionObserver-driven tick on first view.
     { name: 'animatedcounter', selector: '[data-fui-animated-counter]' },
+    // TableOfContents: harvest h2/h3 from target region + active-section tracking.
+    { name: 'toc',             selector: '[data-fui-toc]' },
+    // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
+    { name: 'sortablelist',    selector: '[data-fui-sortable]' },
+    // Shortcut: page-level (non-widget) data-fui-shortcut-focus +
+    // data-fui-shortcut-click bindings.
+    { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
