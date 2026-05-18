@@ -432,12 +432,6 @@ var componentEntries = []componentEntry{
 		Intro: "Labelled native <select> dropdown with FormField-style label, help, error, placeholder, and required marker. Custom chevron arrow via CSS.",
 	},
 	{
-		Slug:  "radiogroup",
-		Name:  "RadioGroup & CheckboxGroup",
-		Tag:   "Form · <fieldset>",
-		Intro: "<fieldset> wrappers for grouped radio buttons and checkboxes with shared legend, help text, error state, and ARIA grouping.",
-	},
-	{
 		Slug:  "aspectratio",
 		Name:  "AspectRatio",
 		Tag:   "Layout · aspect-ratio",

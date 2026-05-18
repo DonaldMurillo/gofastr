@@ -130,7 +130,7 @@ func TestE2E_RadioGroup_FieldsetRenders(t *testing.T) {
 	var legendText string
 	var radioCount int
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('.ui-toggle-group[role="radiogroup"]')?.getAttribute('role') || ''`, &role),
 		chromedp.Evaluate(`document.querySelector('.ui-toggle-group[role="radiogroup"] legend')?.textContent || ''`, &legendText),
@@ -155,7 +155,7 @@ func TestE2E_RadioGroup_UniqueIDs(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var hasDuplicates bool
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
 			var radios = document.querySelectorAll('.ui-toggle-group[role="radiogroup"] input[type="radio"]');
@@ -180,7 +180,7 @@ func TestE2E_RadioGroup_SharedName(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var names []string
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		// Get all unique name= values in the first radiogroup only
 		chromedp.Evaluate(`(function() {
@@ -205,7 +205,7 @@ func TestE2E_RadioGroup_ErrorState(t *testing.T) {
 	var hasError bool
 	var hasAlert bool
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('.ui-toggle-group.is-error') !== null`, &hasError),
 		chromedp.Evaluate(`document.querySelector('.ui-toggle-group.is-error .ui-toggle-group__error[role="alert"]') !== null`, &hasAlert),
@@ -226,7 +226,7 @@ func TestE2E_RadioGroup_HelpText(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var hasHelp bool
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('.ui-toggle-group .ui-toggle-group__help') !== null`, &hasHelp),
 	)
@@ -247,7 +247,7 @@ func TestE2E_CheckboxGroup_FieldsetRenders(t *testing.T) {
 	var legendText string
 	var cbCount int
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		// The CheckboxGroup demo uses role="group"
 		chromedp.Evaluate(`document.querySelector('.ui-toggle-group[role="group"]')?.getAttribute('role') || ''`, &role),
@@ -273,7 +273,7 @@ func TestE2E_CheckboxGroup_UniqueIDs(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var hasDuplicates bool
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
 			var cbs = document.querySelectorAll('.ui-toggle-group[role="group"] input[type="checkbox"]');
@@ -298,7 +298,7 @@ func TestE2E_CheckboxGroup_SharedName(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var names []string
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
 			var cbs = document.querySelectorAll('.ui-toggle-group[role="group"] input[type="checkbox"]');
@@ -320,7 +320,7 @@ func TestE2E_CheckboxGroup_LabelForAssociation(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var mismatches int
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/radiogroup"),
+		chromedp.Navigate(base+"/components/toggle"),
 		pageReady(),
 		// Each label[for] must point to an existing input id
 		chromedp.Evaluate(`(function() {

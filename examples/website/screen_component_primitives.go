@@ -226,6 +226,47 @@ ui.Switch(ui.ToggleConfig{
     Name: "wifi", Label: "Wi-Fi", Checked: true,
 })`
 
+	// ── Group wrappers (RadioGroup / CheckboxGroup) ──
+	rgBasic := ui.RadioGroup(ui.RadioGroupConfig{
+		Name:   "plan-group",
+		Legend: "Choose a plan",
+		Options: []ui.RadioGroupOption{
+			{Value: "free", Label: "Free", Checked: true},
+			{Value: "pro", Label: "Pro — $9/mo"},
+			{Value: "enterprise", Label: "Enterprise — Contact us"},
+		},
+	})
+	rgError := ui.RadioGroup(ui.RadioGroupConfig{
+		Name:     "tos-group",
+		Legend:   "Accept terms?",
+		Required: true,
+		Error:    "You must accept the terms to continue.",
+		Options: []ui.RadioGroupOption{
+			{Value: "yes", Label: "Yes, I accept"},
+			{Value: "no", Label: "No, I decline"},
+		},
+	})
+	cbGroup := ui.CheckboxGroup(ui.CheckboxGroupConfig{
+		Name:   "contact-group",
+		Legend: "Preferred contact methods",
+		Help:   "Select all that apply.",
+		Options: []ui.CheckboxGroupOption{
+			{Value: "email", Label: "Email", Checked: true},
+			{Value: "sms", Label: "SMS"},
+			{Value: "push", Label: "Push notification"},
+		},
+	})
+	groupSrc := `ui.RadioGroup(ui.RadioGroupConfig{
+    Name: "plan", Legend: "Choose a plan",
+    Options: []ui.RadioGroupOption{...},
+})
+
+ui.CheckboxGroup(ui.CheckboxGroupConfig{
+    Name: "contact", Legend: "Preferred methods",
+    Help: "Select all that apply.",
+    Options: []ui.CheckboxGroupOption{...},
+})`
+
 	return render.Tag("div", nil,
 		backLink(),
 		primitiveLede("Toggle controls",
@@ -235,6 +276,16 @@ ui.Switch(ui.ToggleConfig{
 		// h3 cards keeps the WCAG 1.3.1 heading order monotonic.
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Controls")),
 		demoFrame(body, src),
+
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Group wrappers")),
+		render.Tag("p", nil, render.Text(
+			"RadioGroup and CheckboxGroup wrap multiple Radio/Checkbox controls in a <fieldset> with a shared <legend>, ARIA grouping (role=\"radiogroup\" / role=\"group\"), and optional help/error text. Use these for any form that needs grouped toggles.")),
+		ui.Grid(ui.GridConfig{Min: "16rem", Gap: ui.GapLG},
+			ui.Card(ui.CardConfig{Heading: "RadioGroup"}, rgBasic),
+			ui.Card(ui.CardConfig{Heading: "RadioGroup — error"}, rgError),
+			ui.Card(ui.CardConfig{Heading: "CheckboxGroup"}, cbGroup),
+		),
+		demoFrame(render.Text(""), groupSrc),
 	)
 }
 
