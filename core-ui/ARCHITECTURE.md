@@ -545,16 +545,28 @@ core-ui/
   html/        — semantic HTML primitives, 1:1 with HTML tags
                  (Div, Button, Heading, Form, Table…)
   patterns/    — composed UI patterns (not 1:1 with HTML):
-                 accordion, breadcrumbs, pagination, progress,
-                 skeleton, tabs
+                 accordion, breadcrumbs, combobox, disclosure,
+                 infinitescroll, multiselect, pagination, progress,
+                 skeleton, sortablelist, tabs, tree
   component/   — Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
   widget/      — island/widget builder + registration
-  widget/preset/ — opinionated mounting shortcuts (Modal, Toast, Drawer…)
+  widget/preset/ — opinionated mounting shortcuts:
+                 Modal, Drawer, Popover, ToastStack, Toast, Banner,
+                 FloatingPanel, BottomSheet
   widget/theme/ — page-level theme tokens + utility classes
   signal/      — reactive state + SSE push
   island/      — runtime-side island manager
   runtime/     — runtime.js (client) + Go embed wrapper
+  runtime/src/ — code-split runtime modules (loaded on demand):
+                 animatedcounter, banner, carousel, combobox,
+                 dropzone, fileupload, infinitescroll, lightbox,
+                 menu, multiselect, numberinput, popover, rangeslider,
+                 shortcut, slider, sortablelist, sse, taginput,
+                 textarea, toasts, toc, tree, widgets
+  runtime/colorscheme.js — dark/light mode bootstrap (runs sync in <head>
+                 before CSS parses, reads localStorage + OS hint,
+                 sets data-color-scheme on <html>)
   style/       — theme structs, stylesheet builder, token resolution
   check/       — .ui.go linter
 
@@ -563,8 +575,8 @@ framework/
                  runtime.js, theme.css, styles.css; handles SSE; client-side
                  navigation partial-fetch endpoint
   static/      — SSG builder (renders every screen at build time)
-  ui/          — opinionated semantic components on top of core-ui (PageHeader,
-                 FormField, DataTable, EmptyState…)
+  ui/          — opinionated semantic components on top of core-ui
+                 (see full list in the cheat sheet below)
   ui/theme/    — canonical framework theme tokens
 ```
 
@@ -590,24 +602,100 @@ The framework ships base surfaces (`core-ui/widget/preset.*`) and
 opinionated facilities (`framework/ui.*`). Pick the layer that matches
 your need:
 
+### Surfaces (widget presets)
+
 | You want | Use | Notes |
 | --- | --- | --- |
-| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmModal` *(planned)* | Or skip the modal entirely and put `data-fui-confirm="…"` on the button. |
+| Confirm a destructive action | `preset.Modal` + `framework/ui.ConfirmAction` | Or skip the modal entirely and put `data-fui-confirm="…"` on the button. |
 | Edit/show entity detail | `preset.Modal` with `DeepLink("modal", "<name>").DeepLinkParam("id")` | URL stays consistent across refresh/share/back. Buttons opening it carry `data-fui-deeplink="id=<row-id>"`. |
+| Confirm + act in one shot | `framework/ui.ConfirmAction` | Returns a trigger button + hidden `preset.Modal` alertdialog. Eliminates per-button confirm boilerplate. |
 | Secondary nav / filters | `preset.Drawer` | Edge-anchored, backdrop'd. Same deep-link wiring as modals. |
 | Click-triggered help / share / inline expander | `preset.Popover` | Anchored floating surface, no backdrop dim, no focus trap. Escape and click-outside dismiss. |
-| Action menu on a row | `framework/ui.Menu` | Built on `<details data-fui-disclosure>` so Esc / SPA-nav close come free. Keyboard nav handled by the runtime. |
+| Floating panel (non-modal, persistent) | `preset.FloatingPanel` | Bottom-right mounted panel. No backdrop, no focus trap. Use for chat widgets, debug panels, AI assistants. |
+| Mobile-friendly bottom sheet | `preset.BottomSheet` | Bottom-mounted dialog with backdrop, Esc + click-outside close. Use for mobile action sheets, filter panels. |
 | Background events ("Saved", "Build failed") | `preset.ToastStack` + `framework/ui.ToastBus` | Server pushes via SSE; the runtime stacks + auto-dismisses with hover-pause. No URL state. |
+| Dismissible announcement banner | `preset.Banner` + `framework/ui.Banner` | Full-width banner with optional localStorage-persisted dismiss. |
+
+### Data & visualization
+
+| You want | Use | Notes |
+| --- | --- | --- |
+| Table with sort / filter / pagination | `framework/ui.DataTable` | Island-driven, server-side sort/filter/pagination. No client-side re-implementation. |
+| Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. |
+| Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. |
+| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. |
+| Inline trend sparkline | `framework/ui.Sparkline` | Pure-SVG, no JS. Line or area shape. Pairs with Card for metric-overview surfaces. |
+| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format. |
+| Collapsible JSON tree | `framework/ui.JSONViewer` | Nested `<details>`/`<summary>` collapse. No JS. Configurable open depth. |
+| Image gallery | `framework/ui.Gallery` | Grid / strip / masonry layouts. Optional Lightbox or per-item Href click behaviour. |
+| Image lightbox | `framework/ui.Lightbox` | Overlay viewer with Prev/Next nav, gallery groups, arrow-key keyboard nav. |
+| Image carousel / slider | `framework/ui.Carousel` | Runtime-driven Prev/Next, pagination dots, optional auto-rotate and loop. |
+
+### Navigation & structure
+
+| You want | Use | Notes |
+| --- | --- | --- |
 | Primary navigation | `framework/ui.Sidebar` | Inline column ≥ md, hamburger + `preset.Drawer` < md, same content tree, active-route highlighting from the current URL. |
-| Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six small spatial primitives sharing one stylesheet. Replace hand-rolled `display:flex` divs. |
+| Action menu on a row | `framework/ui.Menu` | Built on `<details data-fui-disclosure>` so Esc / SPA-nav close come free. Keyboard nav handled by the runtime. |
+| Command palette (Cmd+K) | `framework/ui.CommandPalette` | Modal + `core-ui/patterns/combobox`. Debounced server search, keyboard nav, listbox selection. Returns trigger + preset pair. |
+| Global search input | `framework/ui.GlobalSearch` | Combobox-based search field with `data-fui-shortcut-focus` for keyboard shortcut opening. |
+| Page-width wrapper | `framework/ui.Container` | Max-width page wrapper with breakpoint-aware padding. Narrow / default / wide / full variants. |
+| Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six spatial primitives sharing one stylesheet (all in `layout.go`). Replace hand-rolled `display:flex` divs. |
 | Labelled content surface | `framework/ui.Card` | Header / body / footer regions, elevated / outlined / flat variants, optional interactive (whole surface is an `<a>`) form. |
-| Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
+| Toolbar of action buttons | `framework/ui.Toolbar` | `role="toolbar"` wrapper with optional named groups. Horizontal strip of buttons/links with visual separators. |
+| Step progress indicator | `framework/ui.ProgressSteps` | Linear step indicator (upcoming / current / complete). Horizontal or vertical. `<ol>` with `aria-current="step"`. |
+| Table of contents | `framework/ui.TableOfContents` | Auto-generated from `<h2>`/`<h3>` headings. IntersectionObserver active-section tracking. |
+| Timeline / event history | `framework/ui.Timeline` | Vertical event list on a rail. Colored dot variants (neutral / success / warn / danger / info). Semantic `<ol>`. |
+
+### Forms & inputs
+
+| You want | Use | Notes |
+| --- | --- | --- |
+| Form layout / field grid | `framework/ui.Form` | Label + input + error wiring. `FieldErrors`-aware validation display. |
+| Labelled text input | `framework/ui.FormField` | Wraps any input with label, help text, and error display. |
+| Multi-line text input | `framework/ui.TextArea` | Labelled `<textarea>` with optional autogrow (`data-fui-autogrow`). |
 | Form toggles (boolean / single-select / setting) | `framework/ui.Checkbox` / `Radio` / `Switch` | Labelled native inputs, `FieldErrors`-aware, focus ring + touch target token-driven. |
-| Hover/focus hint on a control | `framework/ui.Tooltip` | CSS-only reveal, `aria-describedby` auto-wired. No JavaScript. |
-| Pill — filter chip / applied filter / multi-select selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
+| Segmented toggle bar | `framework/ui.SegmentedControl` | Native `<input type="radio">` group styled as sliding pill bar. CSS-only indicator. Optional RPC-on-change. |
+| Star / heart / thumb rating | `framework/ui.RatingInput` | Hidden radio group, keyboard-accessible. CSS-only hover preview via `:has()`. Multiple glyph shapes. |
+| Numeric stepper | `framework/ui.NumberInput` | `<input type="number">` with +/− buttons. Honors min/max/step. |
+| Range slider (single) | `framework/ui.Slider` | `<input type="range">` with optional value mirror output. |
+| Range slider (dual min/max) | `framework/ui.RangeSlider` | Two `<input type="range">` cross-clamped so min ≤ max. |
+| Color picker | `framework/ui.ColorPicker` | Styled `<input type="color">`. Browser native UI, framework owns label + swatch. |
+| Time picker | `framework/ui.TimePicker` | Styled `<input type="time">`. Browser native UI, framework owns label + touch target. |
+| Tag / chip input | `framework/ui.TagInput` | Enter/comma to commit chips, Backspace-on-empty to remove. Creates hidden inputs for form POST. |
+| Multi-select with chips | `framework/ui.Multiselect` (pattern) | Checkbox list with chip strip. Runtime rebuilds chips on change. `aria-live="polite"`. |
+| Drag-drop file picker | `framework/ui.FileUpload` | Native `<input type="file">` is the source of truth; `data-fui-fileupload` adds drag-zone enhancement. |
+| Drag-drop with image preview | `framework/ui.FileDropzone` | File input + drop zone + FileReader image previews. |
+| Combobox (autocomplete search) | `core-ui/patterns/combobox` | Input + listbox, debounced RPC search, signal-driven list swap. Used by CommandPalette and GlobalSearch. |
+
+### Feedback & status
+
+| You want | Use | Notes |
+| --- | --- | --- |
 | Inline loading indicator | `framework/ui.Spinner` | `role="status"` + `aria-busy`, ring / dots variants. Pairs with `aria-busy` on the containing form during RPC. |
+| Notification bell + dropdown | `framework/ui.NotificationBell` | Bell button + unread badge + `preset.Popover` item list. SSE-driven via signal bindings. |
+| Ephemeral notification toast | `framework/ui.Notification` | Styled toast content (title + body + variant). Drop inside `preset.Toast` or `preset.ToastStack`. |
 | Section break | `framework/ui.Divider` | Native `<hr>` for plain horizontal dividers; `role="separator"` for vertical or labelled (e.g. "OR" between auth options). |
-| Drag-drop file picker | `framework/ui.FileUpload` | Native `<input type="file">` is the source of truth; `data-fui-fileupload` adds drag-zone enhancement on top. |
+| Hover/focus hint on a control | `framework/ui.Tooltip` | CSS-only reveal, `aria-describedby` auto-wired. No JavaScript. |
+| Dismissible banner | `framework/ui.Banner` | Full-width banner with optional `localStorage`-persisted dismiss (`data-fui-banner-dismiss-id`). |
+| Pill — filter chip / applied filter / selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
+| Active filter chip toolbar | `framework/ui.FilterChipBar` | Toolbar of removable filter chips. Optional "Clear all" action. Island-driven, signal-swapped. |
+| Copy-to-clipboard button | `framework/ui.CopyButton` | Targets any element by CSS selector. Label swap on success. SR announcement via `data-fui-copy-status`. |
+
+### Visual primitives
+
+| You want | Use | Notes |
+| --- | --- | --- |
+| Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
+| Overlapping avatar stack | `framework/ui.AvatarGroup` | Negative-margin stack with "+N" overflow indicator. Size propagates to children. |
+| Animated number counter | `framework/ui.AnimatedCounter` | Ticks from → to on scroll-into-view. Respects `prefers-reduced-motion`. |
+| Text link (inline / action / muted) | `framework/ui.Link` | Three variants: inline prose link, 44px action link, subdued muted link. |
+| Markdown rendered as HTML | `framework/ui.Markdown` | Themed prose wrapper over `core/markdown`. Headings, lists, code blocks get theme tokens. |
+| Keyboard shortcut hint | `framework/ui.ShortcutHint` | Platform-aware mod-key glyphs (⌘ vs Ctrl) via `data-fui-os`. |
+| Theme override for a subtree | `framework/ui.Themed` | Wraps any content in a `.fui-theme-<hash>` div for section-level theming. |
+| Infinite scroll feed | `core-ui/patterns/infinitescroll` | IntersectionObserver sentinel, cursor-based pagination, appends HTML on scroll. |
+| Sortable drag-and-drop list | `core-ui/patterns/sortablelist` | Drag reorder + keyboard reorder. POSTs new order to RPC. Reverts on non-2xx. |
+| Expandable tree view | `core-ui/patterns/tree` | Lazy-load children via RPC on expand. Arrow-key nav, `data-fui-tree-toggle`. |
 
 ### Deep-linking modals + drawers
 
