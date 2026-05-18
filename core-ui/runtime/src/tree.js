@@ -20,7 +20,15 @@
   if (window.__fuiTreeWired) return;
   window.__fuiTreeWired = true;
 
-  // Toggle click flips aria-expanded + child group visibility.
+  // Toggle click flips aria-expanded + child group visibility AND
+  // redirects focus to the parent treeitem. The toggle button itself
+  // is aria-hidden="true" (decorative chevron — screen readers get
+  // expand state from the treeitem's aria-expanded), so leaving focus
+  // ON it would put aria-hidden on a focused element and trigger
+  // Chrome's "Blocked aria-hidden on an element because its
+  // descendant retained focus" platform warning. Refocusing the
+  // treeitem also matches what ArrowRight/Left already do via the
+  // keyboard handler — both routes end with focus on the row.
   document.addEventListener('click', (e) => {
     const toggle = e.target && e.target.closest && e.target.closest('[data-fui-tree-toggle]');
     if (!toggle) return;
@@ -35,6 +43,16 @@
       if (next === 'true') group.removeAttribute('hidden');
       else group.setAttribute('hidden', '');
     }
+    // Move the roving tabindex onto the toggled row + take focus back
+    // off the (aria-hidden) toggle button.
+    const tree = item.closest('[role="tree"]');
+    if (tree) {
+      tree.querySelectorAll('[role="treeitem"][tabindex="0"]').forEach((n) =>
+        n.setAttribute('tabindex', '-1')
+      );
+      item.setAttribute('tabindex', '0');
+    }
+    item.focus();
   });
 
   // Click anywhere on a treeitem's row moves the roving tabindex to
