@@ -299,6 +299,155 @@ Lower-frequency but high-value once the basics are in.
     config (position / max-visible / dedupe-by-id) would let apps
     swap container shape without touching CSS.
 
+---
+
+## Wave 7 candidates — Gap audit (2026-05-18)
+
+Source: comprehensive audit of `core-ui/`, `framework/ui/`, and
+`core-ui/widget/preset/` against what a complete SSR-first UI
+framework needs. These items are **not** covered by the deferred
+Wave 5/6 entries above — they are entirely new findings.
+
+### Tier 1 — Common form & identity primitives
+
+Every app needs these. Their absence means apps fall back to
+`core-ui/html` raw tags and redo the same theme + label + error
+wiring every time.
+
+1. **Select** (`framework/ui/`) — Styled native `<select>` with
+   label, `FieldErrors` support, and theme-driven chrome. `core-ui/html.Select`
+   exists as a raw tag but has none of the `FormField` integration that
+   Checkbox/Radio/Switch get. This is the single most conspicuous gap —
+   every form with a dropdown (country picker, status filter, category)
+   builds this by hand.
+
+2. **RadioGroup** (`framework/ui/`) — `<fieldset>` + `<legend>` wrapping
+   N `ToggleConfig` radios with helper text and `FieldErrors`. Individual
+   `Radio()` exists but "pick a plan: Free / Pro / Enterprise" requires
+   hand-building the fieldset and error wiring every time.
+
+3. **CheckboxGroup** (`framework/ui/`) — `<fieldset>` + `<legend>` wrapping
+   N `ToggleConfig` checkboxes with helper text and `FieldErrors`. Same gap
+   as RadioGroup but for multi-select preferences ("pick your notifications:
+   Email / SMS / Push").
+
+4. **Avatar standalone** (`framework/ui/`) — Single avatar renderer
+   (image or initials fallback). `AvatarConfig` exists but is locked inside
+   `AvatarGroup` — there is no `Avatar(cfg)` for user menus, comment
+   attribution, or header chrome. Extract `AvatarConfig` into a standalone
+   function and have `AvatarGroup` compose it.
+
+### Tier 2 — UX patterns every app needs
+
+5. **ThemeToggle** (`framework/ui/`) — Dark/light mode switch button.
+   The entire runtime infrastructure exists: `colorscheme.js` reads
+   `localStorage["gofastr.colorScheme"]`, sets `data-color-scheme` on
+   `<html>`, listens for OS preference changes. But **no component**
+   renders a toggle that writes to that key. Every app that ships dark
+   mode builds this ad-hoc. Should be a simple `data-fui-action` button
+   with a runtime module that swaps the scheme and persists the choice.
+
+6. **SkipLink** (`framework/ui/`) — Visually-hidden link that becomes
+   visible on focus, letting keyboard users jump past the nav to
+   `<main>`. Required for WCAG 2.1 Level A (criterion 2.4.1 "Bypass
+   Blocks"). No component, no preset, not documented. Every SSR page
+   should have one. Trivial pure-render — no runtime module needed.
+
+7. **AspectRatio** (`framework/ui/`) — Pure-CSS `aspect-ratio` wrapper
+   that prevents layout shift for images, videos, and third-party embeds
+   whose dimensions aren't known at SSR time. Every component library
+   ships this. Currently nothing prevents CLS for embeds or user-content
+   with unknown dimensions.
+
+8. **DataTable responsive mode** (enhancement to existing `framework/ui.DataTable`)
+   — Add a `Responsive` config option that wraps the table in a horizontal-scroll
+   container at narrow breakpoints OR collapses rows into cards (CSS-driven,
+   breakpoint-aware). Currently tables overflow or clip on mobile.
+
+### Tier 3 — Standard patterns that round out the framework
+
+9. **BackToTop** (`framework/ui/`) — Button that appears after scrolling
+   past a configurable threshold and smooth-scrolls to top on click.
+   Long tables, infinite feeds, admin dashboards need this. Would use a
+   lightweight runtime module with `IntersectionObserver` on a sentinel +
+   `data-fui-scroll-to="top"` on the button.
+
+10. **Sticky** (`framework/ui/`) — Wrapper that applies `position: sticky`
+    with theme-consistent `z-index` and `top`/`bottom` offset from tokens.
+    Used for sticky headers, sticky sidebar TOCs, sticky toolbars. Currently
+    every app hand-rolls sticky positioning and z-index clashes are common.
+    Pure-CSS, no runtime module.
+
+11. **Icon** (`framework/ui/`) — Inline SVG icon primitive. Takes a name
+    from a registered set, renders the SVG markup directly (no sprite sheet,
+    no external font dependency), color from theme tokens via `currentColor`.
+    Components currently reference icons by CSS class names (notification
+    icon, chevrons, close ×) with no typed API. A registry + `Icon("check")`
+    function closes this gap.
+
+12. **NestedList** (`core-ui/patterns/`) — Styled recursive `<ul>`/`<ol>`
+    for navigation trees, settings hierarchies, and multi-level outlines.
+    Lighter than `tree` (no lazy-load, no RPC) — pure render with CSS
+    indentation and disclosure collapse using native `<details>`.
+
+13. **ScrollSpy** (`core-ui/patterns/`) — Standalone IntersectionObserver
+    pattern that tracks which section is in view and sets `aria-current`
+    on matching nav links. Currently this logic is trapped inside the
+    TOC runtime module. Extracting it lets custom sidebars and nav bars
+    reuse the same observer without duplicating JS.
+
+### Tier 4 — Technical SEO
+
+The framework already has: `<meta name="description">`, Open Graph,
+Twitter Card, `<link rel="canonical">`, `<meta name="theme-color">`,
+and `ScreenTitler`/`ScreenDescriber` interfaces. The SSG builder renders
+every screen at build time. What's missing:
+
+14. **JSON-LD / Schema.org** (`core-ui/app/` or new `core-ui/seo/`)
+    — Typed Go structs for common Schema.org types (Article, FAQ,
+    HowTo, Product, BreadcrumbList, Organization, WebPage, WebSite,
+    SearchAction, Event, LocalBusiness) that serialize to `<script
+    type="application/ld+json">`. Each screen declares its structured
+    data via an interface (e.g. `ScreenSchema` returning `[]SchemaItem`);
+    the uihost emits it in `<head>`. Without this, every app builds
+    JSON-LD strings by hand or ships none at all — which means Google
+    rich results (FAQ snippets, product cards, breadcrumb trails) don't
+    work.
+
+15. **Sitemap generation** (`framework/static/`) — The SSG builder
+    already walks every registered route. A `sitemap.xml` emitter should
+    be a natural output of that walk: collect all routes, their
+    `ScreenType` (to infer priority/frequency), and last-modified
+    timestamps, then write a standards-compliant sitemap. Currently
+    apps must generate sitemaps externally.
+
+16. **Robots.txt** (`framework/uihost/`) — A configurable handler that
+    serves `/robots.txt` with app-defined rules (allow/disallow, sitemap
+    URL reference, crawl-delay). Trivial but essential — without it,
+    every app writes a static file or forgets it entirely.
+
+17. **ScreenDescriber → auto-wiring** (enhancement to `framework/uihost/`)
+    — `ScreenDescriber` exists but the description does NOT automatically
+    become `<meta name="description">`. Apps must call `WithDescription()`
+    separately. The uihost should read `ScreenDescriber.Description()` and
+    emit the meta tag automatically when present, so SSR pages get SEO
+    meta for free without the app remembering both the interface AND
+    the option.
+
+18. **Hreflang / alternate links** (`core-ui/app/`) — For multi-locale
+    apps, `<link rel="alternate" hreflang="en">` tags in `<head>` are
+    essential for Google to serve the right language variant. A
+    `WithHreflang(locale, url)` option plus a screen interface that
+    declares available translations would handle this. Currently
+    zero support.
+
+19. **SEO head component** (`framework/ui/`) — A convenience component
+    that composes the common `<head>` SEO stack for a page: title,
+    description, canonical, OG, Twitter Card, JSON-LD — all from one
+    config struct. Currently apps call 5+ `With*` options individually.
+    A single `SEO(cfg)` that sets all of them eliminates the
+    forget-one-and-wonder-why-sharing-is-broken class of bugs.
+
 ### Notes on the contract
 
 Every entry above must satisfy the same five rules the first wave
