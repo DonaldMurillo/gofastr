@@ -576,3 +576,233 @@ func TestE2E_Banner_DismissPersistsAcrossReload(t *testing.T) {
 	}
 }
 
+
+// --- Slider --------------------------------------------------------------
+
+func TestE2E_Slider_OutputMirrorsValue(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var before, after string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/slider"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('input[type=range][data-fui-slider-mirror]').value`, &before),
+		// Drive the input event directly — chromedp doesn't fire change
+		// for range inputs via key events on every Chrome version.
+		chromedp.Evaluate(`(function(){
+			const r = document.querySelector('input[type=range][data-fui-slider-mirror]');
+			r.value = '77';
+			r.dispatchEvent(new Event('input', {bubbles: true}));
+			return r.value;
+		})()`, nil),
+		chromedp.Sleep(150*1e6),
+		chromedp.Evaluate(`document.querySelector('output[for="' + document.querySelector('input[type=range][data-fui-slider-mirror]').id + '"]').textContent`, &after),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if before == after {
+		t.Errorf("output should mirror the new value; before=%q after=%q", before, after)
+	}
+	if after != "77" {
+		t.Errorf("output should reflect new value 77, got %q", after)
+	}
+}
+
+// --- NumberInput ---------------------------------------------------------
+
+func TestE2E_NumberInput_PlusIncrementsValue(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var before, after string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/numberinput"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('input[type=number][name="qty"]').value`, &before),
+		chromedp.Evaluate(`document.querySelector('[data-fui-number-for="qty"][data-fui-number-step="1"]').click()`, nil),
+		chromedp.Sleep(100*1e6),
+		chromedp.Evaluate(`document.querySelector('input[type=number][name="qty"]').value`, &after),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if before == after {
+		t.Errorf("+ button should increment value; before=%q after=%q", before, after)
+	}
+}
+
+func TestE2E_NumberInput_MinusClampsToMin(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var value string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/numberinput"),
+		pageReady(),
+		// qty default 1 with Min=1 — clicking − 3x must not go below 1.
+		chromedp.Evaluate(`(function(){
+			const btn = document.querySelector('[data-fui-number-for="qty"][data-fui-number-step="-1"]');
+			btn.click(); btn.click(); btn.click();
+		})()`, nil),
+		chromedp.Sleep(100*1e6),
+		chromedp.Evaluate(`document.querySelector('input[type=number][name="qty"]').value`, &value),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if value != "1" {
+		t.Errorf("− button should clamp to Min=1; got value=%q", value)
+	}
+}
+
+// --- TextArea ------------------------------------------------------------
+
+func TestE2E_TextArea_AutogrowResizesHeight(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var before, after int64
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/textarea"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('textarea[data-fui-autogrow]').clientHeight`, &before),
+		chromedp.Evaluate(`(function(){
+			const ta = document.querySelector('textarea[data-fui-autogrow]');
+			ta.focus();
+			ta.value = 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7';
+			ta.dispatchEvent(new Event('input', {bubbles: true}));
+		})()`, nil),
+		chromedp.Sleep(150*1e6),
+		chromedp.Evaluate(`document.querySelector('textarea[data-fui-autogrow]').clientHeight`, &after),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if after <= before {
+		t.Errorf("autogrow should increase height when content grows; before=%d after=%d", before, after)
+	}
+}
+
+// --- MultiSelect ---------------------------------------------------------
+
+func TestE2E_MultiSelect_TogglingRendersChips(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var chipsBefore, chipsAfter int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/multiselect"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-multiselect"] .ui-multiselect__chip').length`, &chipsBefore),
+		chromedp.Evaluate(`(function(){
+			const cbs = document.querySelectorAll('[data-fui-comp="ui-multiselect"] input[type="checkbox"]:not(:checked)');
+			if (cbs.length >= 2) {
+				cbs[0].click();
+				cbs[1].click();
+			}
+		})()`, nil),
+		chromedp.Sleep(200*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-multiselect"] .ui-multiselect__chip').length`, &chipsAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if chipsAfter <= chipsBefore {
+		t.Errorf("toggling 2 new checkboxes should add ≥2 chips; before=%d after=%d", chipsBefore, chipsAfter)
+	}
+}
+
+func TestE2E_MultiSelect_ChipRemoveUnchecksOption(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var beforeChecked, afterChecked int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/multiselect"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-multiselect"] input[type="checkbox"]:checked').length`, &beforeChecked),
+		chromedp.Evaluate(`(function(){
+			const btn = document.querySelector('[data-fui-multiselect-remove]');
+			if (btn) btn.click();
+		})()`, nil),
+		chromedp.Sleep(150*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-multiselect"] input[type="checkbox"]:checked').length`, &afterChecked),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if afterChecked != beforeChecked-1 {
+		t.Errorf("clicking a chip's × should uncheck 1 option; before=%d after=%d", beforeChecked, afterChecked)
+	}
+}
+
+func TestE2E_MultiSelect_OutsideClickClosesDisclosure(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var openBefore, openAfter string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/multiselect"),
+		pageReady(),
+		chromedp.Evaluate(`(function(){
+			const d = document.querySelector('details.ui-multiselect__disclosure');
+			d.setAttribute('open', '');
+		})()`, nil),
+		chromedp.Evaluate(`(document.querySelector('details.ui-multiselect__disclosure').hasAttribute('open')) + ''`, &openBefore),
+		// Click on the page heading — definitely outside the multiselect.
+		chromedp.Evaluate(`(function(){
+			const ev = new MouseEvent('mousedown', {bubbles: true, cancelable: true});
+			document.body.dispatchEvent(ev);
+		})()`, nil),
+		chromedp.Sleep(100*1e6),
+		chromedp.Evaluate(`(document.querySelector('details.ui-multiselect__disclosure').hasAttribute('open')) + ''`, &openAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if openBefore != "true" {
+		t.Fatalf("disclosure should be open before outside click, got %q", openBefore)
+	}
+	if openAfter != "false" {
+		t.Errorf("outside click should close the disclosure, got %q", openAfter)
+	}
+}
+
+// --- FileDropzone --------------------------------------------------------
+
+func TestE2E_FileDropzone_AriaRegionAndDragoverClass(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var role, ariaLabel string
+	var dragoverClassAfterEnter, dragoverClassAfterLeave bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/dropzone"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone')?.getAttribute('aria-label') || ''`, &ariaLabel),
+		// Fire a synthetic dragover — runtime adds .is-dragover.
+		chromedp.Evaluate(`(function(){
+			const z = document.querySelector('.ui-dropzone__zone');
+			const dt = new DataTransfer();
+			z.dispatchEvent(new DragEvent('dragenter', {bubbles: true, cancelable: true, dataTransfer: dt}));
+		})()`, nil),
+		chromedp.Sleep(80*1e6),
+		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone').classList.contains('is-dragover')`, &dragoverClassAfterEnter),
+		chromedp.Evaluate(`(function(){
+			const z = document.querySelector('.ui-dropzone__zone');
+			z.dispatchEvent(new DragEvent('dragleave', {bubbles: true, cancelable: true, relatedTarget: document.body}));
+		})()`, nil),
+		chromedp.Sleep(80*1e6),
+		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone').classList.contains('is-dragover')`, &dragoverClassAfterLeave),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if role != "region" {
+		t.Errorf("dropzone should have role=region, got %q", role)
+	}
+	if ariaLabel == "" {
+		t.Errorf("dropzone should have aria-label, got empty")
+	}
+	if !dragoverClassAfterEnter {
+		t.Errorf(".is-dragover should be applied on dragenter")
+	}
+	if dragoverClassAfterLeave {
+		t.Errorf(".is-dragover should be removed on dragleave")
+	}
+}

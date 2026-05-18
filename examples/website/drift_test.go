@@ -268,6 +268,130 @@ func TestDrift_RuntimeDataFuiAttributesDocumented(t *testing.T) {
 	}
 }
 
+// TestDrift_PackagesUnderTestableRootsHaveTests enforces that every
+// package under the directories below carries at least one *_test.go.
+// Packages that ship a public API without tests are how regressions
+// sneak in — the drift test fails loudly the moment a new package
+// lands without a paired test file, prompting the author to add one
+// before merge.
+//
+// Roots scanned (relative to this test file):
+//
+//   - ../../framework/ui          — every styled component
+//   - ../../core-ui/patterns      — every composed pattern
+//   - ../../core-ui/widget/preset — every widget preset
+//
+// Allowlisted package paths (intentional no-test packages) live in
+// testablePackagesAllowlist below.
+var testablePackagesAllowlist = map[string]bool{
+	// Add explicit allowlist entries with a justification comment if
+	// a package legitimately ships zero testable surface (e.g. it's
+	// a pure type-alias shim). Empty by design — keep it strict.
+}
+
+func TestDrift_PackagesUnderTestableRootsHaveTests(t *testing.T) {
+	roots := []string{
+		"../../framework/ui",
+		"../../core-ui/patterns",
+		"../../core-ui/widget/preset",
+	}
+
+	type pkg struct {
+		dir     string
+		hasGo   bool
+		hasTest bool
+	}
+	pkgs := map[string]*pkg{}
+
+	for _, root := range roots {
+		err := walkDir(root, func(path string, isDir bool) {
+			if isDir {
+				return
+			}
+			if !strings.HasSuffix(path, ".go") {
+				return
+			}
+			dir := dirOf(path)
+			p, ok := pkgs[dir]
+			if !ok {
+				p = &pkg{dir: dir}
+				pkgs[dir] = p
+			}
+			if strings.HasSuffix(path, "_test.go") {
+				p.hasTest = true
+			} else {
+				p.hasGo = true
+			}
+		})
+		if err != nil && !os.IsNotExist(err) {
+			t.Errorf("walk %s: %v", root, err)
+		}
+	}
+
+	var missing []string
+	for _, p := range pkgs {
+		if !p.hasGo {
+			continue
+		}
+		if p.hasTest {
+			continue
+		}
+		// Allowlist key: the path relative to the repo root.
+		rel := strings.TrimPrefix(p.dir, "../../")
+		if testablePackagesAllowlist[rel] {
+			continue
+		}
+		missing = append(missing, rel)
+	}
+	if len(missing) > 0 {
+		// Sort for stable error output.
+		sortStrings(missing)
+		t.Errorf("packages under testable roots have NO *_test.go: %v\n"+
+			"Every package shipping a public API must carry at least one test. "+
+			"Add a <pkg>_test.go (smoke tests, panic assertions, ARIA-shape "+
+			"checks — all welcome), or — if zero testable surface is intentional "+
+			"— add the package path to testablePackagesAllowlist in drift_test.go "+
+			"with a justification comment.", missing)
+	}
+}
+
+// walkDir is a minimal recursive walker that calls fn(path, isDir)
+// for every entry rooted at root.
+func walkDir(root string, fn func(path string, isDir bool)) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		full := root + "/" + e.Name()
+		if e.IsDir() {
+			fn(full, true)
+			if err := walkDir(full, fn); err != nil {
+				return err
+			}
+			continue
+		}
+		fn(full, false)
+	}
+	return nil
+}
+
+func dirOf(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[:i]
+	}
+	return "."
+}
+
+func sortStrings(s []string) {
+	// minimal insertion sort — list sizes here are tiny.
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j-1] > s[j]; j-- {
+			s[j-1], s[j] = s[j], s[j-1]
+		}
+	}
+}
+
 func walkGoFiles(root string, fn func(path string, data []byte)) error {
 	entries, err := os.ReadDir(root)
 	if err != nil {
