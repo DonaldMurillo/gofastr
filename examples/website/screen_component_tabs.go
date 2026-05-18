@@ -5,6 +5,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/tabs"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type TabsScreen struct{}
@@ -49,8 +50,7 @@ func (s *TabsScreen) Render() render.HTML {
 			"Each tab is a <details> element. They share a name= attribute, so the browser closes the previously-open one when a new one opens — same mechanic as accordion.Group. CSS Grid arranges summaries in row 1 and panels in row 2 spanning all columns.")),
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
-		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-			`type Config struct {
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `type Config struct {
     Name  string // required
     Label string
     ID    string
@@ -65,7 +65,6 @@ type Tab struct {
 }
 
 func New(cfg Config, tabs ...Tab) render.HTML
-func BaseCSS() string`,
-		))),
+func BaseCSS() string`}),
 	)
 }

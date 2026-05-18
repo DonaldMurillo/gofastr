@@ -4,6 +4,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // HomeScreen is the landing page: hero + feature grid + quickstart.
@@ -48,13 +49,12 @@ func (s *HomeScreen) Render() render.HTML {
 
 	quickstart := render.Tag("section", map[string]string{"aria-label": "Quickstart"},
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Quickstart")),
-		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-			"git clone https://github.com/DonaldMurillo/gofastr.git\n"+
-				"cd gofastr\n"+
-				"go test ./...                        # everything green on a fresh clone\n"+
-				"go run ./cmd/gofastr -- help         # CLI overview\n"+
-				"go run ./examples/blog               # auto-CRUD blog with Swagger UI\n"+
-				"go run ./examples/website            # SSR site with the 10 UI primitives"))),
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "bash", Code: "git clone https://github.com/DonaldMurillo/gofastr.git\n" +
+			"cd gofastr\n" +
+			"go test ./...                        # everything green on a fresh clone\n" +
+			"go run ./cmd/gofastr -- help         # CLI overview\n" +
+			"go run ./examples/blog               # auto-CRUD blog with Swagger UI\n" +
+			"go run ./examples/website            # SSR site with the 10 UI primitives"}),
 		render.Tag("p", nil, render.Text("Then visit http://localhost:8080.")),
 	)
 

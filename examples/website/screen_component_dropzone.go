@@ -52,6 +52,10 @@ func (s *DropzoneScreen) Render() render.HTML {
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("File Dropzone")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"Hero file-drop surface. Native <input type=\"file\"> for keyboard / SR / no-JS form submit; the dropzone runtime adds drag-drop forwarding (via the existing data-fui-fileupload hook), filename display after pick, and optional image previews via FileReader.")),
+		// FileDropzone renders its own <h3> Label inside the zone — an
+		// h2 between this page h1 and the dropzone h3 keeps the WCAG
+		// 1.3.1 heading order monotonic.
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Basic")),
 		demoFrame(basic, src),
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("With image preview strip")),
 		demoFrame(withPreview, `ui.FileDropzone(ui.FileDropzoneConfig{

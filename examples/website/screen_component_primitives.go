@@ -120,6 +120,9 @@ ui.Card(ui.CardConfig{
 		backLink(),
 		primitiveLede("Card",
 			"A labelled <section> shell with header/body/footer regions. Three variants — elevated (default), outlined, flat — plus an interactive (linked) form that wraps the whole surface in an <a>."),
+		// Each Card's heading is h3; an h2 between the page h1 and the
+		// h3 stack keeps WCAG 1.3.1 heading order monotonic.
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Variants")),
 		demoFrame(grid, src),
 	)
 }
@@ -227,6 +230,10 @@ ui.Switch(ui.ToggleConfig{
 		backLink(),
 		primitiveLede("Toggle controls",
 			"Three labelled, FieldErrors-aware form controls — Checkbox, Radio, Switch. All wrap a native <input> with a properly associated <label>, so keyboard, screen-reader, and form-POST flows work without JavaScript."),
+		// The grid below renders three Cards whose headings are h3; an
+		// h2 group heading between this h1 (from primitiveLede) and the
+		// h3 cards keeps the WCAG 1.3.1 heading order monotonic.
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Controls")),
 		demoFrame(body, src),
 	)
 }
@@ -366,7 +373,7 @@ widget.Mount(r, &p)
 			"A click-triggered floating surface — like Modal but without the backdrop dim or focus trap. By default it renders at the widget's declared Position (e.g. TopRight). Add data-fui-popover-anchor to a trigger to position the popover next to it; the runtime measures both rects and auto-flips when the preferred side would overflow the viewport."),
 		demoBlock,
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
-		render.Tag("pre", nil, render.Tag("code", nil, render.Text(src))),
+		ui.CodeBlock(ui.CodeBlockConfig{Code: src, Language: "go"}),
 	)
 }
 

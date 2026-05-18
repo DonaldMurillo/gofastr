@@ -4,6 +4,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // ModalScreen documents preset.Modal + URL deeplinking.
@@ -70,16 +71,14 @@ widget.Mount(r, &m)
 			),
 			render.Tag("div", map[string]string{"class": "demo-source"},
 				render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-				render.Tag("pre", nil, render.Tag("code", nil, render.Text(src))),
+				ui.CodeBlock(ui.CodeBlockConfig{Code: src, Language: "go"}),
 			),
 		),
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
-		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-			`preset.Modal(name string) *widget.Builder
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `preset.Modal(name string) *widget.Builder
 // builds a Center-mounted widget with backdrop + closeOnEscape + closeOnClickOutside.
 // Chain .Hidden() for click-to-open use, .DeepLink(key, value) for URL state,
-// .DeepLinkParam(key) to mirror a URL param into a signal on open.`,
-		))),
+// .DeepLinkParam(key) to mirror a URL param into a signal on open.`}),
 	)
 }

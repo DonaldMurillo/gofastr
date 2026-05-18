@@ -4,6 +4,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // ToastScreen documents preset.ToastStack + the two push paths
@@ -109,7 +110,7 @@ window.__gofastr.toast({variant:"success", title:"Local", ttl:5000});`
 			),
 			render.Tag("div", map[string]string{"class": "demo-source"},
 				render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-				render.Tag("pre", nil, render.Tag("code", nil, render.Text(headerSrc))),
+				ui.CodeBlock(ui.CodeBlockConfig{Code: headerSrc, Language: "go"}),
 			),
 		),
 
@@ -124,7 +125,7 @@ window.__gofastr.toast({variant:"success", title:"Local", ttl:5000});`
 			),
 			render.Tag("div", map[string]string{"class": "demo-source"},
 				render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-				render.Tag("pre", nil, render.Tag("code", nil, render.Text(clientSrc))),
+				ui.CodeBlock(ui.CodeBlockConfig{Code: clientSrc, Language: "go"}),
 			),
 		),
 
@@ -145,8 +146,7 @@ window.__gofastr.toast({variant:"success", title:"Local", ttl:5000});`
 			),
 			render.Tag("div", map[string]string{"class": "demo-source"},
 				render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-				render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-					`// Register a stack at each anchor point you want.
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `// Register a stack at each anchor point you want.
 for _, p := range []struct{ name string; pos widget.Position }{
     {"toasts-top-left",    widget.TopLeft},
     {"toasts-top-center",  widget.TopCenter},
@@ -165,7 +165,7 @@ __gofastr.toast({title: "Hi", stack: "toasts-bottom-center"});
 // Or from the server (header path), via ToastTrigger.Stack:
 ui.AddToast(w, ui.ToastTrigger{
     Title: "Saved", Stack: "toasts-bottom-center",
-})`))),
+})`}),
 			),
 		),
 
@@ -186,8 +186,7 @@ ui.AddToast(w, ui.ToastTrigger{
 		),
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
-		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-			`// Server (any http.Handler reachable via data-fui-rpc):
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `// Server (any http.Handler reachable via data-fui-rpc):
 func AddToast(w http.ResponseWriter, t ToastTrigger)
 func AddToastSuccess(w http.ResponseWriter, title, body string, ttlMs int)
 func AddToastError(w http.ResponseWriter, title, body string)  // persistent
@@ -208,7 +207,6 @@ window.__gofastr.toast({
     body:    'Your...',    // optional
     ttl:     5000,         // optional; 0 = persistent
     stack:   'site-toasts' // optional; first stack on page by default
-});`,
-		))),
+});`}),
 	)
 }

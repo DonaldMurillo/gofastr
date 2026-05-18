@@ -91,9 +91,18 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 	}
 	if overflow > 0 {
 		more := strconv.Itoa(overflow)
+		// role=img + aria-label is the canonical way to attach an
+		// accessible name to a graphical element. axe rejects bare
+		// aria-label on <span> (the implicit role doesn't accept it);
+		// either drop aria-label OR promote the span to a role that
+		// supports the attribute. role=img reads "image, N more" to
+		// screen readers — close enough to the visual "+N" chip.
 		items = append(items, html.Span(html.TextConfig{
 			Class: "ui-avatar-group__overflow",
-			Attrs: html.Attrs{"aria-label": more + " more"},
+			Attrs: html.Attrs{
+				"role":       "img",
+				"aria-label": more + " more",
+			},
 		},
 			html.Span(html.TextConfig{
 				Attrs: html.Attrs{"aria-hidden": "true"},

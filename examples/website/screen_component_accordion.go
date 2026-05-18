@@ -121,8 +121,7 @@ func (s *AccordionScreen) Render() render.HTML {
 
 		// --- API summary ---
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("API")),
-		render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-			`type GroupConfig struct {
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `type GroupConfig struct {
     Name      string // required → <details name="…">
     Class     string
     ID        string
@@ -145,8 +144,7 @@ type Item struct {
 
 func Group(cfg GroupConfig, items ...Item) render.HTML
 func Stack(cfg StackConfig, items ...Item) render.HTML
-func BaseCSS() string`,
-		))),
+func BaseCSS() string`}),
 	)
 }
 

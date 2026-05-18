@@ -263,7 +263,12 @@ func createStyleSheet(theme style.Theme) string {
 			"background", "{colors.surface}", "position", "sticky", "top", "0", "z-index", "10").
 		End()
 	ss.Rule(".site-header .brand").
-		Set("font-weight", "700", "font-size", "1.125rem", "color", "{colors.secondary}",
+		// Use the canonical body-text color so contrast meets WCAG AA
+		// in both light and dark themes. {colors.secondary} can be a
+		// mid-gray on light bg / pale-gray on dark bg — both fail AA
+		// against {colors.surface}. {colors.text} is the guaranteed
+		// high-contrast token for the active background.
+		Set("font-weight", "700", "font-size", "1.125rem", "color", "{colors.text}",
 			// WCAG 2.5.5 — brand is a tappable link, must be >= 44×44.
 			"display", "inline-flex", "align-items", "center",
 			"min-height", "var(--spacing-touch-target)").
@@ -365,12 +370,19 @@ func createStyleSheet(theme style.Theme) string {
 			"opacity", "0.9").End()
 	ss.Rule(".hero .cta-row").
 		Set("display", "flex", "justify-content", "center", "gap", "{spacing.md}").End()
+	// CTA buttons appear both inside the hero gradient AND on regular
+	// page backgrounds (e.g. the toast demo). Use the primary + primary-fg
+	// token pair so contrast is guaranteed AA in both contexts (the
+	// framework's Button component uses the same pair and is axe-clean).
 	ss.Rule(".cta-button").
 		Set("display", "inline-flex", "align-items", "center", "justify-content", "center",
 			"min-height", "44px", // WCAG 2.5.5 tap target
 			"padding", "10px {spacing.lg}",
 			"border-radius", "{radii.md}", "font-weight", "600",
-			"background", "white", "color", "{colors.primary}").End()
+			"background", "{colors.primary}", "color", "{colors.primary-fg}",
+			"border", "1px solid {colors.primary}").End()
+	// Secondary lives ONLY on the hero gradient — white border + white
+	// text on the indigo-to-slate gradient passes 8:1+ contrast.
 	ss.Rule(".cta-button.secondary").
 		Set("background", "transparent", "color", "white",
 			"border", "1px solid white").End()

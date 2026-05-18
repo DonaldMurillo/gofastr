@@ -119,7 +119,7 @@ ui.Sidebar(ui.SidebarConfig{
 			),
 			render.Tag("div", map[string]string{"class": "demo-source"},
 				render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-				render.Tag("pre", nil, render.Tag("code", nil, render.Text(src))),
+				ui.CodeBlock(ui.CodeBlockConfig{Code: src, Language: "go"}),
 			),
 		),
 
@@ -136,14 +136,12 @@ ui.Sidebar(ui.SidebarConfig{
 			),
 			render.Tag("div", map[string]string{"class": "demo-source"},
 				render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-				render.Tag("pre", nil, render.Tag("code", nil, render.Text(
-					`<button data-fui-open="ui-sidebar-drawer">☰  Open sidebar as drawer</button>
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `<button data-fui-open="ui-sidebar-drawer">☰  Open sidebar as drawer</button>
 
 // Server-side, registered once at app start:
 ui.MountSidebar(routerAdapter{r}, sidebarCfg)
 // MountSidebar internally calls preset.Drawer("ui-sidebar-drawer")
-// with sidebarCfg as its content tree.`,
-				))),
+// with sidebarCfg as its content tree.`}),
 			),
 		),
 

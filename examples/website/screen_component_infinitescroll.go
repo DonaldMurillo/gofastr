@@ -40,7 +40,16 @@ func (s *InfiniteScrollScreen) Render() render.HTML {
 	// PAGE scrolls, the feed just expands, and the drain loop fires
 	// all pages on first paint because the sentinel is always in
 	// the page viewport.
-	demo := render.Tag("div", map[string]string{"class": "demo-infinite-frame"}, feed)
+	// tabindex=0 so keyboard users can pan the scroll container (the
+	// feed scrolls vertically inside this 26rem-tall wrapper). axe's
+	// scrollable-region-focusable rule requires this on any scrolling
+	// region. aria-label gives screen readers a name for the scroll
+	// container distinct from the feed inside.
+	demo := render.Tag("div", map[string]string{
+		"class":      "demo-infinite-frame",
+		"tabindex":   "0",
+		"aria-label": "Activity feed scroll region",
+	}, feed)
 	src := `infinitescroll.Render(infinitescroll.Config{
     ID:        "feed",
     RPCPath:   "/feed/page",
@@ -62,6 +71,10 @@ func feedPageHandler(w http.ResponseWriter, r *http.Request) {
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Infinite Scroll")),
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"role=\"feed\" container with IntersectionObserver-driven lazy fetch. aria-busy toggles during each request. <noscript> ships a \"Load more\" form so non-JS users get the same data, keyboard-operable.")),
+		// Feed posts render their own <h3> Title — an h2 between this
+		// page h1 and the post h3s keeps WCAG 1.3.1 heading order
+		// monotonic (no skip-level jumps).
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Live feed")),
 		demoFrame(demo, src),
 	)
 }

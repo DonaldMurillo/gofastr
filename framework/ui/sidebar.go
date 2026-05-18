@@ -332,8 +332,11 @@ func sidebarCSS(_ style.Theme) string {
   outline: none;
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link[aria-current="page"] {
-  background: color-mix(in srgb, var(--color-primary, #4F46E5) 12%, transparent);
-  color: var(--color-primary, #4F46E5);
+  /* Use the primary + primary-fg token pair so contrast is guaranteed
+     AA regardless of theme. The previous 12%-primary tinted bg + raw
+     primary text failed contrast for some primary hues. */
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-fg, #FFFFFF);
   font-weight: 600;
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__group > summary {

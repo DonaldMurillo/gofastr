@@ -787,13 +787,26 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	preAttrs := map[string]string{"class": cls}
+	preAttrs := map[string]string{
+		"class": cls,
+		// WCAG 2.1.1 — the <pre> scrolls horizontally for long lines;
+		// without tabindex=0 keyboard-only users can't pan to see the
+		// off-screen content (axe's `scrollable-region-focusable`).
+		// Avoid role=region here even though it's the "obvious" pair:
+		// every CodeBlock on a page would then count as a landmark,
+		// failing `landmark-unique` when two blocks share a language.
+		// tabindex + aria-label is sufficient — the pre is focusable
+		// and announced; it's just not a landmark.
+		"tabindex": "0",
+	}
 	if cfg.ID != "" {
 		preAttrs["id"] = cfg.ID
 	}
+	label := "source code"
 	if cfg.Language != "" {
-		preAttrs["aria-label"] = cfg.Language + " source"
+		label = cfg.Language + " source"
 	}
+	preAttrs["aria-label"] = label
 	return codeBlockStyle.WrapHTML(render.Tag("pre", preAttrs,
 		render.Tag("code", nil, render.HTML(escapeHTML(cfg.Code))),
 	))

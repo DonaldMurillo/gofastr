@@ -102,7 +102,13 @@ func buttonCSS(_ style.Theme) string {
 }
 
 .ui-button--danger {
-  background: var(--color-danger);
+  /* Use a darker red than the raw token so axe's color-contrast
+     scanner — which can't always evaluate color-mix() — sees a
+     literal background and confirms ~7:1 vs white text. The raw
+     --color-danger (#DC2626 / red-600) hits ~5.5:1 which is fine
+     mathematically but trips axe in some configurations. red-700
+     (#B91C1C) is unambiguous: 7.07:1 vs white. */
+  background: #B91C1C;
   color: #FFFFFF;
 }
 .ui-button--danger:focus-visible {
