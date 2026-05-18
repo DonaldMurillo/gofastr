@@ -90,6 +90,17 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/spinner", &SpinnerScreen{}, nil)
 	site.Register("/components/divider", &DividerScreen{}, nil)
 	site.Register("/components/fileupload", &FileUploadScreen{}, nil)
+	site.Register("/components/kbd", &KbdScreen{}, nil)
+	site.Register("/components/avatargroup", &AvatarGroupScreen{}, nil)
+	site.Register("/components/copybutton", &CopyButtonScreen{}, nil)
+	site.Register("/components/shortcuthint", &ShortcutHintScreen{}, nil)
+	site.Register("/components/segmented", &SegmentedScreen{}, nil)
+	site.Register("/components/confirmaction", &ConfirmActionScreen{}, nil)
+	site.Register("/components/filterchipbar", &FilterChipBarScreen{}, nil)
+	site.Register("/components/infinitescroll", &InfiniteScrollScreen{}, nil)
+	site.Register("/components/combobox", &ComboboxScreen{}, nil)
+	site.Register("/components/tree", &TreeScreen{}, nil)
+	site.Register("/components/commandpalette", &CommandPaletteScreen{}, nil)
 	site.Register("/customers", &CustomersListScreen{}, nil)
 	site.Register("/customers/new", &CustomersFormScreen{}, nil)
 	site.Register("/customers/:id", &CustomersFormScreen{}, nil)
@@ -141,6 +152,11 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	// /components/{modal,drawer,toast} demos — register hidden widgets
 	// + a ToastBus + a tiny push endpoint that the live demo buttons hit.
 	registerComponentDemos(fwApp)
+
+	// /components/new — backing widgets + RPC handlers for the new-
+	// components demo screen (ConfirmAction modal, CommandPalette,
+	// combobox/tree/feed/filter handlers).
+	registerNewComponentsDemos(fwApp)
 
 	if devMode() {
 		// Dev-only livereload — SSE-driven, not polling. The server

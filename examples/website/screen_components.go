@@ -149,6 +149,72 @@ var componentEntries = []componentEntry{
 		Tag:   "Drag-drop · Native",
 		Intro: "Drag-and-drop file picker over a native <input type=\"file\">. Keyboard, screen-reader, and form-POST flows work without JavaScript; drag zone is progressive enhancement via data-fui-fileupload.",
 	},
+	{
+		Slug:  "kbd",
+		Name:  "Kbd",
+		Tag:   "Primitive · <kbd>",
+		Intro: "Semantic <kbd> primitive in core-ui/html. Pairs with ShortcutHint for styled chord chips, or use inline for documentation prose.",
+	},
+	{
+		Slug:  "avatargroup",
+		Name:  "Avatar Group",
+		Tag:   "Stack · Overflow",
+		Intro: "Overlapping stack of avatars with a +N overflow chip when there are more people than Max. role=group + aria-label; Size propagates to children.",
+	},
+	{
+		Slug:  "copybutton",
+		Name:  "Copy Button",
+		Tag:   "Clipboard · SR-announce",
+		Intro: "Clipboard button bound by selector. Visible label swaps to \"Copied\" briefly; a role=\"status\" sibling announces the success via aria-live so AT users don't lose focus.",
+	},
+	{
+		Slug:  "shortcuthint",
+		Name:  "Shortcut Hint",
+		Tag:   "Chord · OS-aware",
+		Intro: "Keyboard chord as styled <kbd> chips. The Mod key resolves to ⌘ on Mac / Ctrl elsewhere via <html data-fui-os>. Hidden on touch-only devices.",
+	},
+	{
+		Slug:  "segmented",
+		Name:  "Segmented Control",
+		Tag:   "Radiogroup · Sliding pill",
+		Intro: "Native radio inputs styled as a pill toggle bar with a CSS-only sliding indicator. Browser handles arrow keys + Space/Enter; form-submittable without JS.",
+	},
+	{
+		Slug:  "confirmaction",
+		Name:  "Confirm Action",
+		Tag:   "Alertdialog · Safe-default",
+		Intro: "Trigger + alertdialog Modal preset for destructive confirmations. Cancel autofocuses by default; opt into AutofocusConfirm for non-destructive flows.",
+	},
+	{
+		Slug:  "filterchipbar",
+		Name:  "Filter Chip Bar",
+		Tag:   "Toolbar · Removable",
+		Intro: "role=toolbar wrapper of removable Tag chips above a table or search result. Each × dismiss + optional \"Clear all\" wire through the existing RPC + signal swap.",
+	},
+	{
+		Slug:  "infinitescroll",
+		Name:  "Infinite Scroll",
+		Tag:   "Sentinel · noscript fallback",
+		Intro: "role=feed container with IntersectionObserver-driven lazy fetch and an X-Gofastr-Infinite-Cursor end-signal. Ships a <noscript> Load more form for non-JS users.",
+	},
+	{
+		Slug:  "combobox",
+		Name:  "Combobox",
+		Tag:   "Typeahead · RPC",
+		Intro: "Debounced input bound to an RPC dropdown listbox. role=combobox + aria-activedescendant + arrow-key/Enter/Esc nav per WAI-ARIA Combobox 1.2.",
+	},
+	{
+		Slug:  "tree",
+		Name:  "Tree View",
+		Tag:   "Recursive · Lazy-load",
+		Intro: "WAI-ARIA tree with roving tabindex and optional RPC lazy-load on expand. Arrow keys, Home/End, Enter/Space, and type-ahead all handled at the runtime layer.",
+	},
+	{
+		Slug:  "commandpalette",
+		Name:  "Command Palette",
+		Tag:   "⌘K · Modal+combobox",
+		Intro: "Ctrl/Cmd+K overlay combining a focus-trapped dialog with an always-open combobox. Server returns ranked options; selected options can fire RPCs or push URL state.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

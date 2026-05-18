@@ -493,6 +493,33 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".demo-stack--sm").Set("gap", "0.75rem").End()
 	ss.Rule(".demo-stack--lg").Set("gap", "1.25rem").End()
 
+	// AvatarGroup demo helpers: a row showing the four sizes, and a
+	// trigger row that pairs an AvatarGroup with a "View team" button.
+	ss.Rule(".demo-avatar-sizes").
+		Set("display", "flex", "flex-direction", "column",
+			"gap", "{spacing.md}", "align-items", "flex-start").End()
+	ss.Rule(".demo-team-trigger").
+		Set("display", "flex", "gap", "{spacing.md}",
+			"align-items", "center", "flex-wrap", "wrap").End()
+	ss.Rule(".demo-team-popover").
+		Set("padding", "{spacing.md}", "min-inline-size", "18rem",
+			"max-inline-size", "24rem").End()
+	ss.Rule(".demo-team-title").
+		Set("margin", "0 0 {spacing.sm} 0", "font-size", "0.85rem",
+			"font-weight", "600", "color", "{colors.text-muted}",
+			"text-transform", "uppercase", "letter-spacing", "0.05em").End()
+	ss.Rule(".demo-team-list").
+		Set("list-style", "none", "margin", "0", "padding", "0",
+			"display", "grid", "gap", "{spacing.sm}").End()
+	ss.Rule(".demo-team-row").
+		Set("display", "grid",
+			"grid-template-columns", "auto 1fr auto",
+			"gap", "{spacing.sm}", "align-items", "center").End()
+	ss.Rule(".demo-team-name").
+		Set("font-weight", "600", "color", "{colors.text}").End()
+	ss.Rule(".demo-team-role").
+		Set("font-size", "0.8rem", "color", "{colors.text-muted}").End()
+
 	// Popover demo — vertical spacer that pushes the next row down
 	// near the viewport bottom so anchored popovers from those
 	// triggers have to flip up to fit. Constrained to leave headroom
