@@ -131,11 +131,12 @@ func Lightbox(cfg LightboxConfig) (render.HTML, *widget.Builder) {
 			h = 120
 		}
 		// data-fui-deeplink mirrors src + alt onto the modal's signals
-		// when this anchor opens the modal. URL-encode the values so
-		// embedded "&" / "=" don't break the deeplink parser.
-		dl := url.Values{}
-		dl.Set("src", img.Src)
-		dl.Set("alt", img.Alt)
+		// when this anchor opens the modal. The runtime decodes with
+		// JS decodeURIComponent which does NOT reverse '+' → space —
+		// so we can't use url.Values.Encode() (Go convention encodes
+		// space as '+'). url.PathEscape uses '%20' for space, which
+		// decodeURIComponent reverses correctly.
+		dl := "src=" + url.PathEscape(img.Src) + "&alt=" + url.PathEscape(img.Alt)
 
 		items = append(items, render.Tag("li", map[string]string{"class": "ui-lightbox__row"},
 			render.Tag("a", map[string]string{
@@ -145,7 +146,7 @@ func Lightbox(cfg LightboxConfig) (render.HTML, *widget.Builder) {
 				"class":             "ui-lightbox__item",
 				"aria-label":        img.Alt,
 				"data-fui-open":     cfg.Name,
-				"data-fui-deeplink": dl.Encode(),
+				"data-fui-deeplink": dl,
 			},
 				render.Tag("img", map[string]string{
 					"src":     thumb,

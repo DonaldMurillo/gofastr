@@ -54,12 +54,19 @@ func TestLightboxDeeplinkCarriesSrcAndAlt(t *testing.T) {
 		Name: "g", Images: []LightboxImage{{Src: "/photo.jpg", Alt: "A photo"}},
 	})
 	h := string(thumbs)
-	// URL-encoded deeplink params.
+	// PathEscape (NOT QueryEscape) — runtime decodes with JS
+	// decodeURIComponent which doesn't reverse '+' → space, so space
+	// must be encoded as %20 not '+'. Confirm we don't slip back to
+	// QueryEscape: a '+' anywhere in the encoded alt would re-break
+	// the runtime decoder.
 	if !strings.Contains(h, "src=%2Fphoto.jpg") {
-		t.Errorf("deeplink should include url-encoded src:\n%s", h)
+		t.Errorf("deeplink should include path-encoded src:\n%s", h)
 	}
-	if !strings.Contains(h, "alt=A+photo") {
-		t.Errorf("deeplink should include url-encoded alt:\n%s", h)
+	if !strings.Contains(h, "alt=A%20photo") {
+		t.Errorf("deeplink should encode space as %%20 not '+':\n%s", h)
+	}
+	if strings.Contains(h, "alt=A+photo") {
+		t.Errorf("regression: '+' in encoded alt — runtime decodeURIComponent doesn't reverse it:\n%s", h)
 	}
 }
 
