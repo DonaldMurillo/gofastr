@@ -25,16 +25,22 @@ func (s *InfiniteScrollScreen) Render() render.HTML {
 		items = append(items, render.Tag("article",
 			map[string]string{"class": "demo-feed-item"},
 			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Post "+strconv.Itoa(i))),
-			html.Paragraph(html.TextConfig{}, render.Text("Initial SSR-rendered feed entry — scroll past the bottom to lazy-load the next batch.")),
+			html.Paragraph(html.TextConfig{}, render.Text("Initial SSR-rendered feed entry — scroll inside the box to lazy-load more.")),
 		))
 	}
-	demo := infinitescroll.Render(infinitescroll.Config{
+	feed := infinitescroll.Render(infinitescroll.Config{
 		ID:        "feed-demo",
 		RPCPath:   "/islands/new-components/feed-page",
 		AriaLabel: "Demo activity feed",
 		Items:     items,
 		Cursor:    "5",
 	})
+	// Wrap the feed in a fixed-height scroll container so the demo
+	// shows what infinite scroll actually does — without this, the
+	// PAGE scrolls, the feed just expands, and the drain loop fires
+	// all pages on first paint because the sentinel is always in
+	// the page viewport.
+	demo := render.Tag("div", map[string]string{"class": "demo-infinite-frame"}, feed)
 	src := `infinitescroll.Render(infinitescroll.Config{
     ID:        "feed",
     RPCPath:   "/feed/page",

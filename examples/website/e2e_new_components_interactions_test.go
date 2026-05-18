@@ -229,8 +229,13 @@ func TestE2E_InfiniteScroll_AutoFetchesNextPage(t *testing.T) {
 		chromedp.Navigate(base+"/components/infinitescroll"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelectorAll('#feed-demo .demo-feed-item').length`, &itemsBefore),
-		// Scroll the sentinel into view → IntersectionObserver fires → RPC.
-		chromedp.Evaluate(`document.querySelector('#feed-demo [data-fui-infinite-sentinel]').scrollIntoView()`, nil),
+		// Scroll the CONTAINER (not the page) — the runtime uses the
+		// `.demo-infinite-frame` element as the IntersectionObserver
+		// root because it's the nearest overflow-y: auto ancestor.
+		chromedp.Evaluate(`(() => {
+			const c = document.querySelector('.demo-infinite-frame');
+			c.scrollTo({ top: c.scrollHeight, behavior: 'instant' });
+		})()`, nil),
 		// Need time for the fetch to complete.
 		chromedp.Sleep(1200*1e6),
 		chromedp.Evaluate(`document.querySelectorAll('#feed-demo .demo-feed-item').length`, &itemsAfter),
@@ -251,26 +256,39 @@ func TestE2E_InfiniteScroll_EndOfFeedRemovesSentinel(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 	var sentinelPresent bool
 	var itemCount int
+	// Demo lives in a fixed-height scroll container; scroll IT, not
+	// the page. The runtime auto-detects the scroll container and uses
+	// it as the IntersectionObserver root, so page-level scrollIntoView
+	// would do nothing useful here.
+	scrollFeed := chromedp.Evaluate(
+		`(() => {
+			const c = document.querySelector('.demo-infinite-frame');
+			if (c) c.scrollTo({ top: c.scrollHeight, behavior: 'instant' });
+		})()`, nil)
+	const feedTotal = 100
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/infinitescroll"),
 		pageReady(),
-		// Hammer the sentinel into view until end-of-feed.
-		chromedp.Evaluate(`document.querySelector('#feed-demo [data-fui-infinite-sentinel]').scrollIntoView()`, nil),
-		chromedp.Sleep(800*1e6),
-		chromedp.Evaluate(`document.querySelector('#feed-demo [data-fui-infinite-sentinel]')?.scrollIntoView()`, nil),
-		chromedp.Sleep(800*1e6),
-		chromedp.Evaluate(`document.querySelector('#feed-demo [data-fui-infinite-sentinel]')?.scrollIntoView()`, nil),
-		chromedp.Sleep(800*1e6),
-		chromedp.Evaluate(`document.querySelector('#feed-demo [data-fui-infinite-sentinel]')?.scrollIntoView()`, nil),
-		chromedp.Sleep(800*1e6),
+		// Hammer the container scroll until end-of-feed (10 cycles is
+		// enough — feed is 100 items, fetched in pages of 10).
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
+		scrollFeed, chromedp.Sleep(400*1e6),
 		chromedp.Evaluate(`document.querySelectorAll('#feed-demo .demo-feed-item').length`, &itemCount),
 		chromedp.Evaluate(`document.querySelector('#feed-demo [data-fui-infinite-sentinel]') !== null`, &sentinelPresent),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if itemCount != 20 {
-		t.Errorf("expected to reach 20 items (full feed), got %d", itemCount)
+	if itemCount != feedTotal {
+		t.Errorf("expected to reach %d items (full feed), got %d", feedTotal, itemCount)
 	}
 	if sentinelPresent {
 		t.Error("sentinel should be removed at end of feed (empty cursor header)")

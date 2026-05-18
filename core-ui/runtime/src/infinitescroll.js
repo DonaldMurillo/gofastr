@@ -87,18 +87,47 @@
         // After a fetch lands, IntersectionObserver won't re-fire if
         // the sentinel was already in view and stays in view (items
         // get inserted ABOVE it, so its intersection is unchanged).
-        // Manually re-check after layout settles.
+        // Manually re-check after layout settles. The viewport math
+        // honors the scroll container we detected — using window.
+        // innerHeight here would over-fetch in a contained-scroll
+        // demo, draining the feed before the user scrolls a pixel.
         if (!exhausted) {
           requestAnimationFrame(() => requestAnimationFrame(() => {
             const r2 = sentinel.getBoundingClientRect();
-            const vh = window.innerHeight || document.documentElement.clientHeight;
             const margin = parseInt(rootMargin, 10) || 0;
-            const inView = r2.top < vh + margin && r2.bottom > -margin;
+            let topBound, bottomBound;
+            if (scrollRoot) {
+              const rr = scrollRoot.getBoundingClientRect();
+              topBound = rr.top - margin;
+              bottomBound = rr.bottom + margin;
+            } else {
+              const vh = window.innerHeight || document.documentElement.clientHeight;
+              topBound = -margin;
+              bottomBound = vh + margin;
+            }
+            const inView = r2.top < bottomBound && r2.bottom > topBound;
             if (inView) fetchMore();
           }));
         }
       };
 
+      // Find the nearest scroll container — any ancestor whose
+      // overflow-y is auto/scroll/overlay. The page viewport
+      // (document) is the default when none is found. Without this,
+      // a feed wrapped in a max-height: 24rem; overflow-y: auto
+      // container would still observe the PAGE viewport, so the
+      // sentinel-in-view check fires once at page load and never
+      // again when the user scrolls inside the container.
+      const findScrollRoot = (el) => {
+        let n = el.parentElement;
+        while (n && n !== document.body) {
+          const style = getComputedStyle(n);
+          if (/(auto|scroll|overlay)/.test(style.overflowY)) return n;
+          n = n.parentElement;
+        }
+        return null;
+      };
+      const scrollRoot = findScrollRoot(sentinel);
       const observer = new IntersectionObserver((entries) => {
         for (const e of entries) {
           if (e.isIntersecting) {
@@ -106,7 +135,7 @@
             break;
           }
         }
-      }, { rootMargin });
+      }, { rootMargin, root: scrollRoot });
       observer.observe(sentinel);
     });
   }

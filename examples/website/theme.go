@@ -542,6 +542,25 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".demo-stack--sm").Set("gap", "0.75rem").End()
 	ss.Rule(".demo-stack--lg").Set("gap", "1.25rem").End()
 
+	// InfiniteScroll demo: a fixed-height scroll container so the
+	// feed has somewhere to actually scroll. Without this the page
+	// scrolls and the drain loop fires every page on first paint.
+	ss.Rule(".demo-infinite-frame").
+		Set("max-block-size", "26rem", "overflow-y", "auto",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"background", "{colors.surface}").End()
+	ss.Rule(".demo-infinite-frame .demo-feed-item").
+		Set("padding", "{spacing.md} {spacing.lg}",
+			"border-bottom", "1px solid {colors.border}").End()
+	ss.Rule(".demo-infinite-frame .demo-feed-item:last-child").
+		Set("border-bottom", "0").End()
+	ss.Rule(".demo-infinite-frame .demo-feed-item h3").
+		Set("margin", "0 0 {spacing.xs} 0", "font-size", "0.95rem").End()
+	ss.Rule(".demo-infinite-frame .demo-feed-item p").
+		Set("margin", "0", "color", "{colors.text-muted}",
+			"font-size", "0.85rem").End()
+
 	// AvatarGroup demo helpers: a row showing the four sizes, and a
 	// trigger row that pairs an AvatarGroup with a "View team" button.
 	ss.Rule(".demo-avatar-sizes").

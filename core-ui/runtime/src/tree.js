@@ -37,6 +37,34 @@
     }
   });
 
+  // Click anywhere on a treeitem's row moves the roving tabindex to
+  // it (and gives it focus). Without this, clicking row B while row A
+  // is the focused item leaves A as the keyboard entry point — so the
+  // user has to first press Tab+ArrowDown to "catch up" to where they
+  // clicked. The WAI-ARIA Tree pattern explicitly recommends that a
+  // pointer click on a treeitem put it into the focus state.
+  //
+  // Skips clicks on the toggle button (the toggle has its own handler
+  // above) so expand/collapse doesn't also reshuffle focus.
+  document.addEventListener('click', (e) => {
+    if (!e.target || !e.target.closest) return;
+    if (e.target.closest('[data-fui-tree-toggle]')) return;
+    const item = e.target.closest('[role="treeitem"]');
+    if (!item) return;
+    const tree = item.closest('[role="tree"]');
+    if (!tree) return;
+    // Move roving tabindex.
+    tree.querySelectorAll('[role="treeitem"][tabindex="0"]').forEach((n) =>
+      n.setAttribute('tabindex', '-1')
+    );
+    item.setAttribute('tabindex', '0');
+    // Only steal focus if the user didn't click an interactive child
+    // (e.g. an <a> label on a leaf) — in that case the click target
+    // handles focus naturally.
+    const interactive = e.target.closest('a, button, input, select, textarea');
+    if (!interactive) item.focus();
+  });
+
   // _treeRows walks the tree and returns the visible (non-hidden)
   // treeitems in document order — used for ArrowDown/Up nav and
   // type-ahead jumps.

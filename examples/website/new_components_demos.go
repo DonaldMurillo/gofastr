@@ -98,7 +98,12 @@ func registerNewComponentsDemos(fwApp *framework.App) {
 		}
 	}))
 
-	// InfiniteScroll: feed page handler.
+	// InfiniteScroll: feed page handler. 100 posts total so the user
+	// actually has something to scroll through; the demo's scroll
+	// container is fixed-height so each fetch lands when the sentinel
+	// scrolls into the container's viewport.
+	const feedTotal = 100
+	const feedPageSize = 10
 	r.Post("/islands/new-components/feed-page", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		cursor, _ := strconv.Atoi(formField(req, "cursor"))
 		if cursor <= 0 {
@@ -108,19 +113,17 @@ func registerNewComponentsDemos(fwApp *framework.App) {
 		// stack auto-sends the header block, any subsequent
 		// header.Set() is silently dropped.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		next := cursor + 5
-		atEnd := cursor >= 20
-		if !atEnd && next <= 20 {
+		next := cursor + feedPageSize
+		atEnd := cursor >= feedTotal
+		if !atEnd && next <= feedTotal {
 			w.Header().Set("X-Gofastr-Infinite-Cursor", strconv.Itoa(next))
 		}
-		// If we're at end-of-feed we still respond 200 with an empty
-		// body and no cursor header — the runtime removes the sentinel.
 		if atEnd {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		for i := cursor + 1; i <= cursor+5 && i <= 20; i++ {
-			_, _ = w.Write([]byte(`<article class="demo-feed-item"><h3>Post ` + strconv.Itoa(i) + `</h3><p>Lazy-loaded entry.</p></article>`))
+		for i := cursor + 1; i <= cursor+feedPageSize && i <= feedTotal; i++ {
+			_, _ = w.Write([]byte(`<article class="demo-feed-item"><h3>Post ` + strconv.Itoa(i) + `</h3><p>Lazy-loaded entry — fetched when the sentinel scrolled into the container.</p></article>`))
 		}
 	}))
 
