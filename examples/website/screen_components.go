@@ -215,6 +215,36 @@ var componentEntries = []componentEntry{
 		Tag:   "⌘K · Modal+combobox",
 		Intro: "Ctrl/Cmd+K overlay combining a focus-trapped dialog with an always-open combobox. Server returns ranked options; selected options can fire RPCs or push URL state.",
 	},
+	{
+		Slug:  "banner",
+		Name:  "Banner",
+		Tag:   "InlineAlert · Dismissible",
+		Intro: "Persistent in-page status strip — maintenance notices, billing alerts, deprecation warnings. Warn/Danger emit role=\"alert\"; Info/Success use role=\"status\". Optional Dismissible + localStorage-backed DismissID.",
+	},
+	{
+		Slug:  "timeline",
+		Name:  "Timeline",
+		Tag:   "Event rail · Audit log",
+		Intro: "Vertical event list on a rail. Each event: dot, label, optional time/meta, optional body. Renders as a semantic <ol>; rail and dots are CSS pseudo-elements so screen readers hear a clean ordered list.",
+	},
+	{
+		Slug:  "steps",
+		Name:  "Progress Steps",
+		Tag:   "Step indicator · Horizontal/Vertical",
+		Intro: "Linear step indicator showing completed, current, upcoming. aria-current=\"step\" on current; completed steps with Href become clickable back-navigation links. Horizontal default + vertical orientation.",
+	},
+	{
+		Slug:  "rating",
+		Name:  "Rating Input",
+		Tag:   "1-N stars/hearts · No-JS",
+		Intro: "Keyboard-accessible star (or heart) rating bound to a hidden radio group. Native browser radio semantics handle arrow keys + Space/Enter; hover preview is pure CSS via sibling selectors.",
+	},
+	{
+		Slug:  "colorpicker",
+		Name:  "Color Picker",
+		Tag:   "Native · Themed chrome",
+		Intro: "Styled wrapper around <input type=\"color\">. The browser handles the actual color UI; we own the label, the 44×44 swatch size, and the focus ring. Preset swatches are on the roadmap.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

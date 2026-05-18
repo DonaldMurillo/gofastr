@@ -1504,6 +1504,10 @@
     // attaches an IntersectionObserver to each [data-fui-infinite-
     // sentinel] inside and POSTs to data-fui-infinite-scroll.
     { name: 'infinitescroll', selector: '[data-fui-infinite-scroll]' },
+    // Banner: dismissible inline-alert support. The module runs the
+    // localStorage-backed hide pass for already-dismissed banners and
+    // wires the delegated click handler for the X button.
+    { name: 'banner',         selector: '[data-fui-banner-dismiss]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

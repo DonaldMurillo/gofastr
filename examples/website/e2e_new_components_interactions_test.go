@@ -520,3 +520,59 @@ func TestE2E_CommandPalette_EscClosesAndReturnsFocus(t *testing.T) {
 		t.Errorf("modal stack should be empty after Esc, got %s", modalStackAfter)
 	}
 }
+
+// --- Banner -------------------------------------------------------------
+
+func TestE2E_Banner_DismissHidesElement(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hiddenBefore, hiddenAfter string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/banner"),
+		pageReady(),
+		// First clear any stale localStorage from a prior run so the
+		// persistent banner is visible.
+		chromedp.Evaluate(`localStorage.removeItem("gofastr.banner-dismiss.feature-filter-chips-2026-05")`, nil),
+		chromedp.Reload(),
+		pageReady(),
+		chromedp.Evaluate(`(document.querySelector("[data-fui-banner-dismiss-id]")?.closest("[data-fui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenBefore),
+		chromedp.Evaluate(`document.querySelector("[data-fui-banner-dismiss-id]").click()`, nil),
+		chromedp.Sleep(150*1e6),
+		chromedp.Evaluate(`(document.querySelector("[data-fui-banner-dismiss-id]")?.closest("[data-fui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if hiddenBefore != "false" {
+		t.Fatalf("persistent banner should be visible before click; hidden=%s", hiddenBefore)
+	}
+	if hiddenAfter != "true" {
+		t.Errorf("clicking dismiss should hide the banner; hidden=%s", hiddenAfter)
+	}
+}
+
+func TestE2E_Banner_DismissPersistsAcrossReload(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hiddenAfterReload string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/banner"),
+		pageReady(),
+		chromedp.Evaluate(`localStorage.setItem("gofastr.banner-dismiss.feature-filter-chips-2026-05", "1")`, nil),
+		chromedp.Reload(),
+		pageReady(),
+		// After reload, the banner runtime should auto-hide the
+		// banner whose DismissID was previously stored.
+		chromedp.Sleep(200*1e6),
+		chromedp.Evaluate(`(document.querySelector("[data-fui-banner-dismiss-id]")?.closest("[data-fui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenAfterReload),
+		// Clean up so other tests start with a known state.
+		chromedp.Evaluate(`localStorage.removeItem("gofastr.banner-dismiss.feature-filter-chips-2026-05")`, nil),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if hiddenAfterReload != "true" {
+		t.Errorf("banner with stored DismissID should auto-hide on reload; hidden=%s", hiddenAfterReload)
+	}
+}
+

@@ -283,6 +283,129 @@ func TestE2E_NewComponents_TreeViewARIA(t *testing.T) {
 	}
 }
 
+func TestE2E_NewComponents_BannerVariantsAndRoles(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var info, warn, danger int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/banner"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-banner"][role="status"]').length`, &info),
+		chromedp.Evaluate(`document.querySelectorAll('.ui-banner--warn[role="alert"]').length`, &warn),
+		chromedp.Evaluate(`document.querySelectorAll('.ui-banner--danger[role="alert"]').length`, &danger),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if info < 1 {
+		t.Errorf("expected ≥1 info/success banner with role=status, got %d", info)
+	}
+	if warn < 1 {
+		t.Errorf("expected ≥1 warn banner with role=alert, got %d", warn)
+	}
+	if danger < 1 {
+		t.Errorf("expected ≥1 danger banner with role=alert, got %d", danger)
+	}
+}
+
+func TestE2E_NewComponents_TimelineOrderedListWithCurrent(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var olTag, items int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/timeline"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-timeline"]').length`, &olTag),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-timeline"] .ui-timeline__item').length`, &items),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if olTag < 1 {
+		t.Errorf("expected ≥1 ui-timeline, got %d", olTag)
+	}
+	if items < 4 {
+		t.Errorf("expected ≥4 timeline events on demo, got %d", items)
+	}
+}
+
+func TestE2E_NewComponents_StepsAriaCurrent(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var current, complete int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/steps"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-progress-steps"] .ui-progress-steps__item[aria-current="step"]').length`, &current),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-progress-steps"] .ui-progress-steps__item--complete').length`, &complete),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if current < 1 {
+		t.Errorf("expected ≥1 step marked aria-current=step, got %d", current)
+	}
+	if complete < 2 {
+		t.Errorf("expected ≥2 completed steps in demo, got %d", complete)
+	}
+}
+
+func TestE2E_NewComponents_RatingRadioGroup(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var role, label string
+	var radios, checked int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rating"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-rating"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-rating"]')?.getAttribute('aria-label') || ''`, &label),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-rating"] input[type=radio]').length`, &radios),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-rating"] input[type=radio]:checked').length`, &checked),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if role != "radiogroup" {
+		t.Errorf("expected role=radiogroup, got %q", role)
+	}
+	if label == "" {
+		t.Errorf("expected aria-label on rating, got empty")
+	}
+	if radios < 5 {
+		t.Errorf("expected ≥5 radios (5-star default), got %d", radios)
+	}
+	if checked < 1 {
+		t.Errorf("expected initial Value to be reflected as one :checked radio, got %d", checked)
+	}
+}
+
+func TestE2E_NewComponents_ColorPickerNativeInput(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var inputs int
+	var labelFor, value string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/colorpicker"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-color-picker"] input[type=color]').length`, &inputs),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-color-picker"] label')?.getAttribute('for') || ''`, &labelFor),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-color-picker"] input[type=color]')?.value || ''`, &value),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if inputs < 1 {
+		t.Errorf("expected ≥1 native color input, got %d", inputs)
+	}
+	if labelFor == "" {
+		t.Errorf("expected <label for=…> wired to color input")
+	}
+	if value == "" {
+		t.Errorf("expected initial Value to be reflected as input value, got empty")
+	}
+}
+
 func TestE2E_NewComponents_CommandPaletteOpens(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
