@@ -30,6 +30,9 @@ import (
 //go:embed runtime.js
 var bundleFS embed.FS
 
+//go:embed colorscheme.js
+var colorSchemeFS embed.FS
+
 //go:embed src/*.js
 var modulesFS embed.FS
 
@@ -60,6 +63,24 @@ func RuntimeSize() int {
 		return 0
 	}
 	return len(js)
+}
+
+// ColorSchemeJS returns the color-scheme bootstrap script — a tiny
+// synchronous snippet meant to ship at the TOP of <head> so dark-mode
+// CSS tokens take effect during the same first paint that hits the
+// page. Reads localStorage("gofastr.colorScheme") + the OS
+// prefers-color-scheme hint, then sets <html data-color-scheme="…">
+// and a matching <meta name="color-scheme">.
+//
+// Apps that ship a theme toggle call
+// `window.__gofastr_colorScheme.set('auto'|'light'|'dark')` to
+// override the OS preference.
+func ColorSchemeJS() (string, error) {
+	data, err := fs.ReadFile(colorSchemeFS, "colorscheme.js")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // Module returns the source of a single split runtime module by name

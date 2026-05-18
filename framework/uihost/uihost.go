@@ -720,6 +720,14 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
 func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool) string {
 	// <head>
+	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
+	// (before any CSS parses) so dark-mode tokens take effect during
+	// the same first paint — no FOUC. Reads localStorage("gofastr.
+	// colorScheme") + prefers-color-scheme media query, sets
+	// <html data-color-scheme="dark|light">.
+	page = strings.Replace(page,
+		"<head>",
+		`<head><script src="/__gofastr/color-scheme.js"></script>`, 1)
 	if sessionID != "" {
 		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
 		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
@@ -887,6 +895,22 @@ func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
 	js := runtime.MustRuntimeJS()
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, js)
+}
+
+// handleColorSchemeJS serves the color-scheme bootstrap script — a
+// tiny synchronous snippet that ships at the top of <head> so dark-
+// mode CSS tokens take effect during first paint with no FOUC.
+func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
+	js, err := runtime.ColorSchemeJS()
+	if err != nil {
+		http.Error(w, "color-scheme bootstrap unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// Long cache — content rarely changes, file-hash query string would
+	// be ideal but isn't critical for a 1KB script.
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	fmt.Fprint(w, js)
 }
 
@@ -1081,6 +1105,7 @@ func (ds *UIHost) PushIsland(islandID string) error {
 // requests that nothing else claimed.
 func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
+	r.Get("/__gofastr/color-scheme.js", http.HandlerFunc(ds.handleColorSchemeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
 	r.Get("/__gofastr/app.css", http.HandlerFunc(ds.handleAppCSS))
 	// Legacy endpoints — 410 GONE redirects.

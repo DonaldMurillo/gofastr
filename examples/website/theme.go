@@ -30,6 +30,39 @@ func createTheme() style.Theme {
 func createStyleSheet(theme style.Theme) string {
 	ss := style.NewStyleSheet(theme)
 
+	// Dark-mode token overrides. The color-scheme bootstrap script
+	// (served at /__gofastr/color-scheme.js, injected at the top of
+	// <head>) sets <html data-color-scheme="dark|light"> based on the
+	// user's localStorage preference + OS prefers-color-scheme. These
+	// rules redefine the framework's CSS custom properties under that
+	// scope so EVERY component reskins for free — no per-component
+	// dark-mode code needed.
+	ss.Rule(`html[data-color-scheme="dark"]`).
+		Set(
+			"--color-background", "#0f1115",
+			"--color-surface", "#181a20",
+			"--color-surface-soft", "#1f222a",
+			"--color-border", "#2a2d36",
+			"--color-border-strong", "#3a3d46",
+			"--color-text", "#e7e7eb",
+			"--color-text-muted", "#a0a0aa",
+			"--color-text-subtle", "#6b6b75",
+			"--color-muted", "#1f222a",
+			"--color-primary", "#818cf8",
+			"--color-primary-fg", "#0f1115",
+			"--color-success", "#34d399",
+			"--color-success-bg", "#0d2a1f",
+			"--color-warning", "#fbbf24",
+			"--color-danger", "#f87171",
+			"--color-info", "#60a5fa",
+			"color-scheme", "dark",
+		).End()
+	// Explicit light mode: also defined so toggling back from dark
+	// (or via the toggle's `set('light')`) reverts cleanly even on
+	// pages where the :root tokens were already light.
+	ss.Rule(`html[data-color-scheme="light"]`).
+		Set("color-scheme", "light").End()
+
 	// Reset.
 	ss.Rule("*, *::before, *::after").
 		Set("box-sizing", "border-box", "margin", "0", "padding", "0").

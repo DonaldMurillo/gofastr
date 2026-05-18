@@ -1549,6 +1549,58 @@
     for (const name of [...G._modalStack]) G.closeWidget(name);
   });
 
+  // Re-fetch the widget catalog after SPA-nav so page-scoped widgets
+  // registered with .Pages("/route") become available when the user
+  // arrives via partial-fetch (instead of a full page load).
+  //
+  // Without this, the boot-time catalog only contains widgets visible
+  // on the initial path; clicking a data-fui-open trigger for a
+  // page-scoped widget elsewhere silently bails because the entry is
+  // missing from _widgetCatalog.
+  //
+  // The fetch is idempotent — entries are MERGED into the catalog
+  // (existing entries from boot don't get overwritten unless the
+  // server returns a changed version). Non-hidden widgets that
+  // aren't already mounted are mounted now. Then _syncDeepLinks runs
+  // so the URL's modal/drawer query params open the right surface.
+  window.addEventListener('gofastr:navigate', (e) => {
+    const path = (e && e.detail && e.detail.path) || location.pathname;
+    fetch('/__gofastr/widgets?page=' + encodeURIComponent(path),
+          { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (list) => {
+        if (!Array.isArray(list) || list.length === 0) return;
+        const G = window.__gofastr;
+        if (!G) return;
+        // Make sure the widgets module is loaded — the initial page
+        // may have had no widgets, so loadModule('widgets') was never
+        // triggered and mountWidget isn't on the namespace yet.
+        try { await G.loadModule('widgets'); } catch (_) { return; }
+        G._widgetCatalog = G._widgetCatalog || {};
+        G._widgetDeepLinks = G._widgetDeepLinks || {};
+        for (const item of list) {
+          const cfg = item.cfg;
+          const prev = G._widgetCatalog[cfg.name];
+          G._widgetCatalog[cfg.name] = item;
+          if (cfg.deepLinkKey && cfg.deepLinkValue && !prev) {
+            const idx = G._widgetDeepLinks;
+            (idx[cfg.deepLinkKey] = idx[cfg.deepLinkKey] || []).push({
+              value: cfg.deepLinkValue,
+              name: cfg.name,
+              params: cfg.deepLinkParams || [],
+            });
+          }
+          // Auto-mount non-hidden widgets that aren't already on the
+          // page. Hidden widgets (Modal / Drawer / Popover) stay
+          // hidden until openWidget is called from a trigger.
+          if (item.hidden) continue;
+          if (G._mountByName) G._mountByName(cfg.name);
+        }
+        if (G._syncDeepLinks) G._syncDeepLinks();
+      })
+      .catch(() => { /* navigation succeeded; missing catalog is non-fatal */ });
+  });
+
   const _bootstrapComponentCSS = () => {
     const G = window.__gofastr;
     if (!G?.scanAndLoadCSS) return;
