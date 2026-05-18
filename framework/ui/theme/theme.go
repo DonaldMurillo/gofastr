@@ -34,6 +34,11 @@ type Overrides struct {
 	Accent                                  string
 	Success, Warning, Danger, Info          string
 
+	// Code-display surface tokens (ui.CodeBlock + demo source panels).
+	// Intentionally a separate pair so dark mode reskins code blocks
+	// independently of the page Text/Background pair.
+	CodeSurface, CodeText, CodeBorder string
+
 	// Font families.
 	FontBody, FontHeading, FontMono string
 
@@ -82,6 +87,9 @@ func applyOverrides(t *style.Theme, o Overrides) {
 	setColor(&t.Colors.Warning, o.Warning)
 	setColor(&t.Colors.Danger, o.Danger)
 	setColor(&t.Colors.Info, o.Info)
+	setColor(&t.Colors.CodeSurface, o.CodeSurface)
+	setColor(&t.Colors.CodeText, o.CodeText)
+	setColor(&t.Colors.CodeBorder, o.CodeBorder)
 
 	setFont := func(f *style.Font, v string) {
 		if v == "" {

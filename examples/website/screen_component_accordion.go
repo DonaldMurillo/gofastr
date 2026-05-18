@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // AccordionScreen documents the core-ui/patterns/accordion package with live demos
@@ -149,7 +150,11 @@ func BaseCSS() string`,
 	)
 }
 
-// demoFrame wraps a live render of a component next to its source code.
+// demoFrame wraps a live render of a component next to its source
+// code. The source panel composes framework/ui.CodeBlock so the
+// visual treatment + dark-mode reskin are shared with every other
+// CodeBlock on the site (single token pair: --color-code-surface,
+// --color-code-text, --color-code-border).
 func demoFrame(demo render.HTML, source string) render.HTML {
 	return render.Tag("div", map[string]string{"class": "demo-frame"},
 		render.Tag("div", map[string]string{"class": "demo-live"},
@@ -158,7 +163,7 @@ func demoFrame(demo render.HTML, source string) render.HTML {
 		),
 		render.Tag("div", map[string]string{"class": "demo-source"},
 			render.Tag("div", map[string]string{"class": "demo-label"}, render.Text("Source")),
-			render.Tag("pre", nil, render.Tag("code", nil, render.Text(source))),
+			ui.CodeBlock(ui.CodeBlockConfig{Code: source, Language: "go"}),
 		),
 	)
 }

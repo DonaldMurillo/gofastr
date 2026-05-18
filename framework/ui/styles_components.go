@@ -125,13 +125,19 @@ func buttonCSS(_ style.Theme) string {
 }
 
 func codeBlockCSS(_ style.Theme) string {
+	// Uses the dedicated code-surface tokens (defined in style.Theme
+	// defaults) so dark mode can override them independently of the
+	// page Text/Background pair. Light-mode fallback values keep the
+	// classic "dark inkwell" feel; dark-mode apps redefine the tokens
+	// in their app stylesheet under [data-color-scheme="dark"].
 	return `[data-fui-comp="ui-code-block"] {
   display: block;
   overflow-x: auto;
   margin: 0;
   padding: var(--spacing-lg, 16px);
-  background: var(--color-text, #18181B);
-  color: #E4E4E7;
+  background: var(--color-code-surface, #18181B);
+  color: var(--color-code-text, #E4E4E7);
+  border: 1px solid var(--color-code-border, #27272A);
   border-radius: var(--radii-md, 8px);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.85rem;

@@ -51,6 +51,13 @@ type ColorSet struct {
 	Border, BorderStrong             Color
 	Danger, Success, Warning, Info   Color
 	Accent                           Color
+
+	// Code surface — the background + foreground used by code-display
+	// components (ui.CodeBlock, demo source panels). Intentionally a
+	// SEPARATE token pair from Surface/Text so dark mode can keep code
+	// blocks legibly distinct from the page background without
+	// inverting (light text on dark background works in both schemes).
+	CodeSurface, CodeText, CodeBorder Color
 }
 
 // SpacingScale — pixel-valued spacing scale.
@@ -369,6 +376,15 @@ func DefaultTheme() Theme {
 			Warning:      Color{Name: "warning", Value: "#A16207"}, // 4.59:1 with white — was #CA8A04 (2.94:1)
 			Info:         Color{Name: "info", Value: "#2563EB"},
 			Accent:       Color{Name: "accent", Value: "#7C3AED"},
+			// Code surface: an always-dark panel for ui.CodeBlock and
+			// other code-display contexts. Light mode keeps the dark
+			// inkwell look (classic IDE feel); dark mode shifts it a
+			// little deeper than the page surface so the code still
+			// stands out from the body. Token names are referenced by
+			// var(--color-code-*) in component CSS.
+			CodeSurface: Color{Name: "code-surface", Value: "#18181B"},
+			CodeText:    Color{Name: "code-text", Value: "#E4E4E7"},
+			CodeBorder:  Color{Name: "code-border", Value: "#27272A"},
 		},
 		Spacing: SpacingScale{
 			XS:   Spacing{Name: "xs", Value: 2},

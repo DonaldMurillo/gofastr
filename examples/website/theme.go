@@ -55,6 +55,12 @@ func createStyleSheet(theme style.Theme) string {
 			"--color-warning", "#fbbf24",
 			"--color-danger", "#f87171",
 			"--color-info", "#60a5fa",
+			// Code surface stays an inkwell in dark mode too — shifted a
+			// hair LIGHTER than the body background so the code panel
+			// reads as an inset chip rather than blending into the page.
+			"--color-code-surface", "#1a1d24",
+			"--color-code-text", "#e4e4e7",
+			"--color-code-border", "#2a2d36",
 			"color-scheme", "dark",
 		).End()
 	// Explicit light mode: also defined so toggling back from dark
@@ -491,13 +497,23 @@ func createStyleSheet(theme style.Theme) string {
 	// illusion that looks like a horizontal gradient even though the
 	// pixels are uniform. Near-black gives the panel a stronger,
 	// inkier feel and matches .ui-code-block.
+	// .demo-source is now a thin wrapper around ui.CodeBlock — the
+	// CodeBlock owns the code-surface background, padding, and font.
+	// The wrapper just provides outer padding for the "Source" label
+	// and uses the same code-surface token so the label chrome blends
+	// seamlessly into the block below in BOTH color schemes.
+	//
+	// Previously: `background: var(--color-text)` + literal #E4E4E7,
+	// which inverted (broken) in dark mode because Text flipped light.
 	ss.Rule(".demo-source").
-		Set("padding", "{spacing.lg}", "background", "{colors.text}", "color", "#E4E4E7",
-			"overflow-x", "auto").End()
-	ss.Rule(".demo-source pre, .demo-source code").
-		Set("background", "transparent", "color", "#E4E4E7", "border", "0",
-			"padding", "0", "font-size", "0.85em",
-			"font-family", "ui-monospace, 'SF Mono', Menlo, monospace").End()
+		Set("padding", "{spacing.lg}", "background", "{colors.code-surface}",
+			"color", "{colors.code-text}", "overflow-x", "auto").End()
+	// Strip the CodeBlock's own outer border + radius inside the
+	// .demo-source wrapper so it visually merges with the wrapper
+	// (the demo-frame already provides the outer border + radius).
+	ss.Rule(`.demo-source [data-fui-comp="ui-code-block"]`).
+		Set("background", "transparent", "border", "0", "padding", "0",
+			"border-radius", "0", "color", "{colors.code-text}").End()
 	ss.Rule(".demo-label").
 		Set("display", "inline-block", "padding", "2px 8px", "margin-bottom", "{spacing.sm}",
 			"border-radius", "{radii.sm}", "font-size", "0.7rem",
