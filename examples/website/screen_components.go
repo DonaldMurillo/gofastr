@@ -395,6 +395,18 @@ var componentEntries = []componentEntry{
 		Tag:   "Drawer variant · Mobile-friendly",
 		Intro: "preset.BottomSheet — bottom-anchored sibling of Drawer. Same dismiss affordances (backdrop, ESC, click-outside, focus-trap), mounted on the bottom edge with slide-from-bottom animation. Ideal for mobile detail panels.",
 	},
+	{
+		Slug:  "gallery",
+		Name:  "Gallery",
+		Tag:   "Grid / Strip / Masonry",
+		Intro: "Standalone thumbnail surface — Grid (configurable Columns + Gap), Strip (scroll-snap row), Masonry (CSS-columns flow). Pairs with Lightbox (set Lightbox: \"<name>\" and items become triggers); works as plain links otherwise.",
+	},
+	{
+		Slug:  "carousel",
+		Name:  "Carousel",
+		Tag:   "Scroll-snap · Prev/Next · AutoRotate",
+		Intro: "Horizontal scroll-snap slider with Prev/Next + pagination dots + ArrowLeft/Right keyboard nav. Opt-in AutoRotate pauses on hover, focus, reduced-motion, and background tabs. Users can drag/swipe natively too.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

@@ -131,6 +131,8 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/sortablelist", &SortableListScreen{}, nil)
 	site.Register("/components/globalsearch", &GlobalSearchScreen{}, nil)
 	site.Register("/components/bottomsheet", &BottomSheetScreen{}, nil)
+	site.Register("/components/gallery", &GalleryScreen{}, nil)
+	site.Register("/components/carousel", &CarouselScreen{}, nil)
 	site.Register("/customers", &CustomersListScreen{}, nil)
 	site.Register("/customers/new", &CustomersFormScreen{}, nil)
 	site.Register("/customers/:id", &CustomersFormScreen{}, nil)

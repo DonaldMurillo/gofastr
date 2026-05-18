@@ -685,19 +685,22 @@ func TestE2E_TOC_PageLoadsAndShellRenders(t *testing.T) {
 }
 
 func TestE2E_Lightbox_ThumbsAreAnchors(t *testing.T) {
+	// After the Wave-4 follow-up split, Lightbox is standalone and
+	// Gallery owns the thumb surface. Triggers now live on
+	// [data-fui-comp="ui-gallery"] anchors.
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var n int
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/lightbox"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-lightbox"] a[data-fui-open]').length`, &n),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-gallery"] a[data-fui-open]').length`, &n),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if n < 4 {
-		t.Errorf("expected ≥4 lightbox thumbs as <a>, got %d", n)
+		t.Errorf("expected ≥4 gallery thumbs wired as lightbox triggers, got %d", n)
 	}
 }
 
@@ -789,5 +792,114 @@ func TestE2E_BottomSheet_TriggerOpensBottomMounted(t *testing.T) {
 	}
 	if position != "fui-pos-bottom" {
 		t.Errorf("bottom sheet should mount at bottom; class=%q", position)
+	}
+}
+
+// =============================================================================
+// Wave 4 follow-up: Lightbox split + Gallery + Carousel
+// =============================================================================
+
+func TestE2E_Gallery_ItemsAreAnchors(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var n int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/gallery"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-gallery"] a').length`, &n),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if n < 6 {
+		t.Errorf("expected ≥6 gallery anchors across demos, got %d", n)
+	}
+}
+
+func TestE2E_Gallery_LightboxTriggersHaveDeeplink(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var n int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/lightbox"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-gallery"] a[data-fui-open="components-lightbox-demo"][data-fui-deeplink]').length`, &n),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if n < 4 {
+		t.Errorf("expected ≥4 gallery anchors wired to the lightbox, got %d", n)
+	}
+}
+
+func TestE2E_Lightbox_ClickArrowsCycleImages(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var firstSrc, afterNext, afterPrev string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/lightbox"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-gallery"] a[data-fui-open]').click()`, nil),
+		chromedp.Sleep(700*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.getAttribute('src') || ''`, &firstSrc),
+		chromedp.Evaluate(`document.querySelector('[data-fui-lightbox-next]').click()`, nil),
+		chromedp.Sleep(400*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.getAttribute('src') || ''`, &afterNext),
+		chromedp.Evaluate(`document.querySelector('[data-fui-lightbox-prev]').click()`, nil),
+		chromedp.Sleep(400*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.getAttribute('src') || ''`, &afterPrev),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if firstSrc == "" {
+		t.Fatalf("expected first image src to populate; got empty")
+	}
+	if afterNext == firstSrc {
+		t.Errorf("Next button should change src; before=%q after=%q", firstSrc, afterNext)
+	}
+	if afterPrev != firstSrc {
+		t.Errorf("Prev after Next should return to first src; got %q want %q", afterPrev, firstSrc)
+	}
+}
+
+func TestE2E_Carousel_PrevNextScrollsTrack(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var x1, x2 float64
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/carousel"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-carousel] [data-fui-carousel-track]').scrollLeft`, &x1),
+		chromedp.Evaluate(`document.querySelector('[data-fui-carousel] [data-fui-carousel-next]').click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-carousel] [data-fui-carousel-track]').scrollLeft`, &x2),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if x2 <= x1 {
+		t.Errorf("Next button should scroll the track; before=%f after=%f", x1, x2)
+	}
+}
+
+func TestE2E_Carousel_DotClickJumpsToSlide(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var x1, x2 float64
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/carousel"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-carousel] [data-fui-carousel-track]').scrollLeft`, &x1),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-carousel] [data-fui-carousel-dot]')[2].click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-carousel] [data-fui-carousel-track]').scrollLeft`, &x2),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if x2 <= x1 {
+		t.Errorf("clicking dot 3 should scroll forward; before=%f after=%f", x1, x2)
 	}
 }

@@ -11,10 +11,25 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Shipped
 
+### Wave 4 follow-up (2026-05-18) — Lightbox split + Gallery + Carousel
+
+- Lightbox — split into a STANDALONE zoom-overlay widget. Returns
+  just `*widget.Builder`. New options: NavArrows (Prev/Next +
+  ArrowLeft/Right), ShowCaption, AllowDownload. Image preloading
+  for adjacent siblings happens on every open.
+- Gallery — `framework/ui/` (new). Three variants: Grid
+  (configurable Columns + Gap), Strip (horizontal scroll-snap),
+  Masonry (CSS-columns flow). Set Lightbox: "<name>" to wire each
+  item as a trigger; otherwise items are plain links.
+- Carousel — `framework/ui/` (new). Horizontal scroll-snap slider
+  with Prev/Next + dots + ArrowLeft/Right keyboard nav. Opt-in
+  AutoRotateMs pauses on hover, focus, prefers-reduced-motion, and
+  background-tab visibility. Loop + multi-slide VisiblePerView.
+
 ### Wave 4 (2026-05-18) — Tier 3 composite & navigation
 
 - TableOfContents — `framework/ui/` (auto-built nav from h2/h3 + IntersectionObserver active-section tracking)
-- Lightbox — `framework/ui/` (click-to-zoom; composes preset.Modal — ZERO new runtime module)
+- Lightbox — see Wave 4 follow-up above (initial Lightbox shipped here was a Gallery+Lightbox composite; split + extended in the follow-up)
 - NotificationBell — `framework/ui/` (bell + unread badge + paired preset.Popover)
 - SortableList — `core-ui/patterns/sortablelist/` (HTML5 drag + keyboard Space-grab/Arrow-move/Esc-cancel)
 - GlobalSearch — `framework/ui/` (sticky bar with `/`-shortcut focus + Combobox results)
@@ -72,12 +87,14 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 ## Deferred — Wave 4 candidates (Tier 3 composite & navigation)
 
 All Wave 4 / Tier-3 items shipped (see Wave 4 section above). Open
-follow-ups carried into the deferred list at the bottom of this doc:
+follow-ups:
 
-- Lightbox arrow-key prev/next nav within an open gallery (v1 ships
-  with ESC + tab-to-thumb only — sufficient but minimal).
-- BottomSheet drag-to-dismiss gesture (touch event story is its own
-  design pass).
+- Lightbox: **pinch-to-zoom inside the open viewer** (touch event
+  story is its own design pass; punted from the Wave-4 follow-up).
+- BottomSheet drag-to-dismiss gesture (touch event story).
+- Carousel: virtual-scroll for galleries with >50 slides (current
+  render emits all slides upfront; fine for product reels, costly
+  for image-heavy archive views).
 
 ## Deferred — Wave 5 candidates (Tier 4 form helpers / async)
 

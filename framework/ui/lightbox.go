@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"net/url"
-	"strconv"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -15,193 +12,104 @@ import (
 
 // ─── Lightbox ───────────────────────────────────────────────────────
 //
-// Click-to-zoom image gallery built on top of preset.Modal. No new
-// runtime module: the framework already gives us
+// Standalone zoom overlay. Composes preset.Modal — ESC, click-outside,
+// focus-trap, return-focus all come free. Lightbox does NOT render any
+// trigger surface itself; any element on the page can open it via
+// `data-fui-open="<lightbox-name>" data-fui-deeplink="src=…&alt=…&caption=…&group=<id>"`.
 //
-//   - ESC + click-outside dismiss (preset.Modal)
-//   - Focus trap + return-focus (preset.Modal)
-//   - URL deeplink mirroring (DeepLinkParam → signal)
-//   - Signal → attribute binding (data-fui-signal-mode="attr")
+// Pairs cleanly with framework/ui.Gallery (set its Lightbox field to
+// this Lightbox's Name and each gallery item becomes a trigger) but
+// works equally well standalone — markdown-content authors, inline
+// figures, custom photo feeds, etc. can all trigger the same overlay.
 //
-// Composition flow:
-//   1. Render N thumbnail anchors, each carrying
-//      data-fui-open="<name>" + data-fui-deeplink="src=<full>&alt=<text>".
-//      The bare <a href=…> is the no-JS fallback (opens full-size in a
-//      new tab).
-//   2. Return a *widget.Builder for a preset.Modal named "<name>" with
-//      DeepLinkParam("src") + DeepLinkParam("alt") and Signal
-//      definitions so click → URL/state mirror → signals update.
-//   3. The modal slot renders <img data-fui-signal="src"
-//      data-fui-signal-mode="attr" data-fui-signal-attr="src">; the
-//      runtime mirrors the chosen image's URL into the src attribute.
+// Optional features:
+//   - NavArrows     — Prev/Next buttons + ArrowLeft/Right keyboard nav
+//                     across siblings sharing `data-fui-lightbox-group`.
+//   - ShowCaption   — `<figcaption>` slot bound to a "caption" signal.
+//   - AllowDownload — visible Download button bound to current src.
+//
+// All three live in the optional runtime module
+// core-ui/runtime/src/lightbox.js, which auto-loads when the modal is
+// rendered with any of these features enabled.
 
-// LightboxImage is one entry in a gallery.
-type LightboxImage struct {
-	// Src is the full-resolution image URL (required).
-	Src string
-	// Thumb is the thumbnail URL. Defaults to Src.
-	Thumb string
-	// Alt is the accessible image description (required).
-	Alt string
-	// Width / Height of the thumbnail in CSS pixels. Default 120×120.
-	Width  int
-	Height int
-}
-
-// LightboxConfig configures a Lightbox gallery.
+// LightboxConfig configures a Lightbox.
 type LightboxConfig struct {
-	// Name is the unique gallery name (required). Used as the widget
-	// name for the paired preset.Modal.
+	// Name is the unique widget name (required) used as the
+	// preset.Modal name. Page-unique. Any element with
+	// data-fui-open="<this Name>" opens the overlay.
 	Name string
-	// Label is the accessible label for the thumbnail strip.
-	// Defaults to "Image gallery".
+	// Label is the accessible name for the open modal. Defaults to
+	// "Image viewer".
 	Label string
-	// ModalLabel is the accessible label for the open lightbox modal.
-	// Defaults to Label.
-	ModalLabel string
-	// Pages, when non-empty, scopes the modal mount to those routes
-	// (passed through to preset.Modal's .Pages). Default: site-wide.
+	// NavArrows renders Prev/Next buttons inside the modal AND wires
+	// ArrowLeft/Right keyboard nav over siblings sharing the same
+	// data-fui-lightbox-group attribute.
+	NavArrows bool
+	// ShowCaption adds a <figcaption> bound to the "caption" signal.
+	// Triggers pass caption=<text> in their data-fui-deeplink.
+	ShowCaption bool
+	// AllowDownload renders a visible "Download" anchor inside the
+	// modal whose href is bound to the current src signal.
+	AllowDownload bool
+	// Pages, when non-empty, scopes the modal mount to those routes.
 	Pages []string
-	// Images are the entries (≥1).
-	Images []LightboxImage
-	ID     string
-	Class  string
-	Attrs  html.Attrs
 }
 
-// Lightbox returns the gallery HTML AND a *widget.Builder for the
-// modal it pairs with. Mount the modal once at app startup:
-//
-//	thumbs, modal := ui.Lightbox(ui.LightboxConfig{...})
-//	widget.Mount(r, modal.Build())
-//
-// Then render `thumbs` anywhere on the page.
-func Lightbox(cfg LightboxConfig) (render.HTML, *widget.Builder) {
+// Lightbox returns a *widget.Builder for the zoom-overlay modal.
+// Mount once at app startup; trigger from anywhere via data-fui-open.
+func Lightbox(cfg LightboxConfig) *widget.Builder {
 	if cfg.Name == "" {
 		panic("ui: Lightbox requires Name")
 	}
-	if len(cfg.Images) == 0 {
-		panic("ui: Lightbox requires ≥1 Image")
-	}
 	label := cfg.Label
 	if label == "" {
-		label = "Image gallery"
-	}
-	modalLabel := cfg.ModalLabel
-	if modalLabel == "" {
-		modalLabel = label
+		label = "Image viewer"
 	}
 
-	cls := "ui-lightbox"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	slot := &lightboxSlot{
+		name:          cfg.Name,
+		label:         label,
+		navArrows:     cfg.NavArrows,
+		showCaption:   cfg.ShowCaption,
+		allowDownload: cfg.AllowDownload,
 	}
-	// Use native <ul> / <li> instead of role=list / role=listitem —
-	// axe rejects role=listitem on an <a> (aria-allowed-role), and
-	// native semantics also win for no-JS / SR fallback.
-	attrs := html.Attrs{
-		"class":      cls,
-		"aria-label": label,
-	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-	for k, v := range cfg.Attrs {
-		attrs[k] = v
-	}
-
-	items := make([]render.HTML, 0, len(cfg.Images))
-	for _, img := range cfg.Images {
-		if img.Src == "" {
-			panic("ui: Lightbox image requires Src")
-		}
-		if img.Alt == "" {
-			panic("ui: Lightbox image requires Alt (a meaningful description; the open zoomed image inherits this as its accessible name)")
-		}
-		thumb := img.Thumb
-		if thumb == "" {
-			thumb = img.Src
-		}
-		w := img.Width
-		if w == 0 {
-			w = 120
-		}
-		h := img.Height
-		if h == 0 {
-			h = 120
-		}
-		// data-fui-deeplink mirrors src + alt onto the modal's signals
-		// when this anchor opens the modal. The runtime decodes with
-		// JS decodeURIComponent which does NOT reverse '+' → space —
-		// so we can't use url.Values.Encode() (Go convention encodes
-		// space as '+'). url.PathEscape uses '%20' for space, which
-		// decodeURIComponent reverses correctly.
-		dl := "src=" + url.PathEscape(img.Src) + "&alt=" + url.PathEscape(img.Alt)
-
-		items = append(items, render.Tag("li", map[string]string{"class": "ui-lightbox__row"},
-			render.Tag("a", map[string]string{
-				"href":              img.Src, // no-JS fallback
-				"target":            "_blank",
-				"rel":               "noopener",
-				"class":             "ui-lightbox__item",
-				"aria-label":        img.Alt,
-				"data-fui-open":     cfg.Name,
-				"data-fui-deeplink": dl,
-			},
-				render.Tag("img", map[string]string{
-					"src":     thumb,
-					"alt":     img.Alt,
-					"width":   strconv.Itoa(w),
-					"height":  strconv.Itoa(h),
-					"loading": "lazy",
-					"class":   "ui-lightbox__thumb",
-				}),
-			),
-		))
-	}
-
-	// Native <ul> root keeps role=list implicit; per-item <li> wraps
-	// each <a>. List padding/markers are reset via the registered CSS.
-	thumbs := lightboxStyle.WrapHTML(render.Tag("ul", attrs, items...))
-
-	// Compose the modal. Pages() scopes the mount; the modal carries
-	// a single <img> bound to the "src" signal via
-	// data-fui-signal-mode="attr" data-fui-signal-attr="src".
-	slot := &lightboxSlot{name: cfg.Name, label: modalLabel}
 	titleID := cfg.Name + "-title"
 	mb := preset.Modal(cfg.Name).
 		Hidden().
 		LabelledBy(titleID).
 		DeepLinkParam("src").
 		DeepLinkParam("alt").
+		DeepLinkParam("caption").
+		DeepLinkParam("group").
 		Signal("src", widget.SignalFunc(func() (any, error) { return "", nil })).
 		Signal("alt", widget.SignalFunc(func() (any, error) { return "", nil })).
+		Signal("caption", widget.SignalFunc(func() (any, error) { return "", nil })).
+		Signal("group", widget.SignalFunc(func() (any, error) { return "", nil })).
 		Slot("body", slot)
 	if len(cfg.Pages) > 0 {
 		mb = mb.Pages(cfg.Pages...)
 	}
-	return thumbs, mb
+	return mb
 }
 
-// lightboxSlot renders the open-modal contents: a centered <img>
-// bound to the "src" signal + an SR-only title bound to "alt".
+// lightboxSlot renders the open-modal contents.
 type lightboxSlot struct {
-	name  string
-	label string
+	name          string
+	label         string
+	navArrows     bool
+	showCaption   bool
+	allowDownload bool
 }
 
 func (s *lightboxSlot) Render() render.HTML {
-	return render.Tag("div", map[string]string{"class": "ui-lightbox__viewer"},
-		// SR-only title — Modal.LabelledBy() points here. The runtime
-		// mirrors the "alt" signal into this element's textContent on
-		// each open, so the announced label matches the displayed image.
+	figChildren := []render.HTML{
+		// SR-only title — Modal.LabelledBy() points here.
 		html.Span(html.TextConfig{
 			ID:    s.name + "-title",
 			Class: "ui-visually-hidden",
 			Attrs: html.Attrs{"data-fui-signal": "alt"},
 		}, render.Text(s.label)),
-		// Image. data-fui-signal-mode="attr" + data-fui-signal-attr="src"
-		// → runtime writes the signal value into the img's src attr.
+		// Image — runtime writes signal value into the src attr.
 		render.Tag("img", map[string]string{
 			"class":                "ui-lightbox__full",
 			"alt":                  "",
@@ -209,7 +117,63 @@ func (s *lightboxSlot) Render() render.HTML {
 			"data-fui-signal-mode": "attr",
 			"data-fui-signal-attr": "src",
 		}),
-	)
+	}
+	if s.showCaption {
+		figChildren = append(figChildren,
+			render.Tag("figcaption", map[string]string{
+				"class":           "ui-lightbox__caption",
+				"data-fui-signal": "caption",
+			}, render.HTML("")))
+	}
+
+	// Toolbar — Prev/Next + Download.
+	toolbar := []render.HTML{}
+	if s.navArrows {
+		toolbar = append(toolbar,
+			render.Tag("button", map[string]string{
+				"type":                   "button",
+				"class":                  "ui-lightbox__nav ui-lightbox__nav--prev",
+				"aria-label":             "Previous image",
+				"data-fui-lightbox-prev": s.name,
+			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
+			render.Tag("button", map[string]string{
+				"type":                   "button",
+				"class":                  "ui-lightbox__nav ui-lightbox__nav--next",
+				"aria-label":             "Next image",
+				"data-fui-lightbox-next": s.name,
+			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
+		)
+	}
+	if s.allowDownload {
+		toolbar = append(toolbar,
+			render.Tag("a", map[string]string{
+				"class":                "ui-lightbox__download",
+				"aria-label":           "Download image",
+				"download":             "",
+				"data-fui-signal":      "src",
+				"data-fui-signal-mode": "attr",
+				"data-fui-signal-attr": "href",
+			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
+		)
+	}
+
+	viewerChildren := []render.HTML{
+		render.Tag("figure", map[string]string{"class": "ui-lightbox__figure"}, figChildren...),
+	}
+	if len(toolbar) > 0 {
+		viewerChildren = append(viewerChildren,
+			render.Tag("div", map[string]string{"class": "ui-lightbox__toolbar"}, toolbar...))
+	}
+
+	wrapAttrs := map[string]string{
+		"class":             "ui-lightbox__viewer",
+		"data-fui-lightbox": s.name,
+	}
+	if s.navArrows {
+		wrapAttrs["data-fui-lightbox-nav"] = "true"
+	}
+
+	return lightboxStyle.WrapHTML(render.Tag("div", wrapAttrs, viewerChildren...))
 }
 
 var _ component.Component = (*lightboxSlot)(nil)
@@ -218,51 +182,60 @@ var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 
 func lightboxCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-lightbox"] {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm, 8px);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-[data-fui-comp="ui-lightbox"] .ui-lightbox__row {
-  margin: 0;
-  padding: 0;
-}
-[data-fui-comp="ui-lightbox"] .ui-lightbox__item {
-  display: inline-block;
-  border-radius: var(--radii-md, 8px);
-  overflow: hidden;
-  border: 1px solid var(--color-border, #E4E4E7);
-  cursor: zoom-in;
-  background: var(--color-surface, #FFFFFF);
-  transition: border-color 120ms ease;
-}
-[data-fui-comp="ui-lightbox"] .ui-lightbox__item:hover {
-  border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-lightbox"] .ui-lightbox__item:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
-}
-[data-fui-comp="ui-lightbox"] .ui-lightbox__thumb {
-  display: block;
-  object-fit: cover;
-}
-
-/* Inside the open modal — image fills the dialog up to viewport
-   bounds. The modal preset already handles backdrop + centering. */
-.ui-lightbox__viewer {
   display: grid;
+  gap: var(--spacing-md, 12px);
   place-items: center;
   inline-size: min(90vw, 1200px);
-  block-size: min(85vh, 90vh);
 }
-.ui-lightbox__full {
+[data-fui-comp="ui-lightbox"] .ui-lightbox__figure {
+  margin: 0;
+  display: grid;
+  gap: var(--spacing-sm, 8px);
+  place-items: center;
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__full {
   display: block;
   max-inline-size: 100%;
-  max-block-size: 100%;
+  max-block-size: min(75vh, 80vh);
   object-fit: contain;
   border-radius: var(--radii-md, 8px);
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__caption {
+  margin: 0;
+  font-size: 0.9rem;
+  text-align: center;
+  color: var(--color-text-muted, #52525B);
+  max-inline-size: 60ch;
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__caption:empty { display: none; }
+
+[data-fui-comp="ui-lightbox"] .ui-lightbox__toolbar {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  align-items: center;
+  justify-content: center;
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__nav,
+[data-fui-comp="ui-lightbox"] .ui-lightbox__download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--spacing-touch-target, 44px);
+  min-inline-size: var(--spacing-touch-target, 44px);
+  border-radius: 999px;
+  border: 0;
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #18181B);
+  cursor: pointer;
+  text-decoration: none;
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__nav:hover,
+[data-fui-comp="ui-lightbox"] .ui-lightbox__download:hover {
+  background: var(--color-border, #E4E4E7);
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__nav:focus-visible,
+[data-fui-comp="ui-lightbox"] .ui-lightbox__download:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
 }`
 }

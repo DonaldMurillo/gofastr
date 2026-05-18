@@ -178,19 +178,15 @@ func registerComponentDemos(fwApp *framework.App) {
 	widget.Mount(r, &pop)
 
 	// --- Wave 4: Lightbox modal --------------------------------------
-	// Mount once so the per-page LightboxScreen demo can open it.
-	// Reuses the same Lightbox() helper the demo screen calls — passing
-	// the same config keeps the gallery list in sync.
-	_, lightboxModal := ui.Lightbox(ui.LightboxConfig{
-		Name:  "components-lightbox-demo",
-		Label: "Sample gallery",
-		Pages: []string{"/components/lightbox"},
-		// Image set duplicated from the screen — single source of truth
-		// would be nicer but cross-package state is heavier than worth.
-		// Image content is irrelevant for the mount; only Name + Pages matter.
-		Images: []ui.LightboxImage{
-			{Src: "x", Alt: "x"},
-		},
+	// Standalone Lightbox modal — Gallery thumbs on /components/lightbox
+	// trigger it via data-fui-open + data-fui-deeplink.
+	lightboxModal := ui.Lightbox(ui.LightboxConfig{
+		Name:          "components-lightbox-demo",
+		Label:         "Photo viewer",
+		Pages:         []string{"/components/lightbox"},
+		NavArrows:     true,
+		ShowCaption:   true,
+		AllowDownload: true,
 	})
 	lbBuilt := lightboxModal.Build()
 	widget.Mount(r, &lbBuilt)

@@ -11,87 +11,100 @@ func TestLightboxRequiresName(t *testing.T) {
 			t.Fatal("Lightbox without Name should panic")
 		}
 	}()
-	Lightbox(LightboxConfig{Images: []LightboxImage{{Src: "/a.jpg", Alt: "A"}}})
+	Lightbox(LightboxConfig{})
 }
 
-func TestLightboxRequiresImages(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Lightbox without Images should panic")
+func TestLightboxReturnsHiddenModalByName(t *testing.T) {
+	b := Lightbox(LightboxConfig{Name: "photo-viewer"})
+	if b == nil {
+		t.Fatal("Lightbox should return non-nil *widget.Builder")
+	}
+	d := b.Definition()
+	if d.Name != "photo-viewer" {
+		t.Errorf("widget Name should match Lightbox Name; got %q", d.Name)
+	}
+	if !d.Hidden {
+		t.Errorf("Lightbox modal should be Hidden by default (data-fui-open opens it)")
+	}
+}
+
+func TestLightboxDeepLinkParams(t *testing.T) {
+	b := Lightbox(LightboxConfig{Name: "x"})
+	d := b.Definition()
+	got := map[string]bool{}
+	for _, p := range d.DeepLinkParams {
+		got[p] = true
+	}
+	for _, want := range []string{"src", "alt", "caption", "group"} {
+		if !got[want] {
+			t.Errorf("Lightbox must declare DeepLinkParam %q", want)
 		}
-	}()
-	Lightbox(LightboxConfig{Name: "g1"})
-}
-
-func TestLightboxImageRequiresAlt(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("LightboxImage without Alt should panic")
-		}
-	}()
-	Lightbox(LightboxConfig{Name: "g1", Images: []LightboxImage{{Src: "/a.jpg"}}})
-}
-
-func TestLightboxEmitsAnchorPerImage(t *testing.T) {
-	thumbs, _ := Lightbox(LightboxConfig{
-		Name: "gallery", Images: []LightboxImage{
-			{Src: "/a.jpg", Alt: "A"},
-			{Src: "/b.jpg", Alt: "B"},
-			{Src: "/c.jpg", Alt: "C"},
-		},
-	})
-	h := string(thumbs)
-	if c := strings.Count(h, `data-fui-open="gallery"`); c != 3 {
-		t.Errorf("expected 3 anchors with data-fui-open=gallery, got %d:\n%s", c, h)
-	}
-	if c := strings.Count(h, `data-fui-deeplink="`); c != 3 {
-		t.Errorf("expected 3 deeplink anchors, got %d:\n%s", c, h)
 	}
 }
 
-func TestLightboxDeeplinkCarriesSrcAndAlt(t *testing.T) {
-	thumbs, _ := Lightbox(LightboxConfig{
-		Name: "g", Images: []LightboxImage{{Src: "/photo.jpg", Alt: "A photo"}},
-	})
-	h := string(thumbs)
-	// PathEscape (NOT QueryEscape) — runtime decodes with JS
-	// decodeURIComponent which doesn't reverse '+' → space, so space
-	// must be encoded as %20 not '+'. Confirm we don't slip back to
-	// QueryEscape: a '+' anywhere in the encoded alt would re-break
-	// the runtime decoder.
-	if !strings.Contains(h, "src=%2Fphoto.jpg") {
-		t.Errorf("deeplink should include path-encoded src:\n%s", h)
+func TestLightboxSlotRendersSignalBoundImg(t *testing.T) {
+	slot := &lightboxSlot{name: "x", label: "Viewer"}
+	h := string(slot.Render())
+	if !strings.Contains(h, `data-fui-signal="src"`) {
+		t.Errorf("slot should bind src signal:\n%s", h)
 	}
-	if !strings.Contains(h, "alt=A%20photo") {
-		t.Errorf("deeplink should encode space as %%20 not '+':\n%s", h)
+	if !strings.Contains(h, `data-fui-signal-mode="attr"`) {
+		t.Errorf("slot src binding should be attr-mode:\n%s", h)
 	}
-	if strings.Contains(h, "alt=A+photo") {
-		t.Errorf("regression: '+' in encoded alt — runtime decodeURIComponent doesn't reverse it:\n%s", h)
+	if !strings.Contains(h, `data-fui-signal-attr="src"`) {
+		t.Errorf("slot should mirror into the src attribute:\n%s", h)
 	}
 }
 
-func TestLightboxAnchorHrefFallback(t *testing.T) {
-	thumbs, _ := Lightbox(LightboxConfig{
-		Name: "g", Images: []LightboxImage{{Src: "/full.jpg", Alt: "F"}},
-	})
-	h := string(thumbs)
-	if !strings.Contains(h, `href="/full.jpg"`) {
-		t.Errorf("anchor should set href=Src for no-JS fallback:\n%s", h)
+func TestLightboxNavArrowsAddsButtons(t *testing.T) {
+	off := string((&lightboxSlot{name: "x", label: "x"}).Render())
+	if strings.Contains(off, "ui-lightbox__nav--prev") {
+		t.Errorf("NavArrows=false should NOT emit Prev/Next buttons:\n%s", off)
+	}
+	on := string((&lightboxSlot{name: "x", label: "x", navArrows: true}).Render())
+	if !strings.Contains(on, "ui-lightbox__nav--prev") {
+		t.Errorf("NavArrows=true should emit Prev button:\n%s", on)
+	}
+	if !strings.Contains(on, "ui-lightbox__nav--next") {
+		t.Errorf("NavArrows=true should emit Next button:\n%s", on)
+	}
+	if !strings.Contains(on, `data-fui-lightbox-prev="x"`) {
+		t.Errorf("Prev button should carry data-fui-lightbox-prev=<name>:\n%s", on)
 	}
 }
 
-func TestLightboxReturnsModalBuilder(t *testing.T) {
-	_, modal := Lightbox(LightboxConfig{
-		Name: "g1", Images: []LightboxImage{{Src: "/a.jpg", Alt: "A"}},
-	})
-	if modal == nil {
-		t.Fatal("Lightbox should return a non-nil *widget.Builder")
+func TestLightboxShowCaptionAddsFigcaption(t *testing.T) {
+	off := string((&lightboxSlot{name: "x", label: "x"}).Render())
+	if strings.Contains(off, "<figcaption") {
+		t.Errorf("ShowCaption=false should NOT emit <figcaption>:\n%s", off)
 	}
-	def := modal.Definition()
-	if def.Name != "g1" {
-		t.Errorf("modal Name should match Lightbox Name, got %q", def.Name)
+	on := string((&lightboxSlot{name: "x", label: "x", showCaption: true}).Render())
+	if !strings.Contains(on, "<figcaption") {
+		t.Errorf("ShowCaption=true should emit <figcaption>:\n%s", on)
 	}
-	if !def.Hidden {
-		t.Errorf("Lightbox modal should be Hidden by default (opened via data-fui-open)")
+	if !strings.Contains(on, `data-fui-signal="caption"`) {
+		t.Errorf("figcaption should bind to caption signal:\n%s", on)
+	}
+}
+
+func TestLightboxAllowDownloadAddsAnchor(t *testing.T) {
+	off := string((&lightboxSlot{name: "x", label: "x"}).Render())
+	if strings.Contains(off, "ui-lightbox__download") {
+		t.Errorf("AllowDownload=false should NOT emit download anchor:\n%s", off)
+	}
+	on := string((&lightboxSlot{name: "x", label: "x", allowDownload: true}).Render())
+	if !strings.Contains(on, `class="ui-lightbox__download"`) {
+		t.Errorf("AllowDownload=true should emit download anchor:\n%s", on)
+	}
+	if !strings.Contains(on, `data-fui-signal-attr="href"`) {
+		t.Errorf("download anchor should mirror src signal into href:\n%s", on)
+	}
+}
+
+func TestLightboxLabelledByPointsToCaptionTitle(t *testing.T) {
+	b := Lightbox(LightboxConfig{Name: "myview"})
+	d := b.Definition()
+	if d.LabelledBy != "myview-title" {
+		t.Errorf("LabelledBy should point to <name>-title; got %q", d.LabelledBy)
 	}
 }

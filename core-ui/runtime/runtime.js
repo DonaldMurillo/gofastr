@@ -1535,6 +1535,10 @@
     // Shortcut: page-level (non-widget) data-fui-shortcut-focus +
     // data-fui-shortcut-click bindings.
     { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
+    // Lightbox: arrow-nav across gallery siblings + image preloading.
+    { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]' },
+    // Carousel: prev/next, dots, ArrowLeft/Right, optional AutoRotate.
+    { name: 'carousel',        selector: '[data-fui-carousel]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

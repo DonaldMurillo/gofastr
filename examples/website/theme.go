@@ -690,6 +690,20 @@ func createStyleSheet(theme style.Theme) string {
 		Set("color", "{colors.text-muted}", "font-size", "0.85rem").End()
 	ss.Rule(".demo-stack--toast").
 		Set("display", "grid", "gap", "0.75rem", "max-inline-size", "28rem").End()
+	// Carousel slide demo chrome — keeps the example slides legible
+	// against the colored SVG art without bleeding component styling
+	// into the framework's Carousel component.
+	ss.Rule(".demo-carousel-slide").
+		Set("display", "grid", "gap", "{spacing.sm}",
+			"padding", "{spacing.md}",
+			"background", "{colors.surface}",
+			"border-radius", "{radii.md}",
+			"border", "1px solid {colors.border}").End()
+	ss.Rule(".demo-carousel-slide__title").
+		Set("margin", "0", "font-size", "1rem", "font-weight", "600").End()
+	ss.Rule(".demo-carousel-slide__body").
+		Set("margin", "0", "font-size", "0.85rem",
+			"color", "{colors.text-muted}").End()
 	ss.Rule(".demo-row-flex").
 		Set("display", "flex", "gap", "0.5rem", "align-items", "center", "flex-wrap", "wrap").End()
 	ss.Rule(".demo-row-tight").
