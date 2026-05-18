@@ -419,6 +419,42 @@ func TestTimeoutConcurrentRequests(t *testing.T) {
 	wg.Wait()
 }
 
+// TestTimeoutHeaderRaceAfterTimeout exercises the concurrent-map-writes
+// race that fired in production: the handler is still inside w.Header().Set
+// when the timeout fires and writes its 504 (which also calls Header().Set
+// on the underlying ResponseWriter). Stdlib http.Header is a plain
+// map[string][]string, so two concurrent writers panic with `fatal error:
+// concurrent map writes` — observed in the chaos rapid-click test on the
+// pagination island handler.
+//
+// Must run with `-race`. Reproduces deterministically because the handler
+// waits until AFTER the timeout fires before mutating headers.
+func TestTimeoutHeaderRaceAfterTimeout(t *testing.T) {
+	m := Timeout(15*time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Wait long enough for the timeout to have fired and written 504.
+		time.Sleep(60 * time.Millisecond)
+		// Now mutate headers from the handler goroutine — used to race
+		// with the timeout goroutine's writes to the underlying header map.
+		w.Header().Set("X-Late-Header-1", "v1")
+		w.Header().Set("X-Late-Header-2", "v2")
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("late body"))
+	}))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 30; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			m.ServeHTTP(rec, req)
+		}()
+	}
+	wg.Wait()
+}
+
 // ---------------------------------------------------------------------------
 // Integration: full pipeline
 // ---------------------------------------------------------------------------
