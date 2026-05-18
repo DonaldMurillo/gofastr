@@ -751,21 +751,6 @@ func createStyleSheet(theme style.Theme) string {
 		Set("outline", "2px solid {colors.primary}",
 			"outline-offset", "1px").End()
 
-	// CRUD demo extras.
-	ss.Rule(".ui-button--small").
-		Set("padding", "2px {spacing.sm}", "font-size", "0.8rem").End()
-	ss.Rule(".ui-link").
-		Set("color", "{colors.primary}", "text-decoration", "none",
-			"font-weight", "500",
-			// WCAG 2.5.5 — .ui-link is used as a row-action ("Edit"/"Delete")
-			// on customer rows; the bare text link was 27×18.
-			"display", "inline-flex", "align-items", "center",
-			"min-block-size", "var(--spacing-touch-target)",
-			"min-inline-size", "var(--spacing-touch-target)",
-			"justify-content", "center",
-			"padding", "0 {spacing.xs}").End()
-	ss.Rule(".ui-link:hover").Set("text-decoration", "underline").End()
-
 	// Theme-swap demo: radios + :has() override --color-primary on the
 	// preview wrapper. Pure CSS — no JS — proves the "one-token swap"
 	// re-skin claim viscerally.

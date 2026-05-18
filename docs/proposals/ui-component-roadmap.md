@@ -9,10 +9,9 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ---
 
-## In-flight (this worktree)
+## Shipped
 
-Tracked here for context only — these are the in-scope items for the
-current series of PRs, not part of the deferred backlog.
+The first wave is on `main` (2026-05-17):
 
 - Async Combobox / Typeahead — `core-ui/patterns/combobox/`
 - Tree View — `core-ui/patterns/tree/`
@@ -24,6 +23,10 @@ current series of PRs, not part of the deferred backlog.
 - AvatarGroup / Avatar Stack — `framework/ui/`
 - FilterChipBar — `framework/ui/`
 - `<kbd>` primitive + ShortcutHint — `core-ui/html/` + `framework/ui/`
+- Button `Size` (ButtonSizeSmall / Large) + `framework/ui.Link` with
+  LinkInline / LinkAction / LinkMuted variants — landed during the
+  website-CSS audit (2026-05-18) to eliminate `.ui-button--small` /
+  `.ui-link` leakage from `examples/website/theme.go`.
 
 ---
 
@@ -85,3 +88,102 @@ current series of PRs, not part of the deferred backlog.
   multi-series), renders inline SVG with `viewBox` auto-normalized. No JS,
   no hydration — pure render. Pairs with `StatCard`.
 - **Pre-reqs:** None. Independent.
+
+---
+
+## Next wave — proposed
+
+A second-wave gap list, prioritized by what blocks the most apps and
+what unblocks the deferred items above. Every entry below is sized to
+fit cleanly in `framework/ui/` (styled molecule) or
+`core-ui/patterns/` (composed-but-themeable pattern), with sensible
+defaults from theme tokens — no app-level CSS required to make them
+look right out of the box.
+
+### Tier 1 — basic primitive gaps
+
+These are missing 1:1 with native HTML controls. Apps work around them
+today by reaching into `core-ui/html/` and re-doing the same theme
+work over and over.
+
+1. **Switch / Toggle** (`framework/ui/`) — settings-row toggle paired
+   with a label and optional helper text. Variant of Checkbox but with
+   the on/off sliding affordance. Required because Checkbox is wrong
+   for binary settings UX-wise. `data-fui-action="form-submit"`
+   support so it can auto-save on change.
+2. **Slider / Range** (`framework/ui/`) — `<input type="range">`
+   wrapped with a styled track + thumb, optional min/max/step labels,
+   optional value bubble. Used everywhere from volume controls to A/B
+   percentage knobs.
+3. **NumberInput / Stepper** (`framework/ui/`) — bound `<input
+   type="number">` with explicit +/- buttons (touch-friendly), min/
+   max/step, on-blur clamp. Date Picker needs this. Inventory forms
+   need this.
+4. **TextArea** (`framework/ui/`) — first-class component. The runtime
+   already ships `data-fui-autogrow`; expose it as a typed
+   `TextAreaConfig{Autogrow bool, …}` field. Pairs with FormField.
+
+### Tier 2 — composite molecules
+
+Small compositions that come up repeatedly and don't have a clean
+spot in user code today.
+
+5. **MultiSelect** (`core-ui/patterns/multiselect/`) — Combobox
+   sibling. Checkbox-rows in the listbox, removable chips above the
+   input. Server-driven option list via RPC like Combobox; selection
+   bound to a comma-separated hidden input for plain form posts.
+6. **FileDropzone** (`framework/ui/`) — already have `FileUpload`;
+   FileDropzone wraps it with the drag-and-drop UX and a thumbnail
+   strip for previews. Reuses the existing upload pipeline.
+7. **Banner / InlineAlert** (`framework/ui/`) — persistent page-top
+   status banner (maintenance notice, deprecation warning, billing
+   alert). Distinct from Toast (transient) and Notification
+   (record-bound). Variants: info / warn / danger / success.
+   Optional Dismissible + persisted-dismiss-id.
+8. **StatCard / KPI** (`framework/ui/`) — the `.demo-stat-card`
+   pattern the website built ad-hoc; should be a real component with
+   Label / Value / Delta / DeltaTrend and optional inline Sparkline
+   slot. Used in every dashboard.
+9. **Stepper / ProgressSteps** (`core-ui/patterns/steps/`) —
+   horizontal/vertical step indicator showing current + completed +
+   upcoming. Pairs with the deferred Form Step Wizard.
+10. **Timeline** (`framework/ui/`) — vertical list of events on a
+    rail, each event a slot (icon + label + meta + body). Common in
+    audit logs, activity feeds, order history.
+
+### Tier 3 — specialty
+
+Lower-frequency but high-value once the basics are in.
+
+11. **Drawer side-panel preset** (`core-ui/widget/preset/`) — modal
+    preset exists; the drawer preset is the natural sibling. Anchored
+    to a viewport edge (start / end / top / bottom), focus trap,
+    backdrop click, ESC close. Used today via raw widget config; a
+    typed preset closes the gap with `Modal`.
+12. **ColorPicker** (`framework/ui/`) — `<input type="color">` with a
+    styled swatch trigger + optional preset swatches grid. Hue/sat
+    picker is out of scope (use native).
+13. **RatingInput** (`framework/ui/`) — 1-N keyboard-accessible
+    star/heart rating with `<input type="radio">` underneath for
+    no-JS submit. Hover-preview via CSS only.
+14. **Toast container preset** (`core-ui/widget/preset/`) — runtime
+    already exposes `data-fui-comp="ui-toast-stack"`; a typed preset
+    config (position / max-visible / dedupe-by-id) would let apps
+    swap container shape without touching CSS.
+
+### Notes on the contract
+
+Every entry above must satisfy the same five rules the first wave
+already meets:
+
+- Owns its CSS — `RegisterStyle` in the component's own package, not
+  in the example website or any app.
+- Theme-token-only colors / radii / spacing — no hard-coded hex /
+  px values except as `var(--…, fallback)`.
+- WCAG 2.5.5 touch-target by default (44×44), with an explicit
+  opt-out variant (like `ButtonSizeSmall`) for dense contexts.
+- SSR-first; runtime hydration only for genuine interactivity
+  (combobox keyboard, drag-drop, etc.) loaded via the demand-load
+  module split.
+- Chromedp interaction test (not just attribute test) before merge —
+  per the component-build skill.

@@ -61,6 +61,47 @@ func getHTML(t *testing.T, app http.Handler, path string) string {
 // Failure mode this guards against: a contributor adding
 // `render.Tag("div", map[string]string{"style": "display:grid"}, …)`
 // instead of a utility class.
+// TestDrift_NoWebsiteComponentDefaults enforces the "components own
+// their defaults" contract: the example website's theme.go must not
+// register CSS rules that look like component-default selectors
+// (`.ui-*` without further compositional scoping). Component visual
+// rules belong in framework/ui/styles_components.go or the owning
+// pattern's RegisterStyle — the website may only override under a
+// `.demo-*` / `.site-*` ancestor.
+//
+// Failure mode this guards against: a contributor patching a missing
+// component knob (e.g., a "small" Button) by writing a top-level
+// `.ui-button--small` rule in the website CSS instead of adding a
+// `Size` field to the component. That hides the gap; the website
+// looks fine, but every other app using the framework still sees the
+// raw default.
+func TestDrift_NoWebsiteComponentDefaults(t *testing.T) {
+	data, err := os.ReadFile("theme.go")
+	if err != nil {
+		t.Fatalf("read theme.go: %v", err)
+	}
+	// Match `ss.Rule(".ui-…")` where the very next char after .ui- is
+	// a letter and the rule string does NOT contain a `.demo-`/`.site-`
+	// ancestor. Contextual scoped overrides like
+	// `.demo-source [data-fui-comp="ui-code-block"]` are allowed because
+	// they live behind a `.demo-…` ancestor.
+	rx := regexp.MustCompile(`ss\.Rule\(["\x60]([^"\x60]*\.ui-[a-z][^"\x60]*)["\x60]\)`)
+	for _, m := range rx.FindAllStringSubmatch(string(data), -1) {
+		sel := m[1]
+		// Allowed if the selector is scoped behind a page-chrome ancestor.
+		if strings.Contains(sel, ".demo-") || strings.Contains(sel, ".site-") ||
+			strings.Contains(sel, ".themed-demo") || strings.Contains(sel, ".popover-demo") ||
+			strings.Contains(sel, ".theme-swap") {
+			continue
+		}
+		t.Errorf("website theme.go registers a component-default selector %q — "+
+			"`.ui-*` rules belong in the component's own RegisterStyle (e.g., "+
+			"framework/ui/styles_components.go or the pattern's css.go), not in "+
+			"the website. If you need a new variant, add it to the component "+
+			"and use the typed field at the call site.", sel)
+	}
+}
+
 func TestDrift_NoInlineStyles(t *testing.T) {
 	app, _ := setupServer()
 	srv := httptest.NewServer(app.Router)

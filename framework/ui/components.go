@@ -376,10 +376,24 @@ const (
 	ButtonGhost     ButtonVariant = "ghost"
 )
 
+// ButtonSize is the rendered button size. Default sits on a 44px
+// touch-target floor (WCAG 2.5.5). ButtonSizeSmall opts out of the
+// floor for row-action contexts where the parent row already provides
+// the tap area (table rows, dense toolbars). ButtonSizeLarge bumps
+// padding + font-size for hero CTAs.
+type ButtonSize string
+
+const (
+	ButtonSizeDefault ButtonSize = ""
+	ButtonSizeSmall   ButtonSize = "small"
+	ButtonSizeLarge   ButtonSize = "large"
+)
+
 // ButtonConfig configures a button.
 type ButtonConfig struct {
 	Label   string        // required visible text + aria-label
 	Variant ButtonVariant // defaults to ButtonPrimary
+	Size    ButtonSize    // defaults to ButtonSizeDefault
 	Type    string        // "button" (default) | "submit" | "reset"
 	Attrs   html.Attrs
 	ID      string
@@ -408,7 +422,17 @@ func Button(cfg ButtonConfig) render.HTML {
 		panic("ui: Button unknown Variant " + string(v) +
 			" — pick one of: primary, secondary, danger, ghost")
 	}
+	switch cfg.Size {
+	case ButtonSizeDefault, ButtonSizeSmall, ButtonSizeLarge:
+		// recognized
+	default:
+		panic("ui: Button unknown Size " + string(cfg.Size) +
+			" — pick one of: \"\" (default), small, large")
+	}
 	cls := "ui-button ui-button--" + string(v)
+	if cfg.Size != ButtonSizeDefault {
+		cls += " ui-button--" + string(cfg.Size)
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

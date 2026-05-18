@@ -121,6 +121,21 @@ func buttonCSS(_ style.Theme) string {
   box-shadow: none;
   outline: 2px solid var(--color-text);
   outline-offset: 2px;
+}
+
+/* Size modifiers — the default Button size already meets WCAG 2.5.5
+   touch-target via min-height. --small explicitly opts out for compact
+   row-action contexts (table rows, dense toolbars) where the parent
+   row already provides the 44px tap area. --large bumps padding +
+   font-size for hero CTAs. */
+.ui-button--small {
+  min-height: auto;
+  padding: 4px var(--spacing-md, 12px);
+  font-size: 0.8rem;
+}
+.ui-button--large {
+  padding: 14px var(--spacing-xl, 24px);
+  font-size: 1.05rem;
 }`
 }
 

@@ -94,20 +94,23 @@ func renderCustomersIsland(sortBy string, sortDir ui.SortDir, page int, query st
 				"email":  render.Text(c.Email),
 				"status": ui.StatusBadge(ui.StatusBadgeConfig{Label: capitalize(string(c.Status)), Variant: c.Status}),
 				"actions": render.Join(
-					html.Link(html.LinkConfig{
-						Href:  "/customers/" + strconv.FormatInt(c.ID, 10),
-						Text:  "Edit",
-						Class: "ui-link",
+					ui.Link(ui.LinkConfig{
+						Href:    "/customers/" + strconv.FormatInt(c.ID, 10),
+						Text:    "Edit",
+						Variant: ui.LinkAction,
 					}),
 					render.Text(" "),
-					render.Tag("button", map[string]string{
-						"type":                "button",
-						"class":               "ui-button ui-button--danger ui-button--small",
-						"data-fui-rpc":        customersDeleteEndpoint + "?id=" + strconv.FormatInt(c.ID, 10),
-						"data-fui-rpc-method": "POST",
-						"data-fui-rpc-signal": customersIslandSignal,
-						"data-fui-confirm":    "Delete \"" + c.Name + "\"? This cannot be undone.",
-					}, render.Text("Delete")),
+					ui.Button(ui.ButtonConfig{
+						Label:   "Delete",
+						Variant: ui.ButtonDanger,
+						Size:    ui.ButtonSizeSmall,
+						Attrs: map[string]string{
+							"data-fui-rpc":        customersDeleteEndpoint + "?id=" + strconv.FormatInt(c.ID, 10),
+							"data-fui-rpc-method": "POST",
+							"data-fui-rpc-signal": customersIslandSignal,
+							"data-fui-confirm":    "Delete \"" + c.Name + "\"? This cannot be undone.",
+						},
+					}),
 				),
 			},
 		})

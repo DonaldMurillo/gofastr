@@ -202,6 +202,41 @@ func TestDangerButtonHasDangerVariantClass(t *testing.T) {
 	mustContain(t, h, "Delete")
 }
 
+func TestButtonSizeDefaultEmitsNoSizeClass(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "x"}))
+	if strings.Contains(h, "ui-button--small") || strings.Contains(h, "ui-button--large") {
+		t.Errorf("default Size should not emit a size modifier:\n%s", h)
+	}
+}
+
+func TestButtonSizeSmallEmitsSmallClass(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "x", Size: ButtonSizeSmall}))
+	if !strings.Contains(h, "ui-button--small") {
+		t.Errorf("Size: ButtonSizeSmall should emit .ui-button--small:\n%s", h)
+	}
+}
+
+func TestButtonSizeLargeEmitsLargeClass(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "x", Size: ButtonSizeLarge}))
+	if !strings.Contains(h, "ui-button--large") {
+		t.Errorf("Size: ButtonSizeLarge should emit .ui-button--large:\n%s", h)
+	}
+}
+
+func TestButtonRejectsUnknownSize(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Button with unknown Size should panic")
+		}
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "huge") {
+			t.Errorf("panic should name the bogus size: %q", msg)
+		}
+	}()
+	Button(ButtonConfig{Label: "x", Size: ButtonSize("huge")})
+}
+
 // ─── StatusBadge ───
 func TestStatusBadgeVariantsRenderClass(t *testing.T) {
 	for _, v := range []StatusVariant{StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral} {
