@@ -1539,6 +1539,8 @@
     { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]' },
     // Carousel: prev/next, dots, ArrowLeft/Right, optional AutoRotate.
     { name: 'carousel',        selector: '[data-fui-carousel]' },
+    // ThemeToggle: dark/light/auto cycle button + pill sync.
+    { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

@@ -536,6 +536,25 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(".demo-source .demo-label").
 		Set("background", "rgba(255,255,255,0.12)", "color", "white").End()
 
+	// Sticky demo helper — a fixed-height scrollable container so the
+	// sticky element can be seen pinning to its edge.
+	ss.Rule(".demo-sticky-scroll").
+		Set("max-height", "300px",
+			"overflow-y", "auto",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"padding", "{spacing.md}").End()
+	ss.Rule(".demo-sticky-scroll > p").
+		Set("padding", "{spacing.sm} 0",
+			"color", "{colors.text-muted}").End()
+	ss.Rule(".demo-sticky-scroll > ul").
+		Set("list-style", "none",
+			"padding", "0",
+			"margin", "0").End()
+	ss.Rule(".demo-sticky-scroll > ul > li").
+		Set("padding", "{spacing.sm} {spacing.md}",
+			"border-bottom", "1px solid {colors.border}").End()
+
 	// Framework-UI demo helpers — small layout shims used only on the
 	// /framework-ui/ page to align rows nicely.
 	ss.Rule(".demo-stat-row").
