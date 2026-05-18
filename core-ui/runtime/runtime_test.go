@@ -35,6 +35,12 @@ func TestRuntimeJS(t *testing.T) {
 		"data-fui-style",     // <link> dedup key
 		"scheduleIdleLoads",  // LoadPrewarm idle queue
 		"data-fui-comp",      // marker attr the scanner reads
+		"data-fui-copy-status",         // SR-announce sibling for copy-text-from
+		"data-fui-copy-announce",       // copy success message override
+		"data-fui-infinite-scroll",     // infinite-scroll RPC path
+		"data-fui-infinite-sentinel",   // intersection observer target
+		"data-fui-infinite-cursor",     // pagination cursor
+		"X-Gofastr-Infinite-Cursor",    // end-of-feed signal
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
@@ -68,8 +74,21 @@ func TestRuntimeSize(t *testing.T) {
 	// trap + return-focus). Cap at 92KB uncompressed (~24-26KB gzip),
 	// still well under typical TCP slow-start initial windows after
 	// compression.
-	if size > 110000 {
-		t.Errorf("runtime too large: %d bytes (max 110000)", size)
+	// Bumped 110000 → 115000 → 120000 as new components landed:
+	//   - CopyButton SR-announce wiring (data-fui-copy-status / -announce)
+	//   - ShortcutHint OS-detection (data-fui-os on <html>)
+	//   - InfiniteScroll IntersectionObserver wiring (data-fui-infinite-*)
+	// Combobox keyboard nav (ArrowUp/Down/Home/End/Enter/Esc/Tab,
+	// click-to-pick, focus auto-open, outside-click close) bumped
+	// the cap to 130000.
+	// Bumped to 135000 after:
+	//   - InfiniteScroll fetch-chain drain (auto-fires next page while
+	//     sentinel stays in view)
+	//   - Combobox open-on-input + outside-click close + global copy
+	//     handler moved here from mountWidget
+	//   - Tree toggle click flips aria-expanded + hidden on child group
+	if size > 135000 {
+		t.Errorf("runtime too large: %d bytes (max 135000)", size)
 	}
 }
 

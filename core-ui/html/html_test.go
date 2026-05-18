@@ -289,6 +289,18 @@ func TestPre(t *testing.T) {
 	assertContains(t, p, "  indented  ")
 }
 
+func TestKbd(t *testing.T) {
+	k := Kbd(TextConfig{}, render.Text("Esc"))
+	assertContains(t, k, "<kbd>")
+	assertContains(t, k, "Esc")
+}
+
+func TestKbdWithClass(t *testing.T) {
+	k := Kbd(TextConfig{Class: "ui-shortcut-key"}, render.Text("⌘"))
+	assertContains(t, k, `class="ui-shortcut-key"`)
+	assertContains(t, k, "⌘")
+}
+
 func TestBlockquote(t *testing.T) {
 	b := Blockquote(TextConfig{Attrs: Attrs{"cite": "https://example.com"}}, render.Text("Quote"))
 	assertContains(t, b, "<blockquote")

@@ -98,6 +98,16 @@ server side and the runtime does the work.
 | `data-fui-autogrow` | On a `<textarea>`, height auto-grows with content. |
 | `data-fui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |
 | `data-fui-copy-text-from="<selector>"` | A button that copies the source element's text to the clipboard on click. |
+| `data-fui-copy-status` | Marks an element (typically a visually-hidden `role="status"` span) that receives a textual announcement when its sibling/ancestor `data-fui-copy-text-from` button succeeds. Pairs with `data-fui-copy-announce` (default "Copied"). |
+| `data-fui-copy-announce="<msg>"` | Overrides the announcement text written into the matching `data-fui-copy-status` element on copy success. |
+| `data-fui-copy-toast="<json>"` | When set on a `data-fui-copy-text-from` button, the runtime dispatches a toast via `window.__gofastr.toast(<json>)` on copy success. Use for "Copied to clipboard" notifications without per-button JS. |
+| `data-fui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |
+| `data-fui-infinite-scroll="<rpc-path>"` | Marks an infinite-scroll wrapper. The runtime POSTs to `<rpc-path>` (form-encoded body with `cursor=<token>`) when the contained `data-fui-infinite-sentinel` enters the viewport, then appends the HTML response into the items container. Pair with `data-fui-infinite-cursor`, `data-fui-infinite-items` (optional, CSS selector — default the wrapper itself), and `data-fui-infinite-root-margin` (default `200px`). Response carries `X-Gofastr-Infinite-Cursor: <next>` for the next call; empty/missing → end of feed, sentinel removed, observer disconnected. `aria-busy` toggles during fetch. |
+| `data-fui-infinite-sentinel` | Marks the IntersectionObserver target inside an infinite-scroll wrapper. The sentinel is removed when end-of-feed is reached. |
+| `data-fui-infinite-cursor="<token>"` | Initial cursor token on the infinite-scroll wrapper. Updated in-place after every fetch. |
+| `data-fui-infinite-items="<selector>"` | Optional CSS selector identifying the child container into which new items are appended. Defaults to the wrapper itself. |
+| `data-fui-infinite-root-margin="<px>"` | Optional IntersectionObserver `rootMargin` value. Default `200px`. |
+| `data-fui-tree-toggle` | Marks the expand/collapse button inside a `core-ui/patterns/tree` treeitem row. The keyboard nav (ArrowRight to expand, ArrowLeft to collapse, Enter/Space to toggle) clicks this button so any `data-fui-rpc` on it fires lazy-load. |
 | `data-fui-fill-input="<selector>"` / `data-fui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
 | `data-fui-disable-when-invalid` | On a submit button: disabled while any field in the surrounding `<form>` reports `:invalid`. |
 | `data-fui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage` under the given key. |

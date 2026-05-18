@@ -139,6 +139,40 @@ Before claiming a component works:
 7. **Browser-verified** — actually open the page in a browser before
    claiming done. `go test` passing is necessary, not sufficient.
 
+## Interaction tests, not attribute tests
+
+**Attribute checks (`role`, `aria-*`, classes) are necessary but NEVER
+sufficient.** A component with the right `role="combobox"` and the right
+`aria-expanded="false"` can be totally broken: the RPC might not fire,
+the listbox might never open, Enter might pick the wrong option. Every
+component PR must include chromedp e2e tests that:
+
+- **Click / type / press keys** through every primary user flow.
+- **Assert DOM changes** that prove the runtime hook actually ran:
+  - Combobox: type → option count goes from 0 to N, `aria-expanded` flips
+    to `"true"`, Enter sets `input.value` to the picked option's
+    `data-value`.
+  - InfiniteScroll: scrolling the sentinel into view → item count
+    increases; end-of-feed (empty cursor header) removes the sentinel.
+  - Tree: clicking the toggle (or pressing ArrowRight) flips
+    `aria-expanded="true"` AND populates `<ul role="group">` children.
+  - CopyButton: click → `.fui-copied` applied, `data-fui-copy-status`
+    sibling reads `"Copied"`; if `ToastOnCopy=true`, the toast stack
+    receives the title.
+  - ConfirmAction: trigger click → modal visible, Cancel autofocused;
+    Esc → modal closed, modal stack empty.
+  - FilterChipBar: click × → chip count decreases by 1 (server-driven
+    re-render via signal swap).
+  - SegmentedControl: click option N → `input:checked` value matches,
+    `getBoundingClientRect()` of options are equal width.
+- **Use real keys**: `chromedp/kb.ArrowDown`, `kb.Enter`, `kb.Escape` —
+  not literal ANSI escape strings.
+- **Avoid timing flakes**: use `chromedp.Sleep` with a window 2-3x the
+  debounce-or-animation duration, not 100ms because "feels enough".
+
+When the static-shape test passes but the interaction test fails, that's
+the bug you would have shipped without it. Always add both.
+
 ## Anti-patterns this skill exists to prevent
 
 - ❌ Embedding full chrome HTML in `/__gofastr/widgets` JSON catalog.
@@ -147,6 +181,21 @@ Before claiming a component works:
 - ❌ Opening per-page SSE for surfaces that fire once per session.
 - ❌ Inline `style="…"` attributes (strict CSP strips them).
 - ❌ "Open the modal client-side then hope SSR caught up" — SSR-inline first.
+- ❌ Hand-rolling `<button class="ui-btn …">` instead of `ui.Button(...)`.
+  The framework class is `ui-button` (with the `data-fui-comp` marker so
+  the CSS auto-loads). `ui-btn` IS NOT a thing — it renders unstyled
+  native buttons. **Always compose with the typed framework components.**
+- ❌ Reading form data with `req.FormValue()` when the runtime POSTs
+  JSON. `dispatchRPC` serializes non-multipart forms as JSON
+  (`Content-Type: application/json`); only manual `URLSearchParams`
+  POSTs (InfiniteScroll) are form-encoded. Use a helper that handles
+  both.
+- ❌ Writing the response body **before** setting a custom header.
+  Go's `net/http` sends headers automatically on the first `Write`,
+  silently dropping any later `w.Header().Set(...)`. Set headers FIRST.
+- ❌ Mounting Modal/Drawer/Popover presets without `.Pages("/route")` —
+  every page on the site pays for the chrome registration even if it'll
+  never open them. Page-scope demo widgets.
 
 ## Related skills
 

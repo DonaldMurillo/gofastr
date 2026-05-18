@@ -125,6 +125,14 @@ func Pre(cfg TextConfig, children ...render.HTML) render.HTML {
 	return render.Tag("pre", attrs, children...)
 }
 
+// Kbd produces a <kbd> element for keyboard input — a single key, a chord,
+// or a sequence. Pairs with framework/ui.ShortcutHint for rendering
+// shortcut chips. Pure semantic markup, no scripting.
+func Kbd(cfg TextConfig, children ...render.HTML) render.HTML {
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	return render.Tag("kbd", attrs, children...)
+}
+
 // Blockquote produces a <blockquote> element.
 func Blockquote(cfg TextConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)

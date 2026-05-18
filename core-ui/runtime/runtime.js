@@ -2,6 +2,21 @@
 (() => {
   'use strict';
 
+  // OS hint on <html data-fui-os="mac|other"> so SSR-rendered
+  // shortcut hints (framework/ui.ShortcutHint) can display
+  // platform-correct mod-key glyphs (⌘ on Mac, Ctrl elsewhere)
+  // without per-component JS. Detection is best-effort; functional
+  // shortcut matching does not depend on this (parseCombo accepts
+  // both metaKey and ctrlKey when Mod is required).
+  try {
+    const ua = (navigator.userAgentData && navigator.userAgentData.platform) ||
+               navigator.platform || '';
+    document.documentElement.setAttribute(
+      'data-fui-os',
+      /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other'
+    );
+  } catch (_) { /* SSR / non-browser */ }
+
   // -----------------------------------------------------------------------
   // Component handler registry
   // -----------------------------------------------------------------------
@@ -281,10 +296,26 @@
     // filtered results (see core-ui/ARCHITECTURE.md — search is an
     // island state change, not a route).
     document.addEventListener('input', (e) => {
+      // Open any focused combobox so typing makes the listbox visible
+      // without requiring an ArrowDown press first. We can't wait for
+      // the RPC response — by then the listbox already has options but
+      // aria-expanded stays false and CSS keeps the panel hidden.
+      const combo = e.target && e.target.closest && e.target.closest('[role="combobox"]');
+      if (combo) {
+        const lbId = combo.getAttribute('aria-controls');
+        const lb = lbId ? document.getElementById(lbId) : null;
+        if (lb) {
+          combo.setAttribute('aria-expanded', 'true');
+          lb.removeAttribute('hidden');
+        }
+      }
       const form = e.target.closest('form[data-fui-rpc][data-fui-rpc-trigger="input"]');
       if (!form) return;
-      // Skip if inside a widget — widget owns its own input handling.
-      if (form.closest('[data-fui-widget]')) return;
+      // Note: this used to skip forms inside [data-fui-widget] under the
+      // theory that the widget would own its own input handling — but no
+      // widget-scoped input-trigger handler exists (only general-purpose
+      // ones for char-count, autogrow, etc.), so the skip stranded any
+      // combobox / typeahead inside a widget surface (e.g. CommandPalette).
       const ms = parseInt(form.getAttribute('data-fui-rpc-debounce-ms') || '250', 10) || 250;
       const prev = inputDebounceTimers.get(form);
       if (prev) clearTimeout(prev);
@@ -1600,39 +1631,9 @@
         });
       });
 
-      // Copy-from: any clickable element with
-      // data-fui-copy-text-from='<selector>' copies the matching
-      // element's textContent to the system clipboard. The button
-      // gets a brief 'copied!' affordance via the .fui-copied
-      // class for 1.2s.
-      widgetEl.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-fui-copy-text-from]');
-        if (!btn || !widgetEl.contains(btn)) return;
-        const sel = btn.getAttribute('data-fui-copy-text-from');
-        if (!sel) return;
-        const target = widgetEl.querySelector(sel) || document.querySelector(sel);
-        if (!target) return;
-        e.preventDefault();
-        const text = (target.innerText || target.textContent || '').trim();
-        const flash = () => {
-          btn.classList.add('fui-copied');
-          setTimeout(() => btn.classList.remove('fui-copied'), 1200);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(flash, flash);
-        } else {
-          // Fallback for older browsers / lacking permissions.
-          try {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            ta.remove();
-            flash();
-          } catch (_) {}
-        }
-      });
+      // (data-fui-copy-text-from handler is now globally delegated
+      // at the document level — see _wireCopyHandler() below — so it
+      // works for buttons outside any widget context too.)
 
       // Char counter: any element with data-fui-charcount-source
        // gets its textContent updated to "<n> chars" of the matching
@@ -2339,12 +2340,192 @@
   // Make it available for the SPA-nav swap path.
   window.__fuiWireFileUploads = _wireFileUploads;
 
+  // -----------------------------------------------------------------------
+  // Globally-delegated copy-to-clipboard handler. Any element with
+  // `data-fui-copy-text-from='<selector>'` copies the matching element's
+  // textContent on click — works inside or outside a widget context.
+  //
+  // Feedback channels:
+  //   - Adds `.fui-copied` to the button for 1.2s (CSS swaps inner
+  //     `.ui-copy-btn__label` ↔ `.ui-copy-btn__copied` spans).
+  //   - If the button has a sibling/ancestor `[data-fui-copy-status]`,
+  //     writes the configured text into it (polite aria-live region).
+  //   - If `data-fui-copy-toast` is set, dispatches a toast via
+  //     `window.__gofastr.toast({...})` (a JSON config) so callers can
+  //     opt into success/error toasts without per-button JS.
+  // -----------------------------------------------------------------------
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('[data-fui-copy-text-from]');
+    if (!btn) return;
+    const sel = btn.getAttribute('data-fui-copy-text-from');
+    if (!sel) return;
+    const target = document.querySelector(sel);
+    if (!target) return;
+    e.preventDefault();
+    const text = (target.innerText || target.textContent || '').trim();
+    const flash = () => {
+      btn.classList.add('fui-copied');
+      setTimeout(() => btn.classList.remove('fui-copied'), 1200);
+    };
+    const announce = () => {
+      const root = btn.parentElement || btn;
+      const status = root.querySelector('[data-fui-copy-status]')
+        || btn.querySelector('[data-fui-copy-status]');
+      if (!status) return;
+      const msg = btn.getAttribute('data-fui-copy-announce') || 'Copied';
+      status.textContent = '';
+      setTimeout(() => { status.textContent = msg; }, 30);
+    };
+    const fireToast = () => {
+      const raw = btn.getAttribute('data-fui-copy-toast');
+      if (!raw) return;
+      try {
+        const cfg = JSON.parse(raw);
+        if (window.__gofastr && window.__gofastr.toast) {
+          window.__gofastr.toast(cfg);
+        }
+      } catch (_) { /* malformed JSON: ignore */ }
+    };
+    const success = () => { flash(); announce(); fireToast(); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(success, success);
+    } else {
+      // Fallback for older browsers / lacking permissions.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        success();
+      } catch (_) { /* deliberately silent — copy is best-effort */ }
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Infinite scroll wiring.
+  //
+  // Every [data-fui-infinite-scroll] wrapper gets an IntersectionObserver
+  // attached to its child [data-fui-infinite-sentinel]. When the sentinel
+  // intersects the viewport (with rootMargin from data-fui-infinite-root-
+  // margin, default "200px"), the runtime POSTs to the wrapper's
+  // data-fui-infinite-scroll URL with the current cursor in the form
+  // body. The response HTML is appended to the items container.
+  //
+  // Response semantics:
+  //   - Body: HTML fragment, appended verbatim into the items container.
+  //   - X-Gofastr-Infinite-Cursor: next cursor token. Empty/missing →
+  //     end-of-feed, sentinel removed, observer disconnected.
+  //
+  // aria-busy on the wrapper toggles true → false across each fetch so
+  // screen readers can detect loading state. The wrapper's role should
+  // be "feed" (set by the SSR component) for proper announcement.
+  //
+  // No-JS fallback: the SSR component renders a <noscript><form action=
+  // "<rpcPath>"> "Load more" button alongside the sentinel.
+  // -----------------------------------------------------------------------
+  function _wireInfiniteScroll(root) {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const wrappers = (root === document
+      ? document.querySelectorAll('[data-fui-infinite-scroll]')
+      : (root.matches && root.matches('[data-fui-infinite-scroll]')
+          ? [root, ...root.querySelectorAll('[data-fui-infinite-scroll]')]
+          : root.querySelectorAll('[data-fui-infinite-scroll]')));
+    wrappers.forEach((wrap) => {
+      if (wrap.__fuiInfiniteWired) return;
+      wrap.__fuiInfiniteWired = true;
+      const sentinel = wrap.querySelector('[data-fui-infinite-sentinel]');
+      if (!sentinel) return;
+      const path = wrap.getAttribute('data-fui-infinite-scroll');
+      if (!path) return;
+      const itemsSel = wrap.getAttribute('data-fui-infinite-items') || '[data-fui-infinite-items]';
+      const items = wrap.querySelector(itemsSel) || wrap;
+      const rootMargin = wrap.getAttribute('data-fui-infinite-root-margin') || '200px';
+      let cursor = wrap.getAttribute('data-fui-infinite-cursor') || '';
+      let inFlight = false;
+      let exhausted = false;
+
+      const fetchMore = async () => {
+        if (inFlight || exhausted) return;
+        inFlight = true;
+        wrap.setAttribute('aria-busy', 'true');
+        try {
+          const body = new URLSearchParams();
+          if (cursor) body.set('cursor', cursor);
+          const r = await fetch(path, {
+            method: 'POST',
+            headers: { 'Accept': 'text/html', 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString(),
+            credentials: 'same-origin',
+          });
+          if (!r.ok) {
+            // Soft-fail; the user can scroll up and try again. No state mutation.
+            return;
+          }
+          const html = await r.text();
+          if (html) {
+            const tmp = document.createElement('template');
+            tmp.innerHTML = html;
+            items.appendChild(tmp.content);
+            if (window.__gofastr?.scanAndLoadCSS) {
+              window.__gofastr.scanAndLoadCSS(items);
+            }
+          }
+          const next = r.headers.get('X-Gofastr-Infinite-Cursor') || '';
+          if (next === '') {
+            // End of feed.
+            exhausted = true;
+            observer.disconnect();
+            sentinel.remove();
+          } else {
+            cursor = next;
+            wrap.setAttribute('data-fui-infinite-cursor', next);
+          }
+        } catch (_) {
+          /* network / abort — keep sentinel, allow retry on next intersection */
+        } finally {
+          inFlight = false;
+          wrap.setAttribute('aria-busy', 'false');
+        }
+        // After a fetch lands, the IntersectionObserver won't re-fire
+        // if the sentinel was already in view and stays in view (new
+        // items get inserted ABOVE the sentinel, so its viewport
+        // intersection is unchanged). Chase the next page if needed.
+        if (!exhausted) {
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            const r2 = sentinel.getBoundingClientRect();
+            const vh = window.innerHeight || document.documentElement.clientHeight;
+            // Convert rootMargin to pixels for the manual check — same
+            // semantics as IntersectionObserver's rootMargin.
+            const margin = parseInt(rootMargin, 10) || 0;
+            const inView = r2.top < vh + margin && r2.bottom > -margin;
+            if (inView) fetchMore();
+          }));
+        }
+      };
+
+      const observer = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            fetchMore();
+            break;
+          }
+        }
+      }, { rootMargin });
+      observer.observe(sentinel);
+    });
+  }
+  window.__fuiWireInfiniteScroll = _wireInfiniteScroll;
+
   // Close any open modal widgets on SPA navigation. Toasts/panels
   // (non-backdrop'd widgets) survive — they're page-independent
   // UI like build-progress banners.
   window.addEventListener('gofastr:navigate', () => {
     // Re-wire file uploads on the new page content.
     setTimeout(() => _wireFileUploads(document), 0);
+    // Re-wire infinite scroll on the new page content.
+    setTimeout(() => _wireInfiniteScroll(document), 0);
     const G = window.__gofastr;
     if (!G || !G._modalStack) return;
     for (const name of [...G._modalStack]) G.closeWidget(name);
@@ -2386,6 +2567,7 @@
     // forwards dropped File objects into it so the form-POST flow
     // and the picker flow share one code path.
     document.addEventListener('DOMContentLoaded', _wireFileUploads);
+    document.addEventListener('DOMContentLoaded', () => _wireInfiniteScroll(document));
 
     // Mirror details.open → summary aria-expanded for screen readers.
     // Native <summary> reports as "button" without an expanded state.
@@ -2517,6 +2699,279 @@
       }
     });
 
+    // Combobox keyboard nav. Listens at document level so dynamically
+    // populated listboxes (data-fui-rpc returns options) pick it up
+    // for free. Per the WAI-ARIA Combobox 1.2 pattern:
+    //
+    //   ArrowDown — open listbox + highlight first option; if open,
+    //               move highlight to next option (wraps)
+    //   ArrowUp   — open listbox + highlight last option; if open,
+    //               move highlight to previous option (wraps)
+    //   Enter     — select the highlighted option: fill input with
+    //               its data-value (or textContent), close listbox
+    //   Escape    — close listbox; second Esc clears input
+    //   Tab       — close listbox; let Tab move focus naturally
+    //
+    // aria-activedescendant reflects the highlighted option's id.
+    // The runtime tags the highlighted option with .is-active so CSS
+    // can style it without rewriting class lists.
+    const _comboHighlight = (lb, opt) => {
+      lb.querySelectorAll('[role="option"].is-active').forEach((o) => {
+        o.classList.remove('is-active');
+      });
+      if (opt) {
+        opt.classList.add('is-active');
+        const input = document.querySelector('[role="combobox"][aria-controls="' + lb.id + '"]');
+        if (input) input.setAttribute('aria-activedescendant', opt.id || '');
+      }
+    };
+    const _comboClose = (input, lb) => {
+      input.setAttribute('aria-expanded', 'false');
+      input.setAttribute('aria-activedescendant', '');
+      if (lb) {
+        lb.setAttribute('hidden', '');
+        lb.querySelectorAll('[role="option"].is-active').forEach((o) => o.classList.remove('is-active'));
+      }
+    };
+    const _comboOpen = (input, lb) => {
+      if (!lb) return;
+      input.setAttribute('aria-expanded', 'true');
+      lb.removeAttribute('hidden');
+    };
+    const _comboPick = (input, lb, opt) => {
+      if (!opt) return;
+      const val = opt.getAttribute('data-value') || (opt.textContent || '').trim();
+      input.value = val;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      _comboClose(input, lb);
+    };
+    document.addEventListener('keydown', (e) => {
+      const input = e.target && e.target.closest && e.target.closest('[role="combobox"]');
+      if (!input) return;
+      const lbId = input.getAttribute('aria-controls');
+      if (!lbId) return;
+      const lb = document.getElementById(lbId);
+      if (!lb) return;
+      const options = Array.from(lb.querySelectorAll('[role="option"]:not([aria-disabled="true"])'));
+      const activeId = input.getAttribute('aria-activedescendant');
+      const activeIdx = options.findIndex((o) => o.id === activeId);
+      const isOpen = input.getAttribute('aria-expanded') === 'true';
+      switch (e.key) {
+        case 'ArrowDown': {
+          if (options.length === 0) return;
+          e.preventDefault();
+          if (!isOpen) { _comboOpen(input, lb); _comboHighlight(lb, options[0]); return; }
+          const next = options[(activeIdx + 1 + options.length) % options.length];
+          _comboHighlight(lb, next);
+          return;
+        }
+        case 'ArrowUp': {
+          if (options.length === 0) return;
+          e.preventDefault();
+          if (!isOpen) { _comboOpen(input, lb); _comboHighlight(lb, options[options.length - 1]); return; }
+          const prev = options[(activeIdx - 1 + options.length) % options.length];
+          _comboHighlight(lb, prev);
+          return;
+        }
+        case 'Home': {
+          if (!isOpen || options.length === 0) return;
+          e.preventDefault();
+          _comboHighlight(lb, options[0]);
+          return;
+        }
+        case 'End': {
+          if (!isOpen || options.length === 0) return;
+          e.preventDefault();
+          _comboHighlight(lb, options[options.length - 1]);
+          return;
+        }
+        case 'Enter': {
+          if (!isOpen) return;
+          if (activeIdx < 0) return;
+          e.preventDefault();
+          _comboPick(input, lb, options[activeIdx]);
+          return;
+        }
+        case 'Escape': {
+          if (isOpen) { e.preventDefault(); _comboClose(input, lb); return; }
+          if (input.value) { e.preventDefault(); input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); return; }
+          return;
+        }
+        case 'Tab': {
+          if (isOpen) _comboClose(input, lb);
+          return;
+        }
+      }
+    });
+    // Click on an option picks it. Delegate so RPC-injected options work.
+    document.addEventListener('click', (e) => {
+      const opt = e.target && e.target.closest && e.target.closest('[role="option"]');
+      if (!opt || opt.getAttribute('aria-disabled') === 'true') return;
+      const lb = opt.closest('[role="listbox"]');
+      if (!lb || !lb.id) return;
+      const input = document.querySelector('[role="combobox"][aria-controls="' + lb.id + '"]');
+      if (!input) return;
+      e.preventDefault();
+      _comboPick(input, lb, opt);
+    });
+    // Auto-open the listbox when the input receives focus and the
+    // server has populated options. Auto-close on outside click.
+    document.addEventListener('focusin', (e) => {
+      const input = e.target && e.target.closest && e.target.closest('[role="combobox"]');
+      if (!input) return;
+      const lbId = input.getAttribute('aria-controls');
+      const lb = lbId ? document.getElementById(lbId) : null;
+      if (!lb) return;
+      if (lb.querySelector('[role="option"]')) _comboOpen(input, lb);
+    });
+    document.addEventListener('click', (e) => {
+      // Close any open combobox whose input + listbox the click missed.
+      for (const input of document.querySelectorAll('[role="combobox"][aria-expanded="true"]')) {
+        const lbId = input.getAttribute('aria-controls');
+        const lb = lbId ? document.getElementById(lbId) : null;
+        if (input.contains(e.target) || (lb && lb.contains(e.target))) continue;
+        _comboClose(input, lb);
+      }
+    });
+
+    // -------------------------------------------------------------
+    // TreeView: clicking a [data-fui-tree-toggle] button toggles its
+    // parent treeitem's aria-expanded. Pairs with the keyboard handler
+    // below — both routes flip the same attribute so the visual chevron
+    // rotation + the screen-reader announcement + the child <ul>
+    // visibility all stay in sync.
+    document.addEventListener('click', (e) => {
+      const toggle = e.target && e.target.closest && e.target.closest('[data-fui-tree-toggle]');
+      if (!toggle) return;
+      const item = toggle.closest('[role="treeitem"]');
+      if (!item) return;
+      const current = item.getAttribute('aria-expanded');
+      if (current === null) return; // leaf — nothing to toggle
+      const next = current === 'true' ? 'false' : 'true';
+      item.setAttribute('aria-expanded', next);
+      // Show/hide the child group container.
+      const group = item.querySelector(':scope > [role="group"]');
+      if (group) {
+        if (next === 'true') group.removeAttribute('hidden');
+        else group.setAttribute('hidden', '');
+      }
+    });
+
+    // -------------------------------------------------------------
+    // TreeView keyboard nav (WAI-ARIA tree pattern).
+    //
+    // Listens at document level so RPC-injected children pick it up.
+    //
+    //   ArrowDown — focus next visible treeitem
+    //   ArrowUp   — focus previous visible treeitem
+    //   ArrowRight — if collapsed: expand; if expanded: focus first child
+    //   ArrowLeft  — if expanded: collapse; if collapsed: focus parent
+    //   Home / End — focus first / last visible treeitem
+    //   Enter / Space — toggle expand; click the row's primary anchor
+    //   Type-ahead — focus the next treeitem whose label starts with
+    //                the typed prefix (800ms reset window)
+    //
+    // Expansion fires the existing data-fui-rpc on the treeitem's
+    // toggle button so server-side lazy-loaded children come back via
+    // the signal swap path. The runtime then sets aria-expanded=true,
+    // un-hides the child <ul role="group">, and (if the child set
+    // arrived via signal) the swap auto-loads any new comp CSS.
+    // -------------------------------------------------------------
+    const _treeRows = (tree) =>
+      Array.from(tree.querySelectorAll('[role="treeitem"]'))
+        .filter((n) => {
+          // Skip hidden treeitems (collapsed branches).
+          let cur = n.parentElement;
+          while (cur && cur !== tree) {
+            if (cur.hasAttribute && cur.hasAttribute('hidden')) return false;
+            cur = cur.parentElement;
+          }
+          return true;
+        });
+    const _treeFocus = (tree, item) => {
+      tree.querySelectorAll('[role="treeitem"][tabindex="0"]').forEach((n) => n.setAttribute('tabindex', '-1'));
+      item.setAttribute('tabindex', '0');
+      item.focus();
+    };
+    let _treeTypeBuf = '', _treeTypeAt = 0;
+    document.addEventListener('keydown', (e) => {
+      const item = e.target && e.target.closest && e.target.closest('[role="treeitem"]');
+      if (!item) return;
+      const tree = item.closest('[role="tree"]');
+      if (!tree) return;
+      const rows = _treeRows(tree);
+      const idx = rows.indexOf(item);
+      if (idx < 0) return;
+      const move = (to) => {
+        e.preventDefault();
+        _treeFocus(tree, rows[Math.max(0, Math.min(rows.length - 1, to))]);
+      };
+      const expanded = item.getAttribute('aria-expanded');
+      const isLeaf = expanded === null;
+      switch (e.key) {
+        case 'ArrowDown': return move(idx + 1);
+        case 'ArrowUp':   return move(idx - 1);
+        case 'Home':      return move(0);
+        case 'End':       return move(rows.length - 1);
+        case 'ArrowRight': {
+          if (isLeaf) return;
+          if (expanded === 'false') {
+            e.preventDefault();
+            const toggle = item.querySelector(':scope > .tree__row [data-fui-tree-toggle], :scope > [data-fui-tree-toggle]');
+            if (toggle) toggle.click();
+            else item.setAttribute('aria-expanded', 'true');
+            return;
+          }
+          // Already expanded — focus first child.
+          const firstChild = item.querySelector(':scope > [role="group"] > [role="treeitem"]');
+          if (firstChild) { e.preventDefault(); _treeFocus(tree, firstChild); }
+          return;
+        }
+        case 'ArrowLeft': {
+          if (!isLeaf && expanded === 'true') {
+            e.preventDefault();
+            const toggle = item.querySelector(':scope > .tree__row [data-fui-tree-toggle], :scope > [data-fui-tree-toggle]');
+            if (toggle) toggle.click();
+            else item.setAttribute('aria-expanded', 'false');
+            return;
+          }
+          // Already collapsed (or leaf) — focus parent treeitem.
+          const parent = item.parentElement && item.parentElement.closest && item.parentElement.closest('[role="treeitem"]');
+          if (parent) { e.preventDefault(); _treeFocus(tree, parent); }
+          return;
+        }
+        case 'Enter':
+        case ' ': {
+          e.preventDefault();
+          if (!isLeaf) {
+            const toggle = item.querySelector(':scope > .tree__row [data-fui-tree-toggle], :scope > [data-fui-tree-toggle]');
+            if (toggle) toggle.click();
+            else item.setAttribute('aria-expanded', expanded === 'true' ? 'false' : 'true');
+          } else {
+            // Click the primary anchor / button inside the row.
+            const link = item.querySelector(':scope > .tree__row a, :scope > .tree__row button, :scope > a, :scope > button');
+            if (link) link.click();
+          }
+          return;
+        }
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const now = Date.now();
+        if (now - _treeTypeAt > 800) _treeTypeBuf = '';
+        _treeTypeAt = now;
+        _treeTypeBuf += e.key.toLowerCase();
+        for (let i = 1; i <= rows.length; i++) {
+          const cand = rows[(idx + i) % rows.length];
+          const label = (cand.textContent || '').trim().toLowerCase();
+          if (label.startsWith(_treeTypeBuf)) {
+            e.preventDefault();
+            _treeFocus(tree, cand);
+            return;
+          }
+        }
+      }
+    });
+
     // Escape closes any open <details data-fui-disclosure>. Native
     // <details> only handles Escape when the summary itself has
     // focus; this extends it to "Escape anywhere on the page". An
@@ -2539,6 +2994,7 @@
   } else {
     connectSSE();
     _bootstrapComponentCSS();
+    _wireInfiniteScroll(document);
   }
 
   window.G=window.__gofastr;
