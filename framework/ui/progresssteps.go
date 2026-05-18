@@ -128,21 +128,22 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 			}, render.Text(strconv.Itoa(i+1)))
 		}
 
-		labelChildren := []render.HTML{
+		textChildren := []render.HTML{
 			html.Span(html.TextConfig{Class: "ui-progress-steps__label"}, render.Text(s.Label)),
 		}
 		if s.Hint != "" {
-			labelChildren = append(labelChildren,
+			textChildren = append(textChildren,
 				html.Span(html.TextConfig{Class: "ui-progress-steps__hint"}, render.Text(s.Hint)))
 		}
+		text := render.Tag("span", map[string]string{"class": "ui-progress-steps__text"}, textChildren...)
 
 		var inner render.HTML
 		if s.Status == ProgressStepComplete && s.Href != "" {
 			inner = render.Tag("a", map[string]string{"href": s.Href, "class": "ui-progress-steps__row"},
-				append([]render.HTML{marker}, labelChildren...)...)
+				marker, text)
 		} else {
 			inner = render.Tag("span", map[string]string{"class": "ui-progress-steps__row"},
-				append([]render.HTML{marker}, labelChildren...)...)
+				marker, text)
 		}
 
 		items = append(items, render.Tag("li", liAttrs, inner))
@@ -203,6 +204,12 @@ func progressStepsCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
+[data-fui-comp="ui-progress-steps"] .ui-progress-steps__text {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 0;
+}
 [data-fui-comp="ui-progress-steps"] a.ui-progress-steps__row:hover {
   text-decoration: underline;
 }
@@ -262,6 +269,9 @@ func progressStepsCSS(_ style.Theme) string {
   justify-items: start;
   align-items: center;
   gap: var(--spacing-md, 12px);
+}
+.ui-progress-steps--vertical .ui-progress-steps__text {
+  justify-items: start;
 }
 .ui-progress-steps--vertical .ui-progress-steps__label,
 .ui-progress-steps--vertical .ui-progress-steps__hint {
