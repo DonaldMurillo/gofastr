@@ -152,17 +152,11 @@
       // each fires through __gofastr.toast().
       const toastHeader = r.headers.get('X-Gofastr-Toast');
       if (toastHeader) {
-        // Await the toasts module — the header may arrive before the
-        // user has hovered any toast trigger, so we may need to fetch
-        // it on the fly. Errors swallowed so a missing module doesn't
-        // break the response handling.
-        window.__gofastr.loadModule('toasts').then(() => {
-          try {
-            const parsed = JSON.parse(toastHeader);
-            const arr = Array.isArray(parsed) ? parsed : [parsed];
-            for (const cfg of arr) window.__gofastr.toast(cfg);
-          } catch (_) {}
-        }).catch(() => {});
+        // Await the toasts module. If it fails to load (deploy mid-
+        // flight, CDN 5xx, network hiccup) we still need to show the
+        // user something — a silently dropped "Save failed" toast is
+        // a real bug.
+        window.__gofastr._dispatchToastHeader(toastHeader);
       }
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
@@ -351,6 +345,18 @@
   // to specific routes via .Pages / .PagesPrefix / .PagesMatch get
   // a filtered catalog. Widgets with no Routes declared appear on
   // every page (the backwards-compatible default).
+  // The eager click delegator (installed below) awaits this readiness
+  // Promise before calling openWidget. openWidget reads
+  // _widgetCatalog[name] and silently bails if absent, so a click that
+  // arrives before the catalog returns must wait for entries to be
+  // populated. We set the Promise up immediately and stash the resolver
+  // so the .then() of the catalog fetch (which runs after the namespace
+  // is assigned further down) can settle it. Stash on the IIFE-local
+  // bag below; the namespace assignment at __gofastr = { … } would
+  // otherwise wipe direct assignments here.
+  let _widgetCatalogResolve;
+  const _widgetCatalogReady = new Promise((resolve) => { _widgetCatalogResolve = resolve; });
+
   fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
@@ -370,7 +376,8 @@
           return;
         }
         // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand.
+        // hidden one on demand. Also resolve _widgetCatalogReadyResolve
+        // so the eager click delegator can proceed.
         window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
         // Build a deep-link index: key -> [{value, name, params}, ...]
         // so URL parsing on boot / popstate is O(1) per registered key.
@@ -402,75 +409,14 @@
         // already covered by this open-on-boot pass.
         window.__gofastr._syncDeepLinks();
 
-        // Global click delegation for data-fui-open buttons. Bound
-        // ONCE per document (idempotent flag). Buttons can carry
-        // data-fui-deeplink="user_id=42&tab=profile" to seed the
-        // widget's signals from per-click values (e.g. row clicks).
-        if (!document.__fuiOpenDispatch) {
-          document.__fuiOpenDispatch = true;
-          document.addEventListener('click', (e) => {
-            // Toast trigger: data-fui-toast='<json>' fires a client
-            // toast. Cheaper than data-fui-rpc when no server work is
-            // needed (form-validation hint, copy-to-clipboard ack, …).
-            const toastBtn = e.target.closest('[data-fui-toast]');
-            if (toastBtn) {
-              e.preventDefault();
-              window.__gofastr.loadModule('toasts').then(() => {
-                try {
-                  const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
-                  window.__gofastr.toast(cfg);
-                } catch (_) {}
-              }).catch(() => {});
-              return;
-            }
-            const btn = e.target.closest('[data-fui-open]');
-            if (!btn) return;
-            const name = btn.getAttribute('data-fui-open');
-            if (!name) return;
-            e.preventDefault();
-            const raw = btn.getAttribute('data-fui-deeplink') || '';
-            const overrides = {};
-            if (raw) {
-              for (const pair of raw.split('&')) {
-                if (!pair) continue;
-                const eq = pair.indexOf('=');
-                if (eq < 0) continue;
-                overrides[decodeURIComponent(pair.slice(0, eq))] =
-                  decodeURIComponent(pair.slice(eq + 1));
-              }
-            }
-            const anchorPref = btn.getAttribute('data-fui-popover-anchor');
-            Promise.resolve(
-              window.__gofastr.openWidget(name, { params: overrides, pushUrl: true })
-            ).then(async () => {
-              if (anchorPref !== null) {
-                // Make sure the popover module is loaded before we
-                // call the anchor function — protects users who click
-                // before the idle scan / hover-prefetch warmed it.
-                await window.__gofastr.loadModule('popover');
-                window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
-              }
-            });
-          });
-        }
-
-        // Browser back/forward: re-sync widgets against the URL. The
-        // SPA navigation path (popstate handler near the bottom of this
-        // file) already swaps <main>; this listener focuses on widget
-        // open/close state, which is independent of <main>'s content.
-        if (!window.__fuiDeepLinkPopstate) {
-          window.__fuiDeepLinkPopstate = true;
-          window.addEventListener('popstate', () => {
-            // Defer so this fires AFTER the main popstate handler has
-            // (potentially) swapped <main> — otherwise we'd open a
-            // widget against a stale DOM.
-            setTimeout(() => window.__gofastr._syncDeepLinks(), 0);
-          });
-        }
+        // Eager click delegator (installed at boot, see below) is
+        // awaiting this Promise — resolve so queued clicks unblock now
+        // that the catalog is populated.
+        _widgetCatalogResolve();
       };
       tryMount();
     })
-    .catch(() => {});
+    .catch(() => { _widgetCatalogResolve(); });
 
   // -----------------------------------------------------------------------
   // Screen cache — stores rendered screens for instant back-navigation.
@@ -625,9 +571,7 @@
       if (resp.ok) {
         const result = await resp.json();
         if (result.message) {
-          window.__gofastr.loadModule('toasts').then(() => {
-            window.__gofastr.toast(result.message);
-          }).catch(() => {});
+          window.__gofastr._toastOrFallback(result.message);
         }
         return result;
       }
@@ -820,6 +764,74 @@
     async openWidget(name, opts) {
       await this.loadModule('widgets');
       return this.openWidget(name, opts);
+    },
+
+    // _dispatchToastHeader is the X-Gofastr-Toast response-header
+    // path. It tries the full toasts module first; on failure it
+    // falls back to a minimal inline renderer so the user never loses
+    // an important message (e.g. "Save failed") to a transient
+    // module-load 5xx or network hiccup.
+    _dispatchToastHeader(header) {
+      let arr;
+      try {
+        const parsed = JSON.parse(header);
+        arr = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (_) { return; }
+      for (const cfg of arr) this._toastOrFallback(cfg);
+    },
+
+    // _toastOrFallback dispatches a single toast cfg, falling back to
+    // the inline renderer if the toasts module isn't available.
+    _toastOrFallback(cfg) {
+      this.loadModule('toasts')
+        .then(() => { try { this.toast(cfg); } catch (_) {} })
+        .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
+    },
+
+    // _fallbackToast renders an unstyled-but-visible toast notice when
+    // the toasts module can't load. No TTL, no animation, no hover
+    // pause — just a labelled live region the user can read and
+    // dismiss with the × button. Uses textContent throughout (no
+    // innerHTML) so a malicious title can't inject script.
+    _fallbackToast(cfg) {
+      if (!cfg || !cfg.title) return null;
+      let container = document.querySelector('[data-fui-toast-fallback]');
+      if (!container) {
+        container = document.createElement('div');
+        container.setAttribute('data-fui-toast-fallback', '');
+        container.setAttribute('role', 'region');
+        container.setAttribute('aria-label', 'Notifications (degraded)');
+        container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem));pointer-events:auto;';
+        document.body.appendChild(container);
+      }
+      const variant = cfg.variant || 'info';
+      const isAssertive = variant === 'warning' || variant === 'danger';
+      const item = document.createElement('div');
+      item.setAttribute('role', isAssertive ? 'alert' : 'status');
+      item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
+      item.style.cssText = 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui,sans-serif;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;';
+      const text = document.createElement('div');
+      text.style.cssText = 'flex:1;';
+      const title = document.createElement('strong');
+      title.style.cssText = 'display:block;';
+      title.textContent = cfg.title;
+      text.appendChild(title);
+      if (cfg.body) {
+        const body = document.createElement('div');
+        body.style.cssText = 'margin-top:0.25rem;opacity:0.9;';
+        body.textContent = cfg.body;
+        text.appendChild(body);
+      }
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.setAttribute('aria-label', 'Dismiss notification');
+      dismiss.style.cssText = 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;';
+      dismiss.textContent = '×';
+      dismiss.addEventListener('click', () => { item.remove(); });
+      item.appendChild(text);
+      item.appendChild(dismiss);
+      container.appendChild(item);
+      return item;
     },
   };
 
@@ -1190,6 +1202,22 @@
       for (const child of node.querySelectorAll?.('[data-component], [data-widget]') ?? []) {
         setupHydration(child);
       }
+      // Demand-load split runtime modules whose marker attributes show
+      // up in injected subtrees (RPC innerHTML replacement, signal
+      // swaps, island updates). Without this, dynamically-inserted
+      // fileupload zones / popover triggers / toast stacks would never
+      // load their module and behave as dead DOM.
+      _scanForModules(node);
+      // And re-run scanners of modules that ARE loaded so they wire
+      // any newly-inserted elements (toast TTL, fileupload drop zones).
+      const G = window.__gofastr;
+      if (G && G._moduleScanners) {
+        for (const name in G._moduleScanners) {
+          if (G.loadedModules && G.loadedModules[name]) {
+            try { G._moduleScanners[name](node); } catch (_) {}
+          }
+        }
+      }
     };
 
     new MutationObserver((mutations) => {
@@ -1278,6 +1306,77 @@
   document.addEventListener('pointerover', _prefetch, { capture: true, passive: true });
   document.addEventListener('focusin', _prefetch, { capture: true });
 
+  // === EAGER WIDGET DELEGATORS =========================================
+  // The data-fui-open click handler, data-fui-toast click handler, and
+  // popstate listener used to live inside the /__gofastr/widgets
+  // catalog fetch's .then() callback. That meant on a slow network the
+  // very first click on an open trigger had no handler to receive it
+  // — the catalog hadn't returned yet, so the .then() hadn't run.
+  //
+  // We install them here at boot, before the catalog fetch. Each
+  // handler awaits loadModule('widgets') (via the openWidget stub on
+  // __gofastr) so it works regardless of whether the catalog has
+  // resolved. Idempotent via document.__fuiOpenDispatch.
+  function _installEagerWidgetDelegators() {
+    if (document.__fuiOpenDispatch) return;
+    document.__fuiOpenDispatch = true;
+    document.addEventListener('click', (e) => {
+      // Toast trigger: data-fui-toast='<json>' fires a client toast.
+      const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
+      if (toastBtn) {
+        e.preventDefault();
+        window.__gofastr.loadModule('toasts').then(() => {
+          try {
+            const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
+            window.__gofastr.toast(cfg);
+          } catch (_) {}
+        }).catch(() => {});
+        return;
+      }
+      const btn = e.target.closest && e.target.closest('[data-fui-open]');
+      if (!btn) return;
+      const name = btn.getAttribute('data-fui-open');
+      if (!name) return;
+      e.preventDefault();
+      const raw = btn.getAttribute('data-fui-deeplink') || '';
+      const overrides = {};
+      if (raw) {
+        for (const pair of raw.split('&')) {
+          if (!pair) continue;
+          const eq = pair.indexOf('=');
+          if (eq < 0) continue;
+          overrides[decodeURIComponent(pair.slice(0, eq))] =
+            decodeURIComponent(pair.slice(eq + 1));
+        }
+      }
+      const anchorPref = btn.getAttribute('data-fui-popover-anchor');
+      (async () => {
+        // The widgets module + catalog must both be ready before
+        // openWidget can find the entry. Awaiting both here keeps the
+        // click responsive even on a cold-cache page where the user
+        // clicked faster than /__gofastr/widgets returned.
+        await window.__gofastr.loadModule('widgets').catch(() => {});
+        await _widgetCatalogReady;
+        await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true });
+        if (anchorPref !== null) {
+          await window.__gofastr.loadModule('popover');
+          window.__gofastr._anchorPopover(name, btn, anchorPref || 'bottom');
+        }
+      })();
+    });
+  }
+  _installEagerWidgetDelegators();
+
+  if (!window.__fuiDeepLinkPopstate) {
+    window.__fuiDeepLinkPopstate = true;
+    window.addEventListener('popstate', () => {
+      setTimeout(() => {
+        const G = window.__gofastr;
+        if (G && typeof G._syncDeepLinks === 'function') G._syncDeepLinks();
+      }, 0);
+    });
+  }
+
   // === DEMAND-LOAD SCANNERS ===========================================
   // Each split module has a marker attribute that, when found in the
   // DOM, triggers a load. Scanners run after DOMContentLoaded + after
@@ -1304,23 +1403,36 @@
       if (scope.querySelector(m.selector)) loadModule(m.name).catch(() => {});
     }
   }
-  // Re-scan after SPA-nav swaps content; modules that are already
-  // loaded re-run their own scanner via the gofastr:navigate hook
-  // they install themselves.
-  window.addEventListener('gofastr:navigate', () => _scanForModules(document));
+  // Re-scan after SPA-nav swaps content. Two phases:
+  //
+  //  1. Marker scan — modules that AREN'T loaded yet get fetched when
+  //     their marker appears in the freshly-swapped content. (Fresh
+  //     page brings new feature → load on demand.)
+  //
+  //  2. Per-module rescan — modules that ARE loaded re-run their
+  //     scanner against the new DOM. Modules opt in by registering
+  //     a function on `window.__gofastr._moduleScanners[name]`; the
+  //     contract is "wire any new elements inside `root`, idempotent
+  //     against already-wired elements". This is how SSR-inlined
+  //     toast stacks on the new page get their TTL timers armed —
+  //     without it, `_initToasts` would have run only once at module
+  //     load before that DOM existed.
+  window.addEventListener('gofastr:navigate', () => {
+    _scanForModules(document);
+    const G = window.__gofastr;
+    if (G && G._moduleScanners) {
+      for (const name in G._moduleScanners) {
+        if (G.loadedModules && G.loadedModules[name]) {
+          try { G._moduleScanners[name](document); } catch (_) {}
+        }
+      }
+    }
+  });
 
   // Close any open modal widgets on SPA navigation. Toasts/panels
   // (non-backdrop'd widgets) survive — they're page-independent
   // UI like build-progress banners.
   window.addEventListener('gofastr:navigate', () => {
-    // Re-wire any already-loaded module that exposes a scanner. The
-    // fileupload module sets window.__gofastr.scanFileUploads on
-    // load; other split modules follow the same convention.
-    setTimeout(() => {
-      const G = window.__gofastr;
-      if (!G) return;
-      if (typeof G.scanFileUploads === 'function') G.scanFileUploads(document);
-    }, 0);
     const G = window.__gofastr;
     if (!G || !G._modalStack) return;
     for (const name of [...G._modalStack]) G.closeWidget(name);

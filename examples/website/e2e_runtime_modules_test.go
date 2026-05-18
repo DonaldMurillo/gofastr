@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -201,6 +203,237 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 	}
 	if !strings.Contains(requestedURL, "?v=") {
 		t.Errorf("fileupload script URL should carry ?v=<hash> cache-buster; got %q", requestedURL)
+	}
+}
+
+// A user who clicks a `data-fui-open` button BEFORE the framework's
+// /__gofastr/widgets catalog fetch resolves must not lose the click.
+// Today the click delegator is installed inside the catalog .then()
+// callback — meaning on slow networks (Slow 3G, cold cache, a deploy
+// in flight) the very first click on an open trigger hits no handler
+// at all. The button looks dead and the user clicks again, often
+// after the catalog has loaded — at which point the second click works
+// and the first click feels lost.
+//
+// The fix: install the click delegator in CORE at boot, before the
+// catalog fetch. The handler awaits loadModule('widgets') itself, so
+// state-on-namespace + the openWidget stub bridge the gap.
+func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
+	// Spin a custom httptest.Server that stalls /__gofastr/widgets by
+	// 800ms (server-side). Stalling at the network layer is the most
+	// faithful repro of a real cold-cache deploy: the page paints,
+	// the catalog request is in flight, and the user clicks during
+	// the wait. If the click delegator is gated on the catalog .then,
+	// the click hits no listener and dies.
+	app, _ := setupServer()
+	stall := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__gofastr/widgets" {
+			time.Sleep(800 * time.Millisecond)
+		}
+		app.Router.ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(stall)
+	t.Cleanup(srv.Close)
+	base := srv.URL
+	ctx := newE2EBrowserCtx(t)
+
+	var opened bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/drawer"),
+		chromedp.WaitVisible(`button[data-fui-open="components-drawer"]`, chromedp.ByQuery),
+		// Click during the catalog stall. Must be queued (awaited),
+		// not lost. After the stall + grace window, widget MUST be open.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="components-drawer"]').click()`, nil),
+		chromedp.Sleep(2000*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+            const w = document.querySelector('[data-fui-widget="components-drawer"]');
+            if (!w) return false;
+            return !w.hasAttribute('hidden');
+        })()`, &opened),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !opened {
+		t.Errorf("data-fui-open click fired before /__gofastr/widgets catalog resolved did NOT open " +
+			"the widget — click delegator is gated on catalog .then() and drops cold-cache clicks.")
+	}
+}
+
+// When `/__gofastr/runtime/toasts.js` fails to load (deploy mid-flight,
+// CDN cache miss, transient 5xx), the X-Gofastr-Toast header path used
+// to swallow the rejection via `.catch(() => {})` — the user's toast
+// (often a "Save failed" error) silently vanished. Core must show a
+// minimal fallback notice so the user still sees the message.
+func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
+	app, _ := setupServer()
+	srv500 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__gofastr/runtime/toasts.js" {
+			// Force toasts.js to 500 — simulates a deploy mid-flight.
+			http.Error(w, "broken", http.StatusInternalServerError)
+			return
+		}
+		app.Router.ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(srv500)
+	t.Cleanup(srv.Close)
+	base := srv.URL
+	ctx := newE2EBrowserCtx(t)
+
+	var fallbackVisible bool
+	// /components/about doesn't ship the toasts marker (no toast stack
+	// on that page), so toasts.js isn't pre-loaded. We use the
+	// /components/toast/push RPC instead — but call it from /about-style
+	// page via fetch + manual header dispatch... simpler: navigate to a
+	// non-toast page, then fetch the toast endpoint and assert fallback.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/about"),
+		pageReady(),
+		// Trigger an RPC manually that responds with X-Gofastr-Toast.
+		// We can't use data-fui-rpc on /about because there's no
+		// existing button — eval fetch + then poke the runtime's RPC
+		// header dispatcher to mimic what dispatchRPC does.
+		chromedp.Evaluate(`(async () => {
+            const r = await fetch('/components/toast/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({variant:'danger', title:'Save failed', body:'Retry?'}),
+            });
+            const header = r.headers.get('X-Gofastr-Toast');
+            // Mimic core's X-Gofastr-Toast dispatch path: kick off
+            // loadModule('toasts') then call NS.toast. Since the
+            // module 500s, the .catch path must show a fallback.
+            window.__gofastr.loadModule('toasts').then(() => {
+                try {
+                    const parsed = JSON.parse(header);
+                    const arr = Array.isArray(parsed) ? parsed : [parsed];
+                    for (const cfg of arr) window.__gofastr.toast(cfg);
+                } catch (_) {}
+            }).catch((err) => {
+                // The fallback contract: core must surface the toast
+                // payload visibly even when the module fails.
+                if (window.__gofastr._fallbackToast) {
+                    try {
+                        const parsed = JSON.parse(header);
+                        const arr = Array.isArray(parsed) ? parsed : [parsed];
+                        for (const cfg of arr) window.__gofastr._fallbackToast(cfg);
+                    } catch (_) {}
+                }
+            });
+        })()`, nil),
+		chromedp.Sleep(800*time.Millisecond),
+		// The fallback should produce SOME visible toast-shaped node
+		// with the title text the server sent.
+		chromedp.Evaluate(`(() => {
+            // Look for the fallback container by a stable hook.
+            const fallback = document.querySelector('[data-fui-toast-fallback]');
+            if (!fallback) return false;
+            return fallback.textContent.includes('Save failed');
+        })()`, &fallbackVisible),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !fallbackVisible {
+		t.Errorf("X-Gofastr-Toast header fired with toasts.js returning 500 should render a fallback " +
+			"notice carrying the server-sent title; nothing visible was found.")
+	}
+}
+
+// Inserting a marker into the DOM via island RPC, signal swap, or any
+// other in-place mutation MUST trigger the module loader. Today the
+// marker scanner runs only on DOMContentLoaded + gofastr:navigate;
+// a newly-injected [data-fui-fileupload] zone (e.g. an RPC response
+// that replaces innerHTML) used to be dead — the module never loaded.
+//
+// The MutationObserver in core handles component/widget hydration on
+// inserted nodes; it MUST also kick the module scanner so newly-
+// inserted markers cause the corresponding module to load.
+func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	urls, cancel := collectRuntimeModuleURLs(ctx)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		network.Enable(),
+		// Home page has no fileupload marker, so the module is NOT
+		// pre-loaded — exactly the cold-cache case we want to test.
+		chromedp.Navigate(base+"/"),
+		pageReady(),
+		chromedp.Sleep(300*time.Millisecond),
+		// Inject a fresh fileupload zone via DOM mutation. This is the
+		// same shape an island swap or RPC innerHTML replacement would
+		// produce: new subtree appended under document.body containing
+		// the module's marker attribute.
+		chromedp.Evaluate(`(() => {
+            const wrap = document.createElement('div');
+            wrap.innerHTML = '<div data-fui-fileupload><input type="file" /></div>';
+            document.body.appendChild(wrap);
+        })()`, nil),
+		chromedp.Sleep(600*time.Millisecond),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	found := false
+	urls.Range(func(k, _ interface{}) bool {
+		if strings.Contains(k.(string), "/runtime/fileupload.js") {
+			found = true
+		}
+		return true
+	})
+	if !found {
+		t.Errorf("appending a [data-fui-fileupload] subtree to the DOM should trigger the " +
+			"module loader via the MutationObserver, but fileupload.js was never fetched.")
+	}
+}
+
+// After a SPA-nav swaps `<main>` content, every ALREADY-LOADED runtime
+// module must re-run its initializer against the fresh DOM. Without
+// this, a page like /components/toast loads the toasts module on first
+// paint, the user navs to a different page that has its own SSR-inlined
+// toast stack with TTL items, and those new items NEVER get their auto-
+// dismiss timers armed — _initToasts only ran once at module-load time
+// before that DOM existed.
+//
+// The test injects a fresh SSR-style toast item with a 300ms TTL into
+// the DOM AFTER the toasts module is loaded, then fires
+// `gofastr:navigate`. If the per-module rescan contract is wired, the
+// item's auto-dismiss timer arms inside the rescan and the item is
+// removed within ~500ms. If not, the item lingers forever.
+func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var dismissed bool
+	if err := chromedp.Run(ctx,
+		network.Enable(),
+		chromedp.Navigate(base+"/components/toast"),
+		pageReady(),
+		chromedp.Sleep(400*time.Millisecond), // toasts module loaded by now
+		// Inject a brand-new toast-stack with a TTL item — simulating
+		// the post-SPA-nav case where a freshly-swapped <main> brings
+		// a stack the module never saw at load time.
+		chromedp.Evaluate(`(() => {
+            const stack = document.createElement('div');
+            stack.setAttribute('data-fui-toast-stack', 'spa-nav-rescan-test');
+            stack.innerHTML = '<div data-fui-toast-id="rescan-target" data-fui-toast-ttl-ms="300">' +
+                '<div class="ui-notification ui-notification--info">SPA nav rescan target</div>' +
+                '</div>';
+            document.body.appendChild(stack);
+            // The contract: core dispatches gofastr:navigate after the
+            // swap, and every loaded module's scanner re-runs against
+            // the fresh DOM.
+            window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x' } }));
+        })()`, nil),
+		chromedp.Sleep(700*time.Millisecond), // TTL is 300ms, dismiss anim ~200ms
+		chromedp.Evaluate(`!document.querySelector('[data-fui-toast-id="rescan-target"]')`, &dismissed),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !dismissed {
+		t.Errorf("SSR toast with TTL=300ms injected after toasts.js loaded was NOT dismissed " +
+			"after gofastr:navigate fired — modules don't re-init on SPA nav.")
 	}
 }
 

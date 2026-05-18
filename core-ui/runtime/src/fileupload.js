@@ -112,6 +112,12 @@
   // any external caller of the legacy name keeps working through the
   // transition.
   window.__fuiWireFileUploads = wireFileUploads;
+  // Per-module rescan registered with core. Core dispatches
+  // `gofastr:navigate` after every SPA-nav swap and iterates
+  // _moduleScanners — modules that need to wire new DOM (drop zones in
+  // a freshly-swapped page) re-run here. wireFileUploads is idempotent
+  // via __fuiWired flag, so re-running on the same node is a no-op.
+  ((window.__gofastr._moduleScanners ||= {})).fileupload = wireFileUploads;
   // Mark the module as loaded so the loader's Promise resolves
   // synchronously on re-load.
   (window.__gofastr.loadedModules ||= {}).fileupload = true;

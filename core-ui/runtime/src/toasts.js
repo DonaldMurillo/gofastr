@@ -171,7 +171,18 @@
   // The framework's ToastStack preset renders a container div with
   // [data-fui-toast-stack="<name>"] — when those exist at module-load
   // time we want their items wired immediately. (Empty stacks no-op.)
-  document.querySelectorAll('[data-fui-toast-stack]').forEach((c) => NS._initToasts(c));
+  const _rescan = (root) => {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll('[data-fui-toast-stack]').forEach((c) => NS._initToasts(c));
+  };
+  _rescan(document);
+
+  // Core dispatches `gofastr:navigate` after every SPA-nav swap; loaded
+  // modules re-init against the fresh DOM via this scanner registry.
+  // Without this, SSR-inlined toast stacks rendered onto the new page
+  // would never get their TTL timers armed — _initToasts ran exactly
+  // once at module load, before that DOM existed.
+  ((NS._moduleScanners ||= {})).toasts = _rescan;
 
   (NS.loadedModules ||= {}).toasts = true;
 })();
