@@ -256,3 +256,62 @@ func Legend(cfg TextConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
 	return render.Tag("legend", attrs, children...)
 }
+
+// CheckboxConfig configures a void <input type="checkbox"> element.
+// Required: Name.
+type CheckboxConfig struct {
+	Name    string // required
+	Value   string // optional
+	ID      string // optional (but strongly recommended for label association)
+	Checked bool   // optional
+	Class   string
+	Attrs   Attrs
+}
+
+// Checkbox produces an <input type="checkbox"> element.
+// Required: Name.
+func Checkbox(cfg CheckboxConfig) render.HTML {
+	if cfg.Name == "" {
+		panic("html: Checkbox requires Name")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "type", "checkbox")
+	setAttr(attrs, "name", cfg.Name)
+	if cfg.Value != "" {
+		setAttr(attrs, "value", cfg.Value)
+	}
+	if cfg.Checked {
+		setAttr(attrs, "checked", "checked")
+	}
+	return render.VoidTag("input", attrs)
+}
+
+// RadioConfig configures a void <input type="radio"> element.
+// Required: Name and Value.
+type RadioConfig struct {
+	Name    string // required
+	Value   string // required
+	ID      string // optional (but strongly recommended)
+	Checked bool   // optional
+	Class   string
+	Attrs   Attrs
+}
+
+// Radio produces an <input type="radio"> element.
+// Required: Name and Value.
+func Radio(cfg RadioConfig) render.HTML {
+	if cfg.Name == "" {
+		panic("html: Radio requires Name")
+	}
+	if cfg.Value == "" {
+		panic("html: Radio requires Value")
+	}
+	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	setAttr(attrs, "type", "radio")
+	setAttr(attrs, "name", cfg.Name)
+	setAttr(attrs, "value", cfg.Value)
+	if cfg.Checked {
+		setAttr(attrs, "checked", "checked")
+	}
+	return render.VoidTag("input", attrs)
+}

@@ -84,6 +84,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/card", &CardScreen{}, nil)
 	site.Register("/components/image", &OptimizedImageScreen{}, nil)
 	site.Register("/components/toggle", &ToggleScreen{}, nil)
+	site.Register("/components/forms", &FormsDemoScreen{}, nil)
 	site.Register("/components/tooltip", &TooltipScreen{}, nil)
 	site.Register("/components/popover", &PopoverScreen{}, nil)
 	site.Register("/components/tag", &TagScreen{}, nil)
@@ -186,6 +187,9 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
+
+	// Forms demo: repeater island endpoint
+	fwApp.Router.Get("/islands/forms/repeater", http.HandlerFunc(FormsRepeaterIslandHandler))
 
 	// /components/{modal,drawer,toast} demos — register hidden widgets
 	// + a ToastBus + a tiny push endpoint that the live demo buttons hit.
