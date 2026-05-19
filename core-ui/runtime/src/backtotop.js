@@ -13,6 +13,7 @@
   var _sentinel = null;
   var _buttons = [];
   var _rafPending = false;
+  var _scrolling = false;
 
   // Remove buttons that are no longer in the DOM.
   function purgeStale() {
@@ -73,6 +74,14 @@
     }
 
     btn.addEventListener('click', function () {
+      // Prevent double-trigger during ongoing smooth scroll.
+      if (_scrolling) return;
+      _scrolling = true;
+
+      var onDone = function () {
+        _scrolling = false;
+      };
+
       if (scrollTarget) {
         var el = document.querySelector(scrollTarget);
         if (el) {
@@ -80,6 +89,37 @@
         }
       } else {
         window.scrollTo({ top: 0, behavior: scrollBehavior });
+      }
+
+      // For smooth scroll, allow re-click after animation completes.
+      // Use a timeout as a fallback; scrollend event is the preferred
+      // signal but isn't available in all browsers.
+      if (scrollBehavior === 'smooth') {
+        if ('onscrollend' in window) {
+          var handler;
+          handler = function () {
+            window.removeEventListener('scrollend', handler);
+            onDone();
+          };
+          window.addEventListener('scrollend', handler);
+        } else {
+          // Fallback: detect when scroll position stops changing.
+          var lastY = window.scrollY;
+          var checks = 0;
+          var poll = function () {
+            var y = window.scrollY;
+            if (y === lastY || y <= 0 || checks > 60) {
+              onDone();
+              return;
+            }
+            lastY = y;
+            checks++;
+            requestAnimationFrame(poll);
+          };
+          requestAnimationFrame(poll);
+        }
+      } else {
+        onDone();
       }
     });
   }
