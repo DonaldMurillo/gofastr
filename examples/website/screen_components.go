@@ -114,6 +114,12 @@ var componentEntries = []componentEntry{
 		Intro: "Three labelled form controls wrapping native <input> elements. FieldErrors-aware, keyboard/screen-reader/form-POST ready without JavaScript.",
 	},
 	{
+		Slug:  "forms",
+		Name:  "Forms",
+		Tag:   "Input · Validation · Patterns",
+		Intro: "Complete form module — text inputs, selection controls, validation round-trip, conditional fields, step wizard, and form repeater. All components are WCAG 2.1 AA compliant with proper ARIA attributes.",
+	},
+	{
 		Slug:  "tooltip",
 		Name:  "Tooltip",
 		Tag:   "Hover · Focus",

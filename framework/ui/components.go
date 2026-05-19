@@ -166,22 +166,24 @@ func FormField(cfg FormFieldConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	labelHTML := html.Label(html.LabelConfig{
+	labelEl := html.Label(html.LabelConfig{
 		For:   cfg.For,
 		Text:  cfg.Label,
 		Class: "ui-form-field__label",
 	})
 	if cfg.Required {
-		// Append a visible "*" inside the label by wrapping the label
-		// + a sibling span. (html.Label's Text covers the simple
-		// case; we add the asterisk via a sibling span so the label
-		// element stays a single accessible name.)
-		labelHTML = render.Join(labelHTML,
+		// Wrap label + asterisk in a flex container so they sit on
+		// one line inside the grid. The asterisk is aria-hidden so
+		// the label's accessible name stays clean.
+		labelEl = render.Tag("div", map[string]string{"class": "ui-form-field__label-row"},
+			labelEl,
 			html.Span(html.TextConfig{
 				Class: "ui-form-field__required",
 				Attrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text(" *")))
+			}, render.Text(" *")),
+		)
 	}
+	labelHTML := labelEl
 	// When the field is in an error state, inject aria-invalid +
 	// aria-describedby into the input's first open tag so SR users
 	// hear "invalid entry" and the error message text. Without this
@@ -194,7 +196,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 		input = injectAriaDescribedBy(input, cfg.For+"-help")
 	}
 	out := []render.HTML{labelHTML, input}
-	if cfg.Help != "" && cfg.Error == "" {
+	if cfg.Help != "" {
 		out = append(out, html.Paragraph(html.TextConfig{
 			Class: "ui-form-field__help", ID: cfg.For + "-help",
 		}, render.Text(cfg.Help)))
@@ -213,22 +215,24 @@ func FormField(cfg FormFieldConfig) render.HTML {
 // into the first open tag of the input HTML. Idempotent — won't
 // add duplicates.
 func injectAriaInvalid(input render.HTML, errID string) render.HTML {
-	return injectAttrs(input, ` aria-invalid="true" aria-describedby="`+errID+`"`)
+	safe := render.Escape(errID)
+	return injectAttrs(input, ` aria-invalid="true" aria-describedby="`+safe+`"`)
 }
 
 // injectAriaDescribedBy splices ` aria-describedby="<id>"` for the
 // non-error help text case.
 func injectAriaDescribedBy(input render.HTML, helpID string) render.HTML {
-	return injectAttrs(input, ` aria-describedby="`+helpID+`"`)
+	safe := render.Escape(helpID)
+	return injectAttrs(input, ` aria-describedby="`+safe+`"`)
 }
 
 func injectAttrs(input render.HTML, attrs string) render.HTML {
 	s := string(input)
-	// Idempotence: skip if the exact attribute (name="...") is
-	// already present. Compare the leading attribute name, not the
-	// whole attrs string, so multiple injections at different ids
-	// don't both land on the same element.
-	if attrName := leadingAttrName(attrs); attrName != "" && strings.Contains(s, attrName+`=`) {
+	// Idempotence: skip injection only when ALL attribute names in the
+	// attrs string are already present on the element. This prevents
+	// aria-describedby from being skipped when aria-invalid is already
+	// on the tag.
+	if allAttrsPresent(s, attrs) {
 		return input
 	}
 	// Find the real open tag, skipping leading whitespace and HTML
@@ -316,6 +320,27 @@ func leadingAttrName(attrs string) string {
 		return ""
 	}
 	return a[:eq]
+}
+
+// allAttrsPresent returns true when every attribute name in the attrs
+// string (e.g. "aria-invalid" and "aria-describedby") is already
+// present in the HTML string s. Returns false if any name is missing.
+func allAttrsPresent(s, attrs string) bool {
+	for _, chunk := range strings.Split(strings.TrimSpace(attrs), " ") {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		eq := strings.IndexByte(chunk, '=')
+		if eq <= 0 {
+			continue
+		}
+		name := chunk[:eq]
+		if !strings.Contains(s, name+"=") {
+			return false
+		}
+	}
+	return true
 }
 
 // ─── FormSection ────────────────────────────────────────────────────

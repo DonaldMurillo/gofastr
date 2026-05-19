@@ -40,7 +40,7 @@ func pageHeaderCSS(t style.Theme) string {
 			"font-weight", "600",
 			"text-transform", "uppercase",
 			"letter-spacing", "0.06em",
-			"color", "var(--color-text-subtle, #A1A1AA)",
+			"color", "var(--color-text-subtle, #71717A)",
 		).
 		End().
 		Rule(".ui-page-header__title").
