@@ -796,6 +796,14 @@ func backToTopCSS(_ style.Theme) string {
 [data-fui-comp="ui-back-to-top"] svg {
   pointer-events: none;
 }
+/* Inside demo frames, show BackToTop inline (not fixed). */
+.demo-live [data-fui-comp="ui-back-to-top"] {
+  position: relative;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+}
 
 /* ── Positions (defaults to bottom-right) ── */
 .ui-back-to-top--br {
@@ -917,7 +925,8 @@ func backToTopCSS(_ style.Theme) string {
   position: absolute;
   top: 0;
   left: 0;
-  width: 0;
+  width: 1px;
   pointer-events: none;
+  visibility: hidden;
 }`
 }

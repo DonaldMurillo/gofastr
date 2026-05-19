@@ -128,5 +128,8 @@ ui.BackToTop(ui.BackToTopConfig{Position: ui.BackToTopTopRight})`
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("↓ Scroll down to test")),
 		render.Tag("div", nil, filler()...),
+
+		// Real fixed BackToTop button (not inside a demo frame).
+		ui.BackToTop(ui.BackToTopConfig{ThresholdPx: 400}),
 	)
 }
