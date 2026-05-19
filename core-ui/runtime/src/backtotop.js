@@ -1,47 +1,59 @@
 // BackToTop runtime module.
 //
-// Uses IntersectionObserver on a sentinel element to toggle the
-// button's visibility when the user scrolls past the configured
-// threshold. On click, scrolls to top (or to data-fui-btt-target).
+// Uses a single IntersectionObserver on a shared sentinel element
+// to toggle button visibility when the user scrolls past the
+// configured threshold. On click, scrolls to top (or to
+// data-fui-btt-target).
 //
 // Loaded on demand via __gofastr.loadModule("backtotop").
 (function () {
   'use strict';
 
-  function init(root) {
-    var btns = (root || document).querySelectorAll('[data-fui-back-to-top]');
-    for (var i = 0; i < btns.length; i++) {
-      wire(btns[i]);
-    }
+  var _observer = null;
+  var _sentinel = null;
+  var _buttons = [];
+
+  // Lazily create a shared sentinel + observer on first wire().
+  function ensureObserver() {
+    if (_observer) return;
+
+    _sentinel = document.createElement('div');
+    _sentinel.setAttribute('aria-hidden', 'true');
+    _sentinel.className = 'ui-btt-sentinel';
+    document.body.appendChild(_sentinel);
+
+    _observer = new IntersectionObserver(function (entries) {
+      for (var j = 0; j < entries.length; j++) {
+        var visible = !entries[j].isIntersecting;
+        for (var k = 0; k < _buttons.length; k++) {
+          var btn = _buttons[k];
+          if (visible) {
+            btn.setAttribute('data-fui-btt-visible', '');
+            btn.setAttribute('aria-hidden', 'false');
+          } else {
+            btn.removeAttribute('data-fui-btt-visible');
+            btn.setAttribute('aria-hidden', 'true');
+          }
+        }
+      }
+    }, { rootMargin: '0px', threshold: 0 });
+    _observer.observe(_sentinel);
   }
 
   function wire(btn) {
     if (btn.__bttWired) return;
     btn.__bttWired = true;
 
-    var threshold = parseInt(btn.getAttribute('data-fui-btt-threshold') || '400', 10);
     var scrollBehavior = btn.getAttribute('data-fui-btt-scroll') === 'instant' ? 'instant' : 'smooth';
     var scrollTarget = btn.getAttribute('data-fui-btt-target') || '';
+    var threshold = parseInt(btn.getAttribute('data-fui-btt-threshold') || '400', 10);
 
-    // Sentinel element at the top of the document. When it leaves
-    // the viewport (user scrolled past threshold), button appears.
-    var sentinel = document.createElement('div');
-    sentinel.setAttribute('aria-hidden', 'true');
-    sentinel.style.cssText = 'position:absolute;top:0;left:0;width:0;height:' + threshold + 'px;pointer-events:none;';
-    document.body.appendChild(sentinel);
+    _buttons.push(btn);
 
-    var observer = new IntersectionObserver(function (entries) {
-      for (var j = 0; j < entries.length; j++) {
-        if (!entries[j].isIntersecting) {
-          btn.setAttribute('data-fui-btt-visible', '');
-          btn.setAttribute('aria-hidden', 'false');
-        } else {
-          btn.removeAttribute('data-fui-btt-visible');
-          btn.setAttribute('aria-hidden', 'true');
-        }
-      }
-    }, { rootMargin: '0px', threshold: 0 });
-    observer.observe(sentinel);
+    // Update sentinel height to the max threshold across all buttons.
+    if (_sentinel && threshold > _sentinel.offsetHeight) {
+      _sentinel.style.height = threshold + 'px';
+    }
 
     btn.addEventListener('click', function () {
       if (scrollTarget) {
@@ -53,6 +65,21 @@
         window.scrollTo({ top: 0, behavior: scrollBehavior });
       }
     });
+  }
+
+  function init(root) {
+    ensureObserver();
+    var btns = (root || document).querySelectorAll('[data-fui-back-to-top]');
+    for (var i = 0; i < btns.length; i++) {
+      wire(btns[i]);
+    }
+    // Re-size sentinel based on max threshold.
+    var maxH = 0;
+    for (var k = 0; k < _buttons.length; k++) {
+      var t = parseInt(_buttons[k].getAttribute('data-fui-btt-threshold') || '400', 10);
+      if (t > maxH) maxH = t;
+    }
+    if (_sentinel) _sentinel.style.height = maxH + 'px';
   }
 
   if (document.readyState === 'loading') {

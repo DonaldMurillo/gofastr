@@ -910,5 +910,14 @@ func backToTopCSS(_ style.Theme) string {
 [data-color-scheme="dark"] .ui-back-to-top--ghost:hover {
   background: var(--color-surface-hover, #2d2d3f);
   color: var(--color-text, #e5e7eb);
+}
+
+/* Sentinel element for IntersectionObserver — positioned off-layout. */
+.ui-btt-sentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  pointer-events: none;
 }`
 }
