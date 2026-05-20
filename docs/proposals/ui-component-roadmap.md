@@ -11,6 +11,12 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Shipped
 
+### Wave 6 (2026-05-19) — Skeleton compositions
+
+- SkeletonCard — `framework/ui/` (title + body lines + optional footer)
+- SkeletonRow — `framework/ui/` (label + value + optional chevron)
+- SkeletonAvatar — `framework/ui/` (circle + stacked text lines)
+
 ### Wave 4 follow-up (2026-05-18) — Lightbox split + Gallery + Carousel
 
 - Lightbox — split into a STANDALONE zoom-overlay widget. Returns
@@ -146,15 +152,7 @@ follow-ups:
 
 ## Deferred — Wave 6 candidates (Tier 5 Skeleton compositions)
 
-### SkeletonCard / SkeletonRow / SkeletonAvatar
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Preset compositions over the existing Skeleton
-  primitives. SkeletonCard = title line + 2 body lines + footer line
-  inside a Card surface; SkeletonRow = label + value + chevron;
-  SkeletonAvatar = circle + 2 stacked lines. One-liner shortcuts so
-  loading layouts don't reinvent the wheel.
-- **Pre-reqs:** Skeleton primitives (shipped), Card (shipped).
+Shipped 2026-05-19 — see the Wave 6 section under "Shipped" above.
 
 ---
 
