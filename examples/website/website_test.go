@@ -91,7 +91,7 @@ func TestComponentDemosRenderWithoutPanic(t *testing.T) {
 	for _, tc := range cases {
 		req := httptest.NewRequest("GET", tc.path, nil)
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: status = %d, want 200", tc.path, rec.Code)
 			continue
@@ -115,7 +115,7 @@ func TestLivereloadEndpointsServe(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/__livereload.js", nil)
 	rec := httptest.NewRecorder()
-	app.Router.ServeHTTP(rec, req)
+	app.Router().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/__livereload.js status = %d", rec.Code)
 	}
@@ -128,7 +128,7 @@ func TestLivereloadEndpointsServe(t *testing.T) {
 
 	pageReq := httptest.NewRequest("GET", "/", nil)
 	pageRec := httptest.NewRecorder()
-	app.Router.ServeHTTP(pageRec, pageReq)
+	app.Router().ServeHTTP(pageRec, pageReq)
 	if !strings.Contains(pageRec.Body.String(), `src="/__livereload.js"`) {
 		t.Errorf("page missing livereload script tag")
 	}
@@ -143,14 +143,14 @@ func TestLivereloadGatedByDevMode(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/__livereload.js", nil)
 	rec := httptest.NewRecorder()
-	app.Router.ServeHTTP(rec, req)
+	app.Router().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("/__livereload.js without GOFASTR_DEV expected 404, got %d", rec.Code)
 	}
 
 	pageReq := httptest.NewRequest("GET", "/", nil)
 	pageRec := httptest.NewRecorder()
-	app.Router.ServeHTTP(pageRec, pageReq)
+	app.Router().ServeHTTP(pageRec, pageReq)
 	if strings.Contains(pageRec.Body.String(), `src="/__livereload.js"`) {
 		t.Errorf("page should NOT include livereload script when GOFASTR_DEV is unset")
 	}
@@ -233,7 +233,7 @@ func TestSSGProducesExpectedFilesAndContent(t *testing.T) {
 // middleware chain (security headers + request id).
 func TestLiveServerRendersAndAppliesMiddleware(t *testing.T) {
 	fwApp, _ := setupServer()
-	srv := httptest.NewServer(fwApp.Router)
+	srv := httptest.NewServer(fwApp.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/docs/migrations")
@@ -271,7 +271,7 @@ func TestLiveServerRendersAndAppliesMiddleware(t *testing.T) {
 // stay strict (default-src 'self') without breaking UI rendering.
 func TestStrictCSPWithExternalResources(t *testing.T) {
 	fwApp, _ := setupServer()
-	srv := httptest.NewServer(fwApp.Router)
+	srv := httptest.NewServer(fwApp.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/")

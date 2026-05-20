@@ -32,7 +32,7 @@ func TestHarnessCreation(t *testing.T) {
 
 func TestHarnessGetRequest(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"message": "pong"})
@@ -47,7 +47,7 @@ func TestHarnessGetRequest(t *testing.T) {
 
 func TestHarnessPostRequest(t *testing.T) {
 	app := NewApp()
-	app.Router.Post("/echo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Post("/echo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		w.Header().Set("Content-Type", "application/json")
@@ -62,7 +62,7 @@ func TestHarnessPostRequest(t *testing.T) {
 
 func TestHarnessPutRequest(t *testing.T) {
 	app := NewApp()
-	app.Router.Put("/items/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Put("/items/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
@@ -79,7 +79,7 @@ func TestHarnessPutRequest(t *testing.T) {
 
 func TestHarnessDeleteRequest(t *testing.T) {
 	app := NewApp()
-	app.Router.Delete("/items/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Delete("/items/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -90,7 +90,7 @@ func TestHarnessDeleteRequest(t *testing.T) {
 
 func TestHarnessRequestBuilder(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/auth", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/auth", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
@@ -106,7 +106,7 @@ func TestHarnessRequestBuilder(t *testing.T) {
 
 func TestHarnessAsUser(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/me", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/me", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := handler.GetUser(r.Context())
 		if !ok {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -130,7 +130,7 @@ func TestHarnessAsUser(t *testing.T) {
 
 func TestHarnessAssertBodyContains(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/html", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/html", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("<h1>Hello, World!</h1>"))
 	}))
 
@@ -142,7 +142,7 @@ func TestHarnessAssertBodyContains(t *testing.T) {
 
 func TestHarnessJSONDecode(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/data", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/data", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"count": 42, "items": []string{"a", "b"}})
 	}))
@@ -162,7 +162,7 @@ func TestHarnessJSONDecode(t *testing.T) {
 
 func TestHarnessFluentChaining(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -310,7 +310,7 @@ func TestPluginHasMiddleware(t *testing.T) {
 	p := &middlewarePlugin{
 		name: "custom-middleware",
 		setup: func(a *App) {
-			a.Router.Use(func(next http.Handler) http.Handler {
+			a.Router().Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					middlewareCalled = true
 					next.ServeHTTP(w, r)
@@ -326,7 +326,7 @@ func TestPluginHasMiddleware(t *testing.T) {
 	}
 
 	// Add a route AFTER middleware is registered
-	app.Router.Get("/test", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/test", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -379,7 +379,7 @@ func TestIntegrationDefineEntityRegisterRoutesHTTP(t *testing.T) {
 	})
 
 	// Register a simple route manually (no DB needed)
-	app.Router.Get("/posts/count", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/posts/count", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"count": 0})
 	}))
@@ -409,7 +409,7 @@ func TestIntegrationMiddlewareChainOnRoutes(t *testing.T) {
 	var order []string
 
 	// Global middleware
-	app.Router.Use(func(next http.Handler) http.Handler {
+	app.Router().Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			order = append(order, "global-in")
 			next.ServeHTTP(w, r)
@@ -418,7 +418,7 @@ func TestIntegrationMiddlewareChainOnRoutes(t *testing.T) {
 	})
 
 	// API group with its own middleware
-	api := app.Router.Group("/api", func(next http.Handler) http.Handler {
+	api := app.Router().Group("/api", func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			order = append(order, "api-in")
 			next.ServeHTTP(w, r)
@@ -594,7 +594,7 @@ func TestIntegrationHandlerAdapter(t *testing.T) {
 		}, nil
 	})
 
-	app.Router.Post("/posts", h)
+	app.Router().Post("/posts", h)
 
 	ta := TestHarness(t, app)
 	ta.Post("/posts", map[string]string{"title": "Hello", "body": "World"}).
@@ -630,7 +630,7 @@ type routesPlugin struct {
 
 func (p *routesPlugin) Name() string { return p.name }
 func (p *routesPlugin) Init(app *App) error {
-	app.Router.Get("/custom/hello", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	app.Router().Get("/custom/hello", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"message": "hello from plugin"})
 	}))
@@ -685,7 +685,7 @@ type fullPlugin struct {
 
 func (p *fullPlugin) Name() string { return p.name }
 func (p *fullPlugin) Init(app *App) error {
-	app.Router.Get("/analytics/stats", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	app.Router().Get("/analytics/stats", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"events": float64(0)})
 	}))

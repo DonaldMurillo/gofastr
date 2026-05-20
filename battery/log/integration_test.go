@@ -55,11 +55,11 @@ func TestPluginInstallsAccessMiddleware(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/ping")
@@ -98,11 +98,11 @@ func TestPluginRecoversPanic(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("explode")
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/boom")
@@ -137,11 +137,11 @@ func TestSpoofedXFFDoesNotChangeRemote(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/p", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/p", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/p", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
@@ -180,11 +180,11 @@ func TestAccessPathCapped(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/{rest...}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/{rest...}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	huge := "/" + strings.Repeat("a", 64<<10) // 64 KiB
 	resp, err := http.Get(srv.URL + huge)
@@ -216,10 +216,10 @@ func TestPanicEntrySizeCapped(t *testing.T) {
 	}
 
 	huge := strings.Repeat("A", 1<<20) // 1 MiB
-	app.Router.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		panic(huge)
 	}))
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, _ := http.Get(srv.URL + "/boom")
 	resp.Body.Close()
@@ -256,11 +256,11 @@ func TestOneAccessEntryPerRequest(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/probe")
 	if err != nil {
@@ -300,11 +300,11 @@ func TestAccessLogEmittedOnPanic(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("explode")
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/boom")
 	if err != nil {
@@ -339,11 +339,11 @@ func TestPluginRecoveryFiresWithDefaultsOn(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	app.Router.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("explode")
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/boom")
 	if err != nil {

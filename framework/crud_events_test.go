@@ -96,7 +96,7 @@ func TestSSE_ReceivesCreateEvent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedEventsDB(t, db)
 		app := eventsApp(t, db)
-		srv := httptest.NewServer(app.Router)
+		srv := httptest.NewServer(app.Router())
 		t.Cleanup(srv.Close)
 
 		streamCtx, cancelStream := context.WithCancel(context.Background())
@@ -156,7 +156,7 @@ func TestSSE_FiltersByEntity(t *testing.T) {
 		app.Entity("posts", entity.EntityConfig{Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}.WithTimestamps(false))
 		app.Entity("comments", entity.EntityConfig{Table: "comments", Fields: []schema.Field{{Name: "body", Type: schema.String, Required: true}}}.WithTimestamps(false))
 
-		srv := httptest.NewServer(app.Router)
+		srv := httptest.NewServer(app.Router())
 		t.Cleanup(srv.Close)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -194,7 +194,7 @@ func TestSSE_DisconnectUnsubscribes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedEventsDB(t, db)
 		app := eventsApp(t, db)
-		srv := httptest.NewServer(app.Router)
+		srv := httptest.NewServer(app.Router())
 		t.Cleanup(srv.Close)
 
 		bus := app.Events()
@@ -255,7 +255,7 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 			},
 		}.WithTimestamps(false))
 
-		srv := httptest.NewServer(app.Router)
+		srv := httptest.NewServer(app.Router())
 		t.Cleanup(srv.Close)
 
 		subscribe := func(tenant string) (<-chan sseEvent, context.CancelFunc) {

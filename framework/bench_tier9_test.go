@@ -99,7 +99,7 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 					req := httptest.NewRequest(http.MethodGet,
 						fmt.Sprintf("/posts?page=%d&limit=100", page), nil)
 					rec := httptest.NewRecorder()
-					app.Router.ServeHTTP(rec, req)
+					app.Router().ServeHTTP(rec, req)
 					totalBytes += rec.Body.Len()
 				}
 				b.ReportMetric(float64(totalBytes), "response_bytes")
@@ -375,7 +375,7 @@ func renderRows(label string, n int) []render.HTML {
 // Logging/Recovery overhead skewing the numbers.
 func newBenchRouter() *appRouter {
 	a := NewApp(WithoutDefaultMiddleware())
-	return &appRouter{a.Router}
+	return &appRouter{a.Router()}
 }
 
 type appRouter struct {
@@ -416,7 +416,7 @@ func BenchmarkT9_UIHostPageRender(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				fwApp.Router.ServeHTTP(rec, req)
+				fwApp.Router().ServeHTTP(rec, req)
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 				}

@@ -107,7 +107,7 @@ func applyRoutes(app *framework.App, w *world.World) error {
 			continue
 		}
 		rt := r // capture
-		app.Router.Handle(rt.Method, rt.Path, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		app.Router().Handle(rt.Method, rt.Path, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			scope := effect.Scope{
 				Ctx: map[string]any{
 					"path":   req.URL.Path,
@@ -237,7 +237,7 @@ func applyPages(app *framework.App, w *world.World) error {
 					fmt.Fprintf(os.Stderr, "[kiln/render] page %q registration panic: %v\n", path, rec)
 				}
 			}()
-			app.Router.Get(path, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+			app.Router().Get(path, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 				rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 				fmt.Fprint(rw, renderFullPage(p))
 			}))
@@ -391,7 +391,7 @@ func applyMiddleware(app *framework.App, w *world.World) error {
 		if err != nil {
 			return fmt.Errorf("middleware %q: %w", mw.Name, err)
 		}
-		app.Router.Use(built)
+		app.Router().Use(built)
 	}
 	return nil
 }

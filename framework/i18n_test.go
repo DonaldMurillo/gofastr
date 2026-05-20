@@ -23,7 +23,7 @@ func TestApp_WithI18nWiresMiddlewareAndExposesT(t *testing.T) {
 	tr := i18n.NewTranslator(cat, "en")
 
 	a := NewApp(WithI18n(tr))
-	a.Router.Get("/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.Router().Get("/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(a.T(r.Context(), "hi")))
 	}))
 
@@ -41,7 +41,7 @@ func TestApp_WithI18nWiresMiddlewareAndExposesT(t *testing.T) {
 			req.Header.Set("Accept-Language", tc.accept)
 		}
 		rr := httptest.NewRecorder()
-		a.Router.ServeHTTP(rr, req)
+		a.Router().ServeHTTP(rr, req)
 		if rr.Body.String() != tc.want {
 			t.Errorf("accept=%q: got %q want %q", tc.accept, rr.Body.String(), tc.want)
 		}

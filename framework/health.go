@@ -141,14 +141,14 @@ func (a *App) probeReadinessRegistrars() {
 // (readiness). Called during App.Start after plugins/batteries have had
 // a chance to register their own checks.
 func (a *App) registerHealthEndpoints() {
-	a.Router.Get("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.router.Get("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}))
 
-	a.Router.Get("/readyz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.router.Get("/readyz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), a.readinessTimeout())
 		defer cancel()
 		results := runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())

@@ -559,7 +559,7 @@ entities:
 	byName := filesByName(files)
 	for _, want := range []string{
 		"func PublishPost(w http.ResponseWriter, r *http.Request)",
-		`fwApp.Router.Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`,
+		`fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`,
 	} {
 		if !strings.Contains(byName[filepath.Join("blueprint", "stubs.go")]+byName[filepath.Join("blueprint", "app.go")], want) {
 			t.Fatalf("generated files missing %q\napp:\n%s\nstubs:\n%s", want, byName[filepath.Join("blueprint", "app.go")], byName[filepath.Join("blueprint", "stubs.go")])
@@ -596,8 +596,8 @@ endpoints:
 	}
 	byName := filesByName(mustRenderBlueprintFiles(t, bp))
 	generated := byName[filepath.Join("blueprint", "app.go")] + byName[filepath.Join("blueprint", "stubs.go")]
-	assertContains(t, generated, `fwApp.Router.Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
-	assertContains(t, generated, `fwApp.Router.Handle("GET", "/health", http.HandlerFunc(HealthCheck))`)
+	assertContains(t, generated, `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
+	assertContains(t, generated, `fwApp.Router().Handle("GET", "/health", http.HandlerFunc(HealthCheck))`)
 }
 
 func TestBlueprintBlockMultipleActionsAreReachable(t *testing.T) {
@@ -671,12 +671,12 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintModule = "example.com/demo"`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintDBDriver = "sqlite"`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintStaticDir = "public"`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Router.Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
+	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Use(RequestLoggerMiddleware)`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.RegisterPlugin(AnalyticsPlugin{})`)
 	assertContains(t, byName["main.go"], `entities.RegisterAll(fwApp)`)
 	assertContains(t, byName["main.go"], `blueprint.RegisterGenerated(fwApp, site)`)
-	assertContains(t, byName["main.go"], `fwApp.Router.Handle("POST", "/mcp", fwApp.MCP)`)
+	assertContains(t, byName["main.go"], `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`)
 	assertContains(t, byName["main.go"], `uihost.WithStaticDir("public")`)
 }
 

@@ -45,7 +45,7 @@ func BenchmarkT7_Plaintext_NetHTTP(b *testing.B) {
 
 func BenchmarkT7_Plaintext_GoFastr(b *testing.B) {
 	app := NewApp(WithoutDefaultMiddleware())
-	app.Router.GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Hello, World!"))
 	})
@@ -54,7 +54,7 @@ func BenchmarkT7_Plaintext_GoFastr(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 	}
 }
 
@@ -85,7 +85,7 @@ func BenchmarkT7_JSON_GoFastr(b *testing.B) {
 	type msg struct {
 		Message string `json:"message"`
 	}
-	app.Router.GetFunc("/json", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(msg{Message: "Hello, World!"})
 	})
@@ -94,7 +94,7 @@ func BenchmarkT7_JSON_GoFastr(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 	}
 }
 
@@ -158,7 +158,7 @@ func BenchmarkT7_SingleQuery_GoFastr(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router, NewCrudHandler(worlds, db), "/worlds")
+		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		rng := rand.New(rand.NewSource(42))
 		b.ResetTimer()
@@ -167,7 +167,7 @@ func BenchmarkT7_SingleQuery_GoFastr(b *testing.B) {
 			id := fmt.Sprintf("w%d", rng.Intn(N))
 			req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
 			rec := httptest.NewRecorder()
-			app.Router.ServeHTTP(rec, req)
+			app.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
 				b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
@@ -256,7 +256,7 @@ func BenchmarkT7_FilteredList_GoFastr(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			rec := httptest.NewRecorder()
-			app.Router.ServeHTTP(rec, req)
+			app.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
 				b.Fatalf("status %d", rec.Code)
 			}

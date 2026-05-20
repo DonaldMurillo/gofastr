@@ -39,7 +39,7 @@ func TestApp_ProbesBatteryReadinessRegistrar(t *testing.T) {
 	app.registerHealthEndpoints()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 	var resp ReadinessResponse
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	var sawBattery bool
@@ -95,7 +95,7 @@ func TestReadiness_RecoversFromPanickingCheck(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("panicking check should mark /readyz as 503, got %d", rr.Code)
@@ -120,7 +120,7 @@ func TestReadiness_NilCheckFnTreatedAsError(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("nil check fn must mark /readyz as 503, got %d", rr.Code)
@@ -139,7 +139,7 @@ func TestReadiness_DoesNotLeakInternalErrorTextByDefault(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status: got %d want 503", rr.Code)
@@ -160,7 +160,7 @@ func TestReadiness_ExposesErrorTextWhenOptedIn(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if !strings.Contains(rr.Body.String(), leak) {
 		t.Fatalf("with WithVerboseReadiness, error text should appear; body=%q", rr.Body.String())
@@ -181,7 +181,7 @@ func TestReadiness_DoesNotHangPastDeadline(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
 	start := time.Now()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 	took := time.Since(start)
 	if took > 300*time.Millisecond {
 		t.Fatalf("/readyz waited past the deadline for a ctx-ignoring check; took %v", took)

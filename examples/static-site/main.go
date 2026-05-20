@@ -21,7 +21,7 @@ func main() {
 	// - /style.css  → pages/style.css
 	pagesDir := resolvePagesDir()
 
-	static.Mount(app.Router, static.Config{
+	static.Mount(app.Router(), static.Config{
 		FS:     os.DirFS(pagesDir),
 		Prefix: "",
 		// No SPA mode — only serve files that actually exist.

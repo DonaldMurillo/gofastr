@@ -25,7 +25,7 @@ import (
 // All widgets are page-scoped to /components/new via .Pages so other
 // pages don't pay their registration weight.
 func registerNewComponentsDemos(fwApp *framework.App) {
-	r := fwApp.Router
+	r := fwApp.Router()
 
 	// ConfirmAction modal — page-scoped to /components/confirmaction.
 	_, confirmBuilder := ui.ConfirmAction(ui.ConfirmActionConfig{

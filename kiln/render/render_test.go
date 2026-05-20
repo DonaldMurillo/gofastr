@@ -81,7 +81,7 @@ func TestApplyEntityRegistersCRUDRoutes(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	res, body := get(t, app.Router, "/posts")
+	res, body := get(t, app.Router(), "/posts")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET /posts status = %d, body = %q", res.StatusCode, body)
 	}
@@ -113,7 +113,7 @@ func TestApplyEntityWithSeed(t *testing.T) {
 		t.Fatalf("ApplySeeds: %v", err)
 	}
 
-	res, body := get(t, app.Router, "/posts")
+	res, body := get(t, app.Router(), "/posts")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET /posts status = %d, body = %q", res.StatusCode, body)
 	}
@@ -142,7 +142,7 @@ func TestApplyPageRendersHTML(t *testing.T) {
 	if err := render.Apply(app, w); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	res, body := get(t, app.Router, "/dashboard")
+	res, body := get(t, app.Router(), "/dashboard")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", res.StatusCode, body)
 	}
@@ -174,7 +174,7 @@ func TestApplyPageEscapesTitle(t *testing.T) {
 	if err := render.Apply(app, w); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	_, body := get(t, app.Router, "/x")
+	_, body := get(t, app.Router(), "/x")
 	if strings.Contains(body, "<script>alert(1)") {
 		t.Errorf("title not escaped: %q", body)
 	}

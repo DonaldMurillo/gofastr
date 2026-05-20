@@ -115,7 +115,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		t.Fatalf("automigrate: %v", err)
 	}
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	ctx := context.Background()

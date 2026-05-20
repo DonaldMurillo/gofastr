@@ -230,7 +230,7 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 		if r.URL.Path == "/__gofastr/widgets" {
 			time.Sleep(800 * time.Millisecond)
 		}
-		app.Router.ServeHTTP(w, r)
+		app.Router().ServeHTTP(w, r)
 	})
 	srv := httptest.NewServer(stall)
 	t.Cleanup(srv.Close)
@@ -272,7 +272,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 			http.Error(w, "broken", http.StatusInternalServerError)
 			return
 		}
-		app.Router.ServeHTTP(w, r)
+		app.Router().ServeHTTP(w, r)
 	})
 	srv := httptest.NewServer(srv500)
 	t.Cleanup(srv.Close)

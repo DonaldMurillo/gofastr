@@ -92,7 +92,7 @@ func (b *Battery) Name() string { return "admin" }
 // Init implements framework.Battery. Mounts the three admin pages on
 // the App's router under cfg.PathPrefix.
 func (b *Battery) Init(app *framework.App) error {
-	b.RegisterRoutes(app.Router)
+	b.RegisterRoutes(app.Router())
 	return nil
 }
 

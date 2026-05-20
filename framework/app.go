@@ -68,7 +68,7 @@ type AppConfig struct {
 // It wires together the entity registry, router, MCP server, and database.
 type App struct {
 	Registry *Registry
-	Router   *router.Router
+	router   *router.Router // access via App.Router() method
 	MCP      *mcp.Server
 	DB       *sql.DB
 	Config   AppConfig
@@ -140,9 +140,16 @@ func WithConfig(config AppConfig) AppOption {
 // WithRouter sets a custom router.
 func WithRouter(r *router.Router) AppOption {
 	return func(a *App) {
-		a.Router = r
+		a.router = r
 	}
 }
+
+// Router returns the App's *router.Router. Methods on the router
+// (Handle / Get / Post / Use / Group / NotFound) are documented in
+// core/router. Exposed as a method (rather than a field) so plugins
+// and batteries can swap or wrap the router during Init without
+// callers depending on direct field assignment.
+func (a *App) Router() *router.Router { return a.router }
 
 // WithMCPServer sets a custom MCP server.
 func WithMCPServer(s *mcp.Server) AppOption {
@@ -305,7 +312,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 // before InitPlugins. Mount last unless you know what you're doing.
 func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
-	m.Mount(a.Router)
+	m.Mount(a.router)
 	return a
 }
 
@@ -318,7 +325,7 @@ func (a *App) Use(mw ...router.Middleware) *App {
 	if len(mw) == 0 {
 		return a
 	}
-	a.Router.Use(mw...)
+	a.router.Use(mw...)
 	return a
 }
 
@@ -327,7 +334,7 @@ func (a *App) Use(mw ...router.Middleware) *App {
 func NewApp(opts ...AppOption) *App {
 	a := &App{
 		Registry: NewRegistry(),
-		Router:   router.New(),
+		router:   router.New(),
 		MCP:      mcp.NewServer(),
 		Config:   AppConfig{JSONCase: crud.CaseCamel},
 		Plugins:  NewPluginManager(),
@@ -368,7 +375,7 @@ func NewApp(opts ...AppOption) *App {
 	// more via app.Use from their Init and still wrap routes that were
 	// registered earlier (e.g. by Mount).
 	if !a.noDefaults {
-		a.Router.Use(DefaultMiddleware(a)...)
+		a.router.Use(DefaultMiddleware(a)...)
 	}
 
 	// Propagate DB to registry and its entities
@@ -410,11 +417,11 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
 		crudHandler.Registry = a.Registry
-		crud.RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		crud.RegisterCrudRoutes(a.router, crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
 	if config.MCP && a.DB != nil {
-		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.Router); err != nil {
+		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q: %v", name, err))
 		}
 	}
@@ -466,7 +473,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		}
 		path := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
-			a.Router.Handle(method, path, endpoint.Handler)
+			a.router.Handle(method, path, endpoint.Handler)
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -755,13 +762,13 @@ func (a *App) Start(addr string) error {
 			appName = "GoFastr API"
 		}
 		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0")
-		a.Router.Get("/openapi.json", coreoa.Handler(spec))
-		a.Router.Get("/api/docs/", coreoa.SwaggerUIHandler(spec, "/api/docs"))
+		a.router.Get("/openapi.json", coreoa.Handler(spec))
+		a.router.Get("/api/docs/", coreoa.SwaggerUIHandler(spec, "/api/docs"))
 
 		// API entity index under /api/ alongside /api/docs/ (Swagger).
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
-			a.Router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				md := crud.RegistryLLMMD(a.Registry, appName)
 				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 				w.Header().Set("Cache-Control", "no-cache")
@@ -819,14 +826,14 @@ func (a *App) Start(addr string) error {
 
 	a.server = &http.Server{
 		Addr:    addr,
-		Handler: a.Router,
+		Handler: a.router,
 	}
 	return a.server.ListenAndServe()
 }
 
 // registerDebugEndpoints adds /.debug/stats for runtime diagnostics.
 func (a *App) registerDebugEndpoints() {
-	a.Router.Get("/.debug/stats", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.router.Get("/.debug/stats", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 

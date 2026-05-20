@@ -17,7 +17,7 @@ import (
 func startE2EServer(t *testing.T) string {
 	t.Helper()
 	app, _ := setupServer()
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
 	return srv.URL
 }

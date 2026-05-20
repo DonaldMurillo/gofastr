@@ -48,11 +48,11 @@ func (p *Plugin) Name() string { return "embed" }
 func (p *Plugin) Init(app *framework.App) error {
 	h := Handler(p.idx)
 	stripped := http.StripPrefix(p.prefix, h)
-	app.Router.Post(p.prefix+"/index", stripped)
-	app.Router.Post(p.prefix+"/query", stripped)
-	app.Router.Get(p.prefix+"/stats", stripped)
-	app.Router.Delete(p.prefix+"/doc/{id}", stripped)
-	app.Router.Delete(p.prefix+"/doc", stripped)
+	app.Router().Post(p.prefix+"/index", stripped)
+	app.Router().Post(p.prefix+"/query", stripped)
+	app.Router().Get(p.prefix+"/stats", stripped)
+	app.Router().Delete(p.prefix+"/doc/{id}", stripped)
+	app.Router().Delete(p.prefix+"/doc", stripped)
 	return nil
 }
 

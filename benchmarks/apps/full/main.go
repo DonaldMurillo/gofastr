@@ -92,9 +92,9 @@ func main() {
 	}
 
 	// ----- CRUD routes --------------------------------------------------
-	framework.RegisterCrudRoutes(fwApp.Router, framework.NewCrudHandler(authors, db), "/authors")
-	framework.RegisterCrudRoutes(fwApp.Router, framework.NewCrudHandler(posts, db), "/posts")
-	framework.RegisterCrudRoutes(fwApp.Router, framework.NewCrudHandler(comments, db), "/comments")
+	framework.RegisterCrudRoutes(fwApp.Router(), framework.NewCrudHandler(authors, db), "/authors")
+	framework.RegisterCrudRoutes(fwApp.Router(), framework.NewCrudHandler(posts, db), "/posts")
+	framework.RegisterCrudRoutes(fwApp.Router(), framework.NewCrudHandler(comments, db), "/comments")
 
 	// ----- Audit log ----------------------------------------------------
 	fwApp.WithAuditLog(framework.AuditConfig{
@@ -129,7 +129,7 @@ func main() {
 
 	// ----- Search backend wired to /search ----------------------------
 	idx := search.NewMemory()
-	fwApp.Router.GetFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+	fwApp.Router().GetFunc("/search", func(w http.ResponseWriter, r *http.Request) {
 		results, _ := idx.Search(r.Context(), search.Query{
 			Text:  r.URL.Query().Get("q"),
 			Type:  "posts",
@@ -140,7 +140,7 @@ func main() {
 	})
 
 	// ----- Custom endpoint ---------------------------------------------
-	fwApp.Router.GetFunc("/posts/{id}/publish",
+	fwApp.Router().GetFunc("/posts/{id}/publish",
 		framework.RequirePermission("posts:write")(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -170,7 +170,7 @@ func main() {
 	})
 
 	// ----- Health -------------------------------------------------------
-	fwApp.Router.GetFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	fwApp.Router().GetFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

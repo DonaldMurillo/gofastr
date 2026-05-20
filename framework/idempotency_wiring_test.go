@@ -16,7 +16,7 @@ import (
 // and returns the supplied response so a test can probe replay vs.
 // re-execution.
 func withTestRoute(a *App, counter *int32, status int, body string) {
-	a.Router.Post("/r", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.Router().Post("/r", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(counter, 1)
 		// Drain body so the test sees the recorder's behaviour, not a
 		// leak through HTTPServer keep-alive.
@@ -36,7 +36,7 @@ func TestWithIdempotency_OmittedMeansNoExtraMiddleware(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/r", strings.NewReader("{}"))
 		req.Header.Set("Idempotency-Key", "x")
 		rr := httptest.NewRecorder()
-		a.Router.ServeHTTP(rr, req)
+		a.Router().ServeHTTP(rr, req)
 	}
 	if calls != 2 {
 		t.Fatalf("no-idempotency: expected 2 calls, got %d", calls)
@@ -53,7 +53,7 @@ func TestWithIdempotency_RepliesCachedResponse(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", "stable-key")
 		rr := httptest.NewRecorder()
-		a.Router.ServeHTTP(rr, req)
+		a.Router().ServeHTTP(rr, req)
 		return rr
 	}
 
