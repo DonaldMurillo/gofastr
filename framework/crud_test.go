@@ -618,7 +618,7 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		app.Registry.Register(ent)
 
 		ch := crud.NewCrudHandler(ent, db)
-		crud.RegisterCrudRoutes(app.Router, ch, "/posts")
+		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
 		ta := TestHarness(t, app)
 		defer ta.Close()
@@ -694,7 +694,7 @@ func TestE2E_ReadOnlyFieldRejected(t *testing.T) {
 		app.Registry.Register(ent)
 
 		ch := crud.NewCrudHandler(ent, db)
-		crud.RegisterCrudRoutes(app.Router, ch, "/posts")
+		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
 		ta := TestHarness(t, app)
 		defer ta.Close()
@@ -769,7 +769,7 @@ func TestE2E_Hooks_CreateLifecycle(t *testing.T) {
 
 		ch := crud.NewCrudHandler(ent, db)
 		ch.Hooks = hooks
-		crud.RegisterCrudRoutes(app.Router, ch, "/posts")
+		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
 		ta := TestHarness(t, app)
 		defer ta.Close()
@@ -848,10 +848,10 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 
 		// Apply tenant middleware BEFORE registering routes
 		// (Router.wrap bakes in middleware at registration time)
-		app.Router.Use(tenant.TenantMiddleware("X-Tenant-ID"))
+		app.Router().Use(tenant.TenantMiddleware("X-Tenant-ID"))
 
 		ch := crud.NewCrudHandler(ent, db)
-		crud.RegisterCrudRoutes(app.Router, ch, "/posts")
+		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
 		ta := TestHarness(t, app)
 		defer ta.Close()
@@ -924,7 +924,7 @@ func TestE2E_SoftDelete_UsesTimestamp(t *testing.T) {
 		app.Registry.Register(ent)
 
 		ch := crud.NewCrudHandler(ent, db)
-		crud.RegisterCrudRoutes(app.Router, ch, "/posts")
+		crud.RegisterCrudRoutes(app.Router(), ch, "/posts")
 
 		ta := TestHarness(t, app)
 		defer ta.Close()

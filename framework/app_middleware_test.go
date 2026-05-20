@@ -25,11 +25,11 @@ import (
 // chain applied.
 func TestDefaultMiddlewareWrapsExplicitRoutes(t *testing.T) {
 	app := NewApp()
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/probe")
@@ -58,12 +58,12 @@ func TestDefaultMiddlewareWrapsExplicitRoutes(t *testing.T) {
 // security headers and request IDs.
 func TestDefaultMiddlewareWrapsNotFoundHandler(t *testing.T) {
 	app := NewApp()
-	app.Router.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("catch-all"))
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/nothing-registered-here")
@@ -86,11 +86,11 @@ func TestDefaultMiddlewareWrapsNotFoundHandler(t *testing.T) {
 // AppOption actually skips the default chain.
 func TestWithoutDefaultMiddlewareSuppressesChain(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
-	app.Router.Get("/bare", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/bare", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/bare")
@@ -118,11 +118,11 @@ func TestUseDoesNotDisableDefaults(t *testing.T) {
 			next.ServeHTTP(w, r)
 		})
 	})
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/probe")
 	if err != nil {
@@ -145,13 +145,13 @@ func TestUseDoesNotDisableDefaults(t *testing.T) {
 // honored by the default middleware chain.
 func TestRequestTimeoutOverride(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{RequestTimeout: 50 * time.Millisecond}))
-	app.Router.Get("/slow", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app.Router().Get("/slow", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 		case <-time.After(2 * time.Second):
 		}
 	}))
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	start := time.Now()
 	resp, err := http.Get(srv.URL + "/slow")
@@ -183,7 +183,7 @@ func (s *stubMountable) Mount(r *router.Router) {
 }
 
 // TestMountRegistersImmediately pins the lifecycle fix that lets tests
-// hit Mountable routes via httptest.NewServer(app.Router) without calling
+// hit Mountable routes via httptest.NewServer(app.Router()) without calling
 // Start. Mount is fluent and the route is reachable instantly.
 func TestMountRegistersImmediately(t *testing.T) {
 	app := NewApp()
@@ -193,7 +193,7 @@ func TestMountRegistersImmediately(t *testing.T) {
 		t.Fatal("Mountable.Mount should be called from App.Mount, not deferred")
 	}
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/mounted-probe")

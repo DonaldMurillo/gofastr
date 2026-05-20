@@ -29,7 +29,7 @@ func TestEmbedDemoSmoke(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/embed/stats")

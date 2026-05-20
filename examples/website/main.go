@@ -212,30 +212,30 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 
 	// Island RPC endpoints — see the matching screen files for how the
 	// demos wire IslandSignal + IslandEndpoint into the rendered HTML.
-	fwApp.Router.Get("/islands/pagination-demo/page", http.HandlerFunc(PaginationIslandHandler))
-	fwApp.Router.Get("/islands/datatable-demo/state", http.HandlerFunc(DataTableIslandHandler))
-	fwApp.Router.Get("/islands/customers/state", http.HandlerFunc(CustomersIslandHandler))
-	fwApp.Router.Post("/islands/customers/delete", http.HandlerFunc(CustomersDeleteHandler))
-	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
-	fwApp.Router.Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
-	fwApp.Router.Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
+	fwApp.Router().Get("/islands/pagination-demo/page", http.HandlerFunc(PaginationIslandHandler))
+	fwApp.Router().Get("/islands/datatable-demo/state", http.HandlerFunc(DataTableIslandHandler))
+	fwApp.Router().Get("/islands/customers/state", http.HandlerFunc(CustomersIslandHandler))
+	fwApp.Router().Post("/islands/customers/delete", http.HandlerFunc(CustomersDeleteHandler))
+	fwApp.Router().Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
+	fwApp.Router().Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
+	fwApp.Router().Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
 
 	// Forms demo: repeater island endpoint
-	fwApp.Router.Get("/islands/forms/repeater", http.HandlerFunc(FormsRepeaterIslandHandler))
+	fwApp.Router().Get("/islands/forms/repeater", http.HandlerFunc(FormsRepeaterIslandHandler))
 
 	// OptimisticAction demo endpoints: success (204) + failure (500) + slow (~400ms 204).
-	fwApp.Router.Post("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
-	fwApp.Router.Delete("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
-	fwApp.Router.Post("/demo/optimistic-failure", http.HandlerFunc(OptimisticDemoFailure))
-	fwApp.Router.Post("/demo/optimistic-slow", http.HandlerFunc(OptimisticDemoSlow))
-	fwApp.Router.Post("/demo/csrf-record", http.HandlerFunc(OptimisticDemoCSRFRecord))
-	fwApp.Router.Get("/demo/csrf-last", http.HandlerFunc(OptimisticDemoCSRFLast))
+	fwApp.Router().Post("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
+	fwApp.Router().Delete("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
+	fwApp.Router().Post("/demo/optimistic-failure", http.HandlerFunc(OptimisticDemoFailure))
+	fwApp.Router().Post("/demo/optimistic-slow", http.HandlerFunc(OptimisticDemoSlow))
+	fwApp.Router().Post("/demo/csrf-record", http.HandlerFunc(OptimisticDemoCSRFRecord))
+	fwApp.Router().Get("/demo/csrf-last", http.HandlerFunc(OptimisticDemoCSRFLast))
 
 	// NetworkRetryBanner: health endpoint that returns 204.
-	fwApp.Router.Get("/demo/network-health", http.HandlerFunc(NetworkHealthOK))
-	fwApp.Router.Get("/demo/network-health-slow", http.HandlerFunc(NetworkHealthSlow))
-	fwApp.Router.Get("/demo/network-health-stats", http.HandlerFunc(NetworkHealthStats))
-	fwApp.Router.Post("/demo/network-health-stats-reset", http.HandlerFunc(NetworkHealthStatsReset))
+	fwApp.Router().Get("/demo/network-health", http.HandlerFunc(NetworkHealthOK))
+	fwApp.Router().Get("/demo/network-health-slow", http.HandlerFunc(NetworkHealthSlow))
+	fwApp.Router().Get("/demo/network-health-stats", http.HandlerFunc(NetworkHealthStats))
+	fwApp.Router().Post("/demo/network-health-stats-reset", http.HandlerFunc(NetworkHealthStatsReset))
 
 	// /components/{modal,drawer,toast} demos — register hidden widgets
 	// + a ToastBus + a tiny push endpoint that the live demo buttons hit.
@@ -258,7 +258,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 		// doesn't open a new EventSource per route.
 		// Gated by GOFASTR_DEV=1.
 		buildID := strconv.FormatInt(time.Now().UnixNano(), 10)
-		fwApp.Router.Get("/__livereload", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fwApp.Router().Get("/__livereload", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
@@ -287,7 +287,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 				}
 			}
 		}))
-		fwApp.Router.Get("/__livereload.js", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fwApp.Router().Get("/__livereload.js", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/javascript")
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = w.Write([]byte(livereloadJS))

@@ -95,7 +95,7 @@ func BenchmarkT6_ListConcurrency(b *testing.B) {
 					for pb.Next() {
 						start := time.Now()
 						w := httptest.NewRecorder()
-						app.Router.ServeHTTP(w, req)
+						app.Router().ServeHTTP(w, req)
 						rec.record(time.Since(start))
 						if w.Code != http.StatusOK {
 							b.Fatalf("status %d", w.Code)
@@ -145,7 +145,7 @@ func BenchmarkT6_CreateConcurrency(b *testing.B) {
 						req.Header.Set("Content-Type", "application/json")
 						start := time.Now()
 						w := httptest.NewRecorder()
-						app.Router.ServeHTTP(w, req)
+						app.Router().ServeHTTP(w, req)
 						rec.record(time.Since(start))
 						if w.Code >= 400 {
 							b.Fatalf("status %d: %s", w.Code, w.Body.String())
@@ -200,14 +200,14 @@ func BenchmarkT6_MixedRW(b *testing.B) {
 							body := buildBody(id)
 							req := httptest.NewRequest(http.MethodPost, "/posts", bytesReader(body))
 							req.Header.Set("Content-Type", "application/json")
-							app.Router.ServeHTTP(w, req)
+							app.Router().ServeHTTP(w, req)
 							writes.Add(1)
 							if w.Code >= 400 {
 								b.Fatalf("write status %d", w.Code)
 							}
 						} else {
 							// Read
-							app.Router.ServeHTTP(w, listReq)
+							app.Router().ServeHTTP(w, listReq)
 							reads.Add(1)
 							if w.Code != http.StatusOK {
 								b.Fatalf("read status %d", w.Code)

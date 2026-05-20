@@ -33,7 +33,7 @@ import (
 // Throughput here is the framework's per-request ceiling.
 func BenchmarkT5_Plaintext(b *testing.B) {
 	app := NewApp(WithoutDefaultMiddleware())
-	app.Router.GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Hello, World!"))
 	})
@@ -43,7 +43,7 @@ func BenchmarkT5_Plaintext(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 	}
 }
 
@@ -52,7 +52,7 @@ func BenchmarkT5_Plaintext(b *testing.B) {
 // the per-request cost users actually pay in production.
 func BenchmarkT5_Plaintext_WithDefaults(b *testing.B) {
 	app := NewApp()
-	app.Router.GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Hello, World!"))
 	})
@@ -61,7 +61,7 @@ func BenchmarkT5_Plaintext_WithDefaults(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 	}
 }
 
@@ -76,7 +76,7 @@ func BenchmarkT5_JSON(b *testing.B) {
 	type message struct {
 		Message string `json:"message"`
 	}
-	app.Router.GetFunc("/json", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(message{Message: "Hello, World!"})
 	})
@@ -86,7 +86,7 @@ func BenchmarkT5_JSON(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 	}
 }
 
@@ -110,7 +110,7 @@ func BenchmarkT5_SingleQuery(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router, NewCrudHandler(worlds, db), "/worlds")
+		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		rng := rand.New(rand.NewSource(42))
 		b.ResetTimer()
@@ -119,7 +119,7 @@ func BenchmarkT5_SingleQuery(b *testing.B) {
 			id := fmt.Sprintf("w%d", rng.Intn(N))
 			req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
 			rec := httptest.NewRecorder()
-			app.Router.ServeHTTP(rec, req)
+			app.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
 				b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
@@ -147,7 +147,7 @@ func BenchmarkT5_MultiQuery(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router, NewCrudHandler(worlds, db), "/worlds")
+		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		for _, queries := range []int{1, 5, 10, 20} {
 			queries := queries
@@ -160,7 +160,7 @@ func BenchmarkT5_MultiQuery(b *testing.B) {
 						id := fmt.Sprintf("w%d", rng.Intn(N))
 						req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
 						rec := httptest.NewRecorder()
-						app.Router.ServeHTTP(rec, req)
+						app.Router().ServeHTTP(rec, req)
 						if rec.Code != http.StatusOK {
 							b.Fatalf("status %d", rec.Code)
 						}
@@ -195,14 +195,14 @@ func BenchmarkT5_FortunesLike(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(fortunes)
-		RegisterCrudRoutes(app.Router, NewCrudHandler(fortunes, db), "/fortunes")
+		RegisterCrudRoutes(app.Router(), NewCrudHandler(fortunes, db), "/fortunes")
 
 		req := httptest.NewRequest(http.MethodGet, "/fortunes?limit=100", nil)
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			rec := httptest.NewRecorder()
-			app.Router.ServeHTTP(rec, req)
+			app.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
 				b.Fatalf("status %d", rec.Code)
 			}
@@ -231,7 +231,7 @@ func BenchmarkT5_Updates(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router, NewCrudHandler(worlds, db), "/worlds")
+		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		for _, updates := range []int{1, 5, 10, 20} {
 			updates := updates
@@ -245,7 +245,7 @@ func BenchmarkT5_Updates(b *testing.B) {
 						// GET
 						req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
 						rec := httptest.NewRecorder()
-						app.Router.ServeHTTP(rec, req)
+						app.Router().ServeHTTP(rec, req)
 						if rec.Code != http.StatusOK {
 							b.Fatalf("get status %d", rec.Code)
 						}
@@ -255,7 +255,7 @@ func BenchmarkT5_Updates(b *testing.B) {
 						req = httptest.NewRequest(http.MethodPut, "/worlds/"+id, bytesReader(body))
 						req.Header.Set("Content-Type", "application/json")
 						rec = httptest.NewRecorder()
-						app.Router.ServeHTTP(rec, req)
+						app.Router().ServeHTTP(rec, req)
 						if rec.Code >= 400 {
 							b.Fatalf("put status %d: %s", rec.Code, rec.Body.String())
 						}

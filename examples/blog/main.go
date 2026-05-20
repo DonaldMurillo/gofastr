@@ -35,9 +35,9 @@ func main() {
 	// --- Custom endpoints ---
 
 	// GET /posts/published — filter published posts
-	app.Router.Get("/posts/published", postsByStatus(app, "published"))
+	app.Router().Get("/posts/published", postsByStatus(app, "published"))
 	searchIndex := search.NewMemory()
-	app.Router.Get("/posts/search", searchPosts(searchIndex))
+	app.Router().Get("/posts/search", searchPosts(searchIndex))
 
 	// --- Seed ---
 

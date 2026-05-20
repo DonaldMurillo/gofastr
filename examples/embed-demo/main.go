@@ -62,7 +62,7 @@ func main() {
 	addr := ":8086"
 	fmt.Printf("embed-demo listening on http://localhost%s\n", addr)
 	fmt.Printf("try: curl 'http://localhost%s/embed/stats'\n", addr)
-	if err := http.ListenAndServe(addr, app.Router); err != nil {
+	if err := http.ListenAndServe(addr, app.Router()); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -14,7 +14,7 @@ import (
 
 func main() {
 	app := framework.NewApp()
-	app.Router.GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Hello, World!"))
 	})

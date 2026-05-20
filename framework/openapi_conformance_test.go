@@ -66,11 +66,11 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	})
 	app.Registry.Register(postsEntity)
 
-	crud.RegisterCrudRoutes(app.Router, crud.NewCrudHandler(usersEntity, db), "/users")
-	crud.RegisterCrudRoutes(app.Router, crud.NewCrudHandler(postsEntity, db), "/posts")
+	crud.RegisterCrudRoutes(app.Router(), crud.NewCrudHandler(usersEntity, db), "/users")
+	crud.RegisterCrudRoutes(app.Router(), crud.NewCrudHandler(postsEntity, db), "/posts")
 
 	spec := EntityOpenAPI(app.Registry, "Conformance API", "1.0.0")
-	app.Router.Get("/openapi.json", openapi.Handler(spec))
+	app.Router().Get("/openapi.json", openapi.Handler(spec))
 
 	// Build spec doc via JSON round-trip for consistent types
 	ta := TestHarness(t, app)

@@ -1098,7 +1098,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	if len(bp.Entities) > 0 {
 		sb.WriteString("\tentities.RegisterAll(fwApp)\n")
 	}
-	sb.WriteString("\tfwApp.Router.Handle(\"POST\", \"/mcp\", fwApp.MCP)\n")
+	sb.WriteString("\tfwApp.Router().Handle(\"POST\", \"/mcp\", fwApp.MCP)\n")
 	sb.WriteString("\tsite := uiapp.NewApp(blueprint.BlueprintAppName)\n")
 	sb.WriteString("\tblueprint.RegisterGenerated(fwApp, site)\n")
 	if staticDir != "" {
@@ -1635,7 +1635,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString(fmt.Sprintf("\tsite.Register(%q, &%sScreen{}, nil)\n", screen.Route, toCamelCase(screen.Name)))
 	}
 	for _, endpoint := range bp.Endpoints {
-		sb.WriteString(fmt.Sprintf("\tfwApp.Router.Handle(%q, %q, http.HandlerFunc(%s))\n", strings.ToUpper(endpoint.Method), blueprintEndpointPath(endpoint), toCamelCase(endpoint.Handler)))
+		sb.WriteString(fmt.Sprintf("\tfwApp.Router().Handle(%q, %q, http.HandlerFunc(%s))\n", strings.ToUpper(endpoint.Method), blueprintEndpointPath(endpoint), toCamelCase(endpoint.Handler)))
 	}
 	for _, item := range bp.Middleware {
 		sb.WriteString(fmt.Sprintf("\tfwApp.Use(%sMiddleware)\n", toCamelCase(item.Name)))

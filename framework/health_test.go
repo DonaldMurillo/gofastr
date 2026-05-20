@@ -16,7 +16,7 @@ func TestHealth_LivenessAlwaysOK(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/healthz: got %d want 200", rr.Code)
@@ -35,7 +35,7 @@ func TestReadiness_NoChecksIsReady(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/readyz: got %d want 200", rr.Code)
@@ -59,7 +59,7 @@ func TestReadiness_FailingCheckReturns503(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("/readyz with failing check: got %d want 503", rr.Code)
@@ -122,7 +122,7 @@ func TestReadiness_ChecksRunInParallel(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
 	start := time.Now()
-	app.Router.ServeHTTP(rr, req)
+	app.Router().ServeHTTP(rr, req)
 	took := time.Since(start)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)

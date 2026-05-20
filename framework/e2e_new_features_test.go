@@ -114,7 +114,7 @@ func setupNewFeaturesE2E(t *testing.T, db *sql.DB) *newFeaturesEnv {
 		},
 	})
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
 
 	return &newFeaturesEnv{

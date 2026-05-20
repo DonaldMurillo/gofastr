@@ -55,11 +55,11 @@ func TestLoggerIsAppLocal(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(syncWriter{&mu, &globalBuf}, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	app := NewApp()
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/probe")
 	if err != nil {
@@ -93,11 +93,11 @@ func TestSetLoggerAffectsMiddleware(t *testing.T) {
 	app.SetLogger(slog.New(slog.NewJSONHandler(syncWriter{&mu, &buf}, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	app.Use(router.Middleware(middleware.LoggingFn(app.Logger)))
 
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/probe")
 	if err != nil {
@@ -167,10 +167,10 @@ func TestDefaultRecoveryUsesAppLogger(t *testing.T) {
 	)
 	app.SetLogger(slog.New(slog.NewJSONHandler(syncWriter{&mu, &buf}, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
-	app.Router.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		panic("kaboom")
 	}))
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/boom")
 	if err != nil {

@@ -21,7 +21,7 @@ import (
 // /components/{modal,drawer,toast} screens drive. Called once at app
 // startup; no per-request state.
 func registerComponentDemos(fwApp *framework.App) {
-	r := fwApp.Router
+	r := fwApp.Router()
 
 	// --- Modal demos --------------------------------------------------
 	// Page-scoped: only available on /components/modal so other

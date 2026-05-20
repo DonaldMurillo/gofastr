@@ -31,7 +31,7 @@ func TestHarness(t *testing.T, app *App) *TestApp {
 	}
 	return &TestApp{
 		App:    app,
-		router: app.Router,
+		router: app.router,
 	}
 }
 

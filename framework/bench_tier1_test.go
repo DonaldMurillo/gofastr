@@ -134,9 +134,9 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 	app.Registry.Register(authors)
 	app.Registry.Register(comments)
 
-	RegisterCrudRoutes(app.Router, NewCrudHandler(posts, db), "/posts")
-	RegisterCrudRoutes(app.Router, NewCrudHandler(authors, db), "/authors")
-	RegisterCrudRoutes(app.Router, NewCrudHandler(comments, db), "/comments")
+	RegisterCrudRoutes(app.Router(), NewCrudHandler(posts, db), "/posts")
+	RegisterCrudRoutes(app.Router(), NewCrudHandler(authors, db), "/authors")
+	RegisterCrudRoutes(app.Router(), NewCrudHandler(comments, db), "/comments")
 	return app
 }
 
@@ -162,7 +162,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
-					app.Router.ServeHTTP(rec, req)
+					app.Router().ServeHTTP(rec, req)
 					if rec.Code != http.StatusOK {
 						b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 					}
@@ -175,7 +175,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
-					app.Router.ServeHTTP(rec, listReq)
+					app.Router().ServeHTTP(rec, listReq)
 					if rec.Code != http.StatusOK {
 						b.Fatalf("list: %d", rec.Code)
 					}
@@ -194,13 +194,13 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 						if authorID != "" {
 							authReq := httptest.NewRequest(http.MethodGet, "/authors/"+authorID, nil)
 							rec := httptest.NewRecorder()
-							app.Router.ServeHTTP(rec, authReq)
+							app.Router().ServeHTTP(rec, authReq)
 						}
 						postID, _ := row["id"].(string)
 						if postID != "" {
 							commReq := httptest.NewRequest(http.MethodGet, "/comments?post_id="+postID, nil)
 							rec := httptest.NewRecorder()
-							app.Router.ServeHTTP(rec, commReq)
+							app.Router().ServeHTTP(rec, commReq)
 						}
 					}
 				}
@@ -233,7 +233,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			for hops := 0; hops < N/pageSize-2; hops++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				var page struct {
 					Cursor string `json:"cursor"`
 				}
@@ -253,7 +253,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d", rec.Code)
 				}
@@ -266,7 +266,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d", rec.Code)
 				}
@@ -279,7 +279,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d", rec.Code)
 				}
@@ -293,7 +293,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
-					app.Router.ServeHTTP(rec, req)
+					app.Router().ServeHTTP(rec, req)
 					if rec.Code != http.StatusOK {
 						b.Fatalf("status %d", rec.Code)
 					}
@@ -348,7 +348,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 				req := httptest.NewRequest(http.MethodPost, "/posts/_batch", bytesReader(body))
 				req.Header.Set("Content-Type", "application/json")
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				if rec.Code >= 400 {
 					b.Fatalf("batch failed: %d %s", rec.Code, rec.Body.String())
 				}
@@ -363,7 +363,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 					req := httptest.NewRequest(http.MethodPost, "/posts", bytesReader(body))
 					req.Header.Set("Content-Type", "application/json")
 					rec := httptest.NewRecorder()
-					app.Router.ServeHTTP(rec, req)
+					app.Router().ServeHTTP(rec, req)
 					if rec.Code >= 400 {
 						b.Fatalf("single failed: %d %s", rec.Code, rec.Body.String())
 					}
@@ -401,7 +401,7 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d", rec.Code)
 				}
@@ -416,7 +416,7 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d", rec.Code)
 				}

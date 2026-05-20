@@ -48,7 +48,7 @@ type conflictRoutePlugin struct {
 
 func (p *conflictRoutePlugin) Name() string { return p.name }
 func (p *conflictRoutePlugin) Init(app *App) error {
-	app.Router.Get(p.pattern, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get(p.pattern, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	return nil
@@ -82,7 +82,7 @@ func TestInitPluginsIsIdempotent(t *testing.T) {
 func TestLatePluginWrapsExistingRoutes(t *testing.T) {
 	app := NewApp()
 
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -92,7 +92,7 @@ func TestLatePluginWrapsExistingRoutes(t *testing.T) {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/probe")
 	if err != nil {
@@ -110,7 +110,7 @@ func TestLatePluginWrapsExistingRoutes(t *testing.T) {
 func TestHarnessAutoInitsPlugins(t *testing.T) {
 	app := NewApp()
 	app.RegisterPlugin(&stampPlugin{name: "harness-stamper"})
-	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

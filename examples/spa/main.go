@@ -56,7 +56,7 @@ func main() {
 	// --- API routes under /api/ prefix ---
 	// Entity CRUD mounted here so Vue Router can use /articles, /projects for client-side routes.
 
-	apiGroup := app.Router.Group("/api")
+	apiGroup := app.Router().Group("/api")
 
 	// Custom API: site metadata
 	apiGroup.Get("/site", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +88,7 @@ func main() {
 	})
 
 	// Catch-all: serves static files, falls back to index.html for SPA routes
-	app.Router.Get("/{path...}", spaHandler)
+	app.Router().Get("/{path...}", spaHandler)
 
 	// --- Start ---
 

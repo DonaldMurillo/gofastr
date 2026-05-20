@@ -27,7 +27,7 @@ func TestStaticSiteSmoke(t *testing.T) {
 		t.Skip("static-site/pages/ directory not found")
 	}
 
-	static.Mount(app.Router, static.Config{
+	static.Mount(app.Router(), static.Config{
 		FS:     os.DirFS(pagesDir),
 		Prefix: "",
 	})
@@ -49,7 +49,7 @@ func TestStaticSiteSmoke(t *testing.T) {
 		t.Run(tt.path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			w := httptest.NewRecorder()
-			app.Router.ServeHTTP(w, req)
+			app.Router().ServeHTTP(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
@@ -83,7 +83,7 @@ func TestStaticSiteHasNav(t *testing.T) {
 		t.Skip("static-site/pages/ directory not found")
 	}
 
-	static.Mount(app.Router, static.Config{
+	static.Mount(app.Router(), static.Config{
 		FS:     os.DirFS(pagesDir),
 		Prefix: "",
 	})
@@ -92,7 +92,7 @@ func TestStaticSiteHasNav(t *testing.T) {
 		t.Run(page, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, page, nil)
 			w := httptest.NewRecorder()
-			app.Router.ServeHTTP(w, req)
+			app.Router().ServeHTTP(w, req)
 
 			body := w.Body.String()
 			// All pages should have the nav with links
@@ -120,14 +120,14 @@ func TestStaticSiteContent(t *testing.T) {
 		t.Skip("static-site/pages/ directory not found")
 	}
 
-	static.Mount(app.Router, static.Config{
+	static.Mount(app.Router(), static.Config{
 		FS:     os.DirFS(pagesDir),
 		Prefix: "",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	app.Router.ServeHTTP(w, req)
+	app.Router().ServeHTTP(w, req)
 	body := w.Body.String()
 
 	// Landing should have features
@@ -141,7 +141,7 @@ func TestStaticSiteContent(t *testing.T) {
 	// About page should have team members
 	req = httptest.NewRequest(http.MethodGet, "/about.html", nil)
 	w = httptest.NewRecorder()
-	app.Router.ServeHTTP(w, req)
+	app.Router().ServeHTTP(w, req)
 	body = w.Body.String()
 
 	for _, name := range []string{"Alice Chen", "Bob Martinez", "Carol Kim"} {
@@ -153,7 +153,7 @@ func TestStaticSiteContent(t *testing.T) {
 	// Contact page should have a form
 	req = httptest.NewRequest(http.MethodGet, "/contact.html", nil)
 	w = httptest.NewRecorder()
-	app.Router.ServeHTTP(w, req)
+	app.Router().ServeHTTP(w, req)
 	body = w.Body.String()
 
 	formElements := []string{`<form`, `name="email"`, `name="message"`, `<button`}
@@ -200,7 +200,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	}
 
 	// Mount CRUD under /api/ prefix (mirrors production setup)
-	apiGroup := app.Router.Group("/api")
+	apiGroup := app.Router().Group("/api")
 	for _, entity := range app.Registry.All() {
 		handler := framework.NewCrudHandler(entity, db)
 		framework.RegisterCrudRoutes(apiGroup, handler, "/"+entity.GetTable())
@@ -213,7 +213,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	t.Run("list_articles", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/articles", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
@@ -233,7 +233,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	t.Run("get_article", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/articles/a1", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
@@ -252,7 +252,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	t.Run("list_projects", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
@@ -270,7 +270,7 @@ func TestSPAEntityAPI(t *testing.T) {
 
 	// Verify custom /api/site endpoint
 	t.Run("api_site", func(t *testing.T) {
-		app.Router.Get("/api/site", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app.Router().Get("/api/site", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"name":   "GoFastr SPA Demo",
@@ -281,7 +281,7 @@ func TestSPAEntityAPI(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodGet, "/api/site", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d", w.Code)
@@ -350,7 +350,7 @@ func TestSPAStaticFiles(t *testing.T) {
 		SPA:    true,
 	})
 
-	app.Router.Get("/{path...}", spaHandler)
+	app.Router().Get("/{path...}", spaHandler)
 
 	tests := []struct {
 		path         string
@@ -368,7 +368,7 @@ func TestSPAStaticFiles(t *testing.T) {
 		t.Run(tt.path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			w := httptest.NewRecorder()
-			app.Router.ServeHTTP(w, req)
+			app.Router().ServeHTTP(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
@@ -417,7 +417,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/articles", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 201 && w.Code != 200 {
 			t.Fatalf("create status: %d, body: %s", w.Code, w.Body.String())
@@ -428,7 +428,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 	t.Run("list_after_create", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/articles", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		var result map[string]any
 		json.Unmarshal(w.Body.Bytes(), &result)
@@ -443,7 +443,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		// First, list to get the ID
 		req := httptest.NewRequest(http.MethodGet, "/articles", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		var list map[string]any
 		json.Unmarshal(w.Body.Bytes(), &list)
@@ -457,7 +457,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		// Now get it individually
 		req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/articles/%s", id), nil)
 		w = httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("get status: %d", w.Code)
@@ -475,7 +475,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		// Get the ID
 		req := httptest.NewRequest(http.MethodGet, "/articles", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		var list map[string]any
 		json.Unmarshal(w.Body.Bytes(), &list)
@@ -489,7 +489,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		// Delete
 		req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/articles/%s", id), nil)
 		w = httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 && w.Code != 204 {
 			t.Fatalf("delete status: %d, body: %s", w.Code, w.Body.String())
@@ -498,7 +498,7 @@ func TestSPAEntityCRUDRoundTrip(t *testing.T) {
 		// Verify empty
 		req = httptest.NewRequest(http.MethodGet, "/articles", nil)
 		w = httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		var afterDelete map[string]any
 		json.Unmarshal(w.Body.Bytes(), &afterDelete)
@@ -548,7 +548,7 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 	framework.AutoMigrate(db, app.Registry)
 
 	// Mount API under /api/ (mirrors production setup)
-	apiGroup := app.Router.Group("/api")
+	apiGroup := app.Router().Group("/api")
 	for _, entity := range app.Registry.All() {
 		handler := framework.NewCrudHandler(entity, db)
 		framework.RegisterCrudRoutes(apiGroup, handler, "/"+entity.GetTable())
@@ -564,13 +564,13 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 		Prefix: "/",
 		SPA:    true,
 	})
-	app.Router.Get("/{path...}", spaHandler)
+	app.Router().Get("/{path...}", spaHandler)
 
 	// /articles should return HTML (SPA), not JSON
 	t.Run("spa_articles_html", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/articles", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d", w.Code)
@@ -588,7 +588,7 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 	t.Run("api_articles_json", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/articles", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
@@ -603,7 +603,7 @@ func TestSPARouteVsAPISplit(t *testing.T) {
 	t.Run("spa_about_html", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/about", nil)
 		w := httptest.NewRecorder()
-		app.Router.ServeHTTP(w, req)
+		app.Router().ServeHTTP(w, req)
 
 		if w.Code != 200 {
 			t.Fatalf("status: %d", w.Code)

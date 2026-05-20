@@ -49,11 +49,11 @@ func BenchmarkT8_ColdStart_Minimal(b *testing.B) {
 			Fields: []schema.Field{{Name: "random_number", Type: schema.Int}},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router, NewCrudHandler(worlds, db), "/worlds")
+		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
 
 		req := httptest.NewRequest(http.MethodGet, "/worlds", nil)
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			b.Fatalf("first request status %d", rec.Code)
 		}
@@ -89,12 +89,12 @@ func BenchmarkT8_ColdStart_TenEntities(b *testing.B) {
 				},
 			}.WithTimestamps(false))
 			app.Registry.Register(ent)
-			RegisterCrudRoutes(app.Router, NewCrudHandler(ent, db), fmt.Sprintf("/ent_%d", j))
+			RegisterCrudRoutes(app.Router(), NewCrudHandler(ent, db), fmt.Sprintf("/ent_%d", j))
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/ent_0", nil)
 		rec := httptest.NewRecorder()
-		app.Router.ServeHTTP(rec, req)
+		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			b.Fatalf("first request status %d", rec.Code)
 		}
@@ -134,7 +134,7 @@ func BenchmarkT8_HeapAfterLoad(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < reqs; j++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 			}
 		}
 		b.StopTimer()
@@ -171,7 +171,7 @@ func BenchmarkT8_GoroutinesAfterLoad(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < reqs; j++ {
 				rec := httptest.NewRecorder()
-				app.Router.ServeHTTP(rec, req)
+				app.Router().ServeHTTP(rec, req)
 			}
 		}
 		b.StopTimer()

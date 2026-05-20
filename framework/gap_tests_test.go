@@ -151,7 +151,7 @@ func TestGap_SSE_ConcurrentSubscribersBothReceive(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedEventsDB(t, db)
 		app := eventsApp(t, db)
-		srv := httptest.NewServer(app.Router)
+		srv := httptest.NewServer(app.Router())
 		t.Cleanup(srv.Close)
 
 		subscribe := func() (<-chan sseEvent, context.CancelFunc) {

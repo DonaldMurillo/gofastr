@@ -185,8 +185,8 @@ func (l *Live) rebuild() error {
 			appName = "Kiln"
 		}
 		spec := framework.EntityOpenAPI(app.Registry, appName, "1.0.0")
-		app.Router.Get("/openapi.json", openapi.Handler(spec))
-		app.Router.Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
+		app.Router().Get("/openapi.json", openapi.Handler(spec))
+		app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 	}
 	l.app = app
 	l.deferred = d
@@ -202,7 +202,7 @@ func (l *Live) Session() *journal.Session {
 
 // App returns the current rebuilt framework.App. Callers can use this
 // to reach app.MCP (per-entity MCP tools auto-registered when an
-// entity has mcp:true) or app.Router for advanced wiring. Note: the
+// entity has mcp:true) or app.Router() for advanced wiring. Note: the
 // pointer changes on every Apply rebuild — don't cache it.
 func (l *Live) App() *framework.App {
 	l.mu.RLock()
@@ -247,7 +247,7 @@ func (l *Live) serveApp(w http.ResponseWriter, r *http.Request) {
 
 	if fallback != "" && wantsHTML(r) {
 		rec := newCapturingRecorder()
-		app.Router.ServeHTTP(rec, r)
+		app.Router().ServeHTTP(rec, r)
 		if rec.code == http.StatusNotFound {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
@@ -257,7 +257,7 @@ func (l *Live) serveApp(w http.ResponseWriter, r *http.Request) {
 		rec.flushTo(w)
 		return
 	}
-	app.Router.ServeHTTP(w, r)
+	app.Router().ServeHTTP(w, r)
 }
 
 // wantsHTML returns true if the request prefers HTML (typical browser nav).

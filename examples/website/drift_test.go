@@ -104,7 +104,7 @@ func TestDrift_NoWebsiteComponentDefaults(t *testing.T) {
 
 func TestDrift_NoInlineStyles(t *testing.T) {
 	app, _ := setupServer()
-	srv := httptest.NewServer(app.Router)
+	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
 
 	// `style="…"` not preceded by a non-alphanumeric — catches

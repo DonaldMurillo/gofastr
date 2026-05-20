@@ -21,7 +21,7 @@ import (
 func archStartServer(t *testing.T) string {
 	t.Helper()
 	fwApp, _ := setupServer()
-	srv := httptest.NewServer(fwApp.Router)
+	srv := httptest.NewServer(fwApp.Router())
 	t.Cleanup(srv.Close)
 	return srv.URL
 }

@@ -35,10 +35,10 @@ func main() {
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		log.Fatal(err)
 	}
-	framework.RegisterCrudRoutes(app.Router, framework.NewCrudHandler(posts, db), "/posts")
+	framework.RegisterCrudRoutes(app.Router(), framework.NewCrudHandler(posts, db), "/posts")
 
 	// Health probe so the resource runner can wait for readiness.
-	app.Router.GetFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	app.Router().GetFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

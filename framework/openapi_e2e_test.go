@@ -362,7 +362,7 @@ func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
 	app.Registry.Register(posts)
 
 	spec := EntityOpenAPI(app.Registry, "Blog API", "2.0.0")
-	app.Router.Get("/openapi.json", openapi.Handler(spec))
+	app.Router().Get("/openapi.json", openapi.Handler(spec))
 
 	ta := TestHarness(t, app)
 	defer ta.Close()
@@ -501,8 +501,8 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	app.Registry.Register(posts)
 
 	spec := EntityOpenAPI(app.Registry, "Blog", "1.0.0")
-	app.Router.Get("/api/docs/openapi.json", openapi.Handler(spec))
-	app.Router.Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
+	app.Router().Get("/api/docs/openapi.json", openapi.Handler(spec))
+	app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 
 	ta := TestHarness(t, app)
 	defer ta.Close()

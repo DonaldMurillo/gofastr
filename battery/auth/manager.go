@@ -289,7 +289,7 @@ func (m *AuthManager) Name() string { return "auth" }
 
 // Init is called by the framework during App.Start. It initializes JWT
 // (if configured), all registered auth plugins, and mounts their HTTP
-// routes on app.Router under the configured BasePath.
+// routes on app.Router() under the configured BasePath.
 //
 // app may be nil for unit tests that exercise auth in isolation; in
 // that case route mounting is skipped (the test wires routes directly
@@ -310,7 +310,7 @@ func (m *AuthManager) Init(app *framework.App) error {
 	}
 
 	if app != nil {
-		m.RegisterRoutes(app.Router)
+		m.RegisterRoutes(app.Router())
 	}
 
 	return nil
