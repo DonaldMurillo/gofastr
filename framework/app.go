@@ -699,10 +699,6 @@ func (a *App) Shutdown(ctx context.Context) error {
 	return firstErr
 }
 
-// Stop is an alias for Shutdown — pair with App.Start for read flow,
-// but Shutdown is the canonical name (matches net/http convention).
-func (a *App) Stop(ctx context.Context) error { return a.Shutdown(ctx) }
-
 // runStartHooks fires every OnStart hook with the app's lifecycle context.
 // Battery lifecycle hooks are called first, then app-level start hooks.
 // Returns the first error so Start aborts cleanly before binding the port.

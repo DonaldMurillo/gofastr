@@ -25,7 +25,7 @@ func TestLifecycle_HooksRunInOrder(t *testing.T) {
 	if err := app.runStartHooks(); err != nil {
 		t.Fatalf("start hooks: %v", err)
 	}
-	if err := app.Stop(context.Background()); err != nil {
+	if err := app.Shutdown(context.Background()); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestLifecycle_AddCronStopsScheduler(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	done := make(chan error, 1)
-	go func() { done <- app.Stop(context.Background()) }()
+	go func() { done <- app.Shutdown(context.Background()) }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -120,7 +120,7 @@ func TestLifecycle_AddQueueStartsAndStops(t *testing.T) {
 	if !q.started.Load() {
 		t.Fatal("queue should have been started")
 	}
-	if err := app.Stop(context.Background()); err != nil {
+	if err := app.Shutdown(context.Background()); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 	if !q.closed.Load() {
@@ -145,7 +145,7 @@ func TestLifecycle_StartContextCancelledByStop(t *testing.T) {
 	if err := app.runStartHooks(); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Stop(context.Background()); err != nil {
+	if err := app.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -164,11 +164,11 @@ func TestLifecycle_StopIdempotent(t *testing.T) {
 	if err := app.runStartHooks(); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Stop(context.Background()); err != nil {
+	if err := app.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	// Second call must not panic and must not return an error.
-	if err := app.Stop(context.Background()); err != nil {
+	if err := app.Shutdown(context.Background()); err != nil {
 		t.Fatalf("second Stop: %v", err)
 	}
 }

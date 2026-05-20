@@ -7,17 +7,29 @@ import (
 )
 
 // Battery is the interface for heavyweight, lifecycle-aware modules that
-// extend a GoFastr application (auth, search, cache, etc.). It extends the
-// lightweight Plugin with startup/shutdown hooks (BatteryLifecycle) and
-// dependency ordering.
+// extend a GoFastr application (auth, search, cache, queue, etc.).
 //
-// Batteries are registered via App.RegisterBattery and initialized during
-// App.Start in dependency-resolved order. From Init the battery does
-// everything it needs by calling into the App — register routes via
-// app.Router, add middleware via app.Use, swap the logger via
-// app.SetLogger, register MCP tools via app.MCP, attach hooks via
-// app.HookRegistry(name).Add..., and so on. There are no optional
-// interfaces for routes / middleware / hooks / tools — Init owns it all.
+// A Battery is a Plugin (Init(*App) error is the same shape) plus two
+// things a plain Plugin doesn't have:
+//
+//  1. Dependency declarations. Pass dependency names at RegisterBattery
+//     time and the framework topologically sorts the Init order so
+//     dependents see their dependencies wired first.
+//  2. Structured start/stop. Implement BatteryLifecycle to get
+//     per-battery OnStart(ctx) / OnStop(ctx) hooks, distinct from the
+//     App-wide app.OnStart / app.OnStop. The framework runs them in
+//     dependency order on Start and reverse-dependency order on Stop.
+//
+// If neither of those applies, prefer Plugin — there is less ceremony
+// and the Plugin/Battery distinction stays meaningful only for the
+// modules that genuinely need it.
+//
+// From Init the battery does everything by calling into the App —
+// register routes via app.Router, middleware via app.Use, swap the
+// logger via app.SetLogger, MCP tools via app.MCP, hooks via
+// app.HookRegistry(name).RegisterHook(...), and so on. There are no
+// optional interfaces for routes / middleware / hooks / tools — Init
+// owns it all.
 type Battery interface {
 	// Name returns the unique battery identifier. Used for dependency
 	// resolution and logging.

@@ -75,6 +75,41 @@ func (p *Plugin) Name() string { return "log" }
 // slog.Default.
 func (p *Plugin) Logger() *slog.Logger { return p.logger }
 
+// Metrics is a point-in-time snapshot of counters surfaced by the log
+// plugin. Operators can scrape these via /metrics, /readyz, or any
+// other surface — the values are atomic loads, cheap and lock-free.
+type Metrics struct {
+	// PostStopDrops counts log entries discarded because they arrived
+	// after sinks were closed (worker goroutines or stop hooks logging
+	// during shutdown).
+	PostStopDrops uint64
+	// SinkWriteFailures counts log entries dropped because a sink's
+	// Write returned a non-ErrSinkClosed error (disk full, network).
+	SinkWriteFailures uint64
+	// WebhookDropped is the sum of entries dropped from every webhook
+	// sink's bounded queue (drop-oldest under backpressure).
+	WebhookDropped uint64
+	// WebhookGaveUp is the sum of batches given up by every webhook
+	// sink after exhausting MaxRetries.
+	WebhookGaveUp uint64
+}
+
+// Metrics returns a point-in-time snapshot of the plugin's counters.
+// Safe to call at any time; values are atomic loads.
+func (p *Plugin) Metrics() Metrics {
+	m := Metrics{
+		PostStopDrops:     p.handler.metrics.closedDrops.Load(),
+		SinkWriteFailures: p.handler.metrics.failedSinks.Load(),
+	}
+	for _, s := range p.handler.sinks {
+		if ws, ok := s.(*webhookSink); ok {
+			m.WebhookDropped += ws.Dropped()
+			m.WebhookGaveUp += ws.GaveUp()
+		}
+	}
+	return m
+}
+
 // Init implements framework.Plugin. Builds the fan-out handler, swaps
 // the App's logger so framework middleware writes through it, attaches
 // panic recovery + access log middleware, and registers lifecycle hooks

@@ -115,7 +115,7 @@ func newE2EApp(t *testing.T) *e2eApp {
 		baseURL: baseURL,
 		client:  client,
 		cleanup: func() {
-			app.Stop(context.Background())
+			app.Shutdown(context.Background())
 			db.Close()
 			os.Remove(tmpFile.Name())
 		},

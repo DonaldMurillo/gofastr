@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Middleware is a function that wraps an http.Handler with additional behavior.
@@ -27,13 +28,19 @@ type Router struct {
 
 	mu          sync.RWMutex
 	middlewares []Middleware
+
+	// root is the topmost ancestor; chainVersion lives there. Any Use
+	// anywhere in the tree bumps root.chainVersion atomically, which
+	// invalidates every per-route cached handler in the tree.
+	root         *Router
+	chainVersion atomic.Uint64
 }
 
 // New creates a new Router.
 func New() *Router {
-	return &Router{
-		mux: http.NewServeMux(),
-	}
+	r := &Router{mux: http.NewServeMux()}
+	r.root = r
+	return r
 }
 
 // Handle registers a handler for the given method and pattern.
@@ -43,12 +50,15 @@ func New() *Router {
 // so middleware appended via Use AFTER Handle still wraps this handler.
 // This lets plugins contribute middleware from their Init without forcing
 // a strict register-middleware-first ordering.
+//
+// The composed handler is cached per route; a route handles steady-state
+// traffic with a single atomic load. Any Use anywhere in the router tree
+// bumps the root chain-version and forces the next request on each route
+// to recompose.
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	fullPattern := method + " " + r.prefix + pattern
-	raw := handler
-	r.mux.Handle(fullPattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		r.wrap(raw).ServeHTTP(w, req)
-	}))
+	route := &cachedRoute{raw: handler, router: r}
+	r.mux.Handle(fullPattern, route)
 }
 
 // Get registers a handler for GET requests on the given pattern.
@@ -113,7 +123,8 @@ func Params(r *http.Request) map[string]string {
 // they are added: the first middleware is the outermost wrapper.
 //
 // Safe to call concurrently with in-flight ServeHTTP — the mutation is
-// guarded by an RWMutex.
+// guarded by an RWMutex. Bumps the root chain-version so every cached
+// per-route handler in the tree recomposes on the next request.
 func (r *Router) Use(mw ...Middleware) {
 	if len(mw) == 0 {
 		return
@@ -121,6 +132,37 @@ func (r *Router) Use(mw ...Middleware) {
 	r.mu.Lock()
 	r.middlewares = append(r.middlewares, mw...)
 	r.mu.Unlock()
+	r.root.chainVersion.Add(1)
+}
+
+// cachedRoute holds a registered route's raw handler plus an atomically
+// cached version of it composed with the current middleware chain. The
+// cache invalidates whenever the root router's chain-version moves.
+type cachedRoute struct {
+	raw       http.Handler
+	router    *Router
+	cached    atomic.Pointer[http.Handler]
+	cachedV   atomic.Uint64
+	composeMu sync.Mutex
+}
+
+func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	curVer := c.router.root.chainVersion.Load()
+	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
+		(*h).ServeHTTP(w, req)
+		return
+	}
+	c.composeMu.Lock()
+	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
+		c.composeMu.Unlock()
+		(*h).ServeHTTP(w, req)
+		return
+	}
+	composed := c.router.wrap(c.raw)
+	c.cached.Store(&composed)
+	c.cachedV.Store(curVer)
+	c.composeMu.Unlock()
+	composed.ServeHTTP(w, req)
 }
 
 // Group creates a sub-router with the given path prefix and optional middleware.
@@ -132,12 +174,17 @@ func (r *Router) Use(mw ...Middleware) {
 func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 	own := make([]Middleware, 0, len(mw))
 	own = append(own, mw...)
-	return &Router{
+	g := &Router{
 		mux:         r.mux,
 		prefix:      r.prefix + prefix,
 		middlewares: own,
 		parent:      r,
+		root:        r.root,
 	}
+	if len(own) > 0 {
+		r.root.chainVersion.Add(1)
+	}
+	return g
 }
 
 // effectiveNotFound returns the nearest non-nil NotFound handler in
@@ -158,8 +205,11 @@ func (r *Router) effectiveNotFound() http.Handler {
 // The router's middleware chain wraps the handler at request time, so 404
 // responses go through the same recovery, logging, security headers, etc.
 // as matched routes — and middleware added after NotFound still applies.
+//
+// Internally wrapped in a cachedRoute so the chain composition is
+// memoised between Use bumps.
 func (r *Router) NotFound(handler http.Handler) {
-	r.notFound = handler
+	r.notFound = &cachedRoute{raw: handler, router: r}
 }
 
 // NOTE: Go 1.22+ ServeMux handles 405 Method Not Allowed responses
@@ -170,13 +220,14 @@ func (r *Router) NotFound(handler http.Handler) {
 
 // ServeHTTP implements http.Handler. It dispatches requests through the
 // underlying ServeMux. If no route matches and a custom notFound handler
-// is set, it delegates to that handler (wrapped with the current chain).
+// is set, it delegates to that handler (already a cachedRoute, so the
+// chain composition is memoised between Use bumps).
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	_, pattern := r.mux.Handler(req)
 
 	if pattern == "" {
 		if nf := r.effectiveNotFound(); nf != nil {
-			r.wrap(nf).ServeHTTP(w, req)
+			nf.ServeHTTP(w, req)
 			return
 		}
 		r.mux.ServeHTTP(w, req)

@@ -33,17 +33,34 @@ func validModuleName(name string) error {
 	return nil
 }
 
-// Plugin is the interface for lightweight GoFastr plugins.
+// Plugin is the interface for lightweight GoFastr extensions — anything
+// that needs to register routes, middleware, hooks, or MCP tools but
+// has no dependency on other modules and no structured start/stop
+// lifecycle of its own.
 //
 // Plugins have a single integration point: Init(app). From there a plugin
 // does everything it needs by calling into the App — register routes via
 // app.Router, add middleware via app.Use, swap the logger via
 // app.SetLogger, register MCP tools via app.MCP, attach hooks via
-// app.HookRegistry(name).Add..., and so on.
+// app.HookRegistry(name).RegisterHook(...), and so on.
 //
 // There are no optional interfaces. The router resolves middleware
 // late-bound, so middleware added from Init wraps routes registered
 // before the plugin loaded — there is no ordering footgun to dodge.
+//
+// When to pick Plugin vs Battery
+//
+//   - Plugin: stateless or self-contained; no dependency on other
+//     modules; uses app.OnStart / app.OnStop if it needs lifecycle.
+//   - Battery: depends on another module being initialised first
+//     (e.g. auth needs the user store wired before login), OR needs
+//     its own structured OnStart/OnStop distinct from the App-wide
+//     hooks (e.g. background queue workers with their own ctx).
+//
+// Both share the Init(*App) shape; Battery just adds dependency
+// declarations and a separate BatteryLifecycle. Most extensions should
+// start as Plugin and graduate to Battery only when one of those two
+// conditions appears.
 type Plugin interface {
 	// Name returns the unique plugin identifier.
 	Name() string
