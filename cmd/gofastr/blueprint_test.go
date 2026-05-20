@@ -24,6 +24,9 @@ func TestLoadBlueprintDecodesCodegenSurface(t *testing.T) {
 	if bp.App.Name != "Demo" {
 		t.Fatalf("App.Name = %q", bp.App.Name)
 	}
+	if bp.App.Theme["background"] != "#101820" || bp.App.Theme["primary"] != "#F2AA4C" {
+		t.Fatalf("App.Theme = %#v", bp.App.Theme)
+	}
 	if len(bp.Entities) != 2 {
 		t.Fatalf("entities len = %d, want 2", len(bp.Entities))
 	}
@@ -140,6 +143,16 @@ func TestBlueprintValidationFailures(t *testing.T) {
 		yml  string
 		want string
 	}{
+		{
+			name: "bad app theme token",
+			yml: `
+app:
+  name: Demo
+  theme:
+    not-a-token: "#fff"
+`,
+			want: `unsupported color token "not-a-token"`,
+		},
 		{
 			name: "duplicate entities",
 			yml: `
@@ -988,6 +1001,7 @@ func runBrowserUIE2E(t *testing.T, baseURL string) {
 
 	var hasRuntime, hasActions, hasIsland, hasWidget bool
 	var before, after, clicked string
+	var backgroundToken, primaryToken, textToken string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(baseURL+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
@@ -1000,6 +1014,9 @@ func runBrowserUIE2E(t *testing.T, baseURL string) {
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Text(`+"`"+`[data-action-result]`+"`"+`, &after, chromedp.ByQuery),
 		chromedp.Evaluate(`+"`"+`document.body.getAttribute('data-blueprint-clicked') || ''`+"`"+`, &clicked),
+		chromedp.Evaluate(`+"`"+`getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()`+"`"+`, &backgroundToken),
+		chromedp.Evaluate(`+"`"+`getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim()`+"`"+`, &primaryToken),
+		chromedp.Evaluate(`+"`"+`getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim()`+"`"+`, &textToken),
 	); err != nil {
 		t.Fatalf("browser UI e2e failed: %v", err)
 	}
@@ -1008,6 +1025,9 @@ func runBrowserUIE2E(t *testing.T, baseURL string) {
 	}
 	if before != "Waiting" || after != "Saved by browser" || clicked != "yes" {
 		t.Fatalf("browser action before=%q after=%q clicked=%q", before, after, clicked)
+	}
+	if backgroundToken != "#101820" || primaryToken != "#F2AA4C" || textToken != "#F7F4EA" {
+		t.Fatalf("computed theme tokens background=%q primary=%q text=%q", backgroundToken, primaryToken, textToken)
 	}
 }
 
@@ -1151,6 +1171,10 @@ app:
   name: Demo
   module: example.com/demo
   static_dir: public
+  theme:
+    background: "#101820"
+    primary: "#F2AA4C"
+    text: "#F7F4EA"
   db:
     driver: sqlite
     url: file:demo.db
