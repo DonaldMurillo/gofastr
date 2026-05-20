@@ -53,6 +53,14 @@ ending with a "common mistakes" callout.
   auto-migrate, dialects.
 - [Security defaults](security.md) — default middleware chain, CSP,
   CORS, CSRF, rate limiting.
+- [Idempotency keys](idempotency.md) — `Idempotency-Key` header
+  support for safe-retry of POST / PUT / PATCH / DELETE.
+- [Health checks](health-checks.md) — `/healthz` + `/readyz`,
+  custom readiness checks, plugin/battery integration.
+- [Feature flags](feature-flags.md) — `core/featureflag` evaluator,
+  rollout percentage, user/tenant/environment allow lists.
+- [Outbound webhooks](webhooks.md) — `battery/webhook`: signed
+  delivery, retry-with-backoff, dead-letter, glob event filters.
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
 - [Widgets](widgets.md) — `core-ui/widget` builder and presets.
@@ -69,6 +77,8 @@ ending with a "common mistakes" callout.
 - [Performance opportunities](performance-opportunities.md) —
   prioritized improvement list derived from the benchmark results.
   Each item names the benchmark that surfaced it for verification.
+- [Framework gaps](proposals/framework-gaps.md) — what the framework
+  already covers vs. what's still missing, tiered by leverage.
 
 ## Maintaining these docs
 
