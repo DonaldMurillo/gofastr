@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -870,13 +869,13 @@ type routePlugin struct {
 	name string
 }
 
-func (p *routePlugin) Name() string        { return p.name }
-func (p *routePlugin) Init(app *App) error { return nil }
-func (p *routePlugin) RegisterRoutes(r *router.Router) {
-	r.Get("/stats/health", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+func (p *routePlugin) Name() string { return p.name }
+func (p *routePlugin) Init(app *App) error {
+	app.Router.Get("/stats/health", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
+	return nil
 }
 
 // ============================================================================

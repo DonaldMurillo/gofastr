@@ -4,35 +4,29 @@ import (
 	"context"
 	"fmt"
 	"sort"
-
-	"github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // Battery is the interface for heavyweight, lifecycle-aware modules that
 // extend a GoFastr application (auth, search, cache, etc.). It extends the
-// lightweight Plugin with startup/shutdown hooks, dependency ordering, and
-// first-class integration with the App spine.
+// lightweight Plugin with startup/shutdown hooks (BatteryLifecycle) and
+// dependency ordering.
 //
 // Batteries are registered via App.RegisterBattery and initialized during
-// App.Start in dependency order. The auth battery under battery/auth is the
-// canonical example.
-//
-// Migration path: existing Plugin implementations keep working unchanged.
-// Only modules that need lifecycle hooks or dependency ordering should
-// implement Battery instead.
+// App.Start in dependency-resolved order. From Init the battery does
+// everything it needs by calling into the App — register routes via
+// app.Router, add middleware via app.Use, swap the logger via
+// app.SetLogger, register MCP tools via app.MCP, attach hooks via
+// app.HookRegistry(name).Add..., and so on. There are no optional
+// interfaces for routes / middleware / hooks / tools — Init owns it all.
 type Battery interface {
 	// Name returns the unique battery identifier. Used for dependency
 	// resolution and logging.
 	Name() string
 
-	// Init initializes the battery with access to the App. Called once
-	// during App.Start, before any lifecycle hooks fire. Dependencies
-	// are guaranteed to be initialized before dependents.
-	// Accepts interface{} so batteries in separate packages (e.g. battery/auth)
-	// can implement it without importing framework (avoiding circular deps).
-	// The caller always passes a concrete *App.
-	Init(app interface{}) error
+	// Init wires the battery into the App. Called once during App.Start,
+	// before lifecycle hooks fire and after any batteries this one
+	// depends on have themselves initialized.
+	Init(app *App) error
 }
 
 // BatteryLifecycle is the optional interface for batteries that need to
@@ -52,37 +46,13 @@ type BatteryLifecycle interface {
 	OnStop(ctx context.Context) error
 }
 
-// BatteryRoutes is the optional interface for batteries that register HTTP routes.
-type BatteryRoutes interface {
-	Battery
-	RegisterRoutes(r *router.Router)
-}
-
-// BatteryMiddleware is the optional interface for batteries that provide middleware.
-type BatteryMiddleware interface {
-	Battery
-	RegisterMiddleware(app *App)
-}
-
-// BatteryHooks is the optional interface for batteries that register entity
-// lifecycle hooks.
-type BatteryHooks interface {
-	Battery
-	RegisterHooks(app *App)
-}
-
-// BatteryTools is the optional interface for batteries that register MCP tools.
-type BatteryTools interface {
-	Battery
-	RegisterTools(server *mcp.Server)
-}
-
 // BatteryConfig holds metadata about a registered battery.
 type batteryEntry struct {
-	battery   Battery
-	deps      []string // names of batteries this one depends on
-	config    any      // optional battery-specific config
-	initOrder int      // set during topological sort
+	battery     Battery
+	deps        []string // names of batteries this one depends on
+	config      any      // optional battery-specific config
+	initOrder   int      // set during topological sort
+	initialized bool     // true after Init successfully ran
 }
 
 // BatteryManager manages registered batteries, resolves dependencies, and
@@ -108,6 +78,9 @@ func (bm *BatteryManager) Register(b Battery, deps ...string) error {
 		return fmt.Errorf("battery: cannot register nil battery")
 	}
 	name := b.Name()
+	if err := validModuleName(name); err != nil {
+		return fmt.Errorf("battery: invalid name %q: %w", name, err)
+	}
 	if _, exists := bm.entries[name]; exists {
 		return fmt.Errorf("battery %q already registered", name)
 	}
@@ -220,9 +193,27 @@ func (bm *BatteryManager) InitAll(app *App) error {
 	for i, name := range bm.sorted {
 		entry := bm.entries[name]
 		entry.initOrder = i
-		if err := entry.battery.Init(app); err != nil {
-			return fmt.Errorf("battery %q init failed: %w", name, err)
+		if entry.initialized {
+			continue
 		}
+		if err := initBatterySafe(name, entry.battery, app); err != nil {
+			return err
+		}
+		entry.initialized = true
+	}
+	return nil
+}
+
+func initBatterySafe(name string, b Battery, app *App) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			// Format with %T not %v so a panic value containing secrets
+			// (e.g. panic(config)) doesn't leak into the error chain.
+			err = fmt.Errorf("battery %q init panicked (panic type %T) — set GOTRACEBACK=all for details", name, v)
+		}
+	}()
+	if e := b.Init(app); e != nil {
+		return fmt.Errorf("battery %q init failed: %w", name, e)
 	}
 	return nil
 }
@@ -253,43 +244,6 @@ func (bm *BatteryManager) StopAll(ctx context.Context) error {
 		}
 	}
 	return firstErr
-}
-
-// RegisterRoutes calls RegisterRoutes on batteries that implement BatteryRoutes,
-// in dependency order.
-func (bm *BatteryManager) RegisterRoutes(r *router.Router) {
-	for _, name := range bm.sorted {
-		if br, ok := bm.entries[name].battery.(BatteryRoutes); ok {
-			br.RegisterRoutes(r)
-		}
-	}
-}
-
-// RegisterMiddleware calls RegisterMiddleware on batteries that implement BatteryMiddleware.
-func (bm *BatteryManager) RegisterMiddleware(app *App) {
-	for _, name := range bm.sorted {
-		if bm, ok := bm.entries[name].battery.(BatteryMiddleware); ok {
-			bm.RegisterMiddleware(app)
-		}
-	}
-}
-
-// RegisterHooks calls RegisterHooks on batteries that implement BatteryHooks.
-func (bm *BatteryManager) RegisterHooks(app *App) {
-	for _, name := range bm.sorted {
-		if bh, ok := bm.entries[name].battery.(BatteryHooks); ok {
-			bh.RegisterHooks(app)
-		}
-	}
-}
-
-// RegisterTools calls RegisterTools on batteries that implement BatteryTools.
-func (bm *BatteryManager) RegisterTools(server *mcp.Server) {
-	for _, name := range bm.sorted {
-		if bt, ok := bm.entries[name].battery.(BatteryTools); ok {
-			bt.RegisterTools(server)
-		}
-	}
 }
 
 // All returns all registered batteries in dependency-resolved order.

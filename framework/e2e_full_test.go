@@ -1,4 +1,4 @@
-package framework
+package framework_test
 
 import (
 	"bufio"
@@ -22,8 +22,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/internal/testdb"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
@@ -42,7 +45,7 @@ import (
 
 // e2eApp wires every relevant feature into one app.
 type e2eEnv struct {
-	app    *App
+	app    *framework.App
 	server *httptest.Server
 	client *http.Client
 }
@@ -172,8 +175,8 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 		})),
 	)
 
-	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithRouter(r),
-		WithFileStorage(upload.NewLocalStorage(uploadDir)))
+	app := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware(), framework.WithRouter(r),
+		framework.WithFileStorage(upload.NewLocalStorage(uploadDir)))
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
@@ -271,7 +274,7 @@ func (e *e2eEnv) withCSRF(req *http.Request) {
 // ============================================================================
 
 func TestE2E_Full(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, _ migrate.Dialect) {
 		uploadDir := t.TempDir()
 		env := e2eSetup(t, db, uploadDir)
 

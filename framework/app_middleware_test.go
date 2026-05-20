@@ -5,9 +5,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
+
+// Tests in this file pin the SHAPE of App's middleware chain — what
+// defaults are present, how Use composes with them, and how the
+// chain wraps explicit routes / Mountables / NotFound. Logger and
+// plugin-lifecycle behaviour live in their own files (app_logger_test.go,
+// plugin_lifecycle_test.go).
 
 // TestDefaultMiddlewareWrapsExplicitRoutes pins the bug fixed in
 // "fix(framework,router): apply default middleware in NewApp;..." —
@@ -97,6 +104,67 @@ func TestWithoutDefaultMiddlewareSuppressesChain(t *testing.T) {
 	}
 	if resp.Header.Get("X-Request-Id") != "" {
 		t.Error("expected no X-Request-Id when defaults are disabled")
+	}
+}
+
+// TestUseDoesNotDisableDefaults pins that App.Use is additive — calling
+// Use does not silently strip the default middleware chain (which was
+// the old behavior and a real footgun).
+func TestUseDoesNotDisableDefaults(t *testing.T) {
+	app := NewApp()
+	app.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-User-Mw", "yes")
+			next.ServeHTTP(w, r)
+		})
+	})
+	app.Router.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	srv := httptest.NewServer(app.Router)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/probe")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("X-User-Mw"); got != "yes" {
+		t.Errorf("user middleware did not fire; X-User-Mw = %q", got)
+	}
+	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("default security headers stripped by App.Use; X-Frame-Options = %q", got)
+	}
+	if resp.Header.Get("X-Request-Id") == "" {
+		t.Error("default RequestID stripped by App.Use")
+	}
+}
+
+// TestRequestTimeoutOverride pins that AppConfig.RequestTimeout is
+// honored by the default middleware chain.
+func TestRequestTimeoutOverride(t *testing.T) {
+	app := NewApp(WithConfig(AppConfig{RequestTimeout: 50 * time.Millisecond}))
+	app.Router.Get("/slow", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	}))
+	srv := httptest.NewServer(app.Router)
+	defer srv.Close()
+	start := time.Now()
+	resp, err := http.Get(srv.URL + "/slow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	dur := time.Since(start)
+	if dur > 500*time.Millisecond {
+		t.Fatalf("request took %v, expected ~50ms timeout to kick in", dur)
+	}
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Errorf("status = %d, want 504 Gateway Timeout", resp.StatusCode)
 	}
 }
 

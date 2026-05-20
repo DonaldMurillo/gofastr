@@ -148,6 +148,50 @@ func TestRequestIDReusesIncoming(t *testing.T) {
 	}
 }
 
+// TestRequestIDRejectsOversized pins the cap that prevents log-volume
+// amplification via a multi-KB X-Request-ID.
+func TestRequestIDRejectsOversized(t *testing.T) {
+	huge := strings.Repeat("a", MaxRequestIDLen+1)
+	handler := RequestID()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := GetRequestID(r.Context())
+		if id == huge {
+			t.Fatal("oversized client header was accepted")
+		}
+		if len(id) == 0 {
+			t.Fatal("expected a generated id replacement")
+		}
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(HeaderRequestID, huge)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if got := rec.Header().Get(HeaderRequestID); got == huge {
+		t.Fatal("oversized client header reflected on response")
+	}
+}
+
+// TestRequestIDRejectsBadCharset pins that values outside the
+// alphanumeric+._- charset are replaced.
+func TestRequestIDRejectsBadCharset(t *testing.T) {
+	cases := []string{
+		"with space",
+		"<script>",
+		"with/slash",
+		"semi;colon",
+	}
+	for _, c := range cases {
+		handler := RequestID()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := GetRequestID(r.Context()); got == c {
+				t.Errorf("%q passed validation", c)
+			}
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set(HeaderRequestID, c)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+}
+
 func TestRequestIDUnique(t *testing.T) {
 	ids := make(map[string]bool)
 	mu := sync.Mutex{}

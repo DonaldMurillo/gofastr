@@ -45,6 +45,9 @@ ending with a "common mistakes" callout.
   syntax, single-replica constraint.
 - [Audit log](audit-log.md) — `WithAuditLog`, transactional row
   writes, schema.
+- [Server logs](log.md) — `battery/log`: structured JSON access logs,
+  panic recovery, lifecycle events; fan-out to file (default or chosen
+  path) and webhook sinks.
 - [Plugins](plugins.md) — `Plugin` + optional capability interfaces.
 
 ## Operational surface

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // AuthConfig is the top-level configuration for the auth battery.
@@ -287,8 +288,13 @@ func (m *AuthManager) initPlugins() error {
 func (m *AuthManager) Name() string { return "auth" }
 
 // Init is called by the framework during App.Start. It initializes JWT
-// (if configured) and all registered auth plugins.
-func (m *AuthManager) Init(app interface{}) error {
+// (if configured), all registered auth plugins, and mounts their HTTP
+// routes on app.Router under the configured BasePath.
+//
+// app may be nil for unit tests that exercise auth in isolation; in
+// that case route mounting is skipped (the test wires routes directly
+// onto a router it owns).
+func (m *AuthManager) Init(app *framework.App) error {
 	// Initialize JWT if secret is configured
 	if m.config.JWTSecret != "" {
 		expiry := m.config.JWTExpiry
@@ -301,6 +307,10 @@ func (m *AuthManager) Init(app interface{}) error {
 	// Init all plugins
 	if err := m.initPlugins(); err != nil {
 		return err
+	}
+
+	if app != nil {
+		m.RegisterRoutes(app.Router)
 	}
 
 	return nil
@@ -336,8 +346,10 @@ func (m *AuthManager) OnStop(ctx context.Context) error {
 	return firstErr
 }
 
-// RegisterRoutes registers all plugin routes under the auth base path.
-// Implements framework.BatteryRoutes.
+// RegisterRoutes mounts all sub-plugin routes under the configured
+// auth base path. Called from AuthManager.Init when an app is supplied;
+// also exported so users can mount auth routes onto a router they
+// manage themselves.
 func (m *AuthManager) RegisterRoutes(r *router.Router) {
 	for _, name := range m.order {
 		if rp, ok := m.plugins[name].(AuthPluginRoutes); ok {

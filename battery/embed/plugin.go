@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -43,21 +42,18 @@ func (p *Plugin) WithPrefix(prefix string) *Plugin {
 // Name implements [framework.Plugin].
 func (p *Plugin) Name() string { return "embed" }
 
-// Init implements [framework.Plugin]. It is a no-op — the index is
-// already constructed when the plugin is registered.
-func (p *Plugin) Init(_ *framework.App) error { return nil }
-
-// RegisterRoutes implements [framework.HasRoutes]. It mounts the
-// stdlib [Handler] under the configured prefix on the framework
-// router so the prefix routing matches Go 1.22 ServeMux semantics.
-func (p *Plugin) RegisterRoutes(r *router.Router) {
+// Init implements [framework.Plugin]. Mounts the stdlib [Handler] under
+// the configured prefix on the app's router; routing semantics match
+// Go 1.22 ServeMux.
+func (p *Plugin) Init(app *framework.App) error {
 	h := Handler(p.idx)
 	stripped := http.StripPrefix(p.prefix, h)
-	r.Post(p.prefix+"/index", stripped)
-	r.Post(p.prefix+"/query", stripped)
-	r.Get(p.prefix+"/stats", stripped)
-	r.Delete(p.prefix+"/doc/{id}", stripped)
-	r.Delete(p.prefix+"/doc", stripped)
+	app.Router.Post(p.prefix+"/index", stripped)
+	app.Router.Post(p.prefix+"/query", stripped)
+	app.Router.Get(p.prefix+"/stats", stripped)
+	app.Router.Delete(p.prefix+"/doc/{id}", stripped)
+	app.Router.Delete(p.prefix+"/doc", stripped)
+	return nil
 }
 
 // Index returns the underlying [Index] so other plugins or the app
@@ -65,4 +61,3 @@ func (p *Plugin) RegisterRoutes(r *router.Router) {
 func (p *Plugin) Index() Index { return p.idx }
 
 var _ framework.Plugin = (*Plugin)(nil)
-var _ framework.HasRoutes = (*Plugin)(nil)

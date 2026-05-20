@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -625,29 +623,28 @@ func (p *testPlugin) Init(app *App) error {
 	return p.initErr
 }
 
-// routesPlugin implements HasRoutes.
+// routesPlugin registers HTTP routes from Init.
 type routesPlugin struct {
 	name string
 }
 
-func (p *routesPlugin) Name() string        { return p.name }
-func (p *routesPlugin) Init(app *App) error { return nil }
-func (p *routesPlugin) RegisterRoutes(r *router.Router) {
-	r.Get("/custom/hello", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+func (p *routesPlugin) Name() string { return p.name }
+func (p *routesPlugin) Init(app *App) error {
+	app.Router.Get("/custom/hello", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"message": "hello from plugin"})
 	}))
+	return nil
 }
 
-// toolsPlugin implements HasTools.
+// toolsPlugin registers MCP tools from Init.
 type toolsPlugin struct {
 	name string
 }
 
-func (p *toolsPlugin) Name() string        { return p.name }
-func (p *toolsPlugin) Init(app *App) error { return nil }
-func (p *toolsPlugin) RegisterTools(server *mcp.Server) {
-	server.RegisterTool("custom_tool", "A custom tool", map[string]any{
+func (p *toolsPlugin) Name() string { return p.name }
+func (p *toolsPlugin) Init(app *App) error {
+	app.MCP.RegisterTool("custom_tool", "A custom tool", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"input": map[string]any{"type": "string"},
@@ -655,20 +652,21 @@ func (p *toolsPlugin) RegisterTools(server *mcp.Server) {
 	}, func(ctx context.Context, params map[string]any) (any, error) {
 		return map[string]string{"result": "ok"}, nil
 	})
+	return nil
 }
 
-// middlewarePlugin implements HasMiddleware.
+// middlewarePlugin registers middleware via app.Use from Init.
 type middlewarePlugin struct {
 	name  string
 	setup func(a *App)
 }
 
-func (p *middlewarePlugin) Name() string        { return p.name }
-func (p *middlewarePlugin) Init(app *App) error { return nil }
-func (p *middlewarePlugin) RegisterMiddleware(app *App) {
+func (p *middlewarePlugin) Name() string { return p.name }
+func (p *middlewarePlugin) Init(app *App) error {
 	if p.setup != nil {
 		p.setup(app)
 	}
+	return nil
 }
 
 // orderPlugin tracks initialization order.
@@ -680,23 +678,18 @@ type orderPlugin struct {
 func (p *orderPlugin) Name() string        { return p.name }
 func (p *orderPlugin) Init(app *App) error { *p.initOrder = append(*p.initOrder, p.name); return nil }
 
-// fullPlugin implements HasRoutes + HasTools.
+// fullPlugin registers both routes and MCP tools from Init.
 type fullPlugin struct {
 	name string
 }
 
-func (p *fullPlugin) Name() string        { return p.name }
-func (p *fullPlugin) Init(app *App) error { return nil }
-
-func (p *fullPlugin) RegisterRoutes(r *router.Router) {
-	r.Get("/analytics/stats", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+func (p *fullPlugin) Name() string { return p.name }
+func (p *fullPlugin) Init(app *App) error {
+	app.Router.Get("/analytics/stats", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"events": float64(0)})
 	}))
-}
-
-func (p *fullPlugin) RegisterTools(server *mcp.Server) {
-	server.RegisterTool("analytics_track", "Track an analytics event", map[string]any{
+	app.MCP.RegisterTool("analytics_track", "Track an analytics event", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"event": map[string]any{"type": "string"},
@@ -704,4 +697,5 @@ func (p *fullPlugin) RegisterTools(server *mcp.Server) {
 	}, func(ctx context.Context, params map[string]any) (any, error) {
 		return map[string]string{"tracked": "ok"}, nil
 	})
+	return nil
 }
