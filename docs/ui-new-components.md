@@ -107,6 +107,9 @@ dev server is up.
 - **infinitescroll** — `core-ui/patterns/infinitescroll` — IntersectionObserver-driven lazy feed
 - **sortablelist** — `core-ui/patterns/sortablelist` — drag-and-drop + keyboard reorderable list
 - **nestedlist** — `core-ui/patterns/nestedlist` — recursive `<ul>`/`<ol>` with native `<details>` collapse on branches
+- **scrollspy** — `core-ui/patterns/scrollspy` — IntersectionObserver-based active-section tracking for any nav of in-page anchors
+- **optimisticaction** — `framework/ui.OptimisticAction` — button that flips to its SSR-declared success state on click; the RPC fires underneath and rolls back with a shake on non-2xx
+- **networkretrybanner** — `framework/ui.NetworkRetryBanner` — persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover
 
 ### Data display
 

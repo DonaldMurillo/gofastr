@@ -145,6 +145,10 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/pollingindicator", &PollingIndicatorScreen{}, nil)
 	site.Register("/components/nestedlist", &NestedListScreen{}, nil)
 	site.Register("/components/seo", &SEODemoScreen{}, nil)
+	site.Register("/components/scrollspy", &ScrollSpyScreen{}, nil)
+	site.Register("/components/optimisticaction", &OptimisticActionScreen{}, nil)
+	site.Register("/components/networkretrybanner", &NetworkRetryBannerScreen{}, nil)
+	site.Register("/components/seo-bundle", &SEOBundleScreen{}, nil)
 	site.Register("/customers", &CustomersListScreen{}, nil)
 	site.Register("/customers/new", &CustomersFormScreen{}, nil)
 	site.Register("/customers/:id", &CustomersFormScreen{}, nil)
@@ -173,6 +177,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 			Title: "GoFastr",
 		}),
 		uihost.WithCanonicalURL("https://gofastr.dev"),
+		uihost.WithHeadHTML(`<meta name="csrf-token" content="demo-csrf-token-abc123">`),
 		uihost.WithPreconnect("https://fonts.googleapis.com", "https://fonts.gstatic.com"),
 		uihost.WithSitemap(uihost.SitemapConfig{
 			BaseURL:      "https://gofastr.dev",
@@ -207,6 +212,20 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 
 	// Forms demo: repeater island endpoint
 	fwApp.Router.Get("/islands/forms/repeater", http.HandlerFunc(FormsRepeaterIslandHandler))
+
+	// OptimisticAction demo endpoints: success (204) + failure (500) + slow (~400ms 204).
+	fwApp.Router.Post("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
+	fwApp.Router.Delete("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
+	fwApp.Router.Post("/demo/optimistic-failure", http.HandlerFunc(OptimisticDemoFailure))
+	fwApp.Router.Post("/demo/optimistic-slow", http.HandlerFunc(OptimisticDemoSlow))
+	fwApp.Router.Post("/demo/csrf-record", http.HandlerFunc(OptimisticDemoCSRFRecord))
+	fwApp.Router.Get("/demo/csrf-last", http.HandlerFunc(OptimisticDemoCSRFLast))
+
+	// NetworkRetryBanner: health endpoint that returns 204.
+	fwApp.Router.Get("/demo/network-health", http.HandlerFunc(NetworkHealthOK))
+	fwApp.Router.Get("/demo/network-health-slow", http.HandlerFunc(NetworkHealthSlow))
+	fwApp.Router.Get("/demo/network-health-stats", http.HandlerFunc(NetworkHealthStats))
+	fwApp.Router.Post("/demo/network-health-stats-reset", http.HandlerFunc(NetworkHealthStatsReset))
 
 	// /components/{modal,drawer,toast} demos — register hidden widgets
 	// + a ToastBus + a tiny push endpoint that the live demo buttons hit.

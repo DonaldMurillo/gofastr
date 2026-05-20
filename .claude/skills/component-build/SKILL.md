@@ -208,8 +208,76 @@ only signals to the auto-loader "fetch this stylesheet". Apps don't
 need any setup; the CSS just appears on every page that renders the
 component.
 
+## Runtime-module contract: per-instance state + CSRF + a11y
+
+Any component that ships a JavaScript counterpart in
+`core-ui/runtime/src/<name>.js` follows three non-negotiable rules.
+Module-scope globals are bugs waiting for the second instance to land.
+
+**1. Per-instance state — never module globals.** Use a `WeakMap`
+keyed by the wrapper element, plus a sibling `Set` for iteration:
+
+```js
+var stateByEl = new WeakMap();
+var active = new Set();
+
+function setupOne(el) {
+  if (el.__fuiBound) return;
+  el.__fuiBound = true;
+  stateByEl.set(el, { failureCount: 0, timer: null });
+  active.add(el);
+  // …
+}
+
+document.addEventListener('gofastr:navigate', function () {
+  active.forEach(function (el) {
+    var s = stateByEl.get(el);
+    if (s && s.timer) clearInterval(s.timer);
+    // IntersectionObserver → call .disconnect(); EventSource → .close()
+  });
+  active.clear();
+  requestAnimationFrame(function () { scan(document); });
+});
+```
+
+**2. CSRF token forwarding.** State-changing fetches (`POST` / `PUT`
+/ `PATCH` / `DELETE`) must forward the page's CSRF token:
+
+```js
+var headers = { 'Accept': 'application/json' };
+var meta = document.querySelector('meta[name="csrf-token"]');
+if (meta && meta.getAttribute('content')) {
+  headers['X-CSRF-Token'] = meta.getAttribute('content');
+}
+fetch(url, { method: 'POST', credentials: 'same-origin', headers: headers });
+```
+
+Apps emit the meta tag via `uihost.WithHeadHTML(...)` and verify the
+token server-side. `OptimisticAction`'s runtime is the canonical
+example. Without this, any cross-origin form on a logged-in user's
+browser can fire the action.
+
+**3. Pending-state a11y.** Async clicks set `aria-busy="true"` +
+`disabled` on the trigger element during the in-flight RPC and clear
+both on commit / error / idle. Without this, keyboard Enter / Space
+fires duplicates and screen readers don't announce the change.
+
+**4. Tear down rollback timers on re-entry.** If your error path
+schedules a `setTimeout` to revert state, store the timer id on the
+button and `clearTimeout` it at the top of the next click handler.
+The race is real: error → user clicks → new fetch goes pending →
+the old 600ms timer fires → state clobbered back to idle while the
+new RPC is still in flight.
+
 ## Anti-patterns this skill exists to prevent
 
+- ❌ Module-scope state in a runtime module — see the runtime-module
+  contract above. The next demo will mount two of the widget and
+  reveal the bug.
+- ❌ State-changing fetches without `X-CSRF-Token` — see the runtime-
+  module contract.
+- ❌ Async triggers without `aria-busy` / `disabled` during pending —
+  see the runtime-module contract.
 - ❌ Exporting `BaseCSS()` from a `core-ui/patterns/*` package — use
   `registry.RegisterStyle` + `Style.WrapHTML` instead. See the CSS
   contract section above.

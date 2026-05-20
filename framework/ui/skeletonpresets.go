@@ -157,9 +157,9 @@ const skeletonPresetsCSS = `
   gap: var(--spacing-md, 12px);
   padding: var(--spacing-lg, 16px);
 }
-/* Per-preset line widths. These used to be passed as Width: "50%" to
-   skeleton.New(), but that emits inline style="…" attributes which
-   strict CSP blocks. Live on classes instead. */
+/* Per-preset line widths. Defined on classes (instead of via the
+   skeleton primitive's Width arg) so strict CSP doesn't strip them
+   off the rendered element. */
 .ui-skeleton-card__title  { inline-size: 50%; }
 .ui-skeleton-card__footer { inline-size: 35%; }
 .ui-skeleton-row__label   { inline-size: 40%; }

@@ -76,7 +76,6 @@ func TestE2EAutoMetaDescription(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startE2EServer(t)
-	base = base
 	code, _, body := fetchE2E(t, base, "/components/seo")
 	if code != 200 {
 		t.Fatalf("expected 200, got %d", code)
@@ -185,4 +184,30 @@ func snippet(body, marker string) string {
 		end = len(body)
 	}
 	return body[start:end]
+}
+
+// ─── ScreenSEO bundle (Wave 7 #19) ──────────────────────────────────
+
+func TestE2ESEOBundleEmitsHead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	_, _, body := fetchE2E(t, base, "/components/seo-bundle")
+	for _, want := range []string{
+		`content="Bundle-style SEO declaration in one method."`,
+		`href="https://example.com/components/seo-bundle"`,
+		`<link rel="alternate" hreflang="en"`,
+		`<link rel="alternate" hreflang="es"`,
+		`<meta name="robots" content="index,follow">`,
+		`<meta property="og:title" content="GoFastr SEO bundle">`,
+		`<meta property="og:type" content="article">`,
+		`<meta name="twitter:card" content="summary_large_image">`,
+		`<script type="application/ld+json">`,
+		`"headline":"GoFastr SEO bundle"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in bundle <head>\n%s", want, snippet(body, want))
+		}
+	}
 }

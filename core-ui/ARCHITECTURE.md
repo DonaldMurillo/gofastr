@@ -642,6 +642,10 @@ framework/
 7. **Always** prefer composing existing widget/preset shortcuts over building a new island from scratch.
 8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop — toasts are ephemeral by definition.
 9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS — read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
+10. **State-changing fetches from runtime modules must forward the page's CSRF token.** Read `document.querySelector('meta[name="csrf-token"]')` once per fetch and set `X-CSRF-Token` on the request. `OptimisticAction`'s runtime is the canonical example. Apps verify the token server-side; the runtime doesn't enforce — it just makes the value reachable so each call site doesn't re-implement the lookup.
+11. **Async runtime modules set `aria-busy="true"` + `disabled` on the trigger during in-flight RPCs.** Without it, keyboard Enter/Space fires duplicate submits and screen readers don't announce the state change. Clear both on commit / idle / error. `OptimisticAction` and `NetworkRetryBanner` follow this contract.
+12. **Per-instance state lives in a `WeakMap` keyed by the wrapper element** — never module-globals. Multiple instances of the same widget on one page (or two banners, two scrollspies) is a normal scenario; assuming "one per page" is a bug that lands a code review later. Track active instances in a sibling `Set` so SPA-nav teardown can disconnect observers / clear timers without leaking.
+13. **Runtime modules `disconnect()`/`clearInterval()` per-instance state on `gofastr:navigate`.** SPA navigation replaces the page DOM; the old wrapper becomes detached but the IO / interval keeps a strong ref to its targets until explicitly torn down. Walk the active-instance Set, clean up, then re-scan.
 
 ---
 

@@ -266,3 +266,97 @@ func TestScreenSchemaEmitsJSONLD(t *testing.T) {
 		t.Errorf("expected headline in JSON-LD, got:\n%s", body)
 	}
 }
+
+// ─── ScreenSEO bundle ──────────────────────────────────────────────
+
+type bundleComp struct{}
+
+func (bundleComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (bundleComp) ScreenSEO() SEO {
+	return SEO{
+		Description: "Bundle desc",
+		Canonical:   "https://example.com/c",
+		Hreflangs:   []HreflangLink{{Lang: "fr", URL: "https://example.com/fr"}},
+		Robots:      "noindex",
+		OG:          &OG{Title: "OGT", Image: "/og.png"},
+		Twitter:     &TwitterCard{Card: "summary", Title: "TwT"},
+		Schema:      []seo.Thing{seo.NewArticle()},
+	}
+}
+
+func TestSEOBundleEmitsAllTags(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &bundleComp{}, nil)
+	ds := New(a)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`<meta name="description" content="Bundle desc">`,
+		`<link rel="canonical" href="https://example.com/c">`,
+		`<link rel="alternate" hreflang="fr" href="https://example.com/fr">`,
+		`<meta name="robots" content="noindex">`,
+		`<meta property="og:title" content="OGT">`,
+		`<meta property="og:image" content="/og.png">`,
+		`<meta name="twitter:card" content="summary">`,
+		`<meta name="twitter:title" content="TwT">`,
+		`<script type="application/ld+json">`,
+		`"@type":"Article"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in <head>", want)
+		}
+	}
+}
+
+// Bundle's Description should win over the screen.Description set by
+// ScreenDescriber when both are present.
+type bundleAndDescriberComp struct{}
+
+func (bundleAndDescriberComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (bundleAndDescriberComp) ScreenDescription() string { return "From describer" }
+func (bundleAndDescriberComp) ScreenSEO() SEO            { return SEO{Description: "From bundle"} }
+
+func TestSEOBundleDescriptionOverrides(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &bundleAndDescriberComp{}, nil)
+	ds := New(a)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, `content="From bundle"`) {
+		t.Errorf("expected bundle description to win, got:\n%s", body)
+	}
+	if strings.Contains(body, `content="From describer"`) {
+		t.Errorf("bundle description should override ScreenDescriber, got:\n%s", body)
+	}
+}
+
+// Empty bundle fields fall through to per-concern interfaces.
+type partialBundleComp struct{}
+
+func (partialBundleComp) Render() render.HTML        { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (partialBundleComp) ScreenDescription() string  { return "fallback desc" }
+func (partialBundleComp) ScreenCanonical() string    { return "https://example.com/c-fallback" }
+func (partialBundleComp) ScreenSEO() SEO             { return SEO{Robots: "noindex"} } // only robots in bundle
+
+func TestSEOBundleFallsThroughEmptyFields(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &partialBundleComp{}, nil)
+	ds := New(a)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`content="fallback desc"`,                   // from ScreenDescriber
+		`href="https://example.com/c-fallback"`,     // from ScreenCanonical
+		`content="noindex"`,                          // from bundle
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in <head>", want)
+		}
+	}
+}

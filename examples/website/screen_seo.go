@@ -82,6 +82,13 @@ func (s *SEODemoScreen) Render() render.HTML {
 				render.Text(" per item. This page emits an Article + a BreadcrumbList.")),
 		),
 
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle alternative — ScreenSEO")),
+		render.Tag("p", nil, render.Text(
+			"Prefer one method over four? ScreenSEO() returns an SEO struct that bundles description, canonical, hreflangs, robots, OG, Twitter Card, and JSON-LD into a single declaration. The /components/seo-bundle page below uses it; check view-source for the resulting <head> tags.")),
+		render.Tag("p", nil,
+			render.Tag("a", map[string]string{"href": "/components/seo-bundle"}, render.Text("→ See ScreenSEO bundle demo")),
+		),
+
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Sitewide endpoints")),
 		render.Tag("p", nil, render.Text(
 			"Two host options register sitewide endpoints — both gated on opt-in so apps that don't want them aren't accidentally indexed:")),
