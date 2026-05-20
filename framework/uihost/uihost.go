@@ -1140,6 +1140,13 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// already call widget.MountRuntime keeps a single source of truth.
 	r.Get("/__gofastr/runtime/{name}", http.HandlerFunc(widget.ServeRuntimeModule))
 
+	// Page-level LLM documentation endpoints.
+	// - /llm-pages.md — top-level index of all screens
+	// - /{screen-path}/llm.md — per-screen documentation
+	if ds.App != nil {
+		ds.mountPageLLMMD(r)
+	}
+
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 }
 
@@ -1149,6 +1156,58 @@ func (ds *UIHost) Mount(r *router.Router) {
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", "POST")
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+// mountPageLLMMD registers LLM-friendly documentation routes for every
+// screen in the app. Two route types are added:
+//   - GET /llm-pages.md — top-level index listing all screens
+//   - GET /{screen-path}/llm.md — per-screen markdown documentation
+//
+// Dynamic routes (e.g. /products/:slug) are documented with their
+// pattern, not concrete values.
+func (ds *UIHost) mountPageLLMMD(r *router.Router) {
+	coreApp := ds.App
+
+	// Global opt-out
+	if coreApp.NoLLMMD {
+		return
+	}
+
+	// Top-level page index
+	r.Get("/llm-pages.md", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write([]byte(app.AppLLMMD(coreApp)))
+	}))
+
+	// Per-screen documentation
+	for _, routePath := range coreApp.Router.Paths() {
+		screen, _, ok := coreApp.Router.Resolve(routePath)
+		if !ok {
+			continue
+		}
+		// Per-screen opt-out
+		if screen.NoLLMMD {
+			continue
+		}
+		// Capture for closure
+		sc := screen
+		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+			w.Write([]byte(app.ScreenLLMMD(sc)))
+		})
+		// Clean trailing slash to avoid double-slash patterns
+		// (e.g. "/docs/" + "/llm.md" → "//llm.md" which panics).
+		// For root "/" , clean becomes "", so the route is "/llm.md".
+		// This is safe because the entity API index now lives at /api/llm.md.
+		clean := strings.TrimRight(routePath, "/")
+		route := clean + "/llm.md"
+		if clean == "" {
+			route = "/llm.md"
+		}
+		r.Get(route, handler)
+	}
 }
 
 // serveOrRender is the catch-all NotFound handler. It first tries static

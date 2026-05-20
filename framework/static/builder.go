@@ -66,6 +66,37 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
+	// LLM documentation — per-page llm.md and top-level index.
+	if !b.Host.App.NoLLMMD {
+		for _, route := range b.Host.App.Routes() {
+			screen, _, ok := b.Host.App.Router.Resolve(route.Path)
+			if !ok {
+				continue
+			}
+			if screen.NoLLMMD {
+				continue
+			}
+			paths, err := expandRoute(ctx, b.Host.App, route.Path)
+			if err != nil {
+				return res, fmt.Errorf("static: expand llm.md %q: %w", route.Path, err)
+			}
+			md := coreapp.ScreenLLMMD(screen)
+			for _, p := range paths {
+				dst := filepath.Join(b.OutDir, pathToLLMFile(p))
+				if err := writeFile(dst, []byte(md)); err != nil {
+					return res, err
+				}
+				b.log("wrote llm.md for %s -> %s", p, dst)
+			}
+		}
+		// Top-level page index
+		indexMD := coreapp.AppLLMMD(b.Host.App)
+		if err := writeFile(filepath.Join(b.OutDir, "llm-pages.md"), []byte(indexMD)); err != nil {
+			return res, err
+		}
+		b.log("wrote llm-pages.md index")
+	}
+
 	// /__gofastr/* assets — runtime, compiled actions, theme CSS, custom
 	// CSS, route graph script. The injected <link>/<script src> tags in
 	// the rendered HTML reference these paths, so SSG output is broken
@@ -172,6 +203,21 @@ func pathToFile(p string) string {
 		return "index.html"
 	}
 	return filepath.Join(clean, "index.html")
+}
+
+// pathToLLMFile turns a URL path into the relative file path for the
+// per-page LLM documentation. Dynamic routes are expected to be expanded
+// (via expandRoute) before being passed in.
+//
+//	"/"              -> "llm.md"
+//	"/about"         -> "about/llm.md"
+//	"/products/abc"  -> "products/abc/llm.md"
+func pathToLLMFile(p string) string {
+	clean := strings.Trim(p, "/")
+	if clean == "" {
+		return "llm.md"
+	}
+	return filepath.Join(clean, "llm.md")
 }
 
 func writeFile(dst string, data []byte) error {

@@ -186,7 +186,7 @@ func (l *Live) rebuild() error {
 		}
 		spec := framework.EntityOpenAPI(app.Registry, appName, "1.0.0")
 		app.Router.Get("/openapi.json", openapi.Handler(spec))
-		app.Router.Get("/docs/", openapi.SwaggerUIHandler(spec, "/docs"))
+		app.Router.Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 	}
 	l.app = app
 	l.deferred = d

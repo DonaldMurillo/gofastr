@@ -21,6 +21,9 @@ type App struct {
 	Router *Router
 	// Theme holds optional theme configuration (can be nil).
 	Theme *style.Theme
+
+	// NoLLMMD disables auto-generated llm.md for all pages in this app.
+	NoLLMMD bool
 }
 
 // NewApp creates a new application with the given name.

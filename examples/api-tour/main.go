@@ -18,7 +18,7 @@
 //	curl -X POST http://localhost:8080/posts/_batch -d '{"items":[{"title":"A","authorId":"u1"}]}'
 //	curl http://localhost:8080/posts/_events
 //
-// The OpenAPI spec lives at /openapi.json and Swagger UI at /docs/.
+// The OpenAPI spec lives at /openapi.json and Swagger UI at /api/docs/.
 package main
 
 import (

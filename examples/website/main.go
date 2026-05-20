@@ -42,6 +42,7 @@ func main() {
 	fmt.Println("  http://localhost" + addr)
 	fmt.Println()
 	fmt.Println("  Pages:  /  /docs/  /docs/:slug  /examples/  /components/  /framework-ui/  /about")
+	fmt.Println("  LLM:    /llm.md  /llm-pages.md  /articles/llm.md")
 	fmt.Println("━─────────────────────────────────────────────")
 
 	if err := fwApp.Start(addr); err != nil {
@@ -177,6 +178,11 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 
 	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "website"}))
 	fwApp.Mount(host)
+
+	// Wire a sqlite-backed entity so CRUD + /llm.md entity docs are live.
+	if err := setupDemoEntity(fwApp); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: demo entity setup failed (CRUD /llm.md unavailable): %v\n", err)
+	}
 
 	// Island RPC endpoints — see the matching screen files for how the
 	// demos wire IslandSignal + IslandEndpoint into the rendered HTML.
