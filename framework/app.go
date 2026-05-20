@@ -16,6 +16,7 @@ import (
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -86,6 +87,10 @@ type App struct {
 
 	// Optional idempotency config wired into the default chain when set.
 	idempotency *middleware.IdempotencyConfig
+
+	// Optional translator. When set, the i18n middleware is wired into
+	// the default chain so handlers can call App.T(ctx, key, ...).
+	translator *i18n.Translator
 }
 
 // AppOption is a functional option for configuring an App.
@@ -151,6 +156,21 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	}
 }
 
+// WithI18n installs a Translator and wires its locale-negotiation
+// middleware into the default chain. Handlers downstream can call
+// App.T(ctx, key, ...) for translated strings driven by the caller's
+// Accept-Language. Also installed as i18n.Default() so the package-
+// level i18n.T helper works from anywhere.
+//
+// Panics when paired with WithoutDefaultMiddleware — register the
+// middleware explicitly in your custom chain in that case.
+func WithI18n(tr *i18n.Translator) AppOption {
+	return func(a *App) {
+		a.translator = tr
+		i18n.SetDefault(tr)
+	}
+}
+
 // Mount attaches a Mountable and registers its routes on the app's router
 // immediately. The default middleware chain is already in place (committed
 // during NewApp), so any handler the Mountable registers is wrapped with
@@ -187,6 +207,11 @@ func (a *App) applyDefaultMiddleware() {
 			"the idempotency middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
 	}
+	if a.noDefaults && a.translator != nil {
+		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware — " +
+			"the i18n middleware lives in the default chain; mount it explicitly via " +
+			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
+	}
 	if a.mwApplied || a.noDefaults {
 		return
 	}
@@ -197,6 +222,9 @@ func (a *App) applyDefaultMiddleware() {
 	}
 	if a.idempotency != nil {
 		chain = append(chain, router.Middleware(middleware.Idempotency(*a.idempotency)))
+	}
+	if a.translator != nil {
+		chain = append(chain, router.Middleware(i18n.Middleware(a.translator)))
 	}
 	chain = append(chain,
 		router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})),
