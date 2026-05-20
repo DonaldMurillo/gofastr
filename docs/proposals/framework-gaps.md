@@ -147,30 +147,51 @@ encryption without a migration step.
 
 ## Tier 2 — felt the first time a customer asks for it
 
-### 5. Internationalization
+### 5. Internationalization — ✅ landed
 
-No locale routing, no string catalog, no ICU number/date
-formatting. Probably the biggest "is this a real framework" gap
-once a non-English customer arrives.
+`core/i18n` + `framework/WithI18n` + [`docs/i18n.md`](../i18n.md).
+JSON-backed catalogs (or in-code `MapCatalog`), `{{placeholder}}`
+interpolation, CLDR plural categories with English defaults +
+hookable per-locale rules, `Accept-Language` negotiation middleware
+with `X-Locale` override, `App.T(ctx, key, params...)` ergonomic
+call, package-level `i18n.T` helper. ICU number/date/currency
+formatting and locale-routing via path prefix remain explicit non-
+goals — wrap stdlib `time`/`strconv` for now.
 
-### 6. Unified notifications
+### 6. Unified notifications — ✅ landed
 
-`battery/email` exists, but a single `notify.Send(user,
-"order.shipped", data)` that fans out across channels (email +
-in-app + webhook + push) is missing. Each channel today is its
-own integration.
+`battery/notify` + [`docs/notifications.md`](../notifications.md).
+Type-routed multi-channel fan-out: `Notifier.Send(ctx, Notification{Type, To, Data})`
+renders a per-channel `Template` and concurrently dispatches to every
+applicable channel. Default router selects by Recipient field
+(`Email` → email channel, `Phone` → sms, `Webhook` → webhook,
+`PushTokens` → push, plus always-on `log`/`inapp`); custom routers
+supported. Bundled `LoggerChannel` (dev) and `EmailChannel` (wraps
+`battery/email`); third-party channels just implement `Channel`.
+Per-channel error callbacks observe failures without taking the call
+site down. Pre-rendered payloads via `Data["_rendered_<channel>"]`
+short-circuit the templater.
 
-### 7. Factory / fixture / seeder ergonomics
+### 7. Factory / fixture / seeder ergonomics — ✅ landed
 
-`testharness` covers test DB lifecycle but the developer-facing
-`factory.Make[User](opts)` and `db.Seed(...)` ergonomics aren't
-there. Rails-style fixtures or `factory_bot` equivalents.
+`framework/factory` + [`docs/factories.md`](../factories.md).
+`factory.New(registry, "users", baseFn)` returns a `*Factory`;
+`Build(overrides...)` produces a fresh body, `Create(ctx, overrides...)`
+inserts through the full CRUD pipeline (hooks + tx + events).
+`CreateMany(n, perIndex)` for batch setup, `Sequence` atomic counter
+for unique base values, optional `Registry` for cross-suite sharing.
+Factories dispatch through `CrudHandler.CreateOne` so integration
+tests stay close to production behaviour.
 
-### 8. Admin UI for queue + audit log
+### 8. Admin UI for queue + audit log — ✅ landed
 
-The data already exists (`battery/queue`, `framework/audit`). What
-is missing is a stock screen — jobs in flight, retries, DLQ, audit
-search. A small UI battery on top of existing data.
+`battery/admin` + [`docs/admin.md`](../admin.md). Read-only stock
+screens at `/admin`, `/admin/queue`, `/admin/audit`. Self-contained
+server-rendered HTML — no UIHost / runtime dependency, so the
+endpoints work in apps without a UI. `queue.Browsable` is the new
+optional interface the bundled `DBQueue` implements (`ListJobs`,
+`Stats`); the audit page reads directly from the audit table. Apps
+gate `/admin*` with their own auth middleware.
 
 ---
 
@@ -230,4 +251,12 @@ Tier 1 — all landed:
 3. ✅ Feature flags (in-memory + SQL store).
 4. ✅ Outbound webhooks (in-memory + SQL store, plus `event` bridge).
 
-Next up: Tier 2, where **i18n** is the highest leverage.
+Tier 2 — all landed:
+
+5. ✅ Internationalization (i18n).
+6. ✅ Unified notifications.
+7. ✅ Factory / fixture / seeder ergonomics.
+8. ✅ Admin UI for queue + audit log.
+
+Next up: Tier 3 quality-of-life — WebSocket primitive, CLI scaffolding
+beyond kiln, configuration management, health-aware graceful shutdown.

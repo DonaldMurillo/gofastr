@@ -61,6 +61,14 @@ ending with a "common mistakes" callout.
   rollout percentage, user/tenant/environment allow lists.
 - [Outbound webhooks](webhooks.md) — `battery/webhook`: signed
   delivery, retry-with-backoff, dead-letter, glob event filters.
+- [Internationalization](i18n.md) — `core/i18n` translator,
+  JSON catalogs, plurals, `Accept-Language` negotiation.
+- [Unified notifications](notifications.md) — `battery/notify`
+  multi-channel fan-out with per-channel templates.
+- [Factories / fixtures](factories.md) — `framework/factory`
+  Rails-style test setup helpers.
+- [Admin UI](admin.md) — `battery/admin` stock screens for
+  queue + audit log.
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
 - [Widgets](widgets.md) — `core-ui/widget` builder and presets.
