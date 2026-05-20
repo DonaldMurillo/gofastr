@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-func TestRender_EmptyReturnsNothing(t *testing.T) {
+func TestEmptyReturnsNothing(t *testing.T) {
 	got := string(Render())
 	if got != "" {
 		t.Errorf("expected empty render with no items, got: %s", got)
 	}
 }
 
-func TestRender_EmitsScriptTagWithLDJSONType(t *testing.T) {
+func TestEmitsLDJSONScript(t *testing.T) {
 	got := string(Render(NewWebPage()))
 	if !strings.Contains(got, `<script type="application/ld+json">`) {
 		t.Errorf("expected <script type=\"application/ld+json\">, got: %s", got)
@@ -23,14 +23,14 @@ func TestRender_EmitsScriptTagWithLDJSONType(t *testing.T) {
 	}
 }
 
-func TestRender_OnePerItem(t *testing.T) {
+func TestOneScriptPerItem(t *testing.T) {
 	got := string(Render(NewWebPage(), NewOrganization()))
 	if c := strings.Count(got, `<script type="application/ld+json">`); c != 2 {
 		t.Errorf("expected 2 script tags for 2 items, got %d: %s", c, got)
 	}
 }
 
-func TestRender_IncludesEnvelope(t *testing.T) {
+func TestIncludesEnvelope(t *testing.T) {
 	got := string(Render(NewArticle()))
 	if !strings.Contains(got, `"@context":"https://schema.org"`) {
 		t.Errorf("expected @context envelope, got: %s", got)
@@ -40,7 +40,7 @@ func TestRender_IncludesEnvelope(t *testing.T) {
 	}
 }
 
-func TestRender_EscapesClosingTagInPayload(t *testing.T) {
+func TestEscapesClosingTag(t *testing.T) {
 	// Adversarial payload: a value that contains "</script>" must not
 	// terminate the script early. Encoded body should NOT contain the
 	// raw close sequence.
@@ -54,7 +54,7 @@ func TestRender_EscapesClosingTagInPayload(t *testing.T) {
 	}
 }
 
-func TestArticle_MarshalsFields(t *testing.T) {
+func TestArticleMarshalsFields(t *testing.T) {
 	a := NewArticle()
 	a.Headline = "Hello"
 	a.Description = "World"
@@ -71,7 +71,7 @@ func TestArticle_MarshalsFields(t *testing.T) {
 	}
 }
 
-func TestBreadcrumbList_AssignsPositions(t *testing.T) {
+func TestBreadcrumbPositions(t *testing.T) {
 	bc := NewBreadcrumbList(
 		BreadcrumbItem{Name: "Home", URL: "/"},
 		BreadcrumbItem{Name: "Docs", URL: "/docs/"},
@@ -90,7 +90,7 @@ func TestBreadcrumbList_AssignsPositions(t *testing.T) {
 	}
 }
 
-func TestFAQPage_ShapeMatchesSchemaOrg(t *testing.T) {
+func TestFAQPageShape(t *testing.T) {
 	faq := NewFAQPage(
 		QA{Question: "Q1", Answer: "A1"},
 		QA{Question: "Q2", Answer: "A2"},
@@ -111,7 +111,7 @@ func TestFAQPage_ShapeMatchesSchemaOrg(t *testing.T) {
 	}
 }
 
-func TestProduct_NestedOffer(t *testing.T) {
+func TestProductNestedOffer(t *testing.T) {
 	p := NewProduct()
 	p.Name = "Widget"
 	o := NewOffer()
@@ -131,7 +131,7 @@ func TestProduct_NestedOffer(t *testing.T) {
 	}
 }
 
-func TestWebSite_PotentialActionWiresSearch(t *testing.T) {
+func TestWebsiteSearchAction(t *testing.T) {
 	site := NewWebSite()
 	site.Name = "Demo"
 	act := NewSearchAction("/search?q={search_term_string}")
@@ -146,7 +146,7 @@ func TestWebSite_PotentialActionWiresSearch(t *testing.T) {
 	}
 }
 
-func TestRender_IsValidJSONPerScript(t *testing.T) {
+func TestPayloadIsValidJSON(t *testing.T) {
 	// The JSON payload between the open and close tags must parse.
 	out := string(Render(NewArticle()))
 	open := `<script type="application/ld+json">`

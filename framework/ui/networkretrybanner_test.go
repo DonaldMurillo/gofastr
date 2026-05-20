@@ -21,7 +21,7 @@ func TestRetryBannerHiddenByDefault(t *testing.T) {
 	}
 }
 
-func TestRetryBannerMarkupAndAttrs(t *testing.T) {
+func TestRetryBannerAttrs(t *testing.T) {
 	got := string(NetworkRetryBanner(NetworkRetryBannerConfig{
 		HealthEndpoint:   "/health",
 		FailureThreshold: 5,

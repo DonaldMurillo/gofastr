@@ -28,7 +28,7 @@ type plainComp struct{}
 
 func (plainComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
 
-func TestSitemapLists404WithoutOption(t *testing.T) {
+func TestSitemap404WithoutOption(t *testing.T) {
 	a := app.NewApp("x")
 	a.Register("/", &plainComp{}, nil)
 	ds := New(a)
