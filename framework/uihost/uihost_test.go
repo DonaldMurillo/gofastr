@@ -528,6 +528,26 @@ func TestUIHostInjectsActions(t *testing.T) {
 	}
 }
 
+func TestUIHostMountAutoCompilesScreenActions(t *testing.T) {
+	application := app.NewApp("Actions App")
+	application.RegisterScreen(app.NewScreen("/", &testClickButton{Label: "Click me"}), nil)
+	ds := New(application)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	assertContains(t, w.Body.String(), `<script src="/__gofastr/actions.js"></script>`)
+
+	req = httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
+	w = httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assertContains(t, body, `// Component: home`)
+	assertContains(t, body, `G.register(id, handlers)`)
+}
+
 func TestUIHostActionsEndpoint(t *testing.T) {
 	ds := newTestUIHost()
 	btn := &testClickButton{Label: "Click me"}

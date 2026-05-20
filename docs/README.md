@@ -59,6 +59,8 @@ ending with a "common mistakes" callout.
 
 ## Build-time tooling
 
+- [Blueprints](blueprints.md) — deterministic YAML-to-code input for
+  `gofastr generate --from`, backed by the in-house `core/yaml` parser.
 - [Kiln (agent-driven build mode)](kiln.md) — separate binary; build a
   GoFastr app live via an agent CLI, then freeze to canonical JSON.
 - [Benchmarks](benchmarks.md) — tiered Go benchmarks covering claims-

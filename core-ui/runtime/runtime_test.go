@@ -19,21 +19,22 @@ func TestRuntimeJS(t *testing.T) {
 		"register",
 		"trigger",
 		"data-action",
+		"data-action-${eventType}",
 		"data-component",
 		"MutationObserver",
 		"EventSource",
 		"data-island",
 		"hydrate",
 		"collectParams",
-		"screenCache",        // screen caching for back-navigation
-		"swapMainContent",    // partial content swapping
-		"X-Gofastr-Navigate", // client-side navigation header
-		"X-Gofastr-Partial",  // server partial response header
-		"loadComponentCSS",   // per-component CSS loader
-		"scanAndLoadCSS",     // marker scan post-swap/post-mount
-		"_pendingLinks",      // sync dedup guard
-		"data-fui-style",     // <link> dedup key
-		"scheduleIdleLoads",  // LoadPrewarm idle queue
+		"screenCache",            // screen caching for back-navigation
+		"swapMainContent",        // partial content swapping
+		"X-Gofastr-Navigate",     // client-side navigation header
+		"X-Gofastr-Partial",      // server partial response header
+		"loadComponentCSS",       // per-component CSS loader
+		"scanAndLoadCSS",         // marker scan post-swap/post-mount
+		"_pendingLinks",          // sync dedup guard
+		"data-fui-style",         // <link> dedup key
+		"scheduleIdleLoads",      // LoadPrewarm idle queue
 		"data-fui-comp",          // marker attr the scanner reads
 		"data-fui-copy-status",   // SR-announce sibling for copy-text-from
 		"data-fui-copy-announce", // copy success message override
@@ -129,12 +130,12 @@ func TestRuntimeModule_Fileupload(t *testing.T) {
 		t.Fatal("fileupload module not embedded")
 	}
 	for _, want := range []string{
-		"data-fui-fileupload",         // marker the scanner reads
-		"input[type=\"file\"]",        // wires the inner native input
-		"DataTransfer",                // drop path
-		"FileReader",                  // image thumbnail
-		"__gofastr.scanFileUploads",   // exposed scanner for SPA re-wire
-		"loadedModules",               // self-registers as loaded
+		"data-fui-fileupload",       // marker the scanner reads
+		"input[type=\"file\"]",      // wires the inner native input
+		"DataTransfer",              // drop path
+		"FileReader",                // image thumbnail
+		"__gofastr.scanFileUploads", // exposed scanner for SPA re-wire
+		"loadedModules",             // self-registers as loaded
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("fileupload module missing %q", want)
@@ -161,7 +162,7 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"NS._deepLinkPushUrl",
 		"NS._deepLinkStripUrl",
 		"NS._syncDeepLinks",
-		"NS._modalStack",                  // reads state from core
+		"NS._modalStack", // reads state from core
 		"NS._popoverStack",
 		"data-fui-backdrop",
 		"data-fui-widget",
@@ -177,8 +178,8 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"data-fui-shortcut-click",
 		"data-fui-shortcut-focus",
 		"data-fui-tick-elapsed",
-		"X-Gofastr-Toast",                 // header path awaits toasts
-		"__fuiModalEsc",                   // installed once at module load
+		"X-Gofastr-Toast", // header path awaits toasts
+		"__fuiModalEsc",   // installed once at module load
 		"__fuiModalTab",
 		"loadedModules",
 	} {
@@ -268,13 +269,13 @@ func TestRuntimeModule_Popover(t *testing.T) {
 		t.Fatal("popover module not embedded")
 	}
 	for _, want := range []string{
-		"_anchorPopover",              // exported entry on __gofastr
-		"data-fui-popover-side",       // chosen-side attr the CSS reads
-		"is-popover-trigger-active",   // trigger highlight class
-		"anchorTrigger",               // per-widget anchor state
-		"--ui-popover-arrow-x",        // arrow CSS variable
-		"requestAnimationFrame",       // scroll/resize throttle
-		"loadedModules",               // self-registers as loaded
+		"_anchorPopover",            // exported entry on __gofastr
+		"data-fui-popover-side",     // chosen-side attr the CSS reads
+		"is-popover-trigger-active", // trigger highlight class
+		"anchorTrigger",             // per-widget anchor state
+		"--ui-popover-arrow-x",      // arrow CSS variable
+		"requestAnimationFrame",     // scroll/resize throttle
+		"loadedModules",             // self-registers as loaded
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("popover module missing %q", want)

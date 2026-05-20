@@ -14,16 +14,20 @@ import (
 // EntityDeclaration is the JSON shape accepted by EntityFromFile and the CLI
 // code generator. It mirrors EntityConfig while keeping field types readable.
 type EntityDeclaration struct {
-	Name        string             `json:"name"`
-	Table       string             `json:"table,omitempty"`
-	Fields      []FieldDeclaration `json:"fields"`
-	Relations   []Relation         `json:"relations,omitempty"`
-	Endpoints   []Endpoint         `json:"endpoints,omitempty"`
-	SoftDelete  bool               `json:"soft_delete,omitempty"`
-	MultiTenant bool               `json:"multi_tenant,omitempty"`
-	Timestamps  *bool              `json:"timestamps,omitempty"`
-	CRUD        *bool              `json:"crud,omitempty"`
-	MCP         bool               `json:"mcp,omitempty"`
+	Name         string             `json:"name"`
+	Table        string             `json:"table,omitempty"`
+	Fields       []FieldDeclaration `json:"fields"`
+	Relations    []Relation         `json:"relations,omitempty"`
+	Endpoints    []Endpoint         `json:"endpoints,omitempty"`
+	SoftDelete   bool               `json:"soft_delete,omitempty"`
+	MultiTenant  bool               `json:"multi_tenant,omitempty"`
+	Timestamps   *bool              `json:"timestamps,omitempty"`
+	CRUD         *bool              `json:"crud,omitempty"`
+	MCP          bool               `json:"mcp,omitempty"`
+	CursorField  string             `json:"cursor_field,omitempty"`
+	CursorFields []string           `json:"cursor_fields,omitempty"`
+	Indices      []Index            `json:"indices,omitempty"`
+	Properties   map[string]any     `json:"properties,omitempty"`
 }
 
 // FieldDeclaration is a JSON-friendly schema.Field.
@@ -109,15 +113,19 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		fields = append(fields, field)
 	}
 	cfg := EntityConfig{
-		Name:        d.Name,
-		Table:       d.Table,
-		Fields:      fields,
-		Relations:   d.Relations,
-		Endpoints:   d.Endpoints,
-		SoftDelete:  d.SoftDelete,
-		MultiTenant: d.MultiTenant,
-		CRUD:        d.CRUD,
-		MCP:         d.MCP,
+		Name:         d.Name,
+		Table:        d.Table,
+		Fields:       fields,
+		Relations:    d.Relations,
+		Endpoints:    d.Endpoints,
+		SoftDelete:   d.SoftDelete,
+		MultiTenant:  d.MultiTenant,
+		CRUD:         d.CRUD,
+		MCP:          d.MCP,
+		CursorField:  d.CursorField,
+		CursorFields: d.CursorFields,
+		Indices:      d.Indices,
+		Properties:   d.Properties,
 	}
 	if d.Timestamps != nil {
 		cfg = cfg.WithTimestamps(*d.Timestamps)

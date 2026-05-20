@@ -4,6 +4,11 @@ GoFastr supports JSON entity declarations for agent-friendly app generation.
 Declarations live in `entities/*.json` and can be loaded at runtime or used by
 the CLI code generator.
 
+YAML blueprints are a separate CLI-only codegen surface. Use
+`gofastr generate --from=gofastr.yml` when you want a broader app blueprint
+that can generate entities plus screens and Go stubs. Runtime loading through
+`EntityFromFile` and `EntitiesFromDir` remains JSON-only.
+
 ## Runtime Loading
 
 ```go

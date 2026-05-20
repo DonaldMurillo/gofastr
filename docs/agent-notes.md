@@ -1,5 +1,14 @@
 # Agent Notes
 
+## 2026-05-19 - in-house-blueprint-codegen
+
+- Scope: `core/yaml`, `cmd/gofastr`, `docs/`
+- Symptom: YAML-to-code should be deterministic code generation, not runtime JSON declaration loading and not LLM-inferred behavior. The parser also belongs in `core` so framework users can reuse the in-house YAML subset without adding a production dependency.
+- Evidence: `core/yaml` parses the supported subset; `gofastr generate --from=<file-or-dir>` decodes blueprints and writes `.gofastr/entities` plus `.gofastr/blueprint` code. Entities now carry properties/cursors/indices through codegen, screens can render property-based Kiln nodes, islands, widgets, and browser actions, and the generated-app E2E test drives HTTP CRUD, OpenAPI, MCP, and real browser UI behavior from the CLI output. Custom endpoints, middleware, plugins, and helpers generate Go stubs instead of invented handler bodies.
+- Follow-up: code review found useful edge cases that now have regression coverage: split blueprint directories validate after merge, entity-owned and top-level endpoints append instead of replacing, endpoint method/path collisions fail before router registration, `--dry-run --json` emits JSON validation errors, unsupported YAML anchors/aliases/tags are rejected, and multiple UI actions can be reachable through event-specific `data-action-<event>` attributes.
+- Second follow-up: empty blueprint directories now fail before generation, dry-run JSON validates unsafe output paths, CRUD collision checks use the framework's default table naming for dashed/spaced entity names, and duplicate per-block UI action events are rejected before rendering unreachable DOM attributes.
+- Next time: keep blueprint expansion schema-first. Add new explicit keys and validation before rendering new artifacts, reject unsupported YAML syntax rather than silently treating full YAML as supported, and keep generated-app E2E coverage on the full surface instead of only unit-testing snippets.
+
 ## 2026-05-11 - framework-reorg
 
 - Scope: `framework/` (no other modules touched)

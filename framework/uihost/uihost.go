@@ -1104,6 +1104,8 @@ func (ds *UIHost) PushIsland(islandID string) error {
 // routes (entity CRUD, custom endpoints) so the page handler only takes
 // requests that nothing else claimed.
 func (ds *UIHost) Mount(r *router.Router) {
+	ds.AutoCompileActions()
+
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(ds.handleRuntimeJS))
 	r.Get("/__gofastr/color-scheme.js", http.HandlerFunc(ds.handleColorSchemeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
@@ -1319,8 +1321,9 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 // so strict CSP (default-src 'self') is happy.
 //
 // runtime.js reads it on boot:
-//   const el = document.getElementById('gofastr-catalog');
-//   if (el) window.__gofastr_catalog = JSON.parse(el.textContent);
+//
+//	const el = document.getElementById('gofastr-catalog');
+//	if (el) window.__gofastr_catalog = JSON.parse(el.textContent);
 func catalogJSONScript(ds *UIHost) string {
 	all := registry.All()
 	if len(all) == 0 {
