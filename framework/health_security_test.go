@@ -17,8 +17,8 @@ type readinessBattery struct {
 	called bool
 }
 
-func (b *readinessBattery) Name() string               { return "readiness-test" }
-func (b *readinessBattery) Init(_ interface{}) error   { return nil }
+func (b *readinessBattery) Name() string             { return "readiness-test" }
+func (b *readinessBattery) Init(_ *App) error        { return nil }
 func (b *readinessBattery) RegisterReadinessChecks(app *App) {
 	b.called = true
 	app.RegisterReadiness("from-battery", func(_ context.Context) error { return nil })

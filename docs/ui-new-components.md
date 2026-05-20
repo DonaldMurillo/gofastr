@@ -142,6 +142,7 @@ dev server is up.
 - **banner** — `framework/ui.Banner` — page-level persistent status strip
 - **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
 - **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
+- **seo-bundle** — `ScreenSEO()` returning an `SEO` struct — per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
 
 ---
 

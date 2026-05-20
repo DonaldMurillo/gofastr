@@ -1,0 +1,169 @@
+# Server logs (`battery/log`)
+
+The `battery/log` plugin wires structured JSON-line server logs into the
+app. A single `*slog.Logger` fans out to one or more **sinks**; built-in
+sinks cover three destinations:
+
+1. A **default file** under the OS state dir (`$XDG_STATE_HOME/<app>/server.log`).
+2. A **chosen file** at an explicit path, with size+count rotation.
+3. A **webhook** URL that receives batched JSON.
+
+The plugin also installs:
+
+- An HTTP **access-log middleware** that emits `http.access` entries with
+  method, path, status, response bytes, latency, request ID, and remote.
+- A **panic-recovery middleware** that logs the stack with request
+  context and returns 500.
+- App **lifecycle events** (`app.start` / `app.stop`).
+
+During `Init` the plugin calls `app.SetLogger(p.Logger())`. The framework's
+default `middleware.Logging` (which uses `App.Logger` per request) and any
+code calling `app.Logger()` directly then flow through this plugin's sinks
+without rewiring `slog.Default` and without touching the stdlib `log`
+package. The swap is scoped to one App — multiple Apps in the same
+process don't collide.
+
+## Quickstart
+
+Zero-config — default file sink, all middleware on:
+
+```go
+app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "myapp"}))
+app.RegisterPlugin(log.New(log.Config{}))
+```
+
+Custom file + Slack webhook:
+
+```go
+app.RegisterPlugin(log.New(log.Config{
+    Level: slog.LevelInfo,
+    Sinks: []log.Sink{
+        log.MustFileSink("/var/log/myapp.log", log.FileOpts{
+            MaxSize:    100 << 20, // 100 MiB
+            MaxBackups: 5,
+        }),
+        log.WebhookSink("https://hooks.slack.com/services/...", log.WebhookOpts{
+            BatchSize:     50,
+            BatchInterval: time.Second,
+            Headers:       map[string]string{"X-Source": "myapp"},
+        }),
+    },
+}))
+```
+
+Pulling the logger out for app code:
+
+```go
+p, _ := app.Plugins.Get("log")
+logger := p.(*log.Plugin).Logger()
+logger.Info("worker.tick", "queue", "ingest")
+```
+
+## Configuration
+
+`log.Config` fields (all optional):
+
+| Field                    | Default             | Notes                                                          |
+|--------------------------|---------------------|----------------------------------------------------------------|
+| `Level`                  | `slog.LevelInfo`    | Minimum level emitted by the fan-out handler.                  |
+| `Sinks`                  | `[DefaultFileSink]` | If empty, resolves a per-app file under the OS state dir.      |
+| `DisableLifecycleEvents` | `false`             | Set true to skip `app.start` / `app.stop` entries.             |
+| `AddSource`              | `false`             | Adds `source` (file:line) attribute to every entry.            |
+
+> **Zero-config = full plugin.** `Config{}` gives you everything: file
+> sink, structured `http.access` + `http.panic` middleware, lifecycle
+> events, and the App's logger swapped so framework middleware writes
+> through the same sinks. The framework's router late-binds its
+> middleware chain, so this plugin's contributions wrap routes
+> registered before it loaded — no ordering footguns.
+
+## Sinks
+
+### `FileSink(path, opts)` and `DefaultFileSink(appName, opts)`
+
+- Buffered writes flushed after every entry (durability over throughput
+  — server logs are read live during debugging).
+- Size-based rotation: when an entry would push the file past
+  `MaxSize`, the active file is renamed to `<path>.1`, existing
+  backups shift up (`.1` → `.2`, …), and anything past `MaxBackups`
+  is removed.
+- Default rotation: 100 MiB cap, 5 backups.
+
+### `WebhookSink(url, opts)`
+
+POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
+
+- Batching: flush on `BatchSize` (default 50) **or** `BatchInterval`
+  (default 1s), whichever first.
+- Bounded queue (default 1000 entries). When full, drop-oldest — the
+  webhook sink will **never** block the request path.
+- Retry with exponential backoff on 5xx / transport errors, up to
+  `MaxRetries` (default 3). 4xx is treated as a hard failure (the
+  receiver said "no", retrying won't help).
+- `Headers` lets you inject auth (`Authorization: Bearer …`) or routing
+  hints. `Content-Type` is forced to `application/json`.
+- `Close` flushes pending entries before returning (App.Stop awaits it).
+
+### Custom sinks
+
+Implement the `Sink` interface:
+
+```go
+type Sink interface {
+    io.Closer
+    Write(entry []byte) error
+}
+```
+
+`entry` is one JSON object without a trailing newline. Sinks that
+produce line-oriented output should append `'\n'` themselves.
+
+## Log entry shape
+
+Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
+
+**HTTP access:**
+```json
+{"time":"...","level":"INFO","msg":"http.access","method":"GET","path":"/users/1","status":200,"bytes":421,"dur_ms":12,"request_id":"...","remote":"10.0.0.4"}
+```
+
+**Panic:**
+```json
+{"time":"...","level":"ERROR","msg":"http.panic","panic":"nil pointer dereference","method":"POST","path":"/things","request_id":"...","stack":"goroutine 18 [running]:\n..."}
+```
+
+**Lifecycle:**
+```json
+{"time":"...","level":"INFO","msg":"app.start","app":"myapp","go":"go1.26.0"}
+{"time":"...","level":"INFO","msg":"app.stop","app":"myapp"}
+```
+
+## Common mistakes
+
+- **Pointing a sink at a high-volume webhook synchronously.** The
+  webhook sink is already async and bounded — never wrap it in your own
+  blocking adapter, and don't set `QueueSize` so high that a downstream
+  outage causes unbounded memory growth.
+- **Setting `DisableReplaceDefault` and then wondering where slow-query
+  logs went.** `framework/slowquery` writes to `slog.Default`. If you
+  want those entries in your sinks, leave the default behavior on or
+  pass your `Plugin.Logger()` to `slowquery.NewSlowQueryLogger`
+  explicitly.
+- **Treating the access middleware as a request log of last resort.**
+  It logs once per request *after* the response is sent. Handlers that
+  hang forever never emit an access entry — pair with a timeout
+  middleware (`middleware.Timeout`) if you need bounded coverage.
+- **Setting `MaxSize` very low to "test rotation in production."**
+  Rotation occurs synchronously on the calling write; tiny caps turn
+  every request into a rename storm.
+- **Adding a webhook sink during a debugging session without auth
+  headers.** The sink will POST your prod request log to whatever is
+  on the other side. Always set `Headers["Authorization"]` (or the
+  receiver's equivalent) before pointing the URL at a real endpoint.
+- **Expecting one access entry per request.** With default middleware
+  on, the framework emits a minimal `request` entry from
+  `middleware.LoggingFn(app.Logger)` and this plugin emits a richer
+  `http.access` entry from its own access middleware — both flow
+  through the same sinks. Either pass `framework.WithoutDefaultMiddleware()`
+  and wire the rest of the chain manually, or filter on `msg` in the
+  consumer.

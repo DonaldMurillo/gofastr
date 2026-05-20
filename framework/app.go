@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
@@ -46,6 +48,20 @@ type AppConfig struct {
 	JSONCase       crud.JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
 	DebugEndpoints bool          // opt-in for /.debug/* endpoints
 	NoLLMMD        bool          // disable auto-generated /llm.md entity docs
+
+	// RequestTimeout caps the per-request wall-clock budget enforced by
+	// the default middleware chain. Zero (default) installs a 30s cap.
+	// Set a positive duration to override. To disable the timeout
+	// middleware entirely, set DisableRequestTimeout — overloading
+	// sign for "disable" is too easy to trip on (e.g. accidentally
+	// subtracting two timestamps).
+	RequestTimeout time.Duration
+
+	// DisableRequestTimeout removes the Timeout middleware from the
+	// default chain entirely. Useful for long-running uploads / SSE;
+	// pair with per-handler ctx deadlines if you still need bounded
+	// request lifetime.
+	DisableRequestTimeout bool
 }
 
 // App is the top-level application container.
@@ -65,8 +81,19 @@ type App struct {
 	events     *event.EventBus
 	hooks      map[string]*hook.HookRegistry
 	mountables []Mountable
-	mwApplied  bool
 	noDefaults bool
+
+	// logger is the App-local *slog.Logger. Read via Logger(), swapped via
+	// SetLogger(). Stored behind an atomic pointer so middleware composed
+	// at NewApp time can resolve the current logger per request without a
+	// lock — plugins (battery/log, etc.) can swap it from their Init.
+	logger atomic.Pointer[slog.Logger]
+
+	// initialized guards InitPlugins against double-init. Public so a test
+	// or CLI can call InitPlugins manually pre-Start, then Start also calls
+	// it — the second call must be a no-op (otherwise routes/middleware
+	// double-register and panic on duplicate mux patterns).
+	initialized atomic.Bool
 
 	// Lifecycle hooks fired by Start/Stop. startHooks run with the app's
 	// derived context so workers cancel when Stop is called.
@@ -143,6 +170,20 @@ func WithoutDefaultMiddleware() AppOption {
 	}
 }
 
+// WithLogger sets the App's *slog.Logger. Same effect as calling
+// App.SetLogger after NewApp; available as an option for symmetry.
+// Panics if l is nil — the App's logger is always non-nil; pass a
+// discard logger (slog.New(slog.DiscardHandler)) if you want to
+// silence output.
+func WithLogger(l *slog.Logger) AppOption {
+	if l == nil {
+		panic("framework: WithLogger(nil) — use slog.DiscardHandler to silence logging")
+	}
+	return func(a *App) {
+		a.logger.Store(l)
+	}
+}
+
 // WithIdempotency adds an Idempotency-Key middleware to the default
 // chain. Pass middleware.IdempotencyConfig{} to take all defaults; the
 // option is otherwise idiomatic-Go composition over the existing
@@ -171,6 +212,80 @@ func WithI18n(tr *i18n.Translator) AppOption {
 	}
 }
 
+// Logger returns the App-local *slog.Logger. Middleware and plugins
+// should call this — not slog.Default() — so that a logging plugin can
+// replace the destination without rewiring globals.
+//
+// Always non-nil. NewApp seeds the App with a JSON-to-stderr logger
+// that is independent of slog.Default; an unrelated slog.SetDefault
+// elsewhere in the process does not redirect this App's logs.
+func (a *App) Logger() *slog.Logger {
+	return a.logger.Load()
+}
+
+// SetLogger replaces the App's logger. Atomic; safe to call
+// concurrently with in-flight requests — atomic.Pointer.Store is
+// race-free, and middleware reading via App.Logger() sees the new
+// value on the next request.
+//
+// Panics if l is nil — the App's logger is always non-nil; pass a
+// discard logger (slog.New(slog.DiscardHandler)) to silence output.
+func (a *App) SetLogger(l *slog.Logger) {
+	if l == nil {
+		panic("framework: App.SetLogger(nil) — use slog.DiscardHandler to silence logging")
+	}
+	a.logger.Store(l)
+}
+
+// DefaultMiddleware is the framework's standard safety chain in
+// canonical order:
+//
+//	recovery → request-id → [idempotency] → [i18n] → security headers → timeout
+//
+// The optional entries are present when the App was configured with
+// WithIdempotency / WithI18n; the timeout entry is omitted when
+// AppConfig.DisableRequestTimeout is true.
+//
+// Access logging is deliberately NOT in this list. battery/log owns
+// structured access logging when registered, and ad-hoc apps that just
+// want a basic line can add middleware.LoggingFn(app.Logger) themselves
+// — having both fire produces duplicate entries with mismatched fields
+// (`request` from the framework, `http.access` from the plugin).
+//
+// Takes the App so the recovery middleware can route panics through
+// app.Logger (late-binding) and the timeout reflects
+// AppConfig.RequestTimeout. Pass nil only in tests; the recovery falls
+// back to slog.Default and the timeout to 30s.
+func DefaultMiddleware(a *App) []router.Middleware {
+	var getLogger func() *slog.Logger
+	timeout := 30 * time.Second
+	var idempotency *middleware.IdempotencyConfig
+	var translator *i18n.Translator
+	if a != nil {
+		getLogger = a.Logger
+		if a.Config.RequestTimeout > 0 {
+			timeout = a.Config.RequestTimeout
+		}
+		idempotency = a.idempotency
+		translator = a.translator
+	}
+	chain := []router.Middleware{
+		router.Middleware(middleware.RecoveryFn(getLogger)),
+		router.Middleware(middleware.RequestID()),
+	}
+	if idempotency != nil {
+		chain = append(chain, router.Middleware(middleware.Idempotency(*idempotency)))
+	}
+	if translator != nil {
+		chain = append(chain, router.Middleware(i18n.Middleware(translator)))
+	}
+	chain = append(chain, router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})))
+	if a == nil || !a.Config.DisableRequestTimeout {
+		chain = append(chain, router.Middleware(middleware.Timeout(timeout)))
+	}
+	return chain
+}
+
 // Mount attaches a Mountable and registers its routes on the app's router
 // immediately. The default middleware chain is already in place (committed
 // during NewApp), so any handler the Mountable registers is wrapped with
@@ -179,59 +294,32 @@ func WithI18n(tr *i18n.Translator) AppOption {
 // Mountables typically register a NotFound catch-all (e.g. a UI host that
 // renders pages for any unrouted path), so call Mount AFTER any explicit
 // routes you want to take precedence (entity CRUD, custom endpoints).
+//
+// IMPORTANT — ordering with plugins/batteries: plugin.Init runs at
+// App.Start (or InitPlugins), AFTER Mount has already registered the
+// Mountable's routes. If a plugin's Init registers a more-specific
+// route that overlaps with a Mountable's NotFound catch-all, the
+// plugin's route still wins (ServeMux dispatches by specificity, not
+// by registration order). But if a plugin registers a Mountable-style
+// catch-all itself, it shadows any user routes added after Mount but
+// before InitPlugins. Mount last unless you know what you're doing.
 func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
 	m.Mount(a.Router)
 	return a
 }
 
-// Use appends middleware to the app's router. Calling Use disables the
-// default middleware chain — once you start composing your own, the app
-// trusts you to attach what you need.
+// Use appends middleware to the app's router chain. The default chain
+// (installed by NewApp unless WithoutDefaultMiddleware is set) stays in
+// place — Use adds to it, never silently replaces it. Plugins call Use
+// from their Init to contribute middleware; router late-binding means
+// these additions also wrap routes registered before the plugin loaded.
 func (a *App) Use(mw ...router.Middleware) *App {
 	if len(mw) == 0 {
 		return a
 	}
 	a.Router.Use(mw...)
-	a.mwApplied = true
 	return a
-}
-
-// applyDefaultMiddleware attaches the standard chain on first call. The
-// order is outermost-first: recovery → request-id → logging → security
-// headers → timeout. Skipped entirely when WithoutDefaultMiddleware is
-// set or when Use has already been called.
-func (a *App) applyDefaultMiddleware() {
-	if a.noDefaults && a.idempotency != nil {
-		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware — " +
-			"the idempotency middleware lives in the default chain; mount it explicitly via " +
-			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
-	}
-	if a.noDefaults && a.translator != nil {
-		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware — " +
-			"the i18n middleware lives in the default chain; mount it explicitly via " +
-			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
-	}
-	if a.mwApplied || a.noDefaults {
-		return
-	}
-	chain := []router.Middleware{
-		router.Middleware(middleware.Recovery()),
-		router.Middleware(middleware.RequestID()),
-		router.Middleware(middleware.Logging()),
-	}
-	if a.idempotency != nil {
-		chain = append(chain, router.Middleware(middleware.Idempotency(*a.idempotency)))
-	}
-	if a.translator != nil {
-		chain = append(chain, router.Middleware(i18n.Middleware(a.translator)))
-	}
-	chain = append(chain,
-		router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})),
-		router.Middleware(middleware.Timeout(30*time.Second)),
-	)
-	a.Router.Use(chain...)
-	a.mwApplied = true
 }
 
 // NewApp creates a new App with the given options.
@@ -252,12 +340,36 @@ func NewApp(opts ...AppOption) *App {
 		opt(a)
 	}
 
-	// Apply default middleware before any routes are registered. The router
-	// wraps handlers at Handle() time, so middleware added after that has
-	// no effect — we have to commit to a chain up front. Users who want a
-	// custom chain pass WithoutDefaultMiddleware and call App.Use(...) before
-	// registering entities.
-	a.applyDefaultMiddleware()
+	// Seed the App-local logger if no option supplied one. JSON to
+	// stderr — independent of slog.Default so external slog rewiring
+	// doesn't redirect this App's framework logs. battery/log replaces
+	// it during Init via app.SetLogger.
+	if a.logger.Load() == nil {
+		a.logger.Store(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	}
+
+	// WithIdempotency / WithI18n add entries to the default chain; if
+	// the caller also passed WithoutDefaultMiddleware they would never
+	// appear. Surface the misconfiguration immediately rather than
+	// silently dropping the middleware.
+	if a.noDefaults && a.idempotency != nil {
+		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware — " +
+			"the idempotency middleware lives in the default chain; mount it explicitly via " +
+			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
+	}
+	if a.noDefaults && a.translator != nil {
+		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware — " +
+			"the i18n middleware lives in the default chain; mount it explicitly via " +
+			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
+	}
+
+	// Install the default middleware preset unless opted out. The router
+	// resolves its middleware chain per request, so plugins can append
+	// more via app.Use from their Init and still wrap routes that were
+	// registered earlier (e.g. by Mount).
+	if !a.noDefaults {
+		a.Router.Use(DefaultMiddleware(a)...)
+	}
 
 	// Propagate DB to registry and its entities
 	if a.DB != nil {
@@ -390,7 +502,15 @@ func (a *App) JSONCasing() crud.JSONCase {
 
 // RegisterPlugin registers a plugin with the application's plugin manager.
 // Returns the App for fluent chaining.
+//
+// Panics if InitPlugins has already run — plugins must be registered
+// before App.Start (or the explicit InitPlugins call) so their Init
+// fires. The panic is a clear contract violation rather than a silent
+// no-op that would have the new plugin's routes / middleware vanish.
 func (a *App) RegisterPlugin(plugin Plugin) *App {
+	if a.initialized.Load() {
+		panic(fmt.Sprintf("framework: RegisterPlugin(%q) called after InitPlugins; register plugins before App.Start", plugin.Name()))
+	}
 	if err := a.Plugins.Register(plugin); err != nil {
 		panic(fmt.Sprintf("framework: failed to register plugin %q: %v", plugin.Name(), err))
 	}
@@ -401,44 +521,50 @@ func (a *App) RegisterPlugin(plugin Plugin) *App {
 // (auth, search, cache, etc.) with the application. deps lists battery names
 // that must be initialized before this one. Returns the App for chaining.
 //
-// Batteries are initialized in dependency order during App.Start, before the
-// HTTP server binds. The battery's optional interfaces (BatteryRoutes,
-// BatteryMiddleware, BatteryHooks, BatteryTools, BatteryLifecycle) are called
-// automatically at the appropriate lifecycle stage.
+// Batteries are initialized in dependency-resolved order during App.Start,
+// before the HTTP server binds. Each battery's Init does whatever it needs
+// by calling into the App (routes, middleware, hooks, MCP tools). Batteries
+// that also implement BatteryLifecycle get their OnStart/OnStop fired by
+// the App at the appropriate moment.
 //
 // Example:
 //
 //	app.RegisterBattery(auth.New(auth.Config{...}), "search") // depends on search battery
 func (a *App) RegisterBattery(b Battery, deps ...string) *App {
+	if a.initialized.Load() {
+		panic(fmt.Sprintf("framework: RegisterBattery(%q) called after InitPlugins; register batteries before App.Start", b.Name()))
+	}
 	if err := a.Batteries.Register(b, deps...); err != nil {
 		panic(fmt.Sprintf("framework: failed to register battery %q: %v", b.Name(), err))
 	}
 	return a
 }
 
-// InitPlugins initializes all registered plugins and batteries, and calls
-// their optional interface methods (HasRoutes, BatteryRoutes, etc.).
-// This should be called after all plugins/batteries are registered and
-// before the server starts.
+// InitPlugins initializes all registered plugins and batteries by calling
+// their Init(app) method. Plugins go first (registration order), then
+// batteries (dependency-resolved order). Each module does everything it
+// needs from inside Init — register routes, add middleware, register MCP
+// tools, attach hooks, swap the logger, etc.
+//
+// Idempotent: the first successful call latches an internal flag so any
+// later call returns nil without re-running plugin Inits. This lets tests
+// call InitPlugins() manually pre-Start without colliding with the
+// implicit call inside Start.
 func (a *App) InitPlugins() error {
-	// Initialize lightweight plugins first
+	if !a.initialized.CompareAndSwap(false, true) {
+		return nil
+	}
 	if err := a.Plugins.InitAll(a); err != nil {
+		// Rollback the latch so the caller can retry after fixing
+		// whatever caused the failure (otherwise a transient init
+		// error would permanently brick the app).
+		a.initialized.Store(false)
 		return err
 	}
-	a.Plugins.RegisterRoutes(a.Router)
-	a.Plugins.RegisterMiddleware(a)
-	a.Plugins.RegisterTools(a.MCP)
-	a.Plugins.RegisterHooks(a)
-
-	// Initialize batteries (dependency-ordered)
 	if err := a.Batteries.InitAll(a); err != nil {
+		a.initialized.Store(false)
 		return err
 	}
-	a.Batteries.RegisterRoutes(a.Router)
-	a.Batteries.RegisterMiddleware(a)
-	a.Batteries.RegisterTools(a.MCP)
-	a.Batteries.RegisterHooks(a)
-
 	// Probe both plugins and batteries for the optional
 	// ReadinessRegistrar interface so they can publish health checks
 	// before /readyz mounts in Start.
@@ -485,6 +611,20 @@ func (a *App) OnStop(fn func() error) *App {
 	return a
 }
 
+// OnStopFirst registers an OnStop hook that runs LAST under the
+// reverse-order Stop iteration — i.e. it's prepended to the hook list.
+// Useful for plugins (battery/log especially) that must outlive every
+// other shutdown step: their close hook needs to fire AFTER every
+// other OnStop has had a chance to emit log entries.
+//
+// Without this, a user that registers app.OnStop BEFORE
+// RegisterPlugin(log) gets the order inverted on reverse iteration —
+// log's close runs first, the user's OnStop logs into closed sinks.
+func (a *App) OnStopFirst(fn func() error) *App {
+	a.stopHooks = append([]func() error{fn}, a.stopHooks...)
+	return a
+}
+
 // AddCron registers a Scheduler with the app's lifecycle: it starts when
 // Start runs and stops when Stop runs. Returns the App for chaining so
 // users can wire several schedulers in one expression.
@@ -523,10 +663,16 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 	return a
 }
 
-// Stop shuts down the HTTP server (graceful) and runs every OnStop hook in
-// reverse order. Batteries stop before app-level hooks. Safe to call multiple
-// times; subsequent calls are no-ops.
-func (a *App) Stop(ctx context.Context) error {
+// Shutdown gracefully stops the HTTP server, stops every registered
+// battery in reverse dependency order, then runs each OnStop hook in
+// reverse registration order. Matches net/http.Server.Shutdown's
+// signature (takes a deadline ctx) but does the FULL lifecycle teardown.
+// Safe to call multiple times — subsequent calls are no-ops.
+//
+// This is the method to call from your signal handler. The old `Stop`
+// name is kept as a thin alias for ergonomic symmetry with `Start` but
+// `Shutdown` is the canonical name and what should appear in new code.
+func (a *App) Shutdown(ctx context.Context) error {
 	if a.appCancel != nil {
 		a.appCancel()
 		a.appCancel = nil
@@ -729,11 +875,3 @@ func formatBytes(b uint64) string {
 func arrow() string        { return "\033[33m→\033[0m" }
 func bold(s string) string { return "\033[1m" + s + "\033[0m" }
 
-// Shutdown gracefully stops the HTTP server, waiting up to ctx's deadline for
-// in-flight requests to complete. Safe to call before Start (no-op).
-func (a *App) Shutdown(ctx context.Context) error {
-	if a.server == nil {
-		return nil
-	}
-	return a.server.Shutdown(ctx)
-}

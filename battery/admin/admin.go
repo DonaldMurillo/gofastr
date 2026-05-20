@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // Config configures the Admin battery.
@@ -88,12 +89,16 @@ func New(cfg Config) *Battery {
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "admin" }
 
-// Init implements framework.Battery. The admin battery is stateless
-// at init time — all real work happens in route handlers.
-func (b *Battery) Init(_ interface{}) error { return nil }
+// Init implements framework.Battery. Mounts the three admin pages on
+// the App's router under cfg.PathPrefix.
+func (b *Battery) Init(app *framework.App) error {
+	b.RegisterRoutes(app.Router)
+	return nil
+}
 
-// RegisterRoutes implements framework.BatteryRoutes. Wires the three
-// admin pages under cfg.PathPrefix.
+// RegisterRoutes mounts the three admin pages under cfg.PathPrefix on
+// the supplied router. Exposed so apps that compose their own router
+// can mount the admin without going through the battery lifecycle.
 func (b *Battery) RegisterRoutes(r *router.Router) {
 	r.Get(b.cfg.PathPrefix, http.HandlerFunc(b.handleIndex))
 	r.Get(b.cfg.PathPrefix+"/queue", http.HandlerFunc(b.handleQueue))

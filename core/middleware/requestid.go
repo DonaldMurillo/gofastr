@@ -24,15 +24,53 @@ func GetRequestID(ctx context.Context) string {
 	return ""
 }
 
+// MaxRequestIDLen caps client-supplied X-Request-ID values. Above this
+// length the inbound header is rejected and a fresh ID generated.
+//
+// Without a cap, an attacker can stuff arbitrary multi-KB strings into
+// every request — they'd be logged in every access entry, reflected on
+// the response, and amplified across webhook sinks.
+const MaxRequestIDLen = 128
+
+// validRequestIDChar accepts the conventional UUID alphabet plus a few
+// adjacent characters operators commonly use for tagging (period, slash
+// is intentionally NOT included to avoid path-injection ambiguity).
+func validRequestIDChar(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z',
+		c >= 'A' && c <= 'Z',
+		c >= '0' && c <= '9',
+		c == '-', c == '_', c == '.':
+		return true
+	}
+	return false
+}
+
+func validRequestID(s string) bool {
+	if s == "" || len(s) > MaxRequestIDLen {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !validRequestIDChar(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // RequestID returns middleware that assigns a unique ID to each request.
-// If an X-Request-ID header is already present on the incoming request,
-// it is reused. Otherwise a new UUID v4 is generated.
-// The ID is stored in the request context and set on the response header.
+// If an X-Request-ID header is present, well-formed (≤MaxRequestIDLen,
+// alphanumeric / dot / dash / underscore), it is reused. Otherwise a
+// new UUID v4 is generated.
+//
+// Validation defends against: (1) huge headers amplified across every
+// log entry, (2) header-reflection into response, (3) control chars
+// (already blocked by net/http) — but our charset is stricter.
 func RequestID() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := r.Header.Get(HeaderRequestID)
-			if id == "" {
+			if !validRequestID(id) {
 				id = newUUIDv4()
 			}
 			ctx := context.WithValue(r.Context(), requestIDKey{}, id)

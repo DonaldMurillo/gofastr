@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,8 +91,10 @@ func forEachBenchDialect(b *testing.B, fn func(b *testing.B, db *sql.DB, dialect
 	}
 }
 
+var benchSchemaCounter atomic.Uint64
+
 func benchSchemaName(b *testing.B) string {
-	id := schemaCounter.Add(1)
+	id := benchSchemaCounter.Add(1)
 	clean := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':

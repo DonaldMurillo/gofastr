@@ -467,3 +467,131 @@ func TestGroupMiddlewareIsolation(t *testing.T) {
 		}
 	}
 }
+
+// Middleware added AFTER Handle still wraps the registered route. This is
+// the contract that lets framework plugins contribute middleware from their
+// Init (which runs after the host has already called Mount/Handle).
+func TestLateMiddlewareWrapsExistingRoutes(t *testing.T) {
+	r := New()
+	r.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Late", "yes")
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if got := w.Header().Get("X-Late"); got != "yes" {
+		t.Fatalf("late middleware did not wrap pre-existing route; X-Late = %q", got)
+	}
+}
+
+// Group inherits parent middleware via late-binding: middleware appended to
+// the parent after Group still applies to routes registered on the child.
+func TestGroupSeesLateParentMiddleware(t *testing.T) {
+	r := New()
+	api := r.Group("/api")
+	api.Get("/x", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Parent-Late", "yes")
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if got := w.Header().Get("X-Parent-Late"); got != "yes" {
+		t.Fatalf("group did not inherit late parent middleware; X-Parent-Late = %q", got)
+	}
+}
+
+// TestRouterUseRaceWithRequests pins that concurrent Use + ServeHTTP
+// is data-race-safe. Under -race, an unsynchronized append/read on
+// r.middlewares panics. The framework documents app.Use as callable
+// at any time (e.g. from a plugin's OnStart after the server is
+// already serving), so the chain mutation must be safe vs requests.
+func TestRouterUseRaceWithRequests(t *testing.T) {
+	r := New()
+	r.Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					next.ServeHTTP(w, req)
+				})
+			})
+		}
+	}()
+
+	for i := 0; i < 200; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+	}
+	<-done
+}
+
+// TestGroupLateBindsParentNotFound pins that a subrouter served
+// directly as an http.Handler picks up the parent's NotFound handler
+// even if NotFound was registered AFTER Group was called. The previous
+// snapshot semantics in Group meant a stale nil notFound would silently
+// 404 through ServeMux's built-in.
+func TestGroupLateBindsParentNotFound(t *testing.T) {
+	r := New()
+	api := r.Group("/api")
+
+	// Register NotFound on parent AFTER Group was constructed.
+	r.NotFound(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Parent-NotFound", "yes")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/missing", nil)
+	w := httptest.NewRecorder()
+	api.ServeHTTP(w, req)
+
+	if got := w.Header().Get("X-Parent-NotFound"); got != "yes" {
+		t.Fatalf("subrouter did not resolve parent's late-registered NotFound; X-Parent-NotFound = %q", got)
+	}
+}
+
+// NotFound handler picks up middleware added after NotFound was called.
+func TestNotFoundSeesLateMiddleware(t *testing.T) {
+	r := New()
+	r.NotFound(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-NotFound-Late", "yes")
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if got := w.Header().Get("X-NotFound-Late"); got != "yes" {
+		t.Fatalf("late middleware did not wrap NotFound; X-NotFound-Late = %q", got)
+	}
+}

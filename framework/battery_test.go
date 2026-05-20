@@ -22,7 +22,7 @@ type mockBattery struct {
 }
 
 func (m *mockBattery) Name() string { return m.name }
-func (m *mockBattery) Init(app interface{}) error {
+func (m *mockBattery) Init(app *App) error {
 	m.initCalled = true
 	return m.initErr
 }
@@ -33,13 +33,6 @@ func (m *mockBattery) OnStart(ctx context.Context) error {
 func (m *mockBattery) OnStop(ctx context.Context) error {
 	m.stopped = true
 	return m.stopErr
-}
-
-// mockBatteryRoutes adds the BatteryRoutes optional interface.
-type mockBatteryRoutes struct{ mockBattery }
-
-func (m *mockBatteryRoutes) RegisterRoutes(r interface{ Get(string, interface{}) }) {
-	m.routes = append(m.routes, "registered")
 }
 
 // Verify mockBattery satisfies the interfaces at compile time.
@@ -288,7 +281,7 @@ type depsBattery struct {
 }
 
 func (d *depsBattery) Name() string              { return d.name }
-func (d *depsBattery) Init(_ interface{}) error {
+func (d *depsBattery) Init(_ *App) error {
 	if d.onInit != nil {
 		d.onInit()
 	}

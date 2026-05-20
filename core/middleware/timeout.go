@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -175,18 +176,48 @@ func Timeout(d time.Duration) Middleware {
 
 			tw := newTimeoutWriter(w)
 			done := make(chan struct{})
+			// Recover panics in the child goroutine and re-raise them
+			// in the parent so outer Recovery middleware sees them.
+			// Without this, a handler panic crashes the whole process
+			// because the parent's defer recover lives in a different
+			// goroutine.
+			var childPanic any
 			go func() {
+				defer func() {
+					if v := recover(); v != nil {
+						childPanic = v
+					}
+					close(done)
+				}()
 				next.ServeHTTP(tw, r.WithContext(ctx))
-				close(done)
 			}()
 
 			select {
 			case <-done:
+				if childPanic != nil {
+					panic(childPanic)
+				}
 				tw.finish()
 			case <-ctx.Done():
 				if tw.expire() {
 					http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
 				}
+				// Parent took the timeout branch; the handler goroutine
+				// is still running and may yet panic. Watch for that
+				// late panic and surface it through slog.Default so it
+				// doesn't vanish — otherwise debugging "why does this
+				// endpoint sometimes 504 with no further trace" is
+				// impossible.
+				go func() {
+					<-done
+					if childPanic != nil {
+						slog.Error("panic in timed-out handler",
+							"error", truncate(fmt.Sprint(childPanic), maxRecoveryPanicLen),
+							"path", truncate(r.URL.Path, maxRecoveryPathLen),
+							"method", r.Method,
+						)
+					}
+				}()
 			}
 		})
 	}

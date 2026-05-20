@@ -18,8 +18,17 @@ type TestApp struct {
 
 // TestHarness creates an in-memory test harness around an App.
 // No real HTTP server is started — requests go directly through the router.
+//
+// Calls app.InitPlugins() internally so plugin / battery wiring is in
+// place before the first request. Without this, RegisterPlugin'd
+// behaviour silently does nothing under the harness (Init never fires).
+// Idempotent guard inside InitPlugins makes this safe even if Start is
+// called later by the same test.
 func TestHarness(t *testing.T, app *App) *TestApp {
 	t.Helper()
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("TestHarness: InitPlugins: %v", err)
+	}
 	return &TestApp{
 		App:    app,
 		router: app.Router,

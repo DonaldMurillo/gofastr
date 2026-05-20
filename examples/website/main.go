@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/static"
@@ -193,6 +194,15 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	host := uihost.New(site, hostOpts...)
 
 	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "website"}))
+
+	// battery/log: structured JSON server log. Writes to a per-app file
+	// in the OS state dir (e.g. ~/.local/state/website/server.log),
+	// installs panic-recovery + access-log middleware, and swaps the
+	// App's logger so framework middleware (Logging, slowquery, etc.)
+	// also flows through these sinks. Router late-binding means the
+	// plugin's middleware wraps routes registered by Mount below too.
+	fwApp.RegisterPlugin(log.New(log.Config{}))
+
 	fwApp.Mount(host)
 
 	// Wire a sqlite-backed entity so CRUD + /llm.md entity docs are live.

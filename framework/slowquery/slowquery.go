@@ -23,18 +23,41 @@ import (
 type SlowQueryLogger struct {
 	inner     db.Executor
 	threshold time.Duration
-	logger    *slog.Logger
+	getLogger func() *slog.Logger
 	hits      atomic.Uint64
 }
 
 // NewSlowQueryLogger wraps inner with a slow-query observer. When threshold
 // is zero, the wrapper is a no-op pass-through (the same db.Executor with no
 // instrumentation cost).
+//
+// logger is a pinned *slog.Logger. Slow-query lines write through it for the
+// lifetime of the wrapper. To follow App.Logger swaps (battery/log replaces
+// it during plugin Init), use NewSlowQueryLoggerFn instead and pass
+// app.Logger as the accessor.
 func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog.Logger) *SlowQueryLogger {
 	if logger == nil {
-		logger = slog.Default()
+		return NewSlowQueryLoggerFn(inner, threshold, nil)
 	}
-	return &SlowQueryLogger{inner: inner, threshold: threshold, logger: logger}
+	return &SlowQueryLogger{
+		inner:     inner,
+		threshold: threshold,
+		getLogger: func() *slog.Logger { return logger },
+	}
+}
+
+// NewSlowQueryLoggerFn is like NewSlowQueryLogger but takes a per-call
+// accessor so log lines route through the current logger at observation
+// time. Use with app.Logger so battery/log's SetLogger swap takes effect
+// without re-wrapping the executor.
+//
+// If getLogger is nil or returns nil, slog.Default is used as a safety
+// fallback (slow-query lines never disappear silently).
+func NewSlowQueryLoggerFn(inner db.Executor, threshold time.Duration, getLogger func() *slog.Logger) *SlowQueryLogger {
+	if getLogger == nil {
+		getLogger = func() *slog.Logger { return slog.Default() }
+	}
+	return &SlowQueryLogger{inner: inner, threshold: threshold, getLogger: getLogger}
 }
 
 // Hits returns the running count of queries that crossed the threshold.
@@ -92,7 +115,11 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	if err != nil {
 		attrs = append(attrs, slog.String("err", err.Error()))
 	}
-	s.logger.LogAttrs(ctx, slog.LevelWarn, "slow query", asSlogAttrs(attrs)...)
+	logger := s.getLogger()
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.LogAttrs(ctx, slog.LevelWarn, "slow query", asSlogAttrs(attrs)...)
 }
 
 // TrimSQL collapses internal whitespace so log lines stay readable. Caps the
