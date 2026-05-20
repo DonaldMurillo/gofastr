@@ -43,17 +43,21 @@ type BlueprintScreen struct {
 }
 
 type BlueprintBlock struct {
-	Type     string
-	Kind     string
-	Text     string
-	Level    int
-	Class    string
-	Href     string
-	Props    map[string]any
-	Children []BlueprintBlock
-	Actions  []BlueprintAction
-	Island   string
-	Widget   string
+	Type      string
+	Kind      string
+	Text      string
+	Level     int
+	Class     string
+	Href      string
+	Entity    string
+	Fields    []string
+	Limit     int
+	EmptyText string
+	Props     map[string]any
+	Children  []BlueprintBlock
+	Actions   []BlueprintAction
+	Island    string
+	Widget    string
 }
 
 type BlueprintAction struct {
@@ -557,7 +561,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -570,17 +574,21 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 			return nil, err
 		}
 		out = append(out, BlueprintBlock{
-			Type:     stringValue(m["type"]),
-			Kind:     stringValue(m["kind"]),
-			Text:     stringValue(m["text"]),
-			Level:    intValue(m["level"]),
-			Class:    stringValue(m["class"]),
-			Href:     stringValue(m["href"]),
-			Props:    mapValue(m["props"]),
-			Children: children,
-			Actions:  actions,
-			Island:   stringValue(m["island"]),
-			Widget:   stringValue(m["widget"]),
+			Type:      stringValue(m["type"]),
+			Kind:      stringValue(m["kind"]),
+			Text:      stringValue(m["text"]),
+			Level:     intValue(m["level"]),
+			Class:     stringValue(m["class"]),
+			Href:      stringValue(m["href"]),
+			Entity:    stringValue(m["entity"]),
+			Fields:    stringListValue(m["fields"]),
+			Limit:     intValue(m["limit"]),
+			EmptyText: stringValue(m["empty_text"]),
+			Props:     mapValue(m["props"]),
+			Children:  children,
+			Actions:   actions,
+			Island:    stringValue(m["island"]),
+			Widget:    stringValue(m["widget"]),
 		})
 	}
 	return out, nil
@@ -670,6 +678,7 @@ func validateBlueprint(bp Blueprint) error {
 		}
 	}
 	entityNames := map[string]bool{}
+	entitiesByName := map[string]framework.EntityDeclaration{}
 	for _, decl := range bp.Entities {
 		if decl.Name == "" {
 			return fmt.Errorf("blueprint: entity name is required")
@@ -678,6 +687,7 @@ func validateBlueprint(bp Blueprint) error {
 			return fmt.Errorf("blueprint: duplicate entity %q", decl.Name)
 		}
 		entityNames[decl.Name] = true
+		entitiesByName[decl.Name] = decl
 		if _, err := decl.Config(); err != nil {
 			return fmt.Errorf("blueprint: entity %q: %w", decl.Name, err)
 		}
@@ -716,7 +726,7 @@ func validateBlueprint(bp Blueprint) error {
 			return err
 		}
 		for _, block := range screen.Body {
-			if err := validateBlueprintBlock(screen.Name, block); err != nil {
+			if err := validateBlueprintBlock(screen.Name, entitiesByName, block); err != nil {
 				return err
 			}
 		}
@@ -847,7 +857,7 @@ func blueprintDefaultTableName(name string) string {
 	return strings.ToLower(b.String())
 }
 
-func validateBlueprintBlock(screenName string, block BlueprintBlock) error {
+func validateBlueprintBlock(screenName string, entities map[string]framework.EntityDeclaration, block BlueprintBlock) error {
 	kind := block.Kind
 	if kind == "" {
 		kind = block.Type
@@ -870,11 +880,38 @@ func validateBlueprintBlock(screenName string, block BlueprintBlock) error {
 		if href == "" {
 			return fmt.Errorf("blueprint: screen %q link block href is required", screenName)
 		}
+	case "entity_list":
+		if block.Entity == "" {
+			return fmt.Errorf("blueprint: screen %q entity_list block entity is required", screenName)
+		}
+		decl, ok := entities[block.Entity]
+		if !ok {
+			return fmt.Errorf("blueprint: screen %q entity_list targets unknown entity %q", screenName, block.Entity)
+		}
+		if decl.CRUD != nil && !*decl.CRUD {
+			return fmt.Errorf("blueprint: screen %q entity_list target %q must enable crud", screenName, block.Entity)
+		}
+		if len(block.Fields) == 0 {
+			return fmt.Errorf("blueprint: screen %q entity_list block fields are required", screenName)
+		}
+		validFields := map[string]bool{"id": true}
+		for _, field := range decl.Fields {
+			validFields[field.Name] = true
+			validFields[toCamelJSON(field.Name)] = true
+		}
+		for _, field := range block.Fields {
+			if !validFields[field] {
+				return fmt.Errorf("blueprint: screen %q entity_list field %q is not defined on entity %q", screenName, field, block.Entity)
+			}
+		}
+		if block.Limit < 0 {
+			return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
+		}
 	default:
 		return fmt.Errorf("blueprint: screen %q has unsupported block type %q", screenName, kind)
 	}
 	for _, child := range block.Children {
-		if err := validateBlueprintBlock(screenName, child); err != nil {
+		if err := validateBlueprintBlock(screenName, entities, child); err != nil {
 			return err
 		}
 	}
@@ -922,6 +959,26 @@ func validateBlueprintActions(screenName string, blocks []BlueprintBlock) error 
 			return err
 		}
 	}
+	var checkSynthetic func([]BlueprintBlock, []int) error
+	checkSynthetic = func(blocks []BlueprintBlock, path []int) error {
+		for i, block := range blocks {
+			blockPath := append(append([]int(nil), path...), i)
+			if isEntityListBlock(block) {
+				name := blueprintEntityListActionName(BlueprintScreen{Name: screenName}, block, blockPath)
+				if names[name] {
+					return fmt.Errorf("blueprint: screen %q duplicate action %q", screenName, name)
+				}
+				names[name] = true
+			}
+			if err := checkSynthetic(block.Children, blockPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := checkSynthetic(blocks, nil); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -959,6 +1016,9 @@ var validHTTPMethods = map[string]bool{
 
 func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 	var files []generatedFile
+	if bp.App.Module != "" {
+		files = append(files, generatedFile{name: "main.go", content: renderBlueprintMain(bp)})
+	}
 	if len(bp.Entities) > 0 {
 		decls := make([]framework.EntityDeclaration, len(bp.Entities))
 		copy(decls, bp.Entities)
@@ -984,6 +1044,100 @@ func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	return files, nil
+}
+
+func renderBlueprintMain(bp Blueprint) string {
+	name := bp.App.Name
+	if name == "" {
+		name = "GoFastr"
+	}
+	staticDir := bp.App.StaticDir
+	dbURL := bp.App.DBURL
+	if dbURL == "" && len(bp.Entities) > 0 {
+		dbURL = "file:gofastr.db"
+	}
+	driver := bp.App.DBDriver
+	if driver == "" && (len(bp.Entities) > 0 || dbURL != "") {
+		driver = "sqlite"
+	}
+	outputDir := bp.App.OutputDir
+	if outputDir == "" {
+		outputDir = ".gofastr"
+	}
+	outputDir = strings.TrimPrefix(filepath.ToSlash(outputDir), "./")
+	baseImport := strings.TrimSuffix(bp.App.Module, "/") + "/" + strings.TrimSuffix(outputDir, "/")
+
+	var sb strings.Builder
+	sb.WriteString("// Code generated by gofastr. DO NOT EDIT.\npackage main\n\n")
+	sb.WriteString("import (\n")
+	sb.WriteString("\t\"database/sql\"\n")
+	sb.WriteString("\t\"fmt\"\n")
+	sb.WriteString("\t\"log\"\n")
+	sb.WriteString("\t\"net/http\"\n")
+	sb.WriteString("\t\"os\"\n\n")
+	sb.WriteString("\tuiapp \"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
+	if driver != "" && blueprintNeedsSQLiteDriver(driver) {
+		sb.WriteString("\t_ \"github.com/mattn/go-sqlite3\"\n")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/blueprint"))
+	if len(bp.Entities) > 0 {
+		sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/entities"))
+	}
+	sb.WriteString(")\n\n")
+
+	sb.WriteString("func main() {\n")
+	sb.WriteString("\tdb, err := openBlueprintDB()\n")
+	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
+	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
+	sb.WriteString("\toptions := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName})}\n")
+	sb.WriteString("\tif db != nil {\n\t\toptions = append(options, framework.WithDB(db))\n\t}\n")
+	sb.WriteString("\tfwApp := framework.NewApp(options...)\n")
+	if len(bp.Entities) > 0 {
+		sb.WriteString("\tentities.RegisterAll(fwApp)\n")
+	}
+	sb.WriteString("\tfwApp.Router.Handle(\"POST\", \"/mcp\", fwApp.MCP)\n")
+	sb.WriteString("\tsite := uiapp.NewApp(blueprint.BlueprintAppName)\n")
+	sb.WriteString("\tblueprint.RegisterGenerated(fwApp, site)\n")
+	if staticDir != "" {
+		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q)))\n", staticDir))
+	} else {
+		sb.WriteString("\tfwApp.Mount(uihost.New(site))\n")
+	}
+	sb.WriteString("\taddr := getEnv(\"PORT\", \"localhost:8080\")\n")
+	sb.WriteString("\tfmt.Printf(\"Server starting at http://%s\\n\", addr)\n")
+	sb.WriteString("\tif err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {\n\t\tlog.Fatal(err)\n\t}\n")
+	sb.WriteString("}\n\n")
+
+	sb.WriteString("func openBlueprintDB() (*sql.DB, error) {\n")
+	if driver == "" && dbURL == "" {
+		sb.WriteString("\treturn nil, nil\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("\tdriver := getEnv(\"DB_DRIVER\", %q)\n", driver))
+		sb.WriteString(fmt.Sprintf("\tdsn := getEnv(\"DATABASE_URL\", %q)\n", dbURL))
+		sb.WriteString("\tswitch driver {\n")
+		sb.WriteString("\tcase \"\", \"none\":\n\t\treturn nil, nil\n")
+		sb.WriteString("\tcase \"sqlite\", \"sqlite3\":\n\t\treturn sql.Open(\"sqlite3\", dsn)\n")
+		sb.WriteString("\tdefault:\n\t\treturn nil, fmt.Errorf(\"unsupported blueprint db driver %q\", driver)\n")
+		sb.WriteString("\t}\n")
+	}
+	sb.WriteString("}\n\n")
+	sb.WriteString("func getEnv(key, fallback string) string {\n")
+	sb.WriteString("\tif v := os.Getenv(key); v != \"\" {\n\t\treturn v\n\t}\n")
+	sb.WriteString("\treturn fallback\n")
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+func blueprintNeedsSQLiteDriver(driver string) bool {
+	switch strings.ToLower(strings.TrimSpace(driver)) {
+	case "", "sqlite", "sqlite3":
+		return true
+	default:
+		return false
+	}
 }
 
 func renderBlueprintScreens(bp Blueprint) string {
@@ -1037,8 +1191,8 @@ func renderBlueprintScreens(bp Blueprint) string {
 			sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootAttrs, screen.TitleOrName()))
 		} else {
 			sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s,\n", rootAttrs))
-			for _, block := range screen.Body {
-				sb.WriteString("\t\t" + renderBlueprintBlock(block) + ",\n")
+			for i, block := range screen.Body {
+				sb.WriteString("\t\t" + renderBlueprintBlockForScreen(screen, block, []int{i}) + ",\n")
 			}
 			sb.WriteString("\t)\n")
 		}
@@ -1095,14 +1249,21 @@ func screenHasActions(screen BlueprintScreen) bool {
 
 func screenActions(screen BlueprintScreen) []BlueprintAction {
 	var actions []BlueprintAction
-	var walk func([]BlueprintBlock)
-	walk = func(blocks []BlueprintBlock) {
-		for _, block := range blocks {
+	var walk func([]BlueprintBlock, []int)
+	walk = func(blocks []BlueprintBlock, path []int) {
+		for i, block := range blocks {
+			blockPath := append(append([]int(nil), path...), i)
 			actions = append(actions, block.Actions...)
-			walk(block.Children)
+			if isEntityListBlock(block) {
+				actions = append(actions, BlueprintAction{
+					Name:     blueprintEntityListActionName(screen, block, blockPath),
+					ClientJS: blueprintEntityListClientJS(block),
+				})
+			}
+			walk(block.Children, blockPath)
 		}
 	}
-	walk(screen.Body)
+	walk(screen.Body, nil)
 	return actions
 }
 
@@ -1140,8 +1301,15 @@ func (s BlueprintScreen) TitleOrName() string {
 }
 
 func renderBlueprintBlock(block BlueprintBlock) string {
+	return renderBlueprintBlockForScreen(BlueprintScreen{}, block, nil)
+}
+
+func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock, path []int) string {
+	if isEntityListBlock(block) {
+		return "kilnrender.RenderNode(" + renderBlueprintEntityListNodeExpression(screen, block, path) + ")"
+	}
 	if blueprintBlockUsesNodeRenderer(block) {
-		expr := renderBlueprintNodeExpression(block)
+		expr := renderBlueprintNodeExpressionForScreen(screen, block, path)
 		if block.Island != "" {
 			return fmt.Sprintf("island.NewIsland(%q, blueprintNodeComponent{node: %s}).Render()", block.Island, expr)
 		}
@@ -1186,6 +1354,10 @@ func renderBlueprintBlock(block BlueprintBlock) string {
 }
 
 func renderBlueprintNodeExpression(block BlueprintBlock) string {
+	return renderBlueprintNodeExpressionForScreen(BlueprintScreen{}, block, nil)
+}
+
+func renderBlueprintNodeExpressionForScreen(screen BlueprintScreen, block BlueprintBlock, path []int) string {
 	kind := block.Kind
 	if kind == "" {
 		kind = block.Type
@@ -1245,12 +1417,134 @@ func renderBlueprintNodeExpression(block BlueprintBlock) string {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(renderBlueprintNodeExpression(child))
+			childPath := append(append([]int(nil), path...), i)
+			sb.WriteString(renderBlueprintNodeExpressionForScreen(screen, child, childPath))
 		}
 		sb.WriteString("}")
 	}
 	sb.WriteString("}")
 	return sb.String()
+}
+
+func isEntityListBlock(block BlueprintBlock) bool {
+	kind := block.Kind
+	if kind == "" {
+		kind = block.Type
+	}
+	return strings.EqualFold(strings.TrimSpace(kind), "entity_list")
+}
+
+func renderBlueprintEntityListNodeExpression(screen BlueprintScreen, block BlueprintBlock, path []int) string {
+	entity := strings.Trim(block.Entity, "/")
+	limit := block.Limit
+	if limit == 0 {
+		limit = 20
+	}
+	emptyText := block.EmptyText
+	if emptyText == "" {
+		emptyText = "No records."
+	}
+	actionName := blueprintEntityListActionName(screen, block, path)
+	props := map[string]any{
+		"class":            "gofastr-entity-list",
+		"data-entity-list": entity,
+	}
+	var children []string
+	title := block.Text
+	if title == "" {
+		title = entity
+	}
+	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+		Kind: "heading",
+		Props: map[string]any{
+			"level": int64(2),
+			"text":  title,
+		},
+	}))
+	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+		Kind: "button",
+		Props: map[string]any{
+			"type":                     "button",
+			"text":                     "Refresh",
+			"data-action":              actionName,
+			"data-entity-list-refresh": entity,
+			"data-param-entity":        entity,
+			"data-param-limit":         int64(limit),
+			"data-param-empty-text":    emptyText,
+			"aria-label":               "Refresh " + entity,
+		},
+	}))
+	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+		Kind: "div",
+		Props: map[string]any{
+			"data-entity-list-body": true,
+			"text":                  emptyText,
+		},
+	}))
+	literal, err := renderGoLiteral(props)
+	if err != nil {
+		literal = "nil"
+	}
+	return "world.Node{Kind: \"section\", Props: " + literal + ", Children: []world.Node{" + strings.Join(children, ", ") + "}}"
+}
+
+func blueprintEntityListActionName(screen BlueprintScreen, block BlueprintBlock, path []int) string {
+	parts := []string{"entity_list"}
+	if screen.Name != "" {
+		parts = append(parts, toCamelJSON(screen.Name))
+	}
+	if block.Entity != "" {
+		parts = append(parts, toCamelJSON(block.Entity))
+	}
+	if len(path) > 0 {
+		pathParts := make([]string, len(path))
+		for i, part := range path {
+			pathParts[i] = fmt.Sprint(part)
+		}
+		parts = append(parts, strings.Join(pathParts, "_"))
+	}
+	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
+}
+
+func blueprintEntityListClientJS(block BlueprintBlock) string {
+	entity := strings.Trim(block.Entity, "/")
+	limit := block.Limit
+	if limit == 0 {
+		limit = 20
+	}
+	emptyText := block.EmptyText
+	if emptyText == "" {
+		emptyText = "No records."
+	}
+	fieldsRaw, _ := json.Marshal(block.Fields)
+	return fmt.Sprintf(`(async () => {
+  const entity = %q;
+  const fields = %s;
+  const root = document.querySelector('[data-entity-list="' + entity + '"]');
+  const body = root && root.querySelector('[data-entity-list-body]');
+  if (!body) return;
+  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const table = (rowsHTML) => '<table><thead><tr>' + fields.map((field) => '<th>' + esc(field) + '</th>').join('') + '</tr></thead><tbody>' + rowsHTML + '</tbody></table>';
+  body.innerHTML = table('<tr><td colspan="' + fields.length + '">Loading...</td></tr>');
+  try {
+    const res = await fetch('/' + entity + '?limit=' + %d, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const payload = await res.json();
+    const rows = Array.isArray(payload.data) ? payload.data : [];
+    if (!rows.length) {
+      body.innerHTML = table('<tr><td colspan="' + fields.length + '">%s</td></tr>');
+      return;
+    }
+    body.innerHTML = table(rows.map((row) => '<tr>' + fields.map((field) => '<td>' + esc(row[field]) + '</td>').join('') + '</tr>').join(''));
+  } catch (err) {
+    body.innerHTML = table('<tr><td colspan="' + fields.length + '">Failed to load ' + esc(entity) + '</td></tr>');
+  }
+})();`, entity, string(fieldsRaw), limit, htmlEscapeJSString(emptyText))
+}
+
+func htmlEscapeJSString(value string) string {
+	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&#39;")
+	return replacer.Replace(value)
 }
 
 func renderBlueprintStubs(bp Blueprint) string {

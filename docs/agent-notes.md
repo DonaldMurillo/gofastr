@@ -1,5 +1,19 @@
 # Agent Notes
 
+## 2026-05-20 - blueprint-entity-list-e2e
+
+- Scope: `cmd/gofastr/blueprint.go`, `cmd/gofastr/blueprint_test.go`, `docs/blueprints.md`
+- Gap: generated screens could render static YAML UI and generated CRUD existed separately, but the blueprint shape had no data-aware UI block proving the generated browser could read generated CRUD data.
+- Change: `kind: entity_list` now validates that it targets a CRUD entity and known fields, renders a refreshable table shell, and registers generated client JS that fetches the entity list endpoint through the generated app.
+- Test rule: keep this covered in `TestBlueprintCLIGeneratesEntireWorkingAppE2E`; the browser should click the generated refresh action after creating real CRUD data and assert the DOM includes that data.
+
+## 2026-05-20 - blueprint-real-app-e2e
+
+- Scope: `cmd/gofastr/blueprint.go`, `cmd/gofastr/blueprint_test.go`, `docs/blueprints.md`
+- Symptom: the generated-app E2E was not actually proving the YAML-to-app boundary; it wrote a hand-built temp `main.go` that opened DB, registered entities, mounted UI, and called `blueprint.RegisterGenerated` itself.
+- Evidence: blueprint generation now emits `.gofastr/main.go` when `app.module` is set, and `TestBlueprintCLIGeneratesEntireWorkingAppE2E` runs the real CLI, builds `./.gofastr` into a binary, starts that binary, then drives HTTP CRUD, OpenAPI, `/mcp`, static assets, and browser UI/actions against the generated process.
+- Next time: generated-app E2E must start the generated binary. Package-level harnesses are useful as build smoke tests only; they cannot be the acceptance test for app generation.
+
 ## 2026-05-20 - blueprint-theme-codegen
 
 - Scope: `cmd/gofastr`, `docs/blueprints.md`, generated-app browser E2E

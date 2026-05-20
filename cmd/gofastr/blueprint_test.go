@@ -2,13 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/chromedp/chromedp"
 )
 
 func TestLoadBlueprintDecodesCodegenSurface(t *testing.T) {
@@ -208,6 +214,63 @@ screens:
         text: nope
 `,
 			want: `unsupported block type "chart"`,
+		},
+		{
+			name: "entity list unknown entity",
+			yml: `
+entities:
+  - name: posts
+    crud: false
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: entity_list
+        entity: comments
+        fields: [body]
+`,
+			want: `entity_list targets unknown entity "comments"`,
+		},
+		{
+			name: "entity list target must have crud",
+			yml: `
+entities:
+  - name: posts
+    crud: false
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+`,
+			want: `entity_list target "posts" must enable crud`,
+		},
+		{
+			name: "entity list field must exist",
+			yml: `
+entities:
+  - name: posts
+    crud: true
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [missing]
+`,
+			want: `entity_list field "missing" is not defined on entity "posts"`,
 		},
 		{
 			name: "bad ui action event",
@@ -595,7 +658,10 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.NewWidget("save_button"`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.On("save_click"`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.On("entity_list_home_posts_7"`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-action": "save_click"`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-entity-list": "posts"`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-entity-list-refresh": "posts"`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `type AnalyticsPlugin struct{}`)
@@ -608,6 +674,10 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Router.Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Use(RequestLoggerMiddleware)`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.RegisterPlugin(AnalyticsPlugin{})`)
+	assertContains(t, byName["main.go"], `entities.RegisterAll(fwApp)`)
+	assertContains(t, byName["main.go"], `blueprint.RegisterGenerated(fwApp, site)`)
+	assertContains(t, byName["main.go"], `fwApp.Router.Handle("POST", "/mcp", fwApp.MCP)`)
+	assertContains(t, byName["main.go"], `uihost.WithStaticDir("public")`)
 }
 
 func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
@@ -634,6 +704,7 @@ func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
+		"main.go",
 		filepath.Join("entities", "register.go"),
 		filepath.Join("entities", "models.go"),
 		filepath.Join("blueprint", "app.go"),
@@ -776,108 +847,62 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
-	goMod := "module example.com/blueprintapp\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	goMod := "module example.com/demo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
 	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
 	if err := copyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
 	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), testBlueprintYAML())
-	writeTestFile(t, filepath.Join(dir, "main.go"), `package main
-
-import (
-	"bytes"
-	"context"
-	"database/sql"
-	"encoding/json"
-	"io"
-	"net"
-	"net/http"
-	"strings"
-	"testing"
-	"time"
-
-	"github.com/chromedp/chromedp"
-	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	_ "github.com/mattn/go-sqlite3"
-
-	"example.com/blueprintapp/.gofastr/blueprint"
-	"example.com/blueprintapp/.gofastr/entities"
-)
-
-func TestGeneratedBlueprintAppWorksE2E(t *testing.T) {
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
-	if err != nil {
+	if err := os.Mkdir(filepath.Join(dir, "public"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	writeTestFile(t, filepath.Join(dir, "public", "hello.txt"), "static from generated app")
 
-	fwApp := framework.NewApp(framework.WithDB(db))
-	entities.RegisterAll(fwApp)
-	postsEntity, err := fwApp.Registry.Get("posts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if postsEntity.Config.Properties["label"] != "Posts" || postsEntity.Config.Properties["icon"] != "newspaper" {
-		t.Fatalf("entity properties = %#v", postsEntity.Config.Properties)
-	}
-	if postsEntity.Config.CursorField != "id" || len(postsEntity.Config.CursorFields) != 2 {
-		t.Fatalf("cursor config = %#v / %#v", postsEntity.Config.CursorField, postsEntity.Config.CursorFields)
-	}
-	if len(postsEntity.Config.Indices) != 1 || postsEntity.Config.Indices[0].Name != "idx_posts_status" {
-		t.Fatalf("indices = %#v", postsEntity.Config.Indices)
+	runGoFastr := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from=gofastr.yml")
+	runGoFastr.Dir = dir
+	if output, err := runGoFastr.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr generate failed: %v\n%s", err, output)
 	}
 
-	site := uiapp.NewApp(blueprint.BlueprintAppName)
-	blueprint.RegisterGenerated(fwApp, site)
-	fwApp.Mount(uihost.New(site))
+	if _, err := os.Stat(filepath.Join(dir, ".gofastr", "main.go")); err != nil {
+		t.Fatalf("generated app entrypoint missing: %v", err)
+	}
+
+	appBin := filepath.Join(dir, "generated-blueprint-app")
+	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, "./.gofastr")
+	buildCmd.Dir = dir
+	buildCmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build generated app failed: %v\n%s", err, output)
+	}
 
 	addr := freeAddr(t)
-	errCh := make(chan error, 1)
-	go func() {
-		err := fwApp.Start(addr)
-		if err != nil && err != http.ErrServerClosed {
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
-	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/")
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := fwApp.Stop(ctx); err != nil {
-			t.Fatalf("stop app: %v", err)
-		}
-		if err := <-errCh; err != nil {
-			t.Fatalf("app start returned: %v", err)
-		}
-	}()
-
-	check := func(path, want string) {
-		resp, err := http.Get(baseURL + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("%s status = %d", path, resp.StatusCode)
-		}
-		buf := make([]byte, 4096)
-		n, _ := resp.Body.Read(buf)
-		if !strings.Contains(string(buf[:n]), want) {
-			t.Fatalf("%s body missing %q:\n%s", path, want, string(buf[:n]))
-		}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, appBin)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"PORT="+addr,
+		"DATABASE_URL=file:"+filepath.Join(dir, "blueprint-e2e.db"),
+	)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start generated app: %v", err)
 	}
+	defer func() {
+		cancel()
+		_ = cmd.Wait()
+	}()
 
-	check("/", "Generated from YAML.")
-	check("/", `+"`"+`data-island="live_status"`+"`"+`)
-	check("/", `+"`"+`data-widget="save_button"`+"`"+`)
-	check("/", "details-section")
-	runBrowserUIE2E(t, baseURL)
+	baseURL := "http://" + addr
+	waitForHTTP(t, baseURL+"/", &output)
+	checkBodyContains(t, baseURL+"/", http.StatusOK, "Generated from YAML.")
+	checkBodyContains(t, baseURL+"/", http.StatusOK, `data-island="live_status"`)
+	checkBodyContains(t, baseURL+"/", http.StatusOK, `data-widget="save_button"`)
+	checkBodyContains(t, baseURL+"/", http.StatusOK, "details-section")
+	checkBodyContains(t, baseURL+"/hello.txt", http.StatusOK, "static from generated app")
 
 	created := requestJSON(t, http.MethodPost, baseURL+"/posts", map[string]any{"title": "HTTP Post", "status": "draft"}, http.StatusCreated)
 	id, ok := created["id"].(string)
@@ -897,6 +922,7 @@ func TestGeneratedBlueprintAppWorksE2E(t *testing.T) {
 	if !ok || len(data) != 1 {
 		t.Fatalf("list data = %#v", list["data"])
 	}
+	runBrowserUIE2E(t, baseURL, "HTTP Post Updated")
 	_ = requestJSON(t, http.MethodDelete, baseURL+"/posts/"+id, nil, http.StatusNoContent)
 	resp404, err := http.Get(baseURL + "/posts/" + id)
 	if err != nil {
@@ -922,34 +948,42 @@ func TestGeneratedBlueprintAppWorksE2E(t *testing.T) {
 		t.Fatalf("publish status = %d", resp.StatusCode)
 	}
 
-	tools := fwApp.MCP.ListTools()
+	tools := requestMCP(t, baseURL+"/mcp", "tools/list", nil)
 	toolNames := map[string]bool{}
-	for _, tool := range tools {
-		toolNames[tool.Name] = true
+	if result, ok := tools["result"].(map[string]any); ok {
+		if rawTools, ok := result["tools"].([]any); ok {
+			for _, rawTool := range rawTools {
+				if tool, ok := rawTool.(map[string]any); ok {
+					if name, ok := tool["name"].(string); ok {
+						toolNames[name] = true
+					}
+				}
+			}
+		}
 	}
 	for _, name := range []string{"posts_list", "posts_get", "posts_create", "posts_update", "posts_delete"} {
 		if !toolNames[name] {
 			t.Fatalf("missing MCP tool %s in %#v", name, toolNames)
 		}
 	}
-	mcpCreated := callMCP(t, fwApp.MCP, "posts_create", map[string]any{"title": "MCP Post", "status": "draft"})
+	mcpCreated := callMCPHTTP(t, baseURL+"/mcp", "posts_create", map[string]any{"title": "MCP Post", "status": "draft"})
 	mcpID, ok := mcpCreated["id"].(string)
 	if !ok || mcpID == "" {
 		t.Fatalf("mcp create id = %#v", mcpCreated)
 	}
-	mcpGot := callMCP(t, fwApp.MCP, "posts_get", map[string]any{"id": mcpID})
+	mcpGot := callMCPHTTP(t, baseURL+"/mcp", "posts_get", map[string]any{"id": mcpID})
 	if mcpGot["title"] != "MCP Post" {
 		t.Fatalf("mcp get = %#v", mcpGot)
 	}
-	mcpUpdated := callMCP(t, fwApp.MCP, "posts_update", map[string]any{"id": mcpID, "status": "published"})
+	mcpUpdated := callMCPHTTP(t, baseURL+"/mcp", "posts_update", map[string]any{"id": mcpID, "title": "MCP Post", "status": "published"})
 	if mcpUpdated["status"] != "published" {
 		t.Fatalf("mcp update = %#v", mcpUpdated)
 	}
-	mcpList := callMCP(t, fwApp.MCP, "posts_list", map[string]any{"limit": 10})
+	mcpList := callMCPHTTP(t, baseURL+"/mcp", "posts_list", map[string]any{"limit": 10})
 	if rows, ok := mcpList["data"].([]any); !ok || len(rows) != 1 {
 		t.Fatalf("mcp list = %#v", mcpList)
 	}
-	mcpDeleted := callMCP(t, fwApp.MCP, "posts_delete", map[string]any{"id": mcpID})
+	mcpDeleted := callMCPHTTP(t, baseURL+"/mcp", "posts_delete", map[string]any{"id": mcpID})
 	if mcpDeleted["deleted"] != true {
 		t.Fatalf("mcp delete = %#v", mcpDeleted)
 	}
@@ -968,9 +1002,9 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
-func waitForHTTP(t *testing.T, url string) {
+func waitForHTTP(t *testing.T, url string, output *bytes.Buffer) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url)
 		if err == nil {
@@ -979,12 +1013,31 @@ func waitForHTTP(t *testing.T, url string) {
 				return
 			}
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("server did not become ready at %s", url)
+	t.Fatalf("server did not become ready at %s\n%s", url, output.String())
 }
 
-func runBrowserUIE2E(t *testing.T, baseURL string) {
+func checkBodyContains(t *testing.T, url string, wantStatus int, want string) {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("%s status = %d, want %d\n%s", url, resp.StatusCode, wantStatus, raw)
+	}
+	if !strings.Contains(string(raw), want) {
+		t.Fatalf("%s body missing %q:\n%s", url, want, raw)
+	}
+}
+
+func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 	t.Helper()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
@@ -1002,21 +1055,26 @@ func runBrowserUIE2E(t *testing.T, baseURL string) {
 	var hasRuntime, hasActions, hasIsland, hasWidget bool
 	var before, after, clicked string
 	var backgroundToken, primaryToken, textToken string
+	var entityListBody string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(baseURL+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Evaluate(`+"`"+`!!window.__gofastr`+"`"+`, &hasRuntime),
-		chromedp.Evaluate(`+"`"+`!!(window.__gofastr && window.__gofastr.handlers && window.__gofastr.handlers["screen-home"])`+"`"+`, &hasActions),
-		chromedp.Evaluate(`+"`"+`!!document.querySelector('[data-island="live_status"]')`+"`"+`, &hasIsland),
-		chromedp.Evaluate(`+"`"+`!!document.querySelector('[data-widget="save_button"]')`+"`"+`, &hasWidget),
-		chromedp.Text(`+"`"+`[data-action-result]`+"`"+`, &before, chromedp.ByQuery),
-		chromedp.Click(`+"`"+`#save-action`+"`"+`, chromedp.ByID),
+		chromedp.Evaluate(`!!window.__gofastr`, &hasRuntime),
+		chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.handlers && window.__gofastr.handlers["screen-home"])`, &hasActions),
+		chromedp.Evaluate(`!!document.querySelector('[data-island="live_status"]')`, &hasIsland),
+		chromedp.Evaluate(`!!document.querySelector('[data-widget="save_button"]')`, &hasWidget),
+		chromedp.WaitVisible(`[data-entity-list="posts"]`, chromedp.ByQuery),
+		chromedp.Text(`[data-action-result]`, &before, chromedp.ByQuery),
+		chromedp.Click(`#save-action`, chromedp.ByID),
 		chromedp.Sleep(300*time.Millisecond),
-		chromedp.Text(`+"`"+`[data-action-result]`+"`"+`, &after, chromedp.ByQuery),
-		chromedp.Evaluate(`+"`"+`document.body.getAttribute('data-blueprint-clicked') || ''`+"`"+`, &clicked),
-		chromedp.Evaluate(`+"`"+`getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()`+"`"+`, &backgroundToken),
-		chromedp.Evaluate(`+"`"+`getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim()`+"`"+`, &primaryToken),
-		chromedp.Evaluate(`+"`"+`getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim()`+"`"+`, &textToken),
+		chromedp.Text(`[data-action-result]`, &after, chromedp.ByQuery),
+		chromedp.Evaluate(`document.body.getAttribute('data-blueprint-clicked') || ''`, &clicked),
+		chromedp.Click(`[data-entity-list-refresh="posts"]`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Text(`[data-entity-list-body]`, &entityListBody, chromedp.ByQuery),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()`, &backgroundToken),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim()`, &primaryToken),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim()`, &textToken),
 	); err != nil {
 		t.Fatalf("browser UI e2e failed: %v", err)
 	}
@@ -1025,6 +1083,9 @@ func runBrowserUIE2E(t *testing.T, baseURL string) {
 	}
 	if before != "Waiting" || after != "Saved by browser" || clicked != "yes" {
 		t.Fatalf("browser action before=%q after=%q clicked=%q", before, after, clicked)
+	}
+	if !strings.Contains(entityListBody, wantEntityTitle) || !strings.Contains(entityListBody, "published") {
+		t.Fatalf("entity list body missing generated CRUD data: %q", entityListBody)
 	}
 	if backgroundToken != "#101820" || primaryToken != "#F2AA4C" || textToken != "#F7F4EA" {
 		t.Fatalf("computed theme tokens background=%q primary=%q text=%q", backgroundToken, primaryToken, textToken)
@@ -1070,48 +1131,42 @@ func requestJSON(t *testing.T, method, url string, body any, wantStatus int) map
 	return out
 }
 
-func callMCP(t *testing.T, server *mcp.Server, name string, params map[string]any) map[string]any {
+func requestMCP(t *testing.T, url, method string, params map[string]any) map[string]any {
 	t.Helper()
-	raw, err := json.Marshal(map[string]any{"name": name, "params": params})
-	if err != nil {
-		t.Fatal(err)
+	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
+	if params != nil {
+		body["params"] = params
 	}
-	resp := server.HandleRequest(context.Background(), mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: raw})
-	if resp.Error != nil {
-		t.Fatalf("mcp %s failed: %v", name, resp.Error)
+	return requestJSON(t, http.MethodPost, url, body, http.StatusOK)
+}
+
+func callMCPHTTP(t *testing.T, url, name string, params map[string]any) map[string]any {
+	t.Helper()
+	resp := requestMCP(t, url, "tools/call", map[string]any{"name": name, "params": params})
+	if errObj := resp["error"]; errObj != nil {
+		t.Fatalf("mcp %s failed: %#v", name, errObj)
 	}
-	resultRaw, err := json.Marshal(resp.Result)
-	if err != nil {
-		t.Fatal(err)
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp %s result = %#v", name, resp["result"])
 	}
-	var envelope struct {
-		Content []struct {
-			Text string `+"`json:\"text\"`"+`
-		} `+"`json:\"content\"`"+`
+	content, ok := result["content"].([]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("mcp %s content = %#v", name, result["content"])
 	}
-	if err := json.Unmarshal(resultRaw, &envelope); err != nil {
-		t.Fatal(err)
+	first, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp %s content[0] = %#v", name, content[0])
+	}
+	text, ok := first["text"].(string)
+	if !ok {
+		t.Fatalf("mcp %s text = %#v", name, first["text"])
 	}
 	var out map[string]any
-	if err := json.Unmarshal([]byte(envelope.Content[0].Text), &out); err != nil {
-		t.Fatalf("decode mcp result: %v\n%s", err, envelope.Content[0].Text)
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("decode mcp result: %v\n%s", err, text)
 	}
 	return out
-}
-`)
-
-	runGoFastr := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from=gofastr.yml")
-	runGoFastr.Dir = dir
-	if output, err := runGoFastr.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate failed: %v\n%s", err, output)
-	}
-
-	cmd := exec.Command("go", "test", "-mod=mod", ".")
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("generated app e2e failed: %v\n%s", err, output)
-	}
 }
 
 func writeTestFile(t *testing.T, path, content string) {
@@ -1262,6 +1317,12 @@ screens:
         props:
           text: Waiting
           data-action-result: true
+      - kind: entity_list
+        text: Latest posts
+        entity: posts
+        fields: [title, status]
+        limit: 5
+        empty_text: No posts yet.
 endpoints:
   - name: publish_post
     method: POST
