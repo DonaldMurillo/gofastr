@@ -145,6 +145,14 @@ server side and the runtime does the work.
 | `data-fui-animated-counter="<target>"` | On a `framework/ui.AnimatedCounter`: the runtime ticks the inner `.ui-animated-counter__value` from `<from>` to `<target>` over `<ms>` once the element scrolls into view. Respects `prefers-reduced-motion` (no-op). Pair with `data-fui-animated-counter-from` and `data-fui-animated-counter-ms`. |
 | `data-fui-animated-counter-from="<n>"` | AnimatedCounter starting value during the animation. |
 | `data-fui-animated-counter-ms="<n>"` | AnimatedCounter animation duration in milliseconds. |
+| `data-fui-theme-toggle` | On a `framework/ui.ThemeToggle`: marks the trigger. Empty/icon/label variants toggle through light/dark/auto on click; `data-fui-theme-toggle="pill"` scopes segmented option buttons. |
+| `data-fui-theme-toggle-opt="<light\|auto\|dark>"` | On a ThemeToggle pill option: selects and persists the requested color-scheme mode. |
+| `data-fui-back-to-top` | On a `framework/ui.BackToTop`: marks the fixed scroll button so the split runtime module can show/hide it and scroll to the configured target. |
+| `data-fui-btt-threshold="<px>"` | BackToTop scroll threshold before the control becomes visible. |
+| `data-fui-btt-target="<selector>"` | Optional BackToTop target selector. Empty means scroll the document root/window. |
+| `data-fui-btt-scroll="smooth\|instant"` | BackToTop scroll behavior. Defaults to smooth. |
+| `data-fui-btt-visible` | Runtime-written BackToTop visibility marker. CSS uses it to reveal the control once the threshold is crossed. |
+| `data-fui-cond-disabled` | Runtime-written marker on controls disabled by `framework/ui.ConditionalField`; it lets the runtime distinguish fields it disabled from fields that were already disabled by the app. |
 | `data-fui-toc="<selector>"` | On a `framework/ui.TableOfContents` nav: the runtime walks the matching content region after first paint and emits an `<li><a>` per `<h2>` / `<h3>` with an `id`. Active-section tracking via IntersectionObserver. Pair with `data-fui-toc-levels`. |
 | `data-fui-toc-levels="<csv>"` | Optional comma-separated list of heading levels to harvest (default `"2,3"`). |
 | `data-fui-toc-for="<heading-id>"` | Internal — set by the TOC runtime on each emitted `<a>` linking it back to its source heading. Used by the active-section tracker. |

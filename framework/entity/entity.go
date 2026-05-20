@@ -27,6 +27,7 @@ type EntityConfig struct {
 	CursorField  string         // optional: single-field keyset cursor; defaults to PrimaryKey
 	CursorFields []string       // optional: composite cursor — ORDER BY each field in order with tuple-compared keyset. Wins over CursorField when non-empty.
 	Indices      []Index        // additional CREATE INDEX statements emitted by AutoMigrate
+	Properties   map[string]any // caller-owned metadata for generators, plugins, and app conventions
 
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.

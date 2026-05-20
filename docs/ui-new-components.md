@@ -52,8 +52,10 @@ dev server is up.
 - **textarea** — `framework/ui.TextArea` — multi-line input with typed Autogrow
 - **colorpicker** — `framework/ui.ColorPicker` — styled native `<input type=color>`
 - **timepicker** — `framework/ui.TimePicker` — styled native `<input type=time>`
+- **select** — `framework/ui.Select` — labelled native `<select>` with help, error, placeholder, and required marker
 - **taginput** — `framework/ui.TagInput` — free-form chips, Enter/comma to commit, Backspace to remove
 - **multiselect** — `core-ui/patterns/multiselect` — checkbox group with chip display above
+- **forms** — `framework/ui` form module — fields, validation, conditional sections, step wizard, and repeaters
 
 ### Selection & input composition
 
@@ -65,6 +67,7 @@ dev server is up.
 
 ### Navigation
 
+- **skiplink** — `framework/ui.SkipLink` — focus-visible bypass link for jumping to main content
 - **breadcrumbs** — `core-ui/patterns/breadcrumbs` — `<nav aria-label=Breadcrumb>` trail
 - **pagination** — `core-ui/patterns/pagination` — numeric page navigation
 - **sidebar** — `framework/ui.Sidebar` — responsive primary nav (inline ≥ md, drawer < md)
@@ -93,6 +96,8 @@ dev server is up.
 - **layout** — `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`
 - **container** — `framework/ui.Container` — max-width page wrapper with breakpoint padding
 - **card** — `framework/ui.Card` — labelled `<section>` with header/body/footer
+- **sticky** — `framework/ui.Sticky` — theme-token sticky wrapper for top or bottom edge pinning
+- **aspectratio** — `framework/ui.AspectRatio` — CLS-safe aspect-ratio wrapper for media and embeds
 - **image** — `framework/ui.OptimizedImage` — responsive `<picture>` with CLS-safe Width/Height
 - **divider** — `framework/ui.Divider` — semantic separator (horizontal, vertical, labelled)
 - **gallery** — `framework/ui.Gallery` — Grid / Strip / Masonry thumbnail surface
@@ -127,6 +132,8 @@ dev server is up.
 
 ### Status & banners
 
+- **themetoggle** — `framework/ui.ThemeToggle` — dark/light/auto toggle that persists color-scheme mode
+- **backtotop** — `framework/ui.BackToTop` — fixed scroll affordance that appears after a threshold
 - **banner** — `framework/ui.Banner` — page-level persistent status strip
 
 ---

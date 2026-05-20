@@ -1168,10 +1168,10 @@
   // Event delegation: [data-action-type]
   for (const eventType of ['input', 'change', 'submit']) {
     document.addEventListener(eventType, (e) => {
-      const target = e.target.closest(`[data-action-type="${eventType}"]`);
+      const target = e.target.closest(`[data-action-type="${eventType}"], [data-action-${eventType}]`);
       if (!target) return;
 
-      const action = target.getAttribute('data-action');
+      const action = target.getAttribute(`data-action-${eventType}`) || target.getAttribute('data-action');
       if (!action) return;
 
       const componentId = closestAttr(e.target, 'data-component')

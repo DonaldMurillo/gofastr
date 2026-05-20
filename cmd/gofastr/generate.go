@@ -40,6 +40,10 @@ func runGenerate(args []string) {
 
 func generateProject(args []string) {
 	options := parseGenerateOptions(args)
+	if options.from != "" {
+		generateFromBlueprint(options)
+		return
+	}
 	decls, err := framework.LoadEntityDeclarations(options.entitiesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -111,6 +115,7 @@ func generateProject(args []string) {
 type generateOptions struct {
 	entitiesDir string
 	outputDir   string
+	from        string
 	clean       bool
 	dryRun      bool
 	json        bool
@@ -130,11 +135,85 @@ func parseGenerateOptions(args []string) generateOptions {
 			options.clean = false
 		case strings.HasPrefix(arg, "--entities="):
 			options.entitiesDir = strings.TrimPrefix(arg, "--entities=")
+		case strings.HasPrefix(arg, "--from="):
+			options.from = strings.TrimPrefix(arg, "--from=")
 		case strings.HasPrefix(arg, "--out="):
 			options.outputDir = strings.TrimPrefix(arg, "--out=")
 		}
 	}
 	return options
+}
+
+func generateFromBlueprint(options generateOptions) {
+	if options.outputDir == filepath.Join(".gofastr", "entities") {
+		options.outputDir = ".gofastr"
+	}
+	bp, err := loadBlueprint(options.from)
+	if err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("Failed to load blueprint: %v", err)
+		os.Exit(1)
+	}
+	if bp.App.OutputDir != "" && options.outputDir == ".gofastr" {
+		options.outputDir = bp.App.OutputDir
+	}
+	if err := validateOutputDir(options.outputDir); err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("%v", err)
+		os.Exit(1)
+	}
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("Blueprint code generation failed: %v", err)
+		os.Exit(1)
+	}
+	if options.dryRun {
+		if options.json {
+			printGeneratedFilesJSON(files)
+			return
+		}
+		info("Would generate %d files in %s:", len(files), options.outputDir)
+		for _, file := range files {
+			fmt.Printf("    %s\n", filepath.Join(options.outputDir, file.name))
+		}
+		return
+	}
+	if options.clean {
+		if err := safeCleanOutputDir(options.outputDir); err != nil {
+			fail("Failed to clean %s: %v", options.outputDir, err)
+			os.Exit(1)
+		}
+	}
+	if err := os.MkdirAll(options.outputDir, 0o755); err != nil {
+		fail("Failed to create %s: %v", options.outputDir, err)
+		os.Exit(1)
+	}
+	for _, file := range files {
+		path := filepath.Join(options.outputDir, file.name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			fail("Failed to create %s: %v", filepath.Dir(path), err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
+			fail("Failed to write %s: %v", path, err)
+			os.Exit(1)
+		}
+	}
+	if options.json {
+		printGeneratedFilesJSON(files)
+		return
+	}
+	success("Generated %d blueprint file(s) in %s", len(files), options.outputDir)
 }
 
 type generatedFile struct {
@@ -226,6 +305,33 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	if decl.MCP {
 		sb.WriteString("\t\tMCP: true,\n")
 	}
+	if decl.CursorField != "" {
+		sb.WriteString(fmt.Sprintf("\t\tCursorField: %q,\n", decl.CursorField))
+	}
+	if len(decl.CursorFields) > 0 {
+		sb.WriteString("\t\tCursorFields: []string{")
+		for i, field := range decl.CursorFields {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(fmt.Sprintf("%q", field))
+		}
+		sb.WriteString("},\n")
+	}
+	if len(decl.Indices) > 0 {
+		sb.WriteString("\t\tIndices: []framework.Index{\n")
+		for _, idx := range decl.Indices {
+			sb.WriteString("\t\t\t" + renderIndexLiteral(idx) + ",\n")
+		}
+		sb.WriteString("\t\t},\n")
+	}
+	if len(decl.Properties) > 0 {
+		literal, err := renderGoLiteral(decl.Properties)
+		if err != nil {
+			return "", fmt.Errorf("properties: %w", err)
+		}
+		sb.WriteString("\t\tProperties: " + literal + ",\n")
+	}
 	sb.WriteString("\t}")
 	if decl.Timestamps != nil {
 		sb.WriteString(fmt.Sprintf(".WithTimestamps(%t)", *decl.Timestamps))
@@ -233,6 +339,24 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	sb.WriteString(")\n")
 	sb.WriteString(fmt.Sprintf("\t_ = %s{}\n", structName))
 	return sb.String(), nil
+}
+
+func renderIndexLiteral(idx framework.Index) string {
+	var parts []string
+	if idx.Name != "" {
+		parts = append(parts, fmt.Sprintf("Name: %q", idx.Name))
+	}
+	if len(idx.Columns) > 0 {
+		quoted := make([]string, len(idx.Columns))
+		for i, column := range idx.Columns {
+			quoted[i] = fmt.Sprintf("%q", column)
+		}
+		parts = append(parts, "Columns: []string{"+strings.Join(quoted, ", ")+"}")
+	}
+	if idx.Unique {
+		parts = append(parts, "Unique: true")
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 func renderFieldLiteral(field framework.FieldDeclaration) (string, error) {
@@ -344,6 +468,37 @@ func renderGoLiteral(value any) (string, error) {
 		return fmt.Sprintf("%g", v), nil
 	case int, int32, int64:
 		return fmt.Sprintf("%d", v), nil
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			literal, err := renderGoLiteral(v[key])
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, fmt.Sprintf("%q: %s", key, literal))
+		}
+		return "map[string]any{" + strings.Join(parts, ", ") + "}", nil
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			literal, err := renderGoLiteral(item)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, literal)
+		}
+		return "[]any{" + strings.Join(parts, ", ") + "}", nil
+	case []string:
+		parts := make([]string, len(v))
+		for i, item := range v {
+			parts[i] = fmt.Sprintf("%q", item)
+		}
+		return "[]string{" + strings.Join(parts, ", ") + "}", nil
 	default:
 		return "", fmt.Errorf("unsupported default literal of type %T", value)
 	}
@@ -492,15 +647,22 @@ func safeCleanOutputDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	owned := map[string]bool{"register.go": true, "models.go": true}
+	owned := map[string]bool{
+		".gitkeep":    true,
+		"register.go": true, "models.go": true, "columns.go": true, "repo.go": true, "events.go": true,
+		"client": true, "entities": true, "blueprint": true,
+	}
 	for _, entry := range entries {
-		if entry.IsDir() || !owned[entry.Name()] {
+		if !owned[entry.Name()] {
 			return fmt.Errorf("refusing to clean %s — contains unknown entry %q (move it or use --no-clean)", dir, entry.Name())
 		}
 	}
 	for name := range owned {
 		path := filepath.Join(dir, name)
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if name == ".gitkeep" {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -515,6 +677,18 @@ func printGeneratedFilesJSON(files []generatedFile) {
 			comma = ""
 		}
 		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.name, len(file.content), comma)
+	}
+	fmt.Println(`]}`)
+}
+
+func printGeneratedErrorsJSON(errs ...error) {
+	fmt.Println(`{"files":[],"errors":[`)
+	for i, err := range errs {
+		comma := ","
+		if i == len(errs)-1 {
+			comma = ""
+		}
+		fmt.Printf("  {\"message\":%q}%s\n", err.Error(), comma)
 	}
 	fmt.Println(`]}`)
 }

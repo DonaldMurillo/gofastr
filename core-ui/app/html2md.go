@@ -4,7 +4,6 @@
 // for /llm.md. The patterns never emit script tags — they only consume
 // them — but the literal `<script` substring trips the no-inline-script
 // linter. The directive exempts this file from that check.
-
 package app
 
 import (

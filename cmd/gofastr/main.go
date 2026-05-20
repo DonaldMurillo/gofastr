@@ -56,6 +56,7 @@ func printHelp() {
       --no-entity      Skip sample entity scaffolding
       --db=<driver>    Database driver: sqlite (default) or postgres
   generate entity <n>   Generate an entity definition file
+  generate --from=<yml> Generate code from a deterministic YAML blueprint
   theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go build
   dev                   Start dev server with auto-restart
@@ -73,6 +74,7 @@ func printHelp() {
   gofastr init myapp --module=github.com/me/myapp
   gofastr init myapp --no-entity
   gofastr generate entity user name:string email:string:unique
+  gofastr generate --from=gofastr.yml --dry-run
   gofastr theme init
   gofastr build
   gofastr dev
