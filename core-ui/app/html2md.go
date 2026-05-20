@@ -1,3 +1,6 @@
+/* //check-csp:ignore-file */
+// This file parses and strips script tags from existing HTML; it does not emit
+// executable HTML.
 package app
 
 import (
