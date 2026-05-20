@@ -147,7 +147,7 @@ encryption without a migration step.
 
 ## Tier 2 — felt the first time a customer asks for it
 
-### 5. Internationalization — ✅ landed
+### 5. Internationalization — ✅ landed (primitive only; surfaces TBD)
 
 `core/i18n` + `framework/WithI18n` + [`docs/i18n.md`](../i18n.md).
 JSON-backed catalogs (or in-code `MapCatalog`), `{{placeholder}}`
@@ -157,6 +157,20 @@ with `X-Locale` override, `App.T(ctx, key, params...)` ergonomic
 call, package-level `i18n.T` helper. ICU number/date/currency
 formatting and locale-routing via path prefix remain explicit non-
 goals — wrap stdlib `time`/`strconv` for now.
+
+**Known limitation — framework surfaces are still English.** The
+primitive shipped, but the framework's own existing surfaces don't
+participate yet. Entity field labels, validator error messages,
+`framework/ui` defaults (Pagination, ValidationSummary, EmptyState,
+Banner / Toast / Modal copy), `framework/crud` error response bodies,
+`battery/admin` page chrome, and the OpenAPI / `llm.md` auto-gen all
+emit hardcoded English. Apps that call `app.T(...)` themselves are
+fully translatable; the framework's own copy is not. Tracked as a
+follow-up integration pass — Tier 2.5 — that adds `LabelKey` hooks
+to entity configs, shifts validators to error codes, and replaces
+literal strings in `framework/ui` defaults with `i18n.T` calls
+behind English fallbacks. See [`docs/i18n.md`](../i18n.md) for the
+full list.
 
 ### 6. Unified notifications — ✅ landed
 
