@@ -156,6 +156,13 @@ settings, indices, and `properties`. Entity-owned endpoints and top-level
 endpoints generate Go handler stubs plus router registration under
 `.gofastr/blueprint`.
 
+When `app.module` is present, blueprint generation also emits
+`.gofastr/main.go`: a runnable app entrypoint that opens the configured SQLite
+database, registers generated entities, exposes generated MCP tools at `/mcp`,
+wires generated screens/endpoints/middleware/plugins through
+`blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
+through the generated UI host.
+
 Screen body blocks support the legacy sugar keys (`type`, `text`, `level`,
 `class`, `href`) and property-based nodes through `kind`, `props`, and
 `children`. Supported render kinds include structural tags, text tags, forms,
@@ -163,6 +170,24 @@ buttons, links, inputs, images, lists, tables, and raw nodes. `island` wraps a
 block in `island.NewIsland`; `widget` wraps it in `component.NewWidget`.
 `actions` generate GoFastr screen actions and add the required `data-action`
 attributes to the rendered node.
+
+Use `kind: entity_list` for a browser-refreshable table backed by a generated
+CRUD JSON endpoint. It requires an `entity` with `crud: true` and known
+`fields`, accepts `limit` and `empty_text`, and registers a generated client
+action that fetches `/<entity>?limit=<limit>` from the generated app.
+
+```yaml
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: entity_list
+        text: Latest posts
+        entity: posts
+        fields: [title, status]
+        limit: 5
+        empty_text: No posts yet.
+```
 
 Supported UI action events are `click`, `input`, `change`, and `submit`.
 `client_js` is copied into generated Go as a string and compiled by the normal
@@ -185,7 +210,10 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
-- relations and endpoint entity references that target unknown entities
+- relations, endpoint entity references, and entity list blocks that target
+  unknown entities
+- entity list blocks that target non-CRUD entities or fields the entity does
+  not define
 - unsupported HTTP methods or screen types
 - unsupported UI action events, duplicate action names, duplicate action events
   on one block, unreachable combined click actions, or missing `client_js`
@@ -195,7 +223,9 @@ The generator rejects:
 ## Testing contract
 
 Blueprint changes should be proven with a generated-app E2E test: run the real
-CLI against a blueprint, compile the generated `.gofastr` packages, start the
-framework app, exercise HTTP CRUD, OpenAPI, MCP tools, and drive generated UI in
-a real browser so islands, widgets, runtime actions, and DOM updates are covered
-together.
+CLI against a blueprint, compile the generated `.gofastr` app binary, start that
+generated binary as a separate process, exercise HTTP CRUD, OpenAPI, MCP tools,
+static assets, and drive generated UI in a real browser so islands, widgets,
+runtime actions, and DOM updates are covered together. Do not satisfy this with
+a test-only hand-written app shell that imports generated packages; that misses
+the app-generator boundary.
