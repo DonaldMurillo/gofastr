@@ -38,6 +38,24 @@ type Queue interface {
 	Close() error
 }
 
+// JobStats is a snapshot of job counts grouped by status. The keys
+// are status names ("pending", "running", "failed", "dead").
+type JobStats map[string]int
+
+// Browsable is the optional read-only inspection interface — implemented
+// by DBQueue so admin tooling can list and aggregate jobs without
+// guessing at the underlying schema. Memory and Redis queues may
+// implement it later; admin code that depends on it should type-assert.
+type Browsable interface {
+	// ListJobs returns up to limit jobs in the given status; pass an
+	// empty status to return all jobs regardless of state. Jobs are
+	// ordered newest-first by created_at.
+	ListJobs(ctx context.Context, status string, limit int) ([]Job, error)
+	// Stats returns counts grouped by status. Cheap by design — admin
+	// dashboards may poll it.
+	Stats(ctx context.Context) (JobStats, error)
+}
+
 // Sentinel errors.
 var (
 	ErrQueueClosed = errors.New("queue is closed")
