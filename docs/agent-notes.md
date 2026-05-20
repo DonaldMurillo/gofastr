@@ -1,5 +1,12 @@
 # Agent Notes
 
+## 2026-05-20 - blueprint-theme-codegen
+
+- Scope: `cmd/gofastr`, `docs/blueprints.md`, generated-app browser E2E
+- Symptom: blueprint `app.theme` support needs both decode-time validation and generated `site.WithTheme(...)`; testing only emitted Go or raw CSS can miss whether the browser actually receives the generated app theme.
+- Evidence: `cmd/gofastr/blueprint.go` decodes `app.theme`, rejects unknown color tokens, generates `BlueprintTheme()`, and `cmd/gofastr/blueprint_test.go` checks `getComputedStyle(document.documentElement)` for `--color-background`, `--color-primary`, and `--color-text` in the generated app.
+- Next time: when adding blueprint app-level knobs, update decode, merge, validation, generated registration, docs, and the generated-app E2E path together.
+
 ## 2026-05-20 - wave-5-7-followups + adversarial review
 
 - Scope: `framework/ui/{optimisticaction,networkretrybanner}`, `core-ui/patterns/scrollspy/`, `framework/uihost/` (SEO bundle), `core-ui/runtime/src/{optimisticaction,networkretrybanner,scrollspy}.js`, plus their demos/e2e in `examples/website/`
