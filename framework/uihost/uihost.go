@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -72,6 +73,8 @@ type UIHost struct {
 	signals        map[string]SignalAny                 // signalID → signal for live updates
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
+	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -104,6 +107,42 @@ type SignalAny interface {
 // titles or descriptions) to prevent XSS.
 type SEOScreen interface {
 	HeadHTML() string
+}
+
+// HreflangLink declares a locale → URL alternate for the current page.
+// Emitted as <link rel="alternate" hreflang="…" href="…">.
+type HreflangLink struct {
+	Lang string // BCP-47 tag (e.g. "en", "en-US", "x-default")
+	URL  string // canonical URL for that locale
+}
+
+// ScreenHreflangs is an optional screen interface that declares
+// per-page hreflang alternates for multi-locale apps. When present,
+// the host emits one <link rel="alternate"> per returned link.
+type ScreenHreflangs interface {
+	ScreenHreflangs() []HreflangLink
+}
+
+// ScreenCanonical is an optional screen interface that declares the
+// canonical URL for the current page. Emitted as
+// <link rel="canonical" href="…">. Use to prevent duplicate-content
+// issues when a page is reachable at multiple URLs (filters, sorts).
+type ScreenCanonical interface {
+	ScreenCanonical() string
+}
+
+// ScreenSchema is an optional screen interface that returns one or
+// more typed Schema.org items (from core-ui/seo) to emit as
+// <script type="application/ld+json"> blocks.
+//
+// Implementations typically return:
+//
+//	[]seo.Thing{
+//	    seo.NewArticle(),
+//	    seo.NewBreadcrumbList(...),
+//	}
+type ScreenSchema interface {
+	ScreenSchema() []seo.Thing
 }
 
 // routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
@@ -697,8 +736,20 @@ func (ds *UIHost) injectChrome(page, pagePath, sessionID string) string {
 	return ds.injectChromeMode(page, pagePath, sessionID, true)
 }
 
-// screenHeadHTML returns per-screen head content from the SEOScreen
-// interface. pagePath is the route path used to resolve the screen.
+// screenHeadHTML returns per-screen head content. It composes from
+// two sources:
+//
+//   - ScreenDescriber: when the screen has a non-empty Description
+//     (set automatically at Register time from the ScreenDescriber
+//     interface), a `<meta name="description">` tag is emitted. Per-
+//     page descriptions appear AFTER the global WithDescription tag,
+//     so search engines pick the per-page text. No app code needs to
+//     remember both the interface AND WithDescription().
+//
+//   - SEOScreen.HeadHTML(): the explicit escape hatch for screens
+//     that need to declare canonical, OG, JSON-LD, etc. inline.
+//
+// pagePath is the route path used to resolve the screen.
 func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
@@ -707,10 +758,44 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	if !ok {
 		return ""
 	}
-	if seo, ok := screen.Component.(SEOScreen); ok {
-		return seo.HeadHTML()
+	var parts []string
+	if screen.Description != "" {
+		parts = append(parts, fmt.Sprintf(
+			`<meta name="description" content="%s">`,
+			stdhtml.EscapeString(screen.Description),
+		))
 	}
-	return ""
+	if c, ok := screen.Component.(ScreenCanonical); ok {
+		if u := c.ScreenCanonical(); u != "" {
+			parts = append(parts, fmt.Sprintf(
+				`<link rel="canonical" href="%s">`,
+				stdhtml.EscapeString(u),
+			))
+		}
+	}
+	if h, ok := screen.Component.(ScreenHreflangs); ok {
+		for _, link := range h.ScreenHreflangs() {
+			if link.Lang == "" || link.URL == "" {
+				continue
+			}
+			parts = append(parts, fmt.Sprintf(
+				`<link rel="alternate" hreflang="%s" href="%s">`,
+				stdhtml.EscapeString(link.Lang),
+				stdhtml.EscapeString(link.URL),
+			))
+		}
+	}
+	if s, ok := screen.Component.(ScreenSchema); ok {
+		if items := s.ScreenSchema(); len(items) > 0 {
+			parts = append(parts, string(seo.Render(items...)))
+		}
+	}
+	if seoScreen, ok := screen.Component.(SEOScreen); ok {
+		if h := seoScreen.HeadHTML(); h != "" {
+			parts = append(parts, h)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // injectChromeMode is the underlying chrome injector. bundle=false
@@ -1147,6 +1232,16 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// - /{screen-path}/llm.md — per-screen documentation
 	if ds.App != nil {
 		ds.mountPageLLMMD(r)
+	}
+
+	// SEO endpoints — only mounted when WithSitemap / WithRobots
+	// were passed, so apps that don't opt in don't accidentally
+	// expose either endpoint.
+	if ds.sitemapConfig != nil {
+		r.Get("/sitemap.xml", http.HandlerFunc(ds.handleSitemap))
+	}
+	if ds.robotsConfig != nil {
+		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))
 	}
 
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))

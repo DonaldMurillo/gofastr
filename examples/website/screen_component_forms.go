@@ -725,6 +725,10 @@ ui.Form(ui.FormConfig{Action: "/submit", Errors: errs},
 					"val-email":    "Email",
 					"val-password": "Password",
 				},
+				// FieldOrder pins the row order so the rendered HTML is
+				// stable across requests (Go map iteration is randomized).
+				FieldOrder: []string{"val-name", "val-email", "val-password"},
+				Title:      "Please fix the highlighted fields",
 			}),
 			`ui.ValidationSummary(ui.ValidationSummaryConfig{
     Errors: ui.FieldErrors{
@@ -737,6 +741,8 @@ ui.Form(ui.FormConfig{Action: "/submit", Errors: errs},
         "val-email": "Email",
         "val-password": "Password",
     },
+    FieldOrder: []string{"val-name", "val-email", "val-password"},
+    Title:      "Please fix the highlighted fields",
 })`),
 
 		// ── Features ──

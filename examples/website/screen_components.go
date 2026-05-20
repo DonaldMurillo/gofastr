@@ -467,6 +467,12 @@ var componentEntries = []componentEntry{
 		Tag:   "Pattern · recursive ul/ol",
 		Intro: "Recursive <ul>/<ol> with optional native <details> collapse on branches. Lighter than the tree pattern (no lazy-load, no RPC). Pure render — no runtime module.",
 	},
+	{
+		Slug:  "seo",
+		Name:  "SEO",
+		Tag:   "Meta · JSON-LD · sitemap · robots",
+		Intro: "Per-page SEO via four small screen interfaces (Describer / Canonical / Hreflangs / Schema) plus sitewide /sitemap.xml and /robots.txt host options. Auto-emits the right <head> tags from typed Schema.org structs.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

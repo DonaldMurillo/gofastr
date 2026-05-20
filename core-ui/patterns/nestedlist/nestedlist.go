@@ -103,8 +103,10 @@ func renderItem(ordered bool, it Item) render.HTML {
 	)
 }
 
-// BaseCSS returns the minimal stylesheet for nested-list. Tokens used:
-// --spacing-sm, --spacing-md, --color-primary, --color-text.
+// BaseCSS returns the stylesheet for nested-list. Tokens used:
+// --spacing-xs / --spacing-sm / --spacing-md / --spacing-lg,
+// --radii-sm, --color-text, --color-text-muted, --color-primary,
+// --color-surface-soft, --color-border.
 func BaseCSS() string {
 	return `
 .nested-list,
@@ -113,32 +115,91 @@ func BaseCSS() string {
   list-style: none;
   padding-inline-start: 0;
   margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 .nested-list ul,
 .nested-list ol {
+  /* Nested indentation: a subtle rail on the inline-start edge
+     anchors the eye to the parent branch. */
   padding-inline-start: var(--spacing-md, 12px);
+  margin-inline-start: var(--spacing-sm, 6px);
+  border-inline-start: 1px solid var(--color-border, #E5E7EB);
+}
+/* Ordered: re-enable numbering. The outer reset above killed
+   list-style on every list under .nested-list, but ol at the root
+   AND when nested wants decimal markers back. */
+ol.nested-list,
+.nested-list ol {
+  list-style: decimal;
+  padding-inline-start: var(--spacing-lg, 18px);
+}
+.nested-list ol .nested-list__item {
+  padding-inline-start: var(--spacing-xs, 4px);
 }
 .nested-list__item {
-  padding-block: var(--spacing-sm, 4px);
+  padding-block: 2px;
 }
-.nested-list details > summary,
+/* Hide the native <details> disclosure triangle — we draw our own
+   custom caret via ::before on the summary so it picks up theme color
+   and rotates smoothly on open. */
+.nested-list details > summary { list-style: none; }
+.nested-list details > summary::-webkit-details-marker { display: none; }
+.nested-list__summary,
 .nested-list summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs, 6px);
   cursor: pointer;
-  list-style: revert;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-text, #111827);
+  padding: 4px 6px;
+  border-radius: var(--radii-sm, 4px);
+  user-select: none;
+}
+.nested-list__summary::before,
+.nested-list summary::before {
+  content: "";
+  display: inline-block;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-block-start: 2px solid currentColor;
+  border-inline-end: 2px solid currentColor;
+  transform: rotate(45deg);  /* points right when collapsed */
+  transition: transform 120ms ease;
+  opacity: 0.7;
+  margin-inline-end: 2px;
+}
+.nested-list details[open] > summary::before,
+.nested-list details[open] > .nested-list__summary::before {
+  transform: rotate(135deg); /* points down when open */
+}
+.nested-list summary:hover {
+  background: var(--color-surface-soft, #F4F4F5);
 }
 .nested-list summary:focus-visible {
   outline: 2px solid var(--color-primary, #2563EB);
   outline-offset: 2px;
 }
 .nested-list__link {
-  color: inherit;
+  display: inline-block;
+  color: var(--color-text, #111827);
   text-decoration: none;
+  padding: 4px 6px;
+  border-radius: var(--radii-sm, 4px);
 }
-.nested-list__link:hover,
+.nested-list__link:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-primary, #2563EB);
+}
 .nested-list__link:focus-visible {
-  text-decoration: underline;
+  outline: 2px solid var(--color-primary, #2563EB);
+  outline-offset: 2px;
+}
+/* Ordered numbers should pick up the muted color so the marker
+   doesn't compete with the label text. */
+.nested-list ol .nested-list__item::marker {
+  color: var(--color-text-muted, #6B7280);
 }
 `
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
@@ -860,5 +861,6 @@ func createStyleSheet(theme style.Theme) string {
 		skeleton.BaseCSS() +
 		breadcrumbs.BaseCSS() +
 		pagination.BaseCSS() +
+		nestedlist.BaseCSS() +
 		ui.BaseCSS()
 }

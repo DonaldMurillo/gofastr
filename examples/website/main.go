@@ -144,6 +144,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/icon", &IconScreen{}, nil)
 	site.Register("/components/pollingindicator", &PollingIndicatorScreen{}, nil)
 	site.Register("/components/nestedlist", &NestedListScreen{}, nil)
+	site.Register("/components/seo", &SEODemoScreen{}, nil)
 	site.Register("/customers", &CustomersListScreen{}, nil)
 	site.Register("/customers/new", &CustomersFormScreen{}, nil)
 	site.Register("/customers/:id", &CustomersFormScreen{}, nil)
@@ -173,6 +174,13 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 		}),
 		uihost.WithCanonicalURL("https://gofastr.dev"),
 		uihost.WithPreconnect("https://fonts.googleapis.com", "https://fonts.gstatic.com"),
+		uihost.WithSitemap(uihost.SitemapConfig{
+			BaseURL:      "https://gofastr.dev",
+			ExcludePaths: []string{"/__gofastr"},
+		}),
+		uihost.WithRobots(uihost.RobotsConfig{
+			Disallow: []string{"/__gofastr/"},
+		}),
 	}
 	if devMode() {
 		hostOpts = append(hostOpts, uihost.WithExtraScripts("/__livereload.js"))

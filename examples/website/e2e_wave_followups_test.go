@@ -14,7 +14,7 @@ import (
 
 // ─── Icon ───────────────────────────────────────────────────────────
 
-func TestE2E_Icon_BuiltInGalleryRenders(t *testing.T) {
+func TestE2EIconGallery(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var svgCount int
@@ -41,7 +41,7 @@ func TestE2E_Icon_BuiltInGalleryRenders(t *testing.T) {
 	}
 }
 
-func TestE2E_Icon_DecorativeIsAriaHidden(t *testing.T) {
+func TestE2EIconAriaHidden(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var hidden bool
@@ -67,7 +67,7 @@ func TestE2E_Icon_DecorativeIsAriaHidden(t *testing.T) {
 // rendered the custom-icon demo as empty — the registry only had it
 // after a prior page load had mutated global state. Fixed by moving the
 // RegisterIcon call to package init.
-func TestE2E_Icon_CustomIconRegisteredAtInit(t *testing.T) {
+func TestE2ECustomIconAtInit(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var rectCount int
@@ -86,7 +86,7 @@ func TestE2E_Icon_CustomIconRegisteredAtInit(t *testing.T) {
 	}
 }
 
-func TestE2E_Icon_LabeledHasRoleImg(t *testing.T) {
+func TestE2EIconLabeledImg(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var labeled bool
@@ -111,7 +111,7 @@ func TestE2E_Icon_LabeledHasRoleImg(t *testing.T) {
 
 // ─── PollingIndicator ──────────────────────────────────────────────
 
-func TestE2E_PollingIndicator_RendersWithDotAndLabel(t *testing.T) {
+func TestE2EPollingDotLabel(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var dotCount, labelCount int
@@ -134,7 +134,7 @@ func TestE2E_PollingIndicator_RendersWithDotAndLabel(t *testing.T) {
 	}
 }
 
-func TestE2E_PollingIndicator_PausedVariantHasModifier(t *testing.T) {
+func TestE2EPollingPaused(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var pausedCount int
@@ -153,7 +153,7 @@ func TestE2E_PollingIndicator_PausedVariantHasModifier(t *testing.T) {
 
 // ─── NestedList ────────────────────────────────────────────────────
 
-func TestE2E_NestedList_FlatRendersAsUL(t *testing.T) {
+func TestE2ENestedListFlat(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var ulCount, linkCount int
@@ -174,7 +174,7 @@ func TestE2E_NestedList_FlatRendersAsUL(t *testing.T) {
 	}
 }
 
-func TestE2E_NestedList_BranchUsesDetails(t *testing.T) {
+func TestE2ENestedListBranchDetails(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var detailsCount, openCount int
@@ -196,7 +196,45 @@ func TestE2E_NestedList_BranchUsesDetails(t *testing.T) {
 	}
 }
 
-func TestE2E_NestedList_OrderedRendersAsOL(t *testing.T) {
+// Regression: the previous version registered the NestedList component
+// but never wired core-ui/patterns/nestedlist.BaseCSS() into the website
+// theme bundle, so links rendered as default-browser red underlined text
+// and <details> branches showed the raw ▶ marker. This test catches
+// the next "shipped without its stylesheet" instance: any rule from
+// BaseCSS() guarantees the bundle picked up the pattern.
+func TestE2ENestedListStyled(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var liStyle, summaryStyle string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/nestedlist"),
+		pageReady(),
+		// Outer <ul> reset: padding-inline-start must be 0 (not the
+		// browser default of ~40px). Any non-zero value means the
+		// pattern's BaseCSS isn't being bundled.
+		chromedp.Evaluate(`(function(){
+			var ul = document.querySelector('ul.nested-list');
+			return ul ? getComputedStyle(ul).paddingInlineStart : '';
+		})()`, &liStyle),
+		// Branch summary should be flex (our custom layout) — not the
+		// browser default "list-item" display.
+		chromedp.Evaluate(`(function(){
+			var s = document.querySelector('.nested-list summary');
+			return s ? getComputedStyle(s).display : '';
+		})()`, &summaryStyle),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if liStyle != "0px" {
+		t.Errorf("expected ul.nested-list padding-inline-start: 0 (BaseCSS reset), got %q", liStyle)
+	}
+	if !strings.Contains(summaryStyle, "flex") {
+		t.Errorf("expected summary display: inline-flex (our BaseCSS), got %q", summaryStyle)
+	}
+}
+
+func TestE2ENestedListOL(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var olCount int
@@ -215,7 +253,7 @@ func TestE2E_NestedList_OrderedRendersAsOL(t *testing.T) {
 
 // ─── Skeleton presets ──────────────────────────────────────────────
 
-func TestE2E_SkeletonPresets_AllRenderOnSkeletonPage(t *testing.T) {
+func TestE2ESkeletonPresetsRender(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var card, row, avatar, footer int
@@ -246,7 +284,7 @@ func TestE2E_SkeletonPresets_AllRenderOnSkeletonPage(t *testing.T) {
 
 // ─── DataTable responsive (container queries) ─────────────────────
 
-func TestE2E_DataTable_Responsive_AddsModifierAndDataLabels(t *testing.T) {
+func TestE2EDataTableCardsModifier(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var modifierCount, labelCount int
@@ -268,7 +306,7 @@ func TestE2E_DataTable_Responsive_AddsModifierAndDataLabels(t *testing.T) {
 	}
 }
 
-func TestE2E_DataTable_Responsive_CollapsesToCardsAtNarrowContainer(t *testing.T) {
+func TestE2EDataTableCollapsesNarrow(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	// The responsive demo wrapper is hard-clamped to 360px max-inline-size,
@@ -307,7 +345,7 @@ func TestE2E_DataTable_Responsive_CollapsesToCardsAtNarrowContainer(t *testing.T
 	}
 }
 
-func TestE2E_DataTable_Default_StaysAsTable(t *testing.T) {
+func TestE2EDataTableDefaultStaysTable(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	// The main "Live (island mode)" DataTable above the responsive demo
@@ -350,7 +388,7 @@ func TestE2E_DataTable_Default_StaysAsTable(t *testing.T) {
 	}
 }
 
-func TestE2E_SkeletonPresets_AreAriaHidden(t *testing.T) {
+func TestE2ESkeletonPresetsAriaHidden(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var allHidden bool
