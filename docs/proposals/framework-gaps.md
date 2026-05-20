@@ -131,9 +131,17 @@ HTTP attempts. Subscribers can be registered paused via
 `Paused: true`. `newID()` panics on `crypto/rand` failure rather
 than minting all-zero IDs.
 
-Documented known caveats (not yet shipped): SQL store has no
-DB-level claim/lease for multi-instance writers; subscriber secrets
-are stored plaintext (use column-level encryption).
+Multi-instance safety: the SQL store implements the optional
+`LeasedStore` interface (Postgres `FOR UPDATE SKIP LOCKED`; SQLite
+`BEGIN IMMEDIATE` + atomic update). The Manager auto-detects the
+interface and uses the claim/lease path so concurrent workers don't
+double-deliver. Tunable via `Options.LeasePeriod` (default 30s).
+
+Secret at rest: `WithSQLSecretCodec(codec)` encrypts
+`webhook_subscribers.secret` on write and decrypts on read. The
+bundled `NewAESGCMSecretCodec(key)` covers the AES-128/192/256 cases;
+unprefixed legacy rows pass through unchanged so deployments can roll
+encryption without a migration step.
 
 ---
 

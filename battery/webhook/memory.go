@@ -111,3 +111,45 @@ func (m *MemoryStore) DueDeliveries(_ context.Context, now time.Time, limit int)
 	}
 	return out, nil
 }
+
+// ClaimDueDeliveries reserves rows under the store's write lock and
+// pushes their NextAttemptAt to now+leasePeriod so a concurrent
+// claimer sees them as not-yet-due. Single-process by design — the
+// memory store can't span instances, but exposing the same interface
+// keeps Manager wiring uniform across store backends.
+func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
+	if leasePeriod <= 0 {
+		leasePeriod = 30 * time.Second
+	}
+	if limit <= 0 {
+		limit = 32
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	candidates := make([]Delivery, 0)
+	for _, d := range m.deliveries {
+		if d.Status != StatusPending {
+			continue
+		}
+		if d.NextAttemptAt.After(now) {
+			continue
+		}
+		candidates = append(candidates, d)
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].NextAttemptAt.Before(candidates[j].NextAttemptAt) })
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	leaseUntil := now.Add(leasePeriod)
+	for _, d := range candidates {
+		d.NextAttemptAt = leaseUntil
+		d.UpdatedAt = leaseUntil
+		m.deliveries[d.ID] = d
+	}
+	// Reflect the lease in the returned snapshot.
+	for i := range candidates {
+		candidates[i].NextAttemptAt = leaseUntil
+		candidates[i].UpdatedAt = leaseUntil
+	}
+	return candidates, nil
+}

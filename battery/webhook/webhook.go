@@ -67,6 +67,24 @@ type Store interface {
 	DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error)
 }
 
+// LeasedStore is the optional Store upgrade for multi-instance
+// deployments. Implementations atomically claim up to `limit` pending
+// rows that are due at `now` and push their next_attempt_at to
+// `now + leasePeriod`, so concurrent workers see those rows as not
+// yet due and skip them.
+//
+// If the worker crashes mid-attempt, the lease expires and another
+// worker re-claims. Pick a leasePeriod larger than your worst-case
+// handler latency.
+//
+// The Manager probes for this interface at tick time; stores that
+// don't implement it fall back to the plain DueDeliveries +
+// best-effort behaviour, which is fine for single-instance setups.
+type LeasedStore interface {
+	Store
+	ClaimDueDeliveries(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error)
+}
+
 // DefaultMaxResponseBodyBytes is the per-attempt response-body cap when
 // Options.MaxResponseBodyBytes is unset. A malicious receiver returning
 // gigabytes of body would otherwise exhaust manager memory.
@@ -99,6 +117,10 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 // signed timestamp drifting from "now" when verifying. The sender
 // embeds the timestamp into the signature; this field is purely
 // documentation here — receivers pass it to VerifyTimestamped.
+//
+// LeasePeriod controls how long a claimed delivery is hidden from
+// other workers when the store implements LeasedStore. Must be
+// longer than the worst-case handler latency; default 30s.
 type Options struct {
 	MaxAttempts          int
 	Backoff              []time.Duration
@@ -107,6 +129,7 @@ type Options struct {
 	MaxResponseBodyBytes int64
 	AllowPrivateNetworks bool
 	SignatureTolerance   time.Duration
+	LeasePeriod          time.Duration
 }
 
 // Manager owns the worker goroutine and is the entry point for Publish
@@ -150,6 +173,9 @@ func New(s Store, opts Options) *Manager {
 	}
 	if opts.MaxResponseBodyBytes == 0 {
 		opts.MaxResponseBodyBytes = DefaultMaxResponseBodyBytes
+	}
+	if opts.LeasePeriod <= 0 {
+		opts.LeasePeriod = 30 * time.Second
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{
@@ -299,12 +325,23 @@ func (m *Manager) runWorker() {
 }
 
 // tick processes any deliveries that are due now. Exposed for tests.
+//
+// When the store implements LeasedStore the worker uses the
+// claim-and-lease path so concurrent Manager instances against the
+// same SQL store don't double-deliver. Stores without that interface
+// fall back to plain DueDeliveries — fine for single-instance setups.
 func (m *Manager) tick(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	now := m.nowFn()
-	due, err := m.store.DueDeliveries(ctx, now, 32)
+	var due []Delivery
+	var err error
+	if ls, ok := m.store.(LeasedStore); ok {
+		due, err = ls.ClaimDueDeliveries(ctx, now, 32, m.opts.LeasePeriod)
+	} else {
+		due, err = m.store.DueDeliveries(ctx, now, 32)
+	}
 	if err != nil {
 		return
 	}

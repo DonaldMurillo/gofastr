@@ -181,10 +181,54 @@ Two stores are bundled:
   single-instance apps that tolerate restart loss.
 - `NewSQLStore(db, opts...)` — SQL-backed (sqlite + postgres),
   creates `webhook_subscribers` and `webhook_deliveries` on first
-  use. Pass `WithSQLSubscribersTable(...)` /
-  `WithSQLDeliveriesTable(...)` to override names. Deliveries
-  survive restart and the worker picks back up on whatever rows are
-  due.
+  use. Options:
+  - `WithSQLSubscribersTable(name)` / `WithSQLDeliveriesTable(name)`
+    — override table names.
+  - `WithSQLSecretCodec(codec)` — encrypt subscriber secrets at rest
+    (see Secret encryption below). Default is `NoopSecretCodec`
+    (plaintext).
+
+Both bundled stores implement the optional `LeasedStore` interface:
+
+```go
+type LeasedStore interface {
+    Store
+    ClaimDueDeliveries(ctx, now, limit, leasePeriod) ([]Delivery, error)
+}
+```
+
+`ClaimDueDeliveries` atomically reserves rows for the calling worker
+and pushes their `NextAttemptAt` forward by `leasePeriod`, so a
+concurrent Manager sees them as not-yet-due and skips them. The
+Manager auto-detects the interface and uses the claim path — making
+multi-instance deployments safe against double delivery. Set
+`Options.LeasePeriod` (default 30s) above your worst-case handler
+latency.
+
+## Secret encryption at rest
+
+The SQL store can encrypt `webhook_subscribers.secret` so a DB
+snapshot doesn't hand out HMAC keys:
+
+```go
+key := mustReadFromKMS() // 32 bytes for AES-256
+codec, err := webhook.NewAESGCMSecretCodec(key)
+if err != nil { /* ... */ }
+store, _ := webhook.NewSQLStore(db, webhook.WithSQLSecretCodec(codec))
+```
+
+The encoded format is `wbenc:v1:<base64(nonce||ciphertext)>`. Rows
+without the `wbenc:` prefix are returned as-is on read so an existing
+deployment can roll the codec without a one-shot rewrite job — each
+subscriber's secret is re-encrypted the next time the row is
+upserted.
+
+Key rotation: re-encrypt subscribers by reading them through a codec
+that decrypts with the old key and encrypts with the new one
+(typically a small wrapper around two `NewAESGCMSecretCodec`
+instances), then write each subscriber back through `AddSubscriber`.
+The package keeps a single-key codec primitive on purpose; a key
+ring belongs in your KMS adapter.
 
 ## Auto-bridging from `framework/event`
 
@@ -218,15 +262,14 @@ The bridge subscribes one handler per event type, marshals
   Use the `DueDeliveries` query for genuinely retryable rows; events
   that pre-date the subscriber should be backfilled deliberately, not
   resurrected by the retry loop.
-- **Don't run multiple workers against the same SQL store without a
-  row claim.** Today the SQL store's `DueDeliveries` query is a plain
-  `SELECT` — two concurrent workers can pick the same row and double-
-  deliver. Run a single Manager per database, or wrap your own
-  `FOR UPDATE SKIP LOCKED` (postgres) / equivalent.
-- **Secrets are stored plaintext.** `webhook_subscribers.secret` is
-  not encrypted at rest today. Use a column-level encryption layer
-  (or an envelope-encrypted column in your own schema) until that
-  ships natively.
+- **Multi-instance writers need the lease path.** The bundled SQL
+  store implements `LeasedStore` — on Postgres via
+  `FOR UPDATE SKIP LOCKED` inside an `UPDATE … RETURNING`, on SQLite
+  via a serializable `BEGIN IMMEDIATE` transaction. The Manager
+  automatically uses it when the store implements the interface.
+  Custom stores that don't implement `LeasedStore` are safe for
+  single-instance deployments only — concurrent workers against a
+  plain `DueDeliveries`-only store can double-deliver.
 - **The bridge calls `Publish` synchronously inside the emitter's
   goroutine.** With a SQL store, that means each `Emit` does a write
   per matching subscriber before returning. If the emitter is a hot

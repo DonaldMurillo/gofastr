@@ -41,10 +41,11 @@ import (
 //	    updated_at      TIMESTAMP NOT NULL
 //	)
 type SQLStore struct {
-	db          *sql.DB
-	subTable    string
-	delTable    string
-	dialect     string
+	db       *sql.DB
+	subTable string
+	delTable string
+	dialect  string
+	codec    SecretCodec
 }
 
 // SQLOption configures SQLStore.
@@ -60,6 +61,21 @@ func WithSQLDeliveriesTable(name string) SQLOption {
 	return func(s *SQLStore) { s.delTable = name }
 }
 
+// WithSQLSecretCodec installs a SecretCodec that encrypts subscriber
+// secrets at write time and decrypts them at read time. Default is
+// NoopSecretCodec (plaintext), which is appropriate only when the DB
+// itself is encrypted at rest or the threat model excludes a DB-snapshot
+// attacker.
+//
+// Use [NewAESGCMSecretCodec] to wrap a 16/24/32-byte key.
+func WithSQLSecretCodec(c SecretCodec) SQLOption {
+	return func(s *SQLStore) {
+		if c != nil {
+			s.codec = c
+		}
+	}
+}
+
 // NewSQLStore constructs a SQL-backed Store and ensures both tables exist.
 func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	if db == nil {
@@ -70,6 +86,7 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 		subTable: "webhook_subscribers",
 		delTable: "webhook_deliveries",
 		dialect:  "sqlite",
+		codec:    NoopSecretCodec{},
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -137,8 +154,12 @@ func (s *SQLStore) AddSubscriber(ctx context.Context, sub Subscriber) error {
 	if sub.Active {
 		active = 1
 	}
+	encSecret, err := s.codec.Encode(sub.Secret)
+	if err != nil {
+		return fmt.Errorf("webhook: encode secret: %w", err)
+	}
 	upsert := s.subUpsert()
-	_, err = s.db.ExecContext(ctx, upsert, sub.ID, sub.URL, sub.Secret, string(events), active, sub.Created)
+	_, err = s.db.ExecContext(ctx, upsert, sub.ID, sub.URL, encSecret, string(events), active, sub.Created)
 	return err
 }
 
@@ -148,7 +169,16 @@ func (s *SQLStore) GetSubscriber(ctx context.Context, id string) (*Subscriber, e
 			s.subTable, s.placeholder(1)),
 		id,
 	)
-	return scanSubscriber(row)
+	sub, err := scanSubscriber(row)
+	if err != nil || sub == nil {
+		return sub, err
+	}
+	plain, err := s.codec.Decode(sub.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("webhook: decode secret: %w", err)
+	}
+	sub.Secret = plain
+	return sub, nil
 }
 
 func (s *SQLStore) ListSubscribers(ctx context.Context) ([]Subscriber, error) {
@@ -165,9 +195,15 @@ func (s *SQLStore) ListSubscribers(ctx context.Context) ([]Subscriber, error) {
 		if err != nil {
 			return nil, err
 		}
-		if sub != nil {
-			out = append(out, *sub)
+		if sub == nil {
+			continue
 		}
+		plain, err := s.codec.Decode(sub.Secret)
+		if err != nil {
+			return nil, fmt.Errorf("webhook: decode secret for %q: %w", sub.ID, err)
+		}
+		sub.Secret = plain
+		out = append(out, *sub)
 	}
 	return out, rows.Err()
 }
@@ -240,6 +276,95 @@ func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) 
 	}
 	defer rows.Close()
 	return scanDeliveries(rows)
+}
+
+// ClaimDueDeliveries atomically reserves up to `limit` pending rows
+// whose next_attempt_at <= now, pushing them to now+leasePeriod so
+// concurrent workers skip them.
+//
+// Postgres uses FOR UPDATE SKIP LOCKED inside a CTE so the inner
+// SELECT only sees uncontested rows; SQLite serializes writers via
+// BEGIN IMMEDIATE so the SELECT-then-UPDATE sequence inside one tx
+// is safely exclusive.
+func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
+	if leasePeriod <= 0 {
+		leasePeriod = 30 * time.Second
+	}
+	if limit <= 0 {
+		limit = 32
+	}
+	if s.dialect == "postgres" {
+		return s.claimPostgres(ctx, now, limit, leasePeriod)
+	}
+	return s.claimSqlite(ctx, now, limit, leasePeriod)
+}
+
+func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
+	q := fmt.Sprintf(`UPDATE %s SET next_attempt_at = $1, updated_at = $1
+		WHERE id IN (
+			SELECT id FROM %s
+			WHERE status = $2 AND next_attempt_at <= $3
+			ORDER BY next_attempt_at ASC
+			LIMIT %d
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, subscriber_id, event, payload, attempts, status,
+			last_error, next_attempt_at, created_at, updated_at`,
+		s.delTable, s.delTable, limit)
+	rows, err := s.db.QueryContext(ctx, q, now.Add(leasePeriod), string(StatusPending), now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDeliveries(rows)
+}
+
+func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
+	// BEGIN IMMEDIATE acquires the database write lock up-front so two
+	// concurrent workers serialize cleanly. The SELECT-then-UPDATE
+	// sequence inside the tx sees a consistent snapshot.
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
+		last_error, next_attempt_at, created_at, updated_at FROM %s
+		WHERE status = ? AND next_attempt_at <= ?
+		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
+	rows, err := tx.QueryContext(ctx, selQ, string(StatusPending), now)
+	if err != nil {
+		return nil, err
+	}
+	claimed, err := scanDeliveries(rows)
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(claimed) == 0 {
+		return nil, tx.Commit()
+	}
+	// Push next_attempt_at forward for every claimed row.
+	placeholders := make([]string, len(claimed))
+	args := []any{now.Add(leasePeriod)}
+	for i, d := range claimed {
+		placeholders[i] = "?"
+		args = append(args, d.ID)
+	}
+	updQ := fmt.Sprintf("UPDATE %s SET next_attempt_at = ?, updated_at = ? WHERE id IN (%s)",
+		s.delTable, strings.Join(placeholders, ","))
+	// Insert the second timestamp arg after the first.
+	args = append([]any{args[0], now.Add(leasePeriod)}, args[1:]...)
+	if _, err := tx.ExecContext(ctx, updQ, args...); err != nil {
+		return nil, err
+	}
+	// Reflect the new lease in the in-memory copies we return.
+	for i := range claimed {
+		claimed[i].NextAttemptAt = now.Add(leasePeriod)
+		claimed[i].UpdatedAt = now.Add(leasePeriod)
+	}
+	return claimed, tx.Commit()
 }
 
 // ----- scan + statements ----------------------------------------------------
