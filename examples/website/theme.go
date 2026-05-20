@@ -46,7 +46,7 @@ func createStyleSheet(theme style.Theme) string {
 			"--color-border-strong", "#3a3d46",
 			"--color-text", "#e7e7eb",
 			"--color-text-muted", "#a0a0aa",
-			"--color-text-subtle", "#6b6b75",
+			"--color-text-subtle", "#8b8b96",
 			"--color-muted", "#1f222a",
 			"--color-primary", "#818cf8",
 			"--color-primary-fg", "#0f1115",

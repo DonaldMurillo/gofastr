@@ -42,6 +42,7 @@ func main() {
 	fmt.Println("  http://localhost" + addr)
 	fmt.Println()
 	fmt.Println("  Pages:  /  /docs/  /docs/:slug  /examples/  /components/  /framework-ui/  /about")
+	fmt.Println("  LLM:    /llm.md  /llm-pages.md  /articles/llm.md")
 	fmt.Println("━─────────────────────────────────────────────")
 
 	if err := fwApp.Start(addr); err != nil {
@@ -84,6 +85,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/components/card", &CardScreen{}, nil)
 	site.Register("/components/image", &OptimizedImageScreen{}, nil)
 	site.Register("/components/toggle", &ToggleScreen{}, nil)
+	site.Register("/components/forms", &FormsDemoScreen{}, nil)
 	site.Register("/components/tooltip", &TooltipScreen{}, nil)
 	site.Register("/components/popover", &PopoverScreen{}, nil)
 	site.Register("/components/tag", &TagScreen{}, nil)
@@ -177,6 +179,11 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "website"}))
 	fwApp.Mount(host)
 
+	// Wire a sqlite-backed entity so CRUD + /llm.md entity docs are live.
+	if err := setupDemoEntity(fwApp); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: demo entity setup failed (CRUD /llm.md unavailable): %v\n", err)
+	}
+
 	// Island RPC endpoints — see the matching screen files for how the
 	// demos wire IslandSignal + IslandEndpoint into the rendered HTML.
 	fwApp.Router.Get("/islands/pagination-demo/page", http.HandlerFunc(PaginationIslandHandler))
@@ -186,6 +193,9 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	fwApp.Router.Post("/customers/save", http.HandlerFunc(CustomersSaveHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-card", http.HandlerFunc(CSSLoadingRevealCardHandler))
 	fwApp.Router.Post("/islands/css-demo/reveal-palette", http.HandlerFunc(CSSLoadingRevealPaletteHandler))
+
+	// Forms demo: repeater island endpoint
+	fwApp.Router.Get("/islands/forms/repeater", http.HandlerFunc(FormsRepeaterIslandHandler))
 
 	// /components/{modal,drawer,toast} demos — register hidden widgets
 	// + a ToastBus + a tiny push endpoint that the live demo buttons hit.

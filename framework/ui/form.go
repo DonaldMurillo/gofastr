@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -40,8 +44,11 @@ type FormConfig struct {
 	Summary string
 
 	// SubmitLabel is the visible submit button label. Defaults to "Save".
-	// Set to empty to omit the button (caller renders their own).
 	SubmitLabel string
+
+	// HideSubmit omits the submit button entirely when true.
+	// Use when the caller renders its own submit button.
+	HideSubmit bool
 
 	ID    string
 	Class string
@@ -59,6 +66,10 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	method := cfg.Method
 	if method == "" {
 		method = "POST"
+	}
+	// D-1: Reject invalid methods to prevent silent HTML bugs.
+	if method != "GET" && method != "POST" {
+		panic("ui: Form Method must be GET or POST, got " + method)
 	}
 
 	cls := "ui-form"
@@ -85,11 +96,11 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		render.Tag("div", map[string]string{"class": "ui-form__fields"}, fields...))
 
 	// Submit button.
-	submitLabel := cfg.SubmitLabel
-	if submitLabel == "" && cfg.SubmitLabel == "" {
-		submitLabel = "Save"
-	}
-	if submitLabel != "" {
+	if !cfg.HideSubmit {
+		submitLabel := cfg.SubmitLabel
+		if submitLabel == "" {
+			submitLabel = "Save"
+		}
 		children = append(children,
 			render.Tag("div", map[string]string{"class": "ui-form__actions"},
 				html.Button(html.ButtonConfig{
@@ -118,4 +129,106 @@ func FormFieldFor(errs FieldErrors, name string, cfg FormFieldConfig) render.HTM
 		}
 	}
 	return FormField(cfg)
+}
+
+// ─── ValidationSummary ───────────────────────────────────────────────
+//
+// Inline summary of all form validation errors rendered as a danger
+// callout with links to each erroneous field. Pure SSR — no runtime JS.
+
+// ValidationSummaryConfig configures a ValidationSummary.
+type ValidationSummaryConfig struct {
+	// Errors maps field names to error messages (required).
+	Errors FieldErrors
+	// FieldLabels maps field names to human-readable labels.
+	// Falls back to the field name when not provided.
+	FieldLabels map[string]string
+	// FieldIDs maps field names to actual input element IDs.
+	// When set, anchor links use these IDs so they point to the
+	// correct input. Falls back to the field name when not provided.
+	FieldIDs map[string]string
+	// Class adds extra CSS classes to the wrapper.
+	Class string
+}
+
+// ValidationSummary renders an inline summary of form validation errors
+// as a danger callout with anchor links to each field.
+func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
+	if len(cfg.Errors) == 0 {
+		return ""
+	}
+
+	cls := "ui-validation-summary"
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+
+	title := html.Strong(
+		html.TextConfig{Class: "ui-validation-summary__title"},
+		render.Text("Please fix the following errors:"),
+	)
+
+	items := []render.HTML{}
+	for field, msg := range cfg.Errors {
+		label := field
+		if cfg.FieldLabels != nil {
+			if l, ok := cfg.FieldLabels[field]; ok {
+				label = l
+			}
+		}
+		linkText := fmt.Sprintf("%s: %s", label, msg)
+		hrefID := field
+		if cfg.FieldIDs != nil {
+			if id, ok := cfg.FieldIDs[field]; ok {
+				hrefID = id
+			}
+		}
+		items = append(items, render.Tag("li", nil,
+			render.Tag("a", map[string]string{
+				"href": "#" + hrefID,
+			}, render.Text(linkText)),
+		))
+	}
+
+	list := render.Tag("ul", map[string]string{
+		"class": "ui-validation-summary__list",
+	}, items...)
+
+	return validationSummaryStyle.WrapHTML(render.Tag("div", map[string]string{
+		"class": cls,
+		"role":  "alert",
+	}, title, list))
+}
+
+var validationSummaryStyle = registry.RegisterStyle("ui-validation-summary", validationSummaryCSS)
+
+func validationSummaryCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-validation-summary"] {
+  display: grid;
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-inline-start: 4px solid var(--color-danger, #DC2626);
+  border-radius: var(--radii-md, 8px);
+  background: color-mix(in oklab, var(--color-danger, #DC2626) 8%, var(--color-surface, #FFFFFF) 92%);
+}
+[data-fui-comp="ui-validation-summary"] .ui-validation-summary__title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-danger, #DC2626);
+}
+[data-fui-comp="ui-validation-summary"] .ui-validation-summary__list {
+  margin: 0;
+  padding-left: var(--spacing-lg, 16px);
+  list-style: disc;
+  font-size: 0.85rem;
+  color: var(--color-text, #18181B);
+}
+[data-fui-comp="ui-validation-summary"] .ui-validation-summary__list a {
+  color: var(--color-danger, #DC2626);
+  text-decoration: underline;
+}
+[data-fui-comp="ui-validation-summary"] .ui-validation-summary__list a:hover {
+  color: var(--color-text, #18181B);
+}`
 }

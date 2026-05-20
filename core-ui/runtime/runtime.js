@@ -1543,6 +1543,14 @@
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
     // BackToTop: scroll-past-threshold reveal + smooth scroll.
     { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
+    // ConditionalField: show/hide content based on another field's value.
+    { name: 'conditionalfield', selector: '[data-fui-comp="ui-conditional-field"]' },
+    // PasswordInput: show/hide toggle for password fields.
+    { name: 'passwordinput',   selector: '[data-fui-comp="ui-password-input"]' },
+    // SearchInput: clear button visibility + input clearing.
+    { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
+    // FormRepeater: serializes field values into RPC add/remove clicks.
+    { name: 'formrepeater',    selector: '[data-fui-comp="ui-form-repeater"]' },
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;

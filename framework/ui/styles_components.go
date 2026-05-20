@@ -33,8 +33,11 @@ var (
 	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
 	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
 	skipLinkStyle     = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
-	themeToggleStyle = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
-	backToTopStyle   = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
+	themeToggleStyle    = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
+	backToTopStyle      = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
+	conditionalFieldStyle = registry.RegisterStyle("ui-conditional-field", conditionalFieldCSS)
+	stepWizardStyle      = registry.RegisterStyle("ui-step-wizard", stepWizardCSS)
+	formRepeaterStyle    = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
 )
 
 // buttonCSS is the base .ui-button styling that several call sites
@@ -204,6 +207,11 @@ func formFieldCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-form-field"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
+}
+[data-fui-comp="ui-form-field"] .ui-form-field__label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__label {
   font-weight: 500;

@@ -128,6 +128,9 @@ type Screen struct {
 	// Layout is an optional layout override for this screen.
 	Layout *Layout
 
+	// NoLLMMD disables auto-generated /path/llm.md for this screen.
+	NoLLMMD bool
+
 	// routeParams holds extracted dynamic route parameters.
 	routeParams map[string]string
 

@@ -501,19 +501,19 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	app.Registry.Register(posts)
 
 	spec := EntityOpenAPI(app.Registry, "Blog", "1.0.0")
-	app.Router.Get("/docs/openapi.json", openapi.Handler(spec))
-	app.Router.Get("/docs/", openapi.SwaggerUIHandler(spec, "/docs"))
+	app.Router.Get("/api/docs/openapi.json", openapi.Handler(spec))
+	app.Router.Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 
 	ta := TestHarness(t, app)
 	defer ta.Close()
 
 	// Spec endpoint
-	resp := ta.Get("/docs/openapi.json")
+	resp := ta.Get("/api/docs/openapi.json")
 	resp.AssertStatus(t, http.StatusOK)
 	resp.AssertBodyContains(t, "Blog")
 
 	// UI page
-	resp = ta.Get("/docs/")
+	resp = ta.Get("/api/docs/")
 	resp.AssertStatus(t, http.StatusOK)
 	resp.AssertBodyContains(t, "swagger-ui")
 }

@@ -72,13 +72,14 @@ func TestFormFieldErrorSwitchesStyling(t *testing.T) {
 	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
 		Label: "Name", For: "n", Error: "Required field", Input: in,
+		Help: "Your legal name",
 	})
 	mustContain(t, h, "is-error")
 	mustContain(t, h, `role="alert"`)
 	mustContain(t, h, "Required field")
-	if strings.Contains(string(h), "ui-form-field__help") {
-		t.Fatal("expected help to be hidden when Error set")
-	}
+	// Help text should also be present alongside error (S-3).
+	mustContain(t, h, "ui-form-field__help")
+	mustContain(t, h, "Your legal name")
 }
 
 func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
@@ -86,6 +87,25 @@ func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
 	h := FormField(FormFieldConfig{Label: "x", For: "n", Help: "Hint", Input: in})
 	mustContain(t, h, "Hint")
 	mustContain(t, h, "ui-form-field__help")
+}
+
+func TestFormFieldHelpRendersAlongsideError(t *testing.T) {
+	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
+	h := FormField(FormFieldConfig{
+		Label: "Name", For: "n", Input: in,
+		Help:  "Enter your full name",
+		Error: "Required",
+	})
+	s := string(h)
+	if !strings.Contains(s, "Enter your full name") {
+		t.Errorf("help text should still render when error is present, got: %s", s)
+	}
+	if !strings.Contains(s, "ui-form-field__help") {
+		t.Errorf("help class should still be present, got: %s", s)
+	}
+	if !strings.Contains(s, "Required") {
+		t.Errorf("error text should render, got: %s", s)
+	}
 }
 
 // ─── FormField a11y ───
@@ -355,5 +375,29 @@ func TestInitialsHelper(t *testing.T) {
 		if got != want {
 			t.Errorf("initials(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// injectAriaInvalid must escape the errID to prevent attribute injection
+// when cfg.For contains special characters (quotes, angle brackets).
+func TestInjectAriaInvalidEscapesID(t *testing.T) {
+	input := render.HTML(`<input id="test" name="test">`)
+	result := string(injectAriaInvalid(input, `foo"bar`))
+	// The raw quote must be escaped, not break the attribute boundary.
+	if strings.Contains(result, `aria-describedby="foo"bar"`) {
+		t.Errorf("unescaped ID in aria-describedby — attribute injection:\n%s", result)
+	}
+	if !strings.Contains(result, `aria-invalid="true"`) {
+		t.Errorf("missing aria-invalid:\n%s", result)
+	}
+}
+
+// injectAttrs must inject aria-describedby even when aria-invalid is
+// already present on the element — idempotence check must cover all attrs.
+func TestInjectAttrsDoesNotSkipDescribedByWhenInvalidPresent(t *testing.T) {
+	input := render.HTML(`<input id="test" aria-invalid="true">`)
+	result := string(injectAttrs(input, ` aria-invalid="true" aria-describedby="test-error"`))
+	if !strings.Contains(result, `aria-describedby="test-error"`) {
+		t.Errorf("aria-describedby was skipped because aria-invalid already present:\n%s", result)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ type AppConfig struct {
 	Name           string        // application name
 	JSONCase       crud.JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
 	DebugEndpoints bool          // opt-in for /.debug/* endpoints
+	NoLLMMD        bool          // disable auto-generated /llm.md entity docs
 }
 
 // App is the top-level application container.
@@ -229,7 +231,7 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
 		crudHandler.Registry = a.Registry
-		crud.RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable())
+		crud.RegisterCrudRoutes(a.Router, crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
 	if config.MCP && a.DB != nil {
@@ -536,7 +538,19 @@ func (a *App) Start(addr string) error {
 		}
 		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0")
 		a.Router.Get("/openapi.json", coreoa.Handler(spec))
-		a.Router.Get("/docs/", coreoa.SwaggerUIHandler(spec, "/docs"))
+		a.Router.Get("/api/docs/", coreoa.SwaggerUIHandler(spec, "/api/docs"))
+
+		// API entity index under /api/ alongside /api/docs/ (Swagger).
+		// Root /llm.md is free for the homepage screen doc.
+		if !a.Config.NoLLMMD {
+			a.Router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				md := crud.RegistryLLMMD(a.Registry, appName)
+				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("Content-Length", strconv.Itoa(len(md)))
+				w.Write([]byte(md))
+			}))
+		}
 	}
 
 	if a.Config.DebugEndpoints {
@@ -573,7 +587,8 @@ func (a *App) Start(addr string) error {
 
 	// Log OpenAPI
 	fmt.Printf("  %s OpenAPI:     http://%s/openapi.json\n", arrow(), host)
-	fmt.Printf("  %s Swagger UI:  http://%s/docs/\n\n", arrow(), host)
+	fmt.Printf("  %s Swagger UI:  http://%s/api/docs/\n", arrow(), host)
+	fmt.Printf("  %s LLM Docs:    http://%s/api/llm.md\n\n", arrow(), host)
 
 	a.server = &http.Server{
 		Addr:    addr,
