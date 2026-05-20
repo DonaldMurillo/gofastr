@@ -1,8 +1,17 @@
 package accordion
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. Both Group and Stack
+// wrap their output in Style.WrapHTML so the data-fui-comp marker is
+// emitted and the runtime auto-loads the CSS on first appearance.
+var Style = registry.RegisterStyle("accordion", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
 
 // Group renders an exclusive accordion: at most one item open at a time.
 //
@@ -17,7 +26,7 @@ func Group(cfg GroupConfig, items ...Item) render.HTML {
 	for i, it := range items {
 		rendered[i] = renderItem(it, cfg.Name)
 	}
-	return render.Tag("div", wrapAttrs, rendered...)
+	return Style.WrapHTML(render.Tag("div", wrapAttrs, rendered...))
 }
 
 // Stack renders an independent accordion: every item opens and closes
@@ -28,7 +37,7 @@ func Stack(cfg StackConfig, items ...Item) render.HTML {
 	for i, it := range items {
 		rendered[i] = renderItem(it, "")
 	}
-	return render.Tag("div", wrapAttrs, rendered...)
+	return Style.WrapHTML(render.Tag("div", wrapAttrs, rendered...))
 }
 
 func wrapperAttrs(id, class, label, base string) map[string]string {

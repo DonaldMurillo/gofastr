@@ -3,6 +3,8 @@ package skeleton
 import (
 	"strings"
 	"testing"
+
+	corestyle "github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestDefaultsToLine(t *testing.T) {
@@ -77,14 +79,14 @@ func TestCircleUsesEqualSides(t *testing.T) {
 	}
 }
 
-func TestBaseCSSHasKeyframes(t *testing.T) {
-	css := BaseCSS()
+func TestStyleHasKeyframes(t *testing.T) {
+	css := Style.Entry().CSSFor(corestyle.Theme{})
 	for _, want := range []string{
 		"@keyframes skeleton-shimmer", ".skeleton-line", ".skeleton-circle",
 		"prefers-reduced-motion",
 	} {
 		if !strings.Contains(css, want) {
-			t.Errorf("BaseCSS missing %q", want)
+			t.Errorf("registered Style missing %q", want)
 		}
 	}
 }

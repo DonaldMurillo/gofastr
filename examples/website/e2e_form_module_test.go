@@ -547,6 +547,63 @@ func TestE2E_ValidationSummary_RendersLinks(t *testing.T) {
 	}
 }
 
+// TestE2E_ValidationSummary_FieldOrderAndTitle verifies the new
+// deterministic-order + custom-title features: the demo wires
+// FieldOrder=[name, email, password] and Title="Please fix the
+// highlighted fields", so on the live page the rows MUST appear in
+// that order and the heading must carry the custom title.
+func TestE2EFieldOrderAndTitle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var raw string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/forms"),
+		pageReady(),
+		chromedp.Evaluate(`JSON.stringify((() => {
+			var sums = document.querySelectorAll('[data-fui-comp="ui-validation-summary"]');
+			if (sums.length === 0) return {found: false};
+			var last = sums[sums.length - 1];
+			var links = Array.from(last.querySelectorAll('a[href^="#"]'));
+			return {
+				found: true,
+				titleText: (last.querySelector('.ui-validation-summary__title') || {}).textContent || '',
+				hrefs: links.map(a => a.getAttribute('href')),
+			};
+		})())`, &raw),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	var result struct {
+		Found     bool     `json:"found"`
+		TitleText string   `json:"titleText"`
+		Hrefs     []string `json:"hrefs"`
+	}
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if !result.Found {
+		t.Fatal("no ui-validation-summary on /components/forms")
+	}
+	if !strings.Contains(result.TitleText, "Please fix the highlighted fields") {
+		t.Errorf("expected custom Title, got %q", result.TitleText)
+	}
+	want := []string{"#val-name", "#val-email", "#val-password"}
+	if len(result.Hrefs) < 3 {
+		t.Fatalf("expected ≥3 anchor links, got %v", result.Hrefs)
+	}
+	for i, w := range want {
+		if result.Hrefs[i] != w {
+			t.Errorf("FieldOrder violated at index %d: want %q, got %q (full=%v)",
+				i, w, result.Hrefs[i], result.Hrefs)
+		}
+	}
+}
+
 // ─── Validation Round-Trip ──────────────────────────────────────────
 
 func TestE2E_ValidationRoundTrip_ShowsErrors(t *testing.T) {

@@ -30,6 +30,7 @@ type BlueprintApp struct {
 	DBURL     string
 	StaticDir string
 	OutputDir string
+	Theme     map[string]string
 }
 
 type BlueprintScreen struct {
@@ -178,7 +179,7 @@ func isBlueprintFile(path string) bool {
 }
 
 func mergeBlueprints(a, b Blueprint) Blueprint {
-	if b.App.Name != "" || b.App.Module != "" || b.App.DBDriver != "" || b.App.DBURL != "" || b.App.StaticDir != "" || b.App.OutputDir != "" {
+	if b.App.Name != "" || b.App.Module != "" || b.App.DBDriver != "" || b.App.DBURL != "" || b.App.StaticDir != "" || b.App.OutputDir != "" || len(b.App.Theme) > 0 {
 		a.App = b.App
 	}
 	a.Entities = append(a.Entities, b.Entities...)
@@ -258,7 +259,7 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 	if err != nil {
 		return BlueprintApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "module": true, "db": true, "static_dir": true, "output_dir": true}
+	allowed := map[string]bool{"name": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "theme": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return BlueprintApp{}, err
 	}
@@ -279,7 +280,29 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 		app.DBDriver = stringValue(db["driver"])
 		app.DBURL = stringValue(db["url"])
 	}
+	if themeNode := m["theme"]; themeNode != nil {
+		theme, err := decodeBlueprintTheme(themeNode)
+		if err != nil {
+			return BlueprintApp{}, err
+		}
+		app.Theme = theme
+	}
 	return app, nil
+}
+
+func decodeBlueprintTheme(node *coreyaml.Node) (map[string]string, error) {
+	m, err := expectMap(node, "app.theme")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(m))
+	for key, value := range m {
+		if value == nil || value.Kind != coreyaml.Scalar {
+			return nil, fmt.Errorf("app.theme.%s must be a scalar CSS token value", key)
+		}
+		out[key] = stringValue(value)
+	}
+	return out, nil
 }
 
 func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, []BlueprintEndpoint, error) {
@@ -641,6 +664,11 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 }
 
 func validateBlueprint(bp Blueprint) error {
+	for key := range bp.App.Theme {
+		if _, ok := blueprintThemeColorPath(key); !ok {
+			return fmt.Errorf("blueprint: app.theme has unsupported color token %q", key)
+		}
+	}
 	entityNames := map[string]bool{}
 	for _, decl := range bp.Entities {
 		if decl.Name == "" {
@@ -951,7 +979,7 @@ func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 {
 		files = append(files, generatedFile{name: filepath.Join("blueprint", "stubs.go"), content: renderBlueprintStubs(bp)})
 	}
-	if bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 {
+	if bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || len(bp.App.Theme) > 0 || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 {
 		files = append(files, generatedFile{name: filepath.Join("blueprint", "app.go"), content: renderBlueprintApp(bp)})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
@@ -1278,7 +1306,11 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.Endpoints) > 0 {
 		sb.WriteString("\t\"net/http\"\n\n")
 	}
-	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n\t\"github.com/DonaldMurillo/gofastr/framework\"\n)\n\n")
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
+	if len(bp.App.Theme) > 0 {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/style\"\n")
+	}
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n)\n\n")
 	sb.WriteString("const (\n")
 	sb.WriteString(fmt.Sprintf("\tBlueprintAppName = %q\n", name))
 	sb.WriteString(fmt.Sprintf("\tBlueprintModule = %q\n", bp.App.Module))
@@ -1286,11 +1318,25 @@ func renderBlueprintApp(bp Blueprint) string {
 	sb.WriteString(fmt.Sprintf("\tBlueprintDBURL = %q\n", bp.App.DBURL))
 	sb.WriteString(fmt.Sprintf("\tBlueprintStaticDir = %q\n", bp.App.StaticDir))
 	sb.WriteString(")\n\n")
+	if len(bp.App.Theme) > 0 {
+		sb.WriteString("func BlueprintTheme() style.Theme {\n")
+		sb.WriteString("\ttheme := style.DefaultTheme()\n")
+		for _, key := range sortedStringMapKeys(bp.App.Theme) {
+			if path, ok := blueprintThemeColorPath(key); ok {
+				sb.WriteString(fmt.Sprintf("\ttheme.Colors.%s.Value = %q\n", path, bp.App.Theme[key]))
+			}
+		}
+		sb.WriteString("\treturn theme\n")
+		sb.WriteString("}\n\n")
+	}
 	sb.WriteString("// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.\n")
 	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App) {\n")
 	sb.WriteString("\tif site == nil {\n")
 	sb.WriteString(fmt.Sprintf("\t\tsite = app.NewApp(%q)\n", name))
 	sb.WriteString("\t}\n")
+	if len(bp.App.Theme) > 0 {
+		sb.WriteString("\tsite.WithTheme(BlueprintTheme())\n")
+	}
 	for _, screen := range bp.Screens {
 		sb.WriteString(fmt.Sprintf("\tsite.Register(%q, &%sScreen{}, nil)\n", screen.Route, toCamelCase(screen.Name)))
 	}
@@ -1305,6 +1351,54 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	sb.WriteString("}\n")
 	return sb.String()
+}
+
+func sortedStringMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func blueprintThemeColorPath(key string) (string, bool) {
+	switch key {
+	case "primary":
+		return "Primary", true
+	case "primary-fg":
+		return "PrimaryFg", true
+	case "secondary":
+		return "Secondary", true
+	case "background":
+		return "Background", true
+	case "surface":
+		return "Surface", true
+	case "surface-soft":
+		return "SurfaceSoft", true
+	case "text":
+		return "Text", true
+	case "text-muted":
+		return "TextMuted", true
+	case "text-subtle":
+		return "TextSubtle", true
+	case "border":
+		return "Border", true
+	case "border-strong":
+		return "BorderStrong", true
+	case "accent":
+		return "Accent", true
+	case "success":
+		return "Success", true
+	case "warning":
+		return "Warning", true
+	case "danger":
+		return "Danger", true
+	case "info":
+		return "Info", true
+	default:
+		return "", false
+	}
 }
 
 func blueprintEndpointPath(endpoint BlueprintEndpoint) string {

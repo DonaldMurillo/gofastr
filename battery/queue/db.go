@@ -261,6 +261,62 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 	return err
 }
 
+// ListJobs implements [Browsable]. Returns up to limit jobs in the
+// supplied status, newest-first. Empty status returns all jobs
+// regardless of state. limit <= 0 defaults to 100.
+func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	base := fmt.Sprintf(`SELECT id, type, payload, priority, attempts, max_attempts,
+		created_at, scheduled_at FROM %s`, q.qt())
+	args := []any{}
+	if status != "" {
+		base += " WHERE status = $1"
+		args = append(args, status)
+	}
+	base += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d", limit)
+	rows, err := q.db.QueryContext(ctx, base, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		var j Job
+		var payload string
+		if err := rows.Scan(&j.ID, &j.Type, &payload, &j.Priority, &j.Attempts,
+			&j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt); err != nil {
+			return nil, err
+		}
+		j.Payload = []byte(payload)
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// Stats implements [Browsable]. Aggregates per-status counts over the
+// whole table. Cheap: a single GROUP BY scan.
+func (q *DBQueue) Stats(ctx context.Context) (JobStats, error) {
+	rows, err := q.db.QueryContext(ctx,
+		fmt.Sprintf("SELECT status, COUNT(*) FROM %s GROUP BY status", q.qt()),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := JobStats{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
+}
+
 // Close stops worker goroutines started by Start. Idempotent.
 func (q *DBQueue) Close() error {
 	select {

@@ -12,6 +12,13 @@ Blueprints are not runtime declarations. The CLI reads `.yml`, `.yaml`, or
 `.gofastr/`. Runtime loading through `app.EntityFromFile` and
 `app.EntitiesFromDir` remains JSON-only.
 
+`app.theme` can override canonical color tokens for generated UI apps. Supported
+keys are `primary`, `primary-fg`, `secondary`, `background`, `surface`,
+`surface-soft`, `text`, `text-muted`, `text-subtle`, `border`,
+`border-strong`, `accent`, `success`, `warning`, `danger`, and `info`.
+Generated apps call `site.WithTheme(...)`, so the values are emitted through
+`/__gofastr/app.css` as computed CSS custom properties.
+
 ## YAML subset
 
 GoFastr ships its own small YAML parser in `core/yaml`; no external YAML parser
@@ -32,6 +39,10 @@ of the blueprint format.
 app:
   name: Demo
   module: example.com/demo
+  theme:
+    background: "#101820"
+    primary: "#F2AA4C"
+    text: "#F7F4EA"
   db:
     driver: sqlite
     url: file:demo.db

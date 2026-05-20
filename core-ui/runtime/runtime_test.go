@@ -380,3 +380,30 @@ func TestRuntimeModuleRejectsBadName(t *testing.T) {
 		}
 	}
 }
+
+// Regression: scrollspy's cssEscape polyfill must handle ids that
+// start with a digit (legal HTML5, illegal as bare CSS selectors).
+// querySelector('#2foo') throws SyntaxError without escaping; the
+// polyfill must emit `\\3<digit><space>` (the CSS spec form) or
+// equivalent so the selector parses.
+func TestScrollspyCSSEscapeHandlesLeadingDigit(t *testing.T) {
+	src, ok := Module("scrollspy")
+	if !ok {
+		t.Fatal("scrollspy module missing")
+	}
+	// The fix uses a charCodeAt branch to emit `\\3<hex><space>` for
+	// the first char when it's a digit (or use CSS.escape natively).
+	// Accept any of the canonical forms.
+	if !contains(src, "charCodeAt(0)") && !contains(src, "/^[0-9]/") && !contains(src, "/^\\d/") {
+		t.Error("cssEscape polyfill must special-case leading-digit ids — querySelector('#42foo') throws otherwise")
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

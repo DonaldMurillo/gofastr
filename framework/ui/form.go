@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -147,12 +148,23 @@ type ValidationSummaryConfig struct {
 	// When set, anchor links use these IDs so they point to the
 	// correct input. Falls back to the field name when not provided.
 	FieldIDs map[string]string
+	// FieldOrder controls the order of error rows. Entries that aren't
+	// in Errors are silently skipped, so it's safe to pass the full
+	// form field list. Without FieldOrder, rows fall back to
+	// alphabetical-by-field-name so the rendered HTML is deterministic
+	// across requests (Go map iteration is randomized).
+	FieldOrder []string
+	// Title overrides the default banner heading. Empty → "Please fix
+	// the following errors:".
+	Title string
 	// Class adds extra CSS classes to the wrapper.
 	Class string
 }
 
 // ValidationSummary renders an inline summary of form validation errors
-// as a danger callout with anchor links to each field.
+// as a danger callout with anchor links to each field. Output ordering
+// is deterministic: FieldOrder first if provided, then any leftover
+// field names alphabetically.
 func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 	if len(cfg.Errors) == 0 {
 		return ""
@@ -163,13 +175,36 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
+	titleText := cfg.Title
+	if titleText == "" {
+		titleText = "Please fix the following errors:"
+	}
 	title := html.Strong(
 		html.TextConfig{Class: "ui-validation-summary__title"},
-		render.Text("Please fix the following errors:"),
+		render.Text(titleText),
 	)
 
-	items := []render.HTML{}
-	for field, msg := range cfg.Errors {
+	// Deterministic order: FieldOrder first, then alphabetical leftover.
+	ordered := make([]string, 0, len(cfg.Errors))
+	seen := make(map[string]bool, len(cfg.Errors))
+	for _, name := range cfg.FieldOrder {
+		if _, ok := cfg.Errors[name]; ok && !seen[name] {
+			ordered = append(ordered, name)
+			seen[name] = true
+		}
+	}
+	leftover := make([]string, 0)
+	for name := range cfg.Errors {
+		if !seen[name] {
+			leftover = append(leftover, name)
+		}
+	}
+	sort.Strings(leftover)
+	ordered = append(ordered, leftover...)
+
+	items := make([]render.HTML, 0, len(ordered))
+	for _, field := range ordered {
+		msg := cfg.Errors[field]
 		label := field
 		if cfg.FieldLabels != nil {
 			if l, ok := cfg.FieldLabels[field]; ok {
@@ -195,8 +230,9 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 	}, items...)
 
 	return validationSummaryStyle.WrapHTML(render.Tag("div", map[string]string{
-		"class": cls,
-		"role":  "alert",
+		"class":     cls,
+		"role":      "alert",
+		"aria-live": "assertive",
 	}, title, list))
 }
 

@@ -128,6 +128,11 @@ server side and the runtime does the work.
 | `data-fui-fileupload` | Marks the drag-drop zone surrounding a `framework/ui.FileUpload` `<input type="file">`. The runtime wires dragover/dragleave/drop handlers that forward dropped File objects into the input's `files` property and dispatch a `change` event so form RPC pipelines fire uniformly whether the user clicked-to-pick or dragged-to-drop. |
 | `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side — `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances — popovers are click-driven and don't deep-link. |
 | `data-fui-banner-dismiss` | On the X button inside a `framework/ui.Banner`: clicking sets `hidden` on the nearest `[data-fui-comp="ui-banner"]` ancestor. The runtime delegates the click globally so dismissal survives partial-island swaps. |
+| `data-fui-scrollspy` | Marks a scrollspy container. The runtime observes section heading targets via IntersectionObserver and tags the matching `data-fui-scrollspy-target` link with `aria-current="true"` as the user scrolls. |
+| `data-fui-scrollspy-target` | On a nav link inside a scrollspy: the value identifies the section heading the link tracks. Updated to `aria-current="true"` when its target enters the active band. |
+| `data-fui-optimistic-idle` / `data-fui-optimistic-success` / `data-fui-optimistic-endpoint` / `data-fui-optimistic-method` | On an OptimisticAction button: the runtime flips the visible label between the idle and success copy as it dispatches a fetch to the endpoint+method, rolling back on error. Used by `framework/ui.OptimisticAction` for "Save / Saved!" patterns without per-button JS. |
+| `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy. |
+| `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/website` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
 | `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "deprecation notice — got it" banners. |
 | `data-fui-slider-mirror` | On an `<input type="range">` inside a `framework/ui.Slider`: opt the slider into runtime value-mirroring. The slider module listens for `input` events on these elements and writes the current value into the associated `<output for="<id>">` so the displayed number tracks the thumb as the user drags. Auto-emitted when `SliderConfig.ShowValue` is true. |
 | `data-fui-number-step="<delta>"` | On a button inside a `framework/ui.NumberInput`: clicking the button increments the linked `<input type="number">` by `<delta>` (signed). Honors the input's `min` / `max` / `step` and dispatches an `input` + `change` event after writing the new value so form-RPC pipelines see the change. Pair with `data-fui-number-for`. |
@@ -524,6 +529,47 @@ unscopable selectors (`body`, `html`, `:root`, `*`, `::backdrop`,
 `::view-transition-*`). Authors `go test` a sheet without chromedp
 by building the `ComponentSheet` directly and asserting on bytes.
 
+### Patterns use the same contract
+
+Every package under `core-ui/patterns/*` (accordion, breadcrumbs,
+combobox, disclosure, infinitescroll, multiselect, nestedlist,
+pagination, progress, skeleton, sortablelist, tabs, tree) uses
+`registry.RegisterStyle` and wraps its top-level rendered element
+with `Style.WrapHTML(...)`. Class selectors stay class-based
+(`.accordion`, `.tabs`, `.nested-list`) — the marker only signals
+to the auto-loader "fetch this stylesheet". No host setup required.
+
+**Legacy `BaseCSS() string` exports are forbidden** — host apps used
+to import each pattern and concatenate `BaseCSS()` into their custom
+CSS via `WithCustomCSS`, but a single forgotten concat shipped a
+component without any styling on the page (the 2026-05-19 nestedlist
+incident). The contract is enforced by
+`core-ui/check.LintNoPatternBaseCSS`, run as a test in CI: any new
+pattern package exporting a `BaseCSS` function fails the build.
+
+The canonical shape for a new pattern package:
+
+```go
+// core-ui/patterns/foo/foo.go
+package foo
+
+import (
+    "github.com/DonaldMurillo/gofastr/core-ui/registry"
+    "github.com/DonaldMurillo/gofastr/core-ui/style"
+    "github.com/DonaldMurillo/gofastr/core/render"
+)
+
+var Style = registry.RegisterStyle("foo", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
+
+func Render(cfg Config) render.HTML {
+    return Style.WrapHTML(render.Tag("div", attrs(cfg), ...))
+}
+
+const baseCSS = `.foo { ... }`
+```
+
 ### What about widgets?
 
 The `core-ui/widget` registry continues to drive widgets (their
@@ -601,6 +647,10 @@ framework/
 7. **Always** prefer composing existing widget/preset shortcuts over building a new island from scratch.
 8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop — toasts are ephemeral by definition.
 9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS — read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
+10. **State-changing fetches from runtime modules must forward the page's CSRF token.** Read `document.querySelector('meta[name="csrf-token"]')` once per fetch and set `X-CSRF-Token` on the request. `OptimisticAction`'s runtime is the canonical example. Apps verify the token server-side; the runtime doesn't enforce — it just makes the value reachable so each call site doesn't re-implement the lookup.
+11. **Async runtime modules set `aria-busy="true"` + `disabled` on the trigger during in-flight RPCs.** Without it, keyboard Enter/Space fires duplicate submits and screen readers don't announce the state change. Clear both on commit / idle / error. `OptimisticAction` and `NetworkRetryBanner` follow this contract.
+12. **Per-instance state lives in a `WeakMap` keyed by the wrapper element** — never module-globals. Multiple instances of the same widget on one page (or two banners, two scrollspies) is a normal scenario; assuming "one per page" is a bug that lands a code review later. Track active instances in a sibling `Set` so SPA-nav teardown can disconnect observers / clear timers without leaking.
+13. **Runtime modules `disconnect()`/`clearInterval()` per-instance state on `gofastr:navigate`.** SPA navigation replaces the page DOM; the old wrapper becomes detached but the IO / interval keeps a strong ref to its targets until explicitly torn down. Walk the active-instance Set, clean up, then re-scan.
 
 ---
 

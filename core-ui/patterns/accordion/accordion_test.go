@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -123,7 +124,7 @@ func TestEscapesUserContent(t *testing.T) {
 }
 
 func TestBaseCSSContainsModernFeatures(t *testing.T) {
-	css := BaseCSS()
+	css := Style.Entry().CSSFor(style.Theme{})
 	for _, must := range []string{
 		"interpolate-size",
 		"::details-content",

@@ -55,6 +55,24 @@ const (
 	SortDesc SortDir = "desc"
 )
 
+// ResponsiveMode selects how a DataTable behaves when its container
+// shrinks below the configured breakpoint. Detection is **container
+// query** based — the table responds to its own container's inline
+// size, not the viewport — so a wide table in a narrow sidebar gets
+// the responsive treatment even when the page itself is wide.
+type ResponsiveMode string
+
+const (
+	// ResponsiveScroll keeps the default horizontal-scroll behavior:
+	// the table stays a table; the wrapper scrolls on overflow.
+	ResponsiveScroll ResponsiveMode = ""
+
+	// ResponsiveCards collapses each row into a labeled card stack
+	// (header → value pairs) when the container is narrower than
+	// ~640px. Column headers travel with each cell via data-label.
+	ResponsiveCards ResponsiveMode = "cards"
+)
+
 // DataTableConfig configures a DataTable.
 type DataTableConfig struct {
 	// Columns is the column definitions. Required.
@@ -103,6 +121,11 @@ type DataTableConfig struct {
 	// "<endpoint>?sort=…&dir=…&p=N". The handler is expected to return
 	// the full new DataTable HTML.
 	IslandEndpoint string
+
+	// Responsive selects how the table behaves when its container is
+	// narrow. Default keeps horizontal scroll; ResponsiveCards collapses
+	// rows into labeled cards via container queries.
+	Responsive ResponsiveMode
 
 	ID    string
 	Class string
@@ -168,6 +191,13 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			if col.Align != "" && col.Align != "start" {
 				cellCfg.Class = "is-align-" + col.Align
 			}
+			// In responsive-cards mode, each cell carries its column
+			// header as data-label so the CSS card layout can render
+			// the label/value pair without depending on the (now-hidden)
+			// <thead>.
+			if cfg.Responsive == ResponsiveCards && col.Header != "" {
+				cellCfg.Attrs = map[string]string{"data-label": col.Header}
+			}
 			cells[j] = html.TD(cellCfg, content)
 		}
 		bodyRows[i] = html.TableRow(html.TableRowConfig{ID: r.ID}, cells...)
@@ -203,8 +233,12 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			html.Div(html.DivConfig{Class: "ui-data-table__footer"},
 				pagination.New(pagCfg)))
 	}
+	base := "ui-data-table"
+	if cfg.Responsive == ResponsiveCards {
+		base += " ui-data-table--responsive-cards"
+	}
 	return dataTableStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: wrapClass(cfg.Class, "ui-data-table"), ID: cfg.ID,
+		Class: wrapClass(cfg.Class, base), ID: cfg.ID,
 	}, children...))
 }
 

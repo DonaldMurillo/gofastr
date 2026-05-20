@@ -15,8 +15,17 @@ package progress
 import (
 	"fmt"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. New's wrapping <div>
+// goes through Style.WrapHTML so the data-fui-comp marker is emitted
+// and the runtime auto-loads the CSS on first appearance.
+var Style = registry.RegisterStyle("progress", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
 
 // Config configures a progress bar.
 type Config struct {
@@ -74,14 +83,13 @@ func New(cfg Config) render.HTML {
 				render.Text(cfg.Description)),
 		)
 	}
-	return render.Tag("div", wrapAttrs, children...)
+	return Style.WrapHTML(render.Tag("div", wrapAttrs, children...))
 }
 
-// BaseCSS returns the stylesheet for the progress component. Tokens
+// baseCSS is the stylesheet for the progress component. Tokens
 // consumed (with fallbacks): --color-surface, --color-border,
 // --color-primary, --radii-full, --spacing-xs.
-func BaseCSS() string {
-	return `
+const baseCSS = `
 .progress {
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -118,4 +126,3 @@ func BaseCSS() string {
   .progress-bar::-webkit-progress-value { transition: none; }
 }
 `
-}

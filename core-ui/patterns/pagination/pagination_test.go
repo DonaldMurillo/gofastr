@@ -90,7 +90,7 @@ func TestHrefPatternFormatted(t *testing.T) {
 
 func TestNavLabel(t *testing.T) {
 	h := string(New(Config{Total: 3, Current: 1, HrefPattern: "/?p=%d"}))
-	if !strings.Contains(h, `<nav aria-label="Pagination">`) {
+	if !strings.Contains(h, `aria-label="Pagination"`) {
 		t.Errorf("expected default nav aria-label, got: %s", h)
 	}
 }

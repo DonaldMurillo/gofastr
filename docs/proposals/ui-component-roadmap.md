@@ -11,6 +11,44 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Shipped
 
+### Wave 5 (2026-05-19 / 2026-05-20) — Form helpers / async
+
+- ConditionalField — `framework/ui/` (CSS-`:has()` wrapper for show/hide)
+- PollingIndicator — `framework/ui/` (pulsing dot + label; paused variant)
+- ValidationSummary — `framework/ui/` (was the "InlineValidationSummary"
+  roadmap item; extended with FieldOrder for deterministic row order,
+  Title override, aria-live="assertive")
+- OptimisticAction — `framework/ui/` (SSR-declared success state flips
+  on click; RPC fires underneath; rolls back with shake on non-2xx;
+  forwards X-CSRF-Token from `<meta name="csrf-token">`; aria-busy
+  + disabled during pending)
+- NetworkRetryBanner — `framework/ui/` (persistent banner that shows
+  on consecutive RPC-failure threshold or SSE silence; retry button
+  pings a health endpoint to recover; per-banner state via WeakMap)
+
+### Wave 7 (2026-05-19 / 2026-05-20) — Misc primitives + Tier 4 SEO
+
+- NestedList — `core-ui/patterns/nestedlist/` (recursive ul/ol with
+  optional native `<details>` collapse; pure render)
+- Icon — `framework/ui/` (inline-SVG primitive backed by a registry;
+  10 built-ins; AriaLabel flips to role=img)
+- DataTable responsive mode — `framework/ui/` (enhancement; container-
+  query driven cards collapse at narrow widths)
+- ScrollSpy — `core-ui/patterns/scrollspy/` (IntersectionObserver
+  active-section tracking for any nav of in-page anchors; extracted
+  from the TOC widget)
+- SEO Tier 4: ScreenDescriber auto-meta, sitemap.xml, robots.txt,
+  hreflang, ScreenCanonical / ScreenSchema interfaces, JSON-LD types
+  in `core-ui/seo`, and a `ScreenSEO` bundle wrapper (returns one
+  struct that bundles description / canonical / hreflangs / robots /
+  OG / Twitter / JSON-LD)
+
+### Wave 6 (2026-05-19) — Skeleton compositions
+
+- SkeletonCard — `framework/ui/` (title + body lines + optional footer)
+- SkeletonRow — `framework/ui/` (label + value + optional chevron)
+- SkeletonAvatar — `framework/ui/` (circle + stacked text lines)
+
 ### Wave 4 follow-up (2026-05-18) — Lightbox split + Gallery + Carousel
 
 - Lightbox — split into a STANDALONE zoom-overlay widget. Returns
@@ -96,65 +134,19 @@ follow-ups:
   render emits all slides upfront; fine for product reels, costly
   for image-heavy archive views).
 
-## Deferred — Wave 5 candidates (Tier 4 form helpers / async)
+## Wave 5 candidates — all shipped (see Wave 5 in Shipped above)
 
-### InlineValidationSummary
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Top-of-form alert that lists every field error
-  with an anchor link to the bad input. Server returns
-  `{field: error}` map; component renders a Banner-variant `danger`
-  block with `<a href="#field-id">label — error</a>` per row.
-- **Pre-reqs:** Banner (shipped).
-
-### ConditionalField
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** CSS-`:has()` driven show/hide wrapper that
-  reveals a child field based on another field's value. Zero JS —
-  pure selector logic. The wrapper takes `When` (selector chain like
-  `[name=plan]:checked[value=pro]`) and a body slot.
-- **Pre-reqs:** None.
-
-### OptimisticAction
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Wraps a trigger (Button, Link) with optimistic UI:
-  declares the success-state DOM ("Following ✓"), flips immediately on
-  click, fires the RPC underneath, rolls back if the response is non-2xx.
-- **Pre-reqs:** Runtime RPC pipeline (shipped).
-
-### NetworkRetryBanner
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Persistent top banner that auto-shows when the SSE
-  stream goes silent or N consecutive RPCs fail. Auto-dismisses when
-  connectivity recovers. Renders a "Retry now" button that pings a
-  health endpoint.
-- **Pre-reqs:** Banner (shipped), runtime SSE hook (shipped).
-
-### PollingIndicator
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Tiny pulsing dot + "Live" label that confirms a
-  polling RPC is firing. Pairs with `data-fui-rpc-trigger="input"`
-  patterns to give users feedback that the live-search is actually
-  searching.
-- **Pre-reqs:** None.
+- InlineValidationSummary → shipped as `ValidationSummary` in `framework/ui/`
+- ConditionalField → shipped
+- OptimisticAction → shipped
+- NetworkRetryBanner → shipped
+- PollingIndicator → shipped
 
 ---
 
 ## Deferred — Wave 6 candidates (Tier 5 Skeleton compositions)
 
-### SkeletonCard / SkeletonRow / SkeletonAvatar
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Preset compositions over the existing Skeleton
-  primitives. SkeletonCard = title line + 2 body lines + footer line
-  inside a Card surface; SkeletonRow = label + value + chevron;
-  SkeletonAvatar = circle + 2 stacked lines. One-liner shortcuts so
-  loading layouts don't reinvent the wheel.
-- **Pre-reqs:** Skeleton primitives (shipped), Card (shipped).
+Shipped 2026-05-19 — see the Wave 6 section under "Shipped" above.
 
 ---
 
@@ -385,68 +377,28 @@ wiring every time.
     icon, chevrons, close ×) with no typed API. A registry + `Icon("check")`
     function closes this gap.
 
-12. **NestedList** (`core-ui/patterns/`) — Styled recursive `<ul>`/`<ol>`
-    for navigation trees, settings hierarchies, and multi-level outlines.
-    Lighter than `tree` (no lazy-load, no RPC) — pure render with CSS
-    indentation and disclosure collapse using native `<details>`.
+12. ~~NestedList~~ — shipped in `core-ui/patterns/nestedlist/`.
 
-13. **ScrollSpy** (`core-ui/patterns/`) — Standalone IntersectionObserver
-    pattern that tracks which section is in view and sets `aria-current`
-    on matching nav links. Currently this logic is trapped inside the
-    TOC runtime module. Extracting it lets custom sidebars and nav bars
-    reuse the same observer without duplicating JS.
+13. ~~ScrollSpy~~ — shipped in `core-ui/patterns/scrollspy/`.
 
 ### Tier 4 — Technical SEO
 
-The framework already has: `<meta name="description">`, Open Graph,
-Twitter Card, `<link rel="canonical">`, `<meta name="theme-color">`,
-and `ScreenTitler`/`ScreenDescriber` interfaces. The SSG builder renders
-every screen at build time. What's missing:
+All shipped 2026-05-19 / 2026-05-20 — see the Wave 7 entry under
+"Shipped" above. Final shape:
 
-14. **JSON-LD / Schema.org** (`core-ui/app/` or new `core-ui/seo/`)
-    — Typed Go structs for common Schema.org types (Article, FAQ,
-    HowTo, Product, BreadcrumbList, Organization, WebPage, WebSite,
-    SearchAction, Event, LocalBusiness) that serialize to `<script
-    type="application/ld+json">`. Each screen declares its structured
-    data via an interface (e.g. `ScreenSchema` returning `[]SchemaItem`);
-    the uihost emits it in `<head>`. Without this, every app builds
-    JSON-LD strings by hand or ships none at all — which means Google
-    rich results (FAQ snippets, product cards, breadcrumb trails) don't
-    work.
-
-15. **Sitemap generation** (`framework/static/`) — The SSG builder
-    already walks every registered route. A `sitemap.xml` emitter should
-    be a natural output of that walk: collect all routes, their
-    `ScreenType` (to infer priority/frequency), and last-modified
-    timestamps, then write a standards-compliant sitemap. Currently
-    apps must generate sitemaps externally.
-
-16. **Robots.txt** (`framework/uihost/`) — A configurable handler that
-    serves `/robots.txt` with app-defined rules (allow/disallow, sitemap
-    URL reference, crawl-delay). Trivial but essential — without it,
-    every app writes a static file or forgets it entirely.
-
-17. **ScreenDescriber → auto-wiring** (enhancement to `framework/uihost/`)
-    — `ScreenDescriber` exists but the description does NOT automatically
-    become `<meta name="description">`. Apps must call `WithDescription()`
-    separately. The uihost should read `ScreenDescriber.Description()` and
-    emit the meta tag automatically when present, so SSR pages get SEO
-    meta for free without the app remembering both the interface AND
-    the option.
-
-18. **Hreflang / alternate links** (`core-ui/app/`) — For multi-locale
-    apps, `<link rel="alternate" hreflang="en">` tags in `<head>` are
-    essential for Google to serve the right language variant. A
-    `WithHreflang(locale, url)` option plus a screen interface that
-    declares available translations would handle this. Currently
-    zero support.
-
-19. **SEO head component** (`framework/ui/`) — A convenience component
-    that composes the common `<head>` SEO stack for a page: title,
-    description, canonical, OG, Twitter Card, JSON-LD — all from one
-    config struct. Currently apps call 5+ `With*` options individually.
-    A single `SEO(cfg)` that sets all of them eliminates the
-    forget-one-and-wonder-why-sharing-is-broken class of bugs.
+- ~~JSON-LD / Schema.org~~ → `core-ui/seo` package; per-page via
+  `uihost.ScreenSchema() []seo.Thing`.
+- ~~Sitemap generation~~ → `uihost.WithSitemap(SitemapConfig{...})`
+  registers `/sitemap.xml`; dynamic routes expanded via
+  `StaticPathsProvider`.
+- ~~Robots.txt~~ → `uihost.WithRobots(RobotsConfig{...})`; auto-
+  references `/sitemap.xml` when both are configured.
+- ~~ScreenDescriber auto-wiring~~ → uihost emits `<meta name="description">`
+  per page; sitewide `WithDescription` comes first, per-page second
+  (search engines pick the last).
+- ~~Hreflang~~ → `uihost.ScreenHreflangs() []HreflangLink`.
+- ~~SEO head component~~ → `uihost.ScreenSEO() SEO` bundle interface;
+  fields override per-concern; empty fields fall through.
 
 ### Notes on the contract
 

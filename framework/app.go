@@ -11,11 +11,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
+	"github.com/DonaldMurillo/gofastr/core/featureflag"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -98,6 +101,23 @@ type App struct {
 	stopHooks  []func() error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
+
+	// Readiness checks registered by app code, plugins, and batteries.
+	// /readyz runs them in parallel; /healthz is unconditional.
+	health *healthState
+
+	// Feature flags. Lazily created on first access (Flags()) so apps
+	// that never use them pay nothing.
+	flagEval     *featureflag.Evaluator
+	flagMu       sync.Mutex
+	flagAccessed bool // true once Flags()/SetFlagStore has run — guards against late SetFlagStore
+
+	// Optional idempotency config wired into the default chain when set.
+	idempotency *middleware.IdempotencyConfig
+
+	// Optional translator. When set, the i18n middleware is wired into
+	// the default chain so handlers can call App.T(ctx, key, ...).
+	translator *i18n.Translator
 }
 
 // AppOption is a functional option for configuring an App.
@@ -164,6 +184,34 @@ func WithLogger(l *slog.Logger) AppOption {
 	}
 }
 
+// WithIdempotency adds an Idempotency-Key middleware to the default
+// chain. Pass middleware.IdempotencyConfig{} to take all defaults; the
+// option is otherwise idiomatic-Go composition over the existing
+// middleware.Idempotency primitive.
+//
+// Has no effect when WithoutDefaultMiddleware is also set — wire your
+// own chain explicitly in that case.
+func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
+	return func(a *App) {
+		a.idempotency = &cfg
+	}
+}
+
+// WithI18n installs a Translator and wires its locale-negotiation
+// middleware into the default chain. Handlers downstream can call
+// App.T(ctx, key, ...) for translated strings driven by the caller's
+// Accept-Language. Also installed as i18n.Default() so the package-
+// level i18n.T helper works from anywhere.
+//
+// Panics when paired with WithoutDefaultMiddleware — register the
+// middleware explicitly in your custom chain in that case.
+func WithI18n(tr *i18n.Translator) AppOption {
+	return func(a *App) {
+		a.translator = tr
+		i18n.SetDefault(tr)
+	}
+}
+
 // Logger returns the App-local *slog.Logger. Middleware and plugins
 // should call this — not slog.Default() — so that a logging plugin can
 // replace the destination without rewiring globals.
@@ -190,7 +238,13 @@ func (a *App) SetLogger(l *slog.Logger) {
 }
 
 // DefaultMiddleware is the framework's standard safety chain in
-// canonical order: recovery → request-id → security headers → timeout.
+// canonical order:
+//
+//	recovery → request-id → [idempotency] → [i18n] → security headers → timeout
+//
+// The optional entries are present when the App was configured with
+// WithIdempotency / WithI18n; the timeout entry is omitted when
+// AppConfig.DisableRequestTimeout is true.
 //
 // Access logging is deliberately NOT in this list. battery/log owns
 // structured access logging when registered, and ad-hoc apps that just
@@ -199,31 +253,37 @@ func (a *App) SetLogger(l *slog.Logger) {
 // (`request` from the framework, `http.access` from the plugin).
 //
 // Takes the App so the recovery middleware can route panics through
-// app.Logger (late-binding) and the timeout reflects AppConfig.RequestTimeout.
-// Pass nil only in tests; the recovery falls back to slog.Default and
-// the timeout to 30s.
+// app.Logger (late-binding) and the timeout reflects
+// AppConfig.RequestTimeout. Pass nil only in tests; the recovery falls
+// back to slog.Default and the timeout to 30s.
 func DefaultMiddleware(a *App) []router.Middleware {
 	var getLogger func() *slog.Logger
 	timeout := 30 * time.Second
+	var idempotency *middleware.IdempotencyConfig
+	var translator *i18n.Translator
 	if a != nil {
 		getLogger = a.Logger
 		if a.Config.RequestTimeout > 0 {
 			timeout = a.Config.RequestTimeout
 		}
-		if a.Config.DisableRequestTimeout {
-			return []router.Middleware{
-				router.Middleware(middleware.RecoveryFn(getLogger)),
-				router.Middleware(middleware.RequestID()),
-				router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})),
-			}
-		}
+		idempotency = a.idempotency
+		translator = a.translator
 	}
-	return []router.Middleware{
+	chain := []router.Middleware{
 		router.Middleware(middleware.RecoveryFn(getLogger)),
 		router.Middleware(middleware.RequestID()),
-		router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})),
-		router.Middleware(middleware.Timeout(timeout)),
 	}
+	if idempotency != nil {
+		chain = append(chain, router.Middleware(middleware.Idempotency(*idempotency)))
+	}
+	if translator != nil {
+		chain = append(chain, router.Middleware(i18n.Middleware(translator)))
+	}
+	chain = append(chain, router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})))
+	if a == nil || !a.Config.DisableRequestTimeout {
+		chain = append(chain, router.Middleware(middleware.Timeout(timeout)))
+	}
+	return chain
 }
 
 // Mount attaches a Mountable and registers its routes on the app's router
@@ -286,6 +346,21 @@ func NewApp(opts ...AppOption) *App {
 	// it during Init via app.SetLogger.
 	if a.logger.Load() == nil {
 		a.logger.Store(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	}
+
+	// WithIdempotency / WithI18n add entries to the default chain; if
+	// the caller also passed WithoutDefaultMiddleware they would never
+	// appear. Surface the misconfiguration immediately rather than
+	// silently dropping the middleware.
+	if a.noDefaults && a.idempotency != nil {
+		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware — " +
+			"the idempotency middleware lives in the default chain; mount it explicitly via " +
+			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
+	}
+	if a.noDefaults && a.translator != nil {
+		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware — " +
+			"the i18n middleware lives in the default chain; mount it explicitly via " +
+			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
 	}
 
 	// Install the default middleware preset unless opted out. The router
@@ -490,6 +565,11 @@ func (a *App) InitPlugins() error {
 		a.initialized.Store(false)
 		return err
 	}
+	// Probe both plugins and batteries for the optional
+	// ReadinessRegistrar interface so they can publish health checks
+	// before /readyz mounts in Start.
+	a.probeReadinessRegistrars()
+
 	return nil
 }
 
@@ -698,6 +778,15 @@ func (a *App) Start(addr string) error {
 	if a.Config.DebugEndpoints {
 		a.registerDebugEndpoints()
 	}
+
+	// Auto-register a db readiness probe if a DB is configured. Plugins
+	// and batteries that implement ReadinessRegistrar were given a chance
+	// to add their own during InitPlugins above.
+	if a.DB != nil {
+		c := dbReadinessCheck(a)
+		a.RegisterReadiness(c.Name, c.Check)
+	}
+	a.registerHealthEndpoints()
 
 	// Mountables already registered their routes when App.Mount was called;
 	// nothing to do at Start time.

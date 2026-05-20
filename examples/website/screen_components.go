@@ -449,6 +449,48 @@ var componentEntries = []componentEntry{
 		Tag:   "Layout · aspect-ratio",
 		Intro: "Pure-CSS aspect-ratio wrapper that prevents layout shift for images, videos, and embeds. Child is absolutely positioned to fill the box.",
 	},
+	{
+		Slug:  "icon",
+		Name:  "Icon",
+		Tag:   "Primitive · inline SVG",
+		Intro: "Inline SVG icon primitive backed by a registry. Renders with currentColor stroke so icons inherit theme color. Decorative by default; AriaLabel makes it meaningful. Ships with 10 built-ins; RegisterIcon adds your own.",
+	},
+	{
+		Slug:  "pollingindicator",
+		Name:  "PollingIndicator",
+		Tag:   "Live · feedback",
+		Intro: "Pulsing dot + label that confirms a polling RPC or live-update pipeline is firing. Pure-CSS animation with prefers-reduced-motion guard. Paused variant freezes the pulse and dims the dot.",
+	},
+	{
+		Slug:  "nestedlist",
+		Name:  "NestedList",
+		Tag:   "Pattern · recursive ul/ol",
+		Intro: "Recursive <ul>/<ol> with optional native <details> collapse on branches. Lighter than the tree pattern (no lazy-load, no RPC). Pure render — no runtime module.",
+	},
+	{
+		Slug:  "seo",
+		Name:  "SEO",
+		Tag:   "Meta · JSON-LD · sitemap · robots",
+		Intro: "Per-page SEO via four small screen interfaces (Describer / Canonical / Hreflangs / Schema) plus sitewide /sitemap.xml and /robots.txt host options. Auto-emits the right <head> tags from typed Schema.org structs.",
+	},
+	{
+		Slug:  "scrollspy",
+		Name:  "ScrollSpy",
+		Tag:   "Pattern · IntersectionObserver",
+		Intro: "Wraps any nav of in-page anchors with active-section tracking. As the user scrolls, the runtime sets aria-current + .is-active on the link whose target is in view. Generalized from the TOC widget so sidebars, sticky nav bars, and custom docs nav all reuse the same observer.",
+	},
+	{
+		Slug:  "optimisticaction",
+		Name:  "OptimisticAction",
+		Tag:   "Optimistic UI · Rollback",
+		Intro: "Button that flips to its declared success state immediately on click; the RPC fires underneath and rolls back with a small shake on non-2xx. Both labels ship in SSR — the runtime only toggles hidden.",
+	},
+	{
+		Slug:  "networkretrybanner",
+		Name:  "NetworkRetryBanner",
+		Tag:   "Connectivity · Retry",
+		Intro: "Persistent banner that shows when consecutive RPC failures cross a threshold (or SSE goes silent). Retry button pings a configured health endpoint; on 2xx the banner hides and the counter resets.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

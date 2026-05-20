@@ -3,6 +3,8 @@ package progress
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestRequiresLabel(t *testing.T) {
@@ -58,7 +60,7 @@ func TestNoDescriptionWhenEmpty(t *testing.T) {
 }
 
 func TestBaseCSSContainsKeySelectors(t *testing.T) {
-	css := BaseCSS()
+	css := Style.Entry().CSSFor(style.Theme{})
 	for _, want := range []string{
 		".progress", ".progress-bar", "::-webkit-progress-value", "::-moz-progress-bar",
 	} {

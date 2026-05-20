@@ -27,8 +27,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	corestyle "github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. New's outermost element
+// goes through Style.WrapHTML so the data-fui-comp marker is emitted
+// and the runtime auto-loads the CSS on first appearance.
+var Style = registry.RegisterStyle("skeleton", styleFn)
+
+func styleFn(_ corestyle.Theme) string { return baseCSS }
 
 // Variant selects the skeleton shape.
 type Variant string
@@ -62,7 +71,7 @@ func New(cfg Config) render.HTML {
 	}
 
 	if count == 1 {
-		return shape(v, cfg)
+		return Style.WrapHTML(shape(v, cfg))
 	}
 
 	wrapCls := "skeleton-stack"
@@ -86,7 +95,7 @@ func New(cfg Config) render.HTML {
 		}
 		children[i] = shape(v, c)
 	}
-	return render.Tag("div", wrapAttrs, children...)
+	return Style.WrapHTML(render.Tag("div", wrapAttrs, children...))
 }
 
 func shape(v Variant, cfg Config) render.HTML {
@@ -139,10 +148,9 @@ func skeletonStyle(v Variant, w, h string) string {
 	return strings.Join(parts, ";")
 }
 
-// BaseCSS returns the stylesheet for skeletons. Tokens consumed:
+// baseCSS is the stylesheet for skeletons. Tokens consumed:
 // --color-border, --color-surface, --radii-sm, --radii-full, --spacing-sm.
-func BaseCSS() string {
-	return `
+const baseCSS = `
 .skeleton {
   display: block;
   background: linear-gradient(
@@ -186,4 +194,3 @@ func BaseCSS() string {
   .skeleton { animation: none; }
 }
 `
-}

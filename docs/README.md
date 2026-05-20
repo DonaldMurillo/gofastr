@@ -10,6 +10,10 @@ ending with a "common mistakes" callout.
   living risk + gap survey. Updated only on fresh review passes.
 - [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — UI/runtime
   contract. **Mandatory reading** before any UI or runtime change.
+- [Pattern-CSS unification proposal](proposals/pattern-css-unification.md)
+  — every `core-ui/patterns/*` package registers via
+  `registry.RegisterStyle` (no more `BaseCSS()` concatenation),
+  enforced by build-time lint.
 - [Agent notes](agent-notes.md) — append-only review log.
 
 ## Entity surface
@@ -56,6 +60,22 @@ ending with a "common mistakes" callout.
   auto-migrate, dialects.
 - [Security defaults](security.md) — default middleware chain, CSP,
   CORS, CSRF, rate limiting.
+- [Idempotency keys](idempotency.md) — `Idempotency-Key` header
+  support for safe-retry of POST / PUT / PATCH / DELETE.
+- [Health checks](health-checks.md) — `/healthz` + `/readyz`,
+  custom readiness checks, plugin/battery integration.
+- [Feature flags](feature-flags.md) — `core/featureflag` evaluator,
+  rollout percentage, user/tenant/environment allow lists.
+- [Outbound webhooks](webhooks.md) — `battery/webhook`: signed
+  delivery, retry-with-backoff, dead-letter, glob event filters.
+- [Internationalization](i18n.md) — `core/i18n` translator,
+  JSON catalogs, plurals, `Accept-Language` negotiation.
+- [Unified notifications](notifications.md) — `battery/notify`
+  multi-channel fan-out with per-channel templates.
+- [Factories / fixtures](factories.md) — `framework/factory`
+  Rails-style test setup helpers.
+- [Admin UI](admin.md) — `battery/admin` stock screens for
+  queue + audit log.
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
 - [Widgets](widgets.md) — `core-ui/widget` builder and presets.
@@ -72,6 +92,8 @@ ending with a "common mistakes" callout.
 - [Performance opportunities](performance-opportunities.md) —
   prioritized improvement list derived from the benchmark results.
   Each item names the benchmark that surfaced it for verification.
+- [Framework gaps](proposals/framework-gaps.md) — what the framework
+  already covers vs. what's still missing, tiered by leverage.
 
 ## Maintaining these docs
 
