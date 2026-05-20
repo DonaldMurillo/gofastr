@@ -16,6 +16,11 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 - ConditionalField — `framework/ui/` (CSS-`:has()` wrapper for show/hide)
 - PollingIndicator — `framework/ui/` (pulsing dot + label; paused variant)
 
+### Wave 7 (2026-05-19, in progress) — Misc primitives
+
+- NestedList — `core-ui/patterns/nestedlist/` (recursive ul/ol with
+  optional native `<details>` collapse on branches; pure render)
+
 ### Wave 6 (2026-05-19) — Skeleton compositions
 
 - SkeletonCard — `framework/ui/` (title + body lines + optional footer)
@@ -374,10 +379,7 @@ wiring every time.
     icon, chevrons, close ×) with no typed API. A registry + `Icon("check")`
     function closes this gap.
 
-12. **NestedList** (`core-ui/patterns/`) — Styled recursive `<ul>`/`<ol>`
-    for navigation trees, settings hierarchies, and multi-level outlines.
-    Lighter than `tree` (no lazy-load, no RPC) — pure render with CSS
-    indentation and disclosure collapse using native `<details>`.
+12. ~~NestedList~~ — shipped in `core-ui/patterns/nestedlist/`.
 
 13. **ScrollSpy** (`core-ui/patterns/`) — Standalone IntersectionObserver
     pattern that tracks which section is in view and sets `aria-current`
