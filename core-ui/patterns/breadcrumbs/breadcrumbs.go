@@ -15,8 +15,17 @@
 package breadcrumbs
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. New's <nav> goes through
+// Style.WrapHTML so the data-fui-comp marker is emitted and the
+// runtime auto-loads the CSS on first appearance.
+var Style = registry.RegisterStyle("breadcrumbs", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
 
 // Crumb is one step in the breadcrumb trail.
 type Crumb struct {
@@ -61,9 +70,9 @@ func New(cfg Config, crumbs ...Crumb) render.HTML {
 	if cfg.ID != "" {
 		listAttrs["id"] = cfg.ID
 	}
-	return render.Tag("nav", map[string]string{"aria-label": label},
+	return Style.WrapHTML(render.Tag("nav", map[string]string{"aria-label": label},
 		render.Tag("ol", listAttrs, items...),
-	)
+	))
 }
 
 func renderCrumb(c Crumb) render.HTML {
@@ -83,10 +92,9 @@ func renderCrumb(c Crumb) render.HTML {
 	)
 }
 
-// BaseCSS returns the stylesheet for breadcrumbs. Tokens: --color-text-muted,
+// baseCSS is the stylesheet for breadcrumbs. Tokens: --color-text-muted,
 // --color-text, --color-primary, --spacing-sm.
-func BaseCSS() string {
-	return `
+const baseCSS = `
 .breadcrumbs {
   display: flex;
   flex-wrap: wrap;
@@ -120,4 +128,3 @@ func BaseCSS() string {
   font-weight: 600;
 }
 `
-}

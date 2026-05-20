@@ -22,8 +22,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. New's wrapping <div>
+// goes through Style.WrapHTML so the data-fui-comp marker is emitted
+// and the runtime auto-loads the CSS on first appearance.
+var Style = registry.RegisterStyle("tabs", styleFn)
+
+func styleFn(_ style.Theme) string { return buildCSS() }
 
 // Tab is one entry in a tabset.
 type Tab struct {
@@ -110,7 +119,7 @@ func New(cfg Config, tabs ...Tab) render.HTML {
 	}
 	children = append(children, render.Tag("div",
 		map[string]string{"class": "tabs-panels"}, panels...))
-	return render.Tag("div", wrapAttrs, children...)
+	return Style.WrapHTML(render.Tag("div", wrapAttrs, children...))
 }
 
 func renderTabHead(t Tab, name string, open bool) render.HTML {
@@ -126,7 +135,7 @@ func renderTabHead(t Tab, name string, open bool) render.HTML {
 	return render.Tag("details", attrs, summary)
 }
 
-// BaseCSS returns the stylesheet for tabs. Tokens: --color-border,
+// baseCSS is the stylesheet for tabs. Tokens: --color-border,
 // --color-surface, --color-primary, --color-text, --color-text-muted,
 // --spacing-md, --spacing-lg, --radii-md.
 //
@@ -136,7 +145,7 @@ func renderTabHead(t Tab, name string, open bool) render.HTML {
 // This survives narrow containers gracefully (tabs wrap onto multiple
 // lines when needed) and avoids the grid-overflow clipping that the
 // previous implementation had inside narrow demo frames.
-func BaseCSS() string {
+func buildCSS() string {
 	// Panel-visibility rules: when the Nth <details> is open, show the
 	// Nth .tabs-panel. Pre-generated up to 16 tabs; if you need more,
 	// extend this CSS. Using `:has()` keeps the cascade purely CSS.

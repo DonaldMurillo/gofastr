@@ -13,8 +13,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. New's <nav> goes through
+// Style.WrapHTML so the data-fui-comp marker is emitted and the
+// runtime auto-loads the CSS on first appearance.
+var Style = registry.RegisterStyle("pagination", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
 
 // Config configures the pagination nav.
 type Config struct {
@@ -148,9 +157,9 @@ func New(cfg Config) render.HTML {
 		}
 	}
 
-	return render.Tag("nav", map[string]string{"aria-label": label},
+	return Style.WrapHTML(render.Tag("nav", map[string]string{"aria-label": label},
 		render.Tag("ol", listAttrs, items...),
-	)
+	))
 }
 
 func pageItem(pattern string, page int, current bool) render.HTML {
@@ -277,8 +286,7 @@ func pageNumbers(total, current, window int) []int {
 // BaseCSS returns the stylesheet for pagination. Tokens: --color-text,
 // --color-primary, --color-border, --color-text-muted, --radii-md,
 // --spacing-xs, --spacing-sm.
-func BaseCSS() string {
-	return `
+const baseCSS = `
 .pagination {
   display: flex;
   flex-wrap: wrap;
@@ -342,4 +350,3 @@ func BaseCSS() string {
   cursor: default;
 }
 `
-}

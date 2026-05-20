@@ -10,9 +10,26 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// demoDatatableResponsiveStyle clamps the container-query demo wrapper
+// to 360px so the cards layout is visible without resizing the viewport.
+// Registered through the proper pipeline because strict CSP blocks
+// inline style="" and <style> blocks injected via render.Tag.
+var demoDatatableResponsiveStyle = registry.RegisterStyle("demo-datatable-responsive", func(_ style.Theme) string {
+	return `.demo-datatable-responsive-probe {
+  inline-size: 360px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  justify-self: start;
+  border: 1px dashed var(--color-border, #E4E4E7);
+  padding: var(--spacing-md, 8px);
+}`
+})
 
 // DataTableDemoScreen serves /framework-ui/datatable. The live demo is
 // an island with three controls: sort headers, pagination buttons, and
@@ -267,6 +284,37 @@ func (s *DataTableDemoScreen) Render() render.HTML {
 			Heading:     "Empty state",
 			Description: "When Rows is empty, the configured EmptyState renders inside the wrapper.",
 		}, emptyDemo),
+
+		ui.Section(ui.SectionConfig{
+			Heading:     "Responsive (container queries → cards)",
+			Description: "Responsive: ui.ResponsiveCards adds container-query rules that collapse rows into labeled cards when the table's container drops below 640px. The probe below is artificially clamped to 360px so the cards mode is visible without resizing the viewport — a wide table in a narrow sidebar gets the same treatment.",
+		},
+			demoDatatableResponsiveStyle.WrapHTML(render.Tag("div", map[string]string{
+				"class":                              "demo-datatable-responsive-probe",
+				"data-fui-datatable-responsive-demo": "true",
+			},
+				ui.DataTable(ui.DataTableConfig{
+					Columns: []ui.Column{
+						{Key: "name", Header: "Name"},
+						{Key: "email", Header: "Email"},
+						{Key: "plan", Header: "Plan"},
+					},
+					Rows: []ui.Row{
+						{Cells: map[string]render.HTML{
+							"name":  render.Text("Ada Lovelace"),
+							"email": render.Text("ada@example.com"),
+							"plan":  render.Text("Pro"),
+						}},
+						{Cells: map[string]render.HTML{
+							"name":  render.Text("Linus Torvalds"),
+							"email": render.Text("linus@example.com"),
+							"plan":  render.Text("Enterprise"),
+						}},
+					},
+					Responsive: ui.ResponsiveCards,
+				}),
+			)),
+		),
 
 		ui.Section(ui.SectionConfig{
 			Heading: "Composition",

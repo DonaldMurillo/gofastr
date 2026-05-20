@@ -1530,6 +1530,12 @@
     { name: 'animatedcounter', selector: '[data-fui-animated-counter]' },
     // TableOfContents: harvest h2/h3 from target region + active-section tracking.
     { name: 'toc',             selector: '[data-fui-toc]' },
+    // ScrollSpy: generic IntersectionObserver section tracking for any nav with in-page anchors.
+    { name: 'scrollspy',       selector: '[data-fui-scrollspy]' },
+    // OptimisticAction: SSR-declared success state flips on click, RPC fires underneath, rolls back on non-2xx.
+    { name: 'optimisticaction', selector: '[data-fui-comp="ui-optimistic-action"]' },
+    // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
+    { name: 'networkretrybanner', selector: '[data-fui-comp="ui-network-retry-banner"]' },
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
     // Shortcut: page-level (non-widget) data-fui-shortcut-focus +

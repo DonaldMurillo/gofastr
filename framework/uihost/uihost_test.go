@@ -725,3 +725,70 @@ type actionTestComp struct {
 
 func (c *actionTestComp) Render() render.HTML { return render.Raw(c.html) }
 func (c *actionTestComp) Actions()            { c.actions() }
+
+// ─── Auto-meta from ScreenDescriber ────────────────────────────────
+
+// describedHomeComp implements ScreenDescriber; the uihost should
+// auto-emit <meta name="description"> matching ScreenDescription().
+type describedHomeComp struct{}
+
+func (d *describedHomeComp) Render() render.HTML {
+	return html.Div(html.DivConfig{}, html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home")))
+}
+func (d *describedHomeComp) ScreenTitle() string       { return "Home" }
+func (d *describedHomeComp) ScreenDescription() string { return "Welcome to the test site" }
+
+// silentHomeComp does NOT implement ScreenDescriber — no auto-meta.
+type silentHomeComp struct{}
+
+func (s *silentHomeComp) Render() render.HTML {
+	return html.Div(html.DivConfig{}, html.Heading(html.HeadingConfig{Level: 1}, render.Text("Silent")))
+}
+
+func TestScreenDescriberMeta(t *testing.T) {
+	application := app.NewApp("Test App")
+	application.Register("/", &describedHomeComp{}, nil)
+	ds := New(application)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, `<meta name="description" content="Welcome to the test site">`) {
+		t.Errorf("expected auto-emitted meta description from ScreenDescriber, got:\n%s",
+			body)
+	}
+}
+
+func TestNoMetaWithoutDescriber(t *testing.T) {
+	application := app.NewApp("Test App")
+	application.Register("/", &silentHomeComp{}, nil)
+	ds := New(application)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+	if strings.Contains(body, `<meta name="description"`) {
+		t.Errorf("did not expect meta description when screen has no ScreenDescriber, got:\n%s",
+			body)
+	}
+}
+
+func TestPerPageMetaWinsOverGlobal(t *testing.T) {
+	// Per-page description must come AFTER WithDescription so search
+	// engines (which use the last meta) pick the per-page text.
+	application := app.NewApp("Test App")
+	application.Register("/", &describedHomeComp{}, nil)
+	ds := New(application, WithDescription("Global site description"))
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+	gIdx := strings.Index(body, "Global site description")
+	pIdx := strings.Index(body, "Welcome to the test site")
+	if gIdx < 0 || pIdx < 0 {
+		t.Fatalf("expected both meta tags present; global=%d per-page=%d", gIdx, pIdx)
+	}
+	if gIdx >= pIdx {
+		t.Errorf("expected global meta BEFORE per-screen meta, got global=%d per-page=%d", gIdx, pIdx)
+	}
+}

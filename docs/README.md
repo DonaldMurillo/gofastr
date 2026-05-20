@@ -10,6 +10,10 @@ ending with a "common mistakes" callout.
   living risk + gap survey. Updated only on fresh review passes.
 - [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — UI/runtime
   contract. **Mandatory reading** before any UI or runtime change.
+- [Pattern-CSS unification proposal](proposals/pattern-css-unification.md)
+  — every `core-ui/patterns/*` package registers via
+  `registry.RegisterStyle` (no more `BaseCSS()` concatenation),
+  enforced by build-time lint.
 - [Agent notes](agent-notes.md) — append-only review log.
 
 ## Entity surface

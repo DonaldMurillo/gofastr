@@ -1,6 +1,6 @@
 package accordion
 
-// BaseCSS returns the stylesheet rules required for the accordion
+// baseCSS is the stylesheet rules required for the accordion
 // components, using only modern CSS features and CSS custom properties
 // from the host theme.
 //
@@ -21,8 +21,7 @@ package accordion
 //
 // Browsers lacking these features fall back to instant open/close, which
 // is intentional progressive enhancement.
-func BaseCSS() string {
-	return `
+const baseCSS = `
 .accordion {
   display: grid;
   gap: var(--spacing-sm, 4px);
@@ -103,4 +102,3 @@ func BaseCSS() string {
   }
 }
 `
-}

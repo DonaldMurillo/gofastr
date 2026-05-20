@@ -1,13 +1,7 @@
 package main
 
 import (
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/tabs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
@@ -854,11 +848,5 @@ func createStyleSheet(theme style.Theme) string {
 	// core-ui + framework/ui component CSS (appended verbatim — each
 	// uses CSS custom properties from the theme above).
 	return ss.CSS() +
-		accordion.BaseCSS() +
-		tabs.BaseCSS() +
-		progress.BaseCSS() +
-		skeleton.BaseCSS() +
-		breadcrumbs.BaseCSS() +
-		pagination.BaseCSS() +
 		ui.BaseCSS()
 }

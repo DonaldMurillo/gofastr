@@ -667,6 +667,78 @@ func dataTableCSS(_ style.Theme) string {
 [data-fui-comp="ui-data-table"] .ui-data-table__footer {
   display: flex;
   justify-content: flex-end;
+}
+
+/* Responsive-cards mode (Container Queries).
+   The .ui-data-table__scroll wrapper becomes a containment context
+   so the table responds to its own container's inline size — not the
+   viewport. A wide table in a narrow sidebar collapses to cards even
+   when the page itself is wide. */
+[data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__scroll {
+  container-type: inline-size;
+  overflow-x: visible;
+}
+
+@container (max-width: 640px) {
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table,
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tbody,
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tr,
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td {
+    display: block;
+    inline-size: 100%;
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table thead {
+    /* Visually hide the header row — labels travel with each cell via
+       data-label and the ::before pseudo. Keep it accessible for screen
+       readers via clip-path so column semantics aren't lost. */
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tr {
+    border: 1px solid var(--color-border, #E4E4E7);
+    border-radius: var(--radii-md, 8px);
+    margin-block-end: var(--spacing-md, 8px);
+    padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+    background: var(--color-surface, #FFFFFF);
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tbody tr:hover {
+    background: var(--color-surface, #FFFFFF);
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--spacing-md, 8px);
+    padding-block: var(--spacing-sm, 4px);
+    padding-inline: 0;
+    border-block-end: 1px solid var(--color-border-subtle, #F4F4F5);
+    text-align: end;
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td:last-child {
+    border-block-end: 0;
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted, #52525B);
+    text-align: start;
+    flex: 0 0 auto;
+  }
+  /* Cells without a data-label (e.g. the Actions column) drop the
+     header pseudo and fill the row. */
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td:not([data-label])::before {
+    content: none;
+  }
+  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td:not([data-label]) {
+    justify-content: flex-end;
+  }
 }`
 }
 

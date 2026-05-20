@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -100,7 +101,7 @@ func TestStructure(t *testing.T) {
 }
 
 func TestBaseCSSContainsKeySelectors(t *testing.T) {
-	css := BaseCSS()
+	css := Style.Entry().CSSFor(style.Theme{})
 	for _, want := range []string{
 		".tabs", ".tabs-summary", "details[open]",
 		".tabs-panel", ".tabs-panels", ":has(",
