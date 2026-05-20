@@ -173,8 +173,46 @@ component PR must include chromedp e2e tests that:
 When the static-shape test passes but the interaction test fails, that's
 the bug you would have shipped without it. Always add both.
 
+## CSS contract: one registry, no manual wiring
+
+**Every styled package — `framework/ui/*`, `core-ui/patterns/*`, and
+widget chrome — registers its stylesheet via `registry.RegisterStyle`
+and wraps its top-level rendered element in `Style.WrapHTML(...)`.**
+The runtime emits a `data-fui-comp="<name>"` marker on the wrapper,
+the SSR collector scans the rendered HTML, and CSS auto-loads — one
+`<link>` per used component per page, dedup'd globally.
+
+```go
+// core-ui/patterns/foo/foo.go — canonical pattern shape
+var Style = registry.RegisterStyle("foo", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
+
+func Render(cfg Config) render.HTML {
+    return Style.WrapHTML(render.Tag("div", attrs(cfg), ...))
+}
+
+const baseCSS = `.foo { ... }`
+```
+
+**Do NOT export `func BaseCSS() string`** from a `core-ui/patterns/*`
+package. That was the legacy contract — host apps had to import the
+package AND concatenate `BaseCSS()` into their custom CSS — and a
+single missed concat shipped a component without any styling on the
+live site (the 2026-05-19 nestedlist incident). The rule is enforced
+by `core-ui/check.LintNoPatternBaseCSS`, a build-time test that
+fails CI on the next regression.
+
+Selectors stay class-based (`.foo`, `.nested-list`) — the marker
+only signals to the auto-loader "fetch this stylesheet". Apps don't
+need any setup; the CSS just appears on every page that renders the
+component.
+
 ## Anti-patterns this skill exists to prevent
 
+- ❌ Exporting `BaseCSS()` from a `core-ui/patterns/*` package — use
+  `registry.RegisterStyle` + `Style.WrapHTML` instead. See the CSS
+  contract section above.
 - ❌ Embedding full chrome HTML in `/__gofastr/widgets` JSON catalog.
 - ❌ Calling `/state` on mount when the widget has no signals.
 - ❌ Constructing DOM in the runtime when the server already rendered it.

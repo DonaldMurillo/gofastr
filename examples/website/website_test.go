@@ -61,8 +61,8 @@ func TestComponentDemosRenderWithoutPanic(t *testing.T) {
 		{"/components/tabs", []string{`class="tabs"`, `tabs-summary`, `tabs-panel`}},
 		{"/components/progress", []string{`<progress`, `class="progress-bar"`, `value="73"`}},
 		{"/components/skeleton", []string{`skeleton-line`, `skeleton-block`, `skeleton-circle`}},
-		{"/components/breadcrumbs", []string{`<nav aria-label="Breadcrumb">`, `breadcrumbs`, `aria-current="page"`}},
-		{"/components/pagination", []string{`<nav aria-label="Pagination">`, `pagination`, `aria-current="page"`}},
+		{"/components/breadcrumbs", []string{`aria-label="Breadcrumb"`, `breadcrumbs`, `aria-current="page"`}},
+		{"/components/pagination", []string{`aria-label="Pagination"`, `pagination`, `aria-current="page"`}},
 		{"/framework-ui/", []string{
 			`ui-page-header`, `ui-stat-card`, `ui-badge--success`,
 			`ui-callout--danger`, `ui-form-section`, `ui-empty-state`,

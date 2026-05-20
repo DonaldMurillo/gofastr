@@ -179,7 +179,7 @@ func TestDataTablePaginationFooterRenders(t *testing.T) {
 	if !strings.Contains(h, "ui-data-table__footer") {
 		t.Errorf("expected pagination footer, got: %s", h)
 	}
-	if !strings.Contains(h, `<nav aria-label="Pagination">`) {
+	if !strings.Contains(h, `aria-label="Pagination"`) {
 		t.Errorf("expected pagination nav, got: %s", h)
 	}
 }

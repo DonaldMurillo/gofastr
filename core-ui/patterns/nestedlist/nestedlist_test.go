@@ -3,6 +3,8 @@ package nestedlist
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestRender_FlatItems(t *testing.T) {
@@ -94,15 +96,22 @@ func TestRender_EmptyItemsReturnsEmptyList(t *testing.T) {
 	}
 }
 
-func TestBaseCSS_DefinesNestedListClasses(t *testing.T) {
-	css := BaseCSS()
+func TestStyleRegistersExpectedRules(t *testing.T) {
+	css := Style.Entry().CSSFor(style.Theme{})
 	for _, cls := range []string{
 		".nested-list",
 		".nested-list details",
 		".nested-list summary",
 	} {
 		if !strings.Contains(css, cls) {
-			t.Errorf("BaseCSS missing rule for %s", cls)
+			t.Errorf("registered Style missing rule for %s", cls)
 		}
+	}
+}
+
+func TestRenderEmitsCompMarker(t *testing.T) {
+	out := string(Render(Config{Items: []Item{{Label: "x"}}}))
+	if !strings.Contains(out, `data-fui-comp="nestedlist"`) {
+		t.Errorf("Render must emit data-fui-comp marker for auto-CSS load, got: %s", out)
 	}
 }

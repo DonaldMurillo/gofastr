@@ -1,5 +1,12 @@
 # Agent Notes
 
+## 2026-05-19 - pattern-css-unification
+
+- Scope: `core-ui/patterns/*`, `core-ui/check`, `examples/website/theme.go`, `core-ui/ARCHITECTURE.md`, `.claude/skills/component-build`
+- Symptom: Two CSS contracts in the framework. `framework/ui/*` auto-wired via `registry.RegisterStyle` + `Style.WrapHTML` (CSS auto-loads on first appearance via the runtime's `data-fui-comp` scanner). `core-ui/patterns/*` exported `BaseCSS() string`, which every host app had to concatenate by hand into `WithCustomCSS`. A single missed concat shipped a component with no styling — the 2026-05-19 nestedlist incident.
+- Evidence: All 6 patterns still on the legacy contract (accordion, breadcrumbs, nestedlist, pagination, progress, skeleton, tabs) migrated to `registry.RegisterStyle` + `Style.WrapHTML`. `BaseCSS()` exports removed; class selectors stay class-based. `examples/website/theme.go` lost 6 imports + 6 concatenations. `core-ui/check.LintNoPatternBaseCSS` + `TestNoPatternBaseCSS_RepoIsClean` enforce the new contract — any new pattern package that re-introduces `BaseCSS()` fails the build. Tabs's dynamic `:has()` rule generation became `buildCSS()` called from `styleFn`. Tests that asserted on exact `<nav aria-label="X">` strings relaxed to `aria-label="X"` since the wrapper now carries `data-fui-comp`. Skeleton-preset line widths moved from inline `Width:"50%"` (CSP-blocked) into the registered preset CSS. Architecture note added to `core-ui/ARCHITECTURE.md` ("Patterns use the same contract"); same rule added to the component-build skill as an anti-pattern.
+- Next time: when introducing a CSS-bearing package, use the registry pattern from day one. The lint guard catches the regression at build time; don't disable it. If a pattern needs theme-aware CSS, `styleFn(t style.Theme) string` already receives the theme — use it. For dynamically generated CSS (like tabs's `:has()` rules), have `styleFn` call a builder function.
+
 ## 2026-05-19 - in-house-blueprint-codegen
 
 - Scope: `core/yaml`, `cmd/gofastr`, `docs/`

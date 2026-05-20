@@ -25,7 +25,7 @@ func TestCrumbRequiresText(t *testing.T) {
 
 func TestRendersNavWithDefaultLabel(t *testing.T) {
 	h := string(New(Config{}, Crumb{Text: "Home", Href: "/"}))
-	if !strings.Contains(h, `<nav aria-label="Breadcrumb">`) {
+	if !strings.Contains(h, `aria-label="Breadcrumb"`) {
 		t.Errorf("expected default nav aria-label, got: %s", h)
 	}
 }

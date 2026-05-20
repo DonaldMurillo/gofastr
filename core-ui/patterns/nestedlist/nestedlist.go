@@ -6,8 +6,16 @@
 package nestedlist
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// Style is the registered stylesheet handle. Render's top-level
+// <ul>/<ol> goes through Style.WrapHTML so the data-fui-comp marker
+// is emitted and the runtime auto-loads the CSS on first appearance.
+// Apps no longer need to concatenate this package's CSS by hand.
+var Style = registry.RegisterStyle("nestedlist", styleFn)
 
 // Item is one node in the list. A node with Children renders as a
 // <details>/<summary>; a leaf node renders as a plain <li> (optionally
@@ -55,7 +63,7 @@ func Render(cfg Config) render.HTML {
 	if cfg.AriaLabel != "" {
 		attrs["aria-label"] = cfg.AriaLabel
 	}
-	return renderList(cfg.Ordered, attrs, cfg.Items)
+	return Style.WrapHTML(renderList(cfg.Ordered, attrs, cfg.Items))
 }
 
 func renderList(ordered bool, listAttrs map[string]string, items []Item) render.HTML {
@@ -103,11 +111,11 @@ func renderItem(ordered bool, it Item) render.HTML {
 	)
 }
 
-// BaseCSS returns the stylesheet for nested-list. Tokens used:
+// styleFn returns the stylesheet for nested-list. Tokens used:
 // --spacing-xs / --spacing-sm / --spacing-md / --spacing-lg,
 // --radii-sm, --color-text, --color-text-muted, --color-primary,
 // --color-surface-soft, --color-border.
-func BaseCSS() string {
+func styleFn(_ style.Theme) string {
 	return `
 .nested-list,
 .nested-list ul,

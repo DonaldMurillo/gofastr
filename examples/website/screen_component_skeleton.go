@@ -80,9 +80,11 @@ ui.SkeletonRow(ui.SkeletonRowConfig{HideChevron: true})`,
 		),
 
 		html.Heading(html.HeadingConfig{Level: 3}, render.Text("SkeletonAvatar")),
+		render.Tag("p", nil, render.Text(
+			"Pass Size: \"3rem\" to override the circle size. Under strict CSP, prefer a custom Class with the inline-size set in your stylesheet — explicit Size emits an inline attribute that CSP can block.")),
 		demoFrame(
-			ui.SkeletonAvatar(ui.SkeletonAvatarConfig{Size: "3rem"}),
-			`ui.SkeletonAvatar(ui.SkeletonAvatarConfig{Size: "3rem"})`,
+			ui.SkeletonAvatar(ui.SkeletonAvatarConfig{}),
+			`ui.SkeletonAvatar(ui.SkeletonAvatarConfig{})`,
 		),
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Accessibility")),

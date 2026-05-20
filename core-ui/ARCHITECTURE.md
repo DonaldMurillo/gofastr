@@ -524,6 +524,47 @@ unscopable selectors (`body`, `html`, `:root`, `*`, `::backdrop`,
 `::view-transition-*`). Authors `go test` a sheet without chromedp
 by building the `ComponentSheet` directly and asserting on bytes.
 
+### Patterns use the same contract
+
+Every package under `core-ui/patterns/*` (accordion, breadcrumbs,
+combobox, disclosure, infinitescroll, multiselect, nestedlist,
+pagination, progress, skeleton, sortablelist, tabs, tree) uses
+`registry.RegisterStyle` and wraps its top-level rendered element
+with `Style.WrapHTML(...)`. Class selectors stay class-based
+(`.accordion`, `.tabs`, `.nested-list`) — the marker only signals
+to the auto-loader "fetch this stylesheet". No host setup required.
+
+**Legacy `BaseCSS() string` exports are forbidden** — host apps used
+to import each pattern and concatenate `BaseCSS()` into their custom
+CSS via `WithCustomCSS`, but a single forgotten concat shipped a
+component without any styling on the page (the 2026-05-19 nestedlist
+incident). The contract is enforced by
+`core-ui/check.LintNoPatternBaseCSS`, run as a test in CI: any new
+pattern package exporting a `BaseCSS` function fails the build.
+
+The canonical shape for a new pattern package:
+
+```go
+// core-ui/patterns/foo/foo.go
+package foo
+
+import (
+    "github.com/DonaldMurillo/gofastr/core-ui/registry"
+    "github.com/DonaldMurillo/gofastr/core-ui/style"
+    "github.com/DonaldMurillo/gofastr/core/render"
+)
+
+var Style = registry.RegisterStyle("foo", styleFn)
+
+func styleFn(_ style.Theme) string { return baseCSS }
+
+func Render(cfg Config) render.HTML {
+    return Style.WrapHTML(render.Tag("div", attrs(cfg), ...))
+}
+
+const baseCSS = `.foo { ... }`
+```
+
 ### What about widgets?
 
 The `core-ui/widget` registry continues to drive widgets (their

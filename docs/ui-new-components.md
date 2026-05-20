@@ -40,6 +40,7 @@ dev server is up.
 - **kbd** — `core-ui/html.Kbd` — semantic `<kbd>` for keyboard input
 - **shortcuthint** — `framework/ui.ShortcutHint` — OS-aware chord chips (⌘ on Mac / Ctrl elsewhere)
 - **avatargroup** — `framework/ui.AvatarGroup` — overlapping avatar stack with overflow chip
+- **icon** — `framework/ui.Icon` — inline-SVG primitive backed by `RegisterIcon`; 10 built-ins, `currentColor` stroke, `AriaLabel` flips to `role="img"`
 
 ### Buttons & form controls
 
@@ -105,6 +106,7 @@ dev server is up.
 - **carousel** — `framework/ui.Carousel` — horizontal scroll-snap slider
 - **infinitescroll** — `core-ui/patterns/infinitescroll` — IntersectionObserver-driven lazy feed
 - **sortablelist** — `core-ui/patterns/sortablelist` — drag-and-drop + keyboard reorderable list
+- **nestedlist** — `core-ui/patterns/nestedlist` — recursive `<ul>`/`<ol>` with native `<details>` collapse on branches
 
 ### Data display
 
@@ -135,6 +137,8 @@ dev server is up.
 - **themetoggle** — `framework/ui.ThemeToggle` — dark/light/auto toggle that persists color-scheme mode
 - **backtotop** — `framework/ui.BackToTop` — fixed scroll affordance that appears after a threshold
 - **banner** — `framework/ui.Banner` — page-level persistent status strip
+- **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
+- **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
 
 ---
 

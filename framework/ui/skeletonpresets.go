@@ -44,15 +44,16 @@ func SkeletonCard(cfg SkeletonCardConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 
+	// Width values are NOT set via Width: "50%" because that would emit
+	// inline `style="inline-size:50%"` which strict CSP blocks. The
+	// widths instead live on the preset class (.ui-skeleton-card__*).
 	children := []render.HTML{
-		// Title line: 50% width line to imply a heading.
-		skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "50%", Class: "ui-skeleton-card__title"}),
-		// Body: multi-line stack.
+		skeleton.New(skeleton.Config{Variant: skeleton.Line, Class: "ui-skeleton-card__title"}),
 		skeleton.New(skeleton.Config{Variant: skeleton.Line, Count: cfg.BodyLines, Class: "ui-skeleton-card__body"}),
 	}
 	if cfg.ShowFooter {
 		children = append(children,
-			skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "35%", Class: "ui-skeleton-card__footer"}),
+			skeleton.New(skeleton.Config{Variant: skeleton.Line, Class: "ui-skeleton-card__footer"}),
 		)
 	}
 	return skeletonPresetsStyle.WrapHTML(render.Tag("div", attrs, children...))
@@ -84,8 +85,8 @@ func SkeletonRow(cfg SkeletonRowConfig) render.HTML {
 	}
 
 	children := []render.HTML{
-		skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "40%", Class: "ui-skeleton-row__label"}),
-		skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "25%", Class: "ui-skeleton-row__value"}),
+		skeleton.New(skeleton.Config{Variant: skeleton.Line, Class: "ui-skeleton-row__label"}),
+		skeleton.New(skeleton.Config{Variant: skeleton.Line, Class: "ui-skeleton-row__value"}),
 	}
 	if !cfg.HideChevron {
 		children = append(children,
@@ -132,11 +133,11 @@ func SkeletonAvatar(cfg SkeletonAvatarConfig) render.HTML {
 	})
 
 	textBlock := []render.HTML{
-		skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "60%", Class: "ui-skeleton-avatar__name"}),
+		skeleton.New(skeleton.Config{Variant: skeleton.Line, Class: "ui-skeleton-avatar__name"}),
 	}
 	if !cfg.HideSubline {
 		textBlock = append(textBlock,
-			skeleton.New(skeleton.Config{Variant: skeleton.Line, Width: "40%", Class: "ui-skeleton-avatar__sub"}),
+			skeleton.New(skeleton.Config{Variant: skeleton.Line, Class: "ui-skeleton-avatar__sub"}),
 		)
 	}
 
@@ -156,6 +157,15 @@ const skeletonPresetsCSS = `
   gap: var(--spacing-md, 12px);
   padding: var(--spacing-lg, 16px);
 }
+/* Per-preset line widths. These used to be passed as Width: "50%" to
+   skeleton.New(), but that emits inline style="…" attributes which
+   strict CSP blocks. Live on classes instead. */
+.ui-skeleton-card__title  { inline-size: 50%; }
+.ui-skeleton-card__footer { inline-size: 35%; }
+.ui-skeleton-row__label   { inline-size: 40%; }
+.ui-skeleton-row__value   { inline-size: 25%; }
+.ui-skeleton-avatar__name { inline-size: 60%; }
+.ui-skeleton-avatar__sub  { inline-size: 40%; }
 .ui-skeleton-card__footer {
   margin-block-start: var(--spacing-sm, 8px);
   padding-block-start: var(--spacing-md, 12px);
