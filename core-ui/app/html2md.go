@@ -1,3 +1,10 @@
+//check-csp:ignore-file
+// This file builds regex patterns that match (and strip) <script> and
+// <style> blocks from rendered HTML before converting it to Markdown
+// for /llm.md. The patterns never emit script tags — they only consume
+// them — but the literal `<script` substring trips the no-inline-script
+// linter. The directive exempts this file from that check.
+
 package app
 
 import (

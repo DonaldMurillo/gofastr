@@ -449,6 +449,24 @@ var componentEntries = []componentEntry{
 		Tag:   "Layout · aspect-ratio",
 		Intro: "Pure-CSS aspect-ratio wrapper that prevents layout shift for images, videos, and embeds. Child is absolutely positioned to fill the box.",
 	},
+	{
+		Slug:  "icon",
+		Name:  "Icon",
+		Tag:   "Primitive · inline SVG",
+		Intro: "Inline SVG icon primitive backed by a registry. Renders with currentColor stroke so icons inherit theme color. Decorative by default; AriaLabel makes it meaningful. Ships with 10 built-ins; RegisterIcon adds your own.",
+	},
+	{
+		Slug:  "pollingindicator",
+		Name:  "PollingIndicator",
+		Tag:   "Live · feedback",
+		Intro: "Pulsing dot + label that confirms a polling RPC or live-update pipeline is firing. Pure-CSS animation with prefers-reduced-motion guard. Paused variant freezes the pulse and dims the dot.",
+	},
+	{
+		Slug:  "nestedlist",
+		Name:  "NestedList",
+		Tag:   "Pattern · recursive ul/ol",
+		Intro: "Recursive <ul>/<ol> with optional native <details> collapse on branches. Lighter than the tree pattern (no lazy-load, no RPC). Pure render — no runtime module.",
+	},
 }
 
 func (s *ComponentsIndexScreen) Render() render.HTML {

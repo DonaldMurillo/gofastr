@@ -5,6 +5,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type SkeletonScreen struct{}
@@ -56,6 +57,33 @@ skeleton.New(skeleton.Config{Variant: skeleton.Circle, Width: "3rem"})`
 		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
 			"Three shimmer placeholders rendered with pure CSS. Variants: Line, Block, Circle.")),
 		demoFrame(stack, source),
+
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Presets (framework/ui)")),
+		render.Tag("p", nil, render.Text(
+			"One-liner compositions over the primitives — covers the common loading shapes so layouts don't reinvent them.")),
+
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("SkeletonCard")),
+		demoFrame(
+			ui.SkeletonCard(ui.SkeletonCardConfig{ShowFooter: true}),
+			`ui.SkeletonCard(ui.SkeletonCardConfig{ShowFooter: true})`,
+		),
+
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("SkeletonRow")),
+		demoFrame(
+			render.Tag("div", nil,
+				ui.SkeletonRow(ui.SkeletonRowConfig{}),
+				ui.SkeletonRow(ui.SkeletonRowConfig{}),
+				ui.SkeletonRow(ui.SkeletonRowConfig{HideChevron: true}),
+			),
+			`ui.SkeletonRow(ui.SkeletonRowConfig{})
+ui.SkeletonRow(ui.SkeletonRowConfig{HideChevron: true})`,
+		),
+
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("SkeletonAvatar")),
+		demoFrame(
+			ui.SkeletonAvatar(ui.SkeletonAvatarConfig{Size: "3rem"}),
+			`ui.SkeletonAvatar(ui.SkeletonAvatarConfig{Size: "3rem"})`,
+		),
 
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Accessibility")),
 		render.Tag("p", nil, render.Text(

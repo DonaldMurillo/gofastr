@@ -225,3 +225,80 @@ func TestDataTableCaptionRenders(t *testing.T) {
 		t.Errorf("expected caption to render, got: %s", h)
 	}
 }
+
+// ─── Responsive cards mode ────────────────────────────────────────
+
+func TestDataTable_ResponsiveCards_AddsModifierClass(t *testing.T) {
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name"}},
+		Rows: []Row{
+			{Cells: map[string]render.HTML{"name": render.Text("Ada")}},
+		},
+		Responsive: ResponsiveCards,
+	}))
+	if !strings.Contains(h, "ui-data-table--responsive-cards") {
+		t.Errorf("expected modifier class on wrapper with ResponsiveCards, got: %s", h)
+	}
+}
+
+func TestDataTable_ResponsiveCards_AddsDataLabelOnCells(t *testing.T) {
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{
+			{Key: "name", Header: "Name"},
+			{Key: "email", Header: "Email"},
+		},
+		Rows: []Row{
+			{Cells: map[string]render.HTML{
+				"name":  render.Text("Ada"),
+				"email": render.Text("ada@x.com"),
+			}},
+		},
+		Responsive: ResponsiveCards,
+	}))
+	if !strings.Contains(h, `data-label="Name"`) {
+		t.Errorf("expected data-label=\"Name\" on cells, got: %s", h)
+	}
+	if !strings.Contains(h, `data-label="Email"`) {
+		t.Errorf("expected data-label=\"Email\" on cells, got: %s", h)
+	}
+}
+
+func TestDataTable_ResponsiveScroll_DoesNotAddDataLabel(t *testing.T) {
+	// Default (ResponsiveScroll / "") should NOT emit data-label —
+	// avoid noisy attributes on the typical wide-viewport table.
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name"}},
+		Rows: []Row{
+			{Cells: map[string]render.HTML{"name": render.Text("Ada")}},
+		},
+	}))
+	if strings.Contains(h, "data-label") {
+		t.Errorf("default DataTable should not emit data-label, got: %s", h)
+	}
+	if strings.Contains(h, "ui-data-table--responsive-cards") {
+		t.Errorf("default DataTable should not carry the responsive-cards modifier, got: %s", h)
+	}
+}
+
+func TestDataTable_ResponsiveCards_EmptyHeaderHasNoDataLabel(t *testing.T) {
+	// Columns with empty Header (e.g. icon-only / actions column)
+	// shouldn't get data-label="" — the CSS hides the ::before pseudo
+	// for cells without the attribute. Keep the attribute absent so
+	// the CSS rule matches.
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{
+			{Key: "name", Header: "Name"},
+			{Key: "actions", Header: ""},
+		},
+		Rows: []Row{
+			{Cells: map[string]render.HTML{
+				"name":    render.Text("Ada"),
+				"actions": render.HTML("<a href=\"/x\">edit</a>"),
+			}},
+		},
+		Responsive: ResponsiveCards,
+	}))
+	if strings.Contains(h, `data-label=""`) {
+		t.Errorf("empty-header column should not emit data-label=\"\", got: %s", h)
+	}
+}
