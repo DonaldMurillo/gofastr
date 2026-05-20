@@ -10,10 +10,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
+	"github.com/DonaldMurillo/gofastr/core/featureflag"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -71,6 +73,19 @@ type App struct {
 	stopHooks  []func() error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
+
+	// Readiness checks registered by app code, plugins, and batteries.
+	// /readyz runs them in parallel; /healthz is unconditional.
+	health *healthState
+
+	// Feature flags. Lazily created on first access (Flags()) so apps
+	// that never use them pay nothing.
+	flagEval     *featureflag.Evaluator
+	flagMu       sync.Mutex
+	flagAccessed bool // true once Flags()/SetFlagStore has run — guards against late SetFlagStore
+
+	// Optional idempotency config wired into the default chain when set.
+	idempotency *middleware.IdempotencyConfig
 }
 
 // AppOption is a functional option for configuring an App.
@@ -123,6 +138,19 @@ func WithoutDefaultMiddleware() AppOption {
 	}
 }
 
+// WithIdempotency adds an Idempotency-Key middleware to the default
+// chain. Pass middleware.IdempotencyConfig{} to take all defaults; the
+// option is otherwise idiomatic-Go composition over the existing
+// middleware.Idempotency primitive.
+//
+// Has no effect when WithoutDefaultMiddleware is also set — wire your
+// own chain explicitly in that case.
+func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
+	return func(a *App) {
+		a.idempotency = &cfg
+	}
+}
+
 // Mount attaches a Mountable and registers its routes on the app's router
 // immediately. The default middleware chain is already in place (committed
 // during NewApp), so any handler the Mountable registers is wrapped with
@@ -154,16 +182,27 @@ func (a *App) Use(mw ...router.Middleware) *App {
 // headers → timeout. Skipped entirely when WithoutDefaultMiddleware is
 // set or when Use has already been called.
 func (a *App) applyDefaultMiddleware() {
+	if a.noDefaults && a.idempotency != nil {
+		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware — " +
+			"the idempotency middleware lives in the default chain; mount it explicitly via " +
+			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
+	}
 	if a.mwApplied || a.noDefaults {
 		return
 	}
-	a.Router.Use(
+	chain := []router.Middleware{
 		router.Middleware(middleware.Recovery()),
 		router.Middleware(middleware.RequestID()),
 		router.Middleware(middleware.Logging()),
+	}
+	if a.idempotency != nil {
+		chain = append(chain, router.Middleware(middleware.Idempotency(*a.idempotency)))
+	}
+	chain = append(chain,
 		router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})),
 		router.Middleware(middleware.Timeout(30*time.Second)),
 	)
+	a.Router.Use(chain...)
 	a.mwApplied = true
 }
 
@@ -372,6 +411,11 @@ func (a *App) InitPlugins() error {
 	a.Batteries.RegisterTools(a.MCP)
 	a.Batteries.RegisterHooks(a)
 
+	// Probe both plugins and batteries for the optional
+	// ReadinessRegistrar interface so they can publish health checks
+	// before /readyz mounts in Start.
+	a.probeReadinessRegistrars()
+
 	return nil
 }
 
@@ -556,6 +600,15 @@ func (a *App) Start(addr string) error {
 	if a.Config.DebugEndpoints {
 		a.registerDebugEndpoints()
 	}
+
+	// Auto-register a db readiness probe if a DB is configured. Plugins
+	// and batteries that implement ReadinessRegistrar were given a chance
+	// to add their own during InitPlugins above.
+	if a.DB != nil {
+		c := dbReadinessCheck(a)
+		a.RegisterReadiness(c.Name, c.Check)
+	}
+	a.registerHealthEndpoints()
 
 	// Mountables already registered their routes when App.Mount was called;
 	// nothing to do at Start time.
