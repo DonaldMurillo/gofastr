@@ -11,6 +11,11 @@ Source: gap audit on branch `worktree-staged-roaming-whale` (2026-05-17).
 
 ## Shipped
 
+### Wave 5 (2026-05-19, in progress) — Form helpers / async
+
+- ConditionalField — `framework/ui/` (CSS-`:has()` wrapper for show/hide)
+- PollingIndicator — `framework/ui/` (pulsing dot + label; paused variant)
+
 ### Wave 6 (2026-05-19) — Skeleton compositions
 
 - SkeletonCard — `framework/ui/` (title + body lines + optional footer)
@@ -113,14 +118,7 @@ follow-ups:
   block with `<a href="#field-id">label — error</a>` per row.
 - **Pre-reqs:** Banner (shipped).
 
-### ConditionalField
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** CSS-`:has()` driven show/hide wrapper that
-  reveals a child field based on another field's value. Zero JS —
-  pure selector logic. The wrapper takes `When` (selector chain like
-  `[name=plan]:checked[value=pro]`) and a body slot.
-- **Pre-reqs:** None.
+### ConditionalField — shipped (see Wave 5 above)
 
 ### OptimisticAction
 
@@ -139,14 +137,7 @@ follow-ups:
   health endpoint.
 - **Pre-reqs:** Banner (shipped), runtime SSE hook (shipped).
 
-### PollingIndicator
-
-- **Layer:** `framework/ui/`
-- **Shape sketch:** Tiny pulsing dot + "Live" label that confirms a
-  polling RPC is firing. Pairs with `data-fui-rpc-trigger="input"`
-  patterns to give users feedback that the live-search is actually
-  searching.
-- **Pre-reqs:** None.
+### PollingIndicator — shipped (see Wave 5 above)
 
 ---
 
