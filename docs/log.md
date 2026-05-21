@@ -59,6 +59,36 @@ logger := p.(*log.Plugin).Logger()
 logger.Info("worker.tick", "queue", "ingest")
 ```
 
+## Metrics
+
+The plugin exposes four counters covering the silent-loss scenarios
+operators care about:
+
+| Counter                                      | Meaning                                                            |
+|----------------------------------------------|--------------------------------------------------------------------|
+| `gofastr_log_post_stop_drops_total`          | Entries dropped because sinks were closed (post-Shutdown writes).  |
+| `gofastr_log_sink_write_failures_total`      | Entries dropped because a sink's Write returned an error.          |
+| `gofastr_log_webhook_dropped_total`          | Entries dropped from webhook queues under backpressure.            |
+| `gofastr_log_webhook_gave_up_total`          | Webhook batches given up after exhausting MaxRetries.              |
+
+Read them programmatically:
+
+```go
+p, _ := app.Plugins.Get("log")
+m := p.(*log.Plugin).Metrics()
+// m.PostStopDrops, m.SinkWriteFailures, m.WebhookDropped, m.WebhookGaveUp
+```
+
+Or expose them over HTTP in Prometheus text exposition format:
+
+```go
+p, _ := app.Plugins.Get("log")
+app.Router().Handle("GET", "/metrics", p.(*log.Plugin).MetricsHandler())
+```
+
+The handler is stateless and safe to mount under any access-controlled
+prefix you use for ops endpoints.
+
 ## Configuration
 
 `log.Config` fields (all optional):
