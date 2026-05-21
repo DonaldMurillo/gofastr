@@ -154,8 +154,9 @@ Run this mental check:
 - **agent-notes drift.** Stopped getting updates while feature work
   continued. The note ≠ the feature, but reviews/refactors of any
   size deserve a one-paragraph entry.
-- **Roadmap drift.** `plan/tasks.md` had unchecked boxes for things
-  that already shipped. Either keep it accurate or delete it.
+- **Roadmap drift.** Forward-looking work lives in `ROADMAP.md`.
+  Keep it accurate — when an item ships, delete it from the roadmap
+  and move per-feature truth into `docs/<feature>.md`.
 
 ## Definition of done for a doc-touching PR
 

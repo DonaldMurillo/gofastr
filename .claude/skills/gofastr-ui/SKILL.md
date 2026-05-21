@@ -123,7 +123,7 @@ legacy `func BaseCSS() string` export pattern is **forbidden** — the
 2026-05-19 nestedlist incident shipped without styling because the
 host's theme.go was never updated to concatenate it. The lint
 `core-ui/check.LintNoPatternBaseCSS` fails CI on any new pattern that
-re-exports `BaseCSS`. See `docs/proposals/pattern-css-unification.md`.
+re-exports `BaseCSS`. The pattern-CSS unification landed 2026-05-19.
 
 **Hard rules:**
 - ❌ Never export `func BaseCSS() string` from a `core-ui/patterns/*`

@@ -288,7 +288,7 @@ cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
 docs/        feature docs (entity declarations, migrations, query DSL, …)
 examples/    website (SSR + 10 UI primitives), blog (JSON-declared entities), api-tour (cursor/include/batch/SSE/uploads), embed-demo, spa (Vue+API), static-site
-plan/        proposal-driven task tracker
+ROADMAP.md   forward-looking proposals not yet built
 ```
 
 ## Documentation
