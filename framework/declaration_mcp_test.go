@@ -161,7 +161,7 @@ func TestCustomEndpointHTTPAndMCPRegistration(t *testing.T) {
 
 func callMCPTool(t *testing.T, server *mcp.Server, name string, params map[string]any) any {
 	t.Helper()
-	raw, err := json.Marshal(map[string]any{"name": name, "params": params})
+	raw, err := json.Marshal(map[string]any{"name": name, "arguments": params})
 	if err != nil {
 		t.Fatal(err)
 	}

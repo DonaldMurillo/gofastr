@@ -10,10 +10,11 @@ type toolsListResult struct {
 	Tools []Tool `json:"tools"`
 }
 
-// toolsCallParams represents the parameters for a tools/call request.
+// toolsCallParams represents the parameters for a tools/call request,
+// per the MCP spec: a tool name and an `arguments` object.
 type toolsCallParams struct {
-	Name   string         `json:"name"`
-	Params map[string]any `json:"params,omitempty"`
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
 // toolsCallResult wraps a tool execution result per MCP spec.
@@ -49,7 +50,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing tool name")
 	}
 
-	result, err := s.callTool(ctx, params.Name, params.Params)
+	result, err := s.callTool(ctx, params.Name, params.Arguments)
 	if err != nil {
 		rpcErr, ok := err.(*RPCError)
 		if ok {

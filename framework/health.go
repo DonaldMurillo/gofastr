@@ -236,9 +236,10 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 		case <-resultCh:
 			completed++
 		case <-ctx.Done():
-			// Fill in any unreported rows as timeout. Goroutines that
-			// haven't returned will overwrite their slot when they
-			// finally do — but the response is already on the wire.
+			// Fill in any unreported rows as timeout, then return a
+			// COPY so any goroutine still in c.Check() can't race the
+			// caller's read of the slice (it'd be writing back into
+			// `out`, which the caller has already moved on from).
 			for i, c := range checks {
 				if out[i].Name == "" {
 					out[i] = ReadinessResult{
@@ -249,7 +250,9 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 					}
 				}
 			}
-			return ReadinessResponse{Checks: out}
+			snapshot := make([]ReadinessResult, len(out))
+			copy(snapshot, out)
+			return ReadinessResponse{Checks: snapshot}
 		}
 	}
 	return ReadinessResponse{Checks: out}

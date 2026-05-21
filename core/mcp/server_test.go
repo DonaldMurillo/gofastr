@@ -65,8 +65,8 @@ func TestCallTool_ValidParams(t *testing.T) {
 	})
 
 	params, _ := json.Marshal(map[string]any{
-		"name":   "add",
-		"params": map[string]any{"a": 3, "b": 4},
+		"name":      "add",
+		"arguments": map[string]any{"a": 3, "b": 4},
 	})
 	req := Request{JSONRPC: "2.0", ID: 2, Method: "tools/call", Params: params}
 	resp := s.HandleRequest(context.Background(), req)
@@ -212,7 +212,7 @@ func TestHTTPTransport_ToolsCall(t *testing.T) {
 		return params["msg"], nil
 	})
 
-	body := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","params":{"msg":"hello"}}}`
+	body := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"msg":"hello"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

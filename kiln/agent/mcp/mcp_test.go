@@ -72,7 +72,7 @@ func TestMCPDispatchAddEntity(t *testing.T) {
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name": "add_entity",
-			"params": map[string]any{
+			"arguments": map[string]any{
 				"entity": map[string]any{
 					"name":   "posts",
 					"fields": []any{map[string]any{"name": "title", "type": "string"}},
@@ -105,7 +105,7 @@ func TestMCPDispatchPreservesErrorKind(t *testing.T) {
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name":      "add_field",
-			"params": map[string]any{"entity": "missing", "field": map[string]any{"name": "x", "type": "string"}},
+			"arguments": map[string]any{"entity": "missing", "field": map[string]any{"name": "x", "type": "string"}},
 		},
 	}
 	buf, _ := json.Marshal(body)

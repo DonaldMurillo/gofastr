@@ -193,7 +193,15 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	}
 	host := uihost.New(site, hostOpts...)
 
-	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "website"}))
+	fwApp := framework.NewApp(
+		framework.WithConfig(framework.AppConfig{Name: "website"}),
+		// MCP introspection: expose app_routes / app_plugins /
+		// app_batteries / app_config / app_readiness for an agent
+		// debugging the running site. The .claude/skills/log-debug,
+		// app-introspect, and gofastr-mcp-debug skills auto-load on
+		// matching agent prompts and document the curl recipes.
+		framework.WithMCPIntrospection(),
+	)
 
 	// battery/log: structured JSON server log. Writes to a per-app file
 	// in the OS state dir (e.g. ~/.local/state/website/server.log),
@@ -201,7 +209,24 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	// App's logger so framework middleware (Logging, slowquery, etc.)
 	// also flows through these sinks. Router late-binding means the
 	// plugin's middleware wraps routes registered by Mount below too.
-	fwApp.RegisterPlugin(log.New(log.Config{}))
+	//
+	// EnableMCP adds an in-memory ring buffer + log_recent / log_filter
+	// / log_metrics / log_set_level tools on /mcp so agents can debug
+	// the running site live.
+	fwApp.RegisterPlugin(log.New(log.Config{
+		EnableMCP:   true,
+		MCPRingSize: 2000,
+		// AllowMCPMutation registers `log_set_level`. Safe here only
+		// because this is a localhost demo with no auth on /mcp. A
+		// production deploy with /mcp publicly reachable MUST leave
+		// this false (or gate /mcp behind authentication first).
+		AllowMCPMutation: true,
+	}))
+
+	// Mount the MCP JSON-RPC endpoint so the introspection + log tools
+	// are reachable from outside the process. POST /mcp speaks JSON-RPC
+	// 2.0; see core/mcp/transport.go for the wire format.
+	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 
 	fwApp.Mount(host)
 

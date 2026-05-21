@@ -90,6 +90,14 @@ func (s *Server) listTools() []Tool {
 	return tools
 }
 
+// CallTool is the exported form of callTool: invokes a registered tool
+// by name with the given params. Use this when calling MCP tools
+// in-process (tests, server-side integrations) without going through
+// the JSON-RPC transport layer.
+func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (any, error) {
+	return s.callTool(ctx, name, params)
+}
+
 // callTool executes a registered tool by name with the given params.
 func (s *Server) callTool(ctx context.Context, name string, params map[string]any) (any, error) {
 	t, ok := s.getTool(name)

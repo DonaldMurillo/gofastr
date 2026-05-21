@@ -118,6 +118,11 @@ type App struct {
 	// Optional translator. When set, the i18n middleware is wired into
 	// the default chain so handlers can call App.T(ctx, key, ...).
 	translator *i18n.Translator
+
+	// mcpIntrospection enables a set of read-only MCP tools that expose
+	// the app's routes, plugins, batteries, config, and readiness state
+	// for agent debugging. Set via WithMCPIntrospection().
+	mcpIntrospection bool
 }
 
 // AppOption is a functional option for configuring an App.
@@ -576,6 +581,14 @@ func (a *App) InitPlugins() error {
 	// ReadinessRegistrar interface so they can publish health checks
 	// before /readyz mounts in Start.
 	a.probeReadinessRegistrars()
+
+	// Register introspection MCP tools if opted in. After plugin/battery
+	// init so app_plugins / app_batteries reflect everything.
+	if a.mcpIntrospection {
+		if err := a.registerIntrospectionTools(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
