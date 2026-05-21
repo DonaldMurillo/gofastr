@@ -61,6 +61,14 @@ type Config struct {
 	// MCPRingSize is the ring buffer capacity used when EnableMCP is
 	// true. Zero defaults to 1000 entries.
 	MCPRingSize int
+
+	// AllowMCPMutation gates the registration of the mutating
+	// `log_set_level` tool. Off by default because flipping the global
+	// log level remotely is a DoS-via-disk-fill primitive against the
+	// file sink and a verbose-info-disclosure primitive against the
+	// ring + access log. Enable only when /mcp is reachable solely from
+	// trusted callers (localhost, authenticated proxy, etc.).
+	AllowMCPMutation bool
 }
 
 // Plugin is the log plugin. Implements framework.Plugin.

@@ -1142,7 +1142,7 @@ func requestMCP(t *testing.T, url, method string, params map[string]any) map[str
 
 func callMCPHTTP(t *testing.T, url, name string, params map[string]any) map[string]any {
 	t.Helper()
-	resp := requestMCP(t, url, "tools/call", map[string]any{"name": name, "params": params})
+	resp := requestMCP(t, url, "tools/call", map[string]any{"name": name, "arguments": params})
 	if errObj := resp["error"]; errObj != nil {
 		t.Fatalf("mcp %s failed: %#v", name, errObj)
 	}

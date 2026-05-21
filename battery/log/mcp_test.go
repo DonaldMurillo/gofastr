@@ -11,14 +11,16 @@ import (
 )
 
 // helper: build an App with battery/log + EnableMCP and return both.
+// AllowMCPMutation is on so tests can exercise log_set_level.
 func newMCPApp(t *testing.T) *framework.App {
 	t.Helper()
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "mcptest"}))
 	sink := &memSink{}
 	app.RegisterPlugin(log.New(log.Config{
-		Sinks:       []log.Sink{sink},
-		EnableMCP:   true,
-		MCPRingSize: 64,
+		Sinks:            []log.Sink{sink},
+		EnableMCP:        true,
+		MCPRingSize:      64,
+		AllowMCPMutation: true,
 	}))
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
@@ -61,6 +63,38 @@ func TestMCPToolsDisabledWhenNotEnabled(t *testing.T) {
 		if tool.Name == "log_recent" || tool.Name == "log_filter" ||
 			tool.Name == "log_metrics" || tool.Name == "log_set_level" {
 			t.Errorf("MCP tool %q registered without EnableMCP", tool.Name)
+		}
+	}
+}
+
+// TestMCPMutationGated pins that log_set_level is only registered when
+// Config.AllowMCPMutation is true — the default is read-only-safe.
+func TestMCPMutationGated(t *testing.T) {
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "mcpro"}))
+	app.RegisterPlugin(log.New(log.Config{
+		Sinks:       []log.Sink{&memSink{}},
+		EnableMCP:   true,
+		MCPRingSize: 16,
+		// AllowMCPMutation deliberately omitted.
+	}))
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	for _, tool := range app.MCP.ListTools() {
+		if tool.Name == "log_set_level" {
+			t.Fatal("log_set_level registered without AllowMCPMutation — that's the regression")
+		}
+	}
+	// The other three read-only tools must still be there.
+	want := map[string]bool{"log_recent": false, "log_filter": false, "log_metrics": false}
+	for _, tool := range app.MCP.ListTools() {
+		if _, ok := want[tool.Name]; ok {
+			want[tool.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("read-only tool %q missing", name)
 		}
 	}
 }
@@ -162,6 +196,83 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 	}
 	if sawInvisible {
 		t.Error("DEBUG entry from before level change should still be suppressed")
+	}
+}
+
+// TestMCPFilterReturnsNewestMatches pins that log_filter, like
+// log_recent, returns the MOST RECENT matches up to limit — not the
+// oldest. (Catches the chronology-direction bug.)
+func TestMCPFilterReturnsNewestMatches(t *testing.T) {
+	app := newMCPApp(t)
+	// Emit 10 worker.tick entries; ask for the last 3.
+	for i := 0; i < 10; i++ {
+		app.Logger().Info("worker.tick", "i", i)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+		"msg":   "worker.tick",
+		"limit": 3,
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	entries := result.(map[string]any)["entries"].([]map[string]any)
+	if len(entries) != 3 {
+		t.Fatalf("got %d, want 3", len(entries))
+	}
+	// Entries should be the LAST three (i=7,8,9), in chronological order.
+	for idx, want := range []float64{7, 8, 9} {
+		if got, _ := entries[idx]["i"].(float64); got != want {
+			t.Errorf("entry[%d].i = %v, want %v (oldest-first within newest window)", idx, got, want)
+		}
+	}
+}
+
+// TestMCPFilterBadTimestampErrors pins that a malformed since_ts /
+// until_ts surfaces as an error to the agent rather than silently
+// filtering nothing.
+func TestMCPFilterBadTimestampErrors(t *testing.T) {
+	app := newMCPApp(t)
+	_, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+		"since_ts": "yesterday",
+	})
+	if err == nil {
+		t.Fatal("expected error for malformed since_ts, got nil")
+	}
+}
+
+// TestMCPFilterSinceAfterUntilErrors pins that swapped time bounds
+// return an error.
+func TestMCPFilterSinceAfterUntilErrors(t *testing.T) {
+	app := newMCPApp(t)
+	_, err := app.MCP.CallTool(context.Background(), "log_filter", map[string]any{
+		"since_ts": "2026-05-20T12:00:00Z",
+		"until_ts": "2026-05-20T11:00:00Z",
+	})
+	if err == nil {
+		t.Fatal("expected error for since_ts > until_ts, got nil")
+	}
+}
+
+// TestMCPLimitClampedToRingCap pins that an out-of-range limit is
+// clamped to the ring's capacity instead of allocating a huge slice.
+func TestMCPLimitClampedToRingCap(t *testing.T) {
+	app := newMCPApp(t)
+	// Ring cap is 64 in newMCPApp.
+	for i := 0; i < 10; i++ {
+		app.Logger().Info("e", "i", i)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "log_recent", map[string]any{
+		"limit": 1_000_000,
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	entries := result.(map[string]any)["entries"].([]map[string]any)
+	// We don't care how many entries came back (depends on ring + lifecycle
+	// events) — only that the call didn't blow up and the count is
+	// bounded by the ring cap.
+	if len(entries) > 64 {
+		t.Fatalf("entries=%d exceeds ring cap 64 — clamp failed", len(entries))
 	}
 }
 

@@ -131,6 +131,76 @@ func TestMCPAppReadinessReportsChecks(t *testing.T) {
 	}
 }
 
+// TestMCPAppReadinessAllOKReportsReady catches the regression where the
+// aggregate "ready" bool was derived from a Status field the underlying
+// helper never sets, so all-passing checks still reported ready=false.
+func TestMCPAppReadinessAllOKReportsReady(t *testing.T) {
+	app := NewApp(WithMCPIntrospection())
+	app.RegisterReadiness("good", func(_ context.Context) error { return nil })
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "app_readiness", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["ready"] != true {
+		t.Errorf("ready = %v, want true (all checks pass)", m["ready"])
+	}
+}
+
+// TestMCPAppReadinessNoChecksNotReady pins that an app with no
+// readiness checks registered reports ready=false + a reason — rather
+// than silently reporting ready=true, which would hide a wiring miss.
+func TestMCPAppReadinessNoChecksNotReady(t *testing.T) {
+	app := NewApp(WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "app_readiness", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["ready"] != false {
+		t.Errorf("ready = %v, want false (no checks registered)", m["ready"])
+	}
+	if _, ok := m["reason"]; !ok {
+		t.Error("expected `reason` field explaining the not-ready state")
+	}
+}
+
+// TestMCPAppReadinessRedactsEvenWhenVerbose pins that app_readiness
+// does NOT honour the App's verbose-readiness flag — /mcp may have a
+// different trust boundary than /readyz, so raw error text must never
+// leak through introspection.
+func TestMCPAppReadinessRedactsEvenWhenVerbose(t *testing.T) {
+	app := NewApp(
+		WithMCPIntrospection(),
+		WithVerboseReadiness(),
+	)
+	app.RegisterReadiness("bad", func(_ context.Context) error {
+		return errSentinel
+	})
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "app_readiness", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	m := result.(map[string]any)
+	checks := m["checks"].([]map[string]any)
+	if len(checks) != 1 {
+		t.Fatalf("got %d checks, want 1", len(checks))
+	}
+	got, _ := checks[0]["error"].(string)
+	if got == errSentinel.Error() {
+		t.Errorf("error leaked raw text %q under verbose flag — /mcp must redact", got)
+	}
+}
+
 type sentinelErr struct{}
 
 func (sentinelErr) Error() string { return "intentional failure" }

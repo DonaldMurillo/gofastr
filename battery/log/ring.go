@@ -57,6 +57,10 @@ func (r *RingSink) Write(entry []byte) error {
 	return nil
 }
 
+// Cap returns the ring's fixed capacity. Set once at construction;
+// safe to read without locking.
+func (r *RingSink) Cap() int { return r.cap }
+
 // Close marks the sink closed. Subsequent Write calls return
 // ErrSinkClosed. Idempotent.
 func (r *RingSink) Close() error {

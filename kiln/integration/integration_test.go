@@ -336,7 +336,7 @@ func TestTransportParityNativeMCPAndACP(t *testing.T) {
 			}
 			body := map[string]any{
 				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-				"params": map[string]any{"name": "add_entity", "params": entityArgs},
+				"params": map[string]any{"name": "add_entity", "arguments": entityArgs},
 			}
 			buf, _ := json.Marshal(body)
 			req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(buf))

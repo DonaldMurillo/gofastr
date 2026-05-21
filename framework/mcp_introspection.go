@@ -133,9 +133,29 @@ func (a *App) toolConfig(_ context.Context, _ map[string]any) (any, error) {
 
 func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) {
 	checks := a.readinessChecks()
-	resp := runReadinessChecks(ctx, checks, a.readinessVerbose())
+	// Force verbose=false regardless of App.readinessVerbose — /readyz
+	// and /mcp may have very different trust boundaries (e.g. /readyz on
+	// a private listener vs /mcp behind authenticated tunneling), and
+	// the introspection tool must not leak raw error text (DSNs, IPs,
+	// stack fragments) just because the operator enabled verbose for
+	// the load balancer's probe.
+	resp := runReadinessChecks(ctx, checks, false)
 	out := make([]map[string]any, 0, len(resp.Checks))
+	// An app with no checks registered is not "ready" — it's
+	// unconfirmed. Surface that explicitly rather than silently
+	// reporting ready=true (which would hide a wiring mistake).
+	if len(checks) == 0 {
+		return map[string]any{
+			"ready":  false,
+			"reason": "no readiness checks registered",
+			"checks": out,
+		}, nil
+	}
+	ready := true
 	for _, c := range resp.Checks {
+		if c.Status != "ok" {
+			ready = false
+		}
 		entry := map[string]any{
 			"name":        c.Name,
 			"status":      c.Status,
@@ -147,7 +167,7 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 		out = append(out, entry)
 	}
 	return map[string]any{
-		"ready":  resp.Status == "ready",
+		"ready":  ready,
 		"checks": out,
 	}, nil
 }
