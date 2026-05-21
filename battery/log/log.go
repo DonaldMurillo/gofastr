@@ -50,6 +50,17 @@ type Config struct {
 	// Even when off the raw value is still emitted as `forwarded_for`
 	// so operators can correlate without trusting it.
 	TrustForwardedFor bool
+
+	// EnableMCP installs a RingSink + MCP tools (log_recent, log_filter,
+	// log_metrics, log_set_level) so a connected agent can debug the
+	// running app via the plugin's logger surface. Off by default.
+	// Production apps that expose MCP to untrusted callers should weigh
+	// the disclosure surface before enabling.
+	EnableMCP bool
+
+	// MCPRingSize is the ring buffer capacity used when EnableMCP is
+	// true. Zero defaults to 1000 entries.
+	MCPRingSize int
 }
 
 // Plugin is the log plugin. Implements framework.Plugin.
@@ -57,6 +68,20 @@ type Plugin struct {
 	cfg     Config
 	logger  *slog.Logger
 	handler *fanoutHandler
+
+	// ring is the in-memory query backing store when EnableMCP is set.
+	// nil otherwise. Held on the plugin so MCP tool handlers (closures
+	// over *Plugin) can read it.
+	ring *RingSink
+
+	// level holds the current minimum level — a pointer to a slog.LevelVar
+	// so log_set_level can mutate it without re-wiring the handler.
+	level *slog.LevelVar
+
+	// resolvedFilePath is the path of the DefaultFileSink when one was
+	// auto-installed. Populated during Init so the log_filter tool can
+	// tail the file for historical entries beyond the ring window.
+	resolvedFilePath string
 }
 
 // New constructs an unregistered plugin. Call App.RegisterPlugin to wire.
@@ -124,15 +149,34 @@ func (p *Plugin) Init(app *framework.App) error {
 	// Resolve sinks.
 	sinks := cfg.Sinks
 	if len(sinks) == 0 {
-		s, err := DefaultFileSink(app.Config.Name, FileOpts{})
+		dir, err := stateDir(app.Config.Name)
+		if err != nil {
+			return fmt.Errorf("log: default sink: %w", err)
+		}
+		path := filepath.Join(dir, "server.log")
+		s, err := FileSink(path, FileOpts{})
 		if err != nil {
 			return fmt.Errorf("log: default sink: %w", err)
 		}
 		sinks = []Sink{s}
+		p.resolvedFilePath = path
 	}
 
+	// If MCP is enabled, install an in-memory ring sink for fast queries.
+	// Inserted at the FRONT of the sink list so the query path doesn't
+	// depend on the file/webhook sinks succeeding.
+	if cfg.EnableMCP {
+		p.ring = NewRingSink(cfg.MCPRingSize)
+		sinks = append([]Sink{p.ring}, sinks...)
+	}
+
+	// LevelVar lets log_set_level mutate the threshold dynamically
+	// without re-wiring the handler.
+	p.level = new(slog.LevelVar)
+	p.level.Set(cfg.Level)
+
 	p.handler = newFanoutHandler(sinks, &slog.HandlerOptions{
-		Level:     cfg.Level,
+		Level:     p.level,
 		AddSource: cfg.AddSource,
 	})
 	p.logger = slog.New(p.handler)
@@ -179,6 +223,12 @@ func (p *Plugin) Init(app *framework.App) error {
 		app.OnStopFirst(func() error {
 			return p.handler.close()
 		})
+	}
+
+	if cfg.EnableMCP {
+		if err := p.registerMCPTools(app); err != nil {
+			return fmt.Errorf("log: register MCP tools: %w", err)
+		}
 	}
 
 	return nil

@@ -28,12 +28,21 @@ type Router struct {
 
 	mu          sync.RWMutex
 	middlewares []Middleware
+	patterns    []RegisteredRoute // populated by Handle for introspection
 
 	// root is the topmost ancestor; chainVersion lives there. Any Use
 	// anywhere in the tree bumps root.chainVersion atomically, which
 	// invalidates every per-route cached handler in the tree.
 	root         *Router
 	chainVersion atomic.Uint64
+}
+
+// RegisteredRoute is the (method, pattern) pair returned by
+// Router.Routes(). Used by framework introspection tooling so an
+// agent / debug endpoint can enumerate what's mounted.
+type RegisteredRoute struct {
+	Method  string
+	Pattern string
 }
 
 // New creates a new Router.
@@ -56,9 +65,15 @@ func New() *Router {
 // bumps the root chain-version and forces the next request on each route
 // to recompose.
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
-	fullPattern := method + " " + r.prefix + pattern
+	fullPath := r.prefix + pattern
+	fullPattern := method + " " + fullPath
 	route := &cachedRoute{raw: handler, router: r}
 	r.mux.Handle(fullPattern, route)
+	// Record on the ROOT so a single Routes() call returns everything
+	// registered under the tree, including via Groups.
+	r.root.mu.Lock()
+	r.root.patterns = append(r.root.patterns, RegisteredRoute{Method: method, Pattern: fullPath})
+	r.root.mu.Unlock()
 }
 
 // Get registers a handler for GET requests on the given pattern.
@@ -117,6 +132,20 @@ func Params(r *http.Request) map[string]string {
 		}
 	}
 	return params
+}
+
+// Routes returns the set of (method, pattern) pairs registered via
+// Handle on this router and its child Groups. Order matches
+// registration. Safe to call concurrently with Handle / Use.
+//
+// Used by framework introspection tooling to enumerate the mounted
+// surface; not consulted on the request hot path.
+func (r *Router) Routes() []RegisteredRoute {
+	r.root.mu.RLock()
+	defer r.root.mu.RUnlock()
+	out := make([]RegisteredRoute, len(r.root.patterns))
+	copy(out, r.root.patterns)
+	return out
 }
 
 // Use adds middleware to the router. Middleware is applied in the order

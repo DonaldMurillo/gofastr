@@ -59,6 +59,35 @@ logger := p.(*log.Plugin).Logger()
 logger.Info("worker.tick", "queue", "ingest")
 ```
 
+## Real-time debugging via MCP
+
+When `Config.EnableMCP` is set, the plugin installs an in-memory
+RingSink (capacity `MCPRingSize`, default 1000) and registers four
+tools on the App's MCP server. Connected agents (Claude Code, Cursor,
+etc.) can call these to inspect the running app live:
+
+| Tool            | Use                                                                                                  |
+|-----------------|------------------------------------------------------------------------------------------------------|
+| `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
+| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
+| `log_metrics`   | Current counter snapshot — same data as `Plugin.Metrics()`.                                          |
+| `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterwards).     |
+
+Opt-in because the surface reveals a lot about the running app —
+weigh the disclosure before enabling on a production MCP server
+exposed to untrusted callers.
+
+```go
+app.RegisterPlugin(log.New(log.Config{
+    EnableMCP:   true,
+    MCPRingSize: 5000,
+}))
+```
+
+Pair with `framework.WithMCPIntrospection()` for parallel introspection
+of the app's routes / plugins / batteries / config / readiness — see
+`framework/mcp_introspection.go`.
+
 ## Metrics
 
 The plugin exposes four counters covering the silent-loss scenarios
