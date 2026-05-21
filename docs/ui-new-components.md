@@ -17,7 +17,7 @@ because each release lands the demo + the code together.
 | Pattern packages (Combobox, Tree, …) | `go doc github.com/DonaldMurillo/gofastr/core-ui/patterns/<pkg>` |
 | Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
 | Runtime data-fui-\* attributes       | [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md)          |
-| What's coming / deferred             | [`docs/proposals/ui-component-roadmap.md`](proposals/ui-component-roadmap.md) |
+| What's coming / deferred             | [`ROADMAP.md` §5](../ROADMAP.md)                                  |
 
 The website's components index page lists every component with a
 one-line description ([`examples/website/screen_components.go`](../examples/website/screen_components.go)
@@ -188,4 +188,4 @@ helpful pre-flight read for human reviewers.
 - [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time setup for the UI layer.
 - [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — runtime contract + `data-fui-*` attribute reference.
 - [`framework/ARCHITECTURE.md`](../framework/ARCHITECTURE.md) — package layout + extraction rules.
-- [`docs/proposals/ui-component-roadmap.md`](proposals/ui-component-roadmap.md) — shipped + deferred components.
+- [`ROADMAP.md` §5](../ROADMAP.md) — deferred UI components.

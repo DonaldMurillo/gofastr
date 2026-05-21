@@ -357,5 +357,5 @@ geometric mean + p-value so noise doesn't show up as a regression.
 
 The prioritized list of optimizations these benchmarks surfaced —
 together with the specific bench that exposed each one and a verify
-step — lives in [`performance-opportunities.md`](performance-opportunities.md).
+step — lives in [`ROADMAP.md` §7](../ROADMAP.md).
 Update it whenever a new hotspot appears or a fix lands.

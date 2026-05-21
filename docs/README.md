@@ -10,10 +10,8 @@ ending with a "common mistakes" callout.
   living risk + gap survey. Updated only on fresh review passes.
 - [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — UI/runtime
   contract. **Mandatory reading** before any UI or runtime change.
-- [Pattern-CSS unification proposal](proposals/pattern-css-unification.md)
-  — every `core-ui/patterns/*` package registers via
-  `registry.RegisterStyle` (no more `BaseCSS()` concatenation),
-  enforced by build-time lint.
+- [`ROADMAP.md`](../ROADMAP.md) — forward-looking work (proposals,
+  performance opportunities, in-flight plans).
 - [Agent notes](agent-notes.md) — append-only review log.
 
 ## Entity surface
@@ -89,11 +87,6 @@ ending with a "common mistakes" callout.
 - [Benchmarks](benchmarks.md) — tiered Go benchmarks covering claims-
   defending end-to-end paths, hot-path microbenchmarks, concurrency,
   and startup. `make bench`, output to `dist/bench/`.
-- [Performance opportunities](performance-opportunities.md) —
-  prioritized improvement list derived from the benchmark results.
-  Each item names the benchmark that surfaced it for verification.
-- [Framework gaps](proposals/framework-gaps.md) — what the framework
-  already covers vs. what's still missing, tiered by leverage.
 
 ## Maintaining these docs
 

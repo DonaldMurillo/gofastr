@@ -82,9 +82,10 @@
 ## 2026-05-08 - proposal-gap-scan
 
 - Scope: `proposal`, `plan/tasks`, `cmd`, `framework`
-- Symptom: `plan/tasks.md` and task checkboxes are stale and still mark broad areas as not started, even though core primitives, batteries, CRUD, OpenAPI, hooks, events, plugins, and tests exist in code.
-- Evidence: compare `proposal.md` and `plan/tasks/*.md` with implemented packages under `core/`, `battery/`, `framework/`, and `cmd/gofastr/`; remaining large gaps are codegen-to-`.gofastr`, JSON entity loading, entity MCP auto-tools, DSL query parser, custom endpoint config, and production-grade CLI subcommands.
+- Symptom: planning tracker and task checkboxes were stale and still marked broad areas as not started, even though core primitives, batteries, CRUD, OpenAPI, hooks, events, plugins, and tests exist in code.
+- Evidence: compared planning files with implemented packages under `core/`, `battery/`, `framework/`, and `cmd/gofastr/`; remaining gaps at the time were codegen-to-`.gofastr`, JSON entity loading, entity MCP auto-tools, DSL query parser, custom endpoint config, and production-grade CLI subcommands.
 - Next time: assess roadmap status from source and tests first, then update the tracker separately instead of trusting unchecked boxes.
+- 2026-05-21 follow-up: the entire planning tree (`plan/`, `draft.md`, `proposal.md`, `research-ui-approaches.md`) was removed. Per-feature truth lives in `docs/*.md` and the two `ARCHITECTURE.md` files; forward-looking work lives in `ROADMAP.md`. Git history is the only reference for the old planning shape.
 
 ## 2026-05-08 - declaration-codegen-mcp
 
