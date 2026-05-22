@@ -546,32 +546,7 @@ func parsePagination(r *http.Request) (page, perPage int) {
 }
 
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.
-// scanRowsPooled is a pool-backed version of scanRows. It borrows maps from
-// the pool to reduce allocations. The caller MUST call returnRowSlice on the
-// returned slice pointer after encoding to JSON.
-func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) (*[]map[string]any, error) {
-	results := borrowRowSlice()
-	for rows.Next() {
-		ptrs := borrowPtrSlice(len(cols))
-		values := make([]any, len(cols))
-		for i := range values {
-			(*ptrs)[i] = &values[i]
-		}
-		if err := rows.Scan(*ptrs...); err != nil {
-			returnPtrSlice(ptrs)
-			returnRowSlice(results)
-			return nil, err
-		}
-		row := borrowRowMap()
-		for i, col := range cols {
-			(*row)[keyFunc(col)] = convertValue(values[i])
-		}
-		*results = append(*results, *row)
-		returnPtrSlice(ptrs)
-	}
-	return results, nil
-}
-
+// scanRowsPooled is the pool-backed version in pool.go.
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
 	var results []map[string]any
 	for rows.Next() {

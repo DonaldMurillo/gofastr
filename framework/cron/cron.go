@@ -92,23 +92,26 @@ func (s *Scheduler) Stop() {
 // (Register during tick) are safe because the mutex is held only for the
 // read — new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
+	// Grab a snapshot of the slice header under read-lock so Register
+	// calls from inside job.Run don't deadlock. The slice data is
+	// immutable for the duration of this function because append in
+	// Register always allocates a new backing array.
 	s.mu.Lock()
-	for i := range s.jobs {
-		sj := &s.jobs[i]
+	jobs := s.jobs
+	s.mu.Unlock()
+
+	for i := range jobs {
+		sj := &jobs[i]
 		if !sj.expr.matches(now) {
 			continue
 		}
-		job := sj.job // capture for goroutine
-		// Unlock before running user code — job.Run may take arbitrarily long.
-		s.mu.Unlock()
+		job := sj.job
 		go func(j CronJob) {
 			if err := j.Run(ctx); err != nil && s.OnError != nil {
 				s.OnError(j.Name, err)
 			}
 		}(job)
-		s.mu.Lock()
 	}
-	s.mu.Unlock()
 }
 
 func (s *Scheduler) run(ctx context.Context) {

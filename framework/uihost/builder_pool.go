@@ -16,15 +16,23 @@ var builderPool = sync.Pool{
 
 // borrowBuilder gets a strings.Builder from the pool, reset to zero length.
 func borrowBuilder() *strings.Builder {
+	return GetBuilder()
+}
+
+// returnBuilder returns a builder to the pool.
+func returnBuilder(b *strings.Builder) {
+	PutBuilder(b)
+}
+
+// GetBuilder gets a strings.Builder from the pool, reset to zero length.
+func GetBuilder() *strings.Builder {
 	b := builderPool.Get().(*strings.Builder)
 	b.Reset()
 	return b
 }
 
-// returnBuilder returns a builder to the pool.
-func returnBuilder(b *strings.Builder) {
-	// Prevent retaining huge buffers — if the builder grew beyond 64KB,
-	// let it GC and return a fresh one next time.
+// PutBuilder returns a builder to the pool.
+func PutBuilder(b *strings.Builder) {
 	if b.Cap() > 64*1024 {
 		return
 	}

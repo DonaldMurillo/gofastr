@@ -609,7 +609,8 @@ func (ds *UIHost) GetActionJS() string {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 
-	var sb strings.Builder
+	sb := borrowBuilder()
+	defer returnBuilder(sb)
 	for _, js := range ds.actionJS {
 		sb.WriteString(js)
 		sb.WriteString("\n")
@@ -1491,7 +1492,8 @@ func actionsToJS(componentID string, reg *component.ActionRegistry) string {
 		return ""
 	}
 
-	var sb strings.Builder
+	sb := borrowBuilder()
+	defer returnBuilder(sb)
 	sb.WriteString(fmt.Sprintf("// Component: %s\n", componentID))
 	sb.WriteString("(() => {\n")
 	sb.WriteString(fmt.Sprintf("  const id = %q;\n", componentID))
