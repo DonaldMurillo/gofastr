@@ -726,7 +726,8 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 // preserving the SSR contract for surfaces that are visible on
 // arrival (deep-linked modals, persistent panels, sidebars).
 func injectWidgetSSR(page string, u *url.URL) string {
-	var b strings.Builder
+	b := borrowBuilder()
+	defer returnBuilder(b)
 	q := u.Query()
 	// Per-page filter — widgets scoped via .Pages / .PagesPrefix /
 	// .PagesMatch only appear on paths they declared. Empty Routes
@@ -1561,7 +1562,8 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	if len(names) == 1 || !bundle {
 		// Static-export path also takes this branch — emit one <link>
 		// per component to avoid the query-paramed bundle URL.
-		var b strings.Builder
+		b := borrowBuilder()
+		defer returnBuilder(b)
 		for i, n := range names {
 			e, ok := registry.Lookup(n)
 			if !ok {
@@ -1570,7 +1572,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 			if i > 0 {
 				b.WriteByte('\n')
 			}
-			fmt.Fprintf(&b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`,
+			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`,
 				n, e.VersionFor(theme))
 		}
 		return b.String()

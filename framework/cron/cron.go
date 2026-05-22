@@ -87,22 +87,28 @@ func (s *Scheduler) Stop() {
 // RunOnce fires every job whose schedule matches the given minute. Exported
 // for tests that drive the tick manually instead of waiting on the wall clock;
 // production code lets the loop call this.
+//
+// Iterates under the lock without copying the slice. Jobs that mutate state
+// (Register during tick) are safe because the mutex is held only for the
+// read — new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 	s.mu.Lock()
-	jobs := make([]scheduledJob, len(s.jobs))
-	copy(jobs, s.jobs)
-	s.mu.Unlock()
-
-	for _, sj := range jobs {
+	for i := range s.jobs {
+		sj := &s.jobs[i]
 		if !sj.expr.matches(now) {
 			continue
 		}
+		job := sj.job // capture for goroutine
+		// Unlock before running user code — job.Run may take arbitrarily long.
+		s.mu.Unlock()
 		go func(j CronJob) {
 			if err := j.Run(ctx); err != nil && s.OnError != nil {
 				s.OnError(j.Name, err)
 			}
-		}(sj.job)
+		}(job)
+		s.mu.Lock()
 	}
+	s.mu.Unlock()
 }
 
 func (s *Scheduler) run(ctx context.Context) {

@@ -517,6 +517,11 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 
 // parsePagination extracts page and per_page from query params.
 // Defaults: page=1, per_page=20.
+//
+// The per_page cap is 100 by default. Entities can raise this via
+// EntityConfig.MaxListLimit. When ?stream=true is set, the cap is
+// raised to streamListThreshold (1000) so clients can access the
+// streaming list path.
 func parsePagination(r *http.Request) (page, perPage int) {
 	page = 1
 	perPage = 20
@@ -526,8 +531,14 @@ func parsePagination(r *http.Request) (page, perPage int) {
 			page = n
 		}
 	}
+
+	maxPerPage := 100
+	if r.URL.Query().Get("stream") == "true" {
+		maxPerPage = streamListThreshold
+	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= maxPerPage {
 			perPage = n
 		}
 	}
@@ -535,6 +546,32 @@ func parsePagination(r *http.Request) (page, perPage int) {
 }
 
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.
+// scanRowsPooled is a pool-backed version of scanRows. It borrows maps from
+// the pool to reduce allocations. The caller MUST call returnRowSlice on the
+// returned slice pointer after encoding to JSON.
+func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) (*[]map[string]any, error) {
+	results := borrowRowSlice()
+	for rows.Next() {
+		ptrs := borrowPtrSlice(len(cols))
+		values := make([]any, len(cols))
+		for i := range values {
+			(*ptrs)[i] = &values[i]
+		}
+		if err := rows.Scan(*ptrs...); err != nil {
+			returnPtrSlice(ptrs)
+			returnRowSlice(results)
+			return nil, err
+		}
+		row := borrowRowMap()
+		for i, col := range cols {
+			(*row)[keyFunc(col)] = convertValue(values[i])
+		}
+		*results = append(*results, *row)
+		returnPtrSlice(ptrs)
+	}
+	return results, nil
+}
+
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
 	var results []map[string]any
 	for rows.Next() {

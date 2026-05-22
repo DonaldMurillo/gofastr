@@ -1,0 +1,189 @@
+package app
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+// ScreenGroup defines a shared layout that wraps every child screen.
+// Screen groups nest: navigating between siblings inside the same group
+// swaps only the inner content region, not the layout shell.
+//
+// Usage:
+//
+//	sidebar := app.NewStaticComponent(sidebarHTML)
+//	group := app.NewScreenGroup("/settings", app.NewLayout("settings").WithSidebar(sidebar))
+//	group.Screen(screen1, nil)
+//	group.Screen(screen2, nil)
+//	appRouter.ScreenGroup(group)
+type ScreenGroup struct {
+	prefix    string
+	layout    *Layout
+	screens   []*Screen
+	children  []*ScreenGroup // nested sub-groups
+	parent    *ScreenGroup
+	parentApp *Router
+}
+
+// StaticComponent wraps raw HTML as a component.Component. Useful for
+// layout regions that don't change per-request (sidebars, headers).
+type StaticComponent struct {
+	HTML render.HTML
+}
+
+// Render returns the pre-rendered HTML.
+func (s *StaticComponent) Render() render.HTML { return s.HTML }
+
+// NewStaticComponent creates a component from raw HTML.
+func NewStaticComponent(h render.HTML) *StaticComponent {
+	return &StaticComponent{HTML: h}
+}
+
+// NewScreenGroup creates a screen group with the given prefix and layout.
+// The prefix is the URL path prefix shared by all screens in the group.
+// The layout wraps every child screen's content.
+func NewScreenGroup(prefix string, layout *Layout) *ScreenGroup {
+	return &ScreenGroup{
+		prefix: normalizeGroupPrefix(prefix),
+		layout: layout,
+	}
+}
+
+// normalizeGroupPrefix ensures the prefix starts with / and ends with /
+// (because it's a directory-like prefix for child screens).
+func normalizeGroupPrefix(p string) string {
+	if p == "" || p == "/" {
+		return "/"
+	}
+	if !startsWithSlash(p) {
+		p = "/" + p
+	}
+	if p[len(p)-1] != '/' {
+		p = p + "/"
+	}
+	return p
+}
+
+func startsWithSlash(s string) bool {
+	return len(s) > 0 && s[0] == '/'
+}
+
+// Prefix returns the URL prefix for this group.
+func (g *ScreenGroup) Prefix() string {
+	return g.prefix
+}
+
+// Layout returns the layout for this group.
+func (g *ScreenGroup) Layout() *Layout {
+	return g.layout
+}
+
+// Screen registers a screen within this group. The screen's path is
+// resolved relative to the group's prefix. If the screen has no layout,
+// the group's layout is applied.
+//
+// The screen path can be:
+//   - Absolute ("/users") — used as-is, but must start with the group prefix
+//   - Relative ("users") — prefixed with the group's prefix
+func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
+	// Resolve path relative to group prefix
+	screen.Path = g.resolvePath(screen.Path)
+
+	// Apply layout: explicit > screen's own > group's layout
+	if layout != nil {
+		screen.Layout = layout
+	} else if screen.Layout == nil {
+		screen.Layout = g.layout
+	}
+
+	g.screens = append(g.screens, screen)
+}
+
+// SubGroup creates a nested screen group. The child group's prefix is
+// resolved relative to this group's prefix. The child inherits this
+// group's layout unless it declares its own.
+func (g *ScreenGroup) SubGroup(prefix string, layout *Layout) *ScreenGroup {
+	// Always resolve relative to parent — strip leading slash
+	for len(prefix) > 0 && prefix[0] == '/' {
+		prefix = prefix[1:]
+	}
+	// Parent prefix already ends with /, so just concatenate
+	childPrefix := g.prefix + prefix + "/"
+	child := &ScreenGroup{
+		prefix: childPrefix,
+		layout: layout,
+		parent: g,
+	}
+	if child.layout == nil {
+		child.layout = g.layout
+	}
+	g.children = append(g.children, child)
+	return child
+}
+
+// resolvePath resolves a path relative to the group's prefix.
+func (g *ScreenGroup) resolvePath(path string) string {
+	if startsWithSlash(path) {
+		// Absolute path — validate it starts with group prefix
+		return path
+	}
+	// Relative path — prepend group prefix
+	return g.prefix + path
+}
+
+// Screens returns all screens registered directly in this group
+// (not including sub-groups).
+func (g *ScreenGroup) Screens() []*Screen {
+	return g.screens
+}
+
+// AllScreens returns all screens in this group and its descendants.
+func (g *ScreenGroup) AllScreens() []*Screen {
+	var all []*Screen
+	all = append(all, g.screens...)
+	for _, child := range g.children {
+		all = append(all, child.AllScreens()...)
+	}
+	return all
+}
+
+// RenderLayout wraps content in the group's layout. If the group has
+// no layout, returns content unchanged.
+//
+// The rendered wrapper carries a data-fui-screen-group attribute so
+// the runtime knows this is a layout boundary that should be preserved
+// during sibling-screen navigation.
+func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
+	if g.layout == nil {
+		return content
+	}
+	wrapped := g.layout.Wrap(content)
+	// Wrap in a group marker div so the runtime can identify the boundary.
+	// The data-fui-screen-group attribute enables DOM-stable sibling nav.
+	return html.Div(html.DivConfig{
+		Class: "fui-screen-group",
+		Attrs: map[string]string{"data-fui-screen-group": g.prefix},
+	}, wrapped)
+}
+
+// ComposeLayouts walks from the innermost group to the outermost,
+// wrapping content in each group's layout. Outer groups wrap inner
+// groups. The innermost content (the screen) is wrapped first by its
+// immediate group, then by each parent group going outward.
+func ComposeLayouts(innermost *ScreenGroup, content render.HTML) render.HTML {
+	// Collect the chain from innermost to outermost
+	var chain []*ScreenGroup
+	for g := innermost; g != nil; g = g.parent {
+		chain = append(chain, g)
+	}
+	// Apply layouts from innermost to outermost
+	out := content
+	for _, g := range chain {
+		out = g.RenderLayout(out)
+	}
+	return out
+}
+
+// Ensure StaticComponent satisfies component.Component.
+var _ component.Component = (*StaticComponent)(nil)

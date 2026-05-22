@@ -150,3 +150,34 @@ auto-migrate for that table.
   without transactional DDL (SQLite, some MySQL paths), the tracking
   row is not written but the partial schema remains. Use
   `CREATE TABLE IF NOT EXISTS` and similar guards.
+
+## Concurrency model
+
+GoFastr supports both SQLite and Postgres. Their concurrency characteristics differ significantly:
+
+### SQLite
+
+SQLite serialises writes — only one writer at a time. Under high concurrency (64+ goroutines), `CREATE` p99 can climb to 112 ms with only 10 writes completing out of 5000+ ops in mixed read/write workloads.
+
+**Production guidance:**
+- Set `MaxOpenConns(1)` on the `*sql.DB` for SQLite workloads (the framework does this automatically in test helpers).
+- For write-heavy concurrent workloads, use Postgres instead.
+- SQLite is fine for development, single-user tools, and read-heavy caches.
+
+### Postgres
+
+Postgres handles concurrent writes with MVCC. The same benchmarks show flat p99 latency at parallelism=64. Use Postgres for any deployment with concurrent write traffic.
+
+## Pure-Go SQLite alternative
+
+The default SQLite driver uses cgo, which adds ~4 MB to the binary and ~440 MB to build RAM. For environments where cgo is undesirable (CI, cross-compilation, minimal containers), use the pure-Go driver:
+
+```go
+import _ "modernc.org/sqlite"
+```
+
+Trade-offs:
+- Binary is ~4 MB smaller, build uses ~440 MB less RAM.
+- No cgo toolchain dependency — works in `GOOS=js` and scratch containers.
+- Query performance is a few percent slower than cgo SQLite.
+- Fully compatible with the GoFastr migration and query layers — no code changes required.

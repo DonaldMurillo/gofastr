@@ -979,7 +979,14 @@
         // before pushState fires (the click handler does pushState).
         document.title = cached.title;
         announceRoute(cached.title);
-        swapMainContent(cached.html);
+        // Screen group optimization: if both paths share a screen group,
+        // only swap the inner content, preserving the layout shell.
+        const groupEl = findCommonScreenGroup(prevPath || currentPath, path);
+        if (groupEl) {
+          swapScreenGroupContent(groupEl, cached.html);
+        } else {
+          swapMainContent(cached.html);
+        }
         updateActiveLink(path);
         window.scrollTo(0, 0);
         window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
@@ -1007,7 +1014,13 @@
       }
       document.title = title;
       announceRoute(title);
-      swapMainContent(body);
+      // Screen group optimization: preserve layout shell for sibling nav.
+      const groupEl = findCommonScreenGroup(prevPath || currentPath, path);
+      if (groupEl) {
+        swapScreenGroupContent(groupEl, body);
+      } else {
+        swapMainContent(body);
+      }
       cacheScreen(path, body, title);
 
       updateActiveLink(path);
@@ -1067,6 +1080,32 @@
     // Relies on the tabindex="-1" set by html.Main().
     if (main && typeof main.focus === 'function') {
       try { main.focus({ preventScroll: true }); } catch (_) { /* older Safari */ }
+    }
+  };
+
+  // --- Screen group awareness ---
+  // When navigating between siblings inside the same data-fui-screen-group,
+  // only swap the group's inner <main> content, preserving the layout shell.
+  const findCommonScreenGroup = (fromPath, toPath) => {
+    const groups = document.querySelectorAll('[data-fui-screen-group]');
+    for (const g of groups) {
+      const prefix = g.getAttribute('data-fui-screen-group');
+      if (prefix && fromPath.startsWith(prefix) && toPath.startsWith(prefix)) {
+        return g;
+      }
+    }
+    return null;
+  };
+
+  const swapScreenGroupContent = (groupEl, html) => {
+    const main = groupEl.querySelector('[role="main"]') ?? groupEl.querySelector('main');
+    if (main) {
+      main.innerHTML = html;
+      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
+    }
+    // Close disclosures inside the group
+    for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]')) {
+      d.removeAttribute('open');
     }
   };
 

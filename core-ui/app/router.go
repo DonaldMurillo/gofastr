@@ -137,3 +137,15 @@ func (r *Router) Paths() []string {
 func (r *Router) Screens() map[string]*Screen {
 	return r.screens
 }
+
+// ScreenGroup registers all screens from a ScreenGroup into the router.
+// Each screen in the group (and its sub-groups) is registered with the
+// router, and the group's layout is applied.
+//
+// When the runtime navigates between siblings in the same group, only
+// the inner content is swapped — the layout shell is DOM-stable.
+func (r *Router) ScreenGroup(sg *ScreenGroup) {
+	for _, screen := range sg.AllScreens() {
+		r.Screen(screen, screen.Layout)
+	}
+}

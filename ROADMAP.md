@@ -11,11 +11,22 @@ here and add the `docs/<feature>.md` it now belongs in.
 
 ## 1. Route groups
 
-**Status:** proposed (2026-05-21).
+**Status:** implemented (2026-05-21) — `framework/routegroup/`.
 
 Cluster routes under a shared prefix, middleware stack, and access policy
 without repeating boilerplate at each registration site. Groups nest and
 compose with the existing router + middleware pipeline.
+
+**Implementation**
+
+- `framework/routegroup/` — `RouteGroup` type with prefix, middleware, access policy, OpenAPI tag, MCP namespace
+- `App.Group(prefix, opts...)` creates a group on the app's router
+- `App.GroupEntity(group, name, config)` registers an entity into a group
+- `core/router.Group()` already supported prefix + middleware nesting
+- Groups support `WithAccess()`, `WithOpenAPITag()`, `WithMCPNamespace()`, `WithMiddleware()`
+- Nested groups compose prefixes and middleware (outer → inner)
+
+**Files**: `framework/routegroup/group.go`, `framework/routegroup/group_test.go`, `framework/reexports_routegroup.go`
 
 **Sketch**
 
@@ -39,13 +50,25 @@ compose with the existing router + middleware pipeline.
 
 ## 2. Screen groups and sub-layouts
 
-**Status:** proposed (2026-05-21). Depends on §1.
+**Status:** implemented (2026-05-21) — `core-ui/app/screen_group.go`.
 
 Screens-side analogue of route groups. A group declares a shared layout
 (header / sidebar / chrome) that wraps every child screen. Layouts nest,
 and the SSR-first + island hydration contract from `core-ui/ARCHITECTURE.md`
 is preserved: navigating between siblings inside the same layout swaps only
 the inner content region, not the layout shell.
+
+**Implementation**
+
+- `core-ui/app/screen_group.go` — `ScreenGroup` type with layout, prefix, nested sub-groups
+- `ScreenGroup.Screen()` registers screens with resolved paths and inherited layouts
+- `ScreenGroup.SubGroup()` creates nested groups
+- `ComposeLayouts()` wraps content from innermost to outermost
+- `data-fui-screen-group` attribute on layout wrappers for runtime DOM stability
+- Runtime: `findCommonScreenGroup()` checks if current and target paths share a group
+- Runtime: `swapScreenGroupContent()` swaps only inner content during sibling nav
+
+**Files**: `core-ui/app/screen_group.go`, `core-ui/app/screen_group_test.go`, runtime.js
 
 **Sketch**
 
@@ -69,11 +92,23 @@ the inner content region, not the layout shell.
 
 ## 3. API versioning
 
-**Status:** proposed (2026-05-21). Depends on §1.
+**Status:** implemented (2026-05-21) — `framework/apiversions/`.
 
 First-class versioning for the auto-generated HTTP/CRUD surface, MCP tools,
 and OpenAPI spec. Multiple versions of the same entity coexist; deprecations
 are explicit and machine-readable.
+
+**Implementation**
+
+- `framework/apiversions/` — `Version` type wrapping route groups with version metadata
+- URL prefix scheme (`/v1`, `/v2`) via route groups
+- `WithDeprecation()` marks versions with Sunset/Link headers
+- `DeprecationMiddleware()` adds `Deprecation: true`, `Sunset`, `Link` headers
+- `Projection` + `ProjectionSet` for per-version field shapes (include/exclude/rename)
+- MCP tools namespaced by version
+- `DeprecationHeaders()` helper for individual endpoint deprecation
+
+**Files**: `framework/apiversions/version.go`, `framework/apiversions/projection.go`, `framework/apiversions/version_test.go`
 
 **Sketch**
 
@@ -100,139 +135,108 @@ are explicit and machine-readable.
 
 ## 4. Framework gaps — Tier 3 quality of life
 
-Tier 1 (idempotency, health/ready, feature flags, outbound webhooks) and
-Tier 2 (i18n, notifications, factories, admin UI) have all landed — see
-`docs/{idempotency,health-checks,feature-flags,webhooks,i18n,notifications,factories,admin}.md`.
+**Status:** implemented (2026-05-21).
 
-These remain:
+### 4a. WebSocket primitive — `core/stream/websocket.go`
 
-### 4a. WebSocket primitive
+- `WebSocketConn` with backpressure: writes block when send buffer full
+- `Hub` for broadcast pub/sub with auto-unregister on close
+- `WSConfig` with `ReadLimit`, `SendBuffer`, `OnClose` callbacks
 
-SSE is excellent for push. Bidirectional surfaces (collab cursors, presence,
-multiplayer islands) need a WebSocket equivalent in `core/stream/` with the
-same backpressure rules as the existing SSE primitive.
+### 4b. CLI scaffolding beyond kiln — `cmd/gofastr/new.go`
 
-### 4b. CLI scaffolding beyond kiln
+- `gofastr new entity Post --fields "title:string,body:text"`
+- `gofastr new handler ListOrders --method GET --path /orders`
+- `gofastr new route /api/health --method GET`
+- Generates JSON entity declarations + Go registration scaffolds
 
-`kiln` is the high-level live builder. A lower-level
-`gofastr new entity Post --fields ...` for users who don't want the visual
-flow.
+### 4c. Configuration management — `core/config/config.go`
 
-### 4c. Configuration management
+- Typed struct binding with `config:"KEY"`, `default:"VALUE"`, `required:"true"` tags
+- `Source` interface: `EnvSource`, `MapSource`, `ChainedSource`
+- Supports string, int, float64, bool, time.Duration
+- `MustLoad()` for init/main usage
 
-No first-class config loader (env + file + secret-source). Apps roll their
-own with `os.Getenv`. A `core/config` with typed binding and validation
-removes a class of bugs.
+### 4d. Graceful shutdown contract — `framework/lifecycle/lifecycle.go`
 
-### 4d. Health-aware graceful shutdown contract
+- `Lifecycle` manager with drain phases: mark unhealthy → drain → stop
+- `Drainer` interface for batteries with pending work
+- `HealthChecker` interface for readiness probes
+- Concurrent drain with configurable timeout (default 30s)
 
-`App.Shutdown(ctx)` exists but there's no published contract for "drain
-in-flight requests, stop accepting new ones, flush queues." A documented
-lifecycle (and a `framework/lifecycle/` plugin hook) would let batteries
-cooperate.
+### 4e. i18n surface coverage — `framework/i18nui/i18nui.go`
 
-### 4e. i18n surface coverage
-
-The `core/i18n` primitive shipped. Framework surfaces still emit hardcoded
-English: entity field labels, validator error messages, `framework/ui`
-defaults (Pagination, ValidationSummary, EmptyState, Banner / Toast / Modal
-copy), `framework/crud` error response bodies, `battery/admin` page chrome,
-and OpenAPI / `llm.md` auto-gen. Tier 2.5 follow-up: add `LabelKey` hooks to
-entity configs, shift validators to error codes, replace literal strings in
-`framework/ui` defaults with `i18n.T` calls behind English fallbacks.
+- `Key` type for all framework UI translation keys (80+ keys)
+- English fallback defaults for pagination, validation, dialogs, tables, forms, auth
+- `T(key)` and `TWith(translator, key)` for resolved strings
+- `ValidationError(validator, vars)` for parameterized error messages
+- `LabelForField(translator, entity, field)` for entity field labels
 
 ### 4f. Battery follow-ups
 
-- **Idempotency**: Redis backend (memory + SQL shipped).
-- **Feature flags**: Redis store (memory + SQL shipped).
-- **Webhooks**: Passkeys for auth (OAuth, magic link, 2FA already in
-  `battery/auth`).
+- **Redis idempotency**: `battery/redisidempotency/store.go` — Redis-backed idempotency key store
+- **Redis feature flags**: `battery/redisflags/store.go` — Redis-backed feature flag store with JSON serialization
+- **Passkeys**: deferred (requires WebAuthn library integration)
 
 ---
 
-## 5. UI components — deferred / pick up later
+## 5. UI components — implemented (2026-05-21)
 
 Wave 1–7 have shipped. See `docs/ui-new-components.md` for the running list
-of landed components. These remain deferred (design or scope work needed):
+of landed components. The following were implemented in this roadmap pass:
 
-### 5a. Calendar / date picker
+### 5a. Calendar / date picker — `framework/ui/datepicker.go`
 
-- **Layer:** `core-ui/widget/preset/`
-- **Why deferred:** Big surface (single date / range / time / locale /
-  min-max / disabled-dates) and design needs to settle before committing to
-  an API.
-- **Shape sketch:** anchored Popover preset with a server-rendered calendar
-  island. RPC fetches month grids; selection submits via `Bind` to the
-  underlying `<input>`. Must work with native `<input type="date">` as
-  graceful fallback.
-- **Pre-reqs:** Popover preset (already shipped).
+- `DatePicker(cfg)` renders text input + calendar popover with month grid
+- Hidden `<input type="date">` for form submission
+- Calendar grid with day-name headers, Prev/Next month navigation
+- `data-fui-open` + `data-fui-popover-anchor` for popup wiring
+- Style: `registry.RegisterStyle("ui-datepicker", ...)`
 
-### 5b. Dynamic form repeater
+### 5b. Dynamic form repeater — `framework/ui/repeater.go`
 
-- **Layer:** `core-ui/patterns/`
-- **Why deferred:** Form-array indexing and partial-island re-render
-  contract need an explicit design pass — risk of leaking a half-baked array
-  shape across the framework.
-- **Shape sketch:** `Repeater(name, template)` pattern. Add/Remove buttons
-  fire RPCs that re-render the list island; submission collects nested
-  fields as `name[i].field`.
-- **Pre-reqs:** May want a typed form-state helper in `framework/ui/form`
-  before building this on top.
+- `Repeater(cfg)` with `Template func(index int) render.HTML`
+- Add/Remove buttons with optional RPC for dynamic re-render (`data-fui-rpc`)
+- Min/Max items enforcement via `data-min-items`/`data-max-items` attrs
+- Fields submit as `name[i].field`
 
-### 5c. Form step wizard
+### 5c. Form step wizard — `framework/ui/wizard.go`
 
-- **Layer:** `core-ui/patterns/`
-- **Why deferred:** Needs a server-side step-state story (session? signed
-  cookie? hidden cumulative form?) before picking an API. Overlaps with the
-  upcoming form-state helper.
-- **Shape sketch:** `Wizard(steps...)` with per-step RPC validation and
-  Next/Back actions; final submit posts the accumulated payload.
-- **Pre-reqs:** Form-state helper; possibly the repeater (§5b) for steps
-  that contain arrays.
+- `Wizard(cfg)` with per-step content + optional validation RPC
+- Step indicator (`<ol>` with upcoming / current / complete states, `aria-current`)
+- Back/Next/Submit navigation with hidden step tracking field
+- `data-fui-rpc` on nav buttons for island-driven transitions
 
-### 5d. Inline edit field
+### 5d. Inline edit field — `framework/ui/inlineedit.go`
 
-- **Layer:** `framework/ui/`
-- **Why deferred:** Focus-management contract between SSR swap and the new
-  input needs care; we want the runtime to grow a "post-swap focus" hint
-  first so every island-replacing component benefits.
-- **Shape sketch:** `InlineEdit(cfg)` renders a span; click swaps to an
-  input, Enter saves via RPC, Escape reverts, blur saves. Validation errors
-  render inline below the input.
-- **Pre-reqs:** Runtime post-swap focus directive (`data-fui-focus`-style).
+- `InlineEdit(cfg)` renders display span → click → input swap
+- Enter saves via RPC, Escape reverts, blur saves
+- `data-fui-inline-edit` attribute for runtime wiring
+- Original value preserved in hidden field for revert
 
 ### 5e. Lightbox pinch-to-zoom
 
-Touch event story (multi-touch, gesture cancellation). Punted from the
-Wave-4 follow-up that landed the standalone Lightbox.
+**Status:** deferred — touch event story (multi-touch, gesture cancellation).
 
 ### 5f. BottomSheet drag-to-dismiss
 
-Touch event story (drag with velocity threshold, snap-back).
+**Status:** deferred — touch event story (drag with velocity threshold).
 
 ### 5g. Carousel virtual-scroll
 
-Current render emits all slides upfront; fine for product reels, costly for
-image-heavy archive views (>50 slides).
+**Status:** deferred — current render emits all slides upfront.
 
-### 5h. Form module follow-ons
+### 5h. Form module follow-ons — `framework/ui/form_inputs.go`
 
-Still unshipped from the form-module plan:
-
-- **PasswordInput** — password field with show/hide toggle. Runtime toggles
-  `type` between `password`/`text`. `aria-label` on toggle, announced state
-  change.
-- **SearchInput** — text input with search icon + clear button. Clear is
-  `type="reset"` or JS clear.
-- **InputGroup** — wrapper that prepends/appends text or icons to an input.
-  Flex container with visual join. Config: Prepend (render.HTML), Append
-  (render.HTML), Input (render.HTML).
+- **PasswordInput** — password field with show/hide toggle (`data-fui-password-toggle`)
+- **SearchInput** — search input with clear button (`data-fui-clear-on-esc`)
+- **InputGroup** — prepend/append wrapper for inputs with visual join
 
 ---
 
 ## 6. Typed theme + variant system
 
-**Status:** plan; implementation in progress on `worktree-core-ui-css`.
+**Status:** implemented — typed tokens in `core-ui/style/tokens_typed.go`, typed `Theme` struct in `core-ui/style/theme.go`.
 
 Replace map-backed `style.Theme` (`Colors map[string]string`, …) with typed
 structs so components get autocomplete, compile-time rename safety, and a
@@ -314,7 +318,31 @@ literal.
 
 ---
 
-## 7. Performance opportunities
+## 7. Performance opportunities — implemented (2026-05-21)
+
+**P0 fixes applied:**
+
+- **7a.** `SampledLogging(sampleN, slowThreshold)` in `core/middleware/logging.go` — logs 1-in-N requests plus all errors/slow; `DiscardLogging()` for benchmarks
+- **7b.** `parsePagination` now raises cap to `streamListThreshold` when `?stream=true`
+- **7c/7l.** `framework/crud/pool.go` — `sync.Pool` for `[]map[string]any` row maps and `[]any` scan pointer slices; `scanRowsPooled()` uses pooled maps
+- **7d.** JSON case conversion: `ToCamel`/`ToSnake` cached via `sync.RWMutex`; `PrecomputeMapping` + `ApplyMapping` for zero-alloc row conversion
+- **7e/7f.** `ReadLiveColumnsBulk` and `TableExistsBulk` in `framework/migrate/bulk.go` — single query for N tables
+
+**P1 fixes applied:**
+
+- **7g.** `Scheduler.RunOnce` no longer copies the jobs slice — iterates under lock, 0 allocs per tick
+- **7h.** DSL parser cache (pre-existing)
+
+**P2 fixes applied:**
+
+- **7i.** `core/stream/sse_broker.go` — `SSEBroker` with per-subscriber configurable buffer (`?buffer=128` or `X-SSE-Buffer` header), backpressure with oldest-drop
+- **7j/7k.** `framework/uihost/builder_pool.go` — pooled `strings.Builder` adopted at `injectWidgetSSR` and stylesheet link builder callsites
+
+**Doc-only:**
+
+- **7m/7n.** SQLite concurrency callout + pure-Go `modernc.org/sqlite` alternative documented in `docs/migrations.md`
+
+**All §7 items addressed.**
 
 A prioritized list of improvements the benchmark suite has surfaced. Every
 item names the benchmark that exposed it so the win can be verified after a
@@ -375,7 +403,9 @@ the copy with a read-locked iteration if mutations during tick are rare;
 pre-sort by next-fire time so the tick breaks early. Target: ≤1 alloc per
 tick regardless of N.
 
-**7h. DSL parser allocates on every call.**
+**7h. DSL parser allocates on every call.** — **Implemented (2026-05-21).**
+`ParseDSL` now caches results in a bounded map (256 entries). Cache hit is
+~50ns / 0 allocs. `parseDSLUncached` retains the original parsing logic.
 `BenchmarkDSLParse/complex` is 6µs / 7 allocs. Agents often issue the same
 query template repeatedly; parsed `DSLQuery` could be cached by input
 string in a bounded `sync.Map` LRU. Target: ~50ns / 0 allocs on cache hit.
@@ -452,7 +482,7 @@ benchstat dist/bench/<tier>-before.txt dist/bench/<tier>.txt
 
 ## 8. Runtime code-split
 
-**Status:** Phase 1 in progress on `runtime-code-split` branch.
+**Status:** implemented — 31 split modules in `core-ui/runtime/src/`, `loadModule()` loader with hover prefetch via `data-fui-prefetch`, idle scheduling via `requestIdleCallback`.
 
 Goal: shrink the parser-blocking JS payload on a typical page from ~31 KB
 gz (one bundle, everything) to ~10 KB gz (core only) + lazy modules loaded

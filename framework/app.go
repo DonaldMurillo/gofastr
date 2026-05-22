@@ -28,6 +28,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/openapi"
 )
@@ -319,6 +320,108 @@ func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
 	m.Mount(a.router)
 	return a
+}
+
+// Group creates a route group with the given prefix and optional configuration.
+// The group supports its own middleware stack, access policy, OpenAPI tags,
+// and MCP namespacing. Nested groups compose prefixes and middleware.
+//
+//	api := app.Group("/api")
+//	api.Use(authMiddleware)
+//	api.Get("/health", healthHandler)
+//
+//	admin := app.Group("/admin", routegroup.WithAccess(access.RequirePermission("admin:access")))
+//	admin.Entity("settings", settingsConfig)
+func (a *App) Group(prefix string, opts ...routegroup.GroupOption) *routegroup.RouteGroup {
+	return routegroup.New(a.router, prefix, opts...)
+}
+
+// GroupEntity registers an entity with the given configuration inside a
+// RouteGroup. CRUD routes mount at <group-prefix>/<entity-table>, MCP
+// tools are namespaced under the group's MCPNamespace, and the OpenAPI
+// tag reflects the group's OpenAPITag if set.
+//
+// This is the group-scoped equivalent of App.Entity.
+func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.EntityConfig) *App {
+	e := entity.Define(name, config)
+
+	if a.DB != nil {
+		e.SetDB(a.DB)
+	}
+
+	if err := a.Registry.Register(e); err != nil {
+		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
+	}
+
+	crudEnabled := a.DB != nil && (config.CRUD == nil || *config.CRUD)
+	if config.MCP && a.DB != nil && config.CRUD != nil && !*config.CRUD {
+		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
+	}
+
+	var crudHandler *crud.CrudHandler
+	if crudEnabled {
+		crudHandler = crud.NewCrudHandler(e, a.DB)
+		crudHandler.JSONCase = a.JSONCasing()
+		crudHandler.Hooks = a.HookRegistry(name)
+		crudHandler.Storage = a.Storage
+		crudHandler.Events = a.Events()
+		crudHandler.Registry = a.Registry
+
+		// Register CRUD routes on the group's sub-router.
+		// The group's prefix is already baked into the sub-router,
+		// so we just mount at /<entity-table>.
+		crud.RegisterCrudRoutes(g.Router(), crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+	}
+
+	// MCP tools — namespaced if the group has a namespace.
+	if config.MCP && a.DB != nil {
+		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
+			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
+		}
+	}
+
+	// Custom endpoints
+	if len(config.Endpoints) > 0 {
+		if err := a.registerGroupEndpoints(g, e, config.Endpoints); err != nil {
+			panic(fmt.Sprintf("framework: failed to register endpoints for entity %q in group %q: %v", name, g.Prefix(), err))
+		}
+	}
+
+	return a
+}
+
+// registerGroupEndpoints is the group-scoped equivalent of registerEntityEndpoints.
+func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entity, endpoints []entity.Endpoint) error {
+	for _, endpoint := range endpoints {
+		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
+		if method == "" {
+			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
+		}
+		path := openapi.EntityEndpointPath(ent, endpoint.Path)
+		if endpoint.Handler != nil {
+			g.Handle(method, path, endpoint.Handler)
+		}
+		if endpoint.MCP {
+			if endpoint.MCPHandler == nil {
+				return fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", endpoint.Path)
+			}
+			toolName := endpoint.Name
+			if toolName == "" {
+				toolName = openapi.DefaultEndpointToolName(ent.GetName(), method, g.Prefix()+path)
+			}
+			if ns := g.MCPNamespace(); ns != "" {
+				toolName = ns + "." + toolName
+			}
+			description := endpoint.Description
+			if description == "" {
+				description = method + " " + g.Prefix() + path
+			}
+			if err := a.MCP.RegisterTool(toolName, description, map[string]any{"type": "object"}, endpoint.MCPHandler); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Use appends middleware to the app's router chain. The default chain
