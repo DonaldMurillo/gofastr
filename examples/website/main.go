@@ -13,10 +13,40 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/config"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/static"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
+
+// WebsiteConfig binds the website's runtime env vars into a typed
+// struct, replacing the previous ad-hoc os.Getenv calls. Loaded once
+// in main; passed to setupServer / devMode helpers.
+type WebsiteConfig struct {
+	// Port the HTTP server listens on. Defaults to 8082.
+	Port int `config:"PORT" default:"8082"`
+	// Dev enables the livereload SSE endpoint and related dev tooling.
+	Dev bool `config:"GOFASTR_DEV" default:"false"`
+}
+
+// Addr returns the listen address in `:port` form.
+func (c WebsiteConfig) Addr() string { return ":" + strconv.Itoa(c.Port) }
+
+// loadWebsiteConfig binds the env into a WebsiteConfig. Exposed for
+// tests; main calls it via config.MustLoad.
+func loadWebsiteConfig(src config.Source) (WebsiteConfig, error) {
+	var cfg WebsiteConfig
+	if src == nil {
+		if err := config.Load(&cfg); err != nil {
+			return cfg, err
+		}
+	} else {
+		if err := config.Load(&cfg, src); err != nil {
+			return cfg, err
+		}
+	}
+	return cfg, nil
+}
 
 func main() {
 	var (
@@ -31,10 +61,9 @@ func main() {
 		return
 	}
 
-	addr := ":8082"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
-	}
+	var webCfg WebsiteConfig
+	config.MustLoad(&webCfg)
+	addr := webCfg.Addr()
 
 	fwApp, _ := setupServer()
 
@@ -248,6 +277,12 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	// Forms demo: repeater island endpoint
 	fwApp.Router().Get("/islands/forms/repeater", http.HandlerFunc(FormsRepeaterIslandHandler))
 
+	// Forms demo: end-to-end wizard at /components/forms/wizard-demo.
+	// Self-contained POST round-trip — used by the wizard E2E tests to
+	// exercise Next → Back → Submit across three steps.
+	fwApp.Router().Get(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
+	fwApp.Router().Post(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
+
 	// OptimisticAction demo endpoints: success (204) + failure (500) + slow (~400ms 204).
 	fwApp.Router().Post("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
 	fwApp.Router().Delete("/demo/optimistic-success", http.HandlerFunc(OptimisticDemoSuccess))
@@ -322,9 +357,14 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 }
 
 // devMode reports whether the dev-only livereload tooling should be
-// wired up. Set GOFASTR_DEV=1 in the watcher's environment.
+// wired up. Resolved live from env via core/config so tests using
+// t.Setenv pick the value up without main() having to run first.
 func devMode() bool {
-	return os.Getenv("GOFASTR_DEV") == "1"
+	cfg, err := loadWebsiteConfig(nil)
+	if err != nil {
+		return false
+	}
+	return cfg.Dev
 }
 
 // livereloadJS — SSE-based change detection.

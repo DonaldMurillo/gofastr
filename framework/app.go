@@ -28,6 +28,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/openapi"
@@ -99,9 +100,14 @@ type App struct {
 	// Lifecycle hooks fired by Start/Stop. startHooks run with the app's
 	// derived context so workers cancel when Stop is called.
 	startHooks []func(ctx context.Context) error
-	stopHooks  []func() error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
+
+	// lc is the graceful-shutdown coordinator. OnStop hooks register
+	// here as Drainers so a single Shutdown() call walks both the
+	// app-level stop hooks and any battery-registered drainers /
+	// health checkers through one documented sequence.
+	lc *lifecycle.Lifecycle
 
 	// Readiness checks registered by app code, plugins, and batteries.
 	// /readyz runs them in parallel; /healthz is unconditional.
@@ -449,6 +455,7 @@ func NewApp(opts ...AppOption) *App {
 		Batteries: NewBatteryManager(),
 		events:   event.NewEventBus(),
 		hooks:    make(map[string]*hook.HookRegistry),
+		lc:       lifecycle.New(),
 	}
 
 	for _, opt := range opts {
@@ -726,26 +733,49 @@ func (a *App) OnStart(fn func(ctx context.Context) error) *App {
 	return a
 }
 
-// OnStop registers a function to run during App.Stop, after the HTTP
-// server has shut down. Hooks run in reverse registration order — the
-// last thing started is the first thing stopped.
+// OnStop registers a function to run during App.Shutdown, after the
+// HTTP server has shut down. Hooks run in reverse registration order
+// — the last thing started is the first thing stopped. Internally the
+// hook is wrapped as a lifecycle.Drainer so app-level cleanup and
+// battery drains share one coordinator.
 func (a *App) OnStop(fn func() error) *App {
-	a.stopHooks = append(a.stopHooks, fn)
+	// LIFO ordering: prepend so reverse-of-Registration === drain order.
+	a.lc.PrependDrainer(stopHookDrainer(fn))
 	return a
 }
 
 // OnStopFirst registers an OnStop hook that runs LAST under the
-// reverse-order Stop iteration — i.e. it's prepended to the hook list.
-// Useful for plugins (battery/log especially) that must outlive every
-// other shutdown step: their close hook needs to fire AFTER every
-// other OnStop has had a chance to emit log entries.
+// reverse-order Stop iteration. Useful for plugins (battery/log
+// especially) that must outlive every other shutdown step: their
+// close hook needs to fire AFTER every other OnStop has had a chance
+// to emit log entries.
 //
 // Without this, a user that registers app.OnStop BEFORE
 // RegisterPlugin(log) gets the order inverted on reverse iteration —
 // log's close runs first, the user's OnStop logs into closed sinks.
 func (a *App) OnStopFirst(fn func() error) *App {
-	a.stopHooks = append([]func() error{fn}, a.stopHooks...)
+	// Append so it runs LAST in the LIFO order used by PrependDrainer.
+	a.lc.AppendDrainer(stopHookDrainer(fn))
 	return a
+}
+
+// stopHookDrainer adapts a legacy OnStop func() error into the
+// lifecycle.Drainer interface. The ctx is ignored — OnStop predates
+// the context-aware drain API and is purely best-effort cleanup.
+type stopHookDrainer func() error
+
+func (f stopHookDrainer) Drain(_ context.Context) error { return f() }
+
+// Lifecycle returns the App's graceful-shutdown coordinator. Batteries
+// and plugins use Lifecycle().RegisterDrainer / RegisterHealthChecker
+// to participate in Shutdown beyond the simple OnStop hook.
+func (a *App) Lifecycle() *lifecycle.Lifecycle { return a.lc }
+
+// RunWithSignals blocks until SIGINT or SIGTERM is received, then runs
+// Shutdown. Returns Shutdown's error, or nil if ctx is cancelled before
+// a signal arrives.
+func (a *App) RunWithSignals(ctx context.Context) error {
+	return a.lc.RunWithSignalsUsing(ctx, a.Shutdown)
 }
 
 // AddCron registers a Scheduler with the app's lifecycle: it starts when
@@ -813,11 +843,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 		firstErr = err
 	}
 
-	// Reverse order — last-started is first-stopped.
-	for i := len(a.stopHooks) - 1; i >= 0; i-- {
-		if err := a.stopHooks[i](); err != nil && firstErr == nil {
-			firstErr = err
-		}
+	// Run OnStop hooks + battery-registered drainers through the
+	// lifecycle coordinator. PrependDrainer in OnStop already encodes
+	// the reverse-of-registration order callers expect.
+	if err := a.lc.Shutdown(ctx); err != nil && firstErr == nil {
+		firstErr = err
 	}
 	return firstErr
 }

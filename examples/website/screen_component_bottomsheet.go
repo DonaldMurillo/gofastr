@@ -41,6 +41,6 @@ widget.Mount(r, &sheet)
 			"preset.BottomSheet is a bottom-edge sibling of Drawer. Same dismiss affordances (backdrop, ESC, click-outside, focus-trap), mounted on the bottom edge with a slide-from-bottom animation. Designed for mobile detail panels, share sheets, action menus — anywhere a side-drawer would feel wrong on small screens.")),
 		demoFrame(openBtn, src),
 		render.Tag("p", nil, render.Text(
-			"The drag-to-dismiss gesture is on the deferred list; ESC + backdrop click cover keyboard + pointer dismiss in the meantime.")),
+			"Pointer drag-to-dismiss is wired: drag the handle bar down past ~80px (or release with downward velocity) to close. Shorter drags snap back. ESC + backdrop click remain available for keyboard + pointer dismiss.")),
 	)
 }

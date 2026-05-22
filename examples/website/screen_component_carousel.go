@@ -63,6 +63,23 @@ func (s *CarouselScreen) Render() render.HTML {
 		},
 	})
 
+	// Virtual-scroll demo — 60 slides, first 5 hydrated, rest deferred.
+	virtualSlides := make([]ui.CarouselSlide, 0, 60)
+	for i := 0; i < 60; i++ {
+		hue := (i * 17) % 360
+		virtualSlides = append(virtualSlides, ui.CarouselSlide{
+			Content: makeSlideContent(hue, "Image "+itoaScreen(i+1), "Lazily hydrated when scrolled into view."),
+		})
+	}
+	virtual := ui.Carousel(ui.CarouselConfig{
+		ID:                       "demo-virtual-carousel",
+		Label:                    "Archive — 60 slides (lazy)",
+		VirtualScroll:            true,
+		VirtualWindow:            5,
+		VirtualPlaceholderHeight: "220px",
+		Slides:                   virtualSlides,
+	})
+
 	return render.Tag("div", nil,
 		render.Tag("a", map[string]string{"href": "/components/", "class": "doc-back"},
 			render.Text("← Components")),
@@ -88,6 +105,16 @@ func (s *CarouselScreen) Render() render.HTML {
     Label:          "Related articles",
     VisiblePerView: 3,
     Slides:         slides,
+})`),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Virtual scroll (60 slides)")),
+		render.Tag("p", nil, render.Text(
+			"VirtualScroll renders only the initial window inline (5 slides here); the rest emit as same-width placeholders paired with a JSON manifest of deferred HTML. The runtime hydrates each placeholder via IntersectionObserver as it scrolls into the track viewport, plus a one-window read-ahead buffer. Use for image-heavy archives where rendering every slide upfront is wasteful.")),
+		demoFrame(virtual, `ui.Carousel(ui.CarouselConfig{
+    Label:                    "Archive",
+    VirtualScroll:            true,
+    VirtualWindow:            5,
+    VirtualPlaceholderHeight: "220px",
+    Slides:                   sixtySlides,
 })`),
 	)
 }

@@ -794,30 +794,39 @@ func TestE2E_FormsPage_LoadsQuickly(t *testing.T) {
 
 // ─── C-7: Remove single item → empty ────────────────────────────────
 
-func TestE2E_FormRepeater_RemoveSingleToEmpty(t *testing.T) {
+func TestE2E_FormRepeater_RemoveSingleIsDisabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
 	}
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var itemCount int
+	var raw string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/forms"),
 		pageReady(),
-		// Fill the initial row
 		chromedp.SetValue(`#f-m0-name`, "Solo", chromedp.ByQuery),
-		// Remove the only row
-		chromedp.Click(`[data-fui-rpc*="action=remove-0"]`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second),
-		// After swap: should have 0 items
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-form-repeater"] .ui-form-repeater__item').length`, &itemCount),
+		chromedp.Evaluate(`JSON.stringify((() => {
+			var rep = document.querySelector('[data-fui-comp="ui-form-repeater"]');
+			var btn = rep ? rep.querySelector('.ui-form-repeater__item-actions button') : null;
+			return {
+				items: rep ? rep.querySelectorAll('.ui-form-repeater__item').length : 0,
+				removeDisabled: btn ? btn.hasAttribute('disabled') : false,
+				removeHasRpc: btn ? btn.hasAttribute('data-fui-rpc') : false,
+			};
+		})())`, &raw),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if itemCount != 0 {
-		t.Errorf("expected 0 items after removing the only one, got %d", itemCount)
+	if !strings.Contains(raw, `"items":1`) {
+		t.Errorf("expected 1 item, got %s", raw)
+	}
+	if !strings.Contains(raw, `"removeDisabled":true`) {
+		t.Errorf("expected remove button disabled when only one item, got %s", raw)
+	}
+	if strings.Contains(raw, `"removeHasRpc":true`) {
+		t.Errorf("disabled remove button must not carry data-fui-rpc, got %s", raw)
 	}
 }
 
