@@ -5,6 +5,12 @@ import (
 	"sync"
 )
 
+// maxPooledMapEntries caps the size of pooled maps and slices. Entries
+// larger than this are dropped on return so a single oversized request
+// can't pin a giant allocation in the pool forever (mirrors
+// uihost/builder_pool.go's 64KB builder cap).
+const maxPooledMapEntries = 4096
+
 // rowSlicePool caches pre-allocated []map[string]any slices.
 var rowSlicePool = sync.Pool{
 	New: func() any {
@@ -36,14 +42,22 @@ func borrowRowSlice() *[]map[string]any {
 
 // returnRowSlice clears and returns the slice to the pool.
 // Individual row maps within are also cleared and returned to rowMapPool.
+// Oversized maps and the slice itself are dropped instead of pooled so a
+// pathological row size can't pin huge allocations in the pool forever.
 func returnRowSlice(s *[]map[string]any) {
 	for i := range *s {
 		m := (*s)[i]
+		mapLen := len(m)
 		for k := range m {
 			delete(m, k)
 		}
-		rowMapPool.Put(&m)
+		if mapLen <= maxPooledMapEntries {
+			rowMapPool.Put(&m)
+		}
 		(*s)[i] = nil
+	}
+	if cap(*s) > maxPooledMapEntries {
+		return
 	}
 	*s = (*s)[:0]
 	rowSlicePool.Put(s)
@@ -60,10 +74,14 @@ func borrowPtrSlice(n int) *[]any {
 	return s
 }
 
-// returnPtrSlice returns a pointer slice to the pool.
+// returnPtrSlice returns a pointer slice to the pool. Oversized slices are
+// dropped rather than retained so the pool's high-water mark stays bounded.
 func returnPtrSlice(s *[]any) {
 	for i := range *s {
 		(*s)[i] = nil
+	}
+	if cap(*s) > maxPooledMapEntries {
+		return
 	}
 	*s = (*s)[:0]
 	ptrSlicePool.Put(s)

@@ -205,7 +205,7 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		page, perPage := parsePagination(r)
+		page, perPage := parsePagination(r, ch.Entity.Config.MaxListLimit)
 
 		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
 		if err != nil {
@@ -519,10 +519,12 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 // Defaults: page=1, per_page=20.
 //
 // The per_page cap is 100 by default. Entities can raise this via
-// EntityConfig.MaxListLimit. When ?stream=true is set, the cap is
-// raised to streamListThreshold (1000) so clients can access the
-// streaming list path.
-func parsePagination(r *http.Request) (page, perPage int) {
+// EntityConfig.MaxListLimit. ?stream=true on its own does NOT raise
+// the cap — that path is opt-in per entity (MaxListLimit > 100) so
+// public endpoints can't be coerced into 10× larger responses by
+// adding a query param. When the entity has explicitly raised the
+// limit, the streaming-list path uses min(MaxListLimit, streamListThreshold).
+func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 	page = 1
 	perPage = 20
 
@@ -533,8 +535,11 @@ func parsePagination(r *http.Request) (page, perPage int) {
 	}
 
 	maxPerPage := 100
-	if r.URL.Query().Get("stream") == "true" {
-		maxPerPage = streamListThreshold
+	if entityMax > 0 {
+		maxPerPage = entityMax
+		if maxPerPage > streamListThreshold {
+			maxPerPage = streamListThreshold
+		}
 	}
 
 	if v := r.URL.Query().Get("limit"); v != "" {

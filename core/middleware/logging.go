@@ -1,8 +1,11 @@
 package middleware
 
 import (
+	"bufio"
+	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -19,8 +22,8 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-			next.ServeHTTP(wrapped, r)
+			wrapped := wrapResponseWriter(w)
+			next.ServeHTTP(reveal(wrapped), r)
 			duration := time.Since(start)
 
 			logger := slog.Default()
@@ -71,21 +74,38 @@ func LoggingWithWriter(w io.Writer) Middleware {
 // production; switch to Logging() in dev or when debugging.
 //
 // When sampleN is 0 or 1, every request is logged (equivalent to Logging()).
+//
+// SampledLogging uses slog.Default(); use SampledLoggingFn to inject a
+// specific logger source the same way LoggingFn does.
 func SampledLogging(sampleN int, slowThreshold time.Duration) Middleware {
+	return SampledLoggingFn(sampleN, slowThreshold, nil)
+}
+
+// SampledLoggingFn is the injected-logger variant of SampledLogging.
+// getLogger is called per logged event; nil or nil-returning getLogger
+// falls back to slog.Default().
+func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func() *slog.Logger) Middleware {
 	if sampleN <= 1 {
-		return LoggingFn(nil)
+		return LoggingFn(getLogger)
 	}
 	var counter uint64
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-			next.ServeHTTP(wrapped, r)
+			wrapped := wrapResponseWriter(w)
+			next.ServeHTTP(reveal(wrapped), r)
 			duration := time.Since(start)
+
+			logger := slog.Default()
+			if getLogger != nil {
+				if l := getLogger(); l != nil {
+					logger = l
+				}
+			}
 
 			// Always log errors and slow requests
 			if wrapped.statusCode >= 400 || duration > slowThreshold {
-				slog.Info("request",
+				logger.Info("request",
 					"method", r.Method,
 					"path", r.URL.Path,
 					"status", wrapped.statusCode,
@@ -98,7 +118,7 @@ func SampledLogging(sampleN int, slowThreshold time.Duration) Middleware {
 			// Sample 1-in-N normal requests
 			n := atomic.AddUint64(&counter, 1)
 			if n%uint64(sampleN) == 1 {
-				slog.Info("request",
+				logger.Info("request",
 					"method", r.Method,
 					"path", r.URL.Path,
 					"status", wrapped.statusCode,
@@ -123,6 +143,9 @@ func DiscardLogging() Middleware {
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
+// To preserve optional interfaces (Flusher, Hijacker, Pusher), use
+// wrapResponseWriter which returns a wrapper that exposes only the
+// interfaces the underlying writer actually supports.
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -132,4 +155,97 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// optional-interface wrappers — we conditionally expose just what the
+// underlying writer actually supports, so a caller's interface assertion
+// reflects the real capabilities of the stack.
+
+type flushWriter struct{ *responseWriter }
+
+func (f flushWriter) Flush() {
+	if fl, ok := f.responseWriter.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
+}
+
+type hijackWriter struct{ *responseWriter }
+
+func (h hijackWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := h.responseWriter.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("middleware: underlying ResponseWriter does not implement http.Hijacker")
+}
+
+type pushWriter struct{ *responseWriter }
+
+func (p pushWriter) Push(target string, opts *http.PushOptions) error {
+	if pu, ok := p.responseWriter.ResponseWriter.(http.Pusher); ok {
+		return pu.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+// 8 combinations of (Flusher, Hijacker, Pusher) — only the relevant
+// few are common enough to be worth a dedicated type; we collapse the
+// rest into the dominant patterns below.
+
+type flushHijackWriter struct {
+	*responseWriter
+	flushWriter
+	hijackWriter
+}
+type flushHijackPushWriter struct {
+	*responseWriter
+	flushWriter
+	hijackWriter
+	pushWriter
+}
+
+// wrapResponseWriter picks a wrapper that exposes the same optional
+// interfaces (Flusher, Hijacker, Pusher) as the underlying writer.
+func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+}
+
+// reveal returns a writer that exposes only the optional interfaces the
+// underlying ResponseWriter w actually supports.
+func reveal(rw *responseWriter) http.ResponseWriter {
+	_, fl := rw.ResponseWriter.(http.Flusher)
+	_, hj := rw.ResponseWriter.(http.Hijacker)
+	_, pu := rw.ResponseWriter.(http.Pusher)
+
+	switch {
+	case fl && hj && pu:
+		return flushHijackPushWriter{
+			responseWriter: rw,
+			flushWriter:    flushWriter{rw},
+			hijackWriter:   hijackWriter{rw},
+			pushWriter:     pushWriter{rw},
+		}
+	case fl && hj:
+		return flushHijackWriter{
+			responseWriter: rw,
+			flushWriter:    flushWriter{rw},
+			hijackWriter:   hijackWriter{rw},
+		}
+	case fl:
+		return struct {
+			*responseWriter
+			flushWriter
+		}{rw, flushWriter{rw}}
+	case hj:
+		return struct {
+			*responseWriter
+			hijackWriter
+		}{rw, hijackWriter{rw}}
+	case pu:
+		return struct {
+			*responseWriter
+			pushWriter
+		}{rw, pushWriter{rw}}
+	default:
+		return rw
+	}
 }

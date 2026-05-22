@@ -996,6 +996,14 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	if manifest := runtimeModuleManifestScript(); manifest != "" {
 		page = strings.Replace(page, "</head>", manifest+"\n</head>", 1)
 	}
+	// Module preload hints — emit <link rel="modulepreload"> per
+	// demand-load runtime module whose marker substring appears in
+	// the rendered page. Lets the browser parallel-fetch modules with
+	// initial render instead of stalling on hover/click. Content-
+	// addressed ?v=<hash> URLs match the immutable cache headers.
+	if preloads := runtimeModulePreloadLinks(page); preloads != "" {
+		page = strings.Replace(page, "</head>", preloads+"\n</head>", 1)
+	}
 
 	// <body>
 	page = strings.Replace(page,
@@ -1634,6 +1642,31 @@ func catalogJSONScript(ds *UIHost) string {
 // and kiln-style hosts that consume widget.RuntimeTag() directly.
 func runtimeModuleManifestScript() string {
 	return widget.RuntimeModuleManifestScript()
+}
+
+// runtimeModulePreloadLinks emits <link rel="modulepreload"> tags for
+// every demand-load runtime module whose marker substring appears in
+// pageHTML (post-render scan via runtime.NeededModules). The href
+// carries the content-addressed ?v=<hash> URL so preload hits the same
+// immutable cache entry as the eventual fetch.
+func runtimeModulePreloadLinks(pageHTML string) string {
+	mods := runtime.NeededModules(pageHTML)
+	if len(mods) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, name := range mods {
+		hash := widget.RuntimeModuleHash(name)
+		href := "/__gofastr/runtime/" + name + ".js"
+		if hash != "" {
+			href += "?v=" + hash
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(`<link rel="modulepreload" href="` + href + `">`)
+	}
+	return b.String()
 }
 
 // routesJSONScript embeds the route graph as inert JSON. Same model

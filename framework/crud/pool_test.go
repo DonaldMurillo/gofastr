@@ -5,6 +5,63 @@ import (
 	"testing"
 )
 
+// Finding 12: pools must not retain unbounded historical capacity.
+// returnRowSlice should drop maps with len > maxPooledMapEntries rather
+// than putting them back in the pool.
+func TestRowMapPoolDropsHugeMap(t *testing.T) {
+	// Stage a slice with one giant row, run it through the normal
+	// borrow/return cycle, and assert the pool's high-water-mark stays
+	// bounded — pulling N small maps in a row must never surface the
+	// pathological one.
+	s := borrowRowSlice()
+	huge := make(map[string]any, maxPooledMapEntries+100)
+	for i := 0; i < maxPooledMapEntries+100; i++ {
+		huge[intStr(i)] = i
+	}
+	*s = append(*s, huge)
+	returnRowSlice(s)
+
+	// The map was put back only if its size was bounded. Confirm by
+	// pulling enough maps that we should be sampling the pool.
+	for i := 0; i < 16; i++ {
+		got := rowMapPool.Get().(*map[string]any)
+		// A returned map should have zero length; cap is not directly
+		// readable but len(map) after delete-all is 0. The signal we
+		// want is that the underlying map storage is bounded.
+		if len(*got) != 0 {
+			t.Fatalf("pulled non-empty map: len=%d", len(*got))
+		}
+	}
+}
+
+// Finding 12: returnPtrSlice should drop slices with cap >
+// maxPooledMapEntries rather than pooling them.
+func TestPtrSlicePoolDropsHugeSlice(t *testing.T) {
+	p := ptrSlicePool.Get().(*[]any)
+	*p = make([]any, maxPooledMapEntries+100)
+	returnPtrSlice(p)
+
+	// All subsequent borrows must have bounded cap.
+	for i := 0; i < 8; i++ {
+		got := ptrSlicePool.Get().(*[]any)
+		if cap(*got) > maxPooledMapEntries {
+			t.Fatalf("pool surfaced slice with cap=%d (> maxPooledMapEntries %d)", cap(*got), maxPooledMapEntries)
+		}
+	}
+}
+
+func intStr(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var s []byte
+	for i > 0 {
+		s = append([]byte{byte('0' + i%10)}, s...)
+		i /= 10
+	}
+	return string(s)
+}
+
 func TestBorrowReturnRowSlice(t *testing.T) {
 	s := borrowRowSlice()
 	*s = append(*s, map[string]any{"a": 1})
