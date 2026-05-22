@@ -41,10 +41,12 @@ compose with the existing router + middleware pipeline.
 
 **Acceptance**
 
-- Routes registered inside a group are reachable at `<parent-prefix><group-prefix><route>`
-- Middleware order outer→inner, matches direct registration semantics
-- Removing a group cleanly unregisters all child routes
-- OpenAPI spec groups routes under the same tag as their parent group
+- Routes registered inside a group are reachable at `<parent-prefix><group-prefix><route>` ✓
+- Middleware order outer→inner, matches direct registration semantics ✓
+- ~~Removing a group cleanly unregisters all child routes~~ — OUT OF SCOPE (2026-05-22). The underlying core router has no route-removal API; hot route-swap is not a normal Go web framework primitive and is not worth the refactor cost. Routes live until process exit.
+- OpenAPI spec groups routes under the same tag as their parent group ✓ (`OpenAPITag` accessor + nested namespace composition verified by `TestNestedMCPNamespaceComposes`)
+
+**Production hardening (2026-05-22):** nested access composition, access-before-middleware ordering, and nested MCP namespace composition now have explicit tests.
 
 ---
 
@@ -82,17 +84,20 @@ the inner content region, not the layout shell.
 
 **Acceptance**
 
-- Initial load fully SSR-rendered, including all wrapping layouts
-- Sibling-screen nav does not re-render the parent layout (DOM-stable)
-- Layout islands keep their state across child navigations
-- chromedp e2e asserts layout DOM node identity is preserved across sibling
-  navigations
+- Initial load fully SSR-rendered, including all wrapping layouts ✓
+- Sibling-screen nav does not re-render the parent layout (DOM-stable) ✓ — `findCommonScreenGroup` picks deepest matching prefix (longest-prefix-wins) so the innermost preserved layout is the right one.
+- Layout islands keep their state across child navigations ✓ — by virtue of the DOM swap only touching the inner content region.
+- chromedp e2e asserts layout DOM node identity is preserved across sibling navigations — DEFERRED to a follow-up branch with a real demo screen group; the SSR contract is now covered by `TestNestedGroupRendersNestedLayoutShells`.
+
+**Production hardening (2026-05-22):**
+- Nested groups now actually nest at SSR time. Previously, `g.Screen()` set `screen.Layout = g.layout` (single layout, no composition), so a sub-group's screen lost the outer group's layout shell entirely. Now `Screen` carries an unexported `group` reference and the renderer calls `ComposeLayouts(screen.group, content)`, emitting nested `data-fui-screen-group` markers from outer→inner. Verified by `TestNestedGroupRendersNestedLayoutShells`.
+- `findCommonScreenGroup` runtime fix (deepest match) — fixed in the prior hardening pass; verified by `TestScreenGroupPicksDeepestMatch`.
 
 ---
 
 ## 3. API versioning
 
-**Status:** implemented (2026-05-21) — `framework/apiversions/`.
+**Status:** EXPERIMENTAL (2026-05-22) — moved to `framework/experimental/apiversions/`. Speculative without a real v1↔v2 in-tree case study to shape the projection machinery (include/exclude/rename). Revisit when a real consumer surfaces the shape.
 
 First-class versioning for the auto-generated HTTP/CRUD surface, MCP tools,
 and OpenAPI spec. Multiple versions of the same entity coexist; deprecations
@@ -141,7 +146,13 @@ are explicit and machine-readable.
 
 - `WebSocketConn` with backpressure: writes block when send buffer full
 - `Hub` for broadcast pub/sub with auto-unregister on close
-- `WSConfig` with `ReadLimit`, `SendBuffer`, `OnClose` callbacks
+- `WSConfig` with `ReadLimit`, `SendBuffer`, `WriteTimeout`, `OnClose`
+- Production hardening: same-origin check (`CheckOrigin` override),
+  RFC 6455 close handshake (`CloseTimeout`, default 1s), idle ping/pong
+  keepalive (`ReadIdleTimeout` default 60s, `PongTimeout` default 10s),
+  RSV-bit + fragmented-control rejection, `RequireMask` for client frames,
+  iterative ping/pong (no recursive stack), subprotocol negotiation via
+  `Subprotocols` (server-preference order per RFC 6455 §4.2.2)
 
 ### 4b. CLI scaffolding beyond kiln — `cmd/gofastr/new.go`
 
@@ -149,6 +160,10 @@ are explicit and machine-readable.
 - `gofastr new handler ListOrders --method GET --path /orders`
 - `gofastr new route /api/health --method GET`
 - Generates JSON entity declarations + Go registration scaffolds
+- Idempotent by default — second invocation errors with "already exists";
+  `-overwrite` opts in to rewriting the target file
+- `gofastr new -h` shows usage; `gofastr new` with no resource exits non-zero
+- Path-traversal-safe (`validateScaffoldName`) and golden-tested per command
 
 ### 4c. Configuration management — `core/config/config.go`
 
@@ -174,8 +189,8 @@ are explicit and machine-readable.
 
 ### 4f. Battery follow-ups
 
-- **Redis idempotency**: `battery/redisidempotency/store.go` — Redis-backed idempotency key store
-- **Redis feature flags**: `battery/redisflags/store.go` — Redis-backed feature flag store with JSON serialization
+- **Redis idempotency**: EXPERIMENTAL (2026-05-22) — moved to `battery/experimental/redisidempotency/`. Hardened (atomic SetNX, KeyPrefix applied, size cap, in-flight sentinel) but unexercised in-tree. Promote back to `battery/` when an example app uses it.
+- **Redis feature flags**: EXPERIMENTAL (2026-05-22) — moved to `battery/experimental/redisflags/`. Same reasoning. Now uses Scan+MGet instead of KEYS, surfaces real errors, validates RolloutPct.
 - **Passkeys**: deferred (requires WebAuthn library integration)
 
 ---
@@ -185,13 +200,9 @@ are explicit and machine-readable.
 Wave 1–7 have shipped. See `docs/ui-new-components.md` for the running list
 of landed components. The following were implemented in this roadmap pass:
 
-### 5a. Calendar / date picker — `framework/ui/datepicker.go`
+### 5a. Calendar / date picker — DELETED (2026-05-22)
 
-- `DatePicker(cfg)` renders text input + calendar popover with month grid
-- Hidden `<input type="date">` for form submission
-- Calendar grid with day-name headers, Prev/Next month navigation
-- `data-fui-open` + `data-fui-popover-anchor` for popup wiring
-- Style: `registry.RegisterStyle("ui-datepicker", ...)`
+Removed. Shipped as a static SSR shell with no runtime JS module, no RPC handler, no interactive contract — calendar buttons rendered as literal "-". Re-add with a working `core-ui/runtime/src/datepicker.js` + RPC and an e2e test that asserts day selection works end-to-end.
 
 ### 5b. Dynamic form repeater — `framework/ui/repeater.go`
 
@@ -207,24 +218,9 @@ of landed components. The following were implemented in this roadmap pass:
 - Back/Next/Submit navigation with hidden step tracking field
 - `data-fui-rpc` on nav buttons for island-driven transitions
 
-### 5d. Inline edit field — `framework/ui/inlineedit.go`
+### 5d. Inline edit field — DELETED (2026-05-22)
 
-- `InlineEdit(cfg)` renders display span → click → input swap
-- Enter saves via RPC, Escape reverts, blur saves
-- `data-fui-inline-edit` attribute for runtime wiring
-- Original value preserved in hidden field for revert
-
-### 5e. Lightbox pinch-to-zoom
-
-**Status:** deferred — touch event story (multi-touch, gesture cancellation).
-
-### 5f. BottomSheet drag-to-dismiss
-
-**Status:** deferred — touch event story (drag with velocity threshold).
-
-### 5g. Carousel virtual-scroll
-
-**Status:** deferred — current render emits all slides upfront.
+Removed. Same reason as 5a — SSR shell only, no runtime, the click→edit contract was rendered as a span that never wired. Re-add with `core-ui/runtime/src/inlineedit.js` + RPC handler + e2e proving click → input swap → Enter save round-trips.
 
 ### 5h. Form module follow-ons — `framework/ui/form_inputs.go`
 
@@ -320,29 +316,33 @@ literal.
 
 ## 7. Performance opportunities — implemented (2026-05-21)
 
+Verification pass on 2026-05-22 — see `docs/perf-results.md` for raw
+numbers and `dist/bench/current.txt` for the bench output.
+
 **P0 fixes applied:**
 
-- **7a.** `SampledLogging(sampleN, slowThreshold)` in `core/middleware/logging.go` — logs 1-in-N requests plus all errors/slow; `DiscardLogging()` for benchmarks
-- **7b.** `parsePagination` now raises cap to `streamListThreshold` when `?stream=true`
-- **7c/7l.** `framework/crud/pool.go` — `sync.Pool` for `[]map[string]any` row maps and `[]any` scan pointer slices; `scanRowsPooled()` uses pooled maps
-- **7d.** JSON case conversion: `ToCamel`/`ToSnake` cached via `sync.RWMutex`; `PrecomputeMapping` + `ApplyMapping` for zero-alloc row conversion
-- **7e/7f.** `ReadLiveColumnsBulk` and `TableExistsBulk` in `framework/migrate/bulk.go` — single query for N tables
+- **7a.** `SampledLogging(sampleN, slowThreshold)` in `core/middleware/logging.go` — logs 1-in-N requests plus all errors/slow; `DiscardLogging()` for benchmarks. **Verified (2026-05-22)** — with/without ratio collapsed from 200× to ~18× (target ≤10×).
+- **7b.** `parsePagination` now raises cap to `streamListThreshold` when `?stream=true`. **Needs rerun (Postgres)** — sqlite in-memory is too fast to expose the gap; needs Postgres to verify 4× streaming win.
+- **7c/7l.** `framework/crud/pool.go` — `sync.Pool` for `[]map[string]any` row maps and `[]any` scan pointer slices; `scanRowsPooled()` uses pooled maps. **Needs rerun** — allocs 3187 → 2487 (−22%), but time gap GoFastr vs net/http is still +105% (target was −60%).
+- **7d.** JSON case conversion: `ToCamel`/`ToSnake` cached via `sync.RWMutex`; `PrecomputeMapping` + `ApplyMapping` for zero-alloc row conversion. **Verified (2026-05-22)** — 26 allocs → 4 allocs, 19 µs → 408 ns. Single-word lookups are 6 ns / 0 allocs.
+- **7e/7f.** `ReadLiveColumnsBulk` and `TableExistsBulk` in `framework/migrate/bulk.go` — single query for N tables. **Needs rerun (Postgres)** — Postgres-specific win, can't be measured on sqlite.
 
 **P1 fixes applied:**
 
-- **7g.** `Scheduler.RunOnce` no longer copies the jobs slice — iterates under lock, 0 allocs per tick
-- **7h.** DSL parser cache (pre-existing)
+- **7g.** `Scheduler.RunOnce` no longer copies the jobs slice — iterates under lock, 0 allocs per tick. **Verified (2026-05-22)** — N=1 is 7.3 ns / 0 allocs. Larger N still allocates because each matching job spawns a goroutine; that is intentional dispatch cost, not the snapshot-copy defect.
+- **7h.** DSL parser cache (pre-existing). **Verified (2026-05-22)** — 14–15 ns / 0 allocs on cache hit (target was 50 ns).
 
 **P2 fixes applied:**
 
-- **7i.** `core/stream/sse_broker.go` — `SSEBroker` with per-subscriber configurable buffer (`?buffer=128` or `X-SSE-Buffer` header), backpressure with oldest-drop
-- **7j/7k.** `framework/uihost/builder_pool.go` — pooled `strings.Builder` adopted at `injectWidgetSSR` and stylesheet link builder callsites
+- **7i.** `core/stream/sse_broker.go` — `SSEBroker` with per-subscriber configurable buffer (`?buffer=128` or `X-SSE-Buffer` header), backpressure with oldest-drop. **Needs rerun (bench stale)** — `BenchmarkSSE_BackpressureDropRate` still constructs a raw 32-cap `chan Event` and measures the OLD path. Implementation looks fixed but the bench must be rewritten to drive `SSEBroker`.
+- **7j/7k.** `framework/uihost/builder_pool.go` — pooled `strings.Builder` adopted at `injectWidgetSSR` and stylesheet link builder callsites. **Needs rerun** — `BenchmarkT9_UIHostPageRender` is now 49 µs (was 7.6 µs baseline) but response body grew from 580 → 2236 bytes; re-baseline against current page shape. `BenchmarkT9_IslandRPC_Concurrency` p99 at par=64 is still ≈60 ms (target < 10 ms).
 
 **Doc-only:**
 
-- **7m/7n.** SQLite concurrency callout + pure-Go `modernc.org/sqlite` alternative documented in `docs/migrations.md`
+- **7m/7n.** SQLite concurrency callout + pure-Go `modernc.org/sqlite` alternative documented in `docs/migrations.md`. **Verified (2026-05-22)** — doc-only items.
 
-**All §7 items addressed.**
+**§7 verification status (2026-05-22):** 5 verified, 5 needs-rerun (3 of
+those require Postgres). See `docs/perf-results.md` for the full table.
 
 A prioritized list of improvements the benchmark suite has surfaced. Every
 item names the benchmark that exposed it so the win can be verified after a
@@ -565,10 +565,15 @@ module is loaded.
   dynamic `<script>` injection with cached promises. `_pendingFor` queue
   in core: `data-fui-open` click before `widgets.js` has loaded queues;
   replays after load.
-- **Phase 3** — server-side dep registration + preload tags.
-  `framework/ui` and `core-ui/widget/preset` builders call
-  `runtime.Need(modules...)`; `uihost` reads the per-request set and emits
-  `<link rel="modulepreload">`. Trigger elements get `data-fui-prefetch`.
+- **Phase 3** *(landed)* — server-side preload emission. The framework
+  ships a Go-side mirror of the demand-load scanner table
+  (`core-ui/runtime/preload.go`) and `framework/uihost.injectChromeMode`
+  scans the rendered page for marker substrings, emitting one
+  `<link rel="modulepreload" href="/__gofastr/runtime/<name>.js?v=<hash>">`
+  per matched module. Drift between the Go and JS tables is enforced by
+  `TestDemandLoadMarkersMatchRuntimeJS`. (The `data-fui-prefetch` trigger
+  attribution is still pending — handled implicitly today by the runtime's
+  demand-load scanner walking the DOM at boot.)
 - **Phase 4** — hover prefetch. Core attaches one `pointerover` +
   `focusin` capture-phase delegator; click handlers `await loadModule()`.
 - **Phase 5** — idle fallback for modules without a hover-trigger

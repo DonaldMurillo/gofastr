@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/framework/apiversions"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/apiversions"
 )
 
 func TestVersionNormalize(t *testing.T) {
@@ -172,6 +172,20 @@ func TestProjectionSet(t *testing.T) {
 	// Unknown version returns nil (no default set)
 	if ps.For("v3") != nil {
 		t.Error("v3 should return nil when no default")
+	}
+}
+
+func TestVersionRejectsGarbage(t *testing.T) {
+	bad := []string{"", "v1/admin", "v", "v1.2.3", "vabc", "v1-beta", "/"}
+	for _, in := range bad {
+		t.Run(in, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Version(%q) did not panic", in)
+				}
+			}()
+			_ = apiversions.Version(router.New(), in)
+		})
 	}
 }
 

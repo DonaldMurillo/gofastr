@@ -16,13 +16,21 @@
 package apiversions
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
+
+// validVersionRe accepts canonicalised version prefixes: "v" followed by
+// a numeric major (and optional .minor). Anything outside this shape —
+// path separators, query glue, empty string — is rejected at Version()
+// time so misuse can't smuggle a /v1/admin prefix into the router.
+var validVersionRe = regexp.MustCompile(`^v[0-9]+(\.[0-9]+)?$`)
 
 // VersionPrefix is the default URL prefix format. "/v1", "/v2", etc.
 type VersionPrefix string
@@ -118,10 +126,15 @@ func (v *APIVersion) Use(mw ...router.Middleware) {
 
 // normalizeVersion strips any leading "/" or "v" from the prefix
 // and returns the clean form (e.g. "/v1" → "v1", "1" → "v1").
+// Panics with a clear message if the result is not a valid version
+// identifier — apps must catch this at startup, not in the request path.
 func normalizeVersion(prefix string) string {
 	prefix = strings.TrimPrefix(prefix, "/")
 	if !strings.HasPrefix(prefix, "v") {
 		prefix = "v" + prefix
+	}
+	if !validVersionRe.MatchString(prefix) {
+		panic(fmt.Sprintf("apiversions: invalid version prefix %q (want v<major> or v<major>.<minor>)", prefix))
 	}
 	return prefix
 }
