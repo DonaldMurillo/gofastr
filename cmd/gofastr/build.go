@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
 func runBuild(args []string) {
@@ -28,7 +30,15 @@ func runBuild(args []string) {
 
 	// Step 1: generate code when entity declarations are present.
 	if !noGenerate {
-		if _, err := os.Stat("entities"); err == nil {
+		discovery, err := codegen.DiscoverConfig(".")
+		if err != nil {
+			fail("Failed to load codegen config: %v", err)
+			os.Exit(1)
+		}
+		if discovery.Found {
+			info("Generating code...")
+			generateProject(nil)
+		} else if _, err := os.Stat("entities"); err == nil {
 			info("Generating code...")
 			generateProject([]string{"--clean"})
 		}

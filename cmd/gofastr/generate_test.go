@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -94,6 +96,443 @@ func TestLoadEntityDeclarationsForGenerator(t *testing.T) {
 	}
 	if !strings.Contains(files[0].content, `Name: "title"`) {
 		t.Fatalf("generated content missing title field:\n%s", files[0].content)
+	}
+}
+
+func TestGenerateProjectWithCodegenConfigBuiltins(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/configured\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: go/entities
+      source:
+        type: json_dir
+        path: entities
+      output: entities
+    - name: go/client
+      source:
+        type: json_dir
+        path: entities
+      output: entities/client
+`)
+	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "entities", "posts.json"), `{
+		"name":"posts",
+		"fields":[{"name":"title","type":"string","required":true}],
+		"crud":true
+	}`)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	generateProject([]string{"--config=gofastr.codegen.yml"})
+
+	for _, path := range []string{
+		filepath.Join("generated", "entities", "register.go"),
+		filepath.Join("generated", "entities", "models.go"),
+		filepath.Join("generated", "entities", "client", "client.go"),
+		filepath.Join("generated", ".codegen-manifest.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected generated file %s: %v", path, err)
+		}
+	}
+	cmd := exec.Command("go", "test", "-mod=mod", "./generated/entities", "./generated/entities/client")
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("configured generated packages did not build: %v\n%s", err, output)
+	}
+}
+
+func TestGenerateProjectConfigPathRunsRelativeToConfigDir(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: go/entities
+      source:
+        type: json_dir
+        path: entities
+      output: entities
+`)
+	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "entities", "posts.json"), `{
+		"name":"posts",
+		"fields":[{"name":"title","type":"string","required":true}],
+		"crud":true
+	}`)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
+		t.Fatal(err)
+	}
+	generateProject([]string{"--config=" + filepath.Join(dir, "gofastr.codegen.yml")})
+	if _, err := os.Stat(filepath.Join(dir, "generated", "entities", "register.go")); err != nil {
+		t.Fatalf("configured output was not written relative to config dir: %v", err)
+	}
+}
+
+func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "ts")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected generate ts to fail after removal\n%s", output)
+	}
+	if !strings.Contains(string(output), "TypeScript codegen has been removed") || !strings.Contains(string(output), "docs/codegen.md") {
+		t.Fatalf("unexpected generate ts output:\n%s", output)
+	}
+}
+
+func TestGenerateProjectLegacyPathDoesNotWriteManifest(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "entities", "posts.json"), `{
+		"name":"posts",
+		"fields":[{"name":"title","type":"string","required":true}],
+		"crud":true
+	}`)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	generateProject(nil)
+	if _, err := os.Stat(filepath.Join(".gofastr", "entities", ".codegen-manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy generate wrote manifest: %v", err)
+	}
+}
+
+func TestGenerateProjectEntitiesOverrideOnlyBuiltins(t *testing.T) {
+	dir := t.TempDir()
+	extPath := filepath.Join(dir, "dir-extension.sh")
+	writeTestFile(t, extPath, `#!/bin/sh
+req=$(cat)
+case "$req" in
+  *'"path":"custom-data"'*) printf '%s' '{"files":[{"path":"ok.go","content":"package ok\n"}]}' ;;
+  *) printf '%s' '{"files":[{"path":"bad.go","content":"package bad\n"}]}' ;;
+esac
+`)
+	if err := os.Chmod(extPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "custom-data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "custom-data", "item.json"), `{"kind":"custom"}`)
+	if err := os.Mkdir(filepath.Join(dir, "alt-entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "alt-entities", "posts.json"), `{
+		"name":"posts",
+		"fields":[{"name":"title","type":"string"}]
+	}`)
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: go/entities
+      source:
+        type: json_dir
+        path: entities
+      output: entities
+    - name: custom/data
+      extension: data-extension
+      source:
+        type: json_dir
+        path: custom-data
+      output: custom
+  extensions:
+    - name: data-extension
+      command: [`+extPath+`]
+`)
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	generateProject([]string{"--config=gofastr.codegen.yml", "--entities=alt-entities"})
+	if _, err := os.Stat(filepath.Join("generated", "custom", "ok.go")); err != nil {
+		t.Fatalf("custom extension source was overridden: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join("generated", "custom", "bad.go")); !os.IsNotExist(err) {
+		t.Fatalf("custom extension produced bad source output: %v", err)
+	}
+}
+
+func TestGenerateProjectWithExternalCodegenExtension(t *testing.T) {
+	dir := t.TempDir()
+	extPath := filepath.Join(dir, "report-extension.sh")
+	writeTestFile(t, extPath, `#!/bin/sh
+cat >/dev/null
+printf '%s' '{"files":[{"path":"report.go","content":"package reports\n"}]}'
+`)
+	if err := os.Chmod(extPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: custom/reports
+      extension: report-generator
+      source:
+        type: json_file
+        path: reports.codegen.json
+      output: reports
+  extensions:
+    - name: report-generator
+      command: [`+extPath+`]
+`)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	generateProject([]string{"--config=gofastr.codegen.yml"})
+	data, err := os.ReadFile(filepath.Join("generated", "reports", "report.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "package reports\n" {
+		t.Fatalf("report.go = %q", data)
+	}
+}
+
+func TestSafeCleanOutputDirRejectsSymlinkRoot(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(dir, "outside")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "register.go"), []byte("do not delete"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "out")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	err := safeCleanOutputDir(link)
+	if err == nil || !strings.Contains(err.Error(), "refusing to write through symlink") {
+		t.Fatalf("safeCleanOutputDir err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "register.go")); err != nil {
+		t.Fatalf("outside file was removed: %v", err)
+	}
+}
+
+func TestBlueprintGenerateRejectsSymlinkOutput(t *testing.T) {
+	if os.Getenv("GOFASTR_BLUEPRINT_SYMLINK_HELPER") == "1" {
+		generateProject([]string{"--from=gofastr.yml", "--out=out", "--no-clean"})
+		return
+	}
+	dir := t.TempDir()
+	outside := filepath.Join(dir, "outside")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outLink := filepath.Join(dir, "out")
+	if err := os.Symlink(outside, outLink); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), `
+app:
+  name: Demo
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
+`)
+	cmd := exec.Command(os.Args[0], "-test.run=TestBlueprintGenerateRejectsSymlinkOutput")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOFASTR_BLUEPRINT_SYMLINK_HELPER=1")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected symlink output to fail\n%s", output)
+	}
+	if !strings.Contains(string(output), "refusing to write through symlink") {
+		t.Fatalf("unexpected output:\n%s", output)
+	}
+	if entries, err := os.ReadDir(outside); err != nil {
+		t.Fatal(err)
+	} else if len(entries) != 0 {
+		t.Fatalf("blueprint wrote through symlink: %#v", entries)
+	}
+}
+
+func TestBuildRunsCodegenConfig(t *testing.T) {
+	if os.Getenv("GOFASTR_BUILD_CONFIG_HELPER") == "1" {
+		runBuild(nil)
+		return
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/buildcfg\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "main.go"), `package main
+
+import "example.com/buildcfg/generated/entities"
+
+func main() {
+	_ = entities.RegisterAll
+}
+`)
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: go/entities
+      source:
+        type: json_dir
+        path: entities
+      output: entities
+`)
+	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "entities", "posts.json"), `{
+		"name":"posts",
+		"fields":[{"name":"title","type":"string","required":true}],
+		"crud":true
+	}`)
+	cmd := exec.Command(os.Args[0], "-test.run=TestBuildRunsCodegenConfig")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GOFASTR_BUILD_CONFIG_HELPER=1",
+		"GOCACHE="+filepath.Join(t.TempDir(), "gocache"),
+		"GOFLAGS=-mod=mod",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("build helper failed: %v\n%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "generated", "entities", "register.go")); err != nil {
+		t.Fatalf("build did not run configured codegen: %v", err)
+	}
+}
+
+func TestGenerateProjectDryRunJSONValidatesOutputBeforeExtensions(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "extension-ran")
+	extPath := filepath.Join(dir, "report-extension.sh")
+	writeTestFile(t, extPath, `#!/bin/sh
+touch `+marker+`
+printf '%s' '{"files":[{"path":"report.go","content":"package reports\n"}]}'
+`)
+	if err := os.Chmod(extPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: custom/reports
+      extension: report-generator
+      source:
+        type: json_file
+        path: reports.codegen.json
+  extensions:
+    - name: report-generator
+      command: [`+extPath+`]
+`)
+	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--config="+filepath.Join(dir, "gofastr.codegen.yml"), "--out=..", "--dry-run", "--json")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	if err == nil {
+		t.Fatalf("expected non-zero exit for unsafe output path\n%s", stdout.String())
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("extension executed before output validation: %v", statErr)
+	}
+	var got struct {
+		Files  []any `json:"files"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if jsonErr := json.Unmarshal(stdout.Bytes(), &got); jsonErr != nil {
+		t.Fatalf("dry-run JSON errors did not parse: %v\nstdout:\n%s\nstderr:\n%s", jsonErr, stdout.String(), stderr.String())
+	}
+	if len(got.Files) != 0 || len(got.Errors) != 1 || !strings.Contains(got.Errors[0].Message, "would target the working directory") {
+		t.Fatalf("unexpected dry-run JSON error payload: %#v", got)
 	}
 }
 

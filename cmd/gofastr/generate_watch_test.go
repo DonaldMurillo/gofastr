@@ -109,3 +109,85 @@ func TestHashEntitiesDir_IgnoresNonJSON(t *testing.T) {
 		t.Fatalf("non-json file should not affect hash; got pre=%q post=%q", h1, h2)
 	}
 }
+
+func TestHashGenerateInputsFromBlueprintDetectsBlueprintChange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	if err := os.WriteFile(path, []byte(`app: { name: Demo }`), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	h1 := hashGenerateInputs(generateOptions{from: path})
+	if err := os.WriteFile(path, []byte(`app: { name: Changed }`), 0o644); err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	h2 := hashGenerateInputs(generateOptions{from: path})
+	if h1 == h2 {
+		t.Fatalf("hash unchanged after blueprint edit: %q", h1)
+	}
+}
+
+func TestHashGenerateInputsWithConfigDetectsExtensionCommandChange(t *testing.T) {
+	dir := t.TempDir()
+	tools := filepath.Join(dir, "tools")
+	if err := os.Mkdir(tools, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	extPath := filepath.Join(tools, "ext.sh")
+	if err := os.WriteFile(extPath, []byte("#!/bin/sh\nprintf one\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"ok":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "gofastr.codegen.yml")
+	if err := os.WriteFile(configPath, []byte(`
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: custom/report
+      extension: report
+      source:
+        type: json_file
+        path: input.json
+  extensions:
+    - name: report
+      command: ["./tools/ext.sh"]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h1 := hashGenerateInputs(generateOptions{configPath: configPath})
+	if err := os.WriteFile(extPath, []byte("#!/bin/sh\nprintf two\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h2 := hashGenerateInputs(generateOptions{configPath: configPath})
+	if h1 == h2 {
+		t.Fatalf("hash unchanged after extension command edit: %q", h1)
+	}
+}
+
+func TestHashGenerateInputsWithInvalidConfigDetectsConfigFix(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "gofastr.codegen.yml")
+	if err := os.WriteFile(configPath, []byte(`
+version: nope
+codegen:
+  output: generated
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h1 := hashGenerateInputs(generateOptions{configPath: configPath})
+	if err := os.WriteFile(configPath, []byte(`
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: go/entities
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h2 := hashGenerateInputs(generateOptions{configPath: configPath})
+	if h1 == h2 {
+		t.Fatalf("hash unchanged after config fix: %q", h1)
+	}
+}

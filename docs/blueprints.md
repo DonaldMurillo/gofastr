@@ -12,6 +12,13 @@ Blueprints are not runtime declarations. The CLI reads `.yml`, `.yaml`, or
 `.gofastr/`. Runtime loading through `app.EntityFromFile` and
 `app.EntitiesFromDir` remains JSON-only.
 
+Blueprints are also separate from general codegen config. `gofastr generate
+--from=gofastr.yml` means "treat this file as a blueprint." Plain
+`gofastr generate` discovers `gofastr.codegen.yml` / `.yaml`, or a
+`codegen:` section in `gofastr.yml`, and runs the configurable codegen engine.
+Use [Codegen](codegen.md) when you want arbitrary configured generators or
+external extensions rather than a full app blueprint.
+
 `app.theme` can override canonical color tokens for generated UI apps. Supported
 keys are `primary`, `primary-fg`, `secondary`, `background`, `surface`,
 `surface-soft`, `text`, `text-muted`, `text-subtle`, `border`,

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -30,7 +32,9 @@ func runGenerate(args []string) {
 	case "all":
 		generateProject(args[1:])
 	case "ts", "typescript":
-		runGenerateTS(args[1:])
+		fail("TypeScript codegen has been removed. Use gofastr.codegen.yml with a project extension to generate frontend artifacts.")
+		info("See docs/codegen.md for the extension protocol.")
+		os.Exit(1)
 	default:
 		fail("Unknown resource type: %s", resourceType)
 		info("Supported: all, entity")
@@ -44,81 +48,33 @@ func generateProject(args []string) {
 		generateFromBlueprint(options)
 		return
 	}
-	decls, err := framework.LoadEntityDeclarations(options.entitiesDir)
+	discovered, err := discoverGenerateConfig(options)
 	if err != nil {
-		if os.IsNotExist(err) {
-			fail("Directory %q not found.", options.entitiesDir)
-			info("Create JSON declarations in entities/ or run: gofastr generate entity post title:string")
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
 			os.Exit(1)
 		}
-		fail("Failed to load entity declarations: %v", err)
+		fail("Failed to load codegen config: %v", err)
 		os.Exit(1)
 	}
-	if len(decls) == 0 {
-		fail("No entity declarations found in %s.", options.entitiesDir)
-		info("Add files like entities/posts.json or run: gofastr generate entity post title:string")
-		os.Exit(1)
-	}
-
-	files, err := renderGeneratedProject(decls)
-	if err != nil {
-		fail("Code generation failed: %v", err)
-		os.Exit(1)
-	}
-
-	if options.dryRun {
-		if options.json {
-			printGeneratedFilesJSON(files)
-			return
-		}
-		info("Would generate %d files in %s:", len(files), options.outputDir)
-		for _, file := range files {
-			fmt.Printf("    %s\n", filepath.Join(options.outputDir, file.name))
-		}
+	if discovered.Found {
+		generateFromCodegenConfig(options, discovered)
 		return
 	}
-
-	if err := validateOutputDir(options.outputDir); err != nil {
-		fail("%v", err)
-		os.Exit(1)
-	}
-	if options.clean {
-		if err := safeCleanOutputDir(options.outputDir); err != nil {
-			fail("Failed to clean %s: %v", options.outputDir, err)
-			os.Exit(1)
-		}
-	}
-	if err := os.MkdirAll(options.outputDir, 0o755); err != nil {
-		fail("Failed to create %s: %v", options.outputDir, err)
-		os.Exit(1)
-	}
-	for _, file := range files {
-		path := filepath.Join(options.outputDir, file.name)
-		// file.name may contain subdirectories (e.g. "client/client.go") so
-		// ensure the parent directory exists before writing.
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			fail("Failed to create %s: %v", filepath.Dir(path), err)
-			os.Exit(1)
-		}
-		if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
-			fail("Failed to write %s: %v", path, err)
-			os.Exit(1)
-		}
-	}
-	if options.json {
-		printGeneratedFilesJSON(files)
-		return
-	}
-	success("Generated %d file(s) in %s", len(files), options.outputDir)
+	generateFromCodegenConfig(options, defaultGenerateDiscovery(options))
 }
 
 type generateOptions struct {
 	entitiesDir string
 	outputDir   string
+	configPath  string
 	from        string
 	clean       bool
+	cleanSet    bool
 	dryRun      bool
 	json        bool
+	outputSet   bool
+	entitiesSet bool
 }
 
 func parseGenerateOptions(args []string) generateOptions {
@@ -131,17 +87,247 @@ func parseGenerateOptions(args []string) generateOptions {
 			options.json = true
 		case arg == "--clean":
 			options.clean = true
+			options.cleanSet = true
 		case arg == "--no-clean":
 			options.clean = false
+			options.cleanSet = true
+		case strings.HasPrefix(arg, "--config="):
+			options.configPath = strings.TrimPrefix(arg, "--config=")
 		case strings.HasPrefix(arg, "--entities="):
 			options.entitiesDir = strings.TrimPrefix(arg, "--entities=")
+			options.entitiesSet = true
 		case strings.HasPrefix(arg, "--from="):
 			options.from = strings.TrimPrefix(arg, "--from=")
 		case strings.HasPrefix(arg, "--out="):
 			options.outputDir = strings.TrimPrefix(arg, "--out=")
+			options.outputSet = true
 		}
 	}
 	return options
+}
+
+func discoverGenerateConfig(options generateOptions) (codegen.Discovery, error) {
+	if options.configPath != "" {
+		configPath, err := filepath.Abs(options.configPath)
+		if err != nil {
+			return codegen.Discovery{}, err
+		}
+		cfg, err := codegen.LoadConfig(configPath)
+		if err != nil {
+			return codegen.Discovery{}, err
+		}
+		return codegen.Discovery{Path: configPath, ProjectDir: filepath.Dir(configPath), Config: cfg, Found: true}, nil
+	}
+	return codegen.DiscoverConfig(".")
+}
+
+func defaultGenerateDiscovery(options generateOptions) codegen.Discovery {
+	return codegen.Discovery{
+		ProjectDir: ".",
+		Config: codegen.Config{
+			Version: 1,
+			Codegen: codegen.CodegenConfig{
+				Output: options.outputDir,
+				Clean:  &options.clean,
+				Generators: []codegen.GeneratorConfig{
+					{
+						Name:   "go/entities",
+						Source: codegen.SourceConfig{Type: "json_dir", Path: options.entitiesDir},
+					},
+					{
+						Name:   "go/client",
+						Source: codegen.SourceConfig{Type: "json_dir", Path: options.entitiesDir},
+						Output: "client",
+					},
+				},
+			},
+		},
+		Found: true,
+	}
+}
+
+func applyGenerateOverrides(cfg *codegen.Config, options generateOptions) {
+	if options.outputSet {
+		cfg.Codegen.Output = options.outputDir
+	}
+	if options.cleanSet {
+		cfg.Codegen.Clean = &options.clean
+	}
+	if options.entitiesSet {
+		for i := range cfg.Codegen.Generators {
+			if isEntitySourceOverrideTarget(cfg.Codegen.Generators[i]) {
+				cfg.Codegen.Generators[i].Source = codegen.SourceConfig{Type: "json_dir", Path: options.entitiesDir}
+			}
+		}
+	}
+}
+
+func isEntitySourceOverrideTarget(gen codegen.GeneratorConfig) bool {
+	if gen.Extension != "" {
+		return false
+	}
+	if gen.Name != "go/entities" && gen.Name != "go/client" {
+		return false
+	}
+	return gen.Source.Type == "" || gen.Source.Type == "json_dir"
+}
+
+func generateFromCodegenConfig(options generateOptions, discovery codegen.Discovery) {
+	restore, err := enterCodegenProjectDir(discovery)
+	if err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("Failed to enter codegen project: %v", err)
+		os.Exit(1)
+	}
+	defer restore()
+	cfg := discovery.Config
+	applyGenerateOverrides(&cfg, options)
+	if err := validateOutputDir(cfg.Codegen.Output); err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("%v", err)
+		os.Exit(1)
+	}
+	reg := codegen.NewRegistry()
+	if err := registerBuiltinGenerators(reg); err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("Code generation setup failed: %v", err)
+		os.Exit(1)
+	}
+	if err := reg.RegisterCommandExtensions(cfg.Codegen, os.Stderr); err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("Code generation setup failed: %v", err)
+		os.Exit(1)
+	}
+	genCtx, err := reg.Run(context.Background(), ".", cfg)
+	if err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			os.Exit(1)
+		}
+		fail("Code generation failed: %v", err)
+		os.Exit(1)
+	}
+	files := genCtx.Files.All()
+	if options.dryRun {
+		if options.json {
+			printCodegenFilesJSON(files)
+			return
+		}
+		info("Would generate %d files in %s:", len(files), cfg.Codegen.Output)
+		for _, file := range files {
+			fmt.Printf("    %s\n", filepath.Join(cfg.Codegen.Output, file.Path))
+		}
+		return
+	}
+	if discovery.Path == "" && codegen.CleanEnabled(cfg.Codegen) {
+		if err := safeCleanOutputDir(cfg.Codegen.Output); err != nil {
+			fail("Failed to clean %s: %v", cfg.Codegen.Output, err)
+			os.Exit(1)
+		}
+	}
+	if err := codegen.WriteFiles(genCtx.Files, codegen.WriteOptions{OutputRoot: cfg.Codegen.Output, Clean: discovery.Path != "" && codegen.CleanEnabled(cfg.Codegen), SkipManifest: discovery.Path == ""}); err != nil {
+		fail("Failed to write generated files: %v", err)
+		os.Exit(1)
+	}
+	if options.json {
+		printCodegenFilesJSON(files)
+		return
+	}
+	success("Generated %d file(s) in %s", len(files), cfg.Codegen.Output)
+}
+
+func enterCodegenProjectDir(discovery codegen.Discovery) (func(), error) {
+	projectDir := discovery.ProjectDir
+	if strings.TrimSpace(projectDir) == "" || projectDir == "." {
+		return func() {}, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chdir(projectDir); err != nil {
+		return nil, err
+	}
+	return func() { _ = os.Chdir(cwd) }, nil
+}
+
+type goEntitiesGenerator struct{}
+
+func (goEntitiesGenerator) Name() string { return "go/entities" }
+
+func (goEntitiesGenerator) Generate(_ context.Context, _ *codegen.Context, cfg codegen.GeneratorConfig) ([]codegen.GeneratedFile, error) {
+	decls, err := loadGeneratorEntityDeclarations(cfg)
+	if err != nil {
+		return nil, err
+	}
+	files, err := renderGeneratedProject(decls)
+	if err != nil {
+		return nil, err
+	}
+	var out []codegen.GeneratedFile
+	for _, file := range files {
+		if strings.HasPrefix(filepath.ToSlash(file.name), "client/") {
+			continue
+		}
+		out = append(out, codegen.GeneratedFile{Path: file.name, Content: file.content})
+	}
+	return out, nil
+}
+
+type goClientGenerator struct{}
+
+func (goClientGenerator) Name() string { return "go/client" }
+
+func (goClientGenerator) Generate(_ context.Context, _ *codegen.Context, cfg codegen.GeneratorConfig) ([]codegen.GeneratedFile, error) {
+	decls, err := loadGeneratorEntityDeclarations(cfg)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(decls, func(i, j int) bool { return decls[i].Name < decls[j].Name })
+	return []codegen.GeneratedFile{{Path: "client.go", Content: renderClient(decls)}}, nil
+}
+
+func registerBuiltinGenerators(reg *codegen.Registry) error {
+	if err := reg.RegisterGenerator(goEntitiesGenerator{}); err != nil {
+		return err
+	}
+	return reg.RegisterGenerator(goClientGenerator{})
+}
+
+func loadGeneratorEntityDeclarations(cfg codegen.GeneratorConfig) ([]framework.EntityDeclaration, error) {
+	if cfg.Source.Type != "" && cfg.Source.Type != "json_dir" {
+		return nil, fmt.Errorf("%s expects source.type json_dir", cfg.Name)
+	}
+	dir := cfg.Source.Path
+	if dir == "" {
+		dir = "entities"
+	}
+	if _, err := codegen.LoadSource(".", codegen.SourceConfig{Type: "json_dir", Path: dir}); err != nil {
+		return nil, fmt.Errorf("load entity declarations: %w", err)
+	}
+	decls, err := framework.LoadEntityDeclarations(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("directory %q not found", dir)
+		}
+		return nil, fmt.Errorf("load entity declarations: %w", err)
+	}
+	if len(decls) == 0 {
+		return nil, fmt.Errorf("no entity declarations found in %s", dir)
+	}
+	return decls, nil
 }
 
 func generateFromBlueprint(options generateOptions) {
@@ -194,20 +380,14 @@ func generateFromBlueprint(options generateOptions) {
 			os.Exit(1)
 		}
 	}
-	if err := os.MkdirAll(options.outputDir, 0o755); err != nil {
-		fail("Failed to create %s: %v", options.outputDir, err)
+	fileSet, err := fileSetFromGeneratedFiles(files, "blueprint")
+	if err != nil {
+		fail("Blueprint code generation failed: %v", err)
 		os.Exit(1)
 	}
-	for _, file := range files {
-		path := filepath.Join(options.outputDir, file.name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			fail("Failed to create %s: %v", filepath.Dir(path), err)
-			os.Exit(1)
-		}
-		if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
-			fail("Failed to write %s: %v", path, err)
-			os.Exit(1)
-		}
+	if err := codegen.WriteFiles(fileSet, codegen.WriteOptions{OutputRoot: options.outputDir, SkipManifest: true}); err != nil {
+		fail("Failed to write generated files: %v", err)
+		os.Exit(1)
 	}
 	if options.json {
 		printGeneratedFilesJSON(files)
@@ -219,6 +399,16 @@ func generateFromBlueprint(options generateOptions) {
 type generatedFile struct {
 	name    string
 	content string
+}
+
+func fileSetFromGeneratedFiles(files []generatedFile, owner string) (*codegen.FileSet, error) {
+	fileSet := codegen.NewFileSet()
+	for _, file := range files {
+		if err := fileSet.Add(codegen.GeneratedFile{Path: file.name, Content: file.content, Owner: owner}); err != nil {
+			return nil, err
+		}
+	}
+	return fileSet, nil
 }
 
 func renderGeneratedProject(decls []framework.EntityDeclaration) ([]generatedFile, error) {
@@ -633,6 +823,9 @@ func validateOutputDir(dir string) error {
 // remove the directory if it contains files the generator did not write — this
 // prevents accidental data loss when --out points at a populated directory.
 func safeCleanOutputDir(dir string) error {
+	if err := codegen.EnsureNoSymlinkPath(dir); err != nil {
+		return err
+	}
 	info, err := os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -648,7 +841,7 @@ func safeCleanOutputDir(dir string) error {
 		return err
 	}
 	owned := map[string]bool{
-		".gitkeep":    true,
+		".gitkeep": true, codegen.ManifestName: true,
 		"register.go": true, "models.go": true, "columns.go": true, "repo.go": true, "events.go": true,
 		"client": true, "entities": true, "blueprint": true,
 	}
@@ -661,6 +854,9 @@ func safeCleanOutputDir(dir string) error {
 		path := filepath.Join(dir, name)
 		if name == ".gitkeep" {
 			continue
+		}
+		if err := codegen.EnsureNoSymlinkPath(filepath.Dir(path)); err != nil {
+			return err
 		}
 		if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
 			return err
@@ -677,6 +873,18 @@ func printGeneratedFilesJSON(files []generatedFile) {
 			comma = ""
 		}
 		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.name, len(file.content), comma)
+	}
+	fmt.Println(`]}`)
+}
+
+func printCodegenFilesJSON(files []codegen.GeneratedFile) {
+	fmt.Println(`{"files":[`)
+	for i, file := range files {
+		comma := ","
+		if i == len(files)-1 {
+			comma = ""
+		}
+		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Path, len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
 }

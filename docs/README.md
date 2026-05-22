@@ -80,6 +80,8 @@ ending with a "common mistakes" callout.
 
 ## Build-time tooling
 
+- [Codegen](codegen.md) — YAML-configured generators, external extension
+  protocol, safe output paths, and manifest-based cleaning.
 - [Blueprints](blueprints.md) — deterministic YAML-to-code input for
   `gofastr generate --from`, backed by the in-house `core/yaml` parser.
 - [Kiln (agent-driven build mode)](kiln.md) — separate binary; build a

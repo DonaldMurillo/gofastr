@@ -637,7 +637,7 @@ From this single definition, the framework can derive:
 - Database column mapping
 - Request validation rules
 - OpenAPI schema generation
-- TypeScript type generation (for frontend)
+- Extension-driven frontend/client code generation
 - Migration generation
 
 ### 3.7 Built-in Testing Patterns
@@ -852,11 +852,8 @@ logger.Info("user_created",
 // $ gofastr docs generate
 // Produces: openapi.json, openapi.yaml
 
-// Also generate TypeScript types for frontend:
-// $ gofastr generate typescript
-// Produces: types/api.ts
-
-// Type definitions are auto-generated from Go types:
+// Project-specific frontend type artifacts should now be added through a
+// configured codegen extension rather than a built-in generator.
 export interface CreateUserRequest {
   name: string;
   email: string;
@@ -1280,7 +1277,7 @@ Each feature is ranked by **impact on agent productivity** (how much it speeds u
 |---|---------|--------|------------|-------|
 | 13 | **MCP server** | 🟡 Medium | 🔴 High | Built-in MCP server for Claude Code / Cursor integration. Powerful but complex to build. |
 | 14 | **Structured error responses** | 🟡 Medium | 🟢 Low | Runtime errors include code, field, message, suggestion in JSON. |
-| 15 | **Auto-generated TypeScript types** | 🟡 Medium | 🟡 Medium | Generate `types/api.ts` from Go types. Helps fullstack agents. |
+| 15 | **Extension-driven client codegen** | 🟡 Medium | 🟡 Medium | Let configured generators emit frontend or client artifacts from stable source data. |
 | 16 | **Prompt-friendly error pages** | 🟡 Medium | 🟢 Low | Dev mode shows copy-pasteable error context for AI assistants. |
 | 17 | **`gofastr explain` command** | 🟡 Medium | 🟡 Medium | Given an error code, explain what it means with examples. |
 | 18 | **Schema-first model definitions** | 🟡 Medium | 🟢 Low | Struct tags define validation, DB mapping, JSON serialization. Single source of truth. |
@@ -1313,7 +1310,7 @@ Each feature is ranked by **impact on agent productivity** (how much it speeds u
 9. Auto-generated OpenAPI spec
 10. Framework-specific linter (start with `go vet` pass)
 11. Structured error responses in dev mode
-12. Auto-generated TypeScript types
+12. Extension-driven client codegen
 
 **Phase 4 — AI Integration (Week 9-12):**
 13. MCP server

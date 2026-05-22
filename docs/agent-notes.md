@@ -135,3 +135,10 @@
 - Symptom: README + architecture doc were solid, but `docs/*.md` had stub pages (~22 lines each) for security/migrations/search/query-dsl and was missing pages for half the surfaces the README advertised: batch, includes, events, cursor, multipart, hooks/tx, access control, multi-tenant, cron, audit, plugins, kiln. No mechanism existed to keep docs synced with API changes.
 - Evidence: this commit expands the four stub pages with full surface tables and common-mistake callouts; adds 11 missing reference pages grounded in code reads; adds `.claude/skills/gofastr-docs/SKILL.md` that auto-loads on any code change so docs ship in the same commit as the API; adds `docs/README.md` index.
 - Next time: a stub doc is a defect — either flesh it out or fold it into the README. Don't leave half-done reference pages that lie about the surface.
+
+## 2026-05-21 - yaml-codegen-extensions
+
+- Scope: `codegen`, `cmd/gofastr`, `docs`
+- Symptom: `gofastr generate` used to be an entity-specific CLI path. The extensible surface is now a general codegen engine: YAML config selects generators, sources are structured inputs, and external commands speak a JSON protocol.
+- Evidence: `codegen/` owns config discovery, source loading, safe file paths, manifest cleaning, in-process generators, and command extensions. `cmd/gofastr` registers `go/entities` and `go/client` built-ins while preserving no-config entity generation.
+- Next time: do not add another special-purpose generator command first. Add a generator or extension path through `codegen`, then expose any CLI sugar as a thin wrapper.

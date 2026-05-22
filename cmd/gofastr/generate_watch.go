@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
 // runGenerateWatch polls the entities directory for changes and re-runs
@@ -21,23 +25,23 @@ import (
 // Stop with Ctrl-C.
 func runGenerateWatch(args []string) {
 	options := parseGenerateOptions(args)
-	info("Watching %s for changes — Ctrl-C to stop.", options.entitiesDir)
+	info("Watching generator inputs — Ctrl-C to stop.")
 
 	// Initial pass.
 	runOnce(args, options.entitiesDir)
 
-	lastHash := hashEntitiesDir(options.entitiesDir)
+	lastHash := hashGenerateInputs(options)
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		h := hashEntitiesDir(options.entitiesDir)
+		h := hashGenerateInputs(options)
 		if h == lastHash {
 			continue
 		}
 		lastHash = h
 		fmt.Printf("\033[2J\033[H") // clear terminal
-		info("Detected change in %s — regenerating...", options.entitiesDir)
+		info("Detected codegen input change — regenerating...")
 		runOnce(args, options.entitiesDir)
 	}
 }
@@ -52,14 +56,18 @@ func runOnce(args []string, _ string) {
 		}
 		filtered = append(filtered, a)
 	}
-	// generateProject calls os.Exit on failure; defer-recover so a single
-	// bad file doesn't kill the watcher.
-	defer func() {
-		if r := recover(); r != nil {
-			fail("recovered from generate panic: %v", r)
-		}
-	}()
-	generateProject(filtered)
+	exe, err := os.Executable()
+	if err != nil {
+		fail("generate failed: %v", err)
+		return
+	}
+	cmd := exec.Command(exe, append([]string{"generate"}, filtered...)...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		fail("generate failed: %v", err)
+	}
 }
 
 // hashEntitiesDir returns a content hash over every *.json file in dir,
@@ -93,4 +101,89 @@ func hashEntitiesDir(dir string) string {
 		h.Write(buf)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func hashGenerateInputs(options generateOptions) string {
+	h := sha256.New()
+	if options.from != "" {
+		hashBlueprintInputInto(h, options.from)
+		return fmt.Sprintf("%x", h.Sum(nil))
+	}
+	if options.configPath != "" {
+		hashFileInto(h, options.configPath)
+	}
+	discovery, err := discoverGenerateConfig(options)
+	if err == nil && discovery.Found {
+		projectDir := discovery.ProjectDir
+		if strings.TrimSpace(projectDir) == "" {
+			projectDir = "."
+		}
+		hashFileInto(h, discovery.Path)
+		for _, ext := range discovery.Config.Codegen.Extensions {
+			if len(ext.Command) > 0 && filepath.Base(ext.Command[0]) != ext.Command[0] {
+				hashFileInto(h, projectRelativePath(projectDir, ext.Command[0]))
+			}
+		}
+		for _, gen := range discovery.Config.Codegen.Generators {
+			source := gen.Source
+			if options.entitiesSet && isEntitySourceOverrideTarget(gen) {
+				source = codegen.SourceConfig{Type: "json_dir", Path: options.entitiesDir}
+			}
+			switch strings.ToLower(source.Type) {
+			case "json_file":
+				hashFileInto(h, projectRelativePath(projectDir, source.Path))
+			case "json_dir", "":
+				dir := source.Path
+				if dir == "" {
+					dir = options.entitiesDir
+				}
+				fmt.Fprintln(h, hashEntitiesDir(projectRelativePath(projectDir, dir)))
+			}
+		}
+		return fmt.Sprintf("%x", h.Sum(nil))
+	}
+	if options.configPath != "" {
+		return fmt.Sprintf("%x", h.Sum(nil))
+	}
+	fmt.Fprintln(h, hashEntitiesDir(options.entitiesDir))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func hashBlueprintInputInto(h interface{ Write([]byte) (int, error) }, path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		fmt.Fprintln(h, path)
+		return
+	}
+	if !info.IsDir() {
+		hashFileInto(h, path)
+		return
+	}
+	var paths []string
+	_ = filepath.WalkDir(path, func(next string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !isBlueprintFile(next) {
+			return nil
+		}
+		paths = append(paths, next)
+		return nil
+	})
+	sort.Strings(paths)
+	for _, next := range paths {
+		hashFileInto(h, next)
+	}
+}
+
+func hashFileInto(h interface{ Write([]byte) (int, error) }, path string) {
+	fmt.Fprintln(h, path)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		_, _ = h.Write(data)
+	}
+}
+
+func projectRelativePath(projectDir, path string) string {
+	if filepath.IsAbs(path) || strings.TrimSpace(projectDir) == "" || projectDir == "." {
+		return path
+	}
+	return filepath.Join(projectDir, path)
 }
