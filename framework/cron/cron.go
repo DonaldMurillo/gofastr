@@ -29,7 +29,7 @@ type CronJob struct {
 // replicas. For single-instance background work it is sufficient; for
 // horizontally scaled deployments use the DB-backed queue instead.
 type Scheduler struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	jobs    []scheduledJob
 	tickEv  time.Duration
 	stop    chan struct{}
@@ -92,16 +92,11 @@ func (s *Scheduler) Stop() {
 // (Register during tick) are safe because the mutex is held only for the
 // read — new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
-	// Grab a snapshot of the slice header under read-lock so Register
-	// calls from inside job.Run don't deadlock. The slice data is
-	// immutable for the duration of this function because append in
-	// Register always allocates a new backing array.
-	s.mu.Lock()
-	jobs := s.jobs
-	s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	for i := range jobs {
-		sj := &jobs[i]
+	for i := range s.jobs {
+		sj := &s.jobs[i]
 		if !sj.expr.matches(now) {
 			continue
 		}
