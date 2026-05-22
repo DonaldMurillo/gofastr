@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Source provides configuration values. The default source reads from
@@ -39,10 +40,12 @@ type Source interface {
 // EnvSource reads from environment variables. This is the default source.
 type EnvSource struct{}
 
-// Get returns the environment variable for the given key.
+// Get returns the environment variable for the given key. Distinguishes
+// between unset (returns ok=false) and set-but-empty (returns "", true).
+// Conflating those breaks defaulting — an explicit empty value used to
+// silently fall back to the `default:` tag.
 func (EnvSource) Get(key string) (string, bool) {
-	v := os.Getenv(key)
-	return v, v != ""
+	return os.LookupEnv(key)
 }
 
 // MapSource reads from a static map. Useful for testing.
@@ -67,12 +70,33 @@ func (cs ChainedSource) Get(key string) (string, bool) {
 	return "", false
 }
 
+// ConfigValidator is implemented by config structs that want a
+// post-binding validation hook. Validate runs after every field has
+// been populated; returning a non-nil error aborts Load.
+//
+// Renamed from Validator to avoid collision with entity.Entity's own
+// Validate() error method — a config struct that doubled as an
+// entity would otherwise accidentally satisfy this interface.
+type ConfigValidator interface {
+	Validate() error
+}
+
 // Load populates the config struct from the given sources (defaulting to
 // EnvSource if none are provided). Struct fields use `config:"KEY"` tags
 // to specify the source key, `default:"VALUE"` for defaults, and
 // `required:"true"` for mandatory fields.
 //
-// Supported field types: string, int, int64, float64, bool, Duration.
+// Nested struct fields recurse with a SCREAMING_SNAKE prefix derived from
+// the parent field name (e.g. `DB DBConfig` reads keys like DB_HOST).
+//
+// Fields tagged `sensitive:"true"` have their raw value redacted from
+// any error messages.
+//
+// If the config (or a pointer to it) implements ConfigValidator,
+// Validate is called after binding and its error is returned.
+//
+// Supported field types: string, int, int64, float64, bool, Duration,
+// and nested structs.
 func Load(cfg interface{}, sources ...Source) error {
 	return LoadWith(cfg, sources...)
 }
@@ -89,7 +113,21 @@ func LoadWith(cfg interface{}, sources ...Source) error {
 		src = ChainedSource{EnvSource{}}
 	}
 
-	elem := v.Elem()
+	if err := bindStruct(v.Elem(), "", src); err != nil {
+		return err
+	}
+
+	if val, ok := cfg.(ConfigValidator); ok {
+		if err := val.Validate(); err != nil {
+			return fmt.Errorf("config: validate: %w", err)
+		}
+	}
+	return nil
+}
+
+// bindStruct walks the fields of elem, reading from src under the given
+// prefix. Nested struct fields recurse with prefix+FieldName+"_".
+func bindStruct(elem reflect.Value, prefix string, src Source) error {
 	t := elem.Type()
 
 	for i := 0; i < t.NumField(); i++ {
@@ -100,13 +138,24 @@ func LoadWith(cfg interface{}, sources ...Source) error {
 			continue
 		}
 
+		// Recurse into nested structs (but not time.Duration, which is an int64).
+		if fieldVal.Kind() == reflect.Struct && fieldVal.Type() != reflect.TypeOf(time.Duration(0)) {
+			nestedPrefix := prefix + strings.ToUpper(field.Name) + "_"
+			if err := bindStruct(fieldVal, nestedPrefix, src); err != nil {
+				return err
+			}
+			continue
+		}
+
 		key := field.Tag.Get("config")
 		if key == "" {
 			key = strings.ToUpper(field.Name)
 		}
+		key = prefix + key
 
 		required := field.Tag.Get("required") == "true"
 		defaultVal := field.Tag.Get("default")
+		sensitive := field.Tag.Get("sensitive") == "true"
 
 		val, found := src.Get(key)
 		if !found {
@@ -121,6 +170,9 @@ func LoadWith(cfg interface{}, sources ...Source) error {
 		}
 
 		if err := setField(fieldVal, val, field.Name); err != nil {
+			if sensitive {
+				return fmt.Errorf("config: field %s: invalid sensitive value (redacted)", field.Name)
+			}
 			return err
 		}
 	}
@@ -172,13 +224,13 @@ func setField(v reflect.Value, s string, fieldName string) error {
 }
 
 // parseDuration parses a duration string. Supports standard Go duration
-// syntax ("30s", "5m") plus plain integer seconds.
+// syntax ("30s", "5m", "500ms") plus plain integer seconds.
 func parseDuration(s string) (int64, error) {
 	// Try standard Go parsing first
 	if strings.ContainsAny(s, "hmsuµn") {
 		d, err := parseGoDuration(s)
 		if err == nil {
-			return int64(d), nil
+			return d, nil
 		}
 		return 0, err
 	}
@@ -190,41 +242,15 @@ func parseDuration(s string) (int64, error) {
 	return n * int64(1e9), nil
 }
 
-// parseGoDuration is a minimal duration parser.
+// parseGoDuration delegates to time.ParseDuration so all of Go's
+// suffixes ("ns", "us"/"µs", "ms", "s", "m", "h") parse correctly.
+// The previous handrolled scanner mis-read "500ms" as "500m + trailing s".
 func parseGoDuration(s string) (int64, error) {
-	var total int64
-	var numStr string
-	for _, ch := range s {
-		switch ch {
-		case 'h':
-			n, err := strconv.ParseInt(numStr, 10, 64)
-			if err != nil {
-				return 0, err
-			}
-			total += n * 3600e9
-			numStr = ""
-		case 'm':
-			n, err := strconv.ParseInt(numStr, 10, 64)
-			if err != nil {
-				return 0, err
-			}
-			total += n * 60e9
-			numStr = ""
-		case 's':
-			n, err := strconv.ParseInt(numStr, 10, 64)
-			if err != nil {
-				return 0, err
-			}
-			total += n * 1e9
-			numStr = ""
-		default:
-			numStr += string(ch)
-		}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%w", err)
 	}
-	if numStr != "" {
-		return 0, fmt.Errorf("trailing number without unit: %s", numStr)
-	}
-	return total, nil
+	return int64(d), nil
 }
 
 // MustLoad is like Load but panics on error. Use in init() or main().

@@ -26,6 +26,7 @@ package routegroup
 import (
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -45,6 +46,7 @@ type GroupOption func(*RouteGroup)
 type RouteGroup struct {
 	prefix      string
 	sub         *router.Router // lazy-created router.Group
+	subOnce     sync.Once      // guards lazy init of sub
 	parent      *router.Router
 
 	// Middleware specific to this group (applied in addition to
@@ -115,15 +117,17 @@ func New(parent *router.Router, prefix string, opts ...GroupOption) *RouteGroup 
 }
 
 // router returns the sub-router for this group, creating it lazily.
+// Race-free: concurrent Get/Post/Use calls on a fresh group used to spawn
+// multiple sub-routers and silently lose registrations.
 func (g *RouteGroup) router_() *router.Router {
-	if g.sub == nil {
+	g.subOnce.Do(func() {
 		var mw []router.Middleware
 		if g.accessMW != nil {
 			mw = append(mw, g.accessMW)
 		}
 		mw = append(mw, g.middleware...)
 		g.sub = g.parent.Group(g.prefix, mw...)
-	}
+	})
 	return g.sub
 }
 

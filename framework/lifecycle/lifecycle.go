@@ -24,10 +24,19 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
+
+// ErrShuttingDown is returned by RegisterDrainer / RegisterHealthChecker
+// when called after Shutdown has begun.
+var ErrShuttingDown = errors.New("lifecycle: shutdown already started")
 
 // Drainer is implemented by batteries and plugins that need to flush
 // pending work during graceful shutdown. Drain should block until all
@@ -54,10 +63,11 @@ type HealthChecker interface {
 
 // Lifecycle manages the graceful shutdown sequence.
 type Lifecycle struct {
-	mu       sync.Mutex
-	drainers []Drainer
-	checkers []HealthChecker
-	timeout  time.Duration
+	mu            sync.Mutex
+	drainers      []Drainer
+	checkers      []HealthChecker
+	timeout       time.Duration
+	shuttingDown  atomic.Bool
 }
 
 // New creates a new Lifecycle manager.
@@ -74,19 +84,60 @@ func WithTimeout(d time.Duration) func(*Lifecycle) {
 }
 
 // RegisterDrainer adds a component to the drain phase. Drainers are
-// called concurrently during shutdown.
-func (lc *Lifecycle) RegisterDrainer(d Drainer) {
+// called sequentially during shutdown, in registration order. Returns
+// ErrShuttingDown if Shutdown has already started — late registrations
+// are dropped to keep the shutdown snapshot deterministic.
+func (lc *Lifecycle) RegisterDrainer(d Drainer) error {
+	return lc.AppendDrainer(d)
+}
+
+// AppendDrainer adds a drainer to the END of the drain order. Equivalent
+// to RegisterDrainer; named explicitly when callers want to be explicit
+// about ordering relative to PrependDrainer.
+func (lc *Lifecycle) AppendDrainer(d Drainer) error {
+	if lc.shuttingDown.Load() {
+		return ErrShuttingDown
+	}
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
+	if lc.shuttingDown.Load() {
+		return ErrShuttingDown
+	}
 	lc.drainers = append(lc.drainers, d)
+	return nil
+}
+
+// PrependDrainer adds a drainer to the FRONT of the drain order — so
+// it runs BEFORE every previously-registered drainer. Used to encode
+// LIFO semantics for app-level stop hooks (last registered = first
+// drained).
+func (lc *Lifecycle) PrependDrainer(d Drainer) error {
+	if lc.shuttingDown.Load() {
+		return ErrShuttingDown
+	}
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	if lc.shuttingDown.Load() {
+		return ErrShuttingDown
+	}
+	lc.drainers = append([]Drainer{d}, lc.drainers...)
+	return nil
 }
 
 // RegisterHealthChecker adds a component that reports health status.
-// During shutdown, all checkers are marked unhealthy.
-func (lc *Lifecycle) RegisterHealthChecker(hc HealthChecker) {
+// During shutdown, all checkers are marked unhealthy. Returns
+// ErrShuttingDown if Shutdown has already started.
+func (lc *Lifecycle) RegisterHealthChecker(hc HealthChecker) error {
+	if lc.shuttingDown.Load() {
+		return ErrShuttingDown
+	}
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
+	if lc.shuttingDown.Load() {
+		return ErrShuttingDown
+	}
 	lc.checkers = append(lc.checkers, hc)
+	return nil
 }
 
 // Shutdown executes the graceful shutdown sequence:
@@ -97,8 +148,9 @@ func (lc *Lifecycle) RegisterHealthChecker(hc HealthChecker) {
 //
 // The context is used as the parent for the drain timeout.
 func (lc *Lifecycle) Shutdown(ctx context.Context) error {
-	// Phase 1: Mark unhealthy (handled by checkers themselves when
-	// the app's health endpoint starts returning 503 during shutdown)
+	// Phase 1: Mark unhealthy. Load balancers polling IsHealthy now see
+	// false and divert traffic before in-flight requests finish draining.
+	lc.shuttingDown.Store(true)
 
 	// Phase 2: Drain with timeout
 	drainCtx, cancel := context.WithTimeout(ctx, lc.timeout)
@@ -107,33 +159,69 @@ func (lc *Lifecycle) Shutdown(ctx context.Context) error {
 	lc.mu.Lock()
 	drainers := make([]Drainer, len(lc.drainers))
 	copy(drainers, lc.drainers)
+	// Snapshot consumed — clear so a second Shutdown() call is a safe
+	// no-op even if callers re-enter (idempotent shutdown contract).
+	lc.drainers = nil
 	lc.mu.Unlock()
 
 	var firstErr error
-	var wg sync.WaitGroup
-	var errMu sync.Mutex
+	recordErr := func(err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 
+	// Sequential, in-order drain. Concurrent draining loses the LIFO
+	// ordering app-level stop hooks rely on (last-registered runs
+	// first, so a battery's close runs AFTER any user code that
+	// depends on it). Callers that want parallel drain can launch
+	// goroutines from inside their Drain implementation.
 	for _, d := range drainers {
-		wg.Add(1)
-		go func(d Drainer) {
-			defer wg.Done()
-			if err := d.Drain(drainCtx); err != nil {
-				errMu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("drain failed: %w", err)
+		func(d Drainer) {
+			defer func() {
+				if r := recover(); r != nil {
+					recordErr(fmt.Errorf("drain panicked: %v", r))
 				}
-				errMu.Unlock()
+			}()
+			if err := d.Drain(drainCtx); err != nil {
+				recordErr(fmt.Errorf("drain failed: %w", err))
 			}
 		}(d)
 	}
-
-	wg.Wait()
 	return firstErr
 }
 
-// IsHealthy returns true if all registered health checkers report healthy.
-// Returns true if no checkers are registered.
+// RunWithSignals blocks until SIGINT or SIGTERM is received, then runs
+// Shutdown using ctx as the parent context. Returns Shutdown's error,
+// or nil if ctx is cancelled before a signal arrives.
+func (lc *Lifecycle) RunWithSignals(ctx context.Context) error {
+	return lc.RunWithSignalsUsing(ctx, lc.Shutdown)
+}
+
+// RunWithSignalsUsing is like RunWithSignals but invokes the supplied
+// shutdown function instead of lc.Shutdown directly. Used by App so
+// SIGTERM walks the App.Shutdown path (HTTP server drain + battery
+// stop + lifecycle.Shutdown), not just lifecycle.Shutdown alone.
+func (lc *Lifecycle) RunWithSignalsUsing(ctx context.Context, shutdown func(context.Context) error) error {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	select {
+	case <-sigCh:
+		return shutdown(ctx)
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+// IsHealthy returns true if all registered health checkers report healthy
+// AND Shutdown has not been called. Returns true if no checkers are
+// registered and the lifecycle is not shutting down.
 func (lc *Lifecycle) IsHealthy() bool {
+	if lc.shuttingDown.Load() {
+		return false
+	}
 	lc.mu.Lock()
 	checkers := make([]HealthChecker, len(lc.checkers))
 	copy(checkers, lc.checkers)

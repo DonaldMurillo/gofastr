@@ -40,6 +40,11 @@ type DSLOrder struct {
 // allocs for a fresh parse.
 const maxParseCacheSize = 256
 
+// maxDSLInputSize caps the byte length of input passed to ParseDSL.
+// Without a cap, a single megabyte-class payload could consume parser
+// time AND get cached, amplifying its cost across the whole process.
+const maxDSLInputSize = 8 * 1024
+
 var (
 	parseCache   = make(map[string]DSLQuery, 64)
 	parseCacheMu sync.RWMutex
@@ -49,9 +54,14 @@ var (
 //
 //	Post.where(status="published").include(author).order(created_at DESC).limit(10)
 //
-// Results are cached by input string. The cache is bounded to 256 entries
-// and evicts the oldest when full (simple map replacement).
+// Results are cached by input string. The cache is bounded to 256 entries;
+// when full, a single randomly-chosen entry is evicted (Go map iteration
+// is randomised, so the first key returned by `range` is effectively
+// random — this is not LRU).
 func ParseDSL(input string) (DSLQuery, error) {
+	if len(input) > maxDSLInputSize {
+		return DSLQuery{}, fmt.Errorf("dsl: input exceeds %d bytes", maxDSLInputSize)
+	}
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return DSLQuery{}, fmt.Errorf("dsl: query is empty")
@@ -71,11 +81,11 @@ func ParseDSL(input string) (DSLQuery, error) {
 		return DSLQuery{}, err
 	}
 
-	// Store in cache (evict if too large)
+	// Store in cache (evict a random entry when full). Random eviction
+	// keeps the working set roughly intact for hot queries without the
+	// bookkeeping cost of LRU.
 	parseCacheMu.Lock()
 	if len(parseCache) >= maxParseCacheSize {
-		// Simple eviction: clear and repopulate. The common case has
-		// a small working set of unique queries.
 		for k := range parseCache {
 			delete(parseCache, k)
 			break

@@ -9,6 +9,12 @@ import (
 	"unicode"
 )
 
+// maxCacheSize bounds both casing caches. User-controlled JSON keys can
+// flow into the snake cache via crud.unconvertMapKeys, so an unbounded
+// map would be a slow memory leak; cap at a size that comfortably covers
+// real-world column-name working sets.
+const maxCacheSize = 4096
+
 // camelCache caches ToCamel results. Agents often issue the same query
 // template repeatedly; cached lookups hit ~50ns / 0 allocs vs ~600ns / 3 allocs
 // for a fresh conversion.
@@ -22,6 +28,16 @@ var (
 	snakeCache   = make(map[string]string)
 	snakeCacheMu sync.RWMutex
 )
+
+// evictOne removes a single (random) entry from m. Go map iteration order
+// is randomized, so taking the first key approximates random eviction with
+// zero bookkeeping cost. Caller must hold the write lock for m.
+func evictOne(m map[string]string) {
+	for k := range m {
+		delete(m, k)
+		return
+	}
+}
 
 // ToCamel converts a snake_case string to camelCase.
 // e.g. "author_id" -> "authorId", "created_at" -> "createdAt".
@@ -49,6 +65,9 @@ func ToCamel(s string) string {
 	result := strings.Join(parts, "")
 
 	camelCacheMu.Lock()
+	if len(camelCache) >= maxCacheSize {
+		evictOne(camelCache)
+	}
 	camelCache[s] = result
 	camelCacheMu.Unlock()
 
@@ -87,6 +106,9 @@ func ToSnake(s string) string {
 	result := b.String()
 
 	snakeCacheMu.Lock()
+	if len(snakeCache) >= maxCacheSize {
+		evictOne(snakeCache)
+	}
 	snakeCache[s] = result
 	snakeCacheMu.Unlock()
 

@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,51 @@ func TestLoadEnvSource(t *testing.T) {
 	}
 }
 
+func TestEnvSourceDistinguishesEmpty(t *testing.T) {
+	const key = "TEST_GFASTR_EMPTY"
+	os.Setenv(key, "")
+	defer os.Unsetenv(key)
+	v, ok := config.EnvSource{}.Get(key)
+	if !ok {
+		t.Fatalf("expected ok=true for set-empty env, got %v", ok)
+	}
+	if v != "" {
+		t.Fatalf("expected empty value, got %q", v)
+	}
+}
+
+func TestDurationParsesMillis(t *testing.T) {
+	type cfg struct {
+		Ms time.Duration `config:"MS"`
+	}
+	var c cfg
+	src := config.MapSource{"MS": "500ms"}
+	if err := config.Load(&c, src); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Ms != 500*time.Millisecond {
+		t.Fatalf("Ms = %v, want 500ms", c.Ms)
+	}
+}
+
+func TestDurationParsesNanosAndMicros(t *testing.T) {
+	type cfg struct {
+		A time.Duration `config:"A"`
+		B time.Duration `config:"B"`
+	}
+	var c cfg
+	src := config.MapSource{"A": "100ns", "B": "200us"}
+	if err := config.Load(&c, src); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.A != 100*time.Nanosecond {
+		t.Fatalf("A = %v, want 100ns", c.A)
+	}
+	if c.B != 200*time.Microsecond {
+		t.Fatalf("B = %v, want 200us", c.B)
+	}
+}
+
 func TestMustLoadPanics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -139,3 +185,99 @@ func TestMustLoadPanics(t *testing.T) {
 	}()
 	config.MustLoad(&testConfig{})
 }
+
+func TestRequiredErrorNamesFieldAndKey(t *testing.T) {
+	type cfg struct {
+		APIKey string `config:"API_KEY" required:"true"`
+	}
+	var c cfg
+	err := config.Load(&c, config.MapSource{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "APIKey") {
+		t.Errorf("error %q missing Go field name APIKey", msg)
+	}
+	if !strings.Contains(msg, "API_KEY") {
+		t.Errorf("error %q missing env key API_KEY", msg)
+	}
+}
+
+func TestNestedStructPrefixed(t *testing.T) {
+	type DBConfig struct {
+		Host string `config:"HOST" required:"true"`
+		Port int    `config:"PORT" default:"5432"`
+	}
+	type App struct {
+		DB DBConfig
+	}
+	src := config.MapSource{
+		"DB_HOST": "db.example.com",
+		"DB_PORT": "6543",
+	}
+	var a App
+	if err := config.Load(&a, src); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if a.DB.Host != "db.example.com" {
+		t.Errorf("DB.Host = %q, want db.example.com", a.DB.Host)
+	}
+	if a.DB.Port != 6543 {
+		t.Errorf("DB.Port = %d, want 6543", a.DB.Port)
+	}
+}
+
+func TestSensitiveValueRedacted(t *testing.T) {
+	type cfg struct {
+		Password int `config:"PASSWORD" sensitive:"true"`
+	}
+	var c cfg
+	src := config.MapSource{"PASSWORD": "supersecret-not-an-int"}
+	err := config.Load(&c, src)
+	if err == nil {
+		t.Fatal("expected error parsing bad int")
+	}
+	if strings.Contains(err.Error(), "supersecret-not-an-int") {
+		t.Errorf("error leaked sensitive value: %q", err.Error())
+	}
+}
+
+func TestValidateHookErrors(t *testing.T) {
+	var c validatedConfig
+	src := config.MapSource{"NAME": "bad"}
+	err := config.Load(&c, src)
+	if err == nil {
+		t.Fatal("expected Validate() error")
+	}
+	if !strings.Contains(err.Error(), "name rejected") {
+		t.Errorf("error %q missing Validate message", err.Error())
+	}
+}
+
+func TestMustLoadPanicsOnValidate(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("MustLoad should panic on Validate error")
+		}
+	}()
+	var c validatedConfig
+	config.MustLoad(&c, config.MapSource{"NAME": "bad"})
+}
+
+type validatedConfig struct {
+	Name string `config:"NAME"`
+}
+
+func (v *validatedConfig) Validate() error {
+	if v.Name == "bad" {
+		return errBadName
+	}
+	return nil
+}
+
+var errBadName = stringErr("name rejected")
+
+type stringErr string
+
+func (s stringErr) Error() string { return string(s) }

@@ -1,13 +1,52 @@
 package routegroup_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
+
+func TestGroupRouterRaceFreeInit(t *testing.T) {
+	t.Parallel()
+	r := router.New()
+	g := routegroup.New(r, "/api")
+
+	// Barrier so every goroutine starts the registration at the same
+	// instant — without this, sequential scheduler quanta let the for-
+	// loop launch finish before the first goroutine even contends.
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	const N = 50
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			g.Get(fmt.Sprintf("/route%d", i), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// All routes should be in a single sub-router. Count routes on the root.
+	routes := r.Routes()
+	count := 0
+	for _, rt := range routes {
+		if rt.Method == http.MethodGet {
+			count++
+		}
+	}
+	if count != N {
+		t.Fatalf("got %d registered GETs, want %d (lost routes to race)", count, N)
+	}
+}
 
 func TestGroupPrefix(t *testing.T) {
 	r := router.New()
@@ -100,6 +139,155 @@ func TestGroupAccess(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d (access denied)", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestNestedAccessBothEnforced(t *testing.T) {
+	// Happy path — both access checks run.
+	t.Run("both allow", func(t *testing.T) {
+		r := router.New()
+		var outerCalled, innerCalled int
+		outer := routegroup.New(r, "/api", routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				outerCalled++
+				next.ServeHTTP(w, req)
+			})
+		}))
+		inner := outer.Group("/admin", routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				innerCalled++
+				next.ServeHTTP(w, req)
+			})
+		}))
+		inner.Get("/secret", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/secret", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+		if outerCalled != 1 || innerCalled != 1 {
+			t.Errorf("outer=%d inner=%d, both should run exactly once", outerCalled, innerCalled)
+		}
+	})
+
+	// Outer denies — inner check must never run, handler must never run.
+	t.Run("outer denies", func(t *testing.T) {
+		r := router.New()
+		var innerCalled, handlerCalled int
+		outer := routegroup.New(r, "/api", routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				// do NOT call next — outer denial blocks the chain
+			})
+		}))
+		inner := outer.Group("/admin", routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				innerCalled++
+				next.ServeHTTP(w, req)
+			})
+		}))
+		inner.Get("/secret", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			handlerCalled++
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/secret", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("status = %d, want 403", rec.Code)
+		}
+		if innerCalled != 0 {
+			t.Errorf("inner ran %d times after outer denial — must be 0", innerCalled)
+		}
+		if handlerCalled != 0 {
+			t.Errorf("handler ran %d times after outer denial — must be 0", handlerCalled)
+		}
+	})
+
+	// Inner denies — outer ran, handler must never run.
+	t.Run("inner denies", func(t *testing.T) {
+		r := router.New()
+		var outerCalled, handlerCalled int
+		outer := routegroup.New(r, "/api", routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				outerCalled++
+				next.ServeHTTP(w, req)
+			})
+		}))
+		inner := outer.Group("/admin", routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				// do NOT call next
+			})
+		}))
+		inner.Get("/secret", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			handlerCalled++
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/secret", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("status = %d, want 403", rec.Code)
+		}
+		if outerCalled != 1 {
+			t.Errorf("outer ran %d times — must be 1 (runs first)", outerCalled)
+		}
+		if handlerCalled != 0 {
+			t.Errorf("handler ran %d times after inner denial — must be 0", handlerCalled)
+		}
+	})
+}
+
+func TestAccessRunsBeforeMiddleware(t *testing.T) {
+	r := router.New()
+	var order []string
+
+	g := routegroup.New(r, "/api",
+		routegroup.WithAccess(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				order = append(order, "access")
+				next.ServeHTTP(w, req)
+			})
+		}),
+		routegroup.WithMiddleware(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				order = append(order, "middleware")
+				next.ServeHTTP(w, req)
+			})
+		}),
+	)
+	g.Get("/x", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		order = append(order, "handler")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(order) != 3 || order[0] != "access" || order[1] != "middleware" || order[2] != "handler" {
+		t.Errorf("order = %v, want [access middleware handler]", order)
+	}
+}
+
+func TestNestedMCPNamespaceComposes(t *testing.T) {
+	r := router.New()
+	outer := routegroup.New(r, "/api", routegroup.WithMCPNamespace("api"))
+	inner := outer.Group("/admin", routegroup.WithMCPNamespace("admin"))
+
+	if got := inner.MCPToolName("users", "list"); got != "admin.users.list" {
+		t.Errorf("inner namespace overrides outer for MCP tool name: got %q, want %q", got, "admin.users.list")
+	}
+	if got := outer.MCPToolName("users", "list"); got != "api.users.list" {
+		t.Errorf("outer-only tool name = %q, want %q", got, "api.users.list")
 	}
 }
 

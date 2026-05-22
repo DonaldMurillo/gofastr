@@ -29,12 +29,13 @@ type CronJob struct {
 // replicas. For single-instance background work it is sufficient; for
 // horizontally scaled deployments use the DB-backed queue instead.
 type Scheduler struct {
-	mu      sync.RWMutex
-	jobs    []scheduledJob
-	tickEv  time.Duration
-	stop    chan struct{}
-	stopped chan struct{}
-	OnError func(jobName string, err error)
+	mu        sync.RWMutex
+	jobs      []scheduledJob
+	tickEv    time.Duration
+	stop      chan struct{}
+	stopped   chan struct{}
+	startOnce sync.Once
+	OnError   func(jobName string, err error)
 }
 
 type scheduledJob struct {
@@ -69,7 +70,9 @@ func (s *Scheduler) Register(job CronJob) error {
 // Start begins the tick loop in a goroutine. Returns immediately. Idempotent:
 // repeated Start calls are no-ops once the loop is running.
 func (s *Scheduler) Start(ctx context.Context) {
-	go s.run(ctx)
+	s.startOnce.Do(func() {
+		go s.run(ctx)
+	})
 }
 
 // Stop signals the loop to exit and blocks until it has. Safe to call

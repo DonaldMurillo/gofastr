@@ -164,3 +164,10 @@ func TestParseDSLWhitespace(t *testing.T) {
 		t.Fatalf("Limit = %d, want 5", q.Limit)
 	}
 }
+
+func TestParseDSLRejectsHugeInput(t *testing.T) {
+	huge := "Post.where(name=\"" + strings.Repeat("a", 2*1024*1024) + "\")"
+	if _, err := ParseDSL(huge); err == nil {
+		t.Fatal("expected ParseDSL to reject 2MB input")
+	}
+}
