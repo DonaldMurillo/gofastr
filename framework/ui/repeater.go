@@ -1,14 +1,26 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
+
+// repeaterAppendQuery appends a query string to a URL using `?` when the
+// URL has no existing query string, or `&` otherwise.
+func repeaterAppendQuery(base, q string) string {
+	if strings.Contains(base, "?") {
+		return base + "&" + q
+	}
+	return base + "?" + q
+}
 
 // RepeaterConfig configures a dynamic form repeater.
 type RepeaterConfig struct {
@@ -30,10 +42,10 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		cfg.ID = autoID("rep")
 	}
 	if cfg.AddLabel == "" {
-		cfg.AddLabel = "Add item"
+		cfg.AddLabel = i18nui.T(context.Background(), i18nui.KeyRepeaterAdd)
 	}
 	if cfg.RemoveLabel == "" {
-		cfg.RemoveLabel = "Remove"
+		cfg.RemoveLabel = i18nui.T(context.Background(), i18nui.KeyRepeaterRemove)
 	}
 
 	var children []render.HTML
@@ -73,12 +85,16 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 			"data-repeater":  cfg.Name,
 			"data-min-items": strconv.Itoa(cfg.MinItems),
 			"data-max-items": strconv.Itoa(cfg.MaxItems),
+			// Announce add/remove to AT users without forcing
+			// per-callsite ARIA wiring.
+			"role":      "region",
+			"aria-live": "polite",
 		},
 	}, itemHTML...))
 
 	addAttrs := map[string]string{"type": "button", "class": "ui-repeater-add"}
 	if cfg.RPCPath != "" {
-		addAttrs["data-fui-rpc"] = cfg.RPCPath + "?action=add"
+		addAttrs["data-fui-rpc"] = repeaterAppendQuery(cfg.RPCPath, "action=add")
 		addAttrs["data-fui-rpc-method"] = "POST"
 		addAttrs["data-fui-rpc-signal"] = cfg.ID + "-items"
 	}
@@ -96,7 +112,7 @@ func repeaterRemoveBtn(cfg RepeaterConfig, index int) render.HTML {
 		"aria-label": fmt.Sprintf("Remove item %d", index+1),
 	}
 	if cfg.RPCPath != "" {
-		attrs["data-fui-rpc"] = fmt.Sprintf("%s?action=remove&index=%d", cfg.RPCPath, index)
+		attrs["data-fui-rpc"] = repeaterAppendQuery(cfg.RPCPath, fmt.Sprintf("action=remove&index=%d", index))
 		attrs["data-fui-rpc-method"] = "POST"
 		attrs["data-fui-rpc-signal"] = cfg.ID + "-items"
 	}

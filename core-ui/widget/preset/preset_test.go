@@ -1,6 +1,7 @@
 package preset
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
@@ -72,6 +73,23 @@ func TestBannerDefaults(t *testing.T) {
 	d := Banner("b").Build()
 	if d.Position != widget.Top {
 		t.Errorf("Banner position = %q", d.Position)
+	}
+}
+
+func TestToastStackSlotEscapesName(t *testing.T) {
+	// The stack name is rendered into the data-fui-toast-stack
+	// attribute. If unescaped, a name containing `"` breaks out of
+	// the attribute (and via " onload=… could execute on browsers
+	// that load this attr lazily).
+	s := clientToastSlot{name: `evil" onload="alert(1)`}
+	got := string(s.Render())
+	if strings.Contains(got, `evil" onload="alert(1)`) {
+		t.Fatalf("ToastStack name rendered unescaped into HTML attr — XSS:\n%s", got)
+	}
+	// Must contain the escaped form so the slot still works for the
+	// legitimate use case.
+	if !strings.Contains(got, `&quot;`) {
+		t.Fatalf("expected escaped quote in attr value:\n%s", got)
 	}
 }
 

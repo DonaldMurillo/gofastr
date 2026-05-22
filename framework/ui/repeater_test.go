@@ -76,6 +76,32 @@ func TestRepeaterHidesRemoveOnMinItems(t *testing.T) {
 	}
 }
 
+func TestRepeaterRPCPathWithExistingQuery(t *testing.T) {
+	// If RPCPath already carries a query string, the action param must
+	// be appended with `&`, not `?` (which produces an invalid URL).
+	h := Repeater(RepeaterConfig{
+		Name:    "items",
+		RPCPath: "/api/items?tenant=42",
+		Items:   []render.HTML{render.Text("x")},
+	})
+	s := string(h)
+	if strings.Contains(s, `/api/items?tenant=42?action=add`) {
+		t.Fatalf("double-? in RPC URL:\n%s", s)
+	}
+	// Strings are HTML-escaped so & becomes &amp;
+	mustContain(t, h, `data-fui-rpc="/api/items?tenant=42&amp;action=add"`)
+	mustContain(t, h, `data-fui-rpc="/api/items?tenant=42&amp;action=remove`)
+}
+
+func TestRepeaterItemsAriaLive(t *testing.T) {
+	// Add/remove must be announced to SR users.
+	h := Repeater(RepeaterConfig{
+		Name:  "items",
+		Items: []render.HTML{render.Text("x")},
+	})
+	mustContain(t, h, `aria-live="polite"`)
+}
+
 func TestRepeaterCustomLabels(t *testing.T) {
 	h := Repeater(RepeaterConfig{
 		Name:        "items",

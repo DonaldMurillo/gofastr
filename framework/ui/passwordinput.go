@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PasswordInput ──────────────────────────────────────────────────
@@ -81,7 +84,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	toggleAttrs := map[string]string{
 		"type":         "button",
 		"class":        "ui-password-input__toggle",
-		"aria-label":   "Show password",
+		"aria-label":   i18nui.T(context.Background(), i18nui.KeyPasswordInputShow),
 		"aria-pressed": "false",
 	}
 

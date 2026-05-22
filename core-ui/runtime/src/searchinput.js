@@ -32,6 +32,18 @@
         // Dispatch input event so any form-RPC pipeline sees the change.
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
+      // Escape clears the input — the SearchInput is the canonical
+      // example of the "clear-on-esc" widget primitive, so it gets
+      // the behaviour by default without needing data-fui-clear-on-esc
+      // on every callsite.
+      input.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || !input.value) return;
+        e.preventDefault();
+        e.stopPropagation();
+        input.value = '';
+        updateClearVisibility();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
 
       // Initial state.
       updateClearVisibility();

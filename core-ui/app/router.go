@@ -114,6 +114,18 @@ func (r *Router) Render(path string) (render.HTML, error) {
 	screen.routeParams = params
 
 	content := screen.Render()
+
+	// Group-registered screens compose ALL parent group layouts so
+	// nested screen groups produce nested layout shells, each wrapped
+	// in its data-fui-screen-group marker. This is what makes
+	// sibling-screen nav DOM-stable at the innermost matching group.
+	// When screen.Layout was explicitly set via group.Screen(s, custom),
+	// it replaces the innermost group's layout in the chain — the
+	// marker is still emitted so sibling-nav keeps working.
+	if screen.group != nil {
+		return composeLayoutsWithOverride(screen.group, screen.Layout, content), nil
+	}
+
 	layout := screen.Layout
 	if layout == nil {
 		layout = r.defaultLayout

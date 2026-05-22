@@ -193,6 +193,17 @@ type Definition struct {
 	// .PagesMatch (or manually for advanced cases).
 	Routes []RouteMatcher
 
+	// DragDismiss enables pointer-driven drag-to-dismiss for bottom-edge
+	// widgets. The chrome renders a visible drag-handle bar at the top
+	// of the panel; the runtime listens for pointerdown/move/up on the
+	// handle (and on the panel itself) and closes the widget when the
+	// user drags past a distance + velocity threshold. Snaps back to
+	// the resting position when released earlier.
+	//
+	// Only meaningful for Bottom (and bottom-edge) positions today;
+	// silently no-op elsewhere.
+	DragDismiss bool
+
 	// Asset path overrides. Default routes are derived from Name.
 	BootstrapPath string // default: /core-ui/widget/<name>/bootstrap.js
 	StylePath     string // default: /core-ui/widget/<name>/style.css
@@ -391,6 +402,10 @@ func (b *Builder) RPCWithSignal(method, path string, h http.Handler, signal stri
 
 // Backdrop forces a backdrop regardless of position.
 func (b *Builder) Backdrop() *Builder { b.def.Backdrop = true; return b }
+
+// DragDismiss enables drag-to-dismiss for bottom-edge widgets. See
+// Definition.DragDismiss for the full contract.
+func (b *Builder) DragDismiss() *Builder { b.def.DragDismiss = true; return b }
 
 // Role sets the ARIA role on the widget root (e.g. "dialog",
 // "alertdialog", "menu"). Pair with LabelledBy / DescribedBy for a

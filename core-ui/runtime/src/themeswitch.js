@@ -25,7 +25,7 @@
     var btns = root.querySelectorAll('[data-fui-theme-toggle-opt]');
     for (var i = 0; i < btns.length; i++) {
       var opt = btns[i].getAttribute('data-fui-theme-toggle-opt');
-      btns[i].setAttribute('aria-pressed', opt === scheme ? 'true' : 'false');
+      btns[i].setAttribute('aria-checked', opt === scheme ? 'true' : 'false');
     }
   }
 

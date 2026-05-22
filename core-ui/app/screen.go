@@ -131,6 +131,14 @@ type Screen struct {
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool
 
+	// group is the innermost ScreenGroup this screen belongs to, when
+	// registered via group.Screen. Nil for screens registered directly
+	// on the router. When set, the renderer composes all parent group
+	// layouts (innermost→outermost), each wrapped in a
+	// data-fui-screen-group marker so the runtime can preserve the
+	// matching layout shell during sibling-screen navigation.
+	group *ScreenGroup
+
 	// routeParams holds extracted dynamic route parameters.
 	routeParams map[string]string
 

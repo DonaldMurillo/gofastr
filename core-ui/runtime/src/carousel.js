@@ -135,19 +135,24 @@
       const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (!prefersReduced) {
         let timer = null;
+        // userPaused tracks pointer/focus interaction. visibilitychange
+        // returning the tab to foreground must NOT auto-resume when the
+        // user has actively hovered or focused the carousel — that
+        // would yank a slide out from under their pointer.
+        let userPaused = false;
         function start() {
-          if (timer) return;
+          if (timer || userPaused) return;
           timer = setInterval(function () {
             if (document.visibilityState === 'hidden') return;
             step(carousel, 1);
           }, rotateMs);
         }
         function stop() { if (timer) { clearInterval(timer); timer = null; } }
-        carousel.addEventListener('mouseenter', stop);
-        carousel.addEventListener('mouseleave', start);
-        carousel.addEventListener('focusin', stop);
+        carousel.addEventListener('mouseenter', function () { userPaused = true; stop(); });
+        carousel.addEventListener('mouseleave', function () { userPaused = false; start(); });
+        carousel.addEventListener('focusin', function () { userPaused = true; stop(); });
         carousel.addEventListener('focusout', function (ev) {
-          if (!carousel.contains(ev.relatedTarget)) start();
+          if (!carousel.contains(ev.relatedTarget)) { userPaused = false; start(); }
         });
         document.addEventListener('visibilitychange', function () {
           if (document.visibilityState === 'hidden') stop(); else start();
@@ -157,6 +162,63 @@
     }
 
     updateDotsAndArrows(carousel);
+
+    // Virtual-scroll hydration. Slides with data-fui-carousel-defer
+    // are placeholders; their content lives in a sibling
+    // <script type='application/json' data-fui-carousel-deferred-for=…>
+    // map. IntersectionObserver swaps in the real HTML the first time
+    // a placeholder enters the track viewport. Once hydrated the
+    // observer stops watching the slide.
+    hydrateVirtual(carousel);
+  }
+
+  function hydrateVirtual(carousel) {
+    if (carousel.__fuiCarouselHydrate) return;
+    carousel.__fuiCarouselHydrate = true;
+    const id = carousel.getAttribute('id');
+    if (!id) return;
+    const manifestEl = carousel.querySelector(
+      'script[type="application/json"][data-fui-carousel-deferred-for="' + id + '"]'
+    );
+    if (!manifestEl) return;
+    let manifest;
+    try { manifest = JSON.parse(manifestEl.textContent || '{}'); } catch (_) { return; }
+    if (!manifest || typeof manifest !== 'object') return;
+    if (typeof IntersectionObserver === 'undefined') {
+      // No observer support — hydrate everything upfront so the
+      // carousel is at least functional.
+      for (const k of Object.keys(manifest)) {
+        const ph = carousel.querySelector('[data-fui-carousel-defer="' + k + '"]');
+        if (ph) { ph.innerHTML = manifest[k]; ph.removeAttribute('data-fui-carousel-defer'); }
+      }
+      return;
+    }
+    const root = track(carousel);
+    if (!root) return;
+    const io = new IntersectionObserver(function (entries) {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const ph = entry.target;
+        const idx = ph.getAttribute('data-fui-carousel-defer');
+        if (idx == null) continue;
+        const html = manifest[idx];
+        if (html != null) {
+          ph.innerHTML = html;
+          ph.removeAttribute('data-fui-carousel-defer');
+          ph.removeAttribute('style');
+        }
+        io.unobserve(ph);
+      }
+    }, {
+      root: root,
+      // Read-ahead: one full track-width ahead means the next-pinged
+      // slide is decoded before the user reaches it.
+      rootMargin: '0px ' + (root.clientWidth || 600) + 'px 0px ' + (root.clientWidth || 600) + 'px',
+      threshold: 0.01,
+    });
+    carousel.querySelectorAll('[data-fui-carousel-defer]').forEach(function (ph) {
+      io.observe(ph);
+    });
   }
 
   function scan(root) {

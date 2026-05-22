@@ -144,7 +144,7 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 			"type":                     "button",
 			"class":                    "ui-theme-toggle__opt",
 			"data-fui-theme-toggle-opt": opt,
-			"aria-pressed":             "false",
+			"aria-checked":             "false",
 			"role":                     "radio",
 		}, render.Text(label))
 	}

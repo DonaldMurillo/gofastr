@@ -115,6 +115,86 @@ func TestSubGroupInheritsParentLayout(t *testing.T) {
 	}
 }
 
+func TestGroupScreenHonorsExplicitLayoutOverride(t *testing.T) {
+	groupLayout := app.NewLayout("group").WithSidebar(app.NewStaticComponent("GROUP_SHELL"))
+	g := app.NewScreenGroup("/shop", groupLayout)
+
+	overrideLayout := app.NewLayout("override").WithSidebar(app.NewStaticComponent("OVERRIDE_SHELL"))
+	g.Screen(app.NewScreen("checkout", &stubComp{html: "CHECKOUT"}), overrideLayout)
+
+	r := app.NewRouter()
+	r.ScreenGroup(g)
+
+	out, err := r.Render("/shop/checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+
+	if !contains(s, "OVERRIDE_SHELL") {
+		t.Errorf("explicit per-screen layout must be applied, got: %s", s)
+	}
+	if contains(s, "GROUP_SHELL") {
+		t.Errorf("default group layout must be replaced by explicit override, but GROUP_SHELL leaked: %s", s)
+	}
+	// The group marker still appears so sibling-nav within /shop keeps the override layout shell.
+	if !contains(s, `data-fui-screen-group="/shop/"`) {
+		t.Errorf("group marker still required when an override is used: %s", s)
+	}
+	if !contains(s, "CHECKOUT") {
+		t.Errorf("content missing: %s", s)
+	}
+}
+
+func TestNestedGroupRendersNestedLayoutShells(t *testing.T) {
+	parentLayout := app.NewLayout("parent").WithSidebar(app.NewStaticComponent("PARENT_SHELL"))
+	parent := app.NewScreenGroup("/settings", parentLayout)
+	childLayout := app.NewLayout("child").WithSidebar(app.NewStaticComponent("CHILD_SHELL"))
+	child := parent.SubGroup("advanced", childLayout)
+	child.Screen(app.NewScreen("security", &stubComp{html: "SECURITY_CONTENT"}), nil)
+
+	r := app.NewRouter()
+	r.ScreenGroup(parent)
+
+	out, err := r.Render("/settings/advanced/security")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+
+	// Both layout shells must appear.
+	if !contains(s, "PARENT_SHELL") || !contains(s, "CHILD_SHELL") {
+		t.Errorf("nested groups must render both layout shells, got: %s", s)
+	}
+	// The data-fui-screen-group markers must be present at BOTH levels so
+	// the runtime can pick the deepest match during sibling nav.
+	if !contains(s, `data-fui-screen-group="/settings/"`) {
+		t.Errorf("outer group marker missing: %s", s)
+	}
+	if !contains(s, `data-fui-screen-group="/settings/advanced/"`) {
+		t.Errorf("inner group marker missing: %s", s)
+	}
+	// Content must be present.
+	if !contains(s, "SECURITY_CONTENT") {
+		t.Errorf("screen content missing: %s", s)
+	}
+	// Outer marker must appear BEFORE inner marker (outer wraps inner).
+	outerAt := indexOf(s, `data-fui-screen-group="/settings/"`)
+	innerAt := indexOf(s, `data-fui-screen-group="/settings/advanced/"`)
+	if outerAt < 0 || innerAt < 0 || outerAt >= innerAt {
+		t.Errorf("expected outer marker (pos %d) to appear before inner marker (pos %d)", outerAt, innerAt)
+	}
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestRouterScreenGroup(t *testing.T) {
 	r := app.NewRouter()
 	layout := app.NewLayout("admin").WithHeader(&stubComp{html: "admin header"})

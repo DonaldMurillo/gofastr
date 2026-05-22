@@ -97,6 +97,11 @@ func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 		screen.Layout = g.layout
 	}
 
+	// Remember the innermost group so the renderer can compose all
+	// parent group layouts at render time (with proper
+	// data-fui-screen-group markers per level).
+	screen.group = g
+
 	g.screens = append(g.screens, screen)
 }
 
@@ -172,14 +177,31 @@ func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
 // groups. The innermost content (the screen) is wrapped first by its
 // immediate group, then by each parent group going outward.
 func ComposeLayouts(innermost *ScreenGroup, content render.HTML) render.HTML {
-	// Collect the chain from innermost to outermost
+	return composeLayoutsWithOverride(innermost, nil, content)
+}
+
+// composeLayoutsWithOverride is the workhorse. When override is
+// non-nil and differs from the innermost group's own layout, the
+// innermost wrap uses the override instead of innermost.layout — but
+// the innermost group's data-fui-screen-group marker is still emitted
+// so sibling-screen navigation inside the group still preserves the
+// (overridden) layout shell. Parent groups in the chain compose
+// normally with their own layouts.
+func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, content render.HTML) render.HTML {
 	var chain []*ScreenGroup
 	for g := innermost; g != nil; g = g.parent {
 		chain = append(chain, g)
 	}
-	// Apply layouts from innermost to outermost
 	out := content
-	for _, g := range chain {
+	for i, g := range chain {
+		if i == 0 && override != nil && override != g.layout {
+			wrapped := override.Wrap(out)
+			out = html.Div(html.DivConfig{
+				Class: "fui-screen-group",
+				Attrs: map[string]string{"data-fui-screen-group": g.prefix},
+			}, wrapped)
+			continue
+		}
 		out = g.RenderLayout(out)
 	}
 	return out

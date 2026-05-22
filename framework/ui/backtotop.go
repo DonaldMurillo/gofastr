@@ -167,7 +167,7 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 		"data-fui-back-to-top":   "",
 		"data-fui-btt-threshold": fmt.Sprintf("%d", threshold),
 		"aria-label":             label,
-		"aria-hidden":            "true",
+		"inert":                  "",
 		"class":                  cls,
 	}
 	if cfg.Smooth != "" {

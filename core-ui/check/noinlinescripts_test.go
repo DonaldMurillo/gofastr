@@ -78,6 +78,51 @@ var _ = render.Tag("script", map[string]string{"src": "/x.js"})
 	}
 }
 
+func TestLintNoInlineScripts_AllowsInertJSONType(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "ok.go", `package x
+import "github.com/DonaldMurillo/gofastr/core/render"
+var _ = render.Tag("script", map[string]string{"type": "application/json"}, render.HTML("{\"x\":1}"))
+`)
+	res, err := LintNoInlineScripts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("application/json script must pass — browsers don't execute it:\n%s", res.Error())
+	}
+}
+
+func TestLintNoInlineScripts_AllowsInertJSONLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "ok.go", `package x
+import "github.com/DonaldMurillo/gofastr/core/render"
+var _ = render.HTML(`+"`<script type=\"application/json\">{\"x\":1}</script>`"+`)
+`)
+	res, err := LintNoInlineScripts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("inert application/json script literal must pass:\n%s", res.Error())
+	}
+}
+
+func TestLintNoInlineScripts_FlagsExecutableType(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "bad.go", `package x
+import "github.com/DonaldMurillo/gofastr/core/render"
+var _ = render.Tag("script", map[string]string{"type": "text/javascript"}, render.HTML("alert(1)"))
+`)
+	res, err := LintNoInlineScripts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HasErrors() {
+		t.Fatal("expected violation: text/javascript with body is executable inline JS")
+	}
+}
+
 func TestLintNoInlineScripts_SkipsTestFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad_test.go", `package x

@@ -32,10 +32,10 @@
         var btn = _buttons[k];
         if (visible) {
           btn.setAttribute('data-fui-btt-visible', '');
-          btn.setAttribute('aria-hidden', 'false');
+          btn.removeAttribute('inert');
         } else {
           btn.removeAttribute('data-fui-btt-visible');
-          btn.setAttribute('aria-hidden', 'true');
+          btn.setAttribute('inert', '');
         }
       }
     });

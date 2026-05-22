@@ -112,3 +112,39 @@ func TestInputGroupCustomClass(t *testing.T) {
 		t.Errorf("expected custom class:\n%s", h)
 	}
 }
+
+// TestInputGroupComposesPrependInputAppend asserts the rendered DOM
+// for a prepend + input + append composition: a single ui-input-group
+// wrapper whose children appear in source order, each addon carries
+// the right class, and the wrapper carries the data-fui-comp marker
+// the runtime expects so the CSS for the visual join is applied.
+func TestInputGroupComposesPrependInputAppend(t *testing.T) {
+	in := html.Input(html.InputConfig{Type: "text", Name: "price", ID: "price"})
+	h := string(InputGroup(InputGroupConfig{
+		Prepend: render.Text("$"),
+		Input:   in,
+		Append:  render.Text("USD"),
+	}))
+
+	// The runtime style hook + CSS selectors all key off this
+	// data-fui-comp marker — its absence would silently strip the
+	// visual join (regression seen on prior shipped components).
+	if !strings.Contains(h, `data-fui-comp="ui-input-group"`) {
+		t.Errorf("missing data-fui-comp=\"ui-input-group\" marker:\n%s", h)
+	}
+
+	prependIdx := strings.Index(h, "ui-input-group__prepend")
+	inputIdx := strings.Index(h, `name="price"`)
+	appendIdx := strings.Index(h, "ui-input-group__append")
+
+	if prependIdx < 0 || inputIdx < 0 || appendIdx < 0 {
+		t.Fatalf("expected prepend, input, and append in output:\n%s", h)
+	}
+	if !(prependIdx < inputIdx && inputIdx < appendIdx) {
+		t.Errorf("expected source order prepend → input → append (got %d / %d / %d):\n%s",
+			prependIdx, inputIdx, appendIdx, h)
+	}
+	if !strings.Contains(h, "ui-input-group") {
+		t.Errorf("missing wrapper class ui-input-group:\n%s", h)
+	}
+}

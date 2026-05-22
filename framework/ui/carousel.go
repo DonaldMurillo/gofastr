@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -54,9 +56,33 @@ type CarouselConfig struct {
 	// VisiblePerView (default 1) shows N slides side-by-side; snap
 	// still steps one slide at a time.
 	VisiblePerView int
-	ID             string
-	Class          string
-	Attrs          html.Attrs
+	// VirtualScroll, when true, server-renders only the first
+	// VirtualWindow slides as visible content; the remaining slides
+	// emit as same-width placeholder divs paired with a JSON manifest
+	// of the deferred HTML. The runtime hydrates each placeholder via
+	// IntersectionObserver as it scrolls into the viewport (plus a
+	// one-window read-ahead buffer). Use for image-heavy archive views
+	// (>50 slides) where rendering every slide upfront is wasteful.
+	//
+	// Once hydrated, slides stay hydrated for the lifetime of the
+	// page — browsers manage the image cache on their own and
+	// re-hydrating on scroll-back would feel laggier than the original
+	// problem.
+	VirtualScroll bool
+	// VirtualWindow is the initial render window when VirtualScroll
+	// is enabled. Default 5. Slides 0..VirtualWindow-1 ship hydrated;
+	// the rest are placeholders.
+	VirtualWindow int
+	// VirtualPlaceholderHeight is an optional CSS length applied to
+	// each unhydrated placeholder slide. Required when slides have
+	// no intrinsic flex height (e.g. raw <img> with no fixed aspect)
+	// — otherwise placeholders collapse to 0 and IntersectionObserver
+	// fires every placeholder at once. Image-only carousels typically
+	// pick "240px" or whatever matches the typical slide aspect.
+	VirtualPlaceholderHeight string
+	ID                       string
+	Class                    string
+	Attrs                    html.Attrs
 }
 
 // Carousel renders the slider.
@@ -80,8 +106,9 @@ func Carousel(cfg CarouselConfig) render.HTML {
 
 	id := cfg.ID
 	if id == "" {
-		// Stable-ish auto id so per-instance dots / aria-controls work.
-		id = "ui-carousel-" + strconv.Itoa(autoCarouselSeq())
+		// autoID is process-global + atomic, so concurrent renders
+		// across goroutines (or HTTP requests) never collide.
+		id = autoID("ui-carousel")
 	}
 
 	cls := "ui-carousel"
@@ -108,6 +135,18 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		attrs[k] = v
 	}
 
+	// VirtualScroll prep — figure out the inline window.
+	virtualWindow := 0
+	if cfg.VirtualScroll {
+		virtualWindow = cfg.VirtualWindow
+		if virtualWindow <= 0 {
+			virtualWindow = 5
+		}
+		if virtualWindow > len(cfg.Slides) {
+			virtualWindow = len(cfg.Slides)
+		}
+	}
+
 	// Slides container. WAI-ARIA Carousel pattern: each slide is
 	// role=group + aria-roledescription=slide. Using <ul>/<li> is
 	// semantically misleading (slides aren't list items) and trips
@@ -116,6 +155,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	// scrollable-region-focusable is satisfied even though the visual
 	// Prev/Next buttons + Arrow-key nav are the primary affordances.
 	slideEls := make([]render.HTML, 0, len(cfg.Slides))
+	deferred := map[string]string{}
 	for i, s := range cfg.Slides {
 		if s.Content == "" {
 			panic("ui: Carousel slide requires Content")
@@ -124,13 +164,25 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		if label == "" {
 			label = "Slide " + strconv.Itoa(i+1) + " of " + strconv.Itoa(len(cfg.Slides))
 		}
-		slideEls = append(slideEls, render.Tag("div", map[string]string{
+		slideAttrs := map[string]string{
 			"class":                   "ui-carousel__slide",
 			"role":                    "group",
 			"aria-roledescription":    "slide",
 			"aria-label":              label,
 			"data-fui-carousel-slide": strconv.Itoa(i),
-		}, s.Content))
+		}
+		if cfg.VirtualScroll && i >= virtualWindow {
+			// Placeholder slide — content is deferred to the JSON
+			// manifest and hydrated lazily via IntersectionObserver.
+			slideAttrs["data-fui-carousel-defer"] = strconv.Itoa(i)
+			if cfg.VirtualPlaceholderHeight != "" {
+				slideAttrs["style"] = "min-block-size:" + cfg.VirtualPlaceholderHeight + ";"
+			}
+			deferred[strconv.Itoa(i)] = string(s.Content)
+			slideEls = append(slideEls, render.Tag("div", slideAttrs))
+			continue
+		}
+		slideEls = append(slideEls, render.Tag("div", slideAttrs, s.Content))
 	}
 	track := render.Tag("div", map[string]string{
 		"class":                   "ui-carousel__track",
@@ -140,6 +192,20 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	}, slideEls...)
 
 	children := []render.HTML{track}
+
+	// Emit the deferred-content manifest so the runtime can hydrate
+	// placeholders. JSON keyed by slide index → HTML string. Escapes
+	// `</` to neutralise embedded scripts that might prematurely
+	// terminate the inline <script>.
+	if len(deferred) > 0 {
+		if buf, err := json.Marshal(deferred); err == nil {
+			s := strings.ReplaceAll(string(buf), `</`, `<\/`)
+			children = append(children, render.Tag("script", map[string]string{
+				"type":                              "application/json",
+				"data-fui-carousel-deferred-for":    id,
+			}, render.HTML(s)))
+		}
+	}
 
 	// Prev / Next buttons.
 	if !cfg.NoArrows {
@@ -186,16 +252,6 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	}
 
 	return carouselStyle.WrapHTML(render.Tag("div", attrs, children...))
-}
-
-// autoCarouselSeq returns a tiny page-unique counter for default IDs.
-// Globals are cheap in single-process Go; concurrent renders in the
-// same request are serialized through render.HTML construction.
-var carouselSeqCounter int
-
-func autoCarouselSeq() int {
-	carouselSeqCounter++
-	return carouselSeqCounter
 }
 
 var carouselStyle = registry.RegisterStyle("ui-carousel", carouselCSS)
