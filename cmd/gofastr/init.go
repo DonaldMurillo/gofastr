@@ -66,8 +66,6 @@ func runInit(args []string) {
 			}
 		}
 	}
-	_ = dbDriver
-
 	fmt.Printf("\n  Creating %s project %s...\n\n", bold("GoFastr"), bold(name))
 
 	// Create directory structure
@@ -91,7 +89,7 @@ func runInit(args []string) {
 	}
 
 	// Write main.go
-	writeMainGo(name, modulePath, noEntity)
+	writeMainGo(name, modulePath, noEntity, dbDriver, dbURL)
 
 	// Write screens/home.go
 	writeHomeScreen(name, noEntity)
@@ -120,6 +118,8 @@ PORT=localhost:8080
 		fail("Failed to write .env: %v", err)
 		os.Exit(1)
 	}
+
+	writeIsolationConfig(name, dbDriver)
 
 	// Write .gitignore
 	gitignoreContent := `.gofastr/
@@ -172,6 +172,7 @@ bin/
 		fmt.Println("    entities/entities.go — Sample entity (posts) served at /posts")
 	}
 	fmt.Println("    .env                 — Environment configuration")
+	fmt.Println("    gofastr.yml          — Project configuration")
 	fmt.Println("    .gitignore           — Git ignore rules")
 	fmt.Println()
 	fmt.Printf("  %s:\n", bold("Next steps"))
@@ -191,7 +192,7 @@ bin/
 }
 
 // writeMainGo generates the application entry point.
-func writeMainGo(name, modulePath string, noEntity bool) {
+func writeMainGo(name, modulePath string, noEntity bool, dbDriver, dbURL string) {
 	var content string
 	if noEntity {
 		content = fmt.Sprintf(`package main
@@ -204,12 +205,18 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 
 	"%[1]s/screens"
 )
 
 func main() {
+	runtimeIsolation, err := isolation.Resolve(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	fwApp := framework.NewApp(
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
 	)
@@ -221,7 +228,10 @@ func main() {
 	css := screens.CreateStyleSheet()
 	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(css)))
 
-	addr := getEnv("PORT", "localhost:8080")
+	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("  %%s Server starting at http://%%s\n", "✓", addr)
 	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
@@ -236,6 +246,14 @@ func getEnv(key, fallback string) string {
 }
 `, modulePath, name)
 	} else {
+		driverImport := `_ "github.com/mattn/go-sqlite3"`
+		migrateDialect := "migrate.DialectSQLite"
+		sqlDriver := "sqlite3"
+		if dbDriver == "postgres" {
+			driverImport = `_ "github.com/lib/pq"`
+			migrateDialect = "migrate.DialectPostgres"
+			sqlDriver = "postgres"
+		}
 		content = fmt.Sprintf(`package main
 
 import (
@@ -249,15 +267,24 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	_ "github.com/mattn/go-sqlite3"
+	%[3]s
 
 	"%[1]s/entities"
 	"%[1]s/screens"
 )
 
 func main() {
-	db, err := sql.Open("sqlite3", getEnv("DATABASE_URL", "file:%[2]s.db"))
+	runtimeIsolation, err := isolation.Resolve(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+	driver, dsn, err := runtimeIsolation.Database("%[4]s", getEnv("DATABASE_URL", "%[5]s"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -279,13 +306,16 @@ func main() {
 	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(css)))
 
 	// Run migrations
-	migrator := migrate.New(db, migrate.WithTableName("_migrations"), migrate.WithDialect(migrate.DialectSQLite))
+	migrator := migrate.New(db, migrate.WithTableName("_migrations"), migrate.WithDialect(%[6]s))
 	entities.RegisterMigrations(migrator)
 	if err := migrator.Up(context.Background()); err != nil {
 		log.Printf("Migration warning: %%v", err)
 	}
 
-	addr := getEnv("PORT", "localhost:8080")
+	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("  %%s Server starting at http://%%s\n", "✓", addr)
 	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
@@ -298,10 +328,35 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
-`, modulePath, name)
+`, modulePath, name, driverImport, sqlDriver, dbURL, migrateDialect)
 	}
 	if err := os.WriteFile(filepath.Join(name, "main.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write main.go: %v", err)
+		os.Exit(1)
+	}
+}
+
+func writeIsolationConfig(name, dbDriver string) {
+	databaseStrategy := "path"
+	if dbDriver == "postgres" {
+		databaseStrategy = "suffix"
+	}
+	content := fmt.Sprintf(`version: 1
+isolation:
+  enabled: true
+  mode: worktree
+  port:
+    strategy: offset
+    offset: 1000
+    range: 1000
+    scan: 20
+  database:
+    strategy: %s
+  services:
+  env:
+`, databaseStrategy)
+	if err := os.WriteFile(filepath.Join(name, "gofastr.yml"), []byte(content), 0o644); err != nil {
+		fail("Failed to write gofastr.yml: %v", err)
 		os.Exit(1)
 	}
 }

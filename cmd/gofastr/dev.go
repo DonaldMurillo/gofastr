@@ -9,6 +9,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
 func runDev(args []string) {
@@ -26,9 +28,19 @@ func runDev(args []string) {
 		}
 	}
 
+	runtimeIsolation, resolvedAddr, err := resolveDevIsolation(dir, addr)
+	if err != nil {
+		fail("Isolation failed: %v", err)
+		os.Exit(1)
+	}
+
 	fmt.Printf("\n  %s Dev server with hot reload\n\n", bold("GoFastr"))
 	info("Watching %s for *.go changes...", dir)
-	info("Server at http://%s", addr)
+	if runtimeIsolation.Active() && resolvedAddr != addr {
+		info("Isolation %s remapped http://%s -> http://%s", runtimeIsolation.ID(), addr, resolvedAddr)
+	} else {
+		info("Server at http://%s", resolvedAddr)
+	}
 	fmt.Println()
 
 	var (
@@ -42,7 +54,7 @@ func runDev(args []string) {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	// Build and start the server initially
-	if !buildAndServe(dir, addr, &mu, &server) {
+	if !buildAndServe(dir, resolvedAddr, runtimeIsolation, &mu, &server) {
 		fail("Initial build failed — fixing and saving will retry")
 	}
 
@@ -83,7 +95,7 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Change detected — rebuilding...")
 			killServer(&mu, &server)
-			if buildAndServe(dir, addr, &mu, &server) {
+			if buildAndServe(dir, resolvedAddr, runtimeIsolation, &mu, &server) {
 				success("Reloaded!")
 			} else {
 				fail("Build failed — fixing and saving will retry")
@@ -92,10 +104,26 @@ func runDev(args []string) {
 	}
 }
 
+func resolveDevIsolation(dir, addr string) (isolation.Runtime, string, error) {
+	runtimeIsolation, err := isolation.Resolve(dir)
+	if err != nil {
+		return isolation.Runtime{}, "", err
+	}
+	resolvedAddr, err := runtimeIsolation.Addr(addr)
+	if err != nil {
+		return isolation.Runtime{}, "", err
+	}
+	return runtimeIsolation, resolvedAddr, nil
+}
+
 // buildAndServe builds and starts the server process.
-func buildAndServe(dir, addr string, mu *sync.Mutex, cmd **exec.Cmd) bool {
+func buildAndServe(dir, addr string, runtimeIsolation isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
 	// Build binary to temp file
-	tmpBin := filepath.Join(os.TempDir(), "gofastr-dev-server")
+	tmpName := "gofastr-dev-server"
+	if runtimeIsolation.Active() {
+		tmpName += "-" + runtimeIsolation.ID()
+	}
+	tmpBin := filepath.Join(os.TempDir(), tmpName)
 	buildCmd := exec.Command("go", "build", "-o", tmpBin, dir)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
@@ -112,6 +140,7 @@ func buildAndServe(dir, addr string, mu *sync.Mutex, cmd **exec.Cmd) bool {
 	runCmd := exec.Command(tmpBin, "--addr", addr)
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
+	runCmd.Env = runtimeIsolation.Env(os.Environ())
 
 	mu.Lock()
 	*cmd = runCmd

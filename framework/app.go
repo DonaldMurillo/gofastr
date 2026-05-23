@@ -28,10 +28,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
-	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/openapi"
+	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -447,15 +448,15 @@ func (a *App) Use(mw ...router.Middleware) *App {
 // It initializes default Registry, Router, and MCP Server if not provided.
 func NewApp(opts ...AppOption) *App {
 	a := &App{
-		Registry: NewRegistry(),
-		router:   router.New(),
-		MCP:      mcp.NewServer(),
-		Config:   AppConfig{JSONCase: crud.CaseCamel},
-		Plugins:  NewPluginManager(),
+		Registry:  NewRegistry(),
+		router:    router.New(),
+		MCP:       mcp.NewServer(),
+		Config:    AppConfig{JSONCase: crud.CaseCamel},
+		Plugins:   NewPluginManager(),
 		Batteries: NewBatteryManager(),
-		events:   event.NewEventBus(),
-		hooks:    make(map[string]*hook.HookRegistry),
-		lc:       lifecycle.New(),
+		events:    event.NewEventBus(),
+		hooks:     make(map[string]*hook.HookRegistry),
+		lc:        lifecycle.New(),
 	}
 
 	for _, opt := range opts {
@@ -881,6 +882,15 @@ func (a *App) runStartHooks() error {
 //
 // Sets the process title to the app name for visibility in ps/Activity Monitor.
 func (a *App) Start(addr string) error {
+	runtimeIsolation, err := isolation.Resolve(".")
+	if err != nil {
+		return fmt.Errorf("resolve isolation: %w", err)
+	}
+	addr, err = runtimeIsolation.Addr(addr)
+	if err != nil {
+		return fmt.Errorf("resolve isolated addr: %w", err)
+	}
+
 	// Auto-migrate all registered entities
 	if a.DB != nil {
 		if err := migrate.AutoMigrate(a.DB, a.Registry); err != nil {
@@ -1027,4 +1037,3 @@ func formatBytes(b uint64) string {
 
 func arrow() string        { return "\033[33m→\033[0m" }
 func bold(s string) string { return "\033[1m" + s + "\033[0m" }
-

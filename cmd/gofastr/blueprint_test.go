@@ -678,6 +678,10 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName["main.go"], `blueprint.RegisterGenerated(fwApp, site)`)
 	assertContains(t, byName["main.go"], `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`)
 	assertContains(t, byName["main.go"], `uihost.WithStaticDir("public")`)
+	assertContains(t, byName["main.go"], `"github.com/DonaldMurillo/gofastr/framework/isolation"`)
+	assertContains(t, byName["main.go"], `runtimeIsolation, err := isolation.Resolve(".")`)
+	assertContains(t, byName["main.go"], `runtimeIsolation.Database(driver, dsn)`)
+	assertContains(t, byName["main.go"], `runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))`)
 }
 
 func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {

@@ -200,7 +200,7 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 	if err != nil {
 		return Blueprint{}, err
 	}
-	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "endpoints": true, "middleware": true, "plugins": true, "helpers": true}
+	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "endpoints": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
 	if err := rejectUnknownKeys(m, allowed, "blueprint"); err != nil {
 		return Blueprint{}, err
 	}
@@ -1077,9 +1077,10 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t\"os\"\n\n")
 	sb.WriteString("\tuiapp \"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/isolation\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
-	if driver != "" && blueprintNeedsSQLiteDriver(driver) {
-		sb.WriteString("\t_ \"github.com/mattn/go-sqlite3\"\n")
+	if imp := blueprintDriverImport(driver); imp != "" {
+		sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
 	}
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/blueprint"))
@@ -1089,7 +1090,9 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString(")\n\n")
 
 	sb.WriteString("func main() {\n")
-	sb.WriteString("\tdb, err := openBlueprintDB()\n")
+	sb.WriteString("\truntimeIsolation, err := isolation.Resolve(\".\")\n")
+	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
+	sb.WriteString("\tdb, err := openBlueprintDB(runtimeIsolation)\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
 	sb.WriteString("\toptions := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName})}\n")
@@ -1106,20 +1109,25 @@ func renderBlueprintMain(bp Blueprint) string {
 	} else {
 		sb.WriteString("\tfwApp.Mount(uihost.New(site))\n")
 	}
-	sb.WriteString("\taddr := getEnv(\"PORT\", \"localhost:8080\")\n")
+	sb.WriteString("\taddr, err := runtimeIsolation.Addr(getEnv(\"PORT\", \"localhost:8080\"))\n")
+	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("\tfmt.Printf(\"Server starting at http://%s\\n\", addr)\n")
 	sb.WriteString("\tif err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("}\n\n")
 
-	sb.WriteString("func openBlueprintDB() (*sql.DB, error) {\n")
+	sb.WriteString("func openBlueprintDB(runtimeIsolation isolation.Runtime) (*sql.DB, error) {\n")
 	if driver == "" && dbURL == "" {
 		sb.WriteString("\treturn nil, nil\n")
 	} else {
 		sb.WriteString(fmt.Sprintf("\tdriver := getEnv(\"DB_DRIVER\", %q)\n", driver))
 		sb.WriteString(fmt.Sprintf("\tdsn := getEnv(\"DATABASE_URL\", %q)\n", dbURL))
+		sb.WriteString("\tresolvedDriver, resolvedDSN, err := runtimeIsolation.Database(driver, dsn)\n")
+		sb.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
+		sb.WriteString("\tdriver, dsn = resolvedDriver, resolvedDSN\n")
 		sb.WriteString("\tswitch driver {\n")
 		sb.WriteString("\tcase \"\", \"none\":\n\t\treturn nil, nil\n")
 		sb.WriteString("\tcase \"sqlite\", \"sqlite3\":\n\t\treturn sql.Open(\"sqlite3\", dsn)\n")
+		sb.WriteString("\tcase \"postgres\", \"postgresql\":\n\t\treturn sql.Open(\"postgres\", dsn)\n")
 		sb.WriteString("\tdefault:\n\t\treturn nil, fmt.Errorf(\"unsupported blueprint db driver %q\", driver)\n")
 		sb.WriteString("\t}\n")
 	}
@@ -1131,12 +1139,14 @@ func renderBlueprintMain(bp Blueprint) string {
 	return sb.String()
 }
 
-func blueprintNeedsSQLiteDriver(driver string) bool {
+func blueprintDriverImport(driver string) string {
 	switch strings.ToLower(strings.TrimSpace(driver)) {
 	case "", "sqlite", "sqlite3":
-		return true
+		return "github.com/mattn/go-sqlite3"
+	case "postgres", "postgresql":
+		return "github.com/lib/pq"
 	default:
-		return false
+		return ""
 	}
 }
 
