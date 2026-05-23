@@ -47,6 +47,24 @@ entity, err := app.EntityFromFile("entities/posts.json")
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
 
+### Column naming
+
+The `name` you put in a field declaration is the SQL column name verbatim —
+case preserved, no snake-casing applied. A field named `flareVerdict` creates
+a column called `flareVerdict`, not `flare_verdict`. The same name is also the
+JSON property on REST responses when `WithJSONCase(...)` is unset (default is
+`camel`).
+
+If you want snake_case columns, write them snake_case in the declaration:
+`flare_verdict` → column `flare_verdict`. The framework never rewrites field
+names; the only auto-casing happens at the JSON layer via `WithJSONCase`,
+which converts column names to/from `camel` or `snake` on the wire and leaves
+the underlying column untouched.
+
+Rule of thumb: name fields in whatever case you want the column to be in.
+camelCase is the convention used in the example apps; snake_case is the
+SQL-traditional choice. Pick one per project and stick with it.
+
 ## Code Generation
 
 ```bash

@@ -91,6 +91,67 @@ site.Register("/about", &screens.AboutScreen{}, nil)
 
 The `ScreenTitle/Description/Type` triple is the optional `ScreenSpec` interface — `app.Register` reads metadata from it. Cross-page nav is client-side by default (no hard reload) once `runtime.js` is on the page.
 
+### Path space — avoid colliding with entity CRUD
+
+Every entity in `entities/*.json` automatically claims its own URL space for
+REST CRUD: an entity named `foods` mounts `GET/POST /foods`, `PUT/DELETE
+/foods/:id`, plus `/foods/llm.md`. If you also register a screen at `/foods`,
+the two routes collide and the app panics at startup (currently the panic
+surfaces as a duplicate `/<entity>/llm.md` registration — friendlier
+diagnostics are on the roadmap).
+
+The cleanest convention is to give screens their own noun space, even when
+the screen *describes* an entity:
+
+| Entity (auto CRUD)     | Matching UI screens                          |
+|------------------------|----------------------------------------------|
+| `foods`                | `/library`, `/library/:slug`                 |
+| `triggers`             | `/my-triggers`, `/my-triggers/:id`           |
+| `journal_entries`      | `/journal`, `/journal/:date`                 |
+
+Or scope all of CRUD under an API prefix (e.g. `/api/foods`) and reserve the
+unprefixed namespace for UI. A configurable `framework.AppConfig{APIPrefix:
+"/api"}` is on the roadmap; until then, route groups (`App.Group("/api", …)`)
+are the way.
+
+### Accessing the database from a screen
+
+A screen's `Render(ctx)` / `Load(ctx)` needs a way to reach the same `*sql.DB`
+the framework already holds. The current idiom is a **package-level handle
+captured at `main()` time**:
+
+```go
+// in package screens (or wherever your screens live)
+var dbHandle *sql.DB
+
+func Init(db *sql.DB) { dbHandle = db }
+```
+
+```go
+// main.go
+db := openDB()
+site := app.NewApp("myapp")
+site.WithDB(db)               // framework also holds it for auto-CRUD
+screens.Init(db)              // hand the same handle to your screens
+```
+
+```go
+// screens/library.go
+func (s *LibraryScreen) Load(ctx context.Context) error {
+    rows, err := dbHandle.QueryContext(ctx, "SELECT id, name FROM foods")
+    ...
+}
+```
+
+This is the pattern used in `examples/website`. It's deliberately simple — a
+single shared handle, no DI container, no reflection. The trade-off is that
+screens become package-coupled to that handle, which is fine for one app and
+awkward for shared screens.
+
+A typed `App.DB(ctx)` accessor that resolves through `context` is on the
+roadmap so screens can stay package-portable. Until then, the package-level
+handle is the documented path.
+
 ---
 
 ## 4. Custom-styled component
