@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── FormStepWizard ─────────────────────────────────────────────────
@@ -159,7 +161,7 @@ func renderStepActions(current, total int) render.HTML {
 	// Back button (not on first step).
 	if current > 0 {
 		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: "Back",
+			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardBack),
 			Type:  "submit",
 			Class: "ui-button ui-button--secondary",
 			Attrs: html.Attrs{
@@ -173,7 +175,7 @@ func renderStepActions(current, total int) render.HTML {
 	isLast := current == total-1
 	if isLast {
 		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: "Submit",
+			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardSubmit),
 			Type:  "submit",
 			Class: "ui-button",
 			Attrs: html.Attrs{
@@ -183,7 +185,7 @@ func renderStepActions(current, total int) render.HTML {
 		}))
 	} else {
 		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: "Continue",
+			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardNext),
 			Type:  "submit",
 			Class: "ui-button",
 			Attrs: html.Attrs{

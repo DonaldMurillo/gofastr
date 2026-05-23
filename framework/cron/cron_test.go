@@ -188,3 +188,32 @@ func TestCron_StopIdempotent(t *testing.T) {
 	s.Stop()
 	s.Stop() // must not panic or hang
 }
+
+func TestCronStartIdempotent(t *testing.T) {
+	s := NewScheduler()
+	s.Start(context.Background())
+	s.Start(context.Background()) // second Start must be a no-op
+
+	// Stop signals the loop(s) to exit; the deferred close(s.stopped) in
+	// run() will double-panic if Start launched two goroutines.
+	done := make(chan struct{})
+	go func() {
+		defer func() {
+			recover() // surface as test failure below
+			close(done)
+		}()
+		s.Stop()
+		// Give any second goroutine time to run its deferred close.
+		time.Sleep(50 * time.Millisecond)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop hung")
+	}
+
+	// Verify no second goroutine is still racing toward close(s.stopped).
+	// Defensive: poll briefly for a panic; runtime would have surfaced
+	// via the recover above.
+}

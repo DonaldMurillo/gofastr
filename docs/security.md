@@ -130,7 +130,16 @@ in the gateway / docs pipeline.
 
 - `RequestID()` — generates or echoes `X-Request-ID`.
 - `Recovery()` — turns panics into `500` with structured log line.
-- `Logging()` / `LoggingWithWriter(io.Writer)` — structured request log.
+- `Logging()` / `LoggingFn(getLogger)` / `LoggingWithWriter(io.Writer)` —
+  structured request log. `LoggingFn` reads the logger per-request so
+  plugins can swap it after the chain is wired.
+- `SampledLogging(sampleN, slowThreshold)` — logs 1-in-N requests but
+  always logs errors (status ≥ 400) and slow ones (duration >
+  `slowThreshold`). Preferred for production paths where the unsampled
+  `Logging()` cost dominates the middleware chain.
+- `DiscardLogging()` — request-timing wrapper that emits no log lines;
+  for high-throughput surfaces where structured logging is handled by
+  an upstream proxy or APM agent.
 - `SecurityHeaders(SecurityHeadersConfig)` — defensive headers above.
 - `CORS(CORSConfig)` — cross-origin headers + preflight.
 - `CSRF(CSRFConfig)` — double-submit cookie pattern.
@@ -140,6 +149,15 @@ in the gateway / docs pipeline.
 - `Tracing(TracingConfig)` — OpenTelemetry span around each request.
 
 Each has a `*_test.go` you can read for the exact behaviour.
+
+## Availability notes
+
+- **SQLite serialises writes.** Concurrent write load can climb to
+  100ms+ p99 latencies and starve out non-write traffic — a soft DoS
+  vector for any endpoint that writes. Set `MaxOpenConns(1)` on the
+  `*sql.DB`, keep writes off the request path where possible (queue +
+  background worker), or run Postgres. Full discussion in
+  `docs/migrations.md` §Concurrency model.
 
 ## Common mistakes
 

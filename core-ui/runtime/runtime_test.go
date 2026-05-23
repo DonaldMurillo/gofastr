@@ -381,6 +381,21 @@ func TestRuntimeModuleRejectsBadName(t *testing.T) {
 	}
 }
 
+// Behavioral coverage notes (replacing prior source-grep regressions):
+//   - setSignal javascript:/vbscript:/data: sanitization is verified by
+//     examples/website/TestE2E_SetSignalRejectsJavascriptHref (renders a
+//     real bound anchor and asserts the attribute is scrubbed).
+//   - <a download> SPA-skip is verified by
+//     examples/website/TestE2E_AnchorDownloadSkipsSPA (synthesizes a
+//     real click and asserts gofastr:navigate never fired).
+//   - data-kiln-tool scoping is verified end-to-end by
+//     kiln/integration/TestBrowser_ButtonToolCallFires — the test renders
+//     a real kiln-app page and a non-kiln page with the same delegator
+//     payload and asserts only the trusted one fires.
+//   - findCommonScreenGroup deepest-match is verified by
+//     core-ui/app/TestNestedGroupRendersNestedLayoutShells (SSR side)
+//     plus the existing chromedp screen-group e2e (DOM-stable nav).
+
 // Regression: scrollspy's cssEscape polyfill must handle ids that
 // start with a digit (legal HTML5, illegal as bare CSS selectors).
 // querySelector('#2foo') throws SyntaxError without escaping; the
@@ -407,3 +422,14 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+// Hover/focus prefetch delegator and idle-fallback scheduler are
+// verified behaviorally by:
+//   - examples/website/TestE2E_HoverPrefetchLoadsModule — synthesizes
+//     pointerover on a data-fui-prefetch element and asserts the
+//     monkey-patched loadModule fired exactly once with the right name.
+//   - examples/website/TestE2E_IdleFallbackUsesRIC — stubs
+//     requestIdleCallback=undefined and asserts the setTimeout fallback
+//     still loads the queued module.
+//   - examples/website/TestE2E_RuntimeSplit_HoverPrefetch — covers the
+//     full network fetch path (popover.js really lands).

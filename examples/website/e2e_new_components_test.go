@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // =============================================================================
@@ -795,6 +798,124 @@ func TestE2E_BottomSheet_TriggerOpensBottomMounted(t *testing.T) {
 	}
 }
 
+// TestE2E_BottomSheet_HandleRenders asserts the chrome includes a
+// drag-handle bar when the preset enables DragDismiss.
+func TestE2E_BottomSheet_HandleRenders(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var handleCount int
+	var dragAttr string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/bottomsheet"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-open="components-bottomsheet-demo"]').click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-widget="components-bottomsheet-demo"] [data-fui-drag-handle="true"]').length`, &handleCount),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-bottomsheet-demo"]')?.getAttribute('data-fui-drag-dismiss') || ''`, &dragAttr),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if handleCount != 1 {
+		t.Errorf("expected exactly 1 drag handle inside the BottomSheet, got %d", handleCount)
+	}
+	if dragAttr != "true" {
+		t.Errorf("expected data-fui-drag-dismiss=\"true\" on widget root, got %q", dragAttr)
+	}
+}
+
+// TestE2E_BottomSheet_DragPastThresholdCloses simulates a pointer drag
+// that exceeds the 80px distance threshold and asserts the sheet closes.
+func TestE2E_BottomSheet_DragPastThresholdCloses(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hiddenBefore, hiddenAfter string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/bottomsheet"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-open="components-bottomsheet-demo"]').click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`(document.querySelector('[data-fui-widget="components-bottomsheet-demo"]')?.hasAttribute('hidden') ?? null) + ''`, &hiddenBefore),
+		chromedp.Evaluate(`(function(){
+			const handle = document.querySelector('[data-fui-widget="components-bottomsheet-demo"] [data-fui-drag-handle="true"]');
+			if (!handle) return 'no-handle';
+			const r = handle.getBoundingClientRect();
+			const cx = r.left + r.width / 2;
+			const startY = r.top + r.height / 2;
+			const opts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch', clientX: cx, clientY: startY, button: 0 };
+			handle.dispatchEvent(new PointerEvent('pointerdown', opts));
+			// 4 frames worth of movement crossing the 80px threshold.
+			for (let i = 1; i <= 4; i++) {
+				const y = startY + i * 30;
+				handle.dispatchEvent(new PointerEvent('pointermove', { ...opts, clientY: y }));
+			}
+			handle.dispatchEvent(new PointerEvent('pointerup', { ...opts, clientY: startY + 120 }));
+			return 'ok';
+		})()`, nil),
+		chromedp.Sleep(500*1e6),
+		chromedp.Evaluate(`(function(){
+			const w = document.querySelector('[data-fui-widget="components-bottomsheet-demo"]');
+			if (!w) return 'gone';
+			return w.hasAttribute('hidden') ? 'true' : 'false';
+		})()`, &hiddenAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if hiddenBefore != "false" {
+		t.Fatalf("precondition: sheet should be open before drag; hidden=%q", hiddenBefore)
+	}
+	// "Closed" means hidden=true OR removed-from-DOM ("gone") — preset
+	// configurations dismiss differently; the test just asserts the
+	// drag completed the close path.
+	if hiddenAfter == "false" {
+		t.Errorf("drag past threshold should close the sheet; after=%q", hiddenAfter)
+	}
+}
+
+// TestE2E_BottomSheet_ShortDragSnapsBack asserts a drag that doesn't
+// cross the distance/velocity thresholds leaves the sheet open and
+// clears the live transform.
+func TestE2E_BottomSheet_ShortDragSnapsBack(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var hiddenAfter, transform string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/bottomsheet"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-open="components-bottomsheet-demo"]').click()`, nil),
+		chromedp.Sleep(600*1e6),
+		chromedp.Evaluate(`(function(){
+			const handle = document.querySelector('[data-fui-widget="components-bottomsheet-demo"] [data-fui-drag-handle="true"]');
+			if (!handle) return 'no-handle';
+			const r = handle.getBoundingClientRect();
+			const cx = r.left + r.width / 2;
+			const startY = r.top + r.height / 2;
+			const opts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch', clientX: cx, clientY: startY, button: 0 };
+			handle.dispatchEvent(new PointerEvent('pointerdown', opts));
+			handle.dispatchEvent(new PointerEvent('pointermove', { ...opts, clientY: startY + 20 }));
+			// Release before crossing the 80px distance threshold and at a
+			// gentle velocity so the snap-back path runs.
+			return new Promise(resolve => setTimeout(() => {
+				handle.dispatchEvent(new PointerEvent('pointerup', { ...opts, clientY: startY + 20 }));
+				resolve('ok');
+			}, 200));
+		})()`, nil),
+		chromedp.Sleep(300*1e6),
+		chromedp.Evaluate(`(document.querySelector('[data-fui-widget="components-bottomsheet-demo"]')?.hasAttribute('hidden') ?? null) + ''`, &hiddenAfter),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-bottomsheet-demo"]')?.style.transform || ''`, &transform),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if hiddenAfter != "false" {
+		t.Errorf("short drag should NOT close the sheet; hidden=%q", hiddenAfter)
+	}
+	if transform != "" {
+		t.Errorf("snap-back should clear the live transform; got %q", transform)
+	}
+}
+
 // =============================================================================
 // Wave 4 follow-up: Lightbox split + Gallery + Carousel
 // =============================================================================
@@ -861,6 +982,206 @@ func TestE2E_Lightbox_ClickArrowsCycleImages(t *testing.T) {
 	}
 	if afterPrev != firstSrc {
 		t.Errorf("Prev after Next should return to first src; got %q want %q", afterPrev, firstSrc)
+	}
+}
+
+// TestE2E_Lightbox_PinchScalesImage simulates a 2-pointer pinch-out on
+// the displayed image and asserts the runtime sets data-fui-zoomed and
+// applies a scale transform.
+func TestE2E_Lightbox_PinchScalesImage(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var zoomedAttr, transform string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/lightbox"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-gallery"] a[data-fui-open]').click()`, nil),
+		chromedp.Sleep(700*1e6),
+		chromedp.Evaluate(`(function(){
+			const img = document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full');
+			if (!img) return 'no-img';
+			const r = img.getBoundingClientRect();
+			const cx = r.left + r.width/2, cy = r.top + r.height/2;
+			const off = 40;
+			const opts = (id, x, y) => ({ bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch', clientX: x, clientY: y, button: 0 });
+			// Two pointers down at distance=80
+			img.dispatchEvent(new PointerEvent('pointerdown', opts(1, cx - off, cy)));
+			img.dispatchEvent(new PointerEvent('pointerdown', opts(2, cx + off, cy)));
+			// Move them apart to ~240 → 3× scale.
+			img.dispatchEvent(new PointerEvent('pointermove', opts(1, cx - off*3, cy)));
+			img.dispatchEvent(new PointerEvent('pointermove', opts(2, cx + off*3, cy)));
+			// Release.
+			img.dispatchEvent(new PointerEvent('pointerup', opts(1, cx - off*3, cy)));
+			img.dispatchEvent(new PointerEvent('pointerup', opts(2, cx + off*3, cy)));
+			return 'ok';
+		})()`, nil),
+		chromedp.Sleep(200*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.getAttribute('data-fui-zoomed') !== null ? 'yes' : 'no'`, &zoomedAttr),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.style.transform || ''`, &transform),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if zoomedAttr != "yes" {
+		t.Errorf("expected data-fui-zoomed marker after pinch-out; got %q", zoomedAttr)
+	}
+	if !strings.Contains(transform, "scale(") {
+		t.Errorf("expected scale() in transform after pinch; got %q", transform)
+	}
+}
+
+// TestE2E_ModulePreload_PopoverPageHasPopoverLink verifies that the
+// server-side runtime-module dependency scan emits a
+// <link rel="modulepreload"> tag in <head> for the popover module on
+// a page that uses popover-anchored widgets.
+func TestE2E_ModulePreload_PopoverPageHasPopoverLink(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var head string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/popover"),
+		pageReady(),
+		chromedp.Evaluate(`document.head.innerHTML`, &head),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !strings.Contains(head, `rel="modulepreload"`) {
+		t.Fatalf("expected at least one <link rel=modulepreload> on a popover page; got head:\n%s", head)
+	}
+	if !strings.Contains(head, "/__gofastr/runtime/popover.js") {
+		t.Errorf("expected preload for popover.js on /components/popover; got head:\n%s", head)
+	}
+	if !strings.Contains(head, "/__gofastr/runtime/widgets.js") {
+		t.Errorf("expected preload for widgets.js (popover opens a widget); got head:\n%s", head)
+	}
+}
+
+// TestE2E_ModulePreload_BarePageHasNoModuleLinks asserts the scanner
+// doesn't emit preload tags for pages without any demand-load markers
+// — every preload is a wasted RTT if the module isn't actually used.
+func TestE2E_ModulePreload_BarePageHasNoModuleLinks(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var head string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/breadcrumbs"), // pure SSR, no JS modules
+		pageReady(),
+		chromedp.Evaluate(`document.head.innerHTML`, &head),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if strings.Contains(head, "/__gofastr/runtime/popover.js") {
+		t.Errorf("breadcrumbs page should not preload popover.js; got head:\n%s", head)
+	}
+	if strings.Contains(head, "/__gofastr/runtime/lightbox.js") {
+		t.Errorf("breadcrumbs page should not preload lightbox.js; got head:\n%s", head)
+	}
+}
+
+// TestE2E_Carousel_VirtualHydratesOnScroll asserts that placeholder
+// slides past the initial window are empty at first paint and get
+// hydrated with real HTML after the user scrolls them into view.
+func TestE2E_Carousel_VirtualHydratesOnScroll(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var initialDeferred, finalDeferred int
+	var lastSlideHydrated bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/carousel"),
+		pageReady(),
+		chromedp.Sleep(300*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('#demo-virtual-carousel [data-fui-carousel-defer]').length`, &initialDeferred),
+		// Scroll the track in steps from the Go side so the
+		// IntersectionObserver fires for the slides crossing into view
+		// on each tick. A single jump-to-end would leave the middle
+		// slides un-hydrated.
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// Step through the full scroll width in half-viewport chunks.
+			// Each step gives the IntersectionObserver time to fire for
+			// slides that just crossed into the read-ahead window before
+			// the next jump.
+			for step := 0; step < 120; step++ {
+				if err := chromedp.Evaluate(fmt.Sprintf(`(function(){
+					const tr = document.querySelector('#demo-virtual-carousel [data-fui-carousel-track]');
+					if (!tr) return 'no-track';
+					const target = %d * tr.clientWidth * 0.5;
+					if (target > tr.scrollWidth) return 'done';
+					tr.scrollTo({ left: target, behavior: 'auto' });
+					return 'ok';
+				})()`, step), nil).Do(ctx); err != nil {
+					return err
+				}
+				if err := chromedp.Sleep(40 * 1e6).Do(ctx); err != nil {
+					return err
+				}
+			}
+			return nil
+		}),
+		chromedp.Sleep(400*1e6),
+		chromedp.Evaluate(`document.querySelectorAll('#demo-virtual-carousel [data-fui-carousel-defer]').length`, &finalDeferred),
+		chromedp.Evaluate(`(function(){
+			const last = document.querySelector('#demo-virtual-carousel [data-fui-carousel-slide="59"]');
+			return !!(last && last.querySelector('svg'));
+		})()`, &lastSlideHydrated),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if initialDeferred < 50 {
+		t.Errorf("expected most slides deferred at first paint; got %d", initialDeferred)
+	}
+	if finalDeferred != 0 {
+		t.Errorf("scrolling to end should hydrate all placeholders; %d still deferred", finalDeferred)
+	}
+	if !lastSlideHydrated {
+		t.Errorf("last slide should be hydrated (have <svg> inside) after full scroll")
+	}
+}
+
+// TestE2E_Lightbox_PinchResetsOnClose asserts the zoom transform clears
+// when the lightbox modal closes.
+func TestE2E_Lightbox_PinchResetsOnClose(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var transformAfterClose, zoomedAfterClose string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/lightbox"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-gallery"] a[data-fui-open]').click()`, nil),
+		chromedp.Sleep(700*1e6),
+		chromedp.Evaluate(`(function(){
+			const img = document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full');
+			if (!img) return 'no-img';
+			const r = img.getBoundingClientRect();
+			const cx = r.left + r.width/2, cy = r.top + r.height/2;
+			const opts = (id, x, y) => ({ bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch', clientX: x, clientY: y, button: 0 });
+			img.dispatchEvent(new PointerEvent('pointerdown', opts(1, cx - 40, cy)));
+			img.dispatchEvent(new PointerEvent('pointerdown', opts(2, cx + 40, cy)));
+			img.dispatchEvent(new PointerEvent('pointermove', opts(1, cx - 120, cy)));
+			img.dispatchEvent(new PointerEvent('pointermove', opts(2, cx + 120, cy)));
+			img.dispatchEvent(new PointerEvent('pointerup', opts(1, cx - 120, cy)));
+			img.dispatchEvent(new PointerEvent('pointerup', opts(2, cx + 120, cy)));
+			return 'ok';
+		})()`, nil),
+		chromedp.Sleep(200*1e6),
+		chromedp.KeyEvent(kb.Escape),
+		chromedp.Sleep(400*1e6),
+		// Re-open and inspect the (same) image instance.
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-gallery"] a[data-fui-open]').click()`, nil),
+		chromedp.Sleep(500*1e6),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.style.transform || ''`, &transformAfterClose),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="components-lightbox-demo"] img.ui-lightbox__full')?.getAttribute('data-fui-zoomed') !== null ? 'yes' : 'no'`, &zoomedAfterClose),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if transformAfterClose != "" {
+		t.Errorf("close-then-reopen should clear transform; got %q", transformAfterClose)
+	}
+	if zoomedAfterClose != "no" {
+		t.Errorf("close-then-reopen should clear data-fui-zoomed; got %q", zoomedAfterClose)
 	}
 }
 

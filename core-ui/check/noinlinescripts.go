@@ -46,6 +46,10 @@ var (
 	scriptOpenRe = regexp.MustCompile(`(?s)<script\b[^>]*>`)
 	// scriptSrcRe matches a src= attribute on a <script> open tag.
 	scriptSrcRe = regexp.MustCompile(`(?s)<script\b[^>]*\bsrc\s*=`)
+	// scriptInertTypeRe matches a type= attribute whose value marks the
+	// script as a non-JS "data block" (HTML spec). Browsers never execute
+	// these so CSP doesn't block them and the linter shouldn't either.
+	scriptInertTypeRe = regexp.MustCompile(`(?si)\btype\s*=\s*["']?(application/json|application/ld\+json|text/plain|importmap|module-shim/json)\b`)
 	// scriptCloseRe matches a closing </script> tag. Used as a
 	// secondary signal — a string literal containing both opening
 	// (without src) AND closing tags is almost certainly an inline
@@ -183,6 +187,11 @@ func checkInlineScriptInString(s string, line int, filename string, result *Resu
 	if scriptSrcRe.MatchString(openTag) {
 		return
 	}
+	// type="application/json" and other inert data blocks are not executed
+	// by the browser — CSP does not block them.
+	if scriptInertTypeRe.MatchString(openTag) {
+		return
+	}
 	// Look for either a closing </script> tag OR any non-whitespace
 	// content right after the open. A bare "<script></script>" is
 	// technically empty and harmless, but suspicious — flag anyway.
@@ -200,6 +209,17 @@ func checkInlineScriptInString(s string, line int, filename string, result *Resu
 			"<script> open tag without src= forbidden: framework strict-CSP blocks inline JS. "+
 				"Use <script src=\"…\"> for external scripts.")
 	}
+}
+
+// isInertScriptType reports whether a <script type="…"> value marks
+// the contents as a non-executable data block per the HTML spec —
+// browsers never run these and CSP does not block them.
+func isInertScriptType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "application/json", "application/ld+json", "text/plain", "importmap", "module-shim/json":
+		return true
+	}
+	return false
 }
 
 // checkTagCall flags render.Tag("script", attrs, children...) and
@@ -231,8 +251,10 @@ func checkTagCall(call *ast.CallExpr, fset *token.FileSet, filename string, resu
 		return
 	}
 	// Second arg is the attrs map (or nil). If it's a map literal,
-	// check whether "src" is a key.
+	// check whether "src" is a key, or whether "type" marks the block
+	// as inert (non-JS data block).
 	hasSrc := false
+	inertType := false
 	if len(call.Args) >= 2 {
 		if lit, ok := call.Args[1].(*ast.CompositeLit); ok {
 			for _, el := range lit.Elts {
@@ -240,19 +262,27 @@ func checkTagCall(call *ast.CallExpr, fset *token.FileSet, filename string, resu
 				if !ok {
 					continue
 				}
-				if key, ok := kv.Key.(*ast.BasicLit); ok && key.Kind == token.STRING {
-					if stripStringLiteral(key.Value) == "src" {
-						hasSrc = true
-						break
+				key, ok := kv.Key.(*ast.BasicLit)
+				if !ok || key.Kind != token.STRING {
+					continue
+				}
+				switch stripStringLiteral(key.Value) {
+				case "src":
+					hasSrc = true
+				case "type":
+					if v, ok := kv.Value.(*ast.BasicLit); ok && v.Kind == token.STRING {
+						if isInertScriptType(stripStringLiteral(v.Value)) {
+							inertType = true
+						}
 					}
 				}
 			}
 		}
 	}
-	// Children come from args[2:]. If src is absent and any children
-	// are passed, it's an inline script.
+	// Children come from args[2:]. If src is absent, the type is not
+	// inert, and any children are passed, it's an inline script.
 	hasChildren := len(call.Args) >= 3
-	if !hasSrc && hasChildren {
+	if !hasSrc && !inertType && hasChildren {
 		result.add(filename, fset.Position(call.Lparen).Line,
 			"render.Tag(\"script\", …) with body forbidden: framework strict-CSP blocks inline JS. "+
 				"Pass attrs={\"src\": \"…\"} and no children, or serve as a separate <script src=\"…\">.")

@@ -302,7 +302,20 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	if def.DescribedBy != "" {
 		b.WriteString(` aria-describedby="` + escAttr(def.DescribedBy) + `"`)
 	}
+	if def.DragDismiss {
+		// data-fui-drag-dismiss is the runtime delegator hook; the
+		// runtime listens on the widget root and the handle bar.
+		b.WriteString(` data-fui-drag-dismiss="true"`)
+	}
 	b.WriteString(`>`)
+
+	if def.DragDismiss {
+		// Visible drag-handle bar at the top of the panel. role=button
+		// keyboard activation isn't meaningful (drag is the gesture);
+		// keep it inert for AT and rely on ESC + backdrop click as the
+		// keyboard/pointer dismiss path.
+		b.WriteString(`<div class="fui-widget-drag-handle" aria-hidden="true" data-fui-drag-handle="true"></div>`)
+	}
 
 	// Render header / body / footer slots if present.
 	for _, name := range []string{"header", "body", "footer"} {
@@ -470,6 +483,42 @@ func widgetCSS(def Definition) string {
 
 	// Slots are pure containers — no styling.
 	ss.Rule(".fui-slot").Set("display", "block").End()
+
+	// ─── Drag-to-dismiss handle (bottom sheets) ───────────────────
+	// Visible 40×4px rounded bar centered at the top of the panel.
+	// The runtime attaches pointer handlers when it sees
+	// data-fui-drag-dismiss on the widget root.
+	ss.Rule(".fui-widget-drag-handle").
+		Set(
+			"display", "block",
+			"width", "40px",
+			"height", "4px",
+			"margin", "8px auto 4px",
+			"border-radius", "2px",
+			"background", "{colors.border}",
+			"touch-action", "none",
+			"cursor", "grab",
+		).
+		End()
+	// Wider drag affordance: the entire widget root accepts the
+	// initial pointerdown when DragDismiss is on. touch-action: none
+	// keeps the browser from claiming vertical pans for scrolling.
+	ss.Rule(`[data-fui-widget][data-fui-drag-dismiss]`).
+		Set("touch-action", "none").
+		End()
+	// While dragging the runtime sets data-fui-dragging=true; disable
+	// the entrance animation + transitions so the live transform isn't
+	// fought by competing tweens.
+	ss.Rule(`[data-fui-widget][data-fui-dragging]`).
+		Set(
+			"animation", "none",
+			"transition", "none",
+			"will-change", "transform",
+		).
+		End()
+	ss.Rule(`[data-fui-widget][data-fui-drag-handle="true"]`).
+		Set("cursor", "grabbing").
+		End()
 
 	// ─── Anchored popover chrome ────────────────────────────────────
 	// When the runtime positions a popover next to its trigger

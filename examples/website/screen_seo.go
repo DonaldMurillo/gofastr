@@ -94,10 +94,10 @@ func (s *SEODemoScreen) Render() render.HTML {
 			"Two host options register sitewide endpoints — both gated on opt-in so apps that don't want them aren't accidentally indexed:")),
 		render.Tag("ul", nil,
 			render.Tag("li", nil,
-				render.Tag("a", map[string]string{"href": "/sitemap.xml"}, render.Text("/sitemap.xml")),
+				render.Tag("a", map[string]string{"href": "/sitemap.xml", "class": "seo-inline-link"}, render.Text("/sitemap.xml")),
 				render.Text(" — uihost.WithSitemap(SitemapConfig{BaseURL: …}). Lists every reachable route; dynamic routes are expanded via StaticPathsProvider.")),
 			render.Tag("li", nil,
-				render.Tag("a", map[string]string{"href": "/robots.txt"}, render.Text("/robots.txt")),
+				render.Tag("a", map[string]string{"href": "/robots.txt", "class": "seo-inline-link"}, render.Text("/robots.txt")),
 				render.Text(" — uihost.WithRobots(RobotsConfig{…}). With nil-zero config ships the open default (Allow: /). Auto-references the sitemap when both are configured.")),
 		),
 

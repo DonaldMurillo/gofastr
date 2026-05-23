@@ -240,9 +240,14 @@
         return;
       }
       // Legacy: data-kiln-tool buttons fire a /kiln/tool/<name> POST
-      // with the data-kiln-args body. Kept for kiln-built pages.
+      // with the data-kiln-args body. Scoped to kiln-rendered pages
+      // (body.kiln-app) or any subtree explicitly opted in via
+      // data-fui-trusted — otherwise stored-XSS inside user-content
+      // could carry a data-kiln-tool attribute and CSRF as the
+      // logged-in user.
       const legacy = e.target.closest('[data-kiln-tool]');
-      if (legacy) {
+      if (legacy && (document.body.classList.contains('kiln-app') ||
+                     legacy.closest('[data-fui-trusted]'))) {
         e.preventDefault();
         const tool = legacy.getAttribute('data-kiln-tool');
         const args = legacy.getAttribute('data-kiln-args') || '';
@@ -263,8 +268,12 @@
         await dispatchRPC(form);
         return;
       }
-      // Legacy: data-kiln-tool form submits.
-      if (form.hasAttribute('data-kiln-tool')) {
+      // Legacy: data-kiln-tool form submits. Scoped to kiln-rendered
+      // pages (body.kiln-app) or data-fui-trusted subtrees, same as
+      // the button delegator above.
+      if (form.hasAttribute('data-kiln-tool') &&
+          (document.body.classList.contains('kiln-app') ||
+           form.closest('[data-fui-trusted]'))) {
         e.preventDefault();
         const tool = form.getAttribute('data-kiln-tool');
         const fd = new FormData(form);
@@ -478,6 +487,36 @@
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
+    /** Reject dangerous schemes when a signal value is about to be
+        written into a URL-bearing HTML attribute (href / src / action
+        / xlink:href / formaction). Returns true when the value MUST
+        be discarded. Allows http(s), mailto, tel, relative paths,
+        same-page anchors, and data:image/* (used for inline blob
+        previews). Rejects javascript:, vbscript:, and other data:
+        payloads.
+
+        This is the runtime-side guard against signal-bound `href` on
+        Lightbox AllowDownload + any other widget that mirrors an
+        attacker-controllable signal into a click-triggered attribute.
+    */
+    _isUnsafeSignalUrl(attr, value) {
+      if (!attr) return false;
+      const a = String(attr).toLowerCase();
+      if (a !== 'href' && a !== 'src' && a !== 'action' &&
+          a !== 'xlink:href' && a !== 'formaction') return false;
+      // Strip leading whitespace + control chars the browser ignores
+      // when resolving schemes — "  javascript:" is still dangerous.
+      const trimmed = String(value || '').replace(/^[\s -]+/, '').toLowerCase();
+      if (trimmed.startsWith('javascript:')) return true;
+      if (trimmed.startsWith('vbscript:')) return true;
+      if (trimmed.startsWith('data:')) {
+        // Allow data:image/* only; everything else (data:text/html,
+        // data:application/javascript, etc.) is rejected.
+        return !trimmed.startsWith('data:image/');
+      }
+      return false;
+    },
+
     /** Register event handlers for a component */
     register(id, events) {
       handlers[id] = events;
@@ -734,7 +773,15 @@
           }
         } else if (mode === 'attr') {
           const attr = node.getAttribute('data-fui-signal-attr') || 'value';
-          node.setAttribute(attr, String(value ?? ''));
+          let v = String(value ?? '');
+          // URL-bearing attrs (href / src / action / xlink:href /
+          // formaction): reject dangerous schemes (javascript:,
+          // vbscript:, data: except data:image/*). Stops a signal-
+          // driven anchor (e.g. Lightbox AllowDownload) from
+          // executing arbitrary JS when an attacker controls the
+          // signal value via a query-string deeplink param.
+          if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
+          node.setAttribute(attr, v);
         } else {
           if (value == null) node.textContent = '';
           else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') node.textContent = String(value);
@@ -979,7 +1026,14 @@
         // before pushState fires (the click handler does pushState).
         document.title = cached.title;
         announceRoute(cached.title);
-        swapMainContent(cached.html);
+        // Screen group optimization: if both paths share a screen group,
+        // only swap the inner content, preserving the layout shell.
+        const groupEl = findCommonScreenGroup(prevPath || currentPath, path);
+        if (groupEl) {
+          swapScreenGroupContent(groupEl, cached.html);
+        } else {
+          swapMainContent(cached.html);
+        }
         updateActiveLink(path);
         window.scrollTo(0, 0);
         window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
@@ -1007,7 +1061,13 @@
       }
       document.title = title;
       announceRoute(title);
-      swapMainContent(body);
+      // Screen group optimization: preserve layout shell for sibling nav.
+      const groupEl = findCommonScreenGroup(prevPath || currentPath, path);
+      if (groupEl) {
+        swapScreenGroupContent(groupEl, body);
+      } else {
+        swapMainContent(body);
+      }
       cacheScreen(path, body, title);
 
       updateActiveLink(path);
@@ -1070,6 +1130,41 @@
     }
   };
 
+  // --- Screen group awareness ---
+  // When navigating between siblings inside the same data-fui-screen-group,
+  // only swap the group's inner <main> content, preserving the layout shell.
+  const findCommonScreenGroup = (fromPath, toPath) => {
+    const groups = document.querySelectorAll('[data-fui-screen-group]');
+    // Pick the DEEPEST matching group — for nested screen groups the
+    // inner group's layout shell is what should survive sibling-nav,
+    // not the outer one. We compare by prefix length: longer prefix
+    // → more specific → wins.
+    let best = null;
+    let bestLen = -1;
+    for (const g of groups) {
+      const prefix = g.getAttribute('data-fui-screen-group');
+      if (prefix && fromPath.startsWith(prefix) && toPath.startsWith(prefix)) {
+        if (prefix.length > bestLen) {
+          best = g;
+          bestLen = prefix.length;
+        }
+      }
+    }
+    return best;
+  };
+
+  const swapScreenGroupContent = (groupEl, html) => {
+    const main = groupEl.querySelector('[role="main"]') ?? groupEl.querySelector('main');
+    if (main) {
+      main.innerHTML = html;
+      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
+    }
+    // Close disclosures inside the group
+    for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]')) {
+      d.removeAttribute('open');
+    }
+  };
+
   // Links with an exact-href match get aria-current=page. A link can
   // opt in to prefix matching via data-fui-match-prefix — useful for
   // primary nav entries like "Components" (href="/components/") that
@@ -1120,7 +1215,14 @@
     const href = anchor.getAttribute('href');
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!isInternalLink(href)) return;
-    if (anchor.target === '_blank') return;
+    // Skip downloads — <a download> needs the native click to trigger
+    // the save dialog; intercepting fetches the bytes silently into
+    // the SPA and the file never reaches the user.
+    if (anchor.hasAttribute('download')) return;
+    // Skip any non-_self target (covers _blank, _top, _parent, named
+    // frames). Previously only _blank was checked, so <a target="_top">
+    // inside an iframe got hijacked instead of breaking out.
+    if (anchor.target && anchor.target !== '' && anchor.target !== '_self') return;
     if (!isKnownRoute(href)) return;
     // data-fui-rpc anchors are RPC triggers, not navigation.
     if (anchor.hasAttribute('data-fui-rpc')) return;
@@ -1398,6 +1500,81 @@
   }
   _installEagerWidgetDelegators();
 
+  // === DRAG-TO-DISMISS (bottom-sheet style) ============================
+  // Pointer-driven drag-to-close for widgets whose Definition opts in
+  // via DragDismiss (data-fui-drag-dismiss="true" on the widget root,
+  // data-fui-drag-handle="true" on the visible handle bar). Drag is
+  // only initiated from the handle so taps inside the panel content
+  // (scrolling, form input) don't accidentally dismiss the sheet.
+  //
+  // Thresholds: close on >80px downward distance OR >0.5px/ms downward
+  // velocity. Snap back otherwise. data-fui-dragging is mirrored onto
+  // the widget root while the gesture is active (CSS suppresses entrance
+  // animation and transitions so the live transform isn't fought).
+  function _installDragDismiss() {
+    if (document.__fuiDragDismissDispatch) return;
+    document.__fuiDragDismissDispatch = true;
+    const DISTANCE_THRESHOLD = 80;
+    const VELOCITY_THRESHOLD = 0.5; // px per ms
+    let active = null;
+    document.addEventListener('pointerdown', (e) => {
+      if (active) return;
+      const handle = e.target && e.target.closest && e.target.closest('[data-fui-drag-handle="true"]');
+      if (!handle) return;
+      const widget = handle.closest('[data-fui-drag-dismiss="true"]');
+      if (!widget) return;
+      const name = widget.getAttribute('data-fui-widget') || '';
+      // Only primary pointer (left mouse / single touch).
+      if (e.button !== undefined && e.button > 0) return;
+      active = {
+        widget, name, pointerId: e.pointerId,
+        startY: e.clientY, startTime: Date.now(),
+        lastY: e.clientY, lastTime: Date.now(),
+      };
+      widget.setAttribute('data-fui-dragging', 'true');
+      try { widget.setPointerCapture(e.pointerId); } catch (_) {}
+    }, true);
+    document.addEventListener('pointermove', (e) => {
+      if (!active || e.pointerId !== active.pointerId) return;
+      const dy = Math.max(0, e.clientY - active.startY);
+      active.widget.style.transform = 'translateY(' + dy + 'px)';
+      active.lastY = e.clientY;
+      active.lastTime = Date.now();
+    }, true);
+    function finishDrag(close) {
+      const w = active.widget;
+      const name = active.name;
+      try { w.releasePointerCapture(active.pointerId); } catch (_) {}
+      w.removeAttribute('data-fui-dragging');
+      if (close && name) {
+        const G = window.__gofastr;
+        if (G && typeof G.closeWidget === 'function') {
+          try { G.closeWidget(name); } catch (_) {}
+        }
+        // Clear transform AFTER close so the panel doesn't briefly
+        // snap back before unmount.
+        setTimeout(() => { try { w.style.transform = ''; } catch (_) {} }, 0);
+      } else {
+        // Snap back to the resting position.
+        w.style.transform = '';
+      }
+      active = null;
+    }
+    document.addEventListener('pointerup', (e) => {
+      if (!active || e.pointerId !== active.pointerId) return;
+      const dy = Math.max(0, e.clientY - active.startY);
+      const dt = Math.max(1, Date.now() - active.startTime);
+      const velocity = dy / dt;
+      const shouldClose = dy > DISTANCE_THRESHOLD || velocity > VELOCITY_THRESHOLD;
+      finishDrag(shouldClose);
+    }, true);
+    document.addEventListener('pointercancel', (e) => {
+      if (!active || e.pointerId !== active.pointerId) return;
+      finishDrag(false);
+    }, true);
+  }
+  _installDragDismiss();
+
   if (!window.__fuiDeepLinkPopstate) {
     window.__fuiDeepLinkPopstate = true;
     window.addEventListener('popstate', () => {
@@ -1486,12 +1663,17 @@
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
     { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
-    { name: 'sse',        selector: 'meta[name="gofastr-sse"]' },
+    // SSE: background event stream. Idle-loaded — never blocks first
+    // interaction; the channel only carries push updates, not user
+    // actions. See ROADMAP §8 Phase 5.
+    { name: 'sse',        selector: 'meta[name="gofastr-sse"]', idle: true },
     // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
-    // scanner just covers the marker-on-page path.
-    { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]' },
+    // scanner just covers the marker-on-page path. Idle-loaded —
+    // SSR-inlined widget chrome is already on the page; mounting is
+    // hydration not first paint. See ROADMAP §8 Phase 5.
+    { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
     // Combobox: any WAI-ARIA combobox + listbox pair. The module
     // handles keyboard nav, click-to-pick, outside-click close, and
     // updates aria-expanded + aria-activedescendant.
@@ -1560,12 +1742,30 @@
   ];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
+    const idleQueue = [];
     for (const m of _moduleMarkers) {
       // Skip if the module is already loaded — its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
       if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[m.name]) continue;
-      if (scope.querySelector(m.selector)) loadModule(m.name).catch(() => {});
+      if (!scope.querySelector(m.selector)) continue;
+      if (m.idle) {
+        idleQueue.push(m.name);
+      } else {
+        loadModule(m.name).catch(() => {});
+      }
     }
+    if (idleQueue.length) _scheduleIdleModules(idleQueue);
+  }
+  // Phase 5 idle fallback (ROADMAP §8). Modules tagged `idle: true` in
+  // `_moduleMarkers` ship after FCP via requestIdleCallback so they
+  // never compete with the user's first interaction. Safari < 16.2 and
+  // Firefox < 55 lack rIC — fall back to setTimeout(0) which still
+  // runs after the current task settles.
+  function _scheduleIdleModules(names) {
+    const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 0));
+    rIC(() => {
+      for (const n of names) loadModule(n).catch(() => {});
+    });
   }
   // Re-scan after SPA-nav swaps content. Two phases:
   //

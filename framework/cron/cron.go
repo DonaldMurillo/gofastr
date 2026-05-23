@@ -29,12 +29,13 @@ type CronJob struct {
 // replicas. For single-instance background work it is sufficient; for
 // horizontally scaled deployments use the DB-backed queue instead.
 type Scheduler struct {
-	mu      sync.Mutex
-	jobs    []scheduledJob
-	tickEv  time.Duration
-	stop    chan struct{}
-	stopped chan struct{}
-	OnError func(jobName string, err error)
+	mu        sync.RWMutex
+	jobs      []scheduledJob
+	tickEv    time.Duration
+	stop      chan struct{}
+	stopped   chan struct{}
+	startOnce sync.Once
+	OnError   func(jobName string, err error)
 }
 
 type scheduledJob struct {
@@ -69,7 +70,9 @@ func (s *Scheduler) Register(job CronJob) error {
 // Start begins the tick loop in a goroutine. Returns immediately. Idempotent:
 // repeated Start calls are no-ops once the loop is running.
 func (s *Scheduler) Start(ctx context.Context) {
-	go s.run(ctx)
+	s.startOnce.Do(func() {
+		go s.run(ctx)
+	})
 }
 
 // Stop signals the loop to exit and blocks until it has. Safe to call
@@ -87,21 +90,25 @@ func (s *Scheduler) Stop() {
 // RunOnce fires every job whose schedule matches the given minute. Exported
 // for tests that drive the tick manually instead of waiting on the wall clock;
 // production code lets the loop call this.
+//
+// Iterates under the lock without copying the slice. Jobs that mutate state
+// (Register during tick) are safe because the mutex is held only for the
+// read — new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
-	s.mu.Lock()
-	jobs := make([]scheduledJob, len(s.jobs))
-	copy(jobs, s.jobs)
-	s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	for _, sj := range jobs {
+	for i := range s.jobs {
+		sj := &s.jobs[i]
 		if !sj.expr.matches(now) {
 			continue
 		}
+		job := sj.job
 		go func(j CronJob) {
 			if err := j.Run(ctx); err != nil && s.OnError != nil {
 				s.OnError(j.Name, err)
 			}
-		}(sj.job)
+		}(job)
 	}
 }
 

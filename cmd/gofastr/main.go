@@ -56,6 +56,9 @@ func printHelp() {
       --no-entity      Skip sample entity scaffolding
       --db=<driver>    Database driver: sqlite (default) or postgres
   generate entity <n>   Generate an entity definition file
+  new entity <n>        Scaffold a new entity (lower-level than kiln)
+  new handler <n>       Scaffold a new HTTP handler
+  new route <path>      Scaffold a route registration
   generate --from=<yml> Generate code from a deterministic YAML blueprint
   generate --config=<yml> Run YAML-configured code generators/extensions
   theme init            Scaffold theme/theme.go for a UI project
@@ -120,6 +123,8 @@ func main() {
 		runBuild(cmdArgs)
 	case "dev":
 		runDev(cmdArgs)
+	case "new":
+		runNew(cmdArgs)
 	case "migrate", "m":
 		runMigrate(cmdArgs)
 	case "test", "t":

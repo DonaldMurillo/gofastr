@@ -26,6 +26,7 @@ subpackage needs to back-import the framework root.
 ```
 framework/
 ├── access/          Permission / Policy / RolePolicy / RBAC helpers
+├── apiversions/     API versioning — URL prefix, deprecation headers, projections
 ├── cron/            CronJob / Scheduler — minimal in-process tick loop
 ├── crud/            HTTP CRUD layer, eager loading, includes, nested
 │                    filters, typed query, MCP tool generator,
@@ -42,12 +43,15 @@ framework/
 ├── filter/          Query-string filter & sort parsing
 ├── hook/            HookRegistry / HookType + lifecycle constants
 │                    (BeforeCreate, AfterCreate, etc.)
+├── i18nui/          Translated default strings for framework UI surfaces
 ├── internal/casing/ snake↔camel helpers (private to the framework
 │                    module — not part of the public API)
-├── migrate/         AutoMigrate / DiffSchema / Dialect
+├── lifecycle/       Graceful shutdown contract — drain, flush, stop phases
+├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
 ├── pagination/      Cursor + offset pagination
+├── routegroup/      Route groups — prefix, middleware, access, OpenAPI tags
 ├── slowquery/       SlowQueryLogger — wraps any db.Executor
 ├── softdelete/      SoftDelete / Restore / ForceDelete + filter
 ├── tenant/          TenantConfig / Middleware / GetTenantID / etc.

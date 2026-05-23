@@ -82,9 +82,13 @@ func ToastStack(name string) *widget.Builder {
 type clientToastSlot struct{ name string }
 
 func (s clientToastSlot) Render() render.HTML {
+	// Escape the widget name before interpolating into the HTML
+	// attribute — callers control the name but a `"` would break out
+	// of the attribute. core-ui/widget's escAttr is unexported, so
+	// we use render.Escape (same set of replacements).
 	return render.HTML(
 		`<div class="ui-toast-stack" data-fui-comp="ui-toast-stack" data-fui-toast-stack="` +
-			s.name + `"></div>`,
+			render.Escape(s.name) + `"></div>`,
 	)
 }
 
@@ -121,24 +125,24 @@ func Banner(name string) *widget.Builder {
 }
 
 // BottomSheet is a mobile-friendly bottom-edge variant of Drawer.
-// Same dismiss affordances (backdrop + ESC + click-outside) but
-// mounted on the bottom edge with a visible drag-handle bar at the
-// top of the panel. Slide-from-bottom animation; on small viewports
-// the sheet rises ~75vh; on larger viewports it caps to a more
-// conservative ~50vh.
+// Same dismiss affordances (backdrop + ESC + click-outside) plus a
+// pointer-driven drag-to-dismiss gesture: the chrome renders a
+// visible drag handle bar at the top of the panel, and the runtime
+// closes the sheet when the user drags past ~80px or releases with
+// a downward velocity above ~0.5 px/ms. Snaps back otherwise.
+//
+// Slide-from-bottom animation; on small viewports the sheet rises
+// ~75vh; on larger viewports it caps to a more conservative ~50vh.
 //
 // Use for mobile detail panels, share sheets, action menus — any
 // content surface that on small screens makes more sense rising
 // from the bottom than sliding in from the left.
-//
-// The drag-to-dismiss gesture is NOT yet wired (touch event story
-// is its own design pass). ESC + backdrop click cover keyboard +
-// pointer dismiss in the meantime.
 func BottomSheet(name string) *widget.Builder {
 	b := widget.New(name).
 		Mount(widget.Bottom).
 		Backdrop().
-		Role("dialog")
+		Role("dialog").
+		DragDismiss()
 	d := b.Definition()
 	d.CloseOnEscape = true
 	d.CloseOnClickOutside = true

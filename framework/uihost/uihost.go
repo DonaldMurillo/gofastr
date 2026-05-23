@@ -609,7 +609,8 @@ func (ds *UIHost) GetActionJS() string {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 
-	var sb strings.Builder
+	sb := borrowBuilder()
+	defer returnBuilder(sb)
 	for _, js := range ds.actionJS {
 		sb.WriteString(js)
 		sb.WriteString("\n")
@@ -726,7 +727,8 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 // preserving the SSR contract for surfaces that are visible on
 // arrival (deep-linked modals, persistent panels, sidebars).
 func injectWidgetSSR(page string, u *url.URL) string {
-	var b strings.Builder
+	b := borrowBuilder()
+	defer returnBuilder(b)
 	q := u.Query()
 	// Per-page filter — widgets scoped via .Pages / .PagesPrefix /
 	// .PagesMatch only appear on paths they declared. Empty Routes
@@ -993,6 +995,14 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// this on boot to cache-bust per-module URLs.
 	if manifest := runtimeModuleManifestScript(); manifest != "" {
 		page = strings.Replace(page, "</head>", manifest+"\n</head>", 1)
+	}
+	// Module preload hints — emit <link rel="modulepreload"> per
+	// demand-load runtime module whose marker substring appears in
+	// the rendered page. Lets the browser parallel-fetch modules with
+	// initial render instead of stalling on hover/click. Content-
+	// addressed ?v=<hash> URLs match the immutable cache headers.
+	if preloads := runtimeModulePreloadLinks(page); preloads != "" {
+		page = strings.Replace(page, "</head>", preloads+"\n</head>", 1)
 	}
 
 	// <body>
@@ -1490,7 +1500,8 @@ func actionsToJS(componentID string, reg *component.ActionRegistry) string {
 		return ""
 	}
 
-	var sb strings.Builder
+	sb := borrowBuilder()
+	defer returnBuilder(sb)
 	sb.WriteString(fmt.Sprintf("// Component: %s\n", componentID))
 	sb.WriteString("(() => {\n")
 	sb.WriteString(fmt.Sprintf("  const id = %q;\n", componentID))
@@ -1561,7 +1572,8 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	if len(names) == 1 || !bundle {
 		// Static-export path also takes this branch — emit one <link>
 		// per component to avoid the query-paramed bundle URL.
-		var b strings.Builder
+		b := borrowBuilder()
+		defer returnBuilder(b)
 		for i, n := range names {
 			e, ok := registry.Lookup(n)
 			if !ok {
@@ -1570,7 +1582,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 			if i > 0 {
 				b.WriteByte('\n')
 			}
-			fmt.Fprintf(&b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`,
+			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`,
 				n, e.VersionFor(theme))
 		}
 		return b.String()
@@ -1630,6 +1642,31 @@ func catalogJSONScript(ds *UIHost) string {
 // and kiln-style hosts that consume widget.RuntimeTag() directly.
 func runtimeModuleManifestScript() string {
 	return widget.RuntimeModuleManifestScript()
+}
+
+// runtimeModulePreloadLinks emits <link rel="modulepreload"> tags for
+// every demand-load runtime module whose marker substring appears in
+// pageHTML (post-render scan via runtime.NeededModules). The href
+// carries the content-addressed ?v=<hash> URL so preload hits the same
+// immutable cache entry as the eventual fetch.
+func runtimeModulePreloadLinks(pageHTML string) string {
+	mods := runtime.NeededModules(pageHTML)
+	if len(mods) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, name := range mods {
+		hash := widget.RuntimeModuleHash(name)
+		href := "/__gofastr/runtime/" + name + ".js"
+		if hash != "" {
+			href += "?v=" + hash
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(`<link rel="modulepreload" href="` + href + `">`)
+	}
+	return b.String()
 }
 
 // routesJSONScript embeds the route graph as inert JSON. Same model

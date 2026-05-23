@@ -76,6 +76,9 @@ func createStyleSheet(theme style.Theme) string {
 		Set("color", "{colors.primary}", "text-decoration", "none").
 		End()
 	ss.Rule("a:hover").Set("text-decoration", "underline").End()
+	// Inline links inside body copy need a non-color indicator so axe's
+	// link-in-text-block rule passes (color contrast alone is not enough).
+	ss.Rule(".seo-inline-link").Set("text-decoration", "underline").End()
 	ss.Rule(".skip-link").
 		Set("position", "absolute", "left", "-9999px",
 			"background", "{colors.primary}", "color", "white",

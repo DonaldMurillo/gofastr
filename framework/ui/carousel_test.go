@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -123,5 +124,136 @@ func TestCarouselVisiblePerViewClampedAndApplied(t *testing.T) {
 	}))
 	if !strings.Contains(h, "ui-carousel--cols-8") {
 		t.Errorf("VisiblePerView clamps to 8:\n%s", h)
+	}
+}
+
+func TestCarouselVirtualScrollPlaceholdersAndManifest(t *testing.T) {
+	slides := make([]CarouselSlide, 0, 12)
+	for i := 0; i < 12; i++ {
+		slides = append(slides, CarouselSlide{Content: render.HTML("<img src='img" + strconv.Itoa(i) + ".jpg' alt=''>")})
+	}
+	h := string(Carousel(CarouselConfig{
+		Label:                    "x",
+		VirtualScroll:            true,
+		VirtualWindow:            3,
+		VirtualPlaceholderHeight: "240px",
+		Slides:                   slides,
+	}))
+	// First 3 slides render content; the rest are placeholders.
+	// The literal "<img" sequence appears only in hydrated slides;
+	// the manifest body has escaped "<img" instead.
+	if !strings.Contains(h, "<img src='img2.jpg'") {
+		t.Errorf("first 3 slides should ship hydrated; <img2 missing:\n%s", h)
+	}
+	if strings.Contains(h, "<img src='img11.jpg'") {
+		t.Errorf("slides outside window should be deferred; found <img11 inline:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-carousel-defer="3"`) {
+		t.Errorf("slide 3 should be a placeholder:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-carousel-defer="11"`) {
+		t.Errorf("slide 11 should be a placeholder:\n%s", h)
+	}
+	if !strings.Contains(h, "min-block-size:240px") {
+		t.Errorf("VirtualPlaceholderHeight should apply to placeholders:\n%s", h)
+	}
+	if !strings.Contains(h, "data-fui-carousel-deferred-for=") {
+		t.Errorf("expected deferred-content manifest script:\n%s", h)
+	}
+	// Manifest JSON should contain the deferred slide HTML escaped.
+	if !strings.Contains(h, "img11.jpg") {
+		t.Errorf("manifest should carry deferred slide HTML (img11):\n%s", h)
+	}
+}
+
+func TestCarouselVirtualScrollClampsWindow(t *testing.T) {
+	h := string(Carousel(CarouselConfig{
+		Label:         "x",
+		VirtualScroll: true,
+		VirtualWindow: 50, // > slide count
+		Slides:        []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
+	}))
+	// No slides should be deferred when window exceeds slide count.
+	if strings.Contains(h, "data-fui-carousel-defer=") {
+		t.Errorf("window > slide count should hydrate everything; got defer attr:\n%s", h)
+	}
+	if strings.Contains(h, "data-fui-carousel-deferred-for=") {
+		t.Errorf("no deferred slides → no manifest script:\n%s", h)
+	}
+}
+
+func TestCarouselConcurrentRenderUniqueIDs(t *testing.T) {
+	// carouselSeqCounter was a plain int — racy under concurrent renders
+	// (`go test -race`). It also collided with autoID's namespace. Run
+	// N parallel renders and assert every emitted id="ui-carousel-…" is
+	// unique.
+	const N = 32
+	ids := make([]string, N)
+	done := make(chan int, N)
+	for i := 0; i < N; i++ {
+		go func(i int) {
+			h := string(Carousel(CarouselConfig{
+				Label:  "x",
+				Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
+			}))
+			// Extract id="ui-carousel-…" substring.
+			marker := `id="ui-carousel-`
+			start := strings.Index(h, marker)
+			if start < 0 {
+				ids[i] = ""
+			} else {
+				rest := h[start+len(marker):]
+				end := strings.Index(rest, `"`)
+				ids[i] = rest[:end]
+			}
+			done <- i
+		}(i)
+	}
+	for i := 0; i < N; i++ {
+		<-done
+	}
+	seen := make(map[string]bool, N)
+	for _, id := range ids {
+		if id == "" {
+			t.Fatalf("missing carousel id in render output")
+		}
+		if seen[id] {
+			t.Fatalf("duplicate carousel id %q under concurrent render — counter is racy", id)
+		}
+		seen[id] = true
+	}
+}
+
+func TestCarouselVirtualScrollManifestEscapesScripts(t *testing.T) {
+	slides := []CarouselSlide{
+		{Content: render.HTML("a")},
+		{Content: render.HTML("b")},
+		{Content: render.HTML("<script>evil()</script>")},
+	}
+	h := string(Carousel(CarouselConfig{
+		Label:         "x",
+		VirtualScroll: true,
+		VirtualWindow: 1,
+		Slides:        slides,
+	}))
+	// The literal `</script>` sequence inside the JSON manifest must
+	// be escaped so it doesn't prematurely terminate the <script> tag.
+	// strings.Count of the un-escaped close tag = 1: the genuine
+	// closing tag of the manifest's own <script> element. Two would
+	// mean a script-injection footgun. (Go's encoding/json escapes
+	// `<` and `>` to < / > by default, so the inner script
+	// text never reaches the HTML parser as a literal close-tag.)
+	if strings.Count(h, "</script>") != 1 {
+		t.Errorf("manifest must escape inline </script> sequences (count > 1 = injection footgun):\n%s", h)
+	}
+	// Sanity: no literal "</scr"+"ipt>" sequence inside the manifest
+	// body (the closing tag we count is the manifest's own).
+	bodyStart := strings.Index(h, `data-fui-carousel-deferred-for=`)
+	bodyEnd := strings.LastIndex(h, "</script>")
+	if bodyStart < 0 || bodyEnd < 0 || bodyStart >= bodyEnd {
+		t.Fatalf("could not locate manifest body in:\n%s", h)
+	}
+	if strings.Contains(h[bodyStart:bodyEnd], "</script>") {
+		t.Errorf("manifest body contains an unescaped </script>:\n%s", h)
 	}
 }

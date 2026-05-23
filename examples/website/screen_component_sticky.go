@@ -34,7 +34,10 @@ func (s *StickyScreen) Render() render.HTML {
 				render.Text("Scroll down to see the sticky element stay in place...")))
 		}
 		return render.Tag("div", map[string]string{
-			"class": "demo-sticky-scroll",
+			"class":      "demo-sticky-scroll",
+			"tabindex":   "0",
+			"role":       "region",
+			"aria-label": "Sticky demo scroll region",
 		}, inner...)
 	}
 
@@ -71,7 +74,12 @@ func (s *StickyScreen) Render() render.HTML {
 }, ...)`
 
 	// Real-world example: sticky toolbar above a long list
-	toolbarDemo := render.Tag("div", map[string]string{"class": "demo-sticky-scroll"}, []render.HTML{
+	toolbarDemo := render.Tag("div", map[string]string{
+		"class":      "demo-sticky-scroll",
+		"tabindex":   "0",
+		"role":       "region",
+		"aria-label": "Sticky toolbar demo",
+	}, []render.HTML{
 		ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop},
 			html.Div(html.DivConfig{Class: "ui-box--surface"},
 				html.Paragraph(html.TextConfig{},

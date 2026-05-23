@@ -177,6 +177,7 @@
       const m = modalOf(v);
       if (m) watch(m);
     });
+    if (typeof pinchScannerHook === 'function') pinchScannerHook(root);
   }
 
   // Prev/Next button clicks.
@@ -184,6 +185,15 @@
   // this module's initial scan (no MutationObserver was attached
   // because the modal didn't exist yet). Bootstrap on-demand by
   // calling recordOpen() before stepping.
+  //
+  // TODO(security/correctness): the click + keydown handlers are
+  // attached on document and the shared `state` is module-scoped,
+  // so two Lightbox widgets on one page can cross-talk (Prev on
+  // widget B steps widget A's group). The signal names src/group/
+  // alt/caption are also unnamespaced — opening lightbox A leaves
+  // lightbox B's bound nodes flashing. Scope handlers to the
+  // closest `[data-fui-lightbox]` ancestor and namespace signals
+  // per-widget when a real two-instance use case lands.
   document.addEventListener('click', function (ev) {
     const prev = ev.target && ev.target.closest && ev.target.closest('[data-fui-lightbox-prev]');
     if (prev) { ev.preventDefault(); if (!state) recordOpen(); step(-1); return; }
@@ -200,6 +210,175 @@
     ev.preventDefault();
     step(ev.key === 'ArrowLeft' ? -1 : 1);
   });
+
+  // ─── Pinch-to-zoom ─────────────────────────────────────────────────
+  // Two-pointer pinch on the .ui-lightbox__full <img>:
+  //   - Scale is bounded to [1.0, 4.0]; below 1.0 snaps back on release.
+  //   - When scaled >1.0, single-pointer drag pans the image.
+  //   - Double-tap toggles 1× ↔ 2×.
+  //
+  // The pinch state is per-viewer instance (one open lightbox at a time
+  // in practice, but we key by the element to stay robust). On modal
+  // close the transform is reset so the next open starts at 1×.
+  function _installPinchZoom() {
+    if (document.__fuiLightboxPinch) return;
+    document.__fuiLightboxPinch = true;
+    const MIN_SCALE = 1;
+    const MAX_SCALE = 4;
+    const TAP_DELAY = 280; // ms
+    const TAP_DISTANCE = 12; // px
+    const zoomStates = new WeakMap();
+    function getState(img) {
+      let s = zoomStates.get(img);
+      if (!s) {
+        s = {
+          scale: 1, tx: 0, ty: 0,
+          pointers: new Map(),
+          pinchStartDist: 0, pinchStartScale: 1,
+          panStartX: 0, panStartY: 0, panStartTx: 0, panStartTy: 0,
+          lastTapTime: 0, lastTapX: 0, lastTapY: 0,
+        };
+        zoomStates.set(img, s);
+      }
+      return s;
+    }
+    function apply(img, st) {
+      img.style.transform =
+        'translate(' + st.tx + 'px, ' + st.ty + 'px) scale(' + st.scale + ')';
+      img.style.transformOrigin = 'center center';
+      img.toggleAttribute('data-fui-zoomed', st.scale > 1.0001);
+    }
+    function reset(img, st) {
+      st.scale = 1; st.tx = 0; st.ty = 0;
+      st.pointers.clear();
+      img.style.transform = '';
+      img.removeAttribute('data-fui-zoomed');
+    }
+    function midpoint(p1, p2) {
+      return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    }
+    function distance(p1, p2) {
+      const dx = p1.x - p2.x, dy = p1.y - p2.y;
+      return Math.hypot(dx, dy);
+    }
+    function isLightboxImg(target) {
+      return target && target.matches && target.matches('.ui-lightbox__full');
+    }
+    document.addEventListener('pointerdown', (e) => {
+      if (!isLightboxImg(e.target)) return;
+      const img = e.target;
+      const st = getState(img);
+      st.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { img.setPointerCapture(e.pointerId); } catch (_) {}
+      // Two pointers → start pinch.
+      if (st.pointers.size === 2) {
+        const [a, b] = Array.from(st.pointers.values());
+        st.pinchStartDist = distance(a, b);
+        st.pinchStartScale = st.scale;
+      } else if (st.pointers.size === 1) {
+        // One pointer → record pan start (only active when zoomed).
+        const p = Array.from(st.pointers.values())[0];
+        st.panStartX = p.x; st.panStartY = p.y;
+        st.panStartTx = st.tx; st.panStartTy = st.ty;
+        // Stash for double-tap detection on pointerup.
+        st._tapCandidate = { x: p.x, y: p.y, t: Date.now() };
+      }
+    }, true);
+    document.addEventListener('pointermove', (e) => {
+      if (!isLightboxImg(e.target)) return;
+      const img = e.target;
+      const st = getState(img);
+      if (!st.pointers.has(e.pointerId)) return;
+      st.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (st.pointers.size === 2) {
+        const [a, b] = Array.from(st.pointers.values());
+        const d = distance(a, b);
+        if (st.pinchStartDist > 0) {
+          let s = st.pinchStartScale * (d / st.pinchStartDist);
+          if (s < MIN_SCALE * 0.6) s = MIN_SCALE * 0.6; // allow brief overshoot
+          if (s > MAX_SCALE) s = MAX_SCALE;
+          st.scale = s;
+          apply(img, st);
+          st._tapCandidate = null;
+        }
+      } else if (st.pointers.size === 1 && st.scale > 1.001) {
+        const p = Array.from(st.pointers.values())[0];
+        const dx = p.x - st.panStartX;
+        const dy = p.y - st.panStartY;
+        st.tx = st.panStartTx + dx;
+        st.ty = st.panStartTy + dy;
+        apply(img, st);
+        st._tapCandidate = null;
+      }
+    }, true);
+    function endPointer(e, cancelled) {
+      if (!isLightboxImg(e.target)) return;
+      const img = e.target;
+      const st = getState(img);
+      const tap = st._tapCandidate;
+      st.pointers.delete(e.pointerId);
+      try { img.releasePointerCapture(e.pointerId); } catch (_) {}
+      // Snap-back below 1×.
+      if (st.pointers.size === 0 && st.scale < MIN_SCALE) {
+        st.scale = MIN_SCALE; st.tx = 0; st.ty = 0;
+        apply(img, st);
+      }
+      if (cancelled) return;
+      // Double-tap detection (single-pointer, didn't move much).
+      if (st.pointers.size === 0 && tap) {
+        const now = Date.now();
+        const movedX = Math.abs(e.clientX - tap.x);
+        const movedY = Math.abs(e.clientY - tap.y);
+        if (movedX < TAP_DISTANCE && movedY < TAP_DISTANCE) {
+          if (now - st.lastTapTime < TAP_DELAY &&
+              Math.abs(tap.x - st.lastTapX) < TAP_DISTANCE &&
+              Math.abs(tap.y - st.lastTapY) < TAP_DISTANCE) {
+            // Toggle 1× ↔ 2×.
+            if (st.scale > 1.001) {
+              st.scale = 1; st.tx = 0; st.ty = 0;
+            } else {
+              st.scale = 2;
+            }
+            apply(img, st);
+            st.lastTapTime = 0;
+            return;
+          }
+          st.lastTapTime = now;
+          st.lastTapX = tap.x;
+          st.lastTapY = tap.y;
+        }
+      }
+    }
+    document.addEventListener('pointerup', (e) => endPointer(e, false), true);
+    document.addEventListener('pointercancel', (e) => endPointer(e, true), true);
+
+    // Reset zoom whenever the lightbox modal closes.
+    function resetAllOnClose(modal) {
+      if (isOpen(modal)) return;
+      modal.querySelectorAll('.ui-lightbox__full').forEach((img) => {
+        const st = zoomStates.get(img);
+        if (st) reset(img, st);
+      });
+    }
+    // Watch the lightbox modal for hidden-attr changes (open/close)
+    // so we reset zoom on close. Runs whenever the main `scan()` finds
+    // a viewer (initial + SPA-nav + MutationObserver re-scan).
+    pinchScannerHook = function (root) {
+      const scope = root && root.querySelectorAll ? root : document;
+      scope.querySelectorAll('[data-fui-comp="ui-lightbox"][data-fui-lightbox]').forEach((v) => {
+        const m = modalOf(v);
+        if (!m || m.dataset.fuiLightboxPinchWatched === '1') return;
+        m.dataset.fuiLightboxPinchWatched = '1';
+        new MutationObserver((records) => {
+          for (const r of records) {
+            if (r.attributeName === 'hidden') resetAllOnClose(m);
+          }
+        }).observe(m, { attributes: true });
+      });
+    };
+  }
+  let pinchScannerHook = null;
+  _installPinchZoom();
 
   scan(document);
   document.addEventListener('gofastr:navigate', function () { scan(document); });

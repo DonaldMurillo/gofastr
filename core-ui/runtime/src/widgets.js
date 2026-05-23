@@ -573,8 +573,11 @@
         if (e.target.closest('[data-fui-widget]')) return;
         const fuiBtn = e.target.closest('[data-fui-rpc]');
         if (fuiBtn && fuiBtn.tagName !== 'FORM') { e.preventDefault(); await dispatchRPC(fuiBtn); return; }
+        // Scoped to kiln-rendered pages (body.kiln-app) or trusted
+        // subtrees — see runtime.js for the threat model.
         const legacy = e.target.closest('[data-kiln-tool]');
-        if (legacy) {
+        if (legacy && (document.body.classList.contains('kiln-app') ||
+                       legacy.closest('[data-fui-trusted]'))) {
           e.preventDefault();
           const tool = legacy.getAttribute('data-kiln-tool');
           const args = legacy.getAttribute('data-kiln-args') || '';
@@ -595,7 +598,9 @@
           await dispatchRPC(form);
           return;
         }
-        if (form.hasAttribute('data-kiln-tool')) {
+        if (form.hasAttribute('data-kiln-tool') &&
+            (document.body.classList.contains('kiln-app') ||
+             form.closest('[data-fui-trusted]'))) {
           e.preventDefault();
           const tool = form.getAttribute('data-kiln-tool');
           const fd = new FormData(form);

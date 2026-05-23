@@ -28,6 +28,7 @@ type EntityConfig struct {
 	CursorFields []string       // optional: composite cursor — ORDER BY each field in order with tuple-compared keyset. Wins over CursorField when non-empty.
 	Indices      []Index        // additional CREATE INDEX statements emitted by AutoMigrate
 	Properties   map[string]any // caller-owned metadata for generators, plugins, and app conventions
+	MaxListLimit int            // opt-in cap for ?limit and the streaming list path. 0 = use default (100); negative = no streaming cap above default.
 
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.

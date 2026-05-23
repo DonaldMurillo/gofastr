@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -8,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Lightbox ───────────────────────────────────────────────────────
@@ -133,13 +136,13 @@ func (s *lightboxSlot) Render() render.HTML {
 			render.Tag("button", map[string]string{
 				"type":                   "button",
 				"class":                  "ui-lightbox__nav ui-lightbox__nav--prev",
-				"aria-label":             "Previous image",
+				"aria-label":             i18nui.T(context.Background(), i18nui.KeyLightboxPrev),
 				"data-fui-lightbox-prev": s.name,
 			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
 			render.Tag("button", map[string]string{
 				"type":                   "button",
 				"class":                  "ui-lightbox__nav ui-lightbox__nav--next",
-				"aria-label":             "Next image",
+				"aria-label":             i18nui.T(context.Background(), i18nui.KeyLightboxNext),
 				"data-fui-lightbox-next": s.name,
 			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
 		)
@@ -148,7 +151,7 @@ func (s *lightboxSlot) Render() render.HTML {
 		toolbar = append(toolbar,
 			render.Tag("a", map[string]string{
 				"class":                "ui-lightbox__download",
-				"aria-label":           "Download image",
+				"aria-label":           i18nui.T(context.Background(), i18nui.KeyLightboxDownload),
 				"download":             "",
 				"data-fui-signal":      "src",
 				"data-fui-signal-mode": "attr",
@@ -199,6 +202,19 @@ func lightboxCSS(_ style.Theme) string {
   max-block-size: min(75vh, 80vh);
   object-fit: contain;
   border-radius: var(--radii-md, 8px);
+  /* touch-action: none lets the pinch-zoom runtime own all gestures
+     on the image without the browser claiming pinch as a page zoom. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+  cursor: zoom-in;
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__full[data-fui-zoomed] {
+  cursor: grab;
+}
+[data-fui-comp="ui-lightbox"] .ui-lightbox__full[data-fui-zoomed]:active {
+  cursor: grabbing;
 }
 [data-fui-comp="ui-lightbox"] .ui-lightbox__caption {
   margin: 0;

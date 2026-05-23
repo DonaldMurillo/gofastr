@@ -624,20 +624,20 @@ func TestE2E_BackToTop_Renders(t *testing.T) {
 func TestE2E_BackToTop_HiddenByDefault(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-	var ariaHidden string
+	var inert bool
 	var visibleAttr bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
-		// The button should have aria-hidden="true" and no data-fui-btt-visible
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.getAttribute('aria-hidden') || ''`, &ariaHidden),
+		// The button should be inert (not focusable, AT-hidden) and have no data-fui-btt-visible.
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('inert')`, &inert),
 		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('data-fui-btt-visible')`, &visibleAttr),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ariaHidden != "true" {
-		t.Errorf("expected aria-hidden=true initially, got %q", ariaHidden)
+	if !inert {
+		t.Error("expected inert attribute initially (button must not be focusable when hidden)")
 	}
 	if visibleAttr {
 		t.Error("expected no data-fui-btt-visible attribute initially")
@@ -751,7 +751,7 @@ func TestE2E_BackToTop_ScrollShowsButton(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 	var visible bool
-	var ariaHidden string
+	var inert bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
@@ -761,7 +761,7 @@ func TestE2E_BackToTop_ScrollShowsButton(t *testing.T) {
 		chromedp.Sleep(500*time.Millisecond),
 		// Check the first (default) BackToTop button
 		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('data-fui-btt-visible') || false`, &visible),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.getAttribute('aria-hidden') || ''`, &ariaHidden),
+		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('inert')`, &inert),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -769,8 +769,8 @@ func TestE2E_BackToTop_ScrollShowsButton(t *testing.T) {
 	if !visible {
 		t.Error("expected data-fui-btt-visible after scrolling past threshold")
 	}
-	if ariaHidden == "true" {
-		t.Error("expected aria-hidden to be removed after scrolling, still 'true'")
+	if inert {
+		t.Error("expected inert to be removed after scrolling, button should be focusable")
 	}
 }
 
