@@ -78,6 +78,37 @@ func TestInitGeneratedMainUsesIsolationHelpers(t *testing.T) {
 	}
 }
 
+// The generated gofastr.yml must not advertise strategy values that the
+// isolation resolver doesn't consult — a reader who edits "strategy: path"
+// to "strategy: foo" expects to see behavior change, and nothing happens.
+// Drop the decorative field rather than mislead.
+func TestInitIsolationConfigOmitsDecorativeStrategy(t *testing.T) {
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.Mkdir("demo", 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeIsolationConfig("demo", "sqlite")
+	data, err := os.ReadFile(filepath.Join("demo", "gofastr.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, bad := range []string{"strategy: path", "strategy: offset"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("generated yml advertises unrecognized %q:\n%s", bad, got)
+		}
+	}
+}
+
 func writeDevFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

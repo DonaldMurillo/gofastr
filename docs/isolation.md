@@ -12,12 +12,9 @@ isolation:
   enabled: true
   mode: worktree
   port:
-    strategy: offset
     offset: 1000
     range: 1000
-    scan: 20
-  database:
-    strategy: suffix
+    scan: 20      # capped server-side at 64
   services:
     redis: 6379
   env:

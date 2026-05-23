@@ -1115,7 +1115,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\tif err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("}\n\n")
 
-	sb.WriteString("func openBlueprintDB(runtimeIsolation isolation.Runtime) (*sql.DB, error) {\n")
+	sb.WriteString("func openBlueprintDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {\n")
 	if driver == "" && dbURL == "" {
 		sb.WriteString("\treturn nil, nil\n")
 	} else {

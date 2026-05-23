@@ -16,15 +16,16 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
 
-var appliedMu sync.Mutex
-var appliedPorts = map[int]int{}
-
 const (
 	envIsolation       = "GOFASTR_ISOLATION"
 	envApplied         = "GOFASTR_ISOLATION_APPLIED"
 	envID              = "GOFASTR_ISOLATION_ID"
 	envPortPrefix      = "GOFASTR_ISOLATION_PORT_"
 	envRewriteExplicit = "GOFASTR_ISOLATION_REWRITE"
+
+	// portScanMax bounds the linear scan that follows a hashed candidate.
+	// Each iteration costs a net.Listen, so user-set ceilings need a sane cap.
+	portScanMax = 64
 )
 
 // Runtime is the resolved isolation context for a project.
@@ -35,6 +36,9 @@ type Runtime struct {
 	cfg        Config
 	active     bool
 	id         string
+
+	portsMu sync.Mutex
+	ports   map[int]int // base port → mapped port, in-process only
 }
 
 // Config describes local resource isolation.
@@ -61,20 +65,20 @@ type DatabaseConfig struct {
 }
 
 // Resolve loads isolation config for projectDir and returns its runtime.
-func Resolve(projectDir string) (Runtime, error) {
+func Resolve(projectDir string) (*Runtime, error) {
 	cfg := defaultConfig()
 	start, err := filepath.Abs(projectDir)
 	if err != nil {
-		return Runtime{}, err
+		return nil, err
 	}
 	configPath, configDir, err := discoverConfig(start)
 	if err != nil {
-		return Runtime{}, err
+		return nil, err
 	}
 	if configPath != "" {
 		loaded, err := loadConfig(configPath, cfg)
 		if err != nil {
-			return Runtime{}, err
+			return nil, err
 		}
 		cfg = loaded
 		start = configDir
@@ -100,48 +104,54 @@ func Resolve(projectDir string) (Runtime, error) {
 		case "off", "disabled":
 			active = false
 		default:
-			return Runtime{}, fmt.Errorf("isolation.mode %q is not supported", cfg.Mode)
+			return nil, fmt.Errorf("isolation.mode %q is not supported", cfg.Mode)
 		}
 	}
-	return Runtime{
+	return &Runtime{
 		projectDir: start,
 		gitRoot:    gitRoot,
 		configPath: configPath,
 		cfg:        cfg,
 		active:     active,
 		id:         id,
+		ports:      map[int]int{},
 	}, nil
 }
 
 // Active reports whether isolation applies to this runtime.
-func (r Runtime) Active() bool { return r.active }
+func (r *Runtime) Active() bool { return r != nil && r.active }
 
 // ID returns the stable isolation identifier.
-func (r Runtime) ID() string { return r.id }
+func (r *Runtime) ID() string {
+	if r == nil {
+		return ""
+	}
+	return r.id
+}
 
 // Addr returns addr with its port remapped when isolation is active.
-func (r Runtime) Addr(addr string) (string, error) {
-	if !r.active || addr == "" {
+func (r *Runtime) Addr(addr string) (string, error) {
+	if !r.Active() || addr == "" {
 		return addr, nil
 	}
 	host, port, shape, err := splitAddr(addr)
 	if err != nil {
 		return "", err
 	}
-	if mapped, ok := appliedPort(port); ok {
+	if mapped, ok := r.lookupPort(port); ok {
 		return joinAddr(host, mapped, shape), nil
 	}
-	if isAppliedResolvedPort(port) {
+	if r.isResolvedPort(port) {
 		return addr, nil
 	}
 	next := r.portFor(port, host)
-	markAppliedPort(port, next)
+	r.recordPort(port, next)
 	return joinAddr(host, next, shape), nil
 }
 
 // Env returns env with configured local resources isolated.
-func (r Runtime) Env(env []string) []string {
-	if !r.active {
+func (r *Runtime) Env(env []string) []string {
+	if !r.Active() {
 		return env
 	}
 	values := envMap(env)
@@ -180,8 +190,8 @@ func (r Runtime) Env(env []string) []string {
 }
 
 // Database returns an isolated database driver and DSN when isolation is active.
-func (r Runtime) Database(driver, dsn string) (string, string, error) {
-	if !r.active {
+func (r *Runtime) Database(driver, dsn string) (string, string, error) {
+	if !r.Active() {
 		return driver, dsn, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(r.cfg.Database.Strategy)) {
@@ -229,6 +239,11 @@ func discoverConfig(start string) (path, dir string, err error) {
 			} else if err != nil && !os.IsNotExist(err) {
 				return "", "", err
 			}
+		}
+		// Stop at the git root: a parent workspace's gofastr.yml must not
+		// silently apply to a nested project.
+		if _, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil {
+			return "", start, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -289,6 +304,9 @@ func loadConfig(path string, base Config) (Config, error) {
 			cfg.Port.Scan, err = intValue(n, "isolation.port.scan")
 			if err != nil {
 				return Config{}, err
+			}
+			if cfg.Port.Scan > portScanMax {
+				cfg.Port.Scan = portScanMax
 			}
 		}
 	}
@@ -358,11 +376,11 @@ func makeID(projectDir string) string {
 	return "wt_" + hex.EncodeToString(sum[:])[:10]
 }
 
-func (r Runtime) portFor(base int, host string) int {
+func (r *Runtime) portFor(base int, host string) int {
 	if base <= 0 {
 		return base
 	}
-	if v, ok := appliedPort(base); ok {
+	if v, ok := r.lookupPort(base); ok {
 		return v
 	}
 	pc := r.cfg.Port
@@ -380,6 +398,9 @@ func (r Runtime) portFor(base int, host string) int {
 	candidate := normalizePort(base + pc.Offset + offset)
 	if pc.Scan < 0 {
 		pc.Scan = 0
+	}
+	if pc.Scan > portScanMax {
+		pc.Scan = portScanMax
 	}
 	for i := 0; i <= pc.Scan; i++ {
 		p := normalizePort(candidate + i)
@@ -461,35 +482,32 @@ func joinAddr(host string, port int, shape addrShape) string {
 	}
 }
 
-func appliedPort(base int) (int, bool) {
-	if p, ok := appliedPortValue(strconv.Itoa(base)); ok {
+// lookupPort returns a previously recorded mapping for base, checking
+// env first (so child processes inherit parent's mapping) and then this
+// Runtime's in-memory cache.
+func (r *Runtime) lookupPort(base int) (int, bool) {
+	if p, ok := envAppliedPort(strconv.Itoa(base)); ok {
 		return p, true
 	}
-	appliedMu.Lock()
-	defer appliedMu.Unlock()
-	p, ok := appliedPorts[base]
+	r.portsMu.Lock()
+	defer r.portsMu.Unlock()
+	p, ok := r.ports[base]
 	return p, ok
 }
 
-func appliedPortValue(base string) (int, bool) {
-	if os.Getenv(envApplied) != "1" {
-		return 0, false
-	}
-	v := os.Getenv(envPortPrefix + base)
-	if v == "" {
-		return 0, false
-	}
-	p, err := strconv.Atoi(v)
-	return p, err == nil
+// recordPort stores base → mapped in this Runtime's in-memory cache only.
+// Child-process inheritance happens through Env(), which writes the env
+// markers separately.
+func (r *Runtime) recordPort(base, mapped int) {
+	r.portsMu.Lock()
+	defer r.portsMu.Unlock()
+	r.ports[base] = mapped
 }
 
-func markAppliedPort(base, mapped int) {
-	appliedMu.Lock()
-	defer appliedMu.Unlock()
-	appliedPorts[base] = mapped
-}
-
-func isAppliedResolvedPort(port int) bool {
+// isResolvedPort reports whether port is already the mapped form for some
+// base — used by Addr to short-circuit when a child process is handed an
+// already-offset port and re-resolving would double-offset.
+func (r *Runtime) isResolvedPort(port int) bool {
 	if os.Getenv(envApplied) == "1" {
 		for _, pair := range os.Environ() {
 			key, val, ok := strings.Cut(pair, "=")
@@ -502,14 +520,28 @@ func isAppliedResolvedPort(port int) bool {
 			}
 		}
 	}
-	appliedMu.Lock()
-	defer appliedMu.Unlock()
-	for _, mapped := range appliedPorts {
+	r.portsMu.Lock()
+	defer r.portsMu.Unlock()
+	for _, mapped := range r.ports {
 		if mapped == port {
 			return true
 		}
 	}
 	return false
+}
+
+// envAppliedPort reads the parent-process port mapping from env (set by
+// Env() in the parent). Always process-wide — that's the inheritance hook.
+func envAppliedPort(base string) (int, bool) {
+	if os.Getenv(envApplied) != "1" {
+		return 0, false
+	}
+	v := os.Getenv(envPortPrefix + base)
+	if v == "" {
+		return 0, false
+	}
+	p, err := strconv.Atoi(v)
+	return p, err == nil
 }
 
 func envMap(env []string) map[string]string {
@@ -558,7 +590,7 @@ func renderPortValue(current string, port int) string {
 	return joinAddr(host, port, shape)
 }
 
-func (r Runtime) expandTemplate(tmpl string, basePort int) string {
+func (r *Runtime) expandTemplate(tmpl string, basePort int) string {
 	out := strings.ReplaceAll(tmpl, "{id}", r.id)
 	out = strings.ReplaceAll(out, "{project_dir}", r.projectDir)
 	out = strings.ReplaceAll(out, "{port}", strconv.Itoa(r.portFor(basePort, "localhost")))
@@ -580,7 +612,7 @@ func inferDriver(dsn string) string {
 	}
 }
 
-func (r Runtime) sqliteDSN(dsn string) (string, error) {
+func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 	if dsn == "" || dsn == ":memory:" {
 		return dsn, nil
 	}
@@ -606,7 +638,7 @@ func (r Runtime) sqliteDSN(dsn string) (string, error) {
 	return prefix + filepath.Join(dir, name) + query, nil
 }
 
-func (r Runtime) postgresDSN(dsn string) (string, error) {
+func (r *Runtime) postgresDSN(dsn string) (string, error) {
 	if dsn == "" {
 		return dsn, nil
 	}
@@ -619,9 +651,17 @@ func (r Runtime) postgresDSN(dsn string) (string, error) {
 		return dsn, nil
 	}
 	suffix := "_" + strings.ReplaceAll(r.id, "-", "_")
-	if !strings.HasSuffix(db, suffix) {
-		u.Path = "/" + db + suffix
+	if strings.HasSuffix(db, suffix) {
+		return u.String(), nil
 	}
+	// Postgres silently truncates identifiers at NAMEDATALEN-1 (63 bytes by
+	// default). Trim the base name so the suffix survives — two worktrees
+	// must not collide on a truncated form.
+	const pgMaxIdentifier = 63
+	if len(db)+len(suffix) > pgMaxIdentifier {
+		db = db[:pgMaxIdentifier-len(suffix)]
+	}
+	u.Path = "/" + db + suffix
 	return u.String(), nil
 }
 

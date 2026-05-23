@@ -336,25 +336,21 @@ func getEnv(key, fallback string) string {
 	}
 }
 
-func writeIsolationConfig(name, dbDriver string) {
-	databaseStrategy := "path"
-	if dbDriver == "postgres" {
-		databaseStrategy = "suffix"
-	}
-	content := fmt.Sprintf(`version: 1
+func writeIsolationConfig(name, _ string) {
+	// strategy: fields are intentionally omitted — the resolver currently
+	// dispatches by driver, not by strategy name. Re-introduce them only
+	// when they actually toggle behavior.
+	content := `version: 1
 isolation:
   enabled: true
   mode: worktree
   port:
-    strategy: offset
     offset: 1000
     range: 1000
     scan: 20
-  database:
-    strategy: %s
   services:
   env:
-`, databaseStrategy)
+`
 	if err := os.WriteFile(filepath.Join(name, "gofastr.yml"), []byte(content), 0o644); err != nil {
 		fail("Failed to write gofastr.yml: %v", err)
 		os.Exit(1)

@@ -104,20 +104,20 @@ func runDev(args []string) {
 	}
 }
 
-func resolveDevIsolation(dir, addr string) (isolation.Runtime, string, error) {
+func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {
 	runtimeIsolation, err := isolation.Resolve(dir)
 	if err != nil {
-		return isolation.Runtime{}, "", err
+		return nil, "", err
 	}
 	resolvedAddr, err := runtimeIsolation.Addr(addr)
 	if err != nil {
-		return isolation.Runtime{}, "", err
+		return nil, "", err
 	}
 	return runtimeIsolation, resolvedAddr, nil
 }
 
 // buildAndServe builds and starts the server process.
-func buildAndServe(dir, addr string, runtimeIsolation isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
+func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
 	// Build binary to temp file
 	tmpName := "gofastr-dev-server"
 	if runtimeIsolation.Active() {
