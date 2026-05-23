@@ -38,6 +38,10 @@ go run ./cmd/gofastr -- help         # CLI overview
 go run ./examples/blog               # minimal blog with auto-CRUD on SQLite
 ```
 
+Linked Git worktrees automatically get isolated local ports and database
+paths when isolation is enabled in `gofastr.yml`; see
+[`docs/isolation.md`](docs/isolation.md).
+
 Open <http://localhost:8080>, then try:
 
 ```bash

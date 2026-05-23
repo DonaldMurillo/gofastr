@@ -54,6 +54,8 @@ ending with a "common mistakes" callout.
 
 ## Operational surface
 
+- [Worktree isolation](isolation.md) — automatic local port, DB, and
+  service-env isolation for linked Git worktrees.
 - [Migrations](migrations.md) — SQL files, CLI subcommands,
   auto-migrate, dialects.
 - [Security defaults](security.md) — default middleware chain, CSP,

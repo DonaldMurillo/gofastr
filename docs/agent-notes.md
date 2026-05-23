@@ -1,5 +1,12 @@
 # Agent Notes
 
+## 2026-05-22 - worktree-isolation-mode
+
+- Scope: `framework/isolation`, `framework.App.Start`, `cmd/gofastr dev`, generated app entrypoints, `docs/isolation.md`
+- Symptom: linked Git worktrees could collide with the main checkout on `PORT`, SQLite files, Postgres database names, and service env values. Port isolation can be applied at `App.Start`, but DB/cache isolation must happen before app code opens clients.
+- Change: isolation is a first-class runtime resolver. `App.Start` remaps listen ports, `gofastr dev` passes isolated child env, and generated apps call `Runtime.Database` before `sql.Open`. Config lives under `isolation:` in `gofastr.yml`, with worktree-only activation by default and `GOFASTR_ISOLATION=off` as the process escape hatch.
+- Next time: if a new resource is opened before `App.Start`, wire it through `framework/isolation` or an env template. Do not assume the framework can rewrite an already-open connection.
+
 ## 2026-05-20 - blueprint-entity-list-e2e
 
 - Scope: `cmd/gofastr/blueprint.go`, `cmd/gofastr/blueprint_test.go`, `docs/blueprints.md`
