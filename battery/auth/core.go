@@ -52,21 +52,30 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/register", c.registerHandler())
 }
 
-// loginHandler handles POST /auth/login with JSON {email, password}.
+// loginHandler handles POST /auth/login. Accepts either:
+//   - application/json: {"email":"…","password":"…"} — returns JSON
+//     {"user":{…},"token":"…"} with 200.
+//   - application/x-www-form-urlencoded / multipart/form-data: same
+//     fields, returns 303 See Other to the post-login destination
+//     (?next= override or "/" fallback) with the session cookie set.
+//
+// The runtime's form interceptor honours the 303 Location header so
+// browser flows navigate after login.
 func (c *CorePlugin) loginHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if c.loginLimit != nil && !c.loginLimit.guard(w, r) {
 			return
 		}
-		var body struct {
-			Email    string `json:"email"`
-			Password string `json:"password"`
-		}
-		if !decodeJSONLimited(w, r, &body) {
+		email, password, _, isForm, ok := decodeAuthCredentials(w, r)
+		if !ok {
 			return
 		}
-		if body.Email == "" || body.Password == "" {
-			writeAuthError(w, http.StatusBadRequest, "email and password required")
+		if email == "" || password == "" {
+			if isForm {
+				writeFormAuthError(w, r, http.StatusBadRequest, "credentials_required")
+			} else {
+				writeAuthError(w, http.StatusBadRequest, "email and password required")
+			}
 			return
 		}
 
@@ -76,11 +85,15 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// account existence by measuring per-account 429s either —
 		// every non-empty email gets the same treatment.
 		if c.loginLimitAccount != nil {
-			key := "account:" + strings.ToLower(strings.TrimSpace(body.Email))
+			key := "account:" + strings.ToLower(strings.TrimSpace(email))
 			allowed, retry := c.loginLimitAccount.Allow(key)
 			if !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
-				writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+				if isForm {
+					writeFormAuthError(w, r, http.StatusTooManyRequests, "rate_limit")
+				} else {
+					writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+				}
 				return
 			}
 		}
@@ -91,17 +104,25 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			return
 		}
 
-		user, hash, err := store.FindByEmail(r.Context(), body.Email)
+		user, hash, err := store.FindByEmail(r.Context(), email)
 		if err != nil {
 			// Run a dummy bcrypt against the package-level dummy hash so
 			// the response time matches the existing-user path. Skipping
 			// bcrypt here leaks user existence via timing.
-			_ = CheckPassword(body.Password, dummyBcryptHash)
-			writeAuthError(w, http.StatusUnauthorized, "invalid credentials")
+			_ = CheckPassword(password, dummyBcryptHash)
+			if isForm {
+				writeFormAuthError(w, r, http.StatusUnauthorized, "invalid_credentials")
+			} else {
+				writeAuthError(w, http.StatusUnauthorized, "invalid credentials")
+			}
 			return
 		}
-		if !CheckPassword(body.Password, hash) {
-			writeAuthError(w, http.StatusUnauthorized, "invalid credentials")
+		if !CheckPassword(password, hash) {
+			if isForm {
+				writeFormAuthError(w, r, http.StatusUnauthorized, "invalid_credentials")
+			} else {
+				writeAuthError(w, http.StatusUnauthorized, "invalid credentials")
+			}
 			return
 		}
 
@@ -129,6 +150,11 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			Expires:  sess.ExpiresAt,
 		})
 
+		if isForm {
+			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
+			return
+		}
+
 		resp := map[string]any{
 			"user": map[string]any{
 				"id":    user.GetID(),
@@ -150,7 +176,9 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 	}
 }
 
-// logoutHandler handles POST /auth/logout.
+// logoutHandler handles POST /auth/logout. For form requests, redirects
+// to ?next= (or "/") with the session cookie cleared. JSON requests get
+// 204 No Content.
 func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := c.mgr.Config()
@@ -167,6 +195,10 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			Expires:  time.Unix(0, 0),
 			MaxAge:   -1,
 		})
+		if isFormRequest(r) {
+			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -235,18 +267,21 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 }
 
 // registerHandler handles POST /auth/register — creates a new user.
+// Accepts JSON or form-encoded bodies. Form requests get a 303 redirect
+// to the post-register destination (?next= override or "/") with the
+// session cookie set after auto-login.
 func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Email    string   `json:"email"`
-			Password string   `json:"password"`
-			Roles    []string `json:"roles"`
-		}
-		if !decodeJSONLimited(w, r, &body) {
+		email, password, roles, isForm, ok := decodeAuthCredentials(w, r)
+		if !ok {
 			return
 		}
-		if body.Email == "" || body.Password == "" {
-			writeAuthError(w, http.StatusBadRequest, "email and password required")
+		if email == "" || password == "" {
+			if isForm {
+				writeFormAuthError(w, r, http.StatusBadRequest, "credentials_required")
+			} else {
+				writeAuthError(w, http.StatusBadRequest, "email and password required")
+			}
 			return
 		}
 
@@ -256,19 +291,44 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			return
 		}
 
-		if len(body.Roles) == 0 {
-			body.Roles = []string{"user"}
+		if len(roles) == 0 {
+			roles = []string{"user"}
 		}
 
-		hash, err := HashPassword(body.Password)
+		hash, err := HashPassword(password)
 		if err != nil {
 			writeAuthError(w, http.StatusInternalServerError, "password hashing failed")
 			return
 		}
 
-		user, err := store.CreateUser(r.Context(), body.Email, hash, body.Roles)
+		user, err := store.CreateUser(r.Context(), email, hash, roles)
 		if err != nil {
-			writeAuthError(w, http.StatusConflict, "email already registered")
+			if isForm {
+				writeFormAuthError(w, r, http.StatusConflict, "email_taken")
+			} else {
+				writeAuthError(w, http.StatusConflict, "email already registered")
+			}
+			return
+		}
+
+		// Form path: auto-login + cookie + 303 redirect.
+		if isForm {
+			sess, err := c.mgr.SessionStore().Create(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
+			if err != nil {
+				writeAuthError(w, http.StatusInternalServerError, "session create failed")
+				return
+			}
+			cfg := c.mgr.Config()
+			http.SetCookie(w, &http.Cookie{
+				Name:     cfg.SessionCookie,
+				Value:    sess.Token,
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   cfg.SessionSecure,
+				SameSite: http.SameSiteLaxMode,
+				Expires:  sess.ExpiresAt,
+			})
+			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
 			return
 		}
 

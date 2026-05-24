@@ -263,6 +263,11 @@
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
       if (!form || form.closest('[data-fui-widget]')) return;
+      // Opt-out: data-fui-native forms submit the browser-native way.
+      // Use this for any handler that returns a redirect, sets cookies,
+      // or otherwise wants control of navigation (auth flows are the
+      // canonical example).
+      if (form.hasAttribute('data-fui-native')) return;
       if (form.hasAttribute('data-fui-rpc')) {
         e.preventDefault();
         await dispatchRPC(form);
@@ -292,14 +297,58 @@
       const action = form.getAttribute('action');
       if (action && !action.match(/^https?:\/\//)) {
         e.preventDefault();
+        const enctype = (form.getAttribute('enctype') || '').toLowerCase();
+        const wantsForm = enctype === 'application/x-www-form-urlencoded' ||
+                          enctype === 'multipart/form-data';
         const fd = new FormData(form);
-        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+        let body, headers;
+        if (wantsForm) {
+          // Encode as URLSearchParams so handlers using r.ParseForm()
+          // see the fields. multipart/form-data falls through to native
+          // FormData encoding (browser sets the multipart boundary).
+          if (enctype === 'multipart/form-data') {
+            body = fd;
+            headers = {}; // browser sets Content-Type with boundary
+          } else {
+            const params = new URLSearchParams();
+            fd.forEach((v, k) => params.append(k, v));
+            body = params;
+            headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+          }
+        } else {
+          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+          body = JSON.stringify(obj);
+          headers = { 'Content-Type': 'application/json' };
+        }
         try {
-          await fetch(action, {
+          const resp = await fetch(action, {
             method: form.getAttribute('method') || 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(obj),
+            headers,
+            body,
+            redirect: 'follow',
+            credentials: 'same-origin',
           });
+          // Follow Location: redirects via the SPA navigator when
+          // available; otherwise fall back to a hard navigation.
+          // fetch's redirect:'follow' will have already chased the 3xx
+          // to its final URL — we navigate to resp.url so the address
+          // bar updates.
+          if (resp.redirected && resp.url) {
+            try {
+              if (typeof navigate === 'function') {
+                await navigate(resp.url);
+              } else {
+                window.location.assign(resp.url);
+              }
+            } catch (_) {
+              window.location.assign(resp.url);
+            }
+            return;
+          }
+          // No redirect — for form submissions that return HTML we let
+          // the page stay put (caller can wire up a data-fui-rpc form
+          // if they want to swap content). For empty/204 responses
+          // there's nothing else to do.
         } catch (_) {}
       }
     });

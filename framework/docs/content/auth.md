@@ -112,6 +112,148 @@ The `EntityUserStore` and `EntitySessionStore` provided in this
 package implement every relevant interface; if you start from
 `EntityUserStore` you get the full feature matrix.
 
+## HTML form support
+
+`/auth/login`, `/auth/register`, and `/auth/logout` accept both JSON
+and HTML-form bodies. The handler branches on `Content-Type`:
+
+| Request                                       | Response                                              |
+|-----------------------------------------------|--------------------------------------------------------|
+| `Content-Type: application/json`              | `200 OK` JSON body with `{user, token}`                |
+| `application/x-www-form-urlencoded` (HTML)    | `303 See Other` with `Location` to `?next=` or `/`     |
+| `multipart/form-data`                         | Same as form-urlencoded                                |
+
+Form-flow responses set the session cookie before redirecting, so the
+runtime's [form interceptor](../../core-ui/ARCHITECTURE.md#forms)
+follows the `Location` header and lands the user on the next page.
+
+Open-redirect protection: the `?next=` (query or form) override is
+honored only for same-origin paths starting with `/` — `//evil.example`
+and full URLs are rejected, falling back to `/`.
+
+Wire a plain HTML login form like this:
+
+```html
+<form action="/auth/login" method="POST" enctype="application/x-www-form-urlencoded">
+  <input name="email" type="email" required>
+  <input name="password" type="password" required>
+  <input name="next" type="hidden" value="/dashboard">
+  <button type="submit">Log in</button>
+</form>
+```
+
+No client-side JavaScript needed beyond the framework runtime.
+
+### Owner extractor — global state and its limit
+
+`battery/auth.init()` installs a global owner extractor in
+`framework/owner` so any entity with `OwnerField` set in the process
+scopes by the current `auth.GetCurrentUser(ctx)`. **The extractor is
+process-global** — one extractor per process, last-import wins. Apps
+that need different extractors per `framework.App` instance (e.g. a
+single process hosting two unrelated apps) can't have them today.
+
+If you need a different identity source, call
+`owner.SetExtractor(yourFunc)` AFTER `battery/auth` is imported (the
+last call wins). Document this clearly in your app — the import-order
+coupling is subtle.
+
+**Safety**: when an entity has `OwnerField` set and the extractor
+can't produce an owner id for the request (no auth, anonymous request,
+extractor disabled), CRUD refuses the request with `401 Unauthorized`.
+There is no fail-open path: setting `OwnerField` makes the entity
+unconditionally require an authenticated owner.
+
+## Session middleware (cookie → ctx user)
+
+`battery/auth.SessionMiddleware(mgr)` reads the session cookie, looks
+up the user, and stashes them in the request context via
+`handler.SetUser`. After it runs, `auth.GetCurrentUser(ctx)` returns
+the live `User`, and any entity with `OwnerField` set automatically
+scopes per-user.
+
+```go
+app.Use(auth.SessionMiddleware(mgr))
+```
+
+Pair with `auth.RequireSession()` (or
+`auth.RequireSession(auth.WithRedirectOnFail("/login"))` for browser
+flows) on any route that needs a logged-in user.
+
+`RequireAuth` is the JWT-Bearer-only equivalent and is unchanged.
+
+## Auth entities are private by default
+
+The user / session tables back the auth subsystem — exposing them via
+auto-CRUD would leak password hashes and session tokens. Use the
+pre-built configs:
+
+```go
+app.Entity("users",    auth.UserEntityConfig())     // CRUD=false, MCP=false
+app.Entity("sessions", auth.SessionEntityConfig())  // CRUD=false, MCP=false
+mgr.SetUserStore(auth.NewEntityUserStore(db, "users"))
+mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
+```
+
+`auth.UserEntityFields()` and `auth.SessionEntityFields()` are still
+exported for hosts that want to assemble their own config — but the
+`*EntityConfig()` helpers are the safe default.
+
+## CSRF protection
+
+For form-submit flows, mount the CSRF middleware globally and embed
+the hidden field helper in every form:
+
+```go
+app.Use(auth.CSRF(auth.WithCSRFSecret(secret)))
+```
+
+```html
+<form action="/save" method="POST" enctype="application/x-www-form-urlencoded">
+  {{ csrfField .Request }}
+  <input name="title">
+</form>
+```
+
+Where `csrfField` is a template helper bound to
+`auth.CSRFInputHTML(r)`. The middleware accepts the token either as a
+hidden `_csrf` field (HTML forms) or as the `X-CSRF-Token` header (XHR /
+fetch flows that don't go through a form).
+
+Bearer-token requests (`Authorization: Bearer …`, `X-API-Key: …`) are
+skipped — they don't ride on cookies and aren't subject to CSRF.
+
+## Naming conventions — DB columns vs. wire JSON
+
+Mixing DB-column casing with wire-JSON casing trips up most first-time
+users. The rule:
+
+| Layer | Convention | Where set |
+|---|---|---|
+| DB column names | `snake_case` (e.g. `password_hash`, `user_id`) | Entity declarations + `UserEntityFields()` |
+| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `EntityConfig.JSONCase` or `AppConfig.JSONCase` — defaults to camelCase |
+
+The framework automatically converts snake_case DB columns to
+camelCase JSON keys at the response layer (via `crud.JSONCase`). You
+do NOT need to match auth's snake_case column names in your own
+entities — define your columns however you like at the DB layer and
+the wire format stays consistent.
+
+```go
+// Both of these expose the SAME wire format ({"userId":"...","notes":"..."}):
+app.Entity("logs", entity.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "user_id", Type: schema.String}, // snake
+        {Name: "notes",   Type: schema.String},
+    },
+    OwnerField: "user_id",
+})
+// Inside JSON payloads (POST body, response): {"userId": "...", "notes": "..."}
+```
+
+If you genuinely need snake_case on the wire (matching a Python or Rails
+client's expectations), set `AppConfig.JSONCase = "snake_case"`.
+
 ## Cookie defaults
 
 `AuthConfig.defaults()` produces two postures:

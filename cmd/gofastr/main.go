@@ -13,21 +13,53 @@ var (
 	buildDate = "unknown"
 )
 
+// stdoutIsTTY is true when os.Stdout is connected to a terminal. ANSI
+// color helpers below return their input unchanged when this is false,
+// so `gofastr docs | less` or `gofastr docs > out.txt` don't get
+// littered with escape sequences. Evaluated once at startup —
+// re-opening stdout post-init doesn't re-detect.
+var stdoutIsTTY = func() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}()
+
 // ANSI color helpers
 func green(msg string) string {
+	if !stdoutIsTTY {
+		return msg
+	}
 	return "\033[32m" + msg + "\033[0m"
 }
 
 func red(msg string) string {
+	if !stdoutIsTTY {
+		return msg
+	}
 	return "\033[31m" + msg + "\033[0m"
 }
 
 func yellow(msg string) string {
+	if !stdoutIsTTY {
+		return msg
+	}
 	return "\033[33m" + msg + "\033[0m"
 }
 
 func bold(msg string) string {
+	if !stdoutIsTTY {
+		return msg
+	}
 	return "\033[1m" + msg + "\033[0m"
+}
+
+func dim(msg string) string {
+	if !stdoutIsTTY {
+		return msg
+	}
+	return "\033[2m" + msg + "\033[0m"
 }
 
 func success(format string, args ...interface{}) {
@@ -67,6 +99,8 @@ func printHelp() {
   migrate [up|down|status]  Run database migrations
   test                  Run project tests
   embed <sub>           Local semantic index (index/watch/query/stats/clear)
+  docs [topic]          Browse framework docs (auto-versioned with this binary)
+                        --list  list every topic; --grep <term> search across docs
   version               Print version info
 
 %s:
@@ -131,12 +165,14 @@ func main() {
 		runTest(cmdArgs)
 	case "embed":
 		runEmbed(cmdArgs)
+	case "docs", "doc":
+		runDocs(cmdArgs)
 	case "version":
 		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "generate", "build", "dev", "migrate", "test", "embed", "version"}
+		suggestions := []string{"init", "generate", "build", "dev", "migrate", "test", "embed", "docs", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

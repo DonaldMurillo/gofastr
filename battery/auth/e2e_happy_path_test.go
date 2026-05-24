@@ -250,8 +250,11 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
-		Jar:     jar,
-		Timeout: 5 * time.Second,
+		Jar: jar,
+		// 30s — generous because bcrypt + 2FA run ~3x slower under
+		// `go test -race`, exceeding the previous 5s cap and producing
+		// false-positive timeouts.
+		Timeout: 30 * time.Second,
 	}
 
 	do := func(method, path string, body any) (int, map[string]any) {

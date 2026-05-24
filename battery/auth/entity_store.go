@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // Both SQLite (via mattn/go-sqlite3) and PostgreSQL (via lib/pq) accept
@@ -247,12 +248,48 @@ func isUniqueViolation(err error) bool {
 	return false
 }
 
+// UserEntityConfig returns an EntityConfig pre-configured for the auth
+// users table: standard fields + CRUD=false + MCP=false. Auto-private by
+// default so host apps don't accidentally expose user rows through
+// auto-generated REST or MCP tools.
+//
+// Hosts that DO want to expose a /users endpoint can override after the
+// fact (e.g. `cfg := auth.UserEntityConfig(); enabled := true; cfg.CRUD =
+// &enabled`).
+//
+//	app.Entity("users", auth.UserEntityConfig())
+func UserEntityConfig() entity.EntityConfig {
+	crudOff := false
+	return entity.EntityConfig{
+		Fields: UserEntityFields(),
+		CRUD:   &crudOff,
+		MCP:    false,
+	}
+}
+
+// SessionEntityConfig returns an EntityConfig pre-configured for the auth
+// sessions table: standard fields + CRUD=false + MCP=false. Auto-private
+// by default. See UserEntityConfig for the rationale.
+//
+//	app.Entity("sessions", auth.SessionEntityConfig())
+func SessionEntityConfig() entity.EntityConfig {
+	crudOff := false
+	return entity.EntityConfig{
+		Fields: SessionEntityFields(),
+		CRUD:   &crudOff,
+		MCP:    false,
+	}
+}
+
 // UserEntityFields returns the standard field definitions for a user entity.
 // Apps call this when defining their user entity:
 //
 //	app.Entity("users", entity.EntityConfig{
 //	    Fields: auth.UserEntityFields(),
 //	})
+//
+// For most apps, prefer UserEntityConfig() which also disables the
+// dangerous-by-default auto-CRUD on user rows.
 func UserEntityFields() []schema.Field {
 	return []schema.Field{
 		{Name: "email", Type: schema.String, Required: true, Unique: true},

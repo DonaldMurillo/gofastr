@@ -51,7 +51,7 @@ func TestBuildDSLQuery(t *testing.T) {
 		t.Fatalf("BuildDSLQuery: %v", err)
 	}
 	sql, args := qb.Build()
-	wantSQL := "SELECT id, status, views, author_id, created_at, updated_at FROM posts WHERE status = $1 AND views IN ($2, $3) ORDER BY created_at DESC LIMIT $4"
+	wantSQL := "SELECT id, status, views, author_id, created_at, updated_at FROM posts WHERE (status = $1) AND (views IN ($2, $3)) ORDER BY created_at DESC LIMIT $4"
 	if sql != wantSQL {
 		t.Fatalf("sql:\n got: %s\nwant: %s", sql, wantSQL)
 	}

@@ -8,7 +8,7 @@ import (
 func TestSelectWithWhere(t *testing.T) {
 	sql, args := Select("id", "name").From("users").Where("age > $1", 21).Build()
 
-	wantContains := "SELECT id, name FROM users WHERE age > $1"
+	wantContains := "SELECT id, name FROM users WHERE (age > $1)"
 	if !contains(sql, wantContains) {
 		t.Errorf("SQL = %q, want to contain %q", sql, wantContains)
 	}
@@ -190,8 +190,8 @@ func TestUpdateWithSetAndWhere(t *testing.T) {
 	if !contains(sql, "SET name = $1, age = $2") {
 		t.Errorf("SQL = %q, want SET name = $1, age = $2", sql)
 	}
-	if !contains(sql, "WHERE id = $3") {
-		t.Errorf("SQL = %q, want WHERE id = $3", sql)
+	if !contains(sql, "WHERE (id = $3)") {
+		t.Errorf("SQL = %q, want WHERE (id = $3)", sql)
 	}
 	if !contains(sql, "RETURNING id, updated_at") {
 		t.Errorf("SQL = %q, want RETURNING id, updated_at", sql)
@@ -215,7 +215,7 @@ func TestDeleteWithWhere(t *testing.T) {
 		Where("id = $1", 5).
 		Build()
 
-	want := "DELETE FROM users WHERE id = $1"
+	want := "DELETE FROM users WHERE (id = $1)"
 	if sql != want {
 		t.Errorf("SQL = %q, want %q", sql, want)
 	}
@@ -247,7 +247,7 @@ func TestCount(t *testing.T) {
 		Where("active = $1", true).
 		Build()
 
-	want := "SELECT COUNT(*) FROM users WHERE active = $1"
+	want := "SELECT COUNT(*) FROM users WHERE (active = $1)"
 	if sql != want {
 		t.Errorf("SQL = %q, want %q", sql, want)
 	}

@@ -216,6 +216,78 @@ For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Ad
 
 ---
 
+## Forms
+
+Plain `<form>` elements with a relative `action` are intercepted by the
+runtime so the page doesn't hard-refresh after submit. The interceptor
+has three knobs you need to know about:
+
+### 1. Body encoding follows `enctype`
+
+```html
+<form action="/save" method="POST" enctype="application/x-www-form-urlencoded">
+  <input name="title">
+</form>
+```
+
+| `enctype`                              | Body sent by runtime                              | Server reads via                |
+|----------------------------------------|---------------------------------------------------|----------------------------------|
+| (unset) — default JSON                 | `application/json` of every form input            | `json.NewDecoder(r.Body)`        |
+| `application/x-www-form-urlencoded`    | `application/x-www-form-urlencoded` (URL-encoded) | `r.ParseForm()` + `r.PostFormValue` |
+| `multipart/form-data`                  | `multipart/form-data` (browser sets boundary)     | `r.ParseMultipartForm()`         |
+
+Pick the encoding that matches your handler. The interceptor is
+content-type-aware — it does NOT JSON-wrap a form-encoded handler's
+input or vice versa.
+
+### 2. Server redirects are followed
+
+When the handler responds with a `30x` and a `Location` header, the
+runtime navigates to the location. This is the right pattern for any
+form that needs the page to change after submit — auth flows, "save
+and return to list", etc.
+
+```go
+http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+```
+
+The redirect target is honored via the runtime's SPA navigator when
+available (no hard refresh between same-app pages), otherwise via
+`window.location.assign`.
+
+### 3. `data-fui-native` opts out entirely
+
+```html
+<form action="/legacy" method="POST" data-fui-native>
+  …
+</form>
+```
+
+`data-fui-native` makes the runtime ignore the form completely — the
+browser submits it natively. Reach for this when:
+
+- The page needs the browser-native multipart upload progress bar.
+- The handler returns HTML that should fully replace the page (rare —
+  prefer a SPA-style redirect).
+- You're embedding a third-party form widget that manages its own
+  submit lifecycle.
+
+Most apps shouldn't need this — the default interceptor + content-type
+negotiation covers normal SSR auth, settings, save-and-return flows.
+
+### Cookie-set + redirect: the canonical auth flow
+
+```go
+// /auth/login form handler — battery/auth ships this out of the box.
+http.SetCookie(w, sessionCookie)
+http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
+```
+
+The runtime preserves the cookie and follows the redirect, so a form
+POST to `/auth/login` from an SSR login page lands the user on the
+next screen without a hard refresh — and without the host needing
+client-side glue.
+
 ## The three failure modes (do not repeat)
 
 These are the misreadings of the model that have already cost rework.

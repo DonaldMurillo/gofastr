@@ -581,6 +581,31 @@ func (a *App) EntitiesFromDir(dir string) error {
 	return nil
 }
 
+// GroupEntitiesFromDir loads every *.json declaration in dir and registers
+// each one inside the given RouteGroup — the group-scoped equivalent of
+// EntitiesFromDir. CRUD routes mount at <group-prefix>/<entity-table>,
+// MCP tools are namespaced under the group's MCPNamespace.
+//
+// Use this with a /api group when every JSON entity should live behind
+// a single prefix:
+//
+//	api := app.Group("/api")
+//	app.GroupEntitiesFromDir(api, "entities")
+func (a *App) GroupEntitiesFromDir(g *routegroup.RouteGroup, dir string) error {
+	decls, err := entity.LoadEntityDeclarations(dir)
+	if err != nil {
+		return err
+	}
+	for _, decl := range decls {
+		cfg, err := decl.Config()
+		if err != nil {
+			return err
+		}
+		a.GroupEntity(g, decl.Name, cfg)
+	}
+	return nil
+}
+
 func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
 	for _, endpoint := range endpoints {
 		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))

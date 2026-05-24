@@ -42,9 +42,13 @@ func (cb *CountBuilder) Build() (string, []any) {
 				sb.WriteString(w.connector)
 				sb.WriteString(" ")
 			}
+			// Wrap each condition in parens — see query.go for the
+			// SQL-precedence bypass this defends against.
 			condition := renumberPlaceholders(w.condition, paramIdx)
 			paramIdx += len(w.args)
+			sb.WriteByte('(')
 			sb.WriteString(condition)
+			sb.WriteByte(')')
 		}
 	}
 

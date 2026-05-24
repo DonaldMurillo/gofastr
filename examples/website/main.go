@@ -426,7 +426,7 @@ func runBuildStatic(out string, watch bool, interval time.Duration) {
 	}
 
 	fmt.Printf("Watching for changes (interval=%s)...\n", interval)
-	_ = builder.Watch(ctx, []string{".", "../../docs"}, interval, func(err error) {
+	_ = builder.Watch(ctx, []string{".", "../../framework/docs/content"}, interval, func(err error) {
 		fmt.Fprintf(os.Stderr, "  build error: %v\n", err)
 	})
 }

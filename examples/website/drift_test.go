@@ -477,7 +477,7 @@ func TestDrift_EveryComponentPageHasE2ETest(t *testing.T) {
 
 // TestDrift_DocsIndexListsEveryComponent enforces that every
 // /components/<slug> route registered in main.go is mentioned in
-// docs/ui-new-components.md. The doc is a one-page catalog meant
+// framework/docs/content/ui-new-components.md. The doc is a one-page catalog meant
 // to point readers at the live demo + Go docs; if a new component
 // lands without an index entry, readers can't find it without
 // grepping main.go.
@@ -498,9 +498,9 @@ func TestDrift_DocsIndexListsEveryComponent(t *testing.T) {
 		t.Fatal("no /components/<slug> routes found in main.go — drift test broken")
 	}
 
-	doc, err := os.ReadFile("../../docs/ui-new-components.md")
+	doc, err := os.ReadFile("../../framework/docs/content/ui-new-components.md")
 	if err != nil {
-		t.Fatalf("read docs/ui-new-components.md: %v", err)
+		t.Fatalf("read framework/docs/content/ui-new-components.md: %v", err)
 	}
 	docText := string(doc)
 
@@ -518,7 +518,7 @@ func TestDrift_DocsIndexListsEveryComponent(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		sortStrings(missing)
-		t.Errorf("docs/ui-new-components.md is missing entries for: %v\n"+
+		t.Errorf("framework/docs/content/ui-new-components.md is missing entries for: %v\n"+
 			"Each slug registered in main.go must appear as `**<slug>**` "+
 			"in the catalog section of the index doc. Add a one-line "+
 			"bullet referencing the constructor + a short description.",

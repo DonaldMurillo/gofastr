@@ -63,7 +63,7 @@ func runFreeze(args []string) int {
 	fmt.Fprintf(os.Stderr, "[kiln freeze] wrote to %s/\n", *dir)
 	fmt.Fprintf(os.Stderr, "  entities: %d  pages: %d  hooks: %d  routes: %d\n",
 		entCount, pageCount, hookCount, routeCount)
-	fmt.Fprintf(os.Stderr, "  next: gofastr generate (will read entities/*.json and emit Go)\n")
+	fmt.Fprintf(os.Stderr, "  next: open %s/entities/ and wire them into your app via app.EntitiesFromDir(\"entities\")\n", *dir)
 	return 0
 }
 

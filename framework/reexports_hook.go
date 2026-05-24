@@ -20,6 +20,14 @@ const (
 	AfterDelete  = hook.AfterDelete
 	BeforeList   = hook.BeforeList
 	AfterList    = hook.AfterList
+	BeforeGet    = hook.BeforeGet
+	AfterGet     = hook.AfterGet
+)
+
+type (
+	HookListPayload  = hook.ListPayload
+	HookGetPayload   = hook.GetPayload
+	HookWhereClause  = hook.WhereClause
 )
 
 var NewHookRegistry = hook.NewHookRegistry

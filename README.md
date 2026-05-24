@@ -40,7 +40,7 @@ go run ./examples/blog               # minimal blog with auto-CRUD on SQLite
 
 Linked Git worktrees automatically get isolated local ports and database
 paths when isolation is enabled in `gofastr.yml`; see
-[`docs/isolation.md`](docs/isolation.md).
+[`framework/docs/content/isolation.md`](framework/docs/content/isolation.md).
 
 Open <http://localhost:8080>, then try:
 
@@ -199,7 +199,7 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 
 `auth`, `cache`, `email`, `embed`, `queue`, `search`, `storage`. Each behind a small interface with at least one in-memory implementation suitable for tests and small examples; production swaps in Redis, S3, Postgres FTS, etc.
 
-`battery/embed` is the local semantic-search battery: in-process vector index with brute-force cosine, optional hybrid keyword fusion, MMR diversity, snapshot/WAL persistence, fsnotify-free polling watcher, and a Kiln agent context hook. See [`docs/embed.md`](docs/embed.md).
+`battery/embed` is the local semantic-search battery: in-process vector index with brute-force cosine, optional hybrid keyword fusion, MMR diversity, snapshot/WAL persistence, fsnotify-free polling watcher, and a Kiln agent context hook. See [`framework/docs/content/embed.md`](framework/docs/content/embed.md).
 
 ### `cmd/gofastr` — CLI
 
@@ -297,17 +297,17 @@ ROADMAP.md   forward-looking proposals not yet built
 
 ## Documentation
 
-- [UI getting started](docs/ui-getting-started.md) — **the 15-minute path**: scaffold → theme → screen → custom-styled component
+- [UI getting started](framework/docs/content/ui-getting-started.md) — **the 15-minute path**: scaffold → theme → screen → custom-styled component
 - [core-ui architecture](core-ui/ARCHITECTURE.md) — **deeper UI/runtime reference** (SSR, hydration, islands, component CSS, data-fui-* primitives)
 - [framework architecture](framework/ARCHITECTURE.md) — package layout, layering rules, cycle-breaking interfaces
-- [Entity declarations](docs/entity-declarations.md) — JSON schema reference
-- [Migrations](docs/migrations.md) — versioned migrations and the CLI
-- [Query DSL](docs/query-dsl.md) — `Entity.where(...).order(...).limit(N)`
-- [Search](docs/search.md) — the `battery/search` interface
-- [Embed](docs/embed.md) — local semantic search via `battery/embed`
-- [Security](docs/security.md) — defaults, headers, and limits
-- [Architecture review](docs/project-architecture-review.md) — design notes and trade-offs
-- [Agent notes](docs/agent-notes.md) — running notes for AI contributors
+- [Entity declarations](framework/docs/content/entity-declarations.md) — JSON schema reference
+- [Migrations](framework/docs/content/migrations.md) — versioned migrations and the CLI
+- [Query DSL](framework/docs/content/query-dsl.md) — `Entity.where(...).order(...).limit(N)`
+- [Search](framework/docs/content/search.md) — the `battery/search` interface
+- [Embed](framework/docs/content/embed.md) — local semantic search via `battery/embed`
+- [Security](framework/docs/content/security.md) — defaults, headers, and limits
+- [Architecture review](framework/docs/content/project-architecture-review.md) — design notes and trade-offs
+- [Agent notes](framework/docs/content/agent-notes.md) — running notes for AI contributors
 
 ## Project status
 

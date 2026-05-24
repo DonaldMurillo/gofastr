@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
@@ -100,6 +101,59 @@ func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string
 	app.HookRegistry(name).RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 		id, _ := data.(string)
 		return fn(ctx, id)
+	})
+}
+
+// OnBeforeList registers a typed BeforeList hook. The callback receives
+// the framework's *hook.ListPayload directly so callers can append WHERE
+// clauses (p.AddWhere) without type-asserting from any. Symmetric with
+// OnBeforeCreate/OnBeforeUpdate.
+func OnBeforeList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
+	app.HookRegistry(name).RegisterHook(hook.BeforeList, func(ctx context.Context, data any) error {
+		p, ok := data.(*hook.ListPayload)
+		if !ok || p == nil {
+			return fmt.Errorf("typed BeforeList hook: payload type = %T, want *hook.ListPayload (framework contract drift?)", data)
+		}
+		return fn(ctx, p)
+	})
+}
+
+// OnAfterList registers a typed AfterList hook. The callback receives
+// the *hook.ListPayload with Results populated — mutate the slice in
+// place to redact / drop rows.
+func OnAfterList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
+	app.HookRegistry(name).RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
+		p, ok := data.(*hook.ListPayload)
+		if !ok || p == nil {
+			return fmt.Errorf("typed AfterList hook: payload type = %T, want *hook.ListPayload (framework contract drift?)", data)
+		}
+		return fn(ctx, p)
+	})
+}
+
+// OnBeforeGet registers a typed BeforeGet hook. The callback receives
+// *hook.GetPayload; ID is the request's path-value and AddWhere lets
+// the host scope the lookup (mismatch → 404).
+func OnBeforeGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
+	app.HookRegistry(name).RegisterHook(hook.BeforeGet, func(ctx context.Context, data any) error {
+		p, ok := data.(*hook.GetPayload)
+		if !ok || p == nil {
+			return fmt.Errorf("typed BeforeGet hook: payload type = %T, want *hook.GetPayload (framework contract drift?)", data)
+		}
+		return fn(ctx, p)
+	})
+}
+
+// OnAfterGet registers a typed AfterGet hook. The callback receives
+// *hook.GetPayload with Result populated — mutate the map in place to
+// redact fields before the response is serialised.
+func OnAfterGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
+	app.HookRegistry(name).RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
+		p, ok := data.(*hook.GetPayload)
+		if !ok || p == nil {
+			return fmt.Errorf("typed AfterGet hook: payload type = %T, want *hook.GetPayload (framework contract drift?)", data)
+		}
+		return fn(ctx, p)
 	})
 }
 

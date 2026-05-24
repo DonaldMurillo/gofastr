@@ -1,5 +1,21 @@
 # Entity Declarations
 
+> ⚠️ **Per-user data warning.** Auto-generated CRUD does **not** scope
+> rows by user unless you set `OwnerField`. An entity exposed via
+> `app.Entity(...)` (or `app.GroupEntity(...)`) with no `OwnerField`
+> lets every authenticated user read every row. For per-user data:
+>
+> ```go
+> app.Entity("logs", entity.EntityConfig{
+>     Fields:     []schema.Field{ /* … */ },
+>     OwnerField: "user_id", // CRUD auto-scopes by current user; auto-stamps on Create
+> })
+> ```
+>
+> When `battery/auth` is imported, the framework's owner extractor is
+> wired automatically — no extra setup needed. See the **Per-user
+> scoping (`OwnerField`)** section below for details.
+
 GoFastr supports JSON entity declarations for agent-friendly app generation.
 Declarations live in `entities/*.json` and can be loaded at runtime or used by
 the CLI code generator. In the general codegen system, entity JSON is one
@@ -64,6 +80,50 @@ the underlying column untouched.
 Rule of thumb: name fields in whatever case you want the column to be in.
 camelCase is the convention used in the example apps; snake_case is the
 SQL-traditional choice. Pick one per project and stick with it.
+
+## Per-user scoping (`OwnerField`)
+
+Set `EntityConfig.OwnerField` to the DB column that holds the row owner's
+id, and auto-CRUD becomes per-user automatically:
+
+| Operation | Behaviour with `OwnerField: "user_id"` |
+|---|---|
+| `GET /api/<entity>` (List)   | `WHERE user_id = <ctx user id>` injected into both the data and count queries. |
+| `GET /api/<entity>/{id}` (Get) | `WHERE id = ? AND user_id = <ctx user id>`. Cross-user requests return 404. |
+| `POST /api/<entity>` (Create) | `user_id` is stamped from the current request — clients can omit it (or send it; it's overwritten). |
+| `PUT /api/<entity>/{id}` (Update) | UPDATE is scoped by owner. Cross-user requests return 404. |
+| `DELETE /api/<entity>/{id}` (Delete) | DELETE is scoped by owner. Cross-user requests return 404. |
+
+The owner id comes from `framework/owner.Get(ctx)`. Any battery that
+registers an extractor wires this up — `battery/auth` does so in
+`init()`, pulling from `auth.GetCurrentUser(ctx).GetID()`. If no
+extractor is registered, `OwnerField` is inert (no scoping, no
+stamping) — so adding the field to an entity config in an app that
+hasn't wired auth is harmless.
+
+Pair with **session middleware** so cookie-authenticated requests
+appear as a User in context:
+
+```go
+app.Use(auth.SessionMiddleware(mgr))
+```
+
+JWT-authenticated requests (via `auth.RequireAuth`) already populate
+the User in context.
+
+### Auth entities are NOT auto-private
+
+When you register the `users` / `sessions` entities for `battery/auth`,
+use the pre-built configs so they don't get exposed via REST or MCP:
+
+```go
+app.Entity("users",    auth.UserEntityConfig())    // CRUD=false, MCP=false
+app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
+```
+
+`auth.UserEntityFields()` and `auth.SessionEntityFields()` remain for
+hosts that want full control; the `*EntityConfig()` helpers are the
+safer default.
 
 ## Code Generation
 
