@@ -749,6 +749,231 @@ func TestModalRoutesKeysAway(t *testing.T) {
 	}
 }
 
+// TestScrollbackSearch_FindsCaseInsensitive: searchScrollback returns
+// the indices of all matches, case-insensitive, in scrollback order.
+func TestScrollbackSearch_FindsCaseInsensitive(t *testing.T) {
+	lines := []string{
+		"first line about Bash",
+		"middle line about nothing",
+		"third line about bashing the keyboard",
+		"BASH something else",
+	}
+	hits := searchScrollback(lines, "bash")
+	if len(hits) != 3 {
+		t.Errorf("got %d hits, want 3: %v", len(hits), hits)
+	}
+	// hits should be {0, 2, 3}
+	wantSet := map[int]bool{0: true, 2: true, 3: true}
+	for _, h := range hits {
+		if !wantSet[h] {
+			t.Errorf("unexpected hit index %d", h)
+		}
+	}
+}
+
+// TestScrollbackSearch_EmptyQueryReturnsNothing: prevents the
+// "search for empty string" pathological case (would match every line).
+func TestScrollbackSearch_EmptyQueryReturnsNothing(t *testing.T) {
+	hits := searchScrollback([]string{"a", "b"}, "")
+	if len(hits) != 0 {
+		t.Errorf("empty query should return no hits: %v", hits)
+	}
+}
+
+// TestSearchModeActivation: Ctrl-R toggles search mode; typing
+// while in search mode filters; Esc cancels and restores.
+func TestSearchModeActivation(t *testing.T) {
+	tui := newSnapshotTUI()
+	tui.scrollback = []string{"hello world", "foo bar", "say hello again"}
+	tui.handleKey([]byte{0x12}) // Ctrl-R
+	if !tui.searchActive {
+		t.Fatal("Ctrl-R didn't activate search mode")
+	}
+	for _, c := range []byte("hello") {
+		tui.handleKey([]byte{c})
+	}
+	if tui.searchQuery != "hello" {
+		t.Errorf("search query = %q, want hello", tui.searchQuery)
+	}
+	if len(tui.searchHits) != 2 {
+		t.Errorf("got %d hits, want 2 for 'hello'", len(tui.searchHits))
+	}
+	tui.handleKey([]byte{0x1b}) // Esc
+	if tui.searchActive {
+		t.Error("Esc didn't cancel search mode")
+	}
+	if tui.searchQuery != "" {
+		t.Error("Esc didn't clear search query")
+	}
+}
+
+// TestMultilineInput_CtrlJInsertsNewline: Ctrl-J (LF) should
+// insert a newline into the input buffer instead of submitting.
+// Enter (CR / 0x0d) still submits.
+func TestMultilineInput_CtrlJInsertsNewline(t *testing.T) {
+	tui := newSnapshotTUI()
+	for _, c := range []byte{'a', 'b'} {
+		tui.handleKey([]byte{c})
+	}
+	if exit := tui.handleKey([]byte{0x0a}); exit {
+		t.Fatal("Ctrl-J should not exit")
+	}
+	tui.handleKey([]byte{'c'})
+	if string(tui.input) != "ab\nc" {
+		t.Errorf("input = %q, want \"ab\\nc\"", string(tui.input))
+	}
+}
+
+// TestMultilineInput_EnterStillSubmits: regular CR (0x0d) Enter
+// still submits — only LF (Ctrl-J) is the newline insert.
+func TestMultilineInput_EnterStillSubmits(t *testing.T) {
+	tui := newSnapshotTUI()
+	tui.input = []rune("hello")
+	tui.handleKey([]byte{0x0d})
+	if string(tui.input) != "" {
+		t.Errorf("Enter didn't submit: input = %q", string(tui.input))
+	}
+}
+
+// TestSpinnerFrameCycles: the spinner advances through a deterministic
+// set of frames so the TUI can render an animated "waiting" indicator
+// without depending on wall time.
+func TestSpinnerFrameCycles(t *testing.T) {
+	frames := []rune{}
+	for i := 0; i < 12; i++ {
+		frames = append(frames, spinnerGlyph(i))
+	}
+	// At least 8 distinct frames (Braille set has 10).
+	seen := map[rune]bool{}
+	for _, r := range frames {
+		seen[r] = true
+	}
+	if len(seen) < 8 {
+		t.Errorf("spinner only has %d unique frames, want ≥ 8: %v", len(seen), frames)
+	}
+}
+
+// TestTurnStartedShowsSpinnerRow: on TurnStarted (from self), a
+// spinner row should appear so the user sees the agent is working
+// even before the first thinking/text delta arrives. The row uses
+// the current frame from spinnerGlyph.
+func TestTurnStartedShowsSpinnerRow(t *testing.T) {
+	tui := newSnapshotTUI()
+	// Other-originator path so we don't suppress (own-input has a
+	// separate flow). For self-originated turns, the spinner shows
+	// for the parent's own turn — let's test that one.
+	tui.ClientID = ids.NewClientID()
+	tui.input = []rune("hello")
+	tui.submit()
+	// Now simulate a TurnStarted from "self" — submit() already
+	// echoed the user line; the engine would publish TurnStarted
+	// next. The TUI should show a spinner row.
+	env, _ := control.EncodeEvent(1, control.TurnStarted{
+		Turn:       1,
+		Originator: tui.ClientID,
+		Content:    []control.ContentBlock{{Type: "text", Text: "hello"}},
+	}, tui.Session, tui.ClientID, time.Now())
+	tui.renderEvent(env)
+	// Spinner glyph is substituted at draw() time so the frame can
+	// advance without rewriting scrollback. Render the frame and
+	// scan it for a Braille pattern char.
+	frame := renderFrame(t, tui)
+	var sawSpinner bool
+	for _, r := range frame {
+		if r >= 0x2800 && r <= 0x28FF {
+			sawSpinner = true
+			break
+		}
+	}
+	if !sawSpinner {
+		t.Errorf("no Braille spinner glyph in rendered frame:\n%s", frame)
+	}
+}
+
+// TestSlash_Profile_OpensModal: /profile shows the current profile +
+// model in a modal so the user can see what's loaded without
+// querying the server.
+func TestSlash_Profile_OpensModal(t *testing.T) {
+	tui := newSnapshotTUI()
+	tui.Profile = "default"
+	tui.Model = "zai:glm-5.1"
+	handled, _ := tui.dispatchLocalSlash("/profile")
+	if !handled {
+		t.Fatal("/profile not handled")
+	}
+	if tui.modal == nil {
+		t.Fatal("/profile didn't open modal")
+	}
+	body := strings.Join(tui.modal.lines, "\n")
+	if !strings.Contains(body, "default") || !strings.Contains(body, "zai:glm-5.1") {
+		t.Errorf("/profile modal missing profile/model: %s", body)
+	}
+}
+
+// TestSlash_Cost_OpensModal: /cost shows the accumulated USD + token
+// breakdown from the in-process counter.
+func TestSlash_Cost_OpensModal(t *testing.T) {
+	tui := newSnapshotTUI()
+	tui.costUSD = 0.0123
+	handled, _ := tui.dispatchLocalSlash("/cost")
+	if !handled {
+		t.Fatal("/cost not handled")
+	}
+	if tui.modal == nil {
+		t.Fatal("/cost didn't open modal")
+	}
+	body := strings.Join(tui.modal.lines, "\n")
+	if !strings.Contains(body, "$0.0123") {
+		t.Errorf("/cost modal missing the USD: %s", body)
+	}
+}
+
+// TestSlash_Health_OpensModal: /health shows subsystem status — for
+// the TUI we mostly care that it dispatches and renders something
+// (the real REST handler does the deep check; this is the UI hook).
+func TestSlash_Health_OpensModal(t *testing.T) {
+	tui := newSnapshotTUI()
+	tui.WebURL = "http://127.0.0.1:18421"
+	handled, _ := tui.dispatchLocalSlash("/health")
+	if !handled {
+		t.Fatal("/health not handled")
+	}
+	if tui.modal == nil {
+		t.Fatal("/health didn't open modal")
+	}
+}
+
+// TestSlash_Model_NoArg_ShowsCurrent: /model with no arg shows what's
+// currently active. With an arg it queues a SetModel command.
+func TestSlash_Model_NoArg_ShowsCurrent(t *testing.T) {
+	tui := newSnapshotTUI()
+	tui.Model = "zai:glm-5.1"
+	tui.dispatchLocalSlash("/model")
+	if tui.modal == nil {
+		t.Fatal("/model with no arg should open a modal showing current")
+	}
+	body := strings.Join(tui.modal.lines, "\n")
+	if !strings.Contains(body, "zai:glm-5.1") {
+		t.Errorf("/model modal missing current model: %s", body)
+	}
+}
+
+// TestSlash_Compact_EmitsScrollbackHint: /compact is best-effort
+// client side — it adds a scrollback hint and (when wired) issues
+// a CustomCommand. We just verify it's handled and the user gets
+// feedback.
+func TestSlash_Compact_DispatchesLocally(t *testing.T) {
+	tui := newSnapshotTUI()
+	handled, _ := tui.dispatchLocalSlash("/compact")
+	if !handled {
+		t.Fatal("/compact not handled")
+	}
+	// Either the scrollback gets a hint or a modal opens — both fine.
+	if tui.modal == nil && len(tui.scrollback) == 0 {
+		t.Errorf("/compact produced no visible feedback")
+	}
+}
+
 // TestSlashTasksShowsPlanInModal: /tasks opens a modal that lists
 // every task currently stored for this session, with an icon per
 // status. Exercises the wiring between TUI ↔ builtins.TaskListSnapshot

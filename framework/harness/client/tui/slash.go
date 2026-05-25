@@ -9,10 +9,12 @@ package tui
 //     them (this preserves wire compatibility with non-TUI clients).
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/framework/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/harness/slash"
 	"github.com/DonaldMurillo/gofastr/framework/harness/tool/builtins"
 )
@@ -303,6 +305,98 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 	case "quit":
 		// Treat as immediate exit; the run loop will return.
 		return true, true
+	case "profile":
+		lines := []string{
+			"Profile · " + nonempty(t.Profile, "(none)"),
+			"Model   · " + nonempty(t.Model, "(none)"),
+			"Session · " + string(t.Session),
+			"",
+			"Per-profile tool packs and skills are loaded at boot.",
+			"To switch profile, restart with `gofastr harness -profile <path>`.",
+		}
+		t.openModal("Profile", lines)
+		return true, false
+	case "cost":
+		t.mu.Lock()
+		usd := t.costUSD
+		t.mu.Unlock()
+		lines := []string{
+			fmt.Sprintf("Session cost · $%.4f", usd),
+			"",
+			"Per-turn costs accumulate from CostIncremented events.",
+			"Rates come from the provider's pricing table (zai static,",
+			"openrouter dynamic from /models).",
+		}
+		t.openModal("Cost", lines)
+		return true, false
+	case "health":
+		lines := []string{
+			"Subsystem status:",
+			"",
+			"  TUI         · live",
+			"  Session     · " + string(t.Session),
+			"  Web sidecar · " + nonempty(t.WebURL, "(not running — start with -web)"),
+		}
+		if t.WebURL != "" {
+			lines = append(lines, "",
+				"For deep checks, hit "+t.WebURL+"/v1/health",
+			)
+		}
+		t.openModal("Health", lines)
+		return true, false
+	case "model":
+		rest := strings.TrimSpace(strings.Join(c.Args, " "))
+		if rest == "" {
+			lines := []string{
+				"Current model · " + nonempty(t.Model, "(none)"),
+				"",
+				"To switch: /model <provider:id>",
+				"e.g. /model zai:glm-5.1",
+				"",
+				"Note: actual model-switch dispatch is in v0.2; for v0.1",
+				"this command reports the current model only.",
+			}
+			t.openModal("Model", lines)
+			return true, false
+		}
+		// With an argument: queue a SetModel command via the inproc client.
+		if t.Client != nil {
+			_ = t.Client.Send(context.Background(), control.SetModel{
+				SessionID: t.Session,
+				Model:     rest,
+			})
+		}
+		t.mu.Lock()
+		t.ensureBlankBefore()
+		t.scrollback = append(t.scrollback,
+			fmt.Sprintf("[model] requested switch to %q", rest))
+		t.mu.Unlock()
+		return true, false
+	case "compact":
+		// History compaction middleware is roadmap. For now we surface
+		// the request as a CustomCommand the engine COULD pick up,
+		// plus a scrollback hint so the user gets feedback.
+		if t.Client != nil {
+			_ = t.Client.Send(context.Background(), control.CustomCommand{
+				SessionID: t.Session,
+				Verb:      "compact",
+			})
+		}
+		t.mu.Lock()
+		t.ensureBlankBefore()
+		t.scrollback = append(t.scrollback,
+			"[compact] requested — engine-side compaction lands in v0.2")
+		t.mu.Unlock()
+		return true, false
 	}
 	return false, false
+}
+
+// nonempty returns s when non-empty, else fallback. Tiny helper for
+// status-line strings.
+func nonempty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }

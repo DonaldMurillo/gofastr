@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 
@@ -87,6 +88,20 @@ type TUI struct {
 	// back from the bottom. 0 == follow tail (default). Reset to 0
 	// when the user submits input.
 	scrollOffset int
+
+	// spinner state for the "agent is working" indicator.
+	// spinnerIdx is the scrollback index of the spinner row;
+	// spinnerFrame cycles through spinnerFrames via the run-loop
+	// ticker.
+	spinnerIdx   int
+	spinnerFrame int
+
+	// search state — Ctrl-R toggles. While searchActive, keys go to
+	// searchQuery (typed chars append, backspace shrinks, Esc cancels).
+	// searchHits is the recomputed list of matching scrollback indices.
+	searchActive bool
+	searchQuery  string
+	searchHits   []int
 
 	// pendingPermission, when non-nil, indicates the engine is
 	// waiting on a permit/deny decision. The next submit() consumes
@@ -177,11 +192,28 @@ func (t *TUI) Run(ctx context.Context) error {
 	keys := make(chan []byte, 16)
 	go t.readKeys(runCtx, keys)
 
+	// Spinner ticker — drives the "working…" frame animation while a
+	// turn is in flight. 100ms is fast enough to look alive without
+	// flooding the terminal.
+	spinTick := time.NewTicker(100 * time.Millisecond)
+	defer spinTick.Stop()
+
 	t.draw()
 	for {
 		select {
 		case <-runCtx.Done():
 			return runCtx.Err()
+		case <-spinTick.C:
+			t.mu.Lock()
+			active := t.spinnerIdx >= 0 && t.spinnerIdx < len(t.scrollback) &&
+				strings.HasPrefix(t.scrollback[t.spinnerIdx], spinnerLineMarker)
+			if active {
+				t.spinnerFrame++
+			}
+			t.mu.Unlock()
+			if active {
+				t.draw()
+			}
 		case <-winch:
 			t.readSize()
 			t.draw()
@@ -276,11 +308,14 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 	defer t.mu.Unlock()
 	switch v := e.(type) {
 	case control.TextDelta:
+		t.dismissSpinner()
 		t.collapseThinkingBurst()
 		t.ingestAssistantText(v.Text)
 	case control.ThinkingDelta:
+		t.dismissSpinner()
 		t.ingestThinkingText(string(v.Block))
 	case control.ToolCallStarted:
+		t.dismissSpinner()
 		t.collapseThinkingBurst()
 		t.ensureBlankBefore()
 		// Claude Code-style: `● Tool(args)` — filled circle bullet
@@ -329,20 +364,23 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		// Render the user message from OTHER clients (browser, MCP,
 		// etc.). Self-originated TurnStarted is skipped because we
 		// already optimistically echoed `→ msg` in submit().
-		if t.ClientID != "" && env.Originator == t.ClientID {
-			break
-		}
-		if len(v.Content) == 0 {
-			break
-		}
-		for _, b := range v.Content {
-			if b.Type != "text" || b.Text == "" {
-				continue
+		if t.ClientID == "" || env.Originator != t.ClientID {
+			for _, b := range v.Content {
+				if b.Type != "text" || b.Text == "" {
+					continue
+				}
+				t.ensureBlankBefore()
+				t.scrollback = append(t.scrollback, "→ "+b.Text)
+				t.assistantOpen = false
 			}
-			t.ensureBlankBefore()
-			t.scrollback = append(t.scrollback, "→ "+b.Text)
-			t.assistantOpen = false
 		}
+		// Add a spinner row so the user sees the agent is working
+		// even before the first thinking/text delta arrives. The row
+		// is recorded with a marker constant; draw() substitutes the
+		// current frame so it animates without re-pushing.
+		t.ensureBlankBefore()
+		t.spinnerIdx = len(t.scrollback)
+		t.scrollback = append(t.scrollback, spinnerLineMarker+" working…")
 	case control.PermissionRequested:
 		t.ensureBlankBefore()
 		t.appendMultiline(
@@ -372,10 +410,42 @@ func (t *TUI) handleKey(bs []byte) bool {
 	// Modal absorbs all keys while active.
 	t.mu.Lock()
 	hasModal := t.modal != nil
+	searchOn := t.searchActive
 	t.mu.Unlock()
 	if hasModal {
 		t.modalKey(bs)
 		return false
+	}
+	// Search mode absorbs typed chars + Esc/Backspace.
+	if searchOn && len(bs) == 1 {
+		c := bs[0]
+		switch c {
+		case 0x1b: // Esc — cancel search
+			t.mu.Lock()
+			t.deactivateSearch()
+			t.mu.Unlock()
+			return false
+		case 0x0d: // Enter — accept (just leave search mode, keep hits)
+			t.mu.Lock()
+			t.searchActive = false
+			t.mu.Unlock()
+			return false
+		case 0x7f, 0x08: // Backspace
+			t.mu.Lock()
+			if len(t.searchQuery) > 0 {
+				t.searchQuery = t.searchQuery[:len(t.searchQuery)-1]
+				t.updateSearch()
+			}
+			t.mu.Unlock()
+			return false
+		}
+		if c >= 32 && c != 0x7f {
+			t.mu.Lock()
+			t.searchQuery += string(rune(c))
+			t.updateSearch()
+			t.mu.Unlock()
+			return false
+		}
 	}
 	// Single-byte handling.
 	if len(bs) == 1 {
@@ -405,7 +475,18 @@ func (t *TUI) handleKey(bs []byte) bool {
 			t.expandLastTruncated()
 			t.mu.Unlock()
 			return false
-		case 0x0d, 0x0a: // Enter
+		case 0x12: // Ctrl-R — incremental scrollback search
+			t.mu.Lock()
+			t.activateSearch()
+			t.mu.Unlock()
+			return false
+		case 0x0a: // Ctrl-J / raw LF — insert newline (multi-line input)
+			t.mu.Lock()
+			t.input = append(t.input, '\n')
+			t.popupIdx = 0
+			t.mu.Unlock()
+			return false
+		case 0x0d: // Enter (CR) — submit OR popup-complete
 			// If the slash popup is showing real completions (i.e.
 			// there are candidates AND the current input isn't already
 			// an exact candidate name), Enter behaves like Tab —
@@ -715,6 +796,21 @@ func (t *TUI) ingestThinkingText(text string) {
 		}
 	}
 	t.capScrollback()
+}
+
+// dismissSpinner removes the "working…" placeholder once the first
+// real event (text/thinking/tool) arrives. Idempotent.
+//
+// Caller must hold t.mu.
+func (t *TUI) dismissSpinner() {
+	if t.spinnerIdx < 0 || t.spinnerIdx >= len(t.scrollback) {
+		return
+	}
+	if !strings.HasPrefix(t.scrollback[t.spinnerIdx], spinnerLineMarker) {
+		return
+	}
+	t.scrollback = append(t.scrollback[:t.spinnerIdx], t.scrollback[t.spinnerIdx+1:]...)
+	t.spinnerIdx = -1
 }
 
 // ensureBlankBefore appends a blank scrollback line if the last entry
@@ -1060,6 +1156,9 @@ func (t *TUI) draw() {
 	}
 	visual := make([]string, 0, len(t.scrollback)*2)
 	for _, line := range t.scrollback {
+		if strings.HasPrefix(line, spinnerLineMarker) {
+			line = string(spinnerGlyph(t.spinnerFrame)) + line[len(spinnerLineMarker):]
+		}
 		visual = append(visual, wrapLine(line, contentWidth)...)
 	}
 
