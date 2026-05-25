@@ -179,8 +179,12 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 
 	if s.BlurHashX > 0 {
 		// Downscale for BlurHash speed; spec is O(W·H·xComp·yComp).
-		hashSrc := src.Resize(32, 0, WithFit(FitInside), WithoutEnlargement())
-		hash, err := hashSrc.BlurHash(s.BlurHashX, s.BlurHashY)
+		// BlurHash auto-resizes internally (cap 64 px on the longest
+		// side) so the pre-resize that used to live here is now a
+		// pessimisation: 256→32→hash produces a different output
+		// than 256→hash directly. Hand the source through and let
+		// BlurHash own the down-scale.
+		hash, err := src.BlurHash(s.BlurHashX, s.BlurHashY)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet blurhash: %w", err)
 		}
@@ -324,8 +328,12 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		result.Placeholder = durl
 	}
 	if s.BlurHashX > 0 {
-		hashSrc := src.Resize(32, 0, WithFit(FitInside), WithoutEnlargement())
-		hash, err := hashSrc.BlurHash(s.BlurHashX, s.BlurHashY)
+		// BlurHash auto-resizes internally (cap 64 px on the longest
+		// side) so the pre-resize that used to live here is now a
+		// pessimisation: 256→32→hash produces a different output
+		// than 256→hash directly. Hand the source through and let
+		// BlurHash own the down-scale.
+		hash, err := src.BlurHash(s.BlurHashX, s.BlurHashY)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet blurhash: %w", err)
 		}

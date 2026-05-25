@@ -289,6 +289,26 @@ func TestVariantSetRejectAnimated(t *testing.T) {
 	}
 }
 
+// TestBlurHashParityAcrossPaths pins that VariantSet.Process and
+// direct img.BlurHash on the same source produce identical hashes.
+// Previously VariantSet pre-resized to 32 px (round-1) and BlurHash
+// auto-resized to 64 px (round-3) — two resize stages produced
+// different output. Drop the pre-resize; BlurHash owns the dwn-scale.
+func TestBlurHashParityAcrossPaths(t *testing.T) {
+	src := FromImage(gradient(256, 256), FormatPNG)
+	direct, err := src.BlurHash(4, 3)
+	if err != nil {
+		t.Fatalf("direct BlurHash: %v", err)
+	}
+	res, err := (VariantSet{BlurHashX: 4, BlurHashY: 3}).Process(src)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if res.BlurHash != direct {
+		t.Errorf("VariantSet.Process hash %q differs from direct BlurHash %q", res.BlurHash, direct)
+	}
+}
+
 func TestProcessToReleasesIntermediatesBetweenVariants(t *testing.T) {
 	if testing.Short() {
 		t.Skip("memory test")
