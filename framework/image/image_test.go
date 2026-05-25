@@ -735,6 +735,28 @@ func TestFromImageHasNoOrientation(t *testing.T) {
 	}
 }
 
+// TestHasAlphaDetectsInteriorPixel pins the round-4 P1: the prior
+// implementation sampled only 9 corner/centre pixels, so a logo
+// with a single semi-transparent inner pixel reported HasAlpha=false.
+// The fast path walks Pix[3::4] for NRGBA/RGBA with early exit on the
+// first non-opaque sample.
+func TestHasAlphaDetectsInteriorPixel(t *testing.T) {
+	src := stdimage.NewNRGBA(stdimage.Rect(0, 0, 16, 16))
+	for i := 0; i < len(src.Pix); i += 4 {
+		src.Pix[i+0] = 200
+		src.Pix[i+1] = 200
+		src.Pix[i+2] = 200
+		src.Pix[i+3] = 255
+	}
+	// Single interior pixel with sub-opaque alpha.
+	off := src.PixOffset(5, 5)
+	src.Pix[off+3] = 250
+	wrapped := FromImage(src, FormatPNG)
+	if !wrapped.Metadata().HasAlpha {
+		t.Error("interior alpha=250 must be detected as HasAlpha=true")
+	}
+}
+
 func TestMetadataReflectsDimensions(t *testing.T) {
 	src := FromImage(gradient(40, 30), FormatPNG)
 	m := src.Metadata()

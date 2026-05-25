@@ -1,5 +1,7 @@
 package image
 
+import stdimage "image"
+
 // Metadata summarises an image's identifying attributes.
 type Metadata struct {
 	Width       int
@@ -28,24 +30,41 @@ func (i *Image) Metadata() Metadata {
 }
 
 func hasAlpha(i *Image) bool {
-	switch m := i.img.ColorModel(); m {
-	case nil:
+	// Fast paths for the two concrete types the framework actually
+	// produces. Read Pix[3::4] directly so the per-pixel interface
+	// boxing of the generic At() loop disappears. Early exit on the
+	// first sub-opaque alpha.
+	switch m := i.img.(type) {
+	case *stdimage.NRGBA:
+		return scanAlphaPix(m.Pix, 4)
+	case *stdimage.RGBA:
+		return scanAlphaPix(m.Pix, 4)
+	}
+	// Generic fallback for any other image.Image: corner + centre
+	// sampling. Cheap, conservative, can miss interior alpha.
+	if i.img.ColorModel() == nil {
 		return false
-	default:
-		// Sample the corners and centre cheaply; if every alpha is 0xFFFF
-		// we report no alpha. This is a conservative heuristic — exact
-		// per-pixel sweep is too expensive for an attribute that callers
-		// usually want as a hint.
-		b := i.img.Bounds()
-		sx := []int{b.Min.X, b.Max.X - 1, b.Min.X + b.Dx()/2}
-		sy := []int{b.Min.Y, b.Max.Y - 1, b.Min.Y + b.Dy()/2}
-		for _, y := range sy {
-			for _, x := range sx {
-				_, _, _, a := i.img.At(x, y).RGBA()
-				if a != 0xFFFF {
-					return true
-				}
+	}
+	b := i.img.Bounds()
+	sx := []int{b.Min.X, b.Max.X - 1, b.Min.X + b.Dx()/2}
+	sy := []int{b.Min.Y, b.Max.Y - 1, b.Min.Y + b.Dy()/2}
+	for _, y := range sy {
+		for _, x := range sx {
+			_, _, _, a := i.img.At(x, y).RGBA()
+			if a != 0xFFFF {
+				return true
 			}
+		}
+	}
+	return false
+}
+
+// scanAlphaPix walks every alpha byte in a 4-byte-per-pixel buffer.
+// Returns true on the first non-0xFF value.
+func scanAlphaPix(pix []byte, stride int) bool {
+	for i := 3; i < len(pix); i += stride {
+		if pix[i] != 0xFF {
+			return true
 		}
 	}
 	return false
