@@ -15,8 +15,10 @@ effect SQL atomic with the change that triggered them.
 | `AfterUpdate`  | After UPDATE, before tx commit                     | `map[string]any` (record)    |
 | `BeforeDelete` | Before DELETE / soft-delete                        | `string` (record id)        |
 | `AfterDelete`  | After DELETE, before tx commit                     | `string` (record id)        |
-| `BeforeList`   | Before SELECT                                      | `map[string]any` (filters)   |
-| `AfterList`    | After SELECT, before response                      | `[]map[string]any` (rows)    |
+| `BeforeList`   | Before SELECT (both data + count queries)          | `*hook.ListPayload`          |
+| `AfterList`    | After SELECT, before response                      | `*hook.ListPayload`          |
+| `BeforeGet`    | Before single-row SELECT (`/api/<entity>/{id}`)    | `*hook.GetPayload`           |
+| `AfterGet`     | After single-row SELECT, before response           | `*hook.GetPayload`           |
 
 Hooks run in registration order. The first error stops execution and
 returns to the caller. For `Before*` hooks the error cancels the
@@ -34,6 +36,56 @@ app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
 
 `HookRegistry(entityName)` lazily creates a registry for that entity.
 Each entity has its own registry — hooks do not cross entities.
+
+## List & Get hooks — scoping reads
+
+`BeforeList` and `BeforeGet` let you inject `WHERE` clauses into the
+read query. The clauses apply to both the data and (for List) the
+count query, so totals match the filtered result. Use this when you
+need per-row scoping the standard `OwnerField` knob doesn't cover —
+e.g. visibility flags, soft-state filters, or role-based redaction.
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/hook"
+
+app.HookRegistry("posts").RegisterHook(framework.BeforeList,
+    func(ctx context.Context, data any) error {
+        p := data.(*hook.ListPayload)
+        // Hide drafts from non-editors.
+        if !isEditor(p.Request) {
+            p.AddWhere("status = $1", "published")
+        }
+        return nil
+    })
+
+app.HookRegistry("posts").RegisterHook(framework.BeforeGet,
+    func(ctx context.Context, data any) error {
+        p := data.(*hook.GetPayload)
+        // p.ID is the id from the URL; scope on team membership.
+        team := teamOf(p.Request)
+        p.AddWhere("team_id = $1", team)
+        return nil
+    })
+```
+
+`AfterList` and `AfterGet` see the fetched rows on the payload and
+may mutate them in place — handy for redaction:
+
+```go
+app.HookRegistry("users").RegisterHook(framework.AfterList,
+    func(ctx context.Context, data any) error {
+        p := data.(*hook.ListPayload)
+        for _, row := range p.Results {
+            delete(row, "password_hash")
+        }
+        return nil
+    })
+```
+
+For the common case of per-user row scoping, use
+`EntityConfig.OwnerField` instead — it's a single line and covers
+all four read/write operations. See
+[`framework/docs/content/entity-declarations.md`](entity-declarations.md#per-user-scoping-ownerfield).
 
 ## Transactions
 

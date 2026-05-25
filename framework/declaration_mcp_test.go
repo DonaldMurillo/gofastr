@@ -74,6 +74,31 @@ func TestEntitiesFromDirLoadsDeclarationsInDirectory(t *testing.T) {
 	}
 }
 
+func TestGroupEntitiesFromDirRegistersUnderPrefix(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"widgets.json": `{"name":"widgets","fields":[{"name":"sku","type":"string"}]}`,
+		"orders.json":  `{"name":"orders","fields":[{"name":"amount","type":"int"}]}`,
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	app := NewApp()
+	api := app.Group("/api")
+	if err := app.GroupEntitiesFromDir(api, dir); err != nil {
+		t.Fatalf("GroupEntitiesFromDir: %v", err)
+	}
+	for name := range files {
+		entityName := name[:len(name)-len(filepath.Ext(name))]
+		if _, err := app.Registry.Get(entityName); err != nil {
+			t.Fatalf("registry missing %s: %v", entityName, err)
+		}
+	}
+}
+
 func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		createPostsTable(t, db)

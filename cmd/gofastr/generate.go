@@ -33,7 +33,7 @@ func runGenerate(args []string) {
 		generateProject(args[1:])
 	case "ts", "typescript":
 		fail("TypeScript codegen has been removed. Use gofastr.codegen.yml with a project extension to generate frontend artifacts.")
-		info("See docs/codegen.md for the extension protocol.")
+		info("See framework/docs/content/codegen.md for the extension protocol.")
 		os.Exit(1)
 	default:
 		fail("Unknown resource type: %s", resourceType)

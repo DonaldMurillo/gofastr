@@ -202,8 +202,16 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 
 // List returns an http.HandlerFunc that lists entity records with filtering,
 // sorting, pagination, and optional ?include= eager-loaded relations.
+//
+// Hook chain: BeforeList → SELECT → AfterList. The BeforeList hook can
+// append WHERE predicates via the *hook.ListPayload.AddWhere helper;
+// appended clauses apply to both the data query and the count query.
+// AfterList receives the fetched results and may mutate them in place.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		ctx := r.Context()
 		page, perPage := parsePagination(r, ch.Entity.Config.MaxListLimit)
 
@@ -227,11 +235,22 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		// BeforeList hook — collect any extra WHERE clauses the host wants
+		// to scope the query by. Runs before cursor / streaming branches so
+		// both paths inherit the same scope.
+		listPayload := &hook.ListPayload{Request: r}
+		if ch.Hooks != nil {
+			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeList, listPayload); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
 		// Cursor pagination is opt-in: presence of the ?cursor key (even
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if r.URL.Query().Has("cursor") {
-			ch.serveCursorList(ctx, w, r, includes, filters, nested)
+			ch.serveCursorList(ctx, w, r, includes, filters, nested, listPayload.Where)
 			return
 		}
 
@@ -247,7 +266,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// requested limit is huge. Skips include resolution to keep memory
 		// bounded.
 		if r.URL.Query().Get("stream") == "true" || perPage >= streamListThreshold {
-			ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage)
+			ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage, listPayload.Where)
 			return
 		}
 
@@ -255,11 +274,15 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		countQb := query.Count(ch.Entity.GetTable())
 		filter.ApplyToCountQuery(countQb, filters)
 		ch.ApplyTenantScopeCount(countQb, r)
+		ch.ApplyOwnerScopeCount(countQb, r)
 		ch.ApplySoftDeleteFilterCount(countQb, r)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
 		)
+		for _, c := range listPayload.Where {
+			countQb.Where(c.SQL, c.Args...)
+		}
 		countSQL, countArgs := countQb.Build()
 		var total int
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
@@ -272,11 +295,15 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		qb.From(ch.Entity.GetTable())
 		filter.ApplyToQuery(qb, filters)
 		ch.ApplyTenantScope(qb, r)
+		ch.ApplyOwnerScope(qb, r)
 		ch.ApplySoftDeleteFilter(qb, r)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
 			ch.Entity.GetTable(), ch.PrimaryKey, nested,
 		)
+		for _, c := range listPayload.Where {
+			qb.Where(c.SQL, c.Args...)
+		}
 		filter.ApplySortToQuery(qb, sorts)
 
 		offset := (page - 1) * perPage
@@ -302,6 +329,16 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		// AfterList hook — host can redact / transform / drop rows.
+		if ch.Hooks != nil {
+			listPayload.Results = results
+			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, listPayload); err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "after-list hook: "+err.Error())
+				return
+			}
+			results = listPayload.Results
+		}
+
 		totalPages := total / perPage
 		if total%perPage != 0 {
 			totalPages++
@@ -322,8 +359,16 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 // Get returns an http.HandlerFunc that fetches a single entity by ID.
 // Honours ?include= eager-loaded relations.
+//
+// Hook chain: BeforeGet → SELECT → AfterGet. The BeforeGet hook can
+// append WHERE predicates via *hook.GetPayload.AddWhere to scope the
+// lookup (mismatches return 404). AfterGet may mutate the result map
+// (redact, transform).
 func (ch *CrudHandler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		ctx := r.Context()
 		id := r.PathValue("id")
 		if id == "" {
@@ -337,6 +382,14 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
+		getPayload := &hook.GetPayload{Request: r, ID: id}
+		if ch.Hooks != nil {
+			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeGet, getPayload); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
 		cols, err := ch.projectFromRequest(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -346,7 +399,11 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb.From(ch.Entity.GetTable())
 		qb.Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScope(qb, r)
+		ch.ApplyOwnerScope(qb, r)
 		ch.ApplySoftDeleteFilter(qb, r)
+		for _, c := range getPayload.Where {
+			qb.Where(c.SQL, c.Args...)
+		}
 
 		sqlStr, args := qb.Build()
 		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
@@ -366,6 +423,15 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
+		if ch.Hooks != nil {
+			getPayload.Result = result
+			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterGet, getPayload); err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "after-get hook: "+err.Error())
+				return
+			}
+			result = getPayload.Result
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	}
@@ -381,6 +447,9 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 // through the handler's Storage backend and persisted as a URL string.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		body, err := ch.readRequestBody(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -414,6 +483,9 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 // Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		id := r.PathValue("id")
 		if id == "" {
 			writeJSONError(w, http.StatusBadRequest, "missing id")
@@ -452,6 +524,9 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 // (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		id := r.PathValue("id")
 		if id == "" {
 			writeJSONError(w, http.StatusBadRequest, "missing id")

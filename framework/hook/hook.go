@@ -14,6 +14,8 @@ const (
 	AfterDelete
 	BeforeList
 	AfterList
+	BeforeGet
+	AfterGet
 )
 
 // HookFunc is the signature for a lifecycle hook.

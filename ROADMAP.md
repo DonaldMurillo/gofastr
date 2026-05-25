@@ -1,8 +1,9 @@
 # GoFastr — Roadmap
 
 Forward-looking work that isn't built yet (or isn't finished yet). Shipped
-features live in `docs/<feature>.md` and the two architecture documents
-(`framework/ARCHITECTURE.md`, `core-ui/ARCHITECTURE.md`).
+features live in `framework/docs/content/<feature>.md` (also embedded into
+the binary — run `gofastr docs` to browse) and the two architecture
+documents (`framework/ARCHITECTURE.md`, `core-ui/ARCHITECTURE.md`).
 
 Each section ends with a status note. When something ships, delete it from
 here and add the `docs/<feature>.md` it now belongs in.
@@ -197,7 +198,7 @@ are explicit and machine-readable.
 
 ## 5. UI components — implemented (2026-05-21)
 
-Wave 1–7 have shipped. See `docs/ui-new-components.md` for the running list
+Wave 1–7 have shipped. See `framework/docs/content/ui-new-components.md` for the running list
 of landed components. The following were implemented in this roadmap pass:
 
 ### 5a. Calendar / date picker — DELETED (2026-05-22)
@@ -316,7 +317,7 @@ literal.
 
 ## 7. Performance opportunities — implemented (2026-05-21)
 
-Verification pass on 2026-05-22 — see `docs/perf-results.md` for raw
+Verification pass on 2026-05-22 — see `framework/docs/content/perf-results.md` for raw
 numbers and `dist/bench/current.txt` for the bench output.
 
 **P0 fixes applied:**
@@ -339,10 +340,10 @@ numbers and `dist/bench/current.txt` for the bench output.
 
 **Doc-only:**
 
-- **7m/7n.** SQLite concurrency callout + pure-Go `modernc.org/sqlite` alternative documented in `docs/migrations.md`. **Verified (2026-05-22)** — doc-only items.
+- **7m/7n.** SQLite concurrency callout + pure-Go `modernc.org/sqlite` alternative documented in `framework/docs/content/migrations.md`. **Verified (2026-05-22)** — doc-only items.
 
 **§7 verification status (2026-05-22):** 5 verified, 5 needs-rerun (3 of
-those require Postgres). See `docs/perf-results.md` for the full table.
+those require Postgres). See `framework/docs/content/perf-results.md` for the full table.
 
 A prioritized list of improvements the benchmark suite has surfaced. Every
 item names the benchmark that exposed it so the win can be verified after a
@@ -445,7 +446,7 @@ path already supports this — auto-detect and route to it).
 **7m. SQLite write serialisation under load.**
 `BenchmarkT6_CreateConcurrency/sqlite3/parallelism=64`: p99 climbs to
 112ms; only 10 writes complete out of 5072 ops in `BenchmarkT6_MixedRW`.
-Update `docs/migrations.md` and `docs/security.md` with a "Concurrency
+Update `framework/docs/content/migrations.md` and `framework/docs/content/security.md` with a "Concurrency
 model" callout for SQLite. The framework already sets `MaxOpenConns(1)`
 in test helpers; users should know to do the same in production or pick
 Postgres.
@@ -453,7 +454,7 @@ Postgres.
 **7n. cgo SQLite costs ~4MB binary + 440MB build RAM.**
 Resource bench: `crud` is 12.9MB / 760MB build RAM; `minimal` is 8.8MB /
 311MB. Document `modernc.org/sqlite` as a pure-Go alternative in
-`docs/migrations.md`. Trade-offs: pure-Go a few % slower at query time,
+`framework/docs/content/migrations.md`. Trade-offs: pure-Go a few % slower at query time,
 saves ~4MB binary + ~440MB build RAM, eliminates cgo toolchain
 dependency.
 
@@ -604,3 +605,341 @@ module is loaded.
 - **Old browsers without `requestIdleCallback`** — Safari < 16.2,
   Firefox < 55. Fallback to `setTimeout(0, …)` — idle becomes "next tick",
   still after FCP.
+
+---
+
+## 9. Framework DX — feedback from the first real third-party app
+
+**Status:** not started (2026-05-23). Surfaced by a build-out of a
+"WTF do I eat?" app on top of the framework. Each item is independent;
+priority is roughly top-to-bottom.
+
+### 9a. Entity↔page path collision — friendlier diagnostic
+
+Today: registering a screen at `/foods` when there's also an entity called
+`foods` panics at startup with a duplicate `/foods/llm.md` registration
+message — the error points at the auto-generated llm.md handler, not at the
+underlying name collision. Users have to trace it back themselves.
+
+**Goal.** Detect the collision at registration time (entity OR screen,
+whichever lands second) and panic with a directly actionable message:
+
+```
+entity "foods" already owns the /foods URL space (REST + /foods/llm.md);
+choose a different page path (e.g. /library, /library/:slug) or move
+entity CRUD under an APIPrefix (see 9c).
+```
+
+**Implementation sketch.** `app.Register(path, screen, spec)` checks the
+entity registry for any entity whose CRUD mount prefix matches `path` (or
+is a parent of it). Symmetric check on entity registration. Error surfaces
+the colliding entity name, the path it claimed, and the recommended fix.
+
+**Acceptance.** Adding a `/foods` screen with a `foods` entity panics with
+the new message in &lt; 1 ms; existing tests covering the auto-CRUD mount path
+still pass.
+
+### 9b. Seed ordering — `WithSeed(func(ctx))` post-migrate hook
+
+Today: `App.Start()` runs auto-migrate as one of its first phases. Calling
+`db.Exec("INSERT …")` from `main()` before `Start()` fails with
+`no such table`. Users hit this once, file it under "easy fix" — but the
+ordering isn't obvious from the API surface.
+
+**Goal.** Either:
+
+1. Expose `App.WithSeed(func(ctx context.Context) error)` that the
+   lifecycle registers after auto-migrate and before "ready", so seed
+   logic lives where it composes (next to the app config), OR
+2. Document the existing `OnStart` hook idiom prominently in
+   `framework/docs/content/ui-getting-started.md` and `framework/docs/content/entity-declarations.md` with a
+   worked seed example.
+
+The exposure path is the better DX. `WithSeed` reads as "this app needs
+seed data", which is the user's intent. Multiple `WithSeed` calls run in
+registration order. Errors fail `Start()` with the seed func's file:line.
+
+**Acceptance.** A user can write `site.WithSeed(seedFoods)` in `main()`
+and the func runs after migration, before the server accepts traffic. A
+chromedp test asserts seed rows are queryable on first request.
+
+### 9c. `framework.AppConfig{APIPrefix: "/api"}`
+
+Today: entity CRUD mounts at the bare entity name (`/foods`, `/users`).
+The convention every real backend uses — `/api/v1/foods` or at minimum
+`/api/foods` — is achievable via route groups, but it's boilerplate the
+first-time user has to assemble.
+
+**Goal.** First-class config:
+
+```go
+site := framework.NewApp("myapp",
+    framework.WithAPIPrefix("/api"),
+    framework.WithDB(db),
+)
+```
+
+Effect: every auto-CRUD route, including `/llm.md` and the per-entity
+OpenAPI block, mounts under the prefix. MCP tool namespacing unchanged.
+The default stays bare (`""`) to avoid a breaking change; the example
+website opts in.
+
+**Open question.** Per-entity override? `EntityConfig{Mount: "/v2/foods"}`
+already gives you that today via route groups. Probably not worth a second
+config knob.
+
+**Acceptance.** `WithAPIPrefix("/api")` causes `GET /api/foods` to serve
+the list; `GET /foods` 404s. Updating an existing app to add the prefix
+requires changing one line in `main.go`; no entity declaration changes.
+
+### 9d. Form-input wrappers — `ui.TextField`, `ui.NumberField`, `ui.DateField`
+
+Today: `html.InputConfig` is a low-level primitive — `Required`,
+`Placeholder`, `Value`, `Min`, `Max`, `Pattern`, ARIA wiring all flow
+through `Attrs: html.Attrs{"required": ""}`. Reasonable at the primitive
+layer; rough at the call site of every form.
+
+**Goal.** Opinionated wrappers in `framework/ui/` that lift the common
+attrs into typed config and compose with `FormField` for label + error +
+description:
+
+```go
+ui.TextField(ui.TextFieldConfig{
+    Name:        "title",
+    Label:       "Title",
+    Required:    true,
+    Placeholder: "Untitled",
+    Value:       cfg.Title,
+    Error:       errs.Field("title"),
+})
+ui.NumberField(ui.NumberFieldConfig{Name: "qty", Min: 1, Max: 99, Step: 1})
+ui.DateField(ui.DateFieldConfig{Name: "due", Min: "2026-01-01"})
+```
+
+These compose `FormField + html.Input` internally. `html.Input` stays the
+primitive escape hatch. Each wrapper does the right ARIA wiring
+(`aria-describedby` for description + error, `aria-invalid` when an error
+is present).
+
+**Acceptance.** A form built with the three wrappers has zero `html.Attrs`
+literals at the call site. Errors surface inline. Submitting with
+`required` empty triggers HTML5 validation; submitting with a server-side
+error sets `aria-invalid="true"`.
+
+### 9e. Kiln skill — auto-trigger tightened (done, externally)
+
+The `~/.claude/skills/kiln/SKILL.md` description previously auto-loaded on
+any mention of "GoFastr". A user building with the framework directly (not
+Kiln) would get routed into the Kiln agent, scaffold Kiln, and try to
+build the app via HTTP IR mutations — losing time before they realised
+Kiln wasn't the intended path.
+
+The skill description was tightened to require explicit Kiln signals
+(`$KILN_URL` set, "Kiln" by name, "kiln serve", IR mutation phrasing) and
+to **not** trigger on "GoFastr" alone. Recorded here so the next change to
+that skill knows the constraint.
+
+**No further work** unless a regression in trigger behavior is observed.
+
+---
+
+## 10. `EntityConfig` sub-config refactor (deferred, design captured)
+
+**Status:** not started (captured 2026-05-24 after adversarial review of
+the `feedback-updates` PR). `EntityConfig` now carries 17 fields —
+the `OwnerField` addition tipped it from "many fields" into "god struct"
+territory. The semantic relationships between the toggles (which fields
+combine, which conflict) aren't visible in the type.
+
+**Sketch**
+
+```go
+type Scope struct {
+    MultiTenant bool
+    OwnerField  string
+    SoftDelete  bool
+}
+
+type Pagination struct {
+    CursorField  string
+    CursorFields []string
+    MaxListLimit int
+}
+
+type Exposure struct {
+    CRUD *bool
+    MCP  bool
+}
+
+type EntityConfig struct {
+    Name, Table string
+    Fields      []schema.Field
+    Relations   []Relation
+    Endpoints   []Endpoint
+    Indices     []Index
+    Properties  map[string]any
+    Timestamps  bool
+    Scope       Scope
+    Paging      Pagination
+    Expose      Exposure
+}
+```
+
+**Why deferred from `feedback-updates`**
+
+The refactor breaks every `EntityConfig{...}` literal in user repos
+(including JSON declarations). The shipping fix path requires a
+`UnmarshalJSON` shim that maps the flat field names to the nested
+shape for one release, plus a deprecation note pointing at the new
+shape. Doing this inside the `feedback-updates` PR would balloon
+the diff past what's reviewable. The flat fields stay valid for now;
+sub-configs land in their own focused PR.
+
+**Acceptance for the future PR**
+
+- `EntityConfig` accepts the nested shape as canonical.
+- Flat-field literals continue to compile + run for one release, with
+  deprecation comments pointing at the nested equivalents.
+- The JSON declaration loader (`framework/entity/declaration.go`)
+  accepts both flat and nested JSON; loader emits a one-line WARN on
+  flat-style for ops visibility.
+- `framework/docs/content/entity-declarations.md` shows the nested
+  shape as primary; flat-shape is in a "legacy" section.
+
+**No further work** until the deprecation window is scheduled.
+
+---
+
+## 11. BFF posture preset (`framework.WithBFFPosture()`)
+
+**Status:** not started (captured 2026-05-24). GoFastr is already a
+backend-for-frontend by construction — server-rendered HTML, in-process
+`/api/*`, no external API gateway. The framework has all the pieces
+(HttpOnly+Secure session cookies, SessionMiddleware, CSRF middleware,
+SkipBearerAuth) but the secure-by-default wiring is currently
+opt-in per piece. A preset flips all four to "on" with a single line.
+
+**Why a preset and not silent defaults**
+
+Each piece of the BFF posture would break a class of existing app if
+defaulted on silently:
+
+- *Stripping JWT from `/auth/login` response body* breaks SPA clients
+  that read `data.token` for cross-origin XHR.
+- *Strict Origin allowlist on `/api/*`* breaks mobile / native clients
+  (`Origin: null`) and any cross-origin XHR.
+- *Auto-mounting CSRF* breaks any existing mutating route behind cookie
+  auth that doesn't yet have the hidden field.
+- *Auto-mounting SessionMiddleware* changes the per-request context shape.
+
+A preset (opt-in) gives operators an explicit posture toggle without
+ambushing existing apps.
+
+**Sketch**
+
+```go
+app := framework.NewApp(
+    framework.WithDB(db),
+    framework.WithBFFPosture(framework.BFFOptions{
+        AllowedOrigins: []string{"https://app.example.com"},
+        // Defaults inside:
+        //   AllowJWTInBody     = false  (cookie-only auth)
+        //   EnforceOrigin      = true   (strict allowlist on /api/*)
+        //   AutoMountCSRF      = true   (with SkipBearerAuth)
+        //   AutoMountSession   = true   (SessionMiddleware on the app router)
+        //   CSRFSecureTracksDevMode = true
+    }),
+)
+```
+
+**What lands**
+
+- `framework/bff.go`: `WithBFFPosture(BFFOptions)` option, `BFFOptions`
+  struct, `originAllowlistMiddleware` factory.
+- `battery/auth/core.go`: `/auth/login` JSON response gates the `token`
+  field on `BFFOptions.AllowJWTInBody`.
+- `battery/auth/csrf.go`: `CSRFSecureTracksDevMode` config that flips
+  `WithCSRFCookieSecure` from `mgr.Config().DevMode`.
+- `framework/docs/content/security.md`: "BFF posture" section
+  documenting trade-offs + SPA / mobile coexistence pattern.
+- New tests:
+  - Origin allowlist accepts same-origin, rejects cross-origin
+  - JWT not in body under BFF posture
+  - Bearer-token clients still work (CSRF skip + Origin null bypass for API-key)
+  - CSRF cookie Secure flag tracks DevMode
+- E2E:
+  - Browser navigates same-origin form login → works
+  - Cross-origin fetch → 403 (synthetic Origin header from chromedp)
+
+**Acceptance**
+
+- Adding `WithBFFPosture` to a fresh app produces a posture where: no
+  bearer tokens in browser JS, no cross-origin XHR, all mutating routes
+  CSRF-protected, all routes can read `auth.GetCurrentUser(ctx)`.
+- A fresh app WITHOUT `WithBFFPosture` behaves exactly as today (no
+  silent default flip).
+- `framework/docs/content/security.md` shows the BFF posture as the
+  recommended default for new apps, with a clear "when to skip"
+  section for SPA / native-client topologies.
+
+**No further work** until prioritised after `feedback-updates` lands.
+
+---
+
+## 12. `Component.Render(ctx)` — context-aware render
+
+**Status:** not started (captured 2026-05-24 from third-party app feedback).
+The current `core-ui/component.Component` interface signature is:
+
+```go
+type Component interface {
+    Render() render.HTML
+}
+```
+
+Components can't reach request-scoped values (current user, request id,
+trace span) during render without stashing them on the component struct
+beforehand. Today's workaround is documented at
+`core-ui/ARCHITECTURE.md:275` — implement `app.ScreenLoader.Load(ctx)`
+and stuff whatever the screen needs onto its fields. Real apps end up
+with a `chrome.go` shim that mechanically forwards ctx into every
+sub-component, which is the kind of boilerplate the framework should
+eliminate.
+
+**Sketch (one option of several)**
+
+```go
+// Additive interface — Render() stays for back-compat; components that
+// need ctx implement the extended one. core-ui/uihost detects the
+// extended interface and prefers it.
+type ContextualComponent interface {
+    Component
+    RenderWithContext(ctx context.Context) render.HTML
+}
+```
+
+Or, more invasive: change the Component interface itself and provide
+a default Render() shim for the migration period.
+
+**Why deferred from `feedback-updates`**
+
+Touches every component in the repo (~40 files in `core-ui/patterns/`,
+many in `framework/ui/`, plus examples). The render loop in
+`core-ui/uihost/render.go` needs to thread ctx through every recursion
+point. Test surface is large. Worth its own focused PR with a clean
+migration story.
+
+**Acceptance**
+
+- New components written against the contextual interface can call
+  `auth.GetCurrentUser(ctx)` (or any other ctx accessor) inside Render
+  without the screen-loader stash dance.
+- Existing `Component`-only implementations keep compiling and rendering.
+- The `chrome.go` shim in the wtf-do-i-eat repo (and equivalent in any
+  third-party app) becomes unnecessary.
+
+**No further work** until prioritised — the screen-loader workaround
+covers the case in the meantime.
+
+
+

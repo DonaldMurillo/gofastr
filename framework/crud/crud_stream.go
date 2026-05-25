@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 // streamListThreshold is the limit beyond which the List handler
@@ -25,16 +26,20 @@ const streamListThreshold = 1000
 // clients keep working: {"data": [...], "total": N, "page": 1, "perPage":
 // N, "totalPages": 1}. Streaming applies only to the data array — the
 // envelope fields are written before the rows start flowing.
-func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int) {
+func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int, extraWhere []hook.WhereClause) {
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)
 	ch.ApplyTenantScopeCount(countQb, r)
+	ch.ApplyOwnerScopeCount(countQb, r)
 	ch.ApplySoftDeleteFilterCount(countQb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { countQb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
+	for _, c := range extraWhere {
+		countQb.Where(c.SQL, c.Args...)
+	}
 	countSQL, countArgs := countQb.Build()
 	var total int
 	if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
@@ -45,11 +50,15 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
 	ch.ApplyTenantScope(qb, r)
+	ch.ApplyOwnerScope(qb, r)
 	ch.ApplySoftDeleteFilter(qb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
+	for _, c := range extraWhere {
+		qb.Where(c.SQL, c.Args...)
+	}
 	filter.ApplySortToQuery(qb, sorts)
 	qb.Limit(limit)
 

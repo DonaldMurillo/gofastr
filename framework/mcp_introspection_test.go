@@ -23,18 +23,21 @@ func TestMCPIntrospectionDisabledByDefault(t *testing.T) {
 }
 
 // TestMCPIntrospectionRegistersTools pins that WithMCPIntrospection()
-// installs all five tools.
+// installs the introspection + docs tools.
 func TestMCPIntrospectionRegistersTools(t *testing.T) {
 	app := NewApp(WithMCPIntrospection())
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 	want := map[string]bool{
-		"app_routes":    false,
-		"app_plugins":   false,
-		"app_batteries": false,
-		"app_config":    false,
-		"app_readiness": false,
+		"app_routes":            false,
+		"app_plugins":           false,
+		"app_batteries":         false,
+		"app_config":            false,
+		"app_readiness":         false,
+		"framework_docs_list":   false,
+		"framework_docs_get":    false,
+		"framework_docs_search": false,
 	}
 	for _, tool := range app.MCP.ListTools() {
 		if _, ok := want[tool.Name]; ok {
@@ -45,6 +48,51 @@ func TestMCPIntrospectionRegistersTools(t *testing.T) {
 		if !found {
 			t.Errorf("introspection tool %q was not registered", name)
 		}
+	}
+}
+
+// TestMCPFrameworkDocsListReturnsTopics verifies framework_docs_list
+// surfaces the embedded markdown tree.
+func TestMCPFrameworkDocsListReturnsTopics(t *testing.T) {
+	app := NewApp(WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	result, err := app.MCP.CallTool(context.Background(), "framework_docs_list", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool framework_docs_list: %v", err)
+	}
+	m := result.(map[string]any)
+	count := m["count"].(int)
+	if count == 0 {
+		t.Fatal("framework_docs_list returned 0 topics — embed broken?")
+	}
+}
+
+// TestMCPFrameworkDocsGetReadsTopic exercises a known topic round-trip.
+func TestMCPFrameworkDocsGetReadsTopic(t *testing.T) {
+	app := NewApp(WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	// List first to discover a real topic name (avoids hardcoding).
+	list, err := app.MCP.CallTool(context.Background(), "framework_docs_list", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	topics := list.(map[string]any)["topics"].([]map[string]any)
+	if len(topics) == 0 {
+		t.Skip("no embedded topics")
+	}
+	name := topics[0]["name"].(string)
+
+	result, err := app.MCP.CallTool(context.Background(), "framework_docs_get", map[string]any{"topic": name})
+	if err != nil {
+		t.Fatalf("CallTool framework_docs_get: %v", err)
+	}
+	m := result.(map[string]any)
+	if md, _ := m["markdown"].(string); md == "" {
+		t.Errorf("markdown body empty for topic %q", name)
 	}
 }
 

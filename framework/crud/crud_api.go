@@ -100,6 +100,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 		Where(ch.PrimaryKey+" = $1", id)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
+	ch.ApplyOwnerScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
 
 	sqlStr, args := qb.Build()
@@ -143,6 +144,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	filter.ApplySortToQuery(qb, opts.Sorts)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
+	ch.ApplyOwnerScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
@@ -253,6 +255,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	filter.ApplyToCountQuery(cb, opts.Filters)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScopeCount(cb, req)
+	ch.ApplyOwnerScopeCount(cb, req)
 	ch.ApplySoftDeleteFilterCount(cb, req)
 	sqlStr, args := cb.Build()
 	var total int

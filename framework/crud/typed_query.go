@@ -81,6 +81,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScope(qb, req)
+	q.handler.ApplyOwnerScope(qb, req)
 	q.handler.ApplySoftDeleteFilter(qb, req)
 	return qb
 }
@@ -146,6 +147,7 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScopeCount(cb, req)
+	q.handler.ApplyOwnerScopeCount(cb, req)
 	q.handler.ApplySoftDeleteFilterCount(cb, req)
 	sqlStr, args := cb.Build()
 	var n int
@@ -237,6 +239,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	}
 	req := syntheticRequest(ctx, "PATCH", "/")
 	q.handler.ApplyTenantScopeUpdate(ub, req)
+	q.handler.ApplyOwnerScopeUpdate(ub, req)
 
 	sqlStr, args := ub.Build()
 	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
@@ -258,6 +261,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 			ub.Where(c.SQL(), c.Args()...)
 		}
 		q.handler.ApplyTenantScopeUpdate(ub, req)
+		q.handler.ApplyOwnerScopeUpdate(ub, req)
 		sqlStr, args := ub.Build()
 		res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {
@@ -272,6 +276,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		db.Where(c.SQL(), c.Args()...)
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
+	q.handler.ApplyOwnerScopeDelete(db, req)
 	sqlStr, args := db.Build()
 	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
 	if err != nil {

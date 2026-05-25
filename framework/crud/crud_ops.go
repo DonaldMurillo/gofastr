@@ -22,6 +22,7 @@ import (
 // it in-place when injecting tenant_id and auto-generated values.
 func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[string]any) (map[string]any, error) {
 	ch.InjectTenant(body, ctx)
+	ch.InjectOwner(body, ctx)
 	for _, f := range ch.Entity.GetFields() {
 		if f.AutoGenerate != schema.AutoNone {
 			body[f.Name] = generateFieldValue(f.AutoGenerate)
@@ -100,7 +101,11 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		}
 	}
 
-	vr := schema.ValidateAll(ch.entitySchema(), body)
+	// Partial validation — only check fields the caller actually sent.
+	// Missing fields aren't treated as "required" violations because the
+	// existing row already satisfies them; the UPDATE only touches the
+	// columns present in the body.
+	vr := schema.ValidatePartial(ch.entitySchema(), body)
 	if !vr.Valid {
 		return nil, &validationError{fields: vr.Errors}
 	}
@@ -124,6 +129,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 
 	ub.Where(ch.PrimaryKey+" = $1", id)
 	ch.ApplyTenantScopeUpdate(ub, r)
+	ch.ApplyOwnerScopeUpdate(ub, r)
 	visFields := ch.VisibleFields()
 	ub.Returning(visFields...)
 
@@ -161,6 +167,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 			Set("deleted_at", time.Now().UTC()).
 			Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScopeUpdate(ub, r)
+		ch.ApplyOwnerScopeUpdate(ub, r)
 		sqlStr, args := ub.Build()
 		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {
@@ -171,6 +178,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		db := query.Delete(ch.Entity.GetTable()).
 			Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScopeDelete(db, r)
+		ch.ApplyOwnerScopeDelete(db, r)
 		sqlStr, args := db.Build()
 		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {

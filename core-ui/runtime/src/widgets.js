@@ -590,44 +590,13 @@
           } catch (_) {}
         }
       });
-      document.addEventListener('submit', async (e) => {
-        const form = e.target.closest('form');
-        if (!form || form.closest('[data-fui-widget]')) return;
-        if (form.hasAttribute('data-fui-rpc')) {
-          e.preventDefault();
-          await dispatchRPC(form);
-          return;
-        }
-        if (form.hasAttribute('data-kiln-tool') &&
-            (document.body.classList.contains('kiln-app') ||
-             form.closest('[data-fui-trusted]'))) {
-          e.preventDefault();
-          const tool = form.getAttribute('data-kiln-tool');
-          const fd = new FormData(form);
-          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-          try {
-            await fetch('/kiln/tool/' + tool, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(obj),
-            });
-          } catch (_) {}
-          return;
-        }
-        const action = form.getAttribute('action');
-        if (action && !action.match(/^https?:\/\//)) {
-          e.preventDefault();
-          const fd = new FormData(form);
-          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-          try {
-            await fetch(action, {
-              method: form.getAttribute('method') || 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(obj),
-            });
-          } catch (_) {}
-        }
-      });
+      // Note: the document-level `submit` dispatcher previously lived
+      // here AND in runtime.js. Two installations of the same handler
+      // drifted in this very PR (bare `navigate()` vs `window.__gofastr?.navigate()`).
+      // The dispatcher now lives ONLY in runtime.js — both files share
+      // the `document.__fuiGlobalDispatch` guard so whichever loads
+      // first wins, and the click handler above remains here for the
+      // widget-loading-without-runtime case. See forms_dedup_test.go.
     }
   };
 

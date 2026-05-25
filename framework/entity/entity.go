@@ -30,6 +30,13 @@ type EntityConfig struct {
 	Properties   map[string]any // caller-owned metadata for generators, plugins, and app conventions
 	MaxListLimit int            // opt-in cap for ?limit and the streaming list path. 0 = use default (100); negative = no streaming cap above default.
 
+	// OwnerField names the DB column that holds the row's owner id (e.g.
+	// "user_id"). When set AND an owner extractor is registered (typically
+	// by battery/auth), auto-CRUD scopes List/Get/Update/Delete by the
+	// current request's owner and auto-stamps Create. Leave empty to keep
+	// pre-existing behaviour.
+	OwnerField string
+
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.
 	timestampsSet bool

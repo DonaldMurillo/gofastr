@@ -88,6 +88,9 @@ type batchCreateRequest struct {
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		var req batchCreateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -145,6 +148,9 @@ type batchUpdateRequest struct {
 // fields are the partial update. All items share one transaction.
 func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		var req batchUpdateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -211,6 +217,9 @@ type batchDeleteRequest struct {
 // with {ids:[...]}. All deletes share one transaction.
 func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := ch.RequireOwner(w, r); !ok {
+			return
+		}
 		var req batchDeleteRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())

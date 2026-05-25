@@ -217,7 +217,7 @@ func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected generate ts to fail after removal\n%s", output)
 	}
-	if !strings.Contains(string(output), "TypeScript codegen has been removed") || !strings.Contains(string(output), "docs/codegen.md") {
+	if !strings.Contains(string(output), "TypeScript codegen has been removed") || !strings.Contains(string(output), "codegen.md") {
 		t.Fatalf("unexpected generate ts output:\n%s", output)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
@@ -51,7 +52,7 @@ func (ch *CrudHandler) cursorFields() []string {
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
 // ordered, unique-enough key, so the cursor field(s) control ORDER BY.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter) {
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere []hook.WhereClause) {
 	cursor, limit, direction := pagination.ParseCursorPagination(r)
 	if direction != "forward" && direction != "backward" {
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")
@@ -64,11 +65,15 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	qb.From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
 	ch.ApplyTenantScope(qb, r)
+	ch.ApplyOwnerScope(qb, r)
 	ch.ApplySoftDeleteFilter(qb, r)
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
+	for _, c := range extraWhere {
+		qb.Where(c.SQL, c.Args...)
+	}
 
 	// Decode cursor (if any) and apply tuple-comparison WHERE.
 	if cursor != "" {

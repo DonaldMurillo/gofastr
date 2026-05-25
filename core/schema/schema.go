@@ -156,3 +156,30 @@ func ValidateAll(s Schema, values map[string]any) ValidationResult {
 	result.Valid = len(result.Errors) == 0
 	return result
 }
+
+// ValidatePartial validates only the fields that are present in `values`.
+// Missing fields — required or not — are not reported. Use this for
+// partial-update flows (PUT/PATCH with only the fields the caller wants
+// to change) so a sparse update doesn't fail because some other required
+// field happens not to be in the body.
+func ValidatePartial(s Schema, values map[string]any) ValidationResult {
+	result := ValidationResult{
+		Errors: make(map[string][]string),
+	}
+
+	for _, f := range s.Fields {
+		if f.AutoGenerate != AutoNone {
+			continue
+		}
+		val, present := values[f.Name]
+		if !present {
+			continue
+		}
+		if err := validateField(f, val); err != nil {
+			result.Errors[f.Name] = append(result.Errors[f.Name], err.Error())
+		}
+	}
+
+	result.Valid = len(result.Errors) == 0
+	return result
+}

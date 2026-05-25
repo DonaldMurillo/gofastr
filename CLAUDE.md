@@ -16,7 +16,11 @@ explicitly so they don't repeat.
 **Before adding, renaming, or removing any exported API, route, CLI
 subcommand, JSON field, or auto-generated artifact, the `gofastr-docs`
 skill at `.claude/skills/gofastr-docs/SKILL.md` auto-loads. Docs ship
-in the same commit as the code change — not a follow-up.**
+in the same commit as the code change — not a follow-up. The docs
+live in `framework/docs/content/*.md` and are embedded into the
+`gofastr` binary at build time — `gofastr docs` browses them; the
+MCP tools `framework_docs_list` / `framework_docs_get` /
+`framework_docs_search` expose them to agents connected to a live app.**
 
 ## TL;DR of the architecture (read the full doc anyway)
 
@@ -39,6 +43,9 @@ in the same commit as the code change — not a follow-up.**
 4. Never add `location.href = …` or full reloads as a "fix".
 5. Never add new `data-fui-*` attributes without updating
    `core-ui/ARCHITECTURE.md` and the runtime test suite.
+6. Never expose an entity holding per-user data via auto-CRUD without
+   setting `EntityConfig.OwnerField`. See
+   `framework/docs/content/entity-declarations.md` → "Per-user scoping".
 
 ## Common operations
 

@@ -3,6 +3,8 @@ package framework
 import (
 	"context"
 	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/framework/docs"
 )
 
 // WithMCPIntrospection installs a set of MCP tools that expose the
@@ -23,6 +25,10 @@ import (
 //   - app_batteries:  list registered batteries with deps + lifecycle status.
 //   - app_config:     return the AppConfig snapshot (Name, JSONCase, timeouts…).
 //   - app_readiness:  run every registered readiness check and report results.
+//   - framework_docs_list / framework_docs_get / framework_docs_search:
+//                     expose the framework's markdown docs (embedded at
+//                     build time, so they match the framework version
+//                     this binary was built against — no GitHub fetch).
 func WithMCPIntrospection() AppOption {
 	return func(a *App) {
 		a.mcpIntrospection = true
@@ -65,6 +71,37 @@ func (a *App) registerIntrospectionTools() error {
 			description: "Run every registered readiness check (the same set /readyz consults) and return per-check status. Use to verify the app is ready to serve traffic before issuing real requests.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolReadiness,
+		},
+		{
+			name:        "framework_docs_list",
+			description: "List every framework documentation topic shipped with this binary. Returns name + title + summary for each topic. Pair with framework_docs_get to fetch the full markdown.",
+			schema:      map[string]any{"type": "object"},
+			handler:     a.toolDocsList,
+		},
+		{
+			name:        "framework_docs_get",
+			description: "Return the full markdown body of a framework doc topic by name. Pass the topic name without .md (e.g. \"entity-declarations\", \"hooks-and-transactions\"). Call framework_docs_list first to discover names.",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"topic": map[string]any{"type": "string", "description": "Topic name (no .md suffix)"},
+				},
+				"required": []string{"topic"},
+			},
+			handler: a.toolDocsGet,
+		},
+		{
+			name:        "framework_docs_search",
+			description: "Search across every framework doc topic for a substring (case-insensitive, min 3 chars). Returns matching lines with nearest-heading context, capped at `limit` hits (default 50). Use when you don't know which topic owns the answer.",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"term":  map[string]any{"type": "string", "description": "Search term (min 3 chars)"},
+					"limit": map[string]any{"type": "integer", "description": "Max hits to return (default 50, hard cap to protect narrow-context clients)"},
+				},
+				"required": []string{"term"},
+			},
+			handler: a.toolDocsSearch,
 		},
 	}
 	for _, t := range tools {
@@ -128,6 +165,77 @@ func (a *App) toolConfig(_ context.Context, _ map[string]any) (any, error) {
 		"no_llmmd":                a.Config.NoLLMMD,
 		"request_timeout_ms":      a.Config.RequestTimeout.Milliseconds(),
 		"disable_request_timeout": a.Config.DisableRequestTimeout,
+	}, nil
+}
+
+// toolDocsList enumerates every embedded framework doc topic. Each
+// entry has name (use with framework_docs_get), title (first H1 in the
+// file), summary (first non-heading paragraph), and bytes (raw size).
+func (a *App) toolDocsList(_ context.Context, _ map[string]any) (any, error) {
+	topics, err := docs.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(topics))
+	for _, t := range topics {
+		out = append(out, map[string]any{
+			"name":    t.Name,
+			"title":   t.Title,
+			"summary": t.Summary,
+			"bytes":   t.Bytes,
+		})
+	}
+	return map[string]any{
+		"topics": out,
+		"count":  len(out),
+	}, nil
+}
+
+// toolDocsGet returns the full markdown body for a named topic.
+func (a *App) toolDocsGet(_ context.Context, params map[string]any) (any, error) {
+	topic, _ := params["topic"].(string)
+	body, err := docs.Get(topic)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"name":     topic,
+		"markdown": string(body),
+		"bytes":    len(body),
+	}, nil
+}
+
+// toolDocsSearch greps every topic for a substring. The response shape
+// mirrors the SearchHit type — topic, line, heading, excerpt — but
+// keeps the payload size bounded by capping each excerpt at 240 chars.
+func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, error) {
+	term, _ := params["term"].(string)
+	limit := 0
+	switch v := params["limit"].(type) {
+	case int:
+		limit = v
+	case int64:
+		limit = int(v)
+	case float64:
+		limit = int(v)
+	}
+	hits, err := docs.SearchWithLimit(term, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, map[string]any{
+			"topic":   h.Topic,
+			"line":    h.Line,
+			"heading": h.Heading,
+			"excerpt": h.Excerpt,
+		})
+	}
+	return map[string]any{
+		"term":  term,
+		"hits":  out,
+		"count": len(out),
 	}, nil
 }
 

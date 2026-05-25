@@ -40,6 +40,9 @@ func TestRuntimeJS(t *testing.T) {
 		"data-fui-copy-announce", // copy success message override
 		"data-fui-copy-toast",    // toast emit on copy success
 		"data-fui-os",            // OS detection on <html> for ShortcutHint
+		"data-fui-native",        // opt-out for form-submit interceptor
+		"redirect: 'follow'",     // form-intercept follows server Location headers
+		"application/x-www-form-urlencoded", // form-intercept honours enctype
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {

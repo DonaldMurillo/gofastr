@@ -63,7 +63,7 @@ func BenchmarkT9_StreamingListRealVolume(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
 					req := httptest.NewRequest(http.MethodGet, "/posts", nil)
-					ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, limit)
+					ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, limit, nil)
 					if rec.Code != http.StatusOK && rec.Code != 0 {
 						b.Fatalf("status %d", rec.Code)
 					}
@@ -115,7 +115,7 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodGet, "/posts", nil)
-				ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, 5000)
+				ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, 5000, nil)
 				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
 			}
 		})

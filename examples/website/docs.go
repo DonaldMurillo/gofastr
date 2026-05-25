@@ -95,11 +95,15 @@ func (c *docCatalog) find(slug string) (docItem, error) {
 	return docItem{}, fmt.Errorf("docs: no doc with slug %q", slug)
 }
 
-// findDocsRoot locates the repo's top-level docs/ directory regardless of
-// where the binary was invoked from. We try the cwd first (for `go run` and
-// the dev server) then walk up looking for a sibling docs/ directory.
+// findDocsRoot locates the repo's docs content tree regardless of where
+// the binary was invoked from. We try the new framework/docs/content/
+// path first, then fall back to the legacy docs/ location for backward
+// compatibility with any not-yet-rebased branches.
 func findDocsRoot() (string, error) {
 	candidates := []string{
+		filepath.Join("framework", "docs", "content"),
+		filepath.Join("..", "..", "framework", "docs", "content"),
+		filepath.Join("..", "..", "..", "framework", "docs", "content"),
 		"docs",
 		filepath.Join("..", "..", "docs"),
 		filepath.Join("..", "..", "..", "docs"),
@@ -110,7 +114,7 @@ func findDocsRoot() (string, error) {
 			return abs, nil
 		}
 	}
-	return "", fmt.Errorf("docs: could not locate docs/ directory; tried %v", candidates)
+	return "", fmt.Errorf("docs: could not locate framework/docs/content/ directory; tried %v", candidates)
 }
 
 func humanise(slug string) string {

@@ -168,10 +168,19 @@ func (qb *QueryBuilder) Build() (string, []any) {
 				sb.WriteString(w.connector)
 				sb.WriteString(" ")
 			}
-			// Re-number placeholders in the condition
+			// Re-number placeholders in the condition. Wrap in parens
+			// so a caller's OR-containing clause can't combine with
+			// framework-injected AND scopes via SQL precedence (which
+			// would let `tenant_id = X AND visibility = 'pub' OR
+			// author_id = Y AND owner_id = Z` group as `(... AND pub)
+			// OR (...AND Z)` — bypassing tenant scope on the OR
+			// branch). Wrapping each condition makes the AND/OR tree
+			// reflect the caller's intent.
 			condition := renumberPlaceholders(w.condition, paramIdx)
 			paramIdx += len(w.args)
+			sb.WriteByte('(')
 			sb.WriteString(condition)
+			sb.WriteByte(')')
 		}
 	}
 

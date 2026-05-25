@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
@@ -17,6 +18,13 @@ const (
 	eventKeyTable    = "table"
 	eventKeyRecord   = "record"
 	eventKeyTenantID = "tenantId"
+	// eventKeyOwnerID is stamped when the entity declares OwnerField; SSE
+	// filters drop events whose owner doesn't match the subscriber's
+	// owner. Falls back to extracting the owner from the record itself
+	// when the framework's owner extractor returned nothing (e.g. for
+	// admin-side events). Without this key, an anonymous SSE subscription
+	// would receive every user's row updates.
+	eventKeyOwnerID = "ownerId"
 )
 
 // EmitEvent fires an entity lifecycle event (asynchronously). No-op when the
@@ -34,6 +42,19 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 	if ch.Entity.Config.MultiTenant {
 		if tid := tenant.GetTenantID(ctx); tid != "" {
 			data[eventKeyTenantID] = tid
+		}
+	}
+	if ch.Entity.Config.OwnerField != "" {
+		// Stamp the owner id so SSE filters can scope per-subscriber.
+		// Prefer the extractor (matches the request-handling user);
+		// fall back to the record's own owner column (covers admin /
+		// background emitters whose ctx has no user).
+		if id, ok := owner.Get(ctx); ok {
+			data[eventKeyOwnerID] = id
+		} else if rec, ok := record.(map[string]any); ok {
+			if id, ok := rec[ch.Entity.Config.OwnerField]; ok {
+				data[eventKeyOwnerID] = id
+			}
 		}
 	}
 	ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: data})
@@ -58,6 +79,14 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			writeJSONError(w, http.StatusServiceUnavailable, "event bus not configured")
 			return
 		}
+		// Same security gate as the standard CRUD handlers: an
+		// OwnerField entity refuses anonymous subscribers. Without
+		// this, a long-lived SSE stream scrapes every other user's
+		// row updates in real time.
+		ownerID, ownerOK := ch.RequireOwner(w, r)
+		if !ownerOK {
+			return
+		}
 
 		sse := stream.NewSSEWriter(w)
 		sse.WriteComment("subscribed " + ch.Entity.GetName())
@@ -65,6 +94,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		entityName := ch.Entity.GetName()
 		tenantScope := ch.Entity.Config.MultiTenant
 		tenantID := tenant.GetTenantID(r.Context())
+		ownerScope := ch.Entity.Config.OwnerField != ""
 
 		buf := make(chan event.Event, 32)
 
@@ -77,6 +107,9 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 				return nil
 			}
 			if tenantScope && tenantID != "" && data[eventKeyTenantID] != tenantID {
+				return nil
+			}
+			if ownerScope && ownerID != nil && data[eventKeyOwnerID] != ownerID {
 				return nil
 			}
 			select {

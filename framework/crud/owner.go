@@ -1,0 +1,94 @@
+package crud
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
+)
+
+// ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query
+// when the entity declares OwnerField and the request context carries an
+// owner id (registered via framework/owner.SetExtractor — typically by
+// battery/auth's init()). No-op when either condition is missing.
+//
+// Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
+func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) {
+	field := ch.Entity.Config.OwnerField
+	if field == "" {
+		return
+	}
+	if id, ok := owner.Get(r.Context()); ok {
+		qb.Where(field+" = $1", id)
+	}
+}
+
+// ApplyOwnerScopeCount mirrors ApplyOwnerScope for count queries.
+func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Request) {
+	field := ch.Entity.Config.OwnerField
+	if field == "" {
+		return
+	}
+	if id, ok := owner.Get(r.Context()); ok {
+		cb.Where(field+" = $1", id)
+	}
+}
+
+// ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries.
+func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
+	field := ch.Entity.Config.OwnerField
+	if field == "" {
+		return
+	}
+	if id, ok := owner.Get(r.Context()); ok {
+		ub.Where(field+" = $1", id)
+	}
+}
+
+// ApplyOwnerScopeDelete mirrors ApplyOwnerScope for DELETE queries.
+func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Request) {
+	field := ch.Entity.Config.OwnerField
+	if field == "" {
+		return
+	}
+	if id, ok := owner.Get(r.Context()); ok {
+		db.Where(field+" = $1", id)
+	}
+}
+
+// InjectOwner stamps the owner id into a Create payload when the entity
+// declares OwnerField. Mirrors InjectTenant's shape.
+func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
+	field := ch.Entity.Config.OwnerField
+	if field == "" {
+		return
+	}
+	if id, ok := owner.Get(ctx); ok {
+		data[field] = id
+	}
+}
+
+// RequireOwner returns the current owner id when the entity declares
+// OwnerField. ok=true means: either no owner is required (entity has no
+// OwnerField), or an owner was extracted. ok=false means: the entity
+// requires an owner but none is available — the caller MUST refuse the
+// request. Writes 401 to w and returns ok=false in that case so handlers
+// can `if _, ok := ch.RequireOwner(w, r); !ok { return }`.
+//
+// This is the secure-by-default seam: without it, ApplyOwnerScope would
+// silently no-op for anonymous requests on OwnerField entities, returning
+// every row in the table. With OwnerField set the framework refuses
+// requests that can't produce an owner id, regardless of whether the
+// caller mounted auth middleware in front of the route.
+func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id any, ok bool) {
+	if ch.Entity.Config.OwnerField == "" {
+		return nil, true
+	}
+	id, found := owner.Get(r.Context())
+	if !found {
+		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		return nil, false
+	}
+	return id, true
+}

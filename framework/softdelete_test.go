@@ -68,7 +68,7 @@ func TestSoftForceDelete(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectExec(`DELETE FROM posts WHERE id = \$1`).
+	mock.ExpectExec(`DELETE FROM posts WHERE \(id = \$1\)`).
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
