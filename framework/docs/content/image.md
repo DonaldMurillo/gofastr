@@ -130,6 +130,61 @@ Per-format option structs:
 Inspect output before materialising via `Encoder.MIME()` and
 `Encoder.Format()`.
 
+## Plug-and-play: VariantSet → PipelineImage
+
+For the common case — "take this upload, produce three sizes plus a
+placeholder, hand it to the UI" — there's a declarative helper. The
+`VariantSet` is headless (no UI/HTTP dependency); pair it with the
+`ui.PipelineImage` component to render.
+
+```go
+result, err := image.VariantSet{
+    BaseName: "hero",
+    Variants: []image.Variant{
+        {Width:  320, Format: image.FormatJPEG, Quality: 80, Suffix: "sm"},
+        {Width:  800, Format: image.FormatJPEG, Quality: 82, Suffix: "md"},
+        {Width: 1600, Format: image.FormatJPEG, Quality: 85, Suffix: "lg"},
+        {Width:  320, Format: image.FormatWebP, Suffix: "sm"}, // VP8L
+        {Width:  800, Format: image.FormatWebP, Suffix: "md"},
+        {Width: 1600, Format: image.FormatWebP, Suffix: "lg"},
+    },
+    Placeholder: &image.PlaceholderOptions{Width: 24},
+    BlurHashX:   4, BlurHashY: 3,
+}.Process(img)
+
+for _, v := range result.Variants {
+    _ = storage.Put(v.Name, v.Bytes)         // → battery/storage
+}
+saveBlurHashColumn(entityID, result.BlurHash) // → entity column
+```
+
+Render the result via `framework/ui`:
+
+```go
+ui.PipelineImage(ui.PipelineImageConfig{
+    Fallback: "/uploads/hero-md.jpg",
+    Alt:      "Sunset over the ocean",
+    Width:    800, Height: 600,
+    Sources: []ui.PipelineSource{
+        {URL: "/uploads/hero-sm.webp",  Width:  320, Type: "image/webp"},
+        {URL: "/uploads/hero-md.webp",  Width:  800, Type: "image/webp"},
+        {URL: "/uploads/hero-lg.webp",  Width: 1600, Type: "image/webp"},
+        {URL: "/uploads/hero-sm.jpg",   Width:  320, Type: "image/jpeg"},
+        {URL: "/uploads/hero-md.jpg",   Width:  800, Type: "image/jpeg"},
+        {URL: "/uploads/hero-lg.jpg",   Width: 1600, Type: "image/jpeg"},
+    },
+    Placeholder: result.BlurHash,
+    Sizes:       "(min-width: 1024px) 1024px, 100vw",
+})
+```
+
+`PipelineImage` emits one `<source type="…" srcset="…">` per distinct
+`Type` in input order — put the modern format first so legacy browsers
+fall through to the `<img>` fallback. The `Placeholder` field accepts
+either a `data:` URL (set as `data-placeholder`) or a BlurHash string
+(set as `data-blurhash`); style or hydrate either as the calling page
+prefers.
+
 ## Placeholders
 
 Two placeholder strategies for above-the-fold image loading:

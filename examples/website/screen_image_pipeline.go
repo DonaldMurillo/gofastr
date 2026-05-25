@@ -1,13 +1,16 @@
 package main
 
 import (
+	"encoding/base64"
 	stdimage "image"
 	"image/color"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/image"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // ImagePipelineScreen showcases the framework/image package: every chain
@@ -74,6 +77,8 @@ func (s *ImagePipelineScreen) Render() render.HTML {
 			render.Text(blurhash)),
 	)
 
+	variantsBlock, variantSummary := renderVariantsSection(pipeline)
+
 	source := `import "github.com/DonaldMurillo/gofastr/framework/image"
 
 img, err := image.Open("photo.jpg")
@@ -95,10 +100,72 @@ hash, _   := img.Resize(32, 0).BlurHash(4, 3)   // "LEHV6nWB2yk8…"`
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("All operations on one source")),
 		grid,
 		hashBlock,
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("VariantSet → PipelineImage")),
+		render.Tag("p", map[string]string{"class": "lede"}, render.Text(
+			"One declarative call produces every size and format in one pass. The typed VariantResult feeds straight into ui.PipelineImage for a multi-format <picture> with placeholder fallback.")),
+		variantsBlock,
+		variantSummary,
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Source")),
 		demoFrame(render.Text(""), source),
 	)
 }
+
+// renderVariantsSection runs VariantSet on the synthetic gradient,
+// embeds the resulting variant bytes as data: URLs, and wires them
+// into a ui.PipelineImage. The returned summary lists each variant's
+// name / MIME / size so the e2e test can assert against it.
+func renderVariantsSection(src *image.Image) (render.HTML, render.HTML) {
+	set := image.VariantSet{
+		BaseName: "demo",
+		Variants: []image.Variant{
+			{Width: 80, Format: image.FormatJPEG, Quality: 80, Suffix: "sm"},
+			{Width: 160, Format: image.FormatJPEG, Quality: 82, Suffix: "md"},
+			{Width: 80, Format: image.FormatPNG, Suffix: "sm"},
+			{Width: 160, Format: image.FormatPNG, Suffix: "md"},
+		},
+		Placeholder: &image.PlaceholderOptions{Width: 16},
+		BlurHashX:   4, BlurHashY: 3,
+	}
+	result, err := set.Process(src)
+	if err != nil {
+		return render.Tag("p", nil, render.Text("VariantSet error: "+err.Error())), render.Text("")
+	}
+
+	sources := make([]ui.PipelineSource, 0, len(result.Variants))
+	var fallback string
+	for _, v := range result.Variants {
+		url := "data:" + v.MIME + ";base64," + base64.StdEncoding.EncodeToString(v.Bytes)
+		sources = append(sources, ui.PipelineSource{URL: url, Width: v.Width, Type: v.MIME})
+		if v.Format == image.FormatJPEG && v.Width == 160 {
+			fallback = url
+		}
+	}
+
+	picture := ui.PipelineImage(ui.PipelineImageConfig{
+		Fallback:    fallback,
+		Alt:         "Pipeline-generated gradient",
+		Width:       160, Height: 96,
+		Sources:     sources,
+		Placeholder: result.Placeholder,
+		Class:       "img-pipeline-variant-output",
+	})
+
+	rows := make([]render.HTML, 0, len(result.Variants))
+	for _, v := range result.Variants {
+		rows = append(rows, render.Tag("li",
+			map[string]string{"data-test": "img-pipeline-variant-" + v.Name},
+			render.Text(v.Name+" — "+v.MIME+" — "+strconv.Itoa(v.Width)+"×"+strconv.Itoa(v.Height)+" — "+strconv.Itoa(len(v.Bytes))+"B"),
+		))
+	}
+	summary := render.Tag("ul",
+		map[string]string{"class": "img-pipeline-variant-list", "data-test": "img-pipeline-variant-list"},
+		rows...)
+
+	return render.Tag("div",
+		map[string]string{"class": "img-pipeline-variant", "data-test": "img-pipeline-variant"},
+		picture), summary
+}
+
 
 // buildDemoGradient produces a deterministic RGBA test image. Keeping it
 // synthetic means the demo page renders identically regardless of what
