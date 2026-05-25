@@ -189,6 +189,7 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	site.Register("/framework-ui/notification", &NotificationDemoScreen{}, nil)
 	site.Register("/framework-ui/css-loading", &CSSLoadingDemoScreen{}, nil)
 	site.Register("/framework-ui/themed", &ThemedDemoScreen{}, nil)
+	site.Register("/framework-ui/image-pipeline", &ImagePipelineScreen{}, nil)
 	site.Register("/about", &AboutScreen{}, nil)
 
 	cssStr := createStyleSheet(*site.Theme)

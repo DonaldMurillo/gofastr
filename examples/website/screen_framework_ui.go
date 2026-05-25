@@ -176,6 +176,13 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 							render.Tag("span", nil, render.Text("ui.Themed(ref, …) wraps a subtree with a scoped CSS variable cascade — same components, different palette.")),
 						)}),
 				),
+				render.Tag("li", nil,
+					html.LinkHTML(html.LinkHTMLConfig{Href: "/framework-ui/image-pipeline",
+						Content: render.Join(
+							render.Tag("strong", nil, render.Text("Image pipeline")),
+							render.Tag("span", nil, render.Text("Pure-Go Resize / Rotate / Flip / Modulate / Placeholder / BlurHash — no CGo, no system libraries.")),
+						)}),
+				),
 			),
 		),
 
