@@ -128,3 +128,9 @@ pi-agent/plugins/*
 # kiln per-session journal (write-time state, not source)
 .kiln.session.jsonl
 .kiln.session.jsonl.bak
+
+# Harness TUI snapshot drift artifacts — the snapshot test writes
+# *.txt.new alongside any drifted *.txt for diff inspection. They're
+# scratch output, never source. Regenerate the canonical .txt files
+# via GOFASTR_UPDATE_SNAPSHOTS=1.
+framework/harness/client/tui/testdata/snapshots/*.txt.new
