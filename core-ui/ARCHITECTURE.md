@@ -218,62 +218,43 @@ For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Ad
 
 ## Forms
 
-Plain `<form>` elements with a relative `action` are intercepted by the
-runtime so the page doesn't hard-refresh after submit. The interceptor
-has three knobs you need to know about:
+**Default: forms behave like standard HTML forms.** The runtime only
+intercepts a form when you explicitly ask it to, so auth flows,
+file uploads, password-manager UX, and Location-follow redirects
+work the moment you drop a `<form>` into the page.
 
-### 1. Body encoding follows `enctype`
+### When the runtime intercepts
 
-```html
-<form action="/save" method="POST" enctype="application/x-www-form-urlencoded">
-  <input name="title">
-</form>
-```
+| Trigger                                | Body sent by runtime                              | Server reads via                    |
+|----------------------------------------|---------------------------------------------------|--------------------------------------|
+| `enctype="application/json"`           | `application/json` of every form input            | `json.NewDecoder(r.Body)`            |
+| `data-fui-spa` (no/urlencoded enctype) | `application/x-www-form-urlencoded`               | `r.ParseForm()` + `r.PostFormValue`  |
+| `data-fui-rpc="/some/endpoint"`        | Per the RPC contract (see Widgets section)        | RPC handler                          |
 
-| `enctype`                              | Body sent by runtime                              | Server reads via                |
-|----------------------------------------|---------------------------------------------------|----------------------------------|
-| (unset) — default JSON                 | `application/json` of every form input            | `json.NewDecoder(r.Body)`        |
-| `application/x-www-form-urlencoded`    | `application/x-www-form-urlencoded` (URL-encoded) | `r.ParseForm()` + `r.PostFormValue` |
-| `multipart/form-data`                  | `multipart/form-data` (browser sets boundary)     | `r.ParseMultipartForm()`         |
+Every other form — no special attribute, default or `urlencoded` or
+`multipart/form-data` enctype — is **NOT intercepted**. The browser
+submits it the standard way: POST body matches enctype, Set-Cookie
+headers apply, 303→Location is followed, file inputs upload natively.
 
-Pick the encoding that matches your handler. The interceptor is
-content-type-aware — it does NOT JSON-wrap a form-encoded handler's
-input or vice versa.
+### Server redirects (after intercept)
 
-### 2. Server redirects are followed
-
-When the handler responds with a `30x` and a `Location` header, the
-runtime navigates to the location. This is the right pattern for any
-form that needs the page to change after submit — auth flows, "save
-and return to list", etc.
+When the interceptor IS active and the handler responds with a `30x`
++ `Location` header, the runtime navigates to the location via the
+SPA navigator (no hard refresh between same-app pages), falling back
+to `window.location.assign`. For the non-intercepted default path,
+redirect-following is the browser's own job — same result.
 
 ```go
 http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 ```
 
-The redirect target is honored via the runtime's SPA navigator when
-available (no hard refresh between same-app pages), otherwise via
-`window.location.assign`.
+### Legacy: `data-fui-native`
 
-### 3. `data-fui-native` opts out entirely
-
-```html
-<form action="/legacy" method="POST" data-fui-native>
-  …
-</form>
-```
-
-`data-fui-native` makes the runtime ignore the form completely — the
-browser submits it natively. Reach for this when:
-
-- The page needs the browser-native multipart upload progress bar.
-- The handler returns HTML that should fully replace the page (rare —
-  prefer a SPA-style redirect).
-- You're embedding a third-party form widget that manages its own
-  submit lifecycle.
-
-Most apps shouldn't need this — the default interceptor + content-type
-negotiation covers normal SSR auth, settings, save-and-return flows.
+Before 2026-05, the runtime intercepted every form by default and you
+had to opt OUT with `data-fui-native`. The attribute still works (it
+disables the interceptor) but it's now a no-op for the common case —
+default-enctype forms aren't intercepted anyway. Keep it on existing
+pages; reach for `data-fui-spa` (opt IN) on new ones.
 
 ### Cookie-set + redirect: the canonical auth flow
 

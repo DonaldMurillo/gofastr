@@ -127,6 +127,10 @@ type Screen struct {
 	Component component.Component
 	// Layout is an optional layout override for this screen.
 	Layout *Layout
+	// policies is the screen-level policy chain. Evaluated after any
+	// parent ScreenGroup policies (outermost→innermost). The first
+	// non-Allow Decision wins. Use WithPolicy to add; PolicyChain to read.
+	policies []Policy
 
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool
@@ -166,6 +170,29 @@ func (s *Screen) WithTitle(title string) *Screen {
 func (s *Screen) WithDescription(desc string) *Screen {
 	s.Description = desc
 	return s
+}
+
+// WithPolicy appends a Policy to the screen's own chain. The screen's
+// chain is evaluated after any parent ScreenGroup policies; the first
+// non-Allow Decision wins. Call multiple times to add several policies.
+func (s *Screen) WithPolicy(p Policy) *Screen {
+	if p == nil {
+		return s
+	}
+	s.policies = append(s.policies, p)
+	return s
+}
+
+// PolicyChain returns a copy of the screen's own policy chain (does
+// not include inherited group policies — use EffectivePolicies for the
+// full walk). Returns nil when no policies are attached.
+func (s *Screen) PolicyChain() []Policy {
+	if len(s.policies) == 0 {
+		return nil
+	}
+	out := make([]Policy, len(s.policies))
+	copy(out, s.policies)
+	return out
 }
 
 // RouteParams returns the extracted dynamic route parameters for this screen.
@@ -211,30 +238,50 @@ func NewDialog(path string, comp component.Component) *Screen {
 }
 
 // Render renders the screen's component with appropriate ARIA landmarks.
+// Equivalent to RenderCtx(context.Background()) — use RenderCtx when a
+// request context is available so ContextComponent screens receive it.
 func (s *Screen) Render() render.HTML {
-	content := s.Component.Render()
+	return s.RenderCtx(context.Background())
+}
 
-	switch s.Type {
+// RenderCtx renders the screen's component with ARIA landmarks, passing
+// ctx through to ContextComponent implementations.
+func (s *Screen) RenderCtx(ctx context.Context) render.HTML {
+	var content render.HTML
+	if cc, ok := s.Component.(component.ContextComponent); ok {
+		content = cc.RenderCtx(ctx)
+	} else {
+		content = s.Component.Render()
+	}
+	return wrapByScreenType(s.Type, s.Title, content)
+}
+
+// wrapByScreenType applies the ARIA scaffolding that matches t. Exported
+// at package scope so callers that need to substitute a different
+// component (e.g. RenderAlt) can reuse the wrapping without copying the
+// Screen struct (which embeds a sync.Mutex).
+func wrapByScreenType(t ScreenType, title string, content render.HTML) render.HTML {
+	switch t {
 	case ScreenPage:
 		return html.Main(html.MainConfig{}, content)
 
 	case ScreenDrawer:
 		return render.Tag("div", map[string]string{
 			"role":       "complementary",
-			"aria-label": s.Title,
+			"aria-label": title,
 		}, content)
 
 	case ScreenSheet:
 		return render.Tag("div", map[string]string{
 			"role":       "complementary",
-			"aria-label": s.Title,
+			"aria-label": title,
 		}, content)
 
 	case ScreenDialog:
 		return render.Tag("div", map[string]string{
 			"role":       "dialog",
 			"aria-modal": "true",
-			"aria-label": s.Title,
+			"aria-label": title,
 		}, content)
 
 	default:

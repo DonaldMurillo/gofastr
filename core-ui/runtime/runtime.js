@@ -263,10 +263,9 @@
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
       if (!form || form.closest('[data-fui-widget]')) return;
-      // Opt-out: data-fui-native forms submit the browser-native way.
-      // Use this for any handler that returns a redirect, sets cookies,
-      // or otherwise wants control of navigation (auth flows are the
-      // canonical example).
+      // data-fui-native is a holdover opt-out from the pre-2026-05
+      // default-intercept era. Now equivalent to "no attribute" for
+      // urlencoded/multipart forms; kept so existing pages don't break.
       if (form.hasAttribute('data-fui-native')) return;
       if (form.hasAttribute('data-fui-rpc')) {
         e.preventDefault();
@@ -292,65 +291,65 @@
         } catch (_) {}
         return;
       }
-      // Plain forms with a relative `action` post via fetch (so
-      // server-rendered forms work without a full page reload).
       const action = form.getAttribute('action');
-      if (action && !action.match(/^https?:\/\//)) {
-        e.preventDefault();
-        const enctype = (form.getAttribute('enctype') || '').toLowerCase();
-        const wantsForm = enctype === 'application/x-www-form-urlencoded' ||
-                          enctype === 'multipart/form-data';
-        const fd = new FormData(form);
-        let body, headers;
-        if (wantsForm) {
-          // Encode as URLSearchParams so handlers using r.ParseForm()
-          // see the fields. multipart/form-data falls through to native
-          // FormData encoding (browser sets the multipart boundary).
-          if (enctype === 'multipart/form-data') {
-            body = fd;
-            headers = {}; // browser sets Content-Type with boundary
-          } else {
-            const params = new URLSearchParams();
-            fd.forEach((v, k) => params.append(k, v));
-            body = params;
-            headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-          }
+      if (!action || action.match(/^https?:\/\//)) return;
+      const enctype = (form.getAttribute('enctype') || '').toLowerCase();
+      const wantsJSON = enctype === 'application/json';
+      const explicitSPA = form.hasAttribute('data-fui-spa');
+      // Safe-by-default: urlencoded / multipart / unspecified-enctype
+      // forms submit the browser-native way (preserves Set-Cookie,
+      // Location-follow, file uploads, default password-manager UX).
+      // Opt INTO the SPA path with data-fui-spa or enctype="application/json"
+      // when you actually want fetch-and-swap behavior.
+      if (!wantsJSON && !explicitSPA) return;
+      e.preventDefault();
+      const wantsForm = enctype === 'application/x-www-form-urlencoded' ||
+                        enctype === 'multipart/form-data';
+      const fd = new FormData(form);
+      let body, headers;
+      if (wantsJSON) {
+        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
+        body = JSON.stringify(obj);
+        headers = { 'Content-Type': 'application/json' };
+      } else if (wantsForm) {
+        if (enctype === 'multipart/form-data') {
+          body = fd;
+          headers = {}; // browser sets Content-Type with boundary
         } else {
-          const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-          body = JSON.stringify(obj);
-          headers = { 'Content-Type': 'application/json' };
+          const params = new URLSearchParams();
+          fd.forEach((v, k) => params.append(k, v));
+          body = params;
+          headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
         }
-        try {
-          const resp = await fetch(action, {
-            method: form.getAttribute('method') || 'POST',
-            headers,
-            body,
-            redirect: 'follow',
-            credentials: 'same-origin',
-          });
-          // Follow Location: redirects via the SPA navigator when
-          // available; otherwise fall back to a hard navigation.
-          // fetch's redirect:'follow' will have already chased the 3xx
-          // to its final URL — we navigate to resp.url so the address
-          // bar updates.
-          if (resp.redirected && resp.url) {
-            try {
-              if (typeof navigate === 'function') {
-                await navigate(resp.url);
-              } else {
-                window.location.assign(resp.url);
-              }
-            } catch (_) {
-              window.location.assign(resp.url);
-            }
-            return;
-          }
-          // No redirect — for form submissions that return HTML we let
-          // the page stay put (caller can wire up a data-fui-rpc form
-          // if they want to swap content). For empty/204 responses
-          // there's nothing else to do.
-        } catch (_) {}
+      } else {
+        // data-fui-spa with no enctype → default to urlencoded so
+        // r.ParseForm() works on the server side.
+        const params = new URLSearchParams();
+        fd.forEach((v, k) => params.append(k, v));
+        body = params;
+        headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
       }
+      try {
+        const resp = await fetch(action, {
+          method: form.getAttribute('method') || 'POST',
+          headers,
+          body,
+          redirect: 'follow',
+          credentials: 'same-origin',
+        });
+        if (resp.redirected && resp.url) {
+          // Hard navigation. (Previously this had a `typeof navigate
+          // === 'function'` branch trying to use a free identifier
+          // `navigate`, which never resolved — the SPA navigator is on
+          // window.__gofastr.navigate. We explicitly do NOT call SPA
+          // nav here: a form-intercept Location follow lands on a
+          // server-rendered page that may not be in this app's SPA
+          // route table, and the hard nav also rebuilds the SSE
+          // connection cleanly. Documented behaviour.)
+          window.location.assign(resp.url);
+          return;
+        }
+      } catch (_) {}
     });
 
     // Debounced input-driven RPC: a form with
@@ -1093,6 +1092,23 @@
         headers: { 'X-Gofastr-Navigate': '1' },
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      // X-Gofastr-Location signals "server policy redirected this
+      // partial — go nav to the new URL instead of trying to swap
+      // the empty body in place." Set by uihost on a Redirect policy
+      // outcome. The fetch above won't see a 303 (we deliberately use
+      // 200 + header to survive redirect:'follow').
+      const redirectTo = resp.headers.get('X-Gofastr-Location');
+      if (redirectTo) {
+        // pushState was already called by the click handler with the
+        // requested path; replace it with the redirect destination so
+        // the URL bar matches what we're about to load.
+        try { history.replaceState(null, '', redirectTo); } catch (_) {}
+        currentPath = redirectTo;
+        _pendingNav.delete(path);
+        document.documentElement.removeAttribute('aria-busy');
+        return loadPage(redirectTo);
+      }
 
       const html = await resp.text();
 

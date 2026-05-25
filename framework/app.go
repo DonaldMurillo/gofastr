@@ -290,18 +290,18 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		translator = a.translator
 	}
 	chain := []router.Middleware{
-		router.Middleware(middleware.RecoveryFn(getLogger)),
-		router.Middleware(middleware.RequestID()),
+		middleware.RecoveryFn(getLogger),
+		middleware.RequestID(),
 	}
 	if idempotency != nil {
-		chain = append(chain, router.Middleware(middleware.Idempotency(*idempotency)))
+		chain = append(chain, middleware.Idempotency(*idempotency))
 	}
 	if translator != nil {
-		chain = append(chain, router.Middleware(i18n.Middleware(translator)))
+		chain = append(chain, i18n.Middleware(translator))
 	}
-	chain = append(chain, router.Middleware(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})))
+	chain = append(chain, middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
 	if a == nil || !a.Config.DisableRequestTimeout {
-		chain = append(chain, router.Middleware(middleware.Timeout(timeout)))
+		chain = append(chain, middleware.Timeout(timeout))
 	}
 	return chain
 }

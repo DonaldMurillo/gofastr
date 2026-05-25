@@ -33,7 +33,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 	// Create sessions table
 	_, err = db.Exec(`CREATE TABLE sessions (
-		token TEXT PRIMARY KEY,
+		id TEXT PRIMARY KEY,
+		token TEXT NOT NULL UNIQUE,
 		user_id TEXT NOT NULL,
 		created_at DATETIME NOT NULL,
 		expires_at DATETIME NOT NULL,

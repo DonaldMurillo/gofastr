@@ -49,6 +49,7 @@ entity, err := app.EntityFromFile("entities/posts.json")
   "table": "posts",
   "soft_delete": true,
   "multi_tenant": false,
+  "owner_field": "user_id",
   "crud": true,
   "mcp": true,
   "fields": [
@@ -59,6 +60,12 @@ entity, err := app.EntityFromFile("entities/posts.json")
   ]
 }
 ```
+
+`owner_field` mirrors `EntityConfig.OwnerField` — set it to the column
+that holds the row owner's id (e.g. `"user_id"`) and the JSON-declared
+entity gets the same per-user auto-CRUD scoping as a Go-declared one
+(see **Per-user scoping** below). Omit the key to keep pre-existing
+behaviour.
 
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.

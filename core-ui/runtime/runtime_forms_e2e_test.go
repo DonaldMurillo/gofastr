@@ -14,10 +14,16 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// formIntercept e2e suite — verifies the runtime.js submit interceptor
-// honours enctype, follows Location, and respects the data-fui-native
-// opt-out. Mirrors the auth-form path the wtf-do-i-eat app hit and the
-// behaviour FRAMEWORK-FEEDBACK.md asks for.
+// formIntercept e2e suite — verifies the runtime.js submit interceptor's
+// safe-by-default behaviour:
+//
+//   - urlencoded / multipart / unspecified-enctype forms are NOT
+//     intercepted; the browser submits natively (cookies, Location
+//     follow, file uploads, password-manager UX all work).
+//   - enctype="application/json" → intercepted as JSON RPC.
+//   - data-fui-spa → intercepted with urlencoded body + SPA navigation
+//     on response Location.
+//   - data-fui-native → still works (legacy no-op opt-out).
 
 type formRequest struct {
 	method      string
@@ -83,9 +89,12 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		enctype := r.URL.Query().Get("enctype")
-		nativeAttr := ""
+		attrs := ""
 		if r.URL.Query().Get("native") == "1" {
-			nativeAttr = ` data-fui-native`
+			attrs += ` data-fui-native`
+		}
+		if r.URL.Query().Get("spa") == "1" {
+			attrs += ` data-fui-spa`
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<!doctype html>
@@ -99,7 +108,7 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
   </form>
   <script src="/__gofastr/runtime.js"></script>
 </body>
-</html>`, enctype, nativeAttr)
+</html>`, enctype, attrs)
 	})
 
 	srv := httptest.NewServer(mux)
@@ -156,7 +165,11 @@ func TestFormIntercept_FormEnctypeSendsFormEncoded(t *testing.T) {
 	}
 }
 
-func TestFormIntercept_JSONFallbackForNoEnctype(t *testing.T) {
+// TestFormIntercept_NativeByDefaultForNoEnctype pins the safe-by-default
+// behaviour: a form with no enctype attribute is NOT intercepted; the
+// browser submits it natively as urlencoded (the HTML default). This
+// is what auth/login forms want — cookies set, Location followed.
+func TestFormIntercept_NativeByDefaultForNoEnctype(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
 	base := startFormE2EServer(t, &recv)
 	ctx := newFormBrowserCtx(t)
@@ -174,11 +187,70 @@ func TestFormIntercept_JSONFallbackForNoEnctype(t *testing.T) {
 	if got == nil {
 		t.Fatal("server did not receive submit")
 	}
+	if !strings.HasPrefix(strings.ToLower(got.contentType), "application/x-www-form-urlencoded") {
+		t.Errorf("expected native urlencoded for default-enctype form; Content-Type=%q (got intercepted?)", got.contentType)
+	}
+	if got.formValues["email"] != "a@b.com" {
+		t.Errorf("native submit form values missing: %+v", got.formValues)
+	}
+}
+
+// TestFormIntercept_JSONEnctypeIsIntercepted pins that explicit
+// enctype="application/json" still opts INTO the SPA interceptor —
+// the runtime sends JSON body + follows Location via the SPA router.
+func TestFormIntercept_JSONEnctypeIsIntercepted(t *testing.T) {
+	var recv atomic.Pointer[formRequest]
+	base := startFormE2EServer(t, &recv)
+	ctx := newFormBrowserCtx(t)
+
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/?enctype=application/json"),
+		chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.WaitVisible(`#landed`, chromedp.ByID),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	got := recv.Load()
+	if got == nil {
+		t.Fatal("server did not receive submit")
+	}
 	if !strings.HasPrefix(strings.ToLower(got.contentType), "application/json") {
-		t.Errorf("expected JSON fallback when no enctype; Content-Type=%q", got.contentType)
+		t.Errorf("enctype=application/json should produce JSON; Content-Type=%q", got.contentType)
 	}
 	if !strings.Contains(got.jsonBody, `"email":"a@b.com"`) {
 		t.Errorf("JSON body missing email: %q", got.jsonBody)
+	}
+}
+
+// TestFormIntercept_DataFuiSPAOptsIn pins that data-fui-spa on a plain
+// urlencoded form opts INTO interception with urlencoded body — for
+// hosts that explicitly want SPA-style nav on a non-JSON form.
+func TestFormIntercept_DataFuiSPAOptsIn(t *testing.T) {
+	var recv atomic.Pointer[formRequest]
+	base := startFormE2EServer(t, &recv)
+	ctx := newFormBrowserCtx(t)
+
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/?spa=1"),
+		chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.WaitVisible(`#landed`, chromedp.ByID),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	got := recv.Load()
+	if got == nil {
+		t.Fatal("server did not receive submit")
+	}
+	// data-fui-spa + no enctype → urlencoded body via the interceptor.
+	if !strings.HasPrefix(strings.ToLower(got.contentType), "application/x-www-form-urlencoded") {
+		t.Errorf("data-fui-spa should keep urlencoded body; Content-Type=%q", got.contentType)
+	}
+	if got.formValues["email"] != "a@b.com" {
+		t.Errorf("spa intercept form values missing: %+v", got.formValues)
 	}
 }
 

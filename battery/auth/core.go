@@ -66,7 +66,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		if c.loginLimit != nil && !c.loginLimit.guard(w, r) {
 			return
 		}
-		email, password, _, isForm, ok := decodeAuthCredentials(w, r)
+		email, password, isForm, ok := decodeAuthCredentials(w, r)
 		if !ok {
 			return
 		}
@@ -272,7 +272,7 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 // session cookie set after auto-login.
 func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		email, password, roles, isForm, ok := decodeAuthCredentials(w, r)
+		email, password, isForm, ok := decodeAuthCredentials(w, r)
 		if !ok {
 			return
 		}
@@ -291,9 +291,10 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			return
 		}
 
-		if len(roles) == 0 {
-			roles = []string{"user"}
-		}
+		// SECURITY: roles are server-assigned, never client-controlled.
+		// /auth/register is anonymous — see decodeAuthCredentials for
+		// the rationale. Role elevation is a separate admin-gated flow.
+		roles := []string{"user"}
 
 		hash, err := HashPassword(password)
 		if err != nil {

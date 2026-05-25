@@ -61,7 +61,8 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
 			created_at TEXT, updated_at TEXT
 		)`,
 		`CREATE TABLE sessions (
-			token TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+			id TEXT PRIMARY KEY,
+			token TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL,
 			created_at TEXT, expires_at TEXT,
 			two_factor_verified BOOLEAN DEFAULT FALSE,
 			pending_two_factor BOOLEAN DEFAULT FALSE
@@ -177,7 +178,7 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
   <h1 id="dashboard">Welcome %s</h1>
   <span id="user-email">%s</span>
   <ul id="logs">%s</ul>
-  <form id="addlog" action="/api/logs" method="POST">
+  <form id="addlog" action="/api/logs" method="POST" enctype="application/json">
     <input id="notes" name="notes" type="text">
     <button id="addlog-submit" type="submit">Add</button>
   </form>
@@ -611,4 +612,4 @@ func TestUIE2E_CSRF_FormHiddenFieldRoundtrip(t *testing.T) {
 // ---- shared mutex prevents two chromedp tests trashing the same DB ----
 var uie2eMu sync.Mutex
 
-func init() { _ = uie2eMu } // suppress unused warning until tests below grow
+func init() { _ = &uie2eMu } // suppress unused warning until tests below grow (take addr — copying a Mutex is a vet warning)

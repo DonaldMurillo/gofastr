@@ -5,10 +5,16 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
-// Middleware is a function that wraps an http.Handler with additional behavior.
-type Middleware func(http.Handler) http.Handler
+// Middleware is the same shape as middleware.Middleware: a function
+// that wraps an http.Handler with additional behavior. Declared as a
+// type alias so values produced by core/middleware (and batteries that
+// return middleware.Middleware) can be passed to Router.Use without
+// an explicit conversion.
+type Middleware = middleware.Middleware
 
 // Router wraps http.ServeMux with method-based routing, path parameter
 // extraction, middleware chaining, and route grouping.

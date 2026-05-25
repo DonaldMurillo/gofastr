@@ -50,6 +50,12 @@ mgr.RegisterRoutes(app.Router)
 posture (`DevMode` left false) it picks the `__Host-session` cookie
 name, sets `Secure=true`, and a seven-day session TTL.
 
+When `DevMode: true` and `JWTSecret` is empty, `New` mints a random
+per-process secret and logs a WARN. That lets demo/boilerplate apps
+skip the "change-me" literal — sessions invalidate on restart, which
+is the right trade for dev. Production builds (`DevMode: false`) still
+require an explicit `JWTSecret` if you want JWT auth.
+
 ## The plugins
 
 | Plugin | Routes | Notes |
@@ -181,6 +187,100 @@ Pair with `auth.RequireSession()` (or
 flows) on any route that needs a logged-in user.
 
 `RequireAuth` is the JWT-Bearer-only equivalent and is unchanged.
+
+## Per-SSR-screen policies (`auth.SessionPolicy`, `auth.RolePolicy`)
+
+For apps built with the `framework/uihost` SSR stack, gating happens
+at the **screen** layer, not the router middleware layer. Attach an
+`app.Policy` to a `Screen` or `ScreenGroup` and the dispatcher
+evaluates it before `Load()` runs:
+
+```go
+import "github.com/DonaldMurillo/gofastr/core-ui/app"
+
+// Public marketing pages — no policy, no gate.
+application.RegisterScreen(app.NewScreen("/",      &HomeScreen{}),  nil)
+application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}), nil)
+
+// Gated dashboard group — every screen inherits SessionPolicy.
+dash := app.NewScreenGroup("/dashboard", dashLayout, auth.SessionPolicy())
+dash.Screen(app.NewScreen("home",    &Home{}),    nil)
+dash.Screen(app.NewScreen("billing", &Billing{}).
+    WithPolicy(auth.RolePolicy(auth.Roles("admin"))), nil)
+application.Router.ScreenGroup(dash)
+
+// Same-URL marketing/dashboard duo via RenderAlt — factory, NOT
+// singleton, so each request gets a fresh instance (no cross-user
+// data leak on shared alt state).
+application.RegisterScreen(
+    app.NewScreen("/", &Dashboard{}).
+        WithPolicy(auth.SessionPolicy(auth.WithRenderAlt(
+            func() component.Component { return &Landing{} },
+        ))),
+    nil,
+)
+```
+
+The dispatcher resolves each request as one of four outcomes:
+
+| Decision     | What happens                                                    |
+|--------------|-----------------------------------------------------------------|
+| Allow        | Normal Load + Render.                                           |
+| Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`.        |
+| RenderAlt    | The alt component takes the screen's place; its Load runs.      |
+| Block        | HTTP status from `WithBlock(status, msg)`, default 401/403.     |
+
+### Option precedence — last-write-wins per call, alt > redirect > block on fail
+
+Each `With*` option overwrites the others' fields on the way in. If
+you chain `auth.WithRedirect("/x").WithBlock(403)` the Block wins —
+the second option clears the redirect URL. There is no "compose two
+failure outcomes" — pick one per policy.
+
+When more than one applies (e.g. through some custom option-builder),
+`failureDecision` resolves them in order: `RenderAlt` first if its
+factory is set; otherwise `Redirect` if a URL is set; otherwise
+`Block` (default 401 for SessionPolicy, 403 for RolePolicy).
+
+Defaults applied when no failure option is passed:
+
+| Policy           | Default failure outcome                            |
+|------------------|----------------------------------------------------|
+| `SessionPolicy`  | `Redirect("/login")` with `?next=<request-path>`   |
+| `RolePolicy`     | `Block(403, "forbidden")`                          |
+
+To suppress the auto-`?next=` on a redirect (e.g. anon "/" →
+"/marketing"), pass `auth.NoNext()`:
+
+```go
+auth.SessionPolicy(auth.WithRedirect("/marketing", auth.NoNext()))
+```
+
+`RenderAlt` takes a factory, not an instance — the framework calls it
+once per request so the alt component cannot leak data across users:
+
+```go
+auth.SessionPolicy(auth.WithRenderAlt(
+    func() component.Component { return &Landing{} },
+))
+```
+
+Inside a `RenderCtx`, call `auth.SessionFrom(ctx)` for in-component
+gating (sidebar nav, conditional CTAs) — no policy machinery needed
+for a per-widget branch:
+
+```go
+func (s *Header) RenderCtx(ctx context.Context) render.HTML {
+    if sess, ok := auth.SessionFrom(ctx); ok {
+        return AuthedHeader(sess)
+    }
+    return AnonHeader()
+}
+```
+
+Pair with `SessionMiddleware` upstream so the policy sees the loaded
+user. JSON/API routes still use `RequireSession` middleware as before
+— policies are for the SSR page layer specifically.
 
 ## Auth entities are private by default
 

@@ -125,7 +125,7 @@ func TestGroupScreenHonorsExplicitLayoutOverride(t *testing.T) {
 	r := app.NewRouter()
 	r.ScreenGroup(g)
 
-	out, err := r.Render("/shop/checkout")
+	out, err := r.RenderRaw("/shop/checkout")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestNestedGroupRendersNestedLayoutShells(t *testing.T) {
 	r := app.NewRouter()
 	r.ScreenGroup(parent)
 
-	out, err := r.Render("/settings/advanced/security")
+	out, err := r.RenderRaw("/settings/advanced/security")
 	if err != nil {
 		t.Fatal(err)
 	}

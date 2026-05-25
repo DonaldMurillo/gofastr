@@ -1,6 +1,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -11,6 +12,41 @@ import (
 type Component interface {
 	Render() render.HTML
 }
+
+// ContextComponent is the optional ctx-aware render interface.
+// Implementations receive the request context and can branch on
+// auth state, locale, or any other request-scoped value that isn't
+// loaded into struct fields by Load(ctx).
+//
+// The framework prefers RenderCtx over Render when both exist.
+// ContextComponent intentionally does NOT embed Component — a type
+// that only wants the ctx-aware shape can satisfy Component via the
+// ContextOnly{} embed below, avoiding the
+// `func (c) Render() HTML { return c.RenderCtx(context.Background()) }`
+// boilerplate.
+type ContextComponent interface {
+	RenderCtx(ctx context.Context) render.HTML
+}
+
+// ContextOnly is a zero-byte embed helper for components that only
+// want to implement RenderCtx. Embedding it provides a Render()
+// satisfying the Component interface; that Render is never called
+// when the type also implements RenderCtx (the framework dispatch
+// prefers RenderCtx and skips Render in that case).
+//
+//	type Home struct {
+//	    component.ContextOnly
+//	    // ... your fields
+//	}
+//	func (h *Home) RenderCtx(ctx context.Context) render.HTML { ... }
+//
+// No need to write a Render() stub on Home — ContextOnly provides one.
+type ContextOnly struct{}
+
+// Render satisfies the Component interface. In practice it is never
+// called: SafeRenderCtx and Screen.RenderCtx detect RenderCtx via a
+// structural type check and route to it directly.
+func (ContextOnly) Render() render.HTML { return "" }
 
 // InteractiveComponent extends Component with event handling.
 // Components that implement this interface can respond to user events.
@@ -87,15 +123,20 @@ type ErrorBoundary interface {
 // it returns a fallback error UI. Components implementing ErrorBoundary
 // get a custom fallback; others get a generic red-bordered box.
 func SafeRender(c Component) (html render.HTML, err error) {
+	return SafeRenderCtx(context.Background(), c)
+}
+
+// SafeRenderCtx is the context-aware variant of SafeRender. If c
+// implements ContextComponent its RenderCtx(ctx) is called; otherwise
+// Render() is called. Panic recovery and ErrorBoundary handling are
+// identical to SafeRender.
+func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("component render panic: %v", r)
 			if eb, ok := c.(ErrorBoundary); ok {
 				html = eb.RenderError(err)
 			} else {
-				// Class name only — strict-CSP host stylesheets ship
-				// .fui-render-error styling; apps without it still see
-				// a legible inline-flow error message.
 				html = render.HTML(fmt.Sprintf(
 					`<div class="fui-render-error" role="alert"><strong>Error:</strong> %s</div>`,
 					err.Error(),
@@ -103,7 +144,11 @@ func SafeRender(c Component) (html render.HTML, err error) {
 			}
 		}
 	}()
-	html = c.Render()
+	if cc, ok := c.(ContextComponent); ok {
+		html = cc.RenderCtx(ctx)
+	} else {
+		html = c.Render()
+	}
 	return
 }
 

@@ -104,7 +104,8 @@ func openPGForBattery(t *testing.T) *sql.DB {
 		t.Fatalf("create users: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE sessions (
-		token TEXT PRIMARY KEY,
+		id TEXT PRIMARY KEY,
+		token TEXT NOT NULL UNIQUE,
 		user_id TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL,
 		expires_at TIMESTAMPTZ NOT NULL,
@@ -241,8 +242,10 @@ func TestEntitySessionStore_Postgres_ExpiryAndCleanup(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	expired := now.Add(-time.Hour)
-	q := store.qTable("INSERT INTO %s (token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)")
-	if _, err := db.ExecContext(ctx, q, tok, "user-expired", now, expired); err != nil {
+	// Mirror EntitySessionStore.Create — Postgres requires the id PK to
+	// be supplied since AutoUUID columns are NOT NULL with no DEFAULT.
+	q := store.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
+	if _, err := db.ExecContext(ctx, q, generateUserID(), tok, "user-expired", now, expired); err != nil {
 		t.Fatalf("insert expired: %v", err)
 	}
 

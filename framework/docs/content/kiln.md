@@ -88,6 +88,36 @@ Kiln is bigger than a single doc page; the layout under `kiln/`:
 - `kiln/agent/acp` — ACP server exposing kiln tools.
 - `kiln/integration` — end-to-end tests against a real subprocess agent.
 
+## Forms in the kiln world
+
+Kiln-rendered `form` nodes default `enctype="application/json"`
+because they target the world's CRUD endpoints (which decode JSON, not
+urlencoded). This is the **opposite** of the framework default — bare
+`<form>` elements in hand-written HTML submit browser-native, kiln
+forms intercept.
+
+To opt out per-form via the world API, set `enctype` explicitly:
+
+```yaml
+- kind: form
+  props:
+    method: POST
+    action: /notes
+    enctype: application/x-www-form-urlencoded  # browser-native submit
+```
+
+For RPC-island form submission (no navigation, JSON response signal),
+use `data-fui-rpc` via `attrs`:
+
+```yaml
+- kind: form
+  props:
+    action: /api/notes
+    attrs:
+      data-fui-rpc: "/api/notes"
+      data-fui-rpc-signal: notes-state
+```
+
 ## Common mistakes
 
 - **Treating Kiln as a runtime.** It's a build-time tool. Once you

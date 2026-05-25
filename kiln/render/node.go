@@ -255,10 +255,24 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if method == "" {
 			method = "POST"
 		}
+		// Kiln-rendered forms target the world's CRUD endpoints, which
+		// accept JSON. Default enctype to application/json so the
+		// runtime's safe-by-default form interceptor knows to JSON-wrap
+		// the body instead of letting the browser submit it as
+		// urlencoded (which the CRUD handlers don't decode).
+		attrs := extraAttrs(props, "id", "class", "method", "action")
+		if _, set := attrs["enctype"]; !set {
+			if propString(props, "enctype") == "" {
+				if attrs == nil {
+					attrs = map[string]string{}
+				}
+				attrs["enctype"] = "application/json"
+			}
+		}
 		return html.Form(html.FormConfig{
 			Method: method, Action: propString(props, "action"),
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "method", "action"),
+			Attrs: attrs,
 		}, children...)
 	case "select":
 		// Options expected as children (kind: "option" with value/text props).

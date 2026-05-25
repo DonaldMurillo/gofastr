@@ -892,6 +892,43 @@ func TestE2E_TagInput_EnterCommitsChip(t *testing.T) {
 	}
 }
 
+// TestE2E_TagInput_LegitSubmitNotEatenAfterEnter pins the bug found in
+// adversarial review: the swallow-on-Enter shouldn't eat a subsequent
+// legitimate form submission. Type a tag, press Enter (chip commits,
+// swallower armed), wait past the same-tick window, then dispatch a
+// real submit on the form — it must reach handlers.
+func TestE2E_TagInput_LegitSubmitNotEatenAfterEnter(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var submitReached bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/taginput"),
+		pageReady(),
+		chromedp.Focus(`input[data-fui-tag-input]`),
+		chromedp.SendKeys(`input[data-fui-tag-input]`, "first"),
+		chromedp.KeyEvent(kb.Enter),
+		chromedp.Sleep(200*1e6), // past the same-tick swallow window
+		// Dispatch a real, cancelable submit on the enclosing form and
+		// check that no handler called preventDefault (i.e. the
+		// dispatchEvent return value is true → submit proceeded).
+		chromedp.Evaluate(`
+		  (function(){
+		    const f = document.querySelector('input[data-fui-tag-input]').form;
+		    if (!f) return false;
+		    const ev = new Event('submit', {bubbles:true, cancelable:true});
+		    const proceeded = f.dispatchEvent(ev);
+		    return proceeded;
+		  })()
+		`, &submitReached),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !submitReached {
+		t.Error("legit submit after Enter-in-tag-input was swallowed; the same-tick guard should have expired")
+	}
+}
+
 func TestE2E_TagInput_BackspaceRemovesLast(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)

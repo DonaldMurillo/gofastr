@@ -1,5 +1,33 @@
 # Agent Notes
 
+## 2026-05-24 - framework DX round-2 + adversarial review fixes
+
+- **Scope:** `core-ui/component/component.go`, `core-ui/app/{app,policy,screen,screen_group,router}.go`, new `core-ui/app/decide` subpkg, `core-ui/runtime/runtime.js`, `core-ui/runtime/src/taginput.js`, `core/router/router.go`, `framework/{entity/declaration,uihost/uihost}.go`, `battery/auth/{manager,policy,form_decode,core}.go`, `kiln/render/node.go`, framework docs.
+
+- **Form intercept default INVERTED (BREAKING).** Default-enctype and `multipart/form-data` forms now submit browser-native (no fetch wrapping, no SPA nav). Only `enctype="application/json"` or `data-fui-spa` opts INTO the runtime interceptor. Auth flows (`<form action="/auth/login" method=POST>`) now work without `data-fui-native` because they're not intercepted at all. CRUD POSTs that previously expected JSON must add `enctype="application/json"` explicitly. **Kiln-rendered `form` nodes default `enctype=application/json` so kiln+CRUD keeps working.**
+
+- **SSR auth via policy chain.** `core-ui/app` adds `Policy { Decide(ctx) Decision }`, `Decision` (Allow/Redirect/RenderAlt/Block), `RenderResult`, `Screen.WithPolicy`, `NewScreenGroup(prefix, layout, policies...)`, `SubGroup(prefix, layout, policies...)`. Construct decisions via the `decide` subpackage: `decide.Allow()`, `decide.Redirect(url)`, `decide.RenderAlt(factory)`, `decide.Block(status, msg)` — subpkg exists so call sites don't shadow common variable names. `battery/auth` adds `SessionPolicy(opts...)`, `RolePolicy(roles []string, opts...)`, `SessionFrom(ctx) (User, bool)`, `Roles(...)` ergonomic-list helper. `RenderAlt(factory)` MUST take a factory closure that returns a fresh component per request — singleton would race across users.
+
+- **ContextComponent + ContextOnly.** New `component.ContextComponent { RenderCtx(ctx) HTML }` interface (does NOT embed Component). For ctx-only screens, embed `component.ContextOnly{}` to satisfy `Component` with a no-op `Render` — the framework prefers `RenderCtx` and never calls the stub. Doc example in `framework/docs/content/ui-getting-started.md`.
+
+- **`owner_field` in entity JSON declarations.** Mirrors `EntityConfig.OwnerField`. Per-user CRUD scoping works in JSON-declared entities too.
+
+- **DevMode mints a random JWT secret** when `JWTSecret == ""` (32 cryptographically-random bytes via `crypto/rand`, base64-encoded, logged WARN). Sessions invalidate on restart; set `JWTSecret` for stability.
+
+- **Middleware type unified.** `core/router.Middleware` is now a type alias for `core/middleware.Middleware` — no more anonymous-func cast when feeding `battery/auth.SessionMiddleware(mgr)` into `Router.Use(...)`. Note: the `core/middleware/tracing_test.go` test moved to `package middleware_test` to break a test-only cycle the alias introduces.
+
+- **Partial-redirect dispatch via header, not 303.** `handlePartialPage` on `DecisionRedirect` returns 200 + `X-Gofastr-Location` + empty body. The runtime fetcher in `core-ui/runtime/runtime.js` checks for that header on the partial response and `loadPage(redirectTo)` itself — replacing `pushState` with the redirect destination. A 303 here would be silently auto-followed by `redirect:'follow'` and the header would never reach JS.
+
+- **SECURITY: `/auth/register` no longer honors client-supplied `roles`.** Was an anonymous privilege-escalation — anyone POSTing `roles=admin` (form OR JSON) became admin. Now roles are server-assigned (`[]string{"user"}` default). Tests in `battery/auth/register_roles_security_test.go` pin this.
+
+- **TagInput Enter race.** Chromium dispatches the implicit form submit despite a bubble-phase `preventDefault` on a single-input form. Fix is a same-tick guard: keydown handler stamps `performance.now()` into `__fuiTagInputLastEnter`; a document-level capture-phase submit listener swallows submits within 50ms of that stamp. Outside the window, legit submits (Save button click) proceed normally.
+
+- **Router.RenderRaw + App.RenderScreenRaw.** Renamed from `Router.Render` / `App.RenderScreen` to call out that they bypass the Policy chain. Use `App.RenderPageResult` for HTTP-serving paths; `RenderRaw` is for SSG/internal.
+
+- **Mutex copy fixed.** `core-ui/app.Screen` contains a `sync.Mutex`; the prior `tmp := *screen` in `renderComponentInScreen` triggered `go vet` and was a real corruption risk. Replaced with the free function `wrapByScreenType(t, title, content)` reused from `Screen.RenderCtx`.
+
+- **Next time:** when designing a Decision-shaped option API, factory closures (not singleton instances) are the safe default — anything the framework will Inject/Load/SetParams on must be per-request. When building a runtime opt-in mechanism that affects browser-native behavior, ship the inverse migration audit checklist alongside (grep targets, common breakage shapes, expected error symptoms) — for round 2 those are documented in this file and in `core-ui/ARCHITECTURE.md`'s Forms section.
+
 ## 2026-05-22 - worktree-isolation-mode
 
 - Scope: `framework/isolation`, `framework.App.Start`, `cmd/gofastr dev`, generated app entrypoints, `docs/isolation.md`
