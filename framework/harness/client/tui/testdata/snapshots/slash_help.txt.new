@@ -1,0 +1,43 @@
+# snapshot: slash_help
+# (lines below are the rendered frame, ANSI stripped)
+#
+ gofastr harness  •  default  •  zai:glm-5.1  •  web: http://localhost:8421
+    → /help
+
+
+
+
+
+                    ╭─ Help ───────────────────────────────────────────────────────────────────────╮
+                    │                                                                              │
+                    │ Built-in slash commands:                                                     │
+                    │                                                                              │
+                    │   /help           List all commands grouped by namespace.                    │
+                    │   /clear          Clear scrollback (does not affect log).                    │
+                    │   /compact        Trigger history compaction now.                            │
+                    │   /cost           Detailed cost breakdown for the current session.           │
+                    │   /model <model-id> Set the active model.                                    │
+                    │   /profile        Show the active profile + skills/MCP/tools loaded.         │
+                    │   /quit           Exit the harness (two-step confirm).                       │
+                    │   /web            Show the --web URL (and copy to clipboard).                │
+                    │   /health         Status of every subsystem.                                 │
+                    │   /tasks          Show the agent's current TaskList plan in a modal.         │
+                    │                                                                              │
+                    │ Reserved namespaces (plugin-claimable):                                      │
+                    │   skills, agents, profiles, sessions, mcp, permissions                       │
+                    │                                                                              │
+                    │ Keyboard shortcuts:                                                          │
+                    │   Tab          slash-command completion                                      │
+                    │   Ctrl-P / N   input history                                                 │
+                    │   Ctrl-O       expand last truncated tool result                             │
+                    │   PgUp/Down    scroll scrollback                                             │
+                    │   Ctrl-C × 2   exit                                                          │
+                    │                                                                              │
+                    │ Press Esc or Enter to close                                                  │
+                    ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+    ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ >                                                                                                                │
+    ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

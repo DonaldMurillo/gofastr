@@ -1,3 +1,8 @@
+# Harness e2e credentials (never commit). The file `env` here is
+# parsed by framework/harness/e2e_real_test.go and the harness's
+# loadSecretsFromRepo helper.
+.harness-secrets/
+
 # Pi internal
 .pi/
 

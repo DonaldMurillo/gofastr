@@ -1,0 +1,43 @@
+# snapshot: permission_prompt
+# (lines below are the rendered frame, ANSI stripped)
+#
+ gofastr harness  •  default  •  zai:glm-5.1  •  web: http://localhost:8421
+    → delete the build dir
+
+    [permission] Bash requested — {"cmd":"rm -rf dist/"}
+                 y = allow once, a = allow session, t = allow tool, enter/n = deny
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ permit? [y/a/t/N]                                                                                                │
+    ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

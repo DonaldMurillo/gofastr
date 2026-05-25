@@ -1,0 +1,43 @@
+# snapshot: long_tool_result_truncates
+# (lines below are the rendered frame, ANSI stripped)
+#
+ gofastr harness  •  default  •  zai:glm-5.1  •  web: http://localhost:8421
+    → list everything
+
+    ● Bash({"cmd":"ls -1 /usr/lib"})
+      ⎿ file-01.so
+        file-02.so
+        file-03.so
+        file-04.so
+        … (+16 lines, Ctrl-O to expand)
+
+    ● Bash({"cmd":"pwd"})
+      ⎿ /Users/dom/programming/gofastr
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ >                                                                                                                │
+    ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -1,0 +1,43 @@
+# snapshot: ctrl_o_expand
+# (lines below are the rendered frame, ANSI stripped)
+#
+ gofastr harness  •  default  •  zai:glm-5.1  •  web: http://localhost:8421
+    → list
+
+    ● Bash({"cmd":"ls /usr/lib"})
+      ⎿ file-01.so
+        file-02.so
+        file-03.so
+        file-04.so
+        file-05.so
+        file-06.so
+        file-07.so
+        file-08.so
+        file-09.so
+        file-10.so
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ >                                                                                                                │
+    ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

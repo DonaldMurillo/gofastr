@@ -1,0 +1,43 @@
+# snapshot: multiline_tool_result
+# (lines below are the rendered frame, ANSI stripped)
+#
+ gofastr harness  •  default  •  zai:glm-5.1  •  web: http://localhost:8421
+    → git log
+
+    ● Bash({"cmd":"git log --all --oneline --graph -10"})
+      ⎿ * 3066b37 docs(roadmap,ui,entities): capture framework DX feedback
+        | *   f1e9bd6 On feature/i18n: deep-auto-attempt-2
+        |/|\
+        | | * d14a38c untracked files on feature/i18n: …
+        … (+2 lines, Ctrl-O to expand)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ >                                                                                                                │
+    ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

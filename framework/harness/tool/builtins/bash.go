@@ -1,0 +1,193 @@
+package builtins
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/harness/tool"
+)
+
+// bashImpl runs a shell command via /bin/sh -c. Defaults:
+//
+//   - 2-minute timeout (configurable per-call up to 10 minutes)
+//   - 1 MiB combined stdout+stderr cap
+//   - Default-blocked credential-exfil commands (security, secret-tool,
+//     keyctl, kwalletcli) — defense in depth alongside the permission
+//     middleware. The blocklist runs before any sandbox.
+//
+// Sandbox integration: pluggable via SandboxFn. When non-nil, it
+// wraps the *exec.Cmd before Run. Defaults to identity on platforms
+// without sandbox support.
+type bashImpl struct {
+	// SandboxFn wraps the command for OS-level sandboxing. Engine
+	// wires `sandbox-exec` on macOS / `bwrap` on Linux when
+	// available; nil = no sandbox.
+	SandboxFn func(*exec.Cmd) *exec.Cmd
+
+	// ExtraBlocklist adds command names to the default blocklist.
+	ExtraBlocklist []string
+}
+
+// DefaultBashBlocklist names the commands the Bash tool refuses to
+// run by default. The threat model rationale is in
+// docs/harness-architecture.md § Threat model → Standing rules.
+var DefaultBashBlocklist = []string{
+	"security",     // macOS keychain CLI
+	"secret-tool",  // Linux libsecret CLI
+	"keyctl",       // Linux kernel keyring
+	"kwalletcli",   // KDE wallet CLI
+	"systemd-ask-password",
+}
+
+func (bashImpl) Name() string        { return "Bash" }
+func (bashImpl) Description() string { return "Execute a shell command. Output is captured and returned." }
+func (bashImpl) Mutating() bool      { return true }
+func (bashImpl) InputSchema() []byte {
+	return []byte(`{
+  "type": "object",
+  "properties": {
+    "cmd":         {"type": "string", "description": "Shell command to run via /bin/sh -c"},
+    "cwd":         {"type": "string", "description": "Working directory (default: harness CWD)"},
+    "timeout_ms":  {"type": "integer", "description": "Timeout in milliseconds (default 120000; max 600000)"},
+    "env":         {"type": "object", "description": "Additional environment variables", "additionalProperties": {"type": "string"}}
+  },
+  "required": ["cmd"],
+  "additionalProperties": false
+}`)
+}
+
+type bashArgs struct {
+	Cmd       string            `json:"cmd"`
+	Cwd       string            `json:"cwd,omitempty"`
+	TimeoutMs int               `json:"timeout_ms,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+}
+
+func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSink) (*tool.ToolResult, error) {
+	var args bashArgs
+	if err := json.Unmarshal(call.Input, &args); err != nil {
+		return nil, fmt.Errorf("Bash: invalid arguments: %w", err)
+	}
+	if args.Cmd == "" {
+		return nil, errors.New("Bash: cmd is required")
+	}
+
+	// Blocklist check. Look at the leading binary name (before any
+	// shell metacharacters); the user is welcome to pass arguments
+	// to non-blocked commands.
+	leading := leadingCommand(args.Cmd)
+	for _, banned := range append(DefaultBashBlocklist, b.ExtraBlocklist...) {
+		if leading == banned {
+			return errorResult(fmt.Sprintf(
+				"Bash: command %q is blocked by default. Override at the permission preset if intentional.",
+				banned,
+			)), nil
+		}
+	}
+
+	timeout := time.Duration(args.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	if timeout > 10*time.Minute {
+		timeout = 10 * time.Minute
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "/bin/sh", "-c", args.Cmd)
+	if args.Cwd != "" {
+		cmd.Dir = args.Cwd
+	}
+	// Merge supplemental env onto inherited.
+	if len(args.Env) > 0 {
+		cmd.Env = append(cmd.Environ(), envSlice(args.Env)...)
+	}
+	if b.SandboxFn != nil {
+		cmd = b.SandboxFn(cmd)
+	}
+
+	var out bytes.Buffer
+	cmd.Stdout = &cappedWriter{w: &out, max: 1 << 20}
+	cmd.Stderr = cmd.Stdout
+
+	start := time.Now()
+	err := cmd.Run()
+	dur := time.Since(start)
+
+	if cmdCtx.Err() == context.DeadlineExceeded {
+		return errorResult(fmt.Sprintf(
+			"Bash: command exceeded timeout %s.\nPartial output:\n%s",
+			timeout, out.String(),
+		)), nil
+	}
+	if ctx.Err() != nil {
+		// Caller-cancelled (e.g. CancelTurn mid-command). Per the
+		// doc's BashCancelledMidCommand error, surface a structured
+		// message about possible side effects.
+		return errorResult(fmt.Sprintf(
+			"Bash: cancelled mid-command after %s. The command may have already modified files.\nPartial output:\n%s",
+			dur, out.String(),
+		)), nil
+	}
+	if err != nil {
+		exitMsg := err.Error()
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitMsg = fmt.Sprintf("exit code %d", exitErr.ExitCode())
+		}
+		return errorResult(fmt.Sprintf(
+			"Bash: %s\nOutput:\n%s", exitMsg, out.String(),
+		)), nil
+	}
+	return textResult(out.String()), nil
+}
+
+func leadingCommand(cmd string) string {
+	// Strip leading shell pipelines / subshells loosely; just take
+	// the first whitespace-delimited token of the trimmed string.
+	trimmed := strings.TrimLeft(cmd, " \t\n;|&(")
+	for i, r := range trimmed {
+		if r == ' ' || r == '\t' || r == '\n' {
+			return trimmed[:i]
+		}
+	}
+	return trimmed
+}
+
+func envSlice(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k, v := range m {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
+// cappedWriter discards writes after max bytes.
+type cappedWriter struct {
+	w   interface{ Write([]byte) (int, error) }
+	max int
+	n   int
+}
+
+func (c *cappedWriter) Write(p []byte) (int, error) {
+	if c.n >= c.max {
+		return len(p), nil // pretend we wrote (don't error the process)
+	}
+	remaining := c.max - c.n
+	if len(p) > remaining {
+		_, _ = c.w.Write(p[:remaining])
+		_, _ = c.w.Write([]byte("\n[output truncated]\n"))
+		c.n = c.max
+		return len(p), nil
+	}
+	n, err := c.w.Write(p)
+	c.n += n
+	return n, err
+}

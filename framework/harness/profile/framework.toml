@@ -1,0 +1,24 @@
+schema_version = 1
+name = "framework"
+default_model = "openrouter:anthropic/claude-sonnet-4"
+
+prompt_header = """
+You are working on the GoFastr framework. Read core-ui/ARCHITECTURE.md
+and framework/ARCHITECTURE.md before touching their domains. The hard
+rules in CLAUDE.md are still load-bearing for this profile during the
+AGENTS.md transition.
+"""
+
+context_sources = ["AGENTS.md", "CLAUDE.md"]
+
+skill_packs = ["builtin", "gofastr-framework"]
+
+mcp_servers = [
+  { name = "gofastr-introspection", cmd = "gofastr", args = ["mcp"], discovery = "lazy" },
+]
+
+tool_packs = ["fs", "search", "git", "web", "tasks", "agents"]
+
+permissions = "preset/framework.toml"
+
+allow_project_hooks = false

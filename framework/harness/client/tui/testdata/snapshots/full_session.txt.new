@@ -1,0 +1,43 @@
+# snapshot: full_session
+# (lines below are the rendered frame, ANSI stripped)
+#
+ gofastr harness  •  default  •  zai:glm-5.1  •  $0.0093  •  web: http://localhost:8421                                 
+    → explain the changes on this worktree
+    
+    … cogitated for 0s
+    
+    ● Bash({"cmd":"git status"})
+      ⎿ On branch feature/i18n
+        Changes not staged for commit:
+          (use "git add <file>..." to update what will be committed)
+        
+        … (+1 line, Ctrl-O to expand)
+    
+    ← The worktree adds a new permission UI and fixes tool-result wrapping.
+    
+    Highlights
+    
+    - Multi-line results are now split per source line
+    - `[permission]` prompts route to `AnswerPermission`
+    - Glyphs use text-presentation Unicode (no emoji)
+    
+    ── ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    
+    → now stash any local changes
+    
+    … Stash is mutating; let me request permission first.
+    
+    [permission] Bash requested — {"cmd":"git stash push -m 'snapshot'"}
+                 y = allow once, a = allow session, t = allow tool, enter/n = deny
+
+
+
+
+
+
+
+
+
+    ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ permit? [y/a/t/N]                                                                                                │
+    ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
