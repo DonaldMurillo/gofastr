@@ -82,6 +82,15 @@ type Engine struct {
 	// rules persist for the EngineRun only.
 	sessionRules map[ids.SessionID][]Rule
 
+	// persistentRules survive harness restarts. Loaded from
+	// PersistencePath on boot; appended to (and re-saved) when the
+	// user picks "Allow always" in a permission prompt.
+	persistentRules []Rule
+
+	// PersistencePath is the JSON file on disk that backs
+	// persistentRules. Empty = in-memory only (tests).
+	PersistencePath string
+
 	// QuietMode pre-shipped preset; default ON. When ON, common
 	// read-only argv shapes (git status, ls, grep, find, …) are
 	// allowed without prompting.
@@ -111,13 +120,19 @@ func (e *Engine) Evaluate(session ids.SessionID, toolName, argv string, mutating
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	// 1) Session-scoped rules (most specific).
+	// 1) Session-scoped rules (most specific — granted this run).
 	for _, r := range e.sessionRules[session] {
 		if r.Match(toolName, argv) {
 			return r.Action
 		}
 	}
-	// 2) Profile-level rules.
+	// 2) Persistent rules (from "Allow always" — survive restart).
+	for _, r := range e.persistentRules {
+		if r.Match(toolName, argv) {
+			return r.Action
+		}
+	}
+	// 3) Profile-level rules.
 	for _, r := range e.profileRules {
 		if r.Match(toolName, argv) {
 			return r.Action

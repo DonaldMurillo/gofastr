@@ -113,12 +113,25 @@ func PermissionMiddleware(
 			if !ans.Allow {
 				return denied(call, "denied by user")
 			}
-			// Persist session-scoped rule if user picked a wider scope.
-			if rule, ok := permission.AnswerToRule(call.Name, argv, control.AnswerPermission{
+			// Apply scope: session-rule for one-session scopes,
+			// persistent-rule for "Allow always".
+			rule, persist, ok := permission.AnswerToRuleWithPersist(call.Name, argv, control.AnswerPermission{
 				Scope:    ans.Scope,
 				Decision: control.DecisionAllow,
-			}); ok {
-				eng.AddSessionRule(session, rule)
+			})
+			if ok {
+				if persist {
+					// Failure to persist is logged (Error event) but
+					// doesn't block the call — user already approved.
+					if err := eng.AddPersistentRule(rule); err != nil {
+						_, _ = bus.Publish(control.Error{
+							Reason:  "PermissionPersistFailed",
+							Message: err.Error(),
+						}, origin)
+					}
+				} else {
+					eng.AddSessionRule(session, rule)
+				}
 			}
 			return next(ctx, call, sink)
 		}

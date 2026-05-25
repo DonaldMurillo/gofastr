@@ -151,8 +151,18 @@ func New(cfg Config) (*Harness, error) {
 	// (5) Permission engine. v0.1 ships an empty profile-level rule
 	// list; permissions = "preset/<name>.toml" referenced in the
 	// profile is not loaded yet (separate file format on the
-	// roadmap).
+	// roadmap). PersistencePath enables the "Allow always" flow —
+	// rules survive harness restarts via
+	// $XDG_CONFIG/gofastr/harness/permissions.json.
 	h.Perms = permission.New(nil)
+	h.Perms.PersistencePath = filepath.Join(cfg.XDGConfig, "permissions.json")
+	if err := h.Perms.LoadPersistentRules(); err != nil {
+		// Non-fatal: corrupt or unreadable file means the user re-grants
+		// permissions this session. Log + continue.
+		if cfg.Logger != nil {
+			cfg.Logger.Warn("permission persistence: load failed", "err", err)
+		}
+	}
 
 	// (6) Credstore + credential helper.
 	credPath := filepath.Join(cfg.XDGConfig, "creds.enc")

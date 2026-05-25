@@ -223,6 +223,7 @@ func renderChat(host, sessionID, token string) render.HTML {
 				render.Tag("button", map[string]string{"id": "perm-yes", "class": "btn btn-ok"}, render.Text("Allow once")),
 				render.Tag("button", map[string]string{"id": "perm-tool-btn", "class": "btn"}, render.Text("Allow tool")),
 				render.Tag("button", map[string]string{"id": "perm-session", "class": "btn"}, render.Text("Allow session")),
+				render.Tag("button", map[string]string{"id": "perm-always", "class": "btn btn-always"}, render.Text("Allow always")),
 				render.Tag("button", map[string]string{"id": "perm-no", "class": "btn btn-deny"}, render.Text("Deny")),
 			),
 		),
@@ -493,6 +494,8 @@ button:active { transform: translateY(1px); }
 .btn-ok:hover { background: var(--ok); filter: brightness(1.1); }
 .btn-deny { background: var(--err); color: black; border-color: var(--err); }
 .btn-deny:hover { background: var(--err); filter: brightness(1.1); }
+.btn-always { background: var(--accent); color: black; border-color: var(--accent); }
+.btn-always:hover { background: var(--accent); filter: brightness(1.1); }
 `
 
 const chatJS = `
@@ -752,6 +755,7 @@ const chatJS = `
   document.getElementById('perm-yes').addEventListener('click', () => answerPermission('allow', 'once'));
   document.getElementById('perm-tool-btn').addEventListener('click', () => answerPermission('allow', 'tool'));
   document.getElementById('perm-session').addEventListener('click', () => answerPermission('allow', 'session'));
+  document.getElementById('perm-always').addEventListener('click', () => answerPermission('allow', 'always'));
   document.getElementById('perm-no').addEventListener('click', () => answerPermission('deny', 'once'));
   permModal.addEventListener('click', (e) => { if (e.target === permModal) closePermissionModal(); });
 

@@ -148,17 +148,20 @@ func (e *Engine) RunTurn(ctx context.Context, originator ids.ClientID, input []c
 		}
 
 		// Cost accounting: emit CostIncremented if the provider
-		// reported usage. The actual USD math depends on Pricing in
-		// the model catalog; for now emit the raw usage and zero USD
-		// — a cost-attribution middleware can subscribe and refine.
+		// reported usage. USD is computed from the model's static
+		// pricing table when available, else 0 (unknown provider).
 		if summary.Usage.InputTokens > 0 || summary.Usage.OutputTokens > 0 {
+			usd := 0.0
+			if p, ok := provider.PricingForModel(e.Provider.Name(), e.Model); ok {
+				usd = provider.USDForUsage(p, summary.Usage)
+			}
 			_, _ = e.Bus.Publish(control.CostIncremented{
 				Provider:     e.Provider.Name(),
 				Model:        e.Model,
 				InputTokens:  summary.Usage.InputTokens,
 				OutputTokens: summary.Usage.OutputTokens,
 				CacheTokens:  summary.Usage.CacheReadTokens,
-				USD:          0,
+				USD:          usd,
 			}, originator)
 		}
 

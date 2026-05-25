@@ -184,6 +184,25 @@ func TestRenderChatEscapesSession(t *testing.T) {
 	}
 }
 
+// TestChatHasAllowAlwaysButton: the permission modal must offer
+// "Allow always" so the user can persist the rule and stop seeing
+// the prompt across runs. Pinned with both the SSR scaffold and the
+// JS handler that posts scope=always.
+func TestChatHasAllowAlwaysButton(t *testing.T) {
+	out := string(renderChat("h", "sess_x", "tok"))
+	want := []string{
+		`id="perm-always"`,
+		`>Allow always</button>`,
+		`answerPermission('allow', 'always')`,
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Errorf("permission modal missing %q\n--- first 1.5kb ---\n%s",
+				w, truncateFor(out, 1500))
+		}
+	}
+}
+
 // TestChatHasTaskPanel TDD: the web client should render a task
 // panel populated by polling /v1/sessions/<id>/tasks. The panel
 // has a known container id and the JS that polls it.
