@@ -66,6 +66,15 @@ type VariantSet struct {
 	RejectAnimated bool
 }
 
+// MaxVariantsPerSet caps Variants to a sane bound. Attacker-controlled
+// variant lists are an obvious DoS vector for upload pipelines: each
+// variant is an encode + allocation; a 10k-variant request would
+// chew several CPU-seconds and ~10 GB of throughput. 64 variants
+// covers every realistic responsive-srcset scenario (5-10 widths ×
+// 3-5 formats); legitimate callers that need more should split into
+// multiple sets.
+const MaxVariantsPerSet = 64
+
 // VariantOutput is one fully rendered variant.
 type VariantOutput struct {
 	// Name is a storage-friendly identifier composed from BaseName,
@@ -115,6 +124,9 @@ type VariantResult struct {
 func (s VariantSet) Process(src *Image) (VariantResult, error) {
 	if src == nil {
 		return VariantResult{}, fmt.Errorf("image: VariantSet.Process: nil source")
+	}
+	if len(s.Variants) > MaxVariantsPerSet {
+		return VariantResult{}, fmt.Errorf("image: VariantSet: too many variants (%d > MaxVariantsPerSet=%d)", len(s.Variants), MaxVariantsPerSet)
 	}
 	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
 		return VariantResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
@@ -257,6 +269,9 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 	}
 	if sink == nil {
 		return StreamResult{}, fmt.Errorf("image: VariantSet.ProcessTo: nil sink")
+	}
+	if len(s.Variants) > MaxVariantsPerSet {
+		return StreamResult{}, fmt.Errorf("image: VariantSet: too many variants (%d > MaxVariantsPerSet=%d)", len(s.Variants), MaxVariantsPerSet)
 	}
 	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
 		return StreamResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")

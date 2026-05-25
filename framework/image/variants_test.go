@@ -8,6 +8,7 @@ import (
 	"image/gif"
 	"io"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -294,6 +295,25 @@ func TestVariantSetRejectAnimated(t *testing.T) {
 // Previously VariantSet pre-resized to 32 px (round-1) and BlurHash
 // auto-resized to 64 px (round-3) — two resize stages produced
 // different output. Drop the pre-resize; BlurHash owns the dwn-scale.
+// TestVariantSetRejectsExcessiveVariants pins the round-4 DoS defence:
+// an attacker-controlled set of 10k variants must error fast (before
+// any encoding) rather than chew CPU + RAM proportional to N.
+func TestVariantSetRejectsExcessiveVariants(t *testing.T) {
+	src := FromImage(gradient(64, 48), FormatPNG)
+	excess := make([]Variant, 100)
+	for i := range excess {
+		excess[i] = Variant{Width: 16, Format: FormatPNG, Suffix: strconv.Itoa(i)}
+	}
+	_, err := (VariantSet{Variants: excess}).Process(src)
+	if err == nil || !strings.Contains(err.Error(), "too many variants") {
+		t.Errorf("Process: expected too-many-variants error; got %v", err)
+	}
+	_, err = (VariantSet{Variants: excess}).ProcessTo(src, func(VariantHeader, io.Reader) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "too many variants") {
+		t.Errorf("ProcessTo: expected too-many-variants error; got %v", err)
+	}
+}
+
 func TestBlurHashParityAcrossPaths(t *testing.T) {
 	src := FromImage(gradient(256, 256), FormatPNG)
 	direct, err := src.BlurHash(4, 3)

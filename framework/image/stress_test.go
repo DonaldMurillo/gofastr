@@ -200,8 +200,10 @@ func TestBlurHashRanges(t *testing.T) {
 	}
 }
 
-// TestVariantSet100 sanity check.
-func TestVariantSet100(t *testing.T) {
+// TestVariantSetAtCap sanity-checks the MaxVariantsPerSet ceiling:
+// exactly MaxVariantsPerSet variants must succeed and produce that
+// many outputs.
+func TestVariantSetAtCap(t *testing.T) {
 	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 128, 128))
 	for y := 0; y < 128; y++ {
 		for x := 0; x < 128; x++ {
@@ -209,7 +211,7 @@ func TestVariantSet100(t *testing.T) {
 		}
 	}
 	img := FromImage(src, FormatPNG)
-	variants := make([]Variant, 100)
+	variants := make([]Variant, MaxVariantsPerSet)
 	for i := range variants {
 		variants[i] = Variant{Width: 16 + (i%50)*2, Format: FormatPNG}
 	}
@@ -223,10 +225,11 @@ func TestVariantSet100(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Variants) != 100 {
-		t.Errorf("got %d variants, want 100", len(res.Variants))
+	if len(res.Variants) != MaxVariantsPerSet {
+		t.Errorf("got %d variants, want %d", len(res.Variants), MaxVariantsPerSet)
 	}
-	t.Logf("100-variant alloc delta: %d bytes (avg %d/variant)", delta, delta/100)
+	t.Logf("%d-variant alloc delta: %d bytes (avg %d/variant)",
+		MaxVariantsPerSet, delta, delta/MaxVariantsPerSet)
 }
 
 // TestVariantQualityExtremes verifies negative/huge/NaN-cast quality.
