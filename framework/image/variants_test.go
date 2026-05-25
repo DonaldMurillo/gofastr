@@ -420,6 +420,31 @@ func TestProcessToAllowUpscaleOptsBackIn(t *testing.T) {
 	}
 }
 
+// TestOneShotReaderImplementsWriterTo asserts the sink reader exposes
+// io.WriterTo so io.Copy doesn't fall back to the 32 KB Read loop.
+// storage.Save uses io.Copy under the hood; without WriterTo every
+// variant pays an extra buffer-copy hop.
+func TestOneShotReaderImplementsWriterTo(t *testing.T) {
+	src := FromImage(gradient(64, 48), FormatPNG)
+	var checked bool
+	_, err := (VariantSet{
+		Variants: []Variant{{Width: 32, Format: FormatPNG, Suffix: "a"}},
+	}).ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		if _, ok := r.(io.WriterTo); !ok {
+			t.Errorf("sink reader does not implement io.WriterTo")
+		}
+		checked = true
+		_, _ = io.Copy(io.Discard, r)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ProcessTo: %v", err)
+	}
+	if !checked {
+		t.Fatal("sink not invoked")
+	}
+}
+
 func TestProcessToSinkReaderInvalidAfterReturn(t *testing.T) {
 	src := FromImage(gradient(64, 48), FormatPNG)
 	set := VariantSet{

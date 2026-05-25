@@ -295,6 +295,32 @@ func TestModulateGrayscaleLiteralZero(t *testing.T) {
 // NRGBA modulation should allocate a constant number of structures
 // (the result RGBA + helpers), not O(pixels). Before the fix it was
 // ~16k allocs on this input.
+// TestModulateYCbCrFastPathAllocsBounded pins the round-4 P2: JPEG
+// inputs decode to *image.YCbCr, which hit the slow per-pixel At()
+// path before the fix and allocated O(pixels) color.Color interface
+// values. The fast path converts via YCbCrToRGBA and writes Pix
+// directly.
+func TestModulateYCbCrFastPathAllocsBounded(t *testing.T) {
+	// Build a YCbCr image directly so we don't depend on a JPEG decode.
+	src := stdimage.NewYCbCr(stdimage.Rect(0, 0, 64, 64), stdimage.YCbCrSubsampleRatio420)
+	for i := range src.Y {
+		src.Y[i] = uint8(i)
+	}
+	for i := range src.Cb {
+		src.Cb[i] = 128
+	}
+	for i := range src.Cr {
+		src.Cr[i] = 128
+	}
+	wrapped := FromImage(src, FormatJPEG)
+	allocs := testing.AllocsPerRun(3, func() {
+		_ = wrapped.Modulate(Modulation{Brightness: Float64(1.4)})
+	})
+	if allocs > 50 {
+		t.Errorf("Modulate on 64×64 YCbCr allocated %v times; want O(1)", allocs)
+	}
+}
+
 func TestModulateNRGBAFastPathAllocsBounded(t *testing.T) {
 	src := stdimage.NewNRGBA(stdimage.Rect(0, 0, 128, 128))
 	for i := 0; i < len(src.Pix); i += 4 {

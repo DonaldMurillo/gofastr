@@ -65,6 +65,9 @@ func (i *Image) Modulate(m Modulation) *Image {
 	case *stdimage.RGBA:
 		modulateRGBA(dst, src, sb, b, s)
 		return i.derive(dst)
+	case *stdimage.YCbCr:
+		modulateYCbCr(dst, src, sb, b, s)
+		return i.derive(dst)
 	}
 
 	for y := 0; y < h; y++ {
@@ -104,6 +107,29 @@ func modulateNRGBA(dst *stdimage.RGBA, src *stdimage.NRGBA, sb stdimage.Rectangl
 				dst.Pix[di+2] = uint8(uint32(bl) * uint32(a) / 255)
 				dst.Pix[di+3] = a
 			}
+		}
+	}
+}
+
+// modulateYCbCr converts each pixel's YCbCr triple to RGB via the
+// stdlib's color.YCbCrToRGB, applies brightness/saturation, then
+// stores premultiplied RGBA. JPEG decode always returns *YCbCr, so
+// this is the fast path for "Decode → Modulate" on the most common
+// upload format.
+func modulateYCbCr(dst *stdimage.RGBA, src *stdimage.YCbCr, sb stdimage.Rectangle, brightness, saturation float64) {
+	w, h := sb.Dx(), sb.Dy()
+	for y := 0; y < h; y++ {
+		dRow := dst.PixOffset(0, y)
+		for x := 0; x < w; x++ {
+			yi := src.YOffset(sb.Min.X+x, sb.Min.Y+y)
+			ci := src.COffset(sb.Min.X+x, sb.Min.Y+y)
+			r, g, bl := color.YCbCrToRGB(src.Y[yi], src.Cb[ci], src.Cr[ci])
+			r, g, bl = applyModulation(r, g, bl, brightness, saturation)
+			di := dRow + x*4
+			dst.Pix[di+0] = r
+			dst.Pix[di+1] = g
+			dst.Pix[di+2] = bl
+			dst.Pix[di+3] = 0xFF // JPEG has no alpha; opaque.
 		}
 	}
 }

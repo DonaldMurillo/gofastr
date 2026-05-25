@@ -256,6 +256,22 @@ func (o *oneShotReader) Read(p []byte) (int, error) {
 	return o.r.Read(p)
 }
 
+// WriteTo delegates to the wrapped reader's WriteTo if it has one.
+// io.Copy queries this interface and uses it as the fast path; the
+// underlying *bytes.Buffer implements it natively. Without exposing
+// it here, io.Copy would fall back to a 32 KB Read loop — turning
+// storage.Save(ctx, key, r) (used by every backend in battery/storage)
+// into a needlessly slow path.
+func (o *oneShotReader) WriteTo(w io.Writer) (int64, error) {
+	if o.closed {
+		return 0, ErrReaderClosed
+	}
+	if wt, ok := o.r.(io.WriterTo); ok {
+		return wt.WriteTo(w)
+	}
+	return io.Copy(w, o.r)
+}
+
 func (o *oneShotReader) close() { o.closed = true }
 
 // ProcessTo is the streaming variant of Process. Only one variant
