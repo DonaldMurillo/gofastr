@@ -165,10 +165,21 @@ func groupPipelineSources(sources []PipelineSource) []pipelineGroup {
 	}
 	order := make([]string, 0, len(sources))
 	byType := make(map[string][]PipelineSource, len(sources))
+	type key struct {
+		url   string
+		width int
+		typ   string
+	}
+	seen := make(map[key]struct{}, len(sources))
 	for _, s := range sources {
 		if s.URL == "" || s.Width <= 0 || s.Type == "" {
 			continue
 		}
+		k := key{s.URL, s.Width, s.Type}
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
 		if _, ok := byType[s.Type]; !ok {
 			order = append(order, s.Type)
 		}

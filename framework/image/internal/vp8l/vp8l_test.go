@@ -162,12 +162,12 @@ func TestUniformImageShortCircuitsMultiPass(t *testing.T) {
 		src.Pix[i+3] = 255
 	}
 	var buf bytes.Buffer
-	lastEncodePasses = 0
+	lastEncodePasses.Store(0)
 	if err := Encode(&buf, src); err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	if lastEncodePasses != 1 {
-		t.Errorf("uniform image used %d passes, want 1", lastEncodePasses)
+	if p := lastEncodePasses.Load(); p != 1 {
+		t.Errorf("uniform image used %d passes, want 1", p)
 	}
 	// Sanity: still decodes correctly.
 	out, err := webp.Decode(&buf)
@@ -175,6 +175,26 @@ func TestUniformImageShortCircuitsMultiPass(t *testing.T) {
 		t.Fatalf("webp.Decode: %v", err)
 	}
 	assertPixelEqual(t, src, out)
+}
+
+// TestDistanceBoundary pins the exact boundary of the distance
+// prefix code: matchDist == (1<<20)-120 is the largest value that
+// still produces a distSym < 40 (in-range). One more (i.e.
+// (1<<20)-119) overflows. The findMatch cap must be set so distSym
+// stays in range at any reachable matchDist.
+func TestDistanceBoundary(t *testing.T) {
+	// (matchDist + 120) → distSym must be < 40.
+	for _, d := range []int{1, 100, 1000, (1 << 20) - 121, (1 << 20) - 120} {
+		sym, _ := lz77Symbol(uint32(d) + 120)
+		if sym >= 40 {
+			t.Errorf("matchDist=%d → distSym=%d, want <40", d, sym)
+		}
+	}
+	// One past the boundary must overflow — this confirms our cap is
+	// EXACTLY right (not off by one in either direction).
+	if sym, _ := lz77Symbol(uint32((1<<20)-119) + 120); sym < 40 {
+		t.Errorf("matchDist=(1<<20)-119 should overflow distSym; got %d", sym)
+	}
 }
 
 func TestEncodeLongDistanceBackrefDoesNotPanic(t *testing.T) {

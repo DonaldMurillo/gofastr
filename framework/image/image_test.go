@@ -4,10 +4,14 @@ import (
 	"bytes"
 	stdimage "image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
+	"math"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -204,6 +208,25 @@ func TestModulateGrayscaleLiteralZero(t *testing.T) {
 	}
 }
 
+// TestModulateNaNNoOps pins the behaviour for NaN inputs: NaN is
+// programmer error (typically int(NaN)=0 or float-from-broken-config)
+// and historically slipped through clamp8 to produce silent black.
+// The fix treats NaN as nil — return source unchanged.
+func TestModulateNaNNoOps(t *testing.T) {
+	src := gradient(8, 8)
+	out := FromImage(src, FormatPNG).Modulate(Modulation{
+		Brightness: Float64(math.NaN()),
+		Saturation: Float64(math.NaN()),
+	})
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			if !sameColor(out.GoImage().At(x, y), src.At(x, y)) {
+				t.Fatalf("NaN modulation changed pixel (%d,%d)", x, y)
+			}
+		}
+	}
+}
+
 func TestModulateGrayscale(t *testing.T) {
 	// Saturation=ε makes R=G=B for every pixel.
 	src := FromImage(gradient(4, 4), FormatPNG).
@@ -215,6 +238,22 @@ func TestModulateGrayscale(t *testing.T) {
 			if diff < -256 || diff > 256 || int(g)-int(b) < -256 || int(g)-int(b) > 256 {
 				t.Fatalf("expected near-grayscale at (%d,%d), got %d/%d/%d", x, y, r>>8, g>>8, b>>8)
 			}
+		}
+	}
+}
+
+func TestPNGRejectsInvalidCompressionLevel(t *testing.T) {
+	src := FromImage(gradient(8, 8), FormatPNG)
+	if _, err := src.PNG(PNGOptions{Compression: 99}).Bytes(); err == nil {
+		t.Error("expected error for invalid CompressionLevel 99")
+	}
+	if _, err := src.PNG(PNGOptions{Compression: -4}).Bytes(); err == nil {
+		t.Error("expected error for invalid CompressionLevel -4")
+	}
+	// Valid range is [-3, 0]; each must succeed.
+	for _, lvl := range []png.CompressionLevel{png.DefaultCompression, png.NoCompression, png.BestSpeed, png.BestCompression} {
+		if _, err := src.PNG(PNGOptions{Compression: lvl}).Bytes(); err != nil {
+			t.Errorf("level %d should succeed; got %v", lvl, err)
 		}
 	}
 }
@@ -321,6 +360,48 @@ func TestEncoderMemoizesTerminalCalls(t *testing.T) {
 	}
 }
 
+// TestEncoderBytesConcurrentSafe must pass under `go test -race`.
+// Before the sync.Once fix the cached/cachedErr/cachedSet fields
+// raced; under -race the test would fail. Calling Bytes() from N
+// goroutines must return byte-identical slices and invoke the codec
+// exactly once.
+func TestEncoderBytesConcurrentSafe(t *testing.T) {
+	src := FromImage(gradient(64, 48), FormatPNG)
+	var calls int32
+	enc := src.PNG()
+	inner := enc.encode
+	enc.encode = func(w io.Writer, img stdimage.Image) error {
+		atomic.AddInt32(&calls, 1)
+		return inner(w, img)
+	}
+
+	const N = 32
+	results := make([][]byte, N)
+	errs := make([]error, N)
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := 0; i < N; i++ {
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = enc.Bytes()
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	for i := 1; i < N; i++ {
+		if !bytes.Equal(results[0], results[i]) {
+			t.Fatalf("goroutine %d produced different bytes", i)
+		}
+	}
+	if c := atomic.LoadInt32(&calls); c != 1 {
+		t.Errorf("encode invoked %d times under concurrent Bytes(); want 1", c)
+	}
+}
+
 func TestEncoderDataURL(t *testing.T) {
 	src := FromImage(gradient(4, 4), FormatPNG)
 	durl, err := src.PNG().DataURL()
@@ -401,6 +482,21 @@ func TestBlurHashLengthIsCorrect(t *testing.T) {
 	}
 }
 
+// TestBlurHashRejectsTooFewSamples pins the rule: an image with fewer
+// pixels than the requested components × components is mathematically
+// degenerate (you can't fit M independent DCT components into N<M
+// samples). Today the encoder returns a base83-looking string anyway;
+// the fix surfaces an error.
+func TestBlurHashRejectsTooFewSamples(t *testing.T) {
+	src := FromImage(solidRGBA(2, 2, color.RGBA{R: 100, G: 50, B: 200, A: 255}), FormatPNG)
+	if _, err := src.BlurHash(4, 3); err == nil {
+		t.Error("expected error: 2*2 samples < 4*3 components")
+	}
+	if _, err := src.BlurHash(2, 2); err != nil {
+		t.Errorf("4 samples >= 2*2 components should succeed; got %v", err)
+	}
+}
+
 func TestBlurHashRejectsBadComponents(t *testing.T) {
 	src := FromImage(solidRGBA(4, 4, color.RGBA{0, 0, 0, 255}), FormatPNG)
 	if _, err := src.BlurHash(0, 4); err == nil {
@@ -414,6 +510,38 @@ func TestBlurHashRejectsBadComponents(t *testing.T) {
 // TestFromImageHasNoOrientation pins the documented quirk: an Image
 // constructed via FromImage carries orient=0, so AutoOrient is a no-
 // op. Callers wanting EXIF handling must go through Decode/Open.
+// TestAnimatedGIFSurfacesFrameCount asserts that a multi-frame GIF
+// surfaces FrameCount > 1 in Metadata so callers can detect the
+// "I lost N-1 frames" foot-gun instead of silently decoding only
+// the first.
+func TestAnimatedGIFSurfacesFrameCount(t *testing.T) {
+	// Build a synthetic 2-frame GIF.
+	var buf bytes.Buffer
+	g := &gif.GIF{LoopCount: 0}
+	for i := 0; i < 2; i++ {
+		f := stdimage.NewPaletted(stdimage.Rect(0, 0, 4, 4),
+			color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{uint8(i * 200), 0, 0, 255}})
+		for y := 0; y < 4; y++ {
+			for x := 0; x < 4; x++ {
+				f.SetColorIndex(x, y, 1)
+			}
+		}
+		g.Image = append(g.Image, f)
+		g.Delay = append(g.Delay, 10)
+	}
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatalf("EncodeAll: %v", err)
+	}
+	img, err := DecodeBytes(buf.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeBytes: %v", err)
+	}
+	md := img.Metadata()
+	if md.FrameCount != 2 {
+		t.Errorf("Metadata.FrameCount = %d, want 2", md.FrameCount)
+	}
+}
+
 func TestFromImageHasNoOrientation(t *testing.T) {
 	img := FromImage(gradient(8, 8), FormatJPEG)
 	if md := img.Metadata(); md.Orientation != 0 {

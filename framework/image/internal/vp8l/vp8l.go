@@ -17,6 +17,7 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"sync/atomic"
 )
 
 // Encode writes m as a VP8L WebP to w. Only m's bounds are honoured;
@@ -43,9 +44,10 @@ import (
 var candidatePredictorModes = []int{1, 2, 11, 12, 13}
 
 // lastEncodePasses records how many candidate-mode passes the most
-// recent Encode actually ran. Exported only for tests; not part of
-// the public API and not goroutine-safe.
-var lastEncodePasses int
+// recent Encode actually ran. Used only for tests; atomic so the
+// race detector doesn't fire when concurrent encodes update it.
+// Not part of the public API.
+var lastEncodePasses atomic.Int32
 
 // Encode writes m as a VP8L WebP to w. Only m's bounds are honoured;
 // callers needing other-than-RGBA must convert first (which the
@@ -85,7 +87,7 @@ func Encode(w io.Writer, m image.Image) error {
 			best = buf
 		}
 	}
-	lastEncodePasses = len(modes)
+	lastEncodePasses.Store(int32(len(modes)))
 	_, err := w.Write(best)
 	return err
 }
@@ -94,19 +96,49 @@ func Encode(w io.Writer, m image.Image) error {
 // 32-bit ARGB value. Used by Encode to short-circuit the multi-pass
 // candidate sweep — no predictor mode produces a smaller stream for
 // a uniform image, so running 5 of them is pure waste.
+//
+// Fast-path only the two concrete types the framework hands us in
+// practice (`*image.NRGBA` and `*image.RGBA`). For everything else
+// we return false up front rather than pay 16M interface-conversion
+// allocs on a 4K image; we'll just run all 5 modes and accept the
+// (rare) wasted work. The image package converts user images to
+// NRGBA before reaching vp8l.Encode, so this loses no real coverage.
 func isUniform(m image.Image, w, h int, bounds image.Rectangle) bool {
 	if w == 0 || h == 0 {
 		return true
 	}
-	r0, g0, b0, a0 := sampleRGBA8(m, bounds.Min.X, bounds.Min.Y)
-	first := packARGB(r0, g0, b0, a0)
+	switch src := m.(type) {
+	case *image.NRGBA:
+		return nrgbaUniform(src, w, h, bounds)
+	case *image.RGBA:
+		return rgbaUniform(src, w, h, bounds)
+	}
+	return false
+}
+
+func nrgbaUniform(m *image.NRGBA, w, h int, bounds image.Rectangle) bool {
+	off0 := m.PixOffset(bounds.Min.X, bounds.Min.Y)
+	r0, g0, b0, a0 := m.Pix[off0], m.Pix[off0+1], m.Pix[off0+2], m.Pix[off0+3]
 	for y := 0; y < h; y++ {
+		off := m.PixOffset(bounds.Min.X, bounds.Min.Y+y)
 		for x := 0; x < w; x++ {
-			if x == 0 && y == 0 {
-				continue
+			i := off + x*4
+			if m.Pix[i] != r0 || m.Pix[i+1] != g0 || m.Pix[i+2] != b0 || m.Pix[i+3] != a0 {
+				return false
 			}
-			r, g, b, a := sampleRGBA8(m, bounds.Min.X+x, bounds.Min.Y+y)
-			if packARGB(r, g, b, a) != first {
+		}
+	}
+	return true
+}
+
+func rgbaUniform(m *image.RGBA, w, h int, bounds image.Rectangle) bool {
+	off0 := m.PixOffset(bounds.Min.X, bounds.Min.Y)
+	r0, g0, b0, a0 := m.Pix[off0], m.Pix[off0+1], m.Pix[off0+2], m.Pix[off0+3]
+	for y := 0; y < h; y++ {
+		off := m.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		for x := 0; x < w; x++ {
+			i := off + x*4
+			if m.Pix[i] != r0 || m.Pix[i+1] != g0 || m.Pix[i+2] != b0 || m.Pix[i+3] != a0 {
 				return false
 			}
 		}

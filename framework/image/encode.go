@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"sync"
 
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
@@ -18,16 +19,22 @@ import (
 // chosen output format and any per-format options. Call Bytes, Write,
 // Base64, or DataURL to materialise the encoded image. Repeat calls
 // against the same Encoder reuse the first encode's bytes instead of
-// re-running the codec.
+// re-running the codec — even across multiple goroutines.
+//
+// Note: the cache is keyed by *Encoder identity, not by source pixels.
+// Mutating the underlying image.Image via Image.GoImage() after the
+// first terminal call will not invalidate the cache; the second call
+// returns the original encoded bytes. Build a fresh Encoder after
+// any direct pixel mutation.
 type Encoder struct {
 	img    *Image
 	format Format
 	encode func(io.Writer, stdimage.Image) error
 	err    error
 
+	once      sync.Once
 	cached    []byte
 	cachedErr error
-	cachedSet bool
 }
 
 // Format returns the Encoder's output format.
@@ -36,37 +43,30 @@ func (e *Encoder) Format() Format { return e.format }
 // MIME returns the Content-Type for the chosen format.
 func (e *Encoder) MIME() string { return e.format.MIME() }
 
-// Write encodes the image to w. Streams without materialising via the
-// cache — call this when you want to avoid the cached []byte cost
-// (e.g., writing directly to an http.ResponseWriter on a large image).
+// Write encodes the image to w. Goroutine-safe; the underlying codec
+// runs at most once across all terminal calls on this Encoder.
 func (e *Encoder) Write(w io.Writer) error {
-	if e.err != nil {
-		return e.err
-	}
-	if e.cachedSet {
-		if e.cachedErr != nil {
-			return e.cachedErr
-		}
-		_, err := w.Write(e.cached)
+	data, err := e.Bytes()
+	if err != nil {
 		return err
 	}
-	return e.encode(w, e.img.img)
+	_, err = w.Write(data)
+	return err
 }
 
-// Bytes returns the encoded image as a byte slice. Repeat calls reuse
-// the first encode's output instead of re-running the codec.
+// Bytes returns the encoded image as a byte slice. Goroutine-safe;
+// repeat calls (and concurrent calls) reuse the first encode's output
+// instead of re-running the codec.
 func (e *Encoder) Bytes() ([]byte, error) {
 	if e.err != nil {
 		return nil, e.err
 	}
-	if e.cachedSet {
-		return e.cached, e.cachedErr
-	}
-	var buf bytes.Buffer
-	err := e.encode(&buf, e.img.img)
-	e.cached = buf.Bytes()
-	e.cachedErr = err
-	e.cachedSet = true
+	e.once.Do(func() {
+		var buf bytes.Buffer
+		err := e.encode(&buf, e.img.img)
+		e.cached = buf.Bytes()
+		e.cachedErr = err
+	})
 	return e.cached, e.cachedErr
 }
 
@@ -130,6 +130,16 @@ func (i *Image) PNG(opts ...PNGOptions) *Encoder {
 	o := PNGOptions{}
 	if len(opts) > 0 {
 		o = opts[0]
+	}
+	// image/png defines CompressionLevel in [-3, 0]; values outside
+	// that range are silently treated as DefaultCompression by
+	// stdlib, which hides config bugs. Reject up front.
+	if o.Compression < -3 || o.Compression > 0 {
+		return &Encoder{
+			img:    i,
+			format: FormatPNG,
+			err:    fmt.Errorf("image: PNGOptions.Compression %d out of valid range [-3, 0]", o.Compression),
+		}
 	}
 	enc := png.Encoder{CompressionLevel: o.Compression}
 	return &Encoder{

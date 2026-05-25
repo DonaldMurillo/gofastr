@@ -2,6 +2,7 @@ package image
 
 import (
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -26,6 +27,10 @@ func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 	w, h := b.Dx(), b.Dy()
 	if w == 0 || h == 0 {
 		return "", errors.New("image: empty image")
+	}
+	if w*h < xComp*yComp {
+		return "", fmt.Errorf("image: BlurHash needs at least %d×%d pixels for %d×%d components; got %d×%d",
+			xComp, yComp, xComp, yComp, w, h)
 	}
 
 	// Pre-convert pixels to linear RGB to avoid redoing the sRGB curve

@@ -7,6 +7,11 @@ type Metadata struct {
 	Format      Format
 	HasAlpha    bool
 	Orientation int // EXIF orientation tag 1..8; 0 if absent or already applied
+	// FrameCount surfaces animated-image frame totals. The decoder
+	// returns only the first frame; FrameCount > 1 lets callers detect
+	// "I just dropped N-1 frames" instead of silently mishandling
+	// animated GIFs. 0 or 1 indicates a still image.
+	FrameCount int
 }
 
 // Metadata returns a snapshot of the current image's attributes.
@@ -18,6 +23,7 @@ func (i *Image) Metadata() Metadata {
 		Format:      i.format,
 		HasAlpha:    hasAlpha(i),
 		Orientation: i.orient,
+		FrameCount:  i.frames,
 	}
 }
 

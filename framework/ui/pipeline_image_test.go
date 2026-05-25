@@ -17,6 +17,32 @@ func TestPipelineImageRequiresAlt(t *testing.T) {
 	t.Fatal("expected panic with empty Alt")
 }
 
+func TestPipelineImageOnlyWidthMissing(t *testing.T) {
+	h := PipelineImage(PipelineImageConfig{
+		Fallback: "/p.jpg", Alt: "x", Height: 200,
+	})
+	out := string(h)
+	if strings.Contains(out, `width=`) {
+		t.Errorf("Width=0 should be omitted; got width attribute: %q", out)
+	}
+	if !strings.Contains(out, `height="200"`) {
+		t.Errorf("Height=200 should be emitted: %q", out)
+	}
+}
+
+func TestPipelineImageOnlyHeightMissing(t *testing.T) {
+	h := PipelineImage(PipelineImageConfig{
+		Fallback: "/p.jpg", Alt: "x", Width: 300,
+	})
+	out := string(h)
+	if !strings.Contains(out, `width="300"`) {
+		t.Errorf("Width=300 should be emitted: %q", out)
+	}
+	if strings.Contains(out, `height=`) {
+		t.Errorf("Height=0 should be omitted; got height attribute: %q", out)
+	}
+}
+
 func TestPipelineImageZeroDimensionsRendersGracefully(t *testing.T) {
 	// User-generated content sometimes has missing width/height (old DB
 	// rows pre-migration, malformed uploads). The component must not
@@ -113,6 +139,24 @@ func TestPipelineImageSortsByWidthWithinType(t *testing.T) {
 		},
 	})
 	mustContain(t, h, "/p-sm.webp 320w, /p-md.webp 800w, /p-lg.webp 1600w")
+}
+
+func TestPipelineImageDedupesIdenticalSources(t *testing.T) {
+	// Two PipelineSource entries with the same (URL, Width, Type)
+	// must collapse to one srcset candidate — duplicates are invalid
+	// per the HTML spec ("each candidate must have a unique width
+	// descriptor within the same source").
+	h := PipelineImage(PipelineImageConfig{
+		Fallback: "/p.jpg", Alt: "x", Width: 1, Height: 1,
+		Sources: []PipelineSource{
+			{URL: "/a.webp", Width: 100, Type: "image/webp"},
+			{URL: "/a.webp", Width: 100, Type: "image/webp"},
+		},
+	})
+	mustContain(t, h, "/a.webp 100w")
+	if c := strings.Count(string(h), "/a.webp 100w"); c != 1 {
+		t.Errorf("expected one srcset candidate, got %d", c)
+	}
 }
 
 func TestPipelineImageSkipsInvalidSources(t *testing.T) {

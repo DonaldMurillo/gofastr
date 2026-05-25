@@ -222,6 +222,81 @@ func TestVariantSetProcessToStopsOnSinkError(t *testing.T) {
 	}
 }
 
+// TestProcessToSinkReaderInvalidAfterReturn pins the contract:
+// readers handed to the sink become invalid once the sink returns,
+// so a sink that stashes one and reads it later gets an error rather
+// than corrupted bytes from the next variant. Before the fix the
+// reader was the *bytes.Buffer the framework reused across variants,
+// so a late read would silently see the next variant's payload.
+func TestProcessToSinkReaderInvalidAfterReturn(t *testing.T) {
+	src := FromImage(gradient(64, 48), FormatPNG)
+	set := VariantSet{
+		Variants: []Variant{
+			{Width: 32, Format: FormatPNG, Suffix: "a"},
+			{Width: 16, Format: FormatPNG, Suffix: "b"},
+		},
+	}
+	var stashed io.Reader
+	_, err := set.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		if stashed == nil {
+			stashed = r
+		}
+		// Don't drain — just return.
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ProcessTo: %v", err)
+	}
+	// Reading the stashed reader after ProcessTo returned must NOT
+	// yield the next variant's bytes. It should error (one-shot) or
+	// return EOF cleanly with empty data — never a different variant.
+	if stashed == nil {
+		t.Fatal("did not capture sink reader")
+	}
+	leaked, _ := io.ReadAll(stashed)
+	if len(leaked) > 0 {
+		t.Errorf("sink reader leaked %d bytes after ProcessTo returned", len(leaked))
+	}
+}
+
+// TestVariantSetDoesNotUpscaleByDefault asserts that a 16×16 source
+// with a Variant requesting Width: 2048 produces output capped at
+// the source's width — silent 100× upscaling is a foot-gun, not a
+// feature. Opt back in via VariantSet.AllowUpscale.
+func TestVariantSetDoesNotUpscaleByDefault(t *testing.T) {
+	src := FromImage(solidRGBA(16, 16, color.RGBA{R: 10, G: 20, B: 30, A: 255}), FormatPNG)
+	res, err := VariantSet{
+		Variants: []Variant{
+			{Width: 2048, Format: FormatPNG, Suffix: "huge"},
+		},
+	}.Process(src)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if got := res.Variants[0].Width; got != 16 {
+		t.Errorf("default should clamp to source width 16, got %d", got)
+	}
+}
+
+// TestVariantSetAllowUpscaleOptsBackIn confirms the explicit
+// AllowUpscale flag restores the old behaviour for callers who
+// know what they're doing (e.g., upsampling a vector-rendered tile).
+func TestVariantSetAllowUpscaleOptsBackIn(t *testing.T) {
+	src := FromImage(solidRGBA(16, 16, color.RGBA{R: 10, G: 20, B: 30, A: 255}), FormatPNG)
+	res, err := VariantSet{
+		AllowUpscale: true,
+		Variants: []Variant{
+			{Width: 64, Format: FormatPNG, Suffix: "big"},
+		},
+	}.Process(src)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if got := res.Variants[0].Width; got != 64 {
+		t.Errorf("AllowUpscale should yield Width 64, got %d", got)
+	}
+}
+
 func TestVariantSetPreservesAspect(t *testing.T) {
 	// 400×300 source resized to width=80 with FitInside → height = 60.
 	src := FromImage(gradient(400, 300), FormatPNG)

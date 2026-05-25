@@ -3,6 +3,7 @@ package image
 import (
 	stdimage "image"
 	"image/color"
+	"math"
 )
 
 // Modulation tweaks brightness and saturation in one pass over the
@@ -28,15 +29,21 @@ func Float64(v float64) *float64 { return &v }
 
 // Modulate returns a new *Image with brightness and saturation applied.
 // A Modulation with both fields nil leaves the source unchanged.
+//
+// NaN values are treated as nil (no change for that channel) — they
+// usually indicate a config-parsing bug (e.g., int(NaN)=0 or a JSON
+// null surfacing as NaN). +Inf/-Inf clamp via the channel limits as
+// you'd expect: +Inf brightness → 255, -Inf → 0.
 func (i *Image) Modulate(m Modulation) *Image {
-	if m.Brightness == nil && m.Saturation == nil {
+	if (m.Brightness == nil || math.IsNaN(*m.Brightness)) &&
+		(m.Saturation == nil || math.IsNaN(*m.Saturation)) {
 		return i
 	}
 	b, s := 1.0, 1.0
-	if m.Brightness != nil {
+	if m.Brightness != nil && !math.IsNaN(*m.Brightness) {
 		b = *m.Brightness
 	}
-	if m.Saturation != nil {
+	if m.Saturation != nil && !math.IsNaN(*m.Saturation) {
 		s = *m.Saturation
 	}
 	if b == 1 && s == 1 {

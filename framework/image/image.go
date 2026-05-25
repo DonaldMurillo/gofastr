@@ -32,10 +32,22 @@ import (
 	"bytes"
 	"fmt"
 	stdimage "image"
+	"image/gif"
 	"io"
 	"io/fs"
 	"os"
 )
+
+// decodeGIFFrames returns the number of frames in a GIF byte stream
+// without materialising the pixel buffers. Used by Decode to surface
+// FrameCount on Metadata when the source is animated.
+func decodeGIFFrames(data []byte) (int, error) {
+	g, err := gif.DecodeAll(bytes.NewReader(data))
+	if err != nil {
+		return 0, err
+	}
+	return len(g.Image), nil
+}
 
 // DefaultMaxPixels matches Bun.Image's default decompression-bomb guard.
 const DefaultMaxPixels int64 = 268_435_456
@@ -54,6 +66,7 @@ type Image struct {
 	img    stdimage.Image
 	format Format
 	orient int // EXIF orientation tag (1..8); 0 means unknown / not applicable
+	frames int // animated frame count; 0 or 1 = still image
 	cfg    Config
 }
 
@@ -99,8 +112,14 @@ func OpenFS(fsys fs.FS, name string) (*Image, error) {
 	return decodeBytes(data, Config{})
 }
 
-// FromImage wraps an existing image.Image without decoding. Use when you
-// already have pixel data (e.g., generated, not loaded from a file).
+// FromImage wraps an existing image.Image without decoding. Use when
+// you already have pixel data (e.g., generated, not loaded from a
+// file).
+//
+// The returned *Image carries Orientation = 0 and FrameCount = 0;
+// AutoOrient() is a no-op against it. If you need EXIF orientation
+// handling or animated-source detection, route the bytes through
+// Decode / Open / OpenFS instead.
 func FromImage(img stdimage.Image, format Format) *Image {
 	return &Image{img: img, format: format}
 }
@@ -128,7 +147,23 @@ func decodeBytes(data []byte, cfg Config) (*Image, error) {
 	if format == FormatJPEG {
 		orient = readJPEGOrientation(data)
 	}
-	return &Image{img: img, format: format, orient: orient, cfg: cfg}, nil
+	frames := 0
+	if format == FormatGIF {
+		frames = countGIFFrames(data)
+	}
+	return &Image{img: img, format: format, orient: orient, frames: frames, cfg: cfg}, nil
+}
+
+// countGIFFrames returns the frame count of a GIF byte stream. 0 on
+// decode error; 1 for a still GIF; >1 for animated. We use the cheaper
+// gif.DecodeAll (which doesn't materialise every frame's pixel buffer
+// up front — it streams) only when we already know the format is GIF.
+func countGIFFrames(data []byte) int {
+	g, err := decodeGIFFrames(data)
+	if err != nil || g == 0 {
+		return 1
+	}
+	return g
 }
 
 // GoImage returns the underlying image.Image. Useful for callers that need

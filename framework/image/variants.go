@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -47,6 +48,14 @@ type VariantSet struct {
 
 	// BaseName is the prefix used for VariantOutput.Name. Default "image".
 	BaseName string
+
+	// AllowUpscale opts back in to producing variants larger than the
+	// source. The default (false) clamps every variant's effective
+	// width to min(Variant.Width, source width). Without the clamp a
+	// 16×16 source with Variant{Width: 2048} would silently produce a
+	// 2048×2048 pixel-multiplied-garbage output — almost never what a
+	// caller wants.
+	AllowUpscale bool
 }
 
 // VariantOutput is one fully rendered variant.
@@ -123,8 +132,13 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 		}
 
 		// Width-only resize already preserves aspect; an extra FitInside
-		// pass would re-quantise the height and lose a pixel.
-		scaled := src.Resize(v.Width, 0)
+		// pass would re-quantise the height and lose a pixel. Without
+		// AllowUpscale, clamp the target width to the source width.
+		targetW := v.Width
+		if !s.AllowUpscale && targetW > bounds.Dx() {
+			targetW = bounds.Dx()
+		}
+		scaled := src.Resize(targetW, 0)
 		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
@@ -186,10 +200,36 @@ type StreamResult struct {
 }
 
 // VariantSink is the callback ProcessTo invokes once per variant.
-// Implementations must fully read r before returning; the framework
-// owns the underlying buffer and will reuse it on the next variant.
-// Returning an error stops emission and propagates out of ProcessTo.
+// Implementations must read r before returning; the framework reuses
+// the underlying buffer on the next variant and the reader handed in
+// is one-shot — it returns ErrReaderClosed on any access after the
+// sink returns. Returning an error stops emission and propagates out
+// of ProcessTo.
 type VariantSink func(h VariantHeader, r io.Reader) error
+
+// ErrReaderClosed is returned when a sink reads from its VariantHeader
+// reader after the sink has returned. The reader is intentionally
+// one-shot to surface the "I stashed the reader and read it later"
+// foot-gun loudly instead of returning corrupted bytes from a later
+// variant.
+var ErrReaderClosed = errors.New("image: VariantSink reader used after sink returned")
+
+// oneShotReader wraps an io.Reader so reads after Close return
+// ErrReaderClosed. ProcessTo closes the reader as soon as the sink
+// returns, regardless of whether the sink drained the buffer.
+type oneShotReader struct {
+	r      io.Reader
+	closed bool
+}
+
+func (o *oneShotReader) Read(p []byte) (int, error) {
+	if o.closed {
+		return 0, ErrReaderClosed
+	}
+	return o.r.Read(p)
+}
+
+func (o *oneShotReader) close() { o.closed = true }
 
 // ProcessTo is the streaming variant of Process. Only one variant
 // lives in memory at a time — once the sink returns, the buffer is
@@ -243,8 +283,11 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 			Height: b.Dy(),
 			MIME:   v.Format.MIME(),
 		}
-		if err := sink(header, &buf); err != nil {
-			return result, err
+		guarded := &oneShotReader{r: &buf}
+		serr := sink(header, guarded)
+		guarded.close()
+		if serr != nil {
+			return result, serr
 		}
 	}
 

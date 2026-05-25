@@ -62,9 +62,11 @@ func WithFit(f Fit) ResizeOption { return func(o *resizeOpts) { o.fit = f } }
 // source on either axis (mirrors Sharp / Bun.Image semantics).
 func WithoutEnlargement() ResizeOption { return func(o *resizeOpts) { o.withoutEnlarge = true } }
 
-// Resize returns a new *Image scaled to the target box. If height is 0 it is
-// computed from width preserving aspect; same for width when height is 0.
-// Width and height of 0 return the source unchanged.
+// Resize returns a new *Image scaled to the target box. If height is
+// 0 or negative it is computed from width preserving aspect; same for
+// width when height is 0 or negative. Width and height both 0 (or
+// both negative) return the source unchanged. Use Sharp-style "skip
+// if larger than source" via WithoutEnlargement().
 func (i *Image) Resize(width, height int, opts ...ResizeOption) *Image {
 	o := resizeOpts{filter: Lanczos3, fit: FitFill}
 	for _, fn := range opts {
@@ -181,8 +183,11 @@ func (i *Image) Flop() *Image {
 	return i.derive(dst)
 }
 
-// AutoOrient applies the EXIF orientation tag from decode time, if any,
-// and clears it. Safe to call when no orientation is known.
+// AutoOrient applies the EXIF orientation tag from decode time, if
+// any, and clears it. Safe to call when no orientation is known. On
+// the no-op path (orient ≤ 1, or no EXIF metadata) the returned
+// *Image shares the underlying image.Image with the receiver — if a
+// caller plans to mutate via GoImage(), they should clone first.
 //
 // EXIF tag values:
 //
