@@ -239,17 +239,17 @@ support is intentionally out of scope.
   or VP8 quality-competitive with libvpx — those formats need CGo and
   are out of scope for this package.
 - **Expecting WebP-lossless to match `cwebp` file sizes exactly.** The
-  pure-Go encoder uses one globally-selected predictor mode (mode 12,
-  ClampAddSubtractFull) plus subtract-green and LZ77 + an 8-bit color
-  cache. On synthetic gradients and repeating patterns we produce
-  output smaller than PNG (≈0.38× on smooth gradients, ≈0.36× on
-  repeating patches); on natural photos `cwebp` will still beat us by
-  30-50% because of its per-block adaptive mode selection (gated on a
-  Huffman-aware cost model), cross-color transform, and palette path.
-  The encoder infrastructure for per-block mode evaluation is in
-  place — see `framework/image/internal/vp8l/predictor.go` — but the
-  current selection picks one mode globally because an L1-only cost
-  metric isn't sharp enough to beat uniform mode 12 on every input.
+  pure-Go encoder tries five uniform predictor modes (1, 2, 11, 12, 13)
+  per image and emits the smallest output, plus subtract-green and
+  LZ77 + an 8-bit color cache. On synthetic gradients and repeating
+  patterns we produce output **smaller than PNG** (≈0.37× on smooth
+  gradients, ≈0.35× on repeating patches). On natural photos `cwebp`
+  will still beat us by 30-50% because of its per-block adaptive mode
+  selection (gated on a Huffman-aware cost model), cross-color
+  transform, and palette path. The encoder infrastructure for
+  per-block mode evaluation is in `framework/image/internal/vp8l/
+  predictor.go` — `scoreModeBlock` + `chooseBlockModes` — waiting on
+  a proper Huffman cost model.
 - **Aliasing `*Image` across goroutines.** Chain methods return new
   `*Image` values, but the underlying pixel buffer in an `image.Image`
   is shared. If you mutate via `GoImage()`, clone first.

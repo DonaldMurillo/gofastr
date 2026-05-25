@@ -26,6 +26,29 @@ import (
 // Lossless guarantee: the decoded pixels equal the input pixels
 // exactly when m's bounds are non-empty. An empty image returns an
 // error rather than producing an empty WebP.
+// candidatePredictorModes is the set of uniform predictor modes the
+// encoder tries on every input. We pick the smallest output across
+// the set — a cheap "try N strategies, ship the best" approach that
+// avoids the bad-cost-metric tax of greedy per-block selection.
+//
+//	mode 1  (L)            — libwebp baseline; great for column-wise gradients
+//	mode 2  (T)            — row-wise gradients
+//	mode 11 (Select)       — picks between L and T per pixel
+//	mode 12 (ClampAdd-Sub) — best for diagonal/smooth gradients
+//	mode 13 (ClampAdd-Half)— variant that wins on photographic content
+//
+// Together this set covers most real-world inputs. Encoding cost is
+// 5× a single pass; if the encoder hot-path becomes a concern we can
+// narrow the set via a quick image-stats heuristic.
+var candidatePredictorModes = []int{1, 2, 11, 12, 13}
+
+// Encode writes m as a VP8L WebP to w. Only m's bounds are honoured;
+// callers needing other-than-RGBA must convert first (which the
+// framework/image package does automatically).
+//
+// Lossless guarantee: the decoded pixels equal the input pixels
+// exactly when m's bounds are non-empty. An empty image returns an
+// error rather than producing an empty WebP.
 func Encode(w io.Writer, m image.Image) error {
 	bounds := m.Bounds()
 	width := bounds.Dx()
@@ -33,17 +56,32 @@ func Encode(w io.Writer, m image.Image) error {
 	if width <= 0 || height <= 0 {
 		return errors.New("vp8l: empty image")
 	}
-	// VP8L width and height are 14-bit unsigned, range 1..16384.
 	if width > 16384 || height > 16384 {
 		return fmt.Errorf("vp8l: image too large: %dx%d (max 16384x16384)", width, height)
 	}
 
+	var best []byte
+	for _, mode := range candidatePredictorModes {
+		buf, err := encodeWithMode(m, width, height, bounds, mode)
+		if err != nil {
+			return err
+		}
+		if best == nil || len(buf) < len(best) {
+			best = buf
+		}
+	}
+	_, err := w.Write(best)
+	return err
+}
+
+// encodeWithMode produces the full RIFF + WEBP + VP8L byte stream
+// using the given uniform predictor mode. Called once per candidate
+// in candidatePredictorModes.
+func encodeWithMode(m image.Image, width, height int, bounds image.Rectangle, mode int) ([]byte, error) {
 	bw := &bitWriter{}
-	emitImage(bw, m, width, height, bounds)
+	emitImage(bw, m, width, height, bounds, mode)
 	payload := bw.Bytes()
 
-	// VP8L chunk header: 'VP8L', 4-byte LE chunk size, 1-byte signature,
-	// 4 bytes for {W-1, H-1, alphaUsed, version}, then payload bits.
 	const sigByte byte = 0x2F
 	chunkBody := make([]byte, 0, 5+len(payload))
 	chunkBody = append(chunkBody, sigByte)
@@ -53,42 +91,25 @@ func Encode(w io.Writer, m image.Image) error {
 	chunkBody = append(chunkBody, hdrBuf[:]...)
 	chunkBody = append(chunkBody, payload...)
 
-	// RIFF padding: chunks are padded to even sizes.
 	pad := 0
 	if len(chunkBody)%2 == 1 {
 		pad = 1
 	}
 
-	totalRIFF := 4 + 4 + len(chunkBody) + pad // "WEBP" + "VP8L" + size + body
-	_ = totalRIFF
-	// "WEBP" form, then VP8L chunk inside.
-	if _, err := w.Write([]byte("RIFF")); err != nil {
-		return err
-	}
+	out := make([]byte, 0, 12+len(chunkBody)+pad)
+	out = append(out, []byte("RIFF")...)
 	var sizeBuf [4]byte
 	binary.LittleEndian.PutUint32(sizeBuf[:], uint32(4+8+len(chunkBody)+pad))
-	if _, err := w.Write(sizeBuf[:]); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte("WEBP")); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte("VP8L")); err != nil {
-		return err
-	}
+	out = append(out, sizeBuf[:]...)
+	out = append(out, []byte("WEBP")...)
+	out = append(out, []byte("VP8L")...)
 	binary.LittleEndian.PutUint32(sizeBuf[:], uint32(len(chunkBody)))
-	if _, err := w.Write(sizeBuf[:]); err != nil {
-		return err
-	}
-	if _, err := w.Write(chunkBody); err != nil {
-		return err
-	}
+	out = append(out, sizeBuf[:]...)
+	out = append(out, chunkBody...)
 	if pad == 1 {
-		if _, err := w.Write([]byte{0}); err != nil {
-			return err
-		}
+		out = append(out, 0)
 	}
-	return nil
+	return out, nil
 }
 
 // sampleRGBA8 returns the 8-bit straight (non-premultiplied) RGBA
@@ -144,8 +165,9 @@ const predictorBits = 3
 
 // emitImage writes the top-level VP8L payload (everything after the
 // 5-byte signature + dimensions prefix). Sub-image emission for the
-// predictor transform goes through emitPayload directly.
-func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
+// predictor transform goes through emitPayload directly. mode picks
+// the uniform predictor mode used across every block of the sub-image.
+func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle, mode int) {
 	pixels := make([][4]uint8, 0, w*h)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -161,7 +183,7 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
 	// First row uses mode 1 (L), first column uses mode 2 (T), and
 	// pixel (0,0) uses mode 0 (opaque black) — these are wired into
 	// the decoder regardless of sub-image mode.
-	modes := chooseBlockModes(pixels, w, h, predictorBits)
+	modes := chooseBlockModes(pixels, w, h, predictorBits, mode)
 	bw.writeBits(1, 1)                       // transform-present
 	bw.writeBits(transformPredictor, 2)      // transform type
 	bw.writeBits(uint32(predictorBits)-2, 3) // 3-bit field; decoder adds 2

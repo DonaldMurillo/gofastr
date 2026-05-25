@@ -162,24 +162,23 @@ func scoreModeBlock(src [][4]uint8, w, h, x0, y0, x1, y1, mode int) int {
 // the same predictor mode. Per-block adaptive selection requires a
 // Huffman-aware cost metric to beat uniform mode in practice — a
 // simple L1 / nonzero-count proxy ends up fragmenting the residual
-// distribution and inflating the sub-image. Uniform mode 12
-// (ClampAddSubtractFull(L, T, TL)) is the best-performing default on
-// our test corpus: it nails smooth-gradient interiors with zero
-// residuals and ties libwebp's default mode 1 on most other content.
+// distribution and inflating the sub-image. scoreModeBlock stays in
+// this file as the foundation for a future per-block-adaptive pass
+// once a proper Huffman cost model is wired in.
 //
-// scoreModeBlock and the full mode-1..13 sweep stay in this file as
-// the foundation for a future per-block-adaptive pass with a proper
-// Huffman cost model.
-func chooseBlockModes(src [][4]uint8, w, h, bits int) []int {
+// The current encoder picks between several uniform-mode candidates
+// at the top level (Encode in vp8l.go) and emits the smallest result;
+// chooseBlockModes is parameterised so each candidate produces its
+// own sub-image.
+func chooseBlockModes(src [][4]uint8, w, h, bits, mode int) []int {
 	blockSize := 1 << bits
 	subW := (w + blockSize - 1) >> bits
 	subH := (h + blockSize - 1) >> bits
 
 	_ = scoreModeBlock // reserved for future Huffman-aware selection
-	const globalMode = 12
 	modes := make([]int, subW*subH)
 	for i := range modes {
-		modes[i] = globalMode
+		modes[i] = mode
 	}
 	return modes
 }
