@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"testing"
 
@@ -27,6 +28,14 @@ func (m *mapRegistry) Register(e *entity.Entity) error {
 	return nil
 }
 func (m *mapRegistry) All() map[string]*entity.Entity { return m.entities }
+func (m *mapRegistry) AllSorted() []*entity.Entity {
+	out := make([]*entity.Entity, 0, len(m.entities))
+	for _, e := range m.entities {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Config.Name < out[j].Config.Name })
+	return out
+}
 func (m *mapRegistry) Get(name string) (*entity.Entity, error) {
 	e, ok := m.entities[name]
 	if !ok {

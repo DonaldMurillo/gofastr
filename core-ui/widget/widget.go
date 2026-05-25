@@ -578,12 +578,12 @@ func RuntimeTag() string {
 
 // MountRuntime registers the framework runtime endpoints on r:
 //
-//	GET /__gofastr/runtime.js                 the legacy bundled runtime
-//	                                          (back-compat; single payload)
+//	GET /__gofastr/runtime.js                 the default bundled runtime
+//	                                          (single-payload IIFE every
+//	                                          page ships)
 //	GET /__gofastr/runtime/<name>.js          one split runtime module
-//	                                          (loaded on demand by the core
-//	                                          module-loader; see
-//	                                          docs/runtime-code-split-plan.md)
+//	                                          (loaded on demand via the
+//	                                          optional module-loader path)
 //	GET /__gofastr/widgets                    JSON list of registered widgets
 //
 // Call this once per host (kiln serve, examples/website, etc.).

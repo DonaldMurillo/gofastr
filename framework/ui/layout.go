@@ -127,7 +127,7 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	// the size buckets to keep older browsers usable).
 	attrs := html.Attrs{"data-min": min}
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: cls, ID: cfg.ID, Attrs: attrs,
+		Class: cls, ID: cfg.ID, ExtraAttrs: attrs,
 	}, children...))
 }
 
@@ -164,7 +164,7 @@ func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 func Spacer() render.HTML {
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: "ui-layout ui-spacer",
-		Attrs: html.Attrs{"aria-hidden": "true"},
+		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}))
 }
 

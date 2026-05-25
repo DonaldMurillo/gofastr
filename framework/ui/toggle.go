@@ -49,7 +49,7 @@ type ToggleConfig struct {
 	Error string
 
 	// Attrs lets callers attach data-fui-* attributes (e.g. for RPC).
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 
 	Class string
 }
@@ -131,7 +131,7 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	} else if cfg.Help != "" {
 		inputAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		inputAttrs[k] = v
 	}
 
@@ -142,7 +142,7 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	input := render.Tag("input", inputAttrs)
 
 	control := html.Span(html.TextConfig{Class: "ui-toggle__control"}, input,
-		html.Span(html.TextConfig{Class: "ui-toggle__indicator", Attrs: html.Attrs{"aria-hidden": "true"}}))
+		html.Span(html.TextConfig{Class: "ui-toggle__indicator", ExtraAttrs: html.Attrs{"aria-hidden": "true"}}))
 
 	labelText := html.Span(html.TextConfig{Class: "ui-toggle__label"}, render.Text(cfg.Label))
 
@@ -151,7 +151,7 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    id + "-error",
 			Class: "ui-toggle__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
@@ -229,7 +229,7 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 		legend = render.Join(legend,
 			html.Span(html.TextConfig{
 				Class: "ui-form-field__required",
-				Attrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
 
@@ -253,7 +253,7 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    id + "-error",
 			Class: "ui-toggle-group__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
@@ -331,7 +331,7 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 		legend = render.Join(legend,
 			html.Span(html.TextConfig{
 				Class: "ui-form-field__required",
-				Attrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
 
@@ -355,7 +355,7 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    id + "-error",
 			Class: "ui-toggle-group__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
 		children = append(children, html.Paragraph(html.TextConfig{

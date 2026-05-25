@@ -110,7 +110,7 @@ func (s *lightboxSlot) Render() render.HTML {
 		html.Span(html.TextConfig{
 			ID:    s.name + "-title",
 			Class: "ui-visually-hidden",
-			Attrs: html.Attrs{"data-fui-signal": "alt"},
+			ExtraAttrs: html.Attrs{"data-fui-signal": "alt"},
 		}, render.Text(s.label)),
 		// Image — runtime writes signal value into the src attr.
 		render.Tag("img", map[string]string{

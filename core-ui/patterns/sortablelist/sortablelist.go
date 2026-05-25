@@ -54,7 +54,7 @@ type Config struct {
 	RPCPath string
 	ID      string
 	Class   string
-	Attrs   html.Attrs
+	ExtraAttrs   html.Attrs
 }
 
 // Render renders the SortableList.
@@ -81,7 +81,7 @@ func Render(cfg Config) render.HTML {
 	if cfg.RPCPath != "" {
 		listAttrs["data-fui-sortable-rpc"] = cfg.RPCPath
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		listAttrs[k] = v
 	}
 

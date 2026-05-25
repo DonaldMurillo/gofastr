@@ -41,7 +41,7 @@ type SliderConfig struct {
 	Disabled bool
 	ID       string
 	Class    string
-	Attrs    html.Attrs
+	ExtraAttrs    html.Attrs
 }
 
 // Slider renders a labelled range input.
@@ -102,7 +102,7 @@ func Slider(cfg SliderConfig) render.HTML {
 	if cfg.Disabled {
 		inputAttrs["disabled"] = ""
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		inputAttrs[k] = v
 	}
 

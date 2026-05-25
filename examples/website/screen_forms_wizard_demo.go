@@ -250,13 +250,13 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 				ui.FormField(ui.FormFieldConfig{
 					Label: "Full name", For: "wd-name", Required: true,
 					Input: html.Input(html.InputConfig{
-						Type: "text", Name: "wd-name", ID: "wd-name", Attrs: nameAttrs,
+						Type: "text", Name: "wd-name", ID: "wd-name", ExtraAttrs: nameAttrs,
 					}),
 				}),
 				ui.FormField(ui.FormFieldConfig{
 					Label: "Email", For: "wd-email", Required: true,
 					Input: html.Input(html.InputConfig{
-						Type: "email", Name: "wd-email", ID: "wd-email", Attrs: emailAttrs,
+						Type: "email", Name: "wd-email", ID: "wd-email", ExtraAttrs: emailAttrs,
 					}),
 				}),
 			},
@@ -275,7 +275,7 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 				ui.FormField(ui.FormFieldConfig{
 					Label: "Comments", For: "wd-comments",
 					Input: html.Input(html.InputConfig{
-						Type: "text", Name: "wd-comments", ID: "wd-comments", Attrs: commentsAttrs,
+						Type: "text", Name: "wd-comments", ID: "wd-comments", ExtraAttrs: commentsAttrs,
 					}),
 				}),
 			},

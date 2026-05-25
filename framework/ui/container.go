@@ -36,7 +36,7 @@ type ContainerConfig struct {
 	As    string
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Container renders a max-width wrapper.
@@ -62,7 +62,7 @@ func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 	return containerStyle.WrapHTML(render.Tag(tag, attrs, children...))

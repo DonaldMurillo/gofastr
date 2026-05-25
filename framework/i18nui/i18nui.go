@@ -239,22 +239,6 @@ func T(ctx context.Context, key Key) string {
 	return string(key)
 }
 
-// TWith translates a key using the given translator and request
-// context. Falls back to the English default if the translator is nil,
-// ctx is nil, or the key is not found.
-//
-// Deprecated: prefer T(ctx, key) after attaching the translator via
-// WithTranslator(ctx, tr). TWith is retained for migration.
-func TWith(ctx context.Context, tr *i18n.Translator, key Key) string {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if tr != nil {
-		ctx = WithTranslator(ctx, tr)
-	}
-	return T(ctx, key)
-}
-
 // TranslateValidation returns a translated validation error message
 // for the given validator type, with optional template variables. ctx
 // carries the per-request locale; tr may be nil to use English
@@ -263,19 +247,18 @@ func TWith(ctx context.Context, tr *i18n.Translator, key Key) string {
 // Renamed from ValidationError so the symbol no longer collides with
 // core/handler.ValidationError when a file imports both packages.
 func TranslateValidation(ctx context.Context, tr *i18n.Translator, validator string, vars map[string]string) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if tr != nil {
+		ctx = WithTranslator(ctx, tr)
+	}
 	key := Key("ui.validation." + validator)
-	msg := TWith(ctx, tr, key)
+	msg := T(ctx, key)
 	for k, v := range vars {
-		msg = replaceAll(msg, "{"+k+"}", v)
+		msg = strings.ReplaceAll(msg, "{"+k+"}", v)
 	}
 	return msg
-}
-
-// replaceAll is a thin wrapper around strings.ReplaceAll, retained so
-// tests can target the substitution path directly without coupling to
-// the stdlib name.
-func replaceAll(s, old, new string) string {
-	return strings.ReplaceAll(s, old, new)
 }
 
 // LabelForField returns the display label for an entity field. If a

@@ -97,7 +97,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		Method: method,
 		Action: cfg.Action,
 		Class:  cls,
-		Attrs:  html.Attrs{"data-fui-comp": "ui-step-wizard"},
+		ExtraAttrs:  html.Attrs{"data-fui-comp": "ui-step-wizard"},
 	}, children...))
 }
 
@@ -164,7 +164,7 @@ func renderStepActions(current, total int) render.HTML {
 			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardBack),
 			Type:  "submit",
 			Class: "ui-button ui-button--secondary",
-			Attrs: html.Attrs{
+			ExtraAttrs: html.Attrs{
 				"name":  "wizard_action",
 				"value": "back",
 			},
@@ -178,7 +178,7 @@ func renderStepActions(current, total int) render.HTML {
 			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardSubmit),
 			Type:  "submit",
 			Class: "ui-button",
-			Attrs: html.Attrs{
+			ExtraAttrs: html.Attrs{
 				"name":  "wizard_action",
 				"value": "next",
 			},
@@ -188,7 +188,7 @@ func renderStepActions(current, total int) render.HTML {
 			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardNext),
 			Type:  "submit",
 			Class: "ui-button",
-			Attrs: html.Attrs{
+			ExtraAttrs: html.Attrs{
 				"name":  "wizard_action",
 				"value": "next",
 			},

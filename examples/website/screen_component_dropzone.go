@@ -16,7 +16,7 @@ func (s *DropzoneScreen) ScreenDescription() string {
 func (s *DropzoneScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *DropzoneScreen) Render() render.HTML {
-	basic := html.Form(html.FormConfig{Method: "post", Action: "#", Attrs: html.Attrs{"enctype": "multipart/form-data"}},
+	basic := html.Form(html.FormConfig{Method: "post", Action: "#", ExtraAttrs: html.Attrs{"enctype": "multipart/form-data"}},
 		ui.FileDropzone(ui.FileDropzoneConfig{
 			Name:      "import",
 			Label:     "Import CSV",
@@ -26,7 +26,7 @@ func (s *DropzoneScreen) Render() render.HTML {
 		}),
 	)
 
-	withPreview := html.Form(html.FormConfig{Method: "post", Action: "#", Attrs: html.Attrs{"enctype": "multipart/form-data"}},
+	withPreview := html.Form(html.FormConfig{Method: "post", Action: "#", ExtraAttrs: html.Attrs{"enctype": "multipart/form-data"}},
 		ui.FileDropzone(ui.FileDropzoneConfig{
 			Name:        "photos",
 			Label:       "Upload photos",

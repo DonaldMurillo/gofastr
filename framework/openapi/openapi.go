@@ -75,8 +75,11 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		},
 	})
 
-	// Generate schema + paths for each entity
-	for _, ent := range registry.All() {
+	// Generate schema + paths for each entity. Use AllSorted so the
+	// emitted /openapi.json bytes are stable across restarts —
+	// otherwise the tag array order tracks Go's randomised map
+	// iteration, breaking ETag caching and golden-file diffs.
+	for _, ent := range registry.AllSorted() {
 		entityName := ent.GetName()
 		tableName := ent.GetTable()
 		fields := ent.GetFields()

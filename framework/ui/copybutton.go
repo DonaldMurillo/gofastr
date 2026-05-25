@@ -148,7 +148,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 			html.Span(html.TextConfig{Class: "ui-copy-btn__label"}, render.Text(label)),
 			html.Span(html.TextConfig{
 				Class: "ui-copy-btn__copied",
-				Attrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(copied)),
 		}
 	} else {
@@ -166,7 +166,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	// a plain inline-block; CSS class lets consumers target it.
 	status := html.Span(html.TextConfig{
 		Class: "ui-visually-hidden",
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"role":                 "status",
 			"aria-live":            "polite",
 			"data-fui-copy-status": "",

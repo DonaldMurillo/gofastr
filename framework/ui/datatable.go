@@ -196,7 +196,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			// the label/value pair without depending on the (now-hidden)
 			// <thead>.
 			if cfg.Responsive == ResponsiveCards && col.Header != "" {
-				cellCfg.Attrs = map[string]string{"data-label": col.Header}
+				cellCfg.ExtraAttrs = map[string]string{"data-label": col.Header}
 			}
 			cells[j] = html.TD(cellCfg, content)
 		}
@@ -258,7 +258,7 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 	}
 	thAttrs := html.Attrs{}
 	if !col.Sortable {
-		thCfg.Attrs = thAttrs
+		thCfg.ExtraAttrs = thAttrs
 		return html.TH(thCfg, render.Text(col.Header))
 	}
 
@@ -278,12 +278,12 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 	} else {
 		thAttrs["aria-sort"] = "none"
 	}
-	thCfg.Attrs = thAttrs
+	thCfg.ExtraAttrs = thAttrs
 
 	href := fmt.Sprintf(pattern, url.QueryEscape(col.Key), url.QueryEscape(string(nextDir)))
 	indicatorSpan := html.Span(html.TextConfig{
 		Class: "ui-data-table__sort-indicator",
-		Attrs: html.Attrs{"aria-hidden": "true"},
+		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}, render.Text(strings.TrimSpace(indicator)))
 
 	// Island mode: render as a data-fui-rpc button so click fires

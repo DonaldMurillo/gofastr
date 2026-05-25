@@ -40,7 +40,6 @@ func TestRuntimeJS(t *testing.T) {
 		"data-fui-copy-announce", // copy success message override
 		"data-fui-copy-toast",    // toast emit on copy success
 		"data-fui-os",            // OS detection on <html> for ShortcutHint
-		"data-fui-native",        // legacy form-intercept opt-out (still honored)
 		"data-fui-spa",           // opt-IN form-intercept for non-JSON forms
 		"redirect: 'follow'",     // form-intercept follows server Location headers
 		"application/x-www-form-urlencoded", // SPA-opt-in body encoding

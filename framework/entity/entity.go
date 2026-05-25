@@ -1,8 +1,10 @@
 package entity
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"strings"
 
@@ -36,6 +38,35 @@ type EntityConfig struct {
 	// current request's owner and auto-stamps Create. Leave empty to keep
 	// pre-existing behaviour.
 	OwnerField string
+
+	// Seed runs once per entity after AutoMigrate creates the table. The
+	// framework tracks completion in the _gofastr_seeded ledger; subsequent
+	// App.Start() calls skip the entity. Errors abort App.Start.
+	//
+	// Go-only: function values cannot be expressed in JSON entity
+	// declarations. Apps that load entities via EntityFromFile /
+	// EntitiesFromDir must wire seeding from Go after loading.
+	//
+	// Concurrency: RunSeeds is NOT safe for concurrent invocation across
+	// multiple processes. The framework assumes serialized startup (one
+	// process / replica calls App.Start at a time). For HA setups, gate
+	// seeding behind an external mechanism (init container, one-shot
+	// job, advisory lock). Seed implementations should be idempotent
+	// (INSERT … ON CONFLICT DO NOTHING) so accidental re-runs cannot
+	// duplicate data.
+	Seed func(ctx context.Context, db *sql.DB) error
+
+	// SeedFS is an optional fs.FS (typically a //go:embed embed.FS) that
+	// the framework attaches to the Seed function's context. Use with
+	// SeedPath to point at a single file within the FS.
+	//
+	// Go-only: like Seed itself, an fs.FS cannot be expressed in JSON
+	// entity declarations.
+	SeedFS fs.FS
+
+	// SeedPath is the path within SeedFS that Seed should consume.
+	// Ignored when SeedFS is nil.
+	SeedPath string
 
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.

@@ -72,6 +72,9 @@ type miniRegistry struct{ e *entity.Entity }
 func (m *miniRegistry) All() map[string]*entity.Entity {
 	return map[string]*entity.Entity{m.e.GetName(): m.e}
 }
+func (m *miniRegistry) AllSorted() []*entity.Entity {
+	return []*entity.Entity{m.e}
+}
 func (m *miniRegistry) Get(name string) (*entity.Entity, error) {
 	if name == m.e.GetName() {
 		return m.e, nil

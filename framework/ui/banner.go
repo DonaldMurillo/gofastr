@@ -44,7 +44,7 @@ type BannerConfig struct {
 	// ID / Class / Attrs are passed through to the outer element.
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Banner renders a persistent page-status strip.
@@ -86,7 +86,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		attrs["role"] = "status"
 		attrs["aria-live"] = "polite"
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

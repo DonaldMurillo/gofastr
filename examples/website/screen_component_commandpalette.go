@@ -24,7 +24,7 @@ func (s *CommandPaletteScreen) Render() render.HTML {
 	trigger := ui.Button(ui.ButtonConfig{
 		Label:   "Open palette",
 		Variant: ui.ButtonPrimary,
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-open":           "demo-command-palette",
 			"data-fui-shortcut-click": "Meta+K",
 		},

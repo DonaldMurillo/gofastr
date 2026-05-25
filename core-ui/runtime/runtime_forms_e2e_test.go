@@ -23,7 +23,6 @@ import (
 //   - enctype="application/json" → intercepted as JSON RPC.
 //   - data-fui-spa → intercepted with urlencoded body + SPA navigation
 //     on response Location.
-//   - data-fui-native → still works (legacy no-op opt-out).
 
 type formRequest struct {
 	method      string
@@ -39,7 +38,7 @@ type formRequest struct {
 //   - POST /submit           records the incoming request and returns 303 → /landing
 //
 // The HTML form's enctype, action, and opt-out attribute are all
-// controlled by ?enctype= / ?native= query params on /.
+// controlled by ?enctype= / ?spa= query params on /.
 func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string {
 	t.Helper()
 	js, err := RuntimeJS()
@@ -90,9 +89,6 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		enctype := r.URL.Query().Get("enctype")
 		attrs := ""
-		if r.URL.Query().Get("native") == "1" {
-			attrs += ` data-fui-native`
-		}
 		if r.URL.Query().Get("spa") == "1" {
 			attrs += ` data-fui-spa`
 		}
@@ -251,36 +247,6 @@ func TestFormIntercept_DataFuiSPAOptsIn(t *testing.T) {
 	}
 	if got.formValues["email"] != "a@b.com" {
 		t.Errorf("spa intercept form values missing: %+v", got.formValues)
-	}
-}
-
-func TestFormIntercept_DataFuiNativeBypassesInterceptor(t *testing.T) {
-	var recv atomic.Pointer[formRequest]
-	base := startFormE2EServer(t, &recv)
-	ctx := newFormBrowserCtx(t)
-
-	// With data-fui-native the browser submits the form natively. The
-	// default form enctype is application/x-www-form-urlencoded, which
-	// the server should see (no JSON wrapping by the runtime).
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/?native=1"),
-		chromedp.WaitVisible(`#go`, chromedp.ByID),
-		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.WaitVisible(`#landed`, chromedp.ByID),
-	)
-	if err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
-	got := recv.Load()
-	if got == nil {
-		t.Fatal("server did not receive submit")
-	}
-	// Browser-native submit uses form-urlencoded by default.
-	if !strings.HasPrefix(strings.ToLower(got.contentType), "application/x-www-form-urlencoded") {
-		t.Errorf("data-fui-native produced unexpected Content-Type: %q", got.contentType)
-	}
-	if got.formValues["email"] != "a@b.com" {
-		t.Errorf("native submit form values missing: %+v", got.formValues)
 	}
 }
 

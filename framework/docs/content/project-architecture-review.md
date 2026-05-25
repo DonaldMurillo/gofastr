@@ -140,17 +140,11 @@ type safeWriter struct {
 
 ---
 
-### Finding 6 — Dynamic route params mutate shared screen/component state
+### Finding 6 — Dynamic route params mutate shared screen/component state — RESOLVED
 
-**Files:** `core-ui/app/app.go:120-132` (RenderPage), `core-ui/app/app.go:219-231` (RenderPartial), `core-ui/app/router.go:96-112` (Render)
+**Files:** `core-ui/app/app.go`, `core-ui/app/screen.go`
 
-Both `RenderPage` and `RenderPartial` call `screen.Component.(ParamSetter).SetParams(params)` and set `screen.routeParams = params`. Registered screens and components are shared singletons — there's one instance per route pattern.
-
-Concurrent requests for `/products/a` and `/products/b` will overwrite each other's params before the component renders.
-
-**Impact:** Data race — users see wrong content under load. Not caught by `go test -race` because the core-ui tests don't exercise concurrent rendering.
-
-**Fix:** Clone the component per request (if it implements `Cloneable`), or pass params through a request-scoped context/wrapper instead of mutating the shared instance. For now, wrap the component render in a mutex or render params directly from the `params` map without storing on the component.
+Earlier versions stored route params on a shared `Screen.routeParams` field that concurrent requests could overwrite. Resolved by per-request component instancing (see `screen.newInstance()` — shallow-copies the registered template, applies `SetParams` only to the request-local instance). The `Screen.routeParams` field and `Screen.RouteParams()` method have been removed.
 
 ---
 

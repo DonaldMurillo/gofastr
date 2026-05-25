@@ -264,7 +264,7 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 	fmt.Fprintf(&b, "# %s — API Reference\n\n", title)
 	b.WriteString("Auto-generated LLM-friendly documentation for all registered resources.\n\n")
 
-	entities := registry.All()
+	entities := registry.AllSorted()
 	if len(entities) == 0 {
 		b.WriteString("No entities registered.\n")
 		return b.String()

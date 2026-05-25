@@ -82,7 +82,7 @@ type CarouselConfig struct {
 	VirtualPlaceholderHeight string
 	ID                       string
 	Class                    string
-	Attrs                    html.Attrs
+	ExtraAttrs                    html.Attrs
 }
 
 // Carousel renders the slider.
@@ -131,7 +131,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	if cfg.Loop {
 		attrs["data-fui-carousel-loop"] = "true"
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

@@ -54,7 +54,7 @@ func (s *AvatarGroupScreen) Render() render.HTML {
 		ui.Button(ui.ButtonConfig{
 			Label:   "View team",
 			Variant: ui.ButtonGhost,
-			Attrs: html.Attrs{
+			ExtraAttrs: html.Attrs{
 				"data-fui-open":           "demo-team-popover",
 				"data-fui-popover-anchor": "bottom",
 			},

@@ -408,17 +408,3 @@ func TestThemeValidate_AllowsNoneRadius(t *testing.T) {
 	}
 }
 
-// --- RouteGraph preload (deprecated but still works) ----------------------
-
-func TestRouteGraphPreloadManifest(t *testing.T) {
-	g := NewRouteGraph()
-	g.AddRoute("/", "home.css", []string{"/about"})
-	g.AddRoute("/about", "about.css", nil)
-	m := g.PreloadManifest()
-	if m["/"].CSS != "home.css" {
-		t.Errorf("home CSS chunk wrong: %v", m["/"])
-	}
-	if len(m["/"].Preload) != 1 || m["/"].Preload[0] != "about.css" {
-		t.Errorf("home preloads wrong: %v", m["/"].Preload)
-	}
-}

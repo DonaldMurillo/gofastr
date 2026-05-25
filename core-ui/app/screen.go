@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -144,20 +143,6 @@ type Screen struct {
 	// matching layout shell during sibling-screen navigation.
 	group *ScreenGroup
 
-	// routeParams holds extracted dynamic route parameters.
-	//
-	// Deprecated: route params are no longer stashed on the shared Screen —
-	// they're delivered per-request via ParamSetter on a fresh component
-	// instance. This field is retained only so RouteParams() keeps its
-	// pre-existing zero-value semantics. Always nil on screens registered
-	// through Router.Screen.
-	routeParams map[string]string
-
-	// mu was used to serialize SetParams + render against the shared
-	// component instance. Per-request instancing (see newInstance) made
-	// the lock unnecessary; field retained to avoid an ABI shift in the
-	// public Screen struct for any caller that built one literally.
-	mu sync.Mutex
 }
 
 // NewScreen creates a page screen.
@@ -203,17 +188,6 @@ func (s *Screen) PolicyChain() []Policy {
 	out := make([]Policy, len(s.policies))
 	copy(out, s.policies)
 	return out
-}
-
-// RouteParams always returns nil.
-//
-// Deprecated: route params are no longer stashed on the shared Screen.
-// Per-request instancing (see newInstance) delivers params directly to
-// the component via ParamSetter.SetParams — read them from your
-// component's own field, not from Screen. Method retained to avoid an
-// ABI break; will be removed in a future version.
-func (s *Screen) RouteParams() map[string]string {
-	return s.routeParams
 }
 
 // ParamSetter is implemented by components that accept route parameters
@@ -309,7 +283,7 @@ func (s *Screen) RenderCtx(ctx context.Context) render.HTML {
 // wrapByScreenType applies the ARIA scaffolding that matches t. Exported
 // at package scope so callers that need to substitute a different
 // component (e.g. RenderAlt) can reuse the wrapping without copying the
-// Screen struct (which embeds a sync.Mutex).
+// Screen struct.
 func wrapByScreenType(t ScreenType, title string, content render.HTML) render.HTML {
 	switch t {
 	case ScreenPage:

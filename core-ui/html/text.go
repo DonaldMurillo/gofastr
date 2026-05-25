@@ -15,7 +15,7 @@ type HeadingConfig struct {
 	Level int // required: 1-6
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // TextConfig configures a text container element (Paragraph, Span, Strong, Em, etc.).
@@ -23,7 +23,7 @@ type HeadingConfig struct {
 type TextConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // AbbrConfig configures an <abbr> element.
@@ -32,7 +32,7 @@ type AbbrConfig struct {
 	Title string // required: full expansion
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // TimeConfig configures a <time> element.
@@ -41,7 +41,7 @@ type TimeConfig struct {
 	Datetime string // required: machine-readable datetime
 	Class    string
 	ID       string
-	Attrs    Attrs
+	ExtraAttrs    Attrs
 }
 
 // nonAlphaNum matches runs of non-alphanumeric characters for slug generation.
@@ -72,7 +72,7 @@ func Heading(cfg HeadingConfig, children ...render.HTML) render.HTML {
 	}
 	tag := fmt.Sprintf("h%d", level)
 
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 
 	// Auto-generate id from children if not already set.
 	if _, ok := attrs["id"]; !ok {
@@ -91,37 +91,37 @@ func Heading(cfg HeadingConfig, children ...render.HTML) render.HTML {
 
 // Paragraph produces a <p> element.
 func Paragraph(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("p", attrs, children...)
 }
 
 // Span produces a <span> element.
 func Span(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("span", attrs, children...)
 }
 
 // Strong produces a <strong> element for strong importance.
 func Strong(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("strong", attrs, children...)
 }
 
 // Em produces an <em> element for stress emphasis.
 func Em(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("em", attrs, children...)
 }
 
 // Code produces a <code> element for inline code fragments.
 func Code(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("code", attrs, children...)
 }
 
 // Pre produces a <pre> element for preformatted text.
 func Pre(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("pre", attrs, children...)
 }
 
@@ -129,31 +129,31 @@ func Pre(cfg TextConfig, children ...render.HTML) render.HTML {
 // or a sequence. Pairs with framework/ui.ShortcutHint for rendering
 // shortcut chips. Pure semantic markup, no scripting.
 func Kbd(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("kbd", attrs, children...)
 }
 
 // Blockquote produces a <blockquote> element.
 func Blockquote(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("blockquote", attrs, children...)
 }
 
 // Cite produces a <cite> element for the title of a work.
 func Cite(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("cite", attrs, children...)
 }
 
 // Small produces a <small> element for side comments.
 func Small(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("small", attrs, children...)
 }
 
 // Mark produces a <mark> element for highlighted text.
 func Mark(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("mark", attrs, children...)
 }
 
@@ -164,7 +164,7 @@ func Abbr(cfg AbbrConfig, children ...render.HTML) render.HTML {
 	if cfg.Title == "" {
 		panic("html: Abbr requires Title")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "title", cfg.Title)
 	return render.Tag("abbr", attrs, children...)
 }
@@ -175,7 +175,7 @@ func Time(cfg TimeConfig, children ...render.HTML) render.HTML {
 	if cfg.Datetime == "" {
 		panic("html: Time requires Datetime")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "datetime", cfg.Datetime)
 	return render.Tag("time", attrs, children...)
 }

@@ -179,7 +179,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 			labelEl,
 			html.Span(html.TextConfig{
 				Class: "ui-form-field__required",
-				Attrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")),
 		)
 	}
@@ -205,7 +205,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 		out = append(out, html.Paragraph(html.TextConfig{
 			Class: "ui-form-field__error",
 			ID:    cfg.For + "-error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	}
 	return formFieldStyle.WrapHTML(html.Div(html.DivConfig{Class: cls}, out...))
@@ -420,7 +420,7 @@ type ButtonConfig struct {
 	Variant ButtonVariant // defaults to ButtonPrimary
 	Size    ButtonSize    // defaults to ButtonSizeDefault
 	Type    string        // "button" (default) | "submit" | "reset"
-	Attrs   html.Attrs
+	ExtraAttrs   html.Attrs
 	ID      string
 	Class   string
 }
@@ -470,36 +470,8 @@ func Button(cfg ButtonConfig) render.HTML {
 		Type:  cfg.Type,
 		Class: cls,
 		ID:    cfg.ID,
-		Attrs: cfg.Attrs,
+		ExtraAttrs: cfg.ExtraAttrs,
 	}))
-}
-
-// ─── DangerButton (deprecated alias for Button{Variant: ButtonDanger}) ─
-
-// DangerButtonConfig is preserved for backwards compatibility.
-//
-// Deprecated: use Button{Variant: ButtonDanger}. Same render output,
-// consistent variant API across the framework.
-type DangerButtonConfig struct {
-	Label string
-	Type  string
-	Attrs html.Attrs
-	ID    string
-	Class string
-}
-
-// DangerButton renders a button with the danger variant.
-//
-// Deprecated: use Button(ButtonConfig{Variant: ButtonDanger, …}).
-func DangerButton(cfg DangerButtonConfig) render.HTML {
-	return Button(ButtonConfig{
-		Label:   cfg.Label,
-		Variant: ButtonDanger,
-		Type:    cfg.Type,
-		Attrs:   cfg.Attrs,
-		ID:      cfg.ID,
-		Class:   cfg.Class,
-	})
 }
 
 // ─── StatusBadge ────────────────────────────────────────────────────
@@ -760,7 +732,7 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	return avatarStyle.WrapHTML(html.Span(spanCfg,
 		html.Span(html.TextConfig{
 			Class: "ui-avatar__initials",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text(initials(cfg.Name))),
 		html.Span(html.TextConfig{Class: "ui-visually-hidden"},
 			render.Text(cfg.Name)),

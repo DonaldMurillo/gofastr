@@ -144,7 +144,7 @@ func CSRFToken(r *http.Request) string {
 // every HTML form they submit through the framework runtime. Safe for
 // template/html — returns template.HTML so it isn't double-escaped.
 //
-//	<form method="POST" action="/save" data-fui-native>
+//	<form method="POST" action="/save">
 //	  {{ auth.CSRFInputHTML .Request }}
 //	  …
 //	</form>

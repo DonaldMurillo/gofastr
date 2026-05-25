@@ -54,7 +54,7 @@ type Config struct {
 	// ID / Class / Attrs are passed through to the wrapper.
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Render renders the MultiSelect.
@@ -135,7 +135,7 @@ func Render(cfg Config) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

@@ -33,7 +33,7 @@ type TOCConfig struct {
 	Sticky bool
 	ID     string
 	Class  string
-	Attrs  html.Attrs
+	ExtraAttrs  html.Attrs
 }
 
 // TableOfContents renders a TOC nav that the runtime fills in.
@@ -66,7 +66,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 	return tocStyle.WrapHTML(render.Tag("nav", attrs,

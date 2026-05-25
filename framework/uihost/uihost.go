@@ -69,7 +69,6 @@ type UIHost struct {
 	extraScripts   []string                             // extra <script src="…"> URLs to inject before </body>
 	staticDir      string                               // directory to serve static files from
 	staticFS       fs.FS                                // embedded filesystem for static files
-	routeGraph     *style.RouteGraph                    // route graph for progressive CSS loading
 	signals        map[string]SignalAny                 // signalID → signal for live updates
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
@@ -196,13 +195,6 @@ func WithCustomCSS(css string) Option {
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
 		ds.extraScripts = append(ds.extraScripts, urls...)
-	}
-}
-
-// WithRouteGraph sets the route graph for progressive CSS loading.
-func WithRouteGraph(rg *style.RouteGraph) Option {
-	return func(ds *UIHost) {
-		ds.routeGraph = rg
 	}
 }
 
@@ -561,7 +553,7 @@ func pathToActionID(path string) string {
 }
 
 // buildRouteScript auto-builds the __gofastr_routes script from registered screens.
-// CSS chunk names are auto-derived from the screen path unless overridden via RouteGraph.
+// CSS chunk names are auto-derived from the screen path.
 func (ds *UIHost) buildRouteScript() string {
 	routes := ds.App.Routes()
 	if len(routes) == 0 {
@@ -569,20 +561,13 @@ func (ds *UIHost) buildRouteScript() string {
 	}
 	infos := make([]routeInfoJSON, len(routes))
 	for i, r := range routes {
-		info := routeInfoJSON{
+		infos[i] = routeInfoJSON{
 			Path:        r.Path,
 			Title:       r.Title,
 			Description: r.Description,
 			Preload:     i == 0, // preload first route
 			CSSChunk:    pathToChunkName(r.Path),
 		}
-		// Allow RouteGraph to override chunk name
-		if ds.routeGraph != nil {
-			if ri, ok := ds.routeGraph.Routes[r.Path]; ok && ri.CSSChunk != "" {
-				info.CSSChunk = ri.CSSChunk
-			}
-		}
-		infos[i] = info
 	}
 	rgJSON, _ := json.Marshal(infos)
 	// JS body only — no <script> wrapper. The body is served as an
@@ -1046,25 +1031,6 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ds.AppCSS())
 }
 
-// handleThemeCSS / handleStylesCSS — retained as 410 GONE so any
-// stale browser reference fails loudly instead of silently 404'ing.
-// New code should reference /__gofastr/app.css instead.
-func (ds *UIHost) handleThemeCSS(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "/__gofastr/theme.css was removed — use /__gofastr/app.css", http.StatusGone)
-}
-func (ds *UIHost) handleStylesCSS(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "/__gofastr/styles.css was removed — use /__gofastr/app.css", http.StatusGone)
-}
-
-// handleRoutesJS is retained as a 410 GONE so any stale browser
-// reference to /__gofastr/routes.js surfaces clearly instead of
-// silently 404'ing alongside other static assets. The route graph
-// now ships inline as a <script type="application/json"> block
-// inside the SSR'd page.
-func (ds *UIHost) handleRoutesJS(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "/__gofastr/routes.js was removed — routes ship inline as JSON in the page", http.StatusGone)
-}
-
 // serveNotFound writes a minimal HTML 404 with a real <title>. The
 // previous http.Error path returned text/plain with no <title>, which
 // left document.title="" on SPA-nav errors and bled into subsequent
@@ -1374,10 +1340,6 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/color-scheme.js", http.HandlerFunc(ds.handleColorSchemeJS))
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
 	r.Get("/__gofastr/app.css", http.HandlerFunc(ds.handleAppCSS))
-	// Legacy endpoints — 410 GONE redirects.
-	r.Get("/__gofastr/theme.css", http.HandlerFunc(ds.handleThemeCSS))
-	r.Get("/__gofastr/styles.css", http.HandlerFunc(ds.handleStylesCSS))
-	r.Get("/__gofastr/routes.js", http.HandlerFunc(ds.handleRoutesJS))
 	r.Get("/__gofastr/sse", http.HandlerFunc(ds.handleSSE))
 	r.Get("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
 	r.Post("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
@@ -1386,12 +1348,10 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Post("/__gofastr/action", http.HandlerFunc(ds.handleServerAction))
 	r.Get("/__gofastr/action", http.HandlerFunc(methodNotAllowed))
 	r.Get("/__gofastr/widget/{id}", http.HandlerFunc(ds.handleWidgetJS))
-	r.Get("/__gofastr/css/{path...}", http.HandlerFunc(ds.handleCSSChunk))
 	// Per-component scoped CSS + bundle endpoint for first paint.
 	// See core-ui/registry and core-ui/ARCHITECTURE.md.
 	r.Get("/__gofastr/comp/{path...}", http.HandlerFunc(ds.handleComponentCSS))
 	r.Get("/__gofastr/comp-bundle.css", http.HandlerFunc(ds.handleCompBundleCSS))
-	r.Get("/__gofastr/catalog.js", http.HandlerFunc(ds.handleCatalogJS))
 	// runtime.js auto-discovers core-ui/widget widgets at
 	// /__gofastr/widgets. Delegate to the widget registry so apps that
 	// mount widgets (preset.Modal, ToastStack, …) are visible to the
@@ -1838,15 +1798,6 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleCatalogJS is retained as a 410 GONE so any stale browser
-// reference to /__gofastr/catalog.js surfaces clearly instead of
-// silently 404'ing alongside other static assets. The catalog now
-// ships inline as a <script type="application/json"> block inside
-// the SSR'd page.
-func (ds *UIHost) handleCatalogJS(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "/__gofastr/catalog.js was removed — catalog ships inline as JSON in the page", http.StatusGone)
-}
-
 // activeTheme returns the configured theme or the default if unset.
 func (ds *UIHost) activeTheme() style.Theme {
 	if ds.App != nil && ds.App.Theme != nil {
@@ -1874,17 +1825,6 @@ func hashStrings(parts ...string) string {
 	}
 	sum := h.Sum(nil)
 	return hex.EncodeToString(sum[:6])
-}
-
-// handleCSSChunk responds 410 GONE for any /__gofastr/css/<path>
-// request. The per-screen CSS chunk system has been replaced by
-// per-component scoped sheets at /__gofastr/comp/<name>.css. Apps
-// declare CSS on the component via registry.RegisterStyle; the
-// runtime loads it on demand from the SSR-emitted <link>. Returning
-// 410 (instead of silently 404'ing) surfaces stale wiring so it gets
-// fixed rather than masked.
-func (ds *UIHost) handleCSSChunk(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "/__gofastr/css/<path> was removed — declare CSS per component via registry.RegisterStyle and the runtime will load /__gofastr/comp/<name>.css on demand", http.StatusGone)
 }
 
 // ReadCustomCSSFile reads a CSS file and returns its content.

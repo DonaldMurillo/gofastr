@@ -122,7 +122,7 @@ func (s *CustomersFormScreen) Render() render.HTML {
 				Help:  "At least 2 characters.",
 				Input: html.Input(html.InputConfig{
 					Type: "text", Name: "name", ID: "f-name",
-					Attrs: html.Attrs{"value": s.customer.Name, "required": "required"},
+					ExtraAttrs: html.Attrs{"value": s.customer.Name, "required": "required"},
 				}),
 			}),
 			ui.FormFieldFor(s.errs, "email", ui.FormFieldConfig{
@@ -130,7 +130,7 @@ func (s *CustomersFormScreen) Render() render.HTML {
 				Help:  "Used for account recovery.",
 				Input: html.Input(html.InputConfig{
 					Type: "email", Name: "email", ID: "f-email",
-					Attrs: html.Attrs{"value": s.customer.Email, "required": "required"},
+					ExtraAttrs: html.Attrs{"value": s.customer.Email, "required": "required"},
 				}),
 			}),
 			ui.FormFieldFor(s.errs, "status", ui.FormFieldConfig{

@@ -192,14 +192,6 @@ func TestButtonRejectsUnknownVariant(t *testing.T) {
 	Button(ButtonConfig{Label: "Save", Variant: ButtonVariant("tertiary")})
 }
 
-func TestDangerButtonAliasMatchesButtonDanger(t *testing.T) {
-	a := string(DangerButton(DangerButtonConfig{Label: "Delete"}))
-	b := string(Button(ButtonConfig{Label: "Delete", Variant: ButtonDanger}))
-	if a != b {
-		t.Errorf("DangerButton alias should match Button{Variant: ButtonDanger}\n--- DangerButton ---\n%s\n--- Button ---\n%s", a, b)
-	}
-}
-
 // Button{Variant: ButtonDanger} must emit ONE data-fui-comp marker
 // (ui-button), not two. The legacy dangerButtonStyle was wrapping
 // the same element with its own marker, causing two scoped CSS files
@@ -213,13 +205,6 @@ func TestButtonDangerEmitsSingleMarker(t *testing.T) {
 	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
 		t.Errorf("Button{Variant: ButtonDanger} should mark as ui-button (not ui-button-danger):\n%s", h)
 	}
-}
-
-// Pre-existing test kept for back-compat coverage of the alias.
-func TestDangerButtonHasDangerVariantClass(t *testing.T) {
-	h := DangerButton(DangerButtonConfig{Label: "Delete"})
-	mustContain(t, h, "ui-button--danger")
-	mustContain(t, h, "Delete")
 }
 
 func TestButtonSizeDefaultEmitsNoSizeClass(t *testing.T) {

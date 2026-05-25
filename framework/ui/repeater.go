@@ -61,7 +61,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 	for i, item := range cfg.Items {
 		itemHTML = append(itemHTML, html.Div(html.DivConfig{
 			Class: "ui-repeater-item",
-			Attrs: map[string]string{"data-index": strconv.Itoa(i)},
+			ExtraAttrs: map[string]string{"data-index": strconv.Itoa(i)},
 		}, item, repeaterRemoveBtn(cfg, i)))
 	}
 
@@ -73,14 +73,14 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		for i := 0; i < count; i++ {
 			itemHTML = append(itemHTML, html.Div(html.DivConfig{
 				Class: "ui-repeater-item",
-				Attrs: map[string]string{"data-index": strconv.Itoa(i)},
+				ExtraAttrs: map[string]string{"data-index": strconv.Itoa(i)},
 			}, cfg.Template(i), repeaterRemoveBtn(cfg, i)))
 		}
 	}
 
 	children = append(children, html.Div(html.DivConfig{
 		Class: "ui-repeater-items",
-		Attrs: map[string]string{
+		ExtraAttrs: map[string]string{
 			"id":             cfg.ID + "-items",
 			"data-repeater":  cfg.Name,
 			"data-min-items": strconv.Itoa(cfg.MinItems),
@@ -100,7 +100,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 	}
 	children = append(children, html.Button(html.ButtonConfig{
 		Label: cfg.AddLabel,
-		Attrs: addAttrs,
+		ExtraAttrs: addAttrs,
 	}))
 
 	return repeaterStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-repeater"}, children...))
@@ -121,7 +121,7 @@ func repeaterRemoveBtn(cfg RepeaterConfig, index int) render.HTML {
 	}
 	return html.Button(html.ButtonConfig{
 		Label: cfg.RemoveLabel,
-		Attrs: attrs,
+		ExtraAttrs: attrs,
 	})
 }
 

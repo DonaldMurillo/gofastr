@@ -12,7 +12,7 @@ import (
 //
 // This test asserts:
 //  1. runtime.js installs a global submit handler that handles
-//     data-fui-native, enctype, and follows Location.
+//     data-fui-rpc forms and follows Location for native submits.
 //  2. widgets.js does NOT install a second global submit handler at
 //     document-scope. (Widget-scoped handlers — `widgetEl.addEventListener`
 //     — are fine; the rule is one DOCUMENT-level handler.)
@@ -26,10 +26,8 @@ func TestFormDispatcher_SingleSourceOfTruth(t *testing.T) {
 		t.Skip("widgets module not embedded")
 	}
 
-	// runtime.js is the canonical home — must contain the data-fui-native
-	// opt-out branch.
-	if !strings.Contains(runtimeJS, "data-fui-native") {
-		t.Error("runtime.js missing data-fui-native opt-out branch")
+	if !strings.Contains(runtimeJS, "data-fui-rpc") {
+		t.Error("runtime.js missing data-fui-rpc form-submit branch")
 	}
 	if !strings.Contains(runtimeJS, "redirect: 'follow'") {
 		t.Error("runtime.js missing Location-follow path")

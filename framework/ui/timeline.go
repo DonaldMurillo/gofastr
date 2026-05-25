@@ -46,7 +46,7 @@ type TimelineConfig struct {
 	Events []TimelineEvent
 	ID     string
 	Class  string
-	Attrs  html.Attrs
+	ExtraAttrs  html.Attrs
 }
 
 // Timeline renders an ordered list of events on a vertical rail.
@@ -62,7 +62,7 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

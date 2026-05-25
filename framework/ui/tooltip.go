@@ -76,7 +76,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	pop := html.Span(html.TextConfig{
 		Class: "ui-tooltip__pop",
 		ID:    id,
-		Attrs: html.Attrs{"role": "tooltip"},
+		ExtraAttrs: html.Attrs{"role": "tooltip"},
 	}, render.Text(cfg.Text))
 
 	return tooltipStyle.WrapHTML(html.Span(html.TextConfig{

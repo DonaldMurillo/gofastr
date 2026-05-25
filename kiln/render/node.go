@@ -55,12 +55,12 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Div(html.DivConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			Role: propString(props, "role"), AriaLabel: propString(props, "aria-label"),
-			Attrs: extraAttrs(props, "id", "class", "role", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "role", "aria-label"),
 		}, children...)
 	case "article":
 		return html.Article(html.ArticleConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class"),
+			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "section":
 		// Sections require label or labelledby for ARIA. We auto-label
@@ -81,22 +81,22 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Section(html.SectionConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
 		}, children...)
 	case "main":
 		return html.Main(html.MainConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class"),
+			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "header":
 		return html.Header(html.HeaderConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class"),
+			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "footer":
 		return html.Footer(html.FooterConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class"),
+			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "nav":
 		label := propString(props, "label")
@@ -110,7 +110,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Nav(html.NavConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
 		}, children...)
 	case "aside":
 		label := propString(props, "label")
@@ -124,7 +124,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Aside(html.AsideConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
 		}, children...)
 
 	// --- text elements --------------------------------------------
@@ -144,7 +144,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Heading(html.HeadingConfig{
 			Level: level,
 			ID:    propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "level", "text"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "level", "text"),
 		}, body...)
 	case "paragraph", "p":
 		text := propString(props, "text")
@@ -188,7 +188,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Button(html.ButtonConfig{
 			Label: label, Type: typ,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: attrs,
+			ExtraAttrs: attrs,
 		})
 	case "link", "a":
 		text := propString(props, "text")
@@ -199,13 +199,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 				Href:    propString(props, "href"),
 				Content: render.Join(children...),
 				ID:      propString(props, "id"), Class: propString(props, "class"),
-				Attrs: extraAttrs(props, "id", "class", "href", "text"),
+				ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
 			})
 		}
 		return html.Link(html.LinkConfig{
 			Href: propString(props, "href"), Text: text,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "href", "text"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
 		})
 	case "input":
 		typ := propString(props, "type")
@@ -222,7 +222,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Input(html.InputConfig{
 			Type: typ, Name: name,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "type", "name"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "type", "name"),
 		})
 	case "label":
 		text := propString(props, "text")
@@ -231,7 +231,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			return html.Label(html.LabelConfig{
 				For: propString(props, "for"), Text: text,
 				ID: propString(props, "id"), Class: propString(props, "class"),
-				Attrs: extraAttrs(props, "id", "class", "for", "text"),
+				ExtraAttrs: extraAttrs(props, "id", "class", "for", "text"),
 			})
 		}
 		// children present — emit a manual <label> so we can include the markup
@@ -272,7 +272,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Form(html.FormConfig{
 			Method: method, Action: propString(props, "action"),
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: attrs,
+			ExtraAttrs: attrs,
 		}, children...)
 	case "select":
 		// Options expected as children (kind: "option" with value/text props).
@@ -291,13 +291,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.TextArea(html.TextAreaConfig{
 			Name: name,
 			ID:   propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "name"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "name"),
 		})
 	case "fieldset":
 		return html.FieldSet(html.FieldSetConfig{
 			Legend: propString(props, "legend"),
 			ID:     propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "legend"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "legend"),
 		}, children...)
 
 	// --- media ----------------------------------------------------
@@ -307,7 +307,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Image(html.ImageConfig{
 			Src: propString(props, "src"), Alt: propString(props, "alt"),
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "src", "alt"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "src", "alt"),
 		})
 
 	// --- lists ----------------------------------------------------
@@ -318,7 +318,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		items := wrapAsListItems(children)
 		cfg := html.ListConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class", "ordered"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "ordered"),
 		}
 		if ordered {
 			return html.OrderedList(cfg, items...)
@@ -331,7 +331,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	case "li":
 		return html.ListItem(html.ListItemConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			Attrs: extraAttrs(props, "id", "class"),
+			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 
 	// --- table ----------------------------------------------------
@@ -359,14 +359,14 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 func textConfig(props map[string]any) html.TextConfig {
 	return html.TextConfig{
 		ID: propString(props, "id"), Class: propString(props, "class"),
-		Attrs: extraAttrs(props, "id", "class", "text"),
+		ExtraAttrs: extraAttrs(props, "id", "class", "text"),
 	}
 }
 
 func listConfig(props map[string]any) html.ListConfig {
 	return html.ListConfig{
 		ID: propString(props, "id"), Class: propString(props, "class"),
-		Attrs: extraAttrs(props, "id", "class"),
+		ExtraAttrs: extraAttrs(props, "id", "class"),
 	}
 }
 

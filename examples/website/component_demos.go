@@ -323,13 +323,13 @@ func (popoverDemoBody) Render() render.HTML {
 			render.Text("Share this page")),
 		html.Paragraph(html.TextConfig{Class: "popover-demo-body__from"},
 			render.Text("Opened from: "),
-			html.Strong(html.TextConfig{Attrs: html.Attrs{"data-fui-signal": "from"}}),
+			html.Strong(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-signal": "from"}}),
 		),
 		html.Paragraph(html.TextConfig{},
 			render.Text("Anchored, dismiss-on-outside, no backdrop dim. Tab moves out naturally — there's no focus trap.")),
 		html.Div(html.DivConfig{Class: "demo-modal-actions"},
-			ui.Button(ui.ButtonConfig{Label: "Copy link", Variant: ui.ButtonSecondary, Attrs: closeAttr}),
-			ui.Button(ui.ButtonConfig{Label: "Done", Variant: ui.ButtonPrimary, Attrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Copy link", Variant: ui.ButtonSecondary, ExtraAttrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Done", Variant: ui.ButtonPrimary, ExtraAttrs: closeAttr}),
 		),
 	)
 }
@@ -358,8 +358,8 @@ func (confirmModalBody) Render() render.HTML {
 		html.Paragraph(html.TextConfig{ID: "components-confirm-desc"},
 			render.Text("This will free up disk space but cannot be undone.")),
 		html.Div(html.DivConfig{Class: "demo-modal-actions"},
-			ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonSecondary, Attrs: closeAttr}),
-			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, Attrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonSecondary, ExtraAttrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: closeAttr}),
 		),
 	)
 }
@@ -371,7 +371,7 @@ func (userEditModalBody) Render() render.HTML {
 	return html.Div(html.DivConfig{Class: "demo-modal-body"},
 		html.Heading(html.HeadingConfig{Level: 2, ID: "components-user-edit-title"},
 			render.Text("Edit user "),
-			html.Span(html.TextConfig{Attrs: html.Attrs{"data-fui-signal": "user_id"}}),
+			html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-signal": "user_id"}}),
 		),
 		html.Paragraph(html.TextConfig{},
 			render.Text("Signal user_id was seeded from the URL — refresh and watch it survive.")),
@@ -380,8 +380,8 @@ func (userEditModalBody) Render() render.HTML {
 			render.Tag("input", map[string]string{"type": "text", "value": ""}),
 		),
 		html.Div(html.DivConfig{Class: "demo-modal-actions"},
-			ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonSecondary, Attrs: closeAttr}),
-			ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, Attrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonSecondary, ExtraAttrs: closeAttr}),
+			ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, ExtraAttrs: closeAttr}),
 		),
 	)
 }
@@ -407,7 +407,7 @@ func (quickNavDrawerBody) Render() render.HTML {
 		ui.Button(ui.ButtonConfig{
 			Label: "Close", Variant: ui.ButtonSecondary,
 			Class: "demo-drawer-spacer",
-			Attrs: html.Attrs{"data-fui-action": "close"},
+			ExtraAttrs: html.Attrs{"data-fui-action": "close"},
 		}),
 	)
 }
@@ -416,7 +416,7 @@ type filterDrawerBody struct{}
 
 func (filterDrawerBody) Render() render.HTML {
 	signalSpan := func(name string) render.HTML {
-		return html.Strong(html.TextConfig{Attrs: html.Attrs{"data-fui-signal": name}})
+		return html.Strong(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-signal": name}})
 	}
 	return html.Div(html.DivConfig{Class: "demo-drawer-body"},
 		html.Heading(html.HeadingConfig{Level: 2, ID: "components-filter-drawer-title"},
@@ -435,7 +435,7 @@ func (filterDrawerBody) Render() render.HTML {
 		ui.Button(ui.ButtonConfig{
 			Label: "Close", Variant: ui.ButtonSecondary,
 			Class: "demo-drawer-spacer",
-			Attrs: html.Attrs{"data-fui-action": "close"},
+			ExtraAttrs: html.Attrs{"data-fui-action": "close"},
 		}),
 	)
 }

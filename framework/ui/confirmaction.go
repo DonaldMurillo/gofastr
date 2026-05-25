@@ -114,7 +114,7 @@ func buildConfirmTrigger(name, label, variant string) render.HTML {
 	return Button(ButtonConfig{
 		Label:   label,
 		Variant: parseButtonVariant(variant),
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-open": name,
 		},
 	})
@@ -190,12 +190,12 @@ func (s *confirmDialogSlot) Render() render.HTML {
 			Button(ButtonConfig{
 				Label:   s.cancelLabel,
 				Variant: ButtonGhost,
-				Attrs:   cancelAttrs,
+				ExtraAttrs:   cancelAttrs,
 			}),
 			Button(ButtonConfig{
 				Label:   s.confirmLabel,
 				Variant: ButtonDanger,
-				Attrs:   confirmAttrs,
+				ExtraAttrs:   confirmAttrs,
 			}),
 		),
 	))

@@ -136,10 +136,12 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	json.NewEncoder(w).Encode(page)
 }
 
-// decodeCursorAny accepts either the legacy single-field cursor or the new
-// multi-field encoding and returns a map keyed by the DB column name. For
-// the legacy form, the single field/value lands under the first entry in
-// `fields`.
+// decodeCursorAny accepts either the single-field cursor or the
+// multi-field encoding and returns a map keyed by the DB column name.
+// For the single-field form the value lands under the first entry in
+// `fields`. Both encodings are first-class — single-field is the
+// compact shape for entities cursored by one column; multi-field is
+// for composite cursors.
 func decodeCursorAny(cursor string, fields []string) (map[string]string, error) {
 	out := map[string]string{}
 
@@ -158,9 +160,9 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 	return nil, fmt.Errorf("cursor format not recognised")
 }
 
-// buildCursorPage assembles the CursorPage envelope. For single-field
-// cursors it uses the legacy EncodeCursor shape so existing clients keep
-// working; for composite cursors it emits the multi-field encoding.
+// buildCursorPage assembles the CursorPage envelope. Single-field
+// cursors use the compact EncodeCursor shape; composite cursors emit
+// the multi-field encoding.
 func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, limit int) pagination.CursorPage {
 	hasMore := len(data) > limit
 	if hasMore {

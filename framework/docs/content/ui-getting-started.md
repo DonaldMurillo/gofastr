@@ -245,6 +245,50 @@ What happened:
 - `Style.Render(c)` — pass a `component.Component`; the framework calls `c.Render()` and injects the marker. Use for components built as Go types.
 - `Style.WrapHTML(html)` — pass already-built `render.HTML`. Use for components built as functions (`StatCard(cfg)`), which is the common case in `framework/ui/`.
 
+### Co-located screen styles (`style.Contribute`)
+
+For one-off screen styles that don't deserve a reusable component, use
+`style.Contribute` to declare CSS next to the Go render code. The host's
+`createStyleSheet` fans every contribution into the main theme stylesheet
+at startup via `style.Apply`:
+
+```go
+// screen_home.go
+var _ = style.Contribute(func(ss *style.StyleSheet) {
+    ss.Rule(".home-hero").
+        Set("padding", "{spacing.lg}", "background", "{colors.surface}").
+        End()
+    ss.Rule(".home-card").
+        Set("border-radius", "{radii.md}").
+        End()
+})
+
+func (s *HomeScreen) Render() render.HTML { /* uses .home-hero, .home-card */ }
+```
+
+In the host's `theme.go`:
+
+```go
+func createStyleSheet(t style.Theme) string {
+    ss := style.NewStyleSheet(t)
+    // ...base rules: resets, layout primitives, page chrome...
+    style.Apply(ss)
+    return ss.CSS() + ui.BaseCSS()
+}
+```
+
+`Apply` runs after the base rules so co-located declarations can override
+them by re-declaring the same selector. Final CSS is identical between
+dev and prod — no nonces, no inline `<style>`, no CSP relaxation.
+
+**When to reach for what:**
+
+| Use case                      | Tool                              |
+|-------------------------------|-----------------------------------|
+| Reusable component with CSS   | `registry.RegisterStyle` + `Style.WrapHTML` (scoped, lazy-loaded per-component sheet) |
+| One-off screen / page styles  | `style.Contribute` (this section — fragment added to the host's global theme stylesheet) |
+| Site-wide tokens & primitives | Host `createStyleSheet` directly  |
+
 ---
 
 ## 5. Mobile hamburger nav (optional)

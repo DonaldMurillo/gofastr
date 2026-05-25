@@ -76,7 +76,7 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	return shortcutHintStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls,
 		ID:    cfg.ID,
-		Attrs: html.Attrs{"aria-hidden": "false"},
+		ExtraAttrs: html.Attrs{"aria-hidden": "false"},
 	}, chips...))
 }
 
@@ -139,7 +139,7 @@ func renderChordPart(p chordPart) render.HTML {
 		// Two spans: ⌘ for Mac, Ctrl for others. CSS hides the wrong one.
 		return html.Kbd(html.TextConfig{
 			Class: "ui-shortcut-hint__key ui-shortcut-hint__key--mod",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		},
 			html.Span(html.TextConfig{Class: "ui-shortcut-hint__mod-mac"}, render.Text("⌘")),
 			html.Span(html.TextConfig{Class: "ui-shortcut-hint__mod-other"}, render.Text("Ctrl")),
@@ -147,17 +147,17 @@ func renderChordPart(p chordPart) render.HTML {
 	case "shift":
 		return html.Kbd(html.TextConfig{
 			Class: "ui-shortcut-hint__key",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⇧"))
 	case "alt":
 		return html.Kbd(html.TextConfig{
 			Class: "ui-shortcut-hint__key",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⌥"))
 	default:
 		return html.Kbd(html.TextConfig{
 			Class: "ui-shortcut-hint__key",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text(p.key))
 	}
 }

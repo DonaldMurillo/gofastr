@@ -18,7 +18,7 @@ func (s *BottomSheetScreen) ScreenType() app.ScreenType { return app.ScreenPage 
 func (s *BottomSheetScreen) Render() render.HTML {
 	openBtn := ui.Button(ui.ButtonConfig{
 		Label: "Open bottom sheet",
-		Attrs: html.Attrs{"data-fui-open": "components-bottomsheet-demo"},
+		ExtraAttrs: html.Attrs{"data-fui-open": "components-bottomsheet-demo"},
 	})
 
 	src := `// Register once at app startup.

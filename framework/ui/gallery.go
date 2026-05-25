@@ -91,7 +91,7 @@ type GalleryConfig struct {
 	// ID / Class / Attrs pass through to the wrapper.
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Gallery renders the thumbnail surface.
@@ -160,7 +160,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

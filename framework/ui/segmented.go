@@ -144,7 +144,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	// Indicator (CSS-positioned via :has() / data-position siblings).
 	items = append(items, html.Span(html.TextConfig{
 		Class: "ui-segmented__indicator",
-		Attrs: html.Attrs{"aria-hidden": "true"},
+		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}))
 
 	return segmentedStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))

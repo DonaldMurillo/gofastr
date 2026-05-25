@@ -86,7 +86,7 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 	if cfg.Variant == SpinnerDots {
 		visual = html.Span(html.TextConfig{
 			Class: "ui-spinner__dots",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		},
 			html.Span(html.TextConfig{Class: "ui-spinner__dot"}),
 			html.Span(html.TextConfig{Class: "ui-spinner__dot"}),
@@ -99,18 +99,18 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 		}
 		visual = html.Span(html.TextConfig{
 			Class: "ui-spinner__grid",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, cells...)
 	} else {
 		visual = html.Span(html.TextConfig{
 			Class: "ui-spinner__ring",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		})
 	}
 
 	return spinnerStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"role":      "status",
 			"aria-live": "polite",
 			"aria-busy": "true",

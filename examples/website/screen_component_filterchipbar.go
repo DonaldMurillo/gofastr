@@ -31,7 +31,7 @@ func (s *FilterChipBarScreen) Render() render.HTML {
 	resetBtn := ui.Button(ui.ButtonConfig{
 		Label:   "Reset filters",
 		Variant: ui.ButtonSecondary,
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-rpc":        "/islands/new-components/filter-reset",
 			"data-fui-rpc-method": "POST",
 			"data-fui-rpc-signal": "filter-bar-demo",

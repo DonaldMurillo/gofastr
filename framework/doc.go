@@ -25,9 +25,10 @@
 //   - framework/slowquery  SlowQueryLogger DBExecutor wrapper
 //   - framework/db         shared Executor + tx context primitives
 //
-// New code should prefer importing the narrow subpackage rather than the
-// framework facade. The facade exists for backwards compatibility with
-// callers and generated code that pre-date the split.
+// Both surfaces are first-class: the facade re-exports give callers
+// short, one-import access (`framework.Entity`, `framework.AutoMigrate`),
+// while the narrow subpackages give plugin authors and codegen tools
+// a precise dependency graph.
 //
 // See framework/ARCHITECTURE.md for the layering rules, cycle-breaking
 // interfaces, and the recipe for extracting a new subpackage.

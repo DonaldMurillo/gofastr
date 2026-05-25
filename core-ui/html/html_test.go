@@ -302,7 +302,7 @@ func TestKbdWithClass(t *testing.T) {
 }
 
 func TestBlockquote(t *testing.T) {
-	b := Blockquote(TextConfig{Attrs: Attrs{"cite": "https://example.com"}}, render.Text("Quote"))
+	b := Blockquote(TextConfig{ExtraAttrs: Attrs{"cite": "https://example.com"}}, render.Text("Quote"))
 	assertContains(t, b, "<blockquote")
 	assertContains(t, b, "Quote")
 	assertContains(t, b, `cite="https://example.com"`)
@@ -518,6 +518,37 @@ func TestInput(t *testing.T) {
 	assertNotContains(t, inp, "</input>")
 }
 
+func TestInputValueAndPlaceholder(t *testing.T) {
+	inp := Input(InputConfig{
+		Type:        "text",
+		Name:        "q",
+		Value:       "hello",
+		Placeholder: "search…",
+	})
+	assertContains(t, inp, `value="hello"`)
+	assertContains(t, inp, `placeholder="search…"`)
+}
+
+func TestInputOmitsEmptyValue(t *testing.T) {
+	inp := Input(InputConfig{Type: "text", Name: "q"})
+	assertNotContains(t, inp, "value=")
+	assertNotContains(t, inp, "placeholder=")
+}
+
+// When both InputConfig.Value (typed) and Attrs["value"] (escape hatch)
+// are set, the typed field wins. Attrs is the escape hatch for things
+// the typed surface doesn't cover; the typed surface is canonical.
+func TestInputConfig_TypedFieldOverridesAttrs(t *testing.T) {
+	inp := Input(InputConfig{
+		Type:  "text",
+		Name:  "q",
+		Value: "typed-wins",
+		ExtraAttrs: Attrs{"value": "attrs-loses"},
+	})
+	assertContains(t, inp, `value="typed-wins"`)
+	assertNotContains(t, inp, `value="attrs-loses"`)
+}
+
 func TestLabel(t *testing.T) {
 	l := Label(LabelConfig{For: "email-field", Text: "Email Address"})
 	assertContains(t, l, "<label")
@@ -552,11 +583,43 @@ func TestOption(t *testing.T) {
 }
 
 func TestTextArea(t *testing.T) {
-	ta := TextArea(TextAreaConfig{Name: "description", Attrs: Attrs{"rows": "5"}})
+	ta := TextArea(TextAreaConfig{Name: "description", Rows: 5})
 	assertContains(t, ta, "<textarea")
 	assertContains(t, ta, `name="description"`)
 	assertContains(t, ta, `rows="5"`)
 	assertContains(t, ta, "</textarea>")
+}
+
+func TestTextAreaContent(t *testing.T) {
+	ta := TextArea(TextAreaConfig{Name: "bio", Content: "Hello <world>"})
+	assertContains(t, ta, "<textarea")
+	assertContains(t, ta, "Hello &lt;world&gt;")
+	assertNotContains(t, ta, "<world>")
+}
+
+func TestTextAreaPlaceholder(t *testing.T) {
+	ta := TextArea(TextAreaConfig{Name: "bio", Placeholder: "tell us…"})
+	assertContains(t, ta, `placeholder="tell us…"`)
+}
+
+func TestTextAreaCols(t *testing.T) {
+	ta := TextArea(TextAreaConfig{Name: "bio", Cols: 80})
+	assertContains(t, ta, `cols="80"`)
+}
+
+// TextArea content lives as a child text node, while Attrs sets element
+// attributes. The two can coexist without conflict — this test pins that
+// behaviour so a regression that accidentally turns Content into an attr
+// (or has Attrs override the child text) gets caught.
+func TestTextAreaContentAndAttrsCoexist(t *testing.T) {
+	ta := TextArea(TextAreaConfig{
+		Name:    "bio",
+		Content: "hello",
+		ExtraAttrs:   Attrs{"data-extra": "x", "aria-label": "Bio"},
+	})
+	assertContains(t, ta, ">hello</textarea>")
+	assertContains(t, ta, `data-extra="x"`)
+	assertContains(t, ta, `aria-label="Bio"`)
 }
 
 func TestFieldSet(t *testing.T) {
@@ -703,14 +766,14 @@ func TestImage(t *testing.T) {
 }
 
 func TestAudio(t *testing.T) {
-	a := Audio(AudioConfig{Attrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
+	a := Audio(AudioConfig{ExtraAttrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
 	assertContains(t, a, "<audio")
 	assertContains(t, a, `controls="controls"`)
 	assertContains(t, a, "fallback")
 }
 
 func TestVideo(t *testing.T) {
-	v := Video(VideoConfig{Attrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
+	v := Video(VideoConfig{ExtraAttrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
 	assertContains(t, v, "<video")
 	assertContains(t, v, `controls="controls"`)
 }
@@ -865,7 +928,7 @@ func TestFullForm(t *testing.T) {
 	f := Form(FormConfig{Method: "POST", Action: "/register", Class: "form"},
 		FieldSet(FieldSetConfig{Legend: "Account"},
 			Label(LabelConfig{For: "email", Text: "Email"}),
-			Input(InputConfig{Type: "email", Name: "email", ID: "email", Attrs: Attrs{"required": "required"}}),
+			Input(InputConfig{Type: "email", Name: "email", ID: "email", ExtraAttrs: Attrs{"required": "required"}}),
 		),
 	)
 
@@ -948,7 +1011,7 @@ func TestOnChange(t *testing.T) {
 }
 
 func TestOnClickInButton(t *testing.T) {
-	html := Button(ButtonConfig{Label: "Save", Attrs: OnClick("save")})
+	html := Button(ButtonConfig{Label: "Save", ExtraAttrs: OnClick("save")})
 	s := string(html)
 	if !strings.Contains(s, `data-action="save"`) {
 		t.Errorf("expected data-action on button, got %s", s)

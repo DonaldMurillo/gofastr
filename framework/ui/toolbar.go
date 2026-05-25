@@ -38,7 +38,7 @@ type ToolbarConfig struct {
 	Align string
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Toolbar renders a horizontal action strip with role=toolbar.
@@ -70,7 +70,7 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

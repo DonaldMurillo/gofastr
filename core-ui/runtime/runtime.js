@@ -225,9 +225,9 @@
   // Catches data-fui-rpc on any element NOT inside a widget. Widget
   // scopes have their own handler that intercepts first.
   //
-  // Also handles legacy data-kiln-tool buttons + plain forms with a
-  // relative `action` attribute, kept here because kiln-built pages
-  // rely on the same generic dispatcher.
+  // Also handles kiln-emitted data-kiln-tool buttons + plain forms with
+  // a relative `action` attribute; kiln-built pages rely on the same
+  // generic dispatcher.
   if (!document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
     document.addEventListener('click', async (e) => {
@@ -239,9 +239,9 @@
         await dispatchRPC(btn);
         return;
       }
-      // Legacy: data-kiln-tool buttons fire a /kiln/tool/<name> POST
-      // with the data-kiln-args body. Scoped to kiln-rendered pages
-      // (body.kiln-app) or any subtree explicitly opted in via
+      // Kiln dispatch: data-kiln-tool buttons fire a /kiln/tool/<name>
+      // POST with the data-kiln-args body. Scoped to kiln-rendered
+      // pages (body.kiln-app) or any subtree explicitly opted in via
       // data-fui-trusted — otherwise stored-XSS inside user-content
       // could carry a data-kiln-tool attribute and CSRF as the
       // logged-in user.
@@ -263,18 +263,14 @@
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
       if (!form || form.closest('[data-fui-widget]')) return;
-      // data-fui-native is a holdover opt-out from the pre-2026-05
-      // default-intercept era. Now equivalent to "no attribute" for
-      // urlencoded/multipart forms; kept so existing pages don't break.
-      if (form.hasAttribute('data-fui-native')) return;
       if (form.hasAttribute('data-fui-rpc')) {
         e.preventDefault();
         await dispatchRPC(form);
         return;
       }
-      // Legacy: data-kiln-tool form submits. Scoped to kiln-rendered
-      // pages (body.kiln-app) or data-fui-trusted subtrees, same as
-      // the button delegator above.
+      // Kiln dispatch: data-kiln-tool form submits. Scoped to
+      // kiln-rendered pages (body.kiln-app) or data-fui-trusted
+      // subtrees, same as the button delegator above.
       if (form.hasAttribute('data-kiln-tool') &&
           (document.body.classList.contains('kiln-app') ||
            form.closest('[data-fui-trusted]'))) {

@@ -34,7 +34,7 @@ type PasswordInputConfig struct {
 	// Class adds extra CSS classes to the wrapper.
 	Class string
 	// Attrs lets callers attach additional attributes.
-	Attrs map[string]string
+	ExtraAttrs map[string]string
 }
 
 // PasswordInput renders a password field with a show/hide toggle button.
@@ -73,7 +73,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		inputAttrs["aria-invalid"] = "true"
 		inputAttrs["aria-describedby"] = cfg.ID + "-error"
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		inputAttrs[k] = v
 	}
 	// Protect critical attrs from Attrs override.
@@ -97,7 +97,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    cfg.ID + "-error",
 			Class: "ui-password-input__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	}
 

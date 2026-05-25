@@ -43,7 +43,7 @@ type RangeSliderConfig struct {
 	Disabled bool
 	ID       string
 	Class    string
-	Attrs    html.Attrs
+	ExtraAttrs    html.Attrs
 }
 
 // RangeSlider renders a dual-thumb range input.
@@ -143,7 +143,7 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 	return rangeSliderStyle.WrapHTML(render.Tag("div", attrs, children...))

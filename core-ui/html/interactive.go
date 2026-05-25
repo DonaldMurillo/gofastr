@@ -1,6 +1,8 @@
 package html
 
 import (
+	"strconv"
+
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -18,7 +20,7 @@ type ButtonConfig struct {
 	Type  string // defaults to "button"
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // LinkConfig configures an <a> element.
@@ -28,7 +30,7 @@ type LinkConfig struct {
 	Text  string // required (visible text content)
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // LinkHTMLConfig configures an <a> element with raw HTML content.
@@ -38,7 +40,7 @@ type LinkHTMLConfig struct {
 	Content render.HTML // required (raw HTML content)
 	Class   string
 	ID      string
-	Attrs   Attrs
+	ExtraAttrs   Attrs
 }
 
 // FormConfig configures a <form> element.
@@ -48,17 +50,19 @@ type FormConfig struct {
 	Action string // optional: form action URL
 	Class  string
 	ID     string
-	Attrs  Attrs
+	ExtraAttrs  Attrs
 }
 
 // InputConfig configures a void <input> element.
 // Required: Type and Name.
 type InputConfig struct {
-	Type  string // required: "text", "email", "password", etc.
-	Name  string // required: form field name
-	Class string
-	ID    string
-	Attrs Attrs
+	Type        string // required: "text", "email", "password", etc.
+	Name        string // required: form field name
+	Value       string // optional: initial value (typed equivalent of Attrs{"value": ...})
+	Placeholder string // optional: placeholder text
+	Class       string
+	ID          string
+	ExtraAttrs       Attrs // escape hatch for attributes not covered by typed fields
 }
 
 // LabelConfig configures a <label> element.
@@ -68,7 +72,7 @@ type LabelConfig struct {
 	Text  string // required: label text
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // SelectConfig configures a <select> element.
@@ -78,16 +82,20 @@ type SelectConfig struct {
 	Options []SelectOption // required: at least one option
 	Class   string
 	ID      string
-	Attrs   Attrs
+	ExtraAttrs   Attrs
 }
 
 // TextAreaConfig configures a <textarea> element.
 // Required: Name.
 type TextAreaConfig struct {
-	Name  string // required: form field name
-	Class string
-	ID    string
-	Attrs Attrs
+	Name        string // required: form field name
+	Content     string // optional: initial text content (HTML-escaped on render)
+	Placeholder string // optional: placeholder text
+	Rows        int    // optional: rows attribute (>0 only)
+	Cols        int    // optional: cols attribute (>0 only)
+	Class       string
+	ID          string
+	ExtraAttrs       Attrs // escape hatch for attributes not covered by typed fields
 }
 
 // FieldSetConfig configures a <fieldset> element.
@@ -96,7 +104,7 @@ type FieldSetConfig struct {
 	Legend string // required: becomes <legend> text
 	Class  string
 	ID     string
-	Attrs  Attrs
+	ExtraAttrs  Attrs
 }
 
 // ButtonGroupConfig configures a <div> with role="group" containing buttons.
@@ -105,13 +113,13 @@ type ButtonGroupConfig struct {
 	AriaLabel string
 	Class     string
 	ID        string
-	Attrs     Attrs
+	ExtraAttrs     Attrs
 }
 
 // Button produces a <button> element.
 // Required: Label (used as both visible text and aria-label).
 func Button(cfg ButtonConfig) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	btnType := cfg.Type
 	if btnType == "" {
 		btnType = "button"
@@ -132,7 +140,7 @@ func Link(cfg LinkConfig) render.HTML {
 	if cfg.Text == "" {
 		panic("html: Link requires Text")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "href", cfg.Href)
 	return render.Tag("a", attrs, render.Text(cfg.Text))
 }
@@ -143,7 +151,7 @@ func LinkHTML(cfg LinkHTMLConfig) render.HTML {
 	if cfg.Href == "" {
 		panic("html: LinkHTML requires Href")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "href", cfg.Href)
 	return render.Tag("a", attrs, cfg.Content)
 }
@@ -154,7 +162,7 @@ func Form(cfg FormConfig, children ...render.HTML) render.HTML {
 	if cfg.Method == "" {
 		panic("html: Form requires Method")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "method", cfg.Method)
 	if cfg.Action != "" {
 		setAttr(attrs, "action", cfg.Action)
@@ -171,9 +179,15 @@ func Input(cfg InputConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: Input requires Name")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "type", cfg.Type)
 	setAttr(attrs, "name", cfg.Name)
+	if cfg.Value != "" {
+		setAttr(attrs, "value", cfg.Value)
+	}
+	if cfg.Placeholder != "" {
+		setAttr(attrs, "placeholder", cfg.Placeholder)
+	}
 	return render.VoidTag("input", attrs)
 }
 
@@ -187,7 +201,7 @@ func Label(cfg LabelConfig) render.HTML {
 	if cfg.Text == "" {
 		panic("html: Label requires Text")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "for", cfg.For)
 	return render.Tag("label", attrs, render.Text(cfg.Text))
 }
@@ -198,7 +212,7 @@ func Select(cfg SelectConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: Select requires Name")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "name", cfg.Name)
 
 	children := make([]render.HTML, len(cfg.Options))
@@ -218,19 +232,32 @@ func Option(value, text string, selected bool) render.HTML {
 }
 
 // TextArea produces a <textarea> element.
-// Required: Name.
+// Required: Name. Content is HTML-escaped on render; for unescaped content
+// (rare) drop to render.Tag("textarea", ...) directly.
 func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: TextArea requires Name")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "name", cfg.Name)
-	return render.Tag("textarea", attrs)
+	if cfg.Placeholder != "" {
+		setAttr(attrs, "placeholder", cfg.Placeholder)
+	}
+	if cfg.Rows > 0 {
+		setAttr(attrs, "rows", strconv.Itoa(cfg.Rows))
+	}
+	if cfg.Cols > 0 {
+		setAttr(attrs, "cols", strconv.Itoa(cfg.Cols))
+	}
+	if cfg.Content == "" {
+		return render.Tag("textarea", attrs)
+	}
+	return render.Tag("textarea", attrs, render.Text(cfg.Content))
 }
 
 // ButtonGroup produces a <div> with role="group" containing buttons.
 func ButtonGroup(cfg ButtonGroupConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "role", "group")
 	if cfg.AriaLabel != "" {
 		setAttr(attrs, "aria-label", cfg.AriaLabel)
@@ -245,7 +272,7 @@ func FieldSet(cfg FieldSetConfig, children ...render.HTML) render.HTML {
 	if cfg.Legend == "" {
 		panic("html: FieldSet requires Legend")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	legendHTML := Legend(TextConfig{}, render.Text(cfg.Legend))
 	all := append([]render.HTML{legendHTML}, children...)
 	return render.Tag("fieldset", attrs, all...)
@@ -253,7 +280,7 @@ func FieldSet(cfg FieldSetConfig, children ...render.HTML) render.HTML {
 
 // Legend produces a <legend> element.
 func Legend(cfg TextConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("legend", attrs, children...)
 }
 
@@ -265,7 +292,7 @@ type CheckboxConfig struct {
 	ID      string // optional (but strongly recommended for label association)
 	Checked bool   // optional
 	Class   string
-	Attrs   Attrs
+	ExtraAttrs   Attrs
 }
 
 // Checkbox produces an <input type="checkbox"> element.
@@ -274,7 +301,7 @@ func Checkbox(cfg CheckboxConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: Checkbox requires Name")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "type", "checkbox")
 	setAttr(attrs, "name", cfg.Name)
 	if cfg.Value != "" {
@@ -294,7 +321,7 @@ type RadioConfig struct {
 	ID      string // optional (but strongly recommended)
 	Checked bool   // optional
 	Class   string
-	Attrs   Attrs
+	ExtraAttrs   Attrs
 }
 
 // Radio produces an <input type="radio"> element.
@@ -306,7 +333,7 @@ func Radio(cfg RadioConfig) render.HTML {
 	if cfg.Value == "" {
 		panic("html: Radio requires Value")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "type", "radio")
 	setAttr(attrs, "name", cfg.Name)
 	setAttr(attrs, "value", cfg.Value)

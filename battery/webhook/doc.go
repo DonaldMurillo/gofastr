@@ -5,7 +5,7 @@
 // backoff and are parked in a dead-letter list once the attempt budget
 // is exhausted.
 //
-// The core package (Manager, Store, Sign/Verify) is dependency-free
+// The core package (Manager, Store, SignWithTimestamp/VerifyTimestamped) is dependency-free
 // beyond the standard library. The optional Bridge helpers in
 // bridge.go pull in framework/event so internal Emit/EmitAsync calls
 // can auto-fan out to subscribers; if you don't use the bridge, that

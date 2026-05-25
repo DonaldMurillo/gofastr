@@ -32,7 +32,7 @@ type AnimatedCounterConfig struct {
 	// ID / Class / Attrs are passed through.
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // AnimatedCounter renders a number that ticks from From to To on
@@ -55,7 +55,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 

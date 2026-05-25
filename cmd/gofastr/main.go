@@ -101,6 +101,8 @@ func printHelp() {
   embed <sub>           Local semantic index (index/watch/query/stats/clear)
   docs [topic]          Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
+  audit <sub>           Inspect the project for security-relevant patterns
+                        deps  list packages that perform init-time global registrations
   version               Print version info
 
 %s:
@@ -169,12 +171,14 @@ func main() {
 		runHarness(cmdArgs)
 	case "docs", "doc":
 		runDocs(cmdArgs)
+	case "audit":
+		runAudit(cmdArgs)
 	case "version":
 		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "generate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "version"}
+		suggestions := []string{"init", "generate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "audit", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

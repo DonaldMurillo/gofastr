@@ -43,7 +43,7 @@ type TextAreaConfig struct {
 	MaxLength int
 	ID        string
 	Class     string
-	Attrs     html.Attrs
+	ExtraAttrs     html.Attrs
 }
 
 // TextArea renders a labelled multi-line text input.
@@ -101,7 +101,7 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	} else if cfg.Help != "" {
 		taAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		taAttrs[k] = v
 	}
 
@@ -114,7 +114,7 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    id + "-error",
 			Class: "ui-textarea__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
