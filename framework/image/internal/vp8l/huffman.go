@@ -5,127 +5,136 @@ import "sort"
 // maxCodeLength caps Huffman code lengths per the VP8L spec.
 const maxCodeLength = 15
 
-// codeLengths returns code lengths for the given symbol frequencies,
-// using a length-limited Huffman construction. Symbols with zero
-// frequency receive length 0 (i.e., "unused"). When fewer than two
-// symbols have non-zero frequency the result still satisfies the
-// canonical Huffman property by promoting a sentinel symbol to a
-// 1-bit code so a decoder can distinguish "no symbols" from "one
-// symbol always".
+// hufLeaf is one active alphabet symbol with its frequency. Sorted
+// ascending by weight before package-merge.
+type hufLeaf struct {
+	w   int
+	idx int
+}
+
+// codeLengths returns optimal code lengths capped at maxCodeLength
+// (the primary-alphabet bound from § 5.2 of the VP8L spec).
 func codeLengths(freq []int) []int {
+	return codeLengthsLimit(freq, maxCodeLength)
+}
+
+// codeLengthsLimit is codeLengths with an explicit upper bound. The
+// secondary Huffman over the 19 code-length-code symbols carries each
+// length in only 3 bits, so it must be invoked with maxLen=7.
+func codeLengthsLimit(freq []int, maxLen int) []int {
 	n := len(freq)
 	out := make([]int, n)
 
-	// Collect non-zero symbols sorted by frequency ascending.
-	type sym struct {
-		idx int
-		f   int
-	}
-	syms := make([]sym, 0, n)
+	leaves := make([]hufLeaf, 0, n)
 	for i, f := range freq {
 		if f > 0 {
-			syms = append(syms, sym{i, f})
+			leaves = append(leaves, hufLeaf{f, i})
 		}
 	}
-	sort.Slice(syms, func(i, j int) bool { return syms[i].f < syms[j].f })
+	sort.Slice(leaves, func(i, j int) bool { return leaves[i].w < leaves[j].w })
 
-	// Degenerate cases: 0 or 1 used symbols.
-	if len(syms) == 0 {
+	if len(leaves) == 0 {
 		return out
 	}
-	if len(syms) == 1 {
-		out[syms[0].idx] = 1
+	if len(leaves) == 1 {
+		out[leaves[0].idx] = 1
 		return out
 	}
 
-	// Build a Huffman tree.
-	type node struct {
-		freq, left, right int
-		sym               int // leaf only; -1 for internal
+	counts := packageMerge(leaves, maxLen)
+	for i, c := range counts {
+		out[leaves[i].idx] = c
 	}
-	nodes := make([]node, 0, 2*len(syms)-1)
-	for _, s := range syms {
-		nodes = append(nodes, node{freq: s.f, sym: s.idx, left: -1, right: -1})
-	}
-
-	// Use a simple repeated-min approach. Each iteration combines the
-	// two lowest-frequency live nodes into a new internal node.
-	live := make([]int, len(nodes))
-	for i := range live {
-		live[i] = i
-	}
-	sort.Slice(live, func(i, j int) bool { return nodes[live[i]].freq < nodes[live[j]].freq })
-
-	for len(live) > 1 {
-		a, b := live[0], live[1]
-		newIdx := len(nodes)
-		nodes = append(nodes, node{
-			freq:  nodes[a].freq + nodes[b].freq,
-			left:  a,
-			right: b,
-			sym:   -1,
-		})
-		live = append(live[2:], newIdx)
-		// Bubble newIdx left until live is sorted by freq ascending.
-		for i := len(live) - 1; i > 0 && nodes[live[i-1]].freq > nodes[live[i]].freq; i-- {
-			live[i], live[i-1] = live[i-1], live[i]
-		}
-	}
-
-	// Walk the tree, accumulating depths into out[].
-	var walk func(idx, depth int)
-	walk = func(idx, depth int) {
-		nd := nodes[idx]
-		if nd.sym >= 0 {
-			out[nd.sym] = depth
-			return
-		}
-		walk(nd.left, depth+1)
-		walk(nd.right, depth+1)
-	}
-	walk(live[0], 0)
-
-	// Length-limit by iteratively bumping the deepest leaf up and the
-	// shallowest non-zero leaf down until the max is within bound.
-	// This is a simple but suboptimal approach; the VP8L spec caps at
-	// 15 bits which most natural inputs hit without intervention.
-	clampLengths(out)
 	return out
 }
 
-// clampLengths reduces every entry in out to at most maxCodeLength while
-// preserving the Kraft inequality (sum of 2^-len <= 1).
-func clampLengths(out []int) {
-	for {
-		maxLen := 0
-		for _, l := range out {
-			if l > maxLen {
-				maxLen = l
-			}
-		}
-		if maxLen <= maxCodeLength {
-			return
-		}
-		// Find a deepest leaf and a shallowest-non-zero leaf that's
-		// shorter than maxCodeLength. Push them one bit each way.
-		deepest := -1
-		shallowest := -1
-		for i, l := range out {
-			if l == maxLen {
-				deepest = i
-			}
-			if l > 0 && l < maxCodeLength {
-				if shallowest < 0 || out[shallowest] > l {
-					shallowest = i
-				}
-			}
-		}
-		if deepest < 0 || shallowest < 0 || deepest == shallowest {
-			return
-		}
-		out[deepest]--
-		out[shallowest]++
+// packageMerge runs the package-merge algorithm of Larmore & Hirschberg
+// to produce optimal code lengths bounded by L bits. Input leaves must
+// be sorted by weight ascending. Returns a slice of length len(leaves)
+// where counts[i] is the code length for the i-th leaf in the input.
+//
+// Algorithm sketch: start with the leaves as items at "level L". For
+// each level down to 1, pair adjacent items into "packages" and merge
+// those packages back with fresh copies of the leaves (kept sorted).
+// After L-1 reduction passes, the first 2N-2 items at level 1 cover
+// each leaf k times where k is its code length.
+func packageMerge(leaves []hufLeaf, L int) []int {
+	n := len(leaves)
+	// Items track origin leaves via a parallel slice of (start,end)
+	// indices into a flat origins[] buffer. We deliberately avoid
+	// per-item slice allocations because per-level merges churn.
+	type item struct {
+		w       int
+		oStart  int
+		oLen    int // number of origin entries
 	}
+	origins := make([]int, 0, 4*n*L)
+	pushItem := func(items []item, w int, starts ...int) []item {
+		s := len(origins)
+		origins = append(origins, starts...)
+		return append(items, item{w: w, oStart: s, oLen: len(starts)})
+	}
+	dupOrigins := func(it item) []int {
+		out := make([]int, it.oLen)
+		copy(out, origins[it.oStart:it.oStart+it.oLen])
+		return out
+	}
+
+	// Seed: every leaf is one item with itself as the sole origin.
+	base := make([]item, 0, n)
+	for i, l := range leaves {
+		base = pushItem(base, l.w, i)
+	}
+
+	current := make([]item, len(base))
+	copy(current, base)
+
+	for level := 1; level < L; level++ {
+		// Pair items into packages.
+		packCount := len(current) / 2
+		packed := make([]item, 0, packCount)
+		for k := 0; k < packCount; k++ {
+			a := current[2*k]
+			b := current[2*k+1]
+			// Merge origins (a's then b's).
+			s := len(origins)
+			origins = append(origins, dupOrigins(a)...)
+			origins = append(origins, dupOrigins(b)...)
+			packed = append(packed, item{
+				w:      a.w + b.w,
+				oStart: s,
+				oLen:   a.oLen + b.oLen,
+			})
+		}
+		// Sort-merge packed with base.
+		next := make([]item, 0, len(base)+len(packed))
+		i, j := 0, 0
+		for i < len(base) && j < len(packed) {
+			if base[i].w <= packed[j].w {
+				next = append(next, base[i])
+				i++
+			} else {
+				next = append(next, packed[j])
+				j++
+			}
+		}
+		next = append(next, base[i:]...)
+		next = append(next, packed[j:]...)
+		current = next
+	}
+
+	// First 2N-2 items determine code lengths.
+	take := 2*n - 2
+	if take > len(current) {
+		take = len(current)
+	}
+	counts := make([]int, n)
+	for _, it := range current[:take] {
+		for k := 0; k < it.oLen; k++ {
+			counts[origins[it.oStart+k]]++
+		}
+	}
+	return counts
 }
 
 // canonicalCodes returns the canonical Huffman codes implied by a code-
@@ -245,7 +254,8 @@ func writeHuffmanTree(bw *bitWriter, lengths []int) (codes []uint32, effLens []i
 		// the code-length code.
 		clcFreq[l]++
 	}
-	clcLengths := codeLengths(clcFreq)
+	// Secondary Huffman lengths carry over a 3-bit field; cap at 7.
+	clcLengths := codeLengthsLimit(clcFreq, 7)
 	clcCodes := canonicalCodes(clcLengths)
 
 	nCodes := 19
@@ -259,12 +269,29 @@ func writeHuffmanTree(bw *bitWriter, lengths []int) (codes []uint32, effLens []i
 
 	bw.writeBits(0, 1) // useLength=0 → maxSymbol = alphabetSize
 
-	// Emit each symbol's code length via the secondary (code-length)
-	// Huffman code. Canonical codes are MSB-first; reverse for the
-	// LSB-first stream.
-	for _, l := range lengths {
-		bw.writeBitsRev(clcCodes[l], uint(clcLengths[l]))
+	// Count distinct code-length values that appear; the decoder's
+	// build() treats a single-symbol secondary Huffman as a 0-bit code
+	// (nSymbols==1 shortcut), so we must emit zero bits per primary
+	// length code in that case — regardless of the 1-bit length we
+	// just wrote into clcLengths.
+	clcUsed := 0
+	for _, cl := range clcLengths {
+		if cl > 0 {
+			clcUsed++
+		}
 	}
+
+	if clcUsed != 1 {
+		// Emit each primary length via the secondary Huffman code,
+		// MSB-first → reversed for the LSB stream.
+		for _, l := range lengths {
+			bw.writeBitsRev(clcCodes[l], uint(clcLengths[l]))
+		}
+	}
+	// clcUsed == 1: the decoder reads 0 bits per length code; we emit
+	// nothing here. The primary alphabet symbols all share one length
+	// (positively, or all zero) and the decoder reconstructs them
+	// from the secondary tree alone.
 
 	// Build the per-symbol codes for pixel emission. Reverse the
 	// canonical codes once so the caller can use writeBits uniformly.

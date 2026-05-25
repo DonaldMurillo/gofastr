@@ -179,6 +179,34 @@ func TestBitWriterRevHuffmanCode(t *testing.T) {
 	}
 }
 
+func TestCodeLengthsSatisfyKraft(t *testing.T) {
+	// Skewed distribution that historically pushed lengths past 15.
+	freq := make([]int, 256)
+	for i := range freq {
+		freq[i] = 1
+	}
+	freq[0] = 10000
+	freq[1] = 5000
+	freq[2] = 2500
+	lens := codeLengths(freq)
+	max := 0
+	var kraft float64
+	for _, l := range lens {
+		if l > max {
+			max = l
+		}
+		if l > 0 {
+			kraft += 1.0 / float64(uint64(1)<<uint(l))
+		}
+	}
+	if max > maxCodeLength {
+		t.Errorf("max length %d exceeds %d", max, maxCodeLength)
+	}
+	if kraft > 1.0+1e-9 {
+		t.Errorf("Kraft violation: sum 2^-len = %f > 1", kraft)
+	}
+}
+
 func TestCanonicalCodesMatchKraft(t *testing.T) {
 	// 4-symbol alphabet with lengths (1, 2, 3, 3) — classic Kraft-equality.
 	codes := canonicalCodes([]int{1, 2, 3, 3})

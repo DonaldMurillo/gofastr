@@ -106,42 +106,56 @@ func sampleRGBA8(m image.Image, x, y int) (r, g, b, a uint8) {
 	return nc.R, nc.G, nc.B, nc.A
 }
 
+// VP8L transform-type codes per spec § 3.
+const (
+	transformPredictor    = 0
+	transformCrossColor   = 1
+	transformSubtractGreen = 2
+	transformColorIndex   = 3
+)
+
 // emitImage writes the VP8L payload (everything after the 5-byte
 // "signature + dimensions" prefix) into bw.
 func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
-	// transform-present = 0
-	bw.writeBits(0, 1)
-
-	// Then: top-level Huffman codes preceded by:
-	//   color-cache-bit (1 bit)
-	//   meta-prefix-present (1 bit)
-	bw.writeBits(0, 1) // colorCacheBit = 0 (no color cache in Phase A)
-	bw.writeBits(0, 1) // metaPrefix = 0
-
-	// Collect frequencies in one pass and emit codes; we keep the
-	// pixel data in a flat slice to avoid re-fetching colours.
-	pixels := make([][4]uint8, 0, w*h) // {G, R, B, A}
-	gFreq := make([]int, 256+24)        // G alphabet: literals + length codes (Phase A leaves length codes at 0)
-	rFreq := make([]int, 256)
-	bFreq := make([]int, 256)
-	aFreq := make([]int, 256)
-
+	// Collect every pixel as {G, R, B, A}. Subsequent transforms
+	// mutate this slice in place; the bitstream emits the post-
+	// transform values.
+	pixels := make([][4]uint8, 0, w*h)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			r, g, b, a := sampleRGBA8(m, bounds.Min.X+x, bounds.Min.Y+y)
 			pixels = append(pixels, [4]uint8{g, r, b, a})
-			gFreq[g]++
-			rFreq[r]++
-			bFreq[b]++
-			aFreq[a]++
 		}
+	}
+
+	// Phase B: subtract-green transform. The decoder reverses it by
+	// adding G back onto R and B, so output remains bit-exact.
+	bw.writeBits(1, 1)                      // transform-present
+	bw.writeBits(transformSubtractGreen, 2) // transform type
+	applySubtractGreen(pixels)
+	bw.writeBits(0, 1) // no more transforms
+
+	// Top-level prefix-code prelude.
+	bw.writeBits(0, 1) // colorCacheBit = 0 (Phase A/B; Phase C will enable)
+	bw.writeBits(0, 1) // metaPrefix    = 0
+
+	// Frequency-table pass after all transforms have been applied.
+	gFreq := make([]int, 256+24) // G alphabet: literals + length codes (length codes unused pre-Phase-C)
+	rFreq := make([]int, 256)
+	bFreq := make([]int, 256)
+	aFreq := make([]int, 256)
+	for _, p := range pixels {
+		gFreq[p[0]]++
+		rFreq[p[1]]++
+		bFreq[p[2]]++
+		aFreq[p[3]]++
 	}
 
 	gCodes, gLens := writeHuffmanTree(bw, codeLengths(gFreq))
 	rCodes, rLens := writeHuffmanTree(bw, codeLengths(rFreq))
 	bCodes, bLens := writeHuffmanTree(bw, codeLengths(bFreq))
 	aCodes, aLens := writeHuffmanTree(bw, codeLengths(aFreq))
-	_, _ = writeHuffmanTree(bw, make([]int, 40)) // distance alphabet — unused in Phase A
+	_, _ = writeHuffmanTree(bw, make([]int, 40)) // distance alphabet — unused without LZ77
 
 	for _, p := range pixels {
 		g, r, bch, a := p[0], p[1], p[2], p[3]
@@ -149,5 +163,17 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
 		bw.writeBits(rCodes[r], uint(rLens[r]))
 		bw.writeBits(bCodes[bch], uint(bLens[bch]))
 		bw.writeBits(aCodes[a], uint(aLens[a]))
+	}
+}
+
+// applySubtractGreen replaces (G, R, B, A) with (G, R-G, B-G, A) in
+// place. The decoder reverses this by re-adding G after channel decode.
+// Subtracting modulo 256 (i.e., uint8 wraparound) is what the spec
+// requires and matches the decoder's reverse operation.
+func applySubtractGreen(pixels [][4]uint8) {
+	for i := range pixels {
+		g := pixels[i][0]
+		pixels[i][1] -= g
+		pixels[i][2] -= g
 	}
 }
