@@ -17,6 +17,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
 )
 
+// PastSession is a single past-session summary row returned by
+// Store.ListPastSessions. Used to populate the "Sessions" sidebar
+// and the REST /v1/sessions?past=true endpoint.
+type PastSession struct {
+	SessionID    ids.SessionID `json:"sessionId"`
+	FirstSeenAt  time.Time     `json:"firstSeenAt"`
+	LastSeenAt   time.Time     `json:"lastSeenAt"`
+	EventCount   int64         `json:"eventCount"`
+	FirstMessage string        `json:"firstMessage,omitempty"` // first user-turn text, truncated
+}
+
 // Store is the durable session storage. Implementations: sqlite (v0.1).
 type Store interface {
 	// AppendEvent persists one envelope. Called by an event-bus
@@ -27,6 +38,11 @@ type Store interface {
 	// session, in ID order. Used by stream-resume across all
 	// transports.
 	EventsSince(ctx context.Context, session ids.SessionID, since uint64, limit int) ([]control.EventEnvelope, error)
+
+	// ListPastSessions returns a summary row per distinct session in
+	// the event log, ordered newest-last-seen first. limit ≤ 0 means
+	// unbounded.
+	ListPastSessions(ctx context.Context, limit int) ([]PastSession, error)
 
 	// RecordToolIntent writes a tool_call_intents row before the
 	// tool spawns. For mutating tools, the implementation MUST fsync

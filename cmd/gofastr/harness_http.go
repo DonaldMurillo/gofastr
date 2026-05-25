@@ -45,11 +45,12 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	h.Catalog.RegisterEngine(h.Mux.EngineFor(sess))
 
 	restSrv := &rest.Server{
-		Mux:         h.Mux,
-		Catalog:     h.Catalog,
-		Encoder:     enc,
-		Revocations: revs,
-		Features:    []string{"rest", "ws"},
+		Mux:          h.Mux,
+		Catalog:      h.Catalog,
+		Encoder:      enc,
+		Revocations:  revs,
+		Features:     []string{"rest", "ws"},
+		SessionStore: h.Sessions, // enables ?past=true sidebar
 	}
 	wsHandler := &ws.Handler{
 		Mux:         h.Mux,

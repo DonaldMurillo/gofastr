@@ -38,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/multiplex"
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/resources"
 	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/harness/session"
 	"github.com/DonaldMurillo/gofastr/framework/harness/tool/builtins"
 )
 
@@ -50,6 +51,10 @@ type Server struct {
 	Features      []string
 	AllowedHosts  []string // exact-match Host headers permitted (e.g., "127.0.0.1:8421")
 	AllowedOrigins []string // exact-match Origin headers permitted
+
+	// SessionStore, when non-nil, backs the ?past=true query on
+	// /v1/sessions to surface historical sessions from disk.
+	SessionStore session.Store
 
 	// Handler caches the constructed mux.
 	handler http.Handler
@@ -161,6 +166,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
+		return
+	}
+	// ?past=true returns historical sessions from the on-disk log
+	// (useful for the sidebar to show prior conversations); default
+	// returns just the active in-memory sessions.
+	if r.URL.Query().Get("past") == "true" && s.SessionStore != nil {
+		past, err := s.SessionStore.ListPastSessions(r.Context(), 50)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "StoreError", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, past)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.Catalog.ListSessions())

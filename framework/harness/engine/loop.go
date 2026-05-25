@@ -46,6 +46,12 @@ type Engine struct {
 	// Tree owns cancellation for the active turn. Child turns and
 	// child engines branch off this.
 	Tree *CancelTree
+
+	// OnTurnEnd, when non-nil, runs JUST BEFORE the engine publishes
+	// TurnEnded — gives the multiplex a chance to release its
+	// turn-busy slot so subscribers reacting to TurnEnded can
+	// immediately send the next input without hitting TurnInProgress.
+	OnTurnEnd func()
 }
 
 // NewEngine constructs an Engine. Caller is responsible for wiring
@@ -267,6 +273,13 @@ func (e *Engine) publishTurnEnd(
 	turn int, reason string, originator ids.ClientID,
 	components map[string]time.Duration, toolTimings []control.ToolTimingEntry,
 ) {
+	// Release the turn-busy slot BEFORE publishing TurnEnded so any
+	// subscriber that reacts to TurnEnded by issuing the next
+	// SendInput won't race the multiplex's busy flag (caught by the
+	// endurance test, sess_01KSE94…).
+	if e.OnTurnEnd != nil {
+		e.OnTurnEnd()
+	}
 	_, _ = e.Bus.Publish(control.TurnEnded{Turn: turn, Reason: reason}, originator)
 	_, _ = e.Bus.Publish(control.TurnTiming{
 		Turn:       turn,

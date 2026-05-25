@@ -180,6 +180,19 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 		return &TurnInProgressError{OriginatorID: st.turnOriginator}
 	}
 	st.turnOriginator = c.ID()
+	// Release the slot via the engine's OnTurnEnd hook so it happens
+	// BEFORE the TurnEnded event is published — prevents a subscriber
+	// reacting to TurnEnded from racing into the slot. The deferred
+	// fallback below catches the case where RunTurn returns without
+	// going through publishTurnEnd (shouldn't happen but defends).
+	var released atomic.Bool
+	release := func() {
+		if released.CompareAndSwap(false, true) {
+			st.turnOriginator = ""
+			st.turnBusy.Store(false)
+		}
+	}
+	st.engine.OnTurnEnd = release
 	// Use the engine's CancelTree as the parent context for the
 	// turn — NOT the caller's ctx. The caller's ctx may be a
 	// short-lived HTTP request context that would cancel the turn
@@ -187,10 +200,7 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	// CancelTurn properly.
 	turnCtx := st.engine.Tree.Context()
 	go func() {
-		defer func() {
-			st.turnOriginator = ""
-			st.turnBusy.Store(false)
-		}()
+		defer release() // fallback if OnTurnEnd never fired
 		_ = st.engine.RunTurn(turnCtx, c.ID(), cmd.Content)
 	}()
 	return nil

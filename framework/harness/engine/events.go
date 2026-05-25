@@ -71,10 +71,12 @@ func (b *Bus) Subscribe(ctx context.Context) <-chan control.EventEnvelope {
 
 	go func() {
 		<-sub.ctx.Done()
+		// Close INSIDE the lock so broadcast (which holds RLock
+		// through its send loop) can't race a send-on-closed panic.
 		b.mu.Lock()
 		delete(b.subscribers, sub)
-		b.mu.Unlock()
 		close(sub.ch)
+		b.mu.Unlock()
 	}()
 	return sub.ch
 }
@@ -126,14 +128,13 @@ func (b *Bus) Close() {
 }
 
 func (b *Bus) broadcast(env control.EventEnvelope) {
+	// Hold RLock through the send loop — the per-sub close
+	// goroutine takes WLock to delete + close, so it can't race a
+	// send-on-closed panic. Sends are non-blocking (select default
+	// drops) so holding the lock isn't a liveness problem.
 	b.mu.RLock()
-	subs := make([]*subscription, 0, len(b.subscribers))
+	defer b.mu.RUnlock()
 	for s := range b.subscribers {
-		subs = append(subs, s)
-	}
-	b.mu.RUnlock()
-
-	for _, s := range subs {
 		select {
 		case s.ch <- env:
 			// delivered

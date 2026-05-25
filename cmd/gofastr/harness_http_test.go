@@ -184,6 +184,27 @@ func TestRenderChatEscapesSession(t *testing.T) {
 	}
 }
 
+// TestChatJSHasDiffRenderer: the inline JS includes a diff-aware
+// renderer for Edit/Write tool results so additions/deletions are
+// color-coded inline. Today renderDiff exists but the test for it
+// only checks function presence; expand to verify the actual color
+// classes are wired.
+func TestChatJSHasDiffRendererClasses(t *testing.T) {
+	out := string(renderChat("h", "sess_x", "tok"))
+	want := []string{
+		"renderDiff",
+		"diff-add",  // CSS class for + lines
+		"diff-del",  // CSS class for - lines
+		"diff-hunk", // CSS class for @@ headers
+		"detectDiff",
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Errorf("chat page missing diff renderer piece %q", w)
+		}
+	}
+}
+
 // TestChatHasAllowAlwaysButton: the permission modal must offer
 // "Allow always" so the user can persist the rule and stop seeing
 // the prompt across runs. Pinned with both the SSR scaffold and the

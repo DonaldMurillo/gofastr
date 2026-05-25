@@ -8,10 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/auth"
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/multiplex"
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/resources"
 	"github.com/DonaldMurillo/gofastr/framework/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/harness/session"
 	"github.com/DonaldMurillo/gofastr/framework/harness/tool"
 	"github.com/DonaldMurillo/gofastr/framework/harness/tool/builtins"
 )
@@ -128,6 +132,60 @@ var (
 	_ = context.Background
 	_ = bytes.NewReader
 )
+
+// fakePastStore implements just enough of session.Store to test the
+// REST ?past=true path without spinning up SQLite.
+type fakePastStore struct {
+	rows []session.PastSession
+}
+
+func (fakePastStore) AppendEvent(ctx context.Context, env control.EventEnvelope) error { return nil }
+func (fakePastStore) EventsSince(_ context.Context, _ ids.SessionID, _ uint64, _ int) ([]control.EventEnvelope, error) {
+	return nil, nil
+}
+func (s fakePastStore) ListPastSessions(_ context.Context, _ int) ([]session.PastSession, error) {
+	return s.rows, nil
+}
+func (fakePastStore) RecordToolIntent(_ context.Context, _ session.ToolIntent) error  { return nil }
+func (fakePastStore) RecordToolOutcome(_ context.Context, _ session.ToolOutcome) error { return nil }
+func (fakePastStore) OrphanIntents(_ context.Context, _ ids.SessionID) ([]session.ToolIntent, error) {
+	return nil, nil
+}
+func (fakePastStore) ApplyRetention(_ context.Context, _ time.Duration) (int64, error) { return 0, nil }
+func (fakePastStore) Close() error                                                      { return nil }
+
+// TestSessionsPastEndpoint: GET /v1/sessions?past=true returns the
+// historical sessions from the store.
+func TestSessionsPastEndpoint(t *testing.T) {
+	s := newServer(t)
+	s.SessionStore = fakePastStore{rows: []session.PastSession{
+		{
+			SessionID:    "sess_01HISTORICAL1",
+			FirstSeenAt:  time.Now().Add(-2 * time.Hour),
+			LastSeenAt:   time.Now().Add(-1 * time.Hour),
+			EventCount:   42,
+			FirstMessage: "old prompt here",
+		},
+	}}
+	tok, _ := s.Encoder.Encode(auth.Claims{
+		Ver: auth.VerCurrent, JTI: ids.NewJTI(),
+		IdentityClass: 0, ExpiresAt: 0,
+	})
+	req := httptest.NewRequest("GET", "/v1/sessions?past=true", nil)
+	req.Header.Set("X-Harness-Token", tok)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got []session.PastSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].SessionID != "sess_01HISTORICAL1" {
+		t.Errorf("got %+v, want one historical row", got)
+	}
+}
 
 // TestSessionTasksEndpoint TDD: writing a TaskList snapshot for a
 // session should be readable via GET /v1/sessions/<id>/tasks.

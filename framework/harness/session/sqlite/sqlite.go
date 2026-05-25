@@ -144,6 +144,113 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 	return out, rows.Err()
 }
 
+// ListPastSessions aggregates the events table into per-session
+// summaries. Newest-last-seen first. Uses two passes — one for the
+// counts/timestamps (fast), one for the first user-message text per
+// session (slower; bounded by `limit`).
+func (s *Store) ListPastSessions(ctx context.Context, limit int) ([]session.PastSession, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT session, MIN(ts), MAX(ts), COUNT(*)
+          FROM events
+      GROUP BY session
+      ORDER BY MAX(ts) DESC
+         LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []session.PastSession
+	for rows.Next() {
+		var (
+			sess         string
+			firstTs      string
+			lastTs       string
+			count        int64
+		)
+		if err := rows.Scan(&sess, &firstTs, &lastTs, &count); err != nil {
+			return nil, err
+		}
+		first, _ := time.Parse(time.RFC3339Nano, firstTs)
+		last, _ := time.Parse(time.RFC3339Nano, lastTs)
+		out = append(out, session.PastSession{
+			SessionID:   ids.SessionID(sess),
+			FirstSeenAt: first,
+			LastSeenAt:  last,
+			EventCount:  count,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Best-effort: enrich with first user-input text per session.
+	for i := range out {
+		var payload string
+		err := s.db.QueryRowContext(ctx, `
+            SELECT payload FROM events
+             WHERE session = ? AND kind = 'TurnStarted'
+          ORDER BY id ASC LIMIT 1`,
+			string(out[i].SessionID),
+		).Scan(&payload)
+		if err != nil {
+			continue // missing TurnStarted is fine — sessions log other events too
+		}
+		// TurnStarted payload contains {"content":[{"type":"text","text":"..."}]}
+		// Cheap extraction without unmarshaling the full schema.
+		if text := extractFirstText(payload); text != "" {
+			if len(text) > 80 {
+				text = text[:80] + "…"
+			}
+			out[i].FirstMessage = text
+		}
+	}
+	return out, nil
+}
+
+// extractFirstText pulls the first "text":"..." value out of a
+// TurnStarted payload without paying for a full JSON unmarshal of
+// the ContentBlock schema. Tolerant of escaping.
+func extractFirstText(payload string) string {
+	const marker = `"text":"`
+	i := strings.Index(payload, marker)
+	if i < 0 {
+		return ""
+	}
+	start := i + len(marker)
+	// Walk to the matching unescaped closing quote.
+	var out []byte
+	for j := start; j < len(payload); j++ {
+		c := payload[j]
+		if c == '\\' && j+1 < len(payload) {
+			// Skip escape pair, decode common ones.
+			next := payload[j+1]
+			switch next {
+			case 'n':
+				out = append(out, '\n')
+			case 't':
+				out = append(out, '\t')
+			case '"':
+				out = append(out, '"')
+			case '\\':
+				out = append(out, '\\')
+			default:
+				out = append(out, next)
+			}
+			j++
+			continue
+		}
+		if c == '"' {
+			return string(out)
+		}
+		out = append(out, c)
+	}
+	return string(out)
+}
+
 // RecordToolIntent writes an intent row.
 func (s *Store) RecordToolIntent(ctx context.Context, intent session.ToolIntent) error {
 	mut := 0
