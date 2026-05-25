@@ -134,12 +134,21 @@ func cacheHash(argb uint32, cacheBits uint) uint32 {
 	return (argb * colorCacheMultiplier) >> (32 - cacheBits)
 }
 
-// emitImage writes the VP8L payload (everything after the 5-byte
-// "signature + dimensions" prefix) into bw.
+// predictorBits is the spec's "bits" field (3-bit) for the predictor
+// transform. Block size = 1<<(predictorBits+2). Bits=3 → 32-pixel
+// blocks, a reasonable balance between sub-image size and per-block
+// adaptation. (Phase D uses a single mode globally; block size mostly
+// affects the sub-image's pixel count.)
+const predictorBits = 3
+
+// predictorMode is the fixed predictor mode applied to every block in
+// Phase D's minimal implementation. Mode 1 = predict to left.
+const predictorMode = 1
+
+// emitImage writes the top-level VP8L payload (everything after the
+// 5-byte signature + dimensions prefix). Sub-image emission for the
+// predictor transform goes through emitPayload directly.
 func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
-	// Collect every pixel as {G, R, B, A}. Subsequent transforms
-	// mutate this slice in place; the bitstream emits the post-
-	// transform values.
 	pixels := make([][4]uint8, 0, w*h)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -148,21 +157,45 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
 		}
 	}
 
-	// Phase B: subtract-green transform. The decoder reverses it by
-	// adding G back onto R and B, so output remains bit-exact.
+	// Phase D: predictor transform. Replaces each pixel with the
+	// residual against its neighbor; the sub-image carries the per-
+	// block predictor mode (uniform mode 1 here). Big win for smooth
+	// content (gradients, photos) where neighboring pixels correlate.
+	// First row uses mode 1 (L), first column uses mode 2 (T), and
+	// pixel (0,0) uses mode 0 (opaque black) — these are wired into
+	// the decoder regardless of sub-image mode.
+	bw.writeBits(1, 1)                  // transform-present
+	bw.writeBits(transformPredictor, 2) // transform type
+	bw.writeBits(uint32(predictorBits)-2, 3)
+	subW := (w + (1<<predictorBits) - 1) >> predictorBits
+	subH := (h + (1<<predictorBits) - 1) >> predictorBits
+	subPixels := buildPredictorSubImage(subW, subH, predictorMode)
+	applyPredictor(pixels, w, h, predictorMode)
+	emitPayload(bw, subPixels, subW, subH, false)
+
+	// Phase B: subtract-green, applied AFTER predictor so the
+	// residual-space green channel is decorrelated out of R and B.
 	bw.writeBits(1, 1)                      // transform-present
 	bw.writeBits(transformSubtractGreen, 2) // transform type
 	applySubtractGreen(pixels)
+
 	bw.writeBits(0, 1) // no more transforms
 
-	// Phase C: color-cache + LZ77 backreferences. Combined G alphabet
-	// adds length codes [256, 280) and cache codes [280, 280+cacheSize).
-	// buildStream walks the pixels and decides per-position which
-	// symbol kind to emit.
+	emitPayload(bw, pixels, w, h, true)
+}
+
+// emitPayload writes the color-cache parameters, optional meta-prefix,
+// five Huffman trees, and LZ77/cache/literal pixel stream for the
+// given pixel buffer. Used for both the top-level image and predictor
+// sub-images (the latter with topLevel=false → no meta-prefix bit).
+func emitPayload(bw *bitWriter, pixels [][4]uint8, w, h int, topLevel bool) {
 	const cacheBits = cacheBitsPhaseC
+
 	bw.writeBits(1, 1)                 // useColorCache = 1
 	bw.writeBits(uint32(cacheBits), 4) // ccBits
-	bw.writeBits(0, 1)                 // metaPrefix = 0
+	if topLevel {
+		bw.writeBits(0, 1) // metaPrefix = 0
+	}
 
 	stream, gFreq, rFreq, bFreq, aFreq, dFreq := buildStream(pixels, cacheBits)
 
@@ -194,6 +227,73 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
 			}
 		}
 	}
+	_, _ = w, h
+}
+
+// buildPredictorSubImage returns subW×subH pixels where every G value
+// is mode and the other channels are zero — the encoding the decoder
+// expects for a uniformly-moded sub-image.
+func buildPredictorSubImage(subW, subH, mode int) [][4]uint8 {
+	out := make([][4]uint8, subW*subH)
+	for i := range out {
+		// Encoder stores {G, R, B, A}. The decoder reads the G byte
+		// (low 4 bits) as the predictor mode for that block.
+		out[i] = [4]uint8{uint8(mode), 0, 0, 0}
+	}
+	return out
+}
+
+// applyPredictor mutates pixels in place to predictor-mode residuals.
+// First pixel uses mode 0 (opaque black). First row (y=0) uses mode 1
+// (L). First column (x=0) uses mode 2 (T). All other pixels use the
+// given mode. The encoder reads from a parallel copy so neighbors
+// aren't observed in their residual form.
+func applyPredictor(pixels [][4]uint8, w, h, mode int) {
+	src := make([][4]uint8, len(pixels))
+	copy(src, pixels)
+
+	// (0, 0): mode 0 (opaque black). pred = (0, 0, 0, 0xFF).
+	// pixels[] stores {G, R, B, A}; subtract (0, 0, 0, 0xFF) component-wise.
+	pixels[0][0] = src[0][0]
+	pixels[0][1] = src[0][1]
+	pixels[0][2] = src[0][2]
+	pixels[0][3] = src[0][3] - 0xFF
+
+	// First row (y=0, x>=1): mode 1 (L).
+	for x := 1; x < w; x++ {
+		predictorResidual(&pixels[x], src[x], src[x-1])
+	}
+
+	// All other rows.
+	for y := 1; y < h; y++ {
+		rowOff := y * w
+
+		// (x=0): mode 2 (T).
+		predictorResidual(&pixels[rowOff], src[rowOff], src[rowOff-w])
+
+		for x := 1; x < w; x++ {
+			off := rowOff + x
+			var pred [4]uint8
+			switch mode {
+			case 1:
+				pred = src[off-1]
+			case 2:
+				pred = src[off-w]
+			default:
+				// Phase D ships only mode 1; future modes go here.
+				pred = src[off-1]
+			}
+			predictorResidual(&pixels[off], src[off], pred)
+		}
+	}
+}
+
+// predictorResidual sets dst = src - pred (mod 256, per byte).
+func predictorResidual(dst *[4]uint8, src, pred [4]uint8) {
+	dst[0] = src[0] - pred[0]
+	dst[1] = src[1] - pred[1]
+	dst[2] = src[2] - pred[2]
+	dst[3] = src[3] - pred[3]
 }
 
 // applySubtractGreen replaces (G, R, B, A) with (G, R-G, B-G, A) in
