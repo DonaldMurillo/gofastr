@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -165,12 +166,12 @@ func getMigrateDBURL(args []string) string {
 			return strings.TrimPrefix(a, "--db-url=")
 		}
 	}
-	// Check .env file
-	if data, err := os.ReadFile(".env"); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "DATABASE_URL=") {
-				return strings.TrimPrefix(line, "DATABASE_URL=")
-			}
+	// Check .env file via the shared parser — handles quoted values,
+	// escapes, and the `export` prefix that the prior ad-hoc 1-key
+	// scanner mishandled.
+	if vals, err := dotenv.Load(".env"); err == nil {
+		if v, ok := vals["DATABASE_URL"]; ok {
+			return v
 		}
 	}
 	return ""

@@ -1,5 +1,21 @@
 # Agent Notes
 
+## 2026-05-24 - core/dotenv + auto-load in NewApp
+
+- **Scope:** new `core/dotenv` package (parser, expander, loader), `framework.NewApp` auto-load wiring, `cmd/gofastr` migrate-command swap, `framework/docs/content/dotenv.md`.
+
+- **NewApp auto-loads `.env` files BEFORE options run.** Probe order (earlier wins): `.env.local`, `.env.<APP_ENV>` (only if APP_ENV is set), `.env`. Missing files silent; malformed files fail fast. Existing `os.Environ` always wins over file values — operator-set vars are never clobbered. Kill switch: `GOFASTR_DOTENV=off` in the process env.
+
+- **Parser is a strict subset of the de facto dotenv spec.** Keys: `^[A-Za-z_][A-Za-z0-9_]*$` or parse error. Double-quoted values interpret `\n \t \r \" \\`. Single-quoted values are verbatim (no escapes, no expansion). `export` prefix tolerated. Inline-comment-after-unquoted-value is preserved as part of the value (write a quoted value if you need `#` inside). Multi-line values NOT supported.
+
+- **Variable expansion is bracket-form only (`${VAR}`), double-quoted only.** Bare `$VAR` is left verbatim. Lookup order: local (earlier keys / earlier files), then `os.Environ`, then empty. Hardening: cycle detection via visited-set, depth cap 16, undefined → empty, `\${...}` escape blocks expansion at that position, malformed `${...` (no closing brace) left verbatim.
+
+- **Migrate cmd cleanup.** `cmd/gofastr/migrate_cmd.go` was rolling its own 1-key prefix scanner for `.env`; now routes through `dotenv.Load` so it picks up quoted DATABASE_URL values, `export DATABASE_URL=...`, etc.
+
+- **Tests:** parser cases (basic, quoted, escapes, comments, export, whitespace, empty, malformed-rejection, dup-key-last-wins); expander cases (basic, bare-dollar-not-expanded, undefined-empty, local-vs-env precedence, nested, self-reference, mutual cycle, deep-chain-bounded, malformed-unclosed-verbatim, empty-brace-verbatim, escape-blocks-expansion, single-quoted-no-expand); loader (existing-env-wins, sets-missing, idempotent, missing-file-silent, earlier-file-wins, malformed-error). NewApp wiring: 4 tests (auto-load, existing-wins, OFF kill switch, APP_ENV overlay).
+
+- **Next time:** when adding env-touching framework features, remember the framework now sets env BEFORE options run. Pre-NewApp `os.Getenv` calls in caller code may see different values than they did before (if a `.env.local` is present). Document the precedence chain in any new feature that reads env.
+
 ## 2026-05-24 - framework DX round-2 + adversarial review fixes
 
 - **Scope:** `core-ui/component/component.go`, `core-ui/app/{app,policy,screen,screen_group,router}.go`, new `core-ui/app/decide` subpkg, `core-ui/runtime/runtime.js`, `core-ui/runtime/src/taginput.js`, `core/router/router.go`, `framework/{entity/declaration,uihost/uihost}.go`, `battery/auth/{manager,policy,form_decode,core}.go`, `kiln/render/node.go`, framework docs.

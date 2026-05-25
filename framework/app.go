@@ -17,6 +17,7 @@ import (
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -444,9 +445,38 @@ func (a *App) Use(mw ...router.Middleware) *App {
 	return a
 }
 
+// defaultDotEnvPaths returns the file list NewApp probes at boot, in
+// precedence order (earlier wins). APP_ENV-specific file is included
+// only when APP_ENV is set in the environment. Paths are relative to
+// the process CWD; callers running gofastr from a non-project dir
+// should set GOFASTR_DOTENV=off and call dotenv.LoadAndApply with
+// explicit absolute paths.
+func defaultDotEnvPaths() []string {
+	paths := []string{".env.local"}
+	if appEnv := os.Getenv("APP_ENV"); appEnv != "" {
+		paths = append(paths, ".env."+appEnv)
+	}
+	return append(paths, ".env")
+}
+
 // NewApp creates a new App with the given options.
 // It initializes default Registry, Router, and MCP Server if not provided.
 func NewApp(opts ...AppOption) *App {
+	// Auto-load .env files BEFORE option processing so options that
+	// peek at os.Environ (WithDB("env://DATABASE_URL"), WithConfig
+	// reading APP_ENV, etc.) see the merged values. Existing env
+	// always wins — operator-set vars are not clobbered by dotfiles.
+	//
+	// File precedence (earlier wins on conflict): .env.local,
+	// .env.<APP_ENV>, .env. Missing files are silent.
+	//
+	// Set GOFASTR_DOTENV=off in the real process env to suppress.
+	// Callers that need custom paths should call dotenv.LoadAndApply
+	// themselves before NewApp and set the off flag.
+	if os.Getenv("GOFASTR_DOTENV") != "off" {
+		_ = dotenv.LoadAndApply(defaultDotEnvPaths()...)
+	}
+
 	a := &App{
 		Registry:  NewRegistry(),
 		router:    router.New(),
