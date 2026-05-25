@@ -201,6 +201,14 @@ func writeHuffmanTree(bw *bitWriter, lengths []int) (codes []uint32, effLens []i
 	codes = make([]uint32, len(lengths))
 	effLens = make([]int, len(lengths))
 
+	// Simple-code path encodes the second symbol as an 8-bit value, so
+	// it can't represent any symbol ≥ 256. The G alphabet with color
+	// cache enabled has symbols up to 280+cacheSize-1; fall back to
+	// normal-code when out of range.
+	if used <= 2 && (first >= 256 || second >= 256) {
+		used = 3 // sentinel: take the normal path
+	}
+
 	switch used {
 	case 0:
 		// Degenerate: nSymbols=1 with placeholder symbol 0. No pixel ever

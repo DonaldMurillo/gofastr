@@ -108,11 +108,31 @@ func sampleRGBA8(m image.Image, x, y int) (r, g, b, a uint8) {
 
 // VP8L transform-type codes per spec § 3.
 const (
-	transformPredictor    = 0
-	transformCrossColor   = 1
+	transformPredictor     = 0
+	transformCrossColor    = 1
 	transformSubtractGreen = 2
-	transformColorIndex   = 3
+	transformColorIndex    = 3
 )
+
+// VP8L alphabet sizes & color-cache parameters.
+const (
+	nLiteralCodes        = 256
+	nLengthCodes         = 24
+	nDistanceCodes       = 40
+	colorCacheMultiplier = 0x1e35a7bd
+	cacheBitsPhaseC      = 8 // 256-entry cache; sweet spot for typical inputs
+)
+
+// packARGB packs (R,G,B,A) into the 32-bit value the color cache hashes
+// against, per the VP8L spec — A in the high byte, then R, G, B.
+func packARGB(r, g, b, a uint8) uint32 {
+	return uint32(a)<<24 | uint32(r)<<16 | uint32(g)<<8 | uint32(b)
+}
+
+// cacheHash returns the cache slot for argb given the cacheBits parameter.
+func cacheHash(argb uint32, cacheBits uint) uint32 {
+	return (argb * colorCacheMultiplier) >> (32 - cacheBits)
+}
 
 // emitImage writes the VP8L payload (everything after the 5-byte
 // "signature + dimensions" prefix) into bw.
@@ -135,34 +155,44 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
 	applySubtractGreen(pixels)
 	bw.writeBits(0, 1) // no more transforms
 
-	// Top-level prefix-code prelude.
-	bw.writeBits(0, 1) // colorCacheBit = 0 (Phase A/B; Phase C will enable)
-	bw.writeBits(0, 1) // metaPrefix    = 0
+	// Phase C: color-cache + LZ77 backreferences. Combined G alphabet
+	// adds length codes [256, 280) and cache codes [280, 280+cacheSize).
+	// buildStream walks the pixels and decides per-position which
+	// symbol kind to emit.
+	const cacheBits = cacheBitsPhaseC
+	bw.writeBits(1, 1)                 // useColorCache = 1
+	bw.writeBits(uint32(cacheBits), 4) // ccBits
+	bw.writeBits(0, 1)                 // metaPrefix = 0
 
-	// Frequency-table pass after all transforms have been applied.
-	gFreq := make([]int, 256+24) // G alphabet: literals + length codes (length codes unused pre-Phase-C)
-	rFreq := make([]int, 256)
-	bFreq := make([]int, 256)
-	aFreq := make([]int, 256)
-	for _, p := range pixels {
-		gFreq[p[0]]++
-		rFreq[p[1]]++
-		bFreq[p[2]]++
-		aFreq[p[3]]++
-	}
+	stream, gFreq, rFreq, bFreq, aFreq, dFreq := buildStream(pixels, cacheBits)
 
 	gCodes, gLens := writeHuffmanTree(bw, codeLengths(gFreq))
 	rCodes, rLens := writeHuffmanTree(bw, codeLengths(rFreq))
 	bCodes, bLens := writeHuffmanTree(bw, codeLengths(bFreq))
 	aCodes, aLens := writeHuffmanTree(bw, codeLengths(aFreq))
-	_, _ = writeHuffmanTree(bw, make([]int, 40)) // distance alphabet — unused without LZ77
+	dCodes, dLens := writeHuffmanTree(bw, codeLengths(dFreq))
 
-	for _, p := range pixels {
-		g, r, bch, a := p[0], p[1], p[2], p[3]
-		bw.writeBits(gCodes[g], uint(gLens[g]))
-		bw.writeBits(rCodes[r], uint(rLens[r]))
-		bw.writeBits(bCodes[bch], uint(bLens[bch]))
-		bw.writeBits(aCodes[a], uint(aLens[a]))
+	for _, s := range stream {
+		switch s.kind {
+		case symLiteral:
+			bw.writeBits(gCodes[s.g], uint(gLens[s.g]))
+			bw.writeBits(rCodes[s.r], uint(rLens[s.r]))
+			bw.writeBits(bCodes[s.b], uint(bLens[s.b]))
+			bw.writeBits(aCodes[s.a], uint(aLens[s.a]))
+		case symCacheHit:
+			sym := nLiteralCodes + nLengthCodes + int(s.cacheIdx)
+			bw.writeBits(gCodes[sym], uint(gLens[sym]))
+		case symBackref:
+			gSym := nLiteralCodes + int(s.lenSym)
+			bw.writeBits(gCodes[gSym], uint(gLens[gSym]))
+			if s.extraLenBits > 0 {
+				bw.writeBits(s.extraLen, uint(s.extraLenBits))
+			}
+			bw.writeBits(dCodes[s.distSym], uint(dLens[s.distSym]))
+			if s.extraDistBits > 0 {
+				bw.writeBits(s.extraDist, uint(s.extraDistBits))
+			}
+		}
 	}
 }
 
