@@ -147,6 +147,30 @@ func TestDecodeBombGuardTrips(t *testing.T) {
 	}
 }
 
+// TestOpenRejectsTraversal pins the round-4 P1: Open(path) used to
+// hand any string directly to os.ReadFile, including paths with ..
+// segments and absolute paths. While callers SHOULD validate before
+// calling, defense-in-depth rejects the obvious traversal patterns
+// at the framework boundary.
+func TestOpenRejectsTraversal(t *testing.T) {
+	// Paths that ESCAPE the working directory after Clean — these
+	// retain a `..` segment and are genuine traversal.
+	for _, p := range []string{
+		"../etc/passwd",
+		"foo/../../../etc/passwd",
+		"../../secrets",
+	} {
+		if _, err := Open(p); err == nil || !strings.Contains(err.Error(), "traversal") {
+			t.Errorf("Open(%q): expected path-traversal error; got %v", p, err)
+		}
+	}
+	// Path that resolves WITHIN the working directory (Clean collapses
+	// the `..` segments) is allowed through — only file-not-found.
+	if _, err := Open("a/b/../../c"); err == nil || strings.Contains(err.Error(), "traversal") {
+		t.Errorf("Open(\"a/b/../../c\") should clean to safe path, not flag as traversal; got %v", err)
+	}
+}
+
 func TestDecodeRejectsGarbage(t *testing.T) {
 	if _, err := DecodeBytes([]byte("not an image at all")); err == nil {
 		t.Fatal("expected error")

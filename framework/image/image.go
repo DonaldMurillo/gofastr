@@ -35,6 +35,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // DefaultMaxPixels caps decoded image area at 64 MP — an 8192×8192
@@ -86,13 +88,37 @@ func DecodeBytesWithConfig(data []byte, cfg Config) (*Image, error) {
 	return decodeBytes(data, cfg)
 }
 
-// Open reads an image from a filesystem path.
+// Open reads an image from a filesystem path. Rejects paths containing
+// ".." segments as a defense-in-depth measure — callers handling
+// user-supplied paths must validate before this layer, but the
+// framework boundary catches the obvious traversal patterns rather
+// than blindly handing them to os.ReadFile.
+//
+// For paths rooted in an embed.FS or a constrained directory tree,
+// prefer OpenFS — fs.FS implementations reject traversal natively.
 func Open(path string) (*Image, error) {
+	if pathTraverses(path) {
+		return nil, fmt.Errorf("image: open %q: path contains traversal (..)", path)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("image: open %q: %w", path, err)
 	}
 	return decodeBytes(data, Config{})
+}
+
+// pathTraverses returns true if path contains a ".." segment after
+// cleaning. Cleaning collapses redundant separators and resolves
+// in-place "..", so a Cleaned path with ".." in any segment is
+// trying to escape its starting directory.
+func pathTraverses(p string) bool {
+	cleaned := filepath.Clean(p)
+	for _, segment := range strings.Split(cleaned, string(filepath.Separator)) {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // OpenFS reads an image from an fs.FS.
