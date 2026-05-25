@@ -736,7 +736,12 @@ endpoints:
 `)
 	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from="+filepath.Join(dir, "bad.yml"), "--dry-run", "--json")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	// Inherit the parent test's GOCACHE — overriding with a fresh
+	// cache here races against the outer `go test ./...` parallel
+	// build of the same module and transiently mis-resolves the 10
+	// battery imports in cmd/gofastr/agents.go during vet's
+	// type-check phase. The fresh cache wasn't load-bearing for
+	// what this test asserts (dry-run JSON error shape).
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -773,7 +778,8 @@ app:
 `)
 	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from="+filepath.Join(dir, "gofastr.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	// Inherit parent GOCACHE — see the matching note in
+	// TestGenerateFromBlueprintDryRunJSONReportsValidationErrors.
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

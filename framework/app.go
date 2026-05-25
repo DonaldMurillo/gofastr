@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -539,6 +540,11 @@ func NewApp(opts ...AppOption) *App {
 	if a.DB != nil {
 		a.Registry.SetDB(a.DB)
 	}
+
+	// Auto-wire dev-only livereload routes. No-op unless GOFASTR_DEV=1 is
+	// set (typically by `gofastr dev`) and the host isn't in production.
+	// See framework/dev/livereload.go for the env-gate rules.
+	dev.MaybeRegisterLiveReload(a.router)
 
 	return a
 }

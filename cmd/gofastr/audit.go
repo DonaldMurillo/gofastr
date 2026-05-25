@@ -225,6 +225,7 @@ func runAudit(args []string) {
 		fmt.Println()
 		fmt.Println("Subcommands:")
 		fmt.Println("  deps    List packages that perform init-time global registrations")
+		fmt.Println("  lint    Scan for AI-typical mistakes (ignored Exec, missing CSRF, render.HTML concat, t.Skip, …)")
 		os.Exit(2)
 	}
 	switch args[0] {
@@ -239,6 +240,20 @@ func runAudit(args []string) {
 			os.Exit(1)
 		}
 		fmt.Print(formatAuditReport(findings))
+	case "lint":
+		root := "."
+		if len(args) > 1 {
+			root = args[1]
+		}
+		findings, err := auditLint(root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "audit lint: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(formatLintReport(findings))
+		if len(findings) > 0 {
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown audit subcommand: %s\n", args[0])
 		os.Exit(2)

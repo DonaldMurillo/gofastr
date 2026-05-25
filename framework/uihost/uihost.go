@@ -32,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
 // OG holds Open Graph meta tag values for social sharing.
@@ -483,6 +484,13 @@ func New(application *app.App, opts ...Option) *UIHost {
 	}
 	for _, opt := range opts {
 		opt(ds)
+	}
+	// Auto-inject the livereload client script when dev-mode env says so.
+	// The matching SSE/JS routes are auto-registered by framework.NewApp
+	// (see framework/dev/livereload.go). Both halves are gated by the
+	// same env predicate, so the host needs zero code change.
+	if dev.LiveReloadEnabled() {
+		ds.extraScripts = append(ds.extraScripts, dev.LiveReloadScriptURL)
 	}
 	return ds
 }

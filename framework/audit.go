@@ -2,9 +2,12 @@ package framework
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -29,6 +32,27 @@ type AuditConfig struct {
 	// Entities restricts auditing to the named entities. Empty means audit
 	// every registered entity.
 	Entities []string
+
+	// Redact, when non-nil, is called with the entity name and a
+	// defensive copy of the row about to be serialised into the
+	// `diff` column. Return either the modified input (safe to mutate
+	// — the framework already copied it) or a fresh map. Either works.
+	//
+	// Use this to keep CRUD audit coverage on PHI-bearing entities
+	// without leaking content into the audit log — e.g. for a search-
+	// history table return `map[string]any{"id": row["id"]}` so the
+	// audit still records who searched when, but not what.
+	//
+	// Redact is invoked for AfterCreate, AfterUpdate, AND AfterDelete.
+	// On delete the input is `map[string]any{"id": <record_id>}`; the
+	// returned map's "id" value (if any) becomes the audit row's
+	// record_id, letting hosts pseudonymise the natural key on delete
+	// too.
+	//
+	// Returning nil is equivalent to returning an empty map. The
+	// callback must not panic. Failures inside Redact don't bubble up
+	// — write something safe if a key is missing.
+	Redact func(entity string, row map[string]any) map[string]any
 }
 
 // auditOp is the op-code stored in the "op" column.
@@ -103,17 +127,28 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
-			diff, _ := json.Marshal(map[string]any{"new": row})
+			diff, _ := json.Marshal(map[string]any{"new": cfg.applyRedact(ent.GetName(), row)})
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpCreate, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
-			diff, _ := json.Marshal(map[string]any{"new": row})
+			diff, _ := json.Marshal(map[string]any{"new": cfg.applyRedact(ent.GetName(), row)})
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpUpdate, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			id, _ := data.(string)
+			// Let Redact substitute the natural-key record_id for
+			// PHI-bearing tables. Input shape mirrors what the doc
+			// describes: a one-key map the host can transform.
+			if cfg.Redact != nil {
+				redacted := cfg.applyRedact(ent.GetName(), map[string]any{"id": id})
+				if v, ok := redacted["id"]; ok {
+					id = fmt.Sprintf("%v", v)
+				} else {
+					id = ""
+				}
+			}
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpDelete, id, cfg.actor(ctx), nil)
 		})
 	}
@@ -125,6 +160,33 @@ func (c AuditConfig) actor(ctx context.Context) string {
 		return ""
 	}
 	return c.Actor(ctx)
+}
+
+// applyRedact runs c.Redact if set. Passes the row through untouched
+// when Redact is nil so existing audit-coverage behavior is unaffected.
+//
+// Defensive-copies the row before handing it to Redact so a host
+// callback that mutates its input can't corrupt the live response
+// payload — the docstring warns against mutation but the runtime
+// enforces it. Cheap (one map allocation per audit row) and removes
+// a foot-shaped landmine from the API.
+//
+// When Redact returns nil, substitutes an empty map so the audit diff
+// JSON is `{"new":{}}` rather than `{"new":null}` — matching the
+// "nil equivalent to empty map" contract on AuditConfig.Redact.
+func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]any {
+	if c.Redact == nil {
+		return row
+	}
+	copied := make(map[string]any, len(row))
+	for k, v := range row {
+		copied[k] = v
+	}
+	out := c.Redact(entity, copied)
+	if out == nil {
+		return map[string]any{}
+	}
+	return out
 }
 
 func stringifyPK(row map[string]any, pk string) string {
@@ -144,7 +206,14 @@ func stringifyPK(row map[string]any, pk string) string {
 }
 
 func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditOp, recordID, actor string, diff []byte) error {
-	id := fmt.Sprintf("aud_%d", time.Now().UnixNano())
+	// 8 bytes of crypto/rand suffix to defeat the "two concurrent
+	// hooks land in the same nanosecond" PK collision that took the
+	// session-ID code down before it was fixed in core-ui/uihost.
+	// A collision here rolls back the user's transaction along with
+	// the audit row.
+	var rb [8]byte
+	_, _ = cryptorand.Read(rb[:])
+	id := "aud_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + hex.EncodeToString(rb[:])
 	var diffArg any
 	if diff != nil {
 		diffArg = string(diff)

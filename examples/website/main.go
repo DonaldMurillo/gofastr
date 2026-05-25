@@ -21,12 +21,14 @@ import (
 
 // WebsiteConfig binds the website's runtime env vars into a typed
 // struct, replacing the previous ad-hoc os.Getenv calls. Loaded once
-// in main; passed to setupServer / devMode helpers.
+// in main; passed to setupServer.
+//
+// Dev-mode livereload is auto-wired by framework.NewApp / uihost.New
+// when GOFASTR_DEV=1 (set by `gofastr dev`) — no example code needed.
+// See framework/dev/livereload.go.
 type WebsiteConfig struct {
 	// Port the HTTP server listens on. Defaults to 8082.
 	Port int `config:"PORT" default:"8082"`
-	// Dev enables the livereload SSE endpoint and related dev tooling.
-	Dev bool `config:"GOFASTR_DEV" default:"false"`
 }
 
 // Addr returns the listen address in `:port` form.
@@ -217,9 +219,6 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 			Disallow: []string{"/__gofastr/"},
 		}),
 	}
-	if devMode() {
-		hostOpts = append(hostOpts, uihost.WithExtraScripts("/__livereload.js"))
-	}
 	host := uihost.New(site, hostOpts...)
 
 	fwApp := framework.NewApp(
@@ -306,93 +305,8 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	// combobox/tree/feed/filter handlers).
 	registerNewComponentsDemos(fwApp)
 
-	if devMode() {
-		// Dev-only livereload — SSE-driven, not polling. The server
-		// opens a long-lived EventSource that fires one "ready" event
-		// with the build-id and then idles. The browser's EventSource
-		// auto-reconnects when the connection drops (which happens on
-		// every server restart), so the client uses the second
-		// `onopen` (= reconnect after a drop) as the reload signal.
-		// One persistent connection per page; no polling. The
-		// connection is fine because cross-page nav is SPA-style and
-		// doesn't open a new EventSource per route.
-		// Gated by GOFASTR_DEV=1.
-		buildID := strconv.FormatInt(time.Now().UnixNano(), 10)
-		fwApp.Router().Get("/__livereload", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("Connection", "keep-alive")
-			w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering
-			fl, ok := w.(http.Flusher)
-			if !ok {
-				http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-				return
-			}
-			// One immediate "ready" event so the client's onopen
-			// fires consistently. After that, idle until the request
-			// context cancels (server shutdown / client disconnect).
-			fmt.Fprintf(w, "event: ready\ndata: %s\n\n", buildID)
-			fl.Flush()
-			// Heartbeat every 25s so intermediaries don't time the
-			// connection out. SSE comments are ignored by the client.
-			ticker := time.NewTicker(25 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-r.Context().Done():
-					return
-				case <-ticker.C:
-					fmt.Fprintf(w, ": ping\n\n")
-					fl.Flush()
-				}
-			}
-		}))
-		fwApp.Router().Get("/__livereload.js", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/javascript")
-			w.Header().Set("Cache-Control", "no-store")
-			_, _ = w.Write([]byte(livereloadJS))
-		}))
-	}
 	return fwApp, host
 }
-
-// devMode reports whether the dev-only livereload tooling should be
-// wired up. Resolved live from env via core/config so tests using
-// t.Setenv pick the value up without main() having to run first.
-func devMode() bool {
-	cfg, err := loadWebsiteConfig(nil)
-	if err != nil {
-		return false
-	}
-	return cfg.Dev
-}
-
-// livereloadJS — SSE-based change detection.
-//
-// The browser opens a single EventSource to /__livereload. The server
-// fires one "ready" event on connect and then idles. EventSource
-// transparently reconnects when the connection drops (server restart),
-// so the second `onopen` is the reload signal. No polling, one
-// persistent connection, near-zero idle traffic.
-const livereloadJS = `(() => {
-  let everConnected = false;
-  const connect = () => {
-    const es = new EventSource('/__livereload');
-    es.addEventListener('open', () => {
-      if (everConnected) {
-        // Reconnect after a drop = server restarted with new code.
-        location.reload();
-        return;
-      }
-      everConnected = true;
-    });
-    es.addEventListener('error', () => {
-      // EventSource auto-retries; if it ever closes (readyState=2)
-      // we'd reconnect ourselves, but typically retry is automatic.
-    });
-  };
-  connect();
-})();`
 
 func runBuildStatic(out string, watch bool, interval time.Duration) {
 	_, host := setupServer()

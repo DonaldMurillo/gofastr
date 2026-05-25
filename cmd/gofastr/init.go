@@ -152,6 +152,26 @@ bin/
 		os.Exit(1)
 	}
 
+	// Write AGENTS.md (thin TOC) + agents/ detail files so AI agents
+	// working on this project find the framework primitives instead
+	// of reinventing them. Refresh later with `gofastr agents sync`.
+	if err := os.WriteFile(filepath.Join(name, "AGENTS.md"), buildAgentsMD(), 0o644); err != nil {
+		fail("Failed to write AGENTS.md: %v", err)
+		os.Exit(1)
+	}
+	if err := writeAgentDetailFiles(name); err != nil {
+		fail("Failed to write agents/ details: %v", err)
+		os.Exit(1)
+	}
+
+	// Drop the gofastr-host Claude Code skill so AI agents working on
+	// this project auto-load the framework's host-app guidance at task
+	// start. Refresh manually with `gofastr agents skill`.
+	if err := writeHostSkill(name); err != nil {
+		fail("Failed to write gofastr-host skill: %v", err)
+		os.Exit(1)
+	}
+
 	// Run go mod init to generate a proper go.mod
 	cmd := exec.Command("go", "mod", "init", modulePath)
 	cmd.Dir = name
@@ -164,7 +184,7 @@ bin/
 
 	success("Created project %s in ./%s/", name, name)
 	fmt.Println()
-	fmt.Printf("  %s:\n", bold("Generated"))
+	fmt.Printf("  %s:\n", bold("App files"))
 	fmt.Println("    main.go              — Application entry point (UI + CSS)")
 	fmt.Println("    screens/home.go      — Sample UI page served at /")
 	fmt.Println("    screens/styles.go    — CSS via theme tokens + StyleSheet")
@@ -174,6 +194,11 @@ bin/
 	fmt.Println("    .env                 — Environment configuration")
 	fmt.Println("    gofastr.yml          — Project configuration")
 	fmt.Println("    .gitignore           — Git ignore rules")
+	fmt.Println()
+	fmt.Printf("  %s (read by AI coding tools so they reach for framework primitives instead of reinventing):\n", bold("AI-agent onboarding"))
+	fmt.Println("    AGENTS.md            — Top-level TOC; refresh with `gofastr agents sync`")
+	fmt.Println("    agents/              — Auto-generated per-battery detail files linked from AGENTS.md")
+	fmt.Println("    .claude/skills/      — Claude Code skill (safe to delete if you only use Cursor/Aider)")
 	fmt.Println()
 	fmt.Printf("  %s:\n", bold("Next steps"))
 	fmt.Printf("    cd %s\n", name)
