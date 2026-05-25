@@ -37,8 +37,12 @@ import (
 	"os"
 )
 
-// DefaultMaxPixels matches Bun.Image's default decompression-bomb guard.
-const DefaultMaxPixels int64 = 268_435_456
+// DefaultMaxPixels caps decoded image area at 64 MP — an 8192×8192
+// square. Tightened from Bun.Image's 268 MP default after round-4
+// found a 45-byte PNG declaring 16383×16383 (~268 M pixels) passed
+// the guard and triggered ~1 GiB of stdimage allocation. Callers
+// who need bigger inputs configure Config.MaxPixels explicitly.
+const DefaultMaxPixels int64 = 64 * 1024 * 1024
 
 // Config holds knobs that propagate through a pipeline.
 type Config struct {

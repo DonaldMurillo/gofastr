@@ -2,6 +2,8 @@ package image
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	stdimage "image"
 	"image/color"
 	"image/gif"
@@ -106,6 +108,34 @@ func TestDecodeBytesRoundTripPNG(t *testing.T) {
 	}
 	if b := img.Bounds(); b.Dx() != 32 || b.Dy() != 24 {
 		t.Fatalf("Bounds = %v, want 32×24", b)
+	}
+}
+
+// TestDecodeBombGuardTightenedDefault pins the round-4 P1: the prior
+// default of 268 MP let a 45-byte crafted PNG declaring 16383×16383
+// pass into stdimage.Decode and allocate ~1 GiB of NRGBA. The
+// default is now 64 MP (an 8192² square is already a generous web
+// upload). Callers wanting more configure Config.MaxPixels.
+func TestDecodeBombGuardTightenedDefault(t *testing.T) {
+	// 16383×16383 ≈ 268 M pixels — passes the old default; rejected by
+	// the new default. Build a PNG header with the canonical IHDR CRC
+	// so stdimage.DecodeConfig accepts the header and surfaces the
+	// dimensions, letting our bomb guard run.
+	ihdrData := []byte{
+		'I', 'H', 'D', 'R',
+		0, 0, 0x3F, 0xFF, 0, 0, 0x3F, 0xFF, // 16383 × 16383
+		8, 6, 0, 0, 0, // depth=8, RGBA, zlib defaults
+	}
+	crc := crc32.ChecksumIEEE(ihdrData)
+	hdr := make([]byte, 0, 33)
+	hdr = append(hdr, 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A)
+	hdr = append(hdr, 0, 0, 0, 13)
+	hdr = append(hdr, ihdrData...)
+	hdr = binary.BigEndian.AppendUint32(hdr, crc)
+
+	_, err := DecodeBytes(hdr)
+	if err == nil || !strings.Contains(err.Error(), "decompression bomb") {
+		t.Fatalf("crafted 16383² PNG should trip bomb guard; got err=%v", err)
 	}
 }
 
