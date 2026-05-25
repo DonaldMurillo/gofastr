@@ -55,7 +55,7 @@ reported `width × height` exceeds `Config.MaxPixels` (default
 | GIF    | ✅ | ✅ | First frame on animated input; 1..256 palette colours |
 | BMP    | ✅ | ✅ | — |
 | TIFF   | ✅ | ✅ | Compression + predictor configurable |
-| WebP   | ✅ | ✅ | Lossless (VP8L). Lossy returns `ErrFormatUnsupported`. |
+| WebP   | ✅ | ✅ | Lossless (VP8L). `WebPOptions{Lossy: true}` returns `ErrFormatUnsupported`. Encode dimension cap: 16384×16384. |
 | HEIC / AVIF | ❌ | ❌ | Out of scope (no pure-Go codec exists) |
 
 Animated input, ICC profiles, and EXIF data beyond orientation are
@@ -152,10 +152,22 @@ result, err := image.VariantSet{
     BlurHashX:   4, BlurHashY: 3,
 }.Process(img)
 
+// core/upload.Storage is io.Reader-shaped: Save(ctx, key, r).
 for _, v := range result.Variants {
-    _ = storage.Put(v.Name, v.Bytes)         // → battery/storage
+    _ = store.Save(ctx, v.Name, bytes.NewReader(v.Bytes))
 }
 saveBlurHashColumn(entityID, result.BlurHash) // → entity column
+```
+
+For high-throughput uploads, use **`ProcessTo`** so only one variant
+sits in memory at a time:
+
+```go
+sr, err := image.VariantSet{ /* same fields */ }.ProcessTo(img,
+    func(h image.VariantHeader, r io.Reader) error {
+        return store.Save(ctx, h.Name, r)
+    })
+// sr.Placeholder and sr.BlurHash carry the metadata; no Bytes buffered.
 ```
 
 Render the result via `framework/ui`:
@@ -212,9 +224,12 @@ reference. Resize first; the algorithm cost scales with
 
 ## Decompression-bomb guard
 
-Inputs whose reported `width × height` exceed
-`Config.MaxPixels` (default 268 MP) return `ErrDecompressionBomb`
-before any pixel decoding is attempted. Override per-call:
+Inputs whose reported `width × height` exceed `Config.MaxPixels`
+(default 268 MP, matches Bun.Image) return `ErrDecompressionBomb`
+before any pixel decoding is attempted. Note the WebP-lossless
+encoder has a per-dimension cap of 16384 (so 268 MP can be a
+16384×16384 square but a 32768×8192 ribbon is encode-rejected even
+though it fits within MaxPixels). Override the guard per-call:
 
 ```go
 img, err := image.DecodeBytesWithConfig(data, image.Config{
@@ -229,6 +244,23 @@ Decoding a JPEG records the EXIF orientation tag (`1..8`) on the
 and resets the tag. Only the orientation tag is parsed — full EXIF
 support is intentionally out of scope.
 
+**Caveat:** an `*Image` built via `FromImage(...)` carries
+`Orientation = 0`, so `AutoOrient()` is a no-op on it. For EXIF
+handling, route through `Decode`/`Open`/`OpenFS`.
+
+## Importing alongside the stdlib `image` package
+
+The package name `image` collides with `std/image`. Files inside
+this package use `stdimage "image"`. Callers that need both should
+alias one side, typically the framework one:
+
+```go
+import (
+    "image" // stdlib
+    fwimage "github.com/DonaldMurillo/gofastr/framework/image"
+)
+```
+
 ## Common mistakes
 
 - **Calling `BlurHash` on the original size.** The algorithm is
@@ -238,18 +270,29 @@ support is intentionally out of scope.
   `ErrFormatUnsupported`. There is no pure-Go encoder for AV1, HEVC,
   or VP8 quality-competitive with libvpx — those formats need CGo and
   are out of scope for this package.
-- **Expecting WebP-lossless to match `cwebp` file sizes exactly.** The
-  pure-Go encoder tries five uniform predictor modes (1, 2, 11, 12, 13)
-  per image and emits the smallest output, plus subtract-green and
-  LZ77 + an 8-bit color cache. On synthetic gradients and repeating
-  patterns we produce output **smaller than PNG** (≈0.37× on smooth
-  gradients, ≈0.35× on repeating patches). On natural photos `cwebp`
-  will still beat us by 30-50% because of its per-block adaptive mode
-  selection (gated on a Huffman-aware cost model), cross-color
-  transform, and palette path. The encoder infrastructure for
-  per-block mode evaluation is in `framework/image/internal/vp8l/
-  predictor.go` — `scoreModeBlock` + `chooseBlockModes` — waiting on
-  a proper Huffman cost model.
+- **Expecting WebP-lossless to match `cwebp` file sizes.** The pure-Go
+  encoder tries five uniform predictor modes (1, 2, 11, 12, 13) per
+  image and emits the smallest output, plus subtract-green and LZ77
+  + an 8-bit color cache. Honest comparison against `cwebp -z 9`
+  (libwebp 1.6) and `png.BestCompression`:
+
+  | Content (256×256) | PNG-best | Ours WebP-LL | `cwebp -z 9` | ours vs PNG | ours vs cwebp |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | smooth gradient | 579 | 282 | 76 | **0.49×** | **3.71×** |
+  | repeating patches | ~800 | 352 | 148 | **0.44×** | **2.38×** |
+  | natural photo | ~110k | 125.5k | 111.7k | 1.14× | **1.12×** |
+  | white noise | ~197k | 196.8k | 196.7k | 1.00× | 1.00× |
+
+  The framing: **we beat PNG** on smooth and structured content by
+  2-3×; **`cwebp` beats us** by another 2-4× on the same content (its
+  per-block adaptive mode + cross-color + palette path) but only by
+  ~12% on natural photos and ~0% on noise. For PNG-replacement
+  delivery in the framework's UI pipeline, our output is competitive;
+  for "smallest-possible WebP" you'd still go to `cwebp`.
+
+  The encoder infrastructure for per-block mode evaluation is in
+  `framework/image/internal/vp8l/predictor.go` — `scoreModeBlock` +
+  `chooseBlockModes` — waiting on a proper Huffman cost model.
 - **Aliasing `*Image` across goroutines.** Chain methods return new
   `*Image` values, but the underlying pixel buffer in an `image.Image`
   is shared. If you mutate via `GoImage()`, clone first.

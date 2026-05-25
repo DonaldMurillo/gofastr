@@ -34,8 +34,8 @@ func (s *ImagePipelineScreen) Render() render.HTML {
 	rotateURL := mustDataURL(pipeline.Rotate(90).PNG())
 	flipURL := mustDataURL(pipeline.Flip().PNG())
 	flopURL := mustDataURL(pipeline.Flop().PNG())
-	brightURL := mustDataURL(pipeline.Modulate(image.Modulation{Brightness: 1.4}).PNG())
-	deSatURL := mustDataURL(pipeline.Modulate(image.Modulation{Saturation: 0.2}).PNG())
+	brightURL := mustDataURL(pipeline.Modulate(image.Modulation{Brightness: image.Float64(1.4)}).PNG())
+	deSatURL := mustDataURL(pipeline.Modulate(image.Modulation{Saturation: image.Float64(0.2)}).PNG())
 	placeholderURL, _ := pipeline.Placeholder()
 	blurhash, _ := pipeline.Resize(32, 24).BlurHash(4, 3)
 

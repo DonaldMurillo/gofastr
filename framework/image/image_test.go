@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"strings"
 	"testing"
 )
@@ -187,10 +188,26 @@ func TestModulateZeroIsIdentity(t *testing.T) {
 	}
 }
 
+func TestModulateGrayscaleLiteralZero(t *testing.T) {
+	// Saturation=0 should produce literal grayscale per the doc.
+	// Before the fix the encoder coerced 0 → 1 and silently returned
+	// identity. The test asserts R=G=B exactly for every pixel.
+	src := FromImage(gradient(4, 4), FormatPNG).
+		Modulate(Modulation{Saturation: Float64(0)})
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			r, g, b, _ := src.GoImage().At(x, y).RGBA()
+			if r != g || g != b {
+				t.Fatalf("Saturation:0 should be grayscale at (%d,%d), got R=%d G=%d B=%d", x, y, r>>8, g>>8, b>>8)
+			}
+		}
+	}
+}
+
 func TestModulateGrayscale(t *testing.T) {
 	// Saturation=ε makes R=G=B for every pixel.
 	src := FromImage(gradient(4, 4), FormatPNG).
-		Modulate(Modulation{Saturation: 0.0001})
+		Modulate(Modulation{Saturation: Float64(0.0001)})
 	for y := 0; y < 4; y++ {
 		for x := 0; x < 4; x++ {
 			r, g, b, _ := src.GoImage().At(x, y).RGBA()
@@ -230,7 +247,7 @@ func TestEncodersAllRoundTrip(t *testing.T) {
 
 func TestWebPLossyReturnsErrFormatUnsupported(t *testing.T) {
 	src := FromImage(gradient(8, 8), FormatPNG)
-	_, err := src.WebP(WebPOptions{Lossless: false}).Bytes()
+	_, err := src.WebP(WebPOptions{Lossy: true}).Bytes()
 	if err == nil {
 		t.Fatal("expected ErrFormatUnsupported")
 	}
@@ -239,9 +256,25 @@ func TestWebPLossyReturnsErrFormatUnsupported(t *testing.T) {
 	}
 }
 
+// TestWebPZeroValueOptionsIsLossless asserts that the idiomatic Go
+// pattern `Image.WebP(WebPOptions{})` produces a valid lossless WebP.
+// Before the fix the zero-value Lossless field was false, which
+// errored as "lossy not implemented" — a foot-gun for callers who
+// reach for the zero-value struct.
+func TestWebPZeroValueOptionsIsLossless(t *testing.T) {
+	src := FromImage(gradient(16, 12), FormatPNG)
+	data, err := src.WebP(WebPOptions{}).Bytes()
+	if err != nil {
+		t.Fatalf("WebP(WebPOptions{}): %v", err)
+	}
+	if Sniff(data) != FormatWebP {
+		t.Fatalf("zero-value WebPOptions produced non-WebP bytes")
+	}
+}
+
 func TestWebPLosslessRoundTrips(t *testing.T) {
 	src := FromImage(gradient(24, 16), FormatPNG)
-	data, err := src.WebP(WebPOptions{Lossless: true}).Bytes()
+	data, err := src.WebP(WebPOptions{}).Bytes()
 	if err != nil {
 		t.Fatalf("WebP lossless encode: %v", err)
 	}
@@ -254,6 +287,37 @@ func TestWebPLosslessRoundTrips(t *testing.T) {
 	}
 	if b := decoded.Bounds(); b.Dx() != 24 || b.Dy() != 16 {
 		t.Errorf("re-decoded bounds = %v, want 24×16", b)
+	}
+}
+
+// TestEncoderMemoizesTerminalCalls asserts that calling Bytes /
+// Base64 / DataURL multiple times on the same Encoder doesn't
+// re-encode. Counts invocations via an instrumented encode func.
+func TestEncoderMemoizesTerminalCalls(t *testing.T) {
+	calls := 0
+	src := FromImage(gradient(32, 16), FormatPNG)
+	// Build an Encoder using PNG, then wrap encode with a counter.
+	pngEnc := src.PNG()
+	inner := pngEnc.encode
+	pngEnc.encode = func(w io.Writer, img stdimage.Image) error {
+		calls++
+		return inner(w, img)
+	}
+
+	if _, err := pngEnc.Bytes(); err != nil {
+		t.Fatalf("Bytes: %v", err)
+	}
+	if _, err := pngEnc.Bytes(); err != nil {
+		t.Fatalf("Bytes 2nd: %v", err)
+	}
+	if _, err := pngEnc.Base64(); err != nil {
+		t.Fatalf("Base64: %v", err)
+	}
+	if _, err := pngEnc.DataURL(); err != nil {
+		t.Fatalf("DataURL: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("encode invoked %d times across 4 terminal calls; want 1", calls)
 	}
 }
 
@@ -344,6 +408,16 @@ func TestBlurHashRejectsBadComponents(t *testing.T) {
 	}
 	if _, err := src.BlurHash(4, 10); err == nil {
 		t.Fatal("expected error for yComp>9")
+	}
+}
+
+// TestFromImageHasNoOrientation pins the documented quirk: an Image
+// constructed via FromImage carries orient=0, so AutoOrient is a no-
+// op. Callers wanting EXIF handling must go through Decode/Open.
+func TestFromImageHasNoOrientation(t *testing.T) {
+	img := FromImage(gradient(8, 8), FormatJPEG)
+	if md := img.Metadata(); md.Orientation != 0 {
+		t.Errorf("FromImage orientation = %d, want 0", md.Orientation)
 	}
 }
 

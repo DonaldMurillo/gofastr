@@ -16,12 +16,18 @@ import (
 
 // Encoder is a configured terminal of an image pipeline. It captures the
 // chosen output format and any per-format options. Call Bytes, Write,
-// Base64, or DataURL to materialise the encoded image.
+// Base64, or DataURL to materialise the encoded image. Repeat calls
+// against the same Encoder reuse the first encode's bytes instead of
+// re-running the codec.
 type Encoder struct {
 	img    *Image
 	format Format
 	encode func(io.Writer, stdimage.Image) error
 	err    error
+
+	cached    []byte
+	cachedErr error
+	cachedSet bool
 }
 
 // Format returns the Encoder's output format.
@@ -30,24 +36,38 @@ func (e *Encoder) Format() Format { return e.format }
 // MIME returns the Content-Type for the chosen format.
 func (e *Encoder) MIME() string { return e.format.MIME() }
 
-// Write encodes the image to w.
+// Write encodes the image to w. Streams without materialising via the
+// cache — call this when you want to avoid the cached []byte cost
+// (e.g., writing directly to an http.ResponseWriter on a large image).
 func (e *Encoder) Write(w io.Writer) error {
 	if e.err != nil {
 		return e.err
 	}
+	if e.cachedSet {
+		if e.cachedErr != nil {
+			return e.cachedErr
+		}
+		_, err := w.Write(e.cached)
+		return err
+	}
 	return e.encode(w, e.img.img)
 }
 
-// Bytes returns the encoded image as a byte slice.
+// Bytes returns the encoded image as a byte slice. Repeat calls reuse
+// the first encode's output instead of re-running the codec.
 func (e *Encoder) Bytes() ([]byte, error) {
 	if e.err != nil {
 		return nil, e.err
 	}
-	var buf bytes.Buffer
-	if err := e.encode(&buf, e.img.img); err != nil {
-		return nil, err
+	if e.cachedSet {
+		return e.cached, e.cachedErr
 	}
-	return buf.Bytes(), nil
+	var buf bytes.Buffer
+	err := e.encode(&buf, e.img.img)
+	e.cached = buf.Bytes()
+	e.cachedErr = err
+	e.cachedSet = true
+	return e.cached, e.cachedErr
 }
 
 // Base64 returns the encoded image as a raw base64 string (no MIME prefix).
@@ -179,22 +199,23 @@ func (i *Image) TIFF(opts ...TIFFOptions) *Encoder {
 	}
 }
 
-// WebPOptions configures WebP encoding. Only lossless is supported.
+// WebPOptions configures WebP encoding. The zero value selects
+// lossless (VP8L), the only mode currently implemented.
 type WebPOptions struct {
-	// Lossless requests VP8L output. The default is true. Lossy WebP (VP8)
-	// is not supported — set Lossless=false and the Encoder will return
-	// ErrFormatUnsupported on terminal calls.
-	Lossless bool
+	// Lossy requests VP8 lossy WebP. Not implemented — setting this
+	// to true returns ErrFormatUnsupported on terminal calls. The
+	// zero value (false) selects lossless.
+	Lossy bool
 }
 
-// WebP selects WebP output. The default mode is lossless; lossy WebP is
-// not implemented and returns ErrFormatUnsupported.
+// WebP selects WebP output. The default mode is lossless; setting
+// WebPOptions.Lossy = true returns ErrFormatUnsupported.
 func (i *Image) WebP(opts ...WebPOptions) *Encoder {
-	o := WebPOptions{Lossless: true}
+	var o WebPOptions
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	if !o.Lossless {
+	if o.Lossy {
 		return &Encoder{
 			img:    i,
 			format: FormatWebP,

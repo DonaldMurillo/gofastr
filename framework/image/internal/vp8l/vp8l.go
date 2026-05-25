@@ -7,7 +7,7 @@
 // the encoder without changing this public API.
 //
 // This package is internal because the only intended entry point is
-// framework/image.Image.WebP(WebPOptions{Lossless: true}).
+// framework/image.Image.WebP() (zero-value WebPOptions = lossless).
 package vp8l
 
 import (
@@ -38,9 +38,14 @@ import (
 //	mode 13 (ClampAdd-Half)— variant that wins on photographic content
 //
 // Together this set covers most real-world inputs. Encoding cost is
-// 5× a single pass; if the encoder hot-path becomes a concern we can
-// narrow the set via a quick image-stats heuristic.
+// 5× a single pass — `Encode` short-circuits to 1 pass when a cheap
+// uniformity probe confirms every mode would produce identical output.
 var candidatePredictorModes = []int{1, 2, 11, 12, 13}
+
+// lastEncodePasses records how many candidate-mode passes the most
+// recent Encode actually ran. Exported only for tests; not part of
+// the public API and not goroutine-safe.
+var lastEncodePasses int
 
 // Encode writes m as a VP8L WebP to w. Only m's bounds are honoured;
 // callers needing other-than-RGBA must convert first (which the
@@ -60,8 +65,18 @@ func Encode(w io.Writer, m image.Image) error {
 		return fmt.Errorf("vp8l: image too large: %dx%d (max 16384x16384)", width, height)
 	}
 
+	// Short-circuit on uniform input: when every pixel is the same
+	// argb, the predictor produces all-zero residuals regardless of
+	// mode and all 5 passes converge to the same output. The probe
+	// is O(w*h) but each pixel comparison is one int64, far cheaper
+	// than a single encode pass.
+	modes := candidatePredictorModes
+	if isUniform(m, width, height, bounds) {
+		modes = modes[:1]
+	}
+
 	var best []byte
-	for _, mode := range candidatePredictorModes {
+	for _, mode := range modes {
 		buf, err := encodeWithMode(m, width, height, bounds, mode)
 		if err != nil {
 			return err
@@ -70,8 +85,33 @@ func Encode(w io.Writer, m image.Image) error {
 			best = buf
 		}
 	}
+	lastEncodePasses = len(modes)
 	_, err := w.Write(best)
 	return err
+}
+
+// isUniform reports whether every pixel in m's bounds has the same
+// 32-bit ARGB value. Used by Encode to short-circuit the multi-pass
+// candidate sweep — no predictor mode produces a smaller stream for
+// a uniform image, so running 5 of them is pure waste.
+func isUniform(m image.Image, w, h int, bounds image.Rectangle) bool {
+	if w == 0 || h == 0 {
+		return true
+	}
+	r0, g0, b0, a0 := sampleRGBA8(m, bounds.Min.X, bounds.Min.Y)
+	first := packARGB(r0, g0, b0, a0)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if x == 0 && y == 0 {
+				continue
+			}
+			r, g, b, a := sampleRGBA8(m, bounds.Min.X+x, bounds.Min.Y+y)
+			if packARGB(r, g, b, a) != first {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // encodeWithMode produces the full RIFF + WEBP + VP8L byte stream

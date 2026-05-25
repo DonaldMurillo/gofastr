@@ -1,7 +1,9 @@
 package image
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"strconv"
 )
 
@@ -163,6 +165,107 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 	return result, nil
 }
 
+// VariantHeader is the metadata for one streaming variant, delivered
+// to the sink callback alongside an io.Reader carrying the encoded
+// bytes. ProcessTo emits one VariantHeader per Variant in input order.
+type VariantHeader struct {
+	Name   string
+	Format Format
+	Width  int
+	Height int
+	MIME   string
+}
+
+// StreamResult is the typed return of ProcessTo. Variants are streamed
+// via the sink rather than carried here.
+type StreamResult struct {
+	SourceWidth  int
+	SourceHeight int
+	Placeholder  string
+	BlurHash     string
+}
+
+// VariantSink is the callback ProcessTo invokes once per variant.
+// Implementations must fully read r before returning; the framework
+// owns the underlying buffer and will reuse it on the next variant.
+// Returning an error stops emission and propagates out of ProcessTo.
+type VariantSink func(h VariantHeader, r io.Reader) error
+
+// ProcessTo is the streaming variant of Process. Only one variant
+// lives in memory at a time — once the sink returns, the buffer is
+// released and the next variant is encoded. Wire the sink directly
+// to a storage backend (e.g., core/upload.Storage.Save) to avoid
+// holding all variants resident.
+func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error) {
+	if src == nil {
+		return StreamResult{}, fmt.Errorf("image: VariantSet.ProcessTo: nil source")
+	}
+	if sink == nil {
+		return StreamResult{}, fmt.Errorf("image: VariantSet.ProcessTo: nil sink")
+	}
+	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
+		return StreamResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
+	}
+
+	baseName := s.BaseName
+	if baseName == "" {
+		baseName = "image"
+	}
+
+	bounds := src.Bounds()
+	result := StreamResult{
+		SourceWidth:  bounds.Dx(),
+		SourceHeight: bounds.Dy(),
+	}
+
+	var buf bytes.Buffer
+	for i, v := range s.Variants {
+		if v.Width < 1 {
+			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Width must be >= 1", i)
+		}
+		if v.Format == FormatUnknown {
+			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Format must be set", i)
+		}
+		scaled := src.Resize(v.Width, 0)
+		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
+		if err != nil {
+			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
+		}
+		buf.Reset()
+		if err := enc.Write(&buf); err != nil {
+			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
+		}
+		b := scaled.Bounds()
+		header := VariantHeader{
+			Name:   variantName(baseName, v),
+			Format: v.Format,
+			Width:  b.Dx(),
+			Height: b.Dy(),
+			MIME:   v.Format.MIME(),
+		}
+		if err := sink(header, &buf); err != nil {
+			return result, err
+		}
+	}
+
+	if s.Placeholder != nil {
+		durl, err := src.Placeholder(*s.Placeholder)
+		if err != nil {
+			return result, fmt.Errorf("image: VariantSet placeholder: %w", err)
+		}
+		result.Placeholder = durl
+	}
+	if s.BlurHashX > 0 {
+		hashSrc := src.Resize(32, 0, WithFit(FitInside), WithoutEnlargement())
+		hash, err := hashSrc.BlurHash(s.BlurHashX, s.BlurHashY)
+		if err != nil {
+			return result, fmt.Errorf("image: VariantSet blurhash: %w", err)
+		}
+		result.BlurHash = hash
+	}
+	return result, nil
+}
+
 // variantName composes a storage-friendly file name for a variant. If
 // Suffix is set, it's used verbatim; otherwise the width is the suffix.
 // Format extension is always appended.
@@ -209,7 +312,7 @@ func encodeForFormat(img *Image, f Format, quality int) (*Encoder, error) {
 		return img.TIFF(), nil
 	case FormatWebP:
 		// Default to lossless; lossy WebP is not supported.
-		return img.WebP(WebPOptions{Lossless: true}), nil
+		return img.WebP(), nil
 	}
 	return nil, fmt.Errorf("unsupported format %q", f)
 }

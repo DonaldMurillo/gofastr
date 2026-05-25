@@ -1,7 +1,9 @@
 package image
 
 import (
+	"errors"
 	"image/color"
+	"io"
 	"strings"
 	"testing"
 )
@@ -147,6 +149,76 @@ func TestVariantSetEmitsWebPLossless(t *testing.T) {
 	}
 	if decoded.Bounds().Dx() != 32 {
 		t.Errorf("re-decoded width = %d, want 32", decoded.Bounds().Dx())
+	}
+}
+
+// TestVariantSetProcessToStreams asserts that ProcessTo delivers
+// each variant via a sink callback (one at a time) without
+// materialising the full result set in memory, and that the
+// returned StreamResult still carries Placeholder + BlurHash.
+func TestVariantSetProcessToStreams(t *testing.T) {
+	src := FromImage(gradient(200, 150), FormatPNG)
+	set := VariantSet{
+		BaseName: "photo",
+		Variants: []Variant{
+			{Width: 100, Format: FormatJPEG, Quality: 80, Suffix: "sm"},
+			{Width: 200, Format: FormatPNG, Suffix: "md"},
+		},
+		Placeholder: &PlaceholderOptions{Width: 16},
+		BlurHashX:   4,
+		BlurHashY:   3,
+	}
+	gotNames := []string{}
+	gotBytes := []int{}
+	sr, err := set.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		data, rerr := io.ReadAll(r)
+		if rerr != nil {
+			return rerr
+		}
+		gotNames = append(gotNames, h.Name)
+		gotBytes = append(gotBytes, len(data))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ProcessTo: %v", err)
+	}
+	if len(gotNames) != 2 {
+		t.Fatalf("expected 2 sink invocations, got %d (%v)", len(gotNames), gotNames)
+	}
+	if gotNames[0] != "photo-sm.jpg" || gotNames[1] != "photo-md.png" {
+		t.Errorf("names: %v", gotNames)
+	}
+	if gotBytes[0] == 0 || gotBytes[1] == 0 {
+		t.Errorf("empty variant bytes: %v", gotBytes)
+	}
+	if !strings.HasPrefix(sr.Placeholder, "data:image/jpeg;base64,") {
+		t.Errorf("placeholder missing: %q", sr.Placeholder[:30])
+	}
+	if len(sr.BlurHash) != 28 {
+		t.Errorf("BlurHash length = %d, want 28", len(sr.BlurHash))
+	}
+}
+
+// TestVariantSetProcessToStopsOnSinkError surfaces sink errors and
+// halts further variant emission.
+func TestVariantSetProcessToStopsOnSinkError(t *testing.T) {
+	src := FromImage(gradient(64, 48), FormatPNG)
+	set := VariantSet{
+		Variants: []Variant{
+			{Width: 32, Format: FormatJPEG, Suffix: "a"},
+			{Width: 16, Format: FormatJPEG, Suffix: "b"},
+		},
+	}
+	calls := 0
+	_, err := set.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		calls++
+		return errors.New("sink boom")
+	})
+	if err == nil {
+		t.Fatal("expected error from sink")
+	}
+	if calls != 1 {
+		t.Errorf("sink should stop after first error; got %d calls", calls)
 	}
 }
 

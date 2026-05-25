@@ -17,10 +17,25 @@ func TestPipelineImageRequiresAlt(t *testing.T) {
 	t.Fatal("expected panic with empty Alt")
 }
 
-func TestPipelineImageRequiresWidthHeight(t *testing.T) {
-	defer func() { recover() }()
-	PipelineImage(PipelineImageConfig{Fallback: "/x.jpg", Alt: "x"})
-	t.Fatal("expected panic without Width/Height")
+func TestPipelineImageZeroDimensionsRendersGracefully(t *testing.T) {
+	// User-generated content sometimes has missing width/height (old DB
+	// rows pre-migration, malformed uploads). The component must not
+	// panic — that crashes the render pipeline. Instead it emits an
+	// <img> without intrinsic dimensions and accepts the CLS cost.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("zero dims should not panic; got %v", r)
+		}
+	}()
+	h := PipelineImage(PipelineImageConfig{Fallback: "/x.jpg", Alt: "x"})
+	out := string(h)
+	if !strings.Contains(out, "/x.jpg") {
+		t.Errorf("expected fallback src in output, got %q", out)
+	}
+	// Should NOT have width="0" or height="0" — omit instead.
+	if strings.Contains(out, `width="0"`) || strings.Contains(out, `height="0"`) {
+		t.Errorf("zero dims should be omitted, not emitted; got %q", out)
+	}
 }
 
 func TestPipelineImageEmitsOneSourcePerType(t *testing.T) {

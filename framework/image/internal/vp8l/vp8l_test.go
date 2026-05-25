@@ -143,6 +143,88 @@ func TestEncodeThreeColors(t *testing.T) {
 	assertPixelEqual(t, src, out)
 }
 
+// TestEncodeLongDistanceBackrefDoesNotPanic plants a 4-pixel signature
+// near the start of a >1MP image and again near the end, so the LZ77
+// match-finder sees a pixel-distance > 1,048,456. Before the fix the
+// distance prefix-code symbol overflowed the 40-symbol alphabet and
+// the encoder panicked at dFreq[distSym]++ in lz77.go. The fix caps
+// matchDist in findMatch so distSym stays in [0, 40).
+// TestUniformImageShortCircuitsMultiPass asserts that a solid-color
+// image is encoded in a single pass — the multi-pass strategy gains
+// nothing on inputs where every predictor mode produces the same
+// residual distribution (zero), so we save 4×CPU.
+func TestUniformImageShortCircuitsMultiPass(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 128, 128))
+	for i := 0; i < len(src.Pix); i += 4 {
+		src.Pix[i+0] = 200
+		src.Pix[i+1] = 50
+		src.Pix[i+2] = 100
+		src.Pix[i+3] = 255
+	}
+	var buf bytes.Buffer
+	lastEncodePasses = 0
+	if err := Encode(&buf, src); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if lastEncodePasses != 1 {
+		t.Errorf("uniform image used %d passes, want 1", lastEncodePasses)
+	}
+	// Sanity: still decodes correctly.
+	out, err := webp.Decode(&buf)
+	if err != nil {
+		t.Fatalf("webp.Decode: %v", err)
+	}
+	assertPixelEqual(t, src, out)
+}
+
+func TestEncodeLongDistanceBackrefDoesNotPanic(t *testing.T) {
+	const w, h = 1100, 1100 // 1.21M pixels — past the 2^20 boundary
+	src := image.NewNRGBA(image.Rect(0, 0, w, h))
+	// Fill with a slow gradient so LZ77 doesn't trivially short-match;
+	// it has to reach across the image for the planted signature.
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			src.SetNRGBA(x, y, color.NRGBA{
+				R: uint8(x), G: uint8(y), B: 64, A: 255,
+			})
+		}
+	}
+	// Planted signature at offsets 0..3 and (w*h - 4)..(w*h - 1). The
+	// distance between them is w*h - 4 = 1,209,996 — past the 1,048,576
+	// limit of the 40-symbol distance alphabet.
+	sig := []color.NRGBA{
+		{R: 0xCA, G: 0xFE, B: 0xBA, A: 0xBE},
+		{R: 0xDE, G: 0xAD, B: 0xBE, A: 0xEF},
+		{R: 0xFA, G: 0xCE, B: 0xB0, A: 0x0C},
+		{R: 0xC0, G: 0x1D, B: 0xBE, A: 0xEF},
+	}
+	for i, c := range sig {
+		src.SetNRGBA(i, 0, c)
+		src.SetNRGBA((w*h-4+i)%w, (w*h-4+i)/w, c)
+	}
+
+	var buf bytes.Buffer
+	if err := Encode(&buf, src); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	out, err := webp.Decode(&buf)
+	if err != nil {
+		t.Fatalf("webp.Decode: %v", err)
+	}
+	// Spot-check the signature pixels round-tripped byte-exact.
+	for i, want := range sig {
+		got := color.NRGBAModel.Convert(out.At(i, 0)).(color.NRGBA)
+		if got != want {
+			t.Errorf("front sig[%d] = %v, want %v", i, got, want)
+		}
+		bx, by := (w*h-4+i)%w, (w*h-4+i)/w
+		got = color.NRGBAModel.Convert(out.At(bx, by)).(color.NRGBA)
+		if got != want {
+			t.Errorf("back sig[%d] = %v, want %v", i, got, want)
+		}
+	}
+}
+
 func TestEncodeEmptyErrors(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 0, 0))
 	var buf bytes.Buffer

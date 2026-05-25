@@ -5,30 +5,39 @@ import (
 	"image/color"
 )
 
-// Modulation tweaks brightness and saturation in one pass over the image.
-// The zero value is identity (no change). Set Brightness and/or Saturation
-// to apply.
+// Modulation tweaks brightness and saturation in one pass over the
+// image. Fields are pointers so the zero value Modulation{} means
+// "no change" and a literal zero (e.g. grayscale via Saturation=0)
+// is unambiguous. Use the Float64 helper to construct values:
+//
+//	img.Modulate(image.Modulation{Saturation: image.Float64(0)}) // grayscale
+//	img.Modulate(image.Modulation{Brightness: image.Float64(1.4)})
 type Modulation struct {
-	// Brightness multiplies each colour channel. 1.0 is identity; values
-	// above 1 brighten; values below 1 darken. Channels are clamped to
-	// the 0..255 output range.
-	Brightness float64
+	// Brightness multiplies each colour channel. 1.0 is identity;
+	// values above 1 brighten; values below 1 darken; 0 produces
+	// pure black. Channels are clamped to 0..255. nil = unchanged.
+	Brightness *float64
 
-	// Saturation interpolates between grayscale (0.0) and source (1.0).
-	// Values above 1 over-saturate.
-	Saturation float64
+	// Saturation interpolates between grayscale (0.0) and source
+	// (1.0). Values above 1 over-saturate. nil = unchanged.
+	Saturation *float64
 }
 
+// Float64 returns a pointer to v. Convenience for Modulation literals.
+func Float64(v float64) *float64 { return &v }
+
 // Modulate returns a new *Image with brightness and saturation applied.
-// A zero Modulation leaves the source unchanged.
+// A Modulation with both fields nil leaves the source unchanged.
 func (i *Image) Modulate(m Modulation) *Image {
-	b := m.Brightness
-	s := m.Saturation
-	if b == 0 {
-		b = 1
+	if m.Brightness == nil && m.Saturation == nil {
+		return i
 	}
-	if s == 0 {
-		s = 1
+	b, s := 1.0, 1.0
+	if m.Brightness != nil {
+		b = *m.Brightness
+	}
+	if m.Saturation != nil {
+		s = *m.Saturation
 	}
 	if b == 1 && s == 1 {
 		return i

@@ -16,6 +16,13 @@ const matchMinLen = 2
 // the inner match-extension loop.
 const matchMaxLen = 4096
 
+// maxBackrefDistance caps pixel-distance backreferences so the distance
+// prefix code (40-symbol alphabet, max representable value 2^20) never
+// overflows. The encoder offsets distances by +120 to skip the spatial
+// LUT region of the spec's distance encoding, so usable raw distances
+// max out at (1<<20) - 120.
+const maxBackrefDistance = (1 << 20) - 120
+
 // hashBits / hashSize control the LZ77 hash table. 14 bits → 16384
 // buckets — good locality, low collision rate for typical inputs.
 const (
@@ -108,7 +115,7 @@ func buildStream(pixels [][4]uint8, cacheBits uint) (
 				continue
 			}
 			d := p - c
-			if d > 0xFFFFFF {
+			if d > maxBackrefDistance {
 				continue
 			}
 			n := 0

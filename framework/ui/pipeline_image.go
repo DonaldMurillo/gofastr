@@ -69,14 +69,19 @@ type PipelineImageConfig struct {
 // the framework's image pipeline where the same source has been
 // encoded as both modern (WebP) and legacy (JPEG/PNG) variants.
 func PipelineImage(cfg PipelineImageConfig) render.HTML {
+	// Programmer errors (empty Fallback URL, missing Alt on a non-
+	// decorative image) still panic — these are bugs in the caller's
+	// code, not data-shape issues. Missing intrinsic dimensions are
+	// a different story: user-generated content frequently lacks
+	// them (old DB rows, malformed uploads), and crashing the render
+	// path on that data turns into a 500. Instead we omit the width/
+	// height attributes when zero, accepting the CLS cost as a
+	// degraded-but-functional fallback.
 	if cfg.Fallback == "" {
 		panic("ui: PipelineImage requires Fallback")
 	}
 	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
 		panic("ui: PipelineImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
-	}
-	if cfg.Width <= 0 || cfg.Height <= 0 {
-		panic("ui: PipelineImage requires Width and Height > 0 to prevent CLS")
 	}
 
 	cls := "ui-image"
@@ -103,10 +108,14 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	}
 
 	imgAttrs := html.Attrs{
-		"width":    strconv.Itoa(cfg.Width),
-		"height":   strconv.Itoa(cfg.Height),
 		"loading":  loading,
 		"decoding": "async",
+	}
+	if cfg.Width > 0 {
+		imgAttrs["width"] = strconv.Itoa(cfg.Width)
+	}
+	if cfg.Height > 0 {
+		imgAttrs["height"] = strconv.Itoa(cfg.Height)
 	}
 	if cfg.HighPriority {
 		imgAttrs["fetchpriority"] = "high"

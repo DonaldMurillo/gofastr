@@ -14,13 +14,13 @@
 //
 //	img.Resize(800, 600, image.Lanczos3).
 //	    AutoOrient().
-//	    Modulate(image.Modulation{Brightness: 1.1})
+//	    Modulate(image.Modulation{Brightness: image.Float64(1.1)})
 //
 // Encode (terminal):
 //
 //	data, err := img.JPEG(image.JPEGOptions{Quality: 80}).Bytes()
 //	err = img.PNG().Write(w)
-//	durl, err := img.WebP(image.WebPOptions{Lossless: true}).DataURL()
+//	durl, err := img.WebP().DataURL() // zero-value = lossless
 //
 // Placeholders:
 //
