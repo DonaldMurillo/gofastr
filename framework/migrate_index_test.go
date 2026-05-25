@@ -171,6 +171,104 @@ func TestMigrate_Indices_Idempotent(t *testing.T) {
 	})
 }
 
+// TestMigrate_Indices_ExpressionUniqueEnforced pins V3 #3: a functional
+// index `UNIQUE(user_id, lower(food))` deduplicates case-insensitively,
+// which the column-list form can't express. Tested by inserting two
+// rows whose `food` differs only in case — the second must fail.
+func TestMigrate_Indices_ExpressionUniqueEnforced(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		reg := NewRegistry()
+		reg.Register(entity.Define("triggers", entity.EntityConfig{
+			Table: "triggers",
+			Fields: []schema.Field{
+				{Name: "user_id", Type: schema.String, Required: true},
+				{Name: "food", Type: schema.String, Required: true},
+			},
+			Indices: []entity.Index{
+				{
+					Name:       "uniq_triggers_user_lowerfood",
+					Expression: "user_id, lower(food)",
+					Unique:     true,
+				},
+			},
+		}.WithTimestamps(false)))
+
+		if err := AutoMigrate(db, reg); err != nil {
+			t.Fatalf("AutoMigrate: %v", err)
+		}
+
+		if _, err := db.Exec(`INSERT INTO triggers(id, user_id, food) VALUES ($1, $2, $3)`, "t1", "u1", "Coffee"); err != nil {
+			t.Fatalf("first insert: %v", err)
+		}
+		// Different casing — must collide via lower().
+		if _, err := db.Exec(`INSERT INTO triggers(id, user_id, food) VALUES ($1, $2, $3)`, "t2", "u1", "COFFEE"); err == nil {
+			t.Fatal("expected functional-unique violation on COFFEE vs Coffee, got nil")
+		}
+		// Different user — must still succeed.
+		if _, err := db.Exec(`INSERT INTO triggers(id, user_id, food) VALUES ($1, $2, $3)`, "t3", "u2", "Coffee"); err != nil {
+			t.Fatalf("different-user insert should succeed: %v", err)
+		}
+	})
+}
+
+// TestMigrate_Indices_ExpressionRequiresName pins the safety contract:
+// expression indices can't auto-derive a name, so omitting Name must
+// panic at startup rather than silently emit broken DDL.
+func TestMigrate_Indices_ExpressionRequiresName(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected panic when Expression set without Name")
+			}
+		}()
+		reg := NewRegistry()
+		reg.Register(entity.Define("triggers", entity.EntityConfig{
+			Table: "triggers",
+			Fields: []schema.Field{
+				{Name: "user_id", Type: schema.String},
+				{Name: "food", Type: schema.String},
+			},
+			Indices: []entity.Index{
+				{Expression: "user_id, lower(food)", Unique: true},
+			},
+		}.WithTimestamps(false)))
+		_ = AutoMigrate(db, reg)
+	})
+}
+
+// TestMigrate_Indices_ExpressionRejectsStatementTerminator guards
+// against the operator-pasted-SQL-statement footgun: a stray semicolon
+// or comment in the expression must fail loud, not stitch a second
+// statement into the CREATE INDEX output.
+func TestMigrate_Indices_ExpressionRejectsStatementTerminator(t *testing.T) {
+	cases := []string{
+		"user_id, lower(food);",
+		"user_id, lower(food) -- danger",
+		"user_id /* comment */, lower(food)",
+		"user_id, lower(food) */",
+	}
+	for _, expr := range cases {
+		t.Run(expr, func(t *testing.T) {
+			forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+				defer func() {
+					if recover() == nil {
+						t.Fatalf("expected panic for expression %q", expr)
+					}
+				}()
+				reg := NewRegistry()
+				reg.Register(entity.Define("t", entity.EntityConfig{
+					Table:  "t",
+					Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "food", Type: schema.String}},
+					Indices: []entity.Index{
+						{Name: "bad", Expression: expr, Unique: true},
+					},
+				}.WithTimestamps(false)))
+				_ = AutoMigrate(db, reg)
+			})
+		})
+	}
+}
+
 func keys(m map[string][]string) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

@@ -1,3 +1,10 @@
+//check-csp:ignore-file
+// The harness web client is a dev-only operator surface, not a
+// production browser app, so the framework's strict-CSP contract
+// does not apply. The renderTUIShell helper inlines a tiny
+// bootstrap <script> + <style> bundle so the harness runs without
+// a build step or an extra HTTP round-trip; that's the explicit
+// trade-off, hence the directive.
 package main
 
 // HTTP listener boot for `gofastr harness` (the -listen / -web flags).

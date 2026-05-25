@@ -329,7 +329,6 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 		}
 		streamOneTurn(sub)
 	}
-	_ = h
 }
 
 func streamOneTurn(sub <-chan control.EventEnvelope) {

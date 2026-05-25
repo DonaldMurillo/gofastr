@@ -12,33 +12,30 @@
 //
 // No server round-trip — visibility is client-only based on form state.
 
-(function () {
+(() => {
   'use strict';
 
   // Evaluate all conditional fields within a root element.
-  function evaluateAll(root) {
-    var fields = (root || document).querySelectorAll('[data-fui-comp="ui-conditional-field"]');
-    for (var i = 0; i < fields.length; i++) {
-      evaluateField(fields[i]);
-    }
-  }
+  const evaluateAll = (root) => {
+    const fields = (root || document).querySelectorAll('[data-fui-comp="ui-conditional-field"]');
+    for (const f of fields) evaluateField(f);
+  };
 
   // Evaluate a single conditional field's visibility.
-  function evaluateField(el) {
-    var whenName = el.getAttribute('data-when-name');
-    var whenValue = el.getAttribute('data-when-value');
+  const evaluateField = (el) => {
+    const whenName = el.getAttribute('data-when-name');
+    const whenValue = el.getAttribute('data-when-value');
     if (!whenName || !whenValue) return;
 
     // Find the parent form (or fallback to document body).
-    var form = el.closest('form') || el.closest('[data-fui-comp="ui-form"]') || document.body;
+    const form = el.closest('form') || el.closest('[data-fui-comp="ui-form"]') || document.body;
 
     // Find all inputs/selects/textareas with the matching name.
-    var inputs = form.querySelectorAll('[name="' + whenName + '"]');
-    var matched = false;
+    const inputs = form.querySelectorAll('[name="' + whenName + '"]');
+    let matched = false;
 
-    for (var j = 0; j < inputs.length; j++) {
-      var input = inputs[j];
-      var type = (input.getAttribute('type') || '').toLowerCase();
+    for (const input of inputs) {
+      const type = (input.getAttribute('type') || '').toLowerCase();
 
       if (type === 'radio') {
         // For radios, the value must match AND be checked.
@@ -86,38 +83,38 @@
       // Disable all form controls so they are excluded from submission.
       toggleDisabled(el, true);
     }
-  }
+  };
 
   // Enable or disable all form controls inside an element.
   // K-2: Mark controls we disable with data-fui-cond-disabled so we
   // only re-enable the ones we disabled — not ones the developer set.
-  function toggleDisabled(container, disabled) {
-    var controls = container.querySelectorAll('input,select,textarea,button');
-    for (var i = 0; i < controls.length; i++) {
+  const toggleDisabled = (container, disabled) => {
+    const controls = container.querySelectorAll('input,select,textarea,button');
+    for (const c of controls) {
       if (disabled) {
         // Only disable controls that aren't already disabled.
-        if (!controls[i].disabled) {
-          controls[i].setAttribute('disabled', '');
-          controls[i].setAttribute('data-fui-cond-disabled', '');
+        if (!c.disabled) {
+          c.setAttribute('disabled', '');
+          c.setAttribute('data-fui-cond-disabled', '');
         }
       } else {
         // Only re-enable controls that WE disabled.
-        if (controls[i].hasAttribute('data-fui-cond-disabled')) {
-          controls[i].removeAttribute('disabled');
-          controls[i].removeAttribute('data-fui-cond-disabled');
+        if (c.hasAttribute('data-fui-cond-disabled')) {
+          c.removeAttribute('disabled');
+          c.removeAttribute('data-fui-cond-disabled');
         }
       }
     }
-  }
+  };
 
   // Attach change/input listeners to the parent form of all conditional
   // fields within root. Uses a Set of forms to avoid duplicate listeners.
-  function attachListeners(root) {
-    var fields = (root || document).querySelectorAll('[data-fui-comp="ui-conditional-field"]');
-    var forms = new Set();
+  const attachListeners = (root) => {
+    const fields = (root || document).querySelectorAll('[data-fui-comp="ui-conditional-field"]');
+    const forms = new Set();
 
-    for (var i = 0; i < fields.length; i++) {
-      var form = fields[i].closest('form') || fields[i].closest('[data-fui-comp="ui-form"]') || document.body;
+    for (const field of fields) {
+      const form = field.closest('form') || field.closest('[data-fui-comp="ui-form"]') || document.body;
       if (!forms.has(form)) {
         forms.add(form);
         // J-1: Prevent duplicate listeners after SPA navigations.
@@ -128,24 +125,22 @@
         }
       }
     }
-  }
+  };
 
   // Event handler: re-evaluate all conditional fields in the form.
-  function onFormChange(e) {
-    var form = e.target.closest('form') || e.target.closest('[data-fui-comp="ui-form"]') || document.body;
-    var fields = form.querySelectorAll('[data-fui-comp="ui-conditional-field"]');
-    for (var i = 0; i < fields.length; i++) {
-      evaluateField(fields[i]);
-    }
-  }
+  const onFormChange = (e) => {
+    const form = e.target.closest('form') || e.target.closest('[data-fui-comp="ui-form"]') || document.body;
+    const fields = form.querySelectorAll('[data-fui-comp="ui-conditional-field"]');
+    for (const f of fields) evaluateField(f);
+  };
 
-  function init(root) {
+  const init = (root) => {
     evaluateAll(root);
     attachListeners(root);
-  }
+  };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { init(document); });
+    document.addEventListener('DOMContentLoaded', () => init(document));
   } else {
     init(document);
   }
@@ -153,9 +148,7 @@
   // Register SPA rescan handler.
   if (window.__gofastr) {
     window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};
-    window.__gofastr._moduleScanners['conditionalfield'] = function (root) {
-      init(root);
-    };
+    window.__gofastr._moduleScanners['conditionalfield'] = (root) => init(root);
   }
 
   (window.__gofastr.loadedModules = window.__gofastr.loadedModules || {}).conditionalfield = true;

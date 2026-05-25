@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 
@@ -78,6 +79,48 @@ func WithCSRFCookieName(name string) CSRFOption {
 	return func(c *middleware.CSRFConfig) { c.CookieName = name }
 }
 
+// WithDevCSRFKey loads (or creates+writes) a stable HMAC key from path
+// and uses it as SecretKey. Intended for dev only — survives process
+// restarts so browsers don't 403 on the next form submit after every
+// dev-server reload (V3 #5). In production, use WithCSRFSecret with a
+// value sourced from your secret manager.
+//
+// Returns an option that PANICS on key-load failure: in a dev startup
+// path, failing loudly is the right behavior (silently falling back
+// to the auto-key reintroduces exactly the UX problem this option
+// exists to solve).
+func WithDevCSRFKey(path string) CSRFOption {
+	key, err := middleware.DevCSRFKeyFromFile(path)
+	if err != nil {
+		panic("auth: WithDevCSRFKey: " + err.Error())
+	}
+	return WithCSRFSecret(key)
+}
+
+// WithCSRFSkipPaths exempts the given path prefixes from CSRF enforcement
+// alongside the default SkipBearerAuth predicate. Use for webhook
+// endpoints authenticated by signature, health checks, and similar
+// non-cookie surfaces. Without this option, hosts have to write a Skip
+// closure that inspects r.URL.Path manually (V3 #9 friction):
+//
+//	app.Use(auth.CSRF(auth.WithCSRFSkipPaths("/webhooks/", "/health")))
+//
+// Path matching is literal string-prefix — see middleware.CSRFSkipper.
+func WithCSRFSkipPaths(prefixes ...string) CSRFOption {
+	return func(c *middleware.CSRFConfig) {
+		skipper := middleware.NewCSRFSkipper()
+		skipper.Add(prefixes...)
+		// Preserve the prior Skip (the default is SkipBearerAuth, but the
+		// caller might have layered something via a previous option).
+		prior := c.Skip
+		if prior == nil {
+			c.Skip = skipper.Skip
+			return
+		}
+		c.Skip = middleware.SkipAny(prior, skipper.Skip)
+	}
+}
+
 // CSRFToken returns the current request's CSRF token. Prefers the
 // value stashed on ctx by middleware.CSRF (which works on the SAME
 // request that minted the cookie); falls back to reading the cookie
@@ -110,8 +153,47 @@ func CSRFToken(r *http.Request) string {
 // next safe-method request to a CSRF-protected route will set the
 // cookie, so the typical page flow lands the token before any form
 // renders.
+//
+// Most callers should prefer CSRFInputFromCtx for code paths that only
+// have a context.Context (e.g. core-ui screens). They share the same
+// renderer underneath.
 func CSRFInputHTML(r *http.Request) template.HTML {
-	tok := CSRFToken(r)
+	return renderCSRFInput(CSRFToken(r))
+}
+
+// CSRFTokenFromCtx returns the request's CSRF token from a context. It
+// reads the value the CSRF middleware stashes on ctx via
+// middleware.TokenFromContext — works on the SAME request that minted
+// the cookie, where the cookie isn't in r.Cookies() yet. Returns "" if
+// the route isn't behind CSRF middleware or no token is available.
+//
+// Use this from any code path that holds only a context.Context (e.g.
+// core-ui Screen.Load, Screen.Render) rather than threading a
+// *http.Request through.
+func CSRFTokenFromCtx(ctx context.Context) string {
+	return middleware.TokenFromContext(ctx)
+}
+
+// CSRFInputFromCtx is the ctx-based counterpart to CSRFInputHTML — same
+// hidden-input markup, derived from middleware.TokenFromContext. Use
+// from core-ui Screen.Render where only ctx is in scope:
+//
+//	func (s *EditScreen) Render() render.HTML {
+//	    return render.Join(
+//	        render.Raw(string(auth.CSRFInputFromCtx(s.ctx))),
+//	        ...,
+//	    )
+//	}
+//
+// Returns "" when no token is available (route not gated by CSRF).
+func CSRFInputFromCtx(ctx context.Context) template.HTML {
+	return renderCSRFInput(CSRFTokenFromCtx(ctx))
+}
+
+// renderCSRFInput builds the hidden-input markup for the given token.
+// Returns "" when tok is empty so callers can pass an unknown-token
+// path without conditionals.
+func renderCSRFInput(tok string) template.HTML {
 	if tok == "" {
 		return ""
 	}

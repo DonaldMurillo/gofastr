@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"context"
 	"fmt"
+	"html/template"
 	"sort"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -51,6 +54,16 @@ type FormConfig struct {
 	// Use when the caller renders its own submit button.
 	HideSubmit bool
 
+	// Ctx, when non-nil, lets Form auto-stamp the hidden CSRF input
+	// (the framework's "_csrf" field) on unsafe-method submits. It
+	// reads middleware.TokenFromContext(Ctx) — i.e. the token the CSRF
+	// middleware stashes on every request — so callers do not have to
+	// remember `render.HTML(csrfInput(ctx))` as the first child of
+	// every form. Nil-safe: a form rendered without Ctx omits the
+	// hidden input (matches pre-v3 behavior so existing tests and
+	// non-CSRF flows like Method:"GET" stay correct).
+	Ctx context.Context
+
 	ID    string
 	Class string
 }
@@ -79,6 +92,16 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	}
 
 	children := []render.HTML{}
+
+	// Auto-embed the hidden CSRF input on unsafe-method submits when a
+	// request ctx is available. POST is the only unsafe method Form
+	// accepts (panic above), so the check is simply "POST + ctx + token
+	// on ctx". GET forms get nothing — they aren't behind CSRF.
+	if method == "POST" && cfg.Ctx != nil {
+		if tok := middleware.TokenFromContext(cfg.Ctx); tok != "" {
+			children = append(children, csrfHiddenInput(tok))
+		}
+	}
 
 	// Error summary callout.
 	if len(cfg.Errors) > 0 {
@@ -118,6 +141,22 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		Class:  cls,
 		ID:     cfg.ID,
 	}, children...))
+}
+
+// csrfFormField is the hidden-input name Form emits when Ctx carries a
+// CSRF token. It matches the framework's default (battery/auth.CSRFFormField
+// + middleware.CSRFConfig.FormField when unset). Hosts that override the
+// form field name in their CSRF config should NOT use Form's auto-embed
+// — render their own hidden input via auth.CSRFInputFromCtx instead.
+const csrfFormField = "_csrf"
+
+// csrfHiddenInput renders the same markup as battery/auth.CSRFInputFromCtx
+// but without the battery/auth dependency (which would create a layering
+// cycle since framework/ui sits below battery/*). Token values are
+// base64url + "." + base64url(HMAC) so HTMLEscapeString is defense-in-depth.
+func csrfHiddenInput(tok string) render.HTML {
+	return render.HTML(`<input type="hidden" name="` + csrfFormField +
+		`" value="` + template.HTMLEscapeString(tok) + `">`)
 }
 
 // FormFieldFor is a convenience wrapper that pre-fills FormFieldConfig.Error

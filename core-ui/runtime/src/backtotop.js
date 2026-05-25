@@ -6,30 +6,29 @@
 // data-fui-btt-target).
 //
 // Loaded on demand via __gofastr.loadModule("backtotop").
-(function () {
+(() => {
   'use strict';
 
-  var _observer = null;
-  var _sentinel = null;
-  var _buttons = [];
-  var _rafPending = false;
-  var _scrolling = false;
+  let _observer = null;
+  let _sentinel = null;
+  let _buttons = [];
+  let _rafPending = false;
+  let _scrolling = false;
 
   // Remove buttons that are no longer in the DOM.
-  function purgeStale() {
-    _buttons = _buttons.filter(function (b) { return b.isConnected; });
-  }
+  const purgeStale = () => {
+    _buttons = _buttons.filter((b) => b.isConnected);
+  };
 
   // Debounced visibility toggle — coalesces rapid IntersectionObserver
   // callbacks (e.g. during smooth scroll) into a single paint.
-  function scheduleToggle(visible) {
+  const scheduleToggle = (visible) => {
     if (_rafPending) return;
     _rafPending = true;
-    requestAnimationFrame(function () {
+    requestAnimationFrame(() => {
       _rafPending = false;
       purgeStale();
-      for (var k = 0; k < _buttons.length; k++) {
-        var btn = _buttons[k];
+      for (const btn of _buttons) {
         if (visible) {
           btn.setAttribute('data-fui-btt-visible', '');
           btn.removeAttribute('inert');
@@ -39,10 +38,10 @@
         }
       }
     });
-  }
+  };
 
   // Lazily create a shared sentinel + observer on first wire().
-  function ensureObserver() {
+  const ensureObserver = () => {
     if (_observer) return;
 
     _sentinel = document.createElement('div');
@@ -50,21 +49,21 @@
     _sentinel.className = 'ui-btt-sentinel';
     document.body.appendChild(_sentinel);
 
-    _observer = new IntersectionObserver(function (entries) {
+    _observer = new IntersectionObserver((entries) => {
       // All entries refer to the same sentinel; use the first.
-      var visible = entries.length > 0 && !entries[0].isIntersecting;
+      const visible = entries.length > 0 && !entries[0].isIntersecting;
       scheduleToggle(visible);
     }, { rootMargin: '0px', threshold: 0 });
     _observer.observe(_sentinel);
-  }
+  };
 
-  function wire(btn) {
+  const wire = (btn) => {
     if (btn.__bttWired) return;
     btn.__bttWired = true;
 
-    var scrollBehavior = btn.getAttribute('data-fui-btt-scroll') === 'instant' ? 'instant' : 'smooth';
-    var scrollTarget = btn.getAttribute('data-fui-btt-target') || '';
-    var threshold = parseInt(btn.getAttribute('data-fui-btt-threshold') || '400', 10);
+    const scrollBehavior = btn.getAttribute('data-fui-btt-scroll') === 'instant' ? 'instant' : 'smooth';
+    const scrollTarget = btn.getAttribute('data-fui-btt-target') || '';
+    const threshold = parseInt(btn.getAttribute('data-fui-btt-threshold') || '400', 10);
 
     _buttons.push(btn);
 
@@ -73,17 +72,15 @@
       _sentinel.style.height = threshold + 'px';
     }
 
-    btn.addEventListener('click', function () {
+    btn.addEventListener('click', () => {
       // Prevent double-trigger during ongoing smooth scroll.
       if (_scrolling) return;
       _scrolling = true;
 
-      var onDone = function () {
-        _scrolling = false;
-      };
+      const onDone = () => { _scrolling = false; };
 
       if (scrollTarget) {
-        var el = document.querySelector(scrollTarget);
+        const el = document.querySelector(scrollTarget);
         if (el) {
           el.scrollIntoView({ behavior: scrollBehavior, block: 'start' });
         }
@@ -96,18 +93,17 @@
       // signal but isn't available in all browsers.
       if (scrollBehavior === 'smooth') {
         if ('onscrollend' in window) {
-          var handler;
-          handler = function () {
+          const handler = () => {
             window.removeEventListener('scrollend', handler);
             onDone();
           };
           window.addEventListener('scrollend', handler);
         } else {
           // Fallback: detect when scroll position stops changing.
-          var lastY = window.scrollY;
-          var checks = 0;
-          var poll = function () {
-            var y = window.scrollY;
+          let lastY = window.scrollY;
+          let checks = 0;
+          const poll = () => {
+            const y = window.scrollY;
             if (y === lastY || y <= 0 || checks > 60) {
               onDone();
               return;
@@ -122,28 +118,28 @@
         onDone();
       }
     });
-  }
+  };
 
-  function rescaleSentinel() {
-    var maxH = 0;
-    for (var k = 0; k < _buttons.length; k++) {
-      var t = parseInt(_buttons[k].getAttribute('data-fui-btt-threshold') || '400', 10);
+  const rescaleSentinel = () => {
+    let maxH = 0;
+    for (const btn of _buttons) {
+      const t = parseInt(btn.getAttribute('data-fui-btt-threshold') || '400', 10);
       if (t > maxH) maxH = t;
     }
     if (_sentinel) _sentinel.style.height = maxH + 'px';
-  }
+  };
 
-  function init(root) {
+  const init = (root) => {
     ensureObserver();
-    var btns = (root || document).querySelectorAll('[data-fui-back-to-top]');
-    for (var i = 0; i < btns.length; i++) {
-      wire(btns[i]);
+    const btns = (root || document).querySelectorAll('[data-fui-back-to-top]');
+    for (const btn of btns) {
+      wire(btn);
     }
     rescaleSentinel();
-  }
+  };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { init(document); });
+    document.addEventListener('DOMContentLoaded', () => init(document));
   } else {
     init(document);
   }
@@ -151,7 +147,7 @@
   // Register SPA rescan handler so newly swapped content gets wired.
   if (window.__gofastr) {
     window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};
-    window.__gofastr._moduleScanners['backtotop'] = function (root) {
+    window.__gofastr._moduleScanners['backtotop'] = (root) => {
       purgeStale();
       init(root);
     };

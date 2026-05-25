@@ -114,12 +114,8 @@ func diffEntity(ctx context.Context, db *sql.DB, ent *entity.Entity, all map[str
 		if f.Required && f.AutoGenerate == schema.AutoNone {
 			nullable = " NOT NULL"
 		}
-		defaultClause := ""
-		if f.Default != nil {
-			defaultClause = fmt.Sprintf(" DEFAULT %s", SQLDefault(f, dialect))
-		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
-			ent.GetTable(), f.Name, colType, nullable, defaultClause)
+			ent.GetTable(), f.Name, colType, nullable, ColumnDefaultClause(f, dialect))
 		changes = append(changes, SchemaChange{
 			Summary: fmt.Sprintf("%s: add column %s %s", ent.GetName(), f.Name, colType),
 			SQL:     ddl,
@@ -239,9 +235,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 		if f.Required && f.AutoGenerate == schema.AutoNone {
 			col += " NOT NULL"
 		}
-		if f.Default != nil {
-			col += fmt.Sprintf(" DEFAULT %v", SQLDefault(f, dialect))
-		}
+		col += ColumnDefaultClause(f, dialect)
 		columns = append(columns, col)
 	}
 	if all != nil {

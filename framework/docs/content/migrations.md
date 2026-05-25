@@ -136,6 +136,32 @@ registered entities. It will **not**:
 For destructive changes, write a numbered SQL file and stop using
 auto-migrate for that table.
 
+`AutoUUID` columns emit `DEFAULT gen_random_uuid()` on Postgres so raw
+SQL `INSERT`s that omit the id column don't crash with a NOT NULL
+violation. SQLite has no built-in UUID generator — the column stays
+app-managed there (the framework's auto-CRUD layer and
+`EntitySessionStore` already supply the value at insert time). If you
+write raw `INSERT` statements against SQLite, you're responsible for
+generating the id yourself.
+
+## Portable SQL placeholders
+
+Use `$N` (numbered) placeholders for all host-app SQL so the same
+query string runs against SQLite (dev/tests) and Postgres (prod) with
+no rebind step. Both drivers accept `$1`, `$2`, …:
+
+```go
+// Works on both engines.
+db.QueryRowContext(ctx,
+    `SELECT id, name FROM users WHERE email = $1 AND tenant_id = $2`,
+    email, tenantID,
+).Scan(&id, &name)
+```
+
+`?` (positional) also works on SQLite but NOT on Postgres, so a query
+that compiles in tests will fail in prod. The framework's
+`core/query.QueryBuilder` already emits `$N` and is the safer path.
+
 ## Common mistakes
 
 - **Forgetting `-- +migrate Down`.** You can't roll back. Add it even

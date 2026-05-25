@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -144,9 +145,18 @@ type Screen struct {
 	group *ScreenGroup
 
 	// routeParams holds extracted dynamic route parameters.
+	//
+	// Deprecated: route params are no longer stashed on the shared Screen —
+	// they're delivered per-request via ParamSetter on a fresh component
+	// instance. This field is retained only so RouteParams() keeps its
+	// pre-existing zero-value semantics. Always nil on screens registered
+	// through Router.Screen.
 	routeParams map[string]string
 
-	// mu protects SetParams + render for concurrent access on dynamic routes.
+	// mu was used to serialize SetParams + render against the shared
+	// component instance. Per-request instancing (see newInstance) made
+	// the lock unnecessary; field retained to avoid an ABI shift in the
+	// public Screen struct for any caller that built one literally.
 	mu sync.Mutex
 }
 
@@ -195,8 +205,13 @@ func (s *Screen) PolicyChain() []Policy {
 	return out
 }
 
-// RouteParams returns the extracted dynamic route parameters for this screen.
-// Returns nil if the screen was matched by an exact path.
+// RouteParams always returns nil.
+//
+// Deprecated: route params are no longer stashed on the shared Screen.
+// Per-request instancing (see newInstance) delivers params directly to
+// the component via ParamSetter.SetParams — read them from your
+// component's own field, not from Screen. Method retained to avoid an
+// ABI break; will be removed in a future version.
 func (s *Screen) RouteParams() map[string]string {
 	return s.routeParams
 }
@@ -235,6 +250,41 @@ func NewDialog(path string, comp component.Component) *Screen {
 		Type:      ScreenDialog,
 		Component: comp,
 	}
+}
+
+// newInstance returns a fresh per-request copy of Component so the
+// SetParams / Inject / Load / Render pipeline operates on storage that
+// no other request can see. Without this, a registered screen instance
+// is shared across requests, and any field a Load forgets to reset
+// leaks the previous request's data into the next render (e.g. the
+// "/foods/oatmeal renders Coffee because the previous request stored
+// Coffee in s.food" bug).
+//
+// For pointer-to-struct components the implementation shallow-copies
+// the registration-time value into a freshly-allocated struct. That
+// preserves construction-time configuration (literal field values set
+// when the host called `&FooScreen{Greeting: "hi"}`) while giving the
+// request its own storage for everything Load mutates.
+//
+// Non-pointer / non-struct components (e.g. function-style stateless
+// components) are returned as-is because there is no per-instance
+// state to leak.
+//
+// A note on shared references: shallow copy means slice / map / pointer
+// fields are still aliased. Construction-time fields shouldn't be
+// mutated during a render; Load should always reassign collection
+// fields rather than mutate them in place.
+func (s *Screen) newInstance() component.Component {
+	if s.Component == nil {
+		return nil
+	}
+	v := reflect.ValueOf(s.Component)
+	if v.Kind() != reflect.Ptr || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		return s.Component
+	}
+	fresh := reflect.New(v.Elem().Type())
+	fresh.Elem().Set(v.Elem())
+	return fresh.Interface().(component.Component)
 }
 
 // Render renders the screen's component with appropriate ARIA landmarks.

@@ -175,10 +175,6 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	// Lock screen for concurrent-safe param mutation + render
-	screen.mu.Lock()
-	defer screen.mu.Unlock()
-
 	// Evaluate policy chain BEFORE Load — a Redirect/Block decision
 	// short-circuits without touching the DB.
 	decision := ResolvePolicy(ctx, screen)
@@ -189,9 +185,10 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
 	}
 
-	// For Allow and RenderAlt we proceed to load + render. RenderAlt
-	// swaps the component the rest of the pipeline operates on.
-	comp := screen.Component
+	// Per-request component instance: shallow-copy from the registered
+	// template so SetParams / Inject / Load mutations land on storage
+	// only this request can see. RenderAlt overrides with its factory.
+	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
 	}
@@ -201,7 +198,6 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
-		screen.routeParams = params
 	}
 
 	// Inject DI services into component fields tagged `inject:""`
@@ -349,9 +345,6 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	screen.mu.Lock()
-	defer screen.mu.Unlock()
-
 	decision := ResolvePolicy(ctx, screen)
 	switch decision.Kind {
 	case DecisionRedirect:
@@ -360,7 +353,8 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
 	}
 
-	comp := screen.Component
+	// Per-request component instance — see RenderPageResult for rationale.
+	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
 	}
@@ -369,7 +363,6 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
-		screen.routeParams = params
 	}
 
 	if err := a.Inject(comp); err != nil {

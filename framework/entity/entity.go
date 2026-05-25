@@ -50,10 +50,20 @@ type EntityConfig struct {
 // "idx_<table>_<col1>_<col2>". Unique indices reject duplicate rows for the
 // chosen column set; for single-column uniqueness prefer the Field-level
 // Unique flag which lives on the column definition.
+//
+// Expression covers the case the column-list form can't express: a
+// functional or partial index, e.g. `UNIQUE(user_id, lower(food))` to
+// dedupe case-insensitively. When non-empty, Expression is rendered
+// verbatim inside the index body (replacing Columns) — Name is REQUIRED
+// in that case because there's no safe deterministic slug for an
+// arbitrary expression. Use Columns for plain identifier indices;
+// reach for Expression when SQL functions or constants need to
+// participate in the indexed key.
 type Index struct {
-	Name    string   `json:"name,omitempty"`
-	Columns []string `json:"columns"`
-	Unique  bool     `json:"unique,omitempty"`
+	Name       string   `json:"name,omitempty"`
+	Columns    []string `json:"columns,omitempty"`
+	Unique     bool     `json:"unique,omitempty"`
+	Expression string   `json:"expression,omitempty"`
 }
 
 // Endpoint declares a custom route owned by an entity.

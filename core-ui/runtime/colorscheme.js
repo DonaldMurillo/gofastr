@@ -15,22 +15,22 @@
 //
 // Listens for OS preference changes when the stored mode is "auto"
 // or unset.
-(function () {
+(() => {
   'use strict';
   try {
-    var KEY = 'gofastr.colorScheme';
-    var stored = '';
+    const KEY = 'gofastr.colorScheme';
+    let stored = '';
     try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
-    var apply = function () {
-      var mode = stored;
+    const apply = () => {
+      let mode = stored;
       if (mode !== 'light' && mode !== 'dark') {
-        var mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
         mode = mq && mq.matches ? 'dark' : 'light';
       }
       document.documentElement.setAttribute('data-color-scheme', mode);
       // Also set the native color-scheme meta so UA-rendered controls
       // (scrollbars, native datepickers, form inputs) follow.
-      var meta = document.querySelector('meta[name="color-scheme"]');
+      let meta = document.querySelector('meta[name="color-scheme"]');
       if (!meta) {
         meta = document.createElement('meta');
         meta.setAttribute('name', 'color-scheme');
@@ -44,8 +44,8 @@
     // change is ignored until they switch back to 'auto'.
     if (stored !== 'light' && stored !== 'dark') {
       try {
-        var mq2 = window.matchMedia('(prefers-color-scheme: dark)');
-        var handler = function () {
+        const mq2 = window.matchMedia('(prefers-color-scheme: dark)');
+        const handler = () => {
           // Re-read storage in case the toggle wrote since boot.
           try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
           apply();
@@ -57,11 +57,11 @@
     // Public API: window.__gofastr_colorScheme.set('auto' | 'light' | 'dark').
     // Apps wire their theme toggle here.
     window.__gofastr_colorScheme = {
-      get: function () {
+      get: () => {
         try { return localStorage.getItem(KEY) || 'auto'; }
         catch (_) { return 'auto'; }
       },
-      set: function (mode) {
+      set: (mode) => {
         if (mode !== 'auto' && mode !== 'light' && mode !== 'dark') return;
         try {
           if (mode === 'auto') localStorage.removeItem(KEY);

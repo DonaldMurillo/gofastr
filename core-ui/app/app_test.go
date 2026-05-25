@@ -594,18 +594,32 @@ func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
 	}
 }
 
+// loadObs is a shared observation struct that survives per-request
+// instancing (shallow copy preserves the pointer). Tests use it to
+// assert on Load behavior without poking at the registered template.
+type loadObs struct {
+	calls  int
+	gotCtx context.Context
+}
+
 // loaderComponent records that Load ran and remembers the context, so the
 // test can assert on cancellation propagation and ordering vs Render.
+//
+// Per-request instancing (see Screen.newInstance) shallow-copies the
+// registered template, so the COPY is what runs Load. To remain
+// observable, the component routes side-effects through a pointer to
+// a shared loadObs.
 type loaderComponent struct {
-	loadCalls int
-	gotCtx    context.Context
-	failWith  error
-	body      string
+	obs      *loadObs
+	failWith error
+	body     string
 }
 
 func (l *loaderComponent) Load(ctx context.Context) error {
-	l.loadCalls++
-	l.gotCtx = ctx
+	if l.obs != nil {
+		l.obs.calls++
+		l.obs.gotCtx = ctx
+	}
 	if l.failWith != nil {
 		return l.failWith
 	}
@@ -613,13 +627,17 @@ func (l *loaderComponent) Load(ctx context.Context) error {
 }
 
 func (l *loaderComponent) Render() render.HTML {
-	return render.HTML(fmt.Sprintf(`<div data-loaded="%d">%s</div>`, l.loadCalls, l.body))
+	calls := 0
+	if l.obs != nil {
+		calls = l.obs.calls
+	}
+	return render.HTML(fmt.Sprintf(`<div data-loaded="%d">%s</div>`, calls, l.body))
 }
 
 func TestRenderPageRunsLoaderBeforeRender(t *testing.T) {
 	a := NewApp("LoaderApp")
-	loader := &loaderComponent{body: "after-load"}
-	a.Register("/p", loader, nil)
+	obs := &loadObs{}
+	a.Register("/p", &loaderComponent{obs: obs, body: "after-load"}, nil)
 
 	type ctxKey struct{}
 	ctx := context.WithValue(context.Background(), ctxKey{}, "marker")
@@ -628,17 +646,17 @@ func TestRenderPageRunsLoaderBeforeRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if loader.loadCalls != 1 {
-		t.Errorf("Load should run exactly once, got %d", loader.loadCalls)
+	if obs.calls != 1 {
+		t.Errorf("Load should run exactly once, got %d", obs.calls)
 	}
-	if loader.gotCtx == nil || loader.gotCtx.Value(ctxKey{}) != "marker" {
+	if obs.gotCtx == nil || obs.gotCtx.Value(ctxKey{}) != "marker" {
 		t.Errorf("Load did not receive the caller's context")
 	}
 	if !strings.Contains(string(html), "after-load") {
 		t.Errorf("rendered HTML missing loader output: %s", html)
 	}
 	if !strings.Contains(string(html), `data-loaded="1"`) {
-		t.Errorf("expected Render to observe loadCalls=1: %s", html)
+		t.Errorf("expected Render to observe calls=1: %s", html)
 	}
 }
 
@@ -655,27 +673,27 @@ func TestRenderPagePropagatesLoadError(t *testing.T) {
 
 func TestRenderPartialRunsLoader(t *testing.T) {
 	a := NewApp("LoaderApp")
-	loader := &loaderComponent{body: "partial"}
-	a.Register("/p", loader, nil)
+	obs := &loadObs{}
+	a.Register("/p", &loaderComponent{obs: obs, body: "partial"}, nil)
 
 	if _, err := a.RenderPartial(context.Background(), "/p"); err != nil {
 		t.Fatalf("RenderPartial: %v", err)
 	}
-	if loader.loadCalls != 1 {
-		t.Errorf("expected Load to run once for partials, got %d", loader.loadCalls)
+	if obs.calls != 1 {
+		t.Errorf("expected Load to run once for partials, got %d", obs.calls)
 	}
 }
 
 func TestRenderPageNoContextStillWorks(t *testing.T) {
 	// The no-ctx wrappers must continue to work; they substitute a Background ctx.
 	a := NewApp("LoaderApp")
-	loader := &loaderComponent{body: "no-ctx"}
-	a.Register("/p", loader, nil)
+	obs := &loadObs{}
+	a.Register("/p", &loaderComponent{obs: obs, body: "no-ctx"}, nil)
 
 	if _, err := a.RenderPage(context.Background(), "/p"); err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if loader.gotCtx == nil {
+	if obs.gotCtx == nil {
 		t.Errorf("Load should still receive a non-nil context (Background)")
 	}
 }

@@ -42,6 +42,7 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-toc", "toc"},
 	{"data-fui-scrollspy", "scrollspy"},
 	{`data-fui-comp="ui-optimistic-action"`, "optimisticaction"},
+	{`data-fui-comp="ui-toggle-action"`, "toggleaction"},
 	{`data-fui-comp="ui-network-retry-banner"`, "networkretrybanner"},
 	{"data-fui-sortable", "sortablelist"},
 	{"data-fui-shortcut-focus", "shortcut"},

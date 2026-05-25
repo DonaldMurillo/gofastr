@@ -1,3 +1,10 @@
+//check-csp:ignore-file
+// The bundled harness web client is a dev-only operator surface served
+// on a random localhost port — not a production browser app — so the
+// framework's strict-CSP contract does not apply. The indexHTML
+// constant inlines the SSE listener + form handler so the harness
+// runs without a build step or an extra HTTP round-trip.
+
 // Package web implements the bundled web client.
 //
 // v0.1 minimum: serve a minimal HTML+JS shell on a random local port

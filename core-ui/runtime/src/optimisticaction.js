@@ -4,13 +4,13 @@
 // idle and play a small shake animation.
 //
 // Loaded on-demand when a [data-fui-comp="ui-optimistic-action"] element appears.
-(function () {
+(() => {
   'use strict';
 
-  function setState(btn, state) {
+  const setState = (btn, state) => {
     btn.setAttribute('data-state', state);
-    var idle = btn.querySelector('[data-fui-optimistic-idle]');
-    var success = btn.querySelector('[data-fui-optimistic-success]');
+    const idle = btn.querySelector('[data-fui-optimistic-idle]');
+    const success = btn.querySelector('[data-fui-optimistic-success]');
     if (!idle || !success) return;
     if (state === 'committed' || state === 'pending') {
       idle.setAttribute('hidden', '');
@@ -30,20 +30,18 @@
       btn.removeAttribute('aria-busy');
       btn.disabled = false;
     }
-  }
+  };
 
-  function setupOne(btn) {
+  const setupOne = (btn) => {
     if (btn.__fuiOptimisticBound) return;
     btn.__fuiOptimisticBound = true;
-    btn.addEventListener('click', function (ev) {
+    btn.addEventListener('click', (ev) => {
       ev.preventDefault();
       // Already committed → no-op. Apps that want toggle behavior
       // should listen to the optimistic-action:committed event below
       // and replace the button DOM with a new instance.
-      if (btn.getAttribute('data-state') === 'committed' ||
-          btn.getAttribute('data-state') === 'pending') {
-        return;
-      }
+      const state = btn.getAttribute('data-state');
+      if (state === 'committed' || state === 'pending') return;
       // A new click cancels any pending rollback timer scheduled by
       // the previous error path. Without this, an error → user-clicks-
       // again → pending → 600ms timer-fires → clobbers state back to
@@ -52,8 +50,8 @@
         clearTimeout(btn.__fuiRollbackTimer);
         btn.__fuiRollbackTimer = null;
       }
-      var url = btn.getAttribute('data-fui-optimistic-endpoint');
-      var method = (btn.getAttribute('data-fui-optimistic-method') || 'POST').toUpperCase();
+      const url = btn.getAttribute('data-fui-optimistic-endpoint');
+      const method = (btn.getAttribute('data-fui-optimistic-method') || 'POST').toUpperCase();
       if (!url) return;
       // Optimistic flip — paint success state on the next frame.
       setState(btn, 'pending');
@@ -66,14 +64,14 @@
       // responsible for verifying the token server-side; the runtime
       // just makes the value available without each call site
       // remembering it.
-      var headers = { 'Accept': 'application/json' };
-      var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+      const headers = { Accept: 'application/json' };
+      const tokenMeta = document.querySelector('meta[name="csrf-token"]');
       if (tokenMeta) {
-        var token = tokenMeta.getAttribute('content');
+        const token = tokenMeta.getAttribute('content');
         if (token) headers['X-CSRF-Token'] = token;
       }
-      fetch(url, { method: method, credentials: 'same-origin', headers: headers })
-        .then(function (res) {
+      fetch(url, { method, credentials: 'same-origin', headers })
+        .then((res) => {
           if (res.ok) {
             setState(btn, 'committed');
             btn.dispatchEvent(new CustomEvent('optimistic-action:committed', { bubbles: true }));
@@ -81,28 +79,30 @@
           }
           throw new Error('non-2xx');
         })
-        .catch(function () {
+        .catch(() => {
           setState(btn, 'error');
           // After the shake animation finishes (~400ms), revert to idle.
           // Stored on the button so a new click can cancel it (see the
           // guard above).
-          btn.__fuiRollbackTimer = setTimeout(function () {
+          btn.__fuiRollbackTimer = setTimeout(() => {
             btn.__fuiRollbackTimer = null;
             setState(btn, 'idle');
           }, 600);
           btn.dispatchEvent(new CustomEvent('optimistic-action:rolled-back', { bubbles: true }));
         });
     });
-  }
+  };
 
-  function scan(root) {
-    var scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-comp="ui-optimistic-action"]').forEach(setupOne);
-  }
+  const scan = (root) => {
+    const scope = root && root.querySelectorAll ? root : document;
+    for (const btn of scope.querySelectorAll('[data-fui-comp="ui-optimistic-action"]')) {
+      setupOne(btn);
+    }
+  };
 
-  requestAnimationFrame(function () { scan(document); });
-  document.addEventListener('gofastr:navigate', function () {
-    requestAnimationFrame(function () { scan(document); });
+  requestAnimationFrame(() => scan(document));
+  document.addEventListener('gofastr:navigate', () => {
+    requestAnimationFrame(() => scan(document));
   });
 
   window.__gofastr = window.__gofastr || {};

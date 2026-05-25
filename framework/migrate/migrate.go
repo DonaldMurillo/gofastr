@@ -91,9 +91,7 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 		if f.Required && f.AutoGenerate == schema.AutoNone {
 			col += " NOT NULL"
 		}
-		if f.Default != nil {
-			col += fmt.Sprintf(" DEFAULT %v", SQLDefault(f, dialect))
-		}
+		col += ColumnDefaultClause(f, dialect)
 		columns = append(columns, col)
 	}
 
@@ -121,8 +119,10 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 
 	// Secondary indices — emit AFTER the table exists. CREATE INDEX IF NOT
 	// EXISTS works on both engines so re-running AutoMigrate is idempotent.
+	// An index with neither Columns nor Expression is a no-op (legacy: empty
+	// Columns used to silently skip; we preserve that for the all-zero case).
 	for _, idx := range ent.Config.Indices {
-		if len(idx.Columns) == 0 {
+		if len(idx.Columns) == 0 && idx.Expression == "" {
 			continue
 		}
 		if _, err := db.Exec(indexDDL(safeTable, idx)); err != nil {
@@ -135,25 +135,62 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 // indexDDL builds the CREATE INDEX statement for one declared Index. Name
 // is synthesised from the table + columns when empty. The table parameter
 // must already be validated via SafeIdent.
+//
+// When idx.Expression is non-empty, the body of the index parens is the
+// raw expression (so functional indices like `lower(food)` work).
+// Expression indices require an explicit Name — there's no safe slug
+// for an arbitrary expression. The expression itself is rejected if it
+// contains a semicolon or a SQL line/block comment marker, which is
+// the minimal sanity check appropriate for an operator-supplied
+// schema declaration loaded at startup.
 func indexDDL(table string, idx entity.Index) string {
 	name := idx.Name
 	if name == "" {
+		if idx.Expression != "" {
+			panic(fmt.Sprintf("migrate: index on %s has Expression but no Name — expression indices require an explicit Name", table))
+		}
 		name = "idx_" + table + "_" + strings.Join(idx.Columns, "_")
 	}
 	safeName, err := query.SafeIdent(name)
 	if err != nil {
 		panic(fmt.Sprintf("migrate: invalid index name %q: %v", name, err))
 	}
-	safeCols := make([]string, len(idx.Columns))
-	for i, col := range idx.Columns {
-		safeCols[i] = query.QuoteIdent(query.MustIdent(col))
-	}
 	unique := ""
 	if idx.Unique {
 		unique = "UNIQUE "
 	}
+	var body string
+	if idx.Expression != "" {
+		body = sanitizeIndexExpression(idx.Expression)
+	} else {
+		safeCols := make([]string, len(idx.Columns))
+		for i, col := range idx.Columns {
+			safeCols[i] = query.QuoteIdent(query.MustIdent(col))
+		}
+		body = strings.Join(safeCols, ", ")
+	}
 	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)",
-		unique, query.QuoteIdent(safeName), query.QuoteIdent(table), strings.Join(safeCols, ", "))
+		unique, query.QuoteIdent(safeName), query.QuoteIdent(table), body)
+}
+
+// sanitizeIndexExpression rejects index expressions that contain SQL
+// statement terminators or comment markers. The expression is rendered
+// verbatim into DDL at startup, so we want to fail loud on suspicious
+// payloads rather than silently emit a possibly-broken statement.
+// Anything more expressive (real SQL parsing) belongs in a separate
+// validator — for now this catches the obvious "operator pasted a
+// trailing semicolon" / "comment block" footguns.
+func sanitizeIndexExpression(expr string) string {
+	trimmed := strings.TrimSpace(expr)
+	if trimmed == "" {
+		panic("migrate: index Expression is empty after trim")
+	}
+	for _, banned := range []string{";", "--", "/*", "*/"} {
+		if strings.Contains(trimmed, banned) {
+			panic(fmt.Sprintf("migrate: index Expression %q contains forbidden token %q", trimmed, banned))
+		}
+	}
+	return trimmed
 }
 
 // foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
@@ -293,6 +330,34 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	default:
 		return "TEXT"
 	}
+}
+
+// ColumnDefaultClause returns the trailing " DEFAULT …" fragment a
+// column definition should include, or "" when none applies. Centralises
+// two decisions every DDL site has to make:
+//
+//  1. An explicit f.Default always wins — rendered via SQLDefault.
+//  2. Otherwise, f.AutoGenerate == AutoUUID on Postgres gets
+//     DEFAULT gen_random_uuid() so raw-SQL INSERTs that omit the id
+//     column don't crash with a NOT NULL constraint violation. (PG 13+
+//     ships gen_random_uuid in core; on older versions it lived in
+//     pgcrypto.) SQLite has no built-in UUID generator — the column
+//     stays app-managed there to avoid silently doing nothing.
+//  3. AutoTimestamp is intentionally NOT auto-defaulted; created_at /
+//     updated_at are populated by framework hooks. Auto-emitting now()
+//     would create a divergence between SQLite (no DEFAULT, app sets
+//     it) and PG (DEFAULT now(), app ALSO sets it, last write wins).
+//
+// The returned fragment is prefixed with a leading space so callers can
+// always concat without inserting one themselves.
+func ColumnDefaultClause(f schema.Field, dialect Dialect) string {
+	if f.Default != nil {
+		return " DEFAULT " + SQLDefault(f, dialect)
+	}
+	if f.AutoGenerate == schema.AutoUUID && dialect == DialectPostgres {
+		return " DEFAULT gen_random_uuid()"
+	}
+	return ""
 }
 
 // SQLDefault returns the SQL DEFAULT value for a field. Booleans render as

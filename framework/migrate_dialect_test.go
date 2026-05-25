@@ -42,6 +42,52 @@ func TestSqlType_DialectMatrix(t *testing.T) {
 	}
 }
 
+// TestColumnDefaultClause_AutoUUID pins the V3 #8 fix: AutoUUID columns
+// on Postgres get DEFAULT gen_random_uuid() so raw-SQL INSERTs that
+// omit the id column succeed instead of crashing with a NOT NULL
+// constraint violation. SQLite has no built-in UUID generator —
+// the column stays app-managed there.
+func TestColumnDefaultClause_AutoUUID(t *testing.T) {
+	f := schema.Field{Name: "id", Type: schema.String, AutoGenerate: schema.AutoUUID}
+	if got := migrate.ColumnDefaultClause(f, DialectPostgres); got != " DEFAULT gen_random_uuid()" {
+		t.Errorf("postgres AutoUUID default: got %q, want %q", got, " DEFAULT gen_random_uuid()")
+	}
+	if got := migrate.ColumnDefaultClause(f, DialectSQLite); got != "" {
+		t.Errorf("sqlite AutoUUID default: got %q, want empty (no built-in UUID generator)", got)
+	}
+}
+
+// TestColumnDefaultClause_LiteralDefaultsStillWork guards the regression
+// path: explicit f.Default values must continue to render via SQLDefault
+// — the AutoUUID branch must not shadow them.
+func TestColumnDefaultClause_LiteralDefaultsStillWork(t *testing.T) {
+	cases := []struct {
+		f       schema.Field
+		dialect Dialect
+		want    string
+	}{
+		{schema.Field{Default: "hello"}, DialectPostgres, " DEFAULT 'hello'"},
+		{schema.Field{Default: 42}, DialectSQLite, " DEFAULT 42"},
+		{schema.Field{Default: true}, DialectPostgres, " DEFAULT TRUE"},
+		{schema.Field{Default: true}, DialectSQLite, " DEFAULT 1"},
+		// AutoUUID + explicit Default → Default wins (operator intent).
+		{schema.Field{AutoGenerate: schema.AutoUUID, Default: "00000000-0000-0000-0000-000000000000"}, DialectPostgres,
+			" DEFAULT '00000000-0000-0000-0000-000000000000'"},
+		// No default and no AutoUUID → empty.
+		{schema.Field{Type: schema.String}, DialectPostgres, ""},
+		{schema.Field{Type: schema.String}, DialectSQLite, ""},
+		// AutoTimestamp does NOT auto-emit a DEFAULT — framework hooks set
+		// created_at/updated_at app-side. Don't broaden the auto-default
+		// surface beyond what V3 #8 asked for.
+		{schema.Field{Type: schema.Timestamp, AutoGenerate: schema.AutoTimestamp}, DialectPostgres, ""},
+	}
+	for i, c := range cases {
+		if got := migrate.ColumnDefaultClause(c.f, c.dialect); got != c.want {
+			t.Errorf("case %d (%v/%v): got %q, want %q", i, c.f, c.dialect, got, c.want)
+		}
+	}
+}
+
 // TestSqlDefault_BoolDialectIdiom pins the bool rendering: SQLite keeps the
 // historic 1/0 form, Postgres emits TRUE/FALSE so pg_dump round-trips
 // idiomatically.

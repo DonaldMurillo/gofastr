@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -104,19 +105,16 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	// Lock screen for concurrent-safe param mutation + render
-	screen.mu.Lock()
-	defer screen.mu.Unlock()
-
-	// Inject route params if the component accepts them
+	// Per-request fresh instance — SetParams/Render mutations stay
+	// isolated to this call. See Screen.newInstance for the rationale.
+	comp := screen.newInstance()
 	if len(params) > 0 {
-		if ps, ok := screen.Component.(ParamSetter); ok {
+		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
 	}
-	screen.routeParams = params
 
-	content := screen.Render()
+	content := renderComponentInScreen(context.Background(), screen, comp)
 
 	// Group-registered screens compose ALL parent group layouts so
 	// nested screen groups produce nested layout shells, each wrapped

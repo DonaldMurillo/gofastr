@@ -3,32 +3,32 @@
 // and aria-pressed on the toggle button to reflect the current state.
 //
 // Loaded on-demand when [data-fui-comp="ui-password-input"] markers appear.
-(function () {
+(() => {
   'use strict';
 
-  function wire(root) {
-    var scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-comp="ui-password-input"]').forEach(function (wrapper) {
-      var toggle = wrapper.querySelector('.ui-password-input__toggle');
-      var input = wrapper.querySelector('.ui-password-input__input');
-      if (!toggle || !input) return;
+  const wire = (root) => {
+    const scope = root && root.querySelectorAll ? root : document;
+    for (const wrapper of scope.querySelectorAll('[data-fui-comp="ui-password-input"]')) {
+      const toggle = wrapper.querySelector('.ui-password-input__toggle');
+      const input = wrapper.querySelector('.ui-password-input__input');
+      if (!toggle || !input) continue;
 
       // Avoid double-binding.
-      if (toggle.__fuiPasswordWired) return;
+      if (toggle.__fuiPasswordWired) continue;
       toggle.__fuiPasswordWired = true;
 
-      toggle.addEventListener('click', function () {
-        var showing = input.type === 'text';
+      toggle.addEventListener('click', () => {
+        const showing = input.type === 'text';
         input.type = showing ? 'password' : 'text';
         toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
         toggle.setAttribute('aria-pressed', showing ? 'false' : 'true');
         toggle.textContent = showing ? '⊙' : '⊘';
       });
-    });
-  }
+    }
+  };
 
   wire(document);
-  document.addEventListener('gofastr:navigate', function () { wire(document); });
+  document.addEventListener('gofastr:navigate', () => wire(document));
 
   // Register for SPA rescan.
   (window.__gofastr = window.__gofastr || {});

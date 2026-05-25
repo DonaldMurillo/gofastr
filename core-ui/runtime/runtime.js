@@ -1781,6 +1781,8 @@
     { name: 'scrollspy',       selector: '[data-fui-scrollspy]' },
     // OptimisticAction: SSR-declared success state flips on click, RPC fires underneath, rolls back on non-2xx.
     { name: 'optimisticaction', selector: '[data-fui-comp="ui-optimistic-action"]' },
+    // ToggleAction: three-state mutex toggle (idle ↔ committed with optional untoggle, mutually exclusive within data-toggle-group).
+    { name: 'toggleaction', selector: '[data-fui-comp="ui-toggle-action"]' },
     // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
     { name: 'networkretrybanner', selector: '[data-fui-comp="ui-network-retry-banner"]' },
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
