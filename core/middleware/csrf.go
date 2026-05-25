@@ -191,8 +191,15 @@ func CSRF(cfg CSRFConfig) Middleware {
 					next.ServeHTTP(w, r)
 					return
 				}
+				// Reuse the existing cookie ONLY if its signature still
+				// verifies under the current key set. Otherwise (process
+				// restart rotated the auto-key, operator dropped a key
+				// from AdditionalKeys, attacker tampered with the value),
+				// stamping it into the form's hidden _csrf guarantees the
+				// next POST 403s on signature mismatch. Re-mint instead.
 				var token string
-				if existing, err := r.Cookie(cookieName); err == nil {
+				if existing, err := r.Cookie(cookieName); err == nil &&
+					verifySignedTokenAny(existing.Value, cfg.SecretKey, cfg.AdditionalKeys) {
 					token = existing.Value
 				} else {
 					tok, err := generateSignedCSRFToken(cfg.SecretKey)

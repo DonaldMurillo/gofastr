@@ -83,12 +83,23 @@ deployments where the browser is not involved.
 
 **Always set `SecretKey` explicitly in production.** The middleware
 will autogenerate one if omitted, but that key rotates every process
-restart — meaning every active CSRF cookie is invalidated on deploy
-and the auditable signing seam moves into the binary instead of into
-your secret store. Source it from your config / secret manager the
-same way you'd source `SessionSecret`. With `SecretKey` set AND
-`CookieSecure=true`, the cookie also gets the `__Host-` prefix in
-production, blocking subdomain cookie-injection attacks.
+restart — and the auditable signing seam moves into the binary
+instead of into your secret store. Source it from your config /
+secret manager the same way you'd source `SessionSecret`. With
+`SecretKey` set AND `CookieSecure=true`, the cookie also gets the
+`__Host-` prefix in production, blocking subdomain cookie-injection
+attacks.
+
+On the next safe-method request (GET / HEAD / OPTIONS) the middleware
+**self-heals** stale or tampered cookies: it verifies any incoming
+cookie against `SecretKey` + `AdditionalKeys` and silently re-mints
+one if the signature doesn't validate. This means a process restart
+(which rotates an auto-generated key) or a key rotation that drops
+the previous secret no longer leaves browsers stranded with a cookie
+that's guaranteed to 403 the next POST. To carry tokens across a
+planned rotation without bouncing in-flight forms, list the previous
+secret(s) in `AdditionalKeys`; drain once the old tokens have
+expired.
 
 ## Rate limiting
 
