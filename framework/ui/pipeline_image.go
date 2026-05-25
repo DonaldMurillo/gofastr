@@ -23,9 +23,13 @@ type PipelineSource struct {
 // framework/image. Callers using framework/image can adapt their
 // []VariantHeader with a one-line loop or by writing a typed
 // adapter helper in their own code.
+//
+// Note: Format from VariantHeader is intentionally omitted — MIME
+// is the discriminator the <source type="..."> attribute actually
+// needs, and a parallel `Format string` field would drift in type
+// vs VariantHeader.Format (image.Format enum).
 type HeaderInfo struct {
 	Name   string
-	Format string
 	Width  int
 	Height int
 	MIME   string

@@ -147,8 +147,8 @@ func TestPipelineImageSortsByWidthWithinType(t *testing.T) {
 // filenames in caller code.
 func TestPipelineSourcesFromHeaders(t *testing.T) {
 	headers := []HeaderInfo{
-		{Name: "photo-sm.jpg", Format: "jpeg", Width: 320, MIME: "image/jpeg"},
-		{Name: "photo-md.webp", Format: "webp", Width: 800, MIME: "image/webp"},
+		{Name: "photo-sm.jpg", Width: 320, MIME: "image/jpeg"},
+		{Name: "photo-md.webp", Width: 800, MIME: "image/webp"},
 	}
 	got := PipelineSourcesFromHeaders(headers, func(name string) string {
 		return "/uploads/" + name
