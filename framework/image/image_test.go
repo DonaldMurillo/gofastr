@@ -658,6 +658,76 @@ func TestAnimatedGIFFrameCountIsCheap(t *testing.T) {
 	}
 }
 
+// TestDerivePreservesFrameCount pins the round-4 P0: every chain
+// method (Resize / Rotate / AutoOrient / Modulate / Flip / Flop) goes
+// through derive(); the field FrameCount must survive that hop so
+// downstream RejectAnimated checks still fire on the chained value.
+func TestDerivePreservesFrameCount(t *testing.T) {
+	var buf bytes.Buffer
+	g := &gif.GIF{LoopCount: 0}
+	for i := 0; i < 3; i++ {
+		f := stdimage.NewPaletted(stdimage.Rect(0, 0, 8, 8),
+			color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{uint8(i * 80), 50, 50, 255}})
+		g.Image = append(g.Image, f)
+		g.Delay = append(g.Delay, 1)
+	}
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatalf("EncodeAll: %v", err)
+	}
+	img, err := DecodeBytes(buf.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeBytes: %v", err)
+	}
+	if img.Metadata().FrameCount != 3 {
+		t.Fatalf("initial FrameCount = %d, want 3", img.Metadata().FrameCount)
+	}
+
+	for _, step := range []struct {
+		name string
+		fn   func(*Image) *Image
+	}{
+		{"AutoOrient", func(i *Image) *Image { return i.AutoOrient() }},
+		{"Resize", func(i *Image) *Image { return i.Resize(8, 0) }},
+		{"Rotate", func(i *Image) *Image { return i.Rotate(0) }},
+		{"Flip", func(i *Image) *Image { return i.Flip() }},
+		{"Modulate", func(i *Image) *Image { return i.Modulate(Modulation{Brightness: Float64(1.0)}) }},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			out := step.fn(img)
+			if got := out.Metadata().FrameCount; got != 3 {
+				t.Errorf("%s.FrameCount = %d, want 3", step.name, got)
+			}
+		})
+	}
+}
+
+// TestRejectAnimatedAfterChainStep pins the user-visible consequence:
+// VariantSet{RejectAnimated: true} must fire even after the source
+// has been chained through AutoOrient (the documented avatar recipe).
+func TestRejectAnimatedAfterChainStep(t *testing.T) {
+	var buf bytes.Buffer
+	g := &gif.GIF{LoopCount: 0}
+	for i := 0; i < 2; i++ {
+		f := stdimage.NewPaletted(stdimage.Rect(0, 0, 8, 8),
+			color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{uint8(i * 200), 50, 50, 255}})
+		g.Image = append(g.Image, f)
+		g.Delay = append(g.Delay, 1)
+	}
+	gif.EncodeAll(&buf, g)
+	img, err := DecodeBytes(buf.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeBytes: %v", err)
+	}
+	oriented := img.AutoOrient()
+	_, err = (VariantSet{
+		RejectAnimated: true,
+		Variants:       []Variant{{Width: 8, Format: FormatPNG, Suffix: "a"}},
+	}).Process(oriented)
+	if err == nil {
+		t.Errorf("RejectAnimated should fire after AutoOrient; got nil")
+	}
+}
+
 func TestFromImageHasNoOrientation(t *testing.T) {
 	img := FromImage(gradient(8, 8), FormatJPEG)
 	if md := img.Metadata(); md.Orientation != 0 {

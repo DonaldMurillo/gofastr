@@ -231,6 +231,16 @@ func (i *Image) Bounds() stdimage.Rectangle { return i.img.Bounds() }
 
 // derive returns a new Image with the same metadata but a fresh underlying
 // image. Used by chain methods so transformations don't mutate the source.
+// Every metadata field that callers can observe via Metadata() must be
+// carried forward — historically `frames` was dropped here, which
+// silently neutralised VariantSet{RejectAnimated: true} after any chain
+// step (including the documented avatar recipe's AutoOrient).
 func (i *Image) derive(img stdimage.Image) *Image {
-	return &Image{img: img, format: i.format, orient: i.orient, cfg: i.cfg}
+	return &Image{
+		img:    img,
+		format: i.format,
+		orient: i.orient,
+		frames: i.frames,
+		cfg:    i.cfg,
+	}
 }
