@@ -64,10 +64,29 @@
     return true;
   }
 
+  // Same-tick submit guard. When Enter in a tag input triggers the
+  // browser's implicit form submission (which preventDefault on
+  // keydown doesn't always block in Chromium for single-input forms),
+  // we want to swallow ONLY that immediate, racing submit — never a
+  // legitimate submit a few moments later from a real Save click.
+  //
+  // Record a high-resolution timestamp on every tag-input Enter/comma;
+  // a single document-level capture-phase submit listener checks
+  // whether the timestamp is within ~50ms. Outside that window, the
+  // listener does nothing and the submit proceeds normally.
+  let __fuiTagInputLastEnter = 0;
+  document.addEventListener('submit', function (ev) {
+    if (performance.now() - __fuiTagInputLastEnter < 50) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+    }
+  }, true);
+
   document.addEventListener('keydown', function (ev) {
     const t = ev.target;
     if (!t || !t.matches || !t.matches('input[data-fui-tag-input]')) return;
     if (ev.key === 'Enter' || ev.key === ',') {
+      __fuiTagInputLastEnter = performance.now();
       ev.preventDefault();
       commit(t);
       return;
@@ -80,7 +99,7 @@
       ev.preventDefault();
       chips[chips.length - 1].remove();
     }
-  });
+  }, true);
 
   // Commit on blur so the user doesn't lose a half-typed tag when
   // they tab away.

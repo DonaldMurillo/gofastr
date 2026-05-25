@@ -99,7 +99,7 @@ func newMultiTenantTestMgr(t *testing.T) *AuthManager {
 
 	for _, ddl := range []string{
 		`CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, roles TEXT, password_set BOOLEAN)`,
-		`CREATE TABLE sessions (token TEXT PRIMARY KEY, user_id TEXT, created_at TEXT, expires_at TEXT, two_factor_verified BOOLEAN, pending_two_factor BOOLEAN)`,
+		`CREATE TABLE sessions (id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, user_id TEXT, created_at TEXT, expires_at TEXT, two_factor_verified BOOLEAN, pending_two_factor BOOLEAN)`,
 	} {
 		if _, err := db.Exec(ddl); err != nil {
 			t.Fatal(err)

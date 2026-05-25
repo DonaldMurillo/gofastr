@@ -21,6 +21,12 @@ type EntityDeclaration struct {
 	Endpoints    []Endpoint         `json:"endpoints,omitempty"`
 	SoftDelete   bool               `json:"soft_delete,omitempty"`
 	MultiTenant  bool               `json:"multi_tenant,omitempty"`
+	// OwnerField names the DB column that holds the row's owner id
+	// (e.g. "user_id"). When set AND an owner extractor is registered
+	// by a battery, auto-CRUD scopes List/Get/Update/Delete by the
+	// current request's owner and auto-stamps Create. Mirrors
+	// EntityConfig.OwnerField; leave empty to keep pre-existing behaviour.
+	OwnerField   string             `json:"owner_field,omitempty"`
 	Timestamps   *bool              `json:"timestamps,omitempty"`
 	CRUD         *bool              `json:"crud,omitempty"`
 	MCP          bool               `json:"mcp,omitempty"`
@@ -120,6 +126,7 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		Endpoints:    d.Endpoints,
 		SoftDelete:   d.SoftDelete,
 		MultiTenant:  d.MultiTenant,
+		OwnerField:   d.OwnerField,
 		CRUD:         d.CRUD,
 		MCP:          d.MCP,
 		CursorField:  d.CursorField,

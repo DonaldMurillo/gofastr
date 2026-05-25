@@ -94,8 +94,11 @@ func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 	return nil, nil, false
 }
 
-// Render renders a screen by path, applying its layout.
-func (r *Router) Render(path string) (render.HTML, error) {
+// RenderRaw renders a screen by path with no policy resolution and no
+// request context. INTENDED FOR INTERNAL/SSG USE ONLY — callers in
+// HTTP-serving code should use App.RenderPageResult, which evaluates
+// the Policy chain before invoking Load and Render.
+func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	screen, params, ok := r.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)

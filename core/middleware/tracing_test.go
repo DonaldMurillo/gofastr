@@ -1,4 +1,4 @@
-package middleware
+package middleware_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -38,7 +39,7 @@ func TestTracing_RecordsSpan(t *testing.T) {
 	// Use the framework's Router so Tracing wraps the handler chain
 	// (middleware runs INSIDE the mux dispatch where r.Pattern is set).
 	rt := router.New()
-	rt.Use(router.Middleware(Tracing()))
+	rt.Use(middleware.Tracing())
 	rt.Get("/posts/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -77,7 +78,7 @@ func TestTracing_RecordsSpan(t *testing.T) {
 func TestTracing_500MarksSpanError(t *testing.T) {
 	rec := withRecordingTracer(t)
 	rt := router.New()
-	rt.Use(router.Middleware(Tracing()))
+	rt.Use(middleware.Tracing())
 	rt.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kaboom", http.StatusInternalServerError)
 	}))
@@ -100,7 +101,7 @@ func TestTracing_500MarksSpanError(t *testing.T) {
 func TestTracing_PropagatesIncomingTrace(t *testing.T) {
 	rec := withRecordingTracer(t)
 	rt := router.New()
-	rt.Use(router.Middleware(Tracing()))
+	rt.Use(middleware.Tracing())
 	rt.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 
 	// W3C traceparent format: version-trace_id-span_id-flags
@@ -130,9 +131,9 @@ func TestTracing_NoProviderIsSafe(t *testing.T) {
 	t.Cleanup(func() { otel.SetTracerProvider(prev) })
 
 	rt := router.New()
-	rt.Use(router.Middleware(Tracing()))
+	rt.Use(middleware.Tracing())
 	rt.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = SpanFromRequest(r)
+		_ = middleware.SpanFromRequest(r)
 		w.WriteHeader(http.StatusOK)
 	}))
 	w := httptest.NewRecorder()
@@ -150,10 +151,10 @@ func TestTracing_SpanFromRequest(t *testing.T) {
 	_ = withRecordingTracer(t)
 	var seenContext context.Context
 	rt := router.New()
-	rt.Use(router.Middleware(Tracing()))
+	rt.Use(middleware.Tracing())
 	rt.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenContext = r.Context()
-		s := SpanFromRequest(r)
+		s := middleware.SpanFromRequest(r)
 		if !s.SpanContext().IsValid() {
 			t.Error("expected valid span context inside handler")
 		}

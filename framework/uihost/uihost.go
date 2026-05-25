@@ -680,11 +680,24 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// screens can read URL query params, headers, etc. SSG builds
 	// pass nil and the helpers degrade to empty values.
 	ctx := app.WithRequest(r.Context(), r)
-	html, err := ds.App.RenderPage(ctx, path)
+	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
 		ds.serveNotFound(w, path)
 		return
 	}
+	switch res.Kind {
+	case app.DecisionRedirect:
+		http.Redirect(w, r, res.URL, http.StatusSeeOther)
+		return
+	case app.DecisionBlock:
+		msg := res.Message
+		if msg == "" {
+			msg = http.StatusText(res.Status)
+		}
+		http.Error(w, msg, res.Status)
+		return
+	}
+	html := res.HTML
 
 	// Get or create session
 	sessionCookie, err := r.Cookie("gofastr-session")
@@ -1077,9 +1090,41 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// via app.WithRequest so partial-fetched screens can still read URL
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
-	html, err := ds.App.RenderPartial(ctx, path)
+	res, err := ds.App.RenderPartialResult(ctx, path)
 	if err != nil {
 		ds.serveNotFound(w, path)
+		return
+	}
+	switch res.Kind {
+	case app.DecisionRedirect:
+		// MUST be 200 + X-Gofastr-Location, not 3xx — the runtime
+		// fetcher uses redirect:'follow' so a 303 here would be chased
+		// silently and the header would never reach client JS. The
+		// client-side router reads the header and pushState's to the
+		// new URL, then loads the partial there.
+		//
+		// SAFETY: only emit X-Gofastr-Location for safe same-origin
+		// relative paths. An absolute, protocol-relative, or scheme-
+		// bearing URL would be fed directly into loadPage(), which
+		// does a fetch with credentials — turning the partial-
+		// redirect signal into a cross-origin XSRF / credential-leak
+		// vector. For unsafe URLs fall back to a hard 303 redirect;
+		// the browser handles those safely (cross-origin redirects
+		// don't propagate cookies, javascript:/data: schemes are
+		// blocked at the navigation layer).
+		if isSafePartialRedirect(res.URL) {
+			w.Header().Set("X-Gofastr-Location", res.URL)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Redirect(w, r, res.URL, http.StatusSeeOther)
+		return
+	case app.DecisionBlock:
+		msg := res.Message
+		if msg == "" {
+			msg = http.StatusText(res.Status)
+		}
+		http.Error(w, msg, res.Status)
 		return
 	}
 
@@ -1094,7 +1139,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Gofastr-Partial", "true")
-	fmt.Fprint(w, html)
+	fmt.Fprint(w, res.HTML)
 }
 
 // handleSSE streams island updates to the client.

@@ -232,7 +232,7 @@ func TestRouterRender(t *testing.T) {
 	screen := NewScreen("/", comp)
 	r.Screen(screen, nil)
 
-	html, err := r.Render("/")
+	html, err := r.RenderRaw("/")
 	if err != nil {
 		t.Fatalf("Render failed: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestRouterRender(t *testing.T) {
 		t.Errorf("expected content in rendered output, got: %s", s)
 	}
 
-	_, err = r.Render("/nonexistent")
+	_, err = r.RenderRaw("/nonexistent")
 	if err == nil {
 		t.Error("expected error for unregistered path")
 	}
@@ -255,7 +255,7 @@ func TestRouterRenderWithLayout(t *testing.T) {
 	layout := NewLayout("sidebar").WithHeader(&stubComponent{html: render.Raw("<h1>App</h1>")})
 	r.Screen(screen, layout)
 
-	html, err := r.Render("/")
+	html, err := r.RenderRaw("/")
 	if err != nil {
 		t.Fatalf("Render failed: %v", err)
 	}

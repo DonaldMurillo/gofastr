@@ -126,46 +126,94 @@ func (a *App) SetDefaultLayout(layout *Layout) {
 	a.Router.DefaultLayout(layout)
 }
 
-// RenderScreen renders a screen by path, applying layout and theme CSS.
-func (a *App) RenderScreen(path string) (render.HTML, error) {
-	return a.Router.Render(path)
+// RenderScreenRaw is a policy-bypassing convenience over
+// Router.RenderRaw. INTENDED FOR INTERNAL/SSG USE ONLY — HTTP
+// handlers must use RenderPageResult so the Policy chain is
+// honored (auth gating, RenderAlt, Redirect, Block).
+func (a *App) RenderScreenRaw(path string) (render.HTML, error) {
+	return a.Router.RenderRaw(path)
 }
 
 // RenderPage renders a full HTML page (<!DOCTYPE html><html>...) for a
-// screen path. It resolves the route, locks the screen for concurrent param
-// safety, injects route params, runs DI, calls the screen's Load(ctx) hook
-// if present, and finally renders. The page includes:
-//   - DOCTYPE and html declaration
-//   - Head with charset, viewport, title, and theme CSS custom properties
-//   - Body with skip link (ADA-compliant) and the rendered screen with layout
+// screen path. It resolves the route, evaluates the screen's policy
+// chain, locks the screen for concurrent param safety, injects route
+// params, runs DI, calls Load(ctx), and finally renders.
+//
+// RenderPage is the legacy entry point: it returns HTML for Allow and
+// RenderAlt decisions, and an error for Redirect/Block (which cannot
+// be expressed as HTML). New code should use RenderPageResult to react
+// to all four DecisionKinds.
 func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) {
+	res, err := a.RenderPageResult(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	switch res.Kind {
+	case DecisionAllow, DecisionRenderAlt:
+		return res.HTML, nil
+	case DecisionRedirect:
+		return "", fmt.Errorf("app: %q policy returned redirect to %q; use RenderPageResult to handle", path, res.URL)
+	case DecisionBlock:
+		return "", fmt.Errorf("app: %q policy returned block status %d; use RenderPageResult to handle", path, res.Status)
+	default:
+		return "", fmt.Errorf("app: %q unknown decision kind %d", path, res.Kind)
+	}
+}
+
+// RenderPageResult is the policy-aware variant of RenderPage. It
+// resolves the screen, evaluates the effective Policy chain, and
+// returns a RenderResult describing the outcome.
+//
+//   - DecisionAllow: HTML holds the full <!DOCTYPE>… document.
+//   - DecisionRedirect: URL is the destination; HTML is empty.
+//   - DecisionRenderAlt: the alt component took the place of the
+//     screen's component; HTML holds the full document.
+//   - DecisionBlock: Status holds the HTTP status code; HTML is empty.
+func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
-		return "", fmt.Errorf("app: no screen registered for path %q", path)
+		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
 	// Lock screen for concurrent-safe param mutation + render
 	screen.mu.Lock()
 	defer screen.mu.Unlock()
 
+	// Evaluate policy chain BEFORE Load — a Redirect/Block decision
+	// short-circuits without touching the DB.
+	decision := ResolvePolicy(ctx, screen)
+	switch decision.Kind {
+	case DecisionRedirect:
+		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
+	case DecisionBlock:
+		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+	}
+
+	// For Allow and RenderAlt we proceed to load + render. RenderAlt
+	// swaps the component the rest of the pipeline operates on.
+	comp := screen.Component
+	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
+		comp = decision.AltFactory()
+	}
+
 	// Inject route params into ParamSetter components
 	if len(params) > 0 {
-		if ps, ok := screen.Component.(ParamSetter); ok {
+		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
 		screen.routeParams = params
 	}
 
-	// Inject DI services into screen fields tagged `inject:""`
-	if err := a.Inject(screen.Component); err != nil {
-		return "", fmt.Errorf("app: DI injection failed for %q: %w", path, err)
+	// Inject DI services into component fields tagged `inject:""`
+	if err := a.Inject(comp); err != nil {
+		return RenderResult{}, fmt.Errorf("app: DI injection failed for %q: %w", path, err)
 	}
 
-	// Run the screen's Load hook if present. Loaders run AFTER DI so they can
+	// Run the component's Load hook if present. Loaders run AFTER DI so they can
 	// use injected services, and BEFORE render so they can populate fields.
-	if loader, ok := screen.Component.(ScreenLoader); ok {
+	if loader, ok := comp.(ScreenLoader); ok {
 		if err := loader.Load(ctx); err != nil {
-			return "", fmt.Errorf("app: load failed for %q: %w", path, err)
+			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
 		}
 	}
 
@@ -183,12 +231,12 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 	if screen.Type == ScreenPage {
 		if layout != nil {
 			var renderErr error
-			content, renderErr = component.SafeRender(screen.Component)
+			content, renderErr = component.SafeRenderCtx(ctx, comp)
 			if renderErr != nil {
-				return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
+				return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
 		} else {
-			content = screen.Render()
+			content = renderComponentInScreen(ctx, screen, comp)
 		}
 		if layout != nil {
 			wrapped = layout.Wrap(content)
@@ -197,7 +245,7 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 		}
 	} else {
 		// Drawer/sheet/dialog — render with ARIA wrapping, skip layout
-		content = screen.Render()
+		content = renderComponentInScreen(ctx, screen, comp)
 		wrapped = content
 	}
 
@@ -217,7 +265,7 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 	// Falls back to the registration-time title, then to the app name alone.
 	titleText := a.Name
 	effectiveTitle := screen.Title
-	if titler, ok := screen.Component.(ScreenTitler); ok {
+	if titler, ok := comp.(ScreenTitler); ok {
 		if t := titler.ScreenTitle(); t != "" {
 			effectiveTitle = t
 		}
@@ -246,13 +294,6 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 	// Polite live region for SPA route changes. document.title mutations
 	// aren't announced by screen readers; the runtime writes the new
 	// page title into here after each partial-nav so AT users hear it.
-	// Page-route announcement region. role="status" should imply
-	// aria-live="polite" + aria-atomic="true" per ARIA 1.2, but older
-	// NVDA + many mobile screen readers miss the implicit mapping.
-	// Declaring all three explicitly is the more compatible choice
-	// (the JAWS double-announce concern from round 6 didn't pan out
-	// in practice; the chaos sweep flagged the missing aria-live as
-	// a real risk for AT users on older runtimes).
 	routeAnnounce := render.Tag("div", map[string]string{
 		"id":          "fui-route-announce",
 		"role":        "status",
@@ -265,55 +306,112 @@ func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) 
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")
-	html := render.Tag("html", map[string]string{"lang": "en"}, head, body)
+	htmlDoc := render.Tag("html", map[string]string{"lang": "en"}, head, body)
 
-	return render.Join(doctype, html), nil
+	out := RenderResult{HTML: render.Join(doctype, htmlDoc)}
+	if decision.Kind == DecisionRenderAlt {
+		out.Kind = DecisionRenderAlt
+	} else {
+		out.Kind = DecisionAllow
+	}
+	return out, nil
 }
 
 // RenderPartial returns just the screen content (no layout, no
 // <html>/<head>/<body>). Used for client-side navigation where the layout
 // is already in the DOM. Runs the same param-injection / DI / Load pipeline
-// as RenderPage.
+// as RenderPage, including policy evaluation. Returns an error for
+// Redirect/Block decisions — partials cannot express those; use
+// RenderPartialResult instead.
 func (a *App) RenderPartial(ctx context.Context, path string) (render.HTML, error) {
+	res, err := a.RenderPartialResult(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	switch res.Kind {
+	case DecisionAllow, DecisionRenderAlt:
+		return res.HTML, nil
+	case DecisionRedirect:
+		return "", fmt.Errorf("app: partial %q policy returned redirect to %q; use RenderPartialResult", path, res.URL)
+	case DecisionBlock:
+		return "", fmt.Errorf("app: partial %q policy returned block %d; use RenderPartialResult", path, res.Status)
+	default:
+		return "", fmt.Errorf("app: partial %q unknown decision kind %d", path, res.Kind)
+	}
+}
+
+// RenderPartialResult is the policy-aware variant of RenderPartial.
+// Same semantics as RenderPageResult but returns just the content
+// fragment, suitable for client-side navigation swaps.
+func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResult, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
-		return "", fmt.Errorf("app: no screen registered for path %q", path)
+		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	// Lock screen for concurrent-safe param mutation + render
 	screen.mu.Lock()
 	defer screen.mu.Unlock()
 
-	// Inject route params into ParamSetter components
+	decision := ResolvePolicy(ctx, screen)
+	switch decision.Kind {
+	case DecisionRedirect:
+		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
+	case DecisionBlock:
+		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+	}
+
+	comp := screen.Component
+	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
+		comp = decision.AltFactory()
+	}
+
 	if len(params) > 0 {
-		if ps, ok := screen.Component.(ParamSetter); ok {
+		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
 		screen.routeParams = params
 	}
 
-	// Inject DI services into screen fields tagged `inject:""`
-	if err := a.Inject(screen.Component); err != nil {
-		return "", fmt.Errorf("app: DI injection failed for %q: %w", path, err)
+	if err := a.Inject(comp); err != nil {
+		return RenderResult{}, fmt.Errorf("app: DI injection failed for %q: %w", path, err)
 	}
 
-	// Run the screen's Load hook if present.
-	if loader, ok := screen.Component.(ScreenLoader); ok {
+	if loader, ok := comp.(ScreenLoader); ok {
 		if err := loader.Load(ctx); err != nil {
-			return "", fmt.Errorf("app: load failed for %q: %w", path, err)
+			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
 		}
 	}
 
+	var body render.HTML
 	if screen.Type == ScreenPage {
-		// Return just the component content — client-side router will
-		// swap it into the existing <main> element
-		html, renderErr := component.SafeRender(screen.Component)
+		html, renderErr := component.SafeRenderCtx(ctx, comp)
 		if renderErr != nil {
-			return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
+			return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 		}
-		return html, nil
+		body = html
+	} else {
+		body = renderComponentInScreen(ctx, screen, comp)
 	}
 
-	// Drawer/sheet/dialog — return full ARIA-wrapped content
-	return screen.Render(), nil
+	out := RenderResult{HTML: body}
+	if decision.Kind == DecisionRenderAlt {
+		out.Kind = DecisionRenderAlt
+	} else {
+		out.Kind = DecisionAllow
+	}
+	return out, nil
+}
+
+// renderComponentInScreen renders comp wrapped in the ARIA scaffolding
+// dictated by screen.Type. Lets the caller substitute a different
+// component (used for RenderAlt + no-layout fallback) without copying
+// the Screen struct (which embeds a sync.Mutex).
+func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component) render.HTML {
+	var content render.HTML
+	if cc, ok := comp.(component.ContextComponent); ok {
+		content = cc.RenderCtx(ctx)
+	} else {
+		content = comp.Render()
+	}
+	return wrapByScreenType(screen.Type, screen.Title, content)
 }

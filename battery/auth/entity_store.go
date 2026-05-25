@@ -342,8 +342,13 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl)
 
-	q := s.qTable("INSERT INTO %s (token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)")
-	_, err = s.db.ExecContext(ctx, q, tok, userID, now, expiresAt)
+	// AutoUUID `id` column is created NOT NULL with no DEFAULT, so
+	// PostgreSQL requires us to supply a value here even though the
+	// session is keyed by token, not id. SQLite happens to accept NULL
+	// for INTEGER-PK-like columns, masking this in dev.
+	sessionID := generateUserID()
+	q := s.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
+	_, err = s.db.ExecContext(ctx, q, sessionID, tok, userID, now, expiresAt)
 	if err != nil {
 		return nil, err
 	}

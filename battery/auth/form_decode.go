@@ -27,7 +27,13 @@ func isFormRequest(r *http.Request) bool {
 //
 // On a body that exceeds the size cap, writes 413 and returns ok=false.
 // On any other decode error, writes 400 and returns ok=false.
-func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, password string, roles []string, form bool, ok bool) {
+//
+// SECURITY: this intentionally does NOT decode a "roles" field.
+// /auth/register is an anonymous endpoint — honoring client-supplied
+// roles would let any visitor self-promote to admin via a single POST
+// (or a CSRF-style cross-origin form submission). Roles are assigned
+// server-side in the handler from a configured default.
+func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, password string, form bool, ok bool) {
 	if isFormRequest(r) {
 		// http.Request.ParseForm respects MaxBytesReader if we set the
 		// body wrapper first.
@@ -36,28 +42,24 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 			var maxErr *http.MaxBytesError
 			if errors.As(err, &maxErr) {
 				writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
-				return "", "", nil, true, false
+				return "", "", true, false
 			}
 			writeAuthError(w, http.StatusBadRequest, "invalid form body")
-			return "", "", nil, true, false
+			return "", "", true, false
 		}
 		email = r.PostFormValue("email")
 		password = r.PostFormValue("password")
-		if rs := r.PostForm["roles"]; len(rs) > 0 {
-			roles = rs
-		}
-		return email, password, roles, true, true
+		return email, password, true, true
 	}
 
 	var body struct {
-		Email    string   `json:"email"`
-		Password string   `json:"password"`
-		Roles    []string `json:"roles"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 	if !decodeJSONLimited(w, r, &body) {
-		return "", "", nil, false, false
+		return "", "", false, false
 	}
-	return body.Email, body.Password, body.Roles, false, true
+	return body.Email, body.Password, false, true
 }
 
 // successRedirect returns the redirect target for a form-based auth

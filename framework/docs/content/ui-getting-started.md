@@ -91,6 +91,35 @@ site.Register("/about", &screens.AboutScreen{}, nil)
 
 The `ScreenTitle/Description/Type` triple is the optional `ScreenSpec` interface — `app.Register` reads metadata from it. Cross-page nav is client-side by default (no hard reload) once `runtime.js` is on the page.
 
+### Reaching the request context from `Render`
+
+If a screen needs the live request context (typical case: auth-aware
+chrome that branches on `auth.SessionFrom(ctx)`), implement
+`RenderCtx(ctx)` and embed `component.ContextOnly` so the type still
+satisfies the `Component` interface:
+
+```go
+import (
+    "context"
+    "github.com/DonaldMurillo/gofastr/core-ui/component"
+    "github.com/DonaldMurillo/gofastr/battery/auth"
+)
+
+type AboutScreen struct {
+    component.ContextOnly  // provides a stub Render() so Component is satisfied
+}
+
+func (a *AboutScreen) RenderCtx(ctx context.Context) render.HTML {
+    sess, _ := auth.SessionFrom(ctx)
+    return Chrome(sess, ...)
+}
+```
+
+The framework prefers `RenderCtx` whenever it's defined and never
+calls the stub `Render` provided by `ContextOnly`. Existing
+`Render()`-only screens keep working unchanged — `ContextOnly` is just
+a convenience for the ctx-aware pattern.
+
 ### Path space — avoid colliding with entity CRUD
 
 Every entity in `entities/*.json` automatically claims its own URL space for

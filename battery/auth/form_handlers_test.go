@@ -41,7 +41,8 @@ func setupAuthTestServer(t *testing.T) (*httptest.Server, *AuthManager) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`CREATE TABLE sessions (
-		token TEXT PRIMARY KEY,
+		id TEXT PRIMARY KEY,
+		token TEXT NOT NULL UNIQUE,
 		user_id TEXT,
 		created_at DATETIME,
 		expires_at DATETIME,

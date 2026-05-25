@@ -20,6 +20,7 @@ import (
 type ScreenGroup struct {
 	prefix    string
 	layout    *Layout
+	policies  []Policy
 	screens   []*Screen
 	children  []*ScreenGroup // nested sub-groups
 	parent    *ScreenGroup
@@ -43,11 +44,32 @@ func NewStaticComponent(h render.HTML) *StaticComponent {
 // NewScreenGroup creates a screen group with the given prefix and layout.
 // The prefix is the URL path prefix shared by all screens in the group.
 // The layout wraps every child screen's content.
-func NewScreenGroup(prefix string, layout *Layout) *ScreenGroup {
+//
+// Optional policies attach a chain of access policies to every screen
+// in the group (and sub-groups). The chain is evaluated outermost
+// group → innermost group → screen at request time; the first non-
+// Allow Decision wins. Use this to gate entire route prefixes:
+//
+//	dash := app.NewScreenGroup("/dashboard", dashLayout, auth.SessionPolicy())
+//	dash.Screen(app.NewScreen("/", &HomeScreen{}), nil)            // inherits SessionPolicy
+//	dash.Screen(app.NewScreen("/billing", &BillingScreen{}).
+//	    WithPolicy(auth.RolePolicy("admin")), nil)                  // SessionPolicy + RolePolicy
+func NewScreenGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGroup {
 	return &ScreenGroup{
-		prefix: normalizeGroupPrefix(prefix),
-		layout: layout,
+		prefix:   normalizeGroupPrefix(prefix),
+		layout:   layout,
+		policies: policies,
 	}
+}
+
+// WithPolicy appends a Policy to the group's chain. Returns the group
+// for chaining. Chain is evaluated before any per-screen policies.
+func (g *ScreenGroup) WithPolicy(p Policy) *ScreenGroup {
+	if p == nil {
+		return g
+	}
+	g.policies = append(g.policies, p)
+	return g
 }
 
 // normalizeGroupPrefix ensures the prefix starts with / and ends with /
@@ -108,7 +130,12 @@ func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 // SubGroup creates a nested screen group. The child group's prefix is
 // resolved relative to this group's prefix. The child inherits this
 // group's layout unless it declares its own.
-func (g *ScreenGroup) SubGroup(prefix string, layout *Layout) *ScreenGroup {
+//
+// Optional policies are appended to the parent's policy chain at
+// resolution time — they don't replace inherited policies. A child's
+// screens are gated by parent.policies + child.policies + screen.Policies
+// in that order.
+func (g *ScreenGroup) SubGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGroup {
 	// Always resolve relative to parent — strip leading slash
 	for len(prefix) > 0 && prefix[0] == '/' {
 		prefix = prefix[1:]
@@ -116,9 +143,10 @@ func (g *ScreenGroup) SubGroup(prefix string, layout *Layout) *ScreenGroup {
 	// Parent prefix already ends with /, so just concatenate
 	childPrefix := g.prefix + prefix + "/"
 	child := &ScreenGroup{
-		prefix: childPrefix,
-		layout: layout,
-		parent: g,
+		prefix:   childPrefix,
+		layout:   layout,
+		policies: policies,
+		parent:   g,
 	}
 	if child.layout == nil {
 		child.layout = g.layout

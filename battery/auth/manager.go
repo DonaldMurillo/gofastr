@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -88,6 +91,18 @@ func (c *AuthConfig) defaults() {
 		if c.SessionCookie == "" {
 			c.SessionCookie = "session_id"
 		}
+		// In dev with no explicit JWTSecret, mint a random per-process
+		// secret so the boilerplate doesn't ship a literal "change-me"
+		// string. Sessions invalidate on restart — set JWTSecret if you
+		// need stable dev tokens across restarts.
+		if c.JWTSecret == "" {
+			secret, err := randomDevJWTSecret()
+			if err == nil {
+				c.JWTSecret = secret
+				slog.Default().Warn("auth: DevMode minted a random per-process JWTSecret",
+					"recommendation", "set AuthConfig.JWTSecret if you need stable dev tokens across restarts")
+			}
+		}
 		// SessionSecure stays false (zero value) in dev.
 		return
 	}
@@ -96,6 +111,18 @@ func (c *AuthConfig) defaults() {
 		c.SessionCookie = "__Host-session"
 	}
 	c.SessionSecure = true
+}
+
+// randomDevJWTSecret returns 32 cryptographically-random bytes encoded
+// as URL-safe base64 — enough entropy for the HMAC-SHA256 signing
+// path NewJWTAuth uses. Only called when DevMode is on and no
+// JWTSecret was supplied.
+func randomDevJWTSecret() (string, error) {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
 }
 
 // UserStore is the interface auth needs to look up and manage users.
