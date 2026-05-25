@@ -134,16 +134,13 @@ func cacheHash(argb uint32, cacheBits uint) uint32 {
 	return (argb * colorCacheMultiplier) >> (32 - cacheBits)
 }
 
-// predictorBits is the spec's "bits" field (3-bit) for the predictor
-// transform. Block size = 1<<(predictorBits+2). Bits=3 → 32-pixel
-// blocks, a reasonable balance between sub-image size and per-block
-// adaptation. (Phase D uses a single mode globally; block size mostly
-// affects the sub-image's pixel count.)
+// predictorBits is the spec's "bits" field for the predictor transform
+// (after the +2 the decoder adds). Block size = 1<<predictorBits.
+// Bits=3 → 8-pixel blocks: the libwebp default, fine enough that
+// per-block mode selection catches local variation without exploding
+// the sub-image. Paired with the switch-margin stickiness in
+// chooseBlockModes so smooth content keeps a uniform sub-image.
 const predictorBits = 3
-
-// predictorMode is the fixed predictor mode applied to every block in
-// Phase D's minimal implementation. Mode 1 = predict to left.
-const predictorMode = 1
 
 // emitImage writes the top-level VP8L payload (everything after the
 // 5-byte signature + dimensions prefix). Sub-image emission for the
@@ -157,20 +154,21 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle) {
 		}
 	}
 
-	// Phase D: predictor transform. Replaces each pixel with the
-	// residual against its neighbor; the sub-image carries the per-
-	// block predictor mode (uniform mode 1 here). Big win for smooth
-	// content (gradients, photos) where neighboring pixels correlate.
+	// Phase E: predictor transform with adaptive per-block mode
+	// selection. For each block, every mode 0..13 is evaluated and the
+	// one with minimum L1 residual cost is chosen. Big win for smooth
+	// content (gradients, photos) where local pixel correlation varies.
 	// First row uses mode 1 (L), first column uses mode 2 (T), and
 	// pixel (0,0) uses mode 0 (opaque black) — these are wired into
 	// the decoder regardless of sub-image mode.
-	bw.writeBits(1, 1)                  // transform-present
-	bw.writeBits(transformPredictor, 2) // transform type
-	bw.writeBits(uint32(predictorBits)-2, 3)
+	modes := chooseBlockModes(pixels, w, h, predictorBits)
+	bw.writeBits(1, 1)                       // transform-present
+	bw.writeBits(transformPredictor, 2)      // transform type
+	bw.writeBits(uint32(predictorBits)-2, 3) // 3-bit field; decoder adds 2
 	subW := (w + (1<<predictorBits) - 1) >> predictorBits
 	subH := (h + (1<<predictorBits) - 1) >> predictorBits
-	subPixels := buildPredictorSubImage(subW, subH, predictorMode)
-	applyPredictor(pixels, w, h, predictorMode)
+	subPixels := buildPredictorSubImageFromModes(subW, subH, modes)
+	applyPredictorAdaptive(pixels, w, h, predictorBits, modes, subW)
 	emitPayload(bw, subPixels, subW, subH, false)
 
 	// Phase B: subtract-green, applied AFTER predictor so the
@@ -230,58 +228,68 @@ func emitPayload(bw *bitWriter, pixels [][4]uint8, w, h int, topLevel bool) {
 	_, _ = w, h
 }
 
-// buildPredictorSubImage returns subW×subH pixels where every G value
-// is mode and the other channels are zero — the encoding the decoder
-// expects for a uniformly-moded sub-image.
-func buildPredictorSubImage(subW, subH, mode int) [][4]uint8 {
+// buildPredictorSubImageFromModes returns a subW×subH sub-image where
+// each pixel's G channel holds the chosen predictor mode for that
+// block. R, B, A are zero. The encoder's internal pixel layout is
+// {G, R, B, A}.
+func buildPredictorSubImageFromModes(subW, subH int, modes []int) [][4]uint8 {
 	out := make([][4]uint8, subW*subH)
-	for i := range out {
-		// Encoder stores {G, R, B, A}. The decoder reads the G byte
-		// (low 4 bits) as the predictor mode for that block.
-		out[i] = [4]uint8{uint8(mode), 0, 0, 0}
+	for i, m := range modes {
+		out[i] = [4]uint8{uint8(m), 0, 0, 0}
 	}
 	return out
 }
 
-// applyPredictor mutates pixels in place to predictor-mode residuals.
-// First pixel uses mode 0 (opaque black). First row (y=0) uses mode 1
-// (L). First column (x=0) uses mode 2 (T). All other pixels use the
-// given mode. The encoder reads from a parallel copy so neighbors
-// aren't observed in their residual form.
-func applyPredictor(pixels [][4]uint8, w, h, mode int) {
+// applyPredictorAdaptive computes residuals using the per-block mode
+// from `modes`. Boundary pixels (x=0 or y=0) are hardcoded by the
+// spec regardless of sub-image content. The encoder reads from a
+// parallel copy so neighbours aren't observed in their residual form.
+func applyPredictorAdaptive(pixels [][4]uint8, w, h, bits int, modes []int, subW int) {
 	src := make([][4]uint8, len(pixels))
 	copy(src, pixels)
 
-	// (0, 0): mode 0 (opaque black). pred = (0, 0, 0, 0xFF).
-	// pixels[] stores {G, R, B, A}; subtract (0, 0, 0, 0xFF) component-wise.
+	// (0, 0): mode 0 (opaque black) → pred = (0, 0, 0, 0xFF).
 	pixels[0][0] = src[0][0]
 	pixels[0][1] = src[0][1]
 	pixels[0][2] = src[0][2]
 	pixels[0][3] = src[0][3] - 0xFF
 
-	// First row (y=0, x>=1): mode 1 (L).
+	// First row (y=0, x≥1): mode 1 (L).
 	for x := 1; x < w; x++ {
 		predictorResidual(&pixels[x], src[x], src[x-1])
 	}
 
-	// All other rows.
 	for y := 1; y < h; y++ {
 		rowOff := y * w
-
-		// (x=0): mode 2 (T).
+		// First column (x=0): mode 2 (T).
 		predictorResidual(&pixels[rowOff], src[rowOff], src[rowOff-w])
 
 		for x := 1; x < w; x++ {
 			off := rowOff + x
+			mode := modes[(y>>bits)*subW+(x>>bits)]
 			var pred [4]uint8
 			switch mode {
+			case 0:
+				pred = [4]uint8{0, 0, 0, 0xFF}
 			case 1:
 				pred = src[off-1]
 			case 2:
 				pred = src[off-w]
 			default:
-				// Phase D ships only mode 1; future modes go here.
-				pred = src[off-1]
+				L := src[off-1]
+				T := src[off-w]
+				var TR [4]uint8
+				if x+1 < w {
+					TR = src[off-w+1]
+				} else {
+					// Spec quirk: rightmost-column TR wraps to the
+					// first pixel of the current row (decoder's
+					// pix[top+4] advances past the end of the previous
+					// row into the start of this one).
+					TR = src[y*w]
+				}
+				TL := src[off-w-1]
+				pred = predictMode(mode, L, T, TR, TL)
 			}
 			predictorResidual(&pixels[off], src[off], pred)
 		}
