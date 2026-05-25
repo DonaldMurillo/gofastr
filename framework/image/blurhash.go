@@ -10,6 +10,13 @@ import (
 // https://blurha.sh.
 const base83Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~"
 
+// blurhashMaxSize caps the working dimension fed into the DCT. The
+// hash quantises into a handful of cosine components anyway, so any
+// resolution beyond ~64 px on the longest side is wasted work.
+// Auto-resizing internally turns a 4096² source from a 2-second,
+// 470 MB allocation into a millisecond-scale call.
+const blurhashMaxSize = 64
+
 // BlurHash returns a compact base83 placeholder string for the current
 // image, following the spec at https://blurha.sh. xComp and yComp control
 // the number of DCT components on each axis; both must be in 1..9.
@@ -31,6 +38,19 @@ func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 	if w*h < xComp*yComp {
 		return "", fmt.Errorf("image: BlurHash needs at least %d×%d pixels for %d×%d components; got %d×%d",
 			xComp, yComp, xComp, yComp, w, h)
+	}
+
+	// Auto-resize down to blurhashMaxSize on the longest side. The
+	// hash output is identical to within rounding noise vs. the full-
+	// resolution computation — BlurHash quantises into a tiny number
+	// of cosine components, so the extra precision doesn't change
+	// the result while the cost scales linearly with pixel count.
+	if w > blurhashMaxSize || h > blurhashMaxSize {
+		target := blurhashMaxSize
+		small := i.Resize(target, 0, WithFit(FitInside))
+		b = small.img.Bounds()
+		w, h = b.Dx(), b.Dy()
+		i = small
 	}
 
 	// Pre-convert pixels to linear RGB to avoid redoing the sRGB curve

@@ -141,6 +141,29 @@ func TestPipelineImageSortsByWidthWithinType(t *testing.T) {
 	mustContain(t, h, "/p-sm.webp 320w, /p-md.webp 800w, /p-lg.webp 1600w")
 }
 
+// TestPipelineSourcesFromHeaders pins the typed-bridge helper: given
+// the headers from a VariantSet pipeline and a URL function, produce
+// the PipelineSource slice without re-deriving MIME or width from
+// filenames in caller code.
+func TestPipelineSourcesFromHeaders(t *testing.T) {
+	headers := []HeaderInfo{
+		{Name: "photo-sm.jpg", Format: "jpeg", Width: 320, MIME: "image/jpeg"},
+		{Name: "photo-md.webp", Format: "webp", Width: 800, MIME: "image/webp"},
+	}
+	got := PipelineSourcesFromHeaders(headers, func(name string) string {
+		return "/uploads/" + name
+	})
+	if len(got) != 2 {
+		t.Fatalf("len=%d, want 2", len(got))
+	}
+	if got[0] != (PipelineSource{URL: "/uploads/photo-sm.jpg", Width: 320, Type: "image/jpeg"}) {
+		t.Errorf("got[0] = %+v", got[0])
+	}
+	if got[1] != (PipelineSource{URL: "/uploads/photo-md.webp", Width: 800, Type: "image/webp"}) {
+		t.Errorf("got[1] = %+v", got[1])
+	}
+}
+
 func TestPipelineImageDedupesIdenticalSources(t *testing.T) {
 	// Two PipelineSource entries with the same (URL, Width, Type)
 	// must collapse to one srcset candidate — duplicates are invalid

@@ -14,4 +14,10 @@ var (
 	// ErrInvalidInput is returned when a source cannot be identified as a
 	// supported image format.
 	ErrInvalidInput = errors.New("image: invalid input")
+
+	// ErrAnimatedSource is returned by VariantSet.Process /
+	// VariantSet.ProcessTo when RejectAnimated is set and the source
+	// has FrameCount > 1. Callers wanting to flatten or split frames
+	// instead must do that explicitly before the variant pipeline.
+	ErrAnimatedSource = errors.New("image: animated source rejected (set VariantSet.RejectAnimated=false to flatten to first frame)")
 )

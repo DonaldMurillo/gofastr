@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"io"
 	"math"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -192,6 +193,29 @@ func TestModulateZeroIsIdentity(t *testing.T) {
 	}
 }
 
+// TestModulateInfBrightnessOnBlackPixelClampsTo255 pins the edge:
+// for a (0,0,0,255) pixel and Brightness=+Inf, the intermediate
+// 0*Inf produces NaN, and the old clamp8 fell through to uint8(NaN)=0
+// — so an "infinitely bright" black pixel rendered as black. The
+// fix in clamp8 treats NaN as 0 explicitly; +Inf on a non-zero
+// channel still clamps to 255.
+func TestModulateInfBrightnessClampsCorrectly(t *testing.T) {
+	// Non-zero pixel + Inf brightness → channels saturated to 255.
+	src := FromImage(solidRGBA(2, 2, color.RGBA{R: 100, G: 50, B: 10, A: 255}), FormatPNG)
+	out := src.Modulate(Modulation{Brightness: Float64(math.Inf(1))})
+	r, g, b, _ := out.GoImage().At(0, 0).RGBA()
+	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
+		t.Errorf("non-zero × +Inf should saturate; got %d/%d/%d", r>>8, g>>8, b>>8)
+	}
+	// Black pixel + Inf brightness → still black (0*Inf=NaN, clamp to 0).
+	black := FromImage(solidRGBA(2, 2, color.RGBA{R: 0, G: 0, B: 0, A: 255}), FormatPNG)
+	out = black.Modulate(Modulation{Brightness: Float64(math.Inf(1))})
+	r, g, b, _ = out.GoImage().At(0, 0).RGBA()
+	if r != 0 || g != 0 || b != 0 {
+		t.Errorf("0 × +Inf should clamp to 0; got %d/%d/%d", r>>8, g>>8, b>>8)
+	}
+}
+
 func TestModulateGrayscaleLiteralZero(t *testing.T) {
 	// Saturation=0 should produce literal grayscale per the doc.
 	// Before the fix the encoder coerced 0 → 1 and silently returned
@@ -212,6 +236,28 @@ func TestModulateGrayscaleLiteralZero(t *testing.T) {
 // programmer error (typically int(NaN)=0 or float-from-broken-config)
 // and historically slipped through clamp8 to produce silent black.
 // The fix treats NaN as nil — return source unchanged.
+// TestModulateNRGBAFastPathAllocsBounded asserts the per-pixel interface
+// boxing path is gone for the two common concrete types. A 128×128
+// NRGBA modulation should allocate a constant number of structures
+// (the result RGBA + helpers), not O(pixels). Before the fix it was
+// ~16k allocs on this input.
+func TestModulateNRGBAFastPathAllocsBounded(t *testing.T) {
+	src := stdimage.NewNRGBA(stdimage.Rect(0, 0, 128, 128))
+	for i := 0; i < len(src.Pix); i += 4 {
+		src.Pix[i+0] = uint8(i / 4 % 256)
+		src.Pix[i+1] = 100
+		src.Pix[i+2] = 200
+		src.Pix[i+3] = 255
+	}
+	wrapped := FromImage(src, FormatPNG)
+	allocs := testing.AllocsPerRun(3, func() {
+		_ = wrapped.Modulate(Modulation{Brightness: Float64(1.4)})
+	})
+	if allocs > 50 {
+		t.Errorf("Modulate on 128×128 NRGBA allocated %v times; want O(1)", allocs)
+	}
+}
+
 func TestModulateNaNNoOps(t *testing.T) {
 	src := gradient(8, 8)
 	out := FromImage(src, FormatPNG).Modulate(Modulation{
@@ -487,6 +533,33 @@ func TestBlurHashLengthIsCorrect(t *testing.T) {
 // degenerate (you can't fit M independent DCT components into N<M
 // samples). Today the encoder returns a base83-looking string anyway;
 // the fix surfaces an error.
+// TestBlurHashAutoResizesLargeInput pins the documented foot-gun: a
+// 4096×4096 source through BlurHash used to allocate ~470 MB and take
+// 2 s. The auto-resize fast path scales internally to at most
+// blurhashMaxSize on each axis before computing, so the cost stays
+// O(blurhashMaxSize²) regardless of input.
+func TestBlurHashAutoResizesLargeInput(t *testing.T) {
+	src := FromImage(gradient(512, 512), FormatPNG)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	hash, err := src.BlurHash(4, 3)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatalf("BlurHash: %v", err)
+	}
+	if len(hash) != 28 {
+		t.Errorf("len=%d, want 28", len(hash))
+	}
+	// 512² = 262,144 px × 24 B per linR/G/B float64 ≈ 6.3 MB if the
+	// algorithm allocates linear buffers at full source size. The
+	// auto-resize path should be sub-1 MB.
+	delta := after.TotalAlloc - before.TotalAlloc
+	if delta > 1_500_000 {
+		t.Errorf("BlurHash on 512² allocated %d bytes; want <1.5 MB (auto-resize active?)", delta)
+	}
+}
+
 func TestBlurHashRejectsTooFewSamples(t *testing.T) {
 	src := FromImage(solidRGBA(2, 2, color.RGBA{R: 100, G: 50, B: 200, A: 255}), FormatPNG)
 	if _, err := src.BlurHash(4, 3); err == nil {
@@ -539,6 +612,49 @@ func TestAnimatedGIFSurfacesFrameCount(t *testing.T) {
 	md := img.Metadata()
 	if md.FrameCount != 2 {
 		t.Errorf("Metadata.FrameCount = %d, want 2", md.FrameCount)
+	}
+}
+
+// TestAnimatedGIFFrameCountIsCheap asserts that counting frames in a
+// multi-frame GIF doesn't materialise pixel buffers. Before: the
+// fix used gif.DecodeAll which allocated O(frames * pixels). The
+// new path walks Image Descriptor markers only — O(frames) tiny
+// allocs, regardless of pixel count.
+func TestAnimatedGIFFrameCountIsCheap(t *testing.T) {
+	// Build a 100-frame GIF where each frame is 64x64. Pixel mem if
+	// materialised: 100 * 64 * 64 * ~5 (palette overhead) = ~2 MB.
+	// We assert the encode is <50% of that.
+	const frames = 100
+	var buf bytes.Buffer
+	g := &gif.GIF{LoopCount: 0}
+	for i := 0; i < frames; i++ {
+		f := stdimage.NewPaletted(stdimage.Rect(0, 0, 64, 64),
+			color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{uint8(i * 2), 50, 200, 255}})
+		g.Image = append(g.Image, f)
+		g.Delay = append(g.Delay, 1)
+	}
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatalf("EncodeAll: %v", err)
+	}
+
+	// Measure allocations during DecodeBytes.
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	img, err := DecodeBytes(buf.Bytes())
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatalf("DecodeBytes: %v", err)
+	}
+	if got := img.Metadata().FrameCount; got != frames {
+		t.Fatalf("FrameCount = %d, want %d", got, frames)
+	}
+	// Pixel materialisation for 100 frames at 64x64 paletted would be
+	// at least ~410k pixel bytes plus image.Paletted overhead. Cap
+	// at 200k bytes of total alloc delta — well below the pixel cost.
+	delta := after.TotalAlloc - before.TotalAlloc
+	if delta > 200_000 {
+		t.Errorf("FrameCount counting allocated %d bytes; want <200k (no pixel materialisation)", delta)
 	}
 }
 

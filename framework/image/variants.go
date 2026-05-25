@@ -56,6 +56,14 @@ type VariantSet struct {
 	// 2048×2048 pixel-multiplied-garbage output — almost never what a
 	// caller wants.
 	AllowUpscale bool
+
+	// RejectAnimated returns ErrAnimatedSource when the source's
+	// Metadata.FrameCount is > 1 (today: animated GIFs). Use this on
+	// upload pipelines where the silent first-frame-flatten behavior
+	// of the default decoder would be a surprise — e.g. avatar
+	// uploads, profile photos. Default (false) preserves the legacy
+	// "first frame wins" behavior.
+	RejectAnimated bool
 }
 
 // VariantOutput is one fully rendered variant.
@@ -110,6 +118,9 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 	}
 	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
 		return VariantResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
+	}
+	if s.RejectAnimated && src.frames > 1 {
+		return VariantResult{}, ErrAnimatedSource
 	}
 
 	baseName := s.BaseName
@@ -246,6 +257,9 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
 		return StreamResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
 	}
+	if s.RejectAnimated && src.frames > 1 {
+		return StreamResult{}, ErrAnimatedSource
+	}
 
 	baseName := s.BaseName
 	if baseName == "" {
@@ -266,7 +280,11 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		if v.Format == FormatUnknown {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Format must be set", i)
 		}
-		scaled := src.Resize(v.Width, 0)
+		targetW := v.Width
+		if !s.AllowUpscale && targetW > bounds.Dx() {
+			targetW = bounds.Dx()
+		}
+		scaled := src.Resize(targetW, 0)
 		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
@@ -286,6 +304,13 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		guarded := &oneShotReader{r: &buf}
 		serr := sink(header, guarded)
 		guarded.close()
+		// Drop the scaled intermediate so the GC can reclaim the
+		// resize-output buffer before we allocate the next one. Without
+		// this, each iteration retains a fresh image.RGBA and the
+		// peak heap grows with variant count — the doc's "only one
+		// variant lives in memory at a time" promise breaks.
+		scaled = nil
+		enc = nil
 		if serr != nil {
 			return result, serr
 		}

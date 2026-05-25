@@ -1,9 +1,13 @@
 package image
 
 import (
+	"bytes"
 	"errors"
+	stdimage "image"
 	"image/color"
+	"image/gif"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -228,6 +232,154 @@ func TestVariantSetProcessToStopsOnSinkError(t *testing.T) {
 // than corrupted bytes from the next variant. Before the fix the
 // reader was the *bytes.Buffer the framework reused across variants,
 // so a late read would silently see the next variant's payload.
+// TestProcessToDoesNotUpscaleByDefault mirrors the Process-side
+// regression: ProcessTo must respect AllowUpscale too. Round 2
+// added the clamp to Process but forgot ProcessTo, so callers
+// reaching for the streaming path silently 16× their storage on
+// any small source.
+// TestProcessToReleasesIntermediatesBetweenVariants pins the streaming
+// memory promise. Before the fix, scaled *Image references survived
+// each loop iteration until ProcessTo returned, so the peak resident
+// memory was sum-of-all-resized-buffers — the same as Process. After
+// the fix, each iteration drops its reference so the GC can reclaim
+// the previous variant's working buffer.
+// TestVariantSetRejectAnimated pins the API for the avatar upload
+// case: callers can opt-in to rejecting animated sources so the
+// variant pipeline doesn't silently flatten N-1 frames.
+func TestVariantSetRejectAnimated(t *testing.T) {
+	// Build a 2-frame GIF and decode it through the framework.
+	var gifBuf bytes.Buffer
+	g := &gif.GIF{LoopCount: 0}
+	for i := 0; i < 2; i++ {
+		f := stdimage.NewPaletted(stdimage.Rect(0, 0, 8, 8),
+			color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{uint8(i * 200), 50, 50, 255}})
+		g.Image = append(g.Image, f)
+		g.Delay = append(g.Delay, 1)
+	}
+	if err := gif.EncodeAll(&gifBuf, g); err != nil {
+		t.Fatalf("EncodeAll: %v", err)
+	}
+	img, err := DecodeBytes(gifBuf.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeBytes: %v", err)
+	}
+
+	// Default behaviour: silent first-frame variant (no error).
+	if _, err := (VariantSet{
+		Variants: []Variant{{Width: 8, Format: FormatPNG, Suffix: "a"}},
+	}).Process(img); err != nil {
+		t.Errorf("default Process should not reject animated: %v", err)
+	}
+
+	// Opt-in: reject animated, surfacing ErrAnimatedSource.
+	_, err = (VariantSet{
+		RejectAnimated: true,
+		Variants:       []Variant{{Width: 8, Format: FormatPNG, Suffix: "a"}},
+	}).Process(img)
+	if !errors.Is(err, ErrAnimatedSource) {
+		t.Errorf("expected ErrAnimatedSource, got %v", err)
+	}
+	// ProcessTo path too.
+	_, err = (VariantSet{
+		RejectAnimated: true,
+		Variants:       []Variant{{Width: 8, Format: FormatPNG, Suffix: "a"}},
+	}).ProcessTo(img, func(VariantHeader, io.Reader) error { return nil })
+	if !errors.Is(err, ErrAnimatedSource) {
+		t.Errorf("ProcessTo expected ErrAnimatedSource, got %v", err)
+	}
+}
+
+func TestProcessToReleasesIntermediatesBetweenVariants(t *testing.T) {
+	if testing.Short() {
+		t.Skip("memory test")
+	}
+	src := FromImage(gradient(1024, 1024), FormatPNG)
+
+	// First pass: one variant — baseline retained size.
+	runtime.GC()
+	var b1 runtime.MemStats
+	runtime.ReadMemStats(&b1)
+	_, err := VariantSet{
+		Variants: []Variant{{Width: 512, Format: FormatPNG, Suffix: "a"}},
+	}.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		_, _ = io.ReadAll(r)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ProcessTo single: %v", err)
+	}
+
+	// Second pass: 5 variants — peak retained should be roughly the
+	// same as one-variant if intermediates are released.
+	runtime.GC()
+	var beforeMulti, afterMulti runtime.MemStats
+	runtime.ReadMemStats(&beforeMulti)
+	_, err = VariantSet{
+		Variants: []Variant{
+			{Width: 1024, Format: FormatPNG, Suffix: "a"},
+			{Width: 800, Format: FormatPNG, Suffix: "b"},
+			{Width: 600, Format: FormatPNG, Suffix: "c"},
+			{Width: 400, Format: FormatPNG, Suffix: "d"},
+			{Width: 200, Format: FormatPNG, Suffix: "e"},
+		},
+	}.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		_, _ = io.ReadAll(r)
+		// Force GC mid-stream so retained intermediates would show.
+		runtime.GC()
+		return nil
+	})
+	runtime.ReadMemStats(&afterMulti)
+	if err != nil {
+		t.Fatalf("ProcessTo multi: %v", err)
+	}
+	// Compare in-use memory after each call. The 5-variant call must
+	// not retain a multiple of the per-variant memory.
+	growth := int64(afterMulti.HeapInuse) - int64(beforeMulti.HeapInuse)
+	const oneVariantBytes = 1024 * 1024 * 4 // ~one RGBA scratch
+	if growth > 3*oneVariantBytes {
+		t.Errorf("ProcessTo retained %d bytes across 5 variants; should be ~one variant", growth)
+	}
+}
+
+func TestProcessToDoesNotUpscaleByDefault(t *testing.T) {
+	src := FromImage(solidRGBA(16, 16, color.RGBA{R: 10, G: 20, B: 30, A: 255}), FormatPNG)
+	var widths []int
+	_, err := VariantSet{
+		Variants: []Variant{{Width: 2048, Format: FormatPNG, Suffix: "big"}},
+	}.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		widths = append(widths, h.Width)
+		_, _ = io.ReadAll(r)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ProcessTo: %v", err)
+	}
+	if len(widths) != 1 || widths[0] != 16 {
+		t.Errorf("default should clamp to source 16, got %v", widths)
+	}
+}
+
+// TestProcessToAllowUpscaleOptsBackIn confirms the flag works
+// symmetrically across both code paths.
+func TestProcessToAllowUpscaleOptsBackIn(t *testing.T) {
+	src := FromImage(solidRGBA(16, 16, color.RGBA{R: 10, G: 20, B: 30, A: 255}), FormatPNG)
+	var widths []int
+	_, err := VariantSet{
+		AllowUpscale: true,
+		Variants:     []Variant{{Width: 64, Format: FormatPNG, Suffix: "big"}},
+	}.ProcessTo(src, func(h VariantHeader, r io.Reader) error {
+		widths = append(widths, h.Width)
+		_, _ = io.ReadAll(r)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ProcessTo: %v", err)
+	}
+	if widths[0] != 64 {
+		t.Errorf("AllowUpscale should yield 64, got %d", widths[0])
+	}
+}
+
 func TestProcessToSinkReaderInvalidAfterReturn(t *testing.T) {
 	src := FromImage(gradient(64, 48), FormatPNG)
 	set := VariantSet{

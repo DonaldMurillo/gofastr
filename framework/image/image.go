@@ -32,22 +32,10 @@ import (
 	"bytes"
 	"fmt"
 	stdimage "image"
-	"image/gif"
 	"io"
 	"io/fs"
 	"os"
 )
-
-// decodeGIFFrames returns the number of frames in a GIF byte stream
-// without materialising the pixel buffers. Used by Decode to surface
-// FrameCount on Metadata when the source is animated.
-func decodeGIFFrames(data []byte) (int, error) {
-	g, err := gif.DecodeAll(bytes.NewReader(data))
-	if err != nil {
-		return 0, err
-	}
-	return len(g.Image), nil
-}
 
 // DefaultMaxPixels matches Bun.Image's default decompression-bomb guard.
 const DefaultMaxPixels int64 = 268_435_456
@@ -154,16 +142,80 @@ func decodeBytes(data []byte, cfg Config) (*Image, error) {
 	return &Image{img: img, format: format, orient: orient, frames: frames, cfg: cfg}, nil
 }
 
-// countGIFFrames returns the frame count of a GIF byte stream. 0 on
-// decode error; 1 for a still GIF; >1 for animated. We use the cheaper
-// gif.DecodeAll (which doesn't materialise every frame's pixel buffer
-// up front — it streams) only when we already know the format is GIF.
+// countGIFFrames returns the frame count of a GIF byte stream without
+// materialising any pixel buffer. It walks the GIF block structure
+// (Image Descriptors, Extensions, sub-block chains) and counts 0x2C
+// markers. The previous gif.DecodeAll approach allocated O(frames ×
+// pixels) — a 1024×1024×1000-frame GIF cost ~4 GB of heap before
+// returning. The byte-walker is O(bytes) heap-free.
 func countGIFFrames(data []byte) int {
-	g, err := decodeGIFFrames(data)
-	if err != nil || g == 0 {
+	const (
+		blockImageDescriptor = 0x2C
+		blockExtension       = 0x21
+		blockTrailer         = 0x3B
+	)
+	if len(data) < 13 || !bytes.HasPrefix(data, []byte("GIF")) {
 		return 1
 	}
-	return g
+	// Logical Screen Descriptor's packed byte at offset 10.
+	p := 13
+	if data[10]&0x80 != 0 {
+		// Global Color Table: 3 bytes × 2^(N+1) entries.
+		p += 3 << ((data[10] & 0x07) + 1)
+	}
+	frames := 0
+	for p < len(data) {
+		switch data[p] {
+		case blockImageDescriptor:
+			frames++
+			if p+10 > len(data) {
+				return maxFrameCount(frames, 1)
+			}
+			lcPacked := data[p+9]
+			p += 10
+			if lcPacked&0x80 != 0 {
+				p += 3 << ((lcPacked & 0x07) + 1)
+			}
+			if p >= len(data) {
+				return maxFrameCount(frames, 1)
+			}
+			p++ // LZW minimum code size
+			p = skipSubBlocks(data, p)
+		case blockExtension:
+			if p+2 >= len(data) {
+				return maxFrameCount(frames, 1)
+			}
+			p += 2 // marker + label
+			p = skipSubBlocks(data, p)
+		case blockTrailer:
+			return maxFrameCount(frames, 1)
+		default:
+			return maxFrameCount(frames, 1)
+		}
+	}
+	return maxFrameCount(frames, 1)
+}
+
+// skipSubBlocks advances p past a chain of GIF sub-blocks (length byte
+// then payload, terminated by a zero length byte). Returns the index
+// just past the terminator, or len(data) on truncation.
+func skipSubBlocks(data []byte, p int) int {
+	for p < len(data) {
+		n := int(data[p])
+		p++
+		if n == 0 {
+			return p
+		}
+		p += n
+	}
+	return p
+}
+
+func maxFrameCount(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // GoImage returns the underlying image.Image. Useful for callers that need

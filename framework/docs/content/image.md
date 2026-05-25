@@ -28,7 +28,7 @@ into independent pipelines without aliasing:
 
 ```go
 big, _   := img.Resize(1600, 0).JPEG().Bytes()
-small, _ := img.Resize(320, 0).WebP(image.WebPOptions{Lossless: true}).Bytes()
+small, _ := img.Resize(320, 0).WebP().Bytes() // zero-value = lossless
 ```
 
 ## Construction
@@ -68,9 +68,12 @@ img.Resize(width, height, opts...)  // ResizeOption: WithFilter, WithFit, Withou
 img.Rotate(degrees)                  // 0 / 90 / 180 / 270 (clockwise)
 img.Flip()                           // mirror top↔bottom
 img.Flop()                           // mirror left↔right
+// Modulation fields are *float64 so the zero-value Modulation{}
+// unambiguously means "no change", and a literal Saturation: 0
+// unambiguously means grayscale. Use image.Float64 to construct.
 img.Modulate(image.Modulation{
-    Brightness: 1.2,                 // 1.0 = identity
-    Saturation: 0.8,                 // 0.0 = grayscale, 1.0 = identity
+    Brightness: image.Float64(1.2), // 1.0 = identity; nil = unchanged
+    Saturation: image.Float64(0.8), // 0.0 = grayscale; nil = unchanged
 })
 img.AutoOrient()                     // apply EXIF orientation, then clear it
 ```
@@ -125,7 +128,7 @@ Per-format option structs:
 | `GIF(GIFOptions{NumColors})` | 1..256, default 256 |
 | `BMP()` | — |
 | `TIFF(TIFFOptions{Compression, Predictor})` | from `x/image/tiff` |
-| `WebP(WebPOptions{Lossless})` | Lossless-only; lossy errors |
+| `WebP(WebPOptions{})` | Zero-value lossless; `Lossy: true` errors |
 
 Inspect output before materialising via `Encoder.MIME()` and
 `Encoder.Format()`.
@@ -260,6 +263,82 @@ import (
     fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 )
 ```
+
+## Avatar upload recipe
+
+The typical "user uploads a photo → produce variants → store → render"
+flow is goroutine-safe end-to-end (every Encoder caches its output via
+`sync.Once`; every `ProcessTo` reader is one-shot). A complete sketch:
+
+```go
+import (
+    "github.com/DonaldMurillo/gofastr/battery/storage" // in-memory or S3 storage
+    "github.com/DonaldMurillo/gofastr/framework/image"
+    "github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+// 1. Decode + orient. Reject animated GIFs (avatar = still image).
+img, err := image.Decode(r)
+if err != nil { /* ... */ }
+img = img.AutoOrient()
+
+// 2. Generate variants and stream to storage. ProcessTo streams one
+//    encoded buffer at a time and clamps to source width so a tiny
+//    upload doesn't fanout into 16× upscaled storage waste.
+store := storage.NewMemoryStorage() // or NewLocalStorage / NewS3Storage
+set := image.VariantSet{
+    RejectAnimated: true,           // ErrAnimatedSource if FrameCount > 1
+    BaseName:       userID,
+    Variants: []image.Variant{
+        {Width:  320, Format: image.FormatJPEG, Quality: 80, Suffix: "sm"},
+        {Width:  800, Format: image.FormatJPEG, Quality: 82, Suffix: "md"},
+        {Width: 1600, Format: image.FormatWebP, Suffix: "lg"},
+    },
+    Placeholder: &image.PlaceholderOptions{Width: 24},
+    BlurHashX:   4, BlurHashY: 3,
+}
+headers := []ui.HeaderInfo{}
+sr, err := set.ProcessTo(img, func(h image.VariantHeader, r io.Reader) error {
+    if err := store.Save(ctx, h.Name, r); err != nil { return err }
+    headers = append(headers, ui.HeaderInfo{
+        Name: h.Name, Width: h.Width, Height: h.Height, MIME: h.MIME,
+    })
+    return nil
+})
+
+// 3. Render with PipelineImage. PipelineSourcesFromHeaders turns the
+//    typed headers into the responsive <source> list.
+picture := ui.PipelineImage(ui.PipelineImageConfig{
+    Fallback: "/uploads/" + headers[1].Name,
+    Alt:      "Avatar",
+    Width:    headers[1].Width, Height: headers[1].Height,
+    Sources: ui.PipelineSourcesFromHeaders(headers, func(name string) string {
+        return "/uploads/" + name
+    }),
+    Placeholder: sr.BlurHash, // or sr.Placeholder for a data: URL
+})
+```
+
+`VariantSink`'s `r` is one-shot — stash it for a later goroutine and
+the next read returns `ErrReaderClosed`. Drain inside the sink (e.g.,
+hand it directly to `storage.Save`).
+
+## Performance notes
+
+- **5-pass VP8L encode**: `WebP().Bytes()` runs every uniform predictor
+  mode (1, 2, 11, 12, 13) and ships the smallest. On a 256² photo
+  that's ~20 ms / 29 MB of allocations — ~6× slower than a single-mode
+  pass. For high-volume hot paths, prefer JPEG (~1 ms) and reserve
+  WebP-lossless for low-throughput admin / dashboard flows.
+- **`isUniform` short-circuit**: solid-color inputs encode in one
+  pass instead of five (~10 ms vs ~50 ms for 1024²). Near-uniform
+  inputs with one off-pixel still pay the full 5-pass.
+- **BlurHash auto-resizes** to 64 px on the longest side internally;
+  callers do not need to pre-Resize.
+- **`ProcessTo` releases resize intermediates** between variants so
+  peak heap stays near one variant's worth, not all variants summed.
+- **`Modulate` fast-paths** `*image.NRGBA` and `*image.RGBA`; for
+  other concrete types the slow per-pixel `At()` path applies.
 
 ## Common mistakes
 

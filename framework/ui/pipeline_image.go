@@ -17,6 +17,42 @@ type PipelineSource struct {
 	Type  string // MIME type — required (e.g. "image/webp", "image/jpeg")
 }
 
+// HeaderInfo is the subset of framework/image.VariantHeader that
+// PipelineSourcesFromHeaders consumes. Decoupling from the concrete
+// VariantHeader type lets framework/ui avoid an upward dependency on
+// framework/image. Callers using framework/image can adapt their
+// []VariantHeader with a one-line loop or by writing a typed
+// adapter helper in their own code.
+type HeaderInfo struct {
+	Name   string
+	Format string
+	Width  int
+	Height int
+	MIME   string
+}
+
+// PipelineSourcesFromHeaders bridges framework/image's variant pipeline
+// to a typed PipelineSource slice. Given a URL function that maps a
+// variant's Name to its public URL (e.g. through a storage backend),
+// build the slice that goes into PipelineImageConfig.Sources without
+// re-deriving MIME or width from filenames.
+//
+// Empty headers are skipped (Width==0 or URL=="").
+func PipelineSourcesFromHeaders(headers []HeaderInfo, urlFor func(name string) string) []PipelineSource {
+	out := make([]PipelineSource, 0, len(headers))
+	for _, h := range headers {
+		if h.Width <= 0 || h.MIME == "" {
+			continue
+		}
+		url := urlFor(h.Name)
+		if url == "" {
+			continue
+		}
+		out = append(out, PipelineSource{URL: url, Width: h.Width, Type: h.MIME})
+	}
+	return out
+}
+
 // PipelineImageConfig configures a multi-format <picture> with an
 // optional placeholder (LQIP data URL or BlurHash string).
 type PipelineImageConfig struct {
