@@ -128,15 +128,25 @@ func TestVariantSetRejectsUnknownFormat(t *testing.T) {
 	}
 }
 
-func TestVariantSetSurfacesEncoderError(t *testing.T) {
-	// Force a WebP-lossy by manually constructing an unsupported variant
-	// path: VariantSet always uses lossless, so this exercises the route
-	// today by injecting a WebP variant — once VP8L lands the assertion
-	// flips. Until then a WebP variant must error.
+func TestVariantSetEmitsWebPLossless(t *testing.T) {
 	src := FromImage(gradient(64, 48), FormatPNG)
-	_, err := VariantSet{Variants: []Variant{{Width: 32, Format: FormatWebP}}}.Process(src)
-	if err == nil {
-		t.Skip("WebP-lossless now wired in — flip this test to assert success")
+	res, err := VariantSet{Variants: []Variant{{Width: 32, Format: FormatWebP}}}.Process(src)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(res.Variants) != 1 || res.Variants[0].MIME != "image/webp" {
+		t.Fatalf("expected one image/webp variant, got %+v", res.Variants)
+	}
+	// Round-trip: decoded width must match the requested size.
+	decoded, err := DecodeBytes(res.Variants[0].Bytes)
+	if err != nil {
+		t.Fatalf("re-decode WebP: %v", err)
+	}
+	if decoded.Format() != FormatWebP {
+		t.Errorf("re-decoded format = %v, want WebP", decoded.Format())
+	}
+	if decoded.Bounds().Dx() != 32 {
+		t.Errorf("re-decoded width = %d, want 32", decoded.Bounds().Dx())
 	}
 }
 

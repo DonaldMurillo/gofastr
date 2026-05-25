@@ -55,7 +55,7 @@ reported `width × height` exceeds `Config.MaxPixels` (default
 | GIF    | ✅ | ✅ | First frame on animated input; 1..256 palette colours |
 | BMP    | ✅ | ✅ | — |
 | TIFF   | ✅ | ✅ | Compression + predictor configurable |
-| WebP   | ✅ | 🚧 | Lossless (VP8L) encoder planned; lossy returns `ErrFormatUnsupported` |
+| WebP   | ✅ | ✅ | Lossless (VP8L, Phase A). Lossy returns `ErrFormatUnsupported`. |
 | HEIC / AVIF | ❌ | ❌ | Out of scope (no pure-Go codec exists) |
 
 Animated input, ICC profiles, and EXIF data beyond orientation are
@@ -238,6 +238,12 @@ support is intentionally out of scope.
   `ErrFormatUnsupported`. There is no pure-Go encoder for AV1, HEVC,
   or VP8 quality-competitive with libvpx — those formats need CGo and
   are out of scope for this package.
+- **Expecting WebP-lossless to match `cwebp` file sizes.** The Phase A
+  encoder is correctness-first: literal-only emission, no transforms,
+  no LZ77, no color cache. Files will be larger than `cwebp`'s output
+  by a meaningful factor on natural images. Phase B (subtract-green)
+  and Phase C (LZ77 + color cache) will narrow the gap; they don't
+  change the API.
 - **Aliasing `*Image` across goroutines.** Chain methods return new
   `*Image` values, but the underlying pixel buffer in an `image.Image`
   is shared. If you mutate via `GoImage()`, clone first.

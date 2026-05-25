@@ -239,6 +239,24 @@ func TestWebPLossyReturnsErrFormatUnsupported(t *testing.T) {
 	}
 }
 
+func TestWebPLosslessRoundTrips(t *testing.T) {
+	src := FromImage(gradient(24, 16), FormatPNG)
+	data, err := src.WebP(WebPOptions{Lossless: true}).Bytes()
+	if err != nil {
+		t.Fatalf("WebP lossless encode: %v", err)
+	}
+	if Sniff(data) != FormatWebP {
+		t.Fatalf("output is not a WebP: %v", Sniff(data))
+	}
+	decoded, err := DecodeBytes(data)
+	if err != nil {
+		t.Fatalf("re-decode: %v", err)
+	}
+	if b := decoded.Bounds(); b.Dx() != 24 || b.Dy() != 16 {
+		t.Errorf("re-decoded bounds = %v, want 24×16", b)
+	}
+}
+
 func TestEncoderDataURL(t *testing.T) {
 	src := FromImage(gradient(4, 4), FormatPNG)
 	durl, err := src.PNG().DataURL()

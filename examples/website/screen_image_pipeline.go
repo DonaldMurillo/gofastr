@@ -118,10 +118,10 @@ func renderVariantsSection(src *image.Image) (render.HTML, render.HTML) {
 	set := image.VariantSet{
 		BaseName: "demo",
 		Variants: []image.Variant{
+			{Width: 80, Format: image.FormatWebP, Suffix: "sm"},
+			{Width: 160, Format: image.FormatWebP, Suffix: "md"},
 			{Width: 80, Format: image.FormatJPEG, Quality: 80, Suffix: "sm"},
 			{Width: 160, Format: image.FormatJPEG, Quality: 82, Suffix: "md"},
-			{Width: 80, Format: image.FormatPNG, Suffix: "sm"},
-			{Width: 160, Format: image.FormatPNG, Suffix: "md"},
 		},
 		Placeholder: &image.PlaceholderOptions{Width: 16},
 		BlurHashX:   4, BlurHashY: 3,

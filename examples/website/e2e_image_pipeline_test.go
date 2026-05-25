@@ -129,7 +129,8 @@ func TestE2E_ImagePipeline_VariantSetRendersPipelineImage(t *testing.T) {
                 sourceCount:   sources.length,
                 sourceTypes:   sources.map(s => s.getAttribute('type')).join(','),
                 hasJPEG:       sources.some(s => s.getAttribute('type') === 'image/jpeg') ? "yes" : "no",
-                hasPNG:        sources.some(s => s.getAttribute('type') === 'image/png') ? "yes" : "no",
+                hasWebP:       sources.some(s => s.getAttribute('type') === 'image/webp') ? "yes" : "no",
+                firstType:     sources[0] ? sources[0].getAttribute('type') : '',
                 fallbackSrc:   (img && img.getAttribute('src') || '').slice(0, 22),
                 fallbackWidth: img ? img.getAttribute('width') : '',
                 placeholder:   (img && img.getAttribute('data-placeholder') || '').slice(0, 22),
@@ -146,8 +147,12 @@ func TestE2E_ImagePipeline_VariantSetRendersPipelineImage(t *testing.T) {
 	if got["hasJPEG"] != "yes" {
 		t.Errorf("missing image/jpeg <source>; types = %q", got["sourceTypes"])
 	}
-	if got["hasPNG"] != "yes" {
-		t.Errorf("missing image/png <source>; types = %q", got["sourceTypes"])
+	if got["hasWebP"] != "yes" {
+		t.Errorf("missing image/webp <source>; types = %q", got["sourceTypes"])
+	}
+	// WebP must come before JPEG so legacy browsers fall through.
+	if got["firstType"] != "image/webp" {
+		t.Errorf("first <source type> = %q, want image/webp", got["firstType"])
 	}
 	if pref, _ := got["fallbackSrc"].(string); !strings.HasPrefix(pref, "data:image/jpeg;base64") {
 		t.Errorf("fallback src should be JPEG data URL, got prefix %q", pref)
