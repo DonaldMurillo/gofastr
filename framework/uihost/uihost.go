@@ -1463,6 +1463,22 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Canonicalize missing trailing slash: when only "/foo/" is
+	// registered and "/foo" arrives, 301 to the slash form. ServeMux
+	// gives this for free for subtree patterns, but UIHost dispatches
+	// inside handlePage via App.Router.Resolve, so we do it here.
+	if path != "/" && !strings.HasSuffix(path, "/") {
+		if _, _, ok := ds.App.Router.Resolve(path); !ok {
+			if _, _, ok := ds.App.Router.Resolve(path + "/"); ok {
+				target := path + "/"
+				if r.URL.RawQuery != "" {
+					target += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+				return
+			}
+		}
+	}
 	if path != "/" {
 		if ds.staticDir != "" {
 			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
