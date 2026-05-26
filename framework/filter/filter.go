@@ -8,6 +8,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
+// maxINListEntries bounds the number of values a single ?field_in=…
+// parameter can expand to. Generous for legitimate use (most DBs cap
+// IN-list at a few thousand parameters) but small enough that an
+// adversarial 10K-element list can't drive memory or statement-cache
+// growth.
+const maxINListEntries = 1000
+
 // FilterOp represents a comparison operator for query filtering.
 type FilterOp string
 
@@ -86,6 +93,15 @@ func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error
 				consumed[fieldName] = true
 				if s.op == OpIn {
 					parts := strings.Split(values[0], ",")
+					// Cap the IN list. An attacker can otherwise post a
+					// 10K-element ?id_in=a,a,a,… string and force the
+					// query builder to expand a parameter list that
+					// blows DB statement-cache or buffer limits. 1 000
+					// is generous for legitimate use and short of any
+					// driver's parameter limit.
+					if len(parts) > maxINListEntries {
+						parts = parts[:maxINListEntries]
+					}
 					for _, p := range parts {
 						filters = append(filters, ParsedFilter{Field: fieldName, Op: OpIn, Value: p})
 					}
