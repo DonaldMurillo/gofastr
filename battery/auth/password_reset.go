@@ -188,6 +188,11 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if err := ValidatePasswordStrength(body.Password); err != nil {
+		writeAuthError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
 	hash, err := HashPassword(body.Password)
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "hash failed")

@@ -296,6 +296,15 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 		// the rationale. Role elevation is a separate admin-gated flow.
 		roles := []string{"user"}
 
+		if err := ValidatePasswordStrength(password); err != nil {
+			if isForm {
+				writeFormAuthError(w, r, http.StatusBadRequest, "weak_password")
+			} else {
+				writeAuthError(w, http.StatusBadRequest, "password must be at least 8 characters")
+			}
+			return
+		}
+
 		hash, err := HashPassword(password)
 		if err != nil {
 			writeAuthError(w, http.StatusInternalServerError, "password hashing failed")

@@ -2,24 +2,87 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
+// RecommendedMinPasswordBytes is the minimum length application
+// registration flows should enforce on new passwords. Applications use
+// [ValidatePasswordStrength] to check it; [HashPassword] itself only
+// rejects the empty string because hashing logic shouldn't dictate
+// product policy (PIN flows, recovery tokens, machine accounts, etc.
+// may legitimately fall outside this length).
+const RecommendedMinPasswordBytes = 8
+
+// ErrPasswordEmpty is returned by HashPassword when the input is the
+// empty string — a blank field at signup would be silently accepted
+// otherwise, and every login attempt with no password would match.
+var ErrPasswordEmpty = errors.New("auth: password is empty")
+
+// ErrPasswordTooShort is returned by ValidatePasswordStrength when the
+// input is shorter than RecommendedMinPasswordBytes.
+var ErrPasswordTooShort = errors.New("auth: password too short")
+
 // HashPassword hashes a plaintext password using bcrypt.
+//
+// The empty string is rejected with ErrPasswordEmpty. No other length
+// policy is enforced — call [ValidatePasswordStrength] from the
+// registration flow when you want to require a minimum length.
+//
+// Inputs longer than 72 bytes are pre-hashed with SHA-256 before
+// bcrypt. bcrypt silently truncates anything past 72 bytes, so without
+// the pre-hash a 200-character passphrase would be indistinguishable
+// from its first 72 characters. The pre-hash is base64-encoded to
+// stay within bcrypt's usual byte-range and to avoid NUL bytes that
+// bcrypt would terminate on.
 func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if password == "" {
+		return "", ErrPasswordEmpty
+	}
+	input := []byte(password)
+	if len(input) > 72 {
+		sum := sha256.Sum256(input)
+		input = []byte(base64.RawStdEncoding.EncodeToString(sum[:]))
+	}
+	bytes, err := bcrypt.GenerateFromPassword(input, bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
 	return string(bytes), nil
 }
 
+// ValidatePasswordStrength returns ErrPasswordEmpty for an empty input
+// and ErrPasswordTooShort for anything shorter than
+// RecommendedMinPasswordBytes. Use it from registration / password-
+// change handlers to enforce a length floor without baking policy
+// into the hash function.
+func ValidatePasswordStrength(password string) error {
+	if password == "" {
+		return ErrPasswordEmpty
+	}
+	if len(password) < RecommendedMinPasswordBytes {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
 // CheckPassword compares a plaintext password against a bcrypt hash.
 // Returns true if the password matches.
+//
+// The same SHA-256 pre-hash applied in [HashPassword] is applied here
+// for inputs longer than 72 bytes, so a long passphrase that was hashed
+// at registration time still verifies at login time.
 func CheckPassword(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	input := []byte(password)
+	if len(input) > 72 {
+		sum := sha256.Sum256(input)
+		input = []byte(base64.RawStdEncoding.EncodeToString(sum[:]))
+	}
+	err := bcrypt.CompareHashAndPassword([]byte(hash), input)
 	return err == nil
 }
 

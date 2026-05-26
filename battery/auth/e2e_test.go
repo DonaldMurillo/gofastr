@@ -237,11 +237,11 @@ func TestE2E_SessionPersistence(t *testing.T) {
 	// Register + login
 	app.doRequest("POST", "/auth/register", map[string]string{
 		"email":    "bob@test.com",
-		"password": "bobpass",
+		"password": "bobpass1",
 	}, nil)
 	_, _, cookies := app.doRequest("POST", "/auth/login", map[string]string{
 		"email":    "bob@test.com",
-		"password": "bobpass",
+		"password": "bobpass1",
 	}, nil)
 	var cookie *http.Cookie
 	for _, c := range cookies {
