@@ -30,11 +30,14 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// Current high-water marks. Treat each override as a TODO to
 	// shrink toward the ROADMAP goal above. Update DOWN when a module
 	// shrinks; never update up.
+	//
+	// Post-minify the bundled runtime meets the 12 KB gz goal on its
+	// own; widgets is the only module that still needs further carving
+	// to hit the per-module 3 KB goal (lightbox cleared it).
 	moduleOverrides := map[string]int{
-		"widgets":  7 * 1024,  // goal 3 KB. Bulk: focus-trap + modal stack + dismiss machinery.
-		"lightbox": 5 * 1024,  // goal 3 KB. Bulk: pinch-zoom + pan + keyboard nav.
+		"widgets": 5 * 1024, // goal 3 KB. Bulk: focus-trap + modal stack + dismiss machinery.
 	}
-	const coreOverride = 28 * 1024 // goal 12 KB. Bulk: the bundled runtime carries the full primitive set; per-module splits are an optional path that hasn't carved core yet.
+	const coreOverride = 12 * 1024 // ROADMAP goal met after minify (was 28 KB pre-minify).
 
 	core, err := RuntimeJS()
 	if err != nil {

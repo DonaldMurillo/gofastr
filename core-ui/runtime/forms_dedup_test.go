@@ -29,7 +29,9 @@ func TestFormDispatcher_SingleSourceOfTruth(t *testing.T) {
 	if !strings.Contains(runtimeJS, "data-fui-rpc") {
 		t.Error("runtime.js missing data-fui-rpc form-submit branch")
 	}
-	if !strings.Contains(runtimeJS, "redirect: 'follow'") {
+	// Minified spacing has no space after the colon.
+	if !strings.Contains(runtimeJS, "redirect:'follow'") &&
+		!strings.Contains(runtimeJS, "redirect: 'follow'") {
 		t.Error("runtime.js missing Location-follow path")
 	}
 

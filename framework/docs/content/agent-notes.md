@@ -1,5 +1,25 @@
 # Agent Notes
 
+## 2026-05-26 - runtime JS minifier + copy module carve
+
+- **Scope:** new `core-ui/runtime/minify` package (token-aware JS minifier, pure Go, zero deps), `core-ui/runtime/runtime.go` wires it into `RuntimeJS()` + `Module()` via `sync.Once`, new `core-ui/runtime/src/copy.js` (carved out of `runtime.js`), `core-ui/runtime/preload.go` adds copy marker, `framework/docs/content/runtime-minification.md`, ROADMAP §8 status update.
+
+- **Minifier is env-gated, prod-wins.** Default polarity: minify unless `GOFASTR_DEV=1` (and `GOFASTR_ENV` is not a non-dev env). `RUNTIME_NOMINIFY=1` / `RUNTIME_MINIFY=1` are manual overrides that trump the env detection. An end-user who just `go build`s their app and runs in production with no env vars gets the minified runtime automatically. Dev workflow (`gofastr dev` → `GOFASTR_DEV=1`) keeps raw output so browser stack traces stay readable.
+
+- **Tier-2 scope, intentionally narrow.** Strip comments + whitespace, distinguish regex from division (via prev-token class), preserve string + template-literal payloads byte-for-byte (including `${…}` interpolation re-tokenized), preserve ASI hazards (`return\nfoo`), keep `++`/`--` un-split, handle control bytes in regex char classes (runtime.js has `/^[\s\x00-\x1f]+/`). No identifier renaming, no DCE — output stays parseable + debuggable without source maps.
+
+- **The `i++` bug.** First implementation inserted a fusion-guard space whenever two `+` would be adjacent. That broke `i++` into `i+ +`, which Acorn rejected as a parse error. Fix: only emit the fusion-guard space when the original source had whitespace between the two tokens (`m.sawSpace`). Adjacent chars in the source can't fuse into a different token by definition. Same logic applies to `--`, `//`, `/*`.
+
+- **Copy carve is the pattern.** `[data-fui-copy-text-from]` global click delegator moved from runtime.js → `src/copy.js`. Lazy-loaded via the existing `_moduleMarkers` scanner. Pages without copy buttons no longer parse the clipboard logic. Net runtime.js shrink was small (~340B raw) but architecturally it validates the carve-on-demand pattern for future growth.
+
+- **Sizes after.** Bundled `runtime.js`: 92 KB raw / 28 KB gz → 38 KB raw / **10.4 KB gz** (beats the ROADMAP §8 12 KB gz target). Total embedded JS corpus: 262 KB raw / 88 KB gz → 132 KB raw / 44 KB gz. `budget_test.go` overrides tightened accordingly.
+
+- **Stale-anchor cleanup.** Several tests grepped for substrings (`EventSource`, `data-island`, `redirect: 'follow'`, `(() =>`) that either lived only in comments (the minifier correctly strips them) or used pre-minify spacing. Replaced with code-only anchors or relaxed to accept both spacings.
+
+- **Tests:** new `core-ui/runtime/minify` package suite (table-driven unit + corpus idempotency + size report); `TestNominifyEnvGating` pins the env contract; `TestRuntimeModule_Copy` covers the new module. Full website chromedp e2e (285 tests) green against the minified runtime. Per-module budget for `copy`: 1.8 KB raw.
+
+- **Next time:** when carving more code out of `runtime.js`, check `core-ui/runtime/preload.go`'s `demandLoadMarkers` table — the marker must be added there too or pages won't get the `<link rel="modulepreload">` tag. Drift test (`TestDemandLoadMarkersMatchRuntimeJS`) enforces alignment.
+
 ## 2026-05-24 - core/dotenv + auto-load in NewApp
 
 - **Scope:** new `core/dotenv` package (parser, expander, loader), `framework.NewApp` auto-load wiring, `cmd/gofastr` migrate-command swap, `framework/docs/content/dotenv.md`.

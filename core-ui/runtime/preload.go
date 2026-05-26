@@ -19,6 +19,7 @@ type demandLoadMarker struct {
 // the bottom of core-ui/runtime/runtime.js (search for "DEMAND-LOAD
 // SCANNERS"). The drift test enforces both sides stay aligned.
 var demandLoadMarkers = []demandLoadMarker{
+	{"data-fui-copy-text-from", "copy"},
 	{"data-fui-fileupload", "fileupload"},
 	{"data-fui-popover-anchor", "popover"},
 	{"data-fui-menu", "menu"},

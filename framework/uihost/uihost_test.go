@@ -164,7 +164,10 @@ func TestUIHostServesRuntimeJS(t *testing.T) {
 	}
 	body := w.Body.String()
 	assertContains(t, body, "__gofastr")
-	assertContains(t, body, "EventSource")
+	// `EventSource` lived in a runtime.js comment until SSE was
+	// extracted to its own module — the minifier correctly strips
+	// comments. Anchor on something that's actually in the code now.
+	assertContains(t, body, "screenCache")
 	ct := w.Header().Get("Content-Type")
 	if !strings.Contains(ct, "javascript") {
 		t.Errorf("expected javascript content type, got %q", ct)

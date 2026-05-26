@@ -53,6 +53,8 @@ ending with a "common mistakes" callout.
 - [Plugins](plugins.md) — `Plugin` + optional capability interfaces.
 - [Dev-mode livereload](dev-livereload.md) — auto-wired SSE refresh
   under `gofastr dev`; env kill switches for prod.
+- [Runtime JS minification](runtime-minification.md) — embedded
+  `runtime.js` minifier, env gating, prod-wins defaults.
 
 ## Operational surface
 
