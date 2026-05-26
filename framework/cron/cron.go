@@ -2,12 +2,28 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// MaxJobNameBytes caps the length of a job name. The cap exists to keep
+// names cheap to log; it is not a security boundary on the name itself
+// (names are opaque labels — sanitise them at any rendering call site).
+const MaxJobNameBytes = 256
+
+// ErrInvalidJobName is returned by Register when Name is empty or longer
+// than MaxJobNameBytes.
+var ErrInvalidJobName = errors.New("cron: invalid job name")
+
+// ErrNilJobRun is returned by Register when Run is nil. A nil Run would
+// nil-pointer at execution time; rejecting at registration surfaces the
+// bug at startup instead of inside a tick callback.
+var ErrNilJobRun = errors.New("cron: job Run is nil")
 
 // CronJob is the unit of scheduled work.
 //
@@ -54,9 +70,16 @@ func NewScheduler() *Scheduler {
 	}
 }
 
-// Register adds a job. Returns an error if the spec is invalid so callers
-// catch typos at registration time rather than silently failing forever.
+// Register adds a job. Returns an error if the spec is invalid, the name
+// is empty or oversize, or Run is nil — callers catch typos at registration
+// time rather than silently failing forever or nil-pointering at firing.
 func (s *Scheduler) Register(job CronJob) error {
+	if job.Name == "" || len(job.Name) > MaxJobNameBytes {
+		return fmt.Errorf("%w: name length %d (must be 1..%d)", ErrInvalidJobName, len(job.Name), MaxJobNameBytes)
+	}
+	if job.Run == nil {
+		return fmt.Errorf("%w: %q", ErrNilJobRun, job.Name)
+	}
 	expr, err := ParseCron(job.Spec)
 	if err != nil {
 		return fmt.Errorf("cron %q: %w", job.Name, err)
@@ -105,6 +128,13 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 		}
 		job := sj.job
 		go func(j CronJob) {
+			defer func() {
+				if r := recover(); r != nil {
+					if s.OnError != nil {
+						s.OnError(j.Name, fmt.Errorf("panic: %v\n%s", r, debug.Stack()))
+					}
+				}
+			}()
 			if err := j.Run(ctx); err != nil && s.OnError != nil {
 				s.OnError(j.Name, err)
 			}
