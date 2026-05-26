@@ -30,6 +30,15 @@ type beforeHookError struct{ err error }
 func (e *beforeHookError) Error() string { return e.err.Error() }
 func (e *beforeHookError) Unwrap() error { return e.err }
 
+// tenantMissingError signals a Create attempt against a MultiTenant
+// entity with no tenant in the request context. Surfaces as 400 in
+// the HTTP handler so an orphan row can never be written.
+type tenantMissingError struct{}
+
+func (e *tenantMissingError) Error() string {
+	return "tenant context required for multi-tenant entity"
+}
+
 // DBExecutor is an alias for db.Executor, retained so existing callers keep
 // using framework.DBExecutor. New code should reference framework/db directly.
 type DBExecutor = db.Executor
@@ -577,6 +586,11 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 			"success": false,
 			"fields":  ve.fields,
 		})
+		return
+	}
+	var tme *tenantMissingError
+	if errors.As(err, &tme) {
+		writeJSONError(w, http.StatusBadRequest, tme.Error())
 		return
 	}
 	if errors.Is(err, errNotFound) {

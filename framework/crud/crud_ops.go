@@ -64,10 +64,16 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Entity.Config.MultiTenant {
-		if tenantID := tenant.GetTenantID(ctx); tenantID != "" {
-			cols = append(cols, "tenant_id")
-			vals = append(vals, tenantID)
+		tenantID := tenant.GetTenantID(ctx)
+		if tenantID == "" {
+			// Refuse to write an orphan row. Without a tenant in the
+			// context, the new row's tenant_id would default to empty
+			// and become readable by anyone passing the matching empty
+			// X-Tenant-ID through the filter middleware.
+			return nil, &tenantMissingError{}
 		}
+		cols = append(cols, "tenant_id")
+		vals = append(vals, tenantID)
 	}
 
 	visFields := ch.VisibleFields()
