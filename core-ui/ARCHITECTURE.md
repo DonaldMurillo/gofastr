@@ -58,6 +58,10 @@ The framework primitives live in:
 - `core-ui/island` — the runtime-side island manager (registration, SSE push, slot lookup)
 - `core-ui/signal` — reactive state values that trigger SSE pushes
 - `core-ui/runtime/runtime.js` — the client-side hydration runtime
+  (minified at first read in production; see
+  [`runtime-minification.md`](../framework/docs/content/runtime-minification.md))
+- `core-ui/runtime/minify` — token-aware Go JS minifier that
+  shrinks every embedded runtime source on first read
 
 ---
 
