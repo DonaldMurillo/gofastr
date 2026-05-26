@@ -6,7 +6,7 @@ import "testing"
 // (1..2^20) and asserts the prefix-code symbol stays within the
 // 40-symbol alphabet. Property test rather than spot-check — covers
 // every distinct symbol partition the lz77Symbol algorithm produces.
-func TestR4_DistanceSymbol_AllValues(t *testing.T) {
+func TestDistanceSymbol_AllValues(t *testing.T) {
 	for v := uint32(1); v <= (1 << 20); v++ {
 		sym, extra := lz77Symbol(v)
 		if sym >= nDistanceCodes {
@@ -37,7 +37,7 @@ func TestR4_DistanceSymbol_AllValues(t *testing.T) {
 // TestR4_LengthSymbol_AllValues sweeps every legal length value
 // (2..4096) and asserts the symbol fits inside the 24-symbol length
 // alphabet. matchMaxLen guarantees the upper end.
-func TestR4_LengthSymbol_AllValues(t *testing.T) {
+func TestLengthSymbol_AllValues(t *testing.T) {
 	for v := uint32(2); v <= matchMaxLen; v++ {
 		sym, _ := lz77Symbol(v)
 		if sym >= nLengthCodes {
@@ -50,7 +50,7 @@ func TestR4_LengthSymbol_AllValues(t *testing.T) {
 // can be inverted by the spec's lz77Param formula — i.e. encode then
 // decode reproduces the input. Catches off-by-one shifts in the
 // symbol-to-value math.
-func TestR4_DistanceSymbol_InverseProperty(t *testing.T) {
+func TestDistanceSymbol_InverseProperty(t *testing.T) {
 	// Spot-check across the partitioning boundaries.
 	for _, v := range []uint32{1, 4, 5, 6, 7, 8, 9, 12, 13, 16, 17, 32, 33, 100, 256, 1 << 10, 1 << 15, 1 << 20} {
 		sym, extra := lz77Symbol(v)

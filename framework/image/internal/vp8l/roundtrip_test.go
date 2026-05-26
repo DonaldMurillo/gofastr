@@ -42,7 +42,7 @@ func assertNRGBAEqual(t *testing.T, want, got image.Image) {
 	}
 }
 
-func TestStressTypeRGBA(t *testing.T) {
+func TestRoundTripTypeRGBA(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 8, 6))
 	for y := 0; y < 6; y++ {
 		for x := 0; x < 8; x++ {
@@ -53,7 +53,7 @@ func TestStressTypeRGBA(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressTypeNRGBA(t *testing.T) {
+func TestRoundTripTypeNRGBA(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 8, 6))
 	for y := 0; y < 6; y++ {
 		for x := 0; x < 8; x++ {
@@ -64,7 +64,7 @@ func TestStressTypeNRGBA(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressTypeGray(t *testing.T) {
+func TestRoundTripTypeGray(t *testing.T) {
 	src := image.NewGray(image.Rect(0, 0, 8, 6))
 	for y := 0; y < 6; y++ {
 		for x := 0; x < 8; x++ {
@@ -75,7 +75,7 @@ func TestStressTypeGray(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressTypePaletted(t *testing.T) {
+func TestRoundTripTypePaletted(t *testing.T) {
 	pal := color.Palette{
 		color.RGBA{0, 0, 0, 255},
 		color.RGBA{255, 0, 0, 255},
@@ -92,7 +92,7 @@ func TestStressTypePaletted(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressTypeYCbCr(t *testing.T) {
+func TestRoundTripTypeYCbCr(t *testing.T) {
 	src := image.NewYCbCr(image.Rect(0, 0, 8, 6), image.YCbCrSubsampleRatio420)
 	for i := range src.Y {
 		src.Y[i] = uint8(i * 13)
@@ -105,7 +105,7 @@ func TestStressTypeYCbCr(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressTypeCMYK(t *testing.T) {
+func TestRoundTripTypeCMYK(t *testing.T) {
 	src := image.NewCMYK(image.Rect(0, 0, 8, 6))
 	for y := 0; y < 6; y++ {
 		for x := 0; x < 8; x++ {
@@ -131,7 +131,7 @@ func (m *customRGBA64Image) At(x, y int) color.Color {
 	}
 }
 
-func TestStressTypeCustomImage(t *testing.T) {
+func TestRoundTripTypeCustomImage(t *testing.T) {
 	src := &customRGBA64Image{w: 8, h: 6}
 	_, err := func() (image.Image, error) {
 		var buf bytes.Buffer
@@ -147,7 +147,7 @@ func TestStressTypeCustomImage(t *testing.T) {
 
 // ---- extreme aspect ratios ----
 
-func TestStressAR16384x1(t *testing.T) {
+func TestRoundTripAR16384x1(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 16384, 1))
 	for x := 0; x < 16384; x++ {
 		src.SetNRGBA(x, 0, color.NRGBA{R: uint8(x), G: uint8(x >> 4), B: uint8(x >> 8), A: 255})
@@ -156,7 +156,7 @@ func TestStressAR16384x1(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressAR1x16384(t *testing.T) {
+func TestRoundTripAR1x16384(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 1, 16384))
 	for y := 0; y < 16384; y++ {
 		src.SetNRGBA(0, y, color.NRGBA{R: uint8(y), G: uint8(y >> 4), B: uint8(y >> 8), A: 255})
@@ -165,7 +165,7 @@ func TestStressAR1x16384(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressAR16385x1Rejected(t *testing.T) {
+func TestRoundTripAR16385x1Rejected(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 16385, 1))
 	var buf bytes.Buffer
 	err := Encode(&buf, src)
@@ -179,7 +179,7 @@ func TestStressAR16385x1Rejected(t *testing.T) {
 
 // ---- alpha variations ----
 
-func TestStressAlphaAllZero(t *testing.T) {
+func TestRoundTripAlphaAllZero(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	for i := 0; i < len(src.Pix); i += 4 {
 		src.Pix[i+0] = uint8(i % 255)
@@ -191,7 +191,7 @@ func TestStressAlphaAllZero(t *testing.T) {
 	assertNRGBAEqual(t, src, out)
 }
 
-func TestStressAlphaVaryGrayMid(t *testing.T) {
+func TestRoundTripAlphaVaryGrayMid(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	for y := 0; y < 32; y++ {
 		for x := 0; x < 32; x++ {
@@ -204,7 +204,7 @@ func TestStressAlphaVaryGrayMid(t *testing.T) {
 
 // ---- wraparound boundary ----
 
-func TestStressWrapAroundBoundary(t *testing.T) {
+func TestRoundTripWrapAroundBoundary(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 64, 64))
 	for y := 0; y < 64; y++ {
 		for x := 0; x < 64; x++ {
@@ -232,7 +232,7 @@ func TestStressWrapAroundBoundary(t *testing.T) {
 // TestStressPremultipliedZeroAlphaOddRGB tests the foot-gun of image.RGBA
 // where alpha=0 but RGB!=0 is technically invalid (premultiplied invariant
 // requires RGB <= A). sampleRGBA8 routes RGBA through color.NRGBAModel.Convert.
-func TestStressPremultipliedZeroAlphaOddRGB(t *testing.T) {
+func TestRoundTripPremultipliedZeroAlphaOddRGB(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 4, 1))
 	// Manually poke pixel bytes — A=0 but R=128, an invalid premul state.
 	src.Pix[0] = 128
