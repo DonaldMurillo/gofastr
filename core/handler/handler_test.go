@@ -294,10 +294,15 @@ func TestErrorResponseCorrectStatus(t *testing.T) {
 			wantMsg:    "something broke",
 		},
 		{
+			// Plain (non-*Error) errors are treated as internal failures
+			// and rendered with a generic message — see WriteError's
+			// doc comment. The inner message is intentionally NOT
+			// exposed; wrap explicitly with Errorf/WrapError to control
+			// what reaches the client.
 			name:       "plain error → 500",
 			err:        errors.New("plain error"),
 			wantStatus: 500,
-			wantMsg:    "plain error",
+			wantMsg:    "internal server error",
 		},
 		{
 			name:       "wrapped error",

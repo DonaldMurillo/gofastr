@@ -102,12 +102,26 @@ type errorResponseDetail struct {
 }
 
 // WriteError writes a structured error response to w.
+//
+// An *Error is rendered verbatim (its Code, Message, and Fields are
+// what the developer chose to expose). Any other error type is treated
+// as an internal failure: the response message is a generic
+// "internal server error" with status 500, and the original error
+// stays out of the response body. Callers that *do* want the inner
+// message to reach the client must wrap explicitly via [Errorf] or
+// [WrapError] (the latter keeps the cause for `errors.Is/As` without
+// leaking it).
+//
+// This prevents accidental leaks of database errors, driver-specific
+// strings ("pq: password authentication failed for user \"admin\""),
+// or wrapped stack traces.
 func WriteError(w http.ResponseWriter, err error) {
 	herr, ok := err.(*Error)
 	if !ok {
 		herr = &Error{
 			Code:    http.StatusInternalServerError,
-			Message: err.Error(),
+			Message: "internal server error",
+			Err:     err,
 		}
 	}
 
