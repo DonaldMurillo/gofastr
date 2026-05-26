@@ -118,8 +118,22 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
+	ownerField := ch.Entity.Config.OwnerField
 	for _, f := range ch.Entity.GetFields() {
 		if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
+			continue
+		}
+		// Refuse to let a client reassign ownership through an update body.
+		// The owner scope already pins the WHERE to the caller's id, but
+		// permitting `user_id` in the SET clause would still allow a
+		// legitimate-owner update to hand the row off to another user
+		// ("transfer-by-tamper"). Always skip the owner field — the
+		// framework manages it.
+		if ownerField != "" && f.Name == ownerField {
+			continue
+		}
+		// Same hazard for tenant_id when MultiTenant is on.
+		if ch.Entity.Config.MultiTenant && f.Name == "tenant_id" {
 			continue
 		}
 		val, ok := body[f.Name]

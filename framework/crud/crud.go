@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -601,7 +602,15 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
-	writeJSONError(w, http.StatusInternalServerError, err.Error())
+	// Unrecognised error → 500 with a generic message. Returning
+	// err.Error() here leaks driver-specific details (`pq: relation
+	// "users" does not exist`, `dial tcp 10.0.0.1:5432: ...`,
+	// `UNIQUE constraint failed: users.email`) that fingerprint the
+	// schema and backend. The full message is logged on the server
+	// side; the client sees a generic "internal server error" with
+	// the original error remaining matchable via errors.Is in tests.
+	log.Printf("crud: internal error: %v", err)
+	writeJSONError(w, http.StatusInternalServerError, "internal server error")
 }
 
 // parsePagination extracts page and per_page from query params.
