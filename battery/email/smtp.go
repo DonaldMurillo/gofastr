@@ -139,8 +139,42 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	return client.Quit()
 }
 
-// buildMessage constructs the raw email message bytes.
+// buildMessage constructs the raw email message bytes. It refuses
+// to serialise an Email whose header fields contain CR or LF —
+// without that check, a To/From/Subject/custom-header value of
+// `"foo\r\nBcc: victim@e.com"` would smuggle an extra Bcc onto the
+// outgoing message (classic SMTP header injection).
 func buildMessage(email Email) ([]byte, error) {
+	if err := assertNoHeaderInjection("From", email.From); err != nil {
+		return nil, err
+	}
+	if err := assertNoHeaderInjection("Subject", email.Subject); err != nil {
+		return nil, err
+	}
+	for _, a := range email.To {
+		if err := assertNoHeaderInjection("To", a); err != nil {
+			return nil, err
+		}
+	}
+	for _, a := range email.CC {
+		if err := assertNoHeaderInjection("Cc", a); err != nil {
+			return nil, err
+		}
+	}
+	for _, a := range email.BCC {
+		if err := assertNoHeaderInjection("Bcc", a); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range email.Headers {
+		if err := assertNoHeaderInjection(k, k); err != nil {
+			return nil, err
+		}
+		if err := assertNoHeaderInjection(k, v); err != nil {
+			return nil, err
+		}
+	}
+
 	var buf strings.Builder
 
 	// Headers
@@ -220,4 +254,17 @@ func buildMessage(email Email) ([]byte, error) {
 // encodeBase64 wraps base64-encoded content at 76 characters per line.
 func encodeBase64(data []byte) string {
 	return b64Encode(data)
+}
+
+// assertNoHeaderInjection returns an error if value contains CR, LF, or
+// NUL — the only bytes that can terminate a header line in SMTP's
+// "Field: value\r\n" framing and let following bytes appear as a new
+// header. The field name is included in the error so the caller can
+// log which input was rejected.
+func assertNoHeaderInjection(field, value string) error {
+	if strings.ContainsAny(value, "\r\n\x00") {
+		return fmt.Errorf("%w: header %q contains illegal control character (CR/LF/NUL — refusing to send to prevent SMTP header injection)",
+			ErrSendFailed, field)
+	}
+	return nil
 }
