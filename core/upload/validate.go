@@ -75,9 +75,15 @@ func ValidateExt(filename string, allowed []string) error {
 }
 
 // SanitizeFilename removes path separators, null bytes, and other dangerous
-// characters from a filename to prevent path traversal attacks.
+// characters from a filename to prevent path traversal attacks. It also
+// neutralises double-extension smuggling — e.g. `shell.php.jpg` becomes
+// `shell_php.jpg` — so a misconfigured web server can't be tricked into
+// executing a hidden interior extension.
 func SanitizeFilename(name string) string {
-	// Remove null bytes
+	// Remove null bytes — note this is BEFORE filepath.Base because a
+	// raw `evil.php\x00.jpg` would otherwise reach filepath.Base intact
+	// and look like a `.jpg` file, while the OS open() syscall would
+	// truncate at the null byte and write `evil.php`.
 	name = strings.ReplaceAll(name, "\x00", "")
 
 	// Normalize backslashes to forward slashes for cross-platform safety
@@ -103,12 +109,74 @@ func SanitizeFilename(name string) string {
 	// Trim whitespace
 	name = strings.TrimSpace(name)
 
+	// Neutralise dangerous interior extensions. We split on `.`, keep the
+	// final segment as the real extension, and replace any *interior*
+	// segment that matches a known executable extension with `_`. This
+	// preserves legitimate compound extensions like `.tar.gz` while
+	// turning `shell.php.jpg` into `shell_php.jpg`.
+	name = neutraliseInteriorExecExts(name)
+
 	// If nothing remains, generate a fallback
 	if name == "" {
 		return "upload"
 	}
 
 	return name
+}
+
+// dangerousExecExts is the deny-list of file extensions that have ever
+// been treated as executable by a web server, shell, or scripting host.
+// Anything appearing in an interior position of a multi-dotted filename
+// is collapsed to an underscore.
+var dangerousExecExts = map[string]bool{
+	"php":   true,
+	"phtml": true,
+	"php3":  true,
+	"php4":  true,
+	"php5":  true,
+	"php7":  true,
+	"phar":  true,
+	"asp":   true,
+	"aspx":  true,
+	"cgi":   true,
+	"jsp":   true,
+	"jspx":  true,
+	"pl":    true,
+	"py":    true,
+	"rb":    true,
+	"sh":    true,
+	"bash":  true,
+	"zsh":   true,
+	"bat":   true,
+	"cmd":   true,
+	"com":   true,
+	"exe":   true,
+	"dll":   true,
+	"so":    true,
+	"dylib": true,
+	"vbs":   true,
+	"vbe":   true,
+	"js":    true,
+	"mjs":   true,
+	"htm":   true,
+	"html":  true,
+	"svg":   true,
+	"xhtml": true,
+}
+
+func neutraliseInteriorExecExts(name string) string {
+	parts := strings.Split(name, ".")
+	if len(parts) < 3 {
+		// No interior segment to worry about — either no extension or
+		// exactly one (base.ext) which is the legitimate shape.
+		return name
+	}
+	for i := 1; i < len(parts)-1; i++ {
+		if dangerousExecExts[strings.ToLower(parts[i])] {
+			parts[i] = "_" + parts[i]
+		}
+	}
+	return strings.Join(parts, ".")
 }
 
 // detectMIMEFromName attempts to detect MIME type from filename extension.
