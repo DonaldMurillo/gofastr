@@ -146,11 +146,45 @@ func Params(r *http.Request) map[string]string {
 //
 // Used by framework introspection tooling to enumerate the mounted
 // surface; not consulted on the request hot path.
+//
+// SECURITY: the returned slice includes EVERY registered pattern,
+// including admin-only paths. Don't expose this output to anonymous
+// callers as-is — wrap it in an auth gate, or use [RoutesFiltered]
+// to drop patterns that match a deny predicate.
 func (r *Router) Routes() []RegisteredRoute {
 	r.root.mu.RLock()
 	defer r.root.mu.RUnlock()
 	out := make([]RegisteredRoute, len(r.root.patterns))
 	copy(out, r.root.patterns)
+	return out
+}
+
+// RoutesFiltered returns the set of registered routes EXCLUDING any
+// pattern for which hide(route) returns true. Use this when exposing
+// the route list over a public introspection endpoint so admin paths
+// aren't trivially enumerated.
+//
+// Typical pattern:
+//
+//	r.RoutesFiltered(func(rt router.RegisteredRoute) bool {
+//	    return strings.HasPrefix(rt.Pattern, "/admin/") ||
+//	        strings.HasPrefix(rt.Pattern, "/internal/")
+//	})
+//
+// hide may be nil — that case returns every route (equivalent to
+// [Routes]).
+func (r *Router) RoutesFiltered(hide func(RegisteredRoute) bool) []RegisteredRoute {
+	all := r.Routes()
+	if hide == nil {
+		return all
+	}
+	out := make([]RegisteredRoute, 0, len(all))
+	for _, rt := range all {
+		if hide(rt) {
+			continue
+		}
+		out = append(out, rt)
+	}
 	return out
 }
 
