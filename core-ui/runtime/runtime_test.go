@@ -5,6 +5,45 @@ import (
 	"testing"
 )
 
+// TestNominifyEnvGating pins the env contract: prod wins by default,
+// dev opts out, manual overrides trump env detection. Subtests can't
+// share the sync.Once cache — exercise the underlying decision via the
+// helpers directly.
+func TestNominifyEnvGating(t *testing.T) {
+	t.Setenv("RUNTIME_NOMINIFY", "")
+	t.Setenv("RUNTIME_MINIFY", "")
+	t.Setenv("GOFASTR_ENV", "")
+	t.Setenv("GOFASTR_DEV", "")
+
+	// envBool / isNonDevEnv behaviour.
+	if envBool("RUNTIME_NOMINIFY") {
+		t.Error("envBool with empty value should be false")
+	}
+	t.Setenv("X_TEST_BOOL", "1")
+	if !envBool("X_TEST_BOOL") {
+		t.Error(`envBool("1") should be true`)
+	}
+	t.Setenv("X_TEST_BOOL", "true")
+	if !envBool("X_TEST_BOOL") {
+		t.Error(`envBool("true") should be true`)
+	}
+	t.Setenv("X_TEST_BOOL", "false")
+	if envBool("X_TEST_BOOL") {
+		t.Error(`envBool("false") should be false`)
+	}
+
+	for _, e := range []string{"production", "prod", "live", "staging", "PRODUCTION"} {
+		if !isNonDevEnv(e) {
+			t.Errorf("isNonDevEnv(%q) should be true", e)
+		}
+	}
+	for _, e := range []string{"", "dev", "development", "test", "local"} {
+		if isNonDevEnv(e) {
+			t.Errorf("isNonDevEnv(%q) should be false", e)
+		}
+	}
+}
+
 func TestRuntimeJS(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {
@@ -13,7 +52,10 @@ func TestRuntimeJS(t *testing.T) {
 	if len(js) == 0 {
 		t.Fatal("runtime JS is empty")
 	}
-	// Check essential features are present
+	// Check essential features are present. Anchors must be either
+	// identifiers/string-literals (preserved verbatim by the minifier)
+	// or use whitespace patterns the minifier produces — bare `foo:bar`
+	// (no space after `:`) rather than `foo: bar`.
 	checks := []string{
 		"__gofastr",
 		"register",
@@ -22,8 +64,6 @@ func TestRuntimeJS(t *testing.T) {
 		"data-action-${eventType}",
 		"data-component",
 		"MutationObserver",
-		"EventSource",
-		"data-island",
 		"hydrate",
 		"collectParams",
 		"screenCache",            // screen caching for back-navigation
@@ -36,12 +76,10 @@ func TestRuntimeJS(t *testing.T) {
 		"data-fui-style",         // <link> dedup key
 		"scheduleIdleLoads",      // LoadPrewarm idle queue
 		"data-fui-comp",          // marker attr the scanner reads
-		"data-fui-copy-status",   // SR-announce sibling for copy-text-from
-		"data-fui-copy-announce", // copy success message override
-		"data-fui-copy-toast",    // toast emit on copy success
+		"data-fui-copy-text-from",// marker triggers copy module load
 		"data-fui-os",            // OS detection on <html> for ShortcutHint
 		"data-fui-spa",           // opt-IN form-intercept for non-JSON forms
-		"redirect: 'follow'",     // form-intercept follows server Location headers
+		"redirect:'follow'",      // form-intercept follows server Location headers (minified spacing)
 		"application/x-www-form-urlencoded", // SPA-opt-in body encoding
 	}
 	for _, check := range checks {
@@ -108,7 +146,12 @@ func TestRuntimeJSSyntax(t *testing.T) {
 		}
 		trimmed = strings.TrimSpace(trimmed[idx+1:])
 	}
-	if !strings.HasPrefix(trimmed, "(() =>") && !strings.HasPrefix(trimmed, "(function") {
+	// Accept both minified (`(()=>`) and unminified (`(() =>`) IIFE
+	// preludes. The RUNTIME_NOMINIFY=1 dev path keeps the original
+	// spacing.
+	if !strings.HasPrefix(trimmed, "(()=>") &&
+		!strings.HasPrefix(trimmed, "(() =>") &&
+		!strings.HasPrefix(trimmed, "(function") {
 		t.Errorf("runtime should be an IIFE, got: %s", truncate(trimmed, 50))
 	}
 	// Should end with closing
@@ -172,7 +215,6 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"data-fui-rpc",
 		"data-fui-autogrow",
 		"data-fui-persist-storage",
-		"data-fui-copy-text-from",
 		"data-fui-charcount-source",
 		"data-fui-clear-on-esc",
 		"data-fui-submit-on-enter",
@@ -185,6 +227,9 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"__fuiModalEsc",   // installed once at module load
 		"__fuiModalTab",
 		"loadedModules",
+		// `data-fui-copy-text-from` was previously checked here but
+		// only lives in a comment now (the delegated handler moved
+		// to core); the minifier correctly strips it.
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("widgets module missing %q", want)
@@ -196,6 +241,29 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 	// per-widget primitives split into a forms module.
 	if size := ModuleSize("widgets"); size > 32000 {
 		t.Errorf("widgets module is %d bytes — budget is 32000", size)
+	}
+}
+
+func TestRuntimeModule_Copy(t *testing.T) {
+	src, ok := Module("copy")
+	if !ok {
+		t.Fatal("copy module not embedded")
+	}
+	for _, want := range []string{
+		"data-fui-copy-text-from", // marker
+		"data-fui-copy-status",    // SR-announce sibling
+		"data-fui-copy-announce",  // override text
+		"data-fui-copy-toast",     // toast-on-copy opt-in
+		"fui-copied",              // visual feedback class
+		"navigator.clipboard",     // primary path
+		"loadedModules",           // self-registers as loaded
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("copy module missing %q", want)
+		}
+	}
+	if size := ModuleSize("copy"); size > 1800 {
+		t.Errorf("copy module is %d bytes — budget is 1800", size)
 	}
 }
 

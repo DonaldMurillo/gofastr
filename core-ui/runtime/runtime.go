@@ -21,8 +21,13 @@ package runtime
 import (
 	"embed"
 	"io/fs"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 )
 
 //go:embed runtime.js
@@ -34,14 +39,96 @@ var colorSchemeFS embed.FS
 //go:embed src/*.js
 var modulesFS embed.FS
 
-// RuntimeJS returns the bundled runtime — the single-file IIFE every
-// page ships by default.
-func RuntimeJS() (string, error) {
-	data, err := fs.ReadFile(bundleFS, "runtime.js")
-	if err != nil {
-		return "", err
+// nominify reports whether minification should be skipped on this
+// process. The default is "production wins":
+//
+//   - GOFASTR_ENV set to "production"/"prod"/"live"/"staging" → minify.
+//   - GOFASTR_DEV truthy (and GOFASTR_ENV not a non-dev env) → keep raw
+//     so browser devtools show readable stack traces.
+//   - Neither set → minify (the right default for any app that just
+//     `go run`s its binary in production with no env hints).
+//   - RUNTIME_NOMINIFY truthy → force raw (manual override; trumps the
+//     env detection so a dev can debug a production-config app).
+//   - RUNTIME_MINIFY truthy → force minify (manual override; useful when
+//     reproducing a prod issue from a dev workstation).
+//
+// Evaluated once at startup; flipping the env mid-process has no effect
+// because Module/RuntimeJS results are cached behind sync.Once.
+var nominifyOnce sync.Once
+var nominifyVal bool
+
+func nominify() bool {
+	nominifyOnce.Do(func() {
+		// Explicit manual overrides win.
+		if envBool("RUNTIME_NOMINIFY") {
+			nominifyVal = true
+			return
+		}
+		if envBool("RUNTIME_MINIFY") {
+			nominifyVal = false
+			return
+		}
+		// Production-shaped env → minify.
+		if isNonDevEnv(os.Getenv("GOFASTR_ENV")) {
+			nominifyVal = false
+			return
+		}
+		// Explicit dev-mode → skip minify.
+		if envBool("GOFASTR_DEV") {
+			nominifyVal = true
+			return
+		}
+		// Nothing set → minify by default.
+		nominifyVal = false
+	})
+	return nominifyVal
+}
+
+func envBool(key string) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return false
 	}
-	return string(data), nil
+	b, err := strconv.ParseBool(v)
+	return err == nil && b
+}
+
+func isNonDevEnv(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "production", "prod", "live", "staging":
+		return true
+	}
+	return false
+}
+
+// Cached minified payloads. Computed lazily on first read so the
+// minify pass runs at most once per source per process; subsequent
+// reads (and there are many — every page render) are pure map lookups.
+var (
+	bundleOnce  sync.Once
+	bundleData  string
+	bundleErr   error
+	modulesOnce sync.Once
+	modulesData map[string]string
+)
+
+// RuntimeJS returns the bundled runtime — the single-file IIFE every
+// page ships by default. Minified on first call (or returned verbatim
+// when RUNTIME_NOMINIFY=1).
+func RuntimeJS() (string, error) {
+	bundleOnce.Do(func() {
+		raw, err := fs.ReadFile(bundleFS, "runtime.js")
+		if err != nil {
+			bundleErr = err
+			return
+		}
+		if nominify() {
+			bundleData = string(raw)
+			return
+		}
+		bundleData = minify.Minify(string(raw))
+	})
+	return bundleData, bundleErr
 }
 
 // MustRuntimeJS returns the bundled runtime or panics.
@@ -83,16 +170,40 @@ func ColorSchemeJS() (string, error) {
 // Module returns the source of a single split runtime module by name
 // (e.g. "fileupload"). Used by the HTTP server to serve
 // /__gofastr/runtime/<name>.js. Returns "", false when the module is
-// not embedded.
+// not embedded. Minified on first read (cached).
 func Module(name string) (string, bool) {
 	if !validModuleName(name) {
 		return "", false
 	}
-	data, err := fs.ReadFile(modulesFS, "src/"+name+".js")
+	modulesOnce.Do(loadModules)
+	src, ok := modulesData[name]
+	return src, ok
+}
+
+func loadModules() {
+	entries, err := fs.ReadDir(modulesFS, "src")
 	if err != nil {
-		return "", false
+		modulesData = map[string]string{}
+		return
 	}
-	return string(data), true
+	skip := nominify()
+	modulesData = make(map[string]string, len(entries))
+	for _, e := range entries {
+		n := e.Name()
+		if !strings.HasSuffix(n, ".js") {
+			continue
+		}
+		raw, err := fs.ReadFile(modulesFS, "src/"+n)
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSuffix(n, ".js")
+		if skip {
+			modulesData[name] = string(raw)
+		} else {
+			modulesData[name] = minify.Minify(string(raw))
+		}
+	}
 }
 
 // ModuleSize returns the byte size of a single embedded module, or 0
@@ -109,17 +220,10 @@ func ModuleSize(name string) int {
 // ModuleNames returns the sorted list of split modules currently
 // embedded. Each name maps 1:1 to a /__gofastr/runtime/<name>.js URL.
 func ModuleNames() []string {
-	entries, err := fs.ReadDir(modulesFS, "src")
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		n := e.Name()
-		if !strings.HasSuffix(n, ".js") {
-			continue
-		}
-		out = append(out, strings.TrimSuffix(n, ".js"))
+	modulesOnce.Do(loadModules)
+	out := make([]string, 0, len(modulesData))
+	for name := range modulesData {
+		out = append(out, name)
 	}
 	sort.Strings(out)
 	return out

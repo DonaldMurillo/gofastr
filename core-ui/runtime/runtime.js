@@ -1651,75 +1651,12 @@
   // DOM, triggers a load. Scanners run after DOMContentLoaded + after
   // every SPA-nav swap (`gofastr:navigate`) + when the MutationObserver
   // sees newly inserted DOM.
-  // -----------------------------------------------------------------------
-  // Global copy-to-clipboard handler.
-  //
-  // Any element with `data-fui-copy-text-from='<selector>'` copies the
-  // matching element's textContent on click — works inside or outside a
-  // widget context. Feedback channels:
-  //
-  //   - Adds `.fui-copied` to the button for 1.2s (CSS swaps inner
-  //     `.ui-copy-btn__label` ↔ `.ui-copy-btn__copied` spans).
-  //   - If the button has a sibling/ancestor `[data-fui-copy-status]`,
-  //     writes the configured text into it (polite aria-live region).
-  //   - If `data-fui-copy-toast` is set, dispatches a toast via
-  //     `window.__gofastr.toast({...})` so callers can opt into
-  //     "Copied!" notifications without per-button JS.
-  // -----------------------------------------------------------------------
-  document.addEventListener('click', (e) => {
-    const btn = e.target && e.target.closest && e.target.closest('[data-fui-copy-text-from]');
-    if (!btn) return;
-    const sel = btn.getAttribute('data-fui-copy-text-from');
-    if (!sel) return;
-    const target = document.querySelector(sel);
-    if (!target) return;
-    e.preventDefault();
-    const text = (target.innerText || target.textContent || '').trim();
-    const flash = () => {
-      btn.classList.add('fui-copied');
-      setTimeout(() => btn.classList.remove('fui-copied'), 1200);
-    };
-    const announce = () => {
-      const root = btn.parentElement || btn;
-      const status = root.querySelector('[data-fui-copy-status]')
-        || btn.querySelector('[data-fui-copy-status]');
-      if (!status) return;
-      const msg = btn.getAttribute('data-fui-copy-announce') || 'Copied';
-      status.textContent = '';
-      setTimeout(() => { status.textContent = msg; }, 30);
-    };
-    const fireToast = () => {
-      const raw = btn.getAttribute('data-fui-copy-toast');
-      if (!raw) return;
-      try {
-        const cfg = JSON.parse(raw);
-        if (window.__gofastr && window.__gofastr.toast) {
-          window.__gofastr.toast(cfg);
-        } else if (window.__gofastr && window.__gofastr.loadModule) {
-          // Toast stack might not be loaded yet — load on demand.
-          window.__gofastr.loadModule('toasts').then(() => {
-            if (window.__gofastr.toast) window.__gofastr.toast(cfg);
-          }).catch(() => {});
-        }
-      } catch (_) { /* malformed JSON: ignore */ }
-    };
-    const success = () => { flash(); announce(); fireToast(); };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(success, success);
-    } else {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-        success();
-      } catch (_) { /* deliberately silent — copy is best-effort */ }
-    }
-  });
-
   const _moduleMarkers = [
+    // Copy-to-clipboard delegated handler. Loaded when any
+    // [data-fui-copy-text-from] button is on the page (or arrives via
+    // SPA-nav). The src/copy.js module installs a single document-level
+    // listener that handles every button.
+    { name: 'copy',       selector: '[data-fui-copy-text-from]' },
     { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },

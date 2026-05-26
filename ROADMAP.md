@@ -483,11 +483,13 @@ benchstat dist/bench/<tier>-before.txt dist/bench/<tier>.txt
 
 ## 8. Runtime code-split
 
-**Status:** implemented — 31 split modules in `core-ui/runtime/src/`, `loadModule()` loader with hover prefetch via `data-fui-prefetch`, idle scheduling via `requestIdleCallback`.
+**Status:** implemented + minified — 32 split modules in `core-ui/runtime/src/`, `loadModule()` loader with hover prefetch via `data-fui-prefetch`, idle scheduling via `requestIdleCallback`. A token-aware JS minifier (`core-ui/runtime/minify`) runs at first read in production, env-gated via `GOFASTR_ENV` / `GOFASTR_DEV` (see [runtime-minification.md](framework/docs/content/runtime-minification.md)). The `~10 KB gz core` target is met: bundled `runtime.js` ships at ~10.4 KB gz post-minify (was 28 KB gz pre-minify, single bundle, everything).
 
 Goal: shrink the parser-blocking JS payload on a typical page from ~31 KB
 gz (one bundle, everything) to ~10 KB gz (core only) + lazy modules loaded
-on hover / idle / first-use.
+on hover / idle / first-use. **Met** via minification + targeted carves
+(`src/copy.js` extracted from the main bundle; remaining carves like
+`navigate.js` are forward-looking).
 
 ### Status quo
 
