@@ -68,20 +68,29 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		// Clean the request path and strip the prefix.
+		// Reject `..` segments on the *raw* URL — running path.Clean
+		// first (the previous behaviour) silently collapses
+		// /static/../secret to /secret and lets the prefix check miss
+		// the traversal entirely.
+		if hasDotDotSegment(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+
 		reqPath := path.Clean(r.URL.Path)
 		if config.Prefix != "" {
 			reqPath = strings.TrimPrefix(reqPath, config.Prefix)
 		}
-		// Ensure leading slash is removed for filesystem lookup.
 		reqPath = strings.TrimPrefix(reqPath, "/")
 
 		if reqPath == "" {
 			reqPath = config.IndexFile
 		}
 
-		// Prevent directory traversal.
-		if containsDotDot(reqPath) {
+		// Refuse to serve dotfiles (.env, .git, .htpasswd, etc.) — these
+		// typically hold secrets or VCS metadata and must not be exposed
+		// via the public static handler.
+		if hasDotfileSegment(reqPath) {
 			http.NotFound(w, r)
 			return
 		}
@@ -170,14 +179,29 @@ func Mount(r *router.Router, config Config) {
 	}
 }
 
-// containsDotDot checks if the path contains ".." components that could
-// be used for directory traversal.
-func containsDotDot(p string) bool {
-	// Clean the path using filepath.Clean for OS-specific checks,
-	// but use path.Clean for URL path cleaning.
-	cleaned := path.Clean(p)
-	for _, component := range strings.Split(cleaned, "/") {
+// hasDotDotSegment reports whether the *raw* (uncleaned) path contains a
+// `..` segment. Run this before path.Clean so traversal segments can't be
+// collapsed silently.
+func hasDotDotSegment(p string) bool {
+	for _, component := range strings.Split(p, "/") {
 		if component == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// hasDotfileSegment reports whether any path component starts with a
+// dot (excluding the bare "." and ".." segments path.Clean would have
+// already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
+// or VCS metadata (.git) and must not be served by a public static
+// handler.
+func hasDotfileSegment(p string) bool {
+	for _, component := range strings.Split(p, "/") {
+		if component == "" || component == "." || component == ".." {
+			continue
+		}
+		if strings.HasPrefix(component, ".") {
 			return true
 		}
 	}
