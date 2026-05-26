@@ -41,7 +41,11 @@ func (ch *CrudHandler) projectFromRequest(r *http.Request) ([]string, error) {
 			col = db
 		}
 		if _, ok := visibleSet[col]; !ok {
-			return nil, fmt.Errorf("unknown field %q", name)
+			// Don't echo the user-supplied name back. A Hidden field's
+			// DB name would otherwise leak into the error body, letting
+			// a probe confirm "is there a column called secret_key?"
+			// just by reading the 400 response.
+			return nil, fmt.Errorf("unknown projection field")
 		}
 		if _, dup := seen[col]; dup {
 			continue
