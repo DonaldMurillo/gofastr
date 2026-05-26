@@ -74,17 +74,30 @@ func ValidateExt(filename string, allowed []string) error {
 	return fmt.Errorf("file extension .%s not allowed (allowed: %s)", fileExt, strings.Join(allowed, ", "))
 }
 
+// MaxFilenameBytes caps the sanitised filename length. A user-supplied
+// filename has no legitimate reason to exceed a few hundred bytes; the
+// cap protects log lines, filesystem APIs, and database columns from
+// pathological inputs.
+const MaxFilenameBytes = 255
+
 // SanitizeFilename removes path separators, null bytes, and other dangerous
 // characters from a filename to prevent path traversal attacks. It also
 // neutralises double-extension smuggling — e.g. `shell.php.jpg` becomes
 // `shell_php.jpg` — so a misconfigured web server can't be tricked into
 // executing a hidden interior extension.
+//
+// Control bytes (CR, LF, TAB, anything < 0x20) are dropped so a logged
+// filename can't escape its log line via injected newlines or terminal
+// control sequences. The final result is truncated to MaxFilenameBytes
+// (preserving the extension) so an attacker can't ship a 10 MB filename.
 func SanitizeFilename(name string) string {
-	// Remove null bytes — note this is BEFORE filepath.Base because a
-	// raw `evil.php\x00.jpg` would otherwise reach filepath.Base intact
-	// and look like a `.jpg` file, while the OS open() syscall would
-	// truncate at the null byte and write `evil.php`.
-	name = strings.ReplaceAll(name, "\x00", "")
+	// Drop every control byte (NUL, CR, LF, TAB, ESC, ...) and DEL up
+	// front. Done before filepath.Base because `evil.php\x00.jpg` would
+	// otherwise reach filepath.Base intact and look like a `.jpg` file,
+	// while the OS open() syscall would truncate at the NUL and write
+	// `evil.php`. Same hazard applies to CR/LF: log lines / multipart
+	// Content-Disposition headers split on those bytes.
+	name = stripControlBytes(name)
 
 	// Normalize backslashes to forward slashes for cross-platform safety
 	name = strings.ReplaceAll(name, "\\", "/")
@@ -97,12 +110,29 @@ func SanitizeFilename(name string) string {
 		name = strings.TrimPrefix(name, ".")
 	}
 
-	// Replace problematic characters
+	// Replace problematic characters. Beyond path separators and traversal
+	// segments, also neutralise shell-dangerous characters (`;`, `|`, `&`,
+	// backtick, `$`, `<`, `>`, `*`, `?`) and Windows-illegal characters
+	// (`:` , `"`) so a downstream consumer that interpolates the filename
+	// into a shell or a Windows path can't be tricked into command
+	// injection or NTFS alternate-data-stream tricks.
 	replacer := strings.NewReplacer(
 		"/", "_",
 		"\\", "_",
 		"\x00", "",
 		"..", "_",
+		";", "_",
+		"|", "_",
+		"&", "_",
+		"`", "_",
+		"$", "_",
+		"<", "_",
+		">", "_",
+		"*", "_",
+		"?", "_",
+		":", "_",
+		"\"", "_",
+		"'", "_",
 	)
 	name = replacer.Replace(name)
 
@@ -116,12 +146,53 @@ func SanitizeFilename(name string) string {
 	// turning `shell.php.jpg` into `shell_php.jpg`.
 	name = neutraliseInteriorExecExts(name)
 
-	// If nothing remains, generate a fallback
-	if name == "" {
+	// If the surviving filename is empty or consists only of dots /
+	// spaces (e.g. ". .", " . ", "..."), fall back to a safe label.
+	// A bare-dot or all-dots filename is still a hidden file on POSIX
+	// and an invalid name on Windows.
+	if isBlankOrDottyOnly(name) {
 		return "upload"
 	}
 
+	// Length cap. Keep the extension if there is one so the truncated
+	// name still round-trips through MIME detection.
+	if len(name) > MaxFilenameBytes {
+		ext := filepath.Ext(name)
+		if len(ext) >= MaxFilenameBytes {
+			// Extension itself is absurdly long; drop it.
+			name = name[:MaxFilenameBytes]
+		} else {
+			name = name[:MaxFilenameBytes-len(ext)] + ext
+		}
+	}
+
 	return name
+}
+
+// stripControlBytes drops every byte < 0x20 plus DEL (0x7f).
+func stripControlBytes(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// isBlankOrDottyOnly reports whether s is empty or made up of nothing
+// but dots and ASCII whitespace.
+func isBlankOrDottyOnly(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '.' && c != ' ' && c != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 // dangerousExecExts is the deny-list of file extensions that have ever
