@@ -681,14 +681,14 @@ func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	hash, _ := HashPassword("pw")
+	hash, _ := HashPassword("pwlong123")
 	user := &BasicUser{ID: "u-2", Email: "bob@example.com", Roles: []string{"user"}}
 	userStore.users["bob@example.com"] = &storeEntry{user: user, hash: hash}
 	userStore.byID[user.ID] = userStore.users["bob@example.com"]
 	r := router.New()
 	mgr.RegisterRoutes(r)
 
-	body, _ := json.Marshal(map[string]string{"email": "bob@example.com", "password": "pw"})
+	body, _ := json.Marshal(map[string]string{"email": "bob@example.com", "password": "pwlong123"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

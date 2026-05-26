@@ -68,20 +68,38 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		// Clean the request path and strip the prefix.
+		// Reject `..` segments on the *raw* URL — running path.Clean
+		// first (the previous behaviour) silently collapses
+		// /static/../secret to /secret and lets the prefix check miss
+		// the traversal entirely.
+		if hasDotDotSegment(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+
 		reqPath := path.Clean(r.URL.Path)
 		if config.Prefix != "" {
 			reqPath = strings.TrimPrefix(reqPath, config.Prefix)
 		}
-		// Ensure leading slash is removed for filesystem lookup.
 		reqPath = strings.TrimPrefix(reqPath, "/")
 
 		if reqPath == "" {
 			reqPath = config.IndexFile
 		}
 
-		// Prevent directory traversal.
-		if containsDotDot(reqPath) {
+		// Refuse to serve dotfiles (.env, .git, .htpasswd, etc.) — these
+		// typically hold secrets or VCS metadata and must not be exposed
+		// via the public static handler.
+		if hasDotfileSegment(reqPath) {
+			http.NotFound(w, r)
+			return
+		}
+		// Refuse to serve well-known server-side config / metadata files
+		// (web.config, .htaccess equivalents, ASP.NET app files). Even
+		// when the backing FS is innocuous, an embed of a project tree
+		// can accidentally ship these — and probing for them is a
+		// standard fingerprinting step.
+		if hasForbiddenConfigSegment(reqPath) {
 			http.NotFound(w, r)
 			return
 		}
@@ -145,9 +163,13 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 
-	// Set content type.
+	// Set content type. X-Content-Type-Options: nosniff prevents browsers
+	// from MIME-sniffing a non-HTML response into HTML (e.g. promoting a
+	// .jpg with embedded HTML into a script execution context). Cheap to
+	// set on every response and required by every modern static guide.
 	contentType := DetectFromName(name)
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 
 	// Write the file content.
@@ -170,14 +192,56 @@ func Mount(r *router.Router, config Config) {
 	}
 }
 
-// containsDotDot checks if the path contains ".." components that could
-// be used for directory traversal.
-func containsDotDot(p string) bool {
-	// Clean the path using filepath.Clean for OS-specific checks,
-	// but use path.Clean for URL path cleaning.
-	cleaned := path.Clean(p)
-	for _, component := range strings.Split(cleaned, "/") {
+// hasDotDotSegment reports whether the *raw* (uncleaned) path contains a
+// `..` segment. Run this before path.Clean so traversal segments can't be
+// collapsed silently.
+func hasDotDotSegment(p string) bool {
+	for _, component := range strings.Split(p, "/") {
 		if component == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// hasDotfileSegment reports whether any path component starts with a
+// dot (excluding the bare "." and ".." segments path.Clean would have
+// already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
+// or VCS metadata (.git) and must not be served by a public static
+// handler.
+func hasDotfileSegment(p string) bool {
+	for _, component := range strings.Split(p, "/") {
+		if component == "" || component == "." || component == ".." {
+			continue
+		}
+		if strings.HasPrefix(component, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+// forbiddenConfigFiles is the set of well-known server-side config and
+// app-metadata files we refuse to serve via the static handler. None of
+// these have a legitimate reason to live behind the public file server,
+// and probing for them is a standard reconnaissance step.
+var forbiddenConfigFiles = map[string]struct{}{
+	"web.config":        {}, // IIS site config
+	"global.asax":       {}, // ASP.NET app entry
+	"app.config":        {}, // .NET application config
+	"machine.config":    {}, // .NET machine-wide config
+	"applicationhost.config": {}, // IIS Express host config
+}
+
+// hasForbiddenConfigSegment matches the forbidden-config list case-
+// insensitively so a request for `/Web.Config` is treated the same as
+// `/web.config`.
+func hasForbiddenConfigSegment(p string) bool {
+	for _, component := range strings.Split(p, "/") {
+		if component == "" {
+			continue
+		}
+		if _, ok := forbiddenConfigFiles[strings.ToLower(component)]; ok {
 			return true
 		}
 	}

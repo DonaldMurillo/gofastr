@@ -168,11 +168,11 @@ func TestCorePlugin_Register(t *testing.T) {
 
 func TestCorePlugin_LoginLogout(t *testing.T) {
 	mgr, store := newTestManager(t)
-	seedUser(t, store, "alice@test.com", "hunter2")
+	seedUser(t, store, "alice@test.com", "hunter22")
 	r := mountRoutes(mgr)
 
 	// Login
-	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "hunter2"})
+	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "hunter22"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -216,7 +216,7 @@ func TestCorePlugin_LoginLogout(t *testing.T) {
 
 func TestCorePlugin_LoginBadPassword(t *testing.T) {
 	mgr, store := newTestManager(t)
-	seedUser(t, store, "alice@test.com", "hunter2")
+	seedUser(t, store, "alice@test.com", "hunter22")
 	r := mountRoutes(mgr)
 
 	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "wrong"})
@@ -232,11 +232,11 @@ func TestCorePlugin_LoginBadPassword(t *testing.T) {
 
 func TestCorePlugin_Me(t *testing.T) {
 	mgr, store := newTestManager(t)
-	seedUser(t, store, "alice@test.com", "hunter2")
+	seedUser(t, store, "alice@test.com", "hunter22")
 	r := mountRoutes(mgr)
 
 	// Login first
-	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "hunter2"})
+	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "hunter22"})
 	loginReq := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginW := httptest.NewRecorder()
@@ -281,10 +281,10 @@ func TestCorePlugin_MeUnauthenticated(t *testing.T) {
 
 func TestCorePlugin_RegisterDuplicateEmail(t *testing.T) {
 	mgr, store := newTestManager(t)
-	seedUser(t, store, "alice@test.com", "hunter2")
+	seedUser(t, store, "alice@test.com", "hunter22")
 	r := mountRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "newpass"})
+	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "newpass1"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

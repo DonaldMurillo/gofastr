@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
 
 // IncludeNode represents one segment of a (possibly nested) ?include=
@@ -283,6 +284,14 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 // kept in raw DB casing during recursion so further EagerLoad calls can find
 // foreign-key columns. The very last step deep-converts everything attached
 // under the include keys to JSON case.
+//
+// Before dispatching each node we inject an owner-scope filter when the
+// related entity has an OwnerField configured. Without this, a request
+// like `/posts?include=comments` would honour owner-scope on /posts (so
+// only alice's posts come back) but pull EVERY comment whose post_id
+// matches — including bob's comments on alice's post. The scope inherits
+// from the request's owner extractor; if no owner is in context, the
+// scope predicate becomes `owner_field = ""` which matches no real row.
 func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]any, nodes []*IncludeNode) error {
 	if len(rows) == 0 || len(nodes) == 0 {
 		return nil
@@ -297,6 +306,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		loaded[id] = make(map[string]any)
 	}
 	for _, node := range nodes {
+		applyRelatedOwnerScope(ctx, node)
 		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded); err != nil {
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
@@ -351,6 +361,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		loaded[id] = make(map[string]any)
 	}
 	for _, node := range children {
+		applyRelatedOwnerScope(ctx, node)
 		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), pk, node, ids, loaded); err != nil {
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
@@ -497,4 +508,40 @@ func (ch *CrudHandler) deepConvertMap(v any) any {
 	default:
 		return v
 	}
+}
+
+// applyRelatedOwnerScope prepends an owner-scope filter to the include
+// node when the related entity has an OwnerField configured. This is
+// the cross-table half of owner scoping — without it, ?include=comments
+// on /posts would honour owner scope on posts but not on comments,
+// letting alice's response include bob's comments on a post she owns.
+//
+// If no owner extractor is wired or the request has no owner in
+// context, the predicate becomes `owner_field = ""` which matches no
+// real row — fail-safe.
+func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
+	if node == nil || node.Target == nil {
+		return
+	}
+	ownerField := node.Target.Config.OwnerField
+	if ownerField == "" {
+		return
+	}
+	// Skip if the caller already supplied an explicit predicate on
+	// this same field (lets advanced callers opt out by passing their
+	// own filter at the API layer).
+	for _, f := range node.Filters {
+		if f.Field == ownerField {
+			return
+		}
+	}
+	var val string
+	if id, ok := owner.Get(ctx); ok && id != nil {
+		val = fmt.Sprintf("%v", id)
+	}
+	node.Filters = append([]filter.ParsedFilter{{
+		Field: ownerField,
+		Op:    filter.OpEq,
+		Value: val,
+	}}, node.Filters...)
 }

@@ -56,10 +56,17 @@ func Attr(key, value string) string {
 //
 //	Tag("div", nil, Text("hello"))  →  <div>hello</div>
 //	Tag("a", map[string]string{"href": "/"}, Text("home"))  →  <a href="/">home</a>
+//
+// The tag name is validated against a strict allow-list (ASCII letters,
+// digits and `-`). A name containing whitespace or other characters
+// would otherwise let a caller smuggle attributes — e.g. a name of
+// `div onclick="alert(1)"` would render as `<div onclick="alert(1)">`
+// — so any invalid name is replaced with a neutral `span`.
 func Tag(name string, attrs map[string]string, children ...HTML) HTML {
+	safeName := safeTagName(name)
 	var b strings.Builder
 	b.WriteByte('<')
-	b.WriteString(name)
+	b.WriteString(safeName)
 	writeAttrs(&b, attrs)
 	b.WriteByte('>')
 
@@ -68,20 +75,45 @@ func Tag(name string, attrs map[string]string, children ...HTML) HTML {
 	}
 
 	b.WriteString("</")
-	b.WriteString(name)
+	b.WriteString(safeName)
 	b.WriteByte('>')
 	return HTML(b.String())
 }
 
 // VoidTag builds a self-closing HTML element (e.g. <img>, <br>, <hr>,
 // <input>, <meta>, <link>). The tag is rendered without a closing tag.
+// The tag name is validated like Tag — see that doc for rationale.
 func VoidTag(name string, attrs map[string]string) HTML {
+	safeName := safeTagName(name)
 	var b strings.Builder
 	b.WriteByte('<')
-	b.WriteString(name)
+	b.WriteString(safeName)
 	writeAttrs(&b, attrs)
 	b.WriteString(">")
 	return HTML(b.String())
+}
+
+// safeTagName returns name if it is a syntactically valid HTML tag name
+// (first char ASCII letter, remaining chars ASCII letters/digits/-).
+// Any other input — empty, whitespace-bearing, attribute-smuggling —
+// is collapsed to "span", which is a neutral inline tag that can't
+// execute scripts or open a layout hole.
+func safeTagName(name string) string {
+	if name == "" {
+		return "span"
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case i > 0 && c >= '0' && c <= '9':
+		case i > 0 && c == '-':
+		default:
+			return "span"
+		}
+	}
+	return name
 }
 
 // Join concatenates zero or more HTML fragments into a single HTML value.

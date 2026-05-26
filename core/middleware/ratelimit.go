@@ -9,9 +9,11 @@ import (
 
 // RateLimitConfig controls the in-memory token-bucket rate limiter.
 //
-// KeyFunc selects the per-bucket identity (per IP, per session, per API key,
-// etc.). It defaults to a remote-address extractor that handles
-// X-Forwarded-For headers safely (trusts the leftmost entry).
+// KeyFunc selects the per-bucket identity (per IP, per session, per API
+// key, etc.). When KeyFunc is nil the default extractor uses
+// r.RemoteAddr — X-Forwarded-For is *ignored* unless TrustProxyHeaders
+// is set, because a caller in front of the origin can spoof XFF freely
+// and would otherwise get a fresh bucket per request.
 //
 // Capacity is the maximum number of tokens a bucket can hold (= peak burst
 // allowed). RefillEvery / RefillBy together define the steady-state rate:
@@ -28,6 +30,13 @@ type RateLimitConfig struct {
 	RefillBy     int
 	StatusCode   int
 	ErrorMessage string
+
+	// TrustProxyHeaders enables reading the client IP from the
+	// leftmost X-Forwarded-For (or X-Real-IP) entry. Only set this
+	// when the origin is behind a reverse proxy you control that
+	// rewrites or appends the header — otherwise an attacker can
+	// trivially defeat per-IP limiting by sending random XFF values.
+	TrustProxyHeaders bool
 }
 
 // RateLimit returns Middleware that enforces a token-bucket rate limit per
@@ -56,7 +65,11 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 		cfg.RefillBy = cfg.Capacity
 	}
 	if cfg.KeyFunc == nil {
-		cfg.KeyFunc = defaultRateLimitKey
+		if cfg.TrustProxyHeaders {
+			cfg.KeyFunc = proxyAwareRateLimitKey
+		} else {
+			cfg.KeyFunc = defaultRateLimitKey
+		}
 	}
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = http.StatusTooManyRequests
@@ -164,12 +177,25 @@ func (s *bucketStore) reapLocked(now time.Time) {
 	}
 }
 
-// defaultRateLimitKey extracts a per-client identity from the request.
-// Trusts the leftmost X-Forwarded-For entry when present; otherwise uses
-// r.RemoteAddr. Strips the port so /key matching is stable.
+// defaultRateLimitKey extracts a per-client identity from the request
+// using r.RemoteAddr only (port stripped). X-Forwarded-For / X-Real-IP
+// are deliberately ignored — a client talking directly to the origin
+// can put any value in those headers and would otherwise get a fresh
+// bucket per request, defeating per-IP rate limiting entirely.
+//
+// Use [proxyAwareRateLimitKey] (or set TrustProxyHeaders=true on
+// RateLimitConfig) only when the origin sits behind a reverse proxy
+// you control.
 func defaultRateLimitKey(r *http.Request) string {
+	return stripPort(r.RemoteAddr)
+}
+
+// proxyAwareRateLimitKey trusts the leftmost X-Forwarded-For entry
+// (then X-Real-IP) when present, falling back to r.RemoteAddr. Only
+// safe behind a reverse proxy that strips / overwrites the header
+// from clients.
+func proxyAwareRateLimitKey(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take just the first hop.
 		for i := 0; i < len(xff); i++ {
 			if xff[i] == ',' {
 				return xff[:i]
@@ -177,7 +203,13 @@ func defaultRateLimitKey(r *http.Request) string {
 		}
 		return xff
 	}
-	addr := r.RemoteAddr
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	return stripPort(r.RemoteAddr)
+}
+
+func stripPort(addr string) string {
 	for i := len(addr) - 1; i >= 0; i-- {
 		if addr[i] == ':' {
 			return addr[:i]

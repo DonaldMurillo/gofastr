@@ -141,7 +141,7 @@ func TestEntityUserStore_RolesParsing(t *testing.T) {
 	store := NewEntityUserStore(db, "users")
 	ctx := context.Background()
 
-	hash, _ := HashPassword("pass")
+	hash, _ := HashPassword("password1")
 	user, err := store.CreateUser(ctx, "roles@test.com", hash, []string{"admin", "editor"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -518,7 +518,7 @@ func TestEntityUserStore_DuplicateEmail_ReturnsErrEmailTaken(t *testing.T) {
 
 	store := NewEntityUserStore(db, "users")
 	ctx := context.Background()
-	hash, _ := HashPassword("pw")
+	hash, _ := HashPassword("pwlong123")
 
 	_, err := store.CreateUser(ctx, "alice@test.com", hash, []string{"user"})
 	if err != nil {

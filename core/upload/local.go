@@ -74,10 +74,21 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("creating file: %w", err)
 	}
-	defer f.Close()
+	closeErr := func() error {
+		return f.Close()
+	}
 
 	if _, err := io.Copy(f, r); err != nil {
+		// Best-effort cleanup: a torn write leaves a partial file on
+		// disk, which a later Get would serve to clients as corrupt
+		// content. Close first so the unlink isn't racing the writer.
+		_ = closeErr()
+		_ = os.Remove(fullPath)
 		return fmt.Errorf("writing file: %w", err)
+	}
+	if err := closeErr(); err != nil {
+		_ = os.Remove(fullPath)
+		return fmt.Errorf("closing file: %w", err)
 	}
 
 	return nil
@@ -113,6 +124,12 @@ func (s *LocalStorage) Delete(_ context.Context, key string) error {
 }
 
 // Get opens the file at key from the local filesystem for reading.
+//
+// Returns [ErrNotFound] (wrapping [os.ErrNotExist]) when the key is
+// missing — callers can match on os.ErrNotExist or upload.ErrNotFound
+// without parsing the message. Other errors are returned with the
+// absolute filesystem path stripped, so a 500 propagated to an end
+// user doesn't disclose where the data lives.
 func (s *LocalStorage) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	safeKey, err := sanitizeKey(key)
 	if err != nil {
@@ -136,10 +153,39 @@ func (s *LocalStorage) Get(_ context.Context, key string) (io.ReadCloser, error)
 
 	f, err := os.Open(fullPath)
 	if err != nil {
-		return nil, fmt.Errorf("opening file: %w", err)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, safeKey)
+		}
+		// Hide the absolute filesystem path from the error message; an
+		// HTTP handler that surfaces this back to the caller would
+		// otherwise leak the storage layout.
+		return nil, fmt.Errorf("opening file: %s", scrubPath(err.Error(), absBase, absPath))
 	}
 
 	return f, nil
+}
+
+// ErrNotFound is wrapped by Get when the requested key doesn't exist.
+// Callers can match on this or on errors.Is(err, os.ErrNotExist) — the
+// returned error wraps both so existing code continues to work.
+var ErrNotFound = errNotFound{}
+
+type errNotFound struct{}
+
+func (errNotFound) Error() string { return "upload: not found" }
+func (errNotFound) Unwrap() error { return os.ErrNotExist }
+
+// scrubPath removes occurrences of the absolute base dir and the full
+// resolved path from a string so internal storage paths don't leak
+// through wrapped error messages.
+func scrubPath(msg, base, full string) string {
+	if full != "" {
+		msg = strings.ReplaceAll(msg, full, "<file>")
+	}
+	if base != "" {
+		msg = strings.ReplaceAll(msg, base, "<base>")
+	}
+	return msg
 }
 
 // Exists checks whether a file at key exists in the local filesystem.

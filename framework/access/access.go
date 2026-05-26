@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
@@ -16,7 +17,13 @@ type Policy interface {
 }
 
 // RolePolicy implements Policy using role-based permission grants.
+//
+// Grant and Revoke may be called concurrently with Can / GetPermissions:
+// the underlying role→permissions map is guarded by an RWMutex so reads
+// don't block each other and writes won't trigger Go's concurrent-map
+// fatal.
 type RolePolicy struct {
+	mu              sync.RWMutex
 	rolePermissions map[string][]Permission
 }
 
@@ -29,11 +36,15 @@ func NewRolePolicy() *RolePolicy {
 
 // Grant adds permissions to a role.
 func (rp *RolePolicy) Grant(role string, permissions ...Permission) {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
 	rp.rolePermissions[role] = append(rp.rolePermissions[role], permissions...)
 }
 
 // Revoke removes specific permissions from a role.
 func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
 	existing, ok := rp.rolePermissions[role]
 	if !ok {
 		return
@@ -51,6 +62,21 @@ func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
 	rp.rolePermissions[role] = filtered
 }
 
+// permissionsFor returns a defensive snapshot of permissions for the
+// given role. Callers iterate the returned slice without holding the
+// lock so a concurrent Grant/Revoke can't mutate it under them.
+func (rp *RolePolicy) permissionsFor(role string) []Permission {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+	src := rp.rolePermissions[role]
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]Permission, len(src))
+	copy(out, src)
+	return out
+}
+
 // Can checks if the user from ctx has the given permission via any of their roles.
 func (rp *RolePolicy) Can(ctx context.Context, permission Permission, resource any) bool {
 	perms := GetPermissions(ctx)
@@ -64,8 +90,14 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission, resource a
 
 // GetPermissions extracts the user's permissions from context by looking up
 // the user's roles against the RolePolicy.
+//
+// Returns nil if ctx is nil, missing a policy, or missing roles — never
+// panics. A nil context is treated as an anonymous request rather than
+// allowed to crash the handler.
 func GetPermissions(ctx context.Context) []Permission {
-	// We store the policy and roles in context; extract them here
+	if ctx == nil {
+		return nil
+	}
 	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
 	if policy == nil {
 		return nil
@@ -77,7 +109,7 @@ func GetPermissions(ctx context.Context) []Permission {
 	seen := make(map[Permission]bool)
 	var result []Permission
 	for _, role := range roles {
-		for _, p := range policy.rolePermissions[role] {
+		for _, p := range policy.permissionsFor(role) {
 			if !seen[p] {
 				seen[p] = true
 				result = append(result, p)

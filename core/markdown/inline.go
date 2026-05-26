@@ -33,7 +33,7 @@ func renderInline(input string) string {
 			alt, url, end, ok := parseLink(input, i+1)
 			if ok {
 				sb.WriteString("<img src=\"")
-				sb.WriteString(escapeAttr(url))
+				sb.WriteString(escapeAttr(safeImageURL(url)))
 				sb.WriteString("\" alt=\"")
 				sb.WriteString(escapeAttr(alt))
 				sb.WriteString("\">")
@@ -46,7 +46,7 @@ func renderInline(input string) string {
 			text, url, end, ok := parseLink(input, i)
 			if ok {
 				sb.WriteString("<a href=\"")
-				sb.WriteString(escapeAttr(url))
+				sb.WriteString(escapeAttr(safeLinkURL(url)))
 				sb.WriteString("\">")
 				sb.WriteString(renderInline(text))
 				sb.WriteString("</a>")
@@ -240,3 +240,59 @@ func escapeHTML(s string) string { return htmlEscaper.Replace(s) }
 // values from user-controlled context without escaping, and the same set of
 // characters needs to be neutralised in either spot.
 func escapeAttr(s string) string { return htmlEscaper.Replace(s) }
+
+// safeLinkURL refuses script-y schemes inside a markdown link href.
+// `javascript:`, `vbscript:` and the small set of `data:` types that
+// render executable content (text/html, application/xhtml+xml,
+// image/svg+xml — SVG can carry inline JS) get replaced with `#` so a
+// click can't navigate to an active payload. Other schemes — http(s),
+// mailto, tel, fragment-only, relative paths — pass through unchanged.
+func safeLinkURL(url string) string {
+	if isDangerousURLScheme(url) {
+		return "#"
+	}
+	return url
+}
+
+// safeImageURL is the image counterpart of safeLinkURL: an `<img src>`
+// can't navigate, but a same-origin `data:text/html` could still be
+// piped into JS that loads the resource into a same-origin frame, and
+// `javascript:` URLs render nothing useful anyway. We allow data:
+// image/* (the legitimate use case for embedded images) and reject
+// the rest of the dangerous set.
+func safeImageURL(url string) string {
+	lower := strings.ToLower(strings.TrimLeft(url, " \t\r\n"))
+	if strings.HasPrefix(lower, "data:image/") && !strings.HasPrefix(lower, "data:image/svg") {
+		return url
+	}
+	if isDangerousURLScheme(url) {
+		return "#"
+	}
+	return url
+}
+
+// isDangerousURLScheme reports whether url begins with a URL scheme
+// known to execute script or render HTML in a navigation context.
+// Leading ASCII whitespace and control chars are ignored — they're
+// stripped from the scheme by the HTML parser anyway, so we match the
+// parser's view.
+func isDangerousURLScheme(url string) bool {
+	trimmed := url
+	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t' || trimmed[0] == '\r' || trimmed[0] == '\n' || trimmed[0] < 0x20) {
+		trimmed = trimmed[1:]
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "javascript:"):
+		return true
+	case strings.HasPrefix(lower, "vbscript:"):
+		return true
+	case strings.HasPrefix(lower, "data:text/html"):
+		return true
+	case strings.HasPrefix(lower, "data:application/xhtml"):
+		return true
+	case strings.HasPrefix(lower, "data:image/svg"):
+		return true
+	}
+	return false
+}

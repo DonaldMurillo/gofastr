@@ -20,11 +20,28 @@ func openSQLStore(t *testing.T) (*sql.DB, *SQLStore) {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	s, err := NewSQLStore(db)
+	s, err := NewSQLStore(db, WithSQLAllowPlaintext())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
 	return db, s
+}
+
+// TestSQLStore_RefusesPlaintextWithoutOptIn verifies that NewSQLStore
+// fails fast when neither WithSQLSecretCodec(...) nor
+// WithSQLAllowPlaintext() is supplied — silently storing subscriber
+// secrets in cleartext was the previous default and is exactly the
+// kind of accidental cleartext store that the agent's audit flagged.
+func TestSQLStore_RefusesPlaintextWithoutOptIn(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+	if _, err := NewSQLStore(db); err == nil {
+		t.Errorf("SECURITY: [webhook_secret] NewSQLStore(db) succeeded without an explicit codec or plaintext opt-in. Attack: subscriber secrets persisted in cleartext.")
+	}
 }
 
 func TestSQLStore_SubscriberRoundTrip(t *testing.T) {

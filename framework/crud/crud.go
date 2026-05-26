@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -29,6 +31,15 @@ type beforeHookError struct{ err error }
 
 func (e *beforeHookError) Error() string { return e.err.Error() }
 func (e *beforeHookError) Unwrap() error { return e.err }
+
+// tenantMissingError signals a Create attempt against a MultiTenant
+// entity with no tenant in the request context. Surfaces as 400 in
+// the HTTP handler so an orphan row can never be written.
+type tenantMissingError struct{}
+
+func (e *tenantMissingError) Error() string {
+	return "tenant context required for multi-tenant entity"
+}
 
 // DBExecutor is an alias for db.Executor, retained so existing callers keep
 // using framework.DBExecutor. New code should reference framework/db directly.
@@ -579,6 +590,11 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	var tme *tenantMissingError
+	if errors.As(err, &tme) {
+		writeJSONError(w, http.StatusBadRequest, tme.Error())
+		return
+	}
 	if errors.Is(err, errNotFound) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return
@@ -587,7 +603,47 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
-	writeJSONError(w, http.StatusInternalServerError, err.Error())
+	if isUniqueViolation(err) {
+		// Map UNIQUE-constraint failures to 409 Conflict so callers can
+		// distinguish duplicate-key errors from a real server fault.
+		// The error message itself is generic — we deliberately don't
+		// echo the violated column to avoid leaking schema details to
+		// an enumeration probe.
+		writeJSONError(w, http.StatusConflict, "conflict")
+		return
+	}
+	// Unrecognised error → 500 with a generic message. Returning
+	// err.Error() here leaks driver-specific details (`pq: relation
+	// "users" does not exist`, `dial tcp 10.0.0.1:5432: ...`,
+	// `UNIQUE constraint failed: users.email`) that fingerprint the
+	// schema and backend. The full message is logged on the server
+	// side; the client sees a generic "internal server error" with
+	// the original error remaining matchable via errors.Is in tests.
+	log.Printf("crud: internal error: %v", err)
+	writeJSONError(w, http.StatusInternalServerError, "internal server error")
+}
+
+// isUniqueViolation reports whether err looks like a UNIQUE-constraint
+// violation from any of the supported drivers. We sniff the message
+// string because the drivers don't share a typed error and the CRUD
+// layer is otherwise driver-agnostic. False positives are rare —
+// "UNIQUE constraint failed" (sqlite), "duplicate key value" (pq),
+// "Error 1062" (mysql) are all distinctive.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, sig := range []string{
+		"UNIQUE constraint failed",
+		"duplicate key value",
+		"Error 1062",
+	} {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePagination extracts page and per_page from query params.

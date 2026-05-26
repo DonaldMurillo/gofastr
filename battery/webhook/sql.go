@@ -62,17 +62,27 @@ func WithSQLDeliveriesTable(name string) SQLOption {
 }
 
 // WithSQLSecretCodec installs a SecretCodec that encrypts subscriber
-// secrets at write time and decrypts them at read time. Default is
-// NoopSecretCodec (plaintext), which is appropriate only when the DB
-// itself is encrypted at rest or the threat model excludes a DB-snapshot
-// attacker.
+// secrets at write time and decrypts them at read time.
 //
-// Use [NewAESGCMSecretCodec] to wrap a 16/24/32-byte key.
+// Use [NewAESGCMSecretCodec] to wrap a 16/24/32-byte key. Callers that
+// genuinely want plaintext storage (DB encrypted at rest, threat model
+// excludes a DB-snapshot attacker) must use [WithSQLAllowPlaintext]
+// explicitly — there is no plaintext default.
 func WithSQLSecretCodec(c SecretCodec) SQLOption {
 	return func(s *SQLStore) {
 		if c != nil {
 			s.codec = c
 		}
+	}
+}
+
+// WithSQLAllowPlaintext opts the SQLStore into plaintext secret
+// storage using [NoopSecretCodec]. Without this (or an explicit
+// [WithSQLSecretCodec]) NewSQLStore returns an error rather than
+// silently storing subscriber secrets in cleartext.
+func WithSQLAllowPlaintext() SQLOption {
+	return func(s *SQLStore) {
+		s.codec = NoopSecretCodec{}
 	}
 }
 
@@ -86,10 +96,15 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 		subTable: "webhook_subscribers",
 		delTable: "webhook_deliveries",
 		dialect:  "sqlite",
-		codec:    NoopSecretCodec{},
+		// codec deliberately nil — callers must choose explicitly
+		// (WithSQLSecretCodec for AES-GCM, or WithSQLAllowPlaintext
+		// to acknowledge plaintext storage).
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.codec == nil {
+		return nil, errors.New("webhook: NewSQLStore requires WithSQLSecretCodec(...) or WithSQLAllowPlaintext() — refusing to silently store subscriber secrets in cleartext")
 	}
 	if !safeIdent(s.subTable) || !safeIdent(s.delTable) {
 		return nil, errors.New("webhook: unsafe table name")

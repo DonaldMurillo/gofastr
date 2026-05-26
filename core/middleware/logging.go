@@ -3,10 +3,12 @@ package middleware
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -34,7 +36,7 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 			}
 			logger.Info("request",
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", safeLogPath(r.URL.Path),
 				"status", wrapped.statusCode,
 				"duration", duration.String(),
 			)
@@ -107,7 +109,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			if wrapped.statusCode >= 400 || duration > slowThreshold {
 				logger.Info("request",
 					"method", r.Method,
-					"path", r.URL.Path,
+					"path", safeLogPath(r.URL.Path),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
 					"sampled", false,
@@ -120,7 +122,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			if n%uint64(sampleN) == 1 {
 				logger.Info("request",
 					"method", r.Method,
-					"path", r.URL.Path,
+					"path", safeLogPath(r.URL.Path),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
 					"sampled", true,
@@ -128,6 +130,29 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			}
 		})
 	}
+}
+
+// safeLogPath re-encodes control characters in a URL path so an
+// attacker can't forge a fake log entry by injecting CRLF (or other
+// terminal-escape sequences). slog's JSON handler already escapes
+// these for valid JSON, but a JSON-escaped \r\n is still visible to
+// text grep — and naive log shippers / console viewers can be tricked
+// into rendering the injected payload on its own line.
+func safeLogPath(p string) string {
+	if !strings.ContainsAny(p, "\x00\r\n\t\v\f\b\x1b") {
+		return p
+	}
+	var b strings.Builder
+	b.Grow(len(p))
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c < 0x20 || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02x", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // DiscardLogging returns middleware that tracks request timing but

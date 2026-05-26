@@ -183,7 +183,11 @@ func TestProjection_UnknownField_400(t *testing.T) {
 		ta := TestHarness(t, app)
 
 		resp := ta.Get("/posts?fields=bogus")
+		// The error body deliberately does NOT echo the user-supplied
+		// field name — leaking it would let a probe enumerate hidden
+		// columns by reading the 400 message. Asserting the generic
+		// label keeps that contract pinned.
 		resp.AssertStatus(t, http.StatusBadRequest).
-			AssertBodyContains(t, "bogus")
+			AssertBodyContains(t, "unknown projection field")
 	})
 }

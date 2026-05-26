@@ -87,6 +87,26 @@ func (c *AuthConfig) defaults() {
 		// already-expired sessions (broken login on the very next request).
 		c.SessionTTL = 7 * 24 * time.Hour
 	}
+	// Default brute-force throttles. These run in BOTH DevMode and
+	// production because credential-stuffing is a network attack, not
+	// a config-mode attack — leaving /auth/login un-throttled in dev
+	// has been the source of every "we wrote a test and it found 22
+	// vulns" story since 2016. Apps that really want unlimited login
+	// throughput can pass a custom config with a huge MaxAttempts.
+	if c.LoginRateLimit == nil {
+		c.LoginRateLimit = &RateLimiterConfig{
+			MaxAttempts:   30,              // ~ generous per-IP burst
+			Window:        time.Minute,
+			BlockDuration: 5 * time.Minute,
+		}
+	}
+	if c.LoginRateLimitPerAccount == nil {
+		c.LoginRateLimitPerAccount = &RateLimiterConfig{
+			MaxAttempts:   10,              // ~ tight per-account budget
+			Window:        time.Minute,
+			BlockDuration: 15 * time.Minute,
+		}
+	}
 	if c.DevMode {
 		if c.SessionCookie == "" {
 			c.SessionCookie = "session_id"

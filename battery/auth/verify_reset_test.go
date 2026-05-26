@@ -106,7 +106,7 @@ func TestEmailVerification_Flow(t *testing.T) {
 	}
 
 	// Seed user + login to get a session cookie.
-	hash, _ := HashPassword("pw")
+	hash, _ := HashPassword("pwlong123")
 	user := &BasicUser{ID: "u-1", Email: "u@example.com", Roles: []string{"user"}}
 	store.users["u@example.com"] = &storeEntry{user: user, hash: hash}
 	store.byID[user.ID] = store.users["u@example.com"]
@@ -115,7 +115,7 @@ func TestEmailVerification_Flow(t *testing.T) {
 	mgr.RegisterRoutes(r)
 
 	// Login
-	body, _ := json.Marshal(map[string]string{"email": "u@example.com", "password": "pw"})
+	body, _ := json.Marshal(map[string]string{"email": "u@example.com", "password": "pwlong123"})
 	loginReq := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginW := httptest.NewRecorder()
@@ -211,7 +211,7 @@ func TestPasswordReset_Flow(t *testing.T) {
 	}
 
 	// Reset.
-	resetBody, _ := json.Marshal(map[string]string{"token": tok, "password": "newpw"})
+	resetBody, _ := json.Marshal(map[string]string{"token": tok, "password": "newpw123"})
 	resetReq := httptest.NewRequest(http.MethodPost, "/auth/reset-password", bytes.NewReader(resetBody))
 	resetReq.Header.Set("Content-Type", "application/json")
 	resetW := httptest.NewRecorder()
@@ -220,7 +220,7 @@ func TestPasswordReset_Flow(t *testing.T) {
 		t.Fatalf("reset-password: %d (body=%s)", resetW.Code, resetW.Body.String())
 	}
 
-	if !CheckPassword("newpw", store.byID[user.ID].hash) {
+	if !CheckPassword("newpw123", store.byID[user.ID].hash) {
 		t.Fatalf("password not updated")
 	}
 	if CheckPassword("oldpw", store.byID[user.ID].hash) {

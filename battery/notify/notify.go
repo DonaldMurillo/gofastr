@@ -328,6 +328,12 @@ func (m *MapTemplater) Set(notifType, channel string, t Template) {
 }
 
 // Render implements Templater.
+//
+// The rendered Subject is stripped of CR / LF / NUL so a user-controlled
+// {{placeholder}} can't inject header continuations when downstream
+// transports (SMTP, push providers) treat Subject as a header value.
+// TextBody / HTMLBody are not modified — those are payload bytes and
+// any HTML safety is the rendering layer's job.
 func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data map[string]any) (Rendered, error) {
 	m.mu.RLock()
 	t, ok := m.templates[notifType][channel]
@@ -336,40 +342,84 @@ func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data
 		return Rendered{}, fmt.Errorf("notify: no template for (%q, %q)", notifType, channel)
 	}
 	return Rendered{
-		Subject:  interpolate(t.Subject, data),
+		Subject:  stripHeaderUnsafe(interpolate(t.Subject, data)),
 		TextBody: interpolate(t.TextBody, data),
 		HTMLBody: interpolate(t.HTMLBody, data),
 		Extra:    t.Extra,
 	}, nil
 }
 
+// stripHeaderUnsafe drops the three bytes that turn a single-line
+// header value into a multi-line injection vector (CR, LF, NUL).
+func stripHeaderUnsafe(s string) string {
+	if !strings.ContainsAny(s, "\r\n\x00") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\r', '\n', 0x00:
+			continue
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// MaxInterpolatedOutputBytes is the hard cap on the output of a single
+// [interpolate] call. A 10 MB placeholder value would otherwise produce
+// an unbounded subject / body string and pin a goroutine in fmt.Fprint.
+// 1 MiB is well above any legitimate notification payload.
+const MaxInterpolatedOutputBytes = 1 << 20
+
 // interpolate is a local copy of the i18n placeholder expander (kept
 // inline so this package has no dependency on core/i18n). Unknown
 // placeholders are left intact for visibility during development.
+//
+// Output is hard-capped at MaxInterpolatedOutputBytes — a giant
+// placeholder value would otherwise produce an unbounded string and
+// pin the rendering goroutine. The cap is far above any legitimate
+// notification size, so triggering it indicates abuse.
 func interpolate(s string, params map[string]any) string {
 	if s == "" || len(params) == 0 || !strings.Contains(s, "{{") {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
+	write := func(chunk string) bool {
+		if b.Len()+len(chunk) > MaxInterpolatedOutputBytes {
+			b.WriteString(chunk[:MaxInterpolatedOutputBytes-b.Len()])
+			return false
+		}
+		b.WriteString(chunk)
+		return true
+	}
 	i := 0
 	for i < len(s) {
 		j := strings.Index(s[i:], "{{")
 		if j < 0 {
-			b.WriteString(s[i:])
+			write(s[i:])
 			break
 		}
-		b.WriteString(s[i : i+j])
+		if !write(s[i : i+j]) {
+			break
+		}
 		k := strings.Index(s[i+j+2:], "}}")
 		if k < 0 {
-			b.WriteString(s[i+j:])
+			write(s[i+j:])
 			break
 		}
 		name := strings.TrimSpace(s[i+j+2 : i+j+2+k])
 		if v, ok := params[name]; ok {
-			fmt.Fprint(&b, v)
+			if !write(fmt.Sprint(v)) {
+				break
+			}
 		} else {
-			b.WriteString(s[i+j : i+j+2+k+2])
+			if !write(s[i+j : i+j+2+k+2]) {
+				break
+			}
 		}
 		i = i + j + 2 + k + 2
 	}
