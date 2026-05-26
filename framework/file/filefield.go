@@ -3,6 +3,7 @@ package file
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -11,6 +12,21 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
+
+// Validation errors returned by [FileField.Validate]. Callers can match
+// on these without parsing the message.
+var (
+	ErrFileFieldURLScheme   = errors.New("filefield: URL has unsafe scheme")
+	ErrFileFieldTraversal   = errors.New("filefield: contains path traversal")
+	ErrFileFieldMimeUnsafe  = errors.New("filefield: MIME type contains unsafe characters")
+	ErrFileFieldSize        = errors.New("filefield: size is negative or oversize")
+	ErrFileFieldOversize    = errors.New("filefield: field exceeds length limit")
+)
+
+// MaxFileFieldStringBytes caps the length of any FileField string field
+// — anything past this is rejected at validation time. A legitimate URL,
+// MIME, or storage ref does not need 8 KB.
+const MaxFileFieldStringBytes = 8 * 1024
 
 // FileField holds metadata about an uploaded file associated with an entity field.
 type FileField struct {
@@ -28,6 +44,99 @@ type FileField struct {
 
 	// StorageRef is the storage backend key used to reference this file.
 	StorageRef string `json:"storage_ref"`
+}
+
+// Validate enforces invariants on a FileField that came from an untrusted
+// source (typically JSON unmarshal in a CRUD body). It is NOT called
+// automatically — callers that accept FileField as request input should
+// call it before persisting or rendering. The constructors in this
+// package (ProcessFileField) already produce valid FileFields.
+//
+// Rejected inputs:
+//   - URL with javascript:, vbscript:, or data: scheme — would XSS when
+//     rendered as href/src by a downstream consumer.
+//   - URL or StorageRef containing `..` segments — would escape the
+//     storage root on a vulnerable filesystem backend.
+//   - MimeType containing characters outside the MIME-safe set —
+//     normal MIME types are `type/subtype` with letters, digits,
+//     `+`, `-`, `.`; angle brackets / quotes indicate an XSS attempt.
+//   - Size < 0 — unsigned conventions require non-negative.
+//   - Any string field over MaxFileFieldStringBytes.
+func (f *FileField) Validate() error {
+	if f == nil {
+		return nil
+	}
+	for name, v := range map[string]string{
+		"url":          f.URL,
+		"filename":     f.Filename,
+		"mime_type":    f.MimeType,
+		"storage_ref":  f.StorageRef,
+	} {
+		if len(v) > MaxFileFieldStringBytes {
+			return fmt.Errorf("%w: field %q is %d bytes (max %d)", ErrFileFieldOversize, name, len(v), MaxFileFieldStringBytes)
+		}
+	}
+	if f.Size < 0 {
+		return fmt.Errorf("%w: size %d", ErrFileFieldSize, f.Size)
+	}
+	if isUnsafeURLScheme(f.URL) {
+		return fmt.Errorf("%w: %q", ErrFileFieldURLScheme, f.URL)
+	}
+	if hasTraversal(f.URL) {
+		return fmt.Errorf("%w: url %q", ErrFileFieldTraversal, f.URL)
+	}
+	if hasTraversal(f.StorageRef) {
+		return fmt.Errorf("%w: storage_ref %q", ErrFileFieldTraversal, f.StorageRef)
+	}
+	if !isSafeMIMEString(f.MimeType) {
+		return fmt.Errorf("%w: %q", ErrFileFieldMimeUnsafe, f.MimeType)
+	}
+	return nil
+}
+
+// isUnsafeURLScheme reports whether url begins with a scheme that should
+// never appear in stored file metadata. Match is case-insensitive and
+// tolerates leading whitespace (browsers do too).
+func isUnsafeURLScheme(url string) bool {
+	trimmed := strings.TrimLeft(url, " \t\r\n")
+	lower := strings.ToLower(trimmed)
+	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
+		if strings.HasPrefix(lower, bad) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasTraversal reports whether s contains a `..` segment. We're
+// deliberately strict — any `..` substring counts, even one tucked
+// inside a filename, because a downstream join may interpret it as a
+// segment.
+func hasTraversal(s string) bool {
+	return strings.Contains(s, "..")
+}
+
+// isSafeMIMEString reports whether s is shaped like a real MIME type
+// (letters, digits, and the small punctuation set used by IANA names).
+// Empty is treated as safe — Validate handles required-field semantics
+// at a higher layer.
+func isSafeMIMEString(s string) bool {
+	if s == "" {
+		return true
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case c == '/' || c == '+' || c == '-' || c == '.' || c == '_':
+		case c == ';' || c == '=' || c == ' ': // parameter syntax: "text/html; charset=utf-8"
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ProcessFileField reads a file from the given reader, saves it via the storage
