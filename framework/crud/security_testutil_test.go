@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -161,21 +162,29 @@ func assertHeaderAbsent(t *testing.T, rr *httptest.ResponseRecorder, name, categ
 	return true
 }
 
+// securityOwnerExtractorOnce installs the test owner extractor exactly
+// once for the lifetime of the test binary. Per-test install/restore
+// raced under t.Parallel — a teardown from one test would reset the
+// extractor while another parallel test was still mid-request, surfacing
+// as a spurious 401. The extractor itself is pure (no shared state with
+// individual tests) so a process-lifetime install is safe.
+var securityOwnerExtractorOnce sync.Once
+
 // installSecurityOwnerExtractor wires the owner extractor for security tests.
 func installSecurityOwnerExtractor(t *testing.T) {
 	t.Helper()
-	prev := owner.GetExtractor()
-	owner.SetExtractor(func(ctx context.Context) (any, bool) {
-		raw, ok := handler.GetUser(ctx)
-		if !ok || raw == nil {
+	securityOwnerExtractorOnce.Do(func() {
+		owner.SetExtractor(func(ctx context.Context) (any, bool) {
+			raw, ok := handler.GetUser(ctx)
+			if !ok || raw == nil {
+				return nil, false
+			}
+			if u, ok := raw.(*testUser); ok {
+				return u.GetID(), true
+			}
 			return nil, false
-		}
-		if u, ok := raw.(*testUser); ok {
-			return u.GetID(), true
-		}
-		return nil, false
+		})
 	})
-	t.Cleanup(func() { owner.SetExtractor(prev) })
 }
 
 // decodeListResponse is a test helper to decode a ListResponse JSON body.

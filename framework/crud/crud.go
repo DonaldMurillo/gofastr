@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -602,6 +603,15 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
+	if isUniqueViolation(err) {
+		// Map UNIQUE-constraint failures to 409 Conflict so callers can
+		// distinguish duplicate-key errors from a real server fault.
+		// The error message itself is generic — we deliberately don't
+		// echo the violated column to avoid leaking schema details to
+		// an enumeration probe.
+		writeJSONError(w, http.StatusConflict, "conflict")
+		return
+	}
 	// Unrecognised error → 500 with a generic message. Returning
 	// err.Error() here leaks driver-specific details (`pq: relation
 	// "users" does not exist`, `dial tcp 10.0.0.1:5432: ...`,
@@ -611,6 +621,29 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	// the original error remaining matchable via errors.Is in tests.
 	log.Printf("crud: internal error: %v", err)
 	writeJSONError(w, http.StatusInternalServerError, "internal server error")
+}
+
+// isUniqueViolation reports whether err looks like a UNIQUE-constraint
+// violation from any of the supported drivers. We sniff the message
+// string because the drivers don't share a typed error and the CRUD
+// layer is otherwise driver-agnostic. False positives are rare —
+// "UNIQUE constraint failed" (sqlite), "duplicate key value" (pq),
+// "Error 1062" (mysql) are all distinctive.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, sig := range []string{
+		"UNIQUE constraint failed",
+		"duplicate key value",
+		"Error 1062",
+	} {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePagination extracts page and per_page from query params.
