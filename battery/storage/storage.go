@@ -43,7 +43,12 @@ var (
 )
 
 // Register adds a backend factory for the given storage type.
+// Panics on duplicate registration (a programming error caught at boot).
+// A nil factory is rejected so a later [New] call doesn't nil-pointer.
 func Register(t StorageType, factory BackendFactory) {
+	if factory == nil {
+		panic(fmt.Sprintf("storage: nil factory registered for type %v", t))
+	}
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	if _, dup := registry[t]; dup {
@@ -53,12 +58,17 @@ func Register(t StorageType, factory BackendFactory) {
 }
 
 // New creates a Storage backend by type name using the registered factory.
+// Returns a typed error if the type is unknown or the registered factory
+// is nil — never panics, so a malformed config can't crash startup.
 func New(t StorageType, config map[string]interface{}) (Storage, error) {
 	registryMu.RLock()
 	factory, ok := registry[t]
 	registryMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("storage: no backend registered for type %v", t)
+	}
+	if factory == nil {
+		return nil, fmt.Errorf("storage: factory for type %v is nil", t)
 	}
 	return factory(config)
 }
