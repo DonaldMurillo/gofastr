@@ -43,8 +43,16 @@ small, _ := img.Resize(320, 0).WebP().Bytes() // zero-value = lossless
 
 All decoders sniff the format from magic bytes and reject inputs whose
 reported `width × height` exceeds `Config.MaxPixels` (default
-`DefaultMaxPixels` = 268 MP, matching Bun.Image). Tune via
-`DecodeBytesWithConfig` or `DecodeWithConfig`.
+`DefaultMaxPixels` = 64 MP, equivalent to an 8192×8192 square). Tune
+via `DecodeBytesWithConfig` or `DecodeWithConfig`. The default was
+intentionally tightened from Bun.Image's 268 MP after a security
+review found a 45-byte crafted PNG declaring 16383×16383 trip the
+old guard and trigger ~1 GiB of decoder allocation.
+
+`Open(path)` rejects paths containing `..` segments that escape the
+working directory (e.g. `../etc/passwd`). Callers handling user input
+should validate at their layer too; prefer `OpenFS` rooted in an
+`embed.FS` or constrained tree for stronger guarantees.
 
 ## Supported formats
 
@@ -228,11 +236,12 @@ reference. Resize first; the algorithm cost scales with
 ## Decompression-bomb guard
 
 Inputs whose reported `width × height` exceed `Config.MaxPixels`
-(default 268 MP, matches Bun.Image) return `ErrDecompressionBomb`
-before any pixel decoding is attempted. Note the WebP-lossless
-encoder has a per-dimension cap of 16384 (so 268 MP can be a
-16384×16384 square but a 32768×8192 ribbon is encode-rejected even
-though it fits within MaxPixels). Override the guard per-call:
+(default 64 MP — an 8192×8192 square) return `ErrDecompressionBomb`
+before any pixel decoding is attempted. The check uses the format's
+header dimensions (`stdimage.DecodeConfig`) so no pixel buffer is
+allocated for a rejected input. Note the WebP-lossless encoder has
+a per-dimension cap of 16384 (so a 16384×16384 square is encode-
+rejected even with MaxPixels raised). Override the guard per-call:
 
 ```go
 img, err := image.DecodeBytesWithConfig(data, image.Config{
@@ -322,6 +331,16 @@ picture := ui.PipelineImage(ui.PipelineImageConfig{
 `VariantSink`'s `r` is one-shot — stash it for a later goroutine and
 the next read returns `ErrReaderClosed`. Drain inside the sink (e.g.,
 hand it directly to `storage.Save`).
+
+## Limits at a glance
+
+| Knob | Default | Configurable via |
+| ---- | ------: | --- |
+| Max decoded pixels | 64 MP (8192²) | `Config.MaxPixels` |
+| Max encoded WebP dim | 16384 per axis | hard cap (spec) |
+| `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |
+| `BlurHash` working size | 64 px longest side | hard cap (perf) |
+| `Path` traversal | rejected on Open | none (use `OpenFS`) |
 
 ## Performance notes
 
