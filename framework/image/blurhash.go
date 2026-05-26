@@ -46,8 +46,14 @@ func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 	// of cosine components, so the extra precision doesn't change
 	// the result while the cost scales linearly with pixel count.
 	if w > blurhashMaxSize || h > blurhashMaxSize {
-		target := blurhashMaxSize
-		small := i.Resize(target, 0, WithFit(FitInside))
+		// Pass the cap on BOTH axes with FitInside so the longest side
+		// is bounded by blurhashMaxSize regardless of aspect. Passing
+		// (cap, 0) only caps width — for tall portraits the cosine
+		// loop would still walk thousands of rows, and for extreme
+		// aspect ratios FitInside would UPSCALE the short axis.
+		// WithoutEnlargement keeps small inputs (one side under the
+		// cap, the other over) from inflating.
+		small := i.Resize(blurhashMaxSize, blurhashMaxSize, WithFit(FitInside), WithoutEnlargement())
 		b = small.img.Bounds()
 		w, h = b.Dx(), b.Dy()
 		i = small

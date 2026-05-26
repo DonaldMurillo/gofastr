@@ -640,6 +640,53 @@ func TestBlurHashAutoResizesLargeInput(t *testing.T) {
 	}
 }
 
+// TestBlurHashAutoResizeCapsLongestSideForPortrait pins the fix for
+// the auto-resize bug where Resize(cap, 0, FitInside) only capped
+// width — a tall portrait still walked thousands of rows. Verifying
+// allocations stay sub-MB on a 1000-row source proves the cap now
+// applies to the longest side regardless of aspect.
+func TestBlurHashAutoResizeCapsLongestSideForPortrait(t *testing.T) {
+	src := FromImage(gradient(100, 1000), FormatPNG)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	hash, err := src.BlurHash(4, 3)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatalf("BlurHash: %v", err)
+	}
+	if len(hash) != 28 {
+		t.Errorf("len=%d, want 28", len(hash))
+	}
+	// With the bug, the cosine loop ran on 64*640=40k pixels and the
+	// linR/G/B buffers were ~960 KB. The fix bounds it to ≤ 64*64 = 4k
+	// pixels (~100 KB of linear buffers). Allow generous slack.
+	delta := after.TotalAlloc - before.TotalAlloc
+	if delta > 1_500_000 {
+		t.Errorf("portrait BlurHash allocated %d bytes; want <1.5 MB (longest-side cap active?)", delta)
+	}
+}
+
+// TestBlurHashAutoResizeDoesNotUpscaleSkinnyInput pins the second
+// half of the auto-resize fix: a 10×200 skinny source previously
+// got UPSCALED to 64×1280 because Resize(cap, 0, FitInside) derived
+// height from the cap and then FitInside scaled up uniformly.
+func TestBlurHashAutoResizeDoesNotUpscaleSkinnyInput(t *testing.T) {
+	src := FromImage(gradient(10, 200), FormatPNG)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := src.BlurHash(4, 3)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatalf("BlurHash: %v", err)
+	}
+	delta := after.TotalAlloc - before.TotalAlloc
+	if delta > 1_500_000 {
+		t.Errorf("skinny BlurHash allocated %d bytes; want <1.5 MB (upscale path active?)", delta)
+	}
+}
+
 func TestBlurHashRejectsTooFewSamples(t *testing.T) {
 	src := FromImage(solidRGBA(2, 2, color.RGBA{R: 100, G: 50, B: 200, A: 255}), FormatPNG)
 	if _, err := src.BlurHash(4, 3); err == nil {
