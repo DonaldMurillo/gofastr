@@ -182,6 +182,27 @@ func TestPipelineImageDedupesIdenticalSources(t *testing.T) {
 	}
 }
 
+// TestPipelineImageEncodesSrcsetURLCommas pins the fix that prevents
+// a URL containing a literal comma from being split into multiple
+// malformed candidates by the browser's srcset parser. Realistic for
+// storage keys like '/uploads/2024,Q1/photo.webp' or presigned URLs
+// that embed comma-separated signature params.
+func TestPipelineImageEncodesSrcsetURLCommas(t *testing.T) {
+	h := PipelineImage(PipelineImageConfig{
+		Fallback: "/p.jpg", Alt: "x", Width: 1, Height: 1,
+		Sources: []PipelineSource{
+			{URL: "/uploads/2024,Q1/photo-100.webp", Width: 100, Type: "image/webp"},
+			{URL: "/uploads/2024,Q1/photo-200.webp", Width: 200, Type: "image/webp"},
+		},
+	})
+	s := string(h)
+	if strings.Contains(s, "2024,Q1") {
+		t.Fatalf("raw comma left in srcset URL — browser will split candidate:\n%s", s)
+	}
+	mustContain(t, h, "/uploads/2024%2CQ1/photo-100.webp 100w")
+	mustContain(t, h, "/uploads/2024%2CQ1/photo-200.webp 200w")
+}
+
 // TestPipelineImageTypeEscaped: Source.Type that contains > and "
 // must be HTML-escaped, not interpolated into the type attribute
 // literally. Pins the XSS guard.

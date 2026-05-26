@@ -196,6 +196,37 @@ type pipelineGroup struct {
 	srcset string
 }
 
+// encodeSrcsetURL percent-escapes the four characters that the HTML
+// srcset parser uses as separators: ',' splits candidates, and any
+// ASCII whitespace splits URL from descriptor. Storage URLs that
+// contain raw commas (presigned URLs, keys with comma-separated
+// segments) would otherwise be split into multiple malformed
+// candidates and the wrong (or no) image would be fetched.
+func encodeSrcsetURL(url string) string {
+	if !strings.ContainsAny(url, ", \t\n\r") {
+		return url
+	}
+	var b strings.Builder
+	b.Grow(len(url) + 8)
+	for i := 0; i < len(url); i++ {
+		switch url[i] {
+		case ',':
+			b.WriteString("%2C")
+		case ' ':
+			b.WriteString("%20")
+		case '\t':
+			b.WriteString("%09")
+		case '\n':
+			b.WriteString("%0A")
+		case '\r':
+			b.WriteString("%0D")
+		default:
+			b.WriteByte(url[i])
+		}
+	}
+	return b.String()
+}
+
 // groupPipelineSources buckets PipelineSources by MIME type, preserving
 // the input ordering of types' first appearance, and sorts widths
 // within each bucket ascending for predictable srcset output.
@@ -231,7 +262,7 @@ func groupPipelineSources(sources []PipelineSource) []pipelineGroup {
 		sort.Slice(list, func(i, j int) bool { return list[i].Width < list[j].Width })
 		parts := make([]string, 0, len(list))
 		for _, s := range list {
-			parts = append(parts, s.URL+" "+strconv.Itoa(s.Width)+"w")
+			parts = append(parts, encodeSrcsetURL(s.URL)+" "+strconv.Itoa(s.Width)+"w")
 		}
 		out = append(out, pipelineGroup{typ: t, srcset: strings.Join(parts, ", ")})
 	}
