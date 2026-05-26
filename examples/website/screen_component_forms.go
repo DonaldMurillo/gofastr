@@ -54,7 +54,7 @@ func repeaterItems(n int, values map[string]string) [][]render.HTML {
 					Type:  "text",
 					Name:  nameField,
 					ID:    fmt.Sprintf("f-m%d-name", i),
-					Attrs: nameAttrs,
+					ExtraAttrs: nameAttrs,
 				}),
 			}),
 			ui.FormField(ui.FormFieldConfig{
@@ -63,7 +63,7 @@ func repeaterItems(n int, values map[string]string) [][]render.HTML {
 					Type:  "email",
 					Name:  emailField,
 					ID:    fmt.Sprintf("f-m%d-email", i),
-					Attrs: emailAttrs,
+					ExtraAttrs: emailAttrs,
 				}),
 			}),
 		}
@@ -98,7 +98,7 @@ func renderRepeaterIsland(count int, values map[string]string) render.HTML {
 			Label: "Remove",
 			Type:  "button",
 			Class: "ui-button ui-button--danger ui-button--small",
-			Attrs: html.Attrs{
+			ExtraAttrs: html.Attrs{
 				"data-fui-rpc":        fmt.Sprintf("%s?n=%d&action=remove-%d", repeaterDemoEndpoint, count, i),
 				"data-fui-rpc-method": "GET",
 				"data-fui-rpc-signal": "repeater-demo",
@@ -109,7 +109,7 @@ func renderRepeaterIsland(count int, values map[string]string) render.HTML {
 				Label: "Remove",
 				Type:  "button",
 				Class: "ui-button ui-button--danger ui-button--small",
-				Attrs: html.Attrs{"disabled": ""},
+				ExtraAttrs: html.Attrs{"disabled": ""},
 			})
 		}
 		itemChildren = append(itemChildren, render.Tag("div", map[string]string{"class": "ui-form-repeater__item-actions"}, removeBtn))
@@ -134,7 +134,7 @@ func renderRepeaterIsland(count int, values map[string]string) render.HTML {
 		Label: "Add team member",
 		Type:  "button",
 		Class: "ui-button ui-button--secondary",
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-rpc":        fmt.Sprintf("%s?n=%d&action=add", repeaterDemoEndpoint, count),
 			"data-fui-rpc-method": "GET",
 			"data-fui-rpc-signal": "repeater-demo",
@@ -145,7 +145,7 @@ func renderRepeaterIsland(count int, values map[string]string) render.HTML {
 			Label: "Add team member",
 			Type:  "button",
 			Class: "ui-button ui-button--secondary",
-			Attrs: html.Attrs{"disabled": ""},
+			ExtraAttrs: html.Attrs{"disabled": ""},
 		})
 	}
 	children = append(children, render.Tag("div", map[string]string{"class": "ui-form-repeater__add"}, addBtn))
@@ -329,7 +329,7 @@ ui.FormFieldFor(errs, "email", ui.FormFieldConfig{
 				Label: "Price", For: "f-price",
 				Input: ui.InputGroup(ui.InputGroupConfig{
 					Prepend: render.Text("$"),
-					Input:   html.Input(html.InputConfig{Type: "text", Name: "price", ID: "f-price", Attrs: html.Attrs{"placeholder": "0.00"}}),
+					Input:   html.Input(html.InputConfig{Type: "text", Name: "price", ID: "f-price", ExtraAttrs: html.Attrs{"placeholder": "0.00"}}),
 					Append:  render.Text("USD"),
 				}),
 			}),

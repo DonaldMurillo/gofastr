@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,6 +85,58 @@ func TestSignWithTimestamp_RejectsTamperedTimestamp(t *testing.T) {
 	tampered := "t=" + "99999," + parts[1]
 	if VerifyTimestamped(secret, tampered, body, time.Hour) {
 		t.Fatalf("verifier must reject tampered timestamp")
+	}
+}
+
+// VerifyTimestamped must reject when tolerance <= 0. Otherwise the
+// caller silently skips the replay check and a year-old signature still
+// verifies — defeating the whole point of binding the timestamp.
+func TestVerifyTimestamped_RejectsNonPositiveTolerance(t *testing.T) {
+	secret := "k"
+	body := []byte("x")
+	now := time.Now().Unix()
+	sig := SignWithTimestamp(secret, now, body)
+
+	if VerifyTimestamped(secret, sig, body, 0) {
+		t.Error("tolerance=0 should reject (replay window disabled)")
+	}
+	if VerifyTimestamped(secret, sig, body, -time.Second) {
+		t.Error("negative tolerance should reject")
+	}
+}
+
+// VerifyTimestamped must reject pathological timestamp values that
+// would cause integer overflow in the drift-arithmetic. Pre-fix,
+// math.MaxInt64 timestamps passed through ParseInt and the negate-abs
+// path overflowed, letting the verifier accept a far-future signature.
+func TestVerifyTimestamped_RejectsExtremeTimestamps(t *testing.T) {
+	secret := "k"
+	body := []byte("x")
+
+	// Build a signature with a MaxInt64 timestamp; an attacker could
+	// craft this without knowing the secret? No — the HMAC binds the
+	// timestamp. But the test pins that the verifier rejects, even if
+	// the HMAC matches its (also-bogus) signed payload.
+	maxTs := int64(math.MaxInt64)
+	sig := SignWithTimestamp(secret, maxTs, body)
+	if VerifyTimestamped(secret, sig, body, time.Hour) {
+		t.Error("MaxInt64 timestamp must be rejected (would overflow drift arithmetic)")
+	}
+
+	minTs := int64(math.MinInt64)
+	sigNeg := SignWithTimestamp(secret, minTs, body)
+	if VerifyTimestamped(secret, sigNeg, body, time.Hour) {
+		t.Error("MinInt64 timestamp must be rejected")
+	}
+}
+
+// VerifyTimestamped must reject empty secret. Otherwise a misconfigured
+// receiver accepts unsigned messages — exactly the worst-case auth bug.
+func TestVerifyTimestamped_RejectsEmptySecret(t *testing.T) {
+	body := []byte("x")
+	sig := SignWithTimestamp("anything", time.Now().Unix(), body)
+	if VerifyTimestamped("", sig, body, time.Hour) {
+		t.Error("empty secret must always reject")
 	}
 }
 

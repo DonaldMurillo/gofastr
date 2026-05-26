@@ -3,6 +3,7 @@ package framework
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -62,7 +63,9 @@ func (r *Registry) Get(name string) (*entity.Entity, error) {
 	return e, nil
 }
 
-// All returns a copy of the map of all registered entities.
+// All returns a copy of the map of all registered entities. Map
+// iteration order is randomised by Go; use AllSorted() for stable
+// iteration in code paths that emit order-sensitive output.
 func (r *Registry) All() map[string]*entity.Entity {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -71,6 +74,24 @@ func (r *Registry) All() map[string]*entity.Entity {
 	for k, v := range r.entities {
 		out[k] = v
 	}
+	return out
+}
+
+// AllSorted returns every registered entity in alphabetical order by
+// name. Use this whenever the iteration order affects bytes-on-the-wire
+// (OpenAPI tag emission, LLM-markdown, codegen output) so the same
+// registry produces the same artefact across restarts.
+func (r *Registry) AllSorted() []*entity.Entity {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	out := make([]*entity.Entity, 0, len(r.entities))
+	for _, e := range r.entities {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Config.Name < out[j].Config.Name
+	})
 	return out
 }
 

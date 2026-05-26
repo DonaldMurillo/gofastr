@@ -290,13 +290,41 @@ func SessionEntityConfig() entity.EntityConfig {
 //
 // For most apps, prefer UserEntityConfig() which also disables the
 // dangerous-by-default auto-CRUD on user rows.
-func UserEntityFields() []schema.Field {
-	return []schema.Field{
+func UserEntityFields() UserFields {
+	return UserFields{
 		{Name: "email", Type: schema.String, Required: true, Unique: true},
 		{Name: "password_hash", Type: schema.String, Required: true, Hidden: true},
 		{Name: "roles", Type: schema.String, Default: `["user"]`},
 		{Name: "password_set", Type: schema.Bool, Default: "false"},
 	}
+}
+
+// UserFields is the canonical user-entity field list returned by
+// UserEntityFields. Its underlying type is []schema.Field so it
+// remains assignable to entity.EntityConfig.Fields without any cast.
+// The named type exists solely to attach the fluent With method.
+type UserFields []schema.Field
+
+// With returns a new UserFields containing the canonical fields plus
+// any additional fields the host wants to attach (typically domain
+// columns like username, disabled_at, or display_name).
+//
+// The returned slice is independent — repeated calls don't mutate the
+// receiver or the canonical list.
+//
+// Example:
+//
+//	app.Entity("users", entity.EntityConfig{
+//	    Fields: auth.UserEntityFields().With(
+//	        schema.Field{Name: "username", Type: schema.String, Unique: true},
+//	        schema.Field{Name: "disabled_at", Type: schema.Timestamp},
+//	    ),
+//	})
+func (uf UserFields) With(extra ...schema.Field) UserFields {
+	out := make(UserFields, 0, len(uf)+len(extra))
+	out = append(out, uf...)
+	out = append(out, extra...)
+	return out
 }
 
 // EntitySessionStore adapts a database table to the SessionStore interface.

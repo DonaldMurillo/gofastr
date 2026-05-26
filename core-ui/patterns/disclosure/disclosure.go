@@ -30,7 +30,7 @@ type Config struct {
 	// ID / Class / Attrs are passed through to the <details>.
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Render renders the disclosure with the given body content.
@@ -49,7 +49,7 @@ func Render(cfg Config, body ...render.HTML) render.HTML {
 	if cfg.Open {
 		attrs["open"] = ""
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 	return disclosureStyle.WrapHTML(render.Tag("details", attrs,

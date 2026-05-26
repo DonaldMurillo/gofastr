@@ -169,10 +169,10 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	}
 
 	img := html.Image(html.ImageConfig{
-		Src:   cfg.Fallback,
-		Alt:   cfg.Alt,
-		Class: "ui-image__img",
-		Attrs: imgAttrs,
+		Src:        cfg.Fallback,
+		Alt:        cfg.Alt,
+		Class:      "ui-image__img",
+		ExtraAttrs: imgAttrs,
 	})
 
 	children := []render.HTML{}

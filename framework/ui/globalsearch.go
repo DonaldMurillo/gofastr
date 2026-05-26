@@ -125,7 +125,7 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	if showHint && shortcut != "" {
 		children = append(children, html.Span(html.TextConfig{
 			Class: "ui-global-search__hint",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.HTML(`<kbd class="ui-global-search__chord">`+shortcut+`</kbd>`)))
 	}
 	return globalSearchStyle.WrapHTML(render.Tag("div", wrapAttrs, children...))

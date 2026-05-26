@@ -34,7 +34,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		"widgets":  7 * 1024,  // goal 3 KB. Bulk: focus-trap + modal stack + dismiss machinery.
 		"lightbox": 5 * 1024,  // goal 3 KB. Bulk: pinch-zoom + pan + keyboard nav.
 	}
-	const coreOverride = 28 * 1024 // goal 12 KB. Bulk: legacy bundled runtime; Phase 2 file-split has not yet carved core.
+	const coreOverride = 28 * 1024 // goal 12 KB. Bulk: the bundled runtime carries the full primitive set; per-module splits are an optional path that hasn't carved core yet.
 
 	core, err := RuntimeJS()
 	if err != nil {

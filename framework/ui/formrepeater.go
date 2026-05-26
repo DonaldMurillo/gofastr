@@ -94,7 +94,7 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 			Label: removeLabel,
 			Type:  "submit",
 			Class: "ui-button ui-button--danger ui-button--small",
-			Attrs: removeAttrs,
+			ExtraAttrs: removeAttrs,
 		})
 		itemChildren = append(itemChildren, render.Tag("div", map[string]string{
 			"class": "ui-form-repeater__item-actions",
@@ -120,7 +120,7 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		Label: addLabel,
 		Type:  "submit",
 		Class: "ui-button ui-button--secondary",
-		Attrs: addAttrs,
+		ExtraAttrs: addAttrs,
 	})
 	children = append(children, render.Tag("div", map[string]string{
 		"class": "ui-form-repeater__add",

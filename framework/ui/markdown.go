@@ -24,7 +24,7 @@ type MarkdownConfig struct {
 	Compact bool
 	ID      string
 	Class   string
-	Attrs   html.Attrs
+	ExtraAttrs   html.Attrs
 }
 
 // Markdown renders the given Markdown source as themed HTML.
@@ -43,7 +43,7 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		attrs[k] = v
 	}
 	body := markdown.RenderHTML(cfg.Source)

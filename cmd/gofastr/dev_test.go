@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,6 +44,62 @@ isolation:
 	}
 	if env["GOFASTR_ISOLATION_APPLIED"] != "1" || env["GOFASTR_ISOLATION_PORT_8080"] != "9080" {
 		t.Fatalf("child env missing isolation markers: %#v", env)
+	}
+}
+
+// Smoke test: a fresh `gofastr init` lands the AI-agent files
+// alongside the app scaffold. Runs the real binary as a subprocess
+// (runInit uses os.Exit so it can't be called in-process) so the test
+// catches the silent-drift class where init.go forgets to call
+// writeAgentDetailFiles or writeHostSkill after a refactor.
+func TestInitDropsAIAgentFiles(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Build the binary inside the gofastr module (where go.mod lives),
+	// then invoke it from the tempdir — `go run` from outside any
+	// module fails to resolve cmd/gofastr's imports.
+	binDir := t.TempDir()
+	binPath := filepath.Join(binDir, "gofastr")
+	build := exec.Command("go", "build", "-o", binPath, "./cmd/gofastr")
+	build.Dir = repoRoot
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build gofastr: %v\n%s", err, out)
+	}
+
+	work := t.TempDir()
+	cmd := exec.Command(binPath, "init", "smoke", "--no-entity")
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+
+	for _, rel := range []string{
+		"smoke/AGENTS.md",
+		"smoke/agents/framework.md",
+		"smoke/agents/battery-admin.md",
+		"smoke/agents/battery-log.md",
+		"smoke/.claude/skills/gofastr-host/SKILL.md",
+	} {
+		path := filepath.Join(work, rel)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected file missing after `gofastr init`: %s — init.go likely dropped a writer call\nstdout/stderr:\n%s", rel, out)
+		}
+	}
+
+	// AGENTS.md must be the thin TOC, not the old 500-line inline form.
+	body, _ := os.ReadFile(filepath.Join(work, "smoke", "AGENTS.md"))
+	if !strings.Contains(string(body), "| Section | Use this when | Details |") {
+		t.Error("init wrote AGENTS.md without the TOC header — regression to old inline shape")
+	}
+
+	// A detail file must carry the AUTO-GENERATED sentinel — proves
+	// writeAgentDetailFiles ran with the right header.
+	detail, _ := os.ReadFile(filepath.Join(work, "smoke", "agents", "framework.md"))
+	if !strings.HasPrefix(string(detail), "<!-- AUTO-GENERATED") {
+		t.Error("agents/framework.md missing AUTO-GENERATED header — header writer regressed")
 	}
 }
 
@@ -116,6 +173,48 @@ func writeDevFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// buildDevChildEnv must inject GOFASTR_DEV=1 so it wins on BOTH macOS
+// (last-occurrence semantics) and Linux glibc (first-occurrence). A
+// parent shell setting GOFASTR_DEV=0 must not survive into the child.
+func TestBuildDevChildEnvOverridesParentDisable(t *testing.T) {
+	parent := []string{
+		"PATH=/usr/bin",
+		"GOFASTR_DEV=0", // user tries to disable
+		"HOME=/tmp",
+	}
+	out := buildDevChildEnv(parent)
+
+	// First occurrence of GOFASTR_DEV must be "1" (Linux first-wins).
+	first := ""
+	for _, kv := range out {
+		if strings.HasPrefix(kv, "GOFASTR_DEV=") {
+			first = strings.TrimPrefix(kv, "GOFASTR_DEV=")
+			break
+		}
+	}
+	if first != "1" {
+		t.Fatalf("first GOFASTR_DEV entry = %q, want 1; got env:\n%v", first, out)
+	}
+
+	// No leftover GOFASTR_DEV=0 anywhere — duplicates confuse audit
+	// tools and depend on platform semantics.
+	count := 0
+	for _, kv := range out {
+		if strings.HasPrefix(kv, "GOFASTR_DEV=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one GOFASTR_DEV entry, got %d:\n%v", count, out)
+	}
+
+	// Other env vars must survive untouched.
+	got := devEnvMap(out)
+	if got["PATH"] != "/usr/bin" || got["HOME"] != "/tmp" {
+		t.Fatalf("non-target env clobbered: %#v", got)
 	}
 }
 

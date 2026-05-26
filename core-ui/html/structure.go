@@ -8,14 +8,14 @@ type DivConfig struct {
 	ID        string
 	Role      string
 	AriaLabel string
-	Attrs     Attrs // passthrough for any extra attributes
+	ExtraAttrs     Attrs // passthrough for any extra attributes
 }
 
 // ArticleConfig configures an <article> element. No required fields.
 type ArticleConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // SectionConfig configures a <section> element.
@@ -25,7 +25,7 @@ type SectionConfig struct {
 	LabelledBy string // alternative → aria-labelledby
 	Class      string
 	ID         string
-	Attrs      Attrs
+	ExtraAttrs      Attrs
 }
 
 // MainConfig configures a <main> element.
@@ -33,7 +33,7 @@ type SectionConfig struct {
 type MainConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // HeaderConfig configures a <header> element.
@@ -44,7 +44,7 @@ type MainConfig struct {
 type HeaderConfig struct {
 	Class  string
 	ID     string
-	Attrs  Attrs
+	ExtraAttrs  Attrs
 	Banner bool // explicit opt-in for role="banner"
 }
 
@@ -56,7 +56,7 @@ type HeaderConfig struct {
 type FooterConfig struct {
 	Class       string
 	ID          string
-	Attrs       Attrs
+	ExtraAttrs       Attrs
 	ContentInfo bool // explicit opt-in for role="contentinfo"
 }
 
@@ -68,7 +68,7 @@ type NavConfig struct {
 	LabelledBy string // alternative → aria-labelledby
 	Class      string
 	ID         string
-	Attrs      Attrs
+	ExtraAttrs      Attrs
 }
 
 // AsideConfig configures an <aside> element.
@@ -79,28 +79,28 @@ type AsideConfig struct {
 	LabelledBy string // alternative → aria-labelledby
 	Class      string
 	ID         string
-	Attrs      Attrs
+	ExtraAttrs      Attrs
 }
 
 // FigureConfig configures a <figure> element. No required fields.
 type FigureConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // FigCaptionConfig configures a <figcaption> element. No required fields.
 type FigCaptionConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // DetailsConfig configures a <details> element. No required fields.
 type DetailsConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 	// Disclosure marks this details element as a dismissible disclosure
 	// (mobile hamburger nav, popover, etc.). The runtime will close it
 	// automatically on SPA navigation and on Escape. See ARCHITECTURE.md
@@ -114,7 +114,7 @@ type DetailsConfig struct {
 type SummaryConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // GroupConfig configures a <div> with an ARIA role.
@@ -124,12 +124,12 @@ type GroupConfig struct {
 	AriaLabel string
 	Class     string
 	ID        string
-	Attrs     Attrs
+	ExtraAttrs     Attrs
 }
 
 // Div produces a <div> element.
 func Div(cfg DivConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Role != "" {
 		setAttr(attrs, "role", cfg.Role)
 	}
@@ -142,7 +142,7 @@ func Div(cfg DivConfig, children ...render.HTML) render.HTML {
 // Article produces an <article> element representing a self-contained
 // composition in a page.
 func Article(cfg ArticleConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("article", attrs, children...)
 }
 
@@ -153,7 +153,7 @@ func Section(cfg SectionConfig, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
 		panic("html: Section requires Label or LabelledBy")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
 		setAttr(attrs, "aria-label", cfg.Label)
 	}
@@ -167,7 +167,7 @@ func Section(cfg SectionConfig, children ...render.HTML) render.HTML {
 // Main produces a <main> element with role="main" and id="main-content"
 // for skip-navigation links. If cfg.ID is set, it overrides the default id.
 func Main(cfg MainConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "role", RoleMain)
 	if _, ok := attrs["id"]; !ok {
 		attrs["id"] = "main-content"
@@ -185,7 +185,7 @@ func Main(cfg MainConfig, children ...render.HTML) render.HTML {
 // also carries role="banner" (use this for the page-wide banner only;
 // nested page-content headers should leave Banner=false).
 func Header(cfg HeaderConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Banner {
 		setAttr(attrs, "role", RoleBanner)
 	}
@@ -196,7 +196,7 @@ func Header(cfg HeaderConfig, children ...render.HTML) render.HTML {
 // also carries role="contentinfo" (use this for the page-wide footer
 // only; nested article/section footers should leave it false).
 func Footer(cfg FooterConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.ContentInfo {
 		setAttr(attrs, "role", RoleContentinfo)
 	}
@@ -209,7 +209,7 @@ func Nav(cfg NavConfig, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
 		panic("html: Nav requires Label or LabelledBy")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
 		setAttr(attrs, "aria-label", cfg.Label)
 	}
@@ -226,7 +226,7 @@ func Aside(cfg AsideConfig, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
 		panic("html: Aside requires Label or LabelledBy")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
 		setAttr(attrs, "aria-label", cfg.Label)
 	}
@@ -240,19 +240,19 @@ func Aside(cfg AsideConfig, children ...render.HTML) render.HTML {
 // Figure produces a <figure> element for self-contained content
 // referenced from the main flow.
 func Figure(cfg FigureConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("figure", attrs, children...)
 }
 
 // FigCaption produces a <figcaption> element for a figure caption.
 func FigCaption(cfg FigCaptionConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("figcaption", attrs, children...)
 }
 
 // Details produces a <details> element for a disclosure widget.
 func Details(cfg DetailsConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Disclosure {
 		attrs["data-fui-disclosure"] = ""
 	}
@@ -265,7 +265,7 @@ func Details(cfg DetailsConfig, children ...render.HTML) render.HTML {
 // Summary produces a <summary> element for the summary/caption
 // of a details element.
 func Summary(cfg SummaryConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("summary", attrs, children...)
 }
 
@@ -275,7 +275,7 @@ func Group(cfg GroupConfig, children ...render.HTML) render.HTML {
 	if cfg.Role == "" {
 		panic("html: Group requires Role")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "role", cfg.Role)
 	if cfg.AriaLabel != "" {
 		setAttr(attrs, "aria-label", cfg.AriaLabel)

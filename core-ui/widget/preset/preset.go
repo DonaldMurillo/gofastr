@@ -28,19 +28,6 @@ func Modal(name string) *widget.Builder {
 		Mount(widget.Center)
 }
 
-// Toast is an ephemeral notification anchored to the bottom. The host
-// SHOULD set up an SSE binding so server-side events push messages
-// without page reloads.
-//
-// Deprecated: prefer ToastStack for new code — it bundles a stack
-// manager, signal binding, and SSE wiring in one call. Toast is kept
-// for the bottom-anchored single-pill pattern callers may already
-// depend on.
-func Toast(name string) *widget.Builder {
-	return widget.New(name).
-		Mount(widget.Bottom)
-}
-
 // ToastStack registers an empty toast stack widget. Toasts are
 // pushed entirely on the client — either via the JS API
 // `window.__gofastr.toast({...})`, or by setting an

@@ -41,6 +41,95 @@ For a single declaration:
 entity, err := app.EntityFromFile("entities/posts.json")
 ```
 
+For Go-defined configs, `RegisterEntities` is sugar over multiple
+`Entity(...)` calls. Map iteration order is randomised, but FK ordering
+is still handled correctly because AutoMigrate sorts entities
+topologically:
+
+```go
+app.RegisterEntities(map[string]entity.EntityConfig{
+    "foods":  foodsConfig,
+    "meals":  mealsConfig,
+    "users":  usersConfig,
+})
+```
+
+## Seeding
+
+`EntityConfig.Seed` runs once per entity after `AutoMigrate` creates the
+table. The framework tracks completion in the `_gofastr_seeded` ledger;
+subsequent restarts short-circuit on the ledger row. Errors abort
+`App.Start`, so a failed seed prevents a half-up server.
+
+```go
+app.Entity("foods", entity.EntityConfig{
+    Fields: []schema.Field{ /* … */ },
+    Seed: func(ctx context.Context, db *sql.DB) error {
+        _, err := db.ExecContext(ctx, `INSERT INTO foods (name)
+            VALUES ('apple'), ('banana') ON CONFLICT DO NOTHING`)
+        return err
+    },
+})
+```
+
+`Seed` should be idempotent. The ledger is best-effort tracking that
+survives normal restarts but cannot guarantee atomicity between user
+inserts and the ledger row; prefer `INSERT … ON CONFLICT DO NOTHING` or
+a pre-check inside `Seed`.
+
+### Embedded seed data (`SeedFS` + `SeedPath`)
+
+Single-binary deploys benefit from seeding from `//go:embed` data rather
+than loose JSON files on disk:
+
+```go
+//go:embed seed/foods.json
+var seedFoods embed.FS
+
+app.Entity("foods", entity.EntityConfig{
+    Fields:   []schema.Field{ /* … */ },
+    SeedFS:   seedFoods,
+    SeedPath: "seed/foods.json",
+    Seed: func(ctx context.Context, db *sql.DB) error {
+        raw, err := entity.SeedDataFromContext(ctx)
+        if err != nil {
+            return err
+        }
+        var rows []FoodRow
+        if err := json.Unmarshal(raw, &rows); err != nil {
+            return err
+        }
+        for _, r := range rows {
+            // …INSERT…
+        }
+        return nil
+    },
+})
+```
+
+`entity.SeedDataFromContext(ctx)` returns the bytes pointed to by `SeedPath`
+within `SeedFS`. The framework wires the context just before calling
+`Seed`; hosts never need to attach it manually.
+
+`App.Entity` panics at registration time if `SeedFS` is set but
+`SeedPath` is empty — a misconfiguration that would otherwise silently
+record the entity as seeded with empty data on first run.
+
+### Observability
+
+Attach a `*slog.Logger` so each seed emits structured lifecycle events:
+
+```go
+ctx := migrate.WithSeedLogger(context.Background(), logger)
+// (the framework calls migrate.RunSeeds with the App's lifecycle ctx
+// during App.Start, so this matters mostly for tests + custom flows)
+```
+
+Events: `seed ledger read` (once per RunSeeds), `seed start`, `seed
+done` (with elapsed duration), `seed skip` (when the ledger already
+records the entity), `seed failed` (on error). When no logger is
+attached, events go to a discard handler.
+
 ## JSON Shape
 
 ```json

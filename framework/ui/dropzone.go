@@ -159,7 +159,7 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    id + "-error",
 			Class: "ui-dropzone__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if help != "" {
 		children = append(children, html.Paragraph(html.TextConfig{

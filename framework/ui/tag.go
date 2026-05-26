@@ -89,7 +89,7 @@ func Tag(cfg TagConfig) render.HTML {
 		// SVG × icon — kept aria-hidden so the aria-label is the
 		// single announced name.
 		body = append(body, render.Tag("button", flattenAttrs(attrs),
-			html.Span(html.TextConfig{Attrs: html.Attrs{"aria-hidden": "true"}},
+			html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
 				render.HTML("&times;"))))
 	}
 

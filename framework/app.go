@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -81,6 +83,7 @@ type App struct {
 
 	Batteries *BatteryManager
 
+	serverMu   sync.Mutex   // guards server — Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
 	hooks      map[string]*hook.HookRegistry
@@ -158,11 +161,20 @@ func WithRouter(r *router.Router) AppOption {
 	}
 }
 
-// Router returns the App's *router.Router. Methods on the router
-// (Handle / Get / Post / Use / Group / NotFound) are documented in
-// core/router. Exposed as a method (rather than a field) so plugins
-// and batteries can swap or wrap the router during Init without
-// callers depending on direct field assignment.
+// Router returns the App's *router.Router for advanced use (plugin authors,
+// batteries that need to register routes with custom matching, sub-router
+// construction). Application code should prefer the App-level helpers:
+//
+//   - App.Use(mw)        — register middleware  (instead of Router().Use)
+//   - App.Get/Post/...   — register routes      (instead of Router().Handle)
+//   - App.Group(prefix)  — sub-routes           (instead of Router().Group)
+//
+// Both forms are functionally equivalent — App.Use forwards to Router().Use —
+// but the App-level surface is the canonical one in docs and examples.
+//
+// Exposed as a method (rather than a field) so plugins and batteries can
+// swap or wrap the router during Init without callers depending on direct
+// field assignment.
 func (a *App) Router() *router.Router { return a.router }
 
 // WithMCPServer sets a custom MCP server.
@@ -529,12 +541,24 @@ func NewApp(opts ...AppOption) *App {
 		a.Registry.SetDB(a.DB)
 	}
 
+	// Auto-wire dev-only livereload routes. No-op unless GOFASTR_DEV=1 is
+	// set (typically by `gofastr dev`) and the host isn't in production.
+	// See framework/dev/livereload.go for the env-gate rules.
+	dev.MaybeRegisterLiveReload(a.router)
+
 	return a
 }
 
 // Entity registers an entity with the given name and configuration.
 // Returns the App for fluent chaining.
 func (a *App) Entity(name string, config entity.EntityConfig) *App {
+	// Registration-time validation: SeedFS without SeedPath is a
+	// misconfiguration that would otherwise silently mark the entity
+	// as seeded with empty data on first run.
+	if config.SeedFS != nil && config.SeedPath == "" {
+		panic(fmt.Sprintf("framework: entity %q has SeedFS set but SeedPath empty — point SeedPath at a file within the FS or unset SeedFS", name))
+	}
+
 	e := entity.Define(name, config)
 
 	if a.DB != nil {
@@ -578,6 +602,33 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 		}
 	}
 
+	return a
+}
+
+// RegisterEntities registers each (name, config) pair via App.Entity in
+// alphabetical-by-name order. Sorting matters: Entity has order-sensitive
+// side effects — router registration, MCP tool list order, OpenAPI tag
+// emission — and Go's map iteration is randomised, so unsorted iteration
+// would mean non-deterministic /openapi.json bytes across restarts
+// (breaking ETag caching) and non-deterministic MCP tools/list responses.
+// FK relations stay safe because AutoMigrate also topologically sorts.
+//
+// Returns the App for fluent chaining.
+//
+//	app.RegisterEntities(map[string]entity.EntityConfig{
+//	    "foods":  foodsConfig,
+//	    "meals":  mealsConfig,
+//	    "users":  usersConfig,
+//	})
+func (a *App) RegisterEntities(entities map[string]entity.EntityConfig) *App {
+	names := make([]string, 0, len(entities))
+	for name := range entities {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		a.Entity(name, entities[name])
+	}
 	return a
 }
 
@@ -878,20 +929,21 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
 // Safe to call multiple times — subsequent calls are no-ops.
 //
-// This is the method to call from your signal handler. The old `Stop`
-// name is kept as a thin alias for ergonomic symmetry with `Start` but
-// `Shutdown` is the canonical name and what should appear in new code.
+// Call this from your signal handler.
 func (a *App) Shutdown(ctx context.Context) error {
 	if a.appCancel != nil {
 		a.appCancel()
 		a.appCancel = nil
 	}
 	var firstErr error
-	if a.server != nil {
-		if err := a.server.Shutdown(ctx); err != nil {
+	a.serverMu.Lock()
+	srv := a.server
+	a.server = nil
+	a.serverMu.Unlock()
+	if srv != nil {
+		if err := srv.Shutdown(ctx); err != nil {
 			firstErr = err
 		}
-		a.server = nil
 	}
 
 	// Stop batteries in reverse dependency order (dependents first)
@@ -946,10 +998,30 @@ func (a *App) Start(addr string) error {
 		return fmt.Errorf("resolve isolated addr: %w", err)
 	}
 
+	// Create the app's lifecycle context early so AutoMigrate, RunSeeds,
+	// InitPlugins, and runStartHooks all share a single cancellable
+	// context. A failure in any of these phases calls Shutdown, which
+	// cancels the context and drains any goroutines an earlier phase
+	// spawned. Without this, a startHook that spawns a worker before a
+	// later startHook fails would leak that worker past Start returning.
+	if a.appCtx == nil {
+		a.appCtx, a.appCancel = context.WithCancel(context.Background())
+	}
+
+	abort := func(err error) error {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = a.Shutdown(shutdownCtx)
+		return err
+	}
+
 	// Auto-migrate all registered entities
 	if a.DB != nil {
 		if err := migrate.AutoMigrate(a.DB, a.Registry); err != nil {
-			return fmt.Errorf("auto-migrate: %w", err)
+			return abort(fmt.Errorf("auto-migrate: %w", err))
+		}
+		if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
+			return abort(fmt.Errorf("run seeds: %w", err))
 		}
 	}
 
@@ -957,13 +1029,13 @@ func (a *App) Start(addr string) error {
 	// Must happen after auto-migrate (so entity tables exist) but before
 	// start hooks (so batteries can reference their routes).
 	if err := a.InitPlugins(); err != nil {
-		return fmt.Errorf("init plugins: %w", err)
+		return abort(fmt.Errorf("init plugins: %w", err))
 	}
 
 	// Run OnStart hooks (cron/queue workers, custom setup). Failure here
 	// aborts before we bind the port — better than a half-up server.
 	if err := a.runStartHooks(); err != nil {
-		return fmt.Errorf("start hooks: %w", err)
+		return abort(fmt.Errorf("start hooks: %w", err))
 	}
 
 	// Auto-generate and serve OpenAPI spec
@@ -1035,11 +1107,17 @@ func (a *App) Start(addr string) error {
 	fmt.Printf("  %s Swagger UI:  http://%s/api/docs/\n", arrow(), host)
 	fmt.Printf("  %s LLM Docs:    http://%s/api/llm.md\n\n", arrow(), host)
 
-	a.server = &http.Server{
+	a.serverMu.Lock()
+	srv := &http.Server{
 		Addr:    addr,
 		Handler: a.router,
 	}
-	return a.server.ListenAndServe()
+	a.server = srv
+	a.serverMu.Unlock()
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
 
 // registerDebugEndpoints adds /.debug/stats for runtime diagnostics.

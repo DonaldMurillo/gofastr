@@ -99,13 +99,13 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		// screen readers — close enough to the visual "+N" chip.
 		items = append(items, html.Span(html.TextConfig{
 			Class: "ui-avatar-group__overflow",
-			Attrs: html.Attrs{
+			ExtraAttrs: html.Attrs{
 				"role":       "img",
 				"aria-label": more + " more",
 			},
 		},
 			html.Span(html.TextConfig{
-				Attrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text("+"+more)),
 		))
 	}

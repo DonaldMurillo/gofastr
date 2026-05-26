@@ -93,6 +93,69 @@ func Join(children ...HTML) HTML {
 	return HTML(b.String())
 }
 
+// If returns html when cond is true, otherwise an empty fragment.
+// Useful for inline conditional rendering:
+//
+//	Tag("div", nil,
+//	    Text("hello"),
+//	    If(user.Admin, adminBadge()),
+//	)
+//
+// Both arguments evaluate eagerly — Go has no lazy semantics here. When
+// the truthy branch is expensive (database query, heavy allocation),
+// use [When] instead so the function only runs when cond is true.
+func If(cond bool, html HTML) HTML {
+	if cond {
+		return html
+	}
+	return ""
+}
+
+// When returns fn() when cond is true, otherwise an empty fragment.
+// Lazy variant of [If] that avoids constructing html when cond is false —
+// preferred when the truthy branch is expensive.
+func When(cond bool, fn func() HTML) HTML {
+	if cond {
+		return fn()
+	}
+	return ""
+}
+
+// Classes joins non-empty string args with spaces. Pair with [ClassIf]
+// for conditional class lists:
+//
+//	class := render.Classes(
+//	    "p-cond-row",
+//	    render.ClassIf(active, "active"),
+//	    render.ClassIf(hasError, "error"),
+//	)
+//
+// The returned string is plain text and is HTML-escaped automatically
+// when assigned to a tag attribute via [Tag] or any html.* config.
+//
+// For wide predicate-driven sets, see html.Classes(map[string]bool).
+func Classes(parts ...string) string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+// ClassIf returns name when cond is true, otherwise the empty string.
+// Argument order matches Go's `if cond { name }` reading order.
+// Designed for use inside [Classes]:
+//
+//	render.Classes("base", render.ClassIf(isActive, "active"))
+func ClassIf(cond bool, name string) string {
+	if cond {
+		return name
+	}
+	return ""
+}
+
 // writeAttrs writes sorted attributes into the builder.
 func writeAttrs(b *strings.Builder, attrs map[string]string) {
 	if len(attrs) == 0 {

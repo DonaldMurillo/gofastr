@@ -139,9 +139,9 @@ func (a *App) RenderScreenRaw(path string) (render.HTML, error) {
 // chain, locks the screen for concurrent param safety, injects route
 // params, runs DI, calls Load(ctx), and finally renders.
 //
-// RenderPage is the legacy entry point: it returns HTML for Allow and
+// RenderPage is the simple entry point: it returns HTML for Allow and
 // RenderAlt decisions, and an error for Redirect/Block (which cannot
-// be expressed as HTML). New code should use RenderPageResult to react
+// be expressed as HTML). Use RenderPageResult when you need to react
 // to all four DecisionKinds.
 func (a *App) RenderPage(ctx context.Context, path string) (render.HTML, error) {
 	res, err := a.RenderPageResult(ctx, path)

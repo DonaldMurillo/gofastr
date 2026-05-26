@@ -30,7 +30,7 @@ type LinkConfig struct {
 	Variant LinkVariant
 	Class   string
 	ID      string
-	Attrs   html.Attrs
+	ExtraAttrs   html.Attrs
 }
 
 // Link renders an anchor with a typed variant. The component owns its
@@ -65,7 +65,7 @@ func Link(cfg LinkConfig) render.HTML {
 		Text:  cfg.Text,
 		Class: cls,
 		ID:    cfg.ID,
-		Attrs: cfg.Attrs,
+		ExtraAttrs: cfg.ExtraAttrs,
 	}))
 }
 

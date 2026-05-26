@@ -166,12 +166,12 @@ func TestComponentCSS_CatalogShipsInlineJSON(t *testing.T) {
 	if !strings.Contains(body, `"loadMode":"auto"`) {
 		t.Errorf("default loadMode should be auto: %s", truncate(body, 800))
 	}
-	// Old endpoint must be gone (410 GONE for compat with stale browsers).
+	// Old endpoint is removed entirely — should 404, not be registered.
 	req := httptest.NewRequest("GET", "/__gofastr/catalog.js", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	if w.Code != http.StatusGone {
-		t.Errorf("catalog.js endpoint should be 410 GONE, got %d", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("catalog.js endpoint should be 404 (removed entirely), got %d", w.Code)
 	}
 }
 

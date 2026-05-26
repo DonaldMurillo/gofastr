@@ -175,11 +175,11 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	// world rebuilds. The host fallback HTML (the floating widget shell)
 	// is installed on Live so any unmatched URL serves it.
 	//
-	// Two registrations:
-	//   - chat.New + Mount: legacy widget.js routes (kept transitionally)
-	//   - chat.MountPanel:  new core-ui/widget-driven panel (primary)
-	// host.html is updated to load the new bootstrap; the legacy routes
-	// remain so existing integrations don't 404 mid-migration.
+	// Two registrations work together:
+	//   - chat.New + Mount: tool-dispatch + widget asset routes
+	//     (/kiln/tool/{name}, /kiln/chat/widget.{js,css}, etc.)
+	//   - chat.MountPanel:  the core-ui/widget-driven panel that the
+	//     host fallback page boots into.
 	// AdapterStore is created up-front so the panel modal's
 	// agent_list_html signal can read live adapter state at hydration
 	// time. mountAgentRoutes still owns the /kiln/agent HTTP surface.

@@ -196,7 +196,7 @@ func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
 	// The data-fui-screen-group attribute enables DOM-stable sibling nav.
 	return html.Div(html.DivConfig{
 		Class: "fui-screen-group",
-		Attrs: map[string]string{"data-fui-screen-group": g.prefix},
+		ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
 	}, wrapped)
 }
 
@@ -226,7 +226,7 @@ func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, conten
 			wrapped := override.Wrap(out)
 			out = html.Div(html.DivConfig{
 				Class: "fui-screen-group",
-				Attrs: map[string]string{"data-fui-screen-group": g.prefix},
+				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
 			}, wrapped)
 			continue
 		}

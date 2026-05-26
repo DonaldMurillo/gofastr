@@ -220,6 +220,46 @@ Promotions made during the reorg:
 `crud.ApplySoftDeleteFilter/Count`,
 `entity.Condition.SQL()`, `entity.Condition.Args()`.
 
+### Agent-onboarding inventory (`agents.md` per package)
+
+Each `battery/*` and every framework subpackage worth surfacing to an
+agent ships an `agents.md` next to its source files plus an `agents.go`
+that does:
+
+```go
+package mybattery
+
+import (
+    _ "embed"
+    "github.com/DonaldMurillo/gofastr/framework/agentsinv"
+)
+
+//go:embed agents.md
+var agentsMarkdown string
+
+func init() {
+    agentsinv.Register(agentsinv.Entry{
+        Name:       "mybattery",                     // dir name
+        Kind:       agentsinv.KindBattery,           // or KindFramework
+        ImportPath: "github.com/.../battery/mybattery",
+        Markdown:   agentsMarkdown,
+    })
+}
+```
+
+Why a registry instead of file globs:
+
+- Importing the battery = its snippet is in scope. No central allow-list
+  to update on every new battery.
+- `cmd/gofastr` blank-imports the batteries it inventories, then walks
+  `agentsinv.All()` to write `AGENTS.md` (see [agents-inventory doc](docs/content/agents-inventory.md)).
+- An empty `agents.md` panics at init — the file is missing or the
+  `//go:embed` directive is stale.
+
+Per-battery `agents.md` content lives next to the code it documents.
+Treat it as a short "use this when / shape / don't reinvent" reference
+for AI agents, not as a user manual.
+
 ### Naming collisions with `core/`
 
 Several `core/` packages share names with what subpackages would want:

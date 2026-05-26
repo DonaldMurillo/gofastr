@@ -137,6 +137,68 @@ func TestAttr(t *testing.T) {
 	}
 }
 
+// --- If / When / Classes ---------------------------------------------------
+
+func TestIf(t *testing.T) {
+	if got := If(true, Text("yes")).String(); got != "yes" {
+		t.Errorf("If(true) = %q, want %q", got, "yes")
+	}
+	if got := If(false, Text("yes")).String(); got != "" {
+		t.Errorf("If(false) = %q, want empty", got)
+	}
+}
+
+func TestWhenLazy(t *testing.T) {
+	calls := 0
+	fn := func() HTML {
+		calls++
+		return Text("yes")
+	}
+	When(false, fn)
+	if calls != 0 {
+		t.Errorf("When(false) called fn, got %d calls", calls)
+	}
+	When(true, fn)
+	if calls != 1 {
+		t.Errorf("When(true) calls = %d, want 1", calls)
+	}
+}
+
+func TestClasses(t *testing.T) {
+	tests := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"a", "b", "c"}, "a b c"},
+		{[]string{"a", "", "c"}, "a c"},
+		{[]string{"", "", ""}, ""},
+		{[]string{"only"}, "only"},
+		{nil, ""},
+	}
+	for _, tt := range tests {
+		if got := Classes(tt.in...); got != tt.want {
+			t.Errorf("Classes(%v) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestClassIf(t *testing.T) {
+	if got := ClassIf(true, "active"); got != "active" {
+		t.Errorf("ClassIf(true, active) = %q, want active", got)
+	}
+	if got := ClassIf(false, "active"); got != "" {
+		t.Errorf("ClassIf(false, active) = %q, want empty", got)
+	}
+}
+
+func TestClassesWithClassIf(t *testing.T) {
+	got := Classes("base", ClassIf(true, "active"), ClassIf(false, "error"))
+	want := "base active"
+	if got != want {
+		t.Errorf("Classes+ClassIf = %q, want %q", got, want)
+	}
+}
+
 // --- Component -------------------------------------------------------------
 
 type GreetingData struct {

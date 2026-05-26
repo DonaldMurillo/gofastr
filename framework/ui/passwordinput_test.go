@@ -109,7 +109,7 @@ func TestPasswordInputErrorInsideComponentScope(t *testing.T) {
 func TestPasswordInputAttrsCannotOverrideType(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{
 		Name: "pw", ID: "pw",
-		Attrs: map[string]string{"type": "text"},
+		ExtraAttrs: map[string]string{"type": "text"},
 	}))
 	if !strings.Contains(h, `type="password"`) {
 		t.Errorf("type should remain password despite Attrs override, got:\n%s", h)
@@ -123,7 +123,7 @@ func TestPasswordInputAttrsCannotOverrideType(t *testing.T) {
 func TestPasswordInputAttrsCannotOverrideName(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{
 		Name: "pw", ID: "pw",
-		Attrs: map[string]string{"name": "evil"},
+		ExtraAttrs: map[string]string{"name": "evil"},
 	}))
 	if !strings.Contains(h, `name="pw"`) {
 		t.Errorf("name should remain pw despite Attrs override, got:\n%s", h)
@@ -133,7 +133,7 @@ func TestPasswordInputAttrsCannotOverrideName(t *testing.T) {
 func TestPasswordInputAttrsCannotOverrideID(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{
 		Name: "pw", ID: "pw",
-		Attrs: map[string]string{"id": "evil"},
+		ExtraAttrs: map[string]string{"id": "evil"},
 	}))
 	if !strings.Contains(h, `id="pw"`) {
 		t.Errorf("id should remain pw despite Attrs override, got:\n%s", h)

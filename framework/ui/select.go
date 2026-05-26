@@ -41,7 +41,7 @@ type SelectConfig struct {
 	Error string
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // Select renders a labelled native <select> dropdown.
@@ -102,7 +102,7 @@ func Select(cfg SelectConfig) render.HTML {
 	} else if cfg.Help != "" {
 		selAttrs["aria-describedby"] = id + "-help"
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		selAttrs[k] = v
 	}
 
@@ -114,7 +114,7 @@ func Select(cfg SelectConfig) render.HTML {
 		labelHTML = render.Join(labelHTML,
 			html.Span(html.TextConfig{
 				Class: "ui-form-field__required",
-				Attrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
 
@@ -126,7 +126,7 @@ func Select(cfg SelectConfig) render.HTML {
 		children = append(children, html.Paragraph(html.TextConfig{
 			ID:    id + "-error",
 			Class: "ui-select__error",
-			Attrs: html.Attrs{"role": "alert"},
+			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
 		children = append(children, html.Paragraph(html.TextConfig{

@@ -61,7 +61,7 @@ type ProgressStepsConfig struct {
 	Label string
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // ProgressSteps renders a step indicator.
@@ -90,7 +90,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if cfg.ID != "" {
 		navAttrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		navAttrs[k] = v
 	}
 

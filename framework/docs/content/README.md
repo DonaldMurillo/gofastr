@@ -51,6 +51,8 @@ ending with a "common mistakes" callout.
   panic recovery, lifecycle events; fan-out to file (default or chosen
   path) and webhook sinks.
 - [Plugins](plugins.md) — `Plugin` + optional capability interfaces.
+- [Dev-mode livereload](dev-livereload.md) — auto-wired SSE refresh
+  under `gofastr dev`; env kill switches for prod.
 
 ## Operational surface
 

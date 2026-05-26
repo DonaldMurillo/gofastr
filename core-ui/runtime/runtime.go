@@ -2,17 +2,15 @@
 //
 // Two surfaces are exposed:
 //
-//   - The legacy bundled runtime (`runtime.js`) — the one-script payload
-//     that handles every framework primitive (dispatchRPC, SPA router,
+//   - The bundled runtime (`runtime.js`) — the one-script payload that
+//     handles every framework primitive (dispatchRPC, SPA router,
 //     screen cache, signals, widgets, etc). Served at
-//     `/__gofastr/runtime.js` for back-compat with pages that haven't
-//     adopted the module-loader yet.
+//     `/__gofastr/runtime.js`. This is the default surface.
 //
 //   - Per-module bundles (`src/<name>.js`) — small payloads loaded on
-//     demand via `__gofastr.loadModule(name)`. Today the canary module
-//     is `fileupload`; future phases peel popover, toasts, menu, sse,
-//     forms, and widgets out the same way (see
-//     docs/runtime-code-split-plan.md).
+//     demand via `__gofastr.loadModule(name)`. Used for the optional
+//     code-splitting path; pages opt into individual modules instead
+//     of the bundled runtime when bundle size matters.
 //
 // The HTTP server (core-ui/widget/server.go) consumes Module(name) +
 // ModuleNames() to wire `/__gofastr/runtime/<name>.js` routes; the
@@ -36,9 +34,8 @@ var colorSchemeFS embed.FS
 //go:embed src/*.js
 var modulesFS embed.FS
 
-// RuntimeJS returns the legacy bundled runtime — the single-file IIFE
-// every page used to ship. Kept for back-compat while the module-loader
-// migration is in progress.
+// RuntimeJS returns the bundled runtime — the single-file IIFE every
+// page ships by default.
 func RuntimeJS() (string, error) {
 	data, err := fs.ReadFile(bundleFS, "runtime.js")
 	if err != nil {

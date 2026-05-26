@@ -104,7 +104,7 @@ func renderCustomersIsland(sortBy string, sortDir ui.SortDir, page int, query st
 						Label:   "Delete",
 						Variant: ui.ButtonDanger,
 						Size:    ui.ButtonSizeSmall,
-						Attrs: map[string]string{
+						ExtraAttrs: map[string]string{
 							"data-fui-rpc":        customersDeleteEndpoint + "?id=" + strconv.FormatInt(c.ID, 10),
 							"data-fui-rpc-method": "POST",
 							"data-fui-rpc-signal": customersIslandSignal,

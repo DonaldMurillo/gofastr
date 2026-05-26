@@ -131,6 +131,8 @@ server side and the runtime does the work.
 | `data-fui-scrollspy` | Marks a scrollspy container. The runtime observes section heading targets via IntersectionObserver and tags the matching `data-fui-scrollspy-target` link with `aria-current="true"` as the user scrolls. |
 | `data-fui-scrollspy-target` | On a nav link inside a scrollspy: the value identifies the section heading the link tracks. Updated to `aria-current="true"` when its target enters the active band. |
 | `data-fui-optimistic-idle` / `data-fui-optimistic-success` / `data-fui-optimistic-endpoint` / `data-fui-optimistic-method` | On an OptimisticAction button: the runtime flips the visible label between the idle and success copy as it dispatches a fetch to the endpoint+method, rolling back on error. Used by `framework/ui.OptimisticAction` for "Save / Saved!" patterns without per-button JS. |
+| `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` if set, otherwise re-issuing a DELETE against `endpoint`. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
+| `data-fui-toggle-idle` / `data-fui-toggle-committed` | Markers on the two label spans inside a ToggleAction button. The runtime shows/hides them as the button transitions between idle and committed states. SSR ships the initial visible state. |
 | `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy. |
 | `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/website` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
 | `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "deprecation notice — got it" banners. |
@@ -247,14 +249,6 @@ redirect-following is the browser's own job — same result.
 ```go
 http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 ```
-
-### Legacy: `data-fui-native`
-
-Before 2026-05, the runtime intercepted every form by default and you
-had to opt OUT with `data-fui-native`. The attribute still works (it
-disables the interceptor) but it's now a no-op for the common case —
-default-enctype forms aren't intercepted anyway. Keep it on existing
-pages; reach for `data-fui-spa` (opt IN) on new ones.
 
 ### Cookie-set + redirect: the canonical auth flow
 

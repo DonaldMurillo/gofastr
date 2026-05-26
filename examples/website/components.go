@@ -24,16 +24,16 @@ func (h *HeaderComponent) Render() render.HTML {
 	prefix := html.Attrs{"data-fui-match-prefix": ""}
 	links := []render.HTML{
 		html.Link(html.LinkConfig{Href: "/", Text: "Home"}),
-		html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Attrs: prefix}),
-		html.Link(html.LinkConfig{Href: "/components/", Text: "Components", Attrs: prefix}),
-		html.Link(html.LinkConfig{Href: "/framework-ui/", Text: "Framework UI", Attrs: prefix}),
-		html.Link(html.LinkConfig{Href: "/customers", Text: "Customers (CRUD)", Attrs: prefix}),
-		html.Link(html.LinkConfig{Href: "/examples/", Text: "Examples", Attrs: prefix}),
+		html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", ExtraAttrs: prefix}),
+		html.Link(html.LinkConfig{Href: "/components/", Text: "Components", ExtraAttrs: prefix}),
+		html.Link(html.LinkConfig{Href: "/framework-ui/", Text: "Framework UI", ExtraAttrs: prefix}),
+		html.Link(html.LinkConfig{Href: "/customers", Text: "Customers (CRUD)", ExtraAttrs: prefix}),
+		html.Link(html.LinkConfig{Href: "/examples/", Text: "Examples", ExtraAttrs: prefix}),
 		html.Link(html.LinkConfig{Href: "/about", Text: "About"}),
 		html.Link(html.LinkConfig{
 			Href:  "https://github.com/DonaldMurillo/gofastr",
 			Text:  "GitHub",
-			Attrs: html.Attrs{"rel": "external"},
+			ExtraAttrs: html.Attrs{"rel": "external"},
 		}),
 	}
 	desktopNav := render.Tag("nav", map[string]string{

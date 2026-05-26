@@ -25,7 +25,7 @@ func (s *ConfirmActionScreen) Render() render.HTML {
 	trigger := ui.Button(ui.ButtonConfig{
 		Label:   "Delete account",
 		Variant: ui.ButtonDanger,
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-open": "demo-confirm-delete",
 		},
 	})

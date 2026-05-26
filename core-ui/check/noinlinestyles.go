@@ -34,7 +34,7 @@ import (
 //      and back-tick raw strings alike.
 //   2. Map / composite literals with a "style" key passed to any of
 //      the HTML helpers — render.Tag(…, map[string]string{"style": …},
-//      html.Attrs{"style": …}, html.DivConfig{Attrs: html.Attrs{"style":
+//      html.Attrs{"style": …}, html.DivConfig{ExtraAttrs: html.Attrs{"style":
 //      …}}, etc.
 //   3. html.* config struct literals whose Attrs field literal carries
 //      a "style" key (covered by case 2 because Attrs is a map).

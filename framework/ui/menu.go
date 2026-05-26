@@ -58,7 +58,7 @@ type MenuItem struct {
 	Class string
 
 	// Attrs sprinkles extra attributes onto the rendered element.
-	Attrs map[string]string
+	ExtraAttrs map[string]string
 }
 
 // MenuConfig describes a dropdown menu — a trigger that, when
@@ -189,7 +189,7 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 		rpcAttr = ` data-fui-rpc="` + escAttr(it.RPC) + `" data-fui-rpc-method="` + escAttr(method) + `"`
 	}
 	extra := ""
-	for k, v := range it.Attrs {
+	for k, v := range it.ExtraAttrs {
 		extra += ` ` + escAttr(k) + `="` + escAttr(v) + `"`
 	}
 	b.WriteString(`<` + tag + ` class="` + cls + `" ` + openExtra +

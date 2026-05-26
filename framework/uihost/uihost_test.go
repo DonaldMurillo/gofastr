@@ -52,7 +52,7 @@ type testClickButton struct {
 }
 
 func (b *testClickButton) Render() render.HTML {
-	return html.Button(html.ButtonConfig{Label: b.Label, Attrs: html.OnClick("do-click")})
+	return html.Button(html.ButtonConfig{Label: b.Label, ExtraAttrs: html.OnClick("do-click")})
 }
 
 func (b *testClickButton) Actions() {
@@ -82,7 +82,7 @@ func newTestUIHostWithCSS() *UIHost {
 	return ds
 }
 
-func newTestUIHostWithRouteGraph() *UIHost {
+func newTestUIHostWithMultipleRoutes() *UIHost {
 	ds := newTestUIHost()
 	ds.App.RegisterScreen(app.NewScreen("/about", &testHomeComp{}).WithTitle("About").WithDescription("About page"), nil)
 	return ds
@@ -452,13 +452,13 @@ func TestUIHostCustomCSS(t *testing.T) {
 	}
 	assertContains(t, cssRec.Body.String(), "body { background: red; }")
 
-	// Legacy endpoints surface stale references as 410 GONE.
+	// Old endpoints are removed entirely — 404, not registered.
 	for _, gone := range []string{"/__gofastr/theme.css", "/__gofastr/styles.css"} {
 		req := httptest.NewRequest("GET", gone, nil)
 		rec := httptest.NewRecorder()
 		ds.ServeHTTP(rec, req)
-		if rec.Code != http.StatusGone {
-			t.Errorf("%s should be 410 GONE, got %d", gone, rec.Code)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s should be 404 (removed entirely), got %d", gone, rec.Code)
 		}
 	}
 }
@@ -468,7 +468,7 @@ func TestUIHostCustomCSS(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUIHostRouteGraph(t *testing.T) {
-	ds := newTestUIHostWithRouteGraph()
+	ds := newTestUIHostWithMultipleRoutes()
 
 	// Page embeds the route graph as inline JSON (CSP-safe; no round-
 	// trip; no executable inline script).
@@ -480,18 +480,17 @@ func TestUIHostRouteGraph(t *testing.T) {
 	assertContains(t, page, `"path":"/"`)
 	assertContains(t, page, `"title":"Home"`)
 	assertContains(t, page, `"title":"About"`)
-	// Legacy external script reference must be gone.
+	// External script reference must not appear — routes ship inline.
 	if strings.Contains(page, `src="/__gofastr/routes.js"`) {
-		t.Errorf("page must NOT reference legacy /__gofastr/routes.js — route graph ships inline:\n%s", page)
+		t.Errorf("page must NOT reference /__gofastr/routes.js — route graph ships inline:\n%s", page)
 	}
 
-	// The legacy endpoint exists only to surface stale browser
-	// references as a clean 410 GONE.
+	// Old endpoint removed entirely — 404, not registered.
 	jsReq := httptest.NewRequest("GET", "/__gofastr/routes.js", nil)
 	jsRec := httptest.NewRecorder()
 	ds.ServeHTTP(jsRec, jsReq)
-	if jsRec.Code != http.StatusGone {
-		t.Errorf("/__gofastr/routes.js should be 410 GONE, got %d", jsRec.Code)
+	if jsRec.Code != http.StatusNotFound {
+		t.Errorf("/__gofastr/routes.js should be 404 (removed entirely), got %d", jsRec.Code)
 	}
 }
 

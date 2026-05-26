@@ -9,21 +9,21 @@ type ImageConfig struct {
 	Alt   string // required (empty = decorative image)
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // AudioConfig configures an <audio> element. No required fields.
 type AudioConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // VideoConfig configures a <video> element. No required fields.
 type VideoConfig struct {
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // SourceConfig configures a void <source> element.
@@ -33,7 +33,7 @@ type SourceConfig struct {
 	Type  string // required: MIME type
 	Class string
 	ID    string
-	Attrs Attrs
+	ExtraAttrs Attrs
 }
 
 // Image produces a void <img> element.
@@ -43,7 +43,7 @@ func Image(cfg ImageConfig) render.HTML {
 	if cfg.Src == "" {
 		panic("html: Image requires Src")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "src", cfg.Src)
 	setAttr(attrs, "alt", cfg.Alt)
 	if cfg.Alt == "" {
@@ -56,13 +56,13 @@ func Image(cfg ImageConfig) render.HTML {
 
 // Audio produces an <audio> element for sound content.
 func Audio(cfg AudioConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("audio", attrs, children...)
 }
 
 // Video produces a <video> element for video content.
 func Video(cfg VideoConfig, children ...render.HTML) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("video", attrs, children...)
 }
 
@@ -75,7 +75,7 @@ func Source(cfg SourceConfig) render.HTML {
 	if cfg.Type == "" {
 		panic("html: Source requires Type")
 	}
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	setAttr(attrs, "src", cfg.Src)
 	setAttr(attrs, "type", cfg.Type)
 	return render.VoidTag("source", attrs)
@@ -83,7 +83,7 @@ func Source(cfg SourceConfig) render.HTML {
 
 // HR produces a void <hr> element (thematic break).
 func HR(cfg TextConfig) render.HTML {
-	attrs := buildAttrs(cfg.Attrs, cfg.ID, cfg.Class)
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.VoidTag("hr", attrs)
 }
 

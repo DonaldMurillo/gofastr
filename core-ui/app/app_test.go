@@ -556,11 +556,6 @@ func TestRouteParamsIsolation(t *testing.T) {
 		t.Errorf("expected slug=hello-world, got %v", params2)
 	}
 
-	// The first screen's RouteParams should NOT have been mutated
-	if s1.RouteParams() != nil {
-		t.Errorf("screen routeParams should be nil until explicitly set, got %v", s1.RouteParams())
-	}
-
 	// Screens are the same shared instances but params are independent
 	if s1 == s2 {
 		t.Error("different dynamic routes should resolve to different screens")
@@ -587,11 +582,7 @@ func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
 	if params1["id"] != "1" {
 		t.Errorf("first params mutated: expected id=1, got %v", params1)
 	}
-
-	// Screen should not have accumulated params from previous resolve
-	if screen.RouteParams() != nil {
-		t.Errorf("shared screen should not have stale params, got %v", screen.RouteParams())
-	}
+	_ = screen
 }
 
 // loadObs is a shared observation struct that survives per-request

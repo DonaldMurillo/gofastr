@@ -146,7 +146,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		Src:   cfg.Src,
 		Alt:   cfg.Alt,
 		Class: "ui-image__img",
-		Attrs: imgAttrs,
+		ExtraAttrs: imgAttrs,
 	}
 
 	// Single-source path: just <img>.

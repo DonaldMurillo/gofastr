@@ -24,7 +24,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		Subtitle: "Building blocks expressing product intent — composed from core-ui primitives, styled via framework/ui/theme tokens.",
 		Actions: render.Join(
 			html.Link(html.LinkConfig{Href: "https://github.com/DonaldMurillo/gofastr/tree/main/framework/ui",
-				Text: "Source", Class: "ui-button", Attrs: html.Attrs{"rel": "external"}}),
+				Text: "Source", Class: "ui-button", ExtraAttrs: html.Attrs{"rel": "external"}}),
 		),
 	})
 
@@ -124,7 +124,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 		}, emptyState),
 
 		ui.Section(ui.SectionConfig{
-			Heading:     "FormSection + FormField + DangerButton",
+			Heading:     "FormSection + FormField + Button (danger variant)",
 			Description: "Forms are where semantic tokens earn their keep — error states, required indicators, help text, focus rings all reference the theme.",
 		}, form),
 
@@ -191,7 +191,7 @@ func (s *FrameworkUIScreen) Render() render.HTML {
 			render.Tag("p", nil, render.Text(
 				"If a piece maps 1:1 to an HTML element or ARIA pattern, it belongs in core-ui. If it composes primitives to express product intent, it belongs in framework/ui.")),
 			render.Tag("p", nil, render.Text(
-				"Accordion = core-ui. DangerButton = framework/ui. Both are valid components — they just live at different layers.")),
+				"Accordion = core-ui. Button (with variants) = framework/ui. Both are valid components — they just live at different layers.")),
 		),
 	)
 }

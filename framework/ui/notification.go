@@ -93,7 +93,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 
 	icon := html.Span(html.TextConfig{
 		Class: "ui-notification__icon",
-		Attrs: html.Attrs{"aria-hidden": "true"},
+		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}, render.Text(notificationGlyph(v)))
 
 	textChildren := []render.HTML{
@@ -116,13 +116,13 @@ func Notification(cfg NotificationConfig) render.HTML {
 		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
 			Href:    cfg.DismissHref,
 			Class:   "ui-notification__dismiss",
-			Attrs:   html.Attrs{"aria-label": label},
+			ExtraAttrs:   html.Attrs{"aria-label": label},
 			Content: render.Text("×"),
 		}))
 	}
 	return notificationStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: cls, ID: cfg.ID,
-		Attrs: attrs,
+		ExtraAttrs: attrs,
 	}, children...))
 }
 

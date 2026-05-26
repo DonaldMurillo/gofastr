@@ -29,7 +29,7 @@ type SearchInputConfig struct {
 	// Class adds extra CSS classes to the wrapper.
 	Class string
 	// Attrs lets callers attach additional attributes.
-	Attrs map[string]string
+	ExtraAttrs map[string]string
 }
 
 // SearchInput renders a search field with icon prefix and clear button.
@@ -67,7 +67,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"placeholder": placeholder,
 		"aria-label":  "Search",
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		inputAttrs[k] = v
 	}
 	// Protect critical attrs from Attrs override.
@@ -78,7 +78,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 	inner := []render.HTML{
 		html.Span(html.TextConfig{
 			Class: "ui-search-input__icon",
-			Attrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⌕")),
 		render.VoidTag("input", inputAttrs),
 		render.Tag("button", map[string]string{

@@ -11,18 +11,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-func TestReplaceAllNoInfiniteLoop(t *testing.T) {
+func TestStringsReplaceAllNoInfiniteLoop(t *testing.T) {
+	// Pins the substitution path used by TranslateValidation — confirms
+	// strings.ReplaceAll terminates even when the replacement contains
+	// the placeholder it just consumed. (Stdlib guarantees this; we
+	// keep the test as a regression net for the substitution call site.)
 	done := make(chan string, 1)
 	go func() {
-		done <- replaceAll("{x}", "{x}", "{x}_evil")
+		done <- strings.ReplaceAll("{x}", "{x}", "{x}_evil")
 	}()
 	select {
 	case got := <-done:
 		if got != "{x}_evil" {
-			t.Fatalf("replaceAll = %q, want %q", got, "{x}_evil")
+			t.Fatalf("ReplaceAll = %q, want %q", got, "{x}_evil")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("replaceAll hung on self-containing replacement")
+		t.Fatal("strings.ReplaceAll hung on self-containing replacement")
 	}
 }
 
@@ -36,29 +40,29 @@ func TestHumanizeMultibyte(t *testing.T) {
 	}
 }
 
-func TestTWithNilReturnsDefault(t *testing.T) {
+func TestTNilReturnsDefault(t *testing.T) {
 	ctx := context.Background()
 	for key, expected := range Defaults {
-		got := TWith(ctx, nil, key)
+		got := T(ctx, key)
 		if got != expected {
-			t.Errorf("TWith(nil, %q) = %q, want %q", key, got, expected)
+			t.Errorf("T(nil, %q) = %q, want %q", key, got, expected)
 		}
 	}
 }
 
-func TestTWithCtxLocale(t *testing.T) {
+func TestTCtxLocale(t *testing.T) {
 	cat := i18n.NewMapCatalog()
 	cat.Set("en", "ui.pagination.next", i18n.Message{Text: "Next"})
 	cat.Set("fr", "ui.pagination.next", i18n.Message{Text: "Suivant"})
 	tr := i18n.NewTranslator(cat, "en")
 
-	ctxFr := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	if got := TWith(ctxFr, tr, KeyPaginationNext); got != "Suivant" {
-		t.Fatalf("TWith fr = %q, want Suivant", got)
+	ctxFr := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), tr)
+	if got := T(ctxFr, KeyPaginationNext); got != "Suivant" {
+		t.Fatalf("T fr = %q, want Suivant", got)
 	}
-	ctxEn := i18n.WithContext(context.Background(), i18n.Locale{Tag: "en"})
-	if got := TWith(ctxEn, tr, KeyPaginationNext); got != "Next" {
-		t.Fatalf("TWith en = %q, want Next", got)
+	ctxEn := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en"}), tr)
+	if got := T(ctxEn, KeyPaginationNext); got != "Next" {
+		t.Fatalf("T en = %q, want Next", got)
 	}
 }
 
@@ -188,7 +192,7 @@ func TestAllKeysHaveDefaults(t *testing.T) {
 		t.Fatal("AllKeys() returned no keys")
 	}
 	for _, k := range keys {
-		got := TWith(context.Background(), nil, k)
+		got := T(context.Background(), k)
 		if got == "" {
 			t.Errorf("key %q resolved to empty string", k)
 		}

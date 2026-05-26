@@ -151,7 +151,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		hintChip("↵", "Select"),
 		hintChip("Esc", "Close"),
 	)
-	footer := html.Div(html.DivConfig{Class: "ui-cmd-palette__footer", Attrs: html.Attrs{"aria-hidden": "true"}},
+	footer := html.Div(html.DivConfig{Class: "ui-cmd-palette__footer", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
 		hints,
 	)
 

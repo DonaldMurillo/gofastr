@@ -142,7 +142,7 @@ func (s *CSSLoadingDemoScreen) Render() render.HTML {
 	revealCardBtn := html.Button(html.ButtonConfig{
 		Label: "Reveal fancy card",
 		Class: "ui-button",
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-rpc":                "/islands/css-demo/reveal-card",
 			"data-fui-rpc-method":         "POST",
 			"data-fui-rpc-signal":         "css-demo-card-slot",
@@ -172,7 +172,7 @@ func (s *CSSLoadingDemoScreen) Render() render.HTML {
 	revealPaletteBtn := html.Button(html.ButtonConfig{
 		Label: "Reveal command palette",
 		Class: "ui-button",
-		Attrs: html.Attrs{
+		ExtraAttrs: html.Attrs{
 			"data-fui-rpc":                "/islands/css-demo/reveal-palette",
 			"data-fui-rpc-method":         "POST",
 			"data-fui-rpc-signal":         "css-demo-palette-slot",

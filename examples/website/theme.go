@@ -848,6 +848,12 @@ func createStyleSheet(theme style.Theme) string {
 	ss.Rule(`.theme-swap:has(input[value="amber"]:checked) .theme-swap__preview`).
 		Set("--color-primary", "#D97706", "--color-info", "#D97706").End()
 
+	// Fan in any co-located screen/component styles registered via
+	// style.Contribute(...) at package-init time. Materialize runs AFTER
+	// the host's base rules so screens can override base styling by
+	// re-declaring the same selector.
+	style.Apply(ss)
+
 	// core-ui + framework/ui component CSS (appended verbatim — each
 	// uses CSS custom properties from the theme above).
 	return ss.CSS() +

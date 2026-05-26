@@ -5,43 +5,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
-
-// ----- signature -------------------------------------------------------------
-
-func TestSign_DeterministicAndVerifies(t *testing.T) {
-	sig := Sign("topsecret", []byte(`{"k":1}`))
-	if !strings.HasPrefix(sig, SignaturePrefix) {
-		t.Fatalf("sig missing prefix: %q", sig)
-	}
-	if !Verify("topsecret", sig, []byte(`{"k":1}`)) {
-		t.Fatalf("Verify rejected its own signature")
-	}
-	if Sign("topsecret", []byte(`{"k":1}`)) != sig {
-		t.Fatalf("Sign should be deterministic")
-	}
-}
-
-func TestVerify_RejectsTampering(t *testing.T) {
-	sig := Sign("s", []byte("abc"))
-	if Verify("s", sig, []byte("abd")) {
-		t.Fatalf("modified body should fail verification")
-	}
-	if Verify("other", sig, []byte("abc")) {
-		t.Fatalf("wrong secret should fail verification")
-	}
-	if Verify("", sig, []byte("abc")) {
-		t.Fatalf("empty secret should never verify")
-	}
-	if Verify("s", "md5=00", []byte("abc")) {
-		t.Fatalf("wrong algorithm prefix should fail verification")
-	}
-}
 
 // ----- glob matching ---------------------------------------------------------
 

@@ -69,7 +69,7 @@ type NotificationBellConfig struct {
 	Pages []string
 	ID    string
 	Class string
-	Attrs html.Attrs
+	ExtraAttrs html.Attrs
 }
 
 // NotificationBell returns the bell-button trigger HTML and a
@@ -105,7 +105,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.ID != "" {
 		btnAttrs["id"] = cfg.ID
 	}
-	for k, v := range cfg.Attrs {
+	for k, v := range cfg.ExtraAttrs {
 		btnAttrs[k] = v
 	}
 
@@ -127,7 +127,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		bellChildren = append(bellChildren,
 			html.Span(html.TextConfig{
 				Class: "ui-notification-bell__badge",
-				Attrs: badgeAttrs,
+				ExtraAttrs: badgeAttrs,
 			}, badgeChild))
 	}
 	// SR-only count announcement — read by assistive tech when focus
@@ -138,7 +138,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 			html.Span(html.TextConfig{
 				ID:    cfg.Name + "-count",
 				Class: "ui-visually-hidden",
-				Attrs: html.Attrs{"data-fui-signal": cfg.SignalUnread},
+				ExtraAttrs: html.Attrs{"data-fui-signal": cfg.SignalUnread},
 			}, render.Text(strconv.Itoa(cfg.UnreadCount)+" unread")))
 	}
 

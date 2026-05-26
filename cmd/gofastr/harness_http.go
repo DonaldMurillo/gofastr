@@ -165,7 +165,7 @@ func chatPage(w http.ResponseWriter, r *http.Request, sess ids.SessionID, token 
 //	│ > input box                                               │
 //	└───────────────────────────────────────────────────────────┘
 func renderChat(host, sessionID, token string) render.HTML {
-	statusBar := html.Div(html.DivConfig{Attrs: html.Attrs{"id": "status-bar"}},
+	statusBar := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "status-bar"}},
 		render.Tag("span", map[string]string{"class": "status-name"},
 			render.Text("gofastr harness")),
 		render.Tag("span", map[string]string{"class": "status-sep"}, render.Text("·")),
@@ -179,26 +179,26 @@ func renderChat(host, sessionID, token string) render.HTML {
 		render.Tag("a", map[string]string{"href": "/endpoints", "class": "status-link"},
 			render.Text("api docs ↗")),
 	)
-	sidebar := html.Div(html.DivConfig{Attrs: html.Attrs{"id": "sidebar"}},
+	sidebar := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "sidebar"}},
 		render.Tag("h3", nil, render.Text("Sessions")),
-		html.Div(html.DivConfig{Attrs: html.Attrs{"id": "session-list"}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "session-list"}},
 			render.Tag("div", map[string]string{"class": "sidebar-empty"}, render.Text("loading…")),
 		),
 		render.Tag("h3", nil, render.Text("Quick commands")),
-		html.Div(html.DivConfig{Attrs: html.Attrs{"id": "quick-cmds"}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "quick-cmds"}},
 			render.Tag("button", map[string]string{"class": "qc", "data-cmd": "/help"}, render.Text("/help")),
 			render.Tag("button", map[string]string{"class": "qc", "data-cmd": "/clear"}, render.Text("/clear")),
 			render.Tag("button", map[string]string{"class": "qc", "data-cmd": "/cost"}, render.Text("/cost")),
 			render.Tag("button", map[string]string{"class": "qc", "data-cmd": "/profile"}, render.Text("/profile")),
 		),
 		render.Tag("h3", nil, render.Text("Plan")),
-		html.Div(html.DivConfig{Attrs: html.Attrs{"id": "task-panel"}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "task-panel"}},
 			render.Tag("div", map[string]string{"class": "sidebar-empty"}, render.Text("no plan yet")),
 		),
 	)
-	main := html.Div(html.DivConfig{Attrs: html.Attrs{"id": "main"}},
-		html.Div(html.DivConfig{Attrs: html.Attrs{"id": "scrollback"}},
-			html.Div(html.DivConfig{Attrs: html.Attrs{"class": "welcome"}},
+	main := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "main"}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "scrollback"}},
+			html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"class": "welcome"}},
 				render.Tag("strong", nil, render.Text("gofastr harness")),
 				render.Tag("br", nil),
 				render.Text("Type a message and press Enter. This page is one of multiple clients attached to the same engine — open the TUI in another window and you'll see messages and tool calls sync both ways."),
@@ -220,14 +220,14 @@ func renderChat(host, sessionID, token string) render.HTML {
 			),
 		),
 	)
-	permissionModal := html.Div(html.DivConfig{Attrs: html.Attrs{
+	permissionModal := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
 		"id": "permission-modal", "class": "modal hidden", "aria-hidden": "true",
 	}},
-		html.Div(html.DivConfig{Attrs: html.Attrs{"class": "modal-panel"}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"class": "modal-panel"}},
 			render.Tag("h3", nil, render.Text("Permission requested")),
 			render.Tag("div", map[string]string{"id": "perm-tool", "class": "perm-tool"}, render.Text("")),
 			render.Tag("pre", map[string]string{"id": "perm-args", "class": "perm-args"}, render.Text("")),
-			html.Div(html.DivConfig{Attrs: html.Attrs{"class": "modal-buttons"}},
+			html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"class": "modal-buttons"}},
 				render.Tag("button", map[string]string{"id": "perm-yes", "class": "btn btn-ok"}, render.Text("Allow once")),
 				render.Tag("button", map[string]string{"id": "perm-tool-btn", "class": "btn"}, render.Text("Allow tool")),
 				render.Tag("button", map[string]string{"id": "perm-session", "class": "btn"}, render.Text("Allow session")),
@@ -237,9 +237,9 @@ func renderChat(host, sessionID, token string) render.HTML {
 		),
 	)
 
-	body := html.Div(html.DivConfig{Attrs: html.Attrs{"id": "app"}},
+	body := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "app"}},
 		statusBar,
-		html.Div(html.DivConfig{Attrs: html.Attrs{"id": "layout"}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "layout"}},
 			sidebar,
 			main,
 		),

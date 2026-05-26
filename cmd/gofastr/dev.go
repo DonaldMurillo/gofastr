@@ -6,12 +6,35 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
+
+// buildDevChildEnv produces the env slice handed to the rebuilt server
+// process. It drops every pre-existing GOFASTR_DEV entry and prepends
+// GOFASTR_DEV=1 — necessary because:
+//
+//   - macOS getenv returns the LAST occurrence; appending wins.
+//   - Linux glibc getenv returns the FIRST occurrence; a parent
+//     GOFASTR_DEV=0 would silently defeat the override.
+//
+// Dropping duplicates and prepending makes the override platform-
+// independent and immune to a user's prior export.
+func buildDevChildEnv(parent []string) []string {
+	out := make([]string, 0, len(parent)+1)
+	out = append(out, "GOFASTR_DEV=1")
+	for _, kv := range parent {
+		if strings.HasPrefix(kv, "GOFASTR_DEV=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
 
 func runDev(args []string) {
 	addr := "localhost:8080"
@@ -136,11 +159,17 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 		return false
 	}
 
-	// Start the server
+	// Start the server. GOFASTR_DEV=1 signals to framework.NewApp +
+	// uihost.New that this process is under `gofastr dev`, so they
+	// auto-wire the livereload SSE endpoint and client script. The
+	// host doesn't need any code change to get browser reload — and
+	// production deployments don't accidentally serve it because
+	// GOFASTR_ENV=production is checked as a kill switch.
+	childEnv := buildDevChildEnv(runtimeIsolation.Env(os.Environ()))
 	runCmd := exec.Command(tmpBin, "--addr", addr)
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
-	runCmd.Env = runtimeIsolation.Env(os.Environ())
+	runCmd.Env = childEnv
 
 	mu.Lock()
 	*cmd = runCmd
