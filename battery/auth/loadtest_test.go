@@ -47,6 +47,13 @@ func TestLoad_LoginEndpoint_RateLimiterHoldsUnderConcurrency(t *testing.T) {
 			Window:        time.Minute,
 			BlockDuration: time.Minute,
 		},
+		// This test isolates the per-IP limiter's behaviour — disable
+		// the per-account limiter (which AuthConfig.defaults() would
+		// otherwise install) so it can't trip first and skew counts.
+		LoginRateLimitPerAccount: &RateLimiterConfig{
+			MaxAttempts: 1_000_000,
+			Window:      time.Minute,
+		},
 	})
 	mgr.Use(NewCorePlugin())
 	if err := mgr.Init(nil); err != nil {
