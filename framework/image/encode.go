@@ -46,20 +46,33 @@ func (e *Encoder) MIME() string { return e.format.MIME() }
 // Write encodes the image to w. Goroutine-safe; the underlying codec
 // runs at most once across all terminal calls on this Encoder.
 func (e *Encoder) Write(w io.Writer) error {
-	data, err := e.Bytes()
-	if err != nil {
+	if err := e.ensureEncoded(); err != nil {
 		return err
 	}
-	_, err = w.Write(data)
+	_, err := w.Write(e.cached)
 	return err
 }
 
-// Bytes returns the encoded image as a byte slice. Goroutine-safe;
-// repeat calls (and concurrent calls) reuse the first encode's output
-// instead of re-running the codec.
+// Bytes returns a freshly-allocated copy of the encoded image. The codec
+// runs at most once across all terminal calls (goroutine-safe), but each
+// Bytes call hands the caller its own slice so in-place mutation of the
+// returned bytes cannot corrupt the shared cache or another caller's
+// view. Use Write to avoid the copy when streaming to an io.Writer.
 func (e *Encoder) Bytes() ([]byte, error) {
+	if err := e.ensureEncoded(); err != nil {
+		return nil, err
+	}
+	out := make([]byte, len(e.cached))
+	copy(out, e.cached)
+	return out, nil
+}
+
+// ensureEncoded runs the codec once across all goroutines. Returns the
+// codec's error (cached) or any construction-time error captured at
+// builder time.
+func (e *Encoder) ensureEncoded() error {
 	if e.err != nil {
-		return nil, e.err
+		return e.err
 	}
 	e.once.Do(func() {
 		var buf bytes.Buffer
@@ -67,7 +80,7 @@ func (e *Encoder) Bytes() ([]byte, error) {
 		e.cached = buf.Bytes()
 		e.cachedErr = err
 	})
-	return e.cached, e.cachedErr
+	return e.cachedErr
 }
 
 // Base64 returns the encoded image as a raw base64 string (no MIME prefix).

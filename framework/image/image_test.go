@@ -528,6 +528,34 @@ func TestEncoderBytesConcurrentSafe(t *testing.T) {
 	}
 }
 
+// TestEncoderBytesReturnsIndependentSlice pins the fix that prevents
+// one caller mutating its returned bytes from corrupting the cache
+// (or another caller's view). Before the fix, Bytes() returned a
+// reference to the same internal slice on every call.
+func TestEncoderBytesReturnsIndependentSlice(t *testing.T) {
+	src := FromImage(gradient(16, 16), FormatPNG)
+	enc := src.PNG()
+	first, err := enc.Bytes()
+	if err != nil {
+		t.Fatalf("Bytes #1: %v", err)
+	}
+	if len(first) == 0 {
+		t.Fatal("Bytes returned empty slice")
+	}
+	original := first[0]
+	first[0] ^= 0xFF // mutate caller's view
+	second, err := enc.Bytes()
+	if err != nil {
+		t.Fatalf("Bytes #2: %v", err)
+	}
+	if second[0] != original {
+		t.Fatalf("mutation of first call corrupted cache: second[0] = %#x, want %#x", second[0], original)
+	}
+	if &first[0] == &second[0] {
+		t.Error("Bytes returned the same backing array on two calls — defensive copy is missing")
+	}
+}
+
 func TestEncoderDataURL(t *testing.T) {
 	src := FromImage(gradient(4, 4), FormatPNG)
 	durl, err := src.PNG().DataURL()
