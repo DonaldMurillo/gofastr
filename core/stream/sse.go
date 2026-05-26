@@ -71,17 +71,24 @@ func (s *SSEWriter) SetID(id string) {
 //	data: <data>
 //
 // followed by a blank line and a flush.
+//
+// CR/LF characters in the event name are stripped — an event name may
+// only occupy a single SSE field line. A caller-supplied newline would
+// otherwise terminate the field and let following bytes appear as
+// arbitrary SSE directives.
 func (s *SSEWriter) WriteEvent(event, data string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureHeaders()
+
+	event = stripSSEControlChars(event)
 
 	var b strings.Builder
 
 	// queued id
 	if s.nextID != "" {
 		b.WriteString("id: ")
-		b.WriteString(s.nextID)
+		b.WriteString(stripSSEControlChars(s.nextID))
 		b.WriteByte('\n')
 		s.nextID = ""
 	}
@@ -139,11 +146,15 @@ func (s *SSEWriter) WriteData(data string) error {
 //
 //	: <comment>
 //
-// followed by a blank line and a flush.
+// followed by a blank line and a flush. The comment is truncated at the
+// first CR/LF so a caller can't terminate the comment line and inject
+// arbitrary SSE fields ("event: …", "data: …", …) below it.
 func (s *SSEWriter) WriteComment(comment string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureHeaders()
+
+	comment = stripSSEControlChars(comment)
 
 	var b strings.Builder
 	b.WriteString(": ")
@@ -153,6 +164,20 @@ func (s *SSEWriter) WriteComment(comment string) error {
 	_, err := s.w.Write([]byte(b.String()))
 	s.flush.Flush()
 	return err
+}
+
+// stripSSEControlChars truncates at the first CR, LF or NUL — those
+// are the only characters that can break out of a single SSE field,
+// and once one appears the rest of the input is treated as adversarial
+// (an injected directive or header). We don't merely *delete* the
+// control char because the surrounding bytes can recombine into the
+// payload we're trying to neutralise (e.g. "X\r\nSet-Cookie:" →
+// "XSet-Cookie:" still leaks the literal header).
+func stripSSEControlChars(s string) string {
+	if i := strings.IndexAny(s, "\r\n\x00"); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // WriteMessage is a convenience for writing a Message event.
