@@ -73,6 +73,7 @@ type UIHost struct {
 	signals        map[string]SignalAny                 // signalID → signal for live updates
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
+	faviconURL     string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
 	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
 
@@ -211,10 +212,14 @@ func WithHeadHTML(html string) Option {
 	}
 }
 
-// WithFavicon adds a <link rel="icon"> tag to <head>.
+// WithFavicon adds a <link rel="icon"> tag to <head>. The host also
+// auto-serves 204 No Content at the configured URL when no static file
+// matches, so a host that ships no favicon doesn't 404 on every page
+// load. Place a real file at the path in staticDir / staticFS to override.
 func WithFavicon(href string) Option {
 	return func(ds *UIHost) {
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="icon" href="%s">`, stdhtml.EscapeString(href)))
+		ds.faviconURL = href
 	}
 }
 
@@ -1501,6 +1506,13 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+	// WithFavicon configured a URL but no real file lives there — 204
+	// rather than 404 so the browser's per-page favicon fetch doesn't
+	// noisily fail in the dev console.
+	if ds.faviconURL != "" && path == ds.faviconURL {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	ds.handlePage(w, r)
 }
