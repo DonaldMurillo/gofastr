@@ -238,9 +238,15 @@ func safeReferer(r *http.Request) string {
 	return out
 }
 
-// sanitiseErr makes an error message safe to embed in a URL query value.
-// Replaces whitespace + non-printable bytes with '+'; full URL escaping
-// is overkill for the short tags we use ("invalid_credentials" etc.).
+// sanitiseErr makes an error message safe to embed in a URL query value
+// AND to read back from server-rendered error pages. Whitespace,
+// control characters, URL-special characters, and HTML-special
+// characters (<, >, ", ') are all replaced with '+'. Full URL escaping
+// would be overkill for the short tags we use ("invalid_credentials"
+// etc.); the substitution keeps the message a single round-trippable
+// token while neutralising every byte that could break out of the
+// surrounding context (CRLF in redirect headers, `<script>` in a flash
+// message, `&` in a query string).
 func sanitiseErr(s string) string {
 	b := make([]byte, 0, len(s))
 	for i := 0; i < len(s); i++ {
@@ -249,7 +255,9 @@ func sanitiseErr(s string) string {
 			b = append(b, '+')
 			continue
 		}
-		if c == '&' || c == '=' || c == '#' || c == '?' || c == '%' || c == '+' {
+		switch c {
+		case '&', '=', '#', '?', '%', '+',
+			'<', '>', '"', '\'':
 			b = append(b, '+')
 			continue
 		}
