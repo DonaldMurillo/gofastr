@@ -164,7 +164,7 @@ func TestE2E_ImagePipeline_VariantSetRendersPipelineImage(t *testing.T) {
 		t.Errorf("placeholder should be JPEG data URL, got prefix %q", pref)
 	}
 	if n, _ := got["listItems"].(float64); int(n) != 4 {
-		t.Errorf("variant list count = %v, want 4 (2 JPEG + 2 PNG)", n)
+		t.Errorf("variant list count = %v, want 4 (2 JPEG + 2 WebP)", n)
 	}
 }
 
