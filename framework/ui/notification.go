@@ -114,7 +114,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 			label = "Dismiss notification"
 		}
 		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
-			Href:    cfg.DismissHref,
+			Href:    sanitizeHref(cfg.DismissHref),
 			Class:   "ui-notification__dismiss",
 			ExtraAttrs:   html.Attrs{"aria-label": label},
 			Content: render.Text("×"),

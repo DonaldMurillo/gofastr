@@ -117,11 +117,15 @@ func Menu(cfg MenuConfig) render.HTML {
 	var b strings.Builder
 	// `<details>` is the toggle. data-fui-disclosure adds Escape close
 	// and closes on SPA nav for free.
+	//
+	// PanelClass / TriggerClass are caller-supplied and pass through
+	// escAttr so a value containing `"` cannot break out of the class
+	// attribute into a sibling attribute context (`onclick=…`, etc.).
 	cls := "ui-menu ui-menu--" + string(pos)
 	if cfg.PanelClass != "" {
 		cls += " " + cfg.PanelClass
 	}
-	b.WriteString(`<details class="` + cls + `" data-fui-disclosure data-fui-menu="` + escAttr(id) + `">`)
+	b.WriteString(`<details class="` + escAttr(cls) + `" data-fui-disclosure data-fui-menu="` + escAttr(id) + `">`)
 
 	// Summary = trigger. We bolt aria-haspopup="menu" so SR users know
 	// the activation type; the runtime mirrors aria-expanded.
@@ -129,7 +133,7 @@ func Menu(cfg MenuConfig) render.HTML {
 	if cfg.TriggerClass != "" {
 		tcls += " " + cfg.TriggerClass
 	}
-	b.WriteString(`<summary class="` + tcls + `" aria-haspopup="menu" aria-controls="` + escAttr(panelID) + `">`)
+	b.WriteString(`<summary class="` + escAttr(tcls) + `" aria-haspopup="menu" aria-controls="` + escAttr(panelID) + `">`)
 	if cfg.TriggerHTML != "" {
 		b.WriteString(string(cfg.TriggerHTML))
 	} else {
@@ -170,7 +174,7 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	openExtra := `type="button"`
 	if it.Href != "" {
 		tag = "a"
-		openExtra = `href="` + escAttr(it.Href) + `"`
+		openExtra = `href="` + escAttr(sanitizeHref(it.Href)) + `"`
 	}
 	tabindex := "-1" // managed by runtime via roving focus
 	disabledAttr := ""
@@ -192,7 +196,7 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	for k, v := range it.ExtraAttrs {
 		extra += ` ` + escAttr(k) + `="` + escAttr(v) + `"`
 	}
-	b.WriteString(`<` + tag + ` class="` + cls + `" ` + openExtra +
+	b.WriteString(`<` + tag + ` class="` + escAttr(cls) + `" ` + openExtra +
 		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
 	if it.Icon != "" {
 		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
@@ -211,6 +215,23 @@ func escText(s string) string {
 func escAttr(s string) string {
 	r := strings.NewReplacer(`&`, `&amp;`, `"`, `&quot;`, `<`, `&lt;`, `>`, `&gt;`)
 	return r.Replace(s)
+}
+
+// sanitizeHref reduces a caller-supplied href to a safe equivalent. Any
+// URI whose scheme is `javascript:`, `vbscript:`, or `data:` is replaced
+// with `#` so a navigation click renders as a no-op rather than running
+// inline script in the browser. Schemes are matched case-insensitively
+// after trimming leading whitespace (browsers tolerate `\tjavascript:`).
+// Returns the original href unchanged if no dangerous scheme is found.
+func sanitizeHref(href string) string {
+	trimmed := strings.TrimLeft(href, " \t\r\n")
+	lower := strings.ToLower(trimmed)
+	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
+		if strings.HasPrefix(lower, bad) {
+			return "#"
+		}
+	}
+	return href
 }
 
 // shortHash is a tiny FNV-style stable hash used only to derive a
