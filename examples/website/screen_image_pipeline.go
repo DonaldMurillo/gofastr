@@ -133,18 +133,33 @@ func renderVariantsSection(src *image.Image) (render.HTML, render.HTML) {
 
 	sources := make([]ui.PipelineSource, 0, len(result.Variants))
 	var fallback string
+	var fallbackW, fallbackH int
 	for _, v := range result.Variants {
 		url := "data:" + v.MIME + ";base64," + base64.StdEncoding.EncodeToString(v.Bytes)
 		sources = append(sources, ui.PipelineSource{URL: url, Width: v.Width, Type: v.MIME})
-		if v.Format == image.FormatJPEG && v.Width == 160 {
+		// Prefer the widest legacy (JPEG) variant for the <img>
+		// fallback so non-modern browsers get the highest-fidelity
+		// option. Track dims so CLS attrs match the chosen image.
+		if v.Format == image.FormatJPEG && v.Width > fallbackW {
 			fallback = url
+			fallbackW = v.Width
+			fallbackH = v.Height
 		}
+	}
+	// If the variant set has no JPEG (or no variants at all but at
+	// least one source was emitted), degrade to the last source so
+	// the demo never panics PipelineImage.
+	if fallback == "" && len(result.Variants) > 0 {
+		last := result.Variants[len(result.Variants)-1]
+		fallback = sources[len(sources)-1].URL
+		fallbackW = last.Width
+		fallbackH = last.Height
 	}
 
 	picture := ui.PipelineImage(ui.PipelineImageConfig{
 		Fallback:    fallback,
 		Alt:         "Pipeline-generated gradient",
-		Width:       160, Height: 96,
+		Width:       fallbackW, Height: fallbackH,
 		Sources:     sources,
 		Placeholder: result.Placeholder,
 		Class:       "img-pipeline-variant-output",
