@@ -83,6 +83,9 @@ ending with a "common mistakes" callout.
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
 - [Widgets](widgets.md) — `core-ui/widget` builder and presets.
+- [Image pipeline](image.md) — `framework/image`: chainable
+  Resize / Rotate / Flip / Modulate / Placeholder / BlurHash, pure-Go
+  with no CGo or system codec dependencies.
 
 ## Build-time tooling
 

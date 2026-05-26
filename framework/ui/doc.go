@@ -45,6 +45,8 @@
 //	Notification    — toast-styled inline notification (variant + dismiss)
 //	OptimizedImage  — responsive <picture> with srcset + lazy + Width/Height
 //	PageHeader      — top-of-page header with title/eyebrow/subtitle/actions
+//	PipelineImage   — multi-format <picture> consuming framework/image
+//	                  VariantSet output (typed sources + LQIP/BlurHash)
 //	Radio           — labelled radio with FieldErrors wiring
 //	Section         — labelled content section with heading + description
 //	Sidebar         — responsive primary navigation (inline/drawer)

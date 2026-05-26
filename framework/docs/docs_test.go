@@ -11,7 +11,7 @@ import (
 // doc enforces "every doc removal requires an explicit decision."
 //
 // Bump it up when adding docs. Be reluctant to decrement.
-const MinExpectedTopics = 40
+const MinExpectedTopics = 46
 
 func TestEmbedManifestFloor(t *testing.T) {
 	topics, err := List()
