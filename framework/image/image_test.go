@@ -912,6 +912,33 @@ func TestHasAlphaDetectsInteriorPixel(t *testing.T) {
 	}
 }
 
+// TestHasAlphaIgnoresOutOfBoundsForSubImage pins the fix: scanning
+// every byte of Pix on a SubImage falsely reported HasAlpha=true when
+// the parent buffer held transparent pixels outside the subimage's
+// rect. The fast path now walks the visible rect honoring Stride.
+func TestHasAlphaIgnoresOutOfBoundsForSubImage(t *testing.T) {
+	parent := stdimage.NewNRGBA(stdimage.Rect(0, 0, 16, 16))
+	// Make the whole parent transparent…
+	for i := 3; i < len(parent.Pix); i += 4 {
+		parent.Pix[i] = 0
+	}
+	// …then make the centre 4×4 fully opaque.
+	for y := 6; y < 10; y++ {
+		for x := 6; x < 10; x++ {
+			off := parent.PixOffset(x, y)
+			parent.Pix[off+0] = 200
+			parent.Pix[off+1] = 200
+			parent.Pix[off+2] = 200
+			parent.Pix[off+3] = 0xFF
+		}
+	}
+	sub := parent.SubImage(stdimage.Rect(6, 6, 10, 10)).(*stdimage.NRGBA)
+	wrapped := FromImage(sub, FormatPNG)
+	if wrapped.Metadata().HasAlpha {
+		t.Error("opaque SubImage of a transparent parent must report HasAlpha=false")
+	}
+}
+
 func TestMetadataReflectsDimensions(t *testing.T) {
 	src := FromImage(gradient(40, 30), FormatPNG)
 	m := src.Metadata()

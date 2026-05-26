@@ -31,14 +31,15 @@ func (i *Image) Metadata() Metadata {
 
 func hasAlpha(i *Image) bool {
 	// Fast paths for the two concrete types the framework actually
-	// produces. Read Pix[3::4] directly so the per-pixel interface
-	// boxing of the generic At() loop disappears. Early exit on the
-	// first sub-opaque alpha.
+	// produces. Walk per-row respecting Rect+Stride so a SubImage's
+	// out-of-bounds bytes (and any row padding when Stride > 4*Dx)
+	// don't pollute the result. Early exit on the first sub-opaque
+	// alpha.
 	switch m := i.img.(type) {
 	case *stdimage.NRGBA:
-		return scanAlphaPix(m.Pix, 4)
+		return scanAlphaRect(m.Pix, m.Stride, m.Rect.Dx(), m.Rect.Dy())
 	case *stdimage.RGBA:
-		return scanAlphaPix(m.Pix, 4)
+		return scanAlphaRect(m.Pix, m.Stride, m.Rect.Dx(), m.Rect.Dy())
 	}
 	// Generic fallback for any other image.Image: corner + centre
 	// sampling. Cheap, conservative, can miss interior alpha.
@@ -59,12 +60,20 @@ func hasAlpha(i *Image) bool {
 	return false
 }
 
-// scanAlphaPix walks every alpha byte in a 4-byte-per-pixel buffer.
-// Returns true on the first non-0xFF value.
-func scanAlphaPix(pix []byte, stride int) bool {
-	for i := 3; i < len(pix); i += stride {
-		if pix[i] != 0xFF {
-			return true
+// scanAlphaRect walks the alpha byte of every pixel inside a w×h
+// rectangle laid out at 4-bytes-per-pixel with the given row Stride.
+// Honoring Stride and the visible row length is what makes SubImage
+// inputs correct: the parent's Pix buffer extends past each visible
+// row and may contain alpha bytes that belong to neighbouring pixels.
+func scanAlphaRect(pix []byte, stride, w, h int) bool {
+	rowBytes := w * 4
+	for y := 0; y < h; y++ {
+		base := y * stride
+		end := base + rowBytes
+		for i := base + 3; i < end; i += 4 {
+			if pix[i] != 0xFF {
+				return true
+			}
 		}
 	}
 	return false
