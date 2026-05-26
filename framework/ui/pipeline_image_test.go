@@ -182,6 +182,25 @@ func TestPipelineImageDedupesIdenticalSources(t *testing.T) {
 	}
 }
 
+// TestPipelineImageTypeEscaped: Source.Type that contains > and "
+// must be HTML-escaped, not interpolated into the type attribute
+// literally. Pins the XSS guard.
+func TestPipelineImageTypeEscaped(t *testing.T) {
+	h := PipelineImage(PipelineImageConfig{
+		Fallback: "/x.jpg", Alt: "x", Width: 1, Height: 1,
+		Sources: []PipelineSource{
+			{URL: "/a.webp", Width: 100, Type: `image/webp"><script>alert(1)</script>`},
+		},
+	})
+	s := string(h)
+	if strings.Contains(s, "<script>") {
+		t.Fatalf("Type attribute not escaped — XSS possible: %s", s)
+	}
+	if !strings.Contains(s, "&lt;script&gt;") && !strings.Contains(s, "&quot;") {
+		t.Fatalf("expected escaped output; got: %s", s)
+	}
+}
+
 func TestPipelineImageSkipsInvalidSources(t *testing.T) {
 	h := PipelineImage(PipelineImageConfig{
 		Fallback: "/p.jpg", Alt: "x", Width: 1, Height: 1,
