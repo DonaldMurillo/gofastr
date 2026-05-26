@@ -133,6 +133,17 @@ func (rw *countingResponseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush forwards to the underlying ResponseWriter's Flusher if it has one.
+// Without this, any SSE / chunked-JSON / long-poll handler downstream of
+// battery/log returns 500 "streaming unsupported" — its
+// `w.(http.Flusher)` assertion fails against the wrapper. Mirrors the
+// fix already present on core/middleware.metricsResponseWriter.
+func (rw *countingResponseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // remoteAddr returns the client address the access log should record.
 // When trustXFF is false (default) it returns r.RemoteAddr only;
 // X-Forwarded-For / X-Real-IP are still emitted as a separate
