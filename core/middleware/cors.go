@@ -51,23 +51,60 @@ func CORS(cfg CORSConfig) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
+			allowed := false
 			if allowAll {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
+				allowed = true
 			} else if origin != "" && originSet[origin] {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Vary", "Origin")
+				allowed = true
 			}
 
-			w.Header().Set("Access-Control-Allow-Methods", methods)
-			w.Header().Set("Access-Control-Allow-Headers", headers)
+			// SECURITY: only emit Allow-Methods / Allow-Headers when the
+			// origin is allowed. Echoing them to rejected origins leaks
+			// API metadata and makes blocked preflights look successful.
+			if allowed {
+				w.Header().Set("Access-Control-Allow-Methods", methods)
+				w.Header().Set("Access-Control-Allow-Headers", headers)
+			}
 
 			// Handle preflight
 			if r.Method == http.MethodOptions {
+				if !allowed {
+					// SECURITY: rejected-origin preflight must fail
+					// outright rather than appearing to succeed.
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
 
+			// SECURITY: wildcard ACAO is incompatible with credentialed
+			// responses — browsers reject the combo. Strip the header so
+			// a downstream handler can't accidentally enable it.
+			if allowAll {
+				next.ServeHTTP(stripCredsWriter{ResponseWriter: w}, r)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// stripCredsWriter prevents Access-Control-Allow-Credentials from being
+// emitted by a downstream handler when the configured ACAO is "*".
+type stripCredsWriter struct {
+	http.ResponseWriter
+}
+
+func (s stripCredsWriter) WriteHeader(code int) {
+	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s stripCredsWriter) Write(b []byte) (int, error) {
+	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
+	return s.ResponseWriter.Write(b)
 }
