@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -77,6 +78,10 @@ func GatedHandler(spec *Spec, allow func(*http.Request) bool) http.Handler {
 // themselves and mount their own handler.
 func SwaggerUIHandler(spec *Spec, basePath string) http.Handler {
 	specHandler := Handler(spec)
+	// basePath is developer-supplied config but flows into href + visible
+	// text; escape it so a CR/LF/quote/angle can't break out of the
+	// attribute or inject script content.
+	safeBase := html.EscapeString(basePath)
 	uiHTML := `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -90,7 +95,7 @@ func SwaggerUIHandler(spec *Spec, basePath string) http.Handler {
 </head>
 <body>
   <h1>API specification</h1>
-  <p>This service exposes an OpenAPI 3 document at <a href="` + basePath + `/openapi.json"><code>` + basePath + `/openapi.json</code></a>.</p>
+  <p>This service exposes an OpenAPI 3 document at <a href="` + safeBase + `/openapi.json"><code>` + safeBase + `/openapi.json</code></a>.</p>
   <p>Load it in your preferred viewer (Swagger UI, Insomnia, Stoplight, Postman, …) to browse the endpoints interactively.</p>
 </body>
 </html>`
