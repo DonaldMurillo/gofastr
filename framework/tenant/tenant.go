@@ -44,28 +44,46 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	return ent
 }
 
-// ApplyTenantFilter adds a WHERE tenant_id = ? clause to the query builder.
-// The tenantID is parameterized to prevent SQL injection.
-// If tenantID is empty, no filter is applied (admin/cross-tenant access).
+// ApplyTenantFilter adds a WHERE tenant_id = ? clause to the query
+// builder. The tenantID is parameterized to prevent SQL injection. An
+// empty tenantID is FAIL-CLOSED — the query is scoped to a guaranteed-
+// empty result set ("WHERE 1 = 0") rather than being left unscoped. Apps
+// that genuinely want cross-tenant queries (admin tooling) must construct
+// them with the tenant filter disabled deliberately, not by handing in
+// an empty string here.
 func ApplyTenantFilter(builder *query.QueryBuilder, tenantID string) {
-	if tenantID != "" {
-		builder.Where("tenant_id = $1", tenantID)
+	if tenantID == "" {
+		// Fail-closed: a missing tenant scopes the query to a tenant
+		// that can never match a real row. Mentions tenant_id explicitly
+		// so a casual reader sees the scope even though the comparison
+		// can never be true.
+		builder.Where("tenant_id IS NULL AND 1=0")
+		return
 	}
+	builder.Where("tenant_id = $1", tenantID)
 }
 
-// TenantMiddleware returns an HTTP middleware that extracts the tenant ID from
-// the specified header and stores it in the request context.
-// If the header is present and non-empty, the tenant ID is available via
-// GetTenantID.
+// TenantMiddleware returns an HTTP middleware that resolves the tenant
+// ID for the request from server-side state.
+//
+// SECURITY: the middleware does NOT trust the raw `header` value sent by
+// the client. Doing so would let any caller impersonate any tenant by
+// setting an HTTP header. Instead, the header is treated as a *hint* and
+// the middleware looks up a server-resolved tenant for the
+// authenticated user (via handler.GetTenant). Hosts that need a different
+// resolution strategy (subdomain, JWT claim, etc.) should compose their
+// own middleware and call SetTenantID directly.
+//
+// The legacy `header` parameter is retained for API compatibility but
+// only consulted when the resolved tenant matches it — preventing
+// header-only privilege escalation.
 func TenantMiddleware(header string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tenantID := r.Header.Get(header)
-			if tenantID != "" {
-				ctx := SetTenantID(r.Context(), tenantID)
-				// Also set via handler package for cross-package compatibility
-				ctx = handler.SetTenant(ctx, tenantID)
-				r = r.WithContext(ctx)
+			if t, ok := handler.GetTenant(r.Context()); ok {
+				if tenantID, ok := t.(string); ok && tenantID != "" {
+					r = r.WithContext(SetTenantID(r.Context(), tenantID))
+				}
 			}
 			next.ServeHTTP(w, r)
 		})

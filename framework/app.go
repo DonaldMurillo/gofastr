@@ -10,7 +10,6 @@ import (
 	"os"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +18,7 @@ import (
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -1051,13 +1051,7 @@ func (a *App) Start(addr string) error {
 		// API entity index under /api/ alongside /api/docs/ (Swagger).
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
-			a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				md := crud.RegistryLLMMD(a.Registry, appName)
-				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-				w.Header().Set("Cache-Control", "no-cache")
-				w.Header().Set("Content-Length", strconv.Itoa(len(md)))
-				w.Write([]byte(md))
-			}))
+			a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
 		}
 	}
 
@@ -1111,6 +1105,13 @@ func (a *App) Start(addr string) error {
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: a.router,
+		// Conservative defaults so a slow / abandoned / hostile client
+		// can't tie up the listener forever (slowloris-style). Hosts
+		// that need a different shape can wrap the server themselves.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	a.server = srv
 	a.serverMu.Unlock()
@@ -1121,8 +1122,16 @@ func (a *App) Start(addr string) error {
 }
 
 // registerDebugEndpoints adds /.debug/stats for runtime diagnostics.
+// The endpoint exposes process internals (pid, goroutines, memory) so it
+// requires an authenticated caller — the framework's normal auth chain
+// must set a user in context for the request to succeed.
 func (a *App) registerDebugEndpoints() {
 	a.router.Get("/.debug/stats", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := handler.GetUser(r.Context()); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
