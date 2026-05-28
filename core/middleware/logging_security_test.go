@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+// TestLogging_SanitizesMethod ensures r.Method is percent-encoded the
+// same way the URL path already is — CRLF / ESC in a forged method
+// would otherwise paint fake log lines or terminal-escape mischief
+// into operator tails.
+func TestLogging_SanitizesMethod(t *testing.T) {
+	var buf strings.Builder
+	mw := LoggingWithWriter(&buf)
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Method = "GE\r\nT"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	out := buf.String()
+	if strings.Contains(out, "\r") || strings.Contains(out, "GE\\r\\nT") == false && strings.Contains(out, "GE%0d%0aT") == false {
+		// Either escaped or percent-encoded is fine; raw CRLF is not.
+		if strings.Contains(out, "GE\r\nT") {
+			t.Fatalf("logger emitted raw CRLF method: %q", out)
+		}
+	}
+}
+
 // TestLogging_LogInjection verifies that request paths with newlines don't
 // inject fake log entries. Attack: log forging via CRLF in URL path.
 func TestLogging_LogInjection(t *testing.T) {

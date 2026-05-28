@@ -28,12 +28,12 @@ type CORSConfig struct {
 func CORS(cfg CORSConfig) Middleware {
 	methods := "GET, POST, PUT, DELETE, PATCH, OPTIONS"
 	if len(cfg.AllowedMethods) > 0 {
-		methods = strings.Join(cfg.AllowedMethods, ", ")
+		methods = strings.Join(sanitizeCORSTokens(cfg.AllowedMethods), ", ")
 	}
 
 	headers := "Content-Type, Authorization"
 	if len(cfg.AllowedHeaders) > 0 {
-		headers = strings.Join(cfg.AllowedHeaders, ", ")
+		headers = strings.Join(sanitizeCORSTokens(cfg.AllowedHeaders), ", ")
 	}
 
 	// Build a set of allowed origins for O(1) lookup.
@@ -107,4 +107,46 @@ func (s stripCredsWriter) WriteHeader(code int) {
 func (s stripCredsWriter) Write(b []byte) (int, error) {
 	s.ResponseWriter.Header().Del("Access-Control-Allow-Credentials")
 	return s.ResponseWriter.Write(b)
+}
+
+// sanitizeCORSTokens strips bytes that could terminate the Allow-Methods
+// or Allow-Headers value and smuggle a second header line. The CORS
+// config is developer-supplied, but defense-in-depth against config
+// injection (env-driven lists, template-generated configs) is cheap.
+func sanitizeCORSTokens(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, t := range in {
+		clean := stripCtrlBytes(t)
+		clean = strings.TrimSpace(clean)
+		if clean == "" {
+			continue
+		}
+		out = append(out, clean)
+	}
+	return out
+}
+
+func stripCtrlBytes(s string) string {
+	if !containsCtrl(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+func containsCtrl(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
 }

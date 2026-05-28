@@ -35,7 +35,7 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 				}
 			}
 			logger.Info("request",
-				"method", r.Method,
+				"method", safeLogMethod(r.Method),
 				"path", safeLogPath(r.URL.Path),
 				"status", wrapped.statusCode,
 				"duration", duration.String(),
@@ -130,6 +130,27 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			}
 		})
 	}
+}
+
+// safeLogMethod percent-encodes control bytes (and DEL) in the HTTP
+// method so an attacker who got a CRLF / ESC sequence into r.Method
+// can't forge a fake log entry or smuggle a terminal-control payload
+// into an operator's tail/less session.
+func safeLogMethod(m string) string {
+	if !strings.ContainsAny(m, "\x00\r\n\t\v\f\b\x1b") {
+		return m
+	}
+	var b strings.Builder
+	b.Grow(len(m))
+	for i := 0; i < len(m); i++ {
+		c := m[i]
+		if c < 0x20 || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02x", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // safeLogPath re-encodes control characters in a URL path so an
