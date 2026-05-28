@@ -174,6 +174,14 @@ func buildMessage(email Email) ([]byte, error) {
 			return nil, err
 		}
 	}
+	for _, att := range email.Attachments {
+		if err := assertNoHeaderInjection("Attachment.Filename", att.Filename); err != nil {
+			return nil, err
+		}
+		if err := assertNoHeaderInjection("Attachment.ContentType", att.ContentType); err != nil {
+			return nil, err
+		}
+	}
 
 	var buf strings.Builder
 

@@ -21,6 +21,9 @@ import (
 func (p *Plugin) MetricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		// Metrics may leak operator-visible counts (drop totals, retry
+		// budgets); ensure no shared cache stores the body.
+		w.Header().Set("Cache-Control", "no-store")
 		writeMetrics(w, p.Metrics())
 	})
 }

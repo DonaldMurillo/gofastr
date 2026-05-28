@@ -200,8 +200,11 @@ func TestLogSenderWithCCandBCC(t *testing.T) {
 	if !strings.Contains(output, "cc1@example.com") {
 		t.Error("expected output to contain CC recipients")
 	}
-	if !strings.Contains(output, "bcc@example.com") {
-		t.Error("expected output to contain BCC recipients")
+	// BCC must NOT appear — contradicts the old behaviour but matches the
+	// security contract in TestLogSender_DoesNotExposeBCCRecipients.
+	// See AI_TEST_AUDIT.md for the rationale.
+	if strings.Contains(output, "bcc@example.com") {
+		t.Error("LogSender must not expose BCC recipients in logs")
 	}
 }
 

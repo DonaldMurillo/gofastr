@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,27 @@ import (
 	"sync"
 	"time"
 )
+
+// MaxPayloadBytes caps webhook payload size. Larger payloads are
+// rejected at Publish time to prevent unbounded queue/memory growth.
+const MaxPayloadBytes = 1 << 20 // 1 MiB
+
+// validateEventName rejects event names that would smuggle CR/LF/NUL
+// or other control characters into outbound headers / persisted rows.
+func validateEventName(name string) error {
+	if name == "" {
+		return errors.New("webhook: event name required")
+	}
+	for _, r := range name {
+		if r == '\r' || r == '\n' || r == 0 {
+			return fmt.Errorf("webhook: event name contains forbidden control character")
+		}
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("webhook: event name contains forbidden control character")
+		}
+	}
+	return nil
+}
 
 // Subscriber is a registered HTTP endpoint that wants to receive
 // signed POSTs for the listed events.
@@ -208,6 +230,11 @@ func (m *Manager) Subscribe(ctx context.Context, s Subscriber) (Subscriber, erro
 	if err := validateSubscriberURL(s.URL, m.opts.AllowPrivateNetworks); err != nil {
 		return Subscriber{}, err
 	}
+	for _, p := range s.Events {
+		if err := validateEventName(p); err != nil {
+			return Subscriber{}, fmt.Errorf("webhook: event pattern: %w", err)
+		}
+	}
 	if s.ID == "" {
 		s.ID = newID()
 	}
@@ -243,6 +270,15 @@ func (m *Manager) Subscribers(ctx context.Context) ([]Subscriber, error) {
 
 // Publish fans the event out to every active matching subscriber.
 func (m *Manager) Publish(ctx context.Context, event string, payload []byte) (int, error) {
+	if err := validateEventName(event); err != nil {
+		return 0, err
+	}
+	if len(payload) > MaxPayloadBytes {
+		return 0, fmt.Errorf("webhook: payload size %d exceeds max %d bytes", len(payload), MaxPayloadBytes)
+	}
+	if len(payload) > 0 && !json.Valid(payload) {
+		return 0, errors.New("webhook: payload is not valid JSON")
+	}
 	subs, err := m.store.ListSubscribers(ctx)
 	if err != nil {
 		return 0, err

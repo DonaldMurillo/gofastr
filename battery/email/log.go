@@ -5,8 +5,36 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 )
+
+// sensitiveHeaderNames lists headers that LogSender refuses to print.
+// Matched case-insensitively against header keys.
+var sensitiveHeaderNames = map[string]struct{}{
+	"authorization": {},
+	"x-api-key":     {},
+	"cookie":        {},
+	"set-cookie":    {},
+	"proxy-authorization": {},
+}
+
+// urlWithSecretPattern matches any URL whose query string carries a
+// sensitive parameter (token / code / key / secret / password). The
+// whole URL is redacted because both the path (e.g. /reset-password)
+// and the secret are sensitive together.
+var urlWithSecretPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]*[?&](?:token|code|key|secret|password|access_token|reset[_-]?token)=[^\s"'<>]*`)
+
+// bearerPattern catches `Bearer <token>` substrings anywhere in the body.
+var bearerPattern = regexp.MustCompile(`(?i)Bearer\s+\S+`)
+
+// redactBody scrubs anything resembling a live credential out of a
+// rendered email body before it is written to a development log.
+func redactBody(s string) string {
+	s = urlWithSecretPattern.ReplaceAllString(s, "[REDACTED-URL]")
+	s = bearerPattern.ReplaceAllString(s, "Bearer [REDACTED]")
+	return s
+}
 
 // LogSender is a development email sender that logs email details
 // to an io.Writer instead of actually sending them.
@@ -34,24 +62,29 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 	if len(email.CC) > 0 {
 		sb.WriteString(fmt.Sprintf("CC:      %s\n", strings.Join(email.CC, ", ")))
 	}
-	if len(email.BCC) > 0 {
-		sb.WriteString(fmt.Sprintf("BCC:     %s\n", strings.Join(email.BCC, ", ")))
-	}
+	// BCC is intentionally omitted from dev logs — blind-carbon recipients
+	// must not be observable to anyone reading the log (including the dev
+	// who sent the message). We do not even emit the label, because the
+	// presence of a "BCC:" line in a log is itself an observable signal.
 	sb.WriteString(fmt.Sprintf("Subject: %s\n", email.Subject))
 
 	if email.TextBody != "" {
 		sb.WriteString("--- Text Body ---\n")
-		sb.WriteString(email.TextBody)
+		sb.WriteString(redactBody(email.TextBody))
 		sb.WriteString("\n")
 	}
 
 	if email.HTMLBody != "" {
 		sb.WriteString("--- HTML Body ---\n")
-		sb.WriteString(email.HTMLBody)
+		sb.WriteString(redactBody(email.HTMLBody))
 		sb.WriteString("\n")
 	}
 
 	for k, v := range email.Headers {
+		if _, isSensitive := sensitiveHeaderNames[strings.ToLower(k)]; isSensitive {
+			sb.WriteString(fmt.Sprintf("Header:  %s: [REDACTED]\n", "[redacted-header]"))
+			continue
+		}
 		sb.WriteString(fmt.Sprintf("Header:  %s: %s\n", k, v))
 	}
 

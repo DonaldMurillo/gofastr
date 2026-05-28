@@ -61,10 +61,13 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) err
 	if n.To.Email == "" {
 		return nil // router shouldn't have selected us, but guard anyway
 	}
-	from := c.from
-	if alt, ok := r.Extra["from"].(string); ok && alt != "" {
-		from = alt
+	// Rendered.Extra["from"] is rejected: a templated from override is a
+	// sender-spoofing vector — the channel's configured from-address is
+	// the only legitimate source.
+	if _, ok := r.Extra["from"]; ok {
+		return fmt.Errorf("%w: rendered 'from' override not allowed", ErrUnsafeHeader)
 	}
+	from := c.from
 	if err := assertSafeAddress("to", n.To.Email); err != nil {
 		return err
 	}
@@ -73,17 +76,63 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) err
 			return err
 		}
 	}
+	var headers map[string]string
+	if raw, ok := r.Extra["headers"]; ok {
+		hdr, ok := raw.(map[string]string)
+		if !ok {
+			return fmt.Errorf("%w: headers must be map[string]string", ErrUnsafeHeader)
+		}
+		if err := validateCustomHeaders(hdr); err != nil {
+			return err
+		}
+		headers = hdr
+	}
 	msg := email.Email{
 		To:       []string{n.To.Email},
 		From:     from,
 		Subject:  r.Subject,
 		TextBody: r.TextBody,
 		HTMLBody: r.HTMLBody,
-	}
-	if hdr, ok := r.Extra["headers"].(map[string]string); ok {
-		msg.Headers = hdr
+		Headers:  headers,
 	}
 	return c.sender.Send(ctx, msg)
+}
+
+// ErrUnsafeHeader is returned when rendered Extra contains a header
+// name/value that would let a caller smuggle SMTP headers (CR/LF), or
+// when it tries to override a reserved header that the channel owns.
+var ErrUnsafeHeader = errors.New("notify: unsafe header")
+
+// reservedHeaderNames are header keys that callers must NOT override
+// through Rendered.Extra["headers"]. The channel computes them itself
+// (To/From/Subject/Content-Type) or routing-critical fields a caller
+// could weaponize for recipient smuggling (Bcc, Cc) or reply hijacking
+// (Reply-To). Compared case-insensitively.
+var reservedHeaderNames = map[string]struct{}{
+	"to":           {},
+	"cc":           {},
+	"bcc":          {},
+	"from":         {},
+	"sender":       {},
+	"reply-to":     {},
+	"subject":      {},
+	"content-type": {},
+	"mime-version": {},
+}
+
+func validateCustomHeaders(h map[string]string) error {
+	for k, v := range h {
+		if strings.ContainsAny(k, "\r\n\x00:") {
+			return fmt.Errorf("%w: header name contains CR/LF/NUL/colon: %q", ErrUnsafeHeader, k)
+		}
+		if strings.ContainsAny(v, "\r\n\x00") {
+			return fmt.Errorf("%w: header value contains CR/LF/NUL: %q=%q", ErrUnsafeHeader, k, v)
+		}
+		if _, reserved := reservedHeaderNames[strings.ToLower(strings.TrimSpace(k))]; reserved {
+			return fmt.Errorf("%w: reserved header %q cannot be overridden via Extra.headers", ErrUnsafeHeader, k)
+		}
+	}
+	return nil
 }
 
 // assertSafeAddress applies a fast shape check that catches the

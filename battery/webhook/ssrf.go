@@ -30,6 +30,9 @@ func validateSubscriberURL(raw string, allowPrivate bool) error {
 	if u.Host == "" {
 		return fmt.Errorf("webhook: URL missing host")
 	}
+	if u.User != nil {
+		return fmt.Errorf("webhook: URL with embedded userinfo not allowed (credential leakage)")
+	}
 	if allowPrivate {
 		return nil
 	}

@@ -12,6 +12,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -53,7 +54,23 @@ func newAuditTable(t *testing.T, db *sql.DB) {
 	}
 }
 
+// mountAdmin returns a router with the admin pages mounted AND a
+// request-time middleware that injects a stand-in admin user, so the
+// page-render tests don't all 401 on the new requireUser gate. Tests
+// that need the unauthenticated path use mountAdminBare instead.
 func mountAdmin(t *testing.T, cfg Config) http.Handler {
+	t.Helper()
+	bare := mountAdminBare(t, cfg)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(handler.SetUser(r.Context(), struct{}{}))
+		bare.ServeHTTP(w, r)
+	})
+}
+
+// mountAdminBare mounts the admin pages without injecting a user — use
+// for the auth-bypass security tests which assert that anonymous
+// callers get 401.
+func mountAdminBare(t *testing.T, cfg Config) http.Handler {
 	t.Helper()
 	b := New(cfg)
 	r := router.New()
