@@ -212,3 +212,80 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 	}
 	return raw
 }
+
+// validateMediaURLs scans body for fields whose schema declares Image or
+// File and refuses unsafe URL shapes. The multipart upload path runs
+// uploaded files through a sniffer; the JSON path stores whatever
+// string the caller supplied, which becomes an `<img src>` / `<a href>`
+// later. A `javascript:`/`data:`/`file:` value there is stored XSS;
+// path-traversal (`../etc/passwd`) bypasses the storage's path scope.
+// Only http(s) URLs, relative paths within the upload tree, and bare
+// filenames survive.
+func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
+	for _, f := range ch.Entity.GetFields() {
+		switch f.Type {
+		case schema.Image, schema.File:
+		default:
+			continue
+		}
+		raw, ok := body[f.Name]
+		if !ok {
+			continue
+		}
+		s, ok := raw.(string)
+		if !ok || s == "" {
+			continue
+		}
+		if !isSafeMediaURL(s) {
+			return &validationError{fields: map[string][]string{f.Name: {"unsafe URL or path"}}}
+		}
+	}
+	return nil
+}
+
+// isSafeMediaURL is true for URLs / paths that may be persisted into an
+// Image or File field. Allow-list (rather than block-list) because the
+// stored value flows into HTML attributes and HTTP redirects later —
+// any scheme not on this list becomes a phishing / XSS / SSRF vector
+// when rendered.
+func isSafeMediaURL(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return false
+		}
+	}
+	low := strings.ToLower(s)
+	// Percent-encoded CR/LF tries to smuggle a header line through
+	// downstream consumers that re-encode the URL.
+	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
+		return false
+	}
+	// Path traversal escapes the storage root.
+	if strings.Contains(s, "..") {
+		return false
+	}
+	// Protocol-relative URLs are ambiguous about origin trust.
+	if strings.HasPrefix(s, "//") {
+		return false
+	}
+	// Relative paths (no scheme) are fine — they live under the storage
+	// prefix.
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == ':' {
+			scheme := strings.ToLower(s[:i])
+			switch scheme {
+			case "http", "https":
+				return true
+			default:
+				return false
+			}
+		}
+		if c == '/' || c == '?' || c == '#' || c == '.' {
+			// Hit a non-scheme delimiter first — relative path.
+			return true
+		}
+	}
+	// No colon at all — bare filename.
+	return true
+}

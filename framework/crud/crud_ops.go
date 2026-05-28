@@ -35,6 +35,10 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		}
 	}
 
+	if err := ch.validateMediaURLs(body); err != nil {
+		return nil, err
+	}
+
 	vr := schema.ValidateAll(ch.entitySchema(), body)
 	if !vr.Valid {
 		return nil, &validationError{fields: vr.Errors}
@@ -113,6 +117,10 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
+	}
+
+	if err := ch.validateMediaURLs(body); err != nil {
+		return nil, err
 	}
 
 	// Partial validation — only check fields the caller actually sent.
