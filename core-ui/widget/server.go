@@ -620,7 +620,15 @@ func widgetCSS(def Definition) string {
   }
 }
 `
-	return theme.CSSCustomProperties() + "\n" + ss.CSS() + animationCSS
+	// Do NOT prepend theme.CSSCustomProperties() — that would emit a
+	// :root block of the framework DefaultTheme tokens AFTER the
+	// host's app.css, overwriting any custom theme an app has set
+	// via app.WithTheme(...). The widget's CSS uses bare var(--…)
+	// refs; those resolve against whatever :root the page already
+	// has (app.css owns that). DefaultTheme is only used here to
+	// supply token VALUES to the token-substituting StyleSheet DSL
+	// during build, never as an emitted :root override.
+	return ss.CSS() + animationCSS
 }
 
 // escAttr does the minimum escaping needed for a value rendered into

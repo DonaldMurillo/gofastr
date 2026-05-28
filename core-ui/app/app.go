@@ -234,7 +234,18 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		} else {
 			content = renderComponentInScreen(ctx, screen, comp)
 		}
-		if layout != nil {
+		// Compose layouts: group chain (innermost → outermost) + the app
+		// default layout as the outermost shell. This matches the
+		// RenderRaw (SSG) composition path so a screen group's sidebar
+		// + content sits INSIDE the default layout's nav + footer. A
+		// screen group whose layout is also the default skips the
+		// duplicate wrap.
+		if screen.group != nil {
+			wrapped = composeLayoutsWithOverride(screen.group, screen.Layout, content)
+			if def := a.Router.defaultLayout; def != nil && !groupChainContainsLayout(screen.group, def) {
+				wrapped = def.Wrap(wrapped)
+			}
+		} else if layout != nil {
 			wrapped = layout.Wrap(content)
 		} else {
 			wrapped = content

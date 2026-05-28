@@ -71,10 +71,15 @@ func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
 var containerStyle = registry.RegisterStyle("ui-container", containerCSS)
 
 func containerCSS(_ style.Theme) string {
+	// Width caps are exposed as CSS variables so a host theme can
+	// override them without forking the component. Example: a marketing
+	// site that wants a 1240px wide cap sets
+	//   :root { --ui-container-wide: 1240px; }
+	// in its app.css.
 	return `[data-fui-comp="ui-container"] {
   display: block;
   inline-size: 100%;
-  max-inline-size: 1080px;
+  max-inline-size: var(--ui-container-default, 1080px);
   margin-inline: auto;
   padding-inline: var(--spacing-md, 16px);
   box-sizing: border-box;
@@ -90,7 +95,7 @@ func containerCSS(_ style.Theme) string {
   }
 }
 
-[data-fui-comp="ui-container"].ui-container--narrow { max-inline-size: 640px; }
-[data-fui-comp="ui-container"].ui-container--wide   { max-inline-size: 1280px; }
+[data-fui-comp="ui-container"].ui-container--narrow { max-inline-size: var(--ui-container-narrow, 640px); }
+[data-fui-comp="ui-container"].ui-container--wide   { max-inline-size: var(--ui-container-wide, 1280px); }
 [data-fui-comp="ui-container"].ui-container--full   { max-inline-size: none; }`
 }

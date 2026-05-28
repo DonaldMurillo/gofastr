@@ -50,6 +50,42 @@ func registerTestStyle(t *testing.T, prefix string, opts ...registry.Option) *re
 	}, opts...)
 }
 
+// TestCSSLoadOrder_AppCSSWinsOverComponentCSS pins the cascade
+// ordering for hosts that override framework component defaults.
+// app.css is the last <link> in <head>, so a host's customCSS for
+// `.ui-button { padding: ... }` wins against the framework default
+// at matching specificity without needing `!important` or
+// selector-stacking gymnastics.
+//
+// Regression guard for the inversion introduced in the migration
+// from "app.css first / comp-bundle after" to "comp-bundle first /
+// app.css last." If a future refactor flips this back, every
+// consumer's theme override silently stops working.
+func TestCSSLoadOrder_AppCSSWinsOverComponentCSS(t *testing.T) {
+	st := registerTestStyle(t, "order")
+	ds := newTestUIHostFor(st)
+	body := pageBody(t, ds, "/")
+
+	appCSSIdx := strings.Index(body, `href="/__gofastr/app.css"`)
+	compIdx := strings.Index(body, "/__gofastr/comp/")
+	if compIdx == -1 {
+		// Single-component takes the per-component link path; multi
+		// takes comp-bundle. Either form must be present.
+		compIdx = strings.Index(body, "/__gofastr/comp-bundle.css")
+	}
+	if appCSSIdx == -1 {
+		t.Fatal("app.css link not emitted")
+	}
+	if compIdx == -1 {
+		t.Fatal("component CSS link not emitted")
+	}
+	if appCSSIdx < compIdx {
+		t.Errorf("app.css must load AFTER component CSS so host overrides "+
+			"win cascade ties — got app.css at %d, component CSS at %d:\n%s",
+			appCSSIdx, compIdx, truncate(body, 800))
+	}
+}
+
 func TestComponentCSS_SingleComponentEmitsDirectLink(t *testing.T) {
 	st := registerTestStyle(t, "single")
 	ds := newTestUIHostFor(st)
