@@ -125,3 +125,67 @@ func TestSSE_LastEventIDHeaderPriority(t *testing.T) {
 		t.Errorf("SECURITY: [sse] LastEventID = %q (want header-id, not query-id). Attack: query param override of trusted header value.", got)
 	}
 }
+
+func TestSSE_LastEventIDHeaderStripsNewlines(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+	req.Header.Set("Last-Event-ID", "42\nevent: forged")
+
+	got := LastEventID(req)
+	if got != "42" {
+		t.Fatalf("SECURITY: [sse] LastEventID header retained control payload %q. Attack: forged SSE fields on resume.", got)
+	}
+}
+
+func TestSSE_LastEventIDHeaderStripsNUL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+	req.Header.Set("Last-Event-ID", "42\x00event: forged")
+
+	got := LastEventID(req)
+	if got != "42" {
+		t.Fatalf("SECURITY: [sse] LastEventID header retained NUL/control payload %q. Attack: resume-token protocol smuggling.", got)
+	}
+}
+
+func TestSSE_LastEventIDQueryStripsNewlines(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/stream?last_event_id=42%0Aevent:%20forged", nil)
+
+	got := LastEventID(req)
+	if got != "42" {
+		t.Fatalf("SECURITY: [sse] last_event_id query retained control payload %q. Attack: forged SSE fields via query resume token.", got)
+	}
+}
+
+func TestSSE_LastEventIDQueryStripsNUL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/stream?last_event_id=42%00event:%20forged", nil)
+
+	got := LastEventID(req)
+	if got != "42" {
+		t.Fatalf("SECURITY: [sse] last_event_id query retained NUL/control payload %q. Attack: resume-token protocol smuggling via query parameter.", got)
+	}
+}
+
+func TestSSE_WriteData_StripsInjectedIDNewlines(t *testing.T) {
+	rr := httptest.NewRecorder()
+	sw := NewSSEWriter(rr)
+
+	sw.SetID("42\nevent: forged")
+	_ = sw.WriteData("hello")
+
+	body := rr.Body.String()
+	if strings.Contains(body, "event: forged") {
+		t.Fatalf("SECURITY: [sse] queued ID injected a forged SSE field via WriteData: %q", body)
+	}
+}
+
+func TestSSE_WriteData_StripsInjectedIDNUL(t *testing.T) {
+	rr := httptest.NewRecorder()
+	sw := NewSSEWriter(rr)
+
+	sw.SetID("42\x00event: forged")
+	_ = sw.WriteData("hello")
+
+	body := rr.Body.String()
+	if strings.Contains(body, "\x00") || strings.Contains(body, "event: forged") {
+		t.Fatalf("SECURITY: [sse] queued ID retained NUL/control payload via WriteData: %q", body)
+	}
+}

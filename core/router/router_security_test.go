@@ -171,3 +171,47 @@ func TestRouter_ConcurrentRegistration(t *testing.T) {
 		<-done
 	}
 }
+
+func TestRouter_ParamStripsNewlines(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/users/x", nil)
+	req.SetPathValue("id", "42\nadmin")
+
+	got := Param(req, "id")
+	if got != "42" {
+		t.Fatalf("SECURITY: [router] Param retained newline/control payload %q. Attack: path-parameter smuggling into downstream headers/queries.", got)
+	}
+}
+
+func TestRouter_ParamStripsNUL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/users/x", nil)
+	req.SetPathValue("id", "42\x00admin")
+
+	got := Param(req, "id")
+	if got != "42" {
+		t.Fatalf("SECURITY: [router] Param retained NUL/control payload %q. Attack: path-parameter smuggling into downstream protocol fields.", got)
+	}
+}
+
+func TestRouter_ParamsStripsNewlines(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/users/x/posts/y", nil)
+	req.Pattern = "GET /users/{id}/posts/{postId}"
+	req.SetPathValue("id", "42\nadmin")
+	req.SetPathValue("postId", "7")
+
+	got := Params(req)
+	if got["id"] != "42" {
+		t.Fatalf("SECURITY: [router] Params retained newline/control payload %q. Attack: bulk path-param smuggling into downstream consumers.", got["id"])
+	}
+}
+
+func TestRouter_ParamsStripsNUL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/users/x/posts/y", nil)
+	req.Pattern = "GET /users/{id}/posts/{postId}"
+	req.SetPathValue("id", "42\x00admin")
+	req.SetPathValue("postId", "7")
+
+	got := Params(req)
+	if got["id"] != "42" {
+		t.Fatalf("SECURITY: [router] Params retained NUL/control payload %q. Attack: bulk path-param smuggling into downstream consumers.", got["id"])
+	}
+}

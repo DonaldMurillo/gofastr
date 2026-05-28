@@ -167,6 +167,113 @@ func TestTenant_TenantOwnerComboEnforced(t *testing.T) {
 		"same-owner cross-tenant data leaked when both tenant+owner scoping active")
 }
 
+func TestTenant_ListWithoutTenantContextDoesNotReturnCrossTenantRows(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "tenant_id", Type: schema.String},
+			{Name: "name", Type: schema.String},
+		},
+		MultiTenant: true,
+	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
+
+	seedRows(t, db, "items", []map[string]any{
+		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
+		{"id": "item-b", "tenant_id": "tenant-B", "name": "B data"},
+	})
+
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/items"})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+
+	if rr.Code == http.StatusOK {
+		resp := decodeListResponse(t, rr.Body.String())
+		if resp.Total != 0 || len(resp.Data) != 0 {
+			t.Fatalf("SECURITY: [tenant] list with no tenant context returned %d rows. Attack: empty-tenant full-table scan.", len(resp.Data))
+		}
+	}
+}
+
+func TestTenant_GetWithoutTenantContextCannotReadTenantRow(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "tenant_id", Type: schema.String},
+			{Name: "name", Type: schema.String},
+		},
+		MultiTenant: true,
+	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
+
+	seedRows(t, db, "items", []map[string]any{
+		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
+	})
+
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/items/item-a"})
+	req.SetPathValue("id", "item-a")
+	rr := httptest.NewRecorder()
+	ch.Get()(rr, req)
+
+	if rr.Code == http.StatusOK {
+		t.Fatalf("SECURITY: [tenant] get without tenant context returned 200. Attack: cross-tenant row read by empty tenant context. body=%s", rr.Body.String())
+	}
+}
+
+func TestTenant_UpdateWithoutTenantContextCannotModifyRow(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "tenant_id", Type: schema.String},
+			{Name: "name", Type: schema.String},
+		},
+		MultiTenant: true,
+	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
+
+	seedRows(t, db, "items", []map[string]any{
+		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
+	})
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodPut,
+		Path:   "/items/item-a",
+		Body:   `{"name":"changed by empty tenant"}`,
+	})
+	req.SetPathValue("id", "item-a")
+	rr := httptest.NewRecorder()
+	ch.Update()(rr, req)
+
+	var name string
+	if err := db.QueryRow(`SELECT name FROM items WHERE id = ?`, "item-a").Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code == http.StatusOK || name != "A data" {
+		t.Fatalf("SECURITY: [tenant] update without tenant context modified row to %q with status %d. Attack: empty-tenant cross-tenant update.", name, rr.Code)
+	}
+}
+
+func TestTenant_DeleteWithoutTenantContextCannotDeleteRow(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "tenant_id", Type: schema.String},
+			{Name: "name", Type: schema.String},
+		},
+		MultiTenant: true,
+	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
+
+	seedRows(t, db, "items", []map[string]any{
+		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
+	})
+
+	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/items/item-a"})
+	req.SetPathValue("id", "item-a")
+	rr := httptest.NewRecorder()
+	ch.Delete()(rr, req)
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM items WHERE id = ?`, "item-a").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code == http.StatusNoContent || count == 0 {
+		t.Fatalf("SECURITY: [tenant] delete without tenant context removed row. Attack: empty-tenant cross-tenant delete.")
+	}
+}
+
 // suppress unused imports
 var _ = schema.String
 var _ = tenant.SetTenantID

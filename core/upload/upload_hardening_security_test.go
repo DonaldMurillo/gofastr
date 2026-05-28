@@ -97,3 +97,42 @@ func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 		t.Errorf("SECURITY: [storage] error message leaks absolute path %q: %v", dir, err)
 	}
 }
+
+// TestLocalStorage_SaveRestrictsFilePermissions verifies uploaded files
+// are not created world-readable. Multi-tenant hosts often share the
+// same node; 0644 exposes user uploads to unrelated local users.
+func TestLocalStorage_SaveRestrictsFilePermissions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	s := upload.NewLocalStorage(dir)
+
+	if err := s.Save(context.Background(), "tenant-a/private.txt", strings.NewReader("secret")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "tenant-a", "private.txt"))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		t.Errorf("SECURITY: [storage] uploaded file permissions = %#o. Attack: local disclosure via world/group-readable upload files.", info.Mode().Perm())
+	}
+}
+
+// TestLocalStorage_SaveRestrictsDirectoryPermissions verifies upload
+// subdirectories are not created world-readable/executable.
+func TestLocalStorage_SaveRestrictsDirectoryPermissions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	s := upload.NewLocalStorage(dir)
+
+	if err := s.Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "tenant-a", "nested"))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		t.Errorf("SECURITY: [storage] upload directory permissions = %#o. Attack: local enumeration of tenant upload trees.", info.Mode().Perm())
+	}
+}
