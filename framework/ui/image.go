@@ -99,6 +99,26 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if cfg.Src == "" {
 		panic("ui: OptimizedImage requires Src")
 	}
+	// Drop unsafe schemes on the fallback src and on every Sources URL;
+	// see framework/ui/safety.go. When the src is unsafe we replace it
+	// with the framework's tiny placeholder URL — a 1×1 transparent
+	// stub the runtime serves. The browser renders nothing, and the
+	// surrounding layout is preserved. Preferable to silently shipping
+	// a `javascript:`/`data:` URL into <img src>.
+	if safe := safeURL(cfg.Src); safe != "" {
+		cfg.Src = safe
+	} else {
+		cfg.Src = "/__gofastr/blank.png"
+	}
+	if len(cfg.Sources) > 0 {
+		filtered := cfg.Sources[:0]
+		for _, s := range cfg.Sources {
+			if safeURL(s.URL) != "" {
+				filtered = append(filtered, s)
+			}
+		}
+		cfg.Sources = filtered
+	}
 	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
 		// Decorative images must opt in explicitly to skip alt — Alt=""
 		// is otherwise treated as missing, not "intentionally empty".

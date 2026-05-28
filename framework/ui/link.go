@@ -60,12 +60,19 @@ func Link(cfg LinkConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	// Drop unsafe href (javascript:, data:, control bytes, …) and
+	// scrub event-handler attributes out of ExtraAttrs. See
+	// framework/ui/safety.go for the allow-list.
+	href := safeURL(cfg.Href)
+	if href == "" {
+		href = "#"
+	}
 	return linkStyle.WrapHTML(html.Link(html.LinkConfig{
-		Href:  cfg.Href,
-		Text:  cfg.Text,
-		Class: cls,
-		ID:    cfg.ID,
-		ExtraAttrs: cfg.ExtraAttrs,
+		Href:       href,
+		Text:       cfg.Text,
+		Class:      cls,
+		ID:         cfg.ID,
+		ExtraAttrs: scrubAttrs(cfg.ExtraAttrs),
 	}))
 }
 

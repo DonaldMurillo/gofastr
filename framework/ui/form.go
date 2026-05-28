@@ -135,9 +135,18 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			))
 	}
 
+	action := safeURL(cfg.Action)
+	if action == "" {
+		// A form pointed at a dangerous URL is worse than a no-op — the
+		// user clicks submit and credentials flow somewhere unexpected.
+		// Refuse to render the action and let the surrounding page
+		// surface the failure when the form goes nowhere.
+		action = "#"
+	}
+
 	return formStyle.WrapHTML(html.Form(html.FormConfig{
 		Method: method,
-		Action: cfg.Action,
+		Action: action,
 		Class:  cls,
 		ID:     cfg.ID,
 	}, children...))
