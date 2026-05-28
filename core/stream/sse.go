@@ -50,8 +50,13 @@ func (s *SSEWriter) Flush() {
 }
 
 // SetRetry writes the "retry:" field, telling the client how many
-// milliseconds to wait before reconnecting.
+// milliseconds to wait before reconnecting. Non-positive values are
+// dropped: `retry: 0` tells the client to reconnect with zero delay,
+// which spins into a reconnect storm — accidental DoS amplifier.
 func (s *SSEWriter) SetRetry(seconds int) {
+	if seconds <= 0 {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureHeaders()
@@ -97,8 +102,10 @@ func (s *SSEWriter) WriteEvent(event, data string) error {
 	b.WriteString(event)
 	b.WriteByte('\n')
 
-	// multi-line data
-	for _, line := range strings.Split(data, "\n") {
+	// multi-line data — strip CR/NUL per the WHATWG SSE parser, which
+	// terminates a field on CR, LF, or CRLF. A `data: foo\rbar` field
+	// would otherwise split into two values on Windows EventSource impls.
+	for _, line := range strings.Split(scrubSSEDataLines(data), "\n") {
 		b.WriteString("data: ")
 		b.WriteString(line)
 		b.WriteByte('\n')
@@ -130,7 +137,7 @@ func (s *SSEWriter) WriteData(data string) error {
 		s.nextID = ""
 	}
 
-	for _, line := range strings.Split(data, "\n") {
+	for _, line := range strings.Split(scrubSSEDataLines(data), "\n") {
 		b.WriteString("data: ")
 		b.WriteString(line)
 		b.WriteByte('\n')
@@ -140,6 +147,25 @@ func (s *SSEWriter) WriteData(data string) error {
 	_, err := s.w.Write([]byte(b.String()))
 	s.flush.Flush()
 	return err
+}
+
+// scrubSSEDataLines strips CR and NUL bytes from a multi-line data
+// payload before \n-splitting. NUL would terminate the field on legacy
+// clients; CR terminates the field on WHATWG-spec parsers.
+func scrubSSEDataLines(s string) string {
+	if !strings.ContainsAny(s, "\r\x00") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\r' || c == 0 {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // WriteComment writes an SSE comment (keepalive):

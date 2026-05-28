@@ -5,7 +5,58 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	corehandler "github.com/DonaldMurillo/gofastr/core/handler"
 )
+
+// TestSwaggerUI_EscapesBasePath pins that the docs landing page never
+// reflects basePath unescaped. The string flows into both an href and
+// visible text; a developer-set "/docs-<svg-onload=1>" would otherwise
+// give a viewer a reflected XSS the moment they hit the docs route.
+func TestSwaggerUI_EscapesBasePath(t *testing.T) {
+	for _, base := range []string{`/docs-<svg-onload=1>`, `/docs"/x`, `/docs&y`} {
+		t.Run(base, func(t *testing.T) {
+			spec := NewSpec("test", "1.0")
+			req := httptest.NewRequest(http.MethodGet, base+"/", nil)
+			req = req.WithContext(corehandler.SetUser(req.Context(), "admin"))
+			rec := httptest.NewRecorder()
+			SwaggerUIHandler(spec, base).ServeHTTP(rec, req)
+
+			body := rec.Body.String()
+			if strings.Contains(body, base) {
+				t.Fatalf("SwaggerUIHandler reflected raw basePath %q into body", base)
+			}
+		})
+	}
+}
+
+// TestAddServer_RejectsUnsafeSchemes locks the allow-list for the
+// OpenAPI servers[].url field. The Swagger UI / Stoplight viewers
+// surface those URLs as clickable links; a `javascript:`/`data:`/`file:`
+// entry there is a stored XSS into every spec consumer.
+func TestAddServer_RejectsUnsafeSchemes(t *testing.T) {
+	for _, u := range []string{"javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "ftp://x", "mailto:x"} {
+		t.Run(u, func(t *testing.T) {
+			spec := NewSpec("t", "1")
+			spec.AddServer(u, "")
+			doc := spec.Build()
+			if _, ok := doc["servers"]; ok {
+				t.Fatalf("AddServer accepted dangerous URL %q", u)
+			}
+		})
+	}
+	// Sanity: http/https/relative + ws/wss survive.
+	for _, u := range []string{"https://api.example.com", "http://localhost:8080", "/v1", "wss://api.example.com"} {
+		t.Run(u, func(t *testing.T) {
+			spec := NewSpec("t", "1")
+			spec.AddServer(u, "")
+			doc := spec.Build()
+			if _, ok := doc["servers"]; !ok {
+				t.Fatalf("AddServer dropped safe URL %q", u)
+			}
+		})
+	}
+}
 
 // TestOpenAPI_OperationIDNoSpecialChars verifies that operation IDs
 // don't contain dangerous characters. Attack: injection via operation IDs.

@@ -9,25 +9,51 @@ import (
 	"strings"
 )
 
-// stripControls removes bytes that have caused cursor / direction injection
-// problems in the past: NUL, CR, LF, and (defensively) the rest of the
-// C0 control range plus DEL. Applied to any user-controlled cursor token
-// field after decoding and to cursor direction strings before they reach
-// downstream consumers.
+// stripControls removes bytes / codepoints that have caused cursor /
+// direction injection problems in the past: NUL, CR, LF, and the rest
+// of the C0 control range plus DEL, plus Unicode zero-width and bidi
+// formatting codepoints. The bidi/zero-width chars are particularly
+// dangerous in cursor *field names*, because a parser that sees "name"
+// and a downstream allow-list that sees "na​me" will disagree.
+// Applied to any user-controlled cursor token field after decoding and
+// to cursor direction strings before they reach downstream consumers.
 func stripControls(s string) string {
 	if s == "" {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
 			continue
 		}
-		b.WriteByte(c)
+		if isUnicodeInvisible(r) {
+			continue
+		}
+		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// isUnicodeInvisible reports whether r is a zero-width or bidi-control
+// codepoint that should never survive a cursor decode. Combining marks
+// and ordinary diacritics deliberately fall through — we only strip
+// the codepoints that have no visible glyph and exist purely to
+// rearrange or hide the surrounding text.
+func isUnicodeInvisible(r rune) bool {
+	switch r {
+	case 0x200B, 0x200C, 0x200D, // zero-width space/non-joiner/joiner
+		0x200E, 0x200F, // LRM / RLM
+		0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // LRE/RLE/PDF/LRO/RLO
+		0x2066, 0x2067, 0x2068, 0x2069, // LRI/RLI/FSI/PDI
+		0x061C,         // Arabic letter mark
+		0x180E,         // Mongolian vowel separator
+		0xFEFF,         // BOM / zero-width no-break space
+		0x2061, 0x2062, 0x2063, 0x2064, // invisible math operators
+		0x202F: // narrow no-break space
+		return true
+	}
+	return false
 }
 
 // DefaultPageSize is the default number of items per page.

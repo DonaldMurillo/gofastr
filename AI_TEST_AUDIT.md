@@ -118,3 +118,141 @@ Splits: monolithic test files (>10 tests spanning multiple topics) get split per
 - **Decision:** weaken (mount stubAuthMiddleware before the debug endpoint)
 - **Why:** AI-authored `exposure_security_test.go::TestDebugStatsEndpoint_RequiresAuth` gates `/.debug/stats` on an authenticated caller. The pre-existing happy-path test exercised the body shape under no auth. Mounted `stubAuthMiddleware` on the test app so the same body assertions still run while the production-facing auth gate remains in place.
 - **Commit:** pending
+
+---
+
+## 2026-05-28 red-tests batch (32 files)
+
+Adversarial "red" suite the previous pass left as the trailing 32
+`_red_test.go` files. Each below records the decision made when
+landing the failing test against production code.
+
+### TestBind_Red{Casefold,DuplicateKeys,UnknownFields}Matrix  ·  core/handler
+- **Decision:** fix-prod
+- **Why:** stdlib `json.Decoder` accepts duplicate keys (last-wins), case-folded matches against struct json tags, and unknown fields. All three are mass-assignment / key-smuggling primitives against any handler that "validates by tag." Added `validateBodyKeys` in `core/handler/bind.go` that pre-scans the top-level object against the struct's exact json-tag set + `DisallowUnknownFields`. Tests consolidated into `bind_strict_keys_security_test.go` (~60 char names).
+- **Commit:** pending
+
+### TestBind_RedRejectsNonApplicationJSONSuffixMatrix  ·  core/handler
+- **Decision:** delete
+- **Why:** Asserted `text/html+json` / `image/svg+json` should not be treated as JSON. RFC 6839 explicitly defines `+json` as the structured-suffix marker for JSON content types — `application/vnd.api+json`, `application/ld+json`, etc. The premise narrowed the RFC; sibling `TestBind_JSONPrefixSpoofingRejected_VendorSuffix` already covers the genuine `application/json-evil` lookalike attack.
+- **Commit:** pending
+
+### TestRespond_Red{ContentType,Nosniff}Matrix  ·  core/handler
+- **Decision:** fix-prod
+- **Why:** Custom `ResponseType.ContentType()` flowed verbatim into Set("Content-Type", …); CR/LF/NUL there smuggles a header line. Nosniff was only set on the default JSON path. Added `sanitizeHeaderValue` + nosniff on every custom path (Respond + SSEStream). New `respond_security_test.go`.
+- **Commit:** pending
+
+### TestCORS_RedSanitizesConfiguredAllowListsMatrix  ·  core/middleware
+- **Decision:** fix-prod (narrow)
+- **Why:** CRLF/NUL in `AllowedMethods`/`AllowedHeaders` smuggled into Allow-* response headers. Added `sanitizeCORSTokens` config-time strip. Cut 60 cases to one merged test in `cors_security_test.go`.
+- **Commit:** pending
+
+### TestIdempotency_RedDefaultConfigDoesNotReplayAcrossUsersMatrix  ·  core/middleware
+- **Decision:** delete
+- **Why:** Directly contradicts the documented "Default: empty principal (no namespacing); apps SHOULD wire one" stance in `IdempotencyConfig`. The contract is "opt-in safety"; flipping it to fail-closed-by-default is a behavior change, not a security fix. Existing `idempotency_security_test.go` covers the principal-set scenario.
+- **Commit:** pending
+
+### TestLoggingFn_RedSanitizesRequestMethodMatrix  ·  core/middleware
+- **Decision:** fix-prod
+- **Why:** `r.Method` flowed verbatim into slog. CRLF/ESC there forges log lines or terminal-escape against operator tails. Added `safeLogMethod` mirror of the existing `safeLogPath`. Trimmed to one focused test in `logging_security_test.go`.
+- **Commit:** pending
+
+### TestDefaultRateLimitKey_RedPreservesBareIPv6Matrix  ·  core/middleware
+- **Decision:** fix-prod
+- **Why:** Real bug — `stripPort`'s last-colon split mangled `2001:db8::1` to `2001:db8:`, sharding the rate-limit bucket per address (DoS bypass). Rewrote using `net.SplitHostPort` with bracket-aware fallback. New `TestStripPort_PreservesBareIPv6` in `ratelimit_security_test.go`.
+- **Commit:** pending
+
+### TestSpec_Red{Server,PathParam,PathValue}Matrix + SwaggerUIHandler_RedEscapesBasePathMatrix  ·  core/openapi
+- **Decision:** mix — fix-prod (swagger_basepath, server_url); delete (path_param_name, path_value)
+- **Why:** `swagger_basepath` is real reflected XSS — basePath flowed unescaped into HTML body twice; fixed with `html.EscapeString`. `server_url`: Swagger UI vendors render `servers[].url` as clickable, so non-http(s) schemes there are phishing primitives — added a tight allow-list at AddServer. `path_value` and `path_param_name` test developer-supplied input as if it were attacker input (the OpenAPI paths map key IS the route the developer registered); wrong threat model. New consolidated section in `openapi_security_test.go`.
+- **Commit:** pending
+
+### TestSSEWriter_Red{DataControl,Retry}Matrix  ·  core/stream
+- **Decision:** fix-prod
+- **Why:** `WriteData`/`WriteEvent` passed CR + NUL through inside the data field — WHATWG SSE parsers treat CR as a line terminator (Windows EventSource impls). `SetRetry(0)` emitted `retry: 0` which spins a reconnect storm (DoS amplifier). Added `scrubSSEDataLines` + early-return on non-positive retry. Tests merged into `sse_security_test.go`.
+- **Commit:** pending
+
+### TestVerifyTimestamped_RedRejectsAmbiguousSignatureHeadersMatrix  ·  battery/webhook
+- **Decision:** fix-prod (duplicates); weaken (extras)
+- **Why:** Duplicate `t=` / `v1=` in the timestamp header is unambiguous signature smuggling — fixed by rejecting at parse time. Extra fields stay tolerated per the existing forward-compat comment (Stripe-style `v2=` future versions). Merged into `signature_security_test.go`.
+- **Commit:** pending
+
+### TestParseDSL_RedAfterCursorMatrix  ·  framework/dsl
+- **Decision:** weaken (control-bytes only)
+- **Why:** DSL `after()` takes an opaque cursor; cursor format validation lives downstream in `framework/crud` (covered by `cursor_security_test.go`). Kept only the control-byte strip via new `stripDSLControlBytes`. The "SQL-injection lookalike" cases were wrong-layer.
+- **Commit:** pending
+
+### TestDecodeMultiCursor_RedUnicodeScrubMatrix  ·  framework/pagination
+- **Decision:** fix-prod
+- **Why:** Zero-width / bidi codepoints in a cursor *field name* let a parser see `"name"` while a downstream allow-list sees `"na​me"` — homograph state confusion. Extended `stripControls` to remove the canonical zero-width / bidi codepoint set. Combining marks deliberately fall through.
+- **Commit:** pending
+
+### TestNormalizePrefix_RedTraversalMatrix  ·  framework/routegroup
+- **Decision:** fix-prod
+- **Why:** Group prefix normalization was minimal (leading `/` + trim trailing `/`). A non-canonical prefix permanently aliases every child route under it. Rewrote to strip control bytes, convert backslashes, and apply `path.Clean` to resolve `..` and collapse repeated `/`. New `prefix_security_test.go`.
+- **Commit:** pending
+
+### TestDeprecation{Headers,Middleware}_RedReplacementSanitizationMatrix  ·  framework/experimental/apiversions
+- **Decision:** fix-prod
+- **Why:** Replacement URL flowed verbatim into the `Link` response header. A `javascript:` / `data:` / `mailto:` value there is a phishing primitive once API clients render it as clickable. Added `safeReplacementURL` allow-list (http/https/relative; rejects percent-encoded CRLF too). New `deprecation_security_test.go`.
+- **Commit:** pending
+
+### TestCrudAPI_Red{AnonymousOwnerCreate,MissingTenantScope}Matrix  ·  framework/crud
+- **Decision:** fix-prod
+- **Why:** In-process CRUD methods (`CreateOne`, `UpdateOne`, `DeleteOne`, `GetOne`, `ListAll`, `CountAll`, `BatchCreate/Update/DeleteMany`) bypassed the HTTP middleware's fail-closed tenant / owner guard. Added `requireTenantContext` + wired `requireOwnerContext` into every in-process method. Aligns with the existing `tenant_security_test.go::TestTenantMiddleware_DoesNotTrustClientHeader` decision. New `crud_api_security_test.go`.
+- **Commit:** pending
+
+### TestDecodeCursorAny_RedFieldValidationMatrix  ·  framework/crud
+- **Decision:** fix-prod
+- **Why:** `decodeCursorAny` accepted any multi-cursor with `len(mf) > 0` and dumped names into the result map — no validation that decoded names match `fields`. An attacker-supplied cursor could widen the keyset WHERE clause beyond the declared key. Added exact-match check (same length + same names + no duplicates) and shape-mismatch detection (single-field encoding rejected when composite expected, and vice versa). New `cursor_security_test.go`.
+- **Commit:** pending
+
+### TestParseScopedFilters_RedFailClosedMatrix  ·  framework/crud
+- **Decision:** delete + small fix-prod
+- **Why:** Test invoked the documented "fields=nil ⇒ no validation" mode then asserted validation. Contradictory. Salvaged the one real concern — oversized IN list — with a `maxScopedINEntries = 256` cap. New `TestParseScopedFilters_CapsInListSize`.
+- **Commit:** pending
+
+### TestList_RedSortFieldValidationMatrix  ·  framework/crud
+- **Decision:** fix-prod (Hidden + unknown + control-bytes)
+- **Why:** `ParseSort` silently dropped unknown fields and allowed Hidden fields as sort keys. Hidden-field sort leaks the value via row ordering (information disclosure); silent-drop unknown turns probes into an oracle. Changed signature to return error; List handler maps to 400. New `sort_security_test.go`.
+- **Commit:** pending
+
+### TestUpsert_RedSoftDeletedRowMutationMatrix  ·  framework/crud
+- **Decision:** fix-prod
+- **Why:** `UpsertOne`'s `ON CONFLICT DO UPDATE` silently cleared `deleted_at` on the conflict path — bypassing the compliance / forensic story of soft-delete. Added a tx-bound preflight that returns `errSoftDeletedResurrection` when the target row carries `deleted_at`. Test merged into existing `upsert_security_test.go`.
+- **Commit:** pending
+
+### TestBatch{Create,Update,Delete}_RedRollbackDataScrubbedMatrix  ·  framework
+- **Decision:** fix-prod
+- **Why:** When a batch tx aborts at index N, earlier items kept their `Data` payload in the response. Surfacing the constructed-but-not-persisted shape tempts callers to read it without checking `Committed=false`. Added `scrubRolledBackData` at write time. Renamed to `batch_rollback_security_test.go` with 3 focused tests.
+- **Commit:** pending
+
+### TestUpload_RedJSON{Create,Update}RejectsDangerousAvatarURLs  ·  framework
+- **Decision:** fix-prod
+- **Why:** Multipart upload path runs files through a sniffer; the JSON path stored whatever string the caller supplied into `schema.Image` / `schema.File` fields. That value flows back into `<img src>` / `<a href>` later — stored XSS. Added `validateMediaURLs` allow-list (http(s)/relative; rejects `../` and CRLF). Updated pre-existing `TestUpload_JSONStillWorks` to use a safe URL. Renamed to `json_upload_security_test.go`.
+- **Commit:** pending
+
+### TestOpenAPI_RedFieldToSchemaReadOnlyMatrix + RedEntitySchemasPreserveReadOnlyMatrix  ·  framework
+- **Decision:** fix-prod (correctness)
+- **Why:** `FieldToSchema` never emitted `readOnly: true` for `ReadOnly` fields or any `AutoGenerate` variant. Generated SDKs propose writable bindings for fields the server rejects. More correctness than security but cheap to fix. Renamed to `openapi_readonly_security_test.go`.
+- **Commit:** pending
+
+### TestOpenAPI_RedSensitiveRelationsOmittedFromIncludeDocs  ·  framework
+- **Decision:** delete
+- **Why:** Wrong-layer name-pattern heuristic. If the author exposes a relation named `secret_keys`, the "leak" is in the relation existing on the entity at all, not its docs string. Trying to redact based on name patterns breaks legitimate relations (`internal_notes` on a CRM) and gives false security. Real fix is a per-relation `OmitFromOpenAPI` flag — out of scope for this pass.
+- **Commit:** pending
+
+### TestTypedHooks_RedPanicsAreRecoveredMatrix  ·  framework
+- **Decision:** fix-prod
+- **Why:** A panic in any registered hook (typed or untyped) propagated out and tore down the request goroutine. Added `runHookSafely` recovery in `HookRegistry.ExecuteHooks` so panics surface as errors. Single point of enforcement covers both `OnBeforeCreate`-style helpers and direct `RegisterHook` callers. Renamed to `typed_hooks_security_test.go`.
+- **Commit:** pending
+
+### TestLink_/Form_/GlobalSearch_/OptimizedImage_RedDangerous*Matrix  ·  framework/ui
+- **Decision:** fix-prod (flipped the escape-hatch contract)
+- **Why:** Existing siblings explicitly documented "framework attribute-escapes but does NOT sanitize URL schemes; callers must" + "ExtraAttrs is an escape hatch — callers must not pass event handlers." User decision was to flip those contracts (see `framework/ui/safety.go`): allow-list URL schemes at the component layer (`safeURL`), strip on-event handlers from `ExtraAttrs` (`scrubAttrs`). Updated sibling `ui_link_form_security_test.go` and `ui_datatable_card_security_test.go::TestImage_SrcJavaScript` to assert the new behaviour. GlobalSearch.Shortcut now flows through `render.Text` instead of raw concatenation.
+- **Commit:** pending
+
+### TestWithHeadHTML_/TestSEOScreen_RedDangerousTagMatrix + TestUIHost_RedDangerousTypedSEOURLMatrix  ·  framework/uihost
+- **Decision:** fix-prod (flipped the escape-hatch contract)
+- **Why:** `WithHeadHTML` / `SEOScreen.HeadHTML` previously only stripped `<script>` (documented as an "escape hatch intended for meta/link/style only"). User decision flipped this to a wider block-list of active-in-head tags (`iframe`, `object`, `base`, `style`, `svg`, `math`, `audio`/`video`, `form`/`button`, `img`, `picture`, `source`, `marquee`, `template`, etc.) plus `<meta http-equiv=refresh>` and scheme-validated `<link>` tags. Typed SEO URL helpers (`WithCanonicalURL`, `WithOpenGraph URL/Image`, `WithTwitterCard Image`) now drop non-http(s)/relative URLs. New `seo_security_test.go`.
+- **Commit:** pending

@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -320,11 +321,22 @@ func trimSpaces(s string) string {
 	return s[start:end]
 }
 
+// stripPort returns the host portion of addr in the canonical form used
+// as a rate-limit / proxy-trust key. Both bracketed IPv6 ("[::1]:8080")
+// and bare-IPv6 forms ("::1", "2001:db8::1") must round-trip cleanly —
+// a last-colon split mangles "2001:db8::1" to "2001:db8:" and silently
+// shards the rate-limit bucket per-address.
 func stripPort(addr string) string {
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
+	if addr == "" {
+		return addr
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	// SplitHostPort rejects unbracketed IPv6 (too many colons) and bare
+	// hosts (no colon). Distinguish: bare-IPv6 has >=2 colons, no port.
+	if strings.Count(addr, ":") >= 2 {
+		return addr
 	}
 	return addr
 }

@@ -123,10 +123,13 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 
 	children := []render.HTML{box}
 	if showHint && shortcut != "" {
+		// shortcut flows raw into the kbd body; HTML-escape it so a
+		// CMS-supplied or untrusted-source shortcut hint can't smuggle
+		// `<script>` or breakout markup into the page.
 		children = append(children, html.Span(html.TextConfig{
-			Class: "ui-global-search__hint",
+			Class:      "ui-global-search__hint",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		}, render.HTML(`<kbd class="ui-global-search__chord">`+shortcut+`</kbd>`)))
+		}, render.Tag("kbd", map[string]string{"class": "ui-global-search__chord"}, render.Text(shortcut))))
 	}
 	return globalSearchStyle.WrapHTML(render.Tag("div", wrapAttrs, children...))
 }

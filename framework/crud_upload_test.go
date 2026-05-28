@@ -214,14 +214,18 @@ func TestUpload_Update_ReplacesURL(t *testing.T) {
 
 func TestUpload_JSONStillWorks(t *testing.T) {
 	runUploadTest(t, func(t *testing.T, db *sql.DB, ta *TestApp, dir string) {
-		resp := ta.Post("/posts", map[string]any{"title": "JSON Path", "avatar": "external://url"})
+		// External URL: must be http(s) — see crud_upload.go
+		// isSafeMediaURL. Adversarial schemes are covered in
+		// json_upload_security_test.go.
+		safe := "https://cdn.example.com/avatar.png"
+		resp := ta.Post("/posts", map[string]any{"title": "JSON Path", "avatar": safe})
 		resp.AssertStatus(t, http.StatusCreated)
 
 		var got map[string]any
 		if err := json.Unmarshal([]byte(resp.Body()), &got); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if got["avatar"] != "external://url" {
+		if got["avatar"] != safe {
 			t.Fatalf("expected JSON-supplied avatar to round-trip, got %v", got["avatar"])
 		}
 	})

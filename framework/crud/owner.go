@@ -7,12 +7,25 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// tenantIDFromCtx is a thin wrapper so owner.go doesn't drag the
+// framework/tenant package across every helper signature.
+func tenantIDFromCtx(ctx context.Context) string {
+	return tenant.GetTenantID(ctx)
+}
 
 // errOwnerRequired signals a write attempt against an OwnerField entity
 // without an authenticated caller in the context. In-process APIs
 // (UpsertOne) bubble this up so callers can map to 401.
 var errOwnerRequired = errors.New("owner context required for owner-scoped entity")
+
+// errTenantRequired signals an in-process CRUD call against a
+// MultiTenant entity with no tenant id in the context. Fails closed —
+// the HTTP layer normally refuses these requests at middleware, but
+// in-process callers (typed repos, jobs, scripts) bypass that path.
+var errTenantRequired = errors.New("tenant context required for multi-tenant entity")
 
 // ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query
 // when the entity declares OwnerField and the request context carries an
@@ -74,6 +87,20 @@ func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
 	}
 	if _, ok := owner.Get(ctx); !ok {
 		return errOwnerRequired
+	}
+	return nil
+}
+
+// requireTenantContext returns errTenantRequired when the entity is
+// configured for multi-tenancy and the context carries no tenant id.
+// Wired into every in-process CRUD method that touches DB state, so a
+// MultiTenant entity can never be queried unscoped through this API.
+func (ch *CrudHandler) requireTenantContext(ctx context.Context) error {
+	if !ch.Entity.Config.MultiTenant {
+		return nil
+	}
+	if tenantIDFromCtx(ctx) == "" {
+		return errTenantRequired
 	}
 	return nil
 }

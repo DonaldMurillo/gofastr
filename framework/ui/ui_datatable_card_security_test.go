@@ -522,14 +522,12 @@ func TestImage_SrcJavaScript(t *testing.T) {
 		Height: 100,
 	})
 	s := string(h)
-	if !strings.Contains(s, "javascript:alert('img-xss')") {
-		// The src goes through attribute escaping, but javascript: is a protocol, not
-		// HTML-special characters. It would appear escaped as: javascript:alert(&#39;img-xss&#39;)
-		// but the protocol is still present.
-		t.Logf("NOTE: [image-src-javascript] src attribute escapes HTML entities but javascript: protocol may persist")
-	}
-	if strings.Contains(s, `src="javascript:alert('img-xss')"` ) {
-		t.Errorf("SECURITY: [image-src-javascript] raw javascript: URL in src attribute:\n  %s", truncate(s, 300))
+	// Allow-list (see framework/ui/safety.go): javascript: is dropped
+	// outright, replaced with an empty src. The browser shows a broken
+	// image — preferable to silently shipping the protocol into the
+	// DOM the way the old contract did.
+	if strings.Contains(s, "javascript:") {
+		t.Errorf("SECURITY: [image-src-javascript] javascript: scheme survived in:\n  %s", truncate(s, 300))
 	}
 }
 

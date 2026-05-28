@@ -142,18 +142,46 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 // `fields`. Both encodings are first-class — single-field is the
 // compact shape for entities cursored by one column; multi-field is
 // for composite cursors.
+//
+// The decoded field names MUST exact-match the expected `fields` set
+// (same length, same names, no duplicates). A cursor with mis-cased,
+// whitespace-padded, or punctuation-altered names would otherwise feed
+// arbitrary column tokens into the keyset WHERE clause — either a
+// query error at best, or silent state confusion across cursor revisions.
 func decodeCursorAny(cursor string, fields []string) (map[string]string, error) {
 	out := map[string]string{}
 
 	// Try multi-cursor first; if it has fields, prefer it.
 	if mf, err := pagination.DecodeMultiCursor(cursor); err == nil && len(mf) > 0 {
+		if len(fields) <= 1 {
+			// Single-field consumer must use the single-field encoding;
+			// accepting a composite blob here would let a caller widen
+			// the WHERE clause beyond the declared key.
+			return nil, fmt.Errorf("cursor shape mismatch: composite cursor with %d fields, expected single-field", len(mf))
+		}
+		if len(mf) != len(fields) {
+			return nil, fmt.Errorf("cursor shape mismatch: %d fields decoded, expected %d", len(mf), len(fields))
+		}
+		want := make(map[string]struct{}, len(fields))
+		for _, f := range fields {
+			want[f] = struct{}{}
+		}
 		for _, kv := range mf {
+			if _, ok := want[kv.Name]; !ok {
+				return nil, fmt.Errorf("cursor field %q not in expected set", kv.Name)
+			}
+			if _, dup := out[kv.Name]; dup {
+				return nil, fmt.Errorf("cursor field %q appears more than once", kv.Name)
+			}
 			out[kv.Name] = kv.Value
 		}
 		return out, nil
 	}
 	// Fall back to single-field cursor.
 	if _, val, err := pagination.DecodeCursor(cursor); err == nil && len(fields) > 0 {
+		if len(fields) > 1 {
+			return nil, fmt.Errorf("cursor shape mismatch: single-field cursor, expected %d fields", len(fields))
+		}
 		out[fields[0]] = val
 		return out, nil
 	}

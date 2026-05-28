@@ -8,6 +8,38 @@ import (
 	"time"
 )
 
+// TestVerify_RejectsDuplicateFields pins that a header with two `t=` or
+// two `v1=` fields is rejected wholesale. Last-wins parsing would let a
+// proxy/attacker pair a valid timestamp with a bogus signature (or vice
+// versa) by appending a second copy of the field. Unknown fields are
+// still tolerated (forward-compat).
+func TestVerify_RejectsDuplicateFields(t *testing.T) {
+	secret := "top-secret"
+	body := []byte(`{"event":"payment.succeeded"}`)
+	now := time.Now().Unix()
+	valid := SignWithTimestamp(secret, now, body)
+
+	cases := map[string]string{
+		"duplicate-t":  "t=1," + valid,
+		"duplicate-v1": valid + ",v1=deadbeef",
+	}
+	for name, header := range cases {
+		t.Run(name, func(t *testing.T) {
+			if VerifyTimestamped(secret, header, body, time.Hour) {
+				t.Fatalf("VerifyTimestamped accepted ambiguous header %q", header)
+			}
+		})
+	}
+
+	// Sanity: an unknown forward-compat field must still verify.
+	t.Run("tolerates-unknown-field", func(t *testing.T) {
+		header := valid + ",kid=key-2"
+		if !VerifyTimestamped(secret, header, body, time.Hour) {
+			t.Fatalf("VerifyTimestamped rejected header with benign extra field %q", header)
+		}
+	})
+}
+
 // TestSignature_ValidSignatureAccepted verifies that a correctly signed
 // payload passes verification.
 func TestSignature_ValidSignatureAccepted(t *testing.T) {

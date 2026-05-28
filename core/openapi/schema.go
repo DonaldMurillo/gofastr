@@ -106,6 +106,13 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["default"] = field.Default
 	}
 
+	// Mirror the runtime contract into the spec: ReadOnly fields and any
+	// AutoGenerate variant are server-managed; clients must not be told
+	// they can write them via the generated SDK.
+	if field.ReadOnly || field.AutoGenerate != schema.AutoNone {
+		prop["readOnly"] = true
+	}
+
 	return prop
 }
 

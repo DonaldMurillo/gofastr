@@ -10,6 +10,47 @@ import (
 	"time"
 )
 
+// TestStripPort_PreservesBareIPv6 pins the contract that
+// defaultRateLimitKey returns bare-IPv6 addresses unchanged. The old
+// last-colon split mangled "2001:db8::1" to "2001:db8:", which split
+// the bucket per address and silently defeated the rate limit.
+func TestStripPort_PreservesBareIPv6(t *testing.T) {
+	cases := []string{
+		"::1",
+		"2001:db8::1",
+		"2001:db8::ab",
+		"[::1]:8080",
+		"[2001:db8::1]:1234",
+		"10.0.0.1:9000",
+		"10.0.0.1",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = in
+			got := defaultRateLimitKey(req)
+			switch in {
+			case "[::1]:8080":
+				if got != "::1" {
+					t.Fatalf("bracketed IPv6 not unwrapped: got %q", got)
+				}
+			case "[2001:db8::1]:1234":
+				if got != "2001:db8::1" {
+					t.Fatalf("bracketed IPv6 not unwrapped: got %q", got)
+				}
+			case "10.0.0.1:9000":
+				if got != "10.0.0.1" {
+					t.Fatalf("IPv4 port not stripped: got %q", got)
+				}
+			default:
+				if got != in {
+					t.Fatalf("bare IPv6/IPv4 mangled: in=%q got=%q", in, got)
+				}
+			}
+		})
+	}
+}
+
 // TestRateLimit_XFFRotationDoesNotBypass verifies that rotating
 // X-Forwarded-For header values does not allow bypassing the rate limit.
 // Attack: attacker spoofs X-Forwarded-For to get a fresh bucket per request.

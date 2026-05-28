@@ -42,51 +42,64 @@ func mustContain(t *testing.T, h render.HTML, sub string) {
 //  Link component XSS (tests 1–10)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-func TestLink_HrefJavaScriptScheme(t *testing.T) {
-	t.Parallel()
-	h := ui.Link(ui.LinkConfig{
-		Href: "javascript:alert(document.cookie)",
-		Text: "Click me",
-	})
-	out := string(h)
-	// The framework attribute-escapes values but does NOT sanitize URL schemes.
-	// A javascript: href is technically attribute-safe (no HTML injection)
-	// but remains a click-jacking / XSS vector if the link is followed.
-	// This test documents the finding — callers must sanitize hrefs.
-	if strings.Contains(out, "javascript:alert") {
-		t.Logf("NOTE: SECURITY FINDING — href contains raw javascript: scheme (attribute-escaped but NOT scheme-sanitized)")
-		t.Logf("NOTE: callers must validate href schemes before passing to Link")
-	} else {
-		t.Logf("NOTE: javascript: href was sanitized or stripped")
+// TestLink_DropsDangerousHrefs pins the framework-side allow-list:
+// javascript:, data:, vbscript:, file:, blob:, and protocol-relative
+// URLs never appear in the rendered href. Previously the framework
+// only attribute-escaped — the contract was "callers must validate".
+// That contract flipped: scheme validation lives in framework/ui/safety.go
+// so component-level callers can't accidentally ship an XSS vector.
+func TestLink_DropsDangerousHrefs(t *testing.T) {
+	for _, payload := range []string{
+		"javascript:alert(document.cookie)",
+		"JAVASCRIPT:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"vbscript:MsgBox(1)",
+		"file:///etc/passwd",
+		"blob:https://evil.example/123",
+		"//evil.example/x",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			h := ui.Link(ui.LinkConfig{Href: payload, Text: "Click me"})
+			href := extractAttr(string(h), "href")
+			if strings.Contains(strings.ToLower(href), strings.ToLower(payload)) {
+				t.Fatalf("dangerous href %q reached output (href=%q)", payload, href)
+			}
+		})
 	}
-	t.Logf("NOTE: href rendered as %q", extractAttr(out, "href"))
 }
 
-func TestLink_HrefDataScheme(t *testing.T) {
-	t.Parallel()
-	h := ui.Link(ui.LinkConfig{
-		Href: "data:text/html,<script>alert(1)</script>",
-		Text: "data link",
-	})
-	out := string(h)
-	mustNotContain(t, h, "<script>")
-	t.Logf("NOTE: data: href rendered as %q", extractAttr(out, "href"))
+// TestLink_AllowsSafeHrefs sanity-checks that http(s), relative, and
+// fragment hrefs round-trip unchanged.
+func TestLink_AllowsSafeHrefs(t *testing.T) {
+	for _, payload := range []string{"https://example.com", "/about", "#section", "mailto:user@example.com", "tel:+15551234"} {
+		t.Run(payload, func(t *testing.T) {
+			h := ui.Link(ui.LinkConfig{Href: payload, Text: "Click"})
+			href := extractAttr(string(h), "href")
+			if href != payload {
+				t.Fatalf("safe href %q dropped (got %q)", payload, href)
+			}
+		})
+	}
 }
 
-func TestLink_HrefVbscriptScheme(t *testing.T) {
-	t.Parallel()
-	h := ui.Link(ui.LinkConfig{
-		Href: "vbscript:MsgBox(1)",
-		Text: "vbscript link",
-	})
-	out := string(h)
-	// VBScript doesn't work in modern browsers but should still be
-	// attribute-escaped rather than passed raw.
-	href := extractAttr(out, "href")
-	if href == "vbscript:MsgBox(1)" {
-		t.Logf("NOTE: vbscript: scheme rendered as-is in attribute (non-executable in modern browsers)")
-	} else {
-		t.Logf("NOTE: vbscript: href attribute value: %q", href)
+// TestLink_StripsEventHandlerExtraAttrs pins that the ExtraAttrs
+// escape hatch never carries on* handlers into the DOM. Earlier the
+// framework documented "ExtraAttrs is an escape hatch — callers must
+// not pass event handlers"; the contract is now enforced.
+func TestLink_StripsEventHandlerExtraAttrs(t *testing.T) {
+	for _, attr := range []string{"onclick", "onmouseover", "onfocus", "onkeydown"} {
+		t.Run(attr, func(t *testing.T) {
+			h := ui.Link(ui.LinkConfig{
+				Href: "/safe",
+				Text: "Click",
+				ExtraAttrs: html.Attrs{
+					attr: "alert(1)",
+				},
+			})
+			if strings.Contains(strings.ToLower(string(h)), strings.ToLower(attr)+`=`) {
+				t.Fatalf("event-handler attr %q reached output: %s", attr, h)
+			}
+		})
 	}
 }
 

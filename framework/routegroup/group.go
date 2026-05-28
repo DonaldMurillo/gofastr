@@ -25,6 +25,7 @@ package routegroup
 
 import (
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 
@@ -207,14 +208,50 @@ func (g *RouteGroup) MCPToolName(entityName, action string) string {
 	return g.mcpNamespace + "." + entityName + "." + action
 }
 
-// normalizePrefix ensures the prefix starts with / and doesn't end with /.
+// normalizePrefix returns the canonical leading-slash, no-trailing-slash
+// form of p. Empty / root prefixes collapse to "" (no prefix needed).
+//
+// Hardening applied in order: control bytes (CR/LF/NUL/C0) are stripped
+// so a forged prefix can't smuggle a header line; backslashes are
+// rewritten to forward slashes so a Windows-style path can't bypass a
+// /admin gate; and path.Clean collapses repeated slashes and resolves
+// `.` / `..` segments. The result is the prefix attached to every
+// child route, so a non-canonical form here permanently aliases routes.
 func normalizePrefix(p string) string {
-	if p == "" || p == "/" {
+	if p == "" {
 		return ""
 	}
+	p = stripPrefixCtrlBytes(p)
+	p = strings.ReplaceAll(p, "\\", "/")
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
-	p = strings.TrimRight(p, "/")
+	p = path.Clean(p)
+	if p == "/" {
+		return ""
+	}
 	return p
+}
+
+func stripPrefixCtrlBytes(s string) string {
+	hasCtrl := false
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			hasCtrl = true
+			break
+		}
+	}
+	if !hasCtrl {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }

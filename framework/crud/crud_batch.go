@@ -80,13 +80,27 @@ func initSkipped(n int) []batchResult {
 }
 
 // writeBatchResponse marshals the envelope and selects 200 vs 400 based on
-// whether the tx committed.
+// whether the tx committed. When the batch was rolled back, per-item
+// success Data is scrubbed: a caller that reads it without checking
+// Committed=false would otherwise treat the constructed-but-not-
+// persisted shape as authoritative.
 func writeBatchResponse(w http.ResponseWriter, resp BatchResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	if !resp.Committed {
+		scrubRolledBackData(resp.Results)
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	json.NewEncoder(w).Encode(resp)
+}
+
+// scrubRolledBackData clears the Data field on per-item results whose
+// only error is "the surrounding tx rolled back". The contract: when
+// Committed=false, no per-item Data appears in the response. Errors and
+// Fields stay — they're the actionable parts.
+func scrubRolledBackData(results []batchResult) {
+	for i := range results {
+		results[i].Data = nil
+	}
 }
 
 // ============================================================================

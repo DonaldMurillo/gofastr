@@ -28,13 +28,48 @@ func NewSpec(title, version string) *Spec {
 	}
 }
 
-// AddServer registers a server URL with an optional description.
+// AddServer registers a server URL with an optional description. URLs
+// that don't begin with a relative path ("/", "./") or one of http(s)/
+// ws(s) are dropped: a `javascript:`/`data:`/`file:` entry in a publicly
+// served spec turns the docs page into a phishing platform when a viewer
+// clicks the "Servers" picker.
 func (s *Spec) AddServer(url, description string) {
+	if !isSafeServerURL(url) {
+		return
+	}
 	entry := map[string]any{"url": url}
 	if description != "" {
 		entry["description"] = description
 	}
 	s.servers = append(s.servers, entry)
+}
+
+func isSafeServerURL(u string) bool {
+	if u == "" {
+		return false
+	}
+	// Relative URLs (path-only) are fine — they inherit the docs origin.
+	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
+		return true
+	}
+	for i := 0; i < len(u); i++ {
+		c := u[i]
+		if c == ':' {
+			scheme := strings.ToLower(u[:i])
+			switch scheme {
+			case "http", "https", "ws", "wss":
+				return true
+			default:
+				return false
+			}
+		}
+		if c == '/' || c == '?' || c == '#' {
+			// No scheme delimiter before path-ish char — treat as relative.
+			return true
+		}
+	}
+	// No colon at all — treat as a relative path.
+	return true
 }
 
 // AddPath registers a path + method with an Operation.

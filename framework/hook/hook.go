@@ -1,6 +1,9 @@
 package hook
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // HookType enumerates the lifecycle hook points for entity operations.
 type HookType int
@@ -41,15 +44,29 @@ func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
 	hr.hooks[hookType] = append(hr.hooks[hookType], fn)
 }
 
-// ExecuteHooks runs all registered hooks for the given type in registration order.
-// It stops on the first error and returns it.
+// ExecuteHooks runs all registered hooks for the given type in registration
+// order. It stops on the first error and returns it. A panic inside a hook
+// is caught and surfaced as an error — without recovery a single buggy or
+// third-party hook would tear down the entire request goroutine.
 func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, data any) error {
 	for _, fn := range hr.hooks[hookType] {
-		if err := fn(ctx, data); err != nil {
+		if err := runHookSafely(ctx, fn, data); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// runHookSafely calls fn with a deferred recover. Recovered panics become
+// errors so the framework's lifecycle (tx rollback, error chain) handles
+// them deterministically instead of unwinding the http stack.
+func runHookSafely(ctx context.Context, fn HookFunc, data any) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("hook panic: %v", r)
+		}
+	}()
+	return fn(ctx, data)
 }
 
 // HooksFor returns a copy of the hooks registered for the given type (for inspection/testing).
