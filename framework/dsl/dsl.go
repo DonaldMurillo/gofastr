@@ -175,7 +175,11 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			}
 			out.Limit = n
 		case "after":
-			out.After = trimDSLValue(args)
+			// Cursor opacity is enforced downstream by the cursor
+			// decoder; here we only need to strip control bytes so a
+			// CR/LF in an after() literal can't smuggle a forged log
+			// line or break out of a re-encoded DSL string.
+			out.After = stripDSLControlBytes(trimDSLValue(args))
 		default:
 			return DSLQuery{}, fmt.Errorf("dsl: unknown call %q", name)
 		}
@@ -346,6 +350,32 @@ func trimDSLValue(value string) string {
 		}
 	}
 	return value
+}
+
+// stripDSLControlBytes removes C0 control bytes and DEL from a DSL
+// literal. Applied to opaque values (cursor after()) so a CR/LF can't
+// survive into log lines or re-encoded queries.
+func stripDSLControlBytes(s string) string {
+	hasCtrl := false
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			hasCtrl = true
+			break
+		}
+	}
+	if !hasCtrl {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
