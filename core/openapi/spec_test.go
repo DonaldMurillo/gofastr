@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -364,7 +365,8 @@ func TestHandlerServesJSON(t *testing.T) {
 	s.AddPath("GET", "/ping", *NewOperation())
 
 	h := Handler(s)
-	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil).
+		WithContext(handler.SetUser(httptest.NewRequest(http.MethodGet, "/", nil).Context(), struct{}{}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -390,8 +392,14 @@ func TestSwaggerUIHandler(t *testing.T) {
 	s := NewSpec("Test", "1.0.0")
 	h := SwaggerUIHandler(s, "/docs")
 
+	// Both surfaces are now auth-gated by default. Inject a user into
+	// the request context so the handler treats us as authenticated.
+	withAuth := func(req *http.Request) *http.Request {
+		return req.WithContext(handler.SetUser(req.Context(), struct{}{}))
+	}
+
 	// Spec endpoint
-	req := httptest.NewRequest(http.MethodGet, "/docs/openapi.json", nil)
+	req := withAuth(httptest.NewRequest(http.MethodGet, "/docs/openapi.json", nil))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -399,7 +407,7 @@ func TestSwaggerUIHandler(t *testing.T) {
 	}
 
 	// UI page
-	req = httptest.NewRequest(http.MethodGet, "/docs/", nil)
+	req = withAuth(httptest.NewRequest(http.MethodGet, "/docs/", nil))
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

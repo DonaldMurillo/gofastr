@@ -144,6 +144,7 @@ func (a *App) registerHealthEndpoints() {
 	a.router.Get("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}))
@@ -167,6 +168,7 @@ func (a *App) registerHealthEndpoints() {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(results)
 	}))
