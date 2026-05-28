@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -317,24 +318,37 @@ func RegistryLLMMD(registry entity.Registry, appName string) string {
 }
 
 // LLMMDHandler returns an http.Handler that serves the LLM-friendly markdown
-// for a single entity. Content-Type is text/markdown.
+// for a single entity. The schema-disclosure surface is broad (every field,
+// validator, relation), so the handler requires an authenticated context
+// — the framework's auth chain must have set a user before this fires.
 func LLMMDHandler(ent *entity.Entity) http.Handler {
 	md := EntityLLMMD(ent)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := handler.GetUser(r.Context()); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Length", strconv.Itoa(len(md))); w.Write([]byte(md))
+		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
+		w.Write([]byte(md))
 	})
 }
 
 // RegistryLLMMDHandler returns an http.Handler that serves the top-level
-// LLM-friendly markdown index for all registered entities.
+// LLM-friendly markdown index for all registered entities. Auth-required
+// for the same reason as [LLMMDHandler].
 func RegistryLLMMDHandler(registry entity.Registry, appName string) http.Handler {
 	md := RegistryLLMMD(registry, appName)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := handler.GetUser(r.Context()); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Length", strconv.Itoa(len(md))); w.Write([]byte(md))
+		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
+		w.Write([]byte(md))
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -41,6 +42,13 @@ type BatchResponse struct {
 
 // classifyDoErr converts a per-item error into the batchResult fields it
 // represents (Error string + optional Fields map).
+//
+// Validation and BeforeHook errors are surfaced verbatim — they're
+// user-actionable and don't carry driver text. Anything else (driver
+// errors, scan failures, after-hook exceptions) is redacted to a
+// generic "internal error" string so the per-item Error field can't
+// leak schema / connection details. The original error is still
+// logged via the caller's tx logger.
 func classifyDoErr(err error) (string, map[string][]string) {
 	var ve *validationError
 	if errors.As(err, &ve) {
@@ -50,7 +58,14 @@ func classifyDoErr(err error) (string, map[string][]string) {
 	if errors.As(err, &bhe) {
 		return bhe.Error(), nil
 	}
-	return err.Error(), nil
+	if errors.Is(err, errNotFound) {
+		return "not found", nil
+	}
+	if errors.Is(err, errNoFieldsToUpdate) {
+		return "no fields to update", nil
+	}
+	log.Printf("crud: batch item failed: %v", err)
+	return "internal error", nil
 }
 
 // initSkipped pre-fills a results slice with skipped entries. Each entry is
@@ -88,12 +103,21 @@ type batchCreateRequest struct {
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if err := enforceJSONContentType(r); err != nil {
+			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			return
+		}
 		if _, ok := ch.RequireOwner(w, r); !ok {
 			return
 		}
+		limitJSONBody(w, r)
 		var req batchCreateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		if err := decodeJSONBody(r, &req); err != nil {
+			if errors.Is(err, errBodyTooLarge) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if len(req.Items) == 0 {
@@ -121,7 +145,8 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		})
 
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			writeJSONError(w, http.StatusInternalServerError, txErr.Error())
+			log.Printf("crud: batch tx failed: %v", txErr)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 		if txErr == nil {
@@ -148,12 +173,21 @@ type batchUpdateRequest struct {
 // fields are the partial update. All items share one transaction.
 func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if err := enforceJSONContentType(r); err != nil {
+			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			return
+		}
 		if _, ok := ch.RequireOwner(w, r); !ok {
 			return
 		}
+		limitJSONBody(w, r)
 		var req batchUpdateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		if err := decodeJSONBody(r, &req); err != nil {
+			if errors.Is(err, errBodyTooLarge) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if len(req.Items) == 0 {
@@ -191,7 +225,8 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		})
 
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			writeJSONError(w, http.StatusInternalServerError, txErr.Error())
+			log.Printf("crud: batch tx failed: %v", txErr)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 		if txErr == nil {
@@ -217,12 +252,21 @@ type batchDeleteRequest struct {
 // with {ids:[...]}. All deletes share one transaction.
 func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if err := enforceJSONContentType(r); err != nil {
+			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			return
+		}
 		if _, ok := ch.RequireOwner(w, r); !ok {
 			return
 		}
+		limitJSONBody(w, r)
 		var req batchDeleteRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		if err := decodeJSONBody(r, &req); err != nil {
+			if errors.Is(err, errBodyTooLarge) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if len(req.IDs) == 0 {
@@ -248,7 +292,8 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		})
 
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			writeJSONError(w, http.StatusInternalServerError, txErr.Error())
+			log.Printf("crud: batch tx failed: %v", txErr)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 		if txErr == nil {

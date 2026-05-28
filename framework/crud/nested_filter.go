@@ -3,11 +3,26 @@ package crud
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
+
+// safeIdentifierRE constrains nested-filter field names to a SQL-safe
+// identifier shape: letter or underscore start, letters/digits/underscore
+// continuation. Anything containing whitespace, quotes, semicolons,
+// parentheses, comment markers, or operators is rejected outright.
+// Field names come from query-string keys (?author.name OR 1=1 -- = foo)
+// and must NEVER be embedded into SQL verbatim.
+var safeIdentifierRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// isSafeIdentifier reports whether s is a plain SQL identifier (letters,
+// digits, underscores, leading non-digit).
+func isSafeIdentifier(s string) bool {
+	return safeIdentifierRE.MatchString(s)
+}
 
 // nestedFilter is one parsed `?author.name=alice` style predicate.
 type nestedFilter struct {
@@ -73,6 +88,14 @@ func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Reg
 			}
 		}
 
+		// Refuse field names that aren't plain SQL identifiers. The
+		// downstream buildExistsSubquery interpolates this directly
+		// into the SQL; without this check a query like
+		// `?author.name OR 1=1 --=foo` becomes a tautology.
+		if !isSafeIdentifier(fieldName) {
+			return nil, fmt.Errorf("nested filter %q: unsafe field name", key)
+		}
+
 		// Validate the field exists on the target entity (when the registry
 		// has it). Without the registry we trust the field name as-is.
 		if registry != nil {
@@ -119,9 +142,28 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 // buildExistsSubquery returns the WHERE fragment for one nested filter.
 // Renumbering happens inside QueryBuilder.Build — the args are passed
 // through carry semantics that make $N adjustment correct downstream.
+//
+// The field name on the target relation comes from a URL query key
+// (?author.name=...) and is interpolated into the SQL directly — there
+// is no parameter placeholder for an identifier. We refuse anything
+// that doesn't look like a plain `[A-Za-z_][A-Za-z0-9_]*` identifier so
+// payloads like `name OR 1=1 --` can't smuggle SQL fragments through
+// parseNestedFilters when the registry can't validate the field.
+//
+// parentTable / parentPK / rel.Entity / rel.ForeignKey / rel.Through /
+// rel.LocalKey / rel.ForeignKeyTarget all originate from server-defined
+// metadata, not request input, so they don't need the same gate.
 func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string, []any) {
 	rel := nf.Relation
 	col := nf.Field
+	if !isSafeIdentifier(col) {
+		// "1 = 0" is an unconditionally-false predicate that lets the
+		// outer query still build but matches nothing. Better than
+		// returning an error here — buildExistsSubquery has no error
+		// channel and the parse layer normally catches unsafe names;
+		// this is the last-line defence.
+		return "1 = 0", nil
+	}
 	predicate := opToSQL(nf.Op)
 	args := []any{nf.Value}
 

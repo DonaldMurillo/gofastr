@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
@@ -79,13 +80,22 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			writeJSONError(w, http.StatusServiceUnavailable, "event bus not configured")
 			return
 		}
-		// Same security gate as the standard CRUD handlers: an
-		// OwnerField entity refuses anonymous subscribers. Without
-		// this, a long-lived SSE stream scrapes every other user's
-		// row updates in real time.
+		// Real-time event streams are authenticated regardless of
+		// whether the entity declares OwnerField. An anonymous SSE
+		// subscriber would otherwise scrape every row update on the
+		// server in real time — turning a "public list endpoint" into
+		// a live feed of all writes. RequireOwner only fires for
+		// OwnerField entities; we also enforce a baseline auth check
+		// here for entities without one.
 		ownerID, ownerOK := ch.RequireOwner(w, r)
 		if !ownerOK {
 			return
+		}
+		if ch.Entity.Config.OwnerField == "" {
+			if _, ok := handler.GetUser(r.Context()); !ok {
+				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
 		}
 
 		sse := stream.NewSSEWriter(w)
