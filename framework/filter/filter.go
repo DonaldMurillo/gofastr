@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -126,16 +127,26 @@ func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error
 }
 
 // ParseSort extracts sort information from query parameters.
-// Supported: ?sort=field (ascending), ?sort=-field (descending)
-func ParseSort(r *http.Request, fields []schema.Field) []ParsedSort {
-	fieldSet := make(map[string]bool, len(fields))
+// Supported: ?sort=field (ascending), ?sort=-field (descending).
+//
+// Hidden fields are excluded from the allow-list: sorting by a hidden
+// column reveals row ordering by a value the caller can't read, which
+// is an information-disclosure path. Unknown fields fail closed with a
+// 400-shaped error rather than being silently ignored — silent drop
+// turns probe attempts into "the API works the same with or without
+// this param" oracles that mask broken client code.
+func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
+	allowed := make(map[string]bool, len(fields))
 	for _, f := range fields {
-		fieldSet[f.Name] = true
+		if f.Hidden {
+			continue
+		}
+		allowed[f.Name] = true
 	}
 
 	sortParams := r.URL.Query()["sort"]
 	if len(sortParams) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var sorts []ParsedSort
@@ -143,17 +154,26 @@ func ParseSort(r *http.Request, fields []schema.Field) []ParsedSort {
 		if s == "" {
 			continue
 		}
+		// Reject control bytes outright — they have no business in a
+		// SQL identifier, and silently dropping them masks broken or
+		// adversarial clients.
+		for i := 0; i < len(s); i++ {
+			if s[i] < 0x20 || s[i] == 0x7f {
+				return nil, fmt.Errorf("invalid sort %q: control bytes not allowed", s)
+			}
+		}
 		desc := false
 		field := s
 		if strings.HasPrefix(s, "-") {
 			desc = true
 			field = s[1:]
 		}
-		if fieldSet[field] {
-			sorts = append(sorts, ParsedSort{Field: field, Desc: desc})
+		if !allowed[field] {
+			return nil, fmt.Errorf("invalid sort field %q", field)
 		}
+		sorts = append(sorts, ParsedSort{Field: field, Desc: desc})
 	}
-	return sorts
+	return sorts, nil
 }
 
 // applyFiltersToCountQuery applies parsed filters to a count builder.

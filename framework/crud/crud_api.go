@@ -40,6 +40,12 @@ func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 // commit. Returns the created row as a snake_cased map; convert to a typed
 // struct in your caller.
 func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	req := syntheticRequest(ctx, http.MethodPost, "/")
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
@@ -60,6 +66,9 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 // UpdateOne updates a record by id with the partial body. Hooks + tx +
 // event emission all fire as in the HTTP path.
 func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string]any) (map[string]any, error) {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	req := syntheticRequest(ctx, http.MethodPut, "/")
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
@@ -79,6 +88,9 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 
 // DeleteOne deletes (or soft-deletes) a record by id.
 func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return err
+	}
 	req := syntheticRequest(ctx, http.MethodDelete, "/")
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		return ch.doDelete(ctx, req, id)
@@ -94,6 +106,9 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 // includes. Returns sql.ErrNoRows when the record doesn't exist (or is
 // soft-deleted, unless options ask otherwise).
 func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string) (map[string]any, error) {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	cols := ch.VisibleFields()
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
@@ -138,6 +153,9 @@ type ListOptions struct {
 // and returns the matching rows. Caller is responsible for paging if the
 // result set is large.
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	cols := ch.VisibleFields()
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, opts.Filters)
@@ -180,6 +198,12 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 // Events fire after commit (per item, in input order). Any per-item error
 // rolls back the whole batch — same semantics as the HTTP _batch endpoint.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	results := make([]map[string]any, len(bodies))
 	req := syntheticRequest(ctx, "POST", "/")
 	txErr := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
@@ -203,6 +227,9 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 
 // BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
 func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	if len(ids) != len(bodies) {
 		return nil, fmt.Errorf("BatchUpdateMany: ids and bodies length mismatch (%d vs %d)", len(ids), len(bodies))
 	}
@@ -230,6 +257,9 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 // BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the
 // ids that were successfully removed.
 func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]string, error) {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
 	req := syntheticRequest(ctx, "DELETE", "/")
 	txErr := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		for _, id := range ids {
@@ -251,6 +281,9 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 // CountAll returns COUNT(*) for the given filters (no pagination). Cheap
 // helper for typed repos that want a totals figure without hitting List.
 func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, error) {
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return 0, err
+	}
 	cb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(cb, opts.Filters)
 	req := syntheticRequest(ctx, http.MethodGet, "/")

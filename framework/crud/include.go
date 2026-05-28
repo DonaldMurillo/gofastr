@@ -229,7 +229,11 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
 		}
 		if op == filter.OpIn {
-			for _, v := range strings.Split(value, "|") {
+			vals := strings.Split(value, "|")
+			if len(vals) > maxScopedINEntries {
+				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, len(vals), maxScopedINEntries)
+			}
+			for _, v := range vals {
 				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v})
 			}
 		} else {
@@ -238,6 +242,12 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 	}
 	return out, nil
 }
+
+// maxScopedINEntries caps the size of a single `field_in=a|b|c|…` list
+// passed through an include's scoped filter. Without a cap, a single
+// request can blow up a JOIN with thousands of bind parameters — a
+// cheap DoS even before SQL parameter limits start refusing the query.
+const maxScopedINEntries = 256
 
 // parseIncludesFlat is the no-registry fallback: only top-level relation
 // names are supported (no dots). Dotted paths produce an error.

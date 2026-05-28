@@ -2,6 +2,8 @@ package crud
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +14,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// errSoftDeletedResurrection signals an UpsertOne attempt against a row
+// the soft-delete contract has marked deleted. Upsert would otherwise
+// silently undelete the row — bypassing the compliance / forensic story
+// that motivates soft-delete in the first place.
+var errSoftDeletedResurrection = errors.New("upsert: target row is soft-deleted; restore explicitly before mutating")
 
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
 // primary key. If a row with the same PK already exists, every writable
@@ -53,6 +61,24 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+		// Refuse to resurrect a soft-deleted row: ON CONFLICT DO UPDATE
+		// silently clears deleted_at without firing the lifecycle hooks,
+		// which would smuggle a row past audit / retention contracts.
+		if ch.Entity.Config.SoftDelete {
+			if pk, ok := body[ch.PrimaryKey]; ok && pk != nil {
+				var deletedAt sql.NullString
+				q := fmt.Sprintf("SELECT deleted_at FROM %s WHERE %s = $1", ch.Entity.GetTable(), ch.PrimaryKey)
+				err := ch.DB.QueryRowContext(ctx, q, pk).Scan(&deletedAt)
+				switch {
+				case errors.Is(err, sql.ErrNoRows):
+					// no existing row — pure insert path, allow.
+				case err != nil:
+					return fmt.Errorf("upsert preflight: %w", err)
+				case deletedAt.Valid && deletedAt.String != "":
+					return errSoftDeletedResurrection
+				}
+			}
+		}
 		ch.InjectTenant(body, ctx)
 		ch.InjectOwner(body, ctx)
 		// Auto-generate any field that needs it; on conflict the existing

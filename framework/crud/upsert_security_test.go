@@ -21,6 +21,43 @@ func upsertSecurityContext(userID, tenantID string) context.Context {
 	return ctx
 }
 
+// TestUpsert_RefusesSoftDeletedResurrection pins that an UpsertOne
+// targeting a row already marked soft-deleted refuses rather than
+// silently clearing deleted_at via ON CONFLICT DO UPDATE. Soft delete
+// is a compliance / forensic contract; bypassing it through upsert
+// would smuggle the row past the audit story.
+func TestUpsert_RefusesSoftDeletedResurrection(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	cfg := makeEntityConfig("posts", "posts", "", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "body", Type: schema.Text},
+	}, func(c *entity.EntityConfig) { c.SoftDelete = true })
+	ch, db := setupSecurityTestHandler(t, cfg,
+		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, body TEXT, deleted_at TEXT)`)
+	seedRows(t, db, "posts", []map[string]any{
+		{"id": "post-1", "title": "deleted", "body": "legacy", "deleted_at": "2024-01-01T00:00:00Z"},
+	})
+
+	_, err := ch.UpsertOne(context.Background(), map[string]any{
+		"id":    "post-1",
+		"title": "mutated",
+		"body":  "tampered",
+	})
+	if err == nil {
+		t.Fatalf("UpsertOne resurrected a soft-deleted row via ON CONFLICT DO UPDATE")
+	}
+
+	// Sanity: the row itself was not mutated.
+	var body string
+	if err := db.QueryRow("SELECT body FROM posts WHERE id = $1", "post-1").Scan(&body); err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if body != "legacy" {
+		t.Fatalf("rejected upsert still mutated row body (got %q)", body)
+	}
+}
+
 func TestUpsert_OwnerFieldStampedFromContext(t *testing.T) {
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "owner_id", []schema.Field{

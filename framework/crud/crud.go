@@ -291,7 +291,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		sorts := filter.ParseSort(r, ch.Entity.GetFields())
+		sorts, err := filter.ParseSort(r, ch.Entity.GetFields())
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		cols, err := ch.projectFromRequest(r)
 		if err != nil {
