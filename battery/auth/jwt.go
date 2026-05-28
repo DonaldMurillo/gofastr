@@ -60,8 +60,18 @@ func (j *JWTAuth) ValidateToken(tokenString string) (Claims, error) {
 		return Claims{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}
 
-	if time.Now().After(claims.ExpiresAt) {
+	if claims.UserID == "" {
+		return Claims{}, fmt.Errorf("%w: token has empty subject", ErrUnauthorized)
+	}
+
+	now := time.Now()
+	if now.After(claims.ExpiresAt) {
 		return Claims{}, fmt.Errorf("%w: token expired", ErrUnauthorized)
+	}
+	// Reject tokens that claim to have been issued in the future. Allow
+	// a small skew for clock drift between issuer and verifier.
+	if !claims.IssuedAt.IsZero() && claims.IssuedAt.After(now.Add(2*time.Minute)) {
+		return Claims{}, fmt.Errorf("%w: token issued in the future", ErrUnauthorized)
 	}
 
 	return claims, nil

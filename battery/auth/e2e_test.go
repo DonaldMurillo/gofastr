@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -14,8 +15,33 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// pickFreeAddr finds a 127.0.0.1 port that is free RIGHT NOW, then runs
+// it through the isolation runtime so the polled URL matches the address
+// app.Start() will actually bind. Without the isolation step the test
+// polls a different port than the one printed in the "server ready"
+// banner (worktrees remap ports).
+func pickFreeAddr(t *testing.T) (bindAddr, pollAddr string) {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("pick free port: %v", err)
+	}
+	bindAddr = l.Addr().String()
+	l.Close()
+	runtime, err := isolation.Resolve(".")
+	if err != nil {
+		t.Fatalf("resolve isolation: %v", err)
+	}
+	resolved, err := runtime.Addr(bindAddr)
+	if err != nil {
+		t.Fatalf("resolve addr: %v", err)
+	}
+	return bindAddr, resolved
+}
 
 // e2eApp wraps a running GoFastr app for E2E testing.
 type e2eApp struct {
@@ -77,12 +103,16 @@ func newE2EApp(t *testing.T) *e2eApp {
 	// Register as battery
 	app.RegisterBattery(mgr)
 
-	// Start on port 18082
-	addr := "127.0.0.1:18082"
-	baseURL := "http://" + addr
+	// Pick a free 127.0.0.1 port per test so concurrent / serial e2e
+	// runs don't collide on a stale TIME_WAIT from the previous test's
+	// listener. `pollAddr` accounts for isolation runtime port-remapping
+	// in worktrees — without it we'd poll the bind address but the app
+	// would actually be listening on a remapped port.
+	bindAddr, pollAddr := pickFreeAddr(t)
+	baseURL := "http://" + pollAddr
 
 	go func() {
-		if err := app.Start(addr); err != nil {
+		if err := app.Start(bindAddr); err != nil {
 			t.Logf("server stopped: %v", err)
 		}
 	}()
@@ -94,9 +124,12 @@ func newE2EApp(t *testing.T) *e2eApp {
 		Timeout: 5 * time.Second,
 	}
 
-	// Wait for server ready
+	// Wait for server ready. 10s budget accommodates slow CI / first-run
+	// migrations / cold caches. A flake here is almost always the app
+	// taking longer than expected to bind, not a real bug.
+	deadline := time.Now().Add(10 * time.Second)
 	ready := false
-	for i := 0; i < 50; i++ {
+	for time.Now().Before(deadline) {
 		resp, err := client.Get(baseURL + "/openapi.json")
 		if err == nil {
 			resp.Body.Close()
@@ -106,7 +139,7 @@ func newE2EApp(t *testing.T) *e2eApp {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if !ready {
-		t.Fatal("server did not start within 2.5s")
+		t.Fatalf("server did not start within 10s (poll=%s)", baseURL)
 	}
 
 	return &e2eApp{
