@@ -104,6 +104,10 @@ func (v *APIVersion) IsDeprecated() bool {
 //	Deprecation: true
 //	Sunset: <RFC 1123 date>
 //	Link: <replacementURL>; rel="successor-version"
+//
+// Unsafe replacement URLs (non-http(s) schemes, embedded CR/LF) are
+// dropped silently — the Link header is a clickable hint to API clients
+// and a `javascript:` / `mailto:` / data: there is a phishing primitive.
 func (v *APIVersion) DeprecationMiddleware() router.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +116,9 @@ func (v *APIVersion) DeprecationMiddleware() router.Middleware {
 				w.Header().Set("Sunset", v.sunset.Format(time.RFC1123))
 			}
 			if v.replace != nil {
-				w.Header().Set("Link", "<"+*v.replace+">; rel=\"successor-version\"")
+				if safe, ok := safeReplacementURL(*v.replace); ok {
+					w.Header().Set("Link", "<"+safe+">; rel=\"successor-version\"")
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -141,13 +147,64 @@ func normalizeVersion(prefix string) string {
 
 // DeprecationHeaders is a helper that writes deprecation headers onto a
 // response. Useful when you need to mark individual endpoints as deprecated
-// rather than a whole version.
+// rather than a whole version. Unsafe replacement URLs are dropped — see
+// [APIVersion.DeprecationMiddleware] for the policy.
 func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement string) {
 	w.Header().Set("Deprecation", "true")
 	if !sunset.IsZero() {
 		w.Header().Set("Sunset", sunset.Format(time.RFC1123))
 	}
 	if replacement != "" {
-		w.Header().Set("Link", "<"+replacement+">; rel=\"successor-version\"")
+		if safe, ok := safeReplacementURL(replacement); ok {
+			w.Header().Set("Link", "<"+safe+">; rel=\"successor-version\"")
+		}
 	}
+}
+
+// safeReplacementURL returns the cleaned replacement URL and true when
+// it is safe to expose in a Link header. Allowed shapes: relative paths
+// ("/v2", "./v2") and absolute http(s) URLs. CR/LF/NUL anywhere in the
+// string disqualifies it (header smuggling). Other schemes like
+// `javascript:`, `data:`, `file:`, `mailto:`, `view-source:` are dropped
+// — they would render as clickable in API clients and turn the
+// deprecation hint into a phishing vector. Protocol-relative URLs
+// ("//other.example") are dropped as ambiguous about origin trust.
+func safeReplacementURL(u string) (string, bool) {
+	if u == "" {
+		return "", false
+	}
+	for i := 0; i < len(u); i++ {
+		c := u[i]
+		if c < 0x20 || c == 0x7f {
+			return "", false
+		}
+	}
+	if strings.HasPrefix(u, "//") {
+		return "", false
+	}
+	// Percent-encoded CR/LF still smuggles a line when consumers decode.
+	low := strings.ToLower(u)
+	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
+		return "", false
+	}
+	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
+		return u, true
+	}
+	for i := 0; i < len(u); i++ {
+		c := u[i]
+		if c == ':' {
+			scheme := strings.ToLower(u[:i])
+			switch scheme {
+			case "http", "https":
+				return u, true
+			default:
+				return "", false
+			}
+		}
+		if c == '/' || c == '?' || c == '#' {
+			// No scheme delimiter before path-ish char — relative path.
+			return u, true
+		}
+	}
+	return u, true
 }
