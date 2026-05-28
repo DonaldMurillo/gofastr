@@ -943,13 +943,22 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 		t.Fatalf("deleted get status = %d", resp404.StatusCode)
 	}
 
-	openapi := requestJSON(t, http.MethodGet, baseURL+"/openapi.json", nil, http.StatusOK)
-	paths := openapi["paths"].(map[string]any)
-	if paths["/posts"] == nil || paths["/posts/{id}"] == nil {
-		t.Fatalf("openapi paths missing posts routes: %#v", paths)
+	// /openapi.json is auth-gated by default (security hardening).
+	// A blueprint app that doesn't wire auth gets 401 from an anonymous
+	// fetch — that's the expected contract. The path-shape assertion
+	// the test really cares about (posts routes appearing in the spec)
+	// is covered by `framework/openapi_e2e_test.go`'s spec-handler
+	// tests, which authenticate via context.
+	resp, err := http.Get(baseURL + "/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous /openapi.json status = %d, want 401 (auth-gated by default)", resp.StatusCode)
 	}
 
-	resp, err := http.Post(baseURL+"/posts/123/publish", "text/plain", nil)
+	resp, err = http.Post(baseURL+"/posts/123/publish", "text/plain", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

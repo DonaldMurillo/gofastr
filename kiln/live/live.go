@@ -185,7 +185,11 @@ func (l *Live) rebuild() error {
 			appName = "Kiln"
 		}
 		spec := framework.EntityOpenAPI(app.Registry, appName, "1.0.0")
-		app.Router().Get("/openapi.json", openapi.Handler(spec))
+		// Kiln is build-mode tooling: the in-studio API browser is part
+		// of the developer experience and must remain reachable without
+		// the auth chain the framework adds by default. PublicHandler
+		// serves the spec without the auth gate.
+		app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
 		app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 	}
 	l.app = app
