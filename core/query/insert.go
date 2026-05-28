@@ -41,11 +41,16 @@ func (ib *InsertBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("INSERT INTO ")
-	sb.WriteString(ib.table)
+	sb.WriteString(sanitizeFragment(ib.table))
 
-	// Columns
+	// Columns — each column is sanitized so SQL meta-sequences in
+	// a hostile column name cannot escape the parenthesised list.
 	sb.WriteString(" (")
-	sb.WriteString(strings.Join(ib.columns, ", "))
+	sanitized := make([]string, len(ib.columns))
+	for i, c := range ib.columns {
+		sanitized[i] = sanitizeColumn(c)
+	}
+	sb.WriteString(strings.Join(sanitized, ", "))
 	sb.WriteString(")")
 
 	// Values
@@ -57,10 +62,14 @@ func (ib *InsertBuilder) Build() (string, []any) {
 	sb.WriteString(strings.Join(placeholders, ", "))
 	sb.WriteString(")")
 
-	// Returning
+	// Returning — each column sanitized for the same reason as Columns.
 	if len(ib.returning) > 0 {
 		sb.WriteString(" RETURNING ")
-		sb.WriteString(strings.Join(ib.returning, ", "))
+		sanitizedRet := make([]string, len(ib.returning))
+		for i, c := range ib.returning {
+			sanitizedRet[i] = sanitizeColumn(c)
+		}
+		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}
 
 	return sb.String(), ib.values

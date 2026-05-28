@@ -30,7 +30,7 @@ func (cb *CountBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("SELECT COUNT(*) FROM ")
-	sb.WriteString(cb.table)
+	sb.WriteString(sanitizeFragment(cb.table))
 
 	// WHERE
 	if len(cb.wheres) > 0 {

@@ -47,8 +47,52 @@ func Raw(s string) HTML {
 
 // Attr formats a single HTML attribute as key="value" with the value
 // HTML-escaped.
+//
+// The key is validated against a strict allow-list (ASCII letters,
+// digits, `-`, `_`, `:`). Keys containing whitespace would let a
+// caller smuggle a second attribute — e.g. `src onerror` becomes a
+// fresh `onerror=` attribute when concatenated into a tag. Keys
+// beginning with `on` (case-insensitive) are inline event handlers
+// and are never legitimately constructed via this builder — a host
+// that needs one should be writing handlers in runtime.js, not
+// injecting JS into the HTML. Both cases return the empty string so
+// the attribute is dropped from any tag that includes it.
 func Attr(key, value string) string {
-	return Escape(key) + `="` + Escape(value) + `"`
+	if !isSafeAttrKey(key) {
+		return ""
+	}
+	return key + `="` + Escape(value) + `"`
+}
+
+// isSafeAttrKey reports whether key is a syntactically valid HTML
+// attribute name AND is not an inline event-handler (`on*`). The
+// allow-list mirrors the HTML5 attribute-name grammar restricted to
+// the characters that practically appear in this framework's UI
+// code (ASCII letters, digits, `-`, `_`, `:`). Anything else —
+// whitespace, quotes, slashes, control bytes — is rejected because
+// the only reason it would appear is an attempted breakout.
+func isSafeAttrKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	if len(key) >= 2 {
+		a, b := key[0], key[1]
+		if (a == 'o' || a == 'O') && (b == 'n' || b == 'N') {
+			return false
+		}
+	}
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case c == '-' || c == '_' || c == ':':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Tag builds an HTML element from a tag name, optional attributes, and
@@ -199,7 +243,14 @@ func writeAttrs(b *strings.Builder, attrs map[string]string) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
+		rendered := Attr(k, attrs[k])
+		if rendered == "" {
+			// Attr drops unsafe keys (whitespace, event handlers,
+			// non-allow-list chars). Skip the leading space too so we
+			// don't leave a dangling separator inside the tag.
+			continue
+		}
 		b.WriteByte(' ')
-		b.WriteString(Attr(k, attrs[k]))
+		b.WriteString(rendered)
 	}
 }

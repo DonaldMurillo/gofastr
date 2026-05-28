@@ -64,13 +64,20 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 		return fmt.Errorf("invalid key: path escapes base directory")
 	}
 
-	// Create parent directories
+	// Create parent directories. Mode 0o700 keeps tenant upload trees
+	// from being enumerable by other local users on a shared host — see
+	// TestLocalStorage_SaveRestrictsDirectoryPermissions for the threat
+	// model (local enumeration of unrelated tenants' upload paths).
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating directories: %w", err)
 	}
 
-	f, err := os.Create(fullPath)
+	// Mode 0o600 keeps uploaded files readable only by the process
+	// owner. The default umask leaves os.Create at 0o644, which on a
+	// shared multi-tenant node exposes every upload to unrelated local
+	// users — see TestLocalStorage_SaveRestrictsFilePermissions.
+	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating file: %w", err)
 	}

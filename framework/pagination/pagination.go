@@ -6,7 +6,29 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 )
+
+// stripControls removes bytes that have caused cursor / direction injection
+// problems in the past: NUL, CR, LF, and (defensively) the rest of the
+// C0 control range plus DEL. Applied to any user-controlled cursor token
+// field after decoding and to cursor direction strings before they reach
+// downstream consumers.
+func stripControls(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
 
 // DefaultPageSize is the default number of items per page.
 const DefaultPageSize = 25
@@ -57,7 +79,14 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 	if page < 1 {
 		page = 1
 	}
+	// Guard against integer overflow: a malicious caller can request a
+	// huge page number (e.g. math.MaxInt) which wraps to a negative
+	// offset when multiplied by limit. Negative offsets are undefined
+	// in most SQL dialects and can yield wraparound pagination bypass.
 	offset = (page - 1) * limit
+	if offset < 0 || page > math.MaxInt/limit+1 {
+		offset = 0
+	}
 	return cursor, limit, offset
 }
 
@@ -73,8 +102,12 @@ func ParseCursorPagination(r *http.Request) (cursor string, limit int, direction
 		limit = MaxPageSize
 	}
 
-	direction = r.URL.Query().Get("direction")
-	if direction == "" {
+	direction = stripControls(r.URL.Query().Get("direction"))
+	// Only "forward" and "backward" are meaningful; anything else
+	// (including the empty string or a CRLF-smuggled header injection
+	// payload) falls back to "forward" so downstream consumers can
+	// trust the value as a static label.
+	if direction != "forward" && direction != "backward" {
 		direction = "forward"
 	}
 	return cursor, limit, direction
@@ -100,7 +133,11 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 	if err := json.Unmarshal(b, &token); err != nil {
 		return "", "", err
 	}
-	return token.Field, token.Value, nil
+	// Cursors are opaque to the caller but their contents flow back into
+	// SQL identifiers (Field → ORDER BY column) and predicate values.
+	// Strip control bytes so a tampered cursor can't poison ORDER/WHERE
+	// clauses, log lines, or metrics labels.
+	return stripControls(token.Field), stripControls(token.Value), nil
 }
 
 // multiCursorToken is the wire shape for cursors that keyset on multiple
@@ -143,6 +180,12 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {
 		return nil, err
+	}
+	// Same control-byte scrub as DecodeCursor — multi-column cursors
+	// feed both column names (ORDER BY) and values (WHERE tuple comparison).
+	for i := range tok.Fields {
+		tok.Fields[i].Name = stripControls(tok.Fields[i].Name)
+		tok.Fields[i].Value = stripControls(tok.Fields[i].Value)
 	}
 	return tok.Fields, nil
 }

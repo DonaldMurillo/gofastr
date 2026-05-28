@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,6 +12,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
+
+// maxDSLLimit caps the value the parser will accept from `limit(N)`.
+// Without a hard cap a malicious or sloppy client can request an
+// arbitrarily large page, turning a single query into a memory /
+// CPU exhaustion vector. Callers can still apply a smaller policy
+// cap on top — this is the parser's last line of defence.
+const maxDSLLimit = 10_000
+
+// dslIdentRe is the allow-list for DSL identifiers: entity names,
+// include (relation) names, and where()/order() field names. SQL
+// metacharacters (`;`, quotes, parens, dashes, spaces) are rejected
+// at the parser so they can never reach the query builder or schema
+// lookup, where a missing-field error would still leak the unsafe
+// string into logs.
+var dslIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // DSLQuery is the parsed representation of a GoFastr query DSL string.
 type DSLQuery struct {
@@ -103,6 +119,9 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 	if ent == "" {
 		return DSLQuery{}, fmt.Errorf("dsl: entity is required")
 	}
+	if !dslIdentRe.MatchString(ent) {
+		return DSLQuery{}, fmt.Errorf("dsl: invalid entity name %q", ent)
+	}
 	out := DSLQuery{Entity: ent}
 	if rest == "" {
 		return out, nil
@@ -119,19 +138,40 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			if err != nil {
 				return DSLQuery{}, err
 			}
+			for _, f := range filters {
+				if !dslIdentRe.MatchString(f.Field) {
+					return DSLQuery{}, fmt.Errorf("dsl: invalid filter field name %q", f.Field)
+				}
+			}
 			out.Filters = append(out.Filters, filters...)
 		case "include":
-			out.Includes = append(out.Includes, splitDSLArgs(args)...)
+			includes := splitDSLArgs(args)
+			for _, inc := range includes {
+				// include() arguments may have been quoted by the
+				// caller; trimDSLValue strips the wrapping quotes so
+				// the allow-list compares against the bare identifier.
+				name := trimDSLValue(inc)
+				if !dslIdentRe.MatchString(name) {
+					return DSLQuery{}, fmt.Errorf("dsl: invalid include name %q", name)
+				}
+			}
+			out.Includes = append(out.Includes, includes...)
 		case "order":
 			order, err := parseDSLOrder(args)
 			if err != nil {
 				return DSLQuery{}, err
+			}
+			if !dslIdentRe.MatchString(order.Field) {
+				return DSLQuery{}, fmt.Errorf("dsl: invalid order field name %q", order.Field)
 			}
 			out.Orders = append(out.Orders, order)
 		case "limit":
 			n, err := strconv.Atoi(strings.TrimSpace(args))
 			if err != nil || n < 1 {
 				return DSLQuery{}, fmt.Errorf("dsl: limit must be a positive integer")
+			}
+			if n > maxDSLLimit {
+				return DSLQuery{}, fmt.Errorf("dsl: limit %d exceeds max %d", n, maxDSLLimit)
 			}
 			out.Limit = n
 		case "after":
