@@ -32,12 +32,15 @@ func auditAppWithRedact(t *testing.T, db *sql.DB, redact func(string, map[string
 	return app
 }
 
-// Redact = nil → audit JSON contains every column verbatim.
+// Redact = nil → audit JSON contains every non-sensitive column
+// verbatim. The default scrubber (defaultSensitiveSuffixes) still
+// removes fields whose names look like passwords / tokens / secrets;
+// "title" is neutral so it must pass through unchanged.
 func TestAudit_RedactNilKeepsAllColumns(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		ta := TestHarness(t, auditAppWithRedact(t, db, nil))
 
-		resp := ta.Post("/posts", map[string]any{"title": "hello", "secret": "shh"})
+		resp := ta.Post("/posts", map[string]any{"title": "hello"})
 		resp.AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)
@@ -49,8 +52,8 @@ func TestAudit_RedactNilKeepsAllColumns(t *testing.T) {
 			t.Fatalf("diff decode: %v", err)
 		}
 		newRow := diff["new"].(map[string]any)
-		if newRow["secret"] != "shh" {
-			t.Fatalf("nil redact dropped secret column: %+v", newRow)
+		if newRow["title"] != "hello" {
+			t.Fatalf("nil redact dropped non-sensitive column: %+v", newRow)
 		}
 	})
 }

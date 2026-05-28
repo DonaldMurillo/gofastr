@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -148,35 +149,37 @@ func TestTenantFilter(t *testing.T) {
 }
 
 func TestTenantFilterEmptyID(t *testing.T) {
+	// Empty tenantID is now fail-closed — see the security test
+	// TestApplyTenantFilter_EmptyTenantDoesNotLeaveQueryUnscoped.
 	qb := query.Select("*").From("posts")
 	tenant.ApplyTenantFilter(qb, "")
-	sqlStr, args := qb.Build()
+	sqlStr, _ := qb.Build()
 
-	if strings.Contains(sqlStr, "tenant_id") {
-		t.Errorf("expected no tenant filter when ID is empty, got: %s", sqlStr)
-	}
-	if len(args) != 0 {
-		t.Errorf("expected no args when ID is empty, got: %v", args)
+	if !strings.Contains(sqlStr, "tenant_id") {
+		t.Errorf("expected fail-closed scope mentioning tenant_id, got: %s", sqlStr)
 	}
 }
 
 func TestTenantMiddleware(t *testing.T) {
+	// The middleware now resolves the tenant from handler-set context
+	// (server-side state), NOT from a raw client header. See the
+	// security test TestTenantMiddleware_DoesNotTrustClientHeader.
 	var capturedTenantID string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedTenantID = tenant.GetTenantID(r.Context())
 	})
 
 	mw := tenant.TenantMiddleware("X-Tenant-ID")
-	handler := mw(next)
+	wrapped := mw(next)
 
 	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("X-Tenant-ID", "tenant-456")
+	req = req.WithContext(handler.SetTenant(req.Context(), "tenant-456"))
 	rec := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	wrapped.ServeHTTP(rec, req)
 
 	if capturedTenantID != "tenant-456" {
-		t.Errorf("expected tenant-456, got %q", capturedTenantID)
+		t.Errorf("expected tenant-456 from context, got %q", capturedTenantID)
 	}
 }
 

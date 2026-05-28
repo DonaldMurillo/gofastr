@@ -896,6 +896,11 @@ func TestDebugEndpoints_EnabledViaConfig(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{
 		DebugEndpoints: true,
 	}))
+	// /.debug/stats now 401s anonymous callers (see
+	// TestDebugStatsEndpoint_RequiresAuth in exposure_security_test.go).
+	// Mount a stub auth middleware so the happy-path body assertions
+	// below can still run.
+	app.Router().Use(stubAuthMiddleware)
 	app.registerDebugEndpoints()
 	ta := TestHarness(t, app)
 

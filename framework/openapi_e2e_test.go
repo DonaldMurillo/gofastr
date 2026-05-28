@@ -362,7 +362,10 @@ func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
 	app.Registry.Register(posts)
 
 	spec := EntityOpenAPI(app.Registry, "Blog API", "2.0.0")
-	app.Router().Get("/openapi.json", openapi.Handler(spec))
+	// E2E test exercises the spec body without authenticating, so use
+	// the explicit public variant (openapi.Handler 401s anonymous
+	// callers — see exposure_security_test.go).
+	app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
 
 	ta := TestHarness(t, app)
 	defer ta.Close()
@@ -501,6 +504,10 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	app.Registry.Register(posts)
 
 	spec := EntityOpenAPI(app.Registry, "Blog", "1.0.0")
+	// SwaggerUIHandler / Handler now 401 anonymous callers (see
+	// exposure_security_test.go). The E2E test exercises the
+	// happy-path content, so inject a stub user via middleware.
+	app.Router().Use(stubAuthMiddleware)
 	app.Router().Get("/api/docs/openapi.json", openapi.Handler(spec))
 	app.Router().Get("/api/docs/", openapi.SwaggerUIHandler(spec, "/api/docs"))
 
@@ -512,10 +519,12 @@ func TestE2E_OpenAPI_SwaggerUI(t *testing.T) {
 	resp.AssertStatus(t, http.StatusOK)
 	resp.AssertBodyContains(t, "Blog")
 
-	// UI page
+	// UI page — the embedded HTML page now points at OpenAPI viewers
+	// rather than vendoring swagger-ui (see core/openapi/handler.go
+	// removing the CDN reference). Assert against the new copy.
 	resp = ta.Get("/api/docs/")
 	resp.AssertStatus(t, http.StatusOK)
-	resp.AssertBodyContains(t, "swagger-ui")
+	resp.AssertBodyContains(t, "OpenAPI")
 }
 
 func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {

@@ -175,6 +175,13 @@ func TestCrudApplySoftDeleteFilter(t *testing.T) {
 }
 
 func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
+	// Anonymous callers must NOT be able to expose soft-deleted rows
+	// via ?trashed=true — that turned a "show recently-deleted" toggle
+	// into an information-disclosure path on public list endpoints.
+	// The security contract (see softdelete_public_security_test.go)
+	// requires the filter to stay applied when no authenticated user
+	// is present, regardless of the query param. The test was
+	// previously inverted; AI_TEST_AUDIT.md records the flip.
 	ent := entity.Define("posts", entity.EntityConfig{SoftDelete: true})
 
 	ch := &crud.CrudHandler{Entity: ent}
@@ -185,8 +192,8 @@ func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 	ch.ApplySoftDeleteFilter(qb, req)
 
 	sqlStr, _ := qb.Build()
-	if strings.Contains(sqlStr, "deleted_at") {
-		t.Errorf("expected no deleted_at filter when trashed=true, got: %s", sqlStr)
+	if !strings.Contains(sqlStr, "deleted_at IS NULL") {
+		t.Errorf("anonymous trashed=true must still hide deleted rows; got: %s", sqlStr)
 	}
 }
 
@@ -647,18 +654,16 @@ func TestE2E_SoftDelete_ListFiltersDeleted(t *testing.T) {
 		resp = ta.Get("/posts/p2")
 		resp.AssertStatus(t, http.StatusNotFound)
 
-		// List with ?trashed=true should include deleted post
+		// Anonymous ?trashed=true must NOT expose soft-deleted rows
+		// — see softdelete_public_security_test.go. The filter is
+		// retained for unauthenticated callers regardless of the
+		// query param. Authenticated callers still see trashed (that
+		// path is covered by authenticated soft-delete tests).
 		resp = ta.Get("/posts?trashed=true")
 		resp.AssertStatus(t, http.StatusOK)
 		resp.AssertBodyContains(t, "Active Post")
-		resp.AssertBodyContains(t, "Deleted Post")
-
-		var trashedResult crud.ListResponse
-		if err := resp.JSON(&trashedResult); err != nil {
-			t.Fatalf("decode trashed list: %v", err)
-		}
-		if trashedResult.Total != 2 {
-			t.Errorf("expected total=2 with trashed, got %d", trashedResult.Total)
+		if strings.Contains(resp.Body(), "Deleted Post") {
+			t.Errorf("anonymous trashed=true must not expose deleted rows; body=%s", resp.Body())
 		}
 	})
 }
@@ -847,7 +852,12 @@ func TestE2E_MultiTenant_CRUDScoping(t *testing.T) {
 		app.Registry.Register(ent)
 
 		// Apply tenant middleware BEFORE registering routes
-		// (Router.wrap bakes in middleware at registration time)
+		// (Router.wrap bakes in middleware at registration time).
+		// TenantMiddleware no longer trusts the raw header — it only
+		// mirrors handler.GetTenant. Mirror X-Tenant-ID into that slot
+		// via a stub so the legacy header-is-tenant test contract still
+		// works.
+		app.Router().Use(stubTenantFromHeaderMiddleware)
 		app.Router().Use(tenant.TenantMiddleware("X-Tenant-ID"))
 
 		ch := crud.NewCrudHandler(ent, db)
