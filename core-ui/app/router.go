@@ -62,6 +62,14 @@ func (r *Router) DefaultLayout(layout *Layout) {
 	r.defaultLayout = layout
 }
 
+// GetDefaultLayout returns the layout currently set as the default for
+// screens that don't declare one. May return nil. Read-only accessor —
+// uihost's not-found path wraps a synthesized 404 component in this
+// layout so the error page shares chrome with the rest of the site.
+func (r *Router) GetDefaultLayout() *Layout {
+	return r.defaultLayout
+}
+
 // Resolve finds the screen for a given path.
 // Returns the screen, the extracted route params (for dynamic routes), and whether it was found.
 // Params are returned separately to avoid mutating the shared screen instance.

@@ -353,29 +353,56 @@ func emptyStateCSS(_ style.Theme) string {
 }
 
 func calloutCSS(_ style.Theme) string {
+	// Variant signaling uses a tinted surface + a leading icon glyph
+	// (via ::before) instead of the colored side-stripe. Side-stripe
+	// admonitions are a recognizable AI-template tell; the framework
+	// avoids them. The full border stays neutral; the surface tint
+	// carries the variant cue at adequate contrast.
 	return `[data-fui-comp="ui-callout"] {
   display: grid;
-  gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  column-gap: var(--spacing-md, 12px);
+  row-gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-inline-start-width: 4px;
   border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
+  background: var(--color-surface-soft, var(--color-surface, #FFFFFF));
+}
+[data-fui-comp="ui-callout"]::before {
+  content: var(--ui-callout-icon, "i");
+  grid-row: 1 / span 2;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  margin-block-start: 1px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  color: var(--ui-callout-accent, var(--color-text-muted, #52525B));
+  background: color-mix(in oklch, var(--ui-callout-accent, var(--color-text-muted, #52525B)) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--ui-callout-accent, var(--color-text-muted, #52525B)) 28%, transparent);
+  border-radius: 999px;
 }
 [data-fui-comp="ui-callout"] .ui-callout__title {
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--color-text, #18181B);
+  grid-column: 2;
 }
 [data-fui-comp="ui-callout"] .ui-callout__body {
   font-size: 0.9rem;
   color: var(--color-text-muted, #52525B);
+  grid-column: 2;
 }
-[data-fui-comp="ui-callout"].ui-callout--info    { border-inline-start-color: var(--color-info, #2563EB); }
-[data-fui-comp="ui-callout"].ui-callout--success { border-inline-start-color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-callout"].ui-callout--warning { border-inline-start-color: var(--color-warning, #CA8A04); }
-[data-fui-comp="ui-callout"].ui-callout--danger  { border-inline-start-color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-callout"].ui-callout--neutral { border-inline-start-color: var(--color-border-strong, #A1A1AA); }`
+[data-fui-comp="ui-callout"].ui-callout--info    { --ui-callout-accent: var(--color-info, #2563EB);    --ui-callout-icon: "i"; }
+[data-fui-comp="ui-callout"].ui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
+[data-fui-comp="ui-callout"].ui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
+[data-fui-comp="ui-callout"].ui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
+[data-fui-comp="ui-callout"].ui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }`
 }
 
 func statCardCSS(_ style.Theme) string {

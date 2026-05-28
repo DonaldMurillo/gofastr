@@ -77,6 +77,7 @@ type UIHost struct {
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
 	faviconURL     string                               // configured WithFavicon URL — serveOrRender 204s it when no static file matches
+	notFoundScreen component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
 	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
 
@@ -212,6 +213,19 @@ func WithExtraScripts(urls ...string) Option {
 func WithHeadHTML(html string) Option {
 	return func(ds *UIHost) {
 		ds.headHTML = html
+	}
+}
+
+// WithNotFoundScreen overrides the default bare 404 fallback. When a
+// request misses every registered screen, static file, and configured
+// favicon, the host renders this component through the active layout
+// — so the 404 page sees the same nav/footer chrome every other page
+// gets. The component's Render() result is wrapped in the default
+// layout; pages without their own layout end up with the framework's
+// bare <main>.
+func WithNotFoundScreen(c component.Component) Option {
+	return func(ds *UIHost) {
+		ds.notFoundScreen = c
 	}
 }
 
@@ -374,7 +388,14 @@ func (ds *UIHost) AppCSS() string {
 // region). Apps can override these classes; the framework just
 // guarantees the defaults exist.
 const frameworkBuiltinCSS = `
-.fui-visually-hidden {
+/* Visually-hidden helper — exposed under BOTH .fui-* (framework runtime
+   uses this for the SPA route-announce region) and .ui-* (framework/ui
+   components — CommandPalette's SR-only trigger, CopyButton's status
+   region, etc.). Apps no longer have to call ui.BaseCSS() to opt in;
+   the helper is part of the built-in auto-emitted app.css floor. Apps
+   that want a custom visually-hidden recipe can override either class
+   via their own WithCustomCSS — last rule wins. */
+.fui-visually-hidden, .ui-visually-hidden {
   position: absolute !important;
   width: 1px; height: 1px;
   padding: 0; margin: -1px;
@@ -974,15 +995,12 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
 		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
 	}
-	// Single app-level CSS asset: theme :root vars + the host's
-	// customCSS payload concatenated. Always emitted — the :root
-	// floor is load-bearing for component CSS that uses bare
-	// var(--*) refs. Legacy endpoints stay 410 GONE.
-	if ds.App != nil {
-		page = strings.Replace(page,
-			"</head>",
-			`<link rel="stylesheet" href="/__gofastr/app.css">`+"\n</head>", 1)
-	}
+	// app.css is injected AFTER component CSS (see further down) so
+	// that host overrides win cascade ties against the framework's
+	// component defaults. CSS variables resolve at use time, so the
+	// :root tokens (which app.css owns) still resolve correctly for
+	// component CSS that uses bare var(--*) refs regardless of source
+	// order.
 
 	// Head injection: global typed tags + raw HTML + per-screen SEOScreen.
 	// Order: typed helpers → WithHeadHTML → SEOScreen. Typed helpers are
@@ -1024,6 +1042,15 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// them or not.
 	if tags := ds.componentCSSTags(page, bundle); tags != "" {
 		page = strings.Replace(page, "</head>", tags+"\n</head>", 1)
+	}
+	// app.css comes AFTER the component CSS so it wins cascade ties
+	// against framework defaults. Hosts that override e.g. a button's
+	// padding or a header's drawer position can do so by writing to
+	// the same selector — no specificity gymnastics needed.
+	if ds.App != nil {
+		page = strings.Replace(page,
+			"</head>",
+			`<link rel="stylesheet" href="/__gofastr/app.css">`+"\n</head>", 1)
 	}
 	if catalog := catalogJSONScript(ds); catalog != "" {
 		page = strings.Replace(page, "</head>", catalog+"\n</head>", 1)
@@ -1071,12 +1098,36 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ds.AppCSS())
 }
 
-// serveNotFound writes a minimal HTML 404 with a real <title>. The
-// previous http.Error path returned text/plain with no <title>, which
-// left document.title="" on SPA-nav errors and bled into subsequent
-// page navs.
+// serveNotFound writes a 404. When WithNotFoundScreen is set, the
+// configured component renders through the same chrome (default
+// layout, runtime.js, theme bootstrap) as every other page; otherwise
+// the framework falls back to a minimal HTML body so something
+// always renders.
 func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if ds.notFoundScreen != nil && ds.App != nil {
+		body := ds.notFoundScreen.Render()
+		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
+			body = layout.Wrap(body)
+		}
+		appName := "GoFastr"
+		if ds.App.Name != "" {
+			appName = ds.App.Name
+		}
+		// Build a minimal document shell so injectChrome's strings.Replace
+		// targets (`<head>`, `</head>`, `<body>`) actually exist — without
+		// this the customCSS / runtime / color-scheme bootstrap silently
+		// don't attach and the page renders as bare browser-default styles.
+		shell := fmt.Sprintf(
+			`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404 — %s</title></head><body>%s</body></html>`,
+			stdhtml.EscapeString(appName), string(body))
+		page := ds.injectChrome(shell, path, "")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, page)
+		return
+	}
+
 	w.WriteHeader(http.StatusNotFound)
 	appName := "GoFastr"
 	if ds.App != nil && ds.App.Name != "" {

@@ -204,7 +204,10 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 		t.Fatalf("style status: %v code=%d", err, resp.StatusCode)
 	}
 	style := readAll(t, resp)
-	for _, want := range []string{":root", ".fui-widget", ".fui-pos-bottom-right"} {
+	// Widget CSS no longer prepends its own :root block — that was
+	// clobbering host-set theme variables (see server.go comment).
+	// app.css owns the :root floor now.
+	for _, want := range []string{".fui-widget", ".fui-pos-bottom-right"} {
 		if !strings.Contains(style, want) {
 			t.Errorf("style missing %q", want)
 		}

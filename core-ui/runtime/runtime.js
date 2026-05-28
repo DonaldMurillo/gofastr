@@ -578,6 +578,16 @@
     /** Programmatically navigate to a path */
     navigate(path, { replace = false } = {}) {
       if (path === currentPath) return;
+      // Security: reject attacker-controllable schemes BEFORE
+      // touching the URL bar. Server-rendered data-fui-push-state
+      // attributes (e.g. on a combobox option) and signal-bound
+      // hrefs are the trust boundary; navigate() is the choke point
+      // for all programmatic SPA navigation, so the guard lives
+      // here. Reuses the same gate as Lightbox AllowDownload etc.
+      if (this._isUnsafeSignalUrl('href', path)) {
+        console.warn('[gofastr] navigate refused unsafe URL:', path);
+        return;
+      }
       if (replace) {
         history.replaceState(null, '', path);
       } else {
@@ -1000,8 +1010,17 @@
     // Resolve relative URLs (e.g. "?p=2") against the current location
     // so query-only links match their owning route.
     const clean = resolvePath(href).split('?')[0].split('#')[0];
-    // Exact match
+    // Exact match.
     if (routes.has(clean)) return true;
+    // Trailing-slash tolerance: a screen group registers its root
+    // as "/components/" but a nav link to "/components" (no slash)
+    // is semantically the same — the server redirects one to the
+    // other. Match both forms so the SPA router doesn't fall through
+    // to a hard reload just because the consumer wrote the link
+    // without the trailing slash. loadPage will surface the server's
+    // canonical form via X-Gofastr-Location if a redirect happens.
+    if (clean !== '/' && !clean.endsWith('/') && routes.has(clean + '/')) return true;
+    if (clean !== '/' && clean.endsWith('/') && routes.has(clean.slice(0, -1))) return true;
     // Try dynamic route patterns (e.g., /products/:slug)
     const parts = clean.split('/').filter(Boolean);
     for (const [pattern] of routes) {
@@ -1870,87 +1889,122 @@
     G.scheduleIdleLoads();
   };
 
-  if (document.readyState === 'loading') {
+  // Mirror details.open → summary aria-expanded for screen readers.
+  // Native <summary> reports as "button" without an expanded state.
+  // Helper hoisted out of any branch so both the initial-pass and
+  // the toggle-listener forms can use it.
+  const _mirrorDisclosure = (d) => {
+    const s = d.querySelector(':scope > summary');
+    if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
+  };
 
-    // Hydration-on-SSR: every fresh page render runs through here on
-    // load. Apply aria-current to the matching nav link so the active
-    // state is visible without SPA-style routing. Server-rendered
-    // pages can also embed aria-current themselves; this just fills
-    // the gap when they don't.
-    document.addEventListener('DOMContentLoaded', () => {
-      updateActiveLink(location.pathname);
-    });
-    document.addEventListener('DOMContentLoaded', _bootstrapComponentCSS);
+  // Event listeners attach unconditionally — they fire only when
+  // the matching event happens, so installing them before DOM is
+  // parsed is safe. The previous arrangement gated these inside
+  // `if (document.readyState === 'loading')`, which silently
+  // disabled them when runtime.js loaded after DOMContentLoaded
+  // (late injection, fast parse, dynamic re-init). Esc-to-close,
+  // aria-expanded mirroring, and menu-focus-on-open are all
+  // load-bearing for keyboard + AT users; they must run regardless
+  // of script-load timing.
 
-    // Demand-load split runtime modules: scan the page for known
-    // marker attributes (data-fui-fileupload, etc.) and kick off
-    // loadModule() for whichever ones are present. Each module
-    // self-wires when it loads — core just decides whether to fetch.
-    document.addEventListener('DOMContentLoaded', () => _scanForModules(document));
-
-    // Mirror details.open → summary aria-expanded for screen readers.
-    // Native <summary> reports as "button" without an expanded state.
-    // We run it once at boot for every disclosure, plus on every
-    // toggle event thereafter.
-    const _mirrorDisclosure = (d) => {
-      const s = d.querySelector(':scope > summary');
-      if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
-    };
-    document.addEventListener('DOMContentLoaded', () => {
-      for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
-        _mirrorDisclosure(d);
+  // Focus trap via `inert`: when a disclosure opts in with
+  // data-fui-disclosure-trap (used for mobile drawer / full-sheet
+  // popovers), set `inert` on every body child that's NOT the
+  // ancestor chain of the drawer. Tab walking is naturally confined
+  // because inert removes elements from the focus order + the AT
+  // tree. Cleared on close, so the rest of the page returns to life.
+  //
+  // _inertNeighbors records what we toggled so removal is exact —
+  // we can't just "remove inert from everything" because some
+  // hosts ship their own inert state.
+  const _inertNeighbors = new WeakMap();
+  const _applyDisclosureTrap = (d, open) => {
+    if (open) {
+      // Find body-level ancestor of d; we make every OTHER body
+      // child inert.
+      let bodyChild = d;
+      while (bodyChild.parentElement && bodyChild.parentElement !== document.body) {
+        bodyChild = bodyChild.parentElement;
       }
-    });
-    // 'toggle' fires on every open/close. Delegate at document level
-    // so dynamically-inserted disclosures are covered.
-    document.addEventListener('toggle', (e) => {
-      const d = e.target;
-      if (d && d.tagName === 'DETAILS' && d.hasAttribute('data-fui-disclosure')) {
-        _mirrorDisclosure(d);
-        // Menu disclosure (data-fui-menu): on open, focus the first
-        // menuitem so keyboard users land inside the panel without an
-        // extra Tab. The native <summary> retains visible focus until
-        // the user moves it with ArrowDown.
-        if (d.open && d.hasAttribute('data-fui-menu')) {
-          const first = d.querySelector('[role="menuitem"]:not([aria-disabled="true"])');
-          if (first) first.focus();
-        }
+      if (bodyChild.parentElement !== document.body) return; // not in body
+      const made = [];
+      for (const sib of document.body.children) {
+        if (sib === bodyChild) continue;
+        if (sib.hasAttribute('inert')) continue; // don't touch existing
+        sib.setAttribute('inert', '');
+        made.push(sib);
       }
-    }, true); // capture phase — toggle doesn't bubble
+      _inertNeighbors.set(d, made);
+    } else {
+      const made = _inertNeighbors.get(d);
+      if (!made) return;
+      for (const sib of made) sib.removeAttribute('inert');
+      _inertNeighbors.delete(d);
+    }
+  };
 
-
-    // Menu keyboard navigation (roving focus, Home/End, Tab close,
-    // type-ahead) ships in core-ui/runtime/src/menu.js — loaded on
-    // demand when the page contains a [data-fui-menu] element. The
-    // "focus first menuitem on open" 4-liner above stays in core
-    // since it's integrated with the disclosure toggle handler.
-
-    // Escape closes any open <details data-fui-disclosure>. Native
-    // <details> only handles Escape when the summary itself has
-    // focus; this extends it to "Escape anywhere on the page". An
-    // open modal widget takes precedence — its own CloseOnEscape
-    // handler runs and we defer so a single Escape doesn't close
-    // both.
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const G = window.__gofastr;
-      if (G && G._modalStack && G._modalStack.length > 0) return;
-      for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
-        // Only refocus the summary if focus is already inside this
-        // disclosure — otherwise we'd yank focus away from whatever
-        // the user was actually doing in main content.
-        const wasInside = d.contains(document.activeElement);
-        d.removeAttribute('open');
-        if (wasInside) d.querySelector('summary')?.focus();
+  // 'toggle' fires on every open/close. Delegate at document level
+  // so dynamically-inserted disclosures are covered.
+  document.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (d && d.tagName === 'DETAILS' && d.hasAttribute('data-fui-disclosure')) {
+      _mirrorDisclosure(d);
+      // Menu disclosure (data-fui-menu): on open, focus the first
+      // menuitem so keyboard users land inside the panel without an
+      // extra Tab. The native <summary> retains visible focus until
+      // the user moves it with ArrowDown.
+      if (d.open && d.hasAttribute('data-fui-menu')) {
+        const first = d.querySelector('[role="menuitem"]:not([aria-disabled="true"])');
+        if (first) first.focus();
       }
-    });
-  } else {
-    // Document already past parsing — run the same hooks the
-    // DOMContentLoaded branch installs. SSE connection is handled
-    // by the module loader (the marker scanner detects
-    // <meta name="gofastr-sse"> and idle-loads the sse module).
-    _scanForModules(document);
+      // Focus-trap opt-in: confine focus to the drawer subtree via
+      // `inert` on siblings. Wired both ways so the trap clears on
+      // close (including auto-close on SPA nav).
+      if (d.hasAttribute('data-fui-disclosure-trap')) {
+        _applyDisclosureTrap(d, d.open);
+      }
+    }
+  }, true); // capture phase — toggle doesn't bubble
+
+  // Escape closes any open <details data-fui-disclosure>. Native
+  // <details> only handles Escape when the summary itself has
+  // focus; this extends it to "Escape anywhere on the page". An
+  // open modal widget takes precedence — its own CloseOnEscape
+  // handler runs and we defer so a single Escape doesn't close
+  // both.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const G = window.__gofastr;
+    if (G && G._modalStack && G._modalStack.length > 0) return;
+    for (const d of document.querySelectorAll('details[data-fui-disclosure][open]')) {
+      // Only refocus the summary if focus is already inside this
+      // disclosure — otherwise we'd yank focus away from whatever
+      // the user was actually doing in main content.
+      const wasInside = d.contains(document.activeElement);
+      d.removeAttribute('open');
+      if (wasInside) d.querySelector('summary')?.focus();
+    }
+  });
+
+  // Initial-pass hooks: these scan the CURRENT DOM, so they have
+  // to wait until the document is at least parsed. updateActiveLink
+  // marks server-rendered nav links; _bootstrapComponentCSS scans
+  // existing markers; _scanForModules dispatches demand-load
+  // modules; the disclosure pass syncs aria-expanded on every
+  // server-rendered <details data-fui-disclosure>.
+  const _initialPass = () => {
+    updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
+    _scanForModules(document);
+    for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
+      _mirrorDisclosure(d);
+    }
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _initialPass);
+  } else {
+    _initialPass();
   }
 
   window.G=window.__gofastr;
