@@ -82,6 +82,16 @@ func slug(s string) string {
 // ─── Section ────────────────────────────────────────────────────────
 
 // SectionConfig configures a labelled content section.
+//
+// ID behavior:
+//   - If ID is set, it's used verbatim — caller controls the anchor.
+//   - If ID is empty and Heading is set, the section auto-slugs the
+//     heading as its id ("Forms" → id="forms"). This is the typical
+//     case for in-page navs / scrollspy rails where the rail's
+//     anchor href should match the section just by typing the heading
+//     text twice.
+//   - If both ID and Heading are empty, the section gets no id and
+//     a generic aria-label.
 type SectionConfig struct {
 	Heading     string // optional <h2> heading
 	Description string // optional supporting text under the heading
@@ -122,7 +132,14 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 			html.DivConfig{Class: "ui-section__body"}, body...))
 	}
 
-	secCfg := html.SectionConfig{Class: cls, ID: cfg.ID}
+	sectionID := cfg.ID
+	if sectionID == "" && cfg.Heading != "" {
+		// Auto-anchor — typical use is in-page rails / scrollspy where the
+		// rail's href="#<slug>" should land on this section without the
+		// caller having to repeat the slug.
+		sectionID = slug(cfg.Heading)
+	}
+	secCfg := html.SectionConfig{Class: cls, ID: sectionID}
 	if headingID != "" {
 		secCfg.LabelledBy = headingID
 	} else {
@@ -472,6 +489,113 @@ func Button(cfg ButtonConfig) render.HTML {
 		ID:    cfg.ID,
 		ExtraAttrs: cfg.ExtraAttrs,
 	}))
+}
+
+// ─── LinkButton ─────────────────────────────────────────────────────
+
+// LinkButtonConfig configures a button-styled <a> link. Use this when
+// the affordance navigates (changes URL) — CTAs like "Get started",
+// "Read the docs". For in-page actions that don't change URL, use
+// Button instead.
+type LinkButtonConfig struct {
+	Label   string        // required visible text
+	Href    string        // required navigation target
+	Variant ButtonVariant // defaults to ButtonPrimary
+	Size    ButtonSize    // defaults to ButtonSizeDefault
+	// External, when true, opens the link in a new tab with
+	// rel="noopener noreferrer". Use for off-site links (docs to
+	// GitHub, pkg.go.dev, etc.). The runtime's SPA-nav interceptor
+	// naturally skips http(s):// hrefs (they're not "internal"), so
+	// External does not also need to "suppress SPA nav" — the
+	// underlying SPA router already does the right thing.
+	External bool
+	ID       string
+	Class    string
+	ExtraAttrs html.Attrs
+}
+
+// LinkButton renders a button-styled anchor. Same variant/size grammar
+// as Button — the visual styling is shared via the registered ui-button
+// CSS (class-based, not tag-scoped). The difference is semantic:
+// <a> for navigation, <button> for actions. Screen readers, "open in
+// new tab", and SPA push-state nav all rely on the right tag choice.
+func LinkButton(cfg LinkButtonConfig) render.HTML {
+	if cfg.Label == "" {
+		panic("ui: LinkButton requires Label")
+	}
+	if cfg.Href == "" {
+		panic("ui: LinkButton requires Href — use Button for non-navigating actions")
+	}
+	// Refuse dangerous schemes at render time. The runtime's SPA
+	// navigator screens these too, but a direct anchor click bypasses
+	// the SPA interceptor (browser handles it natively), so the
+	// rendered href must already be safe. javascript:/vbscript:/non-
+	// image data: are the canonical XSS vectors for links.
+	if isUnsafeScheme(cfg.Href) {
+		panic("ui: LinkButton refuses unsafe Href scheme: " + cfg.Href)
+	}
+	v := cfg.Variant
+	if v == "" {
+		v = ButtonPrimary
+	}
+	switch v {
+	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
+	default:
+		panic("ui: LinkButton unknown Variant " + string(v) +
+			" — pick one of: primary, secondary, danger, ghost")
+	}
+	switch cfg.Size {
+	case ButtonSizeDefault, ButtonSizeSmall, ButtonSizeLarge:
+	default:
+		panic("ui: LinkButton unknown Size " + string(cfg.Size) +
+			" — pick one of: \"\" (default), small, large")
+	}
+	cls := "ui-button ui-button--" + string(v)
+	if cfg.Size != ButtonSizeDefault {
+		cls += " ui-button--" + string(cfg.Size)
+	}
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+	extra := html.Attrs{}
+	for k, val := range cfg.ExtraAttrs {
+		extra[k] = val
+	}
+	if cfg.External {
+		extra["target"] = "_blank"
+		extra["rel"] = "noopener noreferrer"
+	}
+	return buttonStyle.WrapHTML(html.Link(html.LinkConfig{
+		Href: cfg.Href, Text: cfg.Label, Class: cls, ID: cfg.ID,
+		ExtraAttrs: extra,
+	}))
+}
+
+// isUnsafeScheme rejects the canonical XSS vectors for `href`/`src`
+// attributes — javascript:, vbscript:, and non-image data: URIs. Used
+// by LinkButton (render-time guard) and shadowed by the runtime's
+// _isUnsafeSignalUrl for programmatic SPA navigation.
+func isUnsafeScheme(href string) bool {
+	// Strip leading whitespace + control chars; the browser ignores
+	// them when resolving schemes ("  javascript:" is still dangerous).
+	s := href
+	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\n' ||
+		s[0] == '\r' || s[0] == '\f' || s[0] == '\v' || s[0] < 0x20) {
+		s = s[1:]
+	}
+	// Case-insensitive prefix check.
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "javascript:") {
+		return true
+	}
+	if strings.HasPrefix(lower, "vbscript:") {
+		return true
+	}
+	if strings.HasPrefix(lower, "data:") {
+		// Allow data:image/* only.
+		return !strings.HasPrefix(lower, "data:image/")
+	}
+	return false
 }
 
 // ─── StatusBadge ────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type HomeScreen struct{}
@@ -51,11 +52,11 @@ func (s *HomeScreen) Render() render.HTML {
 	)
 }
 
-// container is the site's max-width wrapper. The framework's ui.Container
-// would re-skin with its own width tokens; we want the v2 --col-max value so
-// we use the local .container-site class defined in styles.go.
+// container is the site's max-width wrapper. Delegates to
+// ui.Container(ContainerWide) — the wide cap is overridden to 1240px
+// via the --ui-container-wide token in styles.go's tokens block.
 func container(children ...render.HTML) render.HTML {
-	return html.Div(html.DivConfig{Class: "container-site"}, children...)
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide}, children...)
 }
 
 // -----------------------------------------------------------------------------
@@ -90,8 +91,8 @@ func heroSection() render.HTML {
 	)
 
 	ctas := html.Div(html.DivConfig{Class: "hero__ctas"},
-		html.Link(html.LinkConfig{Href: "/get-started", Text: "Get started", Class: "btn btn--primary btn--lg"}),
-		html.Link(html.LinkConfig{Href: "/docs/", Text: "Read the docs", Class: "btn btn--ghost btn--lg"}),
+		ui.LinkButton(ui.LinkButtonConfig{Label: "Get started", Href: "/get-started", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
+		ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonGhost, Size: ui.ButtonSizeLarge}),
 	)
 
 	install := html.Div(html.DivConfig{Class: "hero__install"},
@@ -99,12 +100,16 @@ func heroSection() render.HTML {
 		render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest"),
 	)
 
-	copy := html.Div(html.DivConfig{Class: "hero__copy"}, preAlphaTag, title, lede1, lede2, ctas, install)
-	code := html.Div(html.DivConfig{Class: "hero__code"}, heroCodeBlock())
-	grid := html.Div(html.DivConfig{Class: "hero__grid"}, copy, code)
+	copy := render.Join(preAlphaTag, title, lede1, lede2, ctas, install)
 
 	return html.Section(html.SectionConfig{Class: "hero", Label: "Hero"},
-		container(grid),
+		container(ui.HeroSplit(ui.HeroSplitConfig{
+			Copy:      copy,
+			Media:     heroCodeBlock(),
+			Ratio:     ui.HeroSplitMediaWide,
+			AriaLabel: "Hero",
+			Class:     "hero-home",
+		})),
 	)
 }
 

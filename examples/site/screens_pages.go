@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // codeText — shared inline <code> span used by most pages.
@@ -43,71 +44,61 @@ func (s *GetStartedScreen) Render() render.HTML {
 }
 
 func gsHero() render.HTML {
-	fact := func(label, value string) render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			html.Span(html.TextConfig{Class: "l"}, render.Text(label)),
-			html.Span(html.TextConfig{Class: "v"}, render.Text(value)),
-		)
+	// Facts as a definition list — label-left in mono caption, value-
+	// right in body type. The previous 2×2 card grid (FactBox tiles)
+	// was a SaaS "feature card" pattern that fought the engineer-
+	// voice brief. The "Or, ask an agent" line lives below the dl
+	// as a footnote rather than a fifth tile.
+	dt := func(s string) render.HTML {
+		return render.Tag("dt", nil, render.Text(s))
 	}
-	facts := html.Div(html.DivConfig{Class: "gs-facts"},
-		fact("Prereqs", "Go 1.26+, git"),
-		fact("OS", "macOS, Linux, Windows (WSL)"),
-		fact("Storage", "SQLite by default, Postgres opt-in"),
-		fact("Time", "~4 minutes"),
-		html.Div(html.DivConfig{Class: "fact full"},
-			html.Span(html.TextConfig{Class: "l"}, render.Text("Or, ask an agent")),
-			html.Span(html.TextConfig{Class: "v"},
-				render.Text("Skip the path — run "), codeText("kiln serve --agent claude-code"),
-				render.Text(" and chat the app into existence.")),
-		),
+	dd := func(body ...render.HTML) render.HTML {
+		return render.Tag("dd", nil, body...)
+	}
+	facts := render.Tag("dl", map[string]string{"class": "gs-facts"},
+		dt("Prereqs"), dd(render.Text("Go 1.26+, git")),
+		dt("OS"), dd(render.Text("macOS, Linux, Windows (WSL)")),
+		dt("Storage"), dd(render.Text("SQLite by default, Postgres opt-in")),
+		dt("Time"), dd(render.Text("~4 minutes")),
+	)
+	footnote := render.Tag("p", map[string]string{"class": "gs-facts-note"},
+		render.Text("Or skip the path — run "), codeText("kiln serve --agent claude-code"),
+		render.Text(" and chat the app into existence."),
 	)
 
-	hero := html.Div(html.DivConfig{Class: "gs-hero__grid"},
-		html.Div(html.DivConfig{Class: "mb-lg"},
-			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Get started · v0.0.4")),
-			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("From cold machine to a running app in "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("four minutes")),
-				render.Text("."),
-			),
-			render.Tag("p", map[string]string{"class": "lede"},
-				render.Text("Install the CLI, scaffold an app, declare an entity, run it. Every command in this guide is real — paste it into a terminal and it works."),
-			),
+	copy := html.Div(html.DivConfig{Class: "mb-lg"},
+		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Get started · v0.0.4")),
+		html.Heading(html.HeadingConfig{Level: 1},
+			render.Text("From cold machine to a running app in four minutes."),
 		),
-		facts,
+		render.Tag("p", map[string]string{"class": "lede"},
+			render.Text("Install the CLI, scaffold an app, declare an entity, run it. Every command in this guide is real — paste it into a terminal and it works."),
+		),
 	)
-	return html.Section(html.SectionConfig{Class: "gs-hero", Label: "Get started"}, container(hero))
+	return html.Section(html.SectionConfig{Class: "gs-hero", Label: "Get started"},
+		container(ui.HeroSplit(ui.HeroSplitConfig{
+			Copy: copy,
+			Media: render.Join(facts, footnote),
+			AriaLabel: "Get started",
+			Class: "hero-gs",
+		})),
+	)
 }
 
 func gsBody() render.HTML {
-	railLink := func(n, anchor, text string, active bool) render.HTML {
-		cls := ""
-		if active {
-			cls = "active"
-		}
-		return html.ListItem(html.ListItemConfig{},
-			html.LinkHTML(html.LinkHTMLConfig{
-				Href:  "#" + anchor,
-				Class: cls,
-				Content: render.Join(
-					html.Span(html.TextConfig{Class: "n"}, render.Text(n)),
-					render.Text(text),
-				),
-			}),
-		)
-	}
-	rail := render.Tag("aside", map[string]string{"class": "step-rail"},
-		render.Tag("h6", nil, render.Text("The path")),
-		render.Tag("ol", nil,
-			railLink("01", "s1", "Install", true),
-			railLink("02", "s2", "Scaffold", false),
-			railLink("03", "s3", "First entity", false),
-			railLink("04", "s4", "Run it", false),
-			railLink("05", "s5", "First page", false),
-			railLink("06", "s6", "What you have", false),
-		),
-		html.Div(html.DivConfig{Class: "meta"}, render.Text("Stuck? Open the journal: pkg.go.dev/github.com/DonaldMurillo/gofastr")),
-	)
+	rail := ui.StepRail(ui.StepRailConfig{
+		Title: "The path",
+		Items: []ui.StepRailItem{
+			{Number: "01", Anchor: "s1", Label: "Install"},
+			{Number: "02", Anchor: "s2", Label: "Scaffold"},
+			{Number: "03", Anchor: "s3", Label: "First entity"},
+			{Number: "04", Anchor: "s4", Label: "Run it"},
+			{Number: "05", Anchor: "s5", Label: "First page"},
+			{Number: "06", Anchor: "s6", Label: "What you have"},
+		},
+		ActiveIndex: 0,
+		Meta:        "Stuck? Open the journal: pkg.go.dev/github.com/DonaldMurillo/gofastr",
+	})
 
 	step := func(id, num, title, time string, body ...render.HTML) render.HTML {
 		head := html.Div(html.DivConfig{Class: "step__head"},
@@ -132,8 +123,8 @@ func gsBody() render.HTML {
 	ok := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "ok"}, render.Text(s)) }
 
 	callout := func(title, body string) render.HTML {
-		return html.Div(html.DivConfig{Class: "callout"},
-			html.Heading(html.HeadingConfig{Level: 5}, render.Text(title)),
+		return ui.Callout(
+			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo},
 			render.Tag("p", nil, render.Text(body)),
 		)
 	}
@@ -266,32 +257,25 @@ func (s *ConceptsIndexScreen) Render() render.HTML {
 }
 
 func cxHero() render.HTML {
-	stat := func(value, label string) render.HTML {
-		return html.Div(html.DivConfig{},
-			html.Span(html.TextConfig{Class: "v"}, render.Text(value)),
-			html.Span(html.TextConfig{Class: "l"}, render.Text(label)),
-		)
-	}
-	stats := html.Div(html.DivConfig{Class: "cx-stats"},
-		stat("53", "docs"),
-		stat("6", "intents"),
-		stat("31", "packages"),
-	)
-	hero := html.Div(html.DivConfig{Class: "cx-hero__grid"},
-		html.Div(html.DivConfig{},
-			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Docs · v0.0.4")),
-			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("Read by what you're "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("trying to do")),
-				render.Text("."),
-			),
-			render.Tag("p", map[string]string{"class": "lede"},
-				render.Text("The framework's surface is grouped into six intents. Pick the one that matches the question you're holding."),
-			),
+	// Stats as a single mono inline line — "53 docs · 6 intents · 31
+	// packages". Replaces the previous KPI tile band, which was a
+	// SaaS-dashboard pattern at odds with the engineer-voice brief
+	// (code is the hero; metadata should be unobtrusive).
+	copy := html.Div(html.DivConfig{},
+		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Docs · v0.0.4")),
+		html.Heading(html.HeadingConfig{Level: 1},
+			render.Text("Read by what you're trying to do."),
 		),
-		stats,
+		render.Tag("p", map[string]string{"class": "lede"},
+			render.Text("The framework's surface is grouped into six intents. Pick the one that matches the question you're holding."),
+		),
+		render.Tag("p", map[string]string{"class": "cx-stats-line"},
+			render.Text("53 docs · 6 intents · 31 packages"),
+		),
 	)
-	return html.Section(html.SectionConfig{Class: "cx-hero", Label: "Docs"}, container(hero))
+	return html.Section(html.SectionConfig{Class: "cx-hero", Label: "Docs"},
+		container(copy),
+	)
 }
 
 func cxBody() render.HTML {
@@ -383,28 +367,23 @@ func cxBody() render.HTML {
 		},
 	}
 
-	railItems := []render.HTML{}
-	for _, it := range intents {
-		cls := ""
-		if it.num == "01" {
-			cls = "active"
+	// Rail via ui.AnchoredRail — bundles markup + scrollspy.
+	items := make([]ui.RailItem, len(intents))
+	for i, it := range intents {
+		items[i] = ui.RailItem{
+			Eyebrow: it.num,
+			Text:    it.title,
+			Anchor:  it.slug,
+			Count:   len(it.docs),
 		}
-		railItems = append(railItems, html.ListItem(html.ListItemConfig{},
-			html.LinkHTML(html.LinkHTMLConfig{
-				Href:  "#" + it.slug,
-				Class: cls,
-				Content: render.Join(
-					html.Span(html.TextConfig{Class: "n"}, render.Text(it.num)),
-					render.Text(it.title),
-					html.Span(html.TextConfig{Class: "ct"}, render.Text(itoa(len(it.docs)))),
-				),
-			}),
-		))
 	}
-	rail := render.Tag("aside", map[string]string{"class": "intent-rail"},
-		render.Tag("h6", nil, render.Text("By intent")),
-		render.Tag("ul", nil, railItems...),
-	)
+	rail := ui.AnchoredRail(ui.AnchoredRailConfig{
+		Label:           "By intent",
+		Items:           items,
+		ObserveSelector: "#docs-sections",
+		TargetSelector:  ".intent[id]",
+		Class:           "intent-rail-spy",
+	})
 
 	sections := []render.HTML{}
 	for _, it := range intents {
@@ -413,7 +392,7 @@ func cxBody() render.HTML {
 
 	return container(html.Div(html.DivConfig{Class: "cx-body"},
 		rail,
-		html.Div(html.DivConfig{}, sections...),
+		render.Tag("div", map[string]string{"id": "docs-sections"}, sections...),
 	))
 }
 
@@ -517,9 +496,7 @@ func docArticle() render.HTML {
 		),
 		html.Div(html.DivConfig{Class: "doc-head"},
 			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("Entities — the unit of "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("declaration")),
-				render.Text("."),
+				render.Text("Entities — the unit of declaration."),
 			),
 			html.Div(html.DivConfig{Class: "doc-head__meta"},
 				tagAccent("Modeling"),
@@ -667,9 +644,7 @@ func exHero() render.HTML {
 		container(
 			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Examples · 6 apps")),
 			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("Six reference apps. "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("Each runs in one command")),
-				render.Text("."),
+				render.Text("Six reference apps. Each runs in one command."),
 			),
 			render.Tag("p", map[string]string{"class": "lede"},
 				render.Text("Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under examples/ in the repo — copy what you need."),
@@ -796,7 +771,7 @@ func kHero() render.HTML {
 				render.Text("Kiln is a separate binary that mounts a chat panel on your running GoFastr app. The agent calls a typed tool surface; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit canonical entities/*.json you commit."),
 			),
 			html.Div(html.DivConfig{Class: "k-hero__ctas"},
-				html.Link(html.LinkConfig{Href: "/docs/kiln", Text: "Read the docs", Class: "btn btn--primary btn--lg"}),
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
 				html.Div(html.DivConfig{Class: "k-hero__cli"},
 					html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
 					render.Text("go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest"),
@@ -855,9 +830,25 @@ func kDemo() render.HTML {
 			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_entity(\"posts\")")),
 			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_field(\"posts\", title)")),
 			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ migrate_up()")),
+			// Real OptimisticAction buttons — the framework's runtime fires
+			// the POST, swaps the label to SuccessLabel on click, rolls back
+			// if the endpoint returns non-2xx. Endpoints are no-op handlers
+			// registered in main.go.
 			html.Div(html.DivConfig{Class: "actions"},
-				render.Tag("button", map[string]string{"type": "button", "class": "approve"}, render.Text("approve")),
-				render.Tag("button", map[string]string{"type": "button", "class": "reject"}, render.Text("reject")),
+				ui.OptimisticAction(ui.OptimisticActionConfig{
+					Endpoint:     "/__site/kiln/approve",
+					IdleLabel:    "approve",
+					SuccessLabel: "applying…",
+					Variant:      ui.ButtonPrimary,
+					Class:        "approve",
+				}),
+				ui.OptimisticAction(ui.OptimisticActionConfig{
+					Endpoint:     "/__site/kiln/reject",
+					IdleLabel:    "reject",
+					SuccessLabel: "rejected",
+					Variant:      ui.ButtonGhost,
+					Class:        "reject",
+				}),
 			),
 		),
 		html.Div(html.DivConfig{Class: "kpanel__input"},
@@ -992,9 +983,7 @@ func phHero() render.HTML {
 					render.Text("2026-05"),
 				),
 				html.Heading(html.HeadingConfig{Level: 1},
-					render.Text("Why this framework "),
-					html.Span(html.TextConfig{Class: "amber"}, render.Text("exists")),
-					render.Text("."),
+					render.Text("Why this framework exists."),
 				),
 				html.Div(html.DivConfig{Class: "by"},
 					render.Text("By Donald Murillo"), render.Raw("<br>"),

@@ -18,11 +18,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 	ss.Rule(".gs-hero").
 		Set("padding", "var(--s-9) 0 {spacing.xxl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
-	ss.Rule(".gs-hero__grid").
-		Set("display", "grid",
-			"grid-template-columns", "minmax(0, 1fr) minmax(0, 1fr)",
-			"gap", "{spacing.xxxl}",
-			"align-items", "start").End()
+	// .gs-hero__grid is gone — ui.HeroSplit handles the 2-col grid.
 	ss.Rule(".gs-hero h1").
 		Set("font-size", "clamp(40px, 5vw, 64px)",
 			"line-height", "1.05",
@@ -35,61 +31,56 @@ func pageGetStarted(ss *style.StyleSheet) {
 			"font-size", "var(--t-lg)",
 			"max-width", "48ch").End()
 
+	// .gs-facts is now a <dl> — label / value pairs as a definition
+	// list, not card tiles. Engineer-voice prefers a tight tabular
+	// layout where the eye can scan label→value horizontally.
 	ss.Rule(".gs-facts").
 		Set("display", "grid",
-			"grid-template-columns", "1fr 1fr",
-			"gap", "{spacing.md}").End()
-	ss.Rule(".fact").
-		Set("padding", "{spacing.lg}",
-			"background", "{colors.surface}",
-			"border", "1px solid var(--line-faint)",
-			"border-radius", "{radii.md}").End()
-	ss.Rule(".fact.full").Set("grid-column", "1 / -1").End()
-	ss.Rule(".fact .l").
+			"grid-template-columns", "auto 1fr",
+			"column-gap", "{spacing.xl}",
+			"row-gap", "{spacing.sm}",
+			"margin", "0",
+			"padding", "0").End()
+	ss.Rule(".gs-facts dt").
 		Set("font-family", "{fonts.mono}",
 			"font-size", "11px",
+			"text-transform", "uppercase",
+			"letter-spacing", "0.05em",
 			"color", "{colors.text-subtle}",
-			"display", "block",
-			"margin-bottom", "6px").End()
-	ss.Rule(".fact .v").
-		Set("font-size", "var(--t-md)", "color", "{colors.text}", "font-weight", "500").End()
+			"line-height", "1.6",
+			"margin", "0").End()
+	ss.Rule(".gs-facts dd").
+		Set("font-size", "var(--t-md)",
+			"color", "{colors.text}",
+			"line-height", "1.6",
+			"margin", "0").End()
+	ss.Rule(".gs-facts-note").
+		Set("margin-top", "{spacing.xl}",
+			"font-size", "var(--t-sm)",
+			"color", "{colors.text-muted}",
+			"line-height", "1.5").End()
 
 	ss.Rule(".gs-body").
 		Set("display", "grid",
 			"grid-template-columns", "220px minmax(0, 1fr)",
 			"gap", "{spacing.xxxl}",
 			"padding", "var(--s-9) 0").End()
-	ss.Rule(".step-rail").
-		Set("position", "sticky",
-			"top", "calc(var(--nav-h) + {spacing.lg})",
-			"align-self", "start",
-			"font-size", "var(--t-sm)").End()
-	ss.Rule(".step-rail h6").
-		Set("font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}",
-			"margin-bottom", "{spacing.md}",
-			"font-weight", "400").End()
-	ss.Rule(".step-rail ol").Set("display", "grid", "gap", "2px").End()
-	ss.Rule(".step-rail li a").
-		Set("display", "grid",
-			"grid-template-columns", "28px 1fr",
-			"gap", "8px",
-			"padding", "6px 0",
-			"color", "{colors.text-muted}").End()
-	ss.Rule(".step-rail li a .n").
-		Set("font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}").End()
-	ss.Rule(".step-rail li a.active").Set("color", "{colors.text}").End()
-	ss.Rule(".step-rail li a.active .n").Set("color", "{colors.primary}").End()
-	ss.Rule(".step-rail .meta").
-		Set("margin-top", "{spacing.lg}",
-			"padding-top", "{spacing.md}",
-			"border-top", "1px solid var(--line-faint)",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "var(--fg-4)").End()
+	// Below 720px the StepRail itself goes static (framework default
+	// at the same breakpoint); collapse the .gs-body grid to a single
+	// column so the rail flows above the steps instead of trying to
+	// reserve 220px of column that drags the page horizontally past
+	// the viewport.
+	ss.Media("(max-width: 720px)", func(inner *style.StyleSheet) {
+		inner.Rule(".gs-body").
+			Set("grid-template-columns", "1fr",
+				"gap", "{spacing.xl}",
+				"padding", "{spacing.xxl} 0").End()
+	})
+	// Pin the framework's ui-step-rail flush below the fixed header.
+	// All of the visual styling (typography, list layout, active state,
+	// meta line) ships with the component.
+	ss.Rule(`[data-fui-comp="ui-step-rail"]`).
+		Set("--ui-step-rail-top", "calc(var(--nav-h) + {spacing.lg})").End()
 
 	ss.Rule(".step").
 		Set("padding-bottom", "var(--s-8)",
@@ -118,18 +109,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 			"max-width", "62ch",
 			"margin-bottom", "{spacing.lg}").End()
 
-	ss.Rule(".callout").
-		Set("padding", "{spacing.lg}",
-			"background", "color-mix(in oklch, {colors.primary} 6%, {colors.surface})",
-			"border-left", "3px solid {colors.primary}",
-			"border-radius", "{radii.sm}",
-			"margin", "{spacing.lg} 0").End()
-	ss.Rule(".callout h5").
-		Set("font-size", "var(--t-md)",
-			"margin-bottom", "6px",
-			"color", "{colors.text}").End()
-	ss.Rule(".callout p").
-		Set("color", "{colors.text-muted}", "font-size", "var(--t-sm)", "margin", "0").End()
+	// .callout class is gone — gsBody now uses ui.Callout (framework).
 
 	ss.Rule(".result").
 		Set("padding", "{spacing.xl}",
@@ -176,11 +156,7 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 	ss.Rule(".cx-hero").
 		Set("padding", "var(--s-9) 0 {spacing.xxl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
-	ss.Rule(".cx-hero__grid").
-		Set("display", "grid",
-			"grid-template-columns", "minmax(0, 1.4fr) minmax(0, 1fr)",
-			"gap", "{spacing.xxxl}",
-			"align-items", "start").End()
+	// .cx-hero__grid is gone — ui.HeroSplit handles the 2-col grid.
 	ss.Rule(".cx-hero h1").
 		Set("font-size", "clamp(40px, 5vw, 64px)",
 			"line-height", "1.05",
@@ -193,23 +169,14 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"font-size", "var(--t-lg)",
 			"max-width", "50ch").End()
 
-	ss.Rule(".cx-stats").
-		Set("display", "grid",
-			"grid-template-columns", "repeat(3, 1fr)",
-			"gap", "{spacing.md}",
-			"padding", "{spacing.lg}",
-			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.lg}").End()
-	ss.Rule(".cx-stats .v").
-		Set("font-size", "var(--t-2xl)",
-			"font-weight", "500",
-			"color", "{colors.text}",
-			"letter-spacing", "-0.02em",
-			"display", "block",
-			"margin-bottom", "4px").End()
-	ss.Rule(".cx-stats .l").
-		Set("font-family", "{fonts.mono}", "font-size", "11px", "color", "{colors.text-subtle}").End()
+	// Single mono inline stat line, sitting under the lede. The
+	// previous KPI tile band was a dashboard-SaaS cliché at odds
+	// with the engineer-voice brief.
+	ss.Rule(".cx-stats-line").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "var(--t-sm)",
+			"color", "{colors.text-subtle}",
+			"margin-top", "{spacing.lg}").End()
 
 	ss.Rule(".cx-body").
 		Set("display", "grid",
@@ -244,6 +211,12 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"text-align", "right").End()
 	ss.Rule(".intent-rail li a.active").Set("color", "{colors.text}").End()
 	ss.Rule(".intent-rail li a.active .n").Set("color", "{colors.primary}").End()
+	// scrollspy state — runtime adds .is-active + aria-current="true" on the
+	// anchor whose section is in view. Same visual as .active.
+	ss.Rule(`.intent-rail li a.is-active, .intent-rail li a[aria-current="true"]`).
+		Set("color", "{colors.text}").End()
+	ss.Rule(`.intent-rail li a.is-active .n, .intent-rail li a[aria-current="true"] .n`).
+		Set("color", "{colors.primary}").End()
 
 	ss.Rule(".intent").Set("margin-bottom", "var(--s-9)").End()
 	ss.Rule(".intent__head").
@@ -1047,6 +1020,172 @@ func pagePhilosophy(ss *style.StyleSheet) {
 			"display", "inline-block", "margin-right", "8px").End()
 	ss.Rule(".biblio dd").
 		Set("color", "{colors.text-muted}", "font-size", "var(--t-sm)").End()
+}
+
+// -----------------------------------------------------------------------------
+// /components/* — page chrome for the showcase grid + single-page demos.
+// -----------------------------------------------------------------------------
+
+func pageComponents(ss *style.StyleSheet) {
+	// .doc-shell-narrow — single-column variant of the doc page used by
+	// component showcase pages (no docnav / no toc). Same vertical rhythm.
+	ss.Rule(".doc-shell-narrow").
+		Set("max-width", "880px",
+			"margin", "0 auto",
+			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)").End()
+
+	// .demo-stage — live component preview frame. Surface + border + label
+	// chip so the rendered component reads as a deliberate sample, not
+	// random body markup.
+	ss.Rule(".demo-stage").
+		Set("border", "1px solid {colors.border}",
+			"border-radius", "{radii.lg}",
+			"overflow", "hidden",
+			"margin-top", "{spacing.xl}").End()
+	ss.Rule(".demo-stage__label").
+		Set("padding", "8px 14px",
+			"background", "{colors.surface}",
+			"border-bottom", "1px solid {colors.border}",
+			"font-family", "{fonts.mono}",
+			"font-size", "11px",
+			"color", "{colors.text-subtle}").End()
+	ss.Rule(".demo-stage__viewport").
+		Set("padding", "{spacing.xl}",
+			"background", "{colors.background}",
+			"display", "flex",
+			"flex-direction", "column",
+			"gap", "{spacing.md}").End()
+
+	// .demo-row + .demo-stack — generic inline wrappers used by Demo
+	// functions so groups of variants line up without bespoke CSS.
+	ss.Rule(".demo-row").
+		Set("display", "flex",
+			"flex-wrap", "wrap",
+			"gap", "{spacing.md}",
+			"align-items", "center").End()
+	ss.Rule(".demo-stack").
+		Set("display", "flex",
+			"flex-direction", "column",
+			"gap", "{spacing.md}").End()
+
+	// ---------- Components ScreenGroup inner layout ----------
+	// The framework's app.Layout wraps the inner content in:
+	//   <div class="layout-components">
+	//     <div class="layout-body">
+	//       <nav aria-label="Sidebar">{sidebar.Render()}</nav>
+	//       <main>{screen content}</main>
+	//     </div>
+	//   </div>
+	// We style that nav/main as a 2-column grid so the sidebar is sticky
+	// + scrollable independently of the content cell.
+	ss.Rule(".layout-components > .layout-body").
+		Set("display", "grid",
+			"grid-template-columns", "260px minmax(0, 1fr)",
+			"gap", "{spacing.xxxl}",
+			"max-width", "var(--col-max)",
+			"margin", "0 auto",
+			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)",
+			"min-height", "calc(100vh - var(--nav-h))",
+			// align-content defaults to `normal` which behaves as
+			// `stretch` for grid containers. With min-height > sum of
+			// auto-row content, the browser distributes the extra
+			// vertical space across rows — pushing content down. Pin
+			// rows to the top so the layout stays tight; min-height
+			// still keeps the background filling the viewport.
+			"align-content", "start").End()
+	ss.Rule(".layout-components > .layout-body > nav").
+		Set("position", "sticky",
+			"top", "calc(var(--nav-h) + {spacing.lg})",
+			"align-self", "start",
+			"max-height", "calc(100vh - var(--nav-h) - {spacing.xl})",
+			"overflow-y", "auto").End()
+
+	// Mobile drawer — used by the framework/ui.Responsive mobile variant
+	// on the components page. Native <details> with a tappable pill that
+	// floats the body as a popover (position: absolute) so opening the
+	// menu doesn't reflow the page below it. The user's content stays
+	// put; the menu drops over it. Tap a link → cross-page nav → the
+	// framework runtime auto-closes [open] via data-fui-disclosure.
+	ss.Rule(".components-mobile-drawer").
+		Set("display", "block",
+			"position", "relative", // anchor for absolute body
+			"margin-bottom", "{spacing.lg}").End()
+	ss.Rule(".components-mobile-drawer__toggle").
+		Set("list-style", "none",
+			"cursor", "pointer",
+			"display", "inline-flex",
+			"align-items", "center",
+			"gap", "8px",
+			"padding", "10px 16px",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"color", "{colors.text}",
+			"font-family", "{fonts.body}",
+			"font-size", "var(--t-md)").End()
+	ss.Rule(".components-mobile-drawer__toggle::-webkit-details-marker").
+		Set("display", "none").End()
+	ss.Rule(".components-mobile-drawer__toggle::after").
+		Set("content", `"▾"`,
+			"color", "{colors.text-subtle}",
+			"font-size", "10px").End()
+	ss.Rule(".components-mobile-drawer[open] .components-mobile-drawer__toggle::after").
+		Set("content", `"▴"`).End()
+	ss.Rule(".components-mobile-drawer__body").
+		Set(
+			// Popover positioning: absolute over the page, anchored to
+			// the drawer wrapper's top-left, full-width on phones.
+			"position", "absolute",
+			"top", "calc(100% + 8px)",
+			"left", "0",
+			"right", "0",
+			"z-index", "30",
+			"padding", "{spacing.md}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"max-height", "60vh",
+			"overflow-y", "auto",
+			"box-shadow", "0 12px 32px rgba(0, 0, 0, 0.45)",
+		).End()
+
+	// .components-sidebar — re-skin nestedlist's bundled CSS to match v2
+	// tokens. nestedlist styles use var(--color-*) by default; setting
+	// our v2 token names on the wrapper wins via CSS variable cascade.
+	ss.Rule(".components-sidebar.nested-list").
+		Set("font-size", "var(--t-sm)",
+			"color", "{colors.text-muted}").End()
+	ss.Rule(".components-sidebar.nested-list summary").
+		Set("font-family", "{fonts.body}",
+			"font-weight", "500",
+			"color", "{colors.text}",
+			"padding", "4px 8px").End()
+	ss.Rule(".components-sidebar.nested-list .nested-list__link").
+		Set("color", "{colors.text-muted}",
+			"padding", "4px 8px",
+			"display", "block").End()
+	ss.Rule(".components-sidebar.nested-list .nested-list__link:hover").
+		Set("color", "{colors.text}",
+			"background", "{colors.surface-soft}").End()
+
+	// Overview content — the cards grid + hero, no rail (sidebar replaces it).
+	ss.Rule(".components-overview__hero").
+		Set("padding-bottom", "{spacing.xl}",
+			"border-bottom", "1px solid var(--line-faint)",
+			"margin-bottom", "{spacing.xl}").End()
+	ss.Rule(".components-overview__title").
+		Set("font-size", "clamp(32px, 4vw, 56px)",
+			"line-height", "1.05",
+			"letter-spacing", "-0.03em",
+			"margin-bottom", "{spacing.lg}",
+			"max-width", "16ch").End()
+	ss.Rule(".components-overview__lede").
+		Set("color", "{colors.text-muted}",
+			"font-size", "var(--t-lg)",
+			"max-width", "52ch").End()
+	ss.Rule(".components-overview__sections").
+		Set("display", "grid",
+			"gap", "{spacing.xxl}").End()
 }
 
 // -----------------------------------------------------------------------------

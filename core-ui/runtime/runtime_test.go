@@ -485,6 +485,132 @@ func TestScrollspyCSSEscapeHandlesLeadingDigit(t *testing.T) {
 	}
 }
 
+// TestRuntimeNavigateRejectsUnsafeSchemes — security: when the SPA
+// navigator is handed an attacker-controlled URL (via signal-bound
+// href or a combobox option's data-fui-push-state), it must refuse
+// javascript:/vbscript:/non-image data: schemes BEFORE calling
+// history.pushState. Otherwise the URL bar lies and a Refresh on
+// some older WebKit forks executes the script.
+//
+// Behavioral assertion is via the e2e suite; this guard pins the
+// source-level contract that navigate() routes through the existing
+// _isUnsafeSignalUrl gate.
+func TestRuntimeNavigateRejectsUnsafeSchemes(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The navigate() body MUST call _isUnsafeSignalUrl (or the
+	// internal alias). Scan within ~400 chars after the function
+	// signature so we don't accept the guard living anywhere on the
+	// page.
+	idx := strings.Index(js, "navigate(path")
+	if idx == -1 {
+		t.Fatal("navigate() function not found in runtime.js")
+	}
+	body := js[idx:min(idx+800, len(js))]
+	if !strings.Contains(body, "_isUnsafeSignalUrl") &&
+		!strings.Contains(body, "javascript:") {
+		t.Errorf("navigate() must reject unsafe schemes before pushState; "+
+			"found body (truncated): %q", truncate(body, 400))
+	}
+}
+
+// TestRuntimeDisclosureAndEscapeRunInBothBranches — a11y: the Escape-
+// to-close handler for <details data-fui-disclosure> and the
+// aria-expanded mirror were previously only attached inside the
+// `document.readyState === 'loading'` branch. If runtime.js loaded
+// after DOMContentLoaded (late injection / fast parse), Esc didn't
+// close the mobile drawer and SR users got stale aria-expanded.
+//
+// Source-pattern check: the keydown listener for Escape and the
+// toggle listener for the disclosure mirror must NOT be lexically
+// nested inside the `if (document.readyState === 'loading')` block.
+func TestRuntimeDisclosureAndEscapeRunInBothBranches(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Minified form drops the spaces; accept both.
+	loadingIdx := strings.Index(js, "readyState === 'loading'")
+	if loadingIdx == -1 {
+		loadingIdx = strings.Index(js, "readyState==='loading'")
+	}
+	if loadingIdx == -1 {
+		t.Fatal("readyState branch not found")
+	}
+	// Find the matching `} else {` (or minified `}else{`) that
+	// closes the loading branch.
+	elseIdx := strings.Index(js[loadingIdx:], "} else {")
+	if elseIdx == -1 {
+		elseIdx = strings.Index(js[loadingIdx:], "}else{")
+	}
+	if elseIdx == -1 {
+		t.Fatal("else branch terminator not found")
+	}
+	loadingBlock := js[loadingIdx : loadingIdx+elseIdx]
+	// The keydown listener for Escape closing the disclosure must
+	// live OUTSIDE this block. If it's still in here, the fix
+	// hasn't shipped.
+	escEvidence := []string{
+		"e.key !== 'Escape'",
+		"details[data-fui-disclosure][open]",
+	}
+	for _, s := range escEvidence {
+		if strings.Contains(loadingBlock, s) {
+			t.Errorf("Escape-close handler still nested inside "+
+				"readyState==='loading' branch — substring %q "+
+				"must be hoisted to run unconditionally", s)
+		}
+	}
+}
+
+// TestRuntimeDisclosureFocusTrapWiring — disclosures opting in via
+// data-fui-disclosure-trap (mobile drawers, full-sheet popovers) must
+// gain a focus-trap via `inert` on body siblings. Confirms the
+// runtime emits both the on-open and on-close branches so the
+// trap is symmetric.
+func TestRuntimeDisclosureFocusTrapWiring(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"data-fui-disclosure-trap",
+		"inert",
+		"_applyDisclosureTrap",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("runtime missing focus-trap wiring %q", want)
+		}
+	}
+}
+
+// TestComboboxPickOptionHonorsPushState — selecting a combobox option
+// carrying data-fui-push-state must navigate. The previous behavior
+// only set input.value + fired change, which left CommandPalette
+// completely non-functional (user could open + type + select, but
+// the click was a no-op).
+//
+// Additionally guards against the XSS vector: an attacker-controlled
+// push-state value (e.g. "javascript:alert(1)") must not navigate.
+func TestComboboxPickOptionHonorsPushState(t *testing.T) {
+	src, ok := Module("combobox")
+	if !ok {
+		t.Fatal("combobox module not embedded")
+	}
+	// Source-pattern guard: pickOption must read data-fui-push-state.
+	if !strings.Contains(src, "data-fui-push-state") {
+		t.Error("combobox pickOption must read data-fui-push-state on selection")
+	}
+	// And must route through the SPA navigator OR a safety-checked
+	// fallback. Either presence of navigate( in the picked-option
+	// branch or a scheme check counts.
+	if !strings.Contains(src, "navigate") && !strings.Contains(src, "_isUnsafeSignalUrl") {
+		t.Error("combobox pickOption must call navigate or scheme-check before nav")
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

@@ -237,3 +237,16 @@ func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, conten
 
 // Ensure StaticComponent satisfies component.Component.
 var _ component.Component = (*StaticComponent)(nil)
+
+// groupChainContainsLayout reports whether any group in the chain
+// (innermost → outermost) already uses layout. Used by the renderer
+// to avoid wrapping the default layout TWICE when an app declares
+// the same layout both at the App level and on a ScreenGroup.
+func groupChainContainsLayout(innermost *ScreenGroup, layout *Layout) bool {
+	for g := innermost; g != nil; g = g.parent {
+		if g.layout == layout {
+			return true
+		}
+	}
+	return false
+}

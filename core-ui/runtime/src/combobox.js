@@ -61,6 +61,25 @@
     input.value = val;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     closeListbox(input, lb);
+    // Honor data-fui-push-state on the option — selecting a result
+    // in a search/palette pattern is almost always meant to navigate.
+    // The server side hands the option a path via this attribute;
+    // we route it through the SPA navigator (or fall back to a hard
+    // load if the navigator hasn't booted yet).
+    const dest = opt.getAttribute('data-fui-push-state');
+    if (dest) {
+      // Close any enclosing widget (e.g. a command palette modal) so
+      // the nav doesn't happen behind a backdrop.
+      const widget = opt.closest('[data-fui-widget]');
+      if (widget && window.__gofastr && window.__gofastr.closeWidget) {
+        try { window.__gofastr.closeWidget(widget.getAttribute('data-fui-widget')); } catch (_) {}
+      }
+      if (window.__gofastr && window.__gofastr.navigate) {
+        window.__gofastr.navigate(dest);
+      } else {
+        location.href = dest;
+      }
+    }
   };
 
   // Idempotent global listener installation. Multiple module loads

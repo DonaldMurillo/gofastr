@@ -21,128 +21,148 @@ package main
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // HeaderComponent renders the sticky top bar:
 //   [GoFastr ver]   Docs   Get started   Examples   Components   Kiln       ⌘K   ⌥
-type HeaderComponent struct{}
+//
+// PaletteTrigger comes from ui.CommandPalette() at wiring time — the
+// HeaderComponent renders it as the search button. The widget itself
+// is mounted globally in main.go so ⌘K opens the palette from any page.
+type HeaderComponent struct {
+	PaletteTrigger render.HTML
+}
 
 func (h *HeaderComponent) Render() render.HTML {
-	// Brand — uses LinkHTML because the visible content is a span trio
-	// (mark + wordmark + version pill) rather than plain text.
+	// Brand stays site-local — the λ mark, lowercase wordmark, and the
+	// amber pre-alpha status pulse are GoFastr's identity. The framework's
+	// SiteHeader takes Brand as a slot so each consuming site renders
+	// whatever brand it wants. See ui.SiteHeader docs for the contract.
 	brand := html.LinkHTML(html.LinkHTMLConfig{
 		Href:  "/",
-		Class: "nav__brand",
+		Class: "site-brand",
+		ExtraAttrs: html.Attrs{
+			"aria-label": "gofastr — pre-alpha v0.0.4",
+		},
 		Content: render.Join(
-			html.Span(html.TextConfig{Class: "mark"}),
-			render.Text(" GoFastr "),
-			html.Span(html.TextConfig{Class: "ver"}, render.Text("v0.0.4")),
+			html.Span(html.TextConfig{Class: "site-brand__mark"}, render.Text("λ")),
+			html.Span(html.TextConfig{Class: "site-brand__name"}, render.Text("gofastr")),
+			html.Span(html.TextConfig{
+				Class:      "site-brand__status",
+				ExtraAttrs: html.Attrs{"title": "Pre-alpha — APIs change between commits."},
+			},
+				html.Span(html.TextConfig{Class: "site-brand__pulse"}),
+				html.Span(html.TextConfig{Class: "site-brand__tag"}, render.Text("pre-alpha")),
+				html.Span(html.TextConfig{Class: "site-brand__ver"}, render.Text("0.0.4")),
+			),
 		),
 	})
 
-	// Primary nav. data-fui-match-prefix opts into the runtime's prefix-
-	// active-route rule (so "Docs" lights up on /docs/foo too).
-	navLink := func(href, text string) render.HTML {
-		return html.Link(html.LinkConfig{
-			Href:       href,
-			Text:       text,
-			ExtraAttrs: html.Attrs{"data-fui-match-prefix": ""},
-		})
-	}
-	primary := render.Tag("nav",
-		map[string]string{"class": "nav__links", "aria-label": "Primary"},
-		navLink("/docs/", "Docs"),
-		navLink("/get-started", "Get started"),
-		navLink("/examples", "Examples"),
-		navLink("/components", "Components"),
-		navLink("/kiln", "Kiln"),
-	)
-
-	// Right side: search command (palette wiring deferred to a follow-up
-	// commit once we register a CommandPalette island), plus GitHub icon.
-	// The GitHub mark stays as inline SVG so it survives strict CSP (no
-	// external img-src) — pkg.go.dev links don't carry our brand pixel.
+	// Action cluster: visible search trigger (delegates to the
+	// CommandPalette widget via data-fui-open), theme toggle, GitHub
+	// icon. ThemeToggle ships its own JS module. The SR-only palette
+	// trigger lands at the front when wired so its data-fui-open +
+	// data-fui-shortcut-click attributes sit in the same DOM subtree.
 	searchCmd := render.Tag("button",
-		map[string]string{"class": "nav__cmd", "type": "button", "aria-label": "Open search"},
-		html.Span(html.TextConfig{}, render.Text("Search")),
-		render.Tag("kbd", nil, render.Text("⌘K")),
+		map[string]string{
+			"class":         "site-cmd",
+			"type":          "button",
+			"aria-label":    "Open search — find a doc, component, or example",
+			"data-fui-open": "site-command-palette",
+		},
+		// Magnifier glyph — shown only on phones (CSS swap below).
+		// Desktop: hidden; the placeholder text + ⌘K hint carries
+		// the affordance. Mobile: visible; replaces the pill.
+		render.Raw(`<svg class="site-cmd__glyph" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`),
+		html.Span(html.TextConfig{Class: "site-cmd__placeholder"}, render.Text("Find docs, components, examples…")),
+		render.Tag("kbd", nil,
+			render.Tag("kbd", nil, render.Text("⌘")),
+			render.Tag("kbd", nil, render.Text("K")),
+		),
 	)
+	themeBtn := ui.ThemeToggle(ui.ThemeToggleConfig{
+		Variant: ui.ThemeToggleIcon,
+		Class:   "site-icon",
+	})
 	githubIcon := html.LinkHTML(html.LinkHTMLConfig{
 		Href:  "https://github.com/DonaldMurillo/gofastr",
-		Class: "nav__icon",
+		Class: "site-icon",
 		ExtraAttrs: html.Attrs{
 			"aria-label": "GitHub",
 			"rel":        "external",
 		},
 		Content: render.Raw(`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 0z"/></svg>`),
 	})
-	right := html.Div(html.DivConfig{Class: "nav__right"}, searchCmd, githubIcon)
+	actionChildren := []render.HTML{searchCmd, themeBtn, githubIcon}
+	if h.PaletteTrigger != "" {
+		actionChildren = append([]render.HTML{h.PaletteTrigger}, actionChildren...)
+	}
 
-	// Wrapping element is a <div> (not <header>) — framework Layout already
-	// wraps this component's output in <header role="banner">. Doubling up
-	// would emit nested <header> tags. The .nav class styles the chrome
-	// regardless of tag.
-	return html.Div(html.DivConfig{Class: "nav"}, brand, primary, right)
+	return ui.SiteHeader(ui.SiteHeaderConfig{
+		Brand: brand,
+		NavItems: []ui.SiteHeaderLink{
+			{Label: "Docs", Href: "/docs/", MatchPrefix: true},
+			{Label: "Get started", Href: "/get-started", MatchPrefix: true},
+			{Label: "Examples", Href: "/examples", MatchPrefix: true},
+			{Label: "Components", Href: "/components/", MatchPrefix: true},
+			{Label: "Kiln", Href: "/kiln", MatchPrefix: true},
+		},
+		MobileExtraLinks: []ui.SiteHeaderLink{
+			{Label: "Home", Href: "/"},
+			{Label: "Philosophy", Href: "/philosophy", MatchPrefix: true},
+			{Label: "GitHub ↗", Href: "https://github.com/DonaldMurillo/gofastr", External: true},
+		},
+		Actions: render.Join(actionChildren...),
+		Class:   "site-header",
+	})
 }
 
-// FooterComponent — five-column credits grid + bottom strip.
+// FooterComponent — credits grid + bottom strip. Composition shipped
+// by ui.SiteFooter; this consumer only fills in lead/columns/bottom.
 type FooterComponent struct{}
 
 func (f *FooterComponent) Render() render.HTML {
-	col := func(title string, items ...render.HTML) render.HTML {
-		return html.Div(html.DivConfig{},
-			render.Tag("h6", nil, render.Text(title)),
-			html.UnorderedList(html.ListConfig{}, items...),
-		)
-	}
-	li := func(href, text string) render.HTML {
-		return html.ListItem(html.ListItemConfig{},
-			html.Link(html.LinkConfig{Href: href, Text: text}),
-		)
-	}
-
-	brandCol := html.Div(html.DivConfig{},
-		html.Div(html.DivConfig{Class: "foot__brand"},
-			html.Span(html.TextConfig{Class: "mark"}),
+	lead := render.Join(
+		html.Div(html.DivConfig{Class: "site-foot-brand"},
+			html.Span(html.TextConfig{Class: "site-foot-brand__mark"}),
 			render.Text(" GoFastr "),
-			html.Span(html.TextConfig{Class: "ver"}, render.Text("v0.0.4")),
+			html.Span(html.TextConfig{Class: "site-foot-brand__ver"}, render.Text("v0.0.4")),
 		),
-		render.Tag("p", map[string]string{"class": "foot__copy"},
+		render.Tag("p", map[string]string{"class": "site-foot-brand__copy"},
 			render.Text("A Go full-stack framework where agents are first-class authors. Pre-alpha. Built in public."),
 		),
 	)
 
-	grid := html.Div(html.DivConfig{Class: "foot__grid"},
-		brandCol,
-		col("Read",
-			li("/get-started", "Get started"),
-			li("/docs/", "Docs"),
-			li("/philosophy", "Philosophy"),
-			li("https://github.com/DonaldMurillo/gofastr/commits/main", "Journal"),
-		),
-		col("Use",
-			li("/examples", "Examples"),
-			li("/kiln", "Kiln"),
-			li("https://pkg.go.dev/github.com/DonaldMurillo/gofastr/cmd/gofastr", "CLI"),
-		),
-		col("Make",
-			li("https://github.com/DonaldMurillo/gofastr/blob/main/CONTRIBUTING.md", "Contribute"),
-			li("https://github.com/DonaldMurillo/gofastr/tree/main/docs", "RFCs"),
-			li("https://github.com/DonaldMurillo/gofastr/releases", "Releases"),
-		),
-		col("Elsewhere",
-			li("https://github.com/DonaldMurillo/gofastr", "GitHub"),
-			li("https://pkg.go.dev/github.com/DonaldMurillo/gofastr", "pkg.go.dev"),
-			li("https://github.com/DonaldMurillo/gofastr/discussions", "Discussions"),
-		),
-	)
-
-	bottom := html.Div(html.DivConfig{Class: "foot__bottom"},
-		html.Span(html.TextConfig{}, render.Text("© 2026 — a research project, not a company.")),
-		html.Span(html.TextConfig{}, render.Text("Set in system sans + mono.")),
-	)
-
-	// Like the header — a <div>, not a <footer>, because the framework Layout
-	// already wraps this in <footer role="contentinfo">.
-	return html.Div(html.DivConfig{Class: "foot"}, grid, bottom)
+	return ui.SiteFooter(ui.SiteFooterConfig{
+		Lead: lead,
+		Columns: []ui.SiteFooterColumn{
+			{Title: "Read", Links: []ui.SiteFooterLink{
+				{Label: "Get started", Href: "/get-started"},
+				{Label: "Docs", Href: "/docs/"},
+				{Label: "Philosophy", Href: "/philosophy"},
+				{Label: "Journal", Href: "https://github.com/DonaldMurillo/gofastr/commits/main", External: true},
+			}},
+			{Title: "Use", Links: []ui.SiteFooterLink{
+				{Label: "Examples", Href: "/examples"},
+				{Label: "Kiln", Href: "/kiln"},
+				{Label: "CLI", Href: "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/cmd/gofastr", External: true},
+			}},
+			{Title: "Make", Links: []ui.SiteFooterLink{
+				{Label: "Contribute", Href: "https://github.com/DonaldMurillo/gofastr/blob/main/CONTRIBUTING.md", External: true},
+				{Label: "RFCs", Href: "https://github.com/DonaldMurillo/gofastr/tree/main/docs", External: true},
+				{Label: "Releases", Href: "https://github.com/DonaldMurillo/gofastr/releases", External: true},
+			}},
+			{Title: "Elsewhere", Links: []ui.SiteFooterLink{
+				{Label: "GitHub", Href: "https://github.com/DonaldMurillo/gofastr", External: true},
+				{Label: "pkg.go.dev", Href: "https://pkg.go.dev/github.com/DonaldMurillo/gofastr", External: true},
+				{Label: "Discussions", Href: "https://github.com/DonaldMurillo/gofastr/discussions", External: true},
+			}},
+		},
+		Bottom: []render.HTML{
+			html.Span(html.TextConfig{}, render.Text("© 2026 — a research project, not a company.")),
+			html.Span(html.TextConfig{}, render.Text("Set in system sans + mono.")),
+		},
+		Class: "site-foot",
+	})
 }

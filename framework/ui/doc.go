@@ -28,6 +28,7 @@
 //
 // Component inventory (alphabetical):
 //
+//	AnchoredRail    — sticky in-page nav rail with scrollspy wiring
 //	Avatar          — circular image/initials avatar (sm/md/lg/xl)
 //	Button          — primary/secondary/danger/ghost variants
 //	Callout         — inline info/warning/danger/info/neutral block
@@ -37,10 +38,13 @@
 //	DataTable       — sortable/paginated table (island-friendly)
 //	Divider         — <hr> for plain horizontal; role="separator" otherwise
 //	EmptyState      — title/description/action block for no-data screens
+//	FactBox         — labelled tile (label-first OR value-first KPI)
 //	FileUpload      — drag-drop file picker over <input type="file">
 //	Form            — opinionated <form> wrapper with submit + errors
 //	FormField       — labelled input with required + help + error states
 //	FormSection     — grouped fields with heading + description
+//	HeroSplit       — two-column hero (copy + media) with mobile collapse
+//	LinkButton      — anchor styled as Button — for CTAs that navigate
 //	Menu            — <details>-driven dropdown menu (keyboard + ARIA)
 //	Notification    — toast-styled inline notification (variant + dismiss)
 //	OptimizedImage  — responsive <picture> with srcset + lazy + Width/Height
@@ -48,11 +52,15 @@
 //	PipelineImage   — multi-format <picture> consuming framework/image
 //	                  VariantSet output (typed sources + LQIP/BlurHash)
 //	Radio           — labelled radio with FieldErrors wiring
+//	Responsive      — viewport-swap pair (desktop / mobile variant)
 //	Section         — labelled content section with heading + description
 //	Sidebar         — responsive primary navigation (inline/drawer)
+//	SiteFooter      — multi-column footer grid + bottom strip
+//	SiteHeader      — top bar with brand + nav + actions + mobile drawer
 //	Spinner         — inline role="status" loading indicator
 //	StatCard        — metric tile with label/value/trend
 //	StatusBadge     — small status pill (success/warning/danger/info/neutral)
+//	StepRail        — sticky numbered nav for multi-step pages
 //	Switch          — iOS-style toggle (Checkbox variant)
 //	Tag             — interactive pill (filter link or × dismiss)
 //	Themed          — wraps a subtree in a registered theme override

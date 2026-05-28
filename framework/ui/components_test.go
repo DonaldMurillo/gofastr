@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -228,6 +229,71 @@ func TestButtonSizeLargeEmitsLargeClass(t *testing.T) {
 	}
 }
 
+func TestLinkButtonRendersAnchorWithButtonClass(t *testing.T) {
+	h := string(LinkButton(LinkButtonConfig{Label: "Get started", Href: "/get-started"}))
+	if !strings.Contains(h, `<a `) {
+		t.Errorf("LinkButton should render <a>:\n%s", h)
+	}
+	if !strings.Contains(h, `href="/get-started"`) {
+		t.Errorf("LinkButton should preserve Href:\n%s", h)
+	}
+	if !strings.Contains(h, "ui-button ui-button--primary") {
+		t.Errorf("LinkButton should default to primary variant:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
+		t.Errorf("LinkButton should share ui-button marker for CSS scope:\n%s", h)
+	}
+}
+
+func TestLinkButtonExternalAddsTargetAndRel(t *testing.T) {
+	h := string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://github.com/x", External: true}))
+	if !strings.Contains(h, `target="_blank"`) || !strings.Contains(h, `rel="noopener noreferrer"`) {
+		t.Errorf("LinkButton{External:true} missing target/rel:\n%s", h)
+	}
+}
+
+func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
+	bad := []string{
+		"javascript:alert(1)",
+		"  javascript:alert(1)",
+		"JaVaScRiPt:alert(1)",
+		"vbscript:msg",
+		"data:text/html,<script>alert(1)</script>",
+		"data:application/javascript,alert(1)",
+	}
+	for _, href := range bad {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("LinkButton must panic on unsafe Href %q", href)
+				}
+			}()
+			LinkButton(LinkButtonConfig{Label: "x", Href: href})
+		}()
+	}
+	// Allowed: http(s), relative paths, mailto, tel, data:image/*.
+	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1", "data:image/png;base64,xx"}
+	for _, href := range ok {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("LinkButton must accept safe Href %q, panicked: %v", href, r)
+				}
+			}()
+			LinkButton(LinkButtonConfig{Label: "x", Href: href})
+		}()
+	}
+}
+
+func TestLinkButtonRequiresHref(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("LinkButton with empty Href should panic")
+		}
+	}()
+	LinkButton(LinkButtonConfig{Label: "x"})
+}
+
 func TestButtonRejectsUnknownSize(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -282,6 +348,36 @@ func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 // ─── Callout ───
 // TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge — typo
 // must panic instead of silently emitting an unmatched class.
+// TestCalloutCSSAvoidsSideStripe — design ban: colored side-stripe
+// borders on cards/list items/callouts are a recognizable AI/SaaS
+// template tell. The Callout variant cue must come from a surface
+// tint + a leading icon glyph, never from a `border-inline-start`
+// width or color override. Regression guard for the redesign.
+func TestCalloutCSSAvoidsSideStripe(t *testing.T) {
+	css := calloutCSS(style.Theme{})
+	for _, banned := range []string{
+		"border-inline-start-width",
+		"border-inline-start-color",
+		"border-left-width",
+		"border-left:",
+	} {
+		if strings.Contains(css, banned) {
+			t.Errorf("calloutCSS must not use %q (side-stripe ban):\n%s", banned, css)
+		}
+	}
+	// Positive: variant signaling routes through the --ui-callout-accent
+	// custom property + the leading ::before icon glyph.
+	for _, want := range []string{
+		"--ui-callout-accent",
+		"::before",
+		"--ui-callout-icon",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("calloutCSS missing variant-cue hook %q", want)
+		}
+	}
+}
+
 func TestCalloutRejectsUnknownVariant(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
