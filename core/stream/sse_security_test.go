@@ -7,6 +7,47 @@ import (
 	"testing"
 )
 
+// TestSSE_DataStripsCRandNUL pins that WriteData / WriteEvent never
+// pass CR or NUL through inside the data payload. CR terminates a field
+// on WHATWG-spec SSE parsers; NUL on legacy clients. Without this
+// scrub, a `data: foo\rid: evil` payload would split into two fields.
+func TestSSE_DataStripsCRandNUL(t *testing.T) {
+	cases := []string{
+		"hello\rretry: 0",
+		"hello\nevent: forged",
+		"hello\x00id: forged",
+		"line1\r\nline2",
+	}
+	for _, p := range cases {
+		t.Run(p, func(t *testing.T) {
+			rec := newFlushRecorder()
+			sw := NewSSEWriter(rec)
+			if err := sw.WriteData(p); err != nil {
+				t.Fatalf("WriteData: %v", err)
+			}
+			body := rec.Body.String()
+			if strings.Contains(body, "\r") || strings.Contains(body, "\x00") {
+				t.Fatalf("WriteData leaked CR/NUL into wire: %q", body)
+			}
+		})
+	}
+}
+
+// TestSSE_SetRetryDropsNonPositive verifies the writer never emits a
+// `retry: 0` (or negative) line — that directive tells EventSource to
+// reconnect with zero delay, an accidental DoS amplifier.
+func TestSSE_SetRetryDropsNonPositive(t *testing.T) {
+	for _, v := range []int{0, -1, -100} {
+		rec := newFlushRecorder()
+		sw := NewSSEWriter(rec)
+		sw.SetRetry(v)
+		body := rec.Body.String()
+		if strings.Contains(body, "retry:") {
+			t.Fatalf("SetRetry(%d) leaked retry directive: %q", v, body)
+		}
+	}
+}
+
 // TestSSE_EventNameInjection verifies that event names containing newlines
 // don't break the SSE protocol. Attack: injecting false events via newline
 // in event name.
