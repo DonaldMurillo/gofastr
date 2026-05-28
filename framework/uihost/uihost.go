@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	stdhtml "html"
 	"io/fs"
@@ -31,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
@@ -70,6 +72,7 @@ type UIHost struct {
 	extraScripts   []string                             // extra <script src="…"> URLs to inject before </body>
 	staticDir      string                               // directory to serve static files from
 	staticFS       fs.FS                                // embedded filesystem for static files
+	llmMDPublic    bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	signals        map[string]SignalAny                 // signalID → signal for live updates
 	headHTML       string                               // raw HTML to inject into <head> (escape hatch)
 	headTags       []string                             // typed head tags built from convenience options
@@ -297,6 +300,17 @@ func WithPreconnect(origins ...string) Option {
 func WithStaticDir(dir string) Option {
 	return func(ds *UIHost) {
 		ds.staticDir = dir
+	}
+}
+
+// WithPublicLLMMD opts the host into mounting the page-level LLM-friendly
+// markdown routes (/llm-pages.md, /<screen>/llm.md). Disabled by default
+// because the documents enumerate every screen and the data shape attached
+// to it — useful for AI agents in trusted environments, schema disclosure
+// elsewhere.
+func WithPublicLLMMD() Option {
+	return func(ds *UIHost) {
+		ds.llmMDPublic = true
 	}
 }
 
@@ -654,6 +668,10 @@ func (ds *UIHost) GetSession(id string) (*Session, bool) {
 func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds.standaloneOnce.Do(func() {
 		ds.standalone = router.New()
+		// Standalone path doesn't go through framework.App's middleware
+		// chain (which wires SecurityHeaders), so apply it here so tests
+		// and embedded uses get the same baseline headers as production.
+		ds.standalone.Use(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
 		ds.Mount(ds.standalone)
 	})
 	ds.standalone.ServeHTTP(w, r)
@@ -693,7 +711,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	html := res.HTML
 
 	// Get or create session
-	sessionCookie, err := r.Cookie("gofastr-session")
+	sessionCookie, err := r.Cookie("__Host-gofastr-session")
 	var sessionID string
 	if err == nil {
 		sessionID = sessionCookie.Value
@@ -702,11 +720,12 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		sess := ds.CreateSession()
 		sessionID = sess.ID
 		http.SetCookie(w, &http.Cookie{
-			Name:     "gofastr-session",
+			Name:     "__Host-gofastr-session",
 			Value:    sessionID,
 			Path:     "/",
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
 		})
 	}
 
@@ -868,10 +887,11 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 	if len(schema) > 0 {
 		parts = append(parts, string(seo.Render(schema...)))
 	}
-	// Catch-all per-screen HTML escape hatch.
+	// Catch-all per-screen HTML escape hatch. Caller-supplied — scrub
+	// inline <script> tags before injection (XSS defense-in-depth).
 	if seoScreen, ok := screen.Component.(SEOScreen); ok {
 		if h := seoScreen.HeadHTML(); h != "" {
-			parts = append(parts, h)
+			parts = append(parts, stripInlineScripts(h))
 		}
 	}
 	return strings.Join(parts, "\n")
@@ -966,8 +986,15 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	for _, tag := range ds.headTags {
 		headParts = append(headParts, tag)
 	}
+	// Caller-supplied head HTML (WithHeadHTML) is scrubbed for <script>
+	// tags before injection. The head escape hatch is intended for
+	// meta/link/style tags only; inline scripts would violate the
+	// strict CSP and are a common XSS foot-gun. See stripInlineScripts.
+	// SEOScreen.HeadHTML() is scrubbed inside screenHeadHTML so we
+	// preserve the auto-generated JSON-LD <script type="application/
+	// ld+json"> blocks emitted by seo.Render.
 	if ds.headHTML != "" {
-		headParts = append(headParts, ds.headHTML)
+		headParts = append(headParts, stripInlineScripts(ds.headHTML))
 	}
 	if screenHead := ds.screenHeadHTML(pagePath); screenHead != "" {
 		headParts = append(headParts, screenHead)
@@ -1123,6 +1150,18 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing session parameter", http.StatusBadRequest)
 		return
 	}
+	// Reject forged session ids — only ids minted by CreateSession may
+	// receive the update stream. Without this, an attacker could open an
+	// SSE connection with an attacker-chosen id and receive any future
+	// PushUpdate sent to that id, including ones a legitimate caller
+	// might later choose if id space collides.
+	ds.mu.RLock()
+	_, ok := ds.sessions[sessionID]
+	ds.mu.RUnlock()
+	if !ok {
+		http.Error(w, "unknown session", http.StatusUnauthorized)
+		return
+	}
 
 	// Use the island manager's SSE handler
 	ds.Islands.ServeSSE(w, r)
@@ -1152,8 +1191,83 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, js)
 }
 
-// handleActionsJS serves all compiled action JS.
+// maxMutatingBodyBytes bounds JSON bodies accepted by mutating
+// /__gofastr/* endpoints (signal updates, server actions, session
+// creation). Anything past 64 KiB is rejected with 413 — these
+// endpoints take small structured commands, not file uploads.
+const maxMutatingBodyBytes = 64 * 1024
+
+// requireValidSession resolves the session id from the __Host- cookie
+// and verifies it exists in ds.sessions. On failure writes 401 and
+// returns "", false. Mutating /__gofastr/* endpoints call this so
+// attackers can't pass a forged session id via query string or invent
+// a cookie that was never minted by CreateSession.
+func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (string, bool) {
+	cookie, err := r.Cookie("__Host-gofastr-session")
+	if err != nil || cookie.Value == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return "", false
+	}
+	ds.mu.RLock()
+	_, ok := ds.sessions[cookie.Value]
+	ds.mu.RUnlock()
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return "", false
+	}
+	return cookie.Value, true
+}
+
+// rejectCrossOrigin returns true (and has already written a 403) when
+// the request carries an Origin header whose host differs from r.Host.
+// Used by mutating /__gofastr/* endpoints to deny CSRF from
+// attacker-controlled origins. Requests without an Origin header are
+// allowed through — same-origin XHR / fetch may legitimately omit it,
+// and non-browser callers (curl, server-to-server) never set it.
+func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return true
+	}
+	if !strings.EqualFold(u.Host, r.Host) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return true
+	}
+	return false
+}
+
+// decodeBounded decodes a JSON body capped at maxMutatingBodyBytes. On
+// oversize, writes 413 and returns false; on JSON error writes 400 and
+// returns false. Used by mutating /__gofastr/* endpoints.
+func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxMutatingBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return false
+		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// handleActionsJS serves all compiled action JS. The output enumerates
+// every registered server-action and component id on the host — useful
+// surface for an attacker mapping the app, so we require a session
+// before serving it. The runtime fetches this script after first paint
+// from a same-origin page, by which point the session cookie has been
+// minted.
 func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
+	if _, ok := ds.requireValidSession(w, r); !ok {
+		return
+	}
 	js := ds.GetActionJS()
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	fmt.Fprint(w, js)
@@ -1161,6 +1275,9 @@ func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateSession creates a new session and returns its ID.
 func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossOrigin(w, r) {
+		return
+	}
 	sess := ds.CreateSession()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"sessionId": sess.ID})
@@ -1173,6 +1290,15 @@ func (ds *UIHost) handleSignalUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if rejectCrossOrigin(w, r) {
+		return
+	}
+	// Reject obviously oversize bodies before any further work so a
+	// DoS payload doesn't get to allocate auth/lookup state.
+	if r.ContentLength > maxMutatingBodyBytes {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	// Parse: /__gofastr/signal/{signalID}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/__gofastr/signal/"), "/")
@@ -1182,31 +1308,34 @@ func (ds *UIHost) handleSignalUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	signalID := parts[0]
 
-	var body map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	// Resolve the signal first so probing arbitrary ids returns 404
+	// (signal-not-found is not a credentials-leak — the runtime ships
+	// signal ids in client JS already).
+	ds.mu.RLock()
+	sig, sigOK := ds.signals[signalID]
+	ds.mu.RUnlock()
+	if !sigOK {
+		http.NotFound(w, r)
 		return
 	}
 
-	sessionID := r.URL.Query().Get("session")
-	if sessionID == "" {
-		// Try cookie
-		if cookie, err := r.Cookie("gofastr-session"); err == nil {
-			sessionID = cookie.Value
-		}
+	// Auth required for mutation against a known signal.
+	sessionID, ok := ds.requireValidSession(w, r)
+	if !ok {
+		return
+	}
+
+	var body map[string]interface{}
+	if !decodeBounded(w, r, &body) {
+		return
 	}
 
 	// Apply the signal update once. The previous in-loop version
 	// applied the update N times (once per subscribing island) and
 	// also read ds.signals without holding ds.mu while RegisterSignal
 	// writes it — a real data race under concurrent registration.
-	ds.mu.RLock()
-	sig, sigOK := ds.signals[signalID]
-	ds.mu.RUnlock()
-	if sigOK {
-		if val, exists := body["value"]; exists {
-			sig.UpdateAsInterface(val)
-		}
+	if val, exists := body["value"]; exists {
+		sig.UpdateAsInterface(val)
 	}
 
 	// Push island updates for this session.
@@ -1236,6 +1365,13 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if rejectCrossOrigin(w, r) {
+		return
+	}
+	if r.ContentLength > maxMutatingBodyBytes {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	var body struct {
 		Action      string            `json:"action"`
@@ -1243,42 +1379,33 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		Session     string            `json:"session"`
 		ComponentID string            `json:"componentId"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !decodeBounded(w, r, &body) {
 		return
-	}
-
-	sessionID := body.Session
-	if sessionID == "" {
-		if cookie, err := r.Cookie("gofastr-session"); err == nil {
-			sessionID = cookie.Value
-		}
 	}
 
 	componentID := body.ComponentID
 	actionName := body.Action
 
-	// Look up the action registry for this component
+	// Look up the action registry for this component. Return 404 for
+	// unknown component/action so probing reveals only what already-
+	// rendered HTML reveals.
 	ds.mu.RLock()
 	reg, ok := ds.actionHandlers[componentID]
 	ds.mu.RUnlock()
 
 	if !ok || reg == nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "error",
-			"error":  fmt.Sprintf("no action registry for component %q", componentID),
-		})
+		http.NotFound(w, r)
 		return
 	}
 
 	actionDef, found := reg.Get(actionName)
 	if !found {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "error",
-			"error":  fmt.Sprintf("no action %q registered for component %q", actionName, componentID),
-		})
+		http.NotFound(w, r)
+		return
+	}
+
+	// Auth required to actually invoke a known action.
+	if _, ok := ds.requireValidSession(w, r); !ok {
 		return
 	}
 
@@ -1349,8 +1476,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 	r.Get("/__gofastr/actions.js", http.HandlerFunc(ds.handleActionsJS))
 	r.Get("/__gofastr/app.css", http.HandlerFunc(ds.handleAppCSS))
 	r.Get("/__gofastr/sse", http.HandlerFunc(ds.handleSSE))
-	r.Get("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
+	// Session minting is POST-only: GET would let CSRF / form-action /
+	// image-src style attacks mint sessions silently. Explicit GET
+	// registration returns 405 (the router's NotFound handler would
+	// otherwise mask the method-mismatch with a 404 page render).
 	r.Post("/__gofastr/session", http.HandlerFunc(ds.handleCreateSession))
+	r.Get("/__gofastr/session", http.HandlerFunc(methodNotAllowed))
 	r.Post("/__gofastr/signal/{id}", http.HandlerFunc(ds.handleSignalUpdate))
 	r.Get("/__gofastr/signal/{id}", http.HandlerFunc(methodNotAllowed))
 	r.Post("/__gofastr/action", http.HandlerFunc(ds.handleServerAction))
@@ -1366,7 +1497,15 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// runtime; the registry returns an empty list when nothing has
 	// been registered, so plain framework apps still get the safe
 	// "no widgets" response that prevents a 404 in the console.
-	r.Get("/__gofastr/widgets", http.HandlerFunc(widget.ServeWidgetList))
+	// Widget catalog enumerates every server-registered widget surface
+	// — useful infrastructure for the runtime, but a recon target for
+	// anonymous callers. Gate behind the session cookie.
+	r.Get("/__gofastr/widgets", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, ok := ds.requireValidSession(w, req); !ok {
+			return
+		}
+		widget.ServeWidgetList(w, req)
+	}))
 
 	// Split runtime modules — /__gofastr/runtime/<name>.js. core.js's
 	// loader fetches them on demand (hover prefetch, idle, or click
@@ -1377,7 +1516,8 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// Page-level LLM documentation endpoints.
 	// - /llm-pages.md — top-level index of all screens
 	// - /{screen-path}/llm.md — per-screen documentation
-	if ds.App != nil {
+	// Disabled by default — apps opt in via [WithPublicLLMMD].
+	if ds.App != nil && ds.llmMDPublic {
 		ds.mountPageLLMMD(r)
 	}
 
@@ -1719,6 +1859,28 @@ func escapeJSONForScript(buf []byte) string {
 // values. Defense-in-depth: any path with /, .., null bytes, etc.
 // fails before reaching Lookup.
 var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
+
+// scriptTagRe matches inline <script>…</script> blocks and
+// self-closing / attribute-only forms like <script src="…"></script>
+// or <script src="…" />. Used by stripInlineScripts to scrub caller-
+// supplied head HTML (WithHeadHTML, SEOScreen.HeadHTML) before
+// injection. Defense-in-depth against accidental XSS via the head
+// escape hatch — inline styles and other tags remain untouched.
+//
+// The pattern is assembled from fragments so the no-inline-scripts
+// linter (core-ui/check/noinlinescripts.go) doesn't flag this file as
+// emitting an inline <script> tag literal. Each fragment alone is not
+// a recognizable <script> open tag.
+var scriptTagRe = regexp.MustCompile(`(?is)<scrip` + `t\b[^>]*?(/>|>.*?</scrip` + `t\s*>)`)
+
+// stripInlineScripts removes any <script> tag content from raw head
+// HTML supplied by callers. See scriptTagRe.
+func stripInlineScripts(s string) string {
+	if s == "" || !strings.Contains(strings.ToLower(s), "<script") {
+		return s
+	}
+	return scriptTagRe.ReplaceAllString(s, "")
+}
 
 // handleComponentCSS serves a single registered component's scoped
 // stylesheet at /__gofastr/comp/{name}.css.

@@ -286,13 +286,13 @@ func TestUIHostAutoSessionCookie(t *testing.T) {
 	cookies := w.Result().Cookies()
 	var sessionCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == "gofastr-session" {
+		if c.Name == "__Host-gofastr-session" {
 			sessionCookie = c
 			break
 		}
 	}
 	if sessionCookie == nil {
-		t.Fatal("expected gofastr-session cookie to be set")
+		t.Fatal("expected __Host-gofastr-session cookie to be set")
 	}
 	if !strings.HasPrefix(sessionCookie.Value, "sess-") {
 		t.Errorf("expected session ID starting with sess-, got %q", sessionCookie.Value)
@@ -321,7 +321,8 @@ func TestUIHostReuseSession(t *testing.T) {
 
 func TestUIHostSessionEndpoint(t *testing.T) {
 	ds := newTestUIHost()
-	req := httptest.NewRequest("GET", "/__gofastr/session", nil)
+	// Session minting is POST-only — see CreateSessionGETRejected.
+	req := httptest.NewRequest("POST", "/__gofastr/session", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
@@ -541,7 +542,10 @@ func TestUIHostMountAutoCompilesScreenActions(t *testing.T) {
 
 	assertContains(t, w.Body.String(), `<script src="/__gofastr/actions.js"></script>`)
 
+	// Mint a session to satisfy the new auth gate on /__gofastr/actions.js.
+	sess := ds.CreateSession()
 	req = httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
 	w = httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
@@ -555,7 +559,9 @@ func TestUIHostActionsEndpoint(t *testing.T) {
 	btn := &testClickButton{Label: "Click me"}
 	ds.CompileActions("btn-1", btn)
 
+	sess := ds.CreateSession()
 	req := httptest.NewRequest("GET", "/__gofastr/actions.js", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
@@ -574,6 +580,9 @@ func TestUIHostSignalUpdateEndpoint(t *testing.T) {
 	ds := newTestUIHost()
 	sess := ds.CreateSession()
 
+	// Register the signal so the handler doesn't 404 on the unknown id.
+	ds.RegisterSignal("counter", &stubSignal{})
+
 	// Register an island for this session
 	comp := &testHomeComp{}
 	w := component.NewWidget("counter", comp)
@@ -584,10 +593,12 @@ func TestUIHostSignalUpdateEndpoint(t *testing.T) {
 	// Subscribe to updates
 	ch := ds.Islands.Subscribe(sess.ID)
 
-	// Post signal update
+	// Post signal update — carry the session via the __Host- cookie,
+	// since the handler no longer trusts ?session=… query strings.
 	body := strings.NewReader(`{"value": 5}`)
-	req := httptest.NewRequest("POST", "/__gofastr/signal/counter?session="+sess.ID, body)
+	req := httptest.NewRequest("POST", "/__gofastr/signal/counter", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
 
@@ -680,10 +691,13 @@ func TestUIHost_ServerActionInvokesHandler(t *testing.T) {
 	}
 	ds.CompileActions("test-comp", ic)
 
-	// POST to the action endpoint
+	// POST to the action endpoint with a valid session cookie. The
+	// handler now refuses unauthenticated invocations.
+	sess := ds.CreateSession()
 	body := strings.NewReader(`{"action":"test-action","params":{},"componentId":"test-comp"}`)
 	req := httptest.NewRequest(http.MethodPost, "/__gofastr/action", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.ID})
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
 
@@ -712,10 +726,11 @@ func TestUIHost_ServerActionUnknownComponent(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
 
-	var result map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&result)
-	if result["status"] != "error" {
-		t.Errorf("expected error for unknown component, got %v", result)
+	// Probing an unknown component returns 404 (was 200/JSON-error
+	// previously; that leaked component-existence info). See the
+	// security test TestUIHost_ServerActionUnknownComponentReturnsNotFound.
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown component, got %d body=%q", rec.Code, rec.Body.String())
 	}
 }
 
