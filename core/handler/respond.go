@@ -7,6 +7,35 @@ import (
 	"strings"
 )
 
+// sanitizeHeaderValue strips bytes that would otherwise smuggle a new
+// header line (CR/LF/NUL) or terminal-control mischief (other C0, DEL)
+// into a response header value. Used to scrub caller-supplied
+// Content-Type strings before writing them to the ResponseWriter.
+func sanitizeHeaderValue(s string) string {
+	if !needsHeaderSanitize(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+func needsHeaderSanitize(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
 // stripSSEField truncates a single-line SSE field value at the first
 // CR/LF/NUL. Those bytes terminate an SSE field and would otherwise let
 // a caller-supplied event name or id inject forged directives below it.
@@ -49,7 +78,12 @@ func Respond(w http.ResponseWriter, r *http.Request, out any) {
 
 	// Check for custom ResponseType
 	if rt, ok := out.(ResponseType); ok {
-		w.Header().Set("Content-Type", rt.ContentType())
+		ct := sanitizeHeaderValue(rt.ContentType())
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
 		rt.WriteBody(w)
 		return
@@ -93,6 +127,7 @@ func SSEStream(w http.ResponseWriter, events <-chan SSE) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
 	flusher, canFlush := w.(http.Flusher)

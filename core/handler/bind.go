@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"net/http"
 	"reflect"
@@ -98,12 +100,104 @@ func bindBody(r *http.Request, dst any) error {
 
 	// Cap the body reader to prevent memory exhaustion attacks.
 	limited := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return Errorf(400, "invalid JSON: %s", err.Error())
+	}
+	if len(body) == 0 {
+		return nil
+	}
 
-	decoder := json.NewDecoder(limited)
+	// Pre-validate the top-level object: reject duplicate keys,
+	// case-folded matches against struct json tags, and unknown
+	// fields. Stdlib json.Decoder accepts all three silently, which
+	// turns "validated by tag" handlers into mass-assignment and
+	// last-key-wins smuggling vectors.
+	if err := validateBodyKeys(body, dst); err != nil {
+		return err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
 		return Errorf(400, "invalid JSON: %s", err.Error())
 	}
 	return nil
+}
+
+// validateBodyKeys enforces strict top-level key handling for the JSON
+// body decoded into dst. It is a no-op when dst is not a struct pointer
+// or when the body isn't a top-level object — both shapes flow through
+// the decoder unchanged. For struct destinations it requires every
+// top-level key to exact-match a json tag on the struct (rejecting
+// case-folded variants) and rejects duplicate keys.
+func validateBodyKeys(body []byte, dst any) error {
+	rv := reflect.ValueOf(dst)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return nil
+	}
+	rv = rv.Elem()
+	if rv.Kind() != reflect.Struct {
+		return nil
+	}
+	allowed := jsonTagSet(rv.Type())
+
+	dec := json.NewDecoder(bytes.NewReader(body))
+	first, err := dec.Token()
+	if err != nil {
+		return nil
+	}
+	delim, ok := first.(json.Delim)
+	if !ok || delim != '{' {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(allowed))
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return nil
+		}
+		if _, dup := seen[key]; dup {
+			return Errorf(400, "invalid JSON: duplicate key %q", key)
+		}
+		seen[key] = struct{}{}
+		if _, allowedKey := allowed[key]; !allowedKey {
+			return Errorf(400, "invalid JSON: unknown field %q", key)
+		}
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return nil
+		}
+	}
+	return nil
+}
+
+// jsonTagSet returns the set of exact JSON field names declared on t.
+// Fields without a json tag fall back to their Go name (mirroring
+// encoding/json's default), and json:"-" is skipped.
+func jsonTagSet(t reflect.Type) map[string]struct{} {
+	out := make(map[string]struct{}, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		tag := f.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+		name := strings.SplitN(tag, ",", 2)[0]
+		if name == "" {
+			name = f.Name
+		}
+		out[name] = struct{}{}
+	}
+	return out
 }
 
 // bindQuery binds query parameters to struct fields tagged with `query:"name"`.
