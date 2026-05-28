@@ -241,7 +241,10 @@ func WithDescription(desc string) Option {
 }
 
 // WithOpenGraph adds Open Graph <meta property="og:..."> tags to <head>.
-// Zero-value fields are omitted.
+// Zero-value fields are omitted. URL-typed fields (Image, URL) are
+// dropped if they fail the head-URL allow-list (http(s)/relative only)
+// — a `javascript:`/`data:` URL there is reflected XSS via any social
+// preview crawler that auto-clicks the link.
 func WithOpenGraph(og OG) Option {
 	return func(ds *UIHost) {
 		if og.Title != "" {
@@ -250,10 +253,10 @@ func WithOpenGraph(og OG) Option {
 		if og.Description != "" {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:description" content="%s">`, stdhtml.EscapeString(og.Description)))
 		}
-		if og.Image != "" {
+		if og.Image != "" && isSafeHeadURL(og.Image) {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:image" content="%s">`, stdhtml.EscapeString(og.Image)))
 		}
-		if og.URL != "" {
+		if og.URL != "" && isSafeHeadURL(og.URL) {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta property="og:url" content="%s">`, stdhtml.EscapeString(og.URL)))
 		}
 		if og.Type != "" {
@@ -263,7 +266,8 @@ func WithOpenGraph(og OG) Option {
 }
 
 // WithTwitterCard adds Twitter Card <meta name="twitter:..."> tags to <head>.
-// Zero-value fields are omitted.
+// Zero-value fields are omitted. URL-typed fields are scheme-restricted
+// per [WithOpenGraph].
 func WithTwitterCard(tc TwitterCard) Option {
 	return func(ds *UIHost) {
 		if tc.Card != "" {
@@ -275,7 +279,7 @@ func WithTwitterCard(tc TwitterCard) Option {
 		if tc.Description != "" {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:description" content="%s">`, stdhtml.EscapeString(tc.Description)))
 		}
-		if tc.Image != "" {
+		if tc.Image != "" && isSafeHeadURL(tc.Image) {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="twitter:image" content="%s">`, stdhtml.EscapeString(tc.Image)))
 		}
 		if tc.Site != "" {
@@ -284,9 +288,13 @@ func WithTwitterCard(tc TwitterCard) Option {
 	}
 }
 
-// WithCanonicalURL adds a <link rel="canonical"> tag to <head>.
+// WithCanonicalURL adds a <link rel="canonical"> tag to <head>. Unsafe
+// URLs (non-http(s)/relative) are dropped.
 func WithCanonicalURL(url string) Option {
 	return func(ds *UIHost) {
+		if !isSafeHeadURL(url) {
+			return
+		}
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="canonical" href="%s">`, stdhtml.EscapeString(url)))
 	}
 }
@@ -1890,10 +1898,7 @@ var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
 
 // scriptTagRe matches inline <script>…</script> blocks and
 // self-closing / attribute-only forms like <script src="…"></script>
-// or <script src="…" />. Used by stripInlineScripts to scrub caller-
-// supplied head HTML (WithHeadHTML, SEOScreen.HeadHTML) before
-// injection. Defense-in-depth against accidental XSS via the head
-// escape hatch — inline styles and other tags remain untouched.
+// or <script src="…" />.
 //
 // The pattern is assembled from fragments so the no-inline-scripts
 // linter (core-ui/check/noinlinescripts.go) doesn't flag this file as
@@ -1901,13 +1906,147 @@ var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
 // a recognizable <script> open tag.
 var scriptTagRe = regexp.MustCompile(`(?is)<scrip` + `t\b[^>]*?(/>|>.*?</scrip` + `t\s*>)`)
 
-// stripInlineScripts removes any <script> tag content from raw head
-// HTML supplied by callers. See scriptTagRe.
+// dangerousHeadTagsRe matches content tag families that have no place
+// in a server-controlled <head>: iframes, inline styles, scriptable
+// media (svg/math/audio/video), forms, the marquee/portal grab-bag,
+// and template/noscript wrappers. Matched in opening-and-closing or
+// self-closing form so a payload can't slip through partial matching.
+var dangerousHeadTagsRe = regexp.MustCompile(
+	`(?is)<(iframe|object|style|svg|math|audio|video|form|button|picture|marquee|portal|template|noscript|foreignObject|details|summary)\b[^>]*?(/>|>.*?</\s*\w+\s*>)`,
+)
+
+// voidHeadTagsRe matches void/empty dangerous tags in the head: base
+// (re-roots the page), img (active resource fetch), embed (plugin
+// loader), source (used by media + picture). Void tags have no closing
+// pair so they need their own pattern.
+var voidHeadTagsRe = regexp.MustCompile(
+	`(?is)<(base|embed|img|source)\b[^>]*?/?>`,
+)
+
+// metaRefreshRe matches `<meta http-equiv="refresh" …>` in any casing
+// or attribute order. Meta-refresh is the canonical "redirect via
+// markup" primitive and has no business being injected by an SEO
+// escape hatch.
+var metaRefreshRe = regexp.MustCompile(`(?is)<meta\b[^>]*http-equiv\s*=\s*["']?\s*refresh\s*["']?[^>]*>`)
+
+// linkTagRe matches a single <link> tag (always void). Used to walk
+// link tags and drop the ones whose href / rel / as combos pull in
+// scripts or use unsafe schemes.
+var linkTagRe = regexp.MustCompile(`(?is)<link\b[^>]*?/?>`)
+
+// stripInlineScripts removes <script> tags AND a broader set of
+// dangerous tag families from caller-supplied head HTML (WithHeadHTML,
+// SEOScreen.HeadHTML). The name is kept for back-compat; the behavior
+// is now defense-in-depth across the whole "active in head" tag set.
+// Allowed survivors: <meta> (except http-equiv=refresh), <link> with
+// http(s)/relative href, <title>, and inline text content.
 func stripInlineScripts(s string) string {
-	if s == "" || !strings.Contains(strings.ToLower(s), "<script") {
+	if s == "" {
 		return s
 	}
-	return scriptTagRe.ReplaceAllString(s, "")
+	out := scriptTagRe.ReplaceAllString(s, "")
+	out = dangerousHeadTagsRe.ReplaceAllString(out, "")
+	out = voidHeadTagsRe.ReplaceAllString(out, "")
+	out = metaRefreshRe.ReplaceAllString(out, "")
+	out = linkTagRe.ReplaceAllStringFunc(out, func(tag string) string {
+		if isSafeLinkTag(tag) {
+			return tag
+		}
+		return ""
+	})
+	return out
+}
+
+// isSafeLinkTag reports whether a <link …> tag's href and rel are safe
+// to inject into the head from a caller-supplied head HTML escape
+// hatch. The framework's own per-render <link> emissions never go
+// through this path — they're constructed directly.
+func isSafeLinkTag(tag string) bool {
+	low := strings.ToLower(tag)
+	// Reject preload/modulepreload/prefetch — they pull arbitrary
+	// resources into the page on the framework's behalf.
+	for _, rel := range []string{`rel="modulepreload"`, `rel='modulepreload'`, `rel=modulepreload`, `rel="prefetch"`, `rel='prefetch'`, `rel=prefetch`, `rel="preload"`, `rel='preload'`, `rel=preload`} {
+		if strings.Contains(low, rel) {
+			return false
+		}
+	}
+	href := extractAttrValue(tag, "href")
+	if href == "" {
+		// No href → benign (e.g., `<link rel=canonical>` is set by typed
+		// helpers, not by the escape hatch).
+		return true
+	}
+	return isSafeHeadURL(href)
+}
+
+// extractAttrValue is a permissive attribute-value extractor for the
+// scrub path. Not for production rendering — only for "is this href
+// safe enough to keep" decisions on caller-supplied HTML fragments.
+func extractAttrValue(tag, attr string) string {
+	low := strings.ToLower(tag)
+	key := strings.ToLower(attr) + "="
+	i := strings.Index(low, key)
+	if i < 0 {
+		return ""
+	}
+	rest := tag[i+len(key):]
+	if rest == "" {
+		return ""
+	}
+	quote := rest[0]
+	if quote == '"' || quote == '\'' {
+		end := strings.IndexByte(rest[1:], quote)
+		if end < 0 {
+			return ""
+		}
+		return rest[1 : 1+end]
+	}
+	end := strings.IndexAny(rest, " \t/>")
+	if end < 0 {
+		end = len(rest)
+	}
+	return rest[:end]
+}
+
+// isSafeHeadURL is the allow-list for URLs that may appear in caller-
+// supplied head tags. Mirrors the framework/ui safety policy: relative,
+// http(s), or fragment.
+func isSafeHeadURL(u string) bool {
+	if u == "" {
+		return false
+	}
+	for i := 0; i < len(u); i++ {
+		c := u[i]
+		if c < 0x20 || c == 0x7f {
+			return false
+		}
+	}
+	low := strings.ToLower(u)
+	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
+		return false
+	}
+	if strings.HasPrefix(u, "//") {
+		return false
+	}
+	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "#") || strings.HasPrefix(u, "?") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
+		return true
+	}
+	for i := 0; i < len(u); i++ {
+		c := u[i]
+		if c == ':' {
+			scheme := strings.ToLower(u[:i])
+			switch scheme {
+			case "http", "https":
+				return true
+			default:
+				return false
+			}
+		}
+		if c == '/' || c == '?' || c == '#' {
+			return true
+		}
+	}
+	return true
 }
 
 // handleComponentCSS serves a single registered component's scoped
