@@ -26,9 +26,35 @@ import (
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
 	req := syntheticRequest(ctx, http.MethodPost, "/")
 
+	// Refuse anonymous upserts on owner-scoped entities. Without this
+	// check, an unauthenticated caller can create orphan rows or
+	// forge ownership via a body-supplied owner_id (see
+	// upsert_security_test.go).
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
+	// Refuse upserts on multi-tenant entities when no tenant id is in
+	// the context. Mirrors the InjectTenant guard in doCreate so the
+	// upsert path can't write an orphan tenant row by omission.
+	if ch.Entity.Config.MultiTenant {
+		if tenant.GetTenantID(ctx) == "" {
+			return nil, &tenantMissingError{}
+		}
+	}
+	// Strip caller-supplied owner_id / tenant_id from the body BEFORE
+	// the tx so a body field can never override what the context says.
+	// The framework stamps both from context-derived values below.
+	if of := ch.Entity.Config.OwnerField; of != "" {
+		delete(body, of)
+	}
+	if ch.Entity.Config.MultiTenant {
+		delete(body, "tenant_id")
+	}
+
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		ch.InjectTenant(body, ctx)
+		ch.InjectOwner(body, ctx)
 		// Auto-generate any field that needs it; on conflict the existing
 		// value stays (we exclude pk + auto fields from the update set).
 		for _, f := range ch.Entity.GetFields() {

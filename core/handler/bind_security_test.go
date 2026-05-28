@@ -156,6 +156,40 @@ func TestBind_NonJSONContentTypeSkipped(t *testing.T) {
 	}
 }
 
+func TestBind_JSONPrefixSpoofingRejected_JSONP(t *testing.T) {
+	var dst struct {
+		Name string `json:"name" query:"name"`
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/?name=safe", strings.NewReader(`{"name":"evil"}`))
+	req.Header.Set("Content-Type", "application/jsonp")
+
+	err := Bind(req, &dst)
+	if err != nil {
+		t.Fatalf("Bind error: %v", err)
+	}
+	if dst.Name != "safe" {
+		t.Fatalf("SECURITY: [bind] application/jsonp was treated as JSON and overrode query value: got %q. Attack: Content-Type prefix spoofing bypass.", dst.Name)
+	}
+}
+
+func TestBind_JSONPrefixSpoofingRejected_VendorSuffix(t *testing.T) {
+	var dst struct {
+		Name string `json:"name" query:"name"`
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/?name=safe", strings.NewReader(`{"name":"evil"}`))
+	req.Header.Set("Content-Type", "application/json-evil")
+
+	err := Bind(req, &dst)
+	if err != nil {
+		t.Fatalf("Bind error: %v", err)
+	}
+	if dst.Name != "safe" {
+		t.Fatalf("SECURITY: [bind] spoofed content type %q was treated as JSON and overrode query value. Attack: Content-Type prefix smuggling.", req.Header.Get("Content-Type"))
+	}
+}
+
 // TestBind_DeeplyNestedJSONRejected verifies that deeply nested JSON
 // is handled. Attack: JSON depth bomb causing stack overflow.
 func TestBind_DeeplyNestedJSONRejected(t *testing.T) {

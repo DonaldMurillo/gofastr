@@ -1,6 +1,8 @@
 package email
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
 )
@@ -82,5 +84,125 @@ func TestEmail_Base64Encoding(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEmail_AttachmentFilenameHeaderInjection(t *testing.T) {
+	email := Email{
+		From:     "a@b.test",
+		To:       []string{"x@y.test"},
+		Subject:  "hi",
+		TextBody: "body",
+		Attachments: []Attachment{{
+			Filename:    "invoice.pdf\"\r\nBcc: victim@example.com\r\nX-Evil: 1",
+			ContentType: "application/pdf",
+			Content:     []byte("fake-pdf"),
+		}},
+	}
+
+	if _, err := buildMessage(email); err == nil {
+		t.Fatalf("SECURITY: [email] buildMessage accepted CR/LF in attachment filename. Attack: MIME header injection via Content-Disposition filename.")
+	}
+}
+
+func TestEmail_AttachmentContentTypeHeaderInjection(t *testing.T) {
+	email := Email{
+		From:     "a@b.test",
+		To:       []string{"x@y.test"},
+		Subject:  "hi",
+		TextBody: "body",
+		Attachments: []Attachment{{
+			Filename:    "report.csv",
+			ContentType: "text/csv\r\nBcc: victim@example.com\r\nX-Evil: 1",
+			Content:     []byte("a,b,c"),
+		}},
+	}
+
+	if _, err := buildMessage(email); err == nil {
+		t.Fatalf("SECURITY: [email] buildMessage accepted CR/LF in attachment content type. Attack: MIME header injection via attachment Content-Type.")
+	}
+}
+
+func TestLogSender_DoesNotExposeBCCRecipients(t *testing.T) {
+	var buf bytes.Buffer
+	sender := NewLogSender(&buf)
+	email := Email{
+		From:     "a@b.test",
+		To:       []string{"primary@example.com"},
+		BCC:      []string{"hidden@example.com"},
+		Subject:  "secret",
+		TextBody: "body",
+	}
+
+	if err := sender.Send(context.Background(), email); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "hidden@example.com") || strings.Contains(buf.String(), "BCC:") {
+		t.Fatalf("SECURITY: [email-log] LogSender exposed BCC recipients in logs: %q", buf.String())
+	}
+}
+
+func TestLogSender_DoesNotExposeSensitiveHeaders(t *testing.T) {
+	var buf bytes.Buffer
+	sender := NewLogSender(&buf)
+	email := Email{
+		From:     "a@b.test",
+		To:       []string{"primary@example.com"},
+		Subject:  "secret",
+		TextBody: "body",
+		Headers: map[string]string{
+			"Authorization": "Bearer super-secret-token",
+			"X-API-Key":     "top-secret",
+		},
+	}
+
+	if err := sender.Send(context.Background(), email); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	logs := buf.String()
+	if strings.Contains(logs, "super-secret-token") || strings.Contains(logs, "top-secret") || strings.Contains(logs, "Authorization:") || strings.Contains(logs, "X-API-Key:") {
+		t.Fatalf("SECURITY: [email-log] LogSender exposed sensitive headers in logs: %q", logs)
+	}
+}
+
+func TestLogSender_DoesNotExposeLiveResetLinksInTextBody(t *testing.T) {
+	var buf bytes.Buffer
+	sender := NewLogSender(&buf)
+	email := Email{
+		From:     "a@b.test",
+		To:       []string{"primary@example.com"},
+		Subject:  "reset",
+		TextBody: "Reset your password: http://localhost/reset-password?token=live-secret-token",
+	}
+
+	if err := sender.Send(context.Background(), email); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	logs := buf.String()
+	if strings.Contains(logs, "token=live-secret-token") || strings.Contains(logs, "/reset-password?token=") {
+		t.Fatalf("SECURITY: [email-log] LogSender exposed live reset link in text body logs: %q", logs)
+	}
+}
+
+func TestLogSender_DoesNotExposeLiveResetLinksInHTMLBody(t *testing.T) {
+	var buf bytes.Buffer
+	sender := NewLogSender(&buf)
+	email := Email{
+		From:     "a@b.test",
+		To:       []string{"primary@example.com"},
+		Subject:  "reset",
+		HTMLBody: `<a href="http://localhost/reset-password?token=html-live-secret">Reset password</a>`,
+	}
+
+	if err := sender.Send(context.Background(), email); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	logs := buf.String()
+	if strings.Contains(logs, "token=html-live-secret") || strings.Contains(logs, "/reset-password?token=") {
+		t.Fatalf("SECURITY: [email-log] LogSender exposed live reset link in HTML body logs: %q", logs)
 	}
 }

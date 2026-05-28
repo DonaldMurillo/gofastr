@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -36,7 +37,23 @@ type RateLimitConfig struct {
 	// when the origin is behind a reverse proxy you control that
 	// rewrites or appends the header — otherwise an attacker can
 	// trivially defeat per-IP limiting by sending random XFF values.
+	//
+	// SECURITY: TrustProxyHeaders alone is NOT sufficient. The
+	// middleware will only trust the header when r.RemoteAddr (the
+	// immediate TCP peer) is one of TrustedProxies — see below.
+	// Without a trusted-proxy whitelist, XFF/X-Real-IP are ignored
+	// and the key falls back to r.RemoteAddr, so an attacker sending
+	// rotating header values from the same source can't get fresh
+	// buckets per request.
 	TrustProxyHeaders bool
+
+	// TrustedProxies is the set of TCP peer addresses (r.RemoteAddr,
+	// port stripped) whose X-Forwarded-For / X-Real-IP headers are
+	// trusted when TrustProxyHeaders is true. CIDR notation is
+	// accepted; bare IPs are matched exactly. If empty, no proxy is
+	// trusted and the header values are ignored (the key falls back
+	// to r.RemoteAddr).
+	TrustedProxies []string
 }
 
 // RateLimit returns Middleware that enforces a token-bucket rate limit per
@@ -66,7 +83,8 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 	}
 	if cfg.KeyFunc == nil {
 		if cfg.TrustProxyHeaders {
-			cfg.KeyFunc = proxyAwareRateLimitKey
+			trusted := parseTrustedProxies(cfg.TrustedProxies)
+			cfg.KeyFunc = newProxyAwareRateLimitKey(trusted)
 		} else {
 			cfg.KeyFunc = defaultRateLimitKey
 		}
@@ -183,30 +201,123 @@ func (s *bucketStore) reapLocked(now time.Time) {
 // can put any value in those headers and would otherwise get a fresh
 // bucket per request, defeating per-IP rate limiting entirely.
 //
-// Use [proxyAwareRateLimitKey] (or set TrustProxyHeaders=true on
-// RateLimitConfig) only when the origin sits behind a reverse proxy
-// you control.
+// Set TrustProxyHeaders=true on RateLimitConfig (paired with a
+// TrustedProxies whitelist) only when the origin sits behind a
+// reverse proxy you control.
 func defaultRateLimitKey(r *http.Request) string {
 	return stripPort(r.RemoteAddr)
 }
 
-// proxyAwareRateLimitKey trusts the leftmost X-Forwarded-For entry
-// (then X-Real-IP) when present, falling back to r.RemoteAddr. Only
-// safe behind a reverse proxy that strips / overwrites the header
-// from clients.
-func proxyAwareRateLimitKey(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		for i := 0; i < len(xff); i++ {
-			if xff[i] == ',' {
-				return xff[:i]
+// newProxyAwareRateLimitKey returns a KeyFunc that trusts the leftmost
+// X-Forwarded-For (then X-Real-IP) entry ONLY when r.RemoteAddr matches
+// one of the configured trusted proxies. The trusted value must also
+// parse as a well-formed public IP — private / loopback / link-local
+// ranges and arbitrary strings are rejected so an attacker sending
+// junk from a trusted hop can't create fresh buckets per request.
+//
+// When the header is not trusted (no proxy match, no value, or value
+// fails validation), the key falls back to r.RemoteAddr so rotating
+// header values from the same TCP source can't bypass the limit.
+func newProxyAwareRateLimitKey(trusted []trustedProxy) func(*http.Request) string {
+	return func(r *http.Request) string {
+		peer := stripPort(r.RemoteAddr)
+		if !proxyAllowed(peer, trusted) {
+			return peer
+		}
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			candidate := xff
+			for i := 0; i < len(xff); i++ {
+				if xff[i] == ',' {
+					candidate = xff[:i]
+					break
+				}
+			}
+			candidate = trimSpaces(candidate)
+			if isTrustablePublicIP(candidate) {
+				return candidate
 			}
 		}
-		return xff
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			xri = trimSpaces(xri)
+			if isTrustablePublicIP(xri) {
+				return xri
+			}
+		}
+		return peer
 	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+}
+
+// trustedProxy is either a single IP or a CIDR range. Membership is
+// checked with contains.
+type trustedProxy struct {
+	ip  net.IP
+	net *net.IPNet
+}
+
+func parseTrustedProxies(entries []string) []trustedProxy {
+	out := make([]trustedProxy, 0, len(entries))
+	for _, e := range entries {
+		if e == "" {
+			continue
+		}
+		if _, ipnet, err := net.ParseCIDR(e); err == nil {
+			out = append(out, trustedProxy{net: ipnet})
+			continue
+		}
+		if ip := net.ParseIP(e); ip != nil {
+			out = append(out, trustedProxy{ip: ip})
+		}
 	}
-	return stripPort(r.RemoteAddr)
+	return out
+}
+
+func proxyAllowed(peer string, trusted []trustedProxy) bool {
+	if len(trusted) == 0 {
+		return false
+	}
+	ip := net.ParseIP(peer)
+	if ip == nil {
+		return false
+	}
+	for _, t := range trusted {
+		if t.net != nil {
+			if t.net.Contains(ip) {
+				return true
+			}
+			continue
+		}
+		if t.ip != nil && t.ip.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTrustablePublicIP returns true iff s parses as an IP that is
+// neither loopback, link-local, nor in a private RFC1918 / ULA range.
+// Junk strings and private ranges both return false.
+func isTrustablePublicIP(s string) bool {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() {
+		return false
+	}
+	return true
+}
+
+func trimSpaces(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
 }
 
 func stripPort(addr string) string {

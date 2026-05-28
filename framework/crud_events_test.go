@@ -14,12 +14,45 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// stubAuthUser is a minimal user stored on every request context for the
+// SSE tests. The SSE endpoint refuses anonymous subscribers (a real-time
+// event firehose is sensitive even on entities without OwnerField), so
+// the legacy tests need to attach _some_ caller identity to clear the
+// 401 gate. Anything non-nil works.
+type stubAuthUser struct{}
+
+func (stubAuthUser) GetID() string { return "test-user" }
+
+// stubAuthMiddleware injects a stub user into every request context.
+// Used only by the SSE event tests in this file; production apps mount
+// real auth middleware in this slot.
+func stubAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(handler.SetUser(r.Context(), stubAuthUser{})))
+	})
+}
+
+// stubTenantFromHeaderMiddleware mirrors X-Tenant-ID into the
+// handler-resolved tenant slot. The production TenantMiddleware
+// refuses to trust the raw header value (impersonation risk) and only
+// reads handler.GetTenant — so tests that want the legacy
+// header-is-tenant behaviour install this in front of it.
+func stubTenantFromHeaderMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if t := r.Header.Get("X-Tenant-ID"); t != "" {
+			r = r.WithContext(handler.SetTenant(r.Context(), t))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func seedEventsDB(t *testing.T, db *sql.DB) {
 	t.Helper()
@@ -31,6 +64,7 @@ func seedEventsDB(t *testing.T, db *sql.DB) {
 func eventsApp(t *testing.T, db *sql.DB) *App {
 	t.Helper()
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	app.Use(stubAuthMiddleware)
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{
@@ -153,6 +187,7 @@ func TestSSE_FiltersByEntity(t *testing.T) {
 			}
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Use(stubAuthMiddleware)
 		app.Entity("posts", entity.EntityConfig{Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}}}.WithTimestamps(false))
 		app.Entity("comments", entity.EntityConfig{Table: "comments", Fields: []schema.Field{{Name: "body", Type: schema.String, Required: true}}}.WithTimestamps(false))
 
@@ -246,6 +281,12 @@ func TestSSE_FiltersByTenant(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Use(stubAuthMiddleware)
+		// TenantMiddleware now refuses to trust the raw header — it
+		// only mirrors handler.GetTenant into the tenant ctx. Inject
+		// the tenant from X-Tenant-ID via handler.SetTenant first so
+		// the existing test pattern (header-as-tenant) keeps working.
+		app.Use(stubTenantFromHeaderMiddleware)
 		app.Use(tenant.TenantMiddleware("X-Tenant-ID"))
 		app.Entity("posts", entity.EntityConfig{
 			Table:       "posts",

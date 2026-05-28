@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
@@ -24,6 +25,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// getHandlerUser is a thin alias for core/handler.GetUser kept in this
+// package so the soft-delete filter doesn't reach across packages
+// directly inside an inline closure. The bool is true iff the request
+// is authenticated.
+func getHandlerUser(ctx context.Context) (any, bool) {
+	return handler.GetUser(ctx)
+}
 
 // beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
 // rejection so the caller can map it to 400 instead of 500.
@@ -135,24 +144,41 @@ func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 }
 
 // ApplySoftDeleteFilter adds a deleted_at IS NULL filter unless the caller
-// requests trashed records via ?trashed=true.
+// requests trashed records via ?trashed=true AND the request is
+// authenticated. An anonymous caller passing ?trashed=true on a public
+// list endpoint must not be allowed to enumerate soft-deleted rows —
+// that's an information-disclosure path. The query param is honoured
+// only when a user is present in the request context.
 func (ch *CrudHandler) ApplySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
 	if ch.Entity.Config.SoftDelete {
-		showTrashed := r.URL.Query().Get("trashed") == "true"
-		if !showTrashed {
+		if !ch.trashedAllowed(r) {
 			qb.Where("deleted_at IS NULL")
 		}
 	}
 }
 
 // ApplySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
+// Same authentication gate as ApplySoftDeleteFilter.
 func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
 	if ch.Entity.Config.SoftDelete {
-		showTrashed := r.URL.Query().Get("trashed") == "true"
-		if !showTrashed {
+		if !ch.trashedAllowed(r) {
 			cb.Where("deleted_at IS NULL")
 		}
 	}
+}
+
+// trashedAllowed reports whether the caller may see soft-deleted rows on
+// this request. True only when ?trashed=true AND the request carries an
+// authenticated user — anonymous callers are denied visibility into
+// soft-deleted data regardless of how they ask.
+func (ch *CrudHandler) trashedAllowed(r *http.Request) bool {
+	if r.URL.Query().Get("trashed") != "true" {
+		return false
+	}
+	if _, ok := getHandlerUser(r.Context()); !ok {
+		return false
+	}
+	return true
 }
 
 // entityFields returns all field names for queries (SELECT, RETURNING).
@@ -297,7 +323,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		countSQL, countArgs := countQb.Build()
 		var total int
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "count query failed: "+err.Error())
+			log.Printf("crud: list count failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
@@ -324,19 +351,22 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		dataSQL, dataArgs := qb.Build()
 		rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "query failed: "+err.Error())
+			log.Printf("crud: list query failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 		defer rows.Close()
 
 		results, err := scanRows(rows, cols, ch.convertKey)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "scan failed: "+err.Error())
+			log.Printf("crud: list scan failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
 		if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
+			log.Printf("crud: list include failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
@@ -344,7 +374,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if ch.Hooks != nil {
 			listPayload.Results = results
 			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, listPayload); err != nil {
-				writeJSONError(w, http.StatusInternalServerError, "after-list hook: "+err.Error())
+				log.Printf("crud: after-list hook failed: %v", err)
+				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
 			}
 			results = listPayload.Results
@@ -425,19 +456,22 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 				writeJSONError(w, http.StatusNotFound, "not found")
 				return
 			}
-			writeJSONError(w, http.StatusInternalServerError, "query failed: "+err.Error())
+			log.Printf("crud: get query failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
 		if err := ch.applyIncludeTree(ctx, []map[string]any{result}, includes); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
+			log.Printf("crud: get include failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
 		if ch.Hooks != nil {
 			getPayload.Result = result
 			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterGet, getPayload); err != nil {
-				writeJSONError(w, http.StatusInternalServerError, "after-get hook: "+err.Error())
+				log.Printf("crud: after-get hook failed: %v", err)
+				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
 			}
 			result = getPayload.Result
@@ -458,17 +492,26 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 // through the handler's Storage backend and persisted as a URL string.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if err := enforceJSONContentType(r); err != nil {
+			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			return
+		}
 		if _, ok := ch.RequireOwner(w, r); !ok {
 			return
 		}
+		limitJSONBody(w, r)
 		body, err := ch.readRequestBody(r)
 		if err != nil {
+			if errors.Is(err, errBodyTooLarge) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		var result map[string]any
-		err = ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		err = ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doCreate(ctx, r, body)
 			if err != nil {
 				return err
@@ -494,6 +537,10 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 // Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if err := enforceJSONContentType(r); err != nil {
+			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			return
+		}
 		if _, ok := ch.RequireOwner(w, r); !ok {
 			return
 		}
@@ -503,14 +550,19 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return
 		}
 
+		limitJSONBody(w, r)
 		body, err := ch.readRequestBody(r)
 		if err != nil {
+			if errors.Is(err, errBodyTooLarge) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		var result map[string]any
-		err = ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		err = ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
 				return err
@@ -544,7 +596,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return
 		}
 
-		err := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		err := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			return ch.doDelete(ctx, r, id)
 		})
 		if err != nil {

@@ -190,3 +190,30 @@ func TestReadiness_DoesNotHangPastDeadline(t *testing.T) {
 		t.Fatalf("over-deadline check should mark /readyz 503, got %d", rr.Code)
 	}
 }
+
+func TestHealthz_SetsNoSniff(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.registerHealthEndpoints()
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	app.Router().ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("SECURITY: [healthz] /healthz missing X-Content-Type-Options: nosniff (got %q). Attack: browser MIME sniffing of liveness responses.", got)
+	}
+}
+
+func TestReadyz_SetsNoSniff(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.RegisterReadiness("ok", func(_ context.Context) error { return nil })
+	app.registerHealthEndpoints()
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rr := httptest.NewRecorder()
+	app.Router().ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("SECURITY: [readyz] /readyz missing X-Content-Type-Options: nosniff (got %q). Attack: browser MIME sniffing of readiness JSON.", got)
+	}
+}

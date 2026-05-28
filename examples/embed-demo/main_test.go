@@ -32,7 +32,13 @@ func TestEmbedDemoSmoke(t *testing.T) {
 	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/embed/stats")
+	// /embed/* routes now require auth (security hardening).
+	authed := func(req *http.Request) *http.Request {
+		req.Header.Set("Authorization", "Bearer test")
+		return req
+	}
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/embed/stats", nil)
+	resp, err := http.DefaultClient.Do(authed(req))
 	if err != nil {
 		t.Fatalf("GET /embed/stats: %v", err)
 	}
@@ -47,7 +53,9 @@ func TestEmbedDemoSmoke(t *testing.T) {
 	}
 
 	body := strings.NewReader(`{"text":"cache battery","k":3,"hybrid":true}`)
-	resp, err = http.Post(srv.URL+"/embed/query", "application/json", body)
+	req, _ = http.NewRequest(http.MethodPost, srv.URL+"/embed/query", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(authed(req))
 	if err != nil {
 		t.Fatalf("POST /embed/query: %v", err)
 	}

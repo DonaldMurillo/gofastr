@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/auth"
@@ -62,10 +64,13 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	sessID := r.Header.Get("Mcp-Session-Id")
+	sessID := sanitizeSessionID(r.Header.Get("Mcp-Session-Id"))
 	if sessID == "" {
 		sessID = string(ids.NewSessionID())
 	}
+	// Cache-Control: no-store on every response — these are session-bound
+	// JSON-RPC / SSE responses, never cacheable by intermediaries.
+	w.Header().Set("Cache-Control", "no-store")
 	switch r.Method {
 	case http.MethodPost:
 		h.handlePOST(w, r, sessID)
@@ -79,8 +84,93 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// sanitizeSessionID strips CR, LF, and NUL bytes from an Mcp-Session-Id
+// header value to prevent response-header / session-fixation injection
+// where an attacker reflects a newline-bearing id into headers.
+func sanitizeSessionID(s string) string {
+	if s == "" {
+		return s
+	}
+	if !strings.ContainsAny(s, "\r\n\x00") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\r' || c == '\n' || c == 0 {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// isAcceptableJSONContentType returns true if ct parses as
+// application/json or application/*+json. Anything else (including a
+// missing or text/plain body) is rejected with 415 to block
+// content-type smuggling into the JSON-RPC transport.
+func isAcceptableJSONContentType(ct string) bool {
+	if ct == "" {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return false
+	}
+	if mt == "application/json" {
+		return true
+	}
+	if strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json") {
+		return true
+	}
+	return false
+}
+
+// sanitizeSSEData defangs an event payload before emission so a single
+// stored event cannot inject additional SSE directives (event:, id:,
+// retry:, or a blank-line frame break) on replay. We:
+//   - strip CR and NUL bytes outright,
+//   - split on LF and re-prefix every line with "data: ",
+//   - defang any embedded SSE directive keywords inside each line so
+//     that even a downstream string-match for `event:` / `id:` /
+//     `retry:` / `data:` will not see a forgeable directive.
+func sanitizeSSEData(payload []byte) []byte {
+	cleaned := make([]byte, 0, len(payload))
+	for _, c := range payload {
+		if c == '\r' || c == 0 {
+			continue
+		}
+		cleaned = append(cleaned, c)
+	}
+	lines := bytes.Split(cleaned, []byte{'\n'})
+	var out bytes.Buffer
+	for _, ln := range lines {
+		out.WriteString("data: ")
+		out.Write(defangSSEDirectives(ln))
+		out.WriteByte('\n')
+	}
+	out.WriteByte('\n')
+	return out.Bytes()
+}
+
+// defangSSEDirectives rewrites SSE directive keywords inside a single
+// already-newline-split data line so an attacker-controlled payload
+// cannot smuggle a directive substring into the emitted frame.
+func defangSSEDirectives(ln []byte) []byte {
+	s := string(ln)
+	for _, kw := range []string{"event:", "id:", "retry:", "data:"} {
+		s = strings.ReplaceAll(s, kw, kw[:len(kw)-1]+"_:")
+	}
+	return []byte(s)
+}
+
 func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID string) {
 	defer r.Body.Close()
+	if !isAcceptableJSONContentType(r.Header.Get("Content-Type")) {
+		http.Error(w, "unsupported media type: expected application/json", http.StatusUnsupportedMediaType)
+		return
+	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 4*1024*1024))
 	if err != nil {
 		http.Error(w, "body read: "+err.Error(), http.StatusBadRequest)
@@ -121,7 +211,7 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Mcp-Session-Id", sessID)
 	w.WriteHeader(http.StatusOK)
@@ -131,8 +221,10 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 	defer h.releaseSession(sessID)
 
 	// Replay backlog (anything published while no GET was attached).
+	// Defang each stored event so a poisoned payload cannot inject a
+	// second SSE frame or a fake event:/id:/retry: directive on replay.
 	for _, ev := range sess.drain() {
-		fmt.Fprintf(w, "data: %s\n\n", ev)
+		_, _ = w.Write(sanitizeSSEData(ev))
 		flusher.Flush()
 	}
 	// Park until ctx done; mcpserver currently doesn't publish

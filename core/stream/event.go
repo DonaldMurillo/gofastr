@@ -34,13 +34,21 @@ type Event struct {
 //   - "event:" for Error, Done, and Custom types
 //   - "data:" for the payload (multi-line data splits on \n)
 //   - terminated by a blank line ("\n\n")
+//
+// ID and custom event names are truncated at the first CR/LF/NUL — those
+// bytes terminate an SSE field and would let a caller-supplied value
+// inject forged directives ("event: forged", "data: pwned"…) below it.
+// Multi-line data is split on '\n' and each line is re-prefixed with
+// "data: " so an injected blank line ("\n\n") still appears as a single
+// event frame to the client. CRs and NULs in data are stripped for the
+// same reason.
 func Encode(e Event) string {
 	var b strings.Builder
 
 	// id field
-	if e.ID != "" {
+	if id := stripSSEControlChars(e.ID); id != "" {
 		b.WriteString("id: ")
-		b.WriteString(e.ID)
+		b.WriteString(id)
 		b.WriteByte('\n')
 	}
 
@@ -51,17 +59,21 @@ func Encode(e Event) string {
 	case Done:
 		b.WriteString("event: done\n")
 	case Custom:
-		if e.Name != "" {
+		if name := stripSSEControlChars(e.Name); name != "" {
 			b.WriteString("event: ")
-			b.WriteString(e.Name)
+			b.WriteString(name)
 			b.WriteByte('\n')
 		}
 	case Message:
 		// W3C spec: omit event field → defaults to "message"
 	}
 
-	// data field — split on newlines per spec
-	for _, line := range strings.Split(e.Data, "\n") {
+	// data field — split on newlines per spec; strip CR/NUL per line so
+	// no caller-supplied bytes can re-introduce a field boundary inside
+	// a single emitted line.
+	data := strings.ReplaceAll(e.Data, "\r", "")
+	data = strings.ReplaceAll(data, "\x00", "")
+	for _, line := range strings.Split(data, "\n") {
 		b.WriteString("data: ")
 		b.WriteString(line)
 		b.WriteByte('\n')

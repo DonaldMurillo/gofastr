@@ -172,8 +172,19 @@ func TestAudit_DeleteRecordsID(t *testing.T) {
 		if rows[1]["record_id"] != id {
 			t.Fatalf("record_id[1]: got %v want %s", rows[1]["record_id"], id)
 		}
-		if _, hasDiff := rows[1]["diff"]; hasDiff {
-			t.Fatalf("expected diff to be NULL on delete, got %v", rows[1]["diff"])
+		// The delete audit row now carries an "old" snapshot + meta
+		// for forensics (see TestAudit_DeleteIncludesDeletedRecordSnapshot).
+		// Just sanity-check the diff parses and references the deleted row.
+		raw, hasDiff := rows[1]["diff"].(string)
+		if !hasDiff || raw == "" {
+			t.Fatalf("expected non-empty diff on delete, got %v", rows[1]["diff"])
+		}
+		var diff map[string]any
+		if err := json.Unmarshal([]byte(raw), &diff); err != nil {
+			t.Fatalf("diff decode: %v", err)
+		}
+		if _, ok := diff["old"]; !ok {
+			t.Fatalf("delete diff missing 'old' snapshot: %s", raw)
 		}
 	})
 }

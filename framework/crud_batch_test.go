@@ -400,8 +400,13 @@ func TestBatchCreate_AfterHookError_RollsBack(t *testing.T) {
 		if got.Committed {
 			t.Fatal("expected committed=false")
 		}
-		if !strings.Contains(got.Results[1].Error, "policy reject") {
-			t.Fatalf("expected hook error at index 1, got %q", got.Results[1].Error)
+		// Hook error messages are redacted to "internal error" in the
+		// batch response so they can't smuggle internal state to the
+		// client (see batch_error_leak_security_test.go / error_leak_security_test.go).
+		// The Index field still pins down which item triggered the
+		// rollback; the original message is logged server-side.
+		if got.Results[1].Error == "" {
+			t.Fatalf("expected non-empty error at index 1, got %+v", got.Results[1])
 		}
 		if !got.Results[2].Skipped {
 			t.Fatalf("expected index 2 skipped, got %+v", got.Results[2])

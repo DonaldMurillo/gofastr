@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -27,6 +28,13 @@ const streamListThreshold = 1000
 // N, "totalPages": 1}. Streaming applies only to the data array — the
 // envelope fields are written before the rows start flowing.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int, extraWhere []hook.WhereClause) {
+	// Same owner gate the public List handler enforces. Direct callers
+	// (in-process or chained from List) must not bypass it — without
+	// this the streaming variant would happily return every row to an
+	// anonymous caller on an OwnerField entity.
+	if _, ok := ch.RequireOwner(w, r); !ok {
+		return
+	}
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)
@@ -43,7 +51,8 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	countSQL, countArgs := countQb.Build()
 	var total int
 	if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "count query failed: "+err.Error())
+		log.Printf("crud: stream count failed: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -65,7 +74,8 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	dataSQL, dataArgs := qb.Build()
 	rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "query failed: "+err.Error())
+		log.Printf("crud: stream query failed: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	defer rows.Close()

@@ -125,7 +125,7 @@ func (s *SSEWriter) WriteData(data string) error {
 	// queued id
 	if s.nextID != "" {
 		b.WriteString("id: ")
-		b.WriteString(s.nextID)
+		b.WriteString(stripSSEControlChars(s.nextID))
 		b.WriteByte('\n')
 		s.nextID = ""
 	}
@@ -196,10 +196,12 @@ func (s *SSEWriter) WriteDone() error {
 }
 
 // LastEventID returns the Last-Event-ID from the request headers
-// or the "last_event_id" query parameter.
+// or the "last_event_id" query parameter. The value is truncated at
+// the first CR/LF/NUL so a malicious resume token can't inject forged
+// SSE fields when later echoed back to clients.
 func LastEventID(r *http.Request) string {
 	if id := r.Header.Get("Last-Event-ID"); id != "" {
-		return id
+		return stripSSEControlChars(id)
 	}
-	return r.URL.Query().Get("last_event_id")
+	return stripSSEControlChars(r.URL.Query().Get("last_event_id"))
 }

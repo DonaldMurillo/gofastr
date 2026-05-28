@@ -53,16 +53,18 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("UPDATE ")
-	sb.WriteString(ub.table)
+	sb.WriteString(sanitizeFragment(ub.table))
 
-	// SET clauses
+	// SET clauses — column slot is sanitized; the value flows through
+	// a placeholder. A payload like `role = 'admin' --` collapses to a
+	// non-injection token.
 	sb.WriteString(" SET ")
 	paramIdx := 1
 	for i, s := range ub.sets {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		fmt.Fprintf(&sb, "%s = $%d", s.column, paramIdx)
+		fmt.Fprintf(&sb, "%s = $%d", sanitizeColumn(s.column), paramIdx)
 		paramIdx++
 	}
 
@@ -85,10 +87,14 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		}
 	}
 
-	// Returning
+	// Returning — each column sanitized.
 	if len(ub.returning) > 0 {
 		sb.WriteString(" RETURNING ")
-		sb.WriteString(strings.Join(ub.returning, ", "))
+		sanitizedRet := make([]string, len(ub.returning))
+		for i, c := range ub.returning {
+			sanitizedRet[i] = sanitizeColumn(c)
+		}
+		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}
 
 	return sb.String(), ub.args

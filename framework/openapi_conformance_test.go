@@ -70,7 +70,11 @@ func setupOpenAPIServer(t *testing.T, dialect Dialect) (*App, map[string]any, fu
 	crud.RegisterCrudRoutes(app.Router(), crud.NewCrudHandler(postsEntity, db), "/posts")
 
 	spec := EntityOpenAPI(app.Registry, "Conformance API", "1.0.0")
-	app.Router().Get("/openapi.json", openapi.Handler(spec))
+	// The conformance tests fetch the spec without authenticating —
+	// openapi.Handler now 401s anonymous callers, so use the explicit
+	// public variant for the in-test spec ingestion. Production code
+	// that wants the gated handler keeps using openapi.Handler.
+	app.Router().Get("/openapi.json", openapi.PublicHandler(spec))
 
 	// Build spec doc via JSON round-trip for consistent types
 	ta := TestHarness(t, app)

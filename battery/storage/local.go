@@ -40,7 +40,7 @@ type LocalStorage struct {
 func NewLocalStorage(baseDir string, opts ...LocalOption) *LocalStorage {
 	ls := &LocalStorage{
 		BaseDir:  baseDir,
-		fileMode: 0644,
+		fileMode: 0o600,
 		tempDir:  "",
 	}
 	for _, opt := range opts {
@@ -90,7 +90,7 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(dstPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("storage: create directory %q: %w", dir, err)
 	}
 

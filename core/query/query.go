@@ -110,6 +110,11 @@ func (qb *QueryBuilder) Offset(n int) *QueryBuilder {
 // Cursor adds keyset/cursor-based pagination.
 // dir "forward" → WHERE field > value, dir "backward" → WHERE field < value.
 func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilder {
+	// Sanitize the field eagerly so a payload like
+	// `id) DESC; DROP TABLE audit_logs; --` cannot appear in either
+	// the WHERE condition or the ORDER BY column. The value flows
+	// through a placeholder and so does not need sanitisation.
+	field = sanitizeFragment(field)
 	op := ">"
 	if dir == "backward" {
 		op = "<"
@@ -136,26 +141,33 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	args := make([]any, len(qb.args))
 	copy(args, qb.args)
 
-	// SELECT columns
+	// SELECT columns — each variadic column is sanitized to drop
+	// SQL meta-sequences. Column slots only ever hold dotted idents
+	// or "*" in practice; sanitizeColumn also collapses whitespace so
+	// a payload that smuggles a sub-SELECT can't survive verbatim.
 	cols := "*"
 	if len(qb.columns) > 0 {
-		cols = strings.Join(qb.columns, ", ")
+		sanitized := make([]string, len(qb.columns))
+		for i, c := range qb.columns {
+			sanitized[i] = sanitizeColumn(c)
+		}
+		cols = strings.Join(sanitized, ", ")
 	}
 	sb.WriteString("SELECT ")
 	sb.WriteString(cols)
 
 	// FROM table
 	sb.WriteString(" FROM ")
-	sb.WriteString(qb.table)
+	sb.WriteString(sanitizeFragment(qb.table))
 
 	// JOINs
 	for _, j := range qb.joins {
 		sb.WriteString(" ")
 		sb.WriteString(j.joinType)
 		sb.WriteString(" ")
-		sb.WriteString(j.table)
+		sb.WriteString(sanitizeFragment(j.table))
 		sb.WriteString(" ON ")
-		sb.WriteString(j.on)
+		sb.WriteString(sanitizeFragment(j.on))
 	}
 
 	// WHERE
@@ -184,17 +196,20 @@ func (qb *QueryBuilder) Build() (string, []any) {
 		}
 	}
 
-	// ORDER BY
+	// ORDER BY — column gets fragment sanitisation, direction is
+	// hard-clamped to ASC/DESC/empty so a CRLF / DROP smuggle in the
+	// direction slot can't appear in the emitted SQL.
 	if len(qb.orderBy) > 0 {
 		sb.WriteString(" ORDER BY ")
 		for i, o := range qb.orderBy {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(o.column)
-			if o.dir != "" {
+			sb.WriteString(sanitizeFragment(o.column))
+			dir := sanitizeDirection(o.dir)
+			if dir != "" {
 				sb.WriteString(" ")
-				sb.WriteString(o.dir)
+				sb.WriteString(dir)
 			}
 		}
 	}

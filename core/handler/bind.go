@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -55,8 +56,7 @@ func Bind(r *http.Request, dst any) error {
 	// 4. Bind JSON body (highest priority — overwrites)
 	hasBody := r.Body != nil && r.ContentLength != 0
 	if hasBody || r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
-		contentType := r.Header.Get("Content-Type")
-		if strings.HasPrefix(contentType, "application/json") {
+		if isJSONContentType(r.Header.Get("Content-Type")) {
 			if err := bindBody(r, dst); err != nil {
 				return err
 			}
@@ -64,6 +64,26 @@ func Bind(r *http.Request, dst any) error {
 	}
 
 	return nil
+}
+
+// isJSONContentType reports whether ct names the JSON media type. It
+// parses the value through mime.ParseMediaType so "application/json"
+// and "application/json; charset=utf-8" both match, while a literal
+// prefix check would also accept "application/jsonp" or
+// "application/json-evil" — a known Content-Type smuggling trick.
+func isJSONContentType(ct string) bool {
+	if ct == "" {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return false
+	}
+	if mt == "application/json" {
+		return true
+	}
+	// RFC 6839 structured suffix, e.g. application/vnd.api+json
+	return strings.HasSuffix(mt, "+json")
 }
 
 // bindBody decodes JSON body into dst.

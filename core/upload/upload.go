@@ -76,6 +76,18 @@ func Handler(cfg Config) http.HandlerFunc {
 			return
 		}
 
+		// Sniff the actual content type so stored metadata reflects what
+		// the file *is*, not what the client claimed in the multipart
+		// header. A misleading Content-Type / extension is a standard
+		// MIME-spoofing primitive (HTML uploaded as image/png, etc.) —
+		// stored metadata must never echo the attacker-controlled value
+		// back to downstream consumers.
+		detectedMime, err := sniffContentType(file)
+		if err != nil {
+			http.Error(w, "failed to sniff content", http.StatusBadRequest)
+			return
+		}
+
 		// Sanitize filename for storage key
 		safeName := SanitizeFilename(header.Filename)
 		key := safeName
@@ -92,7 +104,7 @@ func Handler(cfg Config) http.HandlerFunc {
 		meta := Metadata{
 			OriginalName: header.Filename,
 			Size:         header.Size,
-			MimeType:     header.Header.Get("Content-Type"),
+			MimeType:     detectedMime,
 			UploadedAt:   time.Now().UTC(),
 			Key:          key,
 		}
@@ -101,6 +113,22 @@ func Handler(cfg Config) http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(meta)
 	}
+}
+
+// sniffContentType reads the first 512 bytes of f to detect its content
+// type via [http.DetectContentType], then rewinds f so the storage
+// backend reads the full payload. The detected type is what the metadata
+// must record — never the attacker-controlled multipart Content-Type.
+func sniffContentType(f io.ReadSeeker) (string, error) {
+	buf := make([]byte, 512)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return "", err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	return http.DetectContentType(buf[:n]), nil
 }
 
 // ext returns the lowercase file extension (without dot) from a filename.

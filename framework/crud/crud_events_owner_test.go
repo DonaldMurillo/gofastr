@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // TestEventStream_AnonymousIsRejected pins the security gate: an
@@ -125,6 +127,26 @@ func TestEventStream_FiltersByOwner(t *testing.T) {
 		if rec != nil && rec["user_id"] == "bob" {
 			t.Errorf("EVENT LEAK: alice's subscription received bob's row: %+v", rec)
 		}
+	}
+}
+
+func TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous(t *testing.T) {
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Table: "feeds",
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.String},
+		},
+	}.WithTimestamps(false), `CREATE TABLE feeds (id TEXT PRIMARY KEY, body TEXT)`)
+	ch.Events = event.NewEventBus()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/feeds/_events", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	ch.EventStream()(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("SECURITY: [events] anonymous _events stream on entity without OwnerField returned %d. Attack: unauthenticated real-time event scraping.", rec.Code)
 	}
 }
 

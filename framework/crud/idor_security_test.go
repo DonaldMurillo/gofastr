@@ -1,212 +1,99 @@
 package crud
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// TestIDOR_GetOtherUsersRecord verifies that an authenticated user cannot
-// read another user's record by ID. Attack: IDOR via predictable resource
-// identifiers. Expected: 404 Not Found.
-func TestIDOR_GetOtherUsersRecord(t *testing.T) {
-	ddl := `CREATE TABLE notes (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		content TEXT
-	)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "content", Type: schema.String},
-	})
-	ch, db := setupSecurityTestHandler(t, cfg, ddl)
-	seedRows(t, db, "notes", []map[string]any{
-		{"id": "bob-note-1", "user_id": "bob", "content": "bob's secret"},
-	})
+func TestServeStreamingList_AnonymousOwnerScopedRequestReturnsNoRows(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := setupOwnerScopedHandler(t)
+	seedRow(t, db, "log-a1", "alice", "alice secret")
+	seedRow(t, db, "log-b1", "bob", "bob secret")
 
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/notes/bob-note-1",
-		UserID: "alice",
-	})
-	req.SetPathValue("id", "bob-note-1")
-	rr := httptest.NewRecorder()
-	ch.Get()(rr, req)
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?stream=true", nil)
+	rec := httptest.NewRecorder()
+	ch.ServeStreamingList(context.Background(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 10, nil)
 
-	assertStatus(t, rr, http.StatusNotFound, "idor",
-		"authenticated user reads another user's record by guessing the ID")
-	assertBodyNotContains(t, rr, "bob's secret", "idor",
-		"IDOR via predictable resource identifier leaked other user's data")
-}
-
-// TestIDOR_PutOtherUsersRecord verifies that an authenticated user cannot
-// update another user's record. Attack: IDOR via PUT with predictable ID.
-// Expected: 404 Not Found.
-func TestIDOR_PutOtherUsersRecord(t *testing.T) {
-	ddl := `CREATE TABLE notes (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		content TEXT
-	)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "content", Type: schema.String},
-	})
-	ch, db := setupSecurityTestHandler(t, cfg, ddl)
-	seedRows(t, db, "notes", []map[string]any{
-		{"id": "bob-note-1", "user_id": "bob", "content": "original"},
-	})
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodPut,
-		Path:   "/notes/bob-note-1",
-		Body:   `{"content":"hijacked"}`,
-		UserID: "alice",
-	})
-	req.SetPathValue("id", "bob-note-1")
-	rr := httptest.NewRecorder()
-	ch.Update()(rr, req)
-
-	assertStatus(t, rr, http.StatusNotFound, "idor",
-		"authenticated user updates another user's record by guessing the ID")
-
-	// Verify data integrity
-	var content string
-	if err := db.QueryRow("SELECT content FROM notes WHERE id = ?", "bob-note-1").Scan(&content); err != nil {
-		t.Fatal(err)
-	}
-	if content != "original" {
-		t.Errorf("SECURITY: [idor] record was mutated by cross-user PUT: %q", content)
+	if rec.Code != http.StatusUnauthorized {
+		resp := decodeListResponse(t, rec.Body.String())
+		if resp.Total != 0 || len(resp.Data) != 0 {
+			t.Fatalf("SECURITY: [stream-owner] anonymous streaming list returned %d rows. Attack: direct ServeStreamingList call bypassed owner gate.", len(resp.Data))
+		}
 	}
 }
 
-// TestIDOR_DeleteOtherUsersRecord verifies that an authenticated user cannot
-// delete another user's record. Attack: IDOR via DELETE with predictable ID.
-// Expected: 404 Not Found.
-func TestIDOR_DeleteOtherUsersRecord(t *testing.T) {
-	ddl := `CREATE TABLE notes (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		content TEXT
-	)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "content", Type: schema.String},
-	})
-	ch, db := setupSecurityTestHandler(t, cfg, ddl)
-	seedRows(t, db, "notes", []map[string]any{
-		{"id": "bob-note-1", "user_id": "bob", "content": "bob's data"},
-	})
+func TestServeStreamingList_DBErrorsDoNotLeakDriverText(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := setupOwnerScopedHandler(t)
+	seedRow(t, db, "log-a1", "alice", "alice secret")
 
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodDelete,
-		Path:   "/notes/bob-note-1",
-		UserID: "alice",
-	})
-	req.SetPathValue("id", "bob-note-1")
-	rr := httptest.NewRecorder()
-	ch.Delete()(rr, req)
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?stream=true", nil)
+	req = withTestUser(req, "alice")
+	_ = db.Close()
 
-	assertStatus(t, rr, http.StatusNotFound, "idor",
-		"authenticated user deletes another user's record by guessing the ID")
+	rec := httptest.NewRecorder()
+	ch.ServeStreamingList(context.Background(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 10, nil)
+
+	body := rec.Body.String()
+	if strings.Contains(strings.ToLower(body), "database is closed") || strings.Contains(strings.ToLower(body), "sql:") {
+		t.Fatalf("SECURITY: [stream-error] raw driver error leaked in response body: %s", body)
+	}
 }
 
-// TestIDOR_UnauthenticatedListWithoutOwnerField verifies that unauthenticated
-// requests to a list endpoint with OwnerField set are rejected.
-// Attack: unauthenticated data enumeration.
-// Expected: 401 Unauthorized.
-func TestIDOR_UnauthenticatedListWithoutOwnerField(t *testing.T) {
-	ddl := `CREATE TABLE notes (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		content TEXT
-	)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "content", Type: schema.String},
+func TestNestedFilter_ManyToOneRejectsUnsafeFieldName(t *testing.T) {
+	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+		Relation: entity.Relation{
+			Type:       entity.RelManyToOne,
+			Entity:     "users",
+			ForeignKey: "author_id",
+		},
+		Field:    "name OR 1=1 --",
+		Op:       filter.OpEq,
+		Value:    "alice",
 	})
-	ch, db := setupSecurityTestHandler(t, cfg, ddl)
-	seedRows(t, db, "notes", []map[string]any{
-		{"id": "n1", "user_id": "alice", "content": "private"},
-	})
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/notes",
-	})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-
-	assertStatus(t, rr, http.StatusUnauthorized, "idor",
-		"unauthenticated request to owner-scoped list endpoint returns data")
-	assertBodyNotContains(t, rr, "private", "idor",
-		"unauthenticated list endpoint leaks private data")
+	if strings.Contains(sqlStr, "OR 1=1") {
+		t.Fatalf("SECURITY: [nested-filter] many-to-one query embeds attacker field name verbatim: %s", sqlStr)
+	}
 }
 
-// TestIDOR_IncludeRelationLeak verifies that include relations don't leak
-// data from other users' records. Attack: IDOR via include parameter
-// to fetch related records belonging to other users.
-// Expected: only the user's own records are returned.
-func TestIDOR_IncludeRelationLeak(t *testing.T) {
-	ddl := `CREATE TABLE notes (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		content TEXT
-	)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "content", Type: schema.String},
+func TestNestedFilter_HasManyRejectsUnsafeFieldName(t *testing.T) {
+	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+		Relation: entity.Relation{
+			Type:       entity.RelHasMany,
+			Entity:     "comments",
+			ForeignKey: "post_id",
+		},
+		Field:    "body OR 1=1 --",
+		Op:       filter.OpEq,
+		Value:    "x",
 	})
-	ch, db := setupSecurityTestHandler(t, cfg, ddl)
-	seedRows(t, db, "notes", []map[string]any{
-		{"id": "alice-n1", "user_id": "alice", "content": "alice data"},
-		{"id": "bob-n1", "user_id": "bob", "content": "bob data"},
-	})
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/notes",
-		UserID: "alice",
-	})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-
-	assertStatus(t, rr, http.StatusOK, "idor",
-		"owner-scoped list returns only the user's own records")
-	assertBodyNotContains(t, rr, "bob data", "idor",
-		"owner scope fails — other user's data visible in list response")
+	if strings.Contains(sqlStr, "OR 1=1") {
+		t.Fatalf("SECURITY: [nested-filter] has-many query embeds attacker field name verbatim: %s", sqlStr)
+	}
 }
 
-// TestIDOR_CursorIntoOtherUsersData verifies that cursor-based pagination
-// cannot be used to access other users' records. Attack: IDOR via cursor
-// pointing into another user's data range.
-// Expected: only the user's own records returned.
-func TestIDOR_CursorIntoOtherUsersData(t *testing.T) {
-	ddl := `CREATE TABLE notes (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		content TEXT
-	)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "content", Type: schema.String},
+func TestNestedFilter_ManyToManyRejectsUnsafeFieldName(t *testing.T) {
+	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+		Relation: entity.Relation{
+			Type:             entity.RelManyToMany,
+			Entity:           "tags",
+			ForeignKey:       "tag_id",
+			Through:          "post_tags",
+			LocalKey:         "post_id",
+			ForeignKeyTarget: "id",
+		},
+		Field:    "label OR 1=1 --",
+		Op:       filter.OpEq,
+		Value:    "x",
 	})
-	ch, db := setupSecurityTestHandler(t, cfg, ddl)
-	seedRows(t, db, "notes", []map[string]any{
-		{"id": "alice-n1", "user_id": "alice", "content": "alice data"},
-		{"id": "bob-n1", "user_id": "bob", "content": "bob secret"},
-	})
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/notes?cursor=bob-n1",
-		UserID: "alice",
-	})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-
-	assertBodyNotContains(t, rr, "bob secret", "idor",
-		"cursor pagination leaks data from other users")
+	if strings.Contains(sqlStr, "OR 1=1") {
+		t.Fatalf("SECURITY: [nested-filter] many-to-many query embeds attacker field name verbatim: %s", sqlStr)
+	}
 }

@@ -30,7 +30,7 @@ func (db *DeleteBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("DELETE FROM ")
-	sb.WriteString(db.table)
+	sb.WriteString(sanitizeFragment(db.table))
 
 	// WHERE
 	if len(db.wheres) > 0 {

@@ -146,7 +146,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   cfg.SessionSecure,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteStrictMode,
 			Expires:  sess.ExpiresAt,
 		})
 
@@ -191,7 +191,7 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   cfg.SessionSecure,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteStrictMode,
 			Expires:  time.Unix(0, 0),
 			MaxAge:   -1,
 		})
@@ -335,7 +335,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 				Path:     "/",
 				HttpOnly: true,
 				Secure:   cfg.SessionSecure,
-				SameSite: http.SameSiteLaxMode,
+				SameSite: http.SameSiteStrictMode,
 				Expires:  sess.ExpiresAt,
 			})
 			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)

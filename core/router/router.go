@@ -109,13 +109,20 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 
 // Param extracts a single path parameter by name from the request.
 // It uses the Go 1.22+ r.PathValue() method.
+//
+// SECURITY: the returned value is truncated at the first CR, LF, or
+// NUL byte so a path-parameter payload can't be smuggled into
+// downstream headers, log lines, SSE frames, or query strings.
 func Param(r *http.Request, name string) string {
-	return r.PathValue(name)
+	return sanitizeParam(r.PathValue(name))
 }
 
 // Params extracts all path parameters from the request.
 // It scans the registered pattern for {name} placeholders and extracts
 // each value using r.PathValue().
+//
+// SECURITY: every value is truncated at the first CR / LF / NUL byte
+// — see [Param].
 func Params(r *http.Request) map[string]string {
 	pattern := r.Pattern
 	if pattern == "" {
@@ -130,7 +137,7 @@ func Params(r *http.Request) map[string]string {
 				break
 			}
 			name := pattern[i+1 : i+end]
-			val := r.PathValue(name)
+			val := sanitizeParam(r.PathValue(name))
 			if val != "" {
 				params[name] = val
 			}
@@ -138,6 +145,18 @@ func Params(r *http.Request) map[string]string {
 		}
 	}
 	return params
+}
+
+// sanitizeParam truncates s at the first CR, LF, or NUL byte so a
+// path-parameter value cannot be used to inject header lines, log
+// lines, SSE frames, or any other line-delimited downstream protocol.
+func sanitizeParam(s string) string {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == '\n' || c == '\r' || c == 0 {
+			return s[:i]
+		}
+	}
+	return s
 }
 
 // Routes returns the set of (method, pattern) pairs registered via

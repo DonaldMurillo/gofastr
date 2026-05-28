@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -20,9 +21,23 @@ import (
 // through a temp file.
 const MaxMultipartMemory = 32 << 20 // 32 MiB
 
+// MaxJSONBodyBytes caps the size of a JSON request body the CRUD handlers
+// will read. 1 MiB is large enough for any realistic single record or
+// batch envelope, while bounding the memory an unauthenticated caller can
+// pin per request.
+const MaxJSONBodyBytes int64 = 1 << 20 // 1 MiB
+
 // errStorageNotConfigured is returned when a request includes file parts but
 // the handler has no storage backend.
 var errStorageNotConfigured = errors.New("server has no file storage configured")
+
+// errUnsupportedMediaType is returned by enforceJSONContentType when the
+// caller sends a JSON-only endpoint a body without a JSON Content-Type.
+var errUnsupportedMediaType = errors.New("unsupported media type")
+
+// errBodyTooLarge is returned by the JSON decoder when the body exceeds
+// MaxJSONBodyBytes. Callers map it to 413 Request Entity Too Large.
+var errBodyTooLarge = errors.New("request body too large")
 
 // isMultipart reports whether the request carries a multipart/form-data body.
 func isMultipart(r *http.Request) bool {
@@ -30,18 +45,71 @@ func isMultipart(r *http.Request) bool {
 	return strings.HasPrefix(ct, "multipart/form-data")
 }
 
+// enforceJSONContentType refuses requests whose Content-Type isn't either
+// application/json or multipart/form-data. Returns errUnsupportedMediaType
+// for text/plain, application/x-www-form-urlencoded, missing, or any other
+// type — these are the "simple-request" content types a browser can send
+// cross-origin without a CORS preflight, so accepting them on JSON-only
+// write endpoints opens a CSRF vector.
+func enforceJSONContentType(r *http.Request) error {
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		return errUnsupportedMediaType
+	}
+	mediaType, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return errUnsupportedMediaType
+	}
+	switch mediaType {
+	case "application/json", "multipart/form-data":
+		return nil
+	}
+	return errUnsupportedMediaType
+}
+
+// limitJSONBody wraps r.Body with http.MaxBytesReader so JSON decoding
+// caps at MaxJSONBodyBytes. The wrapped body is installed back onto the
+// request so other readers see the same limit.
+func limitJSONBody(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxJSONBodyBytes)
+}
+
+// decodeJSONBody decodes r.Body into v with the request's body already
+// wrapped by limitJSONBody. Returns errBodyTooLarge if the limit fired,
+// or a generic JSON error otherwise. The caller must have applied
+// limitJSONBody first.
+func decodeJSONBody(r *http.Request, v any) error {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			return errBodyTooLarge
+		}
+		// http.MaxBytesReader may also report a generic
+		// "http: request body too large" error string on some Go
+		// versions / paths — match by substring as a fallback.
+		if strings.Contains(err.Error(), "request body too large") {
+			return errBodyTooLarge
+		}
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	return nil
+}
+
 // readRequestBody decodes the incoming request into a snake_cased body map.
 // Multipart requests run through parseMultipartBody (no JSON casing conversion
 // — multipart field names are taken literally as DB column names); JSON
 // requests are decoded and reverse-cased back to snake_case so they match the
 // schema's field names regardless of the wire casing.
+//
+// Pre-condition: the caller has already validated Content-Type via
+// enforceJSONContentType and (for JSON) wrapped r.Body with limitJSONBody.
 func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, error) {
 	if isMultipart(r) {
 		return ch.parseMultipartBody(r)
 	}
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+	if err := decodeJSONBody(r, &body); err != nil {
+		return nil, err
 	}
 	return ch.unconvertMapKeys(body), nil
 }

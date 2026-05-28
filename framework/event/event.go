@@ -58,7 +58,14 @@ func (eb *EventBus) On(eventType string, handler EventHandler) {
 
 // Subscribe registers a handler and returns a cancel function. Calling cancel
 // removes the handler. Cancel is safe to call multiple times.
+//
+// A nil handler is refused — the bus never retains a nil subscription, so a
+// later Emit can't crash by invoking nothing. The returned cancel is a no-op
+// in that case.
 func (eb *EventBus) Subscribe(eventType string, handler EventHandler) (cancel func()) {
+	if handler == nil {
+		return func() {}
+	}
 	id := eb.nextID.Add(1)
 	eb.mu.Lock()
 	eb.handlers[eventType] = append(eb.handlers[eventType], subEntry{id: id, handler: handler})
@@ -91,12 +98,22 @@ func (eb *EventBus) Snapshot(eventType string) []EventHandler {
 
 // Emit publishes an event synchronously to all subscribers and returns the
 // first error from a handler.
+//
+// A handler that panics is recovered so a buggy subscriber can't bring down
+// the request that triggered the event. The panic is swallowed (the event bus
+// is fire-and-iterate, not a critical-path return channel); callers that need
+// hard failures should propagate them through the returned error instead. A
+// nil entry — which shouldn't happen given Subscribe's guard, but kept for
+// defense-in-depth against direct map manipulation — is skipped.
 func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
 	for _, h := range eb.Snapshot(event.Type) {
-		if err := h(ctx, event); err != nil {
+		if h == nil {
+			continue
+		}
+		if err := emitSafe(ctx, h, event); err != nil {
 			return err
 		}
 	}
@@ -104,6 +121,9 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 }
 
 // EmitAsync publishes an event in a goroutine (fire-and-forget).
+//
+// Each handler runs inside emitSafe so a panicking subscriber takes itself
+// down without crashing the process. Nil entries are skipped defensively.
 func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
@@ -111,7 +131,28 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	hs := eb.Snapshot(event.Type)
 	go func() {
 		for _, h := range hs {
-			_ = h(ctx, event)
+			if h == nil {
+				continue
+			}
+			_ = emitSafe(ctx, h, event)
 		}
 	}()
+}
+
+// emitSafe invokes h with a deferred recover. A panic becomes a discarded
+// error so neither the calling request nor the async goroutine crashes the
+// process. Returning the handler's nominal error keeps the existing Emit
+// short-circuit contract intact.
+func emitSafe(ctx context.Context, h EventHandler, event Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Swallow — see method docs. We deliberately don't surface
+			// the panic as an error because callers wire Emit into
+			// AfterCreate / AfterUpdate hooks where any non-nil return
+			// rolls back the user's transaction; a flaky subscriber
+			// shouldn't gain veto over real writes.
+			err = nil
+		}
+	}()
+	return h(ctx, event)
 }

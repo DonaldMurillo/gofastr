@@ -243,11 +243,14 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		// Hash the sensitive bits so the log is greppable for debugging
 		// but doesn't expose the live token or full email to anyone with
 		// log read access.
+		// SECURITY: do not log the live magic-link URL. The URL embeds the
+		// raw token, which is a takeover credential — anyone with read
+		// access to dev logs could replay it. email_hash + token_hash give
+		// enough signal to correlate with the rendered email body.
 		slog.Info("magic-link dev",
 			"plugin", "magic-link",
 			"email_hash", hashedIdentifier(body.Email),
-			"token_hash", hashedIdentifier(token),
-			"url", magicLinkURL)
+			"token_hash", hashedIdentifier(token))
 	default:
 		// Fail-closed. The operator forgot to wire EmailSender and didn't
 		// opt into DevMode — better a 503 than silently leaking tokens.

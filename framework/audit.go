@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -38,20 +41,24 @@ type AuditConfig struct {
 	// `diff` column. Return either the modified input (safe to mutate
 	// — the framework already copied it) or a fresh map. Either works.
 	//
-	// Use this to keep CRUD audit coverage on PHI-bearing entities
-	// without leaking content into the audit log — e.g. for a search-
-	// history table return `map[string]any{"id": row["id"]}` so the
-	// audit still records who searched when, but not what.
+	// When nil, the framework applies a default sensitive-field scrub
+	// (see defaultSensitiveSuffixes) — fields whose names look like
+	// passwords, tokens, secrets, or keys are dropped from the diff so
+	// a host that forgot to configure Redact doesn't accidentally
+	// stream credentials into the audit log.
 	//
 	// Redact is invoked for AfterCreate, AfterUpdate, AND AfterDelete.
 	// On delete the input is `map[string]any{"id": <record_id>}`; the
 	// returned map's "id" value (if any) becomes the audit row's
 	// record_id, letting hosts pseudonymise the natural key on delete
-	// too.
+	// too. If the callback returns a map with no `id` key the framework
+	// falls back to the original — silently erasing the record_id is
+	// an audit-forensics erasure primitive we don't want to expose.
 	//
-	// Returning nil is equivalent to returning an empty map. The
-	// callback must not panic. Failures inside Redact don't bubble up
-	// — write something safe if a key is missing.
+	// Returning nil is equivalent to returning an empty map. A panic
+	// inside Redact is recovered: the audit row is still written using
+	// the original pre-redact value so audit coverage isn't lost to a
+	// misbehaving callback.
 	Redact func(entity string, row map[string]any) map[string]any
 }
 
@@ -127,62 +134,316 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
-			diff, _ := json.Marshal(map[string]any{"new": cfg.applyRedact(ent.GetName(), row)})
+			redacted := cfg.applyRedact(ent.GetName(), row)
+			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpCreate, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, _ := data.(map[string]any)
 			id := stringifyPK(row, pk)
-			diff, _ := json.Marshal(map[string]any{"new": cfg.applyRedact(ent.GetName(), row)})
+			redactedNew := cfg.applyRedact(ent.GetName(), row)
+			var redactedOld map[string]any
+			var originalOld map[string]any
+			if pre := crud.AuditPreImageFromContext(ctx); pre != nil {
+				originalOld = pre
+				redactedOld = cfg.applyRedact(ent.GetName(), pre)
+			}
+			diff := buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, row, auditMeta(ctx))
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpUpdate, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
-			id, _ := data.(string)
+			originalID, _ := data.(string)
+			recordID := originalID
 			// Let Redact substitute the natural-key record_id for
 			// PHI-bearing tables. Input shape mirrors what the doc
 			// describes: a one-key map the host can transform.
+			//
+			// If the callback omits the "id" key entirely, fall back
+			// to the original — silently erasing the natural key
+			// gives a malformed redact callback an audit-forensics
+			// erasure primitive (see
+			// TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID).
 			if cfg.Redact != nil {
-				redacted := cfg.applyRedact(ent.GetName(), map[string]any{"id": id})
+				redacted := cfg.applyRedact(ent.GetName(), map[string]any{"id": originalID})
 				if v, ok := redacted["id"]; ok {
-					id = fmt.Sprintf("%v", v)
-				} else {
-					id = ""
+					recordID = fmt.Sprintf("%v", v)
 				}
+				// else: keep recordID = originalID
 			}
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpDelete, id, cfg.actor(ctx), nil)
+			// Snapshot the deleted row's pre-image (if doDelete
+			// captured one) so the audit row records WHAT was
+			// deleted, not just WHO did it. The pre-image goes
+			// through the same redact pipeline as create/update.
+			var diff []byte
+			pre := crud.AuditPreImageFromContext(ctx)
+			meta := auditMeta(ctx)
+			if pre != nil {
+				redactedOld := cfg.applyRedact(ent.GetName(), pre)
+				diff = buildAuditDeleteDiff(redactedOld, pre, meta)
+			} else if meta != nil {
+				diff = buildAuditDeleteDiff(nil, nil, meta)
+			}
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpDelete, sanitizeAuditField(recordID), cfg.actor(ctx), diff)
 		})
 	}
 	return a
 }
 
+// actor returns the resolved actor id, recovering from any panic in the
+// host-provided callback (audit must never crash the request it's
+// auditing — losing the actor is preferable to aborting the user write
+// or to losing audit coverage entirely). The result is passed through
+// sanitizeAuditField to defuse log-injection via control characters.
 func (c AuditConfig) actor(ctx context.Context) string {
 	if c.Actor == nil {
 		return ""
 	}
-	return c.Actor(ctx)
+	var out string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				out = ""
+			}
+		}()
+		out = c.Actor(ctx)
+	}()
+	return sanitizeAuditField(out)
 }
 
-// applyRedact runs c.Redact if set. Passes the row through untouched
-// when Redact is nil so existing audit-coverage behavior is unaffected.
-//
-// Defensive-copies the row before handing it to Redact so a host
-// callback that mutates its input can't corrupt the live response
+// sanitizeAuditField strips control bytes (including newlines and NUL)
+// from fields that land in the audit row's TEXT columns. Those columns
+// are queried and emitted verbatim by forensics tools, so an injected
+// `\n` or `\x00` would let a malicious actor or redact callback forge
+// log lines / split records. Drop everything below 0x20 plus DEL.
+func sanitizeAuditField(s string) string {
+	if s == "" {
+		return s
+	}
+	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// defaultSensitiveSuffixes lists field-name suffixes the framework
+// scrubs from the audit `diff` column when the host did NOT set a
+// custom Redact callback. Match is case-insensitive: `password`,
+// `Password`, `password_hash`, `api_key`, `oauth_token`, and
+// `recovery_secret` all qualify. The list is intentionally narrow —
+// any host with broader scrubbing needs should provide a Redact
+// callback.
+var defaultSensitiveSuffixes = []string{
+	"password",
+	"password_hash",
+	"passwordhash",
+	"secret",
+	"token",
+	"api_key",
+	"apikey",
+	"auth_key",
+	"authkey",
+	"private_key",
+	"privatekey",
+	"access_token",
+	"accesstoken",
+	"refresh_token",
+	"refreshtoken",
+	"session_key",
+	"sessionkey",
+}
+
+// defaultRedact removes fields whose names match a known-sensitive
+// suffix from a defensive copy of the row. Called when
+// AuditConfig.Redact is nil so production callers don't accidentally
+// leak secrets through the audit log just by forgetting to configure
+// a Redact callback.
+func defaultRedact(row map[string]any) map[string]any {
+	if len(row) == 0 {
+		return row
+	}
+	out := make(map[string]any, len(row))
+	for k, v := range row {
+		if isDefaultSensitiveField(k) {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func isDefaultSensitiveField(name string) bool {
+	lower := strings.ToLower(name)
+	for _, suf := range defaultSensitiveSuffixes {
+		if lower == suf || strings.HasSuffix(lower, "_"+suf) {
+			return true
+		}
+	}
+	return false
+}
+
+// auditMeta extracts client IP and User-Agent from the live request
+// (if CRUD attached one to ctx) so audit rows record where a write
+// came from. Returns nil when there's no request — async /
+// system-driven hooks omit the meta block rather than emitting empty
+// fields.
+func auditMeta(ctx context.Context) map[string]any {
+	r := crud.AuditRequestFromContext(ctx)
+	if r == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	if ip := clientIP(r); ip != "" {
+		meta["client_ip"] = ip
+	}
+	if ua := r.UserAgent(); ua != "" {
+		meta["user_agent"] = ua
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
+}
+
+// clientIP returns the remote address with the trailing port stripped.
+// Audit forensics needs the source IP literal; the port is
+// per-connection and useless after the fact.
+func clientIP(r *http.Request) string {
+	addr := r.RemoteAddr
+	if addr == "" {
+		return ""
+	}
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		return addr[:i]
+	}
+	return addr
+}
+
+// buildAuditCreateDiff renders `{"new": redacted, "meta": {...}}`.
+// Falls back to the unredacted row if the redacted form contains
+// something json.Marshal can't represent (functions, channels,
+// circular references) — audit evidence must not vanish when a host
+// returns a malformed redact output, because that turns the redact
+// callback into an audit-erasure primitive.
+func buildAuditCreateDiff(redacted, original map[string]any, meta map[string]any) []byte {
+	payload := map[string]any{"new": redacted}
+	if meta != nil {
+		payload["meta"] = meta
+	}
+	if diff, err := json.Marshal(payload); err == nil {
+		return diff
+	}
+	payload["new"] = original
+	if diff, err := json.Marshal(payload); err == nil {
+		return diff
+	}
+	return []byte(`{"new":{}}`)
+}
+
+// buildAuditUpdateDiff renders `{"old": redactedOld, "new":
+// redactedNew, "meta": {...}}`. Same evidence-preserving fallback
+// chain as buildAuditCreateDiff. The "old" block is omitted (rather
+// than set to null) when no pre-image was captured — keeps the
+// column shape predictable for older callers that grep for `"old"`.
+func buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, originalNew map[string]any, meta map[string]any) []byte {
+	payload := map[string]any{"new": redactedNew}
+	if redactedOld != nil {
+		payload["old"] = redactedOld
+	}
+	if meta != nil {
+		payload["meta"] = meta
+	}
+	if diff, err := json.Marshal(payload); err == nil {
+		return diff
+	}
+	// First fallback: keep meta + old, swap new for the unredacted
+	// pre-marshal value. If only the new side was poisoned, this
+	// recovers everything else.
+	payload["new"] = originalNew
+	if diff, err := json.Marshal(payload); err == nil {
+		return diff
+	}
+	// Second fallback: also swap old for the unredacted pre-image.
+	if originalOld != nil {
+		payload["old"] = originalOld
+		if diff, err := json.Marshal(payload); err == nil {
+			return diff
+		}
+	}
+	return []byte(`{"new":{}}`)
+}
+
+// buildAuditDeleteDiff renders `{"old": redactedOld, "meta": {...}}`
+// for the deleted record snapshot. Returns nil when neither a
+// pre-image nor any meta was captured — preserves the legacy
+// behaviour where async delete hooks emit a NULL diff column.
+func buildAuditDeleteDiff(redactedOld, originalOld map[string]any, meta map[string]any) []byte {
+	if redactedOld == nil && meta == nil {
+		return nil
+	}
+	payload := map[string]any{}
+	if redactedOld != nil {
+		payload["old"] = redactedOld
+	}
+	if meta != nil {
+		payload["meta"] = meta
+	}
+	if diff, err := json.Marshal(payload); err == nil {
+		return diff
+	}
+	if originalOld != nil {
+		payload["old"] = originalOld
+		if diff, err := json.Marshal(payload); err == nil {
+			return diff
+		}
+	}
+	return []byte(`{"old":{}}`)
+}
+
+// applyRedact runs c.Redact if set, otherwise applies a default
+// sensitive-field scrub (see defaultSensitiveSuffixes). Always
+// defensive-copies the row before handing it to a host callback so
+// a callback that mutates its input can't corrupt the live response
 // payload — the docstring warns against mutation but the runtime
-// enforces it. Cheap (one map allocation per audit row) and removes
-// a foot-shaped landmine from the API.
+// enforces it.
 //
-// When Redact returns nil, substitutes an empty map so the audit diff
-// JSON is `{"new":{}}` rather than `{"new":null}` — matching the
-// "nil equivalent to empty map" contract on AuditConfig.Redact.
+// When Redact returns nil, substitutes an empty map so the audit
+// diff JSON is `{"new":{}}` rather than `{"new":null}` — matching
+// the "nil equivalent to empty map" contract on
+// AuditConfig.Redact.
+//
+// A panicking Redact must not abort the user's transaction. The
+// docstring already declares panics out-of-contract; recovering
+// turns the contract violation into a soft fallback (the original
+// pre-redact row) instead of a hard process crash.
 func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]any {
 	if c.Redact == nil {
-		return row
+		return defaultRedact(row)
 	}
 	copied := make(map[string]any, len(row))
 	for k, v := range row {
 		copied[k] = v
 	}
-	out := c.Redact(entity, copied)
+	var out map[string]any
+	panicked := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+			}
+		}()
+		out = c.Redact(entity, copied)
+	}()
+	if panicked {
+		return row
+	}
 	if out == nil {
 		return map[string]any{}
 	}

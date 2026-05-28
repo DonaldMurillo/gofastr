@@ -101,6 +101,14 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 // doUpdate runs the BeforeUpdate → UPDATE → AfterUpdate chain for a single
 // record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (map[string]any, error) {
+	// Snapshot the pre-change row inside the same transaction so the audit
+	// hook can diff old vs new. Best-effort — a SELECT failure here must
+	// not block the update itself (the audit log already tolerates a
+	// missing pre-image and just emits {"old": null, "new": ...}).
+	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
+		ctx = WithAuditPreImage(ctx, pre)
+	}
+
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
@@ -175,6 +183,13 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 // doDelete runs the BeforeDelete → DELETE/UPDATE → AfterDelete chain for a
 // single record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
+	// Snapshot the row before deletion so the audit hook can record what
+	// went away. Without this the audit row only carries a record_id —
+	// useful for "who did it" but useless for "what was lost".
+	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
+		ctx = WithAuditPreImage(ctx, pre)
+	}
+
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {
 			return &beforeHookError{err: err}
@@ -216,4 +231,26 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		}
 	}
 	return nil
+}
+
+// selectPreImage SELECTs the row matching `id` (with the same tenant /
+// owner / soft-delete scopes that the mutating statement will use) so
+// audit hooks can capture an old-state snapshot. Returns (nil, nil) when
+// the row doesn't exist or the SELECT fails — callers treat that as
+// "no snapshot available" rather than aborting the surrounding mutation.
+func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
+	cols := ch.VisibleFields()
+	qb := query.Select(cols...).
+		From(ch.Entity.GetTable()).
+		Where(ch.PrimaryKey+" = $1", id)
+	ch.ApplyTenantScope(qb, r)
+	ch.ApplyOwnerScope(qb, r)
+	ch.ApplySoftDeleteFilter(qb, r)
+	sqlStr, args := qb.Build()
+	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
+	result, err := scanRow(row, cols, ch.convertKey)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

@@ -4,7 +4,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
+
+// stripSSEField truncates a single-line SSE field value at the first
+// CR/LF/NUL. Those bytes terminate an SSE field and would otherwise let
+// a caller-supplied event name or id inject forged directives below it.
+func stripSSEField(s string) string {
+	if i := strings.IndexAny(s, "\r\n\x00"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// sanitizeSSEData removes CR and NUL bytes from a multi-line SSE data
+// payload and ensures each '\n'-separated line is re-prefixed with
+// "data: " by the caller. Collapsing consecutive newlines prevents a
+// blank line ("\n\n") inside the payload from terminating the event
+// frame and letting following bytes appear as a forged second frame.
+func sanitizeSSEData(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\x00", "")
+	return s
+}
 
 // ResponseType is an interface for custom response types that control
 // how they are serialized and what Content-Type is used.
@@ -35,6 +57,7 @@ func Respond(w http.ResponseWriter, r *http.Request, out any) {
 
 	// Default: JSON
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(out)
 }
@@ -58,15 +81,7 @@ type SSE struct {
 func (s SSE) ContentType() string { return "text/event-stream" }
 func (s SSE) WriteBody(w http.ResponseWriter) error {
 	flusher, canFlush := w.(http.Flusher)
-
-	if s.ID != "" {
-		fmt.Fprintf(w, "id: %s\n", s.ID)
-	}
-	if s.Event != "" {
-		fmt.Fprintf(w, "event: %s\n", s.Event)
-	}
-	fmt.Fprintf(w, "data: %s\n\n", s.Data)
-
+	writeSSEFrame(w, s)
 	if canFlush {
 		flusher.Flush()
 	}
@@ -82,17 +97,30 @@ func SSEStream(w http.ResponseWriter, events <-chan SSE) {
 
 	flusher, canFlush := w.(http.Flusher)
 	for evt := range events {
-		if evt.ID != "" {
-			fmt.Fprintf(w, "id: %s\n", evt.ID)
-		}
-		if evt.Event != "" {
-			fmt.Fprintf(w, "event: %s\n", evt.Event)
-		}
-		fmt.Fprintf(w, "data: %s\n\n", evt.Data)
+		writeSSEFrame(w, evt)
 		if canFlush {
 			flusher.Flush()
 		}
 	}
+}
+
+// writeSSEFrame emits a single SSE frame with id/event/data fields,
+// stripping control bytes from id/event (so they can't terminate the
+// field and forge a new directive) and re-prefixing every newline-split
+// line of data with "data: " (so an embedded blank line can't end the
+// frame and inject a second event).
+func writeSSEFrame(w http.ResponseWriter, evt SSE) {
+	if id := stripSSEField(evt.ID); id != "" {
+		fmt.Fprintf(w, "id: %s\n", id)
+	}
+	if event := stripSSEField(evt.Event); event != "" {
+		fmt.Fprintf(w, "event: %s\n", event)
+	}
+	data := sanitizeSSEData(evt.Data)
+	for _, line := range strings.Split(data, "\n") {
+		fmt.Fprintf(w, "data: %s\n", line)
+	}
+	fmt.Fprint(w, "\n")
 }
 
 // RawBytes is a response type for raw bytes with an explicit content type.

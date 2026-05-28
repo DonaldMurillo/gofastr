@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -100,9 +102,24 @@ func (b *Battery) Init(app *framework.App) error {
 // the supplied router. Exposed so apps that compose their own router
 // can mount the admin without going through the battery lifecycle.
 func (b *Battery) RegisterRoutes(r *router.Router) {
-	r.Get(b.cfg.PathPrefix, http.HandlerFunc(b.handleIndex))
-	r.Get(b.cfg.PathPrefix+"/queue", http.HandlerFunc(b.handleQueue))
-	r.Get(b.cfg.PathPrefix+"/audit", http.HandlerFunc(b.handleAudit))
+	hdr := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
+	r.Get(b.cfg.PathPrefix, hdr(requireUser(http.HandlerFunc(b.handleIndex))))
+	r.Get(b.cfg.PathPrefix+"/queue", hdr(requireUser(http.HandlerFunc(b.handleQueue))))
+	r.Get(b.cfg.PathPrefix+"/audit", hdr(requireUser(http.HandlerFunc(b.handleAudit))))
+}
+
+// requireUser is a small admin-local middleware that 401s requests
+// without an authenticated user in context. The framework's auth chain
+// is responsible for setting the user; admin pages refuse to render to
+// anonymous callers regardless of how they're mounted.
+func requireUser(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := handler.GetUser(r.Context()); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ----- handlers ------------------------------------------------------------
@@ -134,9 +151,9 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r.URL.Query().Get("limit"), b.cfg.QueueListLimit)
 	jobs, err := b.cfg.Queue.ListJobs(r.Context(), status, limit)
 	if err != nil {
+		// Don't echo err.Error() — driver text leaks DSNs, IPs, secrets.
 		writePage(w, b.cfg.Title, "Queue",
-			render.Raw(fmt.Sprintf(`<p class="err">List error: %s</p>`,
-				render.Escape(err.Error()))))
+			render.Raw(`<p class="err">Could not load queue jobs. Check the server logs for details.</p>`))
 		return
 	}
 	stats, _ := b.cfg.Queue.Stats(r.Context())
@@ -154,9 +171,9 @@ func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r.URL.Query().Get("limit"), b.cfg.AuditListLimit)
 	rows, err := b.queryAudit(r.Context(), limit)
 	if err != nil {
+		// Don't echo err.Error() — driver text leaks DSNs, schema, secrets.
 		writePage(w, b.cfg.Title, "Audit log",
-			render.Raw(fmt.Sprintf(`<p class="err">Query error: %s</p>`,
-				render.Escape(err.Error()))))
+			render.Raw(`<p class="err">Could not load audit rows. Check the server logs for details.</p>`))
 		return
 	}
 	writePage(w, b.cfg.Title, "Audit log", auditTable(rows))

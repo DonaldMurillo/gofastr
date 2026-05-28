@@ -142,11 +142,14 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		}
 		_ = p.cfg.EmailSender.Send(r.Context(), user.GetEmail(), emailBody)
 	case p.cfg.DevMode:
+		// SECURITY: do not log the live reset URL. The URL embeds the
+		// raw token, which is a takeover credential — anyone with read
+		// access to dev logs could replay it. email_hash + token_hash give
+		// enough signal to correlate with the rendered email body.
 		slog.Info("password-reset dev",
 			"plugin", "password-reset",
 			"email_hash", hashedIdentifier(user.GetEmail()),
-			"token_hash", hashedIdentifier(tok),
-			"url", resetURL)
+			"token_hash", hashedIdentifier(tok))
 	default:
 		// Operator hasn't wired email; refuse silently (status is still 200
 		// to preserve no-enumeration). This IS a known footgun: in this

@@ -1,7 +1,6 @@
 package embed
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -21,18 +20,40 @@ func newTestServer(t *testing.T) (*httptest.Server, Index) {
 	return srv, idx
 }
 
+// doAuthed performs an HTTP request with a dummy Authorization header.
+// Handler() requires a non-empty Authorization on every route — see the
+// security tests in routes_security_test.go for the contract.
+func doAuthed(t *testing.T, req *http.Request) *http.Response {
+	t.Helper()
+	req.Header.Set("Authorization", "Bearer test")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
+	}
+	return resp
+}
+
+func postJSONAuthed(t *testing.T, url string, body string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return doAuthed(t, req)
+}
+
+func getAuthed(t *testing.T, url string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	return doAuthed(t, req)
+}
+
 func TestHTTPRoundTrip(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	// Index two docs via POST /index.
-	body := bytes.NewBufferString(`{"documents":[
+	resp := postJSONAuthed(t, srv.URL+"/index", `{"documents":[
 		{"id":"a","text":"alpha bravo"},
 		{"id":"b","text":"charlie delta"}
 	]}`)
-	resp, err := http.Post(srv.URL+"/index", "application/json", body)
-	if err != nil {
-		t.Fatalf("POST /index: %v", err)
-	}
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("POST /index status = %d, want 202", resp.StatusCode)
 	}
@@ -44,10 +65,7 @@ func TestHTTPRoundTrip(t *testing.T) {
 	}
 
 	// GET /stats.
-	resp, err = http.Get(srv.URL + "/stats")
-	if err != nil {
-		t.Fatalf("GET /stats: %v", err)
-	}
+	resp = getAuthed(t, srv.URL+"/stats")
 	var s Stats
 	json.NewDecoder(resp.Body).Decode(&s)
 	resp.Body.Close()
@@ -56,10 +74,7 @@ func TestHTTPRoundTrip(t *testing.T) {
 	}
 
 	// POST /query.
-	resp, err = http.Post(srv.URL+"/query", "application/json", strings.NewReader(`{"text":"alpha bravo","k":1}`))
-	if err != nil {
-		t.Fatalf("POST /query: %v", err)
-	}
+	resp = postJSONAuthed(t, srv.URL+"/query", `{"text":"alpha bravo","k":1}`)
 	var qr queryResponse
 	json.NewDecoder(resp.Body).Decode(&qr)
 	resp.Body.Close()
@@ -69,17 +84,14 @@ func TestHTTPRoundTrip(t *testing.T) {
 
 	// DELETE /doc/{id}.
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/doc/a", nil)
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("DELETE /doc/a: %v", err)
-	}
+	resp = doAuthed(t, req)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("DELETE status = %d, want 204", resp.StatusCode)
 	}
 
 	// Confirm gone via /stats.
-	resp, _ = http.Get(srv.URL + "/stats")
+	resp = getAuthed(t, srv.URL+"/stats")
 	json.NewDecoder(resp.Body).Decode(&s)
 	resp.Body.Close()
 	if s.Docs != 1 {
@@ -90,32 +102,23 @@ func TestHTTPRoundTrip(t *testing.T) {
 func TestHTTPRejectsMalformedBody(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	resp, err := http.Post(srv.URL+"/index", "application/json", strings.NewReader("not json"))
-	if err != nil {
-		t.Fatalf("POST /index: %v", err)
-	}
+	resp := postJSONAuthed(t, srv.URL+"/index", "not json")
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 
-	resp, err = http.Post(srv.URL+"/query", "application/json", strings.NewReader(`{"text":"   "}`))
-	if err != nil {
-		t.Fatalf("POST /query: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("empty text status = %d, want 400", resp.StatusCode)
+	resp2 := postJSONAuthed(t, srv.URL+"/query", `{"text":"   "}`)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty text status = %d, want 400", resp2.StatusCode)
 	}
 }
 
 func TestHTTPDeleteWithoutID(t *testing.T) {
 	srv, _ := newTestServer(t)
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/doc", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("DELETE /doc: %v", err)
-	}
+	resp := doAuthed(t, req)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)

@@ -32,6 +32,27 @@ func TestRespond_XContentTypeOptions(t *testing.T) {
 	}
 }
 
+func TestRespondJSON_SetsNoSniff(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	Respond(w, req, map[string]any{"ok": true})
+
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("SECURITY: [respond] JSON response missing X-Content-Type-Options: nosniff (got %q). Attack: browser MIME sniffing on API responses.", got)
+	}
+}
+
+func TestWriteError_SetsNoSniff(t *testing.T) {
+	w := httptest.NewRecorder()
+
+	WriteError(w, Errorf(http.StatusBadRequest, "bad input"))
+
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("SECURITY: [respond] error JSON missing X-Content-Type-Options: nosniff (got %q). Attack: browser MIME sniffing on structured error responses.", got)
+	}
+}
+
 // TestContext_UserIsolation verifies that users stored in different
 // contexts don't leak between requests. Attack: user context leaking
 // across concurrent requests.

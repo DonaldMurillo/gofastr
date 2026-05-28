@@ -94,3 +94,52 @@ func TestOpenAPI_ToMapSanitized(t *testing.T) {
 		t.Errorf("operationId not in map: %v", m)
 	}
 }
+
+func TestOpenAPI_HandlerDoesNotAllowWildcardCORS(t *testing.T) {
+	spec := NewSpec("test", "1.0")
+	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	rr := httptest.NewRecorder()
+
+	Handler(spec).ServeHTTP(rr, req)
+
+	if rr.Header().Get("Access-Control-Allow-Origin") == "*" {
+		t.Fatalf("SECURITY: [openapi] handler returned Access-Control-Allow-Origin: *. Attack: any website can read the framework's route/spec inventory cross-origin.")
+	}
+}
+
+func TestOpenAPI_HandlerCarriesNoStore(t *testing.T) {
+	spec := NewSpec("test", "1.0")
+	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	rr := httptest.NewRecorder()
+
+	Handler(spec).ServeHTTP(rr, req)
+
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("SECURITY: [openapi] handler missing Cache-Control no-store: %#v", rr.Header())
+	}
+}
+
+func TestSwaggerUIHandler_DoesNotLoadThirdPartyCDNAssets(t *testing.T) {
+	spec := NewSpec("test", "1.0")
+	req := httptest.NewRequest(http.MethodGet, "/docs/", nil)
+	rr := httptest.NewRecorder()
+
+	SwaggerUIHandler(spec, "/docs").ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	if strings.Contains(body, "https://unpkg.com/") {
+		t.Fatalf("SECURITY: [openapi] swagger UI loaded third-party CDN assets: %q. Attack: docs page depends on remote JS/CSS supply chain by default.", body)
+	}
+}
+
+func TestSwaggerUIHandler_CarriesContentSecurityPolicy(t *testing.T) {
+	spec := NewSpec("test", "1.0")
+	req := httptest.NewRequest(http.MethodGet, "/docs/", nil)
+	rr := httptest.NewRecorder()
+
+	SwaggerUIHandler(spec, "/docs").ServeHTTP(rr, req)
+
+	if rr.Header().Get("Content-Security-Policy") == "" {
+		t.Fatalf("SECURITY: [openapi] swagger UI missing Content-Security-Policy header: %#v", rr.Header())
+	}
+}

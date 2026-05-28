@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	handlerpkg "github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -244,10 +245,14 @@ func TestLLMMDHandler_HTTP(t *testing.T) {
 		},
 	})
 
-	handler := crud.LLMMDHandler(ent)
+	// LLMMDHandler now requires an authenticated context — see
+	// exposure_security_test.go::TestEntityLLMMDHandler_RequiresAuth.
+	// Inject a user so the legacy 200 path still has coverage.
+	h := crud.LLMMDHandler(ent)
 	req := httptest.NewRequest("GET", "/posts/llm.md", nil)
+	req = req.WithContext(handlerpkg.SetUser(req.Context(), map[string]string{"id": "test-user"}))
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -300,10 +305,13 @@ func TestRegistryLLMMDHandler_HTTP(t *testing.T) {
 		},
 	)
 
-	handler := crud.RegistryLLMMDHandler(reg, "Test")
+	// RegistryLLMMDHandler now requires an authenticated context — see
+	// exposure_security_test.go::TestRegistryLLMMDHandler_RequiresAuth.
+	h := crud.RegistryLLMMDHandler(reg, "Test")
 	req := httptest.NewRequest("GET", "/llm.md", nil)
+	req = req.WithContext(handlerpkg.SetUser(req.Context(), map[string]string{"id": "test-user"}))
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d", rec.Code)

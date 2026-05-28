@@ -210,6 +210,13 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("auth init: %v", err)
 	}
+	// Session middleware resolves the logged-in user from the session
+	// cookie and stashes them on the request context — required for
+	// SSE auth gating (see crud_events.go) now that the framework
+	// refuses anonymous _events subscribers even on entities without
+	// OwnerField. Mount before RegisterRoutes / Entity routes so it
+	// wraps both.
+	r.Use(router.Middleware(auth.SessionMiddleware(mgr)))
 	mgr.RegisterRoutes(r)
 
 	r.Get("/metrics", middleware.MetricsHandler(metrics))

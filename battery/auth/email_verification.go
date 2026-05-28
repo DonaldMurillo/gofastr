@@ -134,11 +134,15 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 	case p.cfg.DevMode:
+		// SECURITY: do not log the live verification URL. The URL embeds
+		// the raw token, which is a takeover credential — anyone with
+		// read access to dev logs could replay it. email_hash +
+		// token_hash give enough signal to correlate with the rendered
+		// email body.
 		slog.Info("email-verification dev",
 			"plugin", "email-verification",
 			"email_hash", hashedIdentifier(user.GetEmail()),
-			"token_hash", hashedIdentifier(tok),
-			"url", verifyURL)
+			"token_hash", hashedIdentifier(tok))
 	default:
 		writeAuthError(w, http.StatusServiceUnavailable, "email delivery not configured")
 		return

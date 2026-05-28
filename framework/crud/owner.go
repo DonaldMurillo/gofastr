@@ -2,11 +2,17 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
+
+// errOwnerRequired signals a write attempt against an OwnerField entity
+// without an authenticated caller in the context. In-process APIs
+// (UpsertOne) bubble this up so callers can map to 401.
+var errOwnerRequired = errors.New("owner context required for owner-scoped entity")
 
 // ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query
 // when the entity declares OwnerField and the request context carries an
@@ -55,6 +61,21 @@ func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Re
 	if id, ok := owner.Get(r.Context()); ok {
 		db.Where(field+" = $1", id)
 	}
+}
+
+// requireOwnerContext is the in-process mirror of RequireOwner: it
+// returns errOwnerRequired when the entity declares OwnerField and the
+// context carries no extractable owner id. Used by in-process APIs
+// (UpsertOne, in-process Create variants) where there's no
+// http.ResponseWriter to write a 401 to.
+func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
+	if ch.Entity.Config.OwnerField == "" {
+		return nil
+	}
+	if _, ok := owner.Get(ctx); !ok {
+		return errOwnerRequired
+	}
+	return nil
 }
 
 // InjectOwner stamps the owner id into a Create payload when the entity

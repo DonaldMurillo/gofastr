@@ -30,6 +30,14 @@ func tailFile(path string, maxLines int) ([]map[string]any, error) {
 }
 
 func tailFileWithWindow(path string, maxLines int, window int64) ([]map[string]any, error) {
+	// Refuse symlinks: a writable parent dir could let another user
+	// swap the log path for a pointer to /etc/shadow or another
+	// process's log and exfiltrate via the MCP historical reader.
+	if li, err := os.Lstat(path); err == nil {
+		if li.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("log: tail refuses symlink at %s", path)
+		}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
