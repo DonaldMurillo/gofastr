@@ -384,8 +384,8 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 	// the test's HTTP client — no need to fight the reload race.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := httpGet(t, urlBase+"/notes")
-		if err == nil && strings.Contains(resp, "a brand new note") {
+		body, err := httpGet(t, urlBase+"/notes")
+		if err == nil && strings.Contains(body, "a brand new note") {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -395,10 +395,13 @@ func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 
 // httpGet is a tiny helper for tests that want to bypass chromedp.
 // Reads the full response — earlier 4KB cap silently truncated bodies
-// large enough to hide the "paths" section of OpenAPI specs.
+// large enough to hide the "paths" section of OpenAPI specs. Uses a
+// per-test transport so connections release at t.Cleanup instead of
+// staying in the process-wide DefaultClient pool — see http_client_test.go
+// for the parallelism rationale.
 func httpGet(t *testing.T, url string) (string, error) {
 	t.Helper()
-	resp, err := newHTTPClient().Get(url)
+	resp, err := newHTTPClient(t).Get(url)
 	if err != nil {
 		return "", err
 	}
@@ -410,8 +413,11 @@ func httpGet(t *testing.T, url string) (string, error) {
 	return string(body), nil
 }
 
-func newHTTPClient() *http.Client {
-	return &http.Client{Timeout: 2 * time.Second}
+func newHTTPClient(t *testing.T) *http.Client {
+	t.Helper()
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	return &http.Client{Timeout: 2 * time.Second, Transport: tr}
 }
 
 // --- (7) OpenAPI gets mounted once entities exist ------------------
@@ -747,7 +753,7 @@ func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
 
 	// Hit the HTTP dispatcher directly with an add_entity call.
 	body := strings.NewReader(`{"entity":{"name":"items","fields":[{"name":"label","type":"string"},{"name":"qty","type":"int"}]}}`)
-	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", body)
+	resp, err := kilnPost(t, urlBase+"/kiln/tool/add_entity", "application/json", body)
 	if err != nil {
 		t.Fatalf("POST /kiln/tool/add_entity: %v", err)
 	}
@@ -913,7 +919,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 
 	// Shared framework runtime — single URL, idempotent IIFE, fetches
 	// the widget list at startup.
-	resp, err := http.Get(urlBase + "/__gofastr/runtime.js")
+	resp, err := kilnGet(t, urlBase + "/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("framework runtime not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -927,7 +933,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 
 	// Widget discovery — runtime fetches this; one entry per registered
 	// widget, with cfg + chrome HTML inline.
-	resp, err = http.Get(urlBase + "/__gofastr/widgets")
+	resp, err = kilnGet(t, urlBase + "/__gofastr/widgets")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("widget discovery not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -944,7 +950,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 			t.Errorf("widget discovery list missing %q", want)
 		}
 	}
-	resp, err = http.Get(urlBase + "/core-ui/widget/kiln-panel/chrome")
+	resp, err = kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/chrome")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel chrome not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -957,7 +963,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 
 	// Per-widget /state still serves the signal snapshot.
-	resp, err = http.Get(urlBase + "/core-ui/widget/kiln-panel/state")
+	resp, err = kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/state")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel state not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -968,7 +974,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 
 	// Per-widget stylesheet still serves the theme-resolved CSS.
-	resp, err = http.Get(urlBase + "/core-ui/widget/kiln-panel/style.css")
+	resp, err = kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/style.css")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel style not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -1450,7 +1456,7 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
 
-	resp, err := http.Get(urlBase + "/")
+	resp, err := kilnGet(t, urlBase + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1556,7 +1562,7 @@ func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
 // metadata-only); assert the attribute is on the rendered chrome.
 func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	resp, err := http.Get(urlBase + "/core-ui/widget/kiln-panel/chrome")
+	resp, err := kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/chrome")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1839,7 +1845,7 @@ func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 	// both tool_call AND tool_result with paired call IDs (the same
 	// path pi takes when the agent dispatches a tool over HTTP).
 	body := `{"entity":{"name":"notes","fields":[{"name":"title","type":"string","required":true}]}}`
-	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
+	resp, err := kilnPost(t, urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1956,7 +1962,7 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 		`{"entity":{"name":"a","fields":[{"name":"x","type":"string"}]}}`,
 		`{"entity":{"name":"b","fields":[{"name":"y","type":"string"}]}}`,
 	} {
-		resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
+		resp, err := kilnPost(t, urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1996,7 +2002,7 @@ func TestBrowser_FailedToolDispatchSurfacesDistinctRow(t *testing.T) {
 
 	// Bad add_entity: empty name field violates required.
 	body := `{"entity":{"name":"","fields":[{"name":"x","type":"string"}]}}`
-	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
+	resp, err := kilnPost(t, urlBase+"/kiln/tool/add_entity", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2035,7 +2041,7 @@ func TestBrowser_LandingLeadAdaptsToWorld(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
 
 	// Empty world: lead must say "Empty world".
-	resp, err := http.Get(urlBase + "/")
+	resp, err := kilnGet(t, urlBase + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2051,7 +2057,7 @@ func TestBrowser_LandingLeadAdaptsToWorld(t *testing.T) {
 	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "users", Fields: []world.Field{{Name: "name", Type: "string"}}}})
 
-	resp, err = http.Get(urlBase + "/")
+	resp, err = kilnGet(t, urlBase + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2533,7 +2539,7 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 	l.Notify("agent_turn_started", "pi")
 
 	// Resolved tool: hit /kiln/tool — journals call + result.
-	resp, err := http.Post(urlBase+"/kiln/tool/add_entity", "application/json",
+	resp, err := kilnPost(t, urlBase+"/kiln/tool/add_entity", "application/json",
 		strings.NewReader(`{"entity":{"name":"r","fields":[{"name":"x","type":"string"}]}}`))
 	if err != nil {
 		t.Fatal(err)
@@ -2893,7 +2899,7 @@ func TestBrowser_ResetModalMentionsFreezeDiff(t *testing.T) {
 // renders the IR human-readably. Automated parsers don't care.
 func TestBrowser_WorldEndpointReturnsIndentedJSON(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	resp, err := http.Get(urlBase + "/kiln/world")
+	resp, err := kilnGet(t, urlBase + "/kiln/world")
 	if err != nil {
 		t.Fatal(err)
 	}

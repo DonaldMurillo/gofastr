@@ -682,6 +682,14 @@ func TestGitHubProvider_FallsBackToUserEmailsForHiddenPrimary(t *testing.T) {
 
 	prov := NewGitHubProvider("cid", "csec", "http://localhost/cb")
 	prov.userInfoEndpoint = srv.URL + "/user"
+	// Per-test http.Client whose Transport closes idle conns at cleanup
+	// so we don't lean on the package-level defaultOAuthHTTPClient (which
+	// reuses http.DefaultTransport, accumulating connections across
+	// parallel test packages until the macOS ephemeral port range
+	// saturates and the dial fails with EADDRNOTAVAIL).
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	prov.httpClient = &http.Client{Timeout: 10 * time.Second, Transport: tr}
 
 	info, err := prov.FetchUserInfo(context.Background(), "fake-token")
 	if err != nil {

@@ -251,7 +251,7 @@ func (s *liveServer) dumpJournal() []journalSummary {
 // large MCP/OpenAPI responses aren't silently truncated.
 func httpPost(t *testing.T, url string, body []byte) (string, error) {
 	t.Helper()
-	resp, err := newHTTPClient().Post(url, "application/json", bytes.NewReader(body))
+	resp, err := newHTTPClient(t).Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}

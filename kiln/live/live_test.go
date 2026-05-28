@@ -174,8 +174,18 @@ func TestSSEHandlerStreamsEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Per-test client whose transport closes idle conns at cleanup. The
+	// process-wide http.DefaultClient pools per-Transport, so connections
+	// from finished tests stay open until the keep-alive timer fires —
+	// under parallel package execution that burns the macOS 49152-65535
+	// ephemeral range faster than TIME_WAIT clears (15s), and outbound
+	// dials surface as "can't assign requested address".
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	client := &http.Client{Transport: tr}
+
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/.kiln/events", nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
