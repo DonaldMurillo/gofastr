@@ -80,9 +80,16 @@ func VerifyTimestamped(secret, header string, body []byte, tolerance time.Durati
 }
 
 func parseTimestampedHeader(header string) (int64, string, bool) {
-	// Expected form: `t=<unix>,v1=<hex>`. Extra fields are tolerated
-	// — only `t=` and `v1=` are required, in any order, comma-separated.
-	var tsRaw, sig string
+	// Expected form: `t=<unix>,v1=<hex>`. Unknown fields (`kid=…`,
+	// `v0=…`) are tolerated for forward-compat with other v1 variants,
+	// but duplicate `t=` or `v1=` is a signature-smuggling primitive
+	// (last-wins lets an attacker pair a valid timestamp with a bogus
+	// signature or vice versa) — reject the whole header.
+	var (
+		tsRaw, sig string
+		tsSeen     bool
+		sigSeen    bool
+	)
 	for _, part := range strings.Split(header, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
 		if len(kv) != 2 {
@@ -90,9 +97,17 @@ func parseTimestampedHeader(header string) (int64, string, bool) {
 		}
 		switch kv[0] {
 		case "t":
+			if tsSeen {
+				return 0, "", false
+			}
 			tsRaw = kv[1]
+			tsSeen = true
 		case "v1":
+			if sigSeen {
+				return 0, "", false
+			}
 			sig = kv[1]
+			sigSeen = true
 		}
 	}
 	if tsRaw == "" || sig == "" {
