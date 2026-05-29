@@ -190,6 +190,51 @@ func TestLink_EmptyTextPanics(t *testing.T) {
 	})
 }
 
+// TestLinkButtonRejectsControlByteScheme pins that a javascript:/
+// vbscript: scheme split by an INTERIOR ASCII control byte (tab,
+// newline, CR, NUL) is still refused. Browsers strip those bytes from
+// the URL before resolving the scheme, so "java\tscript:" executes as
+// javascript: — the deny-list must normalize the same way and panic.
+func TestLinkButtonRejectsControlByteScheme(t *testing.T) {
+	for _, payload := range []string{
+		"javascript:alert(1)", // leading-safe baseline
+		"java\tscript:alert(1)",
+		"java\nscript:alert(1)",
+		"jav\x00ascript:alert(1)",
+		"vb\rscript:MsgBox(1)",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			mustPanic(t, "control-byte scheme must be refused", func() {
+				ui.LinkButton(ui.LinkButtonConfig{Label: "x", Href: payload})
+			})
+		})
+	}
+}
+
+// TestMenuNeutralisesControlByteScheme pins the same property for
+// ui.Menu items: an interior-control-byte javascript: href is reduced
+// to "#" rather than rendered verbatim.
+func TestMenuNeutralisesControlByteScheme(t *testing.T) {
+	for _, payload := range []string{
+		"java\tscript:alert(1)",
+		"java\nscript:alert(1)",
+		"vb\rscript:MsgBox(1)",
+		"data\t:text/html,<x>",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			h := ui.Menu(ui.MenuConfig{
+				Label: "Open",
+				Items: []ui.MenuItem{{Label: "go", Href: payload}},
+			})
+			out := strings.ToLower(string(h))
+			if strings.Contains(out, "javascript:") || strings.Contains(out, "vbscript:") || strings.Contains(out, "data:") || strings.Contains(out, "data\t") {
+				t.Fatalf("control-byte scheme reached menu href: %s", h)
+			}
+			mustContain(t, h, `href="#"`)
+		})
+	}
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Form component security (tests 11–20)
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -101,12 +101,12 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	sb.WriteString(`" xmlns="http://www.w3.org/2000/svg"`)
 	if cfg.ID != "" {
 		sb.WriteString(` id="`)
-		sb.WriteString(cfg.ID)
+		sb.WriteString(escapeXML(cfg.ID))
 		sb.WriteString(`"`)
 	}
 	if cfg.LabelledBy != "" {
 		sb.WriteString(` role="img" aria-labelledby="`)
-		sb.WriteString(cfg.LabelledBy)
+		sb.WriteString(escapeXML(cfg.LabelledBy))
 		sb.WriteString(`"`)
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
@@ -210,7 +210,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 			color == "success" || color == "warning" || color == "danger"
 		if !isPalette {
 			sb.WriteString(` fill="`)
-			sb.WriteString(color)
+			sb.WriteString(escapeXML(color))
 			sb.WriteString(`"`)
 		}
 		if s.Label != "" {

@@ -102,9 +102,15 @@ func (c *Container) Resolve(target any) error {
 
 // Inject fills struct fields tagged with `inject:""` using the container.
 // target must be a pointer to a struct.
+//
+// Lazy first-time resolution of a func-provider writes the shared
+// singletons/resolved maps, so the whole method takes the full write
+// lock (c.mu.Lock), mirroring Resolve. Using an RLock here would let
+// two concurrent cold-start injections of the same type write the same
+// map simultaneously — an unrecoverable "concurrent map writes" crash.
 func (c *Container) Inject(target any) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Ptr || tv.IsNil() {

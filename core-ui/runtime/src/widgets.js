@@ -324,9 +324,18 @@
       }
       const headers = { 'X-FUI-Widget': cfg.name };
       if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
+      // CSRF: forward the page's <meta name="csrf-token"> via the
+      // X-CSRF-Token header. JSON/multipart RPC bodies can't carry the
+      // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
+      // header is the only working channel. Mirrors the core dispatchRPC.
+      const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      if (csrfMeta) {
+        const tok = csrfMeta.getAttribute('content');
+        if (tok) headers['X-CSRF-Token'] = tok;
+      }
       if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
       try {
-        const r = await fetch(path, { method, headers, body: body || undefined });
+        const r = await fetch(path, { method, headers, body: body || undefined, credentials: 'same-origin' });
         if (!r.ok) {
           const txt = await r.text();
           if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });

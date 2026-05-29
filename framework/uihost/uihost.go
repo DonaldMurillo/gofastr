@@ -880,7 +880,7 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 			canonical = c.ScreenCanonical()
 		}
 	}
-	if canonical != "" {
+	if canonical != "" && isSafeHeadURL(canonical) {
 		parts = append(parts, fmt.Sprintf(
 			`<link rel="canonical" href="%s">`,
 			stdhtml.EscapeString(canonical),
@@ -894,7 +894,7 @@ func (ds *UIHost) screenHeadHTML(pagePath string) string {
 		}
 	}
 	for _, link := range hreflangs {
-		if link.Lang == "" || link.URL == "" {
+		if link.Lang == "" || link.URL == "" || !isSafeHeadURL(link.URL) {
 			continue
 		}
 		parts = append(parts, fmt.Sprintf(
@@ -943,11 +943,11 @@ func ogTags(og OG) []string {
 		out = append(out, fmt.Sprintf(`<meta property="og:description" content="%s">`,
 			stdhtml.EscapeString(og.Description)))
 	}
-	if og.Image != "" {
+	if og.Image != "" && isSafeHeadURL(og.Image) {
 		out = append(out, fmt.Sprintf(`<meta property="og:image" content="%s">`,
 			stdhtml.EscapeString(og.Image)))
 	}
-	if og.URL != "" {
+	if og.URL != "" && isSafeHeadURL(og.URL) {
 		out = append(out, fmt.Sprintf(`<meta property="og:url" content="%s">`,
 			stdhtml.EscapeString(og.URL)))
 	}
@@ -973,7 +973,7 @@ func twitterTags(tc TwitterCard) []string {
 		out = append(out, fmt.Sprintf(`<meta name="twitter:description" content="%s">`,
 			stdhtml.EscapeString(tc.Description)))
 	}
-	if tc.Image != "" {
+	if tc.Image != "" && isSafeHeadURL(tc.Image) {
 		out = append(out, fmt.Sprintf(`<meta name="twitter:image" content="%s">`,
 			stdhtml.EscapeString(tc.Image)))
 	}
@@ -1960,10 +1960,15 @@ var scriptTagRe = regexp.MustCompile(`(?is)<scrip` + `t\b[^>]*?(/>|>.*?</scrip` 
 // dangerousHeadTagsRe matches content tag families that have no place
 // in a server-controlled <head>: iframes, inline styles, scriptable
 // media (svg/math/audio/video), forms, the marquee/portal grab-bag,
-// and template/noscript wrappers. Matched in opening-and-closing or
-// self-closing form so a payload can't slip through partial matching.
+// and template/noscript wrappers. The opening tag alone is enough to
+// match — an UNCLOSED opener like `<svg onload=alert(1)>` (no `/>`, no
+// closing tag) is created and its handler fired by the browser's lenient
+// parser, so requiring a closing tag would let it slip through. The
+// optional closing-tag group greedily consumes any inner content +
+// matching close so the whole element (not just its opener) is removed
+// when it IS closed.
 var dangerousHeadTagsRe = regexp.MustCompile(
-	`(?is)<(iframe|object|style|svg|math|audio|video|form|button|picture|marquee|portal|template|noscript|foreignObject|details|summary)\b[^>]*?(/>|>.*?</\s*\w+\s*>)`,
+	`(?is)<(iframe|object|style|svg|math|audio|video|form|button|picture|marquee|portal|template|noscript|foreignObject|details|summary)\b[^>]*?(/>|>(.*?</\s*\w+\s*>)?)`,
 )
 
 // voidHeadTagsRe matches void/empty dangerous tags in the head: base

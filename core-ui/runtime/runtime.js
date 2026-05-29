@@ -127,6 +127,16 @@
     const headers = {};
     if (widgetEl) headers['X-FUI-Widget'] = widgetEl.getAttribute('data-fui-widget') || '';
     if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
+    // CSRF: forward the page's <meta name="csrf-token"> via the
+    // X-CSRF-Token header. A JSON/multipart RPC body can't carry the
+    // urlencoded `_csrf` field the auth.CSRF middleware parses, so the
+    // header is the only channel that works for these requests. Mirrors
+    // toggleaction.js / optimisticaction.js — see core-ui/ARCHITECTURE.md.
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    if (csrfMeta) {
+      const tok = csrfMeta.getAttribute('content');
+      if (tok) headers['X-CSRF-Token'] = tok;
+    }
     // Optional pre-flight confirm — useful for destructive RPCs
     // (delete, revoke, drop). The user gets a native browser confirm
     // dialog with the supplied message; cancel aborts the dispatch.
@@ -143,7 +153,7 @@
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
     try {
-      const r = await fetch(resolvedPath, { method, headers, body: body || undefined, signal: ctl.signal });
+      const r = await fetch(resolvedPath, { method, headers, body: body || undefined, signal: ctl.signal, credentials: 'same-origin' });
       if (!r.ok) {
         const txt = await r.text();
         if (responseSignal) window.__gofastr.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
@@ -548,9 +558,13 @@
       const a = String(attr).toLowerCase();
       if (a !== 'href' && a !== 'src' && a !== 'action' &&
           a !== 'xlink:href' && a !== 'formaction') return false;
-      // Strip leading whitespace + control chars the browser ignores
-      // when resolving schemes — "  javascript:" is still dangerous.
-      const trimmed = String(value || '').replace(/^[\s -]+/, '').toLowerCase();
+      // Strip ALL ASCII whitespace + C0 control bytes (0x00-0x1f)
+      // anywhere in the value before resolving the scheme. Browsers
+      // remove these during URL parsing (WHATWG), so both leading
+      // ("  javascript:") AND interior ("java<TAB>script:",
+      // "<NUL>javascript:") control chars must go, or a startsWith()
+      // check is defeated by an embedded tab/newline/CR or leading C0.
+      const trimmed = String(value || '').replace(/[\s -]+/g, '').toLowerCase();
       if (trimmed.startsWith('javascript:')) return true;
       if (trimmed.startsWith('vbscript:')) return true;
       if (trimmed.startsWith('data:')) {

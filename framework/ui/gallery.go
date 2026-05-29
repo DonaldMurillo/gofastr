@@ -176,6 +176,14 @@ func Gallery(cfg GalleryConfig) render.HTML {
 		if thumb == "" {
 			thumb = it.Src
 		}
+		// Drop unsafe schemes on the thumbnail src (see safety.go). An
+		// unsafe value falls back to the framework's 1×1 placeholder so
+		// a javascript:/data: URL never reaches <img src>.
+		if safe := safeURL(thumb); safe != "" {
+			thumb = safe
+		} else {
+			thumb = "/__gofastr/blank.png"
+		}
 		w := it.Width
 		if w == 0 {
 			w = 200
@@ -206,18 +214,24 @@ func Gallery(cfg GalleryConfig) render.HTML {
 			if it.Caption != "" {
 				dl += "&caption=" + url.PathEscape(it.Caption)
 			}
-			linkAttrs["href"] = it.Src
-			linkAttrs["target"] = "_blank"
-			linkAttrs["rel"] = "noopener"
+			if h := safeURL(it.Src); h != "" {
+				linkAttrs["href"] = h
+				linkAttrs["target"] = "_blank"
+				linkAttrs["rel"] = "noopener"
+			}
 			linkAttrs["data-fui-open"] = cfg.Lightbox
 			linkAttrs["data-fui-deeplink"] = dl
 			linkAttrs["data-fui-lightbox-group"] = groupID
 		case cfg.HrefFn != nil:
-			linkAttrs["href"] = cfg.HrefFn(i, it)
+			if h := safeURL(cfg.HrefFn(i, it)); h != "" {
+				linkAttrs["href"] = h
+			}
 		default:
-			linkAttrs["href"] = it.Src
-			linkAttrs["target"] = "_blank"
-			linkAttrs["rel"] = "noopener"
+			if h := safeURL(it.Src); h != "" {
+				linkAttrs["href"] = h
+				linkAttrs["target"] = "_blank"
+				linkAttrs["rel"] = "noopener"
+			}
 		}
 
 		figureChildren := []render.HTML{

@@ -576,13 +576,22 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 // by LinkButton (render-time guard) and shadowed by the runtime's
 // _isUnsafeSignalUrl for programmatic SPA navigation.
 func isUnsafeScheme(href string) bool {
-	// Strip leading whitespace + control chars; the browser ignores
-	// them when resolving schemes ("  javascript:" is still dangerous).
-	s := href
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\n' ||
-		s[0] == '\r' || s[0] == '\f' || s[0] == '\v' || s[0] < 0x20) {
-		s = s[1:]
+	// Browsers strip ASCII whitespace and control bytes from a URL —
+	// including bytes INTERIOR to the scheme token ("java\tscript:" is
+	// resolved as "javascript:") — before scheme resolution. A leading-
+	// only strip therefore misses "java\tscript:". Remove every ASCII
+	// control byte and space anywhere in the string before matching, so
+	// the deny-list sees the same scheme the browser will.
+	var b strings.Builder
+	b.Grow(len(href))
+	for i := 0; i < len(href); i++ {
+		c := href[i]
+		if c == ' ' || c <= 0x1f || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
 	}
+	s := b.String()
 	// Case-insensitive prefix check.
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "javascript:") {

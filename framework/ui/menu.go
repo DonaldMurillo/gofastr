@@ -224,8 +224,21 @@ func escAttr(s string) string {
 // after trimming leading whitespace (browsers tolerate `\tjavascript:`).
 // Returns the original href unchanged if no dangerous scheme is found.
 func sanitizeHref(href string) string {
-	trimmed := strings.TrimLeft(href, " \t\r\n")
-	lower := strings.ToLower(trimmed)
+	// Browsers strip ASCII whitespace/control bytes from a URL before
+	// resolving its scheme, INCLUDING bytes interior to the scheme token
+	// ("java\tscript:" resolves to "javascript:"). A leading-only trim
+	// misses that, so collapse every ASCII space + control byte before
+	// matching the deny-list against the canonical scheme.
+	var b strings.Builder
+	b.Grow(len(href))
+	for i := 0; i < len(href); i++ {
+		c := href[i]
+		if c == ' ' || c <= 0x1f || c == 0x7f {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	lower := strings.ToLower(b.String())
 	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
 		if strings.HasPrefix(lower, bad) {
 			return "#"

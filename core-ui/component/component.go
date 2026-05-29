@@ -137,10 +137,14 @@ func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err erro
 			if eb, ok := c.(ErrorBoundary); ok {
 				html = eb.RenderError(err)
 			} else {
-				html = render.HTML(fmt.Sprintf(
-					`<div class="fui-render-error" role="alert"><strong>Error:</strong> %s</div>`,
-					err.Error(),
-				))
+				// Build the fallback through the auto-escaper so an
+				// attacker-influenced panic message can't inject markup.
+				html = render.Tag(
+					"div",
+					map[string]string{"class": "fui-render-error", "role": "alert"},
+					render.Tag("strong", nil, render.Text("Error:")),
+					render.Text(" "+err.Error()),
+				)
 			}
 		}
 	}()

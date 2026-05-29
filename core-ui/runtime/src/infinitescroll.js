@@ -50,12 +50,21 @@
         try {
           const body = new URLSearchParams();
           if (cursor) body.set('cursor', cursor);
+          const headers = {
+            'Accept': 'text/html',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          };
+          // CSRF: forward the page's <meta name="csrf-token"> via the
+          // X-CSRF-Token header so the auth.CSRF middleware accepts this
+          // state-changing POST. Mirrors the core dispatchRPC.
+          const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+          if (csrfMeta) {
+            const tok = csrfMeta.getAttribute('content');
+            if (tok) headers['X-CSRF-Token'] = tok;
+          }
           const r = await fetch(path, {
             method: 'POST',
-            headers: {
-              'Accept': 'text/html',
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
+            headers,
             body: body.toString(),
             credentials: 'same-origin',
           });

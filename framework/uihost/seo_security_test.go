@@ -59,6 +59,13 @@ var dangerousHeadTags = []struct {
 	{"form", `<form action="https://evil.example/submit"></form>`, `<form`},
 	{"img", `<img src="https://evil.example/p.png">`, `<img`},
 	{"marquee", `<marquee>x</marquee>`, `<marquee`},
+	// Unclosed openers: the browser's lenient parser still creates the
+	// element and fires the handler. A regex that requires a closing tag
+	// (or self-close) leaves these untouched.
+	{"svg-unclosed", `<svg onload=alert(document.cookie)>`, `<svg`},
+	{"iframe-unclosed", `<iframe src=x onload=alert(1)>`, `<iframe`},
+	{"details-unclosed", `<details ontoggle=alert(1)>`, `<details`},
+	{"video-unclosed", `<video onloadstart=alert(1) src=x>`, `<video`},
 }
 
 func TestWithHeadHTML_StripsDangerousTags(t *testing.T) {
@@ -113,6 +120,55 @@ func TestSEO_TypedURLsRejectUnsafeSchemes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// seoBundleComp is a screen that returns a per-page SEO bundle from
+// dynamic (e.g. CMS / per-record) data — the path that bypasses the
+// sitewide WithCanonicalURL/WithOpenGraph allow-list.
+type seoBundleComp struct{ seo SEO }
+
+func (c *seoBundleComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("SEO")) }
+func (c *seoBundleComp) ScreenSEO() SEO      { return c.seo }
+
+func renderBundleSEOPage(t *testing.T, s SEO) string {
+	t.Helper()
+	application := app.NewApp("BundleSEOSec")
+	application.SetDefaultLayout(app.NewLayout("main"))
+	application.RegisterScreen(app.NewScreen("/", &seoBundleComp{seo: s}).WithTitle("Home"), nil)
+	host := New(application)
+	rec := httptest.NewRecorder()
+	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	return rec.Body.String()
+}
+
+// Per-page typed SEO URL fields (the ScreenSEO bundle path) must enforce
+// the same scheme allow-list as the sitewide helpers — they flow into
+// the same crawler-followed meta/link tags.
+func TestSEO_BundleURLsRejectUnsafeSchemes(t *testing.T) {
+	checks := map[string]func(string) SEO{
+		"canonical": func(u string) SEO { return SEO{Canonical: u} },
+		"og-image":  func(u string) SEO { return SEO{OG: &OG{Image: u}} },
+		"og-url":    func(u string) SEO { return SEO{OG: &OG{URL: u}} },
+		"tw-image":  func(u string) SEO { return SEO{Twitter: &TwitterCard{Image: u}} },
+	}
+	for label, mk := range checks {
+		for _, u := range dangerousURLs {
+			t.Run(label+"/"+u, func(t *testing.T) {
+				page := renderBundleSEOPage(t, mk(u))
+				if strings.Contains(strings.ToLower(page), strings.ToLower(u)) {
+					t.Fatalf("%s bundle SEO URL %q reflected into page", label, u)
+				}
+			})
+		}
+	}
+}
+
+// Sanity: a safe URL still flows through the bundle path.
+func TestSEO_BundleURLsAcceptHTTPS(t *testing.T) {
+	page := renderBundleSEOPage(t, SEO{Canonical: "https://example.com/about"})
+	if !strings.Contains(page, `href="https://example.com/about"`) {
+		t.Fatalf("safe bundle canonical URL dropped: page=%s", page)
 	}
 }
 
