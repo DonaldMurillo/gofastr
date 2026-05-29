@@ -95,6 +95,50 @@ func TestCacheMiddleware_HonorsVaryAuthorization(t *testing.T) {
 	}
 }
 
+func TestCacheMiddleware_DoesNotCacheVaryStar(t *testing.T) {
+	store := NewMemoryCache()
+	var hits int32
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&hits, 1)
+		// Vary: * means the response varies on unstated factors and must
+		// never be reused (RFC 9111 §4.1). Users are distinguished by a
+		// non-credential header here so hasCreds stays false.
+		w.Header().Set("Vary", "*")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fmt.Sprintf("personalized-%d-for-%s", n, r.Header.Get("X-User"))))
+	}))
+
+	// Distinct attack shapes: bare "*", "*" mixed with named headers,
+	// and lowercase/spaced "*". Each is the same property at the surface.
+	for _, varyVal := range []string{"*", "Accept-Language, *", " * "} {
+		atomic.StoreInt32(&hits, 0)
+		store = NewMemoryCache()
+		handler = CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n := atomic.AddInt32(&hits, 1)
+			w.Header().Set("Vary", varyVal)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fmt.Sprintf("personalized-%d-for-%s", n, r.Header.Get("X-User"))))
+		}))
+
+		req1 := httptest.NewRequest(http.MethodGet, "/me", nil)
+		req1.Header.Set("X-User", "alice")
+		rec1 := httptest.NewRecorder()
+		handler.ServeHTTP(rec1, req1)
+
+		req2 := httptest.NewRequest(http.MethodGet, "/me", nil)
+		req2.Header.Set("X-User", "bob")
+		rec2 := httptest.NewRecorder()
+		handler.ServeHTTP(rec2, req2)
+
+		if rec2.Header().Get("X-Cache") == "HIT" {
+			t.Fatalf("SECURITY: [cache] Vary:%q response was cached and replayed cross-user (X-Cache=HIT)", varyVal)
+		}
+		if rec2.Body.String() == rec1.Body.String() {
+			t.Fatalf("SECURITY: [cache] Vary:%q response replayed alice's body to bob: %q", varyVal, rec2.Body.String())
+		}
+	}
+}
+
 func TestCacheMiddleware_DoesNotCacheNoCacheResponses(t *testing.T) {
 	store := NewMemoryCache()
 	var hits int32

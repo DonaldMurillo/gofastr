@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -66,7 +67,7 @@ func (q *MemoryQueue) processJob(job Job) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := handler(ctx, job)
+	err := safeHandle(ctx, handler, job)
 	if err != nil {
 		job.Attempts++
 		if job.Attempts < job.MaxAttempts {
@@ -74,6 +75,18 @@ func (q *MemoryQueue) processJob(job Job) {
 			_ = q.Enqueue(ctx, job)
 		}
 	}
+}
+
+// safeHandle invokes a handler, converting a panic into an error so a
+// poison-message job cannot unwind the worker goroutine and crash the whole
+// process. The panicked job follows the normal retry path.
+func safeHandle(ctx context.Context, handler Handler, job Job) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
+		}
+	}()
+	return handler(ctx, job)
 }
 
 // Enqueue adds a job to the buffered channel. If the job has no ID, one is generated.

@@ -440,6 +440,17 @@ func (s *EntitySessionStore) Delete(ctx context.Context, token string) error {
 	return err
 }
 
+// DeleteByUser removes every session belonging to userID and returns the
+// count purged. Implements SessionUserPurger.
+func (s *EntitySessionStore) DeleteByUser(ctx context.Context, userID string) (int, error) {
+	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE user_id = $1"), userID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
 // Cleanup removes all expired sessions and returns the count purged.
 func (s *EntitySessionStore) Cleanup(ctx context.Context) (int, error) {
 	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE expires_at < $1"), time.Now().UTC())

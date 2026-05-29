@@ -210,6 +210,21 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Revoke every pre-existing session for this user. A credential that was
+	// compromised before the reset must not retain access through an already-
+	// issued cookie — the whole point of a reset is to lock the attacker out.
+	// Stores that don't implement SessionUserPurger leave the window open; log
+	// that so the gap is visible rather than silent.
+	if purger, ok := p.mgr.SessionStore().(SessionUserPurger); ok {
+		if _, err := purger.DeleteByUser(r.Context(), userID); err != nil {
+			slog.Warn("password-reset session revocation failed",
+				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		}
+	} else {
+		slog.Warn("password-reset could not revoke existing sessions: session store does not implement SessionUserPurger",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID))
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
 }

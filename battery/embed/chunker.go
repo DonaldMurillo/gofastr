@@ -46,15 +46,23 @@ func (f *FixedWindow) Chunk(doc Document) ([]Chunk, error) {
 		step = 1
 	}
 	var chunks []Chunk
+	// Track the byte offset of the current window start incrementally so
+	// the whole chunking pass is O(N): recomputing len(string(runes[:start]))
+	// each iteration re-materialises the growing prefix and is O(N^2).
+	// prevStart/byteStart advance by the byte length of the runes the step
+	// consumed since the last window.
+	prevStart := 0
+	byteStart := 0
 	for start := 0; start < len(runes); start += step {
+		if start > prevStart {
+			byteStart += len(string(runes[prevStart:start]))
+			prevStart = start
+		}
 		end := start + f.Size
 		if end > len(runes) {
 			end = len(runes)
 		}
 		chunkText := string(runes[start:end])
-		// Convert rune offsets to byte offsets so callers can map back
-		// into the original source file.
-		byteStart := len(string(runes[:start]))
 		byteEnd := byteStart + len(chunkText)
 		chunks = append(chunks, newChunk(doc, byteStart, byteEnd, chunkText))
 		if end == len(runes) {

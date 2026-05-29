@@ -2,8 +2,11 @@ package email
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
+	"mime"
 	"net/smtp"
 	"strings"
 )
@@ -14,7 +17,19 @@ type SMTPConfig struct {
 	Port     int
 	Username string
 	Password string
-	UseTLS   bool
+	// UseTLS dials with implicit TLS (e.g. port 465). When false, the
+	// sender opportunistically attempts STARTTLS on the cleartext
+	// connection.
+	UseTLS bool
+	// AllowCleartext, when true, permits the message to be transmitted
+	// without any transport encryption (no implicit TLS and STARTTLS
+	// either unavailable or not negotiated). It defaults to false so the
+	// sender fails CLOSED: if neither implicit TLS nor STARTTLS could be
+	// established, Send returns an error instead of leaking the message
+	// and recipient list in cleartext (defends against STARTTLS
+	// stripping by an on-path attacker). Set true only for trusted
+	// local relays where plaintext is acceptable.
+	AllowCleartext bool
 }
 
 // SMTPSender sends emails via SMTP.
@@ -87,13 +102,18 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	}
 	defer client.Close()
 
-	// Attempt STARTTLS if not already using implicit TLS.
+	// Attempt STARTTLS if not already using implicit TLS. Fail CLOSED:
+	// if the server does not advertise STARTTLS (e.g. an on-path
+	// attacker stripped the capability) or negotiation fails, refuse to
+	// continue over cleartext unless AllowCleartext was explicitly set.
 	if !s.config.UseTLS {
 		if ok, _ := client.Extension("STARTTLS"); ok {
 			tlsConfig := &tls.Config{ServerName: s.config.Host}
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return fmt.Errorf("%w: starttls failed: %v", ErrSendFailed, err)
 			}
+		} else if !s.config.AllowCleartext {
+			return fmt.Errorf("%w: server does not advertise STARTTLS and AllowCleartext is false — refusing to send in cleartext (set SMTPConfig.AllowCleartext to override)", ErrSendFailed)
 		}
 	}
 
@@ -203,7 +223,19 @@ func buildMessage(email Email) ([]byte, error) {
 	hasTextAndHTML := email.TextBody != "" && email.HTMLBody != ""
 
 	if hasAttachments || hasTextAndHTML {
-		boundary := "gofastr-boundary-12345"
+		// Use a cryptographically random boundary per message so body
+		// content (which may be rendered from attacker-influenced
+		// templates) cannot predict and forge the delimiter to inject a
+		// new MIME part or terminate the container early.
+		boundary, err := randomBoundary()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSendFailed, err)
+		}
+		// Defense in depth: even with an unguessable boundary, refuse to
+		// serialise a body that contains a line forming the delimiter.
+		if bodyContainsBoundary(email.TextBody, boundary) || bodyContainsBoundary(email.HTMLBody, boundary) {
+			return nil, fmt.Errorf("%w: message body contains the MIME boundary delimiter (refusing to send to prevent MIME part injection)", ErrSendFailed)
+		}
 		buf.WriteString("MIME-Version: 1.0\r\n")
 		buf.WriteString("Content-Type: multipart/mixed; boundary=" + boundary + "\r\n")
 		buf.WriteString("\r\n")
@@ -230,10 +262,25 @@ func buildMessage(email Email) ([]byte, error) {
 			if ct == "" {
 				ct = "application/octet-stream"
 			}
+			// Encode the Content-Type/Disposition parameters with
+			// mime.FormatMediaType, which quotes/escapes embedded
+			// double-quotes and special characters (RFC 2045/2231). Raw
+			// concatenation would let a filename like `x"; name="evil`
+			// break out of the quoted parameter and append attacker
+			// parameters.
+			// Validate the content-type as a media type so a forged value
+			// like `text/csv"; name="evil` cannot reach the header. The
+			// base type (before any params) is re-emitted, and the
+			// filename is emitted as a properly escaped quoted-string.
+			baseCT, err := safeMediaType(ct)
+			if err != nil {
+				return nil, fmt.Errorf("%w: invalid attachment content-type: %v", ErrSendFailed, err)
+			}
+			name := quoteParamValue(att.Filename)
 			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: " + ct + "; name=\"" + att.Filename + "\"\r\n")
+			buf.WriteString("Content-Type: " + baseCT + "; name=" + name + "\r\n")
 			buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-			buf.WriteString("Content-Disposition: attachment; filename=\"" + att.Filename + "\"\r\n")
+			buf.WriteString("Content-Disposition: attachment; filename=" + name + "\r\n")
 			buf.WriteString("\r\n")
 			buf.WriteString(encodeBase64(att.Content))
 			buf.WriteString("\r\n")
@@ -262,6 +309,66 @@ func buildMessage(email Email) ([]byte, error) {
 // encodeBase64 wraps base64-encoded content at 76 characters per line.
 func encodeBase64(data []byte) string {
 	return b64Encode(data)
+}
+
+// randomBoundary returns a cryptographically random MIME boundary
+// token. The token uses only RFC 2046 boundary characters (hex), so it
+// never needs quoting and cannot be predicted by an attacker crafting
+// body content.
+func randomBoundary() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("boundary generation failed: %w", err)
+	}
+	return "gofastr-boundary-" + hex.EncodeToString(b[:]), nil
+}
+
+// bodyContainsBoundary reports whether any line of body equals the
+// boundary delimiter (`--boundary`) or the closing delimiter
+// (`--boundary--`), which would let the body inject or terminate a MIME
+// part. Lines are split on both CRLF and bare LF since either could be
+// present in template-rendered content.
+func bodyContainsBoundary(body, boundary string) bool {
+	delim := "--" + boundary
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == delim || line == delim+"--" {
+			return true
+		}
+	}
+	return false
+}
+
+// safeMediaType parses ct and returns only its canonical base media
+// type (e.g. "text/csv"), discarding any caller-supplied parameters. A
+// forged value such as `text/csv"; name="evil` fails to parse as a
+// bare media type, so we fail closed rather than emit it into a header.
+func safeMediaType(ct string) (string, error) {
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return "", fmt.Errorf("cannot parse media type %q: %w", ct, err)
+	}
+	return mt, nil
+}
+
+// quoteParamValue renders s as an RFC 2045 quoted-string, backslash-
+// escaping embedded double-quotes and backslashes so the value cannot
+// break out of the surrounding `"..."` and append extra MIME
+// parameters. CR/LF/NUL are already rejected upstream by
+// assertNoHeaderInjection; they are stripped here defensively.
+func quoteParamValue(s string) string {
+	s = strings.NewReplacer("\r", "", "\n", "", "\x00", "").Replace(s)
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' || c == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // assertNoHeaderInjection returns an error if value contains CR, LF, or

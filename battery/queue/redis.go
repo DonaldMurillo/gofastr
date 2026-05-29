@@ -17,6 +17,9 @@ type RedisClient interface {
 	RPop(ctx context.Context, key string) (string, error)
 	HSet(ctx context.Context, key string, values ...interface{}) error
 	HGet(ctx context.Context, key, field string) (string, error)
+	// HGetAll returns every field→value pair in the hash. Used by Reclaim to
+	// scan the processing set for expired in-flight jobs.
+	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	HDel(ctx context.Context, key string, fields ...string) error
 	Del(ctx context.Context, keys ...string) error
 }
@@ -77,19 +80,37 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		typeSet[t] = struct{}{}
 	}
 
+	requeueSkipped := func(skipped []string) {
+		for _, s := range skipped {
+			_ = q.client.LPush(ctx, q.queueName, s)
+		}
+	}
+
 	var skipped []string
 	for {
+		// Bound the type-miss drain: without a server-side filter a rare-type
+		// request could otherwise RPop the entire list into process memory
+		// (OOM). When the bound is hit, re-enqueue what we drained and report
+		// no job — the caller retries.
+		if len(skipped) >= maxSkipDrain {
+			requeueSkipped(skipped)
+			return Job{}, ErrNoJob
+		}
+
 		data, err := q.client.RPop(ctx, q.queueName)
 		if err != nil {
 			// Re-enqueue skipped jobs so we don't lose them.
-			for _, s := range skipped {
-				_ = q.client.LPush(ctx, q.queueName, s)
-			}
+			requeueSkipped(skipped)
 			return Job{}, ErrNoJob
 		}
 
 		var job Job
 		if err := json.Unmarshal([]byte(data), &job); err != nil {
+			// A malformed entry must not take down the valid jobs we already
+			// RPop'd: re-enqueue them, then quarantine the bad entry to the
+			// dead-letter queue instead of silently dropping it.
+			requeueSkipped(skipped)
+			_ = q.client.LPush(ctx, q.deadLetterQueue, data)
 			return Job{}, fmt.Errorf("unmarshal job: %w", err)
 		}
 
@@ -104,18 +125,21 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// Track in processing queue for visibility timeout.
 		jobData, _ := json.Marshal(map[string]interface{}{
 			"job":       data,
-			"expiresAt": time.Now().Add(q.visibilityTimeout).Unix(),
+			"expiresAt": time.Now().Add(q.visibilityTimeout).UnixNano(),
 		})
 		_ = q.client.HSet(ctx, q.processingQueue, job.ID, jobData)
 
 		// Re-enqueue skipped jobs.
-		for _, s := range skipped {
-			_ = q.client.LPush(ctx, q.queueName, s)
-		}
+		requeueSkipped(skipped)
 
 		return job, nil
 	}
 }
+
+// maxSkipDrain bounds how many type-miss jobs Dequeue will pull off the list
+// while looking for a matching type, so a rare-type filter cannot pull the
+// whole queue into process memory.
+const maxSkipDrain = 1024
 
 // Ack removes a single job from the processing queue after successful handling.
 func (q *RedisQueue) Ack(ctx context.Context, jobID string) error {
@@ -160,6 +184,43 @@ func (q *RedisQueue) Nack(ctx context.Context, jobID string) error {
 	// Re-enqueue for retry.
 	jobData, _ := json.Marshal(job)
 	return q.client.LPush(ctx, q.queueName, jobData)
+}
+
+// Reclaim scans the processing set for in-flight jobs whose visibility
+// timeout has passed (the worker that claimed them crashed before Ack/Nack),
+// re-enqueues them onto the main list, and removes the stale processing
+// entry. Returns the number of jobs re-delivered. Call it periodically (e.g.
+// from a background ticker) to make in-flight Redis work crash-safe.
+func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
+	entries, err := q.client.HGetAll(ctx, q.processingQueue)
+	if err != nil {
+		return 0, fmt.Errorf("reclaim: scan processing: %w", err)
+	}
+	now := time.Now().UnixNano()
+	reclaimed := 0
+	for jobID, raw := range entries {
+		var entry struct {
+			Job       string `json:"job"`
+			ExpiresAt int64  `json:"expiresAt"`
+		}
+		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+			// Corrupt processing entry: drop it so it can't wedge the sweep.
+			_ = q.client.HDel(ctx, q.processingQueue, jobID)
+			continue
+		}
+		if entry.ExpiresAt > now {
+			continue // still within its lease
+		}
+		// Re-enqueue the original job, then clear the processing entry. Order
+		// matters: enqueue first so a crash between the two ops re-delivers
+		// (at-least-once) rather than loses the job.
+		if err := q.client.LPush(ctx, q.queueName, entry.Job); err != nil {
+			return reclaimed, fmt.Errorf("reclaim: re-enqueue %s: %w", jobID, err)
+		}
+		_ = q.client.HDel(ctx, q.processingQueue, jobID)
+		reclaimed++
+	}
+	return reclaimed, nil
 }
 
 // Close is a no-op for RedisQueue — the caller manages the Redis connection.

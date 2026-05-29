@@ -237,11 +237,24 @@ func (i *index) Snapshot() error {
 	return nil
 }
 
+// maxQueryK caps the attacker-controllable result count K. K only
+// names how many results the caller wants back; values larger than this
+// are nonsensical and would otherwise drive an unbounded candidate
+// allocation (candidateWidth multiplies K by 4). Clamping fails closed
+// without surfacing an error, since a too-large K is harmless intent.
+const maxQueryK = 1000
+
 // candidateWidth decides how many candidates to pull from each stage
 // before MMR/rerank narrows down to k. Pulling 4x widens recall
 // enough to give MMR room without paying the cost of scanning more
 // vectors than we have to.
 func candidateWidth(k int) int {
+	// Defense in depth: clamp k here too so no caller path can produce an
+	// unbounded width even if a future caller forgets to clamp K. Query
+	// already clamps K to maxQueryK before this runs.
+	if k > maxQueryK {
+		k = maxQueryK
+	}
 	w := k * 4
 	if w < 50 {
 		w = 50
@@ -256,6 +269,12 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 	k := q.K
 	if k <= 0 {
 		k = 10
+	}
+	if k > maxQueryK {
+		// Clamp attacker-controllable K so candidateWidth cannot drive an
+		// unbounded candidate allocation. Fail closed silently: a too-large
+		// K is harmless intent, not an error to surface.
+		k = maxQueryK
 	}
 	if q.Rerank && i.reranker == nil {
 		return nil, errors.New("embed: Query.Rerank=true but no Reranker configured on Options")

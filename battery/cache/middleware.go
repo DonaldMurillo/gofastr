@@ -36,7 +36,8 @@ type cachedResponse struct {
 //     stored.
 //   - Responses carrying a Vary header are stored under a key that
 //     includes the values of every listed request header so different
-//     variants do not collide.
+//     variants do not collide. A Vary: * response is treated as
+//     uncacheable and is never stored (RFC 9111 §4.1).
 func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +135,23 @@ func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
 	if cc["private"] || cc["no-store"] || cc["no-cache"] {
 		return false
 	}
+	// Vary: * declares the response varies on factors not in the request
+	// and must never be reused (RFC 9111 §4.1). Refuse to store it.
+	if varyHasStar(rec.header.Get("Vary")) {
+		return false
+	}
 	return true
+}
+
+// varyHasStar reports whether a Vary header value contains the "*" token,
+// which per RFC 9111 §4.1 marks the response as uncacheable.
+func varyHasStar(v string) bool {
+	for _, p := range strings.Split(v, ",") {
+		if strings.TrimSpace(p) == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 // parseCacheControl returns a set of directive names from a
@@ -168,7 +185,13 @@ func parseVary(v string) []string {
 	out := make([]string, 0, len(parts))
 	seen := map[string]bool{}
 	for _, p := range parts {
-		p = http.CanonicalHeaderKey(strings.TrimSpace(p))
+		p = strings.TrimSpace(p)
+		// "*" is uncacheable (handled by isStoreable / varyHasStar) and
+		// must not become a stored variant dimension.
+		if p == "*" {
+			continue
+		}
+		p = http.CanonicalHeaderKey(p)
 		if p == "" || seen[p] {
 			continue
 		}

@@ -14,8 +14,10 @@ import (
 // Caps on the size of pieces that flow into a log entry. Without these,
 // a hostile or buggy caller can write multi-MB JSON lines per request:
 // Go's default MaxHeaderBytes allows ~1 MiB request lines, so URL.Path
-// alone can be that large; a panic with a giant value or stack
-// compounds the problem across every sink.
+// or an X-Forwarded-For / X-Real-IP header alone can be that large; a
+// panic with a giant value or stack compounds the problem across every
+// sink. Every request-derived field (path, forwarded_for, remote, panic,
+// stack) is therefore truncated before it reaches a log entry.
 const (
 	maxPanicValueLen = 4 << 10  // 4 KiB
 	maxStackLen      = 64 << 10 // 64 KiB
@@ -58,7 +60,7 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 			// actually sent.
 			method := r.Method
 			path := truncateString(r.URL.Path, maxPathLen)
-			forwardedRaw := r.Header.Get("X-Forwarded-For")
+			forwardedRaw := truncateString(r.Header.Get("X-Forwarded-For"), maxPathLen)
 			rw := &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				logger.LogAttrs(r.Context(), slog.LevelInfo, "http.access",
@@ -158,12 +160,12 @@ func remoteAddr(r *http.Request, trustXFF bool) string {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			// First entry is the client; subsequent entries are proxies.
 			if comma := strings.IndexByte(xff, ','); comma >= 0 {
-				return strings.TrimSpace(xff[:comma])
+				return truncateString(strings.TrimSpace(xff[:comma]), maxPathLen)
 			}
-			return strings.TrimSpace(xff)
+			return truncateString(strings.TrimSpace(xff), maxPathLen)
 		}
 		if real := r.Header.Get("X-Real-IP"); real != "" {
-			return strings.TrimSpace(real)
+			return truncateString(strings.TrimSpace(real), maxPathLen)
 		}
 	}
 	return r.RemoteAddr

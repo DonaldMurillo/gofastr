@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,12 +32,25 @@ type RateLimiterConfig struct {
 	TrustForwardedFor bool
 }
 
+// maxRateLimitKeys caps the number of distinct keys the in-memory limiter
+// tracks at once. The per-account limiter keys on the attacker-chosen
+// (lowercased) email BEFORE the user-store lookup, so an attacker can mint an
+// unbounded number of distinct keys with random non-existent emails (and the
+// per-IP limiter under XFF rotation). Without a cap the map grows until OOM.
+// When the cap is hit, idle states (no active block, no in-window attempts)
+// are reclaimed first; if every tracked key is still active the oldest are
+// dropped — fail-open for that key is acceptable since the alternative is
+// process death, and the cap is far above any legitimate concurrent caller
+// count.
+const maxRateLimitKeys = 100_000
+
 // RateLimiter is an in-memory sliding-window rate limiter keyed by an
 // arbitrary string (typically the client IP).
 type RateLimiter struct {
-	cfg    RateLimiterConfig
-	mu     sync.Mutex
-	states map[string]*rlState
+	cfg       RateLimiterConfig
+	mu        sync.Mutex
+	states    map[string]*rlState
+	lastSweep time.Time
 }
 
 type rlState struct {
@@ -67,6 +81,16 @@ func (rl *RateLimiter) Allow(key string) (allowed bool, retryAfter time.Duration
 	defer rl.mu.Unlock()
 
 	now := time.Now()
+
+	// Amortized sweep of idle states. Runs at most once per Window so the
+	// cost is negligible, and unconditionally when the cap is hit. This keeps
+	// the map bounded under an attacker-key flood (per-account email / rotated
+	// XFF) instead of growing until OOM.
+	if len(rl.states) >= maxRateLimitKeys || now.Sub(rl.lastSweep) >= rl.cfg.Window {
+		rl.evictLocked(now)
+		rl.lastSweep = now
+	}
+
 	state, ok := rl.states[key]
 	if !ok {
 		state = &rlState{}
@@ -101,6 +125,60 @@ func (rl *RateLimiter) Allow(key string) (allowed bool, retryAfter time.Duration
 
 	state.attempts = append(state.attempts, now)
 	return true, 0
+}
+
+// evictLocked reclaims map entries that no longer carry security-relevant
+// state: those with no active block AND no attempts inside the rolling window.
+// Dropping such a state is safe — re-creating it lazily yields the identical
+// "fresh key" behaviour. Callers MUST hold rl.mu.
+//
+// If the map is still at/over the cap after shedding idle entries (i.e. every
+// tracked key is actively blocked or mid-window), the entries whose blocks
+// expire soonest are dropped to keep the map strictly bounded. An active block
+// is preserved as long as the map has room, so eviction is never a routine
+// block-bypass — it only sheds the soonest-to-expire blocks under genuine flood
+// pressure, which is strictly better than OOM.
+func (rl *RateLimiter) evictLocked(now time.Time) {
+	cutoff := now.Add(-rl.cfg.Window)
+	for key, st := range rl.states {
+		blockActive := !st.blockedUntil.IsZero() && now.Before(st.blockedUntil)
+		if blockActive {
+			continue
+		}
+		hasRecent := false
+		for _, t := range st.attempts {
+			if t.After(cutoff) {
+				hasRecent = true
+				break
+			}
+		}
+		if !hasRecent {
+			delete(rl.states, key)
+		}
+	}
+
+	if len(rl.states) < maxRateLimitKeys {
+		return
+	}
+
+	// Still at/over the cap after shedding idle entries. Shed the entries
+	// whose blocks expire soonest (unblocked entries sort first, as their
+	// zero blockedUntil is the earliest) down to a low-water mark, so this
+	// expensive path runs at most once per ~10% of the cap rather than on
+	// every insert under sustained flood.
+	lowWater := maxRateLimitKeys * 9 / 10
+	type expiring struct {
+		key string
+		at  time.Time
+	}
+	pending := make([]expiring, 0, len(rl.states))
+	for key, st := range rl.states {
+		pending = append(pending, expiring{key: key, at: st.blockedUntil})
+	}
+	sort.Slice(pending, func(i, j int) bool { return pending[i].at.Before(pending[j].at) })
+	for i := 0; i < len(pending) && len(rl.states) > lowWater; i++ {
+		delete(rl.states, pending[i].key)
+	}
 }
 
 // Middleware returns an HTTP middleware that rate-limits by client IP.

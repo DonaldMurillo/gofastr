@@ -25,6 +25,7 @@ type DBQueue struct {
 
 	handlers map[string]Handler
 	workers  int
+	lease    time.Duration
 	stop     chan struct{}
 	stopped  chan struct{}
 }
@@ -50,6 +51,13 @@ func WithWorkers(n int) DBQueueOption {
 	return func(q *DBQueue) { q.workers = n }
 }
 
+// WithLeaseTimeout sets how long a claimed-but-unacked job may stay in-flight
+// before it is considered abandoned (the worker crashed/was killed) and
+// becomes eligible for re-dequeue. Defaults to 5 minutes.
+func WithLeaseTimeout(d time.Duration) DBQueueOption {
+	return func(q *DBQueue) { q.lease = d }
+}
+
 // NewDBQueue constructs a DBQueue and ensures its backing table exists.
 // Probes the dialect once via SELECT version(); falls back to SQLite.
 // Panics if the table name contains unsafe characters.
@@ -59,6 +67,7 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 		table:    "queue_jobs",
 		handlers: map[string]Handler{},
 		workers:  1,
+		lease:    5 * time.Minute,
 		stop:     make(chan struct{}),
 		stopped:  make(chan struct{}),
 	}
@@ -103,11 +112,16 @@ func (q *DBQueue) ensureTable() error {
 		max_attempts  INTEGER NOT NULL DEFAULT 3,
 		created_at    %s NOT NULL,
 		scheduled_at  %s NOT NULL,
-		status        TEXT NOT NULL DEFAULT 'pending'
-	)`, q.qt(), tsType, tsType)
+		status        TEXT NOT NULL DEFAULT 'pending',
+		claimed_at    %s
+	)`, q.qt(), tsType, tsType, tsType)
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
 	}
+	// Best-effort migration for pre-existing tables created before the
+	// lease column existed. Ignore the error: re-running ADD COLUMN on a
+	// table that already has it is the only expected failure here.
+	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN claimed_at %s", q.qt(), tsType))
 	// Index supports the dequeue ORDER BY and the WHERE filter together.
 	idxName := q.table + "_dequeue_idx"
 	safeIdx, err := query.SafeIdent(idxName)
@@ -125,6 +139,12 @@ func (q *DBQueue) ensureTable() error {
 // RegisterHandler binds a job type to a handler. Required before Start.
 func (q *DBQueue) RegisterHandler(jobType string, h Handler) {
 	q.handlers[jobType] = h
+}
+
+// SetLeaseTimeout adjusts the in-flight lease duration after construction.
+// See WithLeaseTimeout for semantics.
+func (q *DBQueue) SetLeaseTimeout(d time.Duration) {
+	q.lease = d
 }
 
 // Enqueue inserts a job. Fills in ID/CreatedAt/MaxAttempts/ScheduledAt
@@ -174,11 +194,14 @@ func (q *DBQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 }
 
 func (q *DBQueue) dequeuePostgres(ctx context.Context, types []string) (Job, error) {
-	where, args := q.eligibleWhere(types, 1)
+	where, args := q.eligibleWhere(types, 2)
+	// $1 is the claim timestamp (claimed_at = now); eligibleWhere starts its
+	// own placeholders at $2.
+	claimArgs := append([]any{time.Now().UTC()}, args...)
 	// FOR UPDATE SKIP LOCKED is the canonical Postgres pattern: holds a
 	// row lock for the surrounding UPDATE, lets concurrent workers skip
 	// it instead of blocking.
-	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', attempts = attempts + 1
+	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, attempts = attempts + 1
 		WHERE id = (
 			SELECT id FROM %s
 			WHERE %s
@@ -188,7 +211,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, types []string) (Job, err
 		)
 		RETURNING id, type, payload, priority, attempts, max_attempts, created_at, scheduled_at`,
 		q.qt(), q.qt(), where)
-	row := q.db.QueryRowContext(ctx, sqlStr, args...)
+	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
 	return scanJob(row)
 }
 
@@ -210,8 +233,8 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 		return Job{}, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='claimed', attempts = attempts + 1 WHERE id = $1`, q.qt()),
-		job.ID,
+		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, attempts = attempts + 1 WHERE id = $2`, q.qt()),
+		time.Now().UTC(), job.ID,
 	); err != nil {
 		return Job{}, err
 	}
@@ -222,14 +245,36 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 	return job, nil
 }
 
-// eligibleWhere builds the WHERE fragment for "pending and ready to run",
-// optionally restricted to a set of job types. startIdx is the first $N to
-// use so callers can prepend their own params.
+// eligibleWhere builds the WHERE fragment for "ready to run", optionally
+// restricted to a set of job types. startIdx is the first $N to use so
+// callers can prepend their own params.
+//
+// A row is eligible when it is 'pending', OR when it is 'claimed' but its
+// lease has expired (the worker that claimed it crashed before Ack/Nack) and
+// it still has retry attempts left. The lease-expiry clause is what makes
+// in-flight work crash-safe: a claimed row is reclaimed instead of lost.
 func (q *DBQueue) eligibleWhere(types []string, startIdx int) (string, []any) {
 	var args []any
-	parts := []string{"status='pending'", "scheduled_at <= $" + itoa(startIdx)}
-	args = append(args, time.Now().UTC())
-	idx := startIdx + 1
+	now := time.Now().UTC()
+	idx := startIdx
+	// Placeholder numbers must increase in textual order: go-sqlite3 binds
+	// positional args in order of appearance, ignoring the $N value. The
+	// lease cutoff appears first (inside the status clause), then scheduled_at.
+	// $idx: lease cutoff (claimed_at <= now-lease ⇒ abandoned)
+	leaseIdx := idx
+	args = append(args, now.Add(-q.lease))
+	idx++
+	// $idx: now (scheduled_at gate)
+	schedIdx := idx
+	args = append(args, now)
+	idx++
+
+	status := fmt.Sprintf(
+		"(status='pending' OR (status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $%d AND attempts < max_attempts))",
+		leaseIdx,
+	)
+	parts := []string{status, "scheduled_at <= $" + itoa(schedIdx)}
+
 	if len(types) > 0 {
 		placeholders := make([]string, len(types))
 		for i, t := range types {
@@ -330,20 +375,59 @@ func (q *DBQueue) Close() error {
 }
 
 // Start launches q.workers polling goroutines. Each loops Dequeue → handle
-// → Ack/Nack until Close.
+// → Ack/Nack until Close. A worker goroutine that dies for any reason
+// (including a panic escaping the handler-recover guard) is respawned so the
+// pool can never be permanently drained by a poison message.
 func (q *DBQueue) Start(ctx context.Context) {
 	remaining := q.workers
 	go func() {
 		defer close(q.stopped)
 		done := make(chan struct{}, q.workers)
 		for i := 0; i < q.workers; i++ {
-			go func() { q.workerLoop(ctx); done <- struct{}{} }()
+			go q.superviseWorker(ctx, done)
 		}
 		for remaining > 0 {
 			<-done
 			remaining--
 		}
 	}()
+}
+
+// superviseWorker runs workerLoop and respawns it if it ever returns
+// abnormally (panic). It only reports done on a clean shutdown (stop/ctx),
+// guaranteeing the pool size is preserved across poison-message panics.
+func (q *DBQueue) superviseWorker(ctx context.Context, done chan<- struct{}) {
+	for {
+		select {
+		case <-q.stop:
+			done <- struct{}{}
+			return
+		case <-ctx.Done():
+			done <- struct{}{}
+			return
+		default:
+		}
+		clean := q.runWorker(ctx)
+		if clean {
+			done <- struct{}{}
+			return
+		}
+		// Abnormal exit (panic that escaped the per-job guard): loop and
+		// respawn rather than leaking a worker slot.
+	}
+}
+
+// runWorker executes workerLoop, recovering any panic that escapes the
+// per-job guard. Returns true if the loop exited cleanly (stop/ctx), false
+// if it unwound via panic (so the supervisor respawns it).
+func (q *DBQueue) runWorker(ctx context.Context) (clean bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			clean = false
+		}
+	}()
+	q.workerLoop(ctx)
+	return true
 }
 
 func (q *DBQueue) workerLoop(ctx context.Context) {
@@ -377,12 +461,24 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 			_ = q.Ack(ctx, job.ID)
 			continue
 		}
-		if err := h(ctx, job); err != nil {
+		if err := q.runHandler(ctx, h, job); err != nil {
 			_ = q.Nack(ctx, job.ID)
 			continue
 		}
 		_ = q.Ack(ctx, job.ID)
 	}
+}
+
+// runHandler invokes a job handler, converting a panic into an error so a
+// poison-message job is nacked (retried/dead-lettered) instead of unwinding
+// the worker goroutine and draining the pool / crashing the process.
+func (q *DBQueue) runHandler(ctx context.Context, h Handler, job Job) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
+		}
+	}()
+	return h(ctx, job)
 }
 
 func keys(m map[string]Handler) []string {

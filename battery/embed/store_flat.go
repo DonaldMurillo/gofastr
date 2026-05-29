@@ -106,7 +106,15 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	hits := make([]Hit, 0, top*2)
+	// We can never return more candidates than chunks exist, so bound the
+	// capacity hint by the corpus size. This stops a pathological caller
+	// top (e.g. derived from an attacker-supplied K) from pre-allocating
+	// gigabytes against a tiny store.
+	capHint := top * 2
+	if capHint > len(s.chunks) || capHint < 0 {
+		capHint = len(s.chunks)
+	}
+	hits := make([]Hit, 0, capHint)
 	for i := range s.chunks {
 		c := &s.chunks[i]
 		if !chunkMatches(c, filter) {

@@ -29,6 +29,13 @@ s, err := email.NewSMTPSender(email.SMTPConfig{
 })
 ```
 
+**Transport encryption (fail-closed):** when `UseTLS` is false the sender
+attempts opportunistic `STARTTLS`. If the server does not advertise
+STARTTLS (e.g. an on-path downgrade/strip), `Send` **fails closed** with
+`ErrSendFailed` rather than transmitting the message + recipient list in
+cleartext. Set `SMTPConfig.AllowCleartext: true` to explicitly opt into
+plaintext delivery (local relays / dev only).
+
 **Templates:**
 ```go
 // LoadFromDir takes a filesystem path; LoadFromFS takes an fs.FS

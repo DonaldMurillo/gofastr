@@ -56,6 +56,17 @@ type SessionTwoFAMarker interface {
 	MarkTwoFactorVerified(ctx context.Context, token string) error
 }
 
+// SessionUserPurger is the optional SessionStore extension that revokes
+// every session belonging to a user in one call. Credential-changing flows
+// (password reset / change, email change) call it so a credential that was
+// compromised before the change cannot retain access through an already-issued
+// cookie. Both built-in stores implement it; a store that does not is treated
+// as fail-open for this purpose and the caller logs that revocation was a
+// no-op. Returns the number of sessions removed.
+type SessionUserPurger interface {
+	DeleteByUser(ctx context.Context, userID string) (int, error)
+}
+
 // SessionPendingMarker is the optional SessionStore extension that lets
 // CorePlugin's login handler mark a freshly-minted session as awaiting
 // a 2FA challenge. Without this, login of a 2FA-enrolled user produces a
@@ -138,6 +149,21 @@ func (m *MemorySessionStore) Delete(_ context.Context, token string) error {
 	delete(m.sessions, token)
 	m.mu.Unlock()
 	return nil
+}
+
+// DeleteByUser removes every session belonging to userID and returns the
+// count purged. Implements SessionUserPurger.
+func (m *MemorySessionStore) DeleteByUser(_ context.Context, userID string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for tok, sess := range m.sessions {
+		if sess.UserID == userID {
+			delete(m.sessions, tok)
+			n++
+		}
+	}
+	return n, nil
 }
 
 // MarkTwoFactorVerified flips TwoFactorVerified=true and clears

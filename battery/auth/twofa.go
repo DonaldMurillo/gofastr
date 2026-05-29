@@ -220,18 +220,40 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 
 // ─── Route helpers ─────────────────────────────────────────────────────
 
-// getSessionUser extracts the user ID from the session cookie.
-func (p *TwoFAPlugin) getSessionUser(r *http.Request) (string, error) {
+// getSessionUser extracts the user ID from the session cookie. It also
+// reports whether the session is still in the PendingTwoFactor (pre-step-up)
+// state — callers that mutate the second factor MUST refuse pending sessions
+// (see requireStepUpUser). A pending session proves only the password.
+func (p *TwoFAPlugin) getSessionUser(r *http.Request) (userID string, pending bool, err error) {
 	cfg := p.mgr.Config()
 	cookie, err := r.Cookie(cfg.SessionCookie)
 	if err != nil {
-		return "", fmt.Errorf("no session cookie")
+		return "", false, fmt.Errorf("no session cookie")
 	}
 	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
 	if err != nil {
-		return "", fmt.Errorf("invalid session")
+		return "", false, fmt.Errorf("invalid session")
 	}
-	return sess.UserID, nil
+	return sess.UserID, sess.PendingTwoFactor, nil
+}
+
+// requireStepUpUser resolves the session user and refuses any session that
+// is still PendingTwoFactor. Used by every 2FA self-service handler except
+// challengeHandler — a pending session (password only) must not be able to
+// disable, re-enroll, verify, or refresh backup codes, which would defeat
+// 2FA with the password alone. Writes the 401/403 response and returns ok=false
+// when the caller must abort.
+func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) (userID string, ok bool) {
+	uid, pending, err := p.getSessionUser(r)
+	if err != nil {
+		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+		return "", false
+	}
+	if pending {
+		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		return "", false
+	}
+	return uid, true
 }
 
 // ─── Route handlers ────────────────────────────────────────────────────
@@ -240,9 +262,18 @@ func (p *TwoFAPlugin) getSessionUser(r *http.Request) (string, error) {
 // Generates a new TOTP secret for the authenticated user and returns the
 // otpauth:// URL (for QR code apps) along with the plaintext secret.
 func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
-	userID, err := p.getSessionUser(r)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+	userID, ok := p.requireStepUpUser(w, r)
+	if !ok {
+		return
+	}
+
+	// Refuse to overwrite an already-enabled factor without a fresh step-up.
+	// Re-enrolling silently clobbers the live secret (Enabled=false below),
+	// which would let an attacker with a non-pending but un-stepped-up
+	// session disable the victim's working second factor. Callers must
+	// disable (which itself requires step-up) before re-enrolling.
+	if existing, err := p.store.GetTwoFA(r.Context(), userID); err == nil && existing != nil && existing.Enabled {
+		writeAuthError(w, http.StatusConflict, "2FA already enabled; disable it before re-enrolling")
 		return
 	}
 
@@ -283,9 +314,8 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	if p.challengeLimit != nil && !p.challengeLimit.guard(w, r) {
 		return
 	}
-	userID, err := p.getSessionUser(r)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+	userID, ok := p.requireStepUpUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -345,7 +375,10 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	if p.challengeLimit != nil && !p.challengeLimit.guard(w, r) {
 		return
 	}
-	userID, err := p.getSessionUser(r)
+	// challengeHandler is the ONLY endpoint a PendingTwoFactor session may
+	// reach — it is how the session completes step-up. Hence it uses the raw
+	// getSessionUser (pending is allowed here) rather than requireStepUpUser.
+	userID, _, err := p.getSessionUser(r)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
 		return
@@ -466,9 +499,8 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 // POST {basePath}/2fa/disable
 // Disables 2FA for the authenticated user.
 func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
-	userID, err := p.getSessionUser(r)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+	userID, ok := p.requireStepUpUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -484,9 +516,8 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 // GET {basePath}/2fa/backup-codes
 // Generates a fresh set of backup codes, invalidating any previous ones.
 func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request) {
-	userID, err := p.getSessionUser(r)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+	userID, ok := p.requireStepUpUser(w, r)
+	if !ok {
 		return
 	}
 

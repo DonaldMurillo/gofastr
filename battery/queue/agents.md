@@ -45,5 +45,20 @@ stop and use `DBQueue` instead:
 exponential retry, lease-based worker claim (safe under crashes), and
 a `Browsable` view consumed by `battery/admin`'s `/admin/queue` page.
 
+**Lease / crash-safety.** Dequeue claims a row by setting `status='claimed'`
+and stamping `claimed_at`. If the worker dies before Ack/Nack the row would
+otherwise be stranded; instead, a claimed row whose `claimed_at` is older than
+the lease timeout (default 5m, set via `WithLeaseTimeout` / `SetLeaseTimeout`)
+becomes eligible for re-dequeue again — as long as it still has attempts left.
+A handler that **panics** is recovered and routed through Nack (retry /
+dead-letter); the worker goroutine is respawned, so a poison message can never
+permanently drain the pool or crash the process. `MemoryQueue` recovers handler
+panics the same way.
+
+`RedisQueue` records a visibility timeout per in-flight job; call
+`RedisQueue.Reclaim(ctx)` periodically (e.g. from a ticker) to re-deliver jobs
+whose worker crashed before Ack/Nack. A malformed list entry is quarantined to
+the dead-letter queue rather than dropping the valid jobs queued behind it.
+
 **Don't use `MemoryQueue` for real workloads.** Jobs die with the
 process — fine for tests, dangerous for anything users can observe.

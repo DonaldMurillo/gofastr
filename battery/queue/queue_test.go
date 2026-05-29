@@ -350,6 +350,20 @@ func (m *mockRedis) HGet(_ context.Context, key, field string) (string, error) {
 	return v, nil
 }
 
+func (m *mockRedis) HGetAll(_ context.Context, key string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h, ok := m.hashes[key]
+	if !ok {
+		return map[string]string{}, nil
+	}
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		out[k] = v
+	}
+	return out, nil
+}
+
 func (m *mockRedis) HDel(_ context.Context, key string, fields ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
