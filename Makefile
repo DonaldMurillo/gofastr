@@ -227,12 +227,14 @@ secret-scan:
 	@echo "  ✓ No secrets detected"
 
 vulncheck:
-	@if command -v govulncheck >/dev/null 2>&1; then \
-		govulncheck ./...; \
-		echo "  ✓ No known vulnerabilities"; \
+	@GVC="$$(command -v govulncheck 2>/dev/null || echo "$$(go env GOPATH)/bin/govulncheck")"; \
+	if [ -x "$$GVC" ]; then \
+		"$$GVC" ./... && echo "  ✓ No known vulnerabilities"; \
 	else \
-		echo "  ! govulncheck not installed"; \
-		echo "    Install: go install golang.org/x/vuln/cmd/govolncheck@latest"; \
+		echo "  ! govulncheck not installed — gate cannot run (failing closed)"; \
+		echo "    Install with the repo's Go toolchain so it can load go1.26 packages:"; \
+		echo "    GOTOOLCHAIN=go1.26.3 go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+		exit 1; \
 	fi
 
 mod-verify:
