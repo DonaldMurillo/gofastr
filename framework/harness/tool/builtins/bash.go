@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,16 +79,21 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 		return nil, errors.New("Bash: cmd is required")
 	}
 
-	// Blocklist check. Look at the leading binary name (before any
-	// shell metacharacters); the user is welcome to pass arguments
-	// to non-blocked commands.
-	leading := leadingCommand(args.Cmd)
-	for _, banned := range append(DefaultBashBlocklist, b.ExtraBlocklist...) {
-		if leading == banned {
-			return errorResult(fmt.Sprintf(
-				"Bash: command %q is blocked by default. Override at the permission preset if intentional.",
-				banned,
-			)), nil
+	// Blocklist check. Scan the leading binary name of every
+	// pipeline/separator-split segment, normalized via filepath.Base so
+	// an absolute path (`/usr/bin/security`) matches its bare name. The
+	// user is welcome to pass arguments to non-blocked commands. This is
+	// defense in depth behind the authoritative permission middleware.
+	blocklist := append(DefaultBashBlocklist, b.ExtraBlocklist...)
+	for _, leading := range segmentCommands(args.Cmd) {
+		base := filepath.Base(leading)
+		for _, banned := range blocklist {
+			if leading == banned || base == banned {
+				return errorResult(fmt.Sprintf(
+					"Bash: command %q is blocked by default. Override at the permission preset if intentional.",
+					banned,
+				)), nil
+			}
 		}
 	}
 
@@ -159,6 +165,46 @@ func leadingCommand(cmd string) string {
 		}
 	}
 	return trimmed
+}
+
+// segmentCommands splits a command line on shell separators
+// (`;`, `|`, `&`, newline, and subshell `(`) and returns the leading
+// command token of each segment. It also peels off env-assignment and
+// pass-through prefixes (`command`, `env`, `VAR=val`) so a banned tool
+// invoked as `command secret-tool …` or `FOO=1 security …` is still
+// detected. This is a blocklist heuristic, not a shell parser — the
+// permission middleware remains the authoritative gate.
+func segmentCommands(cmd string) []string {
+	segs := strings.FieldsFunc(cmd, func(r rune) bool {
+		switch r {
+		case ';', '|', '&', '\n', '(', ')':
+			return true
+		}
+		return false
+	})
+	out := make([]string, 0, len(segs))
+	for _, seg := range segs {
+		fields := strings.Fields(seg)
+		// Skip env-assignment and pass-through prefixes to reach the
+		// real command name.
+		for len(fields) > 0 {
+			f := fields[0]
+			if f == "command" || f == "env" || f == "exec" || f == "nohup" || f == "sudo" {
+				fields = fields[1:]
+				continue
+			}
+			// VAR=value assignment prefix (no slash, contains '=').
+			if i := strings.IndexByte(f, '='); i > 0 && !strings.ContainsRune(f[:i], '/') {
+				fields = fields[1:]
+				continue
+			}
+			break
+		}
+		if len(fields) > 0 {
+			out = append(out, fields[0])
+		}
+	}
+	return out
 }
 
 func envSlice(m map[string]string) []string {

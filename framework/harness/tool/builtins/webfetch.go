@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +28,14 @@ type webFetchImpl struct {
 	// HTTPClient is the client used for fetches. Tests inject a
 	// stub; production wires the engine's shared client.
 	HTTPClient *http.Client
+
+	// AllowPrivateHosts disables the SSRF preflight that rejects
+	// loopback/link-local/private/unspecified destinations on the
+	// INITIAL URL. It exists for tests that must reach an httptest
+	// server (which listens on loopback). It is false in production,
+	// so production fails closed. Redirect targets are re-validated
+	// on every hop regardless of this flag.
+	AllowPrivateHosts bool
 }
 
 func (webFetchImpl) Name() string        { return "WebFetch" }
@@ -88,10 +97,36 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 		return errorResult(fmt.Sprintf("WebFetch: scheme %q is not allowed (http/https only)", u.Scheme)), nil
 	}
 
+	// SSRF preflight on the initial URL. Resolve the host and reject
+	// loopback/link-local/private/unspecified destinations. Skipped only
+	// when AllowPrivateHosts is set (tests reaching httptest servers);
+	// production fails closed. Redirect hops are re-validated below
+	// regardless of this flag.
+	if !w.AllowPrivateHosts {
+		if err := assertPublicHost(u.Host); err != nil {
+			return errorResult(fmt.Sprintf("WebFetch: refusing to reach internal address: %v", err)), nil
+		}
+	}
+
 	client := w.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: webFetchTimeout}
 	}
+	// Re-validate every redirect target. We never relax this — a vetted
+	// public URL must not be able to 302 us into the metadata service or
+	// loopback, even when the test injects AllowPrivateHosts on the
+	// initial hop. We copy the client so we don't mutate a shared one.
+	safeClient := *client
+	safeClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if err := assertPublicHost(req.URL.Host); err != nil {
+			return fmt.Errorf("redirect into internal address blocked: %w", err)
+		}
+		return nil
+	}
+	client = &safeClient
 	reqCtx, cancel := context.WithTimeout(ctx, webFetchTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, args.URL, nil)
@@ -128,4 +163,52 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 		return errorResult(header + string(body) + suffix), nil
 	}
 	return textResult(header + string(body) + suffix), nil
+}
+
+// assertPublicHost resolves host (host[:port]) and returns an error if
+// it is missing, an outright internal IP literal, or resolves to any
+// loopback/link-local/private/unspecified/multicast address. SSRF
+// guard for WebFetch: a model-chosen or prompt-injected URL must not
+// reach the cloud metadata service (169.254.169.254), loopback, or the
+// host's private network. Fails closed on resolution error.
+func assertPublicHost(host string) error {
+	h := host
+	if hostOnly, _, err := net.SplitHostPort(host); err == nil {
+		h = hostOnly
+	}
+	h = strings.Trim(h, "[]")
+	if h == "" {
+		return errors.New("empty host")
+	}
+	// If the host is an IP literal, check it directly.
+	if ip := net.ParseIP(h); ip != nil {
+		if isInternalIP(ip) {
+			return fmt.Errorf("%s is a non-public address", ip)
+		}
+		return nil
+	}
+	// Otherwise resolve and reject if ANY resolved address is internal.
+	ips, err := net.LookupIP(h)
+	if err != nil {
+		return fmt.Errorf("resolve %q: %w", h, err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("no addresses for %q", h)
+	}
+	for _, ip := range ips {
+		if isInternalIP(ip) {
+			return fmt.Errorf("%s resolves to non-public address %s", h, ip)
+		}
+	}
+	return nil
+}
+
+// isInternalIP reports whether ip is loopback, link-local,
+// private, unspecified, or multicast.
+func isInternalIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
+		return true
+	}
+	return false
 }

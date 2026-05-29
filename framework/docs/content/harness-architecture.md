@@ -224,6 +224,12 @@ audited against this matrix.
   `kwalletcli` (credential exfiltration paths).
 - `WebFetch` strips `Authorization` and `X-Harness-Token` headers
   from any URL it is asked to fetch.
+- `WebFetch` runs an **SSRF preflight**: it rejects URLs resolving to
+  private/loopback/link-local ranges (incl. cloud metadata
+  `169.254.169.254`) and re-validates the target on every redirect hop,
+  failing closed. The test-only `WebFetch.AllowPrivateHosts` field
+  disables the preflight so unit tests can reach `httptest` loopback
+  servers — never set it in production.
 - Untrusted content (rule 12) is the prompt-injection defense.
 - TOFU (rule 13) is the supply-chain defense.
 

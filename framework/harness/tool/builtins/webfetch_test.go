@@ -20,7 +20,7 @@ func TestWebFetchSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := WebFetch{HTTPClient: srv.Client()}
+	tool := WebFetch{HTTPClient: srv.Client(), AllowPrivateHosts: true}
 	res, _ := tool.Run(context.Background(), mustCall(t, map[string]any{
 		"url": srv.URL,
 		"headers": map[string]string{
@@ -53,7 +53,7 @@ func TestWebFetch404(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := WebFetch{HTTPClient: srv.Client()}
+	tool := WebFetch{HTTPClient: srv.Client(), AllowPrivateHosts: true}
 	res, _ := tool.Run(context.Background(), mustCall(t, map[string]any{"url": srv.URL}), nil)
 	if !res.IsError {
 		t.Fatal("expected IsError on 4xx")
