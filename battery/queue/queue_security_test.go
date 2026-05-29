@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -220,6 +221,73 @@ func TestRedisDequeueQuarantinesBadJSON(t *testing.T) {
 		t.Fatalf("malformed entry should not remain on main queue, main len=%d", main)
 	}
 }
+
+// ============================================================================
+// Property: a type-filtered MemoryQueue.Dequeue must never lose the valid,
+// non-matching jobs it drained while searching — even when the bounded jobChan
+// is full at re-enqueue time. Surface: MemoryQueue.Dequeue type-filter branch.
+// ============================================================================
+
+// TestMemoryDequeueKeepsSkippedUnderLoad runs a type-filtered Dequeue against a
+// near-full jobChan while a concurrent producer keeps refilling it. The drained
+// non-matching jobs must never be silently dropped: with a non-blocking
+// re-enqueue, a producer that steals the freed slot causes permanent job loss.
+// We assert the total job count is conserved across the drain/re-enqueue cycle.
+func TestMemoryDequeueKeepsSkippedUnderLoad(t *testing.T) {
+	q := NewMemoryQueue(0) // no workers — manual consumption only
+	ctx := context.Background()
+
+	const cap = 1024 // jobChan capacity
+
+	// Seed the channel completely full with non-matching jobs.
+	for i := 0; i < cap; i++ {
+		if err := q.Enqueue(ctx, Job{ID: fmtID(i), Type: "sms"}); err != nil {
+			t.Fatalf("seed enqueue %d: %v", i, err)
+		}
+	}
+
+	// A producer hammers Enqueue concurrently with the type-filtered Dequeue,
+	// racing to grab any slot the drain frees up. Count how many it lands.
+	var produced atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < cap*4; i++ {
+			if err := q.Enqueue(ctx, Job{ID: "p" + strconv.Itoa(i), Type: "sms"}); err == nil {
+				produced.Add(1)
+			}
+		}
+	}()
+
+	// Drain looking for an absent type: every job is RPop'd into skipped and
+	// must be re-enqueued. Run it repeatedly to widen the race window.
+	for i := 0; i < 50; i++ {
+		if _, err := q.Dequeue(ctx, "email"); !errors.Is(err, ErrNoJob) && err != nil {
+			t.Fatalf("filtered dequeue: %v", err)
+		}
+	}
+	<-done
+
+	// Total surviving jobs must equal seeded + producer-acked. If the
+	// non-blocking re-enqueue dropped any drained job, the count comes up short.
+	want := cap + int(produced.Load())
+	got := 0
+	for {
+		_, err := q.Dequeue(ctx, "sms")
+		if errors.Is(err, ErrNoJob) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("drain dequeue: %v", err)
+		}
+		got++
+	}
+	if got != want {
+		t.Fatalf("type-filtered Dequeue lost jobs under load: have %d, expected %d (lost %d)", got, want, want-got)
+	}
+}
+
+func fmtID(i int) string { return "j" + strconv.Itoa(i) }
 
 // ============================================================================
 // Property: a recorded visibility timeout must actually re-deliver abandoned

@@ -313,6 +313,80 @@ func TestCacheMiddleware_RequestNoCacheBypassesStoredVariant(t *testing.T) {
 	}
 }
 
+func TestCacheMiddleware_RangeDoesNotPoisonFullGet(t *testing.T) {
+	store := NewMemoryCache()
+	var hits int32
+	const full = "FULL-DOCUMENT-CONTENTS"
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		if rng := r.Header.Get("Range"); rng != "" {
+			// Emulate http.ServeContent's 206 Partial Content behaviour.
+			w.Header().Set("Content-Range", "bytes 0-5/"+fmt.Sprint(len(full)))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte(full[:6]))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(full))
+	}))
+
+	// 1) Attacker primes the cache with a Range request -> 206 truncated body.
+	reqRange := httptest.NewRequest(http.MethodGet, "/file", nil)
+	reqRange.Header.Set("Range", "bytes=0-5")
+	recRange := httptest.NewRecorder()
+	handler.ServeHTTP(recRange, reqRange)
+
+	// 2) Victim sends a plain full GET. It must NOT be served the cached 206.
+	recFull := httptest.NewRecorder()
+	handler.ServeHTTP(recFull, httptest.NewRequest(http.MethodGet, "/file", nil))
+
+	if recFull.Code == http.StatusPartialContent || recFull.Body.String() != full {
+		t.Fatalf("SECURITY: [cache] 206 Range response poisoned full GET. status=%d body=%q", recFull.Code, recFull.Body.String())
+	}
+
+	// 3) A subsequent identical Range request must also not get a HIT that
+	// could leak a full body cached under the same bare key, and the
+	// truncated 206 body must not be served as a HIT to non-Range GETs.
+	recFull2 := httptest.NewRecorder()
+	handler.ServeHTTP(recFull2, httptest.NewRequest(http.MethodGet, "/file", nil))
+	if recFull2.Body.String() != full {
+		t.Fatalf("SECURITY: [cache] later full GET served truncated body %q", recFull2.Body.String())
+	}
+}
+
+func TestCacheMiddleware_DoesNotLeakAcrossHosts(t *testing.T) {
+	store := NewMemoryCache()
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("host=" + r.Host))
+	}))
+
+	// Anonymous GET /dashboard on tenant-a primes the cache.
+	reqA := httptest.NewRequest(http.MethodGet, "http://tenant-a.app.com/dashboard", nil)
+	recA := httptest.NewRecorder()
+	handler.ServeHTTP(recA, reqA)
+
+	// Anonymous GET /dashboard on tenant-b must not be served tenant-a's body.
+	reqB := httptest.NewRequest(http.MethodGet, "http://tenant-b.app.com/dashboard", nil)
+	recB := httptest.NewRecorder()
+	handler.ServeHTTP(recB, reqB)
+
+	if recB.Body.String() == "host=tenant-a.app.com" {
+		t.Fatalf("SECURITY: [cache] cross-host leak: tenant-b served tenant-a's cached body %q (X-Cache=%s)", recB.Body.String(), recB.Header().Get("X-Cache"))
+	}
+	if recB.Body.String() != "host=tenant-b.app.com" {
+		t.Fatalf("SECURITY: [cache] tenant-b got unexpected body %q", recB.Body.String())
+	}
+
+	// Same host repeated should still be cacheable (no regression).
+	reqA2 := httptest.NewRequest(http.MethodGet, "http://tenant-a.app.com/dashboard", nil)
+	recA2 := httptest.NewRecorder()
+	handler.ServeHTTP(recA2, reqA2)
+	if recA2.Body.String() != "host=tenant-a.app.com" {
+		t.Fatalf("SECURITY: [cache] same-host caching regressed: %q", recA2.Body.String())
+	}
+}
+
 func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
 	store := NewMemoryCache()
 	var hits int32

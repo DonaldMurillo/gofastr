@@ -25,6 +25,11 @@ type cachedResponse struct {
 // carry user-specific data or that the origin marks as uncacheable:
 //
 //   - Requests other than GET are passed through untouched.
+//   - Requests carrying a Range header are passed through untouched and
+//     never cached: the key does not encode the Range, so a partial
+//     (206) body must not be allowed to collide with the full variant.
+//   - The cache key includes the request authority (Host) so distinct
+//     virtual hosts sharing one Cache do not serve each other's content.
 //   - Requests with Authorization or Cookie headers are not served from
 //     or written to the cache by default (RFC 9111 §3.5 / §3 default).
 //   - Requests with Cache-Control: no-cache or no-store bypass the
@@ -33,7 +38,8 @@ type cachedResponse struct {
 //   - Responses with Set-Cookie or with Cache-Control containing
 //     private, no-store, or no-cache are never stored.
 //   - Responses with non-2xx/3xx status (i.e. 4xx and 5xx) are never
-//     stored.
+//     stored. Partial-content (206) responses, or any response carrying
+//     a Content-Range header, are likewise never stored.
 //   - Responses carrying a Vary header are stored under a key that
 //     includes the values of every listed request header so different
 //     variants do not collide. A Vary: * response is treated as
@@ -55,7 +61,21 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 			// This avoids replaying one user's response to another.
 			hasCreds := r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != ""
 
-			baseKey := r.Method + ":" + r.URL.Path + "?" + r.URL.RawQuery
+			// Range requests are partial-content requests. The cache key does
+			// not encode the Range, so serving from or writing to the cache
+			// for a Range request would let a truncated 206 body collide with
+			// (and poison) the full-document variant. Pass them straight
+			// through, untouched and uncached.
+			isRange := r.Header.Get("Range") != ""
+			if isRange {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Include the request authority (Host) in the key so distinct
+			// virtual hosts / tenants sharing one Cache do not collide on the
+			// same method+path+query.
+			baseKey := r.Method + ":" + r.Host + ":" + r.URL.Path + "?" + r.URL.RawQuery
 
 			// Try to fetch from cache only if we're allowed to serve a
 			// stored variant for this request.
@@ -125,6 +145,11 @@ func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
 	}
 	// Only 2xx and 3xx responses are stored; never 4xx/5xx.
 	if rec.statusCode < 200 || rec.statusCode >= 400 {
+		return false
+	}
+	// Partial-content responses are not full representations and would
+	// poison the full-document variant under the shared key.
+	if rec.statusCode == http.StatusPartialContent || rec.header.Get("Content-Range") != "" {
 		return false
 	}
 	// Set-Cookie responses are inherently user-specific.

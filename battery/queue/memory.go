@@ -18,6 +18,14 @@ type MemoryQueue struct {
 	mu       sync.RWMutex
 	closed   bool
 	done     chan struct{}
+
+	// holdover stores jobs that were drained by a type-filtered Dequeue but
+	// could not be re-enqueued onto the bounded jobChan because it was full at
+	// re-enqueue time (concurrent producers refilled it during the drain). It
+	// guarantees those valid jobs are never lost; they are re-fed ahead of the
+	// channel by subsequent Dequeue/processing. Guarded by holdoverMu.
+	holdoverMu sync.Mutex
+	holdover   []Job
 }
 
 // NewMemoryQueue creates a new in-memory queue with the given number of workers.
@@ -142,32 +150,45 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 		for _, t := range types {
 			typeSet[t] = struct{}{}
 		}
-		// Try to find a matching job by draining and pushing back non-matches.
+		// Drain the holdover first so earlier-skipped jobs are considered before
+		// anything still on the channel, then drain the channel itself.
 		var skipped []Job
+		pending := q.takeHoldover()
+		i := 0
 		for {
-			select {
-			case job := <-q.jobChan:
-				if _, ok := typeSet[job.Type]; ok {
-					// Re-enqueue skipped jobs.
-					for _, s := range skipped {
-						_ = q.enqueueInternal(s)
-					}
-					return job, nil
+			var job Job
+			if i < len(pending) {
+				job = pending[i]
+				i++
+			} else {
+				select {
+				case job = <-q.jobChan:
+				default:
+					q.requeueSkipped(skipped)
+					return Job{}, ErrNoJob
+				case <-ctx.Done():
+					q.requeueSkipped(skipped)
+					return Job{}, ctx.Err()
 				}
-				skipped = append(skipped, job)
-			default:
-				// Re-enqueue all skipped.
-				for _, s := range skipped {
-					_ = q.enqueueInternal(s)
-				}
-				return Job{}, ErrNoJob
-			case <-ctx.Done():
-				for _, s := range skipped {
-					_ = q.enqueueInternal(s)
-				}
-				return Job{}, ctx.Err()
 			}
+			if _, ok := typeSet[job.Type]; ok {
+				// Requeue everything we drained but did not consume: the
+				// non-matching jobs we skipped plus the not-yet-inspected tail
+				// of the holdover we took. None may be dropped.
+				if i < len(pending) {
+					skipped = append(skipped, pending[i:]...)
+				}
+				q.requeueSkipped(skipped)
+				return job, nil
+			}
+			skipped = append(skipped, job)
 		}
+	}
+
+	// Holdover jobs (drained by a prior type-filtered Dequeue but bumped off the
+	// full channel) take priority over the channel for untyped consumption.
+	if job, ok := q.popHoldover(); ok {
+		return job, nil
 	}
 
 	select {
@@ -176,6 +197,53 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 	default:
 		return Job{}, ErrNoJob
 	}
+}
+
+// requeueSkipped returns drained non-matching jobs to the queue without losing
+// any: it tries the bounded channel first, and stashes the remainder onto the
+// holdover when the channel is full (e.g. concurrent producers refilled it
+// during the drain). Holdover jobs are re-fed by subsequent Dequeue calls.
+func (q *MemoryQueue) requeueSkipped(skipped []Job) {
+	if len(skipped) == 0 {
+		return
+	}
+	var overflow []Job
+	for _, s := range skipped {
+		if err := q.enqueueInternal(s); err != nil {
+			overflow = append(overflow, s)
+		}
+	}
+	if len(overflow) > 0 {
+		q.holdoverMu.Lock()
+		// Prepend overflow so original ordering is preserved relative to any
+		// holdover already present from a concurrent drain.
+		q.holdover = append(overflow, q.holdover...)
+		q.holdoverMu.Unlock()
+	}
+}
+
+// takeHoldover atomically removes and returns all currently-held holdover jobs.
+func (q *MemoryQueue) takeHoldover() []Job {
+	q.holdoverMu.Lock()
+	defer q.holdoverMu.Unlock()
+	if len(q.holdover) == 0 {
+		return nil
+	}
+	h := q.holdover
+	q.holdover = nil
+	return h
+}
+
+// popHoldover removes and returns the oldest holdover job, if any.
+func (q *MemoryQueue) popHoldover() (Job, bool) {
+	q.holdoverMu.Lock()
+	defer q.holdoverMu.Unlock()
+	if len(q.holdover) == 0 {
+		return Job{}, false
+	}
+	job := q.holdover[0]
+	q.holdover = q.holdover[1:]
+	return job, true
 }
 
 // randomID generates a 16-byte hex string ID.

@@ -1,8 +1,10 @@
 package log
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -144,6 +146,27 @@ func (rw *countingResponseWriter) Flush() {
 	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards to the underlying ResponseWriter's Hijacker if it has one.
+// Without this, wrapping breaks any handler that performs a WebSocket upgrade
+// or otherwise type-asserts http.Hijacker (e.g. core/stream/websocket.go),
+// because the assertion would see the wrapper instead of the real writer and
+// fail with "does not support hijacking". Mirrors the fix on
+// core/middleware.metricsResponseWriter.
+func (rw *countingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
+// Push forwards to the underlying ResponseWriter's Pusher if it has one.
+func (rw *countingResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pu, ok := rw.ResponseWriter.(http.Pusher); ok {
+		return pu.Push(target, opts)
+	}
+	return http.ErrNotSupported
 }
 
 // remoteAddr returns the client address the access log should record.

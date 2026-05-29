@@ -178,12 +178,11 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := p.store.RedeemToken(r.Context(), body.Token)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
-		return
-	}
-
+	// Validate everything that can fail BEFORE consuming the single-use token.
+	// RedeemToken atomically deletes the token, so any failure after it strands
+	// the user — they'd have to restart the whole forgot-password flow for a new
+	// emailed token. The token is only burned once the inputs are known-good and
+	// immediately before SetPassword.
 	setter, ok := p.mgr.UserStore().(PasswordSetter)
 	if !ok {
 		writeAuthError(w, http.StatusInternalServerError,
@@ -199,6 +198,12 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	hash, err := HashPassword(body.Password)
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+
+	userID, err := p.store.RedeemToken(r.Context(), body.Token)
+	if err != nil {
+		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
 		return
 	}
 	if err := setter.SetPassword(r.Context(), userID, hash); err != nil {
