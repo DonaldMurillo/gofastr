@@ -172,7 +172,9 @@ func TestCRUDApi_ListAll_FilterSortLimit(t *testing.T) {
 
 		min1 := float64(1)
 		got, err := ch.ListAll(ctx, crud.ListOptions{
-			Filters: []filter.ParsedFilter{{Field: "title", Op: filter.OpLike, Value: "%a%"}},
+			// _like is a literal "contains" (wildcards escaped); the value
+			// is the raw substring, so "a" matches alpha/bravo/charlie/delta.
+			Filters: []filter.ParsedFilter{{Field: "title", Op: filter.OpLike, Value: "a"}},
 			Sorts:   []filter.ParsedSort{{Field: "title", Desc: false}},
 			Limit:   2,
 		})

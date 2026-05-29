@@ -164,7 +164,9 @@ func TestNestedFilter_ComposesWithTopLevel(t *testing.T) {
 		app := nestedBlogApp(t, db)
 		ta := TestHarness(t, app)
 
-		resp := ta.Get("/posts?author.name=Alice&title_like=" + url.QueryEscape("Fir%"))
+		// _like is a literal "contains" (caller wildcards are escaped), so
+		// the substring "Fir" matches a title like "First …".
+		resp := ta.Get("/posts?author.name=Alice&title_like=" + url.QueryEscape("Fir"))
 		resp.AssertStatus(t, http.StatusOK)
 		var env crud.ListResponse
 		json.Unmarshal([]byte(resp.Body()), &env)

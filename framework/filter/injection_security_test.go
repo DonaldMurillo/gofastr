@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -204,4 +205,54 @@ func TestSort_RepeatedFieldBounded(t *testing.T) {
 			t.Errorf("SECURITY: [filter_sort] %d sort clauses accepted (want cap <=16 or a rejection). Attack: unbounded ORDER BY.", len(sorts))
 		}
 	})
+}
+
+// TestLike_WildcardEscaped verifies that a _like filter treats the
+// caller value as a literal substring: LIKE metacharacters (% _ \)
+// supplied by the caller are escaped (with an ESCAPE clause) so they
+// cannot broaden the match or force pathological pattern scans. This
+// mirrors the DSL `contains` operator. The contract must hold for both
+// the data and the count query.
+func TestLike_WildcardEscaped(t *testing.T) {
+	fields := []schema.Field{{Name: "title", Type: schema.String}}
+
+	cases := []struct {
+		name string
+		in   string
+		want string // expected bound arg
+	}{
+		{"plain_substring", "hello", `%hello%`},
+		{"percent_wildcard", "%", `%\%%`},
+		{"underscore_wildcard", "_", `%\_%`},
+		{"escape_char", `\`, `%\\%`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/?title_like="+url.QueryEscape(tc.in), nil)
+			filters, err := ParseFilters(req, fields)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(filters) != 1 || filters[0].Op != OpLike {
+				t.Fatalf("expected one LIKE filter, got %+v", filters)
+			}
+
+			qb := query.Select("*").From("notes")
+			ApplyToQuery(qb, filters)
+			sql, args := qb.Build()
+
+			// The LIKE fragment must carry an ESCAPE clause so caller
+			// metacharacters are interpreted literally.
+			if strings.Contains(sql, "LIKE") && !strings.Contains(sql, "ESCAPE") {
+				t.Errorf("SECURITY: [filter_like] LIKE clause has no ESCAPE: %q. Attack: ?title_like=%%25 matches every row (wildcard injection).", sql)
+			}
+			if len(args) != 1 {
+				t.Fatalf("expected one bound arg, got %d", len(args))
+			}
+			if got, _ := args[0].(string); got != tc.want {
+				t.Errorf("SECURITY: [filter_like] %q not escaped: arg=%q want %q", tc.in, got, tc.want)
+			}
+		})
+	}
 }

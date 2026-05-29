@@ -24,6 +24,20 @@ const maxINListEntries = 1000
 // sort keys than any legitimate UI needs.
 const maxSortFields = 16
 
+// likeEscapeReplacer escapes the LIKE metacharacters (\ % _) so a _like
+// filter value is matched as a literal substring rather than a pattern,
+// mirroring the DSL `contains` operator. Backslash is escaped first (it
+// is the ESCAPE char appended to the LIKE fragment), then the wildcards.
+var likeEscapeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// escapeLikePattern escapes v's LIKE metacharacters and wraps it in the
+// leading/trailing wildcards that implement "contains". Pair it with an
+// `ESCAPE '\'` clause on the LIKE fragment so the wildcards a caller
+// supplies are matched literally, not interpreted as patterns.
+func escapeLikePattern(v string) string {
+	return "%" + likeEscapeReplacer.Replace(v) + "%"
+}
+
 // FilterOp represents a comparison operator for query filtering.
 type FilterOp string
 
@@ -217,7 +231,7 @@ func ApplyToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
 		case OpLte:
 			cb.Where(f.Field+" <= $1", f.Value)
 		case OpLike:
-			cb.Where(f.Field+" LIKE $1", "%"+f.Value+"%")
+			cb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
 			cb.Where(f.Field+" = $1", f.Value)
 		}
@@ -239,7 +253,7 @@ func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 		case OpLte:
 			qb.Where(f.Field+" <= $1", f.Value)
 		case OpLike:
-			qb.Where(f.Field+" LIKE $1", "%"+f.Value+"%")
+			qb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
 			qb.Where(f.Field+" = $1", f.Value)
 		}

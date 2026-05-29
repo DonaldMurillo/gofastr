@@ -360,3 +360,11 @@ Worked the 4 latent items Pass 4 deferred: 2 fixed (TDD), 2 skipped after verifi
 ### SEO sitemap traversal  ·  framework/uihost — SKIP (no sink)
 - **Decision:** skip (verified non-vulnerable)
 - **Why:** `seo.go::handleSitemap` builds the sitemap as an in-memory XML string written only to the HTTP response body; `StaticPaths` values are emitted into `<loc>` HTML-escaped (`stdhtml.EscapeString`) and never reach `os.Create`/`WriteFile`/`filepath.Join`. The only `filepath.Join` in the package serves static files from the request URL and already `filepath.Clean`s. `StaticPaths` also come from a developer-implemented `StaticPathsProvider` (trusted config, not request input). No filesystem traversal sink exists.
+
+---
+
+## Pass 6 — `_like` product decision resolved (2026-05-29)
+
+### `_like` made escape-literal  ·  framework/filter
+- **Decision:** fix-prod (RESOLVES the Pass-2 deferred decision)
+- **Why:** Pass 2 reverted the `_like` wildcard-escaping because it changed a tested contract and the direction was a product call. The owner chose to make `_like` **escape-literal**, consistent with the documented DSL `contains` operator: `ApplyToQuery`/`ApplyToCountQuery` now emit `LIKE $1 ESCAPE '\'` and `escapeLikePattern` escapes the caller's `%`/`_`/`\` so a `_like` value matches the substring literally rather than as a wildcard pattern. Re-added `TestLike_WildcardEscaped`. Updated the two integration tests that encoded the old wildcard behaviour to use literal substrings (`TestNestedFilter_ComposesWithTopLevel`: `Fir%`→`Fir`; `TestCRUDApi_ListAll_FilterSortLimit`: `%a%`→`a`) and the `includes.md` operator table. This supersedes the Pass-2 `TestLike_WildcardEscaped (reverted)` entry.

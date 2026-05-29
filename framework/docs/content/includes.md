@@ -74,7 +74,7 @@ filters:
 | `_gte`   | `>=`            |
 | `_lt`    | `<`             |
 | `_lte`   | `<=`            |
-| `_like`  | SQL `LIKE`      |
+| `_like`  | literal `contains` — `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator) |
 | `_in`    | `IN (...)` (pipe-separated values)  |
 
 Filters validate against the **target** entity's fields, not the
