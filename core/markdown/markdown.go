@@ -52,6 +52,12 @@ func renderBodyDepth(input string, depth int) (render.HTML, string) {
 	var sb strings.Builder
 	var firstH1 string
 	for !p.eof() {
+		// Progress guard: every block handler must consume at least one
+		// line. A classifier that matches a line the handler then refuses
+		// to consume (e.g. an atX() / renderX() whitespace-definition
+		// mismatch) spins forever. Record the position and force-advance
+		// past an unconsumable line so no handler bug can hang the render.
+		start := p.pos
 		switch {
 		case p.atFence():
 			renderFence(p, &sb)
@@ -77,6 +83,9 @@ func renderBodyDepth(input string, depth int) (render.HTML, string) {
 			p.advance()
 		default:
 			renderParagraph(p, &sb)
+		}
+		if p.pos == start {
+			p.advance()
 		}
 	}
 	return render.HTML(sb.String()), firstH1

@@ -105,3 +105,10 @@ _secure-100 campaign (2 passes) — 101 verified findings, each survived an adve
 | 99 | P3 | bug | `battery/cache` | Cache key omits request Host: cross-host content leak |
 | 100 | P3 | bug | `battery/auth` | Reset token consumed before new-password validation/hashing |
 | 101 | P3 | bug | `core/migrate` | Diff emits Postgres-only DDL and catalog regardless of dialect |
+
+_Pass 6 — fuzz harness (`go test -fuzz`) for the five parsers; FuzzRenderHTML found two distinct markdown DoS in seconds._
+
+| # | Sev | Cat | Package | Title |
+|---|---|---|---|---|
+| 102 | P2 | vuln | `core/markdown` | Form-feed-prefixed `>` classifies as blockquote but never advances — infinite-loop + OOM DoS |
+| 103 | P2 | vuln | `core/markdown` | Table separator row wider than header indexes align slice OOB — render panic (request DoS) |

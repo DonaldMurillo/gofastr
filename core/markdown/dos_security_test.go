@@ -39,6 +39,28 @@ func TestMarkdown_NestedBlockquoteBounded(t *testing.T) {
 	renderWithin(t, "nested blockquote", attack, 1500*time.Millisecond)
 }
 
+// TestMarkdown_NonAdvancingBlockquoteTerminates pins the always-advance
+// invariant: a line a classifier matches but the handler won't consume
+// must not spin the block loop. Found by FuzzRenderHTML — "\f>" is seen
+// as a blockquote (TrimSpace treats \f as space) but the consumer can't
+// strip the marker, so the parser never advanced — infinite loop + OOM.
+func TestMarkdown_NonAdvancingBlockquoteTerminates(t *testing.T) {
+	for _, in := range []string{"\f>", "\v>", "\f> a", " >"} {
+		renderWithin(t, "non-advancing blockquote", in, 500*time.Millisecond)
+	}
+}
+
+// TestMarkdown_MalformedTableNoPanic pins that a table whose separator
+// row is wider than its header row does not panic the renderer. Found by
+// FuzzRenderHTML — "|\n||:" indexed the header-sized align slice with the
+// separator's cell count (index out of range → request-goroutine crash).
+func TestMarkdown_MalformedTableNoPanic(t *testing.T) {
+	for _, in := range []string{"|\n||:", "|\n|:-:|:-:|", "a|b\n|", "|\n|||||"} {
+		// A panic here crashes the test goroutine and fails the run.
+		_ = RenderHTML(in)
+	}
+}
+
 // TestMarkdown_UnmatchedEmphasisBounded verifies that many unmatched
 // emphasis delimiters do not cause quadratic closing-delimiter scans.
 // Attack: "____...____x" (a long run of underscores with no closer).

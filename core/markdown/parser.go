@@ -60,8 +60,12 @@ func (p *parser) atHeading() bool {
 }
 
 func (p *parser) atBlockquote() bool {
-	return strings.HasPrefix(strings.TrimLeft(p.line(), " "), "> ") ||
-		strings.TrimSpace(p.line()) == ">"
+	// Use space-only trimming to match renderBlockquote's line consumer.
+	// TrimSpace here would classify e.g. "\f>" as a blockquote while the
+	// consumer (HasPrefix on a space-trimmed line) refuses to strip it,
+	// leaving the parser unable to advance — an infinite-loop DoS.
+	trimmed := strings.TrimLeft(p.line(), " ")
+	return strings.HasPrefix(trimmed, "> ") || trimmed == ">"
 }
 
 func (p *parser) atUnorderedList() bool {
@@ -270,6 +274,12 @@ func renderTable(p *parser, sb *strings.Builder) {
 	sepCells := splitTableRow(p.line())
 	aligns := make([]string, len(header))
 	for i, c := range sepCells {
+		// A malformed table can have more separator cells than header
+		// cells ("|\n||:"); aligns is sized to the header, so ignore the
+		// surplus rather than indexing out of range (panic → request DoS).
+		if i >= len(aligns) {
+			break
+		}
 		c = strings.TrimSpace(c)
 		switch {
 		case strings.HasPrefix(c, ":") && strings.HasSuffix(c, ":"):
