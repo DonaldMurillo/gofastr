@@ -132,6 +132,110 @@ func TestUpsert_AnonymousBodyOwnerFieldRejected(t *testing.T) {
 	}
 }
 
+// TestUpsert_CannotHijackOtherOwnersRow pins that an upsert whose body PK
+// matches a row owned by a DIFFERENT owner is refused — not silently
+// taken over via ON CONFLICT DO UPDATE (which re-stamps owner_id from the
+// caller's context and overwrites the victim's data).
+func TestUpsert_CannotHijackOtherOwnersRow(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "owner_id", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "owner_id", Type: schema.String},
+		{Name: "title", Type: schema.String},
+	}), `CREATE TABLE posts (id TEXT PRIMARY KEY, owner_id TEXT, title TEXT)`)
+	seedRows(t, db, "posts", []map[string]any{
+		{"id": "post-1", "owner_id": "alice", "title": "alice secret"},
+	})
+
+	// bob attempts to take over alice's row by PK.
+	if _, err := ch.UpsertOne(upsertSecurityContext("bob", ""), map[string]any{
+		"id":    "post-1",
+		"title": "pwned",
+	}); err == nil {
+		t.Fatal("SECURITY: [upsert-owner] bob upserted alice's row by PK. Attack: ON CONFLICT ownership hijack.")
+	}
+
+	var owner, title string
+	if err := db.QueryRow("SELECT owner_id, title FROM posts WHERE id = $1", "post-1").Scan(&owner, &title); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if owner != "alice" || title != "alice secret" {
+		t.Fatalf("SECURITY: [upsert-owner] alice's row was hijacked: owner=%q title=%q", owner, title)
+	}
+}
+
+// TestUpsert_CannotHijackOtherTenantsRow is the tenant analogue: a caller
+// in tenant B must not take over a row stamped tenant A by colliding PK.
+func TestUpsert_CannotHijackOtherTenantsRow(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "tenant_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		},
+		MultiTenant: true,
+	}.WithTimestamps(false), `CREATE TABLE posts (id TEXT PRIMARY KEY, tenant_id TEXT, title TEXT)`)
+	seedRows(t, db, "posts", []map[string]any{
+		{"id": "post-1", "tenant_id": "tenant-a", "title": "a secret"},
+	})
+
+	if _, err := ch.UpsertOne(upsertSecurityContext("", "tenant-b"), map[string]any{
+		"id":    "post-1",
+		"title": "pwned",
+	}); err == nil {
+		t.Fatal("SECURITY: [upsert-tenant] tenant-b upserted tenant-a's row by PK. Attack: ON CONFLICT tenant hijack.")
+	}
+
+	var tid, title string
+	if err := db.QueryRow("SELECT tenant_id, title FROM posts WHERE id = $1", "post-1").Scan(&tid, &title); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if tid != "tenant-a" || title != "a secret" {
+		t.Fatalf("SECURITY: [upsert-tenant] tenant-a's row was hijacked: tenant=%q title=%q", tid, title)
+	}
+}
+
+// TestUpsert_RejectsDangerousMediaURL pins that UpsertOne runs the same
+// media-URL allow-list (isSafeMediaURL) that Create/Update enforce — an
+// Image/File field value like javascript:/data:/../ traversal must be
+// rejected, not stored verbatim for later stored-XSS in an <img src>.
+func TestUpsert_RejectsDangerousMediaURL(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	cfg := makeEntityConfig("profiles", "profiles", "", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "avatar", Type: schema.Image},
+	})
+	ch, db := setupSecurityTestHandler(t, cfg,
+		`CREATE TABLE profiles (id TEXT PRIMARY KEY, avatar TEXT)`)
+
+	dangerous := []string{
+		"javascript:alert(document.cookie)",
+		"data:text/html,<script>alert(1)</script>",
+		"../../../etc/passwd",
+	}
+	for _, bad := range dangerous {
+		if _, err := ch.UpsertOne(context.Background(), map[string]any{
+			"id":     "p1",
+			"avatar": bad,
+		}); err == nil {
+			t.Errorf("SECURITY: [upsert-xss] UpsertOne stored dangerous avatar URL %q. Attack: stored XSS via Image field on upsert.", bad)
+		}
+	}
+	// Happy path: a safe URL is accepted.
+	if _, err := ch.UpsertOne(context.Background(), map[string]any{
+		"id":     "p2",
+		"avatar": "https://cdn.example.com/a.png",
+	}); err != nil {
+		t.Fatalf("UpsertOne rejected a safe avatar URL: %v", err)
+	}
+	var n int
+	db.QueryRow("SELECT COUNT(*) FROM profiles WHERE id = 'p1'").Scan(&n)
+	if n != 0 {
+		t.Errorf("SECURITY: [upsert-xss] dangerous avatar URL persisted a row")
+	}
+}
+
 func TestUpsert_MissingTenantContextRejected(t *testing.T) {
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
 		Table: "posts",

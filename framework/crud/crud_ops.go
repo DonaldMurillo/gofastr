@@ -166,6 +166,15 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	ub.Where(ch.PrimaryKey+" = $1", id)
 	ch.ApplyTenantScopeUpdate(ub, r)
 	ch.ApplyOwnerScopeUpdate(ub, r)
+	// A soft-deleted row is logically gone: the read paths hide it
+	// (ApplySoftDeleteFilter on Get/List/cursor/pre-image) and so must the
+	// write path — otherwise an owner could mutate / resurrect a record the
+	// system considers deleted, which the upsert path already refuses
+	// (errSoftDeletedResurrection). Match-nothing ⇒ scanRow gets ErrNoRows
+	// ⇒ errNotFound, same 404 a deleted row gives on Get.
+	if ch.Entity.Config.SoftDelete {
+		ub.Where("deleted_at IS NULL")
+	}
 	visFields := ch.VisibleFields()
 	ub.Returning(visFields...)
 
@@ -211,6 +220,12 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 			Where(ch.PrimaryKey+" = $1", id)
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)
+		// Don't re-soft-delete an already-deleted row: without this the
+		// UPDATE matches the trashed row, bumps deleted_at, and reports
+		// success — making a re-delete of a logically-gone record look
+		// like a fresh delete. Filtering to live rows makes affected==0,
+		// which maps to errNotFound below.
+		ub.Where("deleted_at IS NULL")
 		sqlStr, args := ub.Build()
 		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
 		if err != nil {

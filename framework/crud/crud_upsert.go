@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
@@ -20,6 +21,12 @@ import (
 // silently undelete the row — bypassing the compliance / forensic story
 // that motivates soft-delete in the first place.
 var errSoftDeletedResurrection = errors.New("upsert: target row is soft-deleted; restore explicitly before mutating")
+
+// errUpsertForeignRow signals an UpsertOne whose body PK collides with an
+// existing row owned by a different owner / tenant. Without this guard the
+// ON CONFLICT DO UPDATE matches purely by primary key and re-stamps
+// ownership/tenant from the caller's context — a cross-principal takeover.
+var errUpsertForeignRow = errors.New("upsert: target row belongs to a different owner or tenant")
 
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
 // primary key. If a row with the same PK already exists, every writable
@@ -61,26 +68,29 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 	var result map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
-		// Refuse to resurrect a soft-deleted row: ON CONFLICT DO UPDATE
-		// silently clears deleted_at without firing the lifecycle hooks,
-		// which would smuggle a row past audit / retention contracts.
-		if ch.Entity.Config.SoftDelete {
-			if pk, ok := body[ch.PrimaryKey]; ok && pk != nil {
-				var deletedAt sql.NullString
-				q := fmt.Sprintf("SELECT deleted_at FROM %s WHERE %s = $1", ch.Entity.GetTable(), ch.PrimaryKey)
-				err := ch.DB.QueryRowContext(ctx, q, pk).Scan(&deletedAt)
-				switch {
-				case errors.Is(err, sql.ErrNoRows):
-					// no existing row — pure insert path, allow.
-				case err != nil:
-					return fmt.Errorf("upsert preflight: %w", err)
-				case deletedAt.Valid && deletedAt.String != "":
-					return errSoftDeletedResurrection
-				}
-			}
+		// Preflight against the pre-existing row (matched by PK only — the
+		// same key the ON CONFLICT target uses). Three properties are
+		// enforced here, all FAIL-CLOSED:
+		//   1. A row owned by a different owner / tenant must not be taken
+		//      over (ON CONFLICT DO UPDATE would re-stamp ownership from the
+		//      caller's context and overwrite the victim's data).
+		//   2. A soft-deleted row must not be silently resurrected (it would
+		//      bypass the audit / retention story).
+		// The SELECT is intentionally unscoped by owner/tenant so a foreign
+		// row is DETECTED rather than treated as absent (which would fall
+		// through to a hijacking ON CONFLICT).
+		if err := ch.upsertPreflight(ctx, body); err != nil {
+			return err
 		}
 		ch.InjectTenant(body, ctx)
 		ch.InjectOwner(body, ctx)
+		// Run the media-URL allow-list (http/https/relative only) before
+		// persisting, matching doCreate/doUpdate. Without it the upsert
+		// path stores a javascript:/data:/../ value verbatim into an
+		// Image/File field — stored XSS once it renders into <img src>.
+		if err := ch.validateMediaURLs(body); err != nil {
+			return err
+		}
 		// Auto-generate any field that needs it; on conflict the existing
 		// value stays (we exclude pk + auto fields from the update set).
 		for _, f := range ch.Entity.GetFields() {
@@ -193,6 +203,75 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	}
 	ch.EmitEvent(ctx, event.EntityCreated, result)
 	return result, nil
+}
+
+// upsertPreflight inspects the pre-existing row (if any) matching the body's
+// primary key and fails closed when the row belongs to a different owner /
+// tenant, or is soft-deleted. Runs inside the upsert tx, before INSERT ...
+// ON CONFLICT. A pure-insert (no existing row) is always allowed.
+func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any) error {
+	ownerField := ch.Entity.Config.OwnerField
+	checkSoftDelete := ch.Entity.Config.SoftDelete
+	checkTenant := ch.Entity.Config.MultiTenant
+	if ownerField == "" && !checkSoftDelete && !checkTenant {
+		return nil
+	}
+	pk, ok := body[ch.PrimaryKey]
+	if !ok || pk == nil {
+		return nil // no PK supplied ⇒ no conflict possible.
+	}
+
+	// Build the projection: owner_field, tenant_id, deleted_at as needed.
+	cols := make([]string, 0, 3)
+	if ownerField != "" {
+		cols = append(cols, ownerField)
+	}
+	if checkTenant {
+		cols = append(cols, "tenant_id")
+	}
+	if checkSoftDelete {
+		cols = append(cols, "deleted_at")
+	}
+	dest := make([]sql.NullString, len(cols))
+	ptrs := make([]any, len(cols))
+	for i := range dest {
+		ptrs[i] = &dest[i]
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
+		strings.Join(cols, ", "), ch.Entity.GetTable(), ch.PrimaryKey)
+	err := ch.DB.QueryRowContext(ctx, q, pk).Scan(ptrs...)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil // no existing row — pure insert path, allow.
+	case err != nil:
+		return fmt.Errorf("upsert preflight: %w", err)
+	}
+
+	idx := 0
+	if ownerField != "" {
+		got := dest[idx].String
+		want := ""
+		if id, ok := owner.Get(ctx); ok && id != nil {
+			want = fmt.Sprintf("%v", id)
+		}
+		if got != want {
+			return errUpsertForeignRow
+		}
+		idx++
+	}
+	if checkTenant {
+		got := dest[idx].String
+		if got != tenant.GetTenantID(ctx) {
+			return errUpsertForeignRow
+		}
+		idx++
+	}
+	if checkSoftDelete {
+		if dest[idx].Valid && dest[idx].String != "" {
+			return errSoftDeletedResurrection
+		}
+	}
+	return nil
 }
 
 // isAutoField reports whether a field name corresponds to an auto-generated

@@ -24,6 +24,15 @@ import (
 func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK string, node *IncludeNode, ids []string, result map[string]map[string]any) error {
 	rel := node.Relation
 
+	// When the related entity is soft-deletable, hide logically-removed
+	// rows from the eager-load — the direct read paths do this via
+	// ApplySoftDeleteFilter, and an include must not be a back door around
+	// it. Rendered as a static (non-parameterised) `deleted_at IS NULL`.
+	softDeleteFilter := ""
+	if node.Target != nil && node.Target.Config.SoftDelete {
+		softDeleteFilter = " AND deleted_at IS NULL"
+	}
+
 	// Validate relation-derived identifiers before dispatching.
 	safeEntity, err := query.SafeIdent(rel.Entity)
 	if err != nil {
@@ -51,20 +60,26 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
 		}
-		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Filters, ids, result)
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter)
 	case entity.RelManyToOne:
 		safeFK, err := query.SafeIdent(rel.ForeignKey)
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Filters, ids, result)
+		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter)
 	case entity.RelManyToMany:
-		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Filters, ids, result)
+		mtmSoftDelete := softDeleteFilter
+		if mtmSoftDelete != "" {
+			// The ManyToMany SELECT JOINs target + pivot, so a bare
+			// `deleted_at` would be ambiguous — qualify it with the target.
+			mtmSoftDelete = " AND " + query.QuoteIdent(safeEntity) + ".deleted_at IS NULL"
+		}
+		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Filters, ids, result, mtmSoftDelete)
 	}
 	return nil
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -73,8 +88,8 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	}
 
 	extra, extraArgs := filterClause(filters, len(ids)+1)
-	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s",
-		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "), extra)
+	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s%s",
+		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "), extra, softDeleteFilter)
 	args = append(args, extraArgs...)
 
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -117,7 +132,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -168,8 +183,8 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 		fkArgs[i] = fk
 	}
 	extra, extraArgs := filterClause(filters, len(unique)+1)
-	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)%s",
-		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "), extra)
+	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)%s%s",
+		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "), extra, softDeleteFilter)
 	fkArgs = append(fkArgs, extraArgs...)
 
 	tgtRows, err := db.QueryContext(ctx, tgtQuery, fkArgs...)
@@ -212,7 +227,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string) error {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid through table %q: %w", rel.Through, err)
@@ -235,7 +250,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 
 	extra, extraArgs := filterClauseQualified(filters, safeEntity, len(ids)+1)
 	q := fmt.Sprintf(
-		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)%s",
+		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)%s%s",
 		query.QuoteIdent(safeEntity),
 		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
 		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough),
@@ -243,6 +258,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
 		strings.Join(placeholders, ", "),
 		extra,
+		softDeleteFilter,
 	)
 	args = append(args, extraArgs...)
 

@@ -110,6 +110,82 @@ func TestCrud_MissingTenantContextRejects(t *testing.T) {
 	}
 }
 
+// setupOwnerReadInProcHandler builds an OwnerField entity seeded with two
+// owners' rows, used to assert in-proc read/update/delete fail closed
+// without an owner in context.
+func setupOwnerReadInProcHandler(t *testing.T) (*CrudHandler, *sql.DB) {
+	t.Helper()
+	db := setupDB(t, `CREATE TABLE onotes (
+		id TEXT PRIMARY KEY,
+		user_id TEXT,
+		title TEXT
+	)`)
+	ent := entity.Define("onotes", entity.EntityConfig{
+		Table: "onotes",
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		},
+		OwnerField: "user_id",
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	seedRows(t, db, "onotes", []map[string]any{
+		{"id": "note-a", "user_id": "alice", "title": "Alpha"},
+		{"id": "note-b", "user_id": "bob", "title": "Beta"},
+	})
+	return ch, db
+}
+
+// TestCrud_MissingOwnerContextRejects pins fail-closed behaviour on every
+// in-proc read/update/delete method touching an OwnerField entity. The
+// HTTP twins enforce RequireOwner; the in-proc methods previously called
+// only ApplyOwnerScope, which is fail-OPEN (no owner ⇒ no WHERE), so an
+// anonymous context spanned every owner's rows.
+func TestCrud_MissingOwnerContextRejects(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := setupOwnerReadInProcHandler(t)
+	ctx := context.Background() // no owner in context
+
+	if _, err := ch.GetOne(ctx, "note-b", nil); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("GetOne err=%v, want errOwnerRequired (anonymous read of another owner's row)", err)
+	}
+	if rows, err := ch.ListAll(ctx, ListOptions{}); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("ListAll err=%v rows=%+v, want errOwnerRequired (anonymous list spans all owners)", err, rows)
+	}
+	if n, err := ch.CountAll(ctx, ListOptions{}); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("CountAll err=%v n=%d, want errOwnerRequired", err, n)
+	}
+	if _, err := ch.UpdateOne(ctx, "note-b", map[string]any{"title": "pwned"}); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("UpdateOne err=%v, want errOwnerRequired", err)
+	}
+	if err := ch.DeleteOne(ctx, "note-b"); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("DeleteOne err=%v, want errOwnerRequired", err)
+	}
+	if _, err := ch.BatchUpdateMany(ctx, []string{"note-b"}, []map[string]any{{"title": "x"}}); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("BatchUpdateMany err=%v, want errOwnerRequired", err)
+	}
+	if _, err := ch.BatchDeleteMany(ctx, []string{"note-b"}); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("BatchDeleteMany err=%v, want errOwnerRequired", err)
+	}
+
+	// Sanity: no rows mutated/removed by the rejected operations.
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM onotes").Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("rejected operations still mutated rows; count=%d", n)
+	}
+	var title string
+	if err := db.QueryRow("SELECT title FROM onotes WHERE id = $1", "note-b").Scan(&title); err != nil {
+		t.Fatalf("read title: %v", err)
+	}
+	if title != "Beta" {
+		t.Fatalf("bob's row was mutated by anonymous in-proc update; title=%q", title)
+	}
+}
+
 // TestParseScopedFilters_CapsInListSize keeps a defensible cap on
 // `field_in=a|b|...` so a single request can't blow up a JOIN with
 // thousands of bind parameters.

@@ -62,6 +62,13 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			}
 		}
 		for _, field := range ch.Entity.GetFields() {
+			// Never build a filter predicate on a Hidden field. Its value
+			// is omitted from output, but a filter turns row presence /
+			// absence into a value-disclosure oracle over a secret column.
+			// Mirrors listToolSchema, which also skips Hidden fields.
+			if field.Hidden {
+				continue
+			}
 			for _, suffix := range []string{"", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
 				key := field.Name + suffix
 				if v, ok := params[key]; ok {

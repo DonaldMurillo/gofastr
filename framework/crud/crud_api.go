@@ -66,6 +66,9 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 // UpdateOne updates a record by id with the partial body. Hooks + tx +
 // event emission all fire as in the HTTP path.
 func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string]any) (map[string]any, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
@@ -88,6 +91,9 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 
 // DeleteOne deletes (or soft-deletes) a record by id.
 func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return err
 	}
@@ -106,6 +112,9 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 // includes. Returns sql.ErrNoRows when the record doesn't exist (or is
 // soft-deleted, unless options ask otherwise).
 func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string) (map[string]any, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
@@ -153,6 +162,9 @@ type ListOptions struct {
 // and returns the matching rows. Caller is responsible for paging if the
 // result set is large.
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
@@ -227,6 +239,9 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 
 // BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
 func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
@@ -257,6 +272,9 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 // BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the
 // ids that were successfully removed.
 func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]string, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
@@ -281,6 +299,9 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 // CountAll returns COUNT(*) for the given filters (no pagination). Cheap
 // helper for typed repos that want a totals figure without hitting List.
 func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return 0, err
+	}
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return 0, err
 	}

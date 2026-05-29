@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -433,21 +434,30 @@ func TestUpdate_DeletedRecord(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ddl := `CREATE TABLE sitems (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, deleted_at TEXT)`
-	cfg := entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		},
-		OwnerField: "user_id",
-		SoftDelete: true,
-	}.WithTimestamps(false)
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
+	cfg := makeEntityConfig("sitems", "sitems", "user_id", []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "title", Type: schema.String},
+	}, func(c *entity.EntityConfig) { c.SoftDelete = true })
+	ch, db := setupSecurityTestHandler(t, cfg, ddl)
+	// Seed an OWNED but soft-deleted row so the deleted-row code path is
+	// actually exercised (the previous version left the table empty, so the
+	// 404 came from sql.ErrNoRows, not soft-delete enforcement).
+	seedRows(t, db, "sitems", []map[string]any{
+		{"id": "deleted-id", "user_id": "alice", "title": "original", "deleted_at": "2024-01-01T00:00:00Z"},
+	})
 	req := makeRequest(t, RequestOpts{Method: http.MethodPut, Path: "/sitems/deleted-id", Body: `{"title":"resurrected"}`, UserID: "alice"})
 	req.SetPathValue("id", "deleted-id")
 	rr := httptest.NewRecorder()
 	ch.Update()(rr, req)
 	if rr.Code == http.StatusOK || rr.Code == http.StatusCreated {
 		t.Errorf("SECURITY: [update] soft-deleted record was updated. Attack: update soft-deleted record to modify hidden data.")
+	}
+	var title string
+	if err := db.QueryRow("SELECT title FROM sitems WHERE id = ?", "deleted-id").Scan(&title); err != nil {
+		t.Fatalf("read title: %v", err)
+	}
+	if title != "original" {
+		t.Errorf("SECURITY: [update] soft-deleted record's title was mutated to %q. Attack: update soft-deleted record.", title)
 	}
 }
 
@@ -864,6 +874,47 @@ func TestMCP_ToolListPaginationEnforced(t *testing.T) {
 		t.Errorf("SECURITY: [mcp] list schema 'limit' field has no maximum constraint. Attack: unbounded pagination via MCP tool.")
 	} else if maxVal, ok := max.(float64); ok && maxVal > 1000 {
 		t.Errorf("SECURITY: [mcp] list schema 'limit' maximum is %v, which is too high. Attack: large pagination via MCP tool.", maxVal)
+	}
+}
+
+// TestMCP_ListToolOmitsHiddenFieldFilters pins that the generated _list
+// MCP tool does NOT forward a filter predicate built on a Hidden field.
+// Attack: probe a hidden secret column (e.g. password_hash_like=$2a$10$abc%)
+// and read the secret via the match/no-match oracle in row presence. The
+// write/list schemas already omit hidden fields (listToolSchema); the
+// filter-param builder must too.
+func TestMCP_ListToolOmitsHiddenFieldFilters(t *testing.T) {
+	t.Parallel()
+	installSecurityOwnerExtractor(t)
+	ddl := `CREATE TABLE mcp_secrets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT, password_hash TEXT)`
+	cfg := makeEntityConfig("mcp_secrets", "mcp_secrets", "user_id", []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String},
+		{Name: "password_hash", Type: schema.String, Hidden: true},
+	})
+	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
+
+	var gotQuery url.Values
+	rec := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+	})
+
+	handler := ch.listTool(rec)
+	_, _ = handler(context.Background(), map[string]any{
+		"name":               "visible",        // visible field — allowed
+		"password_hash":      "$2a$10$abc",      // hidden eq probe
+		"password_hash_like": "$2a$10$abc%",     // hidden LIKE probe
+	})
+
+	for _, k := range []string{"password_hash", "password_hash_like"} {
+		if gotQuery.Has(k) {
+			t.Errorf("SECURITY: [mcp] _list tool forwarded hidden-field filter %q=%q. Attack: hidden-column value-disclosure oracle.", k, gotQuery.Get(k))
+		}
+	}
+	if !gotQuery.Has("name") {
+		t.Errorf("visible filter 'name' was dropped — filter forwarding too aggressive")
 	}
 }
 

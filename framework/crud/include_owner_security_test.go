@@ -89,6 +89,78 @@ CREATE TABLE comments (
 	}
 }
 
+// TestInclude_ScopedFilterCannotBypassOwnerScope pins that an
+// attacker-supplied scoped filter on the related entity's OwnerField does
+// NOT disable cross-table owner scoping. Attack: alice requests
+// `/posts?include=comments(user_id=bob)` — the forged predicate must be
+// intersected with alice's real owner scope (matching nothing), not treated
+// as an opt-out that returns bob's private comment.
+func TestInclude_ScopedFilterCannotBypassOwnerScope(t *testing.T) {
+	ddl := `
+CREATE TABLE posts (
+	id        TEXT PRIMARY KEY,
+	user_id   TEXT NOT NULL,
+	title     TEXT
+);
+CREATE TABLE comments (
+	id        TEXT PRIMARY KEY,
+	user_id   TEXT NOT NULL,
+	post_id   TEXT NOT NULL,
+	body      TEXT
+);
+`
+	postCfg := makeEntityConfig("posts", "posts", "user_id",
+		[]schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "title", Type: schema.String},
+		},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{
+				entity.HasMany("comments", "comments", "post_id"),
+			}
+		},
+	)
+	commentCfg := makeEntityConfig("comments", "comments", "user_id",
+		[]schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "post_id", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.String},
+		},
+	)
+
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	commentEnt := entity.Define(commentCfg.Table, commentCfg)
+	commentEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	reg.add(t, commentEnt)
+	ch.Registry = reg
+
+	seedRows(t, db, "posts", []map[string]any{
+		{"id": "p1", "user_id": "alice", "title": "alice post"},
+	})
+	seedRows(t, db, "comments", []map[string]any{
+		{"id": "c-alice", "user_id": "alice", "post_id": "p1", "body": "alice comment"},
+		{"id": "c-bob", "user_id": "bob", "post_id": "p1", "body": "bob secret"},
+	})
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   "/posts?include=comments(user_id=bob)",
+		UserID: "alice",
+	})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list+include returned %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "bob secret") {
+		t.Errorf("SECURITY: [idor] include=comments(user_id=bob) bypassed owner scope and leaked bob's comment. Body: %s", body)
+	}
+}
+
 // minimal Registry shim for the include test.
 type testRegistry struct {
 	mu map[string]*entity.Entity

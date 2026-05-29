@@ -537,14 +537,14 @@ func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
 	if ownerField == "" {
 		return
 	}
-	// Skip if the caller already supplied an explicit predicate on
-	// this same field (lets advanced callers opt out by passing their
-	// own filter at the API layer).
-	for _, f := range node.Filters {
-		if f.Field == ownerField {
-			return
-		}
-	}
+	// Always AND the context-derived owner predicate, even when the node
+	// already carries a filter on the owner field. On the HTTP path
+	// node.Filters comes from the attacker-controlled
+	// `include=rel(owner_field=val)` query string; treating that as an
+	// opt-out would let a forged `user_id=bob` disable cross-table owner
+	// scoping (IDOR). Intersecting it with the real owner instead means a
+	// forged value matches nothing — fail-closed. A legitimate caller who
+	// filters on their own id gets a redundant-but-harmless predicate.
 	var val string
 	if id, ok := owner.Get(ctx); ok && id != nil {
 		val = fmt.Sprintf("%v", id)
