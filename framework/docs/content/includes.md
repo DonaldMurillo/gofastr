@@ -92,6 +92,15 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
 - Result key casing matches the entity's `JSONCase` setting
   (`camel` or `snake`); nested rows are deep-converted.
 
+> **Low-level helper:** the HTTP `?include=` path scrubs soft-deleted
+> rows and Hidden columns automatically. The exported `EagerLoad` helper
+> (`framework.EagerLoad`) only does so when you pass the optional
+> `entity.Registry` argument — `EagerLoad(ctx, db, ent, rels, ids, registry)`
+> — which lets it resolve each relation's target to apply the
+> `deleted_at IS NULL` filter and exclude Hidden fields. Always pass the
+> registry when loading relations whose targets are soft-deletable or
+> carry Hidden columns; without it the helper returns unscrubbed rows.
+
 ## Errors
 
 - `unknown include "x"` — the named relation does not exist on the

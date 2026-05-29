@@ -293,27 +293,40 @@ func rejectUnsafeContent(data []byte) error {
 	// the dangerous tag off offset 0, and DetectContentType then reports
 	// text/plain. So we strip a leading byte-order mark and scan the
 	// whole sniff window (case-insensitive) for any active-content token
-	// anywhere — none of these belong in a non-active content field.
-	trim := bytes.TrimLeft(stripBOM(head), " \t\r\n\f\v")
-	lower := bytes.ToLower(trim)
-	for _, tok := range [][]byte{
-		[]byte("<svg"),
-		[]byte("<?xml"),
-		[]byte("<html"),
-		[]byte("<!doctype"),
-		[]byte("<script"),
-		[]byte("<iframe"),
-		[]byte("<img"),
-		[]byte("<math"),
-		[]byte("<object"),
-		[]byte("<embed"),
-		[]byte("<link"),
-		[]byte("<base"),
-		[]byte("<style"),
-		[]byte("javascript:"),
-	} {
-		if bytes.Contains(lower, tok) {
-			return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
+	// anywhere.
+	//
+	// But that broad scan can false-positive: a legitimate raster image,
+	// PDF, or font whose bytes happen to contain an ASCII sequence like
+	// "<img" or "javascript:" (e.g. in a metadata/comment segment) would
+	// be wrongly rejected. To avoid that without weakening the block, we
+	// only run the token scan when the content is NOT a confirmed binary
+	// type. http.DetectContentType recognises raster images, PDF, fonts,
+	// archives, and audio/video by magic bytes — those can never be
+	// "active content" served as markup, so skipping the token scan for
+	// them is safe. SVG, HTML, plain text, and unknown
+	// (application/octet-stream) all still go through the full scan.
+	if !isConfirmedInertBinary(head) {
+		trim := bytes.TrimLeft(stripBOM(head), " \t\r\n\f\v")
+		lower := bytes.ToLower(trim)
+		for _, tok := range [][]byte{
+			[]byte("<svg"),
+			[]byte("<?xml"),
+			[]byte("<html"),
+			[]byte("<!doctype"),
+			[]byte("<script"),
+			[]byte("<iframe"),
+			[]byte("<img"),
+			[]byte("<math"),
+			[]byte("<object"),
+			[]byte("<embed"),
+			[]byte("<link"),
+			[]byte("<base"),
+			[]byte("<style"),
+			[]byte("javascript:"),
+		} {
+			if bytes.Contains(lower, tok) {
+				return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
+			}
 		}
 	}
 
@@ -328,6 +341,40 @@ func rejectUnsafeContent(data []byte) error {
 	}
 
 	return nil
+}
+
+// isConfirmedInertBinary reports whether http.DetectContentType
+// classifies head as a binary type that can never be rendered as active
+// HTML/SVG markup — raster images, PDF, fonts, archives, and audio/video.
+// For these the active-content token scan would only produce false
+// positives (a token in a metadata segment is just bytes, not markup),
+// so the scan is skipped. Crucially this NEVER returns true for SVG,
+// HTML, XML, plain text, or unknown content (application/octet-stream),
+// so the active-content block is not weakened for the shapes that matter.
+func isConfirmedInertBinary(head []byte) bool {
+	ct := http.DetectContentType(head)
+	// Strip any "; charset=" parameter for prefix matching.
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	switch {
+	case ct == "application/pdf":
+		return true
+	case strings.HasPrefix(ct, "image/") && ct != "image/svg+xml":
+		// Raster images: png, jpeg, gif, webp, bmp, ico. SVG is excluded.
+		return true
+	case strings.HasPrefix(ct, "audio/"),
+		strings.HasPrefix(ct, "video/"),
+		strings.HasPrefix(ct, "font/"),
+		ct == "application/font-woff",
+		ct == "application/wasm",
+		ct == "application/x-rar-compressed",
+		ct == "application/zip",
+		ct == "application/x-gzip",
+		ct == "application/ogg":
+		return true
+	}
+	return false
 }
 
 // stripBOM removes a single leading byte-order mark (UTF-8, UTF-16 LE/BE,

@@ -97,3 +97,32 @@ func TestProcessFileField_RejectsHiddenActiveContent(t *testing.T) {
 		})
 	}
 }
+
+// TestProcessFileField_AcceptsBinaryWithToken verifies that legitimate
+// binary uploads (PNG, JPEG, PDF, font) whose bytes coincidentally
+// contain an ASCII active-content token like "<script" or "javascript:"
+// are NOT rejected — the active-content scan must only apply to content
+// that actually sniffs as text/markup, not confirmed binary magic.
+// Real HTML/SVG must still be rejected (covered by the cases above).
+func TestProcessFileField_AcceptsBinaryWithToken(t *testing.T) {
+	token := []byte("<script>alert(1)</script> javascript: <img src=x>")
+	cases := map[string][]byte{
+		// PNG magic + IDAT-ish bytes, with an embedded HTML token (e.g. a
+		// tEXt chunk or zTXt comment carrying user text).
+		"png": append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 'I', 'H', 'D', 'R'}, token...),
+		// JPEG SOI + JFIF, token embedded in an EXIF/comment segment.
+		"jpeg": append([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, token...),
+		// PDF header, token in a stream/metadata.
+		"pdf": append([]byte("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n"), token...),
+		// GIF, token in a comment extension.
+		"gif": append([]byte("GIF89a"), token...),
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := &captureStorage{}
+			if _, err := file.ProcessFileField(context.Background(), store, bytes.NewReader(body), "asset."+name, "posts", "attachment"); err != nil {
+				t.Fatalf("SECURITY/correctness: [filefield] ProcessFileField rejected legitimate %s binary that merely contains an ASCII token: %v", name, err)
+			}
+		})
+	}
+}
