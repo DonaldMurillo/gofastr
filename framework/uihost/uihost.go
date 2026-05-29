@@ -1979,6 +1979,19 @@ var voidHeadTagsRe = regexp.MustCompile(
 	`(?is)<(base|embed|img|source)\b[^>]*?/?>`,
 )
 
+// eventHandlerAttrRe matches any `on…=` event-handler attribute (quoted,
+// single-quoted, or bare value) plus the bare `autofocus` boolean. Form
+// controls (input/select/textarea/keygen) are hoisted into <body> by the
+// browser's lenient parser, and an `autofocus` on one fires its `onfocus`
+// handler with no user interaction — an XSS vector that survives the
+// tag-family block-lists because those tags aren't in them. Stripping the
+// attributes (rather than the tags) also future-proofs any new
+// interactive element that lands in caller-supplied head HTML.
+var eventHandlerAttrRe = regexp.MustCompile(`(?is)\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+
+// autofocusAttrRe matches the bare `autofocus` boolean attribute.
+var autofocusAttrRe = regexp.MustCompile(`(?is)\sautofocus(\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?`)
+
 // metaRefreshRe matches `<meta http-equiv="refresh" …>` in any casing
 // or attribute order. Meta-refresh is the canonical "redirect via
 // markup" primitive and has no business being injected by an SEO
@@ -1995,7 +2008,8 @@ var linkTagRe = regexp.MustCompile(`(?is)<link\b[^>]*?/?>`)
 // SEOScreen.HeadHTML). The name is kept for back-compat; the behavior
 // is now defense-in-depth across the whole "active in head" tag set.
 // Allowed survivors: <meta> (except http-equiv=refresh), <link> with
-// http(s)/relative href, <title>, and inline text content.
+// http(s)/relative href, <title>, and inline text content — and even
+// those have any on*= event-handler / autofocus attribute scrubbed.
 func stripInlineScripts(s string) string {
 	if s == "" {
 		return s
@@ -2004,6 +2018,10 @@ func stripInlineScripts(s string) string {
 	out = dangerousHeadTagsRe.ReplaceAllString(out, "")
 	out = voidHeadTagsRe.ReplaceAllString(out, "")
 	out = metaRefreshRe.ReplaceAllString(out, "")
+	// Generic on*= / autofocus strip so any surviving tag (notably form
+	// controls the browser hoists into <body>) can't fire an event handler.
+	out = eventHandlerAttrRe.ReplaceAllString(out, "")
+	out = autofocusAttrRe.ReplaceAllString(out, "")
 	out = linkTagRe.ReplaceAllStringFunc(out, func(tag string) string {
 		if isSafeLinkTag(tag) {
 			return tag

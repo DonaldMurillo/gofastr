@@ -100,3 +100,69 @@ func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 		}
 	}
 }
+
+// htmlSignalDoesNotInjectObjectMarkup asserts html-mode signal rendering
+// never routes a non-string value (e.g. the auto-built dispatchRPC error
+// object {ok:false,status,text}) through innerHTML. JSON.stringify does
+// NOT HTML-escape, so a server error body that reflects attacker input
+// ("<img src=x onerror=…>") would execute. Non-string values must use
+// textContent (mirroring text-mode); the html escape hatch is for
+// trusted HTML *strings* only.
+//
+// Surface: the html-mode branch of setSignal in runtime.js.
+func TestHtmlSignalDoesNotInjectObjectMarkup(t *testing.T) {
+	src := readSrc(t, "runtime.js")
+	fnIdx := strings.Index(src, "setSignal(name, value)")
+	if fnIdx < 0 {
+		t.Fatal("could not locate setSignal in runtime.js")
+	}
+	body := src[fnIdx:]
+	if end := strings.Index(body, "signal(name) {"); end > 0 {
+		body = body[:end]
+	}
+	htmlIdx := strings.Index(body, "if (mode === 'html')")
+	if htmlIdx < 0 {
+		t.Fatal("could not locate html-mode branch in setSignal")
+	}
+	// Capture just the html-mode branch up to the next mode check.
+	htmlBranch := body[htmlIdx:]
+	if end := strings.Index(htmlBranch, "} else if (mode === 'attr')"); end > 0 {
+		htmlBranch = htmlBranch[:end]
+	}
+
+	// The vulnerable shape assigns JSON.stringify(value) into innerHTML
+	// for the non-string case. The fixed shape must NOT feed
+	// JSON.stringify output to innerHTML — non-string values go to
+	// textContent. Detect the unsafe pairing: innerHTML on the same
+	// statement as JSON.stringify.
+	for _, line := range strings.Split(htmlBranch, "\n") {
+		l := strings.TrimSpace(line)
+		if strings.Contains(l, "innerHTML") && strings.Contains(l, "JSON.stringify") {
+			t.Errorf("SECURITY: [html-signal] non-string signal value reaches innerHTML via JSON.stringify (no HTML-escape) — a reflected RPC error object {text:'<img onerror=…>'} executes; line:\n%s", l)
+		}
+	}
+}
+
+// sseIslandSelectorEscaped asserts the SSE island handler escapes the
+// server-supplied island name before interpolating it into a CSS
+// attribute selector. Without CSS.escape() a crafted island name like
+// `x"], [data-trusted-region` re-targets the write to an unintended
+// element (and `x"]` throws an invalid-selector error that silently
+// drops the legitimate island's update).
+//
+// Surface: the island event listener in src/sse.js. Sibling widgets.js /
+// toasts.js already wrap analogous data-* lookups in CSS.escape().
+func TestSseIslandSelectorEscaped(t *testing.T) {
+	src := readSrc(t, filepath.Join("src", "sse.js"))
+
+	if !strings.Contains(src, "CSS.escape") {
+		t.Error("SECURITY: [sse-selector] src/sse.js never calls CSS.escape on the island name — the SSE island field is interpolated raw into a CSS attribute selector, so a crafted name re-targets the innerHTML write")
+	}
+
+	// The raw-template form `[data-island="${island}"]` is the vulnerable
+	// shape; once fixed the island name must be escaped, not templated
+	// directly into the selector.
+	if strings.Contains(src, "[data-island=\"${island}\"]") {
+		t.Error("SECURITY: [sse-selector] src/sse.js still interpolates the raw island name into the selector template `[data-island=\"${island}\"]` — must use CSS.escape(String(island))")
+	}
+}

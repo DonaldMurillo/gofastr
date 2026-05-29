@@ -14,9 +14,15 @@ type IslandUpdate struct {
 // streamEntry holds a per-session update stream. The data channel is never
 // closed; instead, the done channel is closed on Unsubscribe to signal
 // termination. This prevents panics from sending to a closed channel.
+//
+// refs counts the number of live subscribers sharing this entry (e.g. the
+// same session open in multiple browser tabs). The stream is only torn down
+// — done closed and the entry deleted — when the last subscriber leaves, so
+// closing one tab does not kill the others' live updates.
 type streamEntry struct {
 	ch   chan IslandUpdate
-	done chan struct{} // closed when unsubscribed
+	done chan struct{} // closed when the last subscriber unsubscribes
+	refs int           // number of live subscribers; guarded by Manager.mu
 }
 
 // Manager tracks active islands across all client sessions.
@@ -112,20 +118,24 @@ func (m *Manager) Subscribe(sessionID string) <-chan IslandUpdate {
 	defer m.mu.Unlock()
 
 	if entry, ok := m.streams[sessionID]; ok {
+		entry.refs++
 		return entry.ch
 	}
 
 	entry := &streamEntry{
 		ch:   make(chan IslandUpdate, 64),
 		done: make(chan struct{}),
+		refs: 1,
 	}
 	m.streams[sessionID] = entry
 	return entry.ch
 }
 
-// Unsubscribe removes the update channel for a session.
-// It closes the done channel to signal termination; the data channel is never
-// closed, preventing panics from concurrent sends.
+// Unsubscribe releases one subscriber's hold on a session's update stream.
+// The stream is only torn down — done closed and the entry deleted — when the
+// last subscriber leaves. This keeps the stream alive for other tabs sharing
+// the same session. The data channel is never closed, preventing panics from
+// concurrent sends.
 func (m *Manager) Unsubscribe(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -133,6 +143,11 @@ func (m *Manager) Unsubscribe(sessionID string) {
 	entry, ok := m.streams[sessionID]
 	if !ok {
 		return
+	}
+
+	entry.refs--
+	if entry.refs > 0 {
+		return // other subscribers still hold this stream
 	}
 
 	delete(m.streams, sessionID)

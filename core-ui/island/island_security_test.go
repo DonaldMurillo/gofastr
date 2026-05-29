@@ -710,6 +710,47 @@ func TestSecurity_Unsubscribe_DoesNotBlockPush(t *testing.T) {
 	}
 }
 
+// TestSecurity_MultiTabSubscribe_OutlivesOneClose asserts that a session's
+// live update stream stays alive as long as at least one subscriber for that
+// session remains. Two tabs sharing one session cookie subscribe; when one
+// closes (Unsubscribe), the survivor must keep receiving Push updates.
+func TestSecurity_MultiTabSubscribe_OutlivesOneClose(t *testing.T) {
+	t.Parallel()
+	mgr := island.NewManager()
+	isl := island.NewIsland("multi-tab", htmlComp("live"))
+	isl.SessionID = "shared-sess"
+	mgr.Register(isl)
+
+	// Tab A and Tab B both connect with the same session cookie.
+	chA := mgr.Subscribe("shared-sess")
+	chB := mgr.Subscribe("shared-sess")
+
+	// Tab A closes (browser tab closed → ServeSSE defer Unsubscribe).
+	mgr.Unsubscribe("shared-sess")
+
+	// The surviving tab B must still receive pushed updates.
+	if err := mgr.Push("multi-tab"); err != nil {
+		t.Fatalf("Push returned error after one subscriber closed: %v", err)
+	}
+
+	select {
+	case <-chB:
+		t.Logf("NOTE: surviving subscriber still receives updates")
+	case <-time.After(time.Second):
+		t.Errorf("SECURITY: [availability] surviving subscriber stopped receiving updates after another tab closed")
+	}
+
+	// Sanity: chA shares the underlying stream in the current design; the
+	// property under test is that the stream is not torn down while B is open.
+	_ = chA
+
+	// Once the last subscriber closes, the stream may be torn down.
+	mgr.Unsubscribe("shared-sess")
+	if err := mgr.Push("multi-tab"); err != nil {
+		t.Fatalf("Push returned error after all subscribers closed: %v", err)
+	}
+}
+
 // ===================================================================
 // Tests 28-30: Nil component handling
 // ===================================================================

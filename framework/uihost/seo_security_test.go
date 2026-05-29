@@ -90,6 +90,40 @@ func TestSEOScreen_StripsDangerousTags(t *testing.T) {
 	}
 }
 
+// formControlXSS covers interactive form controls that browsers hoist
+// out of <head> into <body> and then fire an event handler on via
+// autofocus. They are NOT in dangerousHeadTagsRe / voidHeadTagsRe, so
+// the only thing that neutralises them is a generic on*= / autofocus
+// attribute strip. The property: no surviving head tag may carry an
+// event-handler attribute or autofocus.
+var formControlXSS = []struct {
+	name, payload string
+}{
+	{"input", `<input type=hidden onfocus=alert(1) autofocus>`},
+	{"select", `<select autofocus onfocus=alert(document.cookie)></select>`},
+	{"textarea", `<textarea autofocus oninput=alert(1)></textarea>`},
+	{"keygen", `<keygen autofocus onfocus=alert(1)>`},
+}
+
+func TestHeadHTML_NeutralisesAutofocusXSS(t *testing.T) {
+	for _, tc := range formControlXSS {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, render := range map[string]func() string{
+				"WithHeadHTML": func() string { return renderHeadPage(t, WithHeadHTML(tc.payload)) },
+				"SEOScreen":    func() string { return renderScreenHeadPage(t, tc.payload) },
+			} {
+				low := strings.ToLower(render())
+				if strings.Contains(low, "onfocus") || strings.Contains(low, "oninput") {
+					t.Fatalf("event handler survived head scrub: %q", tc.payload)
+				}
+				if strings.Contains(low, "autofocus") {
+					t.Fatalf("autofocus survived head scrub: %q", tc.payload)
+				}
+			}
+		})
+	}
+}
+
 // dangerousURLs are scheme/escape combinations that have no business in
 // a typed SEO URL field. The typed helpers (WithCanonicalURL,
 // WithOpenGraph URL/Image, WithTwitterCard Image) flow into rendered

@@ -569,7 +569,12 @@
       if (trimmed.startsWith('vbscript:')) return true;
       if (trimmed.startsWith('data:')) {
         // Allow data:image/* only; everything else (data:text/html,
-        // data:application/javascript, etc.) is rejected.
+        // data:application/javascript, etc.) is rejected. NOTE: this
+        // intentionally allows data:image/svg+xml — an SVG in an <img>
+        // src (the only sink signal-bound `src`/`href` reaches here)
+        // renders inertly and does NOT execute its scripts. SVG only runs
+        // script when loaded as a *document* (iframe/object/navigation),
+        // which is not a signal-URL sink. See AI_TEST_AUDIT.md (pass 3).
         return !trimmed.startsWith('data:image/');
       }
       return false;
@@ -828,7 +833,17 @@
       document.querySelectorAll('[data-fui-signal="' + name + '"]').forEach((node) => {
         const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
-          node.innerHTML = (typeof value === 'string') ? value : (value == null ? '' : JSON.stringify(value));
+          // The html escape hatch is for TRUSTED HTML *strings* only.
+          // Non-string values (e.g. the auto-built dispatchRPC error
+          // object {ok:false,status,text}) carry untrusted server-error
+          // text; JSON.stringify does NOT HTML-escape, so routing it
+          // through innerHTML would execute reflected markup. Render
+          // non-strings as text (mirrors text-mode below).
+          if (typeof value === 'string') {
+            node.innerHTML = value;
+          } else {
+            node.textContent = (value == null) ? '' : JSON.stringify(value);
+          }
           window.__gofastr.scanAndLoadCSS(node);
           // Wire any toast items the freshly-swapped HTML brought in.
           // Awaits the toasts module — when an island-driven update

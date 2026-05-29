@@ -25,7 +25,13 @@
       try {
         const { island, html } = JSON.parse(event.data);
         if (island === undefined || html === undefined) return;
-        const el = document.querySelector(`[data-island="${island}"]`);
+        // Escape the server-supplied island name before it enters the
+        // CSS attribute selector — a crafted name (e.g. `x"], [data-…`)
+        // would otherwise re-target the write to an unintended element,
+        // or throw an invalid-selector error that silently drops the
+        // legitimate island's update. Matches the CSS.escape pattern in
+        // widgets.js / toasts.js.
+        const el = document.querySelector('[data-island="' + CSS.escape(String(island)) + '"]');
         if (!el) return;
         el.innerHTML = html;
         el.classList.add('island-updated');

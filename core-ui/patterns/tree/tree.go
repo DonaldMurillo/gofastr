@@ -2,6 +2,7 @@ package tree
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -118,9 +119,12 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 			render.Tag("button", toggleAttrs, render.Raw("▶")),
 		)
 	}
-	if n.Href != "" {
+	// A dangerous Href (javascript:/vbscript:/data:/protocol-relative/
+	// control bytes) is dropped and the node degrades to a plain label
+	// rather than a clickable XSS vector.
+	if href := safeURL(n.Href); href != "" {
 		rowChildren = append(rowChildren, render.Tag("a", map[string]string{
-			"href":  n.Href,
+			"href":  href,
 			"class": "tree__label",
 		}, render.Text(n.Label)))
 	} else {
@@ -154,4 +158,53 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 	}
 
 	return render.Tag("li", liAttrs, liBody...)
+}
+
+// safeURL returns u if it is safe to render as an href, and "" if it
+// carries a script-executing or origin-ambiguous scheme. Permitted:
+// http(s), mailto, tel, relative paths, fragment- and query-only
+// references. Dropped: javascript:/vbscript:/data:/file:/blob: and any
+// other non-allow-listed scheme, protocol-relative "//host", and any
+// value containing control bytes or percent-encoded CR/LF. Mirrors
+// framework/ui/safety.go::safeURL — the patterns builders bypass that
+// layer, so the allow-list is enforced here.
+func safeURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	for i := 0; i < len(u); i++ {
+		if c := u[i]; c < 0x20 || c == 0x7f {
+			return ""
+		}
+	}
+	trimmed := strings.TrimLeft(u, " \t")
+	low := strings.ToLower(trimmed)
+	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
+		return ""
+	}
+	// Protocol-relative URLs are ambiguous about origin trust.
+	if strings.HasPrefix(trimmed, "//") {
+		return ""
+	}
+	// Fragment-only, query-only, or relative paths pass.
+	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "?") || strings.HasPrefix(trimmed, "./") || strings.HasPrefix(trimmed, "../") {
+		return u
+	}
+	for i := 0; i < len(trimmed); i++ {
+		switch c := trimmed[i]; c {
+		case ':':
+			switch strings.ToLower(trimmed[:i]) {
+			case "http", "https", "mailto", "tel":
+				return u
+			default:
+				return ""
+			}
+		case '/', '?', '#':
+			// No scheme before the first path/query/fragment delimiter
+			// — relative reference, allowed.
+			return u
+		}
+	}
+	// No colon — bare relative reference.
+	return u
 }
