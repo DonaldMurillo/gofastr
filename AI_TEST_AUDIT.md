@@ -312,3 +312,29 @@ across both passes). Notable judgment calls + doc obligations:
 - **Decision:** revert-prod + delete-test (over-broad fix) — finding NOT landed
 - **Why:** The pass made `_isUnsafeSignalUrl` reject `data:image/svg+xml`, reasoning that SVG is a scriptable document. But the only sinks a signal-bound `src`/`href` reaches are `<img src>`/`<a href>`/SPA `navigate()` — and an SVG in an `<img>` src renders **inertly** (the browser does not execute its scripts; SVG scripting only fires when loaded as a *document* via iframe/object/navigation, which is not a signal-URL sink). The guard only sees the attribute name, not the element, so a blanket SVG rejection is over-broad. It broke a standard, shipped pattern — `data:image/svg+xml` placeholder images in the gallery/lightbox/primitives demos (`screen_component_lightbox.go:42` etc.) — surfaced by `TestE2E_Lightbox_ClickArrowsCycleImages` (empty img src). The pre-existing `data:image/*` allowlist already rejects the real data: XSS vectors (`data:text/html`, `data:application/javascript`). Reverted the carve-out (added a NOTE comment explaining why SVG-in-img is safe) and removed `TestSchemeGuardRejectsSvgDataURI`. **Kept** the unrelated same-file fix routing non-string html-mode signal values through `textContent` (`TestHtmlSignalDoesNotInjectObjectMarkup`) and the CSRF/control-strip fixes.
 - **Commit:** pending
+
+---
+
+## Pass 4 — review follow-up: sibling sinks (7 fixes, 2026-05-29)
+
+An independent fix-review (one reviewer per changed package) confirmed
+95/105 fixes `fixed_well`, 0 `fixed_wrong`, and 103/103 tests genuinely
+property-pinning. It flagged 8 `fixed_incomplete` — each closed the
+named sink but left a sibling sink the finding itself called out. All
+landed as fix + TDD test:
+
+- **breadcrumbs `Crumb.Href`** → routed through the scheme allow-list (sibling of tree/nestedlist `javascript:` XSS).
+- **`framework/ui/sparkline.go`** ID/LabelledBy → `escapeXML` (sibling of the PieChart SVG XSS).
+- **`filter.ParseFilters`** now excludes Hidden fields (mirrors `ParseSort`) — closes the value-disclosure oracle on the plain-HTTP List path (MCP path was already fixed).
+- **`sortablelist.js`** + **`widgets.js` kiln-tool** POSTs now forward `X-CSRF-Token`; the CSRF test now scans all state-changing fetch sites.
+- **uihost head scrubber** now treats `/` as an attribute separator, closing `<input/onX=…/autofocus>` bypass for input/select/textarea/keygen.
+
+### WebFetch DNS-rebinding + ranges  ·  framework/harness/tool/builtins
+- **Decision:** fix-prod
+- **Why:** Extended `isInternalIP` for CGNAT (100.64.0.0/10) and IPv4-mapped IPv6 normalization, and added a dial-time `net.Dialer.Control` (`ssrfDialControl`) on the WebFetch transport so the ACTUAL resolved IP is checked at connect — closing the rebinding TOCTOU between the `assertPublicHost` preflight resolution and the dialer's re-resolution (initial fetch + every redirect hop). The Control hook installs only when the caller injected no custom transport, so httptest-injecting tests are unaffected; `AllowPrivateHosts` test-only bypass preserved.
+
+### Bash blocklist shell-form hardening  ·  framework/harness/tool/builtins
+- **Decision:** fix-prod (extend coverage, keep documented best-effort contract)
+- **Why:** `segmentCommands` now resolves backtick / `$()` command substitution and strips quote/backslash noise from the candidate token (`normalizeToken`), catching `echo $(security …)`, `"security"`, `\security`, and backtick forms. This stays explicitly **best-effort defense-in-depth behind the permission middleware** (Bash is Mutating → default ask) and **cannot be made airtight without a real shell parser**. Intentionally still uncovered (accepted residual): variable-expansion smuggling (`x=security; $x dump-keychain`) and arbitrary cross-token quote splitting the heuristic tokenizer can't model.
+
+(Latent, out-of-scope follow-ups the review noted, NOT yet fixed: password/email-change flows should also purge sessions like password-reset; the legacy exported `crud.EagerLoad` helper still runs unscrubbed `SELECT *` (no production HTTP caller); `framework/file`'s 512-byte content scan may false-positive on legitimate binaries; `framework/uihost/seo.go` sitemap path expansion should be checked for the same traversal as `framework/static`.)
