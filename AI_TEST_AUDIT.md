@@ -338,3 +338,25 @@ landed as fix + TDD test:
 - **Why:** `segmentCommands` now resolves backtick / `$()` command substitution and strips quote/backslash noise from the candidate token (`normalizeToken`), catching `echo $(security …)`, `"security"`, `\security`, and backtick forms. This stays explicitly **best-effort defense-in-depth behind the permission middleware** (Bash is Mutating → default ask) and **cannot be made airtight without a real shell parser**. Intentionally still uncovered (accepted residual): variable-expansion smuggling (`x=security; $x dump-keychain`) and arbitrary cross-token quote splitting the heuristic tokenizer can't model.
 
 (Latent, out-of-scope follow-ups the review noted, NOT yet fixed: password/email-change flows should also purge sessions like password-reset; the legacy exported `crud.EagerLoad` helper still runs unscrubbed `SELECT *` (no production HTTP caller); `framework/file`'s 512-byte content scan may false-positive on legitimate binaries; `framework/uihost/seo.go` sitemap path expansion should be checked for the same traversal as `framework/static`.)
+
+---
+
+## Pass 5 — latent follow-ups from the review (2026-05-29)
+
+Worked the 4 latent items Pass 4 deferred: 2 fixed (TDD), 2 skipped after verification.
+
+### EagerLoad soft-delete/Hidden scrub  ·  framework/crud
+- **Decision:** fix-prod (backward-compatible exported-API addition)
+- **Why:** The legacy exported `crud.EagerLoad` (re-exported as `framework.EagerLoad`) ran unscrubbed `SELECT *` — no `deleted_at IS NULL`, Hidden columns populated. Added an optional variadic `reg ...entity.Registry` param: when supplied, each relation's target is resolved and rows are scrubbed (soft-delete filter + Hidden-column exclusion) exactly like the live include path. Variadic keeps the signature backward-compatible; the doc-comment states callers loading soft-deletable/Hidden-field targets MUST pass the registry. New `eager_security_test.go::TestEagerLoadScrubsSoftDeleteAndHidden`. (Exported-API note added to `includes.md`.)
+
+### Active-content scan false-positive gate  ·  framework/file
+- **Decision:** fix-prod (no security weakening)
+- **Why:** `rejectUnsafeContent` ran its HTML/SVG/JS token scan over the whole 512B window, false-rejecting legitimate binaries (raster/PDF/font) whose bytes coincidentally contained a token. Gated the scan on `!isConfirmedInertBinary(head)` — `http.DetectContentType` confirms raster images / PDF / fonts / archives / audio-video, which can never be served as active markup. **SVG, HTML, text, and unknown/octet-stream still get the full scan**, so the active-content block is not weakened. Test asserts a PNG/PDF containing `<script` is accepted while real HTML/SVG is still rejected.
+
+### Password/email-change session purge  ·  battery/auth — SKIP (no surface)
+- **Decision:** skip (verified non-existent)
+- **Why:** Inventoried every battery/auth route + every `SetPassword`/email-mutation call site. There is no password-change or email-change handler: `accounts.go` only lists/unlinks OAuth accounts; `email_verification.go::verifyHandler` only sets a `MarkEmailVerified` boolean (does not rotate the login identifier). The sole credential-mutation surface, `password_reset.go::resetHandler`, already calls `SessionUserPurger.DeleteByUser` and is covered by `TestPasswordReset_RevokesExistingSessions`. The Pass-4 latent note presupposed handlers that don't ship. If such an endpoint is added later, it must call `DeleteByUser` like the reset flow.
+
+### SEO sitemap traversal  ·  framework/uihost — SKIP (no sink)
+- **Decision:** skip (verified non-vulnerable)
+- **Why:** `seo.go::handleSitemap` builds the sitemap as an in-memory XML string written only to the HTTP response body; `StaticPaths` values are emitted into `<loc>` HTML-escaped (`stdhtml.EscapeString`) and never reach `os.Create`/`WriteFile`/`filepath.Join`. The only `filepath.Join` in the package serves static files from the request URL and already `filepath.Clean`s. `StaticPaths` also come from a developer-implemented `StaticPathsProvider` (trusted config, not request input). No filesystem traversal sink exists.
