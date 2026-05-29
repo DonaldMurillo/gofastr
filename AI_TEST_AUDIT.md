@@ -256,3 +256,31 @@ landing the failing test against production code.
 - **Decision:** fix-prod (flipped the escape-hatch contract)
 - **Why:** `WithHeadHTML` / `SEOScreen.HeadHTML` previously only stripped `<script>` (documented as an "escape hatch intended for meta/link/style only"). User decision flipped this to a wider block-list of active-in-head tags (`iframe`, `object`, `base`, `style`, `svg`, `math`, `audio`/`video`, `form`/`button`, `img`, `picture`, `source`, `marquee`, `template`, etc.) plus `<meta http-equiv=refresh>` and scheme-validated `<link>` tags. Typed SEO URL helpers (`WithCanonicalURL`, `WithOpenGraph URL/Image`, `WithTwitterCard Image`) now drop non-http(s)/relative URLs. New `seo_security_test.go`.
 - **Commit:** pending
+
+---
+
+## Pass 2 — secure-100 campaign (75 findings, 2026-05-29)
+
+74 of 75 verified findings landed as fix + TDD test. The decisions
+below are the ones that flipped a contract, strengthened an
+ineffective test, or were consciously NOT landed.
+
+### TestLike_WildcardEscaped (reverted)  ·  framework/filter
+- **Decision:** revert-prod + delete-test (preserve documented contract) — finding NOT landed
+- **Why:** The pass added `LIKE $1 ESCAPE '\'` + metacharacter escaping to the `_like` REST filter so caller-supplied `%`/`_` are treated literally (P3 "wildcard injection"). But `_like` is already parameterized (no SQL injection — `%`/`_` only widen matching), and two existing integration tests encode `_like` as *wildcard-supporting*: `TestNestedFilter_ComposesWithTopLevel` uses `title_like=Fir%` as starts-with, and `TestCRUDApi_ListAll_FilterSortLimit` passes `%a%`. Escaping silently broke that contract → both queries returned 0 rows. Whether `_like` should adopt the DSL `contains` operator's documented escaping (`query-dsl.md`) is a **product decision**, not a security auto-fix, so per the adversarial-tests policy it is flagged for the user rather than flipped. Reverted the `OpLike` change in `ApplyToQuery`/`ApplyToCountQuery`; removed `TestLike_WildcardEscaped`. **Kept** the non-breaking `maxSortFields` (≤16 ORDER BY clauses) bound and `TestSort_RepeatedFieldBounded`.
+- **Commit:** pending
+
+### TestInclude_ScopedFilterCannotBypassOwnerScope  ·  framework/crud
+- **Decision:** fix-prod (flipped a documented opt-out)
+- **Why:** `applyRelatedOwnerScope` (include.go) previously early-returned when `node.Filters` already carried a predicate on the related entity's OwnerField — documented as an advanced-caller opt-out. On the HTTP List/cursor path `node.Filters` is attacker-controlled (`include=rel(user_id=bob)`), so the opt-out was an IDOR (alice reads bob's comments via a post she owns). Flipped: the context-derived owner predicate is now ALWAYS AND-ed in, so a forged value intersects the real owner and matches nothing (fail-closed); a legitimate caller filtering on their own id just gets a redundant predicate. Updated the doc-comment in include.go.
+- **Commit:** pending
+
+### TestUpdate_DeletedRecord  ·  framework/crud
+- **Decision:** strengthen (was ineffective) + fix-prod
+- **Why:** The pre-existing test built its entity from a bare `entity.EntityConfig` with no Name/Table, so it targeted an empty table name and never seeded a row — its 404 came from the broken empty-table query, not from soft-delete enforcement (the vuln path was never exercised). Rebuilt via `makeEntityConfig`, seeded an owned-but-soft-deleted row, and added a DB assertion that the row is unchanged. Now genuinely red without the `doUpdate` `deleted_at IS NULL` guard and green with it.
+- **Commit:** pending
+
+### battery/email STARTTLS fail-closed (doc)
+- **Decision:** fix-prod + doc
+- **Why:** STARTTLS-strip fix changed default behavior to fail-closed and added the exported `SMTPConfig.AllowCleartext` field. Per gofastr-docs policy the exported-API + behavior change ships with docs — added the "Transport encryption (fail-closed)" note to `battery/email/agents.md` in the same change.
+- **Commit:** pending
