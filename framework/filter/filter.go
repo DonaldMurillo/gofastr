@@ -61,10 +61,19 @@ type ParsedSort struct {
 //	?field_like=value   → LIKE (contains)
 //	?field_in=v1,v2,v3  → IN
 //
-// Only fields present in the schema are accepted.
+// Only fields present in the schema are accepted. Hidden fields are
+// excluded from the allow-list (mirroring ParseSort): building a WHERE
+// predicate on a column the caller can't read turns row-count/result
+// changes into a value-disclosure oracle — an attacker could probe a
+// Hidden column (e.g. a password hash) via ?password_hash_like=… and
+// exfiltrate it prefix by prefix. A Hidden field name is treated as an
+// unknown filter param and never produces a ParsedFilter.
 func ParseFilters(r *http.Request, fields []schema.Field) ([]ParsedFilter, error) {
 	fieldSet := make(map[string]bool, len(fields))
 	for _, f := range fields {
+		if f.Hidden {
+			continue
+		}
 		fieldSet[f.Name] = true
 	}
 

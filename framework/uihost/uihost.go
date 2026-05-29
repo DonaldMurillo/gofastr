@@ -1987,10 +1987,18 @@ var voidHeadTagsRe = regexp.MustCompile(
 // tag-family block-lists because those tags aren't in them. Stripping the
 // attributes (rather than the tags) also future-proofs any new
 // interactive element that lands in caller-supplied head HTML.
-var eventHandlerAttrRe = regexp.MustCompile(`(?is)\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+//
+// The leading boundary is [\s/], not just \s: HTML5 treats '/' as an
+// attribute separator (no whitespace required), so `<input/onfocus=…>`
+// is a live handler the browser parses. A whitespace-only boundary would
+// miss the slash-delimited form. The same [\s/] applies to the value's
+// terminator so a trailing `/autofocus` is consumed, not left dangling.
+var eventHandlerAttrRe = regexp.MustCompile(`(?is)[\s/]on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+)`)
 
-// autofocusAttrRe matches the bare `autofocus` boolean attribute.
-var autofocusAttrRe = regexp.MustCompile(`(?is)\sautofocus(\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?`)
+// autofocusAttrRe matches the bare `autofocus` boolean attribute. Like
+// eventHandlerAttrRe, the leading boundary is [\s/] to catch the HTML5
+// '/'-as-separator form (`<input/autofocus>`).
+var autofocusAttrRe = regexp.MustCompile(`(?is)[\s/]autofocus(\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+))?`)
 
 // metaRefreshRe matches `<meta http-equiv="refresh" …>` in any casing
 // or attribute order. Meta-refresh is the canonical "redirect via

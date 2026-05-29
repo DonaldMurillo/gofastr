@@ -103,6 +103,10 @@ var formControlXSS = []struct {
 	{"select", `<select autofocus onfocus=alert(document.cookie)></select>`},
 	{"textarea", `<textarea autofocus oninput=alert(1)></textarea>`},
 	{"keygen", `<keygen autofocus onfocus=alert(1)>`},
+	// HTML5 allows '/' as an attribute separator (no whitespace). A
+	// whitespace-only attribute scrub misses on*/autofocus tucked behind
+	// a slash, leaving the handler live on a body-hoisted form control.
+	{"slash-sep", `<input/onfocus=alert(1)/autofocus>`},
 }
 
 func TestHeadHTML_NeutralisesAutofocusXSS(t *testing.T) {

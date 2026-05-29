@@ -18,6 +18,19 @@
     return Array.from(list.querySelectorAll(':scope > [data-fui-sortable-item]'));
   }
 
+  // CSRF: forward the page's <meta name="csrf-token"> via the
+  // X-CSRF-Token header so the auth.CSRF middleware accepts this
+  // state-changing reorder POST. Mirrors toggleaction.js / widgets.js.
+  function csrfHeaders() {
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) {
+      const tok = meta.getAttribute('content');
+      if (tok) headers['X-CSRF-Token'] = tok;
+    }
+    return headers;
+  }
+
   function postOrder(list) {
     const rpc = list.getAttribute('data-fui-sortable-rpc');
     if (!rpc) return Promise.resolve();
@@ -28,7 +41,7 @@
     return fetch(rpc, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: csrfHeaders(),
       body: body,
     });
   }

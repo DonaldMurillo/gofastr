@@ -15,6 +15,8 @@
 package breadcrumbs
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -79,7 +81,12 @@ func renderCrumb(c Crumb) render.HTML {
 	if c.Text == "" {
 		panic("breadcrumbs: Crumb requires Text")
 	}
-	current := c.Current || c.Href == ""
+	// A dangerous Href (javascript:/vbscript:/data:/protocol-relative/
+	// control bytes) is dropped and the crumb degrades to a plain
+	// <span> rather than a clickable XSS vector. An empty result from
+	// safeURL also means "no link", so it folds into the current heuristic.
+	href := safeURL(c.Href)
+	current := c.Current || href == ""
 	if current {
 		return render.Tag("li", nil,
 			render.Tag("span",
@@ -88,8 +95,58 @@ func renderCrumb(c Crumb) render.HTML {
 		)
 	}
 	return render.Tag("li", nil,
-		render.Tag("a", map[string]string{"href": c.Href}, render.Text(c.Text)),
+		render.Tag("a", map[string]string{"href": href}, render.Text(c.Text)),
 	)
+}
+
+// safeURL returns u if it is safe to render as an href, and "" if it
+// carries a script-executing or origin-ambiguous scheme. Permitted:
+// http(s), mailto, tel, relative paths, fragment- and query-only
+// references. Dropped: javascript:/vbscript:/data:/file:/blob: and any
+// other non-allow-listed scheme, protocol-relative "//host", and any
+// value containing control bytes or percent-encoded CR/LF. Mirrors
+// framework/ui/safety.go::safeURL and the sibling tree/nestedlist
+// builders — the patterns layer bypasses that helper, so the allow-list
+// is enforced here.
+func safeURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	for i := 0; i < len(u); i++ {
+		if c := u[i]; c < 0x20 || c == 0x7f {
+			return ""
+		}
+	}
+	trimmed := strings.TrimLeft(u, " \t")
+	low := strings.ToLower(trimmed)
+	if strings.Contains(low, "%0d") || strings.Contains(low, "%0a") {
+		return ""
+	}
+	// Protocol-relative URLs are ambiguous about origin trust.
+	if strings.HasPrefix(trimmed, "//") {
+		return ""
+	}
+	// Fragment-only, query-only, or relative paths pass.
+	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "?") || strings.HasPrefix(trimmed, "./") || strings.HasPrefix(trimmed, "../") {
+		return u
+	}
+	for i := 0; i < len(trimmed); i++ {
+		switch c := trimmed[i]; c {
+		case ':':
+			switch strings.ToLower(trimmed[:i]) {
+			case "http", "https", "mailto", "tel":
+				return u
+			default:
+				return ""
+			}
+		case '/', '?', '#':
+			// No scheme before the first path/query/fragment delimiter
+			// — relative reference, allowed.
+			return u
+		}
+	}
+	// No colon — bare relative reference.
+	return u
 }
 
 // baseCSS is the stylesheet for breadcrumbs. Tokens: --color-text-muted,

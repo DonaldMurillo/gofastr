@@ -96,10 +96,10 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 
 	cls := "ui-sparkline"
 	if cfg.Color != "" {
-		cls += " ui-sparkline--" + cfg.Color
+		cls += " ui-sparkline--" + escapeXML(cfg.Color)
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		cls += " " + escapeXML(cfg.Class)
 	}
 
 	svgAttrs := strings.Builder{}
@@ -116,12 +116,12 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	svgAttrs.WriteString(`" xmlns="http://www.w3.org/2000/svg"`)
 	if cfg.ID != "" {
 		svgAttrs.WriteString(` id="`)
-		svgAttrs.WriteString(cfg.ID)
+		svgAttrs.WriteString(escapeXML(cfg.ID))
 		svgAttrs.WriteString(`"`)
 	}
 	if cfg.LabelledBy != "" {
 		svgAttrs.WriteString(` role="img" aria-labelledby="`)
-		svgAttrs.WriteString(cfg.LabelledBy)
+		svgAttrs.WriteString(escapeXML(cfg.LabelledBy))
 		svgAttrs.WriteString(`"`)
 	} else {
 		svgAttrs.WriteString(` aria-hidden="true"`)

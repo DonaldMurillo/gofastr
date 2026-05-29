@@ -58,6 +58,17 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		assertSafe(t, string(h))
 	})
 
+	t.Run("sparkline", func(t *testing.T) {
+		h := ui.Sparkline(ui.SparklineConfig{
+			Values:     []float64{1, 2, 3},
+			ID:         idAttack,
+			LabelledBy: idAttack,
+			Color:      colorAttack,
+			Class:      idAttack,
+		})
+		assertSafe(t, string(h))
+	})
+
 	t.Run("happy-path-palette-color", func(t *testing.T) {
 		h := ui.PieChart(ui.PieChartConfig{
 			Slices: []ui.PieSlice{{Value: 1, Color: "primary"}},

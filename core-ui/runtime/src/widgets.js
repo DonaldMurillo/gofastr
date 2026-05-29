@@ -590,10 +590,21 @@
           e.preventDefault();
           const tool = legacy.getAttribute('data-kiln-tool');
           const args = legacy.getAttribute('data-kiln-args') || '';
+          // CSRF: forward <meta name="csrf-token"> so the auth.CSRF
+          // middleware accepts this state-changing tool invocation. The
+          // JSON body can't carry the urlencoded `_csrf` field the
+          // middleware parses, so the header channel is required.
+          const ktHeaders = { 'Content-Type': 'application/json' };
+          const ktMeta = document.querySelector('meta[name="csrf-token"]');
+          if (ktMeta) {
+            const ktTok = ktMeta.getAttribute('content');
+            if (ktTok) ktHeaders['X-CSRF-Token'] = ktTok;
+          }
           try {
             await fetch('/kiln/tool/' + tool, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              headers: ktHeaders,
               body: args,
             });
           } catch (_) {}
