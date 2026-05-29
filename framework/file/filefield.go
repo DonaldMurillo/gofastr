@@ -3,6 +3,8 @@ package file
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -105,20 +107,26 @@ func (f *FileField) Validate() error {
 
 // isUnsafeURLScheme reports whether url begins with a scheme that should
 // never appear in stored file metadata. Match is case-insensitive and
-// mirrors browser URL normalization: browsers strip TAB/LF/CR (and NUL)
-// from *anywhere* in the URL before resolving the scheme, so we remove
-// them everywhere — not just leading — before prefix-matching. Otherwise
-// "java\tscript:" slips past while a browser still resolves it as
-// javascript:.
+// mirrors browser URL normalization. Per the WHATWG URL spec, browsers
+// strip TAB/LF/CR from *anywhere* in the URL, and additionally remove any
+// leading C0-control-or-space bytes (0x00-0x20) before resolving the
+// scheme. We do the same so that neither "java\tscript:" nor a URL led by
+// a stray control byte such as "\x0cjavascript:" slips past while a
+// browser still resolves it as javascript:.
 func isUnsafeURLScheme(url string) bool {
+	// Strip TAB/LF/CR from anywhere (browsers ignore these wherever they
+	// appear inside a URL).
 	cleaned := strings.Map(func(r rune) rune {
 		switch r {
-		case '\t', '\n', '\r', 0:
+		case '\t', '\n', '\r':
 			return -1
 		}
 		return r
 	}, url)
-	cleaned = strings.TrimLeft(cleaned, " ")
+	// Trim every leading C0 control byte (0x00-0x1F) or space (0x20),
+	// matching the spec's "remove leading C0 control or space" rule.
+	cleaned = strings.TrimLeft(cleaned, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"+
+		"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f ")
 	lower := strings.ToLower(cleaned)
 	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
 		if strings.HasPrefix(lower, bad) {
@@ -357,8 +365,15 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 }
 
 // GenerateFilePath produces a safe, unique file path for storage.
-// The format is: uploads/{entityName}/{fieldName}/{sanitized_name}_{timestamp}{ext}
-// Example: "uploads/posts/avatar/photo_1683398400000000000.png"
+// The format is: uploads/{entityName}/{fieldName}/{sanitized_name}_{timestamp}_{rand}{ext}
+// Example: "uploads/posts/avatar/photo_1683398400000000000_3f9a1c2b.png"
+//
+// The path carries a crypto/rand component in addition to the timestamp so
+// that two uploads of the same filename to the same field never collide —
+// uniqueness must not depend on clock resolution. Without it, two requests
+// landing within the same nanosecond (or the same clock tick on platforms
+// whose clock does not advance every nanosecond) would resolve to the same
+// path and one upload would silently overwrite the other.
 func GenerateFilePath(entityName, fieldName, filename string) string {
 	// Sanitize the filename to prevent path traversal
 	safe := upload.SanitizeFilename(filename)
@@ -367,14 +382,32 @@ func GenerateFilePath(entityName, fieldName, filename string) string {
 	ext := filepath.Ext(safe)
 	nameWithoutExt := strings.TrimSuffix(safe, ext)
 
-	// Generate a unique name using nanosecond timestamp
-	uniqueName := fmt.Sprintf("%s_%d%s", nameWithoutExt, time.Now().UnixNano(), ext)
+	// Generate a unique name from the timestamp plus a random suffix. The
+	// random suffix is the real uniqueness guarantee; the timestamp is
+	// retained only for human-readable ordering. crypto/rand.Read on a
+	// fixed-size buffer never returns a short read without an error, but
+	// if the platform RNG fails we fall back to the timestamp alone rather
+	// than panicking mid-upload.
+	uniqueName := fmt.Sprintf("%s_%d_%s%s", nameWithoutExt, time.Now().UnixNano(), randomSuffix(), ext)
 
 	// Build the path using filepath.Join for cross-platform safety
 	path := filepath.Join("uploads", entityName, fieldName, uniqueName)
 
 	// Normalize to forward slashes for storage consistency
 	return filepath.ToSlash(path)
+}
+
+// randomSuffix returns a hex-encoded 8-byte crypto-random token used to
+// guarantee storage-path uniqueness independent of clock resolution. If
+// the platform RNG fails it returns an empty string; the caller still has
+// the timestamp, so a failure degrades to the old behaviour rather than
+// aborting an upload.
+func randomSuffix() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // detectMIMEFromName attempts to detect MIME type from filename extension.

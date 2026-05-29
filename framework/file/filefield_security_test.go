@@ -26,6 +26,14 @@ func TestFileField_RejectsJavaScriptScheme(t *testing.T) {
 		"java\nscript:alert(1)",
 		"jav\rascript:alert(1)",
 		"\x00javascript:alert(1)",
+		// Leading C0 control bytes outside TAB/LF/CR/NUL — the WHATWG URL
+		// spec strips ALL leading C0-control-or-space bytes (0x00-0x20)
+		// before resolving the scheme, so the browser still executes
+		// javascript: here. The guard must too.
+		"\x0cjavascript:alert(1)",
+		"\x0bjavascript:alert(1)",
+		"\x01javascript:alert(1)",
+		"\x1fdata:text/html,<script>alert(1)</script>",
 	} {
 		ff := &file.FileField{URL: url}
 		err := ff.Validate()
@@ -103,6 +111,25 @@ func TestFileField_RejectsOversize(t *testing.T) {
 		if !errors.Is(err, file.ErrFileFieldOversize) {
 			t.Errorf("SECURITY: [filefield] oversize: err = %v; want ErrFileFieldOversize", err)
 		}
+	}
+}
+
+// TestGenerateFilePath_NoCollision verifies repeated path generation for
+// the same entity/field/filename never collides — uniqueness must not
+// depend on clock resolution, or one upload silently overwrites another.
+func TestGenerateFilePath_NoCollision(t *testing.T) {
+	t.Parallel()
+	const n = 1000
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		p := file.GenerateFilePath("users", "avatar", "photo.png")
+		if !strings.HasPrefix(p, "uploads/users/avatar/photo_") || !strings.HasSuffix(p, ".png") {
+			t.Fatalf("unexpected path shape: %q", p)
+		}
+		if _, dup := seen[p]; dup {
+			t.Fatalf("SECURITY: [filefield] GenerateFilePath collision after %d calls: %q", i, p)
+		}
+		seen[p] = struct{}{}
 	}
 }
 

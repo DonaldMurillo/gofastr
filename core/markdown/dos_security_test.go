@@ -51,3 +51,26 @@ func TestMarkdown_UnmatchedEmphasisBounded(t *testing.T) {
 	attack := strings.Repeat("_", 200000) + "x"
 	renderWithin(t, "unmatched emphasis", attack, 1500*time.Millisecond)
 }
+
+// TestMarkdown_NestedInlineBounded verifies that deeply nested inline
+// constructs (links and emphasis) do not drive renderInline into
+// unbounded recursion — a stack-exhaustion / CPU DoS. Attack shapes:
+// nested links "[[[...x...](u)](u)](u)" and nested emphasis
+// "*** ... ***x*** ... ***".
+func TestMarkdown_NestedInlineBounded(t *testing.T) {
+	// Happy path: a normal nested link/emphasis still renders.
+	if got := string(RenderHTML("[*hi*](u)")); !strings.Contains(got, "<a href=\"u\"><em>hi</em></a>") {
+		t.Fatalf("expected nested link/em in output, got: %s", got)
+	}
+
+	// Attack 1: ~200k levels of nested link text. parseLink matches the
+	// balanced brackets so renderInline recurses once per level.
+	n := 200000
+	nestedLinks := strings.Repeat("[", n) + "x" + strings.Repeat("](u)", n)
+	renderWithin(t, "nested links", nestedLinks, 1500*time.Millisecond)
+
+	// Attack 2: deeply nested single-char emphasis. Each matched pair
+	// recurses on its inner content.
+	nestedEm := strings.Repeat("*", n) + "x" + strings.Repeat("*", n)
+	renderWithin(t, "nested emphasis", nestedEm, 1500*time.Millisecond)
+}

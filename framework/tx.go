@@ -32,10 +32,24 @@ func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
+	// committed gates the deferred rollback. The defer guarantees the tx is
+	// closed on EVERY exit path — including when fn panics — so the pooled
+	// connection (and any rows it locked) is released. Without it a panic in
+	// fn unwinds past both Rollback and Commit, leaking the connection until
+	// the pool/finalizer reclaims it; repeated panics exhaust MaxOpenConns.
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
 	txCtx := db.WithTx(ctx, tx)
 	if err := fn(txCtx, tx); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }

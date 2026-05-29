@@ -73,6 +73,32 @@ func TestStringLengthRuneCount(t *testing.T) {
 	}
 }
 
+// Decimal Min/Max must be enforced in exact decimal space; round-tripping the
+// value through float64 loses precision above 2^53 and admits over-cap values.
+func TestDecimalBoundPrecision(t *testing.T) {
+	// Max = 2^53; "2^53 + 1" parses to exactly 2^53 in float64, so a float
+	// comparison would let the over-cap value through.
+	capped := Field{Name: "amount", Type: Decimal, Max: f64(9007199254740992)}
+	if err := validateField(capped, "9007199254740993"); err == nil {
+		t.Error("Decimal Max:2^53 accepted 2^53+1 (float64 precision bypass)")
+	}
+	// happy path: the bound value itself is accepted.
+	if err := validateField(capped, "9007199254740992"); err != nil {
+		t.Errorf("Decimal Max:2^53 rejected exactly 2^53: %v", err)
+	}
+	// Min precision bypass: 2^53-1 is strictly under a 2^53 floor but the float
+	// round-trip of the floor must not admit it.
+	floored := Field{Name: "amount", Type: Decimal, Min: f64(9007199254740992)}
+	if err := validateField(floored, "9007199254740991"); err == nil {
+		t.Error("Decimal Min:2^53 accepted 2^53-1 (float64 precision bypass)")
+	}
+	// Sub-precision fraction strictly over an integral Max must be rejected.
+	hundred := Field{Name: "amount", Type: Decimal, Max: f64(1000)}
+	if err := validateField(hundred, "1000.0000000000000001"); err == nil {
+		t.Error("Decimal Max:1000 accepted 1000.0000000000000001 (fraction over cap)")
+	}
+}
+
 // Decimal must only accept canonical decimal text, not Go float-literal forms
 // (underscores, hex floats) that the storage layer cannot reparse.
 func TestDecimalCanonicalForm(t *testing.T) {

@@ -23,8 +23,39 @@ type columnInfo struct {
 	DataType string
 }
 
-// fieldTypeToSQL maps a schema.FieldType to a PostgreSQL column type.
+// fieldTypeToSQL maps a schema.FieldType to a column type for the Postgres
+// dialect. Kept for backward compatibility; the dialect-aware variant is
+// fieldTypeToSQLForDialect.
 func fieldTypeToSQL(t schema.FieldType) string {
+	return fieldTypeToSQLForDialect(t, DialectPostgres)
+}
+
+// fieldTypeToSQLForDialect maps a schema.FieldType to a column type for the
+// given SQL dialect. SQLite has a small set of storage classes, so several
+// Postgres types collapse onto TEXT/INTEGER/REAL.
+func fieldTypeToSQLForDialect(t schema.FieldType, d Dialect) string {
+	if d == DialectSQLite {
+		switch t {
+		case schema.String, schema.Text, schema.Enum:
+			return "TEXT"
+		case schema.Int:
+			return "INTEGER"
+		case schema.Float, schema.Decimal:
+			return "REAL"
+		case schema.Bool:
+			return "INTEGER"
+		case schema.UUID, schema.Relation:
+			return "TEXT"
+		case schema.Timestamp, schema.Date:
+			return "TEXT"
+		case schema.JSON:
+			return "TEXT"
+		case schema.Image, schema.File:
+			return "TEXT"
+		default:
+			return "TEXT"
+		}
+	}
 	switch t {
 	case schema.String:
 		return "VARCHAR(255)"
@@ -118,7 +149,7 @@ func (m *Migrator) Diff(ctx context.Context, entities []Entity) ([]Migration, er
 				if err != nil {
 					return nil, fmt.Errorf("diff: invalid column name %q: %w", f.Name, err)
 				}
-				colType := fieldTypeToSQL(f.Type)
+				colType := fieldTypeToSQLForDialect(f.Type, m.dialect)
 				var constraints []string
 				if f.Required {
 					constraints = append(constraints, "NOT NULL")
@@ -174,6 +205,14 @@ func (m *Migrator) nextDiffVersion() uint64 {
 
 // discoverTables queries the database for all user tables and their columns.
 func (m *Migrator) discoverTables(ctx context.Context) (map[string]map[string]columnInfo, error) {
+	if m.dialect == DialectSQLite {
+		return m.discoverTablesSQLite(ctx)
+	}
+	return m.discoverTablesPostgres(ctx)
+}
+
+// discoverTablesPostgres introspects via the Postgres information_schema catalog.
+func (m *Migrator) discoverTablesPostgres(ctx context.Context) (map[string]map[string]columnInfo, error) {
 	// Get all tables in the public schema.
 	tableRows, err := m.db.QueryContext(ctx,
 		"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
@@ -224,18 +263,84 @@ func (m *Migrator) discoverTables(ctx context.Context) (map[string]map[string]co
 	return result, nil
 }
 
+// discoverTablesSQLite introspects via sqlite_master and pragma_table_info,
+// which are the SQLite equivalents of information_schema (which SQLite lacks).
+func (m *Migrator) discoverTablesSQLite(ctx context.Context) (map[string]map[string]columnInfo, error) {
+	tableRows, err := m.db.QueryContext(ctx,
+		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+	if err != nil {
+		return nil, err
+	}
+	defer tableRows.Close()
+
+	var tableNames []string
+	for tableRows.Next() {
+		var name string
+		if err := tableRows.Scan(&name); err != nil {
+			return nil, err
+		}
+		tableNames = append(tableNames, name)
+	}
+	if err := tableRows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]map[string]columnInfo, len(tableNames))
+
+	for _, tbl := range tableNames {
+		// pragma_table_info does not accept a bound parameter for the table
+		// name in all driver/SQLite versions, so validate and inline it.
+		safeTbl, err := query.SafeIdent(tbl)
+		if err != nil {
+			// Skip tables whose names we cannot safely reference.
+			continue
+		}
+		// safeTbl has already passed SafeIdent (only [a-zA-Z0-9_.]), so it
+		// cannot contain a quote or terminate the string literal.
+		colRows, err := m.db.QueryContext(ctx,
+			fmt.Sprintf("SELECT name, type FROM pragma_table_info('%s')", safeTbl))
+		if err != nil {
+			return nil, err
+		}
+
+		cols := make(map[string]columnInfo)
+		for colRows.Next() {
+			var ci columnInfo
+			if err := colRows.Scan(&ci.Name, &ci.DataType); err != nil {
+				colRows.Close()
+				return nil, err
+			}
+			cols[strings.ToLower(ci.Name)] = ci
+		}
+		colRows.Close()
+		if err := colRows.Err(); err != nil {
+			return nil, err
+		}
+
+		result[strings.ToLower(tbl)] = cols
+	}
+
+	return result, nil
+}
+
 // generateCreateTable builds a CREATE TABLE statement from a schema.
 // The tableName must already be validated via SafeIdent.
 func (m *Migrator) generateCreateTable(tableName string, s schema.Schema) string {
 	var cols []string
 
+	sqlite := m.dialect == DialectSQLite
+
 	// Add an id column if not present.
 	if _, hasID := s.FieldByName("id"); !hasID {
-		cols = append(cols, "id BIGSERIAL PRIMARY KEY")
+		if sqlite {
+			cols = append(cols, "id INTEGER PRIMARY KEY AUTOINCREMENT")
+		} else {
+			cols = append(cols, "id BIGSERIAL PRIMARY KEY")
+		}
 	}
 
 	for _, f := range s.Fields {
-		colType := fieldTypeToSQL(f.Type)
+		colType := fieldTypeToSQLForDialect(f.Type, m.dialect)
 		safeCol := query.MustIdent(f.Name)
 		var constraints []string
 		if f.Required {
@@ -255,11 +360,17 @@ func (m *Migrator) generateCreateTable(tableName string, s schema.Schema) string
 	}
 
 	// Add timestamps if not present.
+	tsType := "TIMESTAMP"
+	tsDefault := "NOW()"
+	if sqlite {
+		tsType = "TEXT"
+		tsDefault = "CURRENT_TIMESTAMP"
+	}
 	if _, hasCreated := s.FieldByName("created_at"); !hasCreated {
-		cols = append(cols, "created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+		cols = append(cols, fmt.Sprintf("created_at %s NOT NULL DEFAULT %s", tsType, tsDefault))
 	}
 	if _, hasUpdated := s.FieldByName("updated_at"); !hasUpdated {
-		cols = append(cols, "updated_at TIMESTAMP NOT NULL DEFAULT NOW()")
+		cols = append(cols, fmt.Sprintf("updated_at %s NOT NULL DEFAULT %s", tsType, tsDefault))
 	}
 
 	return fmt.Sprintf("CREATE TABLE %s (\n\t%s\n)", query.QuoteIdent(tableName), strings.Join(cols, ",\n\t"))

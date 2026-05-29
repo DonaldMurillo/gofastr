@@ -19,6 +19,28 @@ func TestParsePagination_OffsetDoesNotOverflowNegative(t *testing.T) {
 	}
 }
 
+func TestParsePagination_OffsetCorrectForAnyLimit(t *testing.T) {
+	t.Parallel()
+	// Property: offset == (page-1)*limit for any valid limit, including
+	// limit=1, as long as the product does not overflow. The overflow
+	// guard must not spuriously reset a non-overflowing offset to 0.
+	cases := []struct {
+		page, limit, want int
+	}{
+		{1, 1, 0},     // happy path
+		{3, 1, 2},     // limit=1 regression: must not reset to 0
+		{3, 2, 4},     // small limit
+		{3, 100, 200}, // typical limit
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest("GET", fmt.Sprintf("/?page=%d&limit=%d", c.page, c.limit), nil)
+		_, _, offset := ParsePagination(req)
+		if offset != c.want {
+			t.Fatalf("SECURITY: [pagination] page=%d limit=%d -> offset=%d, want %d. Attack: limit=1 overflow-guard wraparound makes pages 2+ unreachable (offset always 0).", c.page, c.limit, offset, c.want)
+		}
+	}
+}
+
 func TestParseCursorPagination_InvalidDirectionDefaultsForward(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest("GET", "/?direction=sideways", nil)

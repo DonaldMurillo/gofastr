@@ -84,6 +84,13 @@ consume bytes:
 A failing validator returns `400 Bad Request` with a `fields` map
 identifying the offending field.
 
+Uploaded filenames are sanitized to a safe storage key (path
+separators and control characters stripped, length capped at
+`MaxFilenameBytes` on a UTF-8 rune boundary). `SanitizeFilename`
+bounds the *input* it inspects to `SanitizeFilenameInputBound`
+(`4 × MaxFilenameBytes`) so a multi-megabyte attacker-supplied
+filename can't force unbounded pre-truncation work (DoS).
+
 ## Storage backends
 
 `upload.Storage` is the interface:

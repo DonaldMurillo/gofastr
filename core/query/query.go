@@ -116,8 +116,10 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 	// through a placeholder and so does not need sanitisation.
 	field = sanitizeFragment(field)
 	op := ">"
+	orderDir := "ASC"
 	if dir == "backward" {
 		op = "<"
+		orderDir = "DESC"
 	}
 	// Use $1 placeholder; Build will renumber it correctly
 	condition := fmt.Sprintf("%s %s $1", field, op)
@@ -127,8 +129,12 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 		condition: condition,
 		args:      []any{value}, // Carry args so Build's paramIdx advances
 	})
-	// Ensure ORDER BY the cursor field
-	qb.orderBy = append(qb.orderBy, orderClause{column: field, dir: ""})
+	// Ensure ORDER BY the cursor field in the direction of the comparison
+	// so the returned page is adjacent to the cursor: forward (id > $1)
+	// sorts ASC, backward (id < $1) sorts DESC. A bare ASC here would make
+	// a backward page return the lowest ids in the table instead of the
+	// rows immediately before the cursor.
+	qb.orderBy = append(qb.orderBy, orderClause{column: field, dir: orderDir})
 	return qb
 }
 

@@ -109,9 +109,13 @@ func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
 	// huge page number (e.g. math.MaxInt) which wraps to a negative
 	// offset when multiplied by limit. Negative offsets are undefined
 	// in most SQL dialects and can yield wraparound pagination bypass.
-	offset = (page - 1) * limit
-	if offset < 0 || page > math.MaxInt/limit+1 {
+	// page>=1 and limit>=1 here, so (page-1)*limit overflows iff
+	// (page-1) > math.MaxInt/limit. Compute the threshold without the
+	// `+1` that previously wrapped to math.MinInt when limit==1.
+	if page-1 > math.MaxInt/limit {
 		offset = 0
+	} else {
+		offset = (page - 1) * limit
 	}
 	return cursor, limit, offset
 }

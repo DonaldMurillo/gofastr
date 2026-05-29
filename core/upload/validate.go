@@ -81,6 +81,31 @@ func ValidateExt(filename string, allowed []string) error {
 // pathological inputs.
 const MaxFilenameBytes = 255
 
+// SanitizeFilenameInputBound caps the *input* length before any of the
+// O(n) sanitisation passes (control-byte strip, replacer, interior-ext
+// split-and-join) run. A multipart Content-Disposition filename is a
+// MIME-header value and is NOT counted against ParseMultipartForm's
+// maxMemory, so without this guard an attacker can ship a multi-MiB
+// filename (bounded only by the stdlib's 10 MiB per-header cap) that
+// amplifies into tens of MB of transient allocation and >100ms of CPU
+// per request — strings.Split on a ~9 MiB all-dots name produces a
+// ~9.4M-element slice. The bound is a generous multiple of
+// MaxFilenameBytes so legitimate names with escaped / multibyte
+// sequences survive untouched; the final MaxFilenameBytes cap still
+// applies after sanitisation.
+const SanitizeFilenameInputBound = 4 * MaxFilenameBytes
+
+// boundFilenameInput hard-truncates name to at most
+// SanitizeFilenameInputBound bytes on a UTF-8 rune boundary so the
+// per-rune / split passes in SanitizeFilename never see a pathological
+// multi-MiB input. It is a cheap O(min(len, bound)) operation.
+func boundFilenameInput(name string) string {
+	if len(name) <= SanitizeFilenameInputBound {
+		return name
+	}
+	return truncateRunes(name, SanitizeFilenameInputBound)
+}
+
 // SanitizeFilename removes path separators, null bytes, and other dangerous
 // characters from a filename to prevent path traversal attacks. It also
 // neutralises double-extension smuggling — e.g. `shell.php.jpg` becomes
@@ -92,6 +117,14 @@ const MaxFilenameBytes = 255
 // control sequences. The final result is truncated to MaxFilenameBytes
 // (preserving the extension) so an attacker can't ship a 10 MB filename.
 func SanitizeFilename(name string) string {
+	// Bound the input length BEFORE any O(n) memory-heavy pass. The
+	// multipart filename is attacker-controlled MIME-header metadata not
+	// counted against maxMemory, so a multi-MiB name would otherwise
+	// explode the strings.Split / per-rune passes below into a
+	// request-amplified CPU/allocation DoS. The MaxFilenameBytes output
+	// cap still runs at the end; this only caps the *work*.
+	name = boundFilenameInput(name)
+
 	// Drop every control byte (NUL, CR, LF, TAB, ESC, ...) and DEL up
 	// front. Done before filepath.Base because `evil.php\x00.jpg` would
 	// otherwise reach filepath.Base intact and look like a `.jpg` file,

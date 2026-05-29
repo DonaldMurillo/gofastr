@@ -202,6 +202,53 @@ func TestSanitize_StripsUnicodeLineSeparators(t *testing.T) {
 	}
 }
 
+// TestSanitize_BoundsInputBeforeWork verifies that SanitizeFilename caps
+// the input length BEFORE running its O(n) per-rune / split passes, so a
+// multi-MiB attacker filename (a MIME-header value not counted against
+// ParseMultipartForm's maxMemory) can't amplify into tens of MB of
+// transient allocation and >100ms CPU per request. Attack: a ~9 MiB
+// all-dots filename explodes strings.Split into a ~9.4M-element slice.
+func TestSanitize_BoundsInputBeforeWork(t *testing.T) {
+	cases := []string{
+		"x" + strings.Repeat(".", 9<<20) + ".jpg", // dot-bomb -> giant Split slice
+		strings.Repeat("a", 9<<20) + ".php.jpg",    // long base + interior exec ext
+		strings.Repeat("/", 9<<20) + "evil.jpg",    // path-separator flood
+		strings.Repeat("世", 4<<20) + ".png",        // multibyte flood
+		"safe.jpg",                                  // happy path, short
+	}
+	for _, in := range cases {
+		// The intermediate work must stay bounded: a correct
+		// implementation truncates to a small multiple of
+		// MaxFilenameBytes before any allocating pass. We can't observe
+		// allocation directly here, but we CAN observe the contract that
+		// makes the work bounded: no pass ever sees an input longer than
+		// the bound. Assert via a panic-free, fast return plus the
+		// invariant that the function never copies the whole giant input.
+		// The load-bearing guard is the SanitizeFilenameInputBound cap;
+		// assert the output is sane and the call is cheap.
+		got := SanitizeFilename(in)
+		if len(got) > MaxFilenameBytes {
+			t.Errorf("SanitizeFilename(%d-byte name) = %d bytes, exceeds cap %d", len(in), len(got), MaxFilenameBytes)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("SanitizeFilename(%d-byte name) produced invalid UTF-8 %q", len(in), got)
+		}
+	}
+
+	// Property: the work is bounded by SanitizeFilenameInputBound, not by
+	// the attacker's input length. boundFilenameInput must hard-truncate
+	// any over-long input to at most SanitizeFilenameInputBound bytes
+	// before the O(n) passes run.
+	huge := "x" + strings.Repeat(".", 9<<20) + ".jpg"
+	bounded := boundFilenameInput(huge)
+	if len(bounded) > SanitizeFilenameInputBound {
+		t.Errorf("SECURITY: [filename] boundFilenameInput left %d bytes for the O(n) passes; must cap at %d. Attack: multi-MiB filename amplifies into a ~9.4M-element strings.Split slice (tens of MB / >100ms per request).", len(bounded), SanitizeFilenameInputBound)
+	}
+	if !utf8.ValidString(bounded) {
+		t.Errorf("boundFilenameInput truncated to invalid UTF-8")
+	}
+}
+
 // suppress unused
 var _ = context.Background
 var _ io.ReadSeeker

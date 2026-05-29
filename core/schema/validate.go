@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -178,11 +179,31 @@ func validateDecimal(f Field, value any) error {
 	if math.IsNaN(n) || math.IsInf(n, 0) {
 		return fmt.Errorf("must be a finite decimal number")
 	}
-	if f.Min != nil && n < *f.Min {
-		return fmt.Errorf("must be at least %v", *f.Min)
+	// Compare bounds in exact decimal space. Decimal is a fixed-precision type
+	// stored as a string precisely to avoid float rounding, so the bound check
+	// must not round-trip through float64 (which would lose precision above
+	// 2^53 and admit values strictly over Max / under Min). big.Rat parses the
+	// canonical decimal text exactly, and a float64 bound converts to big.Rat
+	// without loss, so the comparison is exact.
+	dv, ok := new(big.Rat).SetString(s)
+	if !ok {
+		// decimalRe already vetted the form; this should not happen, but fail
+		// closed rather than skipping the bound check.
+		return fmt.Errorf("must be a valid decimal number")
 	}
-	if f.Max != nil && n > *f.Max {
-		return fmt.Errorf("must be at most %v", *f.Max)
+	if f.Min != nil {
+		// SetFloat64 returns nil for a NaN/Inf bound; such a bound can never be
+		// satisfied, so reject (fail closed) rather than panic in Cmp.
+		min := new(big.Rat).SetFloat64(*f.Min)
+		if min == nil || dv.Cmp(min) < 0 {
+			return fmt.Errorf("must be at least %v", *f.Min)
+		}
+	}
+	if f.Max != nil {
+		max := new(big.Rat).SetFloat64(*f.Max)
+		if max == nil || dv.Cmp(max) > 0 {
+			return fmt.Errorf("must be at most %v", *f.Max)
+		}
 	}
 	return nil
 }

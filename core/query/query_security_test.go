@@ -50,6 +50,28 @@ func TestSelectCursor_DoesNotInterpolateUnsafeCursorField(t *testing.T) {
 	}
 }
 
+// Keyset pagination must order rows in the direction of the comparison so
+// the returned page is the page adjacent to the cursor. A backward cursor
+// (WHERE id < $1) that sorts ASC returns the LOWEST ids instead of the
+// page immediately before the cursor, silently skipping records.
+func TestCursorOrdersInComparisonDirection(t *testing.T) {
+	fwd, _ := Select("*").From("users").Cursor("id", 42, "forward").Limit(10).Build()
+	if !strings.Contains(fwd, "ORDER BY id ASC") {
+		t.Fatalf("forward cursor: SQL = %q, want ORDER BY id ASC", fwd)
+	}
+
+	back, _ := Select("*").From("users").Cursor("id", 100, "backward").Limit(10).Build()
+	if !strings.Contains(back, "ORDER BY id DESC") {
+		t.Fatalf("backward cursor: SQL = %q, want ORDER BY id DESC (page adjacent to cursor, not lowest ids)", back)
+	}
+
+	// Default/unknown direction is treated as forward and must stay ASC.
+	def, _ := Select("*").From("users").Cursor("id", 5, "").Limit(10).Build()
+	if !strings.Contains(def, "ORDER BY id ASC") {
+		t.Fatalf("default cursor: SQL = %q, want ORDER BY id ASC", def)
+	}
+}
+
 func TestSelectJoin_DoesNotInterpolateUnsafeJoinTable(t *testing.T) {
 	payload := `profiles; DROP TABLE users; --`
 	sql, _ := Select("*").From("users").Join(payload, "profiles.user_id = users.id").Build()

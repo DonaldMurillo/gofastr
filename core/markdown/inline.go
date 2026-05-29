@@ -5,11 +5,29 @@ import (
 	"unicode"
 )
 
+// maxInlineDepth bounds inline nesting (link text, emphasis inner content).
+// renderInline recurses once per nesting level — attacker-supplied markdown
+// like "[[[…x…](u)](u)](u)" or deeply nested emphasis drives that recursion
+// arbitrarily deep, exhausting the goroutine stack (an unrecoverable crash)
+// and burning super-linear CPU. Past the cap we stop recursing and emit the
+// remaining inner text verbatim (HTML-escaped), failing closed without
+// dropping content — exactly like maxBlockquoteDepth in the block layer.
+const maxInlineDepth = 64
+
 // renderInline runs the inline parser over a single block of text and emits
 // HTML. Order matters: code spans are extracted first so their contents are
 // not interpreted as bold/italic, then images, then links, then bold, then
 // italic. Plain text segments are HTML-escaped.
 func renderInline(input string) string {
+	return renderInlineDepth(input, 0)
+}
+
+func renderInlineDepth(input string, depth int) string {
+	if depth >= maxInlineDepth {
+		// Bail out: emit the rest of this block as escaped plain text
+		// rather than recursing further into nested constructs.
+		return escapeHTML(input)
+	}
 	var sb strings.Builder
 	// noCloser memoizes (delim,run) pairs for which a scan has already
 	// reached end-of-input without finding a matching closing run. Once a
@@ -55,7 +73,7 @@ func renderInline(input string) string {
 				sb.WriteString("<a href=\"")
 				sb.WriteString(escapeAttr(safeLinkURL(url)))
 				sb.WriteString("\">")
-				sb.WriteString(renderInline(text))
+				sb.WriteString(renderInlineDepth(text, depth+1))
 				sb.WriteString("</a>")
 				i = end
 				continue
@@ -80,15 +98,15 @@ func renderInline(input string) string {
 				switch run {
 				case 1:
 					sb.WriteString("<em>")
-					sb.WriteString(renderInline(inner))
+					sb.WriteString(renderInlineDepth(inner, depth+1))
 					sb.WriteString("</em>")
 				case 2:
 					sb.WriteString("<strong>")
-					sb.WriteString(renderInline(inner))
+					sb.WriteString(renderInlineDepth(inner, depth+1))
 					sb.WriteString("</strong>")
 				default:
 					sb.WriteString("<strong><em>")
-					sb.WriteString(renderInline(inner))
+					sb.WriteString(renderInlineDepth(inner, depth+1))
 					sb.WriteString("</em></strong>")
 				}
 				i = closeIdx + run
