@@ -215,3 +215,61 @@ func TestRouter_ParamsStripsNUL(t *testing.T) {
 		t.Fatalf("SECURITY: [router] Params retained NUL/control payload %q. Attack: bulk path-param smuggling into downstream consumers.", got["id"])
 	}
 }
+
+// TestRouter_ParamsCatchAll verifies Params() returns the value of a
+// catch-all {name...} wildcard under its plain key. Property: Params(r)
+// must expose every declared path parameter, including catch-all, so
+// callers driving auth / file-path logic off the map don't fail open on
+// a silently-missing value.
+func TestRouter_ParamsCatchAll(t *testing.T) {
+	r := New()
+	var got map[string]string
+	r.Get("/files/{path...}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		got = Params(req)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/files/a/b/c", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if got["path"] != "a/b/c" {
+		t.Fatalf("SECURITY: [router] Params dropped catch-all value, got %#v. Attack: auth/path logic fails open on empty value.", got)
+	}
+	if _, leaked := got["path..."]; leaked {
+		t.Fatalf("[router] Params exposed catch-all under literal key %q", "path...")
+	}
+}
+
+// TestRouter_CustomNotFoundKeeps405 verifies that a wrong-method request
+// to an existing path still yields native 405 + Allow header even when a
+// custom NotFound handler is set. Property: a custom 404 must not mask
+// the mux's native Method-Not-Allowed semantics (RFC 7231).
+func TestRouter_CustomNotFoundKeeps405(t *testing.T) {
+	r := New()
+	r.Get("/u/{id}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	r.NotFound(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("nf"))
+	}))
+
+	// Wrong method on an existing path -> 405 with Allow, not custom 404.
+	req := httptest.NewRequest(http.MethodPost, "/u/1", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("SECURITY: [router] custom NotFound masked native 405, got code=%d body=%q. Attack: lost 405/Allow semantics.", rr.Code, rr.Body.String())
+	}
+	if allow := rr.Header().Get("Allow"); !strings.Contains(allow, "GET") {
+		t.Fatalf("[router] 405 response missing Allow header with GET, got %q", allow)
+	}
+
+	// A genuinely unknown path still reaches the custom NotFound.
+	req = httptest.NewRequest(http.MethodGet, "/nope", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), "nf") {
+		t.Fatalf("[router] genuine 404 did not reach custom NotFound, got code=%d body=%q", rr.Code, rr.Body.String())
+	}
+}

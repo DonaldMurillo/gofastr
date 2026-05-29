@@ -142,7 +142,7 @@ func FromImage(img stdimage.Image, format Format) *Image {
 	return &Image{img: img, format: format}
 }
 
-func decodeBytes(data []byte, cfg Config) (*Image, error) {
+func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	if cfg.MaxPixels <= 0 {
 		cfg.MaxPixels = DefaultMaxPixels
 	}
@@ -150,11 +150,31 @@ func decodeBytes(data []byte, cfg Config) (*Image, error) {
 	if format == FormatUnknown {
 		return nil, ErrInvalidInput
 	}
+	// The stdlib codecs can panic (rather than error) on crafted
+	// geometry — e.g. image.NewGray panics with "huge or negative
+	// dimensions" on an oversized raster. Fail closed: convert any
+	// panic from the decode path into a returned error so malformed
+	// input never crashes the caller's goroutine.
+	defer func() {
+		if r := recover(); r != nil {
+			out = nil
+			err = fmt.Errorf("image: decode panicked: %v: %w", r, ErrInvalidInput)
+		}
+	}()
 	icfg, _, err := stdimage.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("image: decode config: %w", err)
 	}
-	if int64(icfg.Width)*int64(icfg.Height) > cfg.MaxPixels {
+	// Reject non-positive or oversized dimensions before computing the
+	// pixel area. A naive `int64(w)*int64(h)` overflows int64 when each
+	// dimension is near the format's uint32 max (e.g. a TIFF declaring
+	// 0xFFFFFFFF×0xFFFFFFFF), wrapping the product negative so the bomb
+	// guard's `> MaxPixels` test silently passes. Dividing avoids the
+	// overflow entirely.
+	if icfg.Width <= 0 || icfg.Height <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if int64(icfg.Width) > cfg.MaxPixels/int64(icfg.Height) {
 		return nil, ErrDecompressionBomb
 	}
 	img, _, err := stdimage.Decode(bytes.NewReader(data))

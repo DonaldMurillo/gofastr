@@ -435,8 +435,16 @@ func parseAcceptLanguage(header string) []string {
 		tag string
 		q   float64
 	}
+	// Bound the work an attacker-controlled header can force: RFC-realistic
+	// clients send a handful of language ranges. Cap the number of accepted
+	// entries so a header packed with commas (up to MaxHeaderBytes) cannot
+	// amplify into hundreds of thousands of allocations + an O(n log n) sort.
+	const maxEntries = 32
 	var out []entry
 	for _, part := range strings.Split(header, ",") {
+		if len(out) >= maxEntries {
+			break
+		}
 		seg := strings.TrimSpace(part)
 		if seg == "" {
 			continue

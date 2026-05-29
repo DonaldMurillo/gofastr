@@ -71,3 +71,44 @@ func TestBind_RejectsJsonDashTaggedFields(t *testing.T) {
 		t.Fatalf("Bind accepted field tagged json:\"-\"; that tag is the canonical opt-out for sensitive props")
 	}
 }
+
+type embeddedCommon struct {
+	Name string `json:"name"`
+}
+
+type embeddedReq struct {
+	embeddedCommon
+	Age int `json:"age"`
+}
+
+// Strict-key validation must not over-reject: encoding/json promotes JSON
+// keys from anonymous embedded structs, so the allow-list has to recurse
+// into them. Otherwise every endpoint whose bind struct embeds another
+// struct 400s on fully-valid bodies (a functional DoS), while a still-
+// unknown key must keep being rejected.
+func TestBind_AcceptsEmbeddedStructKeys(t *testing.T) {
+	t.Run("promoted key accepted", func(t *testing.T) {
+		body := `{"name":"alice","age":30}`
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		var dst embeddedReq
+		if err := Bind(req, &dst); err != nil {
+			t.Fatalf("Bind rejected promoted embedded key: %v", err)
+		}
+		if dst.Name != "alice" || dst.Age != 30 {
+			t.Fatalf("Bind dropped values: %+v", dst)
+		}
+	})
+
+	t.Run("still rejects unknown key", func(t *testing.T) {
+		body := `{"name":"alice","age":30,"is_admin":true}`
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		var dst embeddedReq
+		if err := Bind(req, &dst); err == nil {
+			t.Fatalf("Bind accepted unknown field alongside embedded keys; strict-key protection lost")
+		}
+	})
+}

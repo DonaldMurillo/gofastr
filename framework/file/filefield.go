@@ -105,10 +105,21 @@ func (f *FileField) Validate() error {
 
 // isUnsafeURLScheme reports whether url begins with a scheme that should
 // never appear in stored file metadata. Match is case-insensitive and
-// tolerates leading whitespace (browsers do too).
+// mirrors browser URL normalization: browsers strip TAB/LF/CR (and NUL)
+// from *anywhere* in the URL before resolving the scheme, so we remove
+// them everywhere — not just leading — before prefix-matching. Otherwise
+// "java\tscript:" slips past while a browser still resolves it as
+// javascript:.
 func isUnsafeURLScheme(url string) bool {
-	trimmed := strings.TrimLeft(url, " \t\r\n")
-	lower := strings.ToLower(trimmed)
+	cleaned := strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\n', '\r', 0:
+			return -1
+		}
+		return r
+	}, url)
+	cleaned = strings.TrimLeft(cleaned, " ")
+	lower := strings.ToLower(cleaned)
 	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
 		if strings.HasPrefix(lower, bad) {
 			return true
@@ -268,18 +279,34 @@ func rejectUnsafeContent(data []byte) error {
 	}
 
 	// XML / HTML / SVG. http.DetectContentType returns text/html for
-	// most HTML inputs, but classifies SVG as text/plain. Sniff the
-	// leading non-whitespace token directly so both fall into the same
-	// reject path.
-	trim := bytes.TrimLeft(head, " \t\r\n\f\v")
+	// most HTML inputs, but classifies SVG (and any markup that is not
+	// the leading token) as text/plain. The leading-token heuristic is
+	// trivially bypassed: a DOCTYPE/BOM/comment/arbitrary prefix pushes
+	// the dangerous tag off offset 0, and DetectContentType then reports
+	// text/plain. So we strip a leading byte-order mark and scan the
+	// whole sniff window (case-insensitive) for any active-content token
+	// anywhere — none of these belong in a non-active content field.
+	trim := bytes.TrimLeft(stripBOM(head), " \t\r\n\f\v")
 	lower := bytes.ToLower(trim)
-	if bytes.HasPrefix(lower, []byte("<svg")) ||
-		bytes.HasPrefix(lower, []byte("<?xml")) ||
-		bytes.HasPrefix(lower, []byte("<html")) ||
-		bytes.HasPrefix(lower, []byte("<!doctype html")) ||
-		bytes.HasPrefix(lower, []byte("<script")) ||
-		bytes.HasPrefix(lower, []byte("<iframe")) {
-		return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
+	for _, tok := range [][]byte{
+		[]byte("<svg"),
+		[]byte("<?xml"),
+		[]byte("<html"),
+		[]byte("<!doctype"),
+		[]byte("<script"),
+		[]byte("<iframe"),
+		[]byte("<img"),
+		[]byte("<math"),
+		[]byte("<object"),
+		[]byte("<embed"),
+		[]byte("<link"),
+		[]byte("<base"),
+		[]byte("<style"),
+		[]byte("javascript:"),
+	} {
+		if bytes.Contains(lower, tok) {
+			return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
+		}
 	}
 
 	// Final fallback: trust http.DetectContentType for cases it gets
@@ -293,6 +320,27 @@ func rejectUnsafeContent(data []byte) error {
 	}
 
 	return nil
+}
+
+// stripBOM removes a single leading byte-order mark (UTF-8, UTF-16 LE/BE,
+// UTF-32 LE/BE) so a BOM prefix can't push a dangerous markup token off
+// offset 0 and out of the sniff path. Only the BOM bytes are stripped;
+// for UTF-16/32 the following ASCII bytes (e.g. "<svg") remain matchable
+// because they sit interleaved-or-adjacent in the trimmed window.
+func stripBOM(b []byte) []byte {
+	switch {
+	case len(b) >= 4 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0xFE && b[3] == 0xFF:
+		return b[4:] // UTF-32 BE
+	case len(b) >= 4 && b[0] == 0xFF && b[1] == 0xFE && b[2] == 0x00 && b[3] == 0x00:
+		return b[4:] // UTF-32 LE
+	case len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF:
+		return b[3:] // UTF-8
+	case len(b) >= 2 && b[0] == 0xFE && b[1] == 0xFF:
+		return b[2:] // UTF-16 BE
+	case len(b) >= 2 && b[0] == 0xFF && b[1] == 0xFE:
+		return b[2:] // UTF-16 LE
+	}
+	return b
 }
 
 // DeleteFileField removes a previously stored file from the storage backend.

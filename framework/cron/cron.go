@@ -51,6 +51,7 @@ type Scheduler struct {
 	stop      chan struct{}
 	stopped   chan struct{}
 	startOnce sync.Once
+	started   bool // set under mu inside Start; gates Stop's wait on stopped
 	OnError   func(jobName string, err error)
 }
 
@@ -94,12 +95,18 @@ func (s *Scheduler) Register(job CronJob) error {
 // repeated Start calls are no-ops once the loop is running.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.startOnce.Do(func() {
+		s.mu.Lock()
+		s.started = true
+		s.mu.Unlock()
 		go s.run(ctx)
 	})
 }
 
 // Stop signals the loop to exit and blocks until it has. Safe to call
-// multiple times.
+// multiple times, and safe to call before Start — if the loop was never
+// launched there is nothing to wait for, so Stop returns immediately
+// instead of blocking forever on a channel the loop never closes (which
+// would hang graceful shutdown when boot aborts before Start runs).
 func (s *Scheduler) Stop() {
 	select {
 	case <-s.stop:
@@ -107,7 +114,12 @@ func (s *Scheduler) Stop() {
 	default:
 		close(s.stop)
 	}
-	<-s.stopped
+	s.mu.RLock()
+	started := s.started
+	s.mu.RUnlock()
+	if started {
+		<-s.stopped
+	}
 }
 
 // RunOnce fires every job whose schedule matches the given minute. Exported

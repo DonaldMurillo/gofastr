@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -61,9 +63,35 @@ func MetricsMiddleware(m *Metrics) Middleware {
 			if route == "" {
 				route = "unmatched"
 			}
-			m.record(r.Method, route, ww.status, time.Since(start))
+			m.record(boundMethod(r.Method), route, ww.status, time.Since(start))
 		})
 	}
+}
+
+// knownMethods is the set of HTTP methods we keep as distinct metric label
+// values. net/http accepts any RFC 7230 token as a request method, so the
+// method dimension is attacker-controlled; collapsing everything outside this
+// allow-list to a single "other" sentinel bounds metric cardinality and stops
+// an unauthenticated client from growing the in-memory store without limit.
+var knownMethods = map[string]struct{}{
+	http.MethodGet:     {},
+	http.MethodHead:    {},
+	http.MethodPost:    {},
+	http.MethodPut:     {},
+	http.MethodPatch:   {},
+	http.MethodDelete:  {},
+	http.MethodConnect: {},
+	http.MethodOptions: {},
+	http.MethodTrace:   {},
+}
+
+// boundMethod maps any method outside the known-method allow-list to a single
+// "other" sentinel so the metrics cardinality stays bounded.
+func boundMethod(method string) string {
+	if _, ok := knownMethods[method]; ok {
+		return method
+	}
+	return "other"
 }
 
 func (m *Metrics) record(method, route string, status int, dur time.Duration) {
@@ -191,4 +219,29 @@ func (w *metricsResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards to the underlying ResponseWriter's Hijacker if it has one.
+// Without this, wrapping breaks any handler that performs a WebSocket upgrade
+// or otherwise type-asserts http.Hijacker (e.g. core/stream/websocket.go),
+// because the assertion would see the wrapper instead of the real writer.
+func (w *metricsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
+// Push forwards to the underlying ResponseWriter's Pusher if it has one.
+func (w *metricsResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pu, ok := w.ResponseWriter.(http.Pusher); ok {
+		return pu.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+// Unwrap exposes the wrapped writer to net/http's ResponseController so it
+// can reach optional interfaces this wrapper doesn't re-expose directly.
+func (w *metricsResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }

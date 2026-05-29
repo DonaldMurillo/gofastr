@@ -35,10 +35,20 @@ func RenderHTML(input string) render.HTML {
 	return Render(input).HTML
 }
 
+// maxBlockquoteDepth bounds blockquote nesting. Each level re-parses the
+// remaining inner text, so unbounded nesting is O(n^2) on a single line of
+// "> > > … x" — a CPU-DoS amplifier on any user-submitted markdown. Past
+// the cap we stop recursing and emit the remaining text verbatim (escaped).
+const maxBlockquoteDepth = 32
+
 // renderBody runs the block parser and returns the HTML plus the first H1
 // text seen (used as the document title).
 func renderBody(input string) (render.HTML, string) {
-	p := &parser{lines: splitLines(input)}
+	return renderBodyDepth(input, 0)
+}
+
+func renderBodyDepth(input string, depth int) (render.HTML, string) {
+	p := &parser{lines: splitLines(input), depth: depth}
 	var sb strings.Builder
 	var firstH1 string
 	for !p.eof() {

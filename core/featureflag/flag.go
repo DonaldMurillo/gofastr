@@ -144,7 +144,19 @@ func (e *Evaluator) Bool(ctx context.Context, key string) bool {
 		return false
 	}
 	f, err := e.store.Get(ctx, key)
-	if err != nil || f == nil || !f.Enabled {
+	if err != nil || f == nil {
+		return false
+	}
+	return e.evaluate(ctx, f)
+}
+
+// evaluate applies the rule chain to an already-loaded flag. It performs
+// no store access, so callers control exactly how many fetches happen —
+// Bool and BoolDefault both fetch once and hand the result here. Keeping
+// the decision logic store-free closes the TOCTOU double-read window and
+// lets BoolDefault honour its fail-closed contract.
+func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
+	if f == nil || !f.Enabled {
 		return false
 	}
 	ec := FromContext(ctx)
@@ -176,7 +188,7 @@ func (e *Evaluator) Bool(ctx context.Context, key string) bool {
 	if subject == "" {
 		return false
 	}
-	return bucket(e.salt, key, subject) < f.Rollout
+	return bucket(e.salt, f.Key, subject) < f.Rollout
 }
 
 // BoolDefault returns the supplied fallback when the named flag is
@@ -193,14 +205,16 @@ func (e *Evaluator) BoolDefault(ctx context.Context, key string, fallback bool) 
 	if e == nil || e.store == nil {
 		return fallback
 	}
+	// Single guarded fetch: evaluating the flag we already loaded avoids
+	// a second, independent store.Get inside Bool. That second read could
+	// error (transient DB blip) and make Bool return false — fail open —
+	// or observe a changed definition (TOCTOU). One read here keeps the
+	// fallback authoritative whenever the store can't give a clean answer.
 	f, err := e.store.Get(ctx, key)
-	if err != nil {
+	if err != nil || f == nil {
 		return fallback
 	}
-	if f == nil {
-		return fallback
-	}
-	return e.Bool(ctx, key)
+	return e.evaluate(ctx, f)
 }
 
 // subjectID picks the stable identifier to hash for rollout.

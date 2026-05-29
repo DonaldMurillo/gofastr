@@ -58,6 +58,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 				return res, fmt.Errorf("static: render %q: %w", p, err)
 			}
 			dst := filepath.Join(b.OutDir, pathToFile(p))
+			if err := b.ensureContained(dst); err != nil {
+				return res, err
+			}
 			if err := writeFile(dst, []byte(html)); err != nil {
 				return res, err
 			}
@@ -83,6 +86,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			md := coreapp.ScreenLLMMD(screen)
 			for _, p := range paths {
 				dst := filepath.Join(b.OutDir, pathToLLMFile(p))
+				if err := b.ensureContained(dst); err != nil {
+					return res, err
+				}
 				if err := writeFile(dst, []byte(md)); err != nil {
 					return res, err
 				}
@@ -148,6 +154,21 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	return res, nil
 }
 
+// ensureContained is the last line of defence before any generated file is
+// written: it verifies dst resolves inside b.OutDir. applyParams already
+// rejects unsafe StaticPaths values, but this guards against any future caller
+// that constructs a destination some other way. Fails closed.
+func (b *Builder) ensureContained(dst string) error {
+	rel, err := filepath.Rel(b.OutDir, dst)
+	if err != nil {
+		return fmt.Errorf("static: refusing to write outside OutDir: %q: %w", dst, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("static: refusing to write outside OutDir: %q escapes %q", dst, b.OutDir)
+	}
+	return nil
+}
+
 func (b *Builder) log(format string, args ...any) {
 	if b.Logger != nil {
 		b.Logger(format, args...)
@@ -172,24 +193,58 @@ func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]strin
 	if !ok {
 		return nil, nil
 	}
+	return expandParams(ctx, pattern, provider.StaticPaths(ctx))
+}
+
+// expandParams substitutes each StaticPaths param map into the route pattern.
+// It fails closed: any param value that would let the generated URL escape its
+// route segment — a path separator, an "." / ".." traversal component, a NUL,
+// or an empty value — aborts the whole build rather than silently writing a
+// file outside OutDir.
+func expandParams(_ context.Context, pattern string, sets []map[string]string) ([]string, error) {
 	var out []string
-	for _, params := range provider.StaticPaths(ctx) {
-		out = append(out, applyParams(pattern, params))
+	for _, params := range sets {
+		url, err := applyParams(pattern, params)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, url)
 	}
 	return out, nil
 }
 
-func applyParams(pattern string, params map[string]string) string {
+func applyParams(pattern string, params map[string]string) (string, error) {
 	parts := strings.Split(pattern, "/")
 	for i, part := range parts {
 		if strings.HasPrefix(part, ":") && len(part) > 1 {
 			key := strings.TrimPrefix(part, ":")
 			if v, ok := params[key]; ok {
+				if err := validateParamValue(key, v); err != nil {
+					return "", err
+				}
 				parts[i] = v
 			}
 		}
 	}
-	return strings.Join(parts, "/")
+	return strings.Join(parts, "/"), nil
+}
+
+// validateParamValue rejects StaticPaths values that could break out of their
+// single URL segment when written to disk by pathToFile/Build. A param fills
+// exactly one path component, so anything that introduces a new component
+// (separator) or navigates the tree ("."/"..") or truncates the name (NUL) is
+// unsafe.
+func validateParamValue(key, v string) error {
+	if v == "" {
+		return fmt.Errorf("static: empty StaticPaths value for %q", key)
+	}
+	if strings.ContainsAny(v, "/\\\x00") {
+		return fmt.Errorf("static: StaticPaths value for %q contains a path separator: %q", key, v)
+	}
+	if v == "." || v == ".." {
+		return fmt.Errorf("static: StaticPaths value for %q is a traversal component: %q", key, v)
+	}
+	return nil
 }
 
 // pathToFile turns a URL path into the relative file path SSG output uses.

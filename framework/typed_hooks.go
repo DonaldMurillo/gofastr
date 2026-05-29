@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
@@ -32,11 +34,12 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
+		before := v
 		if err := fn(ctx, &v); err != nil {
 			return err
 		}
 		if m, ok := data.(map[string]any); ok {
-			return mergeStructIntoMap(&v, m)
+			return mergeStructIntoMap(&before, &v, m)
 		}
 		return nil
 	})
@@ -64,11 +67,12 @@ func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, v
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
+		before := v
 		if err := fn(ctx, &v); err != nil {
 			return err
 		}
 		if m, ok := data.(map[string]any); ok {
-			return mergeStructIntoMap(&v, m)
+			return mergeStructIntoMap(&before, &v, m)
 		}
 		return nil
 	})
@@ -180,9 +184,77 @@ func unmarshalHookPayload(data any, dest any) error {
 }
 
 // mergeStructIntoMap reflects struct mutations from the typed Before-hook
-// callback back into the snake-cased payload map. Only top-level fields are
-// merged; nested maps are replaced wholesale.
-func mergeStructIntoMap(src any, dest map[string]any) error {
+// callback back into the snake-cased payload map. It diffs the pre-hook
+// struct (`before`) against the post-hook struct (`after`) and writes back
+// ONLY the fields the hook actually changed — including changes TO a zero
+// value (false, 0, "").
+//
+// Why not just marshal `after`: generated structs tag every field
+// `,omitempty` (cmd/gofastr/generate.go), so json.Marshal silently drops a
+// field a defensive hook forced to its zero value. Relying on that
+// marshalling makes a hook that does `value.IsAdmin = false` (to override
+// attacker-supplied is_admin=true) a no-op — the client's value survives
+// into the SET clause. The diff is computed via reflection on the struct
+// fields so a forced-zero override lands in dest, while untouched fields on
+// a sparse BeforeUpdate body are left alone (we don't add fields the hook
+// never touched). Only top-level fields are merged.
+func mergeStructIntoMap(before, after any, dest map[string]any) error {
+	bv := reflect.Indirect(reflect.ValueOf(before))
+	av := reflect.Indirect(reflect.ValueOf(after))
+	if !bv.IsValid() || !av.IsValid() || av.Kind() != reflect.Struct || bv.Type() != av.Type() {
+		// Fall back to the additive marshal merge for non-struct payloads.
+		return marshalMergeIntoMap(after, dest)
+	}
+	t := av.Type()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" { // unexported
+			continue
+		}
+		name, skip := jsonFieldName(f)
+		if skip {
+			continue
+		}
+		oldVal := bv.Field(i).Interface()
+		newVal := av.Field(i).Interface()
+		if reflect.DeepEqual(oldVal, newVal) {
+			continue // hook left this field untouched — don't widen the body
+		}
+		// Round-trip the new value through JSON so it matches the shape the
+		// untyped path expects (numbers as float64, time as RFC3339, etc.).
+		b, err := json.Marshal(newVal)
+		if err != nil {
+			return err
+		}
+		var decoded any
+		if err := json.Unmarshal(b, &decoded); err != nil {
+			return err
+		}
+		dest[casing.ToSnake(name)] = decoded
+	}
+	return nil
+}
+
+// jsonFieldName returns the effective JSON key for a struct field (honoring
+// the json tag, ignoring options like omitempty) and whether the field is
+// JSON-skipped (`json:"-"`).
+func jsonFieldName(f reflect.StructField) (name string, skip bool) {
+	tag := f.Tag.Get("json")
+	if tag == "-" {
+		return "", true
+	}
+	if comma := strings.IndexByte(tag, ','); comma >= 0 {
+		tag = tag[:comma]
+	}
+	if tag == "" {
+		return f.Name, false
+	}
+	return tag, false
+}
+
+// marshalMergeIntoMap is the additive fallback used when the diff path can't
+// apply (non-struct payloads). It mirrors the original behaviour.
+func marshalMergeIntoMap(src any, dest map[string]any) error {
 	b, err := json.Marshal(src)
 	if err != nil {
 		return err

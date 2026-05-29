@@ -96,3 +96,40 @@ func TestScheduler_JobPanicRecovered(t *testing.T) {
 	}
 	t.Fatalf("SECURITY: [cron] panic was not surfaced via OnError")
 }
+
+// TestScheduler_StopBeforeStart verifies that Stop() returns promptly when
+// Start() was never called — a shutdown path that fires the OnStop drainer
+// after an aborted boot must not hang forever on a bare channel receive.
+func TestScheduler_StopBeforeStart(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(s *cron.Scheduler)
+	}{
+		{"never started", func(s *cron.Scheduler) { s.Stop() }},
+		{"never started, double stop", func(s *cron.Scheduler) { s.Stop(); s.Stop() }},
+		{"started then stopped", func(s *cron.Scheduler) {
+			s.Start(context.Background())
+			s.Stop()
+		}},
+		{"stop after stop on started", func(s *cron.Scheduler) {
+			s.Start(context.Background())
+			s.Stop()
+			s.Stop()
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := cron.NewScheduler()
+			done := make(chan struct{})
+			go func() {
+				tc.run(s)
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatalf("SECURITY: [cron] Stop() deadlocked (%s)", tc.name)
+			}
+		})
+	}
+}

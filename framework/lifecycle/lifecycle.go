@@ -152,17 +152,21 @@ func (lc *Lifecycle) Shutdown(ctx context.Context) error {
 	// false and divert traffic before in-flight requests finish draining.
 	lc.shuttingDown.Store(true)
 
-	// Phase 2: Drain with timeout
-	drainCtx, cancel := context.WithTimeout(ctx, lc.timeout)
-	defer cancel()
-
+	// Phase 2: Drain with timeout. Snapshot the timeout and the drainers
+	// under the same lock that SetShutdownTimeout writes to, so a
+	// concurrent SetShutdownTimeout during Shutdown is not an
+	// unsynchronised read/write.
 	lc.mu.Lock()
+	timeout := lc.timeout
 	drainers := make([]Drainer, len(lc.drainers))
 	copy(drainers, lc.drainers)
 	// Snapshot consumed — clear so a second Shutdown() call is a safe
 	// no-op even if callers re-enter (idempotent shutdown contract).
 	lc.drainers = nil
 	lc.mu.Unlock()
+
+	drainCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	var firstErr error
 	recordErr := func(err error) {

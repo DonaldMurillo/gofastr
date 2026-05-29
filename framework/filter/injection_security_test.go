@@ -155,3 +155,53 @@ func TestInjection_OversizedINList(t *testing.T) {
 		t.Errorf("SECURITY: [filter_inject] oversized IN list produced %d filter entries (want cap at ~1000). Attack: memory exhaustion via unbounded IN clause.", inCount)
 	}
 }
+
+// TestSort_RepeatedFieldBounded verifies that a single request cannot
+// generate an unbounded ORDER BY clause by repeating an allow-listed
+// ?sort= param thousands of times. Without a cap, N copies of
+// ?sort=title produce N "ORDER BY title" fragments — oversized SQL,
+// parse-CPU burn, and statement-cache pollution from one small request.
+func TestSort_RepeatedFieldBounded(t *testing.T) {
+	fields := []schema.Field{
+		{Name: "title", Type: schema.String},
+		{Name: "status", Type: schema.String},
+	}
+
+	t.Run("single_sort_ok", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/?sort=title", nil)
+		sorts, err := ParseSort(req, fields)
+		if err != nil {
+			t.Fatalf("legitimate single sort rejected: %v", err)
+		}
+		if len(sorts) != 1 {
+			t.Fatalf("got %d sorts, want 1", len(sorts))
+		}
+	})
+
+	t.Run("repeated_allowed_field", func(t *testing.T) {
+		// Same allow-listed field repeated 10,000 times.
+		q := make([]string, 10000)
+		for i := range q {
+			q[i] = "sort=title"
+		}
+		req := httptest.NewRequest(http.MethodGet, "/?"+strings.Join(q, "&"), nil)
+		sorts, err := ParseSort(req, fields)
+		// Either fail closed (preferred) or cap — never emit thousands.
+		if err == nil && len(sorts) > 16 {
+			t.Errorf("SECURITY: [filter_sort] repeated ?sort=title produced %d clauses (want cap <=16 or a rejection). Attack: unbounded ORDER BY via repeated param.", len(sorts))
+		}
+	})
+
+	t.Run("many_distinct_combos", func(t *testing.T) {
+		// Mix of asc/desc on allowed fields, still over the cap.
+		var q []string
+		for i := 0; i < 5000; i++ {
+			q = append(q, "sort=title", "sort=-title", "sort=status", "sort=-status")
+		}
+		req := httptest.NewRequest(http.MethodGet, "/?"+strings.Join(q, "&"), nil)
+		sorts, err := ParseSort(req, fields)
+		if err == nil && len(sorts) > 16 {
+			t.Errorf("SECURITY: [filter_sort] %d sort clauses accepted (want cap <=16 or a rejection). Attack: unbounded ORDER BY.", len(sorts))
+		}
+	})
+}

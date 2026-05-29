@@ -146,3 +146,50 @@ func TestMarkdown_LinkDataURIVerify(t *testing.T) {
 		t.Errorf("SECURITY: [markdown] data:text/html URI in link href: %s. Attack: XSS via data URI link.", html)
 	}
 }
+
+// TestMarkdown_SchemeInteriorControlChar verifies that control bytes
+// embedded INSIDE a scheme name (which the HTML5 URL parser strips
+// before scheme resolution) cannot smuggle a javascript: URL past the
+// dangerous-scheme allow-list. Attack: [x](java<TAB>script:alert(1)).
+func TestMarkdown_SchemeInteriorControlChar(t *testing.T) {
+	// Each attack embeds a different control byte between "java" and
+	// "script:" — a browser ignores it and resolves the URL to
+	// javascript:, so the renderer must neutralise all of them.
+	for _, ctrl := range []string{"\t", "\n", "\r", "\x00"} {
+		link := "[x](java" + ctrl + "script:alert(1))"
+		img := "![x](java" + ctrl + "script:alert(1))"
+		for _, src := range []string{link, img} {
+			html := string(Render(src).HTML)
+			// The control byte must not survive into the href/src value
+			// such that the residual reads as "javascript:" once stripped.
+			deScripted := strings.ReplaceAll(html, ctrl, "")
+			if strings.Contains(strings.ToLower(deScripted), "java") &&
+				strings.Contains(strings.ToLower(deScripted), "script:alert") &&
+				!strings.Contains(deScripted, `="#"`) {
+				t.Errorf("SECURITY: [markdown] interior control byte %q smuggled javascript: scheme: %s", ctrl, html)
+			}
+		}
+	}
+}
+
+// TestMarkdown_FenceInfoAttrEscaped verifies the fenced-code-block info
+// string cannot break out of the class attribute into element context.
+// Attack: ```"><img src=x onerror=alert(1)> as the fence info string.
+func TestMarkdown_FenceInfoAttrEscaped(t *testing.T) {
+	// Happy path: a normal language identifier renders a clean class.
+	clean := string(Render("```go\nx := 1\n```").HTML)
+	if !strings.Contains(clean, `class="language-go"`) {
+		t.Errorf("expected clean language class, got: %s", clean)
+	}
+
+	for _, info := range []string{
+		`"><img src=x onerror=alert(1)>`,
+		`go"><script>alert(1)</script>`,
+		`x" onmouseover="alert(1)`,
+	} {
+		html := string(Render("```" + info + "\nbody\n```").HTML)
+		if strings.Contains(html, "<img") || strings.Contains(html, "<script") {
+			t.Errorf("SECURITY: [markdown] fence info string broke out of class attribute: %s. Attack: XSS via info string.", html)
+		}
+	}
+}

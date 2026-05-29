@@ -108,7 +108,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			// Always log errors and slow requests
 			if wrapped.statusCode >= 400 || duration > slowThreshold {
 				logger.Info("request",
-					"method", r.Method,
+					"method", safeLogMethod(r.Method),
 					"path", safeLogPath(r.URL.Path),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),
@@ -121,7 +121,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 			n := atomic.AddUint64(&counter, 1)
 			if n%uint64(sampleN) == 1 {
 				logger.Info("request",
-					"method", r.Method,
+					"method", safeLogMethod(r.Method),
 					"path", safeLogPath(r.URL.Path),
 					"status", wrapped.statusCode,
 					"duration", duration.String(),

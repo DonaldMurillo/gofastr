@@ -179,25 +179,53 @@ func validateBodyKeys(body []byte, dst any) error {
 
 // jsonTagSet returns the set of exact JSON field names declared on t.
 // Fields without a json tag fall back to their Go name (mirroring
-// encoding/json's default), and json:"-" is skipped.
+// encoding/json's default), and json:"-" is skipped. Anonymous embedded
+// struct fields without an explicit json name have their keys promoted
+// (matching encoding/json's promotion rules), so the strict-key
+// allow-list doesn't false-reject a valid promoted key.
 func jsonTagSet(t reflect.Type) map[string]struct{} {
 	out := make(map[string]struct{}, t.NumField())
+	collectJSONTags(t, out)
+	return out
+}
+
+func collectJSONTags(t reflect.Type, out map[string]struct{}) {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
 		tag := f.Tag.Get("json")
 		if tag == "-" {
 			continue
 		}
 		name := strings.SplitN(tag, ",", 2)[0]
+
+		// Anonymous embedded struct with no explicit json name:
+		// encoding/json promotes its EXPORTED fields into the parent
+		// object — even when the embedded type itself is unexported —
+		// so merge the embedded type's key set rather than naming the
+		// field. The promoted fields' own exportedness is enforced in
+		// the recursive call.
+		if f.Anonymous && name == "" {
+			ft := f.Type
+			if ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				collectJSONTags(ft, out)
+				continue
+			}
+		}
+
+		// Non-embedded unexported fields are never (de)serialized by
+		// encoding/json, so they don't belong on the allow-list.
+		if !f.IsExported() {
+			continue
+		}
+
 		if name == "" {
 			name = f.Name
 		}
 		out[name] = struct{}{}
 	}
-	return out
 }
 
 // bindQuery binds query parameters to struct fields tagged with `query:"name"`.

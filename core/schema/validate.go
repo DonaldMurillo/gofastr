@@ -8,7 +8,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+// decimalRe matches a canonical decimal numeric literal: an optional sign
+// followed by digits with an optional fractional part, or a bare fractional
+// part, optionally with a base-10 exponent. It deliberately rejects Go
+// float-literal forms that storage layers cannot reparse (underscore
+// separators, hex floats) as well as Inf/NaN.
+var decimalRe = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
 
 // validateField dispatches to type-specific validation.
 func validateField(f Field, value any) error {
@@ -59,10 +67,11 @@ func validateString(f Field, value any) error {
 	if f.Required && s == "" {
 		return fmt.Errorf("is required")
 	}
-	if f.Min != nil && float64(len(s)) < *f.Min {
+	n := utf8.RuneCountInString(s)
+	if f.Min != nil && float64(n) < *f.Min {
 		return fmt.Errorf("must be at least %v characters", *f.Min)
 	}
-	if f.Max != nil && float64(len(s)) > *f.Max {
+	if f.Max != nil && float64(n) > *f.Max {
 		return fmt.Errorf("must be at most %v characters", *f.Max)
 	}
 	if f.Pattern != "" {
@@ -84,13 +93,42 @@ func validateInt(f Field, value any) error {
 	if !ok {
 		return fmt.Errorf("must be an integer")
 	}
-	if f.Min != nil && float64(n) < *f.Min {
+	// Compare bounds in integer space. The bounds are stored as *float64,
+	// so first clamp them to the int64 range; widening n to float64 instead
+	// would lose precision above 2^53 and admit values strictly over Max.
+	if f.Min != nil && n < floatBoundToInt64(*f.Min, true) {
 		return fmt.Errorf("must be at least %v", *f.Min)
 	}
-	if f.Max != nil && float64(n) > *f.Max {
+	if f.Max != nil && n > floatBoundToInt64(*f.Max, false) {
 		return fmt.Errorf("must be at most %v", *f.Max)
 	}
 	return nil
+}
+
+// floatBoundToInt64 converts a *float64 Int bound to an int64 for exact
+// integer comparison. Bounds beyond the int64 range are clamped: a Min above
+// MaxInt64 becomes MaxInt64 (nothing can satisfy it), a Max above MaxInt64
+// becomes MaxInt64 (no int64 can exceed it), and symmetrically for the low
+// end. isMin selects rounding that never widens the admitted range.
+func floatBoundToInt64(b float64, isMin bool) int64 {
+	if math.IsNaN(b) {
+		// A NaN bound can never be satisfied / never be exceeded; pick the
+		// extreme that rejects everything for a Min and accepts for a Max.
+		if isMin {
+			return math.MaxInt64
+		}
+		return math.MinInt64
+	}
+	if b >= math.MaxInt64 {
+		return math.MaxInt64
+	}
+	if b <= math.MinInt64 {
+		return math.MinInt64
+	}
+	if isMin {
+		return int64(math.Ceil(b))
+	}
+	return int64(math.Floor(b))
 }
 
 // --- Float ---
@@ -99,6 +137,11 @@ func validateFloat(f Field, value any) error {
 	n, ok := toFloat64(value)
 	if !ok {
 		return fmt.Errorf("must be a number")
+	}
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		// NaN/Inf defeat every Min/Max comparison (IEEE-754); reject them
+		// so the bound can't be bypassed.
+		return fmt.Errorf("must be a finite number")
 	}
 	if f.Min != nil && n < *f.Min {
 		return fmt.Errorf("must be at least %v", *f.Min)
@@ -122,9 +165,18 @@ func validateDecimal(f Field, value any) error {
 	if s == "" {
 		return nil
 	}
+	// Require a canonical decimal literal. strconv.ParseFloat also accepts
+	// underscore separators, hex floats, and Inf/NaN, none of which are valid
+	// decimal text and several of which (NaN/Inf) bypass the Min/Max bounds.
+	if !decimalRe.MatchString(s) {
+		return fmt.Errorf("must be a valid decimal number")
+	}
 	n, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return fmt.Errorf("must be a valid decimal number")
+	}
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Errorf("must be a finite decimal number")
 	}
 	if f.Min != nil && n < *f.Min {
 		return fmt.Errorf("must be at least %v", *f.Min)
@@ -284,6 +336,22 @@ func toString(v any) (string, bool) {
 	}
 }
 
+// isInt64Representable reports whether a float is a finite, integral value
+// that fits in int64. Go's float->int64 conversion silently saturates for
+// out-of-range inputs, so an explicit guard is required to avoid accepting a
+// value (e.g. 1e30) that the validator would then range-check against the
+// wrong (saturated) number. The upper bound is strict because MaxInt64 itself
+// is not exactly representable as float64 and rounds up to 2^63.
+func isInt64Representable(n float64) bool {
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		return false
+	}
+	if n != math.Trunc(n) {
+		return false
+	}
+	return n >= math.MinInt64 && n < math.MaxInt64
+}
+
 func toInt64(v any) (int64, bool) {
 	switch n := v.(type) {
 	case int:
@@ -311,12 +379,12 @@ func toInt64(v any) (int64, bool) {
 		}
 		return int64(n), true
 	case float64:
-		if n == math.Trunc(n) {
+		if isInt64Representable(n) {
 			return int64(n), true
 		}
 		return 0, false
 	case float32:
-		if float64(n) == math.Trunc(float64(n)) {
+		if isInt64Representable(float64(n)) {
 			return int64(n), true
 		}
 		return 0, false

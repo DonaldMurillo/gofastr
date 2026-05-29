@@ -20,6 +20,12 @@ func TestFileField_RejectsJavaScriptScheme(t *testing.T) {
 		"vbscript:msgbox(1)",
 		"data:text/html,<script>alert(1)</script>",
 		"data:application/xhtml+xml,<x/>",
+		// Embedded TAB/LF/CR inside the scheme — browsers strip these
+		// anywhere before resolving the scheme, so they must be rejected.
+		"java\tscript:alert(1)",
+		"java\nscript:alert(1)",
+		"jav\rascript:alert(1)",
+		"\x00javascript:alert(1)",
 	} {
 		ff := &file.FileField{URL: url}
 		err := ff.Validate()

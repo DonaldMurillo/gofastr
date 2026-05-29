@@ -11,6 +11,13 @@ import (
 // italic. Plain text segments are HTML-escaped.
 func renderInline(input string) string {
 	var sb strings.Builder
+	// noCloser memoizes (delim,run) pairs for which a scan has already
+	// reached end-of-input without finding a matching closing run. Once a
+	// run has no closer from some position, no later opener of the same
+	// (delim,run) can find one either (its scan covers a suffix of the same
+	// region), so we skip the rescan. This turns the unmatched-emphasis
+	// case from O(n^2) into O(n) — a CPU-DoS guard.
+	var noCloser map[int]bool
 	i := 0
 	for i < len(input) {
 		ch := input[i]
@@ -57,7 +64,17 @@ func renderInline(input string) string {
 			i++
 		case ch == '*' || ch == '_':
 			delim, run := scanRun(input, i, ch)
-			closeIdx := findClosingDelim(input, i+run, delim, run)
+			key := int(delim)<<2 | run
+			closeIdx := -1
+			if noCloser == nil || !noCloser[key] {
+				closeIdx = findClosingDelim(input, i+run, delim, run)
+				if closeIdx < 0 {
+					if noCloser == nil {
+						noCloser = make(map[int]bool, 4)
+					}
+					noCloser[key] = true
+				}
+			}
 			if closeIdx >= 0 {
 				inner := input[i+run : closeIdx]
 				switch run {
@@ -96,12 +113,12 @@ func renderInline(input string) string {
 // scanRun returns the run length of the same delimiter starting at i.
 // It also returns the delimiter byte for clarity at call sites.
 func scanRun(s string, i int, delim byte) (byte, int) {
+	// Stop counting at 3: the caller only distinguishes runs of 1, 2 and
+	// 3+, and counting a full run of N identical delimiters at every
+	// position would be O(n^2) on a long unmatched run (a CPU-DoS vector).
 	n := 0
-	for i+n < len(s) && s[i+n] == delim {
+	for n < 3 && i+n < len(s) && s[i+n] == delim {
 		n++
-	}
-	if n > 3 {
-		n = 3
 	}
 	return delim, n
 }
@@ -248,6 +265,7 @@ func escapeAttr(s string) string { return htmlEscaper.Replace(s) }
 // click can't navigate to an active payload. Other schemes — http(s),
 // mailto, tel, fragment-only, relative paths — pass through unchanged.
 func safeLinkURL(url string) string {
+	url = stripURLControlBytes(url)
 	if isDangerousURLScheme(url) {
 		return "#"
 	}
@@ -261,6 +279,7 @@ func safeLinkURL(url string) string {
 // image/* (the legitimate use case for embedded images) and reject
 // the rest of the dangerous set.
 func safeImageURL(url string) string {
+	url = stripURLControlBytes(url)
 	lower := strings.ToLower(strings.TrimLeft(url, " \t\r\n"))
 	if strings.HasPrefix(lower, "data:image/") && !strings.HasPrefix(lower, "data:image/svg") {
 		return url
@@ -271,13 +290,39 @@ func safeImageURL(url string) string {
 	return url
 }
 
+// stripURLControlBytes removes the tab/LF/CR/NUL bytes that the HTML5
+// URL parser deletes from a URL before resolving its scheme. Browsers
+// ignore them anywhere in the URL — including in the MIDDLE of a scheme
+// name — so `java\tscript:` resolves to `javascript:`. We delete them up
+// front so both the scheme allow-list and the stored href see the same
+// string the browser will execute, closing the interior-control-byte
+// bypass.
+func stripURLControlBytes(url string) string {
+	if !strings.ContainsAny(url, "\t\n\r\x00") {
+		return url
+	}
+	var sb strings.Builder
+	sb.Grow(len(url))
+	for i := 0; i < len(url); i++ {
+		switch url[i] {
+		case '\t', '\n', '\r', '\x00':
+			// dropped — mirrors the browser URL parser
+		default:
+			sb.WriteByte(url[i])
+		}
+	}
+	return sb.String()
+}
+
 // isDangerousURLScheme reports whether url begins with a URL scheme
 // known to execute script or render HTML in a navigation context.
 // Leading ASCII whitespace and control chars are ignored — they're
 // stripped from the scheme by the HTML parser anyway, so we match the
-// parser's view.
+// parser's view. Callers should run stripURLControlBytes first so that
+// control bytes embedded INSIDE the scheme (java\tscript:) are also
+// neutralised.
 func isDangerousURLScheme(url string) bool {
-	trimmed := url
+	trimmed := stripURLControlBytes(url)
 	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t' || trimmed[0] == '\r' || trimmed[0] == '\n' || trimmed[0] < 0x20) {
 		trimmed = trimmed[1:]
 	}

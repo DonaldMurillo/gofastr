@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // ValidateMIME reads the first 512 bytes from file to detect MIME type,
@@ -155,32 +156,78 @@ func SanitizeFilename(name string) string {
 	}
 
 	// Length cap. Keep the extension if there is one so the truncated
-	// name still round-trips through MIME detection.
+	// name still round-trips through MIME detection. Truncation walks
+	// back to a UTF-8 rune boundary so the result is never invalid
+	// UTF-8 — an orphaned lead/continuation byte would corrupt the
+	// storage key, utf8mb4 DB columns, and JSON consumers.
 	if len(name) > MaxFilenameBytes {
 		ext := filepath.Ext(name)
 		if len(ext) >= MaxFilenameBytes {
 			// Extension itself is absurdly long; drop it.
-			name = name[:MaxFilenameBytes]
+			name = truncateRunes(name, MaxFilenameBytes)
 		} else {
-			name = name[:MaxFilenameBytes-len(ext)] + ext
+			name = truncateRunes(name, MaxFilenameBytes-len(ext)) + ext
 		}
 	}
 
 	return name
 }
 
-// stripControlBytes drops every byte < 0x20 plus DEL (0x7f).
+// truncateRunes returns the longest prefix of s that is at most maxBytes
+// bytes and ends on a UTF-8 rune boundary, so the result is always valid
+// UTF-8.
+func truncateRunes(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	// Back up until cut lands on a rune boundary (i.e. not in the middle
+	// of a multibyte sequence).
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// stripControlBytes drops every ASCII control byte (< 0x20, plus DEL
+// 0x7f) and every Unicode control / line-terminator rune. The latter
+// closes a gap that a byte-only filter leaves open: U+0085 (NEL),
+// U+2028 (LINE SEPARATOR), and U+2029 (PARAGRAPH SEPARATOR) are all
+// encoded entirely with bytes >= 0x80, so they survive a byte-only
+// scan yet are treated as line breaks by terminals, log processors,
+// and JavaScript/JSON tooling — the same newline-injection hazard the
+// ASCII filter defends against.
 func stripControlBytes(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
+	for _, r := range s {
+		if isStrippableControl(r) {
 			continue
 		}
-		b.WriteByte(c)
+		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// isStrippableControl reports whether r is a control character or a
+// Unicode line/paragraph separator that must never survive into a
+// stored filename.
+func isStrippableControl(r rune) bool {
+	switch r {
+	case ' ', // LINE SEPARATOR
+		' ', // PARAGRAPH SEPARATOR
+		'': // NEXT LINE (NEL)
+		return true
+	}
+	// C0 controls, DEL, and C1 controls (0x80–0x9f, which includes NEL
+	// above but also other invisible control runes).
+	if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+		return true
+	}
+	return false
 }
 
 // isBlankOrDottyOnly reports whether s is empty or made up of nothing

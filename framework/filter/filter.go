@@ -16,6 +16,14 @@ import (
 // growth.
 const maxINListEntries = 1000
 
+// maxSortFields bounds the number of ORDER BY clauses a single request
+// can generate. Mirrors maxINListEntries: without it, a repeated
+// allow-listed ?sort=title (N copies) produces N "ORDER BY title"
+// fragments, inflating SQL text, burning statement-parse CPU, and
+// polluting the statement cache from one small request. 16 is far more
+// sort keys than any legitimate UI needs.
+const maxSortFields = 16
+
 // FilterOp represents a comparison operator for query filtering.
 type FilterOp string
 
@@ -147,6 +155,15 @@ func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
 	sortParams := r.URL.Query()["sort"]
 	if len(sortParams) == 0 {
 		return nil, nil
+	}
+
+	// Bound the number of sort clauses. A repeated allow-listed
+	// ?sort=title would otherwise produce one ORDER BY fragment per
+	// occurrence, letting a single small request inflate the generated
+	// SQL and pollute the statement cache. Fail closed rather than
+	// silently truncate, mirroring the unknown-field policy above.
+	if len(sortParams) > maxSortFields {
+		return nil, fmt.Errorf("too many sort fields: %d (max %d)", len(sortParams), maxSortFields)
 	}
 
 	var sorts []ParsedSort

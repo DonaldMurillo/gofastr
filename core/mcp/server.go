@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -108,14 +109,39 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		}
 	}
 
-	result, err := t.Handler(ctx, params)
+	result, err := s.invokeHandler(ctx, t, params)
 	if err != nil {
+		var rpcErr *RPCError
+		if errors.As(err, &rpcErr) {
+			return nil, rpcErr
+		}
 		return nil, &RPCError{
 			Code:    ErrInternalError,
 			Message: err.Error(),
 		}
 	}
 	return result, nil
+}
+
+// invokeHandler runs a tool handler with a recover() guard so a panic
+// inside attacker-reachable handler code (e.g. an unchecked type
+// assertion on request-supplied arguments) becomes a well-formed
+// JSON-RPC internal error instead of unwinding the transport loop. This
+// matters most for ServeStdio, which has no net/http per-request recover
+// net and would otherwise crash the entire process. The recovered panic
+// value is deliberately NOT echoed to the caller to avoid leaking
+// internal details.
+func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]any) (result any, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			result = nil
+			err = &RPCError{
+				Code:    ErrInternalError,
+				Message: "internal tool error",
+			}
+		}
+	}()
+	return t.Handler(ctx, params)
 }
 
 // enrichContext propagates auth and tenant info from the handler package's

@@ -1,11 +1,50 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestSampledLogging_SanitizesMethod ensures the production-recommended
+// sampled logger percent-encodes CR/LF/ESC in r.Method on BOTH branches
+// (the always-log error/slow path and the 1-in-N sampled path), matching
+// LoggingFn. Forged control bytes must never reach the log stream raw.
+func TestSampledLogging_SanitizesMethod(t *testing.T) {
+	forge := func(t *testing.T, status int) {
+		t.Helper()
+		var buf strings.Builder
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		srv := SampledLoggingFn(2, time.Hour, func() *slog.Logger { return logger })(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}),
+		)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Method = "GE\r\nT\x1b]"
+		srv.ServeHTTP(httptest.NewRecorder(), req)
+
+		out := buf.String()
+		// Raw control bytes must never appear.
+		if strings.Contains(out, "GE\r\nT") || strings.Contains(out, "\x1b") {
+			t.Fatalf("sampled logger emitted raw control bytes in method: %q", out)
+		}
+		// safeLogMethod percent-encodes the control bytes, so the method
+		// must land as GE%0d%0aT%1b] — NOT JSON-escaped \r\n (which a text
+		// grep / naive log shipper would still render as a fake line).
+		if !strings.Contains(out, "GE%0d%0aT%1b]") {
+			t.Fatalf("sampled logger did not percent-encode control bytes in method (safeLogMethod not applied): %q", out)
+		}
+	}
+
+	// status 500 -> always-log (error) branch.
+	forge(t, http.StatusInternalServerError)
+	// status 200 -> 1-in-N sampled branch (first request always logged).
+	forge(t, http.StatusOK)
+}
 
 // TestLogging_SanitizesMethod ensures r.Method is percent-encoded the
 // same way the URL path already is — CRLF / ESC in a forged method

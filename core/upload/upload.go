@@ -3,12 +3,27 @@ package upload
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
 	"time"
 )
+
+// maxMultipartMemory bounds how many bytes of a multipart request are
+// buffered in memory before parts spill to temp files. It is deliberately
+// small and independent of Config.MaxSize: passing MaxSize as the
+// maxMemory arg to ParseMultipartForm only controls the RAM-vs-disk spill
+// threshold, it does NOT cap the request body. The body cap is enforced
+// separately via http.MaxBytesReader below.
+const maxMultipartMemory = 1 << 20 // 1 MiB
+
+// multipartFramingSlack is added to Config.MaxSize when wrapping the
+// request body so the multipart boundary markers, part headers, and
+// other framing bytes don't push a legitimately-sized file part over
+// the body cap and trigger a spurious 413.
+const multipartFramingSlack = 4 << 10 // 4 KiB
 
 // Storage defines the interface for file storage backends.
 type Storage interface {
@@ -45,11 +60,35 @@ func Handler(cfg Config) http.HandlerFunc {
 			return
 		}
 
-		// Parse multipart form
-		if err := r.ParseMultipartForm(cfg.MaxSize); err != nil {
+		// Bound the request body before parsing so an attacker can't
+		// force the whole multipart payload to be buffered/spilled to
+		// disk before the size check runs. MaxBytesReader caps total
+		// body bytes (with a small slack for multipart framing); the
+		// maxMemory arg to ParseMultipartForm is a separate RAM-vs-disk
+		// spill threshold, not a body cap.
+		if cfg.MaxSize > 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxSize+multipartFramingSlack)
+		}
+
+		// Parse multipart form. Use a small fixed in-memory threshold so
+		// large parts spill predictably; do NOT pass MaxSize here.
+		if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "failed to parse form", http.StatusBadRequest)
 			return
 		}
+		// Remove any temp files multipart spilled to disk on every return
+		// path, including the validation-reject paths below. The net/http
+		// server does not delete these deterministically.
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 
 		file, header, err := r.FormFile("file")
 		if err != nil {

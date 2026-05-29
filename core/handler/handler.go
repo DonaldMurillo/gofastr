@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
 )
 
 // Handler is a typed function that processes an input of type I and returns
@@ -18,8 +20,19 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				err := Errorf(http.StatusInternalServerError, "internal server error: %v", rec)
-				WriteError(w, err)
+				// The raw panic value (driver strings, internal paths,
+				// wrapped DB errors) must stay out of the client body.
+				// Log it server-side and return a fixed generic 500 —
+				// mirroring middleware.RecoveryFn. The value/stack are
+				// truncated so a giant panic can't drive a multi-MB log.
+				slog.Default().Error("panic recovered in handler",
+					"error", truncateLog(fmt.Sprint(rec), maxPanicLogLen),
+					"stack", truncateLog(string(debug.Stack()), maxStackLogLen),
+				)
+				WriteError(w, &Error{
+					Code:    http.StatusInternalServerError,
+					Message: "internal server error",
+				})
 			}
 		}()
 
@@ -40,6 +53,25 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 
 		Respond(w, r, out)
 	}
+}
+
+// Caps on the panic value / stack pieces logged from the recover path,
+// so a handler that panics with a huge value can't drive a multi-MB log
+// line through slog.Default.
+const (
+	maxPanicLogLen = 4 << 10  // 4 KiB
+	maxStackLogLen = 64 << 10 // 64 KiB
+)
+
+func truncateLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	const marker = " … (truncated)"
+	if max <= len(marker) {
+		return s[:max]
+	}
+	return s[:max-len(marker)] + marker
 }
 
 // Error is a structured HTTP error with optional field-level validation errors.

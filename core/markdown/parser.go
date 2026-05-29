@@ -9,6 +9,10 @@ import (
 type parser struct {
 	lines []string
 	pos   int
+	// depth is the current blockquote nesting level. It bounds the
+	// O(n)-per-level re-parse in renderBlockquote so deeply nested
+	// blockquotes can't drive O(n^2) CPU work.
+	depth int
 }
 
 func (p *parser) eof() bool      { return p.pos >= len(p.lines) }
@@ -148,7 +152,11 @@ func renderFence(p *parser, sb *strings.Builder) {
 
 	sb.WriteString("<pre><code")
 	if lang != "" {
-		fmt.Fprintf(sb, " class=%q", "language-"+lang)
+		// %q is NOT HTML-attribute-safe: it escapes " as \" (a literal
+		// backslash + quote in HTML, so the quote terminates the value)
+		// and leaves > untouched, letting an attacker-controlled info
+		// string break out into element context. HTML-escape instead.
+		fmt.Fprintf(sb, " class=\"%s\"", escapeAttr("language-"+lang))
 	}
 	sb.WriteString(">")
 	sb.WriteString(escapeHTML(body.String()))
@@ -189,9 +197,20 @@ func renderBlockquote(p *parser, sb *strings.Builder) {
 		inner = append(inner, stripped)
 		p.advance()
 	}
-	sub, _ := renderBody(strings.Join(inner, "\n"))
 	sb.WriteString("<blockquote>\n")
-	sb.WriteString(string(sub))
+	joined := strings.Join(inner, "\n")
+	if p.depth+1 >= maxBlockquoteDepth {
+		// Depth cap reached: stop recursing into renderBody (which would
+		// re-scan the whole remaining string for every further level) and
+		// emit the inner text as an escaped paragraph. Fails closed against
+		// the nested-blockquote CPU-DoS without dropping content.
+		sb.WriteString("<p>")
+		sb.WriteString(renderInline(joined))
+		sb.WriteString("</p>\n")
+	} else {
+		sub, _ := renderBodyDepth(joined, p.depth+1)
+		sb.WriteString(string(sub))
+	}
 	sb.WriteString("</blockquote>\n")
 }
 

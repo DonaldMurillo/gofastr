@@ -137,6 +137,17 @@ func Params(r *http.Request) map[string]string {
 				break
 			}
 			name := pattern[i+1 : i+end]
+			// Go's ServeMux stores a catch-all {name...} under the bare
+			// "name" key, and {$} is the end-of-path anchor, not a param.
+			// Normalise the extracted token so PathValue resolves and the
+			// map exposes the param under its plain name — otherwise a
+			// catch-all value is silently dropped and callers driving
+			// auth/path logic off Params() fail open.
+			name = strings.TrimSuffix(name, "...")
+			if name == "$" {
+				i += end
+				continue
+			}
 			val := sanitizeParam(r.PathValue(name))
 			if val != "" {
 				params[name] = val
@@ -314,7 +325,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	_, pattern := r.mux.Handler(req)
 
 	if pattern == "" {
-		if nf := r.effectiveNotFound(); nf != nil {
+		// ServeMux returns an empty pattern for BOTH a genuine 404 and a
+		// method mismatch (405). A custom NotFound handler must only
+		// shadow the former — otherwise it masks the mux's native
+		// "405 Method Not Allowed, Allow: …" response and silently
+		// downgrades RFC 7231 method semantics to a 404.
+		if nf := r.effectiveNotFound(); nf != nil && !r.isMethodMismatch(req) {
 			nf.ServeHTTP(w, req)
 			return
 		}
@@ -323,6 +339,49 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.mux.ServeHTTP(w, req)
+}
+
+// isMethodMismatch reports whether req's path is registered under some
+// other method (the 405 case) rather than being genuinely unknown (404).
+//
+// Go's ServeMux returns an empty pattern from Handler for BOTH cases and
+// will only resolve a probe request whose method is actually registered,
+// so probing the real mux with a substitute method is unreliable. Instead
+// we build a method-agnostic mux from the recorded patterns (path only)
+// and ask whether the request path matches any of them; a match means the
+// path exists, so the original "" was a method mismatch (405), not a 404.
+//
+// This runs only on the cold 404/405 fallback path, never on a matched
+// route, so the per-call mux build is not on the request hot path.
+func (r *Router) isMethodMismatch(req *http.Request) bool {
+	r.root.mu.RLock()
+	patterns := make([]RegisteredRoute, len(r.root.patterns))
+	copy(patterns, r.root.patterns)
+	r.root.mu.RUnlock()
+	if len(patterns) == 0 {
+		return false
+	}
+
+	probeMux := http.NewServeMux()
+	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	seen := make(map[string]struct{}, len(patterns))
+	for _, rt := range patterns {
+		// Register the path with NO method constraint, deduped, and guard
+		// against a malformed pattern panicking the probe.
+		if _, dup := seen[rt.Pattern]; dup {
+			continue
+		}
+		seen[rt.Pattern] = struct{}{}
+		func() {
+			defer func() { _ = recover() }()
+			probeMux.Handle(rt.Pattern, noop)
+		}()
+	}
+
+	probe := req.Clone(req.Context())
+	probe.Method = http.MethodGet
+	_, p := probeMux.Handler(probe)
+	return p != ""
 }
 
 // effectiveChain returns the full middleware chain for this router,

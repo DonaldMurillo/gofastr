@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 
 	"go.opentelemetry.io/otel"
@@ -119,4 +121,26 @@ func (w *tracingResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards to the underlying ResponseWriter's Hijacker if it has one,
+// so a WebSocket-upgrade handler behind Tracing() keeps its upgrade path.
+func (w *tracingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
+// Push forwards to the underlying ResponseWriter's Pusher if it has one.
+func (w *tracingResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pu, ok := w.ResponseWriter.(http.Pusher); ok {
+		return pu.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+// Unwrap exposes the wrapped writer to net/http's ResponseController.
+func (w *tracingResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }

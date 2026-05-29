@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestUploadBypass_FilenameSanitization verifies that dangerous filenames
@@ -12,40 +13,40 @@ import (
 // injection, and path traversal in filenames.
 func TestUploadBypass_FilenameSanitization(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
+		name           string
+		input          string
 		mustNotContain string
-		desc     string
+		desc           string
 	}{
 		{
-			name:     "double_extension_php_jpg",
-			input:    "shell.php.jpg",
+			name:           "double_extension_php_jpg",
+			input:          "shell.php.jpg",
 			mustNotContain: ".php",
-			desc:     "double extension with PHP; filepath.Ext returns .jpg but .php remains",
+			desc:           "double extension with PHP; filepath.Ext returns .jpg but .php remains",
 		},
 		{
-			name:     "null_byte_injection",
-			input:    "evil.php\x00.jpg",
+			name:           "null_byte_injection",
+			input:          "evil.php\x00.jpg",
 			mustNotContain: ".php",
-			desc:     "null byte truncation; older systems stop at null byte",
+			desc:           "null byte truncation; older systems stop at null byte",
 		},
 		{
-			name:     "path_traversal",
-			input:    "../../etc/passwd",
+			name:           "path_traversal",
+			input:          "../../etc/passwd",
 			mustNotContain: "../",
-			desc:     "path traversal attempt in filename",
+			desc:           "path traversal attempt in filename",
 		},
 		{
-			name:     "absolute_path",
-			input:    "/etc/passwd",
+			name:           "absolute_path",
+			input:          "/etc/passwd",
 			mustNotContain: "/etc",
-			desc:     "absolute path in filename",
+			desc:           "absolute path in filename",
 		},
 		{
-			name:     "backslash_traversal",
-			input:    "..\\..\\windows\\system32",
+			name:           "backslash_traversal",
+			input:          "..\\..\\windows\\system32",
 			mustNotContain: "..\\",
-			desc:     "backslash-based path traversal",
+			desc:           "backslash-based path traversal",
 		},
 	}
 
@@ -154,6 +155,51 @@ func TestUploadBypass_DoubleExtensionValidation(t *testing.T) {
 	// If it passes, the .php extension remains in the filename
 	// The security boundary is at SanitizeFilename or server config
 	t.Logf("SECURITY: [upload_bypass] ValidateExt accepted double extension 'shell.php.jpg'. filepath.Ext returns '.jpg' (last extension). Attack: malicious extension hidden behind legitimate one.")
+}
+
+// TestSanitize_TruncatesOnRuneBoundary verifies the length cap never
+// slices through a multibyte UTF-8 rune. Attack: a long non-ASCII
+// filename gets cut mid-rune, yielding an invalid-UTF-8 storage key /
+// metadata that corrupts utf8mb4 DB columns and JSON consumers.
+func TestSanitize_TruncatesOnRuneBoundary(t *testing.T) {
+	cases := []string{
+		strings.Repeat("世", 200) + ".jpg", // 3-byte runes (世)
+		strings.Repeat("é", 400) + ".png", // 2-byte runes (é)
+		strings.Repeat("\U0001f600", 100) + ".gif", // 4-byte runes (😀)
+		"safe.jpg", // happy path, short
+	}
+	for _, in := range cases {
+		got := SanitizeFilename(in)
+		if len(got) > MaxFilenameBytes {
+			t.Errorf("SanitizeFilename(%d-byte name) = %d bytes, exceeds cap %d", len(in), len(got), MaxFilenameBytes)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("SECURITY: [filename] SanitizeFilename truncated %d-byte non-ASCII name to invalid UTF-8 %q. Attack: orphaned lead byte corrupts storage key / utf8mb4 DB column / JSON.", len(in), got)
+		}
+	}
+}
+
+// TestSanitize_StripsUnicodeLineSeparators verifies that Unicode line
+// terminators are removed, not just ASCII control bytes. Attack: a
+// filename with U+2028/U+2029/U+0085 (all bytes >=0x80) passes an
+// ASCII-only control filter and injects a line break into logs / JS /
+// JSON consumers that split on Unicode newlines.
+func TestSanitize_StripsUnicodeLineSeparators(t *testing.T) {
+	cases := []string{
+		"a b.jpg", // LINE SEPARATOR
+		"a b.jpg", // PARAGRAPH SEPARATOR
+		"ab.jpg", // NEXT LINE (NEL)
+		"a\x0bb.jpg",   // VT (ASCII control, regression guard)
+	}
+	lineTerminators := []rune{' ', ' ', '', '\v'}
+	for _, in := range cases {
+		got := SanitizeFilename(in)
+		for _, bad := range lineTerminators {
+			if strings.ContainsRune(got, bad) {
+				t.Errorf("SECURITY: [filename] SanitizeFilename(%q) = %q still contains line terminator U+%04X. Attack: newline injection into logs / JS via Unicode line separator.", in, got, bad)
+			}
+		}
+	}
 }
 
 // suppress unused
