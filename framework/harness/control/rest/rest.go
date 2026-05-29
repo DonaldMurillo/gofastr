@@ -91,10 +91,14 @@ func (s *Server) handle(inner http.HandlerFunc, requireToken bool) http.HandlerF
 			return
 		}
 		if requireToken {
-			if _, err := s.verifyToken(r); err != nil {
+			claims, err := s.verifyToken(r)
+			if err != nil {
 				writeError(w, http.StatusUnauthorized, control.ReasonTokenExpired, err.Error())
 				return
 			}
+			// Stash the verified claims so per-session handlers can
+			// enforce the token's session/command scope (mirrors ws.go).
+			r = r.WithContext(context.WithValue(r.Context(), claimsKey{}, claims))
 		}
 		inner(w, r)
 	}
@@ -125,6 +129,17 @@ func (s *Server) originOK(r *http.Request) bool {
 		}
 	}
 	return len(s.AllowedOrigins) == 0
+}
+
+// claimsKey is the context key under which verified token claims are
+// stashed by handle() for downstream scope enforcement.
+type claimsKey struct{}
+
+// claimsFrom returns the verified claims stashed by handle(). The
+// second result is false when the route did not require a token.
+func claimsFrom(r *http.Request) (auth.Claims, bool) {
+	c, ok := r.Context().Value(claimsKey{}).(auth.Claims)
+	return c, ok
 }
 
 func (s *Server) verifyToken(r *http.Request) (auth.Claims, error) {
@@ -197,6 +212,14 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "InvalidSessionID", err.Error())
 		return
 	}
+	// Enforce the token's session scope before touching the session
+	// at all — a token bound to session A must not drive session B,
+	// nor read its event stream/tasks. Mirrors ws.go:AllowsSession.
+	claims, ok := claimsFrom(r)
+	if !ok || !claims.AllowsSession(sessID) {
+		writeError(w, http.StatusForbidden, "Forbidden", "token not bound to session")
+		return
+	}
 	verb := ""
 	if len(parts) > 1 {
 		verb = parts[1]
@@ -233,6 +256,13 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 // cmdSeed is a zero-value of the expected type used to discriminate.
 func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.SessionID, cmdSeed control.Command) {
 	defer r.Body.Close()
+	// Enforce the token's command scope before decoding/dispatching —
+	// a token scoped to SendInput must not answer permission prompts.
+	// Session scope was already checked in handleSessionItem.
+	if claims, ok := claimsFrom(r); !ok || !claims.AllowsCommand(cmdSeed.CommandKind()) {
+		writeError(w, http.StatusForbidden, "Forbidden", "token not permitted for command "+cmdSeed.CommandKind())
+		return
+	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 

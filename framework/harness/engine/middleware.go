@@ -65,11 +65,63 @@ func ContextInjectionMiddleware(inject ContextInjector) RequestMiddleware {
 				continue
 			}
 			tag := "untrusted-" + strings.ToLower(s.Name)
-			fmt.Fprintf(&b, "<%s>\n%s\n</%s>\n\n", tag, s.Content, tag)
+			fmt.Fprintf(&b, "<%s>\n%s\n</%s>\n\n", tag, neutralizeBoundaryTags(s.Content), tag)
 		}
 		req.System = strings.TrimSpace(b.String())
 		return next(ctx, req)
 	}
+}
+
+// neutralizeBoundaryTags defuses any literal untrusted-content boundary
+// tag the content tries to forge. Untrusted content (repo files such as
+// AGENTS.md/CLAUDE.md, fetched pages, tool results) is interpolated raw
+// into a <untrusted-...> wrapper; because the canonical tag name is
+// deterministic, an attacker can embed the matching closing tag to
+// break out of the wrapper and have subsequent text read as trusted
+// system-prompt. We break the leading "<" of any "<untrusted-" or
+// "</untrusted-" sequence (case-insensitive) by inserting a space so
+// the sequence can no longer be parsed as a wrapper delimiter, while
+// staying human/model-readable. Fails closed: when in doubt, defuse.
+func neutralizeBoundaryTags(content string) string {
+	const open, closeT = "<untrusted-", "</untrusted-"
+	var b strings.Builder
+	b.Grow(len(content))
+	for i := 0; i < len(content); {
+		if content[i] == '<' {
+			rest := content[i:]
+			if hasPrefixFold(rest, closeT) {
+				b.WriteString("< /untrusted-")
+				i += len(closeT)
+				continue
+			}
+			if hasPrefixFold(rest, open) {
+				b.WriteString("< untrusted-")
+				i += len(open)
+				continue
+			}
+		}
+		b.WriteByte(content[i])
+		i++
+	}
+	return b.String()
+}
+
+// hasPrefixFold reports whether s begins with prefix, ASCII
+// case-insensitively. prefix is expected to be lowercase ASCII.
+func hasPrefixFold(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	for i := 0; i < len(prefix); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // UntrustedContentNotice is the standing instruction emitted alongside

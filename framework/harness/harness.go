@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	xcontext "github.com/DonaldMurillo/gofastr/framework/harness/context"
 	"github.com/DonaldMurillo/gofastr/framework/harness/control"
@@ -104,6 +105,19 @@ type Harness struct {
 	Catalog *resources.Catalog
 
 	plugins *plugin.Manager
+
+	// sessionMu guards sessionRuns. CreateSession and Shutdown may be
+	// called from different goroutines.
+	sessionMu   sync.Mutex
+	sessionRuns []sessionRun
+}
+
+// sessionRun bundles the per-session teardown handles created by
+// CreateSession so Shutdown can release them deterministically.
+type sessionRun struct {
+	id     ids.SessionID
+	bus    *engine.Bus
+	cancel context.CancelFunc
 }
 
 // New runs the boot sequence and returns a Harness ready to drive
@@ -265,9 +279,16 @@ func (h *Harness) CreateSession(prov provider.Provider, model string) ids.Sessio
 	// Subscription must happen synchronously before this function
 	// returns; otherwise an early SendInput races the goroutine.
 	ctx, cancel := context.WithCancel(context.Background())
-	_ = cancel // canceled by Shutdown via bus.Close cascade
 	ch := bus.Subscribe(ctx)
 	go h.persistLoop(ctx, ch)
+
+	// Track the teardown handles so Shutdown can cancel the persistLoop
+	// context, close the bus, and unregister the engine. Without this
+	// every session leaks a goroutine + context for the process lifetime.
+	h.sessionMu.Lock()
+	h.sessionRuns = append(h.sessionRuns, sessionRun{id: session, bus: bus, cancel: cancel})
+	h.sessionMu.Unlock()
+
 	return session
 }
 
@@ -315,8 +336,35 @@ func (h *Harness) persistLoop(ctx context.Context, ch <-chan control.EventEnvelo
 	}
 }
 
-// Shutdown releases resources held by the Harness.
+// Shutdown releases resources held by the Harness. It tears down every
+// per-session run created by CreateSession (cancelling the persistLoop
+// context, closing the engine bus so subscriptions drain, and
+// unregistering the engine from the mux + catalog) before closing the
+// session store.
 func (h *Harness) Shutdown() error {
+	h.sessionMu.Lock()
+	runs := h.sessionRuns
+	h.sessionRuns = nil
+	h.sessionMu.Unlock()
+
+	for _, r := range runs {
+		// Close the bus first so live subscriptions (incl. persistLoop's)
+		// are signalled to drain, then cancel the parent context as a
+		// belt-and-suspenders teardown for the persistLoop goroutine.
+		if r.bus != nil {
+			r.bus.Close()
+		}
+		if r.cancel != nil {
+			r.cancel()
+		}
+		if h.Mux != nil {
+			h.Mux.UnregisterEngine(r.id)
+		}
+		if h.Catalog != nil {
+			h.Catalog.UnregisterEngine(r.id)
+		}
+	}
+
 	var errs []error
 	if h.Sessions != nil {
 		if err := h.Sessions.Close(); err != nil {
