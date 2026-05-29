@@ -54,19 +54,27 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 		}
 	}
 
+	// Build the set of Hidden columns on the related entity so the loaders
+	// can scrub them from each attached row. The direct read paths project
+	// only VisibleFields() (crud.go) — an include must not be a back door
+	// that leaks a related entity's Hidden fields (e.g. password_hash).
+	// When node.Target is nil (no-registry flat fallback) the set is empty;
+	// there's no schema to consult, so the SELECT * shape is unchanged.
+	hidden := hiddenColumns(node.Target)
+
 	switch rel.Type {
 	case entity.RelHasOne, entity.RelHasMany:
 		safeFK, err := query.SafeIdent(rel.ForeignKey)
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
 		}
-		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter)
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter, hidden)
 	case entity.RelManyToOne:
 		safeFK, err := query.SafeIdent(rel.ForeignKey)
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter)
+		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Filters, ids, result, softDeleteFilter, hidden)
 	case entity.RelManyToMany:
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
@@ -74,12 +82,30 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 			// `deleted_at` would be ambiguous — qualify it with the target.
 			mtmSoftDelete = " AND " + query.QuoteIdent(safeEntity) + ".deleted_at IS NULL"
 		}
-		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Filters, ids, result, mtmSoftDelete)
+		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Filters, ids, result, mtmSoftDelete, hidden)
 	}
 	return nil
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string) error {
+// hiddenColumns returns the set of column names flagged Hidden on the
+// target entity, used to scrub eager-loaded rows. nil target → empty set.
+func hiddenColumns(target *entity.Entity) map[string]bool {
+	if target == nil {
+		return nil
+	}
+	var set map[string]bool
+	for _, f := range target.GetFields() {
+		if f.Hidden {
+			if set == nil {
+				set = map[string]bool{}
+			}
+			set[f.Name] = true
+		}
+	}
+	return set
+}
+
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -112,10 +138,17 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 			return err
 		}
 		row := make(map[string]any, len(cols))
+		var fkVal any
 		for i, c := range cols {
+			if c == safeFK {
+				fkVal = vals[i]
+			}
+			if hidden[c] {
+				continue
+			}
 			row[c] = vals[i]
 		}
-		parentID := fmt.Sprintf("%v", row[safeFK])
+		parentID := fmt.Sprintf("%v", fkVal)
 		if existing, ok := result[parentID]; ok {
 			if rel.Type == entity.RelHasOne {
 				existing[rel.Name] = row
@@ -132,7 +165,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -208,10 +241,17 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 			return err
 		}
 		row := make(map[string]any, len(cols))
+		var idVal any
 		for i, c := range cols {
+			if c == "id" {
+				idVal = vals[i]
+			}
+			if hidden[c] {
+				continue
+			}
 			row[c] = vals[i]
 		}
-		targetByID[fmt.Sprintf("%v", row["id"])] = row
+		targetByID[fmt.Sprintf("%v", idVal)] = row
 	}
 	if err := tgtRows.Err(); err != nil {
 		return err
@@ -227,7 +267,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, filters []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, hidden map[string]bool) error {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid through table %q: %w", rel.Through, err)
@@ -285,7 +325,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 		for i, c := range cols {
 			if c == "__parent_id" {
 				parentID = fmt.Sprintf("%v", vals[i])
-			} else {
+			} else if !hidden[c] {
 				row[c] = vals[i]
 			}
 		}

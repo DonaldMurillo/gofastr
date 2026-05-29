@@ -161,6 +161,84 @@ CREATE TABLE comments (
 	}
 }
 
+// TestInclude_RelatedHiddenFieldNotLeaked pins that a related entity's
+// Hidden field is scrubbed from an ?include= response, the same way the
+// base read path scrubs it. Attack: declare users.password_hash Hidden,
+// then GET /rf_posts?include=author — the eager loader SELECT *'d every
+// column of the related row and copied it verbatim, leaking the hash.
+func TestInclude_RelatedHiddenFieldNotLeaked(t *testing.T) {
+	ddl := `
+CREATE TABLE rf_posts (
+	id        TEXT PRIMARY KEY,
+	user_id   TEXT NOT NULL,
+	author_id TEXT,
+	title     TEXT
+);
+CREATE TABLE rf_users (
+	id            TEXT PRIMARY KEY,
+	name          TEXT,
+	password_hash TEXT
+);
+`
+	postCfg := makeEntityConfig("rf_posts", "rf_posts", "user_id",
+		[]schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "author_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{
+				{Name: "author", Type: entity.RelManyToOne, Entity: "rf_users", ForeignKey: "author_id"},
+			}
+		},
+	)
+	// rf_users has no OwnerField — the relation is public-by-reference, but
+	// password_hash is Hidden and must never surface.
+	userCfg := makeEntityConfig("rf_users", "rf_users", "",
+		[]schema.Field{
+			{Name: "name", Type: schema.String},
+			{Name: "password_hash", Type: schema.String, Hidden: true},
+		},
+	)
+
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	userEnt := entity.Define(userCfg.Table, userCfg)
+	userEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	reg.add(t, userEnt)
+	ch.Registry = reg
+
+	seedRows(t, db, "rf_users", []map[string]any{
+		{"id": "u1", "name": "alice", "password_hash": "super_secret_hash"},
+	})
+	seedRows(t, db, "rf_posts", []map[string]any{
+		{"id": "p1", "user_id": "alice", "author_id": "u1", "title": "alice post"},
+	})
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   "/rf_posts?include=author",
+		UserID: "alice",
+	})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list+include returned %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "super_secret_hash") {
+		t.Errorf("SECURITY: [disclosure] include=author leaked related entity's Hidden password_hash. Attack: SELECT * eager-load ignores target Hidden flags. Body: %s", body)
+	}
+	if !strings.Contains(body, "alice post") {
+		t.Errorf("base row missing — test setup wrong. Body: %s", body)
+	}
+	if !strings.Contains(body, `"author"`) {
+		t.Errorf("included author missing — relation not loaded. Body: %s", body)
+	}
+}
+
 // minimal Registry shim for the include test.
 type testRegistry struct {
 	mu map[string]*entity.Entity

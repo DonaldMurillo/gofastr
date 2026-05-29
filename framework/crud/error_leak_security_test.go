@@ -30,6 +30,27 @@ func TestList_CountQueryErrorDoesNotLeakDriverText(t *testing.T) {
 	}
 }
 
+func TestCursorListErrorDoesNotLeakDriverText(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
+		{Name: "title", Type: schema.String},
+	}), `CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`)
+
+	seedRows(t, db, "posts", []map[string]any{{"id": "p1", "title": "hello"}})
+	_ = db.Close()
+
+	// An empty ?cursor= still selects cursor mode (crud.go) so the query
+	// runs against the closed DB and surfaces a raw driver error.
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/posts?cursor="})
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+
+	body := strings.ToLower(rec.Body.String())
+	if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") ||
+		strings.Contains(body, "query failed:") || strings.Contains(body, "scan failed:") {
+		t.Fatalf("SECURITY: [crud-error] cursor list leaked raw driver text: %s", rec.Body.String())
+	}
+}
+
 func TestGet_QueryErrorDoesNotLeakDriverText(t *testing.T) {
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
 		{Name: "title", Type: schema.String},

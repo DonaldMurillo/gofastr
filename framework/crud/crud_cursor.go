@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -114,19 +115,24 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	dataSQL, dataArgs := qb.Build()
 	rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "query failed: "+err.Error())
+		// Redact: raw driver text must not reach the client. Mirrors the
+		// non-cursor List and streaming paths.
+		log.Printf("crud: cursor query failed: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	defer rows.Close()
 
 	results, err := scanRows(rows, cols, ch.convertKey)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "scan failed: "+err.Error())
+		log.Printf("crud: cursor scan failed: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if err := ch.applyIncludeTree(ctx, results, includes); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "include failed: "+err.Error())
+		log.Printf("crud: cursor include failed: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 

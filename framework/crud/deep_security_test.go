@@ -534,7 +534,12 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 			})
 			rr := httptest.NewRecorder()
 			ch.List()(rr, req)
-			if rr.Code == http.StatusInternalServerError && (strings.Contains(rr.Body.String(), "near \"$\": syntax error") || strings.Contains(rr.Body.String(), "count query failed") || strings.Contains(rr.Body.String(), "query failed") || strings.Contains(rr.Body.String(), "scan failed")) {
+			// The cursor query/scan failures used to leak driver text, which
+			// this heuristic sniffed to detect SQLite's lack of $N placeholder
+			// support. Those paths now redact to "internal server error"
+			// (see error_leak_security_test.go::TestCursorListErrorDoesNotLeakDriverText),
+			// so a redacted 500 on the cursor path is the SQLite-incompat signal.
+			if rr.Code == http.StatusInternalServerError && (strings.Contains(rr.Body.String(), "near \"$\": syntax error") || strings.Contains(rr.Body.String(), "count query failed") || strings.Contains(rr.Body.String(), "query failed") || strings.Contains(rr.Body.String(), "scan failed") || strings.Contains(rr.Body.String(), "internal server error")) {
 				sqliteSkip.Store(true)
 				return
 			}
