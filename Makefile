@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full hooks install ollama-up ollama-down ollama-logs embed-live
+.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs embed-live
 
 # ---- Build ----
 #
@@ -240,6 +240,27 @@ vulncheck:
 mod-verify:
 	go mod verify
 	@echo "  ✓ Module integrity verified"
+
+# Active fuzz discovery on the five parser surfaces. Non-deterministic, so
+# it is NOT part of security-full (the crasher seeds in testdata/fuzz/
+# already replay deterministically under `make test`). Run before releases
+# and after touching a parser. Budget: make fuzz FUZZTIME=2m
+FUZZTIME ?= 30s
+fuzz:
+	@set -e; \
+	for t in \
+		"core/upload FuzzSanitizeFilename" \
+		"framework/pagination FuzzDecodeMultiCursor" \
+		"framework/dsl FuzzParseDSL" \
+		"core/markdown FuzzRenderHTML" \
+		"framework/filter FuzzParseFilters"; do \
+		set -- $$t; \
+		echo "  → fuzzing $$2 ($$1) for $(FUZZTIME)"; \
+		go test ./$$1/ -run='^$$' -fuzz="^$$2$$" -fuzztime=$(FUZZTIME) \
+			|| { go clean -fuzzcache; echo "  ✗ crasher found in $$2 — seed saved under $$1/testdata/fuzz/"; exit 1; }; \
+	done; \
+	go clean -fuzzcache; \
+	echo "  ✓ Fuzz smoke passed (cache reclaimed)"
 
 # ---- Git Hooks ----
 
