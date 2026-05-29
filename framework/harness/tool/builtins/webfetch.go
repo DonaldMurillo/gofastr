@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/harness/tool"
@@ -117,6 +118,23 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 	// loopback, even when the test injects AllowPrivateHosts on the
 	// initial hop. We copy the client so we don't mutate a shared one.
 	safeClient := *client
+	// Dial-time SSRF guard. The CheckRedirect / preflight checks validate
+	// the host string and a *separate* resolution; the dialer re-resolves,
+	// so a DNS-rebinding host (public at preflight, internal at dial) would
+	// otherwise reach the internal IP. Reject the ACTUAL connected IP at
+	// connect time — this closes rebinding on the initial fetch and every
+	// redirect hop. Only installed when the client carries no custom
+	// transport (tests that inject httptest.Client keep their transport).
+	if safeClient.Transport == nil {
+		safeClient.Transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   webFetchTimeout,
+				KeepAlive: 30 * time.Second,
+				Control:   ssrfDialControl,
+			}).DialContext,
+		}
+	}
 	safeClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("stopped after 10 redirects")
@@ -165,6 +183,28 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 	return textResult(header + string(body) + suffix), nil
 }
 
+// ssrfDialControl is a net.Dialer.Control hook that rejects a
+// connection whose resolved peer address is an internal IP. Because it
+// runs AFTER name resolution but BEFORE the connect completes, it
+// closes the DNS-rebinding TOCTOU that assertPublicHost (a separate,
+// earlier resolution) cannot. address is "ip:port".
+func ssrfDialControl(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Should not happen — Control receives an already-resolved
+		// numeric address. Fail closed.
+		return fmt.Errorf("unresolved dial address %q", address)
+	}
+	if isInternalIP(ip) {
+		return fmt.Errorf("refusing to dial internal address %s", ip)
+	}
+	return nil
+}
+
 // assertPublicHost resolves host (host[:port]) and returns an error if
 // it is missing, an outright internal IP literal, or resolves to any
 // loopback/link-local/private/unspecified/multicast address. SSRF
@@ -203,11 +243,25 @@ func assertPublicHost(host string) error {
 	return nil
 }
 
-// isInternalIP reports whether ip is loopback, link-local,
-// private, unspecified, or multicast.
+// cgnatRange is the RFC 6598 carrier-grade NAT block (100.64.0.0/10),
+// which IsPrivate() does not cover but is non-routable internal space.
+var cgnatRange = net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+// isInternalIP reports whether ip is loopback, link-local, private,
+// unspecified, multicast, or CGNAT (RFC 6598). IPv4-mapped IPv6
+// addresses (`::ffff:a.b.c.d`) are normalized to their v4 form first
+// so a mapped internal literal cannot slip past the v4 range checks.
 func isInternalIP(ip net.IP) bool {
+	// Normalize IPv4-mapped IPv6 to its 4-byte form so range checks
+	// (IsPrivate / CGNAT) that key off the v4 representation apply.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
+		return true
+	}
+	if cgnatRange.Contains(ip) {
 		return true
 	}
 	return false

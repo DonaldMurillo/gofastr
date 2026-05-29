@@ -168,13 +168,22 @@ func leadingCommand(cmd string) string {
 }
 
 // segmentCommands splits a command line on shell separators
-// (`;`, `|`, `&`, newline, and subshell `(`) and returns the leading
-// command token of each segment. It also peels off env-assignment and
-// pass-through prefixes (`command`, `env`, `VAR=val`) so a banned tool
-// invoked as `command secret-tool …` or `FOO=1 security …` is still
-// detected. This is a blocklist heuristic, not a shell parser — the
-// permission middleware remains the authoritative gate.
+// (`;`, `|`, `&`, newline, subshell `(` `)`, and command-substitution
+// boundaries backtick / `$(` `)`) and returns the leading command
+// token of each segment. It peels off env-assignment and pass-through
+// prefixes (`command`, `env`, `VAR=val`), strips surrounding quotes
+// and leading backslashes, and collapses intra-token quote-splitting
+// (`sec''urity`) so a banned tool hidden behind quoting or substitution
+// is still detected. This is a blocklist heuristic, not a shell parser
+// — the permission middleware remains the authoritative gate.
 func segmentCommands(cmd string) []string {
+	// Treat command-substitution markers as plain separators: replace
+	// backticks with a separator and the `$(` opener with `(` so the
+	// existing FieldsFunc split on `(`/`)` peels the inner command into
+	// its own segment. This is intentionally syntactic, not a parser.
+	cmd = strings.ReplaceAll(cmd, "`", "\n")
+	cmd = strings.ReplaceAll(cmd, "$(", "(")
+
 	segs := strings.FieldsFunc(cmd, func(r rune) bool {
 		switch r {
 		case ';', '|', '&', '\n', '(', ')':
@@ -188,7 +197,7 @@ func segmentCommands(cmd string) []string {
 		// Skip env-assignment and pass-through prefixes to reach the
 		// real command name.
 		for len(fields) > 0 {
-			f := fields[0]
+			f := normalizeToken(fields[0])
 			if f == "command" || f == "env" || f == "exec" || f == "nohup" || f == "sudo" {
 				fields = fields[1:]
 				continue
@@ -201,10 +210,37 @@ func segmentCommands(cmd string) []string {
 			break
 		}
 		if len(fields) > 0 {
-			out = append(out, fields[0])
+			out = append(out, normalizeToken(fields[0]))
 		}
 	}
 	return out
+}
+
+// normalizeToken strips shell quoting noise from a candidate command
+// token so the blocklist sees the bare name: it removes single/double
+// quotes anywhere in the token (collapsing `sec''urity` → `security`),
+// drops a leading backslash (`\security` → `security`), and unescapes
+// backslash-escaped characters. Best-effort defense in depth.
+func normalizeToken(tok string) string {
+	var b strings.Builder
+	b.Grow(len(tok))
+	escaped := false
+	for _, r := range tok {
+		if escaped {
+			b.WriteRune(r)
+			escaped = false
+			continue
+		}
+		switch r {
+		case '\\':
+			escaped = true // drop the backslash, keep the next rune literally
+		case '\'', '"':
+			// drop quote characters (collapses quote-splitting)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func envSlice(m map[string]string) []string {

@@ -33,3 +33,32 @@ func TestBashBlocklistBypass(t *testing.T) {
 		t.Errorf("Bash blocked benign command: %+v", res)
 	}
 }
+
+// TestBashBlocklistShellForms asserts the blocklist also catches a
+// banned command hidden behind shell quoting / substitution forms:
+// backtick, $(), quoted name, and a leading backslash. This is
+// best-effort defense-in-depth behind the permission middleware.
+func TestBashBlocklistShellForms(t *testing.T) {
+	skipNonUnix(t)
+	blocked := []string{
+		"echo `security find-generic-password`", // backtick substitution
+		"echo $(security dump-keychain)",         // $() substitution
+		`"security" dump-keychain`,               // double-quoted name
+		`\security dump-keychain`,                // leading backslash
+	}
+	for _, cmd := range blocked {
+		res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
+			"cmd": cmd,
+		}), nil)
+		if res == nil || !res.IsError || !strings.Contains(res.Content[0].Text, "blocked") {
+			t.Errorf("Bash allowed shell-form blocklist bypass %q: %+v", cmd, res)
+		}
+	}
+	// Happy path: a benign substitution is allowed.
+	res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
+		"cmd": "echo $(echo hi)",
+	}), nil)
+	if res.IsError {
+		t.Errorf("Bash blocked benign substitution: %+v", res)
+	}
+}
