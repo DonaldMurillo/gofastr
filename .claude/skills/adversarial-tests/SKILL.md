@@ -178,3 +178,42 @@ Two ways:
 After the pass: run `./scripts/test-all.sh` and confirm exit 0;
 audit `find . -maxdepth 3 -type f -size +500k …` for stray binaries
 per `CLAUDE.md`; review the new `AI_TEST_AUDIT.md` entries.
+
+## Dual-model protocol (MANDATORY)
+
+A security pass is run by **two model tiers**, never one. This is not
+optional — single-model passes do not get to mark anything clean.
+
+| Role | Profile | Tier | Job |
+|---|---|---|---|
+| breadth | `sec-recon` | Haiku (weak/cheap) | walk every file against the property×surface checklist, emit all candidates, no plausibility filter |
+| depth | `sec-auditor` | Opus (strong) | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
+
+**Why two tiers:** cheap exhaustive breadth and expensive deep
+reasoning are different jobs; one model doing both does neither well.
+Honest limit: Haiku and Opus share a lineage, so their blind spots
+overlap more than two vendors' would. The diversity that *doesn't*
+come from a model is therefore load-bearing:
+
+- **Web search** (`sec-auditor` job 1) injects vuln classes from the
+  live CVE/advisory corpus that no Claude tier would spontaneously
+  recall. Anchor every pass to current CWE Top 25 / OWASP ASVS / recent
+  Go + primitive-specific advisories, and turn the result into a
+  checklist delta both profiles sweep.
+- **Deterministic tools** — `go vet` and `govulncheck` (both
+  first-party Go-team; no third-party analyzers, no external deps) —
+  are the one second opinion that shares no blind spot with any LLM.
+
+**The clean-gate (the non-optional invariant):** a surface is
+**CLEARED** only when ALL of these are dry/clean on it — Opus deep pass,
+Haiku breadth pass, `go vet`, `govulncheck`. One signal's silence never
+clears a surface. A category nobody ran all four against is
+"never-looked", not "clean" — track the difference.
+
+**Cross-verify both directions:** Haiku finds → Opus refutes (kills
+false positives); Opus finds → Haiku re-derives from the code + the
+deterministic tools confirm where analyzable (catches Opus over-reads).
+
+Spawn the two profiles with the Agent tool (`subagent_type: sec-recon`
+/ `sec-auditor` — the `model:` is pinned in each profile's frontmatter)
+or drive them as stages of a Workflow.
