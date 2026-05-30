@@ -36,6 +36,65 @@ func TestUIHost_PageSessionCookieUsesSecureFlag(t *testing.T) {
 	}
 }
 
+func TestLoopbackDevCookieRoundTrips(t *testing.T) {
+	ds := newTestUIHost()
+
+	// A plaintext loopback origin must mint a cookie that the browser
+	// will actually send back: no __Host- prefix, no Secure flag.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "localhost:8090"
+	ds.ServeHTTP(rec, req)
+
+	set := rec.Header().Get("Set-Cookie")
+	if !strings.Contains(set, sessionCookieDevName+"=") {
+		t.Fatalf("expected dev session cookie %q, got %q", sessionCookieDevName, set)
+	}
+	if strings.Contains(set, "__Host-") || strings.Contains(set, "Secure") {
+		t.Fatalf("loopback http cookie must not be Secure/__Host- (would not round-trip): %q", set)
+	}
+
+	var val string
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieDevName {
+			val = c.Value
+		}
+	}
+	if val == "" {
+		t.Fatal("no dev session cookie value minted")
+	}
+
+	// The minted cookie must satisfy requireValidSession on a gated
+	// endpoint — this is the path that was 401-storming the console.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/__gofastr/widgets?page=/", nil)
+	req2.Host = "localhost:8090"
+	req2.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: val})
+	ds.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("widgets with dev cookie: got %d, want 200", rec2.Code)
+	}
+}
+
+func TestStaleSessionCookieReminted(t *testing.T) {
+	ds := newTestUIHost()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "localhost:8090"
+	// A cookie left over from a prior process whose in-memory sessions
+	// are gone. Reusing it would embed a dead SSE id and 401 forever.
+	req.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: "sess-deadbeef"})
+	ds.ServeHTTP(rec, req)
+
+	set := rec.Header().Get("Set-Cookie")
+	if !strings.Contains(set, sessionCookieDevName+"=sess-") {
+		t.Fatalf("expected a freshly minted session cookie, got %q", set)
+	}
+	if strings.Contains(set, "sess-deadbeef") {
+		t.Fatalf("stale session id must not be reused: %q", set)
+	}
+}
+
 func TestUIHost_PageResponsesCarrySecurityHeaders(t *testing.T) {
 	ds := newTestUIHost()
 	rec := httptest.NewRecorder()

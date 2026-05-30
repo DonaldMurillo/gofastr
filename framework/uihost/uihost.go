@@ -14,6 +14,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -33,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
@@ -686,6 +688,87 @@ func newSessionID() string {
 	return hex.EncodeToString(b[:])
 }
 
+// sessionCookieSecureName is the cookie name used over a secure (TLS)
+// origin. The __Host- prefix locks the cookie to a Secure, Path=/,
+// Domain-less scope — the browser refuses to accept it unless those
+// hold, which is the defense against subdomain/fixation attacks.
+const sessionCookieSecureName = "__Host-gofastr-session"
+
+// sessionCookieDevName is used on a plaintext loopback dev origin.
+// Browsers won't store (and reject the __Host- prefix on) a Secure
+// cookie sent over http://, so a dev server on http://localhost would
+// never get the cookie back — every island RPC and the SSE stream would
+// 401, and the console fills with reconnect errors. On loopback the
+// connection is already trusted, so we drop Secure and the prefix there.
+// Any non-loopback or TLS origin keeps the hardened __Host- form.
+const sessionCookieDevName = "gofastr-session"
+
+// requestIsSecure reports whether the request arrived over TLS, directly
+// or terminated at a proxy that set X-Forwarded-Proto: https.
+func requestIsSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+// requestIsLoopback reports whether the request targets a loopback host.
+// Only loopback origins are eligible for the relaxed dev cookie.
+func requestIsLoopback(r *http.Request) bool {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	switch strings.ToLower(host) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
+}
+
+// useSecureSessionCookie decides whether this request should carry the
+// hardened __Host- cookie: Secure everywhere EXCEPT a plaintext loopback
+// dev origin, where a Secure cookie can't round-trip.
+func useSecureSessionCookie(r *http.Request) bool {
+	return requestIsSecure(r) || !requestIsLoopback(r)
+}
+
+// setSessionCookie writes the session cookie with the name + Secure flag
+// appropriate to this request's origin.
+func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
+	secure := useSecureSessionCookie(r)
+	name := sessionCookieDevName
+	if secure {
+		name = sessionCookieSecureName
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    id,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// readSessionCookie returns the session id from the cookie that matches
+// this request's security mode. An origin's mode is stable (loopback
+// http is always dev, TLS/remote is always hardened), so reading only
+// the mode-appropriate name avoids picking up a stale cross-mode cookie
+// — e.g. a __Host- cookie left over from a prior https run won't shadow
+// the dev cookie on a later http://localhost run.
+func readSessionCookie(r *http.Request) string {
+	name := sessionCookieDevName
+	if useSecureSessionCookie(r) {
+		name = sessionCookieSecureName
+	}
+	if c, err := r.Cookie(name); err == nil && c.Value != "" {
+		return c.Value
+	}
+	return ""
+}
+
 // GetSession retrieves a session by ID.
 func (ds *UIHost) GetSession(id string) (*Session, bool) {
 	ds.mu.RLock()
@@ -744,23 +827,21 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	html := res.HTML
 
-	// Get or create session
-	sessionCookie, err := r.Cookie("__Host-gofastr-session")
-	var sessionID string
-	if err == nil {
-		sessionID = sessionCookie.Value
-	}
-	if sessionID == "" {
+	// Get or create session. The cookie name + Secure flag depend on the
+	// request origin (see setSessionCookie): a plaintext loopback dev
+	// server can't round-trip a Secure cookie, so it gets the relaxed
+	// form; everything else keeps the hardened __Host- cookie.
+	//
+	// A cookie whose session no longer exists server-side (sessions are
+	// in-memory, so a restart/deploy wipes them) must be re-minted, not
+	// reused — otherwise the embedded SSE id and every island RPC would
+	// reference a dead session and 401 until the user manually cleared
+	// the cookie.
+	sessionID := readSessionCookie(r)
+	if _, live := ds.GetSession(sessionID); sessionID == "" || !live {
 		sess := ds.CreateSession()
 		sessionID = sess.ID
-		http.SetCookie(w, &http.Cookie{
-			Name:     "__Host-gofastr-session",
-			Value:    sessionID,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
-		})
+		setSessionCookie(w, r, sessionID)
 	}
 
 	page := ds.injectChrome(string(html), path, sessionID)
@@ -1106,6 +1187,15 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ds.AppCSS())
 }
 
+// NotFoundRenderer is an optional interface a custom 404 screen (see
+// WithNotFoundScreen) may implement to receive the unmatched request
+// path. The path arrives as an argument, so a single shared screen
+// instance can render per-request detail without a data race. Screens
+// that don't implement it just render via component.Component.Render.
+type NotFoundRenderer interface {
+	RenderNotFound(path string) render.HTML
+}
+
 // serveNotFound writes a 404. When WithNotFoundScreen is set, the
 // configured component renders through the same chrome (default
 // layout, runtime.js, theme bootstrap) as every other page; otherwise
@@ -1115,7 +1205,16 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, path string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if ds.notFoundScreen != nil && ds.App != nil {
-		body := ds.notFoundScreen.Render()
+		// If the screen implements NotFoundRenderer, hand it the unmatched
+		// path so it can echo the real URL instead of a placeholder. The
+		// path is passed as an argument (not stored on the shared screen
+		// instance) so concurrent 404s don't race.
+		var body render.HTML
+		if nf, ok := ds.notFoundScreen.(NotFoundRenderer); ok {
+			body = nf.RenderNotFound(path)
+		} else {
+			body = ds.notFoundScreen.Render()
+		}
 		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
 			body = layout.Wrap(body)
 		}
@@ -1261,25 +1360,27 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 // endpoints take small structured commands, not file uploads.
 const maxMutatingBodyBytes = 64 * 1024
 
-// requireValidSession resolves the session id from the __Host- cookie
-// and verifies it exists in ds.sessions. On failure writes 401 and
+// requireValidSession resolves the session id from the session cookie
+// (hardened __Host- form on TLS/non-loopback origins, relaxed dev form
+// on plaintext localhost) and verifies it exists in ds.sessions. On
+// failure writes 401 and
 // returns "", false. Mutating /__gofastr/* endpoints call this so
 // attackers can't pass a forged session id via query string or invent
 // a cookie that was never minted by CreateSession.
 func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cookie, err := r.Cookie("__Host-gofastr-session")
-	if err != nil || cookie.Value == "" {
+	id := readSessionCookie(r)
+	if id == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", false
 	}
 	ds.mu.RLock()
-	_, ok := ds.sessions[cookie.Value]
+	_, ok := ds.sessions[id]
 	ds.mu.RUnlock()
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", false
 	}
-	return cookie.Value, true
+	return id, true
 }
 
 // rejectCrossOrigin returns true (and has already written a 403) when

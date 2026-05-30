@@ -139,6 +139,26 @@ func TestUIHost404(t *testing.T) {
 	}
 }
 
+type pathEchoNotFound struct{}
+
+func (pathEchoNotFound) Render() render.HTML { return render.HTML("<div>generic 404</div>") }
+func (pathEchoNotFound) RenderNotFound(path string) render.HTML {
+	return render.HTML("<div>no route: " + path + "</div>")
+}
+
+func TestNotFoundRendererReceivesPath(t *testing.T) {
+	ds := newTestUIHost()
+	ds.notFoundScreen = pathEchoNotFound{}
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest("GET", "/no/such/route", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "no route: /no/such/route") {
+		t.Fatalf("404 should echo the requested path via RenderNotFound; got %q", w.Body.String())
+	}
+}
+
 // ---------------------------------------------------------------------------
 // B. Runtime JS Injection
 // ---------------------------------------------------------------------------
