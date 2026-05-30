@@ -132,7 +132,7 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	// it replaces the innermost group's layout in the chain — the
 	// marker is still emitted so sibling-nav keeps working.
 	if screen.group != nil {
-		return composeLayoutsWithOverride(screen.group, screen.Layout, content), nil
+		return composeLayoutsWithOverride(screen.group, screen.Layout, content, false), nil
 	}
 
 	layout := screen.Layout
