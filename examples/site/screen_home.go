@@ -35,7 +35,9 @@ import (
 
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string { return "GoFastr — Full-stack Go, with agents at the table" }
+// ScreenTitle returns the bare page name; core-ui/app appends " — GoFastr"
+// (the app name) to form the <title>, so it must NOT be repeated here.
+func (s *HomeScreen) ScreenTitle() string { return "Full-stack Go, with agents at the table" }
 func (s *HomeScreen) ScreenDescription() string {
 	return "A pre-alpha Go full-stack framework where AI agents are first-class authors. Declare your domain in Go; get REST, MCP tools, OpenAPI, migrations, and a typed client — to disk, in plain Go."
 }
@@ -193,9 +195,9 @@ func generatesSection() render.HTML {
 		row("04", "OpenAPI 3 spec",
 			render.Join(
 				render.Text("Schema, parameters, responses. Swagger UI auto-mounted at "),
-				codeText("/_/api/docs"), render.Text("."),
+				codeText("/api/docs"), render.Text("."),
 			),
-			render.Text("/_/openapi.json")),
+			render.Text("/openapi.json")),
 		row("05", "Typed Go model + query builder",
 			render.Join(
 				codeText(`posts.Query(ctx).Where(posts.Status.Eq("published")).List(20)`),
@@ -215,7 +217,7 @@ func generatesSection() render.HTML {
 				render.Text("A listing + form per entity. Off by default. Add "),
 				codeText("Admin: true"), render.Text(" to enable."),
 			),
-			render.Text("/_/admin/posts")),
+			render.Text("/admin/posts")),
 	)
 
 	head := sectionHead(
@@ -264,7 +266,7 @@ func architectureSection() render.HTML {
 	batteries := card("Pluggable", "battery/", "One interface per concern. In-memory dev driver, production driver behind the same shape. Swap without forking.",
 		render.Join(b("auth"), render.Text("  "), b("cache"), render.Text("  "), b("email"), render.Text("  "), b("embed"), br,
 			b("notify"), render.Text("  "), b("queue"), render.Text("  "), b("search"), render.Text("  "), b("storage"), br,
-			b("webhook"), render.Text("  "), b("log"), render.Text("  "), b("admin"),
+			b("webhook"), render.Text("  "), b("log"), render.Text("  "), b("admin"), render.Text("  "), b("print"),
 		))
 
 	coreUI := card("UI runtime", "core-ui/", "Server-driven. Signals + HTML primitives + islands + SSE. ~10 KB gz vanilla JS. No React.",
@@ -303,7 +305,7 @@ func agentsSection() render.HTML {
 		html.Heading(html.HeadingConfig{Level: 4}, render.Text("Every entity is an MCP surface")),
 		render.Tag("p", nil,
 			render.Text("For each entity you declare, the framework registers MCP tools that map 1:1 to your REST surface. An agent connects to "),
-			codeText("/_/mcp"),
+			codeText("/mcp"),
 			render.Text(" and calls them with the same auth context a human would have over HTTP."),
 		),
 		html.UnorderedList(html.ListConfig{},
@@ -323,8 +325,8 @@ func agentsSection() render.HTML {
 			render.Text(" $ kiln serve --agent claude-code"),
 		),
 		html.Div(html.DivConfig{Class: "term__body"},
-			html.Span(html.TextConfig{Class: "o"}, render.Text("→ panel mounted at  http://localhost:8080/_/kiln\n")),
-			html.Span(html.TextConfig{Class: "o"}, render.Text("→ MCP server live  at  /_/mcp\n")),
+			html.Span(html.TextConfig{Class: "o"}, render.Text("→ panel floats on  http://localhost:8765\n")),
+			html.Span(html.TextConfig{Class: "o"}, render.Text("→ MCP server live  at  /mcp\n")),
 			html.Span(html.TextConfig{Class: "o"}, render.Text("→ journal           in  .kiln/journal\n")),
 			html.Span(html.TextConfig{Class: "ok"}, render.Text("→ ready · waiting for the agent.")),
 		),
@@ -334,9 +336,7 @@ func agentsSection() render.HTML {
 		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("kiln (separate binary)")),
 		html.Heading(html.HeadingConfig{Level: 4}, render.Text("An agent that authors your app")),
 		render.Tag("p", nil,
-			render.Text("Kiln mounts a chat panel at "),
-			codeText("/_/kiln"),
-			render.Text(" on the running app. The agent calls a typed tool surface ("),
+			render.Text("Kiln mounts a floating chat panel on the running app. The agent calls a typed tool surface ("),
 			codeText("add_entity"), render.Text(", "),
 			codeText("add_field"), render.Text(", "),
 			codeText("propose_plan"),
@@ -361,9 +361,12 @@ func agentsSection() render.HTML {
 
 func examplesSection() render.HTML {
 	codeText := func(s string) render.HTML { return render.Tag("code", nil, render.Text(s)) }
+	// Each card deep-links to its row on /examples (anchored by slug), so
+	// "clone the one that looks like your problem" actually lands on it.
 	exCard := func(path, title string, desc render.HTML, cmd string) render.HTML {
+		slug := path[len("examples/"):]
 		return html.LinkHTML(html.LinkHTMLConfig{
-			Href:  "/examples",
+			Href:  "/examples#" + slug,
 			Class: "ex-card",
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "path"}, render.Text(path)),
@@ -374,10 +377,14 @@ func examplesSection() render.HTML {
 		})
 	}
 
+	// Order matches /examples (01–06) so the two pages tell the same story.
 	grid := html.Div(html.DivConfig{Class: "ex__grid"},
 		exCard("examples/blog", "JSON-declared blog",
 			render.Text("Posts, comments, tags. Three entities. The smallest end-to-end example — start here."),
 			"cd examples/blog && go run ."),
+		exCard("examples/website", "Feature gallery",
+			render.Text("Every framework feature lit up at once. For contributors; less useful for first-timers."),
+			"cd examples/website && go run ."),
 		exCard("examples/api-tour", "API tour",
 			render.Join(render.Text("Every REST endpoint as a chapter. Each chapter has a live "), codeText("curl"), render.Text(" example you run from the page.")),
 			"cd examples/api-tour && go run ."),
@@ -390,9 +397,6 @@ func examplesSection() render.HTML {
 		exCard("examples/static-site", "Static-site mode",
 			render.Join(render.Text("Same renderer, no server. "), codeText("gofastr build"), render.Text(" emits a CDN-friendly bundle.")),
 			"cd examples/static-site && gofastr build"),
-		exCard("examples/website", "Feature gallery",
-			render.Text("Every framework feature lit up at once. For contributors; less useful for first-timers."),
-			"cd examples/website && go run ."),
 	)
 
 	head := sectionHead(

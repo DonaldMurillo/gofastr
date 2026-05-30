@@ -42,9 +42,23 @@ func (l *Layout) WithFooter(c component.Component) *Layout {
 	return l
 }
 
-// Wrap renders the layout wrapping the given content HTML.
-// If the layout is nil, Wrap returns the content unchanged.
+// Wrap renders the layout as the OUTERMOST shell: its content region is
+// the page's single <main id="main-content">. If the layout is nil, Wrap
+// returns the content unchanged.
 func (l *Layout) Wrap(content render.HTML) render.HTML {
+	return l.wrap(content, true)
+}
+
+// WrapNested renders the layout as an INNER shell — one composed inside
+// another layout's <main> (e.g. a screen-group layout nested in the app's
+// default layout). It contributes its sidebar + content region but NOT a
+// <main> landmark, so the page keeps exactly one <main id="main-content">
+// instead of emitting a duplicate (invalid id + a second landmark).
+func (l *Layout) WrapNested(content render.HTML) render.HTML {
+	return l.wrap(content, false)
+}
+
+func (l *Layout) wrap(content render.HTML, outermost bool) render.HTML {
 	if l == nil {
 		return content
 	}
@@ -57,9 +71,15 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 		bodyChildren = append(bodyChildren, nav)
 	}
 
-	// Main content.
-	mainContent := html.Main(html.MainConfig{}, content)
-	bodyChildren = append(bodyChildren, mainContent)
+	// Content region. Only the outermost layout owns the <main> landmark;
+	// nested layouts emit a plain region so there's just one <main>.
+	var contentRegion render.HTML
+	if outermost {
+		contentRegion = html.Main(html.MainConfig{}, content)
+	} else {
+		contentRegion = html.Div(html.DivConfig{Class: "layout-content"}, content)
+	}
+	bodyChildren = append(bodyChildren, contentRegion)
 
 	// Layout body: sidebar + main.
 	body := html.Div(html.DivConfig{Class: "layout-body"}, bodyChildren...)

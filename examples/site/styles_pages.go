@@ -246,13 +246,20 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"border", "1px solid var(--line-faint)",
 			"border-radius", "{radii.md}",
 			"overflow", "hidden").End()
+	// .doc is an <a> (each card links to /docs/<slug>) — reset link
+	// chrome and let the inner spans own color.
 	ss.Rule(".doc").
 		Set("padding", "{spacing.lg}",
 			"background", "{colors.background}",
 			"display", "flex",
 			"flex-direction", "column",
-			"gap", "8px").End()
+			"gap", "8px",
+			"text-decoration", "none",
+			"transition", "background 120ms ease").End()
 	ss.Rule(".doc:hover").Set("background", "{colors.surface}").End()
+	ss.Rule(".doc:hover .doc__title").Set("color", "{colors.accent}").End()
+	ss.Rule(".doc:focus-visible").
+		Set("outline", "2px solid {colors.accent}", "outline-offset", "-2px").End()
 	ss.Rule(".doc__head").
 		Set("display", "flex", "align-items", "center", "gap", "8px").End()
 	ss.Rule(".doc__head .pill").
@@ -317,6 +324,11 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"margin", "0 auto",
 			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)").End()
 
+	// Generic embedded-markdown doc pages drop the in-page TOC column —
+	// the markdown body owns its own headings — so they run two-column.
+	ss.Rule(".doc-shell--notoc").
+		Set("grid-template-columns", "220px minmax(0, 1fr)").End()
+
 	ss.Rule(".docnav").
 		Set("position", "sticky",
 			"top", "calc(var(--nav-h) + {spacing.lg})",
@@ -345,6 +357,29 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"padding-left", "20px").End()
 
 	ss.Rule(".doc-content").Set("max-width", "720px").End()
+
+	// Mobile: the multi-column doc shell would otherwise lay out a fixed
+	// 220px nav rail beside the content and overflow narrow viewports
+	// (right half of every line clipped, unrecoverable). Collapse to a
+	// single column, un-stick the nav, and let content use the full width.
+	ss.Media("(max-width: 900px)", func(inner *style.StyleSheet) {
+		// Drop the grid entirely on mobile and stack the nav + content as
+		// plain blocks. A grid track (even minmax(0,1fr)) resolved to the
+		// content's min-content here (~606px) and overflowed the viewport,
+		// clipping the right half of every line. display:block makes each
+		// child take the container width; prose wraps and code blocks
+		// scroll internally (min-width:0 lets .doc-content shrink).
+		inner.Rule(".doc-shell, .doc-shell--notoc").
+			Set("display", "block",
+				"max-width", "none",
+				"padding", "{spacing.xl} {spacing.lg} var(--s-9)").End()
+		inner.Rule(".docnav").
+			Set("position", "static", "max-height", "none",
+				"margin-bottom", "{spacing.xl}").End()
+		inner.Rule(".doc-content").
+			Set("max-width", "none", "min-width", "0", "overflow-x", "hidden").End()
+	})
+
 	ss.Rule(".doc-crumbs").
 		Set("display", "flex", "gap", "6px",
 			"font-family", "{fonts.mono}",
@@ -579,6 +614,13 @@ func pageExamples(ss *style.StyleSheet) {
 			"gap", "8px",
 			"align-self", "flex-start").End()
 	ss.Rule(".ex-row__cli .p").Set("color", "{colors.text-subtle}").End()
+	ss.Rule(".ex-row__src").Set("margin-top", "{spacing.sm}").End()
+	ss.Rule(".ex-row__src a").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "12px",
+			"color", "{colors.accent}",
+			"text-decoration", "none").End()
+	ss.Rule(".ex-row__src a:hover").Set("text-decoration", "underline").End()
 	ss.Rule(".ex-row__right").
 		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.md}").End()
 	ss.Rule(".ex-shot").
@@ -684,8 +726,11 @@ func pageKiln(ss *style.StyleSheet) {
 			"min-height", "440px").End()
 
 	ss.Rule(".ghost").Set("padding", "{spacing.xl}").End()
-	ss.Rule(".ghost h3").
-		Set("margin-bottom", "{spacing.md}", "color", "{colors.text-muted}", "font-weight", "500").End()
+	ss.Rule(".ghost h2").
+		Set("margin-bottom", "{spacing.xs}", "color", "{colors.text-muted}", "font-weight", "500",
+			"font-size", "var(--t-md)").End()
+	ss.Rule(".ghost__cap").
+		Set("margin-bottom", "{spacing.md}", "color", "var(--fg-4)", "font-size", "12px").End()
 	ss.Rule(".ghost-row").
 		Set("height", "20px",
 			"margin-bottom", "10px",

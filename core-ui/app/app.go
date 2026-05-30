@@ -241,8 +241,13 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		// screen group whose layout is also the default skips the
 		// duplicate wrap.
 		if screen.group != nil {
-			wrapped = composeLayoutsWithOverride(screen.group, screen.Layout, content)
-			if def := a.Router.defaultLayout; def != nil && !groupChainContainsLayout(screen.group, def) {
+			// When the app default layout wraps the whole composition, it
+			// owns the single <main>; the group layers must nest WITHOUT
+			// their own <main> (else duplicate <main id="main-content">).
+			def := a.Router.defaultLayout
+			applyDefault := def != nil && !groupChainContainsLayout(screen.group, def)
+			wrapped = composeLayoutsWithOverride(screen.group, screen.Layout, content, applyDefault)
+			if applyDefault {
 				wrapped = def.Wrap(wrapped)
 			}
 		} else if layout != nil {

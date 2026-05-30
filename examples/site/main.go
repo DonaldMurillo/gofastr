@@ -25,24 +25,44 @@ import (
 )
 
 func main() {
+	fwApp := setupServer()
+
+	// Port from $PORT (dev-watch sets it); default 8083 for plain `go run .`.
+	addr := ":8083"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+	fmt.Println("━─────────────────────────────────────────────")
+	fmt.Println("  GoFastr — product site (v2)")
+	fmt.Println("  http://localhost" + addr)
+	fmt.Println("━─────────────────────────────────────────────")
+	if err := fwApp.Start(addr); err != nil {
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// setupServer wires the whole site and returns the framework.App without
+// binding a port — main() calls Start, tests drive app.Router() directly
+// (mirrors examples/website's setupServer so the site is testable).
+func setupServer() *framework.App {
 	site := app.NewApp("GoFastr")
 
 	t := createTheme()
 	site.WithTheme(t)
 
-	// CommandPalette — global trigger for ⌘K. Wired BEFORE the layout
-	// is built so HeaderComponent can render the SR-only trigger
-	// alongside its visible search affordance.
-	paletteTrigger, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
-		Name:         "site-command-palette",
-		RPCPath:      "/__site/palette",
-		Placeholder:  "Search docs, examples, components…",
-		TriggerLabel: "Open site search",
+	// CommandPalette — the global ⌘K palette. We only need the widget
+	// definition; the header's own search button opens it and binds the
+	// shortcut, so the returned trigger is discarded.
+	_, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
+		Name:        "site-command-palette",
+		RPCPath:     "/__site/palette",
+		Placeholder: "Search docs, examples, components…",
 	})
 	paletteDef := paletteBuilder.Build()
 
 	layout := app.NewLayout("main").
-		WithHeader(&HeaderComponent{PaletteTrigger: paletteTrigger}).
+		WithHeader(&HeaderComponent{}).
 		WithFooter(&FooterComponent{})
 	site.SetDefaultLayout(layout)
 
@@ -81,19 +101,7 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	// Port from $PORT (dev-watch sets it); default 8083 for plain `go run .`.
-	addr := ":8083"
-	if p := os.Getenv("PORT"); p != "" {
-		addr = ":" + p
-	}
-	fmt.Println("━─────────────────────────────────────────────")
-	fmt.Println("  GoFastr — product site (v2)")
-	fmt.Println("  http://localhost" + addr)
-	fmt.Println("━─────────────────────────────────────────────")
-	if err := fwApp.Start(addr); err != nil {
-		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
-	}
+	return fwApp
 }
 
 // paletteRoute is one entry in the command palette's search catalog.
@@ -105,7 +113,7 @@ var paletteCatalog = []paletteRoute{
 	{"Home", "/"},
 	{"Get started", "/get-started"},
 	{"Docs index", "/docs/"},
-	{"Entities — modeling the domain", "/docs/entities"},
+	{"Entity declarations — modeling the domain", "/docs/entity-declarations"},
 	{"Examples — six reference apps", "/examples"},
 	{"Kiln — agent build mode", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
@@ -166,7 +174,11 @@ func registerScreens(site *app.App) {
 	site.Register("/", &HomeScreen{}, nil)
 	site.Register("/get-started", &GetStartedScreen{}, nil)
 	site.Register("/docs/", &ConceptsIndexScreen{}, nil)
-	site.Register("/docs/entities", &ConceptsDocScreen{}, nil)
+	// One /docs/<slug> page per catalog entry, each rendering the embedded
+	// framework doc. Driven by docIntents so routes and cards stay in sync.
+	for _, dp := range flatDocs() {
+		site.Register("/docs/"+dp.Slug, &DocPageScreen{Entry: dp}, nil)
+	}
 	site.Register("/examples", &ExamplesScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
@@ -185,7 +197,7 @@ func registerScreens(site *app.App) {
 		WithDescription("Every framework/ui and core-ui/patterns primitive, one page each."), nil)
 	for _, c := range componentCatalog {
 		componentsGroup.Screen(app.NewScreen("/components/"+c.Slug, &ComponentShowcaseScreen{Entry: c}).
-			WithTitle(c.Name+" — components"), nil)
+			WithTitle(c.Name), nil)
 	}
 	site.Router.ScreenGroup(componentsGroup)
 }

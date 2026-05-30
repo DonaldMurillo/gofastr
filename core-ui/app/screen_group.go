@@ -205,7 +205,7 @@ func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
 // groups. The innermost content (the screen) is wrapped first by its
 // immediate group, then by each parent group going outward.
 func ComposeLayouts(innermost *ScreenGroup, content render.HTML) render.HTML {
-	return composeLayoutsWithOverride(innermost, nil, content)
+	return composeLayoutsWithOverride(innermost, nil, content, false)
 }
 
 // composeLayoutsWithOverride is the workhorse. When override is
@@ -215,19 +215,39 @@ func ComposeLayouts(innermost *ScreenGroup, content render.HTML) render.HTML {
 // so sibling-screen navigation inside the group still preserves the
 // (overridden) layout shell. Parent groups in the chain compose
 // normally with their own layouts.
-func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, content render.HTML) render.HTML {
+// nestInner, when true, makes every group layer emit its content region
+// WITHOUT a <main> landmark — because an outer layout (the app default)
+// will be wrapped around the whole composition and provides the single
+// <main>. Without this, a grouped screen rendered inside the default
+// layout ends up with two <main id="main-content"> (invalid + a duplicate
+// landmark). When false (SSG / no outer default), behavior is unchanged:
+// each group layer wraps with its own <main>.
+func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, content render.HTML, nestInner bool) render.HTML {
 	var chain []*ScreenGroup
 	for g := innermost; g != nil; g = g.parent {
 		chain = append(chain, g)
 	}
+	wrapLayout := func(l *Layout, c render.HTML) render.HTML {
+		if nestInner {
+			return l.WrapNested(c)
+		}
+		return l.Wrap(c)
+	}
 	out := content
 	for i, g := range chain {
 		if i == 0 && override != nil && override != g.layout {
-			wrapped := override.Wrap(out)
+			wrapped := wrapLayout(override, out)
 			out = html.Div(html.DivConfig{
 				Class: "fui-screen-group",
 				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
 			}, wrapped)
+			continue
+		}
+		if nestInner && g.layout != nil {
+			out = html.Div(html.DivConfig{
+				Class:      "fui-screen-group",
+				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
+			}, g.layout.WrapNested(out))
 			continue
 		}
 		out = g.RenderLayout(out)

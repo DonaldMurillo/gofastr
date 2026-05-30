@@ -186,8 +186,8 @@ func siteHeaderCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 36px;
-  block-size: 36px;
+  inline-size: 44px;
+  block-size: 44px;
   background: transparent;
   border: 1px solid var(--ui-site-header-icon-border, transparent);
   border-radius: var(--radius-sm, 6px);
