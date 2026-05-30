@@ -52,6 +52,31 @@ func TestStepRailRendersItemsAndMarksActive(t *testing.T) {
 	}
 }
 
+func TestStepRailMetaHrefRendersLink(t *testing.T) {
+	h := string(StepRail(StepRailConfig{
+		Items:       []StepRailItem{{Number: "01", Anchor: "s1", Label: "Install"}},
+		ActiveIndex: 0,
+		Meta:        "Ask in Discussions",
+		MetaHref:    "https://example.com/discuss",
+	}))
+	if !strings.Contains(h, `href="https://example.com/discuss"`) {
+		t.Fatalf("MetaHref should render an anchor; got %q", h)
+	}
+	if !strings.Contains(h, "Ask in Discussions") {
+		t.Fatalf("Meta text missing; got %q", h)
+	}
+
+	// Without MetaHref, Meta stays plain text (no anchor around it).
+	plain := string(StepRail(StepRailConfig{
+		Items:       []StepRailItem{{Number: "01", Anchor: "s1", Label: "Install"}},
+		ActiveIndex: 0,
+		Meta:        "Plain note",
+	}))
+	if !strings.Contains(plain, `ui-step-rail__meta">Plain note</div>`) {
+		t.Fatalf("Meta without MetaHref should be plain text in the meta div; got %q", plain)
+	}
+}
+
 func TestStepRailDefaultsAriaLabelWhenTitleEmpty(t *testing.T) {
 	h := string(StepRail(StepRailConfig{
 		Items: []StepRailItem{{Number: "01", Anchor: "a", Label: "x"}},

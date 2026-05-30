@@ -43,6 +43,10 @@ type StepRailConfig struct {
 	// Meta is optional small text below the list (e.g. a "stuck?
 	// open the journal" pointer).
 	Meta string
+	// MetaHref, when non-empty, renders Meta as a link to this URL
+	// instead of plain text — so a "stuck? ask here" pointer is
+	// actually clickable.
+	MetaHref string
 	// Class is appended to the ui-step-rail wrapper.
 	Class string
 }
@@ -97,9 +101,13 @@ func StepRail(cfg StepRailConfig) render.HTML {
 		map[string]string{"class": "ui-step-rail__list"},
 		listItems...))
 	if cfg.Meta != "" {
+		var meta render.HTML = render.Text(cfg.Meta)
+		if cfg.MetaHref != "" {
+			meta = html.Link(html.LinkConfig{Href: cfg.MetaHref, Text: cfg.Meta})
+		}
 		body = append(body, html.Div(
 			html.DivConfig{Class: "ui-step-rail__meta"},
-			render.Text(cfg.Meta)))
+			meta))
 	}
 
 	return stepRailStyle.WrapHTML(render.Tag("aside",
