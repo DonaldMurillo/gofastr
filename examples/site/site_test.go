@@ -204,6 +204,22 @@ func TestComponentDemoLabels(t *testing.T) {
 	}
 }
 
+func TestComponentPageHasSingleMain(t *testing.T) {
+	// Component pages compose a group (sidebar) layout inside the default
+	// (header/footer) layout. Both used to emit <main id="main-content">,
+	// producing a duplicate id + two landmarks. There must be exactly one.
+	for _, path := range []string{"/components/", "/components/button"} {
+		n := strings.Count(body(t, path), `id="main-content"`)
+		if n != 1 {
+			t.Errorf("%s should have exactly one <main id=main-content>, got %d", path, n)
+		}
+	}
+	// Sanity: the group sidebar survived the de-duplication.
+	if !strings.Contains(body(t, "/components/button"), "Sidebar") {
+		t.Error("component page lost its sidebar")
+	}
+}
+
 func TestComponentPackageLinks(t *testing.T) {
 	if got := componentPkg("button"); got != "framework/ui" {
 		t.Errorf("componentPkg(button)=%q", got)

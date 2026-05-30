@@ -357,6 +357,29 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"padding-left", "20px").End()
 
 	ss.Rule(".doc-content").Set("max-width", "720px").End()
+
+	// Mobile: the multi-column doc shell would otherwise lay out a fixed
+	// 220px nav rail beside the content and overflow narrow viewports
+	// (right half of every line clipped, unrecoverable). Collapse to a
+	// single column, un-stick the nav, and let content use the full width.
+	ss.Media("(max-width: 900px)", func(inner *style.StyleSheet) {
+		// Drop the grid entirely on mobile and stack the nav + content as
+		// plain blocks. A grid track (even minmax(0,1fr)) resolved to the
+		// content's min-content here (~606px) and overflowed the viewport,
+		// clipping the right half of every line. display:block makes each
+		// child take the container width; prose wraps and code blocks
+		// scroll internally (min-width:0 lets .doc-content shrink).
+		inner.Rule(".doc-shell, .doc-shell--notoc").
+			Set("display", "block",
+				"max-width", "none",
+				"padding", "{spacing.xl} {spacing.lg} var(--s-9)").End()
+		inner.Rule(".docnav").
+			Set("position", "static", "max-height", "none",
+				"margin-bottom", "{spacing.xl}").End()
+		inner.Rule(".doc-content").
+			Set("max-width", "none", "min-width", "0", "overflow-x", "hidden").End()
+	})
+
 	ss.Rule(".doc-crumbs").
 		Set("display", "flex", "gap", "6px",
 			"font-family", "{fonts.mono}",

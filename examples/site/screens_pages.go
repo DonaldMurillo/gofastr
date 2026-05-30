@@ -186,12 +186,14 @@ func gsBody() render.HTML {
 	)
 
 	step5 := step("s5", "05", "First page", "~60s",
-		render.Tag("p", nil, render.Text("Add a server-rendered page. Screens are normal Go structs that implement Render() and live alongside main.go.")),
+		render.Tag("p", nil, render.Text("Add a server-rendered page. Screens are normal Go structs: Load(ctx) fetches, Render() returns the markup. They live alongside main.go.")),
 		codeBlock("blog/screen_posts.go", []render.HTML{
+			ln(kw("func"), render.Text(" (s "), pn("*"), ty("PostsScreen"), pn(")"), render.Text(" "), fn_("Load"), pn("("), render.Text("ctx context."), ty("Context"), pn(")"), render.Text(" {")),
+			ln(render.Text("  s.posts, "), pn("_"), render.Text(" = posts."), fn_("Query"), pn("("), render.Text("ctx"), pn(")."), fn_("List"), pn("(20)"), render.Text("  "), com("// fetch in Load")),
+			ln(pn("}")),
 			ln(kw("func"), render.Text(" (s "), pn("*"), ty("PostsScreen"), pn(")"), render.Text(" "), fn_("Render"), pn("()"), render.Text(" "), ty("render.HTML"), pn(" {")),
-			ln(render.Text("  posts, "), pn("_"), render.Text(" := posts."), fn_("Query"), pn("("), render.Text("ctx"), pn(")."), fn_("List"), pn("(20)")),
 			ln(render.Text("  "), kw("return"), render.Text(" html."), fn_("Div"), pn("("), render.Text("html."), ty("DivConfig"), pn("{},")),
-			ln(render.Text("    /* render each post */")),
+			ln(render.Text("    "), com("/* render each post in s.posts */")),
 			ln(render.Text("  "), pn(")")),
 			ln(pn("}")),
 		}),
@@ -236,7 +238,7 @@ func gsNext() render.HTML {
 		container(
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Where next")),
 			html.Div(html.DivConfig{Class: "next__grid"},
-				card("/docs/", "Browse the docs", "53 docs grouped by what you're trying to do.", "/docs/"),
+				card("/docs/", "Browse the docs", fmt.Sprintf("%d docs grouped by what you're trying to do.", docCount()), "/docs/"),
 				card("/examples", "Read an example", "Six full apps you can clone and modify.", "/examples"),
 				card("/kiln", "Try Kiln", "Skip the writing entirely — chat your app into being.", "/kiln"),
 			),
@@ -529,7 +531,7 @@ func kHero() render.HTML {
 				render.Text("."),
 			),
 			render.Tag("p", map[string]string{"class": "lede"},
-				render.Text("Kiln is a separate binary that mounts a chat panel on your running GoFastr app. The agent calls a typed tool surface; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit canonical entities/*.json you commit."),
+				render.Text("Kiln is a separate binary that mounts a chat panel on your running GoFastr app. The agent calls a typed tool surface; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit the canonical entity files you commit."),
 			),
 			html.Div(html.DivConfig{Class: "k-hero__ctas"},
 				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
@@ -620,7 +622,7 @@ func kDemo() render.HTML {
 			),
 		),
 		html.Div(html.DivConfig{Class: "kpanel__input"},
-			render.Tag("input", map[string]string{"type": "text", "placeholder": "Ask the agent…"}, render.Raw("")),
+			render.Tag("input", map[string]string{"type": "text", "placeholder": "Ask the agent…", "aria-label": "Ask the agent (demo)", "disabled": "disabled"}, render.Raw("")),
 		),
 	)
 	frame := html.Div(html.DivConfig{Class: "k-demo__frame"},

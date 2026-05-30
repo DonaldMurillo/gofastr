@@ -266,7 +266,7 @@ func architectureSection() render.HTML {
 	batteries := card("Pluggable", "battery/", "One interface per concern. In-memory dev driver, production driver behind the same shape. Swap without forking.",
 		render.Join(b("auth"), render.Text("  "), b("cache"), render.Text("  "), b("email"), render.Text("  "), b("embed"), br,
 			b("notify"), render.Text("  "), b("queue"), render.Text("  "), b("search"), render.Text("  "), b("storage"), br,
-			b("webhook"), render.Text("  "), b("log"), render.Text("  "), b("admin"),
+			b("webhook"), render.Text("  "), b("log"), render.Text("  "), b("admin"), render.Text("  "), b("print"),
 		))
 
 	coreUI := card("UI runtime", "core-ui/", "Server-driven. Signals + HTML primitives + islands + SSE. ~10 KB gz vanilla JS. No React.",
