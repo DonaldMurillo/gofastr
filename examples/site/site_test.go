@@ -204,6 +204,24 @@ func TestComponentDemoLabels(t *testing.T) {
 	}
 }
 
+func TestDocShellCollapsesOnMobile(t *testing.T) {
+	// /docs/<slug> pages must collapse their nav-rail + content grid to a
+	// block layout on mobile; otherwise a grid track resolves to the
+	// content's min-content (~600px) and overflows narrow viewports,
+	// clipping the right half of every line. (chromedp can't reliably
+	// reproduce the overflow, so this asserts the CSS rule directly.)
+	css := createStyleSheet(createTheme())
+	mq := strings.Index(css, "max-width: 900px")
+	if mq < 0 {
+		t.Fatal("docs shell is missing its mobile breakpoint")
+	}
+	rule := css[mq:]
+	sel := strings.Index(rule, ".doc-shell, .doc-shell--notoc")
+	if sel < 0 || !strings.Contains(rule[sel:sel+80], "display: block") {
+		t.Fatal("on mobile the doc shell must collapse to display:block (grid overflows)")
+	}
+}
+
 func TestComponentPageHasSingleMain(t *testing.T) {
 	// Component pages compose a group (sidebar) layout inside the default
 	// (header/footer) layout. Both used to emit <main id="main-content">,

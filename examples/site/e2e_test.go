@@ -162,3 +162,10 @@ func TestE2EDocCardNavigates(t *testing.T) {
 		t.Fatal("doc page should render embedded markdown")
 	}
 }
+
+// NOTE: a chromedp mobile-overflow test was tried and removed — chromedp's
+// EmulateViewport doesn't reproduce the grid-overflow that a real browser
+// resize does, so it passed even with the broken CSS (a false guard). The
+// responsive rule is guarded deterministically by
+// TestDocShellCollapsesOnMobile in site_test.go (asserts the CSS), and the
+// behavior was verified manually in a real browser at 320/375/414.
