@@ -726,8 +726,9 @@ func pageKiln(ss *style.StyleSheet) {
 			"min-height", "440px").End()
 
 	ss.Rule(".ghost").Set("padding", "{spacing.xl}").End()
-	ss.Rule(".ghost h3").
-		Set("margin-bottom", "{spacing.xs}", "color", "{colors.text-muted}", "font-weight", "500").End()
+	ss.Rule(".ghost h2").
+		Set("margin-bottom", "{spacing.xs}", "color", "{colors.text-muted}", "font-weight", "500",
+			"font-size", "var(--t-md)").End()
 	ss.Rule(".ghost__cap").
 		Set("margin-bottom", "{spacing.md}", "color", "var(--fg-4)", "font-size", "12px").End()
 	ss.Rule(".ghost-row").

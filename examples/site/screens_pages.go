@@ -107,7 +107,7 @@ func gsBody() render.HTML {
 	step := func(id, num, title, time string, body ...render.HTML) render.HTML {
 		head := html.Div(html.DivConfig{Class: "step__head"},
 			html.Span(html.TextConfig{Class: "step__num"}, render.Text(num)),
-			html.Heading(html.HeadingConfig{Level: 3, Class: "step__title"}, render.Text(title)),
+			html.Heading(html.HeadingConfig{Level: 2, Class: "step__title"}, render.Text(title)),
 			html.Span(html.TextConfig{Class: "step__time"}, render.Text(time)),
 		)
 		inner := []render.HTML{head, html.Div(html.DivConfig{Class: "step__body"}, body...)}
@@ -203,7 +203,7 @@ func gsBody() render.HTML {
 	step6 := step("s6", "06", "What you have", "now",
 		render.Tag("p", nil, render.Text("In four minutes you've stood up an app with full HTTP + agent surface area:")),
 		html.Div(html.DivConfig{Class: "result"},
-			html.Heading(html.HeadingConfig{Level: 5}, render.Text("Running, on disk, queryable, agent-driven")),
+			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Running, on disk, queryable, agent-driven")),
 			html.UnorderedList(html.ListConfig{},
 				html.ListItem(html.ListItemConfig{}, render.Text("Versioned SQL migrations")),
 				html.ListItem(html.ListItemConfig{}, render.Text("REST CRUD + cursor pagination")),
@@ -229,7 +229,7 @@ func gsNext() render.HTML {
 			Class: "ex-card",
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "path"}, render.Text(meta)),
-				html.Heading(html.HeadingConfig{Level: 4}, render.Text(title)),
+				html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
 				render.Tag("p", nil, render.Text(desc)),
 			),
 		})
@@ -555,7 +555,7 @@ func kDemo() render.HTML {
 	// NOT a live load. The bars are decorative (aria-hidden) and the
 	// caption says so, so it doesn't read as a skeleton stuck loading.
 	ghost := html.Div(html.DivConfig{Class: "ghost"},
-		html.Heading(html.HeadingConfig{Level: 3}, render.Text("Your app — being authored live")),
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Your app — being authored live")),
 		render.Tag("p", map[string]string{"class": "ghost__cap"},
 			render.Text("Illustration — your real app renders here as the agent edits it.")),
 		render.Tag("div", map[string]string{"class": "ghost__wire", "aria-hidden": "true"},

@@ -1153,14 +1153,13 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".ui-site-header__links").Set("display", "none").End()
 		inner.Rule(".ui-site-header__mobile").Set("display", "block").End()
 		inner.Rule(".site-brand__status").Set("display", "none").End()
-		// Search pill morphs into a 36px icon button on phones: the
-		// placeholder text + ⌘K hint hide, the magnifier glyph shows.
-		// Tap-target stays 36px (WCAG 2.5.5 minimum) and the visible
-		// affordance is unambiguous (not "mystery-meat ⌘K").
+		// Search pill morphs into an icon button on phones: the placeholder
+		// text + ⌘K hint hide, the magnifier glyph shows. Touch targets are
+		// 44×44 (WCAG 2.5.5) — the header controls were 30–36px before.
 		inner.Rule(".site-cmd").
-			Set("min-width", "0",
-				"width", "36px",
-				"height", "36px",
+			Set("min-width", "44px",
+				"width", "44px",
+				"height", "44px",
 				"padding", "0",
 				"justify-content", "center",
 				"gap", "0",
@@ -1169,8 +1168,12 @@ func responsive(ss *style.StyleSheet) {
 			Set("display", "none").End()
 		inner.Rule(".site-cmd__glyph").
 			Set("display", "block").End()
-		inner.Rule(".ui-site-header").Set("padding", "0 {spacing.md}", "gap", "{spacing.md}").End()
-		inner.Rule(".ui-site-header__right").Set("gap", "6px").End()
+		// Icon buttons (theme toggle, GitHub) to 44×44. The hamburger
+		// (.ui-site-header__mobile-toggle) is sized by framework/ui's
+		// SiteHeader CSS — bumped to 44px there.
+		inner.Rule(".site-icon").Set("width", "44px", "height", "44px").End()
+		inner.Rule(".ui-site-header").Set("padding", "0 {spacing.sm}", "gap", "{spacing.sm}").End()
+		inner.Rule(".ui-site-header__right").Set("gap", "4px").End()
 		// All card grids → 1 col.
 		inner.Rule(".arch__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".ex__grid").Set("grid-template-columns", "1fr").End()
