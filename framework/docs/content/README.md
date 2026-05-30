@@ -80,6 +80,9 @@ ending with a "common mistakes" callout.
   Rails-style test setup helpers.
 - [Admin UI](admin.md) — `battery/admin` stock screens for
   queue + audit log.
+- [Printable documents](print.md) — `battery/print`: declare a
+  print-friendly document route (invoice / receipt / report); optional
+  headless-Chromium PDF via the `chromepdf` adapter.
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
 - [Widgets](widgets.md) — `core-ui/widget` builder and presets.
