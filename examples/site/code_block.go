@@ -19,14 +19,23 @@ package main
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
+// codeBlockSeq hands each codeBlock a process-unique id so the copy button
+// can target its own <pre> via #id. The exact value is irrelevant — only
+// that the button and its pre share it within one render (they do, minted
+// together below), so it stays correct across SSR and client-nav renders.
+var codeBlockSeq atomic.Uint64
+
 // codeBlock renders the chrome (filename + line-count + copy button) plus
-// the body lines. lineCount is shown verbatim in the head; the actual line
-// total comes from len(lines).
+// the body lines. The line count is len(lines) — every entry, including
+// blank ones, renders as a visible line (see ln), so the count matches
+// what's on screen.
 func codeBlock(filename string, lines []render.HTML) render.HTML {
+	id := "codeblk-" + itoa(int(codeBlockSeq.Add(1)))
 	return render.Tag("div", attrClass("code"),
 		render.Tag("div", attrClass("code__head"),
 			// Status dot — green, matches the file's "alive" pill in the
@@ -35,23 +44,38 @@ func codeBlock(filename string, lines []render.HTML) render.HTML {
 			render.Tag("span", attrClass("file"), render.Text(filename)),
 			render.Tag("span", attrClass("right"),
 				render.Tag("span", nil, render.Text(itoa(len(lines))+" lines")),
-				// Inert in v1 — wire a copy handler once we register an island
-				// for this block. Visible affordance makes the page feel real.
-				render.Tag("span", attrClass("copy"), render.Text("copy")),
+				// Real copy button: the runtime's data-fui-copy-text-from
+				// handler copies the <pre>'s textContent, toggles .fui-copied
+				// for ~1.2s (drives the label swap below), and announces
+				// "Copied" to screen readers via data-fui-copy-announce.
+				render.Tag("button", map[string]string{
+					"class":                   "copy",
+					"type":                    "button",
+					"data-fui-copy-text-from": "#" + id,
+					"data-fui-copy-announce":  "Copied",
+					"aria-label":              "Copy code to clipboard",
+				},
+					render.Tag("span", attrClass("copy__label"), render.Text("copy")),
+					render.Tag("span", attrClass("copy__done"), render.Text("copied")),
+				),
 			),
 		),
 		// IMPORTANT: no whitespace between <pre> and the first <span class="ln">.
 		// `white-space: pre` on .code__body would otherwise render that whitespace
 		// as a stray leading newline. We spread the line slice into Tag's
 		// children which serializes each child back-to-back, no separator.
-		render.Tag("pre", attrClass("code__body"), lines...),
+		render.Tag("pre", map[string]string{"class": "code__body", "id": id}, lines...),
 	)
 }
 
-// ln wraps a sequence of token spans as one logical source line. Lines with
-// no content still emit an empty <span class="ln"> so the line counter
-// (CSS counter-reset:ln) advances — blank lines should appear in the gutter.
+// ln wraps a sequence of token spans as one logical source line. A blank
+// line still emits a line box (via a zero-width space) so its gutter number
+// shows — without it, the empty <span class="ln"> collapses to zero height
+// and the numbers look like they skip (1, 3, 4…).
 func ln(parts ...render.HTML) render.HTML {
+	if len(parts) == 0 {
+		return render.Tag("span", attrClass("ln"), render.Raw("\u200b"))
+	}
 	return render.Tag("span", attrClass("ln"), parts...)
 }
 

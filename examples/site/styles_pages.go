@@ -246,13 +246,20 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 			"border", "1px solid var(--line-faint)",
 			"border-radius", "{radii.md}",
 			"overflow", "hidden").End()
+	// .doc is an <a> (each card links to /docs/<slug>) — reset link
+	// chrome and let the inner spans own color.
 	ss.Rule(".doc").
 		Set("padding", "{spacing.lg}",
 			"background", "{colors.background}",
 			"display", "flex",
 			"flex-direction", "column",
-			"gap", "8px").End()
+			"gap", "8px",
+			"text-decoration", "none",
+			"transition", "background 120ms ease").End()
 	ss.Rule(".doc:hover").Set("background", "{colors.surface}").End()
+	ss.Rule(".doc:hover .doc__title").Set("color", "{colors.accent}").End()
+	ss.Rule(".doc:focus-visible").
+		Set("outline", "2px solid {colors.accent}", "outline-offset", "-2px").End()
 	ss.Rule(".doc__head").
 		Set("display", "flex", "align-items", "center", "gap", "8px").End()
 	ss.Rule(".doc__head .pill").
@@ -316,6 +323,11 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"max-width", "1360px",
 			"margin", "0 auto",
 			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)").End()
+
+	// Generic embedded-markdown doc pages drop the in-page TOC column —
+	// the markdown body owns its own headings — so they run two-column.
+	ss.Rule(".doc-shell--notoc").
+		Set("grid-template-columns", "220px minmax(0, 1fr)").End()
 
 	ss.Rule(".docnav").
 		Set("position", "sticky",
@@ -579,6 +591,13 @@ func pageExamples(ss *style.StyleSheet) {
 			"gap", "8px",
 			"align-self", "flex-start").End()
 	ss.Rule(".ex-row__cli .p").Set("color", "{colors.text-subtle}").End()
+	ss.Rule(".ex-row__src").Set("margin-top", "{spacing.sm}").End()
+	ss.Rule(".ex-row__src a").
+		Set("font-family", "{fonts.mono}",
+			"font-size", "12px",
+			"color", "{colors.accent}",
+			"text-decoration", "none").End()
+	ss.Rule(".ex-row__src a:hover").Set("text-decoration", "underline").End()
 	ss.Rule(".ex-row__right").
 		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.md}").End()
 	ss.Rule(".ex-shot").
@@ -685,7 +704,9 @@ func pageKiln(ss *style.StyleSheet) {
 
 	ss.Rule(".ghost").Set("padding", "{spacing.xl}").End()
 	ss.Rule(".ghost h3").
-		Set("margin-bottom", "{spacing.md}", "color", "{colors.text-muted}", "font-weight", "500").End()
+		Set("margin-bottom", "{spacing.xs}", "color", "{colors.text-muted}", "font-weight", "500").End()
+	ss.Rule(".ghost__cap").
+		Set("margin-bottom", "{spacing.md}", "color", "var(--fg-4)", "font-size", "12px").End()
 	ss.Rule(".ghost-row").
 		Set("height", "20px",
 			"margin-bottom", "10px",

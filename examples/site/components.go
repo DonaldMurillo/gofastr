@@ -39,6 +39,33 @@ type componentEntry struct {
 	Demo     func() render.HTML
 }
 
+// noteOnlyComponents are components whose showcase shows an explanatory
+// NOTE instead of a live, interactive demo — they need per-page backend
+// wiring (an RPC, a mounted widget, image sources), so a self-contained
+// live render isn't possible. Their stage is labeled "Note", not "Live",
+// so the box doesn't claim to be something it isn't.
+var noteOnlyComponents = map[string]bool{
+	"datatable": true, "combobox": true, "multiselect": true,
+	"conditionalfield": true, "formrepeater": true, "repeater": true,
+	"gallery": true, "lightbox": true, "commandpalette": true,
+	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
+	"confirmaction": true,
+}
+
+// componentPkg returns the Go source package for a component, used to
+// link the showcase header at its API docs on pkg.go.dev. Most live in
+// framework/ui; a few are core-ui patterns or the image pipeline.
+func componentPkg(slug string) string {
+	switch slug {
+	case "accordion", "breadcrumbs", "pagination":
+		return "core-ui/patterns/" + slug
+	case "image", "pipelineimage":
+		return "framework/image"
+	default:
+		return "framework/ui"
+	}
+}
+
 // componentCatalog — every component the site showcases. Grouped by
 // category for ComponentsIndexScreen; routes are flat at /components/<slug>.
 var componentCatalog = []componentEntry{
@@ -620,7 +647,10 @@ func main() {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
 	}},
 
-	// ---------- Wizards / agent affordances ----------
+	// ---------- Wizards + cross-cutting affordances ----------
+	// StepWizard/ProgressSteps are Wizards; the rest below are
+	// categorized into their real homes (Navigation/Feedback/Media)
+	// via the Category field — they're grouped here only physically.
 	{"stepwizard", "StepWizard", "Wizards", "Numbered multi-step form (server-driven).", func() render.HTML {
 		return ui.StepWizard(ui.StepWizardConfig{
 			Action:      "#",
@@ -641,24 +671,24 @@ func main() {
 			},
 		})
 	}},
-	{"optimisticaction", "OptimisticAction", "Wizards", "Action that commits + can rollback on error.", func() render.HTML {
+	{"optimisticaction", "OptimisticAction", "Feedback", "Action that commits + can rollback on error.", func() render.HTML {
 		return ui.OptimisticAction(ui.OptimisticActionConfig{
 			Endpoint:     "#",
 			IdleLabel:    "Mark as read",
 			SuccessLabel: "Marked ✓",
 		})
 	}},
-	{"commandpalette", "CommandPalette", "Wizards", "⌘K modal palette — wired in nav (try it).", func() render.HTML {
+	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette — wired in nav (try it).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair — mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
 		)
 	}},
-	{"globalsearch", "GlobalSearch", "Wizards", "Inline persistent search bar.", func() render.HTML {
+	{"globalsearch", "GlobalSearch", "Navigation", "Inline persistent search bar.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("GlobalSearch is the inline alternative to CommandPalette. Needs an RPC search endpoint."),
 		)
 	}},
-	{"notificationbell", "NotificationBell", "Wizards", "Bell icon with unread badge + popover (trigger + widget).", func() render.HTML {
+	{"notificationbell", "NotificationBell", "Feedback", "Bell icon with unread badge + popover (trigger + widget).", func() render.HTML {
 		// NotificationBell returns (trigger, *widget.Builder). The widget
 		// must be mounted once at startup; the showcase renders only the
 		// trigger HTML, paired with a static caption.
@@ -678,7 +708,7 @@ func main() {
 			),
 		)
 	}},
-	{"pipelineimage", "PipelineImage", "Wizards", "Image processed through the framework's image pipeline.", func() render.HTML {
+	{"pipelineimage", "PipelineImage", "Media", "Image processed through the framework's image pipeline.", func() render.HTML {
 		return render.Tag("div", map[string]string{"class": "fact"},
 			render.Text("PipelineImage runs framework/image transforms (resize, webp) — see /examples for a live demo."),
 		)
@@ -692,7 +722,7 @@ func main() {
 
 type ComponentsIndexScreen struct{}
 
-func (s *ComponentsIndexScreen) ScreenTitle() string { return "Components — GoFastr" }
+func (s *ComponentsIndexScreen) ScreenTitle() string { return "Components" }
 func (s *ComponentsIndexScreen) ScreenDescription() string {
 	return "Every framework/ui and core-ui/patterns primitive, one page each."
 }
@@ -801,10 +831,23 @@ type ComponentShowcaseScreen struct {
 }
 
 func (s *ComponentShowcaseScreen) ScreenTitle() string {
-	return s.Entry.Name + " — GoFastr components"
+	return s.Entry.Name
 }
 func (s *ComponentShowcaseScreen) ScreenDescription() string  { return s.Entry.Desc }
 func (s *ComponentShowcaseScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// demoStage renders the demo box with an honest label: "Live" for a
+// real interactive instance, "Note" for a wiring explanation.
+func (s *ComponentShowcaseScreen) demoStage() render.HTML {
+	label := "Live"
+	if noteOnlyComponents[s.Entry.Slug] {
+		label = "Note"
+	}
+	return html.Div(html.DivConfig{Class: "demo-stage"},
+		html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text(label)),
+		html.Div(html.DivConfig{Class: "demo-stage__viewport"}, s.Entry.Demo()),
+	)
+}
 
 func (s *ComponentShowcaseScreen) Render() render.HTML {
 	return render.Tag("div", map[string]string{"class": "doc-shell-narrow"},
@@ -822,16 +865,23 @@ func (s *ComponentShowcaseScreen) Render() render.HTML {
 				),
 				html.Div(html.DivConfig{Class: "doc-head__meta"},
 					tagAccent(s.Entry.Category),
-					render.Text("framework/ui"),
+					// Real source package, linked to its API docs — this is
+					// the per-component "usage/reference" the page otherwise
+					// lacked. (Was hardcoded "framework/ui" for everything.)
+					html.LinkHTML(html.LinkHTMLConfig{
+						Href:       "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/" + componentPkg(s.Entry.Slug),
+						ExtraAttrs: html.Attrs{"rel": "external"},
+						Content:    render.Join(render.Text(componentPkg(s.Entry.Slug)), render.Text(" ↗")),
+					}),
 				),
 				render.Tag("p", map[string]string{"class": "doc-head__lede"}, render.Text(s.Entry.Desc)),
 			),
 
-			// Live demo panel — the actual component, rendered with sensible defaults.
-			html.Div(html.DivConfig{Class: "demo-stage"},
-				html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
-				html.Div(html.DivConfig{Class: "demo-stage__viewport"}, s.Entry.Demo()),
-			),
+			// Demo panel. Components that render a self-contained live
+			// instance are labeled "Live"; ones that show an explanatory
+			// note (need per-page wiring) are labeled "Note" so the box is
+			// honest about what it's showing.
+			s.demoStage(),
 		),
 	)
 }

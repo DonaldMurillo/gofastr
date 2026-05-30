@@ -27,12 +27,10 @@ import (
 // HeaderComponent renders the sticky top bar:
 //   [GoFastr ver]   Docs   Get started   Examples   Components   Kiln       ⌘K   ⌥
 //
-// PaletteTrigger comes from ui.CommandPalette() at wiring time — the
-// HeaderComponent renders it as the search button. The widget itself
-// is mounted globally in main.go so ⌘K opens the palette from any page.
-type HeaderComponent struct {
-	PaletteTrigger render.HTML
-}
+// The CommandPalette widget is mounted globally in main.go; the header's
+// own search button opens it (data-fui-open) and binds ⌘K
+// (data-fui-shortcut-click), so the header needs no injected trigger.
+type HeaderComponent struct{}
 
 func (h *HeaderComponent) Render() render.HTML {
 	// Brand stays site-local — the λ mark, lowercase wordmark, and the
@@ -59,17 +57,19 @@ func (h *HeaderComponent) Render() render.HTML {
 		),
 	})
 
-	// Action cluster: visible search trigger (delegates to the
-	// CommandPalette widget via data-fui-open), theme toggle, GitHub
-	// icon. ThemeToggle ships its own JS module. The SR-only palette
-	// trigger lands at the front when wired so its data-fui-open +
-	// data-fui-shortcut-click attributes sit in the same DOM subtree.
+	// Action cluster: a single search trigger (theme toggle, GitHub icon
+	// follow). It opens the CommandPalette on click (data-fui-open) AND
+	// binds ⌘K (data-fui-shortcut-click) directly, so there's exactly one
+	// "open search" control. Previously a second, visually-hidden trigger
+	// from ui.CommandPalette carried the shortcut, which left screen-reader
+	// users hearing two identical "open search" buttons.
 	searchCmd := render.Tag("button",
 		map[string]string{
-			"class":         "site-cmd",
-			"type":          "button",
-			"aria-label":    "Open search — find a doc, component, or example",
-			"data-fui-open": "site-command-palette",
+			"class":                   "site-cmd",
+			"type":                    "button",
+			"aria-label":              "Open search — find a doc, component, or example",
+			"data-fui-open":           "site-command-palette",
+			"data-fui-shortcut-click": "Meta+K",
 		},
 		// Magnifier glyph — shown only on phones (CSS swap below).
 		// Desktop: hidden; the placeholder text + ⌘K hint carries
@@ -95,9 +95,6 @@ func (h *HeaderComponent) Render() render.HTML {
 		Content: render.Raw(`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 0z"/></svg>`),
 	})
 	actionChildren := []render.HTML{searchCmd, themeBtn, githubIcon}
-	if h.PaletteTrigger != "" {
-		actionChildren = append([]render.HTML{h.PaletteTrigger}, actionChildren...)
-	}
 
 	return ui.SiteHeader(ui.SiteHeaderConfig{
 		Brand: brand,

@@ -12,6 +12,9 @@ package main
 // =============================================================================
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -35,7 +38,7 @@ func tagAccent(label string) render.HTML {
 
 type GetStartedScreen struct{}
 
-func (s *GetStartedScreen) ScreenTitle() string        { return "Get started — GoFastr" }
+func (s *GetStartedScreen) ScreenTitle() string        { return "Get started" }
 func (s *GetStartedScreen) ScreenDescription() string  { return "Cold machine to a running GoFastr app in four minutes." }
 func (s *GetStartedScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -97,7 +100,8 @@ func gsBody() render.HTML {
 			{Number: "06", Anchor: "s6", Label: "What you have"},
 		},
 		ActiveIndex: 0,
-		Meta:        "Stuck? Open the journal: pkg.go.dev/github.com/DonaldMurillo/gofastr",
+		Meta:        "Stuck? Ask in GitHub Discussions",
+		MetaHref:    "https://github.com/DonaldMurillo/gofastr/discussions",
 	})
 
 	step := func(id, num, title, time string, body ...render.HTML) render.HTML {
@@ -165,12 +169,12 @@ func gsBody() render.HTML {
 	)
 
 	step4 := step("s4", "04", "Run it", "~15s",
-		render.Tag("p", nil, render.Text("Start the app. The framework auto-migrates the SQLite schema, mounts /posts, /openapi.json, /_/mcp, and a livereload SSE stream.")),
+		render.Tag("p", nil, render.Text("Start the app. The framework auto-migrates the SQLite schema, mounts /posts, /openapi.json, /mcp, and a livereload SSE stream.")),
 		termBlock("$ run",
 			render.Text("$ go run .\n"),
 			ok("→ HTTP on http://localhost:8080\n"),
 			ok("→ migrated posts (1 table)\n"),
-			ok("→ /_/openapi.json + /_/mcp ready\n"),
+			ok("→ /openapi.json + /mcp ready\n"),
 		),
 		render.Tag("p", nil, render.Text("In a second terminal, hit the API to prove it works:")),
 		termBlock("$ probe",
@@ -202,7 +206,7 @@ func gsBody() render.HTML {
 				html.ListItem(html.ListItemConfig{}, render.Text("Versioned SQL migrations")),
 				html.ListItem(html.ListItemConfig{}, render.Text("REST CRUD + cursor pagination")),
 				html.ListItem(html.ListItemConfig{}, render.Text("OpenAPI 3 + Swagger UI")),
-				html.ListItem(html.ListItemConfig{}, render.Text("MCP tools at /_/mcp")),
+				html.ListItem(html.ListItemConfig{}, render.Text("MCP tools at /mcp")),
 				html.ListItem(html.ListItemConfig{}, render.Text("Typed Go query builder")),
 				html.ListItem(html.ListItemConfig{}, render.Text("Hot-reload dev SSE")),
 			),
@@ -246,7 +250,7 @@ func gsNext() render.HTML {
 
 type ConceptsIndexScreen struct{}
 
-func (s *ConceptsIndexScreen) ScreenTitle() string { return "Docs — GoFastr" }
+func (s *ConceptsIndexScreen) ScreenTitle() string { return "Docs" }
 func (s *ConceptsIndexScreen) ScreenDescription() string {
 	return "Every feature, grouped by what you're trying to do — not alphabetically."
 }
@@ -270,7 +274,7 @@ func cxHero() render.HTML {
 			render.Text("The framework's surface is grouped into six intents. Pick the one that matches the question you're holding."),
 		),
 		render.Tag("p", map[string]string{"class": "cx-stats-line"},
-			render.Text("53 docs · 6 intents · 31 packages"),
+			render.Text(fmt.Sprintf("%d docs · %d intents", docCount(), len(docIntents))),
 		),
 	)
 	return html.Section(html.SectionConfig{Class: "cx-hero", Label: "Docs"},
@@ -279,102 +283,16 @@ func cxHero() render.HTML {
 }
 
 func cxBody() render.HTML {
-	intents := []struct {
-		num, slug, title, meta, lede string
-		docs                         []docCardData
-		path                         []string
-	}{
-		{
-			"01", "modeling", "Modeling your domain", "9 docs · ~22 min", "Declare entities, fields, relations. The framework generates schema, CRUD, validators, and code.",
-			[]docCardData{
-				{"frame", "Entity declarations", "JSON or Go — both produce the same tables, routes, and tools.", "framework/entity"},
-				{"frame", "Field types", "string, text, enum, relation, slug, markdown — and the file/image upload types.", "framework/field"},
-				{"core", "Schema primitives", "The stdlib-only token under entity declarations.", "core/schema"},
-				{"frame", "Migrations", "Versioned, ordered, reversible — versus the auto-migrate dev mode.", "framework/migrate"},
-				{"frame", "Hooks & transactions", "BeforeCreate / AfterUpdate hooks share the parent tx.", "framework/hook"},
-				{"frame", "Filter DSL", "?status=published&views_gte=10&sort=-created_at parses to a typed Where.", "framework/filter"},
-				{"frame", "Cursor pagination", "Keyset by EntityConfig.CursorField. Opt in by sending ?cursor=.", "framework/pagination"},
-				{"frame", "Eager loading", "?include=author.profile flattens N+1.", "framework/crud"},
-				{"frame", "Multi-tenant scope", "tenant_id column + automatic filter from request context.", "framework/tenant"},
-			},
-			[]string{"Entity declarations", "Field types", "Filter DSL"},
-		},
-		{
-			"02", "serving", "Serving HTTP", "9 docs · ~24 min", "Routes, middleware, sessions, auth, idempotency, security headers — everything between the wire and your handler.",
-			[]docCardData{
-				{"core", "Router", "Pattern-based net/http wrapper with Group + middleware chain.", "core/router"},
-				{"core", "Middleware", "Compose RequestID + Logging + Recovery + Security + Timeout.", "core/middleware"},
-				{"frame", "Access control", "RolePolicy, RequirePermission, custom Policy implementations.", "framework/access"},
-				{"battery", "Auth", "Login, OAuth, magic-link, 2FA, password reset — each a plugin.", "battery/auth"},
-				{"core", "Idempotency", "Idempotency-Key header replays safely.", "core/middleware"},
-				{"core", "Security defaults", "CSP, CSRF, rate limit, headers — all on by default.", "core/middleware"},
-				{"core", "Health checks", "/healthz + /readyz with plugin checks.", "core/handler"},
-				{"battery", "Webhooks", "Signed outbound delivery with retry-with-backoff.", "battery/webhook"},
-				{"frame", "Notifications", "Multi-channel fan-out with per-channel templates.", "battery/notify"},
-			},
-			[]string{"Router", "Middleware", "Access control"},
-		},
-		{
-			"03", "ui", "Building UI", "9 docs · ~28 min", "Server-rendered with islands. Signals, HTML primitives, composed patterns, the runtime, and theming.",
-			[]docCardData{
-				{"ui", "Getting started (UI)", "The 15-minute path: scaffold → theme → screen → custom component.", "framework/ui"},
-				{"ui", "Architecture", "SSR + hydration + islands — the three failure modes.", "core-ui"},
-				{"ui", "Signals", "Reactive state shared between server + client.", "core-ui/signal"},
-				{"ui", "HTML primitives", "Typed wrappers around standard HTML elements.", "core-ui/html"},
-				{"ui", "Patterns", "Accordion, tabs, modal, drawer, popover, toast.", "core-ui/patterns"},
-				{"ui", "Themes", "The typed theme: Colors, Spacing, Radii, Fonts, Motion.", "framework/ui/theme"},
-				{"ui", "Widget builder", "Build islands that hydrate against a registered handler.", "core-ui/widget"},
-				{"ui", "Runtime modules", "Carved per-feature so pages without X don't ship X's JS.", "core-ui/runtime"},
-				{"ui", "Image pipeline", "Pure-Go resize + WebP lossless encode.", "framework/image"},
-			},
-			[]string{"Getting started (UI)", "Patterns", "Widget builder"},
-		},
-		{
-			"04", "persist", "Persisting & migrating", "6 docs · ~12 min", "SQLite and Postgres, dialect-aware, with the migration CLI and per-test isolation.",
-			[]docCardData{
-				{"frame", "Migrations", "SQL files, versioned, CLI subcommands, dialect detection.", "framework/migrate"},
-				{"frame", "Soft delete", "deleted_at column + automatic filter.", "framework/softdelete"},
-				{"frame", "Audit log", "WithAuditLog writes a row for every Create/Update/Delete.", "framework/audit"},
-				{"frame", "Isolation", "Linked git worktrees get isolated local DBs.", "framework/isolation"},
-				{"frame", "Factories", "Rails-style fixtures for tests.", "framework/factory"},
-				{"battery", "Cache", "Per-key + per-tag invalidation behind a small interface.", "battery/cache"},
-			},
-			[]string{"Migrations", "Soft delete", "Isolation"},
-		},
-		{
-			"05", "agents", "Working with agents", "7 docs · ~22 min", "MCP tools, Kiln build mode, agent permissions, plan-gated destructive ops.",
-			[]docCardData{
-				{"frame", "MCP CRUD", "Every entity ships posts_list, posts_get, posts_create, posts_update, posts_delete.", "framework/crud"},
-				{"core", "MCP primitives", "The stdlib-only token under MCP-CRUD.", "core/mcp"},
-				{"frame", "Kiln overview", "The agent-driven build mode binary.", "kiln"},
-				{"frame", "Kiln tools", "add_entity, add_field, propose_plan — the typed surface.", "kiln/protocol"},
-				{"frame", "Agent notes", "Append-only review log for agents working on the framework.", "framework/docs"},
-				{"frame", "Audit deps", "Detect packages an agent shouldn't import.", "framework/agentsinv"},
-				{"battery", "Embed", "Local semantic search via brute-force cosine — no API key.", "battery/embed"},
-			},
-			[]string{"MCP CRUD", "Kiln overview", "Embed"},
-		},
-		{
-			"06", "ops", "Operations", "5 docs · ~14 min", "Run it in production. Logging, metrics, feature flags, env, i18n.",
-			[]docCardData{
-				{"battery", "Logging", "Structured JSON logs with MCP query tools.", "battery/log"},
-				{"core", "Metrics", "Counter + histogram + /metrics endpoint.", "core/middleware"},
-				{"core", "Feature flags", "Rollout percentage, allow lists, env evaluator.", "core/featureflag"},
-				{"core", "Env / .env", "core/dotenv auto-loaded by NewApp.", "core/dotenv"},
-				{"core", "i18n", "JSON catalogs, plurals, Accept-Language negotiation.", "core/i18n"},
-			},
-			[]string{"Logging", "Metrics", "Feature flags"},
-		},
-	}
-
-	// Rail via ui.AnchoredRail — bundles markup + scrollspy.
-	items := make([]ui.RailItem, len(intents))
-	for i, it := range intents {
+	// Rail via ui.AnchoredRail — bundles markup + scrollspy. Driven by the
+	// shared docIntents catalog so the rail, the sections, and the per-doc
+	// pages can never disagree about what exists.
+	items := make([]ui.RailItem, len(docIntents))
+	for i, it := range docIntents {
 		items[i] = ui.RailItem{
-			Eyebrow: it.num,
-			Text:    it.title,
-			Anchor:  it.slug,
-			Count:   len(it.docs),
+			Eyebrow: it.Num,
+			Text:    it.Title,
+			Anchor:  it.Slug,
+			Count:   len(it.Docs),
 		}
 	}
 	rail := ui.AnchoredRail(ui.AnchoredRailConfig{
@@ -386,8 +304,8 @@ func cxBody() render.HTML {
 	})
 
 	sections := []render.HTML{}
-	for _, it := range intents {
-		sections = append(sections, intentSection(it.num, it.slug, it.title, it.meta, it.lede, it.docs, it.path))
+	for _, it := range docIntents {
+		sections = append(sections, intentSection(it))
 	}
 
 	return container(html.Div(html.DivConfig{Class: "cx-body"},
@@ -396,234 +314,40 @@ func cxBody() render.HTML {
 	))
 }
 
-type docCardData struct{ pill, title, desc, meta string }
-
-func intentSection(num, slug, title, meta, lede string, docs []docCardData, path []string) render.HTML {
+// intentSection renders one intent group. Every doc card is an <a> to its
+// /docs/<slug> page — no dead cards.
+func intentSection(it docIntent) render.HTML {
 	cards := []render.HTML{}
-	for _, d := range docs {
-		cards = append(cards, html.Div(html.DivConfig{Class: "doc"},
-			html.Div(html.DivConfig{Class: "doc__head"},
-				html.Span(html.TextConfig{Class: "pill " + d.pill}, render.Text(d.pill)),
+	for _, d := range it.Docs {
+		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
+			Href:  "/docs/" + d.Slug,
+			Class: "doc",
+			Content: render.Join(
+				html.Div(html.DivConfig{Class: "doc__title"}, render.Text(d.Title)),
+				html.Div(html.DivConfig{Class: "doc__desc"}, render.Text(d.Desc)),
+				html.Div(html.DivConfig{Class: "doc__meta"}, render.Text("/docs/"+d.Slug)),
 			),
-			html.Div(html.DivConfig{Class: "doc__title"}, render.Text(d.title)),
-			html.Div(html.DivConfig{Class: "doc__desc"}, render.Text(d.desc)),
-			html.Div(html.DivConfig{Class: "doc__meta"}, render.Text(d.meta)),
-		))
+		}))
 	}
 	stripChildren := []render.HTML{html.Span(html.TextConfig{Class: "l"}, render.Text("Recommended path"))}
-	for i, p := range path {
+	for i, p := range it.Path {
 		if i > 0 {
 			stripChildren = append(stripChildren, html.Span(html.TextConfig{Class: "arrow"}, render.Text("→")))
 		}
 		stripChildren = append(stripChildren, html.Span(html.TextConfig{Class: "s"}, render.Text(p)))
 	}
-	return html.Section(html.SectionConfig{ID: slug, Class: "intent", Label: title},
+	return html.Section(html.SectionConfig{ID: it.Slug, Class: "intent", Label: it.Title},
 		html.Div(html.DivConfig{Class: "intent__head"},
-			html.Span(html.TextConfig{Class: "intent__num"}, render.Text(num)),
-			html.Heading(html.HeadingConfig{Level: 2, Class: "intent__title"}, render.Text(title)),
-			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(meta)),
+			html.Span(html.TextConfig{Class: "intent__num"}, render.Text(it.Num)),
+			html.Heading(html.HeadingConfig{Level: 2, Class: "intent__title"}, render.Text(it.Title)),
+			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(fmt.Sprintf("%d docs", len(it.Docs)))),
 		),
-		render.Tag("p", map[string]string{"class": "intent__lede"}, render.Text(lede)),
+		render.Tag("p", map[string]string{"class": "intent__lede"}, render.Text(it.Lede)),
 		html.Div(html.DivConfig{Class: "docs"}, cards...),
 		html.Div(html.DivConfig{Class: "path-strip"}, stripChildren...),
 	)
 }
 
-// =============================================================================
-// /docs/{slug}  (single doc page — uses Entities as the canonical demo)
-// =============================================================================
-
-type ConceptsDocScreen struct{}
-
-func (s *ConceptsDocScreen) ScreenTitle() string        { return "Entities — GoFastr docs" }
-func (s *ConceptsDocScreen) ScreenDescription() string  { return "Declare a domain entity once; the framework generates SQL, REST, MCP, OpenAPI, and a typed model." }
-func (s *ConceptsDocScreen) ScreenType() app.ScreenType { return app.ScreenPage }
-
-func (s *ConceptsDocScreen) Render() render.HTML {
-	return render.Tag("div", map[string]string{"class": "doc-shell"},
-		docNavSidebar(),
-		docArticle(),
-		docInPageToc(),
-	)
-}
-
-func docNavSidebar() render.HTML {
-	group := func(n, label string, items ...render.HTML) render.HTML {
-		return html.Div(html.DivConfig{Class: "docnav__group"},
-			html.Div(html.DivConfig{Class: "label"},
-				html.Span(html.TextConfig{Class: "n"}, render.Text(n)),
-				render.Text(label),
-			),
-			html.UnorderedList(html.ListConfig{}, items...),
-		)
-	}
-	li := func(href, text string, active bool) render.HTML {
-		cls := ""
-		if active {
-			cls = "active"
-		}
-		return html.ListItem(html.ListItemConfig{},
-			html.Link(html.LinkConfig{Href: href, Text: text, Class: cls}),
-		)
-	}
-	return render.Tag("aside", map[string]string{"class": "docnav"},
-		group("01", "Modeling your domain",
-			li("/docs/entities", "Entities", true),
-			li("/docs/field-types", "Field types", false),
-			li("/docs/migrations", "Migrations", false),
-			li("/docs/hooks", "Hooks & transactions", false),
-		),
-		group("02", "Serving HTTP",
-			li("/docs/router", "Router", false),
-			li("/docs/middleware", "Middleware", false),
-			li("/docs/access", "Access control", false),
-		),
-		group("03", "Building UI",
-			li("/docs/ui-getting-started", "Getting started", false),
-			li("/docs/ui-architecture", "Architecture", false),
-		),
-	)
-}
-
-func docArticle() render.HTML {
-	return render.Tag("article", map[string]string{"class": "doc-content"},
-		render.Tag("nav", map[string]string{"class": "doc-crumbs", "aria-label": "Breadcrumb"},
-			html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs"}),
-			html.Span(html.TextConfig{Class: "sep"}, render.Text("/")),
-			html.Link(html.LinkConfig{Href: "/docs/#modeling", Text: "Modeling"}),
-			html.Span(html.TextConfig{Class: "sep"}, render.Text("/")),
-			html.Span(html.TextConfig{Class: "current"}, render.Text("Entities")),
-		),
-		html.Div(html.DivConfig{Class: "doc-head"},
-			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("Entities — the unit of declaration."),
-			),
-			html.Div(html.DivConfig{Class: "doc-head__meta"},
-				tagAccent("Modeling"),
-				render.Text("8 min read"),
-				html.Span(html.TextConfig{Class: "sep"}, render.Text("·")),
-				render.Text("Updated 2026-05-22"),
-				html.Span(html.TextConfig{Class: "sep"}, render.Text("·")),
-				render.Text("v0.0.4"),
-			),
-			render.Tag("p", map[string]string{"class": "doc-head__lede"},
-				render.Text("An entity is the smallest unit GoFastr understands. Declare one, and the framework generates the SQL table, REST endpoints, MCP tools, OpenAPI schema, lifecycle hooks, and a typed Go query builder — all to disk, all readable."),
-			),
-		),
-		docProse(),
-		docFooter(),
-	)
-}
-
-func docProse() render.HTML {
-	return render.Tag("div", map[string]string{"class": "prose"},
-		html.Heading(html.HeadingConfig{Level: 2}, render.Text("What an entity declaration is")),
-		render.Tag("p", nil,
-			render.Text("Two equivalent forms — JSON loaded at runtime, or Go evaluated at process start. Both produce the exact same set of routes, OpenAPI ops, MCP tools, and migrations. Pick by who's reading the declaration: agents emit JSON, humans tend to prefer Go.")),
-		codeBlock(".gofastr/posts.go", []render.HTML{
-			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" framework."), ty("EntityConfig"), pn("{")),
-			ln(render.Text("  SoftDelete"), pn(":"), render.Text(" "), kw("true"), pn(",")),
-			ln(render.Text("  Fields"), pn(":"), render.Text(" []schema."), ty("Field"), pn("{")),
-			ln(render.Text("    {Name"), pn(":"), render.Text(" "), str_(`"title"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("String"), pn(","), render.Text(" Required"), pn(":"), render.Text(" "), kw("true"), pn("},")),
-			ln(render.Text("    {Name"), pn(":"), render.Text(" "), str_(`"body"`), pn(","), render.Text("  Type"), pn(":"), render.Text(" schema."), ty("Text"), pn("},")),
-			ln(render.Text("  "), pn("},")),
-			ln(render.Text("  MCP"), pn(":"), render.Text(" "), kw("true"), pn(",")),
-			ln(pn("})")),
-		}),
-		html.Heading(html.HeadingConfig{Level: 2}, render.Text("What gets generated")),
-		render.Tag("p", nil,
-			render.Text("One declaration; many surfaces. The seven outputs land in three places: the database (a versioned migration), the request router (REST and MCP handlers), and "),
-			codeText(".gofastr/entities/posts.go"), render.Text(" (the typed Go model + query builder).")),
-		html.UnorderedList(html.ListConfig{},
-			html.ListItem(html.ListItemConfig{}, render.Text("SQL table — emitted as plain up/down files in "), codeText(".gofastr/migrations/")),
-			html.ListItem(html.ListItemConfig{}, render.Text("REST endpoints — list, get, create, update, delete, batch")),
-			html.ListItem(html.ListItemConfig{}, render.Text("MCP tools — same auth, same validators")),
-			html.ListItem(html.ListItemConfig{}, render.Text("OpenAPI 3 spec")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Typed Go model + query builder")),
-		),
-		render.Tag("div", map[string]string{"class": "note"},
-			html.Heading(html.HeadingConfig{Level: 4}, render.Text("Not magic — readable")),
-			render.Tag("p", nil, render.Text("Open the generated file. It's normal Go. You can step through it, add a print, vendor it. If something looks wrong, you can fix it — and your fix survives the next regeneration when you commit it.")),
-		),
-		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Field types")),
-		render.Tag("p", nil,
-			render.Text("Built-in field types cover the 90% case: "),
-			codeText("string"), render.Text(", "),
-			codeText("text"), render.Text(", "),
-			codeText("enum"), render.Text(", "),
-			codeText("relation"), render.Text(", "),
-			codeText("slug"), render.Text(", "),
-			codeText("markdown"), render.Text(", "),
-			codeText("image"), render.Text(", "),
-			codeText("file"), render.Text(". Each comes with validators, a default migration shape, and a Go type."),
-		),
-		render.Tag("blockquote", nil,
-			render.Text("The right abstraction makes the simple case trivial and the complex case possible. The wrong abstraction makes both unreadable."),
-		),
-		render.Tag("p", nil,
-			render.Text("Custom field types are a "), codeText("framework.Field"), render.Text(" implementation away. Define the validator, the migration shape, the Go type — register it, and your declarations can use it."),
-		),
-	)
-}
-
-func docFooter() render.HTML {
-	prev := html.LinkHTML(html.LinkHTMLConfig{
-		Href:  "/docs/",
-		Class: "prev-card",
-		Content: render.Join(
-			html.Span(html.TextConfig{Class: "dir"}, render.Text("← Previous")),
-			html.Span(html.TextConfig{Class: "ttl"}, render.Text("Docs index")),
-		),
-	})
-	next := html.LinkHTML(html.LinkHTMLConfig{
-		Href:  "/docs/field-types",
-		Class: "next-card",
-		Content: render.Join(
-			html.Span(html.TextConfig{Class: "dir"}, render.Text("Next →")),
-			html.Span(html.TextConfig{Class: "ttl"}, render.Text("Field types")),
-		),
-	})
-	feedback := html.Div(html.DivConfig{Class: "feedback"},
-		render.Text("Was this helpful?"),
-		render.Tag("button", map[string]string{"type": "button"}, render.Text("yes")),
-		render.Tag("button", map[string]string{"type": "button"}, render.Text("kind of")),
-		render.Tag("button", map[string]string{"type": "button"}, render.Text("no")),
-	)
-	return html.Div(html.DivConfig{Class: "doc-foot"},
-		html.Div(html.DivConfig{Class: "doc-foot__nav"}, prev, next),
-		html.Div(html.DivConfig{Class: "doc-foot__chrome"},
-			html.Link(html.LinkConfig{Href: "https://github.com/DonaldMurillo/gofastr/edit/main/framework/docs/content/entity-declarations.md", Text: "Edit on GitHub"}),
-			html.Span(html.TextConfig{Class: "sep"}, render.Text("·")),
-			html.Link(html.LinkConfig{Href: "https://github.com/DonaldMurillo/gofastr/blob/main/framework/entity/entity.go", Text: "View source"}),
-			html.Span(html.TextConfig{Class: "sep"}, render.Text("·")),
-			html.Link(html.LinkConfig{Href: "https://github.com/DonaldMurillo/gofastr/discussions", Text: "Discuss"}),
-			feedback,
-		),
-	)
-}
-
-func docInPageToc() render.HTML {
-	li := func(href, text string, active bool) render.HTML {
-		cls := ""
-		if active {
-			cls = "active"
-		}
-		return html.ListItem(html.ListItemConfig{},
-			html.Link(html.LinkConfig{Href: href, Text: text, Class: cls}),
-		)
-	}
-	return render.Tag("aside", map[string]string{"class": "toc"},
-		render.Tag("h6", nil, render.Text("On this page")),
-		render.Tag("ol", nil,
-			li("#what-an-entity-declaration-is", "What an entity declaration is", true),
-			li("#what-gets-generated", "What gets generated", false),
-			li("#field-types", "Field types", false),
-		),
-		html.Div(html.DivConfig{Class: "toc__foot"},
-			render.Text("4 min · 740 words"),
-		),
-	)
-}
 
 // =============================================================================
 // /examples
@@ -631,7 +355,7 @@ func docInPageToc() render.HTML {
 
 type ExamplesScreen struct{}
 
-func (s *ExamplesScreen) ScreenTitle() string        { return "Examples — GoFastr" }
+func (s *ExamplesScreen) ScreenTitle() string        { return "Examples" }
 func (s *ExamplesScreen) ScreenDescription() string  { return "Six reference apps. Each runs in one command." }
 func (s *ExamplesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -658,32 +382,70 @@ func exRows() render.HTML {
 		exRow("01", "examples/blog", "JSON-declared blog", "smallest", "~120 LoC",
 			"Posts, comments, tags. Three entities. Start here — it's the end-to-end story in one file.",
 			[]string{"Three entities loaded from JSON", "Auto-CRUD + Swagger UI + MCP", "SQLite by default; swap for Postgres in main.go"},
-			"cd examples/blog && go run ."),
+			"cd examples/blog && go run .",
+			"examples/blog/main.go", []render.HTML{
+				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
+				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"comments"`), pn(","), render.Text(" …"), pn(")")),
+				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"tags"`), pn(","), render.Text(" …"), pn(")")),
+				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+			}),
 		exRow("02", "examples/website", "Feature gallery", "largest", "~3000 LoC",
 			"Every framework feature lit up at once. For contributors; less useful for first-timers.",
 			[]string{"Every core-ui pattern", "Every framework/ui component", "CRUD demo, themes, dark mode, agents"},
-			"cd examples/website && go run ."),
+			"cd examples/website && go run .",
+			"examples/website/main.go", []render.HTML{
+				ln(render.Text("app "), pn(":="), render.Text(" framework."), fn_("New"), pn("(…)")),
+				ln(com("// every core-ui pattern + framework/ui component")),
+				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+			}),
 		exRow("03", "examples/api-tour", "API tour", "live docs", "~180 LoC",
 			"Every REST endpoint as a chapter. Each chapter has a live curl example you run from the page.",
 			[]string{"Cursor + offset pagination", "Eager loading (?include=…)", "Batch endpoints, SSE entity events, uploads"},
-			"cd examples/api-tour && go run ."),
+			"cd examples/api-tour && go run .",
+			"examples/api-tour/main.go", []render.HTML{
+				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
+				ln(com("// cursor + offset paging, ?include=, batch, SSE")),
+				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+			}),
 		exRow("04", "examples/embed-demo", "Local semantic search", "no API key", "~180 LoC",
 			"A markdown corpus indexed locally via battery/embed. No external API key; works offline.",
 			[]string{"Brute-force cosine, hybrid keyword fusion", "Snapshot + WAL persistence", "Poll-watch for file changes"},
-			"cd examples/embed-demo && go run ."),
+			"cd examples/embed-demo && go run .",
+			"examples/embed-demo/main.go", []render.HTML{
+				ln(render.Text("idx "), pn(":="), render.Text(" embed."), fn_("New"), pn("(…)")),
+				ln(render.Text("idx."), fn_("Add"), pn("("), render.Text("docs…"), pn(")"), render.Text("   "), com("// local vectors")),
+				ln(render.Text("hits "), pn(":="), render.Text(" idx."), fn_("Search"), pn("("), str_(`"how do hooks work"`), pn(", "), render.Text("5"), pn(")")),
+			}),
 		exRow("05", "examples/spa", "Vue + GoFastr API", "BYO client", "~140 LoC server",
 			"For teams who already have a client app. Shows the framework is happy to just be your typed API.",
 			[]string{"Same auto-CRUD entities", "OpenAPI generates the TypeScript client", "No SSR — just the JSON surface"},
-			"cd examples/spa && go run ."),
+			"cd examples/spa && go run .",
+			"examples/spa/main.go", []render.HTML{
+				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
+				ln(com("// JSON API only — your Vue app is the client")),
+				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+			}),
 		exRow("06", "examples/static-site", "Static-site mode", "no server", "~90 LoC",
 			"Same renderer, no server. gofastr build emits a CDN-friendly bundle of HTML + CSS + JS.",
 			[]string{"Screens implement Load(ctx) once", "Build-time fetches replace SSR fetches", "Output drops straight on Cloudflare Pages or Netlify"},
-			"cd examples/static-site && gofastr build"),
+			"cd examples/static-site && gofastr build",
+			"examples/static-site/home.go", []render.HTML{
+				ln(kw("func"), render.Text(" (s "), pn("*"), ty("HomeScreen"), pn(")"), render.Text(" "), fn_("Load"), pn("(ctx) {")),
+				ln(render.Text("  s.Posts, _ "), pn("="), render.Text(" posts."), fn_("Query"), pn("(ctx)."), fn_("List"), pn("("), render.Text("20"), pn(")")),
+				ln(pn("}"), render.Text("  "), com("// run at build time, not per-request")),
+				ln(com("// $ gofastr build → ./dist  (no app.Serve)")),
+			}),
 	}
 	return container(render.Join(rows...))
 }
 
-func exRow(num, path, title, tag, loc, desc string, points []string, cmd string) render.HTML {
+// exRow renders one example. codeFile/codeLines is a representative,
+// example-specific snippet (NOT a shared placeholder) and srcFile names
+// the file the snippet is excerpted from for the "View source" link.
+func exRow(num, path, title, tag, loc, desc string, points []string, cmd, codeFile string, codeLines []render.HTML) render.HTML {
+	slug := strings.TrimPrefix(path, "examples/")
+	srcURL := "https://github.com/DonaldMurillo/gofastr/tree/main/" + path
+
 	pointLis := []render.HTML{}
 	for _, p := range points {
 		pointLis = append(pointLis, html.ListItem(html.ListItemConfig{}, render.Text(p)))
@@ -699,15 +461,7 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd string)
 		),
 		html.Div(html.DivConfig{Class: "bar"}),
 	)
-	miniCode := codeBlock(path+"/main.go", []render.HTML{
-		ln(kw("package"), render.Text(" main")),
-		ln(),
-		ln(kw("func"), render.Text(" "), fn_("main"), pn("()"), render.Text(" "), pn("{")),
-		ln(render.Text("  app "), pn(":="), render.Text(" framework."), fn_("New"), pn("("), render.Text("…"), pn(")")),
-		ln(render.Text("  app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
-		ln(render.Text("  app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
-		ln(pn("}")),
-	})
+	miniCode := codeBlock(codeFile, codeLines)
 	body := html.Div(html.DivConfig{Class: "ex-row__body"},
 		html.Div(html.DivConfig{Class: "ex-row__meta"},
 			tagAccent(tag),
@@ -723,6 +477,13 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd string)
 			html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
 			render.Text(cmd),
 		),
+		html.Div(html.DivConfig{Class: "ex-row__src"},
+			html.LinkHTML(html.LinkHTMLConfig{
+				Href:       srcURL,
+				ExtraAttrs: html.Attrs{"rel": "external"},
+				Content:    render.Text("View source ↗"),
+			}),
+		),
 	)
 	right := html.Div(html.DivConfig{Class: "ex-row__right"}, miniCode, shot)
 	grid := html.Div(html.DivConfig{Class: "ex-row__grid"},
@@ -730,7 +491,7 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd string)
 		body,
 		right,
 	)
-	return html.Section(html.SectionConfig{Class: "ex-row", Label: path}, grid)
+	return html.Section(html.SectionConfig{ID: slug, Class: "ex-row", Label: path}, grid)
 }
 
 // =============================================================================
@@ -739,7 +500,7 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd string)
 
 type KilnScreen struct{}
 
-func (s *KilnScreen) ScreenTitle() string { return "Kiln — GoFastr" }
+func (s *KilnScreen) ScreenTitle() string { return "Kiln" }
 func (s *KilnScreen) ScreenDescription() string {
 	return "Build a GoFastr app live by chatting with an agent."
 }
@@ -786,16 +547,23 @@ func kDemo() render.HTML {
 		html.Div(html.DivConfig{Class: "dots"},
 			html.Span(html.TextConfig{}), html.Span(html.TextConfig{}), html.Span(html.TextConfig{}),
 		),
-		html.Div(html.DivConfig{Class: "url"}, render.Text("localhost:8080/_/kiln")),
+		html.Div(html.DivConfig{Class: "url"}, render.Text("localhost:8765")),
 	)
+	// Left pane is a stylized wireframe of the app under construction —
+	// NOT a live load. The bars are decorative (aria-hidden) and the
+	// caption says so, so it doesn't read as a skeleton stuck loading.
 	ghost := html.Div(html.DivConfig{Class: "ghost"},
 		html.Heading(html.HeadingConfig{Level: 3}, render.Text("Your app — being authored live")),
-		html.Div(html.DivConfig{Class: "ghost-row m"}),
-		html.Div(html.DivConfig{Class: "ghost-row s"}),
-		html.Div(html.DivConfig{Class: "ghost-row m"}),
-		html.Div(html.DivConfig{Class: "ghost-row"}),
-		html.Div(html.DivConfig{Class: "ghost-row s"}),
-		html.Div(html.DivConfig{Class: "ghost-row m"}),
+		render.Tag("p", map[string]string{"class": "ghost__cap"},
+			render.Text("Illustration — your real app renders here as the agent edits it.")),
+		render.Tag("div", map[string]string{"class": "ghost__wire", "aria-hidden": "true"},
+			html.Div(html.DivConfig{Class: "ghost-row m"}),
+			html.Div(html.DivConfig{Class: "ghost-row s"}),
+			html.Div(html.DivConfig{Class: "ghost-row m"}),
+			html.Div(html.DivConfig{Class: "ghost-row"}),
+			html.Div(html.DivConfig{Class: "ghost-row s"}),
+			html.Div(html.DivConfig{Class: "ghost-row m"}),
+		),
 	)
 	km := func(who, role, body string, tool string) render.HTML {
 		whoCls := "km__who"
@@ -948,8 +716,8 @@ func kCli() render.HTML {
 				),
 				cmd("serve",
 					p("$"), render.Text(" kiln serve --agent claude-code\n"),
-					o("→ panel mounted at http://localhost:8765/_/kiln\n"),
-					o("→ MCP server live at /_/mcp\n"),
+					o("→ panel floats on http://localhost:8765\n"),
+					o("→ MCP server live at /mcp\n"),
 					ok("→ ready · waiting for the agent.\n"),
 				),
 			),
@@ -963,7 +731,7 @@ func kCli() render.HTML {
 
 type PhilosophyScreen struct{}
 
-func (s *PhilosophyScreen) ScreenTitle() string { return "Philosophy — GoFastr" }
+func (s *PhilosophyScreen) ScreenTitle() string { return "Philosophy" }
 func (s *PhilosophyScreen) ScreenDescription() string {
 	return "The convictions behind GoFastr — what we say no to, and why."
 }
@@ -1059,7 +827,7 @@ func phBody() render.HTML {
 		html.Section(html.SectionConfig{ID: "agents", Label: "Where agents fit"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Where agents fit")),
 			render.Tag("p", nil, render.Text("Agents drive the framework the same way humans do. The MCP tool surface is just the REST surface in a different shape; the typed Kiln tools are the framework's mutate API exposed for code-generating agents. Destructive operations require an approved plan — the agent cannot drop your tables without you clicking Approve.")),
-			render.Tag("p", nil, render.Text("The framework also leaves clear breadcrumbs for the agent: doc files embedded in the binary, structured MCP introspection at /_/mcp, agent-notes for review history. An agent that connects to a running GoFastr app can read its own state and reason about it.")),
+			render.Tag("p", nil, render.Text("The framework also leaves clear breadcrumbs for the agent: doc files embedded in the binary, structured MCP introspection at /mcp, agent-notes for review history. An agent that connects to a running GoFastr app can read its own state and reason about it.")),
 		),
 		html.Section(html.SectionConfig{ID: "next", Label: "What's next"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("What's next")),
@@ -1103,11 +871,30 @@ func (s *NotFoundScreen) ScreenTitle() string        { return "404 — Not found
 func (s *NotFoundScreen) ScreenDescription() string  { return "" }
 func (s *NotFoundScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-func (s *NotFoundScreen) Render() render.HTML {
+// Render is the component.Component fallback (path unknown). The uihost
+// calls RenderNotFound with the real path via the NotFoundRenderer
+// interface, so this is only hit if that path changes.
+func (s *NotFoundScreen) Render() render.HTML { return s.renderFor("/…") }
+
+// RenderNotFound implements uihost.NotFoundRenderer — it receives the
+// unmatched request path so the page echoes the real URL, not a canned
+// placeholder.
+func (s *NotFoundScreen) RenderNotFound(path string) render.HTML {
+	if path == "" {
+		path = "/…"
+	}
+	return s.renderFor(path)
+}
+
+func (s *NotFoundScreen) renderFor(path string) render.HTML {
 	o := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "o"}, render.Text(s)) }
 	p := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "p"}, render.Text(s)) }
 	e := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "e"}, render.Text(s)) }
 	ok := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "ok"}, render.Text(s)) }
+
+	// Display path: leading "/" rendered in the accent span, remainder as
+	// text (render.Text escapes, so a hostile URL can't inject markup).
+	rest := strings.TrimPrefix(path, "/")
 
 	left := html.Div(html.DivConfig{},
 		html.Div(html.DivConfig{Class: "nf__num"},
@@ -1121,11 +908,13 @@ func (s *NotFoundScreen) Render() render.HTML {
 			render.Text("."),
 		),
 		render.Tag("p", map[string]string{"class": "nf__lede"},
-			render.Text("The requested path didn't map to any registered screen. Below: what the router tried, three near-hits, and a search box."),
+			render.Text("The requested path didn't map to any registered screen. Below: what the router tried, and a few places you might've meant. Press "),
+			render.Tag("kbd", nil, render.Text("⌘K")),
+			render.Text(" to search."),
 		),
 		html.Div(html.DivConfig{Class: "nf__path"},
 			html.Span(html.TextConfig{Class: "u"}, render.Text("/")),
-			render.Text("requested-but-missing/path"),
+			render.Text(rest),
 		),
 	)
 
@@ -1137,12 +926,12 @@ func (s *NotFoundScreen) Render() render.HTML {
 			),
 			html.Div(html.DivConfig{Class: "nf__term-body"},
 				p("$ router.Match\n"),
-				o("→ trying  /requested-but-missing/path\n"),
+				o("→ trying  "+path+"\n"),
 				e("→ miss   no exact match\n"),
-				o("→ trying  /requested-but-missing/*\n"),
+				o("→ trying  "+path+"/*\n"),
 				e("→ miss   no prefix subtree\n"),
 				o("→ fallback handler:\n"),
-				ok("→ examples-v2: 3 near-hits\n"),
+				ok("→ 404 screen + suggestions\n"),
 			),
 		),
 		html.Div(html.DivConfig{Class: "nf__suggest"},

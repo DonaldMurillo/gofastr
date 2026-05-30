@@ -713,10 +713,22 @@ func codeBlockStyles(ss *style.StyleSheet) {
 			"display", "flex",
 			"gap", "10px",
 			"color", "{colors.text-subtle}").End()
+	// .copy is a real <button> now — reset native chrome so it reads as
+	// the same compact text chip, but stays keyboard-focusable.
 	ss.Rule(".code__head .copy").
-		Set("color", "{colors.text-subtle}", "cursor", "pointer").
+		Set("color", "{colors.text-subtle}", "cursor", "pointer",
+			"background", "transparent",
+			"border", "0",
+			"padding", "0",
+			"font", "inherit").
 		Transition("color {durations.fast}").End()
 	ss.Rule(".code__head .copy:hover").Set("color", "{colors.text}").End()
+	ss.Rule(".code__head .copy:focus-visible").
+		Set("outline", "2px solid {colors.accent}", "outline-offset", "2px", "border-radius", "{radii.sm}").End()
+	// Label/feedback swap driven by the runtime's .fui-copied toggle.
+	ss.Rule(".code__head .copy__done").Set("display", "none").End()
+	ss.Rule(".code__head .copy.fui-copied .copy__label").Set("display", "none").End()
+	ss.Rule(".code__head .copy.fui-copied .copy__done").Set("display", "inline", "color", "{colors.accent}").End()
 
 	// IMPORTANT: display:block on each .ln so syntax-token spans flow as one
 	// line. The prototype's first attempt used display:grid and broke layout.
@@ -1202,11 +1214,12 @@ func responsive(ss *style.StyleSheet) {
 		// Step-rail (get-started) collapses too.
 		inner.Rule(".gs-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.xl} 0").End()
 		inner.Rule(".step-rail").Set("position", "static", "max-height", "200px", "overflow-y", "auto", "padding-bottom", "{spacing.md}", "border-bottom", "1px solid var(--line-faint)").End()
-		// Hero install line wraps (mobile-only — desktop keeps the
-		// one-line look with overflow-x:auto for horizontal pan).
-		inner.Rule(".hero__install").Set("white-space", "normal", "word-break", "break-all").End()
-		// Kiln install pill — same single-line overflow on mobile.
-		inner.Rule(".k-hero__cli").Set("white-space", "normal", "word-break", "break-all").End()
+		// Install commands stay on one line and pan horizontally on
+		// mobile. Wrapping a no-space command (go install …/cmd/gofastr)
+		// breaks it mid-token ("gofast r/cmd"), which is illegible and
+		// breaks copy-paste — horizontal scroll keeps the token intact.
+		inner.Rule(".hero__install").Set("white-space", "nowrap", "overflow-x", "auto").End()
+		inner.Rule(".k-hero__cli").Set("white-space", "nowrap", "overflow-x", "auto").End()
 		// Code blocks inside paragraphs that have long URLs (install
 		// commands, RPC paths) need to wrap rather than force a wide line.
 		inner.Rule(":not(pre) > code").Set("word-break", "break-word").End()
