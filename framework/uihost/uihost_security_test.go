@@ -5,12 +5,40 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
+
+func TestPartialTitleHeaderIsEncoded(t *testing.T) {
+	ds := newTestUIHost()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1") // partial (cross-page nav) response
+	ds.ServeHTTP(rec, req)
+
+	h := rec.Header().Get("X-Gofastr-Title")
+	if h == "" {
+		t.Fatal("partial response should carry X-Gofastr-Title")
+	}
+	// Must be header-safe ASCII — a raw UTF-8 title (em-dash separator)
+	// would arrive mojibaked when a reader decodes the header as Latin-1.
+	for i := 0; i < len(h); i++ {
+		if h[i] > 127 {
+			t.Fatalf("X-Gofastr-Title must be ASCII/percent-encoded, got raw non-ASCII: %q", h)
+		}
+	}
+	dec, err := url.PathUnescape(h)
+	if err != nil {
+		t.Fatalf("X-Gofastr-Title is not valid percent-encoding: %v", err)
+	}
+	if !strings.Contains(dec, "—") {
+		t.Fatalf("decoded title should round-trip the em-dash separator, got %q", dec)
+	}
+}
 
 type stubSignal struct {
 	value any

@@ -1292,13 +1292,13 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
-	// Look up screen title from route info
+	// Look up screen title from route info. Percent-encode it: a title
+	// with non-ASCII (e.g. the em-dash in "Docs — GoFastr") sent raw in an
+	// HTTP header is non-conformant and a reader decodes the UTF-8 bytes as
+	// Latin-1 ("Docs â GoFastr"). The runtime must decodeURIComponent it.
 	if scr, _, ok := ds.App.Router.Resolve(path); ok && scr.Title != "" {
-		title := scr.Title
-		if title != "" {
-			title = title + " — " + ds.App.Name
-		}
-		w.Header().Set("X-Gofastr-Title", title)
+		title := scr.Title + " — " + ds.App.Name
+		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

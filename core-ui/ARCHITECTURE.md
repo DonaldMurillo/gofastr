@@ -207,7 +207,7 @@ For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Ad
 |---|---|
 | `X-Gofastr-Push-State: <path>` | Apply via `history.pushState` after the RPC succeeds (URL update without re-fetch) |
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
-| `X-Gofastr-Title: <text>` | Update `document.title` after partial swap |
+| `X-Gofastr-Title: <text>` | Percent-encoded title — `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
 
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
 

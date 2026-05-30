@@ -93,7 +93,12 @@ func StepRail(cfg StepRailConfig) render.HTML {
 
 	body := []render.HTML{}
 	if cfg.Title != "" {
-		body = append(body, render.Tag("h6",
+		// A plain label, NOT a heading: the rail is a complementary
+		// landmark already named by Title (aria-label below), and emitting
+		// an <h6> here injected a stray, out-of-order heading into the
+		// page outline (h1 → h6 → h2…). The label keeps the visual + the
+		// landmark name without polluting the heading hierarchy.
+		body = append(body, render.Tag("div",
 			map[string]string{"class": "ui-step-rail__title"},
 			render.Text(cfg.Title)))
 	}
