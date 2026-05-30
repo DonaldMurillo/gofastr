@@ -306,6 +306,10 @@ func setupServer() (*framework.App, *uihost.UIHost) {
 	// combobox/tree/feed/filter handlers).
 	registerNewComponentsDemos(fwApp)
 
+	// battery/print demos: /print/invoice/{id}, /print/receipt, and a
+	// RequireAuth /print/statement/{id} (401 on the no-auth demo site).
+	registerPrintDemos(fwApp)
+
 	return fwApp, host
 }
 
