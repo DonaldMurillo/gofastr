@@ -1038,8 +1038,13 @@ func (a *App) Start(addr string) error {
 		return abort(fmt.Errorf("start hooks: %w", err))
 	}
 
-	// Auto-generate and serve OpenAPI spec
-	if len(a.Registry.All()) > 0 {
+	// Auto-generate and serve OpenAPI spec. Only when the app actually
+	// declares entities — a UI-only app (e.g. a content site) has an
+	// empty registry and gets none of these routes. The startup banner
+	// below keys off the same flags so it never advertises a 404.
+	hasAPI := len(a.Registry.All()) > 0
+	hasLLMMD := false
+	if hasAPI {
 		appName := a.Config.Name
 		if appName == "" {
 			appName = "GoFastr API"
@@ -1052,6 +1057,7 @@ func (a *App) Start(addr string) error {
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
 			a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
+			hasLLMMD = true
 		}
 	}
 
@@ -1096,10 +1102,16 @@ func (a *App) Start(addr string) error {
 		fmt.Printf("  %s %-12s http://%s/%s\n", arrow(), e.GetName(), host, e.GetTable())
 	}
 
-	// Log OpenAPI
-	fmt.Printf("  %s OpenAPI:     http://%s/openapi.json\n", arrow(), host)
-	fmt.Printf("  %s Swagger UI:  http://%s/api/docs/\n", arrow(), host)
-	fmt.Printf("  %s LLM Docs:    http://%s/api/llm.md\n\n", arrow(), host)
+	// Log OpenAPI surfaces — only the ones actually mounted above, so the
+	// banner never points at a route that 404s.
+	if hasAPI {
+		fmt.Printf("  %s OpenAPI:     http://%s/openapi.json\n", arrow(), host)
+		fmt.Printf("  %s Swagger UI:  http://%s/api/docs/\n", arrow(), host)
+		if hasLLMMD {
+			fmt.Printf("  %s LLM Docs:    http://%s/api/llm.md\n", arrow(), host)
+		}
+	}
+	fmt.Println()
 
 	a.serverMu.Lock()
 	srv := &http.Server{
