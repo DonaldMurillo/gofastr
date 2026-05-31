@@ -36,6 +36,7 @@
         {"field": "docs_used", "check": "agent ran gofastr docs command"},
         {"field": "theme_approach", "check": "response mentions theme tokens, StyleSheet, or ui-getting-started"},
         {"field": "no_raw_css", "check": "response does NOT suggest writing raw CSS files (GoFastr uses Go-native StyleSheet builder)"}
+      ]
     },
     {
       "id": 4,
@@ -104,6 +105,80 @@
         {"field": "health_check_found", "check": "response mentions /healthz or /readyz or RegisterReadiness"},
         {"field": "no_custom_tenant_filter", "check": "response does NOT suggest writing custom WHERE tenant_id = ? filters"},
         {"field": "no_custom_migrations", "check": "response does NOT suggest writing a custom migration system"}
+      ]
+    },
+    {
+      "id": 9,
+      "name": "ui-components-table-form-modal-toast-sidebar",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) a sortable paginated data table for users, (2) a validated form for creating/editing blog posts, (3) a confirmation modal before deleting a post, (4) a toast notification after save, (5) a sidebar navigation with collapsible sections. GoFastr has all of these built in — do NOT suggest raw HTML or external JS libraries.",
+      "expected_output": "Agent discovers DataTable, form module, ConfirmAction/Modal widget, ToastStack, and Sidebar component from framework/ui.",
+      "assertions": [
+        {"field": "table_found", "check": "response mentions DataTable"},
+        {"field": "form_found", "check": "response mentions Form, FormField, or form-module"},
+        {"field": "modal_found", "check": "response mentions ConfirmAction or Modal widget"},
+        {"field": "toast_found", "check": "response mentions ToastStack or toast"},
+        {"field": "sidebar_found", "check": "response mentions Sidebar component"},
+        {"field": "no_raw_html_table", "check": "response does NOT suggest raw HTML table"},
+        {"field": "no_external_js", "check": "response does NOT suggest external JS library"}
+      ]
+    },
+    {
+      "id": 10,
+      "name": "ui-charts-without-external-libs",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs a line chart of signups, a pie chart of user roles, and a sparkline in the header. Find the GoFastr charting components. The user should NOT need Chart.js, D3, or any external JS library.",
+      "expected_output": "Agent discovers LineChart, PieChart, and Sparkline — all SSR SVG, no JS framework needed.",
+      "assertions": [
+        {"field": "line_chart_found", "check": "response mentions LineChart"},
+        {"field": "pie_chart_found", "check": "response mentions PieChart"},
+        {"field": "sparkline_found", "check": "response mentions Sparkline"},
+        {"field": "ssr_svg", "check": "response mentions SSR SVG as the rendering approach"},
+        {"field": "no_chartjs", "check": "response does NOT mention Chart.js or chart.js"},
+        {"field": "no_d3", "check": "response does NOT mention D3 or d3.js"},
+        {"field": "no_external_viz", "check": "response does NOT suggest any external visualization library"}
+      ]
+    },
+    {
+      "id": 11,
+      "name": "ui-islands-streams-no-js-frameworks",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) live-updating notification bell via server-push, (2) search-as-you-type without page reload, (3) a like button that increments without page reload. Find GoFastr's island/stream/hydration system. Do NOT suggest HTMX, Alpine.js, React, or manual fetch() calls.",
+      "expected_output": "Agent discovers core-ui/island + core/stream SSE + data-fui-* hydration attributes. No external JS frameworks suggested.",
+      "assertions": [
+        {"field": "island_found", "check": "response mentions island system or core-ui/island"},
+        {"field": "stream_found", "check": "response mentions SSE or core/stream"},
+        {"field": "hydration_found", "check": "response mentions data-fui-* attributes or runtime.js"},
+        {"field": "no_htmx", "check": "response does NOT suggest HTMX or htmx"},
+        {"field": "no_alpine", "check": "response does NOT suggest Alpine.js"},
+        {"field": "no_react", "check": "response does NOT suggest React, Vue, Svelte, or any JS framework"}
+      ]
+    },
+    {
+      "id": 12,
+      "name": "ui-widgets-step-rails-card-composition",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) a floating chat widget overlay, (2) a multi-step onboarding wizard, (3) a table column that renders a progress bar, (4) a reusable card component with customizable header/footer/body. Find the GoFastr primitives for widgets, step rails, custom column rendering, and component composition.",
+      "expected_output": "Agent discovers core-ui/widget + preset.FloatingPanel, StepWizard/StepRail, DataTable cell-as-render.HTML, and Card with slot-like composition.",
+      "assertions": [
+        {"field": "widget_found", "check": "response mentions widget system or core-ui/widget"},
+        {"field": "step_wizard_found", "check": "response mentions StepWizard or StepRail"},
+        {"field": "column_renderer_found", "check": "response mentions DataTable cells as render.HTML or custom cell rendering"},
+        {"field": "card_found", "check": "response mentions Card or component composition pattern"},
+        {"field": "no_custom_overlay", "check": "response does NOT suggest building a custom overlay div"},
+        {"field": "no_custom_wizard_state", "check": "response does NOT suggest building custom wizard state management"}
+      ]
+    },
+    {
+      "id": 13,
+      "name": "ui-theme-layout-dark-mode-responsive-no-tailwind",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) define design tokens once that flow into every component, (2) override table/form/button styles without editing framework source, (3) dark mode variant of the entire theme, (4) site-wide header+footer on every page, (5) responsive breakpoints for mobile. Do NOT suggest Tailwind, raw CSS files, or CSS-in-JS.",
+      "expected_output": "Agent discovers style.Theme tokens, registry.RegisterStyle for overrides, ThemeToggle + data-color-scheme for dark mode, app.Layout for header/footer, and BreakpointSet tokens for responsive.",
+      "assertions": [
+        {"field": "theme_found", "check": "response mentions style.Theme or typed tokens"},
+        {"field": "override_found", "check": "response mentions RegisterStyle or Contribute for overrides"},
+        {"field": "dark_mode_found", "check": "response mentions dark mode via ThemeToggle or data-color-scheme"},
+        {"field": "layout_found", "check": "response mentions app.Layout or WithHeader/WithFooter"},
+        {"field": "breakpoints_found", "check": "response mentions BreakpointSet or responsive breakpoints"},
+        {"field": "no_tailwind", "check": "response does NOT suggest Tailwind CSS"},
+        {"field": "no_raw_css", "check": "response does NOT suggest writing raw .css files"},
+        {"field": "no_css_in_js", "check": "response does NOT suggest styled-components, emotion, or CSS-in-JS"}
       ]
     }
   ]
