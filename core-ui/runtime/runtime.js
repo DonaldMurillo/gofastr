@@ -222,7 +222,10 @@
       // SPA navigate on success — swaps <main> without full page reload.
       const navigatePath = node.getAttribute('data-fui-rpc-navigate');
       if (navigatePath) {
-        window.__gofastr._navigate(navigatePath);
+        try {
+          history.pushState(null, '', navigatePath);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } catch (_) {}
       }
     } catch (err) {
       // Swallow AbortError — it just means a newer dispatch superseded

@@ -361,7 +361,12 @@
         if (openWidgetName) NS.openWidget(openWidgetName);
         // SPA navigate on success.
         const navigatePath = node.getAttribute('data-fui-rpc-navigate');
-        if (navigatePath) NS._navigate(navigatePath);
+        if (navigatePath) {
+          try {
+            history.pushState(null, '', navigatePath);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          } catch (_) {}
+        }
       } finally {
         if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
       }
