@@ -1280,10 +1280,18 @@
   };
 
   const swapScreenGroupContent = (groupEl, html) => {
-    const main = groupEl.querySelector('[role="main"]') ?? groupEl.querySelector('main');
-    if (main) {
-      main.innerHTML = html;
-      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
+    // The content cell inside a ScreenGroup layout can be:
+    //   1. <main> or [role="main"] (outermost layout)
+    //   2. .layout-content (nested layout — sidebar + content)
+    // The nested case is the common one: the ScreenGroup wrapper holds
+    // a layout-body with sidebar + content. We must swap only the
+    // content cell, not the sidebar.
+    const target = groupEl.querySelector('.layout-content')
+      ?? groupEl.querySelector('[role="main"]')
+      ?? groupEl.querySelector('main');
+    if (target) {
+      target.innerHTML = html;
+      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(target);
     }
     // Close disclosures inside the group
     for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]')) {
