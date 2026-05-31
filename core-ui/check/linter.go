@@ -61,7 +61,7 @@ var allowedImports = map[string]bool{
 	"github.com/DonaldMurillo/gofastr/core/render":       true,
 	"github.com/DonaldMurillo/gofastr/core-ui/html":  true,
 	"github.com/DonaldMurillo/gofastr/core-ui/component": true,
-	"github.com/DonaldMurillo/gofastr/core-ui/signal":    true,
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive": true,
 	"github.com/DonaldMurillo/gofastr/core-ui/style":     true,
 }
 

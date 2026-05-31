@@ -71,7 +71,7 @@ _secure-100 campaign (2 passes) — 101 verified findings, each survived an adve
 | 65 | P2 | bug | `battery/queue` | RedisQueue.Dequeue silently loses jobs on a single malformed message |
 | 66 | P2 | bug | `battery/embed` | FixedWindow.Chunk recomputes byte offset O(N^2) |
 | 67 | P2 | bug | `core/upload` | Filename length-cap splits multibyte runes -> invalid UTF-8 key |
-| 68 | P2 | bug | `core-ui/signal` | Global currentCtx causes data race in concurrent signal tracking |
+| 68 | ~~P2~~ resolved | `core-ui/signal` | Global currentCtx data race — package removed in favor of `core-ui/interactive` |
 | 69 | P2 | bug | `core/mcp` | MCP tool-handler panic is never recovered |
 | 70 | P2 | bug | `core/middleware` | metrics/tracing writers drop Hijacker and Pusher |
 | 71 | P2 | bug | `framework` | App.InTx leaks tx connection + row locks when fn panics |
