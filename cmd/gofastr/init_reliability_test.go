@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -77,6 +78,53 @@ func TestInitGeneratedSQLiteMigrationsRunFromCLI(t *testing.T) {
 	status.Dir = project
 	if out, err := status.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr migrate status: %v\n%s", err, out)
+	}
+}
+
+func TestInitCreatesGitRepo(t *testing.T) {
+	bin := buildGofastrBin(t)
+	work := t.TempDir()
+
+	initCmd := exec.Command(bin, "init", "gitapp", "--module=example.com/gitapp")
+	initCmd.Dir = work
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+
+	project := filepath.Join(work, "gitapp")
+
+	// git init should have created .git/
+	gitDir := filepath.Join(project, ".git")
+	if fi, err := os.Stat(gitDir); err != nil {
+		t.Fatalf(".git directory not found: %v", err)
+	} else if !fi.IsDir() {
+		t.Fatalf(".git exists but is not a directory")
+	}
+}
+
+func TestInitWritesCLAUDEmd(t *testing.T) {
+	bin := buildGofastrBin(t)
+	work := t.TempDir()
+
+	initCmd := exec.Command(bin, "init", "claudeapp", "--module=example.com/claudeapp")
+	initCmd.Dir = work
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+
+	project := filepath.Join(work, "claudeapp")
+
+	// CLAUDE.md should exist and reference AGENTS.md
+	claude := filepath.Join(project, "CLAUDE.md")
+	data, err := os.ReadFile(claude)
+	if err != nil {
+		t.Fatalf("CLAUDE.md not found: %v", err)
+	}
+	body := string(data)
+	for _, substr := range []string{"AGENTS.md", "gofastr-host", "gofastr agents sync"} {
+		if !strings.Contains(body, substr) {
+			t.Errorf("CLAUDE.md missing %q", substr)
+		}
 	}
 }
 

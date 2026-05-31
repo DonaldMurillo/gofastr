@@ -172,6 +172,13 @@ bin/
 		os.Exit(1)
 	}
 
+	// Write CLAUDE.md — thin entry point for Claude Code that points
+	// agents at the richer AGENTS.md and the gofastr-host skill.
+	if err := writeCLAUDEmd(name); err != nil {
+		fail("Failed to write CLAUDE.md: %v", err)
+		os.Exit(1)
+	}
+
 	// Run go mod init to generate a proper go.mod
 	cmd := exec.Command("go", "mod", "init", modulePath)
 	cmd.Dir = name
@@ -180,6 +187,15 @@ bin/
 	if err := cmd.Run(); err != nil {
 		info("Could not run 'go mod init': %v", err)
 		info("You may need to run 'go mod init %s' manually.", modulePath)
+	}
+
+	// Run git init so the project starts with a clean repo.
+	gitCmd := exec.Command("git", "init", name)
+	gitCmd.Stdout = os.Stdout
+	gitCmd.Stderr = os.Stderr
+	if err := gitCmd.Run(); err != nil {
+		info("Could not run 'git init': %v", err)
+		info("You may need to run 'git init' manually.")
 	}
 
 	success("Created project %s in ./%s/", name, name)
@@ -196,6 +212,7 @@ bin/
 	fmt.Println("    .gitignore           — Git ignore rules")
 	fmt.Println()
 	fmt.Printf("  %s (read by AI coding tools so they reach for framework primitives instead of reinventing):\n", bold("AI-agent onboarding"))
+	fmt.Println("    CLAUDE.md            — Claude Code entry point; links to AGENTS.md + skill")
 	fmt.Println("    AGENTS.md            — Top-level TOC; refresh with `gofastr agents sync`")
 	fmt.Println("    agents/              — Auto-generated per-battery detail files linked from AGENTS.md")
 	fmt.Println("    .claude/skills/      — Claude Code skill (safe to delete if you only use Cursor/Aider)")
@@ -548,4 +565,35 @@ func validateProjectName(name string) error {
 		return fmt.Errorf("name must start with a letter or digit")
 	}
 	return nil
+}
+
+// writeCLAUDEmd writes a thin CLAUDE.md that points Claude Code at the
+// richer AGENTS.md and the gofastr-host skill. This is the entry point
+// Claude Code reads automatically when opening a project.
+func writeCLAUDEmd(dir string) error {
+	const content = `# CLAUDE.md — GoFastr host project
+
+This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framework.
+
+## Start here
+
+- **[AGENTS.md](AGENTS.md)** — TOC of every framework primitive with trigger
+  phrases. When your task matches a row, open the linked detail file under
+  ` + "`" + `agents/` + "`" + ` for the full shape/import/don't-reinvent breakdown.
+- **[.claude/skills/gofastr-host/SKILL.md](.claude/skills/gofastr-host/SKILL.md)**
+  — Auto-loaded skill that encodes the "reach for the battery first" rule and
+  the import paths you need.
+
+## Refreshing after a framework upgrade
+
+` + "`" + `gofastr agents sync` + "`" + ` — refreshes AGENTS.md and agents/ detail files.
+
+## Quick reference
+
+- ` + "`" + `gofastr dev` + "`" + `          — dev server with hot-reload
+- ` + "`" + `gofastr build` + "`" + `        — production binary
+- ` + "`" + `gofastr agents sync` + "`" + `  — refresh AI-agent onboarding files
+- ` + "`" + `gofastr theme init` + "`" + `   — scaffold a typed theme.go
+`
+	return os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0o644)
 }
