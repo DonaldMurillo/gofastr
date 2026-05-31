@@ -204,7 +204,9 @@ func killServer(mu *sync.Mutex, cmd **exec.Cmd) {
 	}
 }
 
-// scanModTimes walks the directory and records the latest mod time of all .go files.
+// scanModTimes walks the directory and records the latest mod time of
+// source and embedded-asset files. Go embeds .js, .css, and .html at
+// build time, so changes to those files also require a rebuild.
 func scanModTimes(dir string) map[string]time.Time {
 	result := make(map[string]time.Time)
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -216,7 +218,9 @@ func scanModTimes(dir string) map[string]time.Time {
 		if info.IsDir() && (name == "vendor" || name == ".git" || name == "node_modules" || name == "tmp") {
 			return filepath.SkipDir
 		}
-		if filepath.Ext(path) == ".go" {
+		ext := filepath.Ext(path)
+		switch ext {
+		case ".go", ".js", ".css", ".html":
 			result[path] = info.ModTime()
 		}
 		return nil
