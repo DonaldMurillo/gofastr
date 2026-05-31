@@ -58,7 +58,7 @@ func runDev(args []string) {
 	}
 
 	fmt.Printf("\n  %s Dev server with hot reload\n\n", bold("GoFastr"))
-	info("Watching %s for *.go changes...", dir)
+	info("Watching %s for changes (.go, .js, .css, .html)...", dir)
 	if runtimeIsolation.Active() && resolvedAddr != addr {
 		info("Isolation %s remapped http://%s -> http://%s", runtimeIsolation.ID(), addr, resolvedAddr)
 	} else {
@@ -147,7 +147,8 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 		tmpName += "-" + runtimeIsolation.ID()
 	}
 	tmpBin := filepath.Join(os.TempDir(), tmpName)
-	buildCmd := exec.Command("go", "build", "-o", tmpBin, dir)
+	buildCmd := exec.Command("go", "build", "-o", tmpBin, ".")
+	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
