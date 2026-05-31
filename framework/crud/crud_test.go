@@ -3,6 +3,9 @@ package crud
 import (
 	"net/http/httptest"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 func TestStreamCapDefault(t *testing.T) {
@@ -39,5 +42,32 @@ func TestStreamDefaultCapUnchanged(t *testing.T) {
 	_, perPage := parsePagination(req, 0)
 	if perPage != 50 {
 		t.Fatalf("perPage=%d, want 50", perPage)
+	}
+}
+
+func TestVisibleFieldsReturnsCopy(t *testing.T) {
+	ent := entity.Define("docs", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "internal_notes", Type: schema.String, Hidden: true},
+		},
+	}.WithTimestamps(false))
+	ch := NewCrudHandler(ent, nil)
+
+	fields := ch.VisibleFields()
+	fields[0] = "mutated"
+
+	got := ch.VisibleFields()
+	if got[0] == "mutated" {
+		t.Fatal("VisibleFields returned mutable handler cache")
+	}
+	if len(got) != 2 || got[0] != "id" || got[1] != "title" {
+		t.Fatalf("VisibleFields = %v, want [id title]", got)
+	}
+
+	ent.Config.Fields[1].Hidden = true
+	got = ch.VisibleFields()
+	if len(got) != 1 || got[0] != "id" {
+		t.Fatalf("VisibleFields after entity mutation = %v, want [id]", got)
 	}
 }

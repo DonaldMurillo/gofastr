@@ -3,11 +3,13 @@ package framework
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
@@ -59,11 +61,11 @@ func BenchmarkEventBus_EmitAsync(b *testing.B) {
 	}
 }
 
-// BenchmarkSSE_BackpressureDropRate is a property benchmark — it doesn't
-// produce stable ns/op numbers, but reports how many events are dropped
-// when a single slow subscriber is paired with a fast emitter. The
-// surface advertises a 32-event buffer and silent drops; this records
-// the drop rate so regressions in either show up.
+// BenchmarkSSE_BackpressureDropRate is a property benchmark — it reports
+// the effective drop rate when a single slow subscriber is paired with a
+// fast emitter through the production SSEBroker. This intentionally
+// exercises the configurable ?buffer= path rather than the legacy raw
+// channel fan-out the broker replaced.
 //
 // Reported via b.ReportMetric("drop_rate", …).
 func BenchmarkSSE_BackpressureDropRate(b *testing.B) {
@@ -71,61 +73,95 @@ func BenchmarkSSE_BackpressureDropRate(b *testing.B) {
 		b.Skip("skipping property benchmark in short mode")
 	}
 
-	// Build the same setup the EventStream handler uses: subscribe to
-	// EntityCreated, drop events into a 32-capacity channel buffer.
-	const bufCap = 32
 	const totalEvents = 5000
+	const requestedBuffer = 128
 
-	var (
-		dropped   uint64
-		delivered uint64
-	)
-	bus := NewEventBus()
-	buf := make(chan Event, bufCap)
-	bus.Subscribe(EntityCreated, func(_ context.Context, ev Event) error {
-		select {
-		case buf <- ev:
-		default:
-			atomic.AddUint64(&dropped, 1)
-		}
-		return nil
+	broker := stream.NewSSEBroker(stream.SSEBrokerConfig{
+		Topic:             "bench",
+		DefaultBuf:        32,
+		MaxBuf:            512,
+		HeartbeatInterval: time.Hour,
 	})
+	rec := newSlowCountingSSEWriter(100 * time.Microsecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest("GET", fmt.Sprintf("/events?buffer=%d", requestedBuffer), nil).WithContext(ctx)
 
-	// Slow consumer: reads at ~10k/sec; emitter fires as fast as it can.
-	done := make(chan struct{})
+	subDone := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(100 * time.Microsecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				select {
-				case <-buf:
-					atomic.AddUint64(&delivered, 1)
-				default:
-				}
-			}
-		}
+		defer close(subDone)
+		broker.Subscribe(rec, req)
 	}()
+	waitForBenchSubscriber(b, broker)
 
 	b.ResetTimer()
-	ctx := context.Background()
 	for i := 0; i < totalEvents; i++ {
-		_ = bus.Emit(ctx, Event{Type: EntityCreated, Data: i})
+		broker.Publish(EntityCreated, fmt.Sprintf(`{"id":"p%d"}`, i))
 	}
-	close(done)
+	waitForBenchDelivery(rec, requestedBuffer)
 	b.StopTimer()
+	cancel()
+	<-subDone
 
-	totalSeen := atomic.LoadUint64(&dropped) + atomic.LoadUint64(&delivered)
-	if totalSeen == 0 {
+	delivered := rec.events.Load()
+	if delivered == 0 {
 		b.Skip("no events flowed")
 	}
-	dropRate := float64(atomic.LoadUint64(&dropped)) / float64(totalEvents)
+	dropped := totalEvents - delivered
+	if dropped < 0 {
+		dropped = 0
+	}
+	dropRate := float64(dropped) / float64(totalEvents)
 	b.ReportMetric(dropRate, "drop_rate")
-	b.ReportMetric(float64(atomic.LoadUint64(&delivered)), "delivered")
-	b.ReportMetric(float64(atomic.LoadUint64(&dropped)), "dropped")
+	b.ReportMetric(float64(delivered), "delivered")
+	b.ReportMetric(float64(dropped), "dropped")
+	b.ReportMetric(requestedBuffer, "subscriber_buffer")
+}
+
+type slowCountingSSEWriter struct {
+	header http.Header
+	delay  time.Duration
+	events atomic.Int64
+}
+
+func newSlowCountingSSEWriter(delay time.Duration) *slowCountingSSEWriter {
+	return &slowCountingSSEWriter{header: make(http.Header), delay: delay}
+}
+
+func (w *slowCountingSSEWriter) Header() http.Header { return w.header }
+func (w *slowCountingSSEWriter) WriteHeader(int)     {}
+func (w *slowCountingSSEWriter) Flush()              {}
+func (w *slowCountingSSEWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	const marker = "event: "
+	for i := 0; i+len(marker) <= len(p); i++ {
+		if string(p[i:i+len(marker)]) == marker {
+			w.events.Add(1)
+		}
+	}
+	return len(p), nil
+}
+
+func waitForBenchSubscriber(b *testing.B, broker *stream.SSEBroker) {
+	b.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if broker.SubscriberCount() == 1 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	b.Fatalf("subscriber did not register")
+}
+
+func waitForBenchDelivery(rec *slowCountingSSEWriter, requestedBuffer int) {
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if rec.events.Load() >= int64(requestedBuffer) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // BenchmarkSSEWriter_Write measures the cost of writing a single SSE event

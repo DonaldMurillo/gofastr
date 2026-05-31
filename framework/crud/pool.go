@@ -90,6 +90,10 @@ func returnPtrSlice(s *[]any) {
 // scanRowsPooled scans rows using pooled maps to reduce allocations.
 // The caller must call returnRowSlice on the result after encoding.
 func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) (*[]map[string]any, error) {
+	return scanRowsPooledWithKeys(rows, cols, convertedKeys(cols, keyFunc))
+}
+
+func scanRowsPooledWithKeys(rows *sql.Rows, cols, keys []string) (*[]map[string]any, error) {
 	results := borrowRowSlice()
 	for rows.Next() {
 		ptrs := borrowPtrSlice(len(cols))
@@ -105,11 +109,19 @@ func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) 
 		// Use pooled map instead of make
 		rowPtr := rowMapPool.Get().(*map[string]any)
 		row := *rowPtr
-		for i, col := range cols {
-			row[keyFunc(col)] = convertValue(values[i])
+		for i := range cols {
+			row[keys[i]] = convertValue(values[i])
 		}
 		*results = append(*results, row)
 		returnPtrSlice(ptrs)
 	}
 	return results, nil
+}
+
+func convertedKeys(cols []string, keyFunc func(string) string) []string {
+	keys := make([]string, len(cols))
+	for i, col := range cols {
+		keys[i] = keyFunc(col)
+	}
+	return keys
 }

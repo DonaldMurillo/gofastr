@@ -190,3 +190,69 @@ func TestNewHelpExitsZero(t *testing.T) {
 		t.Fatalf("expected help text, got: %s", out)
 	}
 }
+
+func TestNewCLIGeneratedHandlerAndEntityBuild(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := buildGofastrBin(t)
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/newcli\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	run := func(args ...string) []byte {
+		t.Helper()
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("gofastr %v: %v\n%s", args, err, out)
+		}
+		return out
+	}
+	run("new", "handler", "Ping", "GET", "/ping")
+	run("new", "entity", "User", "name:string", "email:string:unique")
+
+	entityPath := filepath.Join(dir, "entities", "users.json")
+	first, err := os.ReadFile(entityPath)
+	if err != nil {
+		t.Fatalf("read entity: %v", err)
+	}
+	dup := exec.Command(bin, "new", "entity", "User", "other:string")
+	dup.Dir = dir
+	if out, err := dup.CombinedOutput(); err == nil || !strings.Contains(string(out), "already exists") {
+		t.Fatalf("duplicate entity should fail without clobbering: err=%v out=%s", err, out)
+	}
+	second, err := os.ReadFile(entityPath)
+	if err != nil {
+		t.Fatalf("read entity after duplicate: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("duplicate entity command clobbered existing file")
+	}
+
+	gen := exec.Command(bin, "generate")
+	gen.Dir = dir
+	gen.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr generate after new entity: %v\n%s", err, out)
+	}
+
+	cmd := exec.Command("go", "test", "-mod=mod", ".", "./.gofastr/entities")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("new-generated output did not build: %v\n%s", err, out)
+	}
+}

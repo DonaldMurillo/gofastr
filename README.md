@@ -306,7 +306,7 @@ ROADMAP.md   forward-looking proposals not yet built
 - [Search](framework/docs/content/search.md) — the `battery/search` interface
 - [Embed](framework/docs/content/embed.md) — local semantic search via `battery/embed`
 - [Security](framework/docs/content/security.md) — defaults, headers, and limits
-- [Architecture review](framework/docs/content/project-architecture-review.md) — design notes and trade-offs
+- [Current risk register](framework/docs/content/project-architecture-review.md) — revalidated architecture risks and maintenance rules
 - [Agent notes](framework/docs/content/agent-notes.md) — running notes for AI contributors
 
 ## Project status

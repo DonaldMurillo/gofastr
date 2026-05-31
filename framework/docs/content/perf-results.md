@@ -1,20 +1,19 @@
-# §7 Performance verification — 2026-05-22
+# §7 Performance verification — 2026-05-31
 
 Measures the wins claimed in `ROADMAP.md` §7 against current HEAD.
 
 Environment: darwin/arm64, Apple M4 Pro, Go (project default), SQLite
-in-memory. Postgres dialect skipped via `BENCH_SKIP_PG=1` — items whose
-claim is Postgres-specific are flagged "Postgres-needed" rather than
-verified.
+in-memory, and Postgres 16 via testcontainers when noted.
 
 Run command per tier:
 ```
-BENCH_SKIP_PG=1 go test ./framework/ -run=^$ -bench=<pattern> \
-    -benchmem -benchtime=300ms -count=3 -timeout=180s
+go test ./framework/ -run=^$ -bench=<pattern> \
+    -benchmem -benchtime=100ms -count=1 -timeout=240s
 ```
 
 Raw output: `dist/bench/current.txt` (concatenation of `tier2.txt`,
-`tier3.txt`, `tier4.txt`, `tier7.txt`, `tier9.txt`).
+`tier3.txt`, `tier4.txt`, `tier7.txt`, `tier9.txt`) when a full bench
+capture is produced.
 
 ---
 
@@ -25,16 +24,16 @@ Raw output: `dist/bench/current.txt` (concatenation of `tier2.txt`,
 - Verdict: **VERIFIED** — ratio is now ~18× (2.83 / 0.152). Close to the ≤10× target; the 200× regression is gone.
 
 ### 7b — Pagination cap hiding streaming win
-- Benchmark: `BenchmarkT9_StreamingVsBuffered_RealVolume/sqlite3`
-- Current: buffered-paginated-5000 ≈ 11.7 ms/op; streaming-single-5000 ≈ 11.2 ms/op (sqlite, in-memory)
+- Benchmark: `BenchmarkT9_StreamingVsBuffered_RealVolume`
+- Current: Postgres buffered-paginated-5000 ≈ 41.1 ms/op; streaming-single-5000 ≈ 10.8 ms/op. SQLite remains too fast to show the gap clearly.
 - Claim in ROADMAP: streaming should beat buffered 4× at 5000 rows (Postgres: 12.6 ms vs 50 ms)
-- Verdict: **N/A (Postgres-needed)** — sqlite in-memory is too fast for the gap to surface. The fix (`?stream=true` bypass + raised cap) needs the Postgres dialect to reproduce the 4× ratio.
+- Verdict: **VERIFIED** — Postgres evidence now shows a 3.8× streaming win on the current path, close to the original 4× claim and far beyond the sqlite-only signal.
 
 ### 7c — FilteredList vs hand-rolled net/http
 - Benchmark: `BenchmarkT7_FilteredList_GoFastr/sqlite3` vs `BenchmarkT7_FilteredList_NetHTTP/sqlite3`
-- Current: GoFastr 134 µs / 116 KB / 2487 allocs; net/http 65 µs / 64 KB / 1881 allocs → +105% time, +32% allocs
+- Current: GoFastr 140 µs / 97 KB / 2432 allocs; net/http 62 µs / 64 KB / 1881 allocs → +127% time, +29% allocs
 - Claim in ROADMAP: was +127%, 3187 vs 1881 allocs; target halve the gap (−127% → −60%)
-- Verdict: **NEEDS-WORK** — allocs improved (3187 → 2487, −22%) but the time gap is still +105%, not the ≤60% target. Partial win.
+- Verdict: **NEEDS-WORK** — allocs improved (3187 → 2432, −24%) but the time gap is still +127%, not the ≤60% target. Partial win only.
 
 ### 7d — JSON case conversion allocs per row
 - Benchmark: `BenchmarkJSONCasing`
@@ -44,15 +43,15 @@ Raw output: `dist/bench/current.txt` (concatenation of `tier2.txt`,
 
 ### 7e — SchemaDiff Postgres N=50
 - Benchmark: `BenchmarkSchemaDiff`
-- Current: sqlite3/N=50 = 329 µs / 6227 allocs (sqlite only)
+- Current: postgres/N=50 = 2.73 ms / 5174 allocs; sqlite3/N=50 = 378 µs / 6232 allocs
 - Claim in ROADMAP: was 59 ms on Postgres/N=50; target 5–10× faster via bulk query
-- Verdict: **N/A (Postgres-needed)** — `ReadLiveColumnsBulk` exists in `framework/migrate/bulk.go`. The win is dialect-specific to Postgres round-trips and can't be measured on in-memory sqlite.
+- Verdict: **VERIFIED** — `DiffSchema` now uses `ReadLiveColumnsBulk`; Postgres N=50 improved by roughly 21× from the old 59 ms baseline.
 
 ### 7f — AutoMigrate idempotent re-run, Postgres N=50
 - Benchmark: `BenchmarkAutoMigrate_Idempotent`
-- Current: sqlite3/N=50 = 139 µs / 2577 allocs
+- Current: postgres/N=50 = 748 µs / 2376 allocs; sqlite3/N=50 = 157 µs / 2427 allocs
 - Claim in ROADMAP: was 7.5 ms on Postgres/N=50; target sub-1 ms regardless of N
-- Verdict: **N/A (Postgres-needed)** — `TableExistsBulk` exists in `framework/migrate/bulk.go`. Same dialect dependency as 7e.
+- Verdict: **VERIFIED** — `AutoMigrate` now uses `TableExistsBulk` on Postgres idempotent re-runs and meets the sub-1 ms target at N=50.
 
 ### 7g — CronTick allocs per minute (N=1000)
 - Benchmark: `BenchmarkCronTick`
@@ -68,26 +67,43 @@ Raw output: `dist/bench/current.txt` (concatenation of `tier2.txt`,
 
 ### 7i — SSE backpressure drop rate
 - Benchmark: `BenchmarkSSE_BackpressureDropRate`
-- Current: drop_rate **0.9932** at 5000 events through a 32-buffer + slow consumer (4966 dropped, 2 delivered)
-- Claim in ROADMAP: was drop_rate 0.99 with hardcoded 32-buffer; fix is `SSEBroker` with per-subscriber buffer
-- Verdict: **NEEDS-WORK / bench-not-updated** — `core/stream/sse_broker.go` has been added with configurable buffers, but `BenchmarkSSE_BackpressureDropRate` still constructs a raw `chan Event` with `bufCap = 32`. The benchmark measures the OLD path, not the new `SSEBroker`. The implementation may be fixed; the benchmark is no longer the right witness. Action: rewrite the benchmark to exercise `SSEBroker` with `?buffer=128`.
+- Current witness: `core/stream.SSEBroker` with `?buffer=128`, a slow
+  subscriber, and 5000 fast-published events. Latest measured run:
+  delivered 130, dropped 4870, drop_rate 0.9740.
+- Claim in ROADMAP: the old hardcoded 32-buffer path should be replaced
+  by configurable per-subscriber broker buffering with oldest-drop
+  backpressure.
+- Verdict: **VERIFIED SEMANTICS / HIGH DROP UNDER SLOW CLIENT** — the
+  current contract is bounded, non-blocking delivery with oldest-drop and
+  latest-event retention. `?slow=block` / `X-SSE-Slow: block` is the
+  opt-in stronger-delivery path; it backpressures publishers instead of
+  dropping. High drop rate is expected for intentionally slow default
+  subscribers and is not treated as a delivery guarantee.
 
 ### 7j — UI host page render
 - Benchmark: `BenchmarkT9_UIHostPageRender`
-- Current: `/` 49 µs / 41 KB / 211 allocs (response 2236 bytes); `/about` 66 µs / 57 KB / 373 allocs (response 3015 bytes)
+- Current: `/` 35 µs / 49 KB / 345 allocs (response 2217 bytes); `/about` 52 µs / 61 KB / 457 allocs (response 2996 bytes)
 - Claim in ROADMAP: was 7.6 µs / 580 bytes for a trivial page; target halve render time
-- Verdict: **NEEDS-WORK** — `/` is now 49 µs vs the 7.6 µs baseline. The response body grew from 580 bytes to 2236 bytes (4×) — likely scope/markup changed, not a regression of the pool. Pool exists (`framework/uihost/builder_pool.go`). The benchmark needs re-baselining against the current page shape before this can be called.
+- Verdict: **PARTIAL / CURRENT-SHAPE BASELINE** — runtime injection now uses
+  fewer whole-page replacements and cuts `/` from the previous 68 µs
+  witness to 35 µs. Compare future changes against the current response
+  size instead of the obsolete 580-byte page baseline; the broader "halve
+  trivial page render" target still needs a second pass against HTML tree
+  build costs.
 
-### 7k — Island RPC tail latency at parallelism=64
+### 7k — Island RPC tail latency at workers=64
 - Benchmark: `BenchmarkT9_IslandRPC_Concurrency`
-- Current: parallelism=64 → p50 13 µs, p90 89 µs, p99 **60 ms**, p999 168 ms (mean 2.5 µs/op, 180 allocs/op)
+- Current: workers=64 → p50 11.8 µs, p90 32.9 µs, p99 **4.32 ms**, p999 15.4 ms, 94 allocs/op
 - Claim in ROADMAP: was p50 13 µs / p99 65 ms; target p99 < 10 ms
-- Verdict: **NEEDS-WORK** — p50 unchanged, but p99 is still 56–64 ms across runs. The 10 ms target is not met.
+- Verdict: **VERIFIED** — the benchmark now uses fixed worker counts, so
+  `workers=64` means 64 goroutines rather than a `testing.B` parallelism
+  multiplier. `render.Tag`/`Join` sizing and the one-attribute fast path
+  cut allocations from 180 to 94/op, and p99 is below target.
 
 ### 7l — FilteredList allocations (restatement of 7c)
 - Benchmark: see 7c
-- Current: 2487 allocs (gofastr) vs 1881 (net/http)
-- Verdict: **NEEDS-WORK** — same conclusion as 7c. Allocs improved 22% but not closed.
+- Current: 2432 allocs (gofastr) vs 1881 (net/http)
+- Verdict: **NEEDS-WORK** — same conclusion as 7c. Allocs improved 24% but not closed.
 
 ### 7m — SQLite write serialisation (doc-only)
 - Benchmark: none required (doc-only)
@@ -104,16 +120,16 @@ Raw output: `dist/bench/current.txt` (concatenation of `tier2.txt`,
 | Item | Verdict |
 |---|---|
 | 7a | VERIFIED |
-| 7b | N/A (Postgres-needed) |
+| 7b | VERIFIED |
 | 7c | NEEDS-WORK |
 | 7d | VERIFIED |
-| 7e | N/A (Postgres-needed) |
-| 7f | N/A (Postgres-needed) |
+| 7e | VERIFIED |
+| 7f | VERIFIED |
 | 7g | VERIFIED (with caveat) |
 | 7h | VERIFIED |
-| 7i | NEEDS-WORK (benchmark stale, measures old path) |
-| 7j | NEEDS-WORK (page shape changed; re-baseline) |
-| 7k | NEEDS-WORK (p99 still ≈60 ms at par=64) |
+| 7i | VERIFIED SEMANTICS / HIGH DROP UNDER SLOW CLIENT |
+| 7j | PARTIAL (current-shape baseline) |
+| 7k | VERIFIED |
 | 7l | NEEDS-WORK (same as 7c) |
 | 7m | VERIFIED (doc-only) |
 | 7n | VERIFIED (doc-only) |

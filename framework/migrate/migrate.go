@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -37,7 +38,6 @@ func DetectDialect(db *sql.DB) Dialect {
 	return DialectSQLite
 }
 
-
 // AutoMigrate creates tables for all registered entities. Entities are
 // migrated in dependency order so FK targets exist before referencing
 // tables. Uses CREATE TABLE IF NOT EXISTS so re-running is safe.
@@ -48,8 +48,20 @@ func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 		return err
 	}
 	dialect := DetectDialect(db)
+	existing := map[string]bool{}
+	if dialect == DialectPostgres {
+		tableNames := make([]string, 0, len(ordered))
+		for _, ent := range ordered {
+			tableNames = append(tableNames, ent.GetTable())
+		}
+		var err error
+		existing, err = TableExistsBulk(context.Background(), db, tableNames, dialect)
+		if err != nil {
+			return err
+		}
+	}
 	for _, ent := range ordered {
-		if err := migrateEntityWithRegistry(db, ent, all, dialect); err != nil {
+		if err := migrateEntityWithRegistry(db, ent, all, dialect, existing[ent.GetTable()]); err != nil {
 			return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 		}
 	}
@@ -61,19 +73,19 @@ func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 // callers that need foreign keys should call AutoMigrate. The dialect is
 // auto-detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
-	return migrateEntityWithRegistry(db, ent, nil, DetectDialect(db))
+	return migrateEntityWithRegistry(db, ent, nil, DetectDialect(db), false)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
-	return migrateEntityWithRegistry(db, ent, nil, dialect)
+	return migrateEntityWithRegistry(db, ent, nil, dialect, false)
 }
 
 // migrateEntityWithRegistry is the shared implementation. When `all` is
 // non-nil it is consulted for FK target tables; missing targets return an
 // error before any DDL runs.
-func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) error {
+func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, tableExists bool) error {
 	fields := ent.GetFields()
 	if len(fields) == 0 {
 		return nil
@@ -108,13 +120,15 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 		return fmt.Errorf("migrate %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
 	}
 
-	stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		query.QuoteIdent(safeTable),
-		strings.Join(columns, ",\n\t"),
-	)
+	if !tableExists {
+		stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
+			query.QuoteIdent(safeTable),
+			strings.Join(columns, ",\n\t"),
+		)
 
-	if _, err := db.Exec(stmt); err != nil {
-		return err
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
 	}
 
 	// Secondary indices — emit AFTER the table exists. CREATE INDEX IF NOT
@@ -211,20 +225,20 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if !ok {
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
-	safeRelFK, err := query.SafeIdent(rel.ForeignKey)
-	if err != nil {
-		return nil, fmt.Errorf("relation %q: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
-	}
-	safeTargetTable, err := query.SafeIdent(target.GetTable())
-	if err != nil {
-		return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
-	}
-	safeTargetPK, err := query.SafeIdent(target.PrimaryKey)
-	if err != nil {
-		return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, target.PrimaryKey, err)
-	}
-	out = append(out, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-		query.QuoteIdent(safeRelFK), query.QuoteIdent(safeTargetTable), query.QuoteIdent(safeTargetPK)))
+		safeRelFK, err := query.SafeIdent(rel.ForeignKey)
+		if err != nil {
+			return nil, fmt.Errorf("relation %q: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
+		}
+		safeTargetTable, err := query.SafeIdent(target.GetTable())
+		if err != nil {
+			return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
+		}
+		safeTargetPK, err := query.SafeIdent(target.PrimaryKey)
+		if err != nil {
+			return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, target.PrimaryKey, err)
+		}
+		out = append(out, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+			query.QuoteIdent(safeRelFK), query.QuoteIdent(safeTargetTable), query.QuoteIdent(safeTargetPK)))
 	}
 	return out, nil
 }

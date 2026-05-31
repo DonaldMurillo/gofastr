@@ -43,8 +43,16 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	}
 
 	var out []SchemaChange
+	tables := make([]string, 0, len(ordered))
 	for _, ent := range ordered {
-		changes, err := diffEntity(ctx, db, ent, all, dialect)
+		tables = append(tables, ent.GetTable())
+	}
+	liveByTable, err := ReadLiveColumnsBulk(ctx, db, tables, dialect)
+	if err != nil {
+		return nil, err
+	}
+	for _, ent := range ordered {
+		changes, err := diffEntityFromLive(ent, all, dialect, liveByTable[ent.GetTable()])
 		if err != nil {
 			return nil, fmt.Errorf("diff %s: %w", ent.GetName(), err)
 		}
@@ -84,6 +92,10 @@ func diffEntity(ctx context.Context, db *sql.DB, ent *entity.Entity, all map[str
 	if err != nil {
 		return nil, err
 	}
+	return diffEntityFromLive(ent, all, dialect, live)
+}
+
+func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
 	if len(live) == 0 {
 		// Table missing entirely — emit a CREATE TABLE via the same path
 		// AutoMigrate uses, captured as SQL string.

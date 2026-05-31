@@ -161,7 +161,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			placeholders[i] = fmt.Sprintf("$%d", i+1)
 		}
 
-		visFields := ch.VisibleFields()
+		visFields := ch.visibleFields()
 		var sb strings.Builder
 		sb.WriteString("INSERT INTO ")
 		sb.WriteString(ch.Entity.GetTable())

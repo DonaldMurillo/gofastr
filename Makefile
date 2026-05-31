@@ -1,4 +1,4 @@
-.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs embed-live
+.PHONY: build build-all build-cmd build-examples csp-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs embed-live
 
 # ---- Build ----
 #
@@ -106,6 +106,10 @@ bench-pg: $(BENCH_OUT)
 	go test -run=^$$ -bench=postgres -benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) \
 		-timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/pg.txt
 
+bench-pg-evidence: $(BENCH_OUT)
+	BENCH_OUT=$(BENCH_OUT) BENCHTIME=$(BENCHTIME) BENCH_COUNT=$(BENCH_COUNT) \
+		BENCH_TIMEOUT=$(BENCH_TIMEOUT) sh ./scripts/perf-postgres-evidence.sh
+
 bench-tier1: $(BENCH_OUT)
 	go test -run=^$$ -bench=BenchmarkTier1 -benchmem -benchtime=$(BENCHTIME) \
 		-count=$(BENCH_COUNT) -timeout=$(BENCH_TIMEOUT) ./framework/ | tee $(BENCH_OUT)/tier1.txt
@@ -168,8 +172,10 @@ bench-resources: $(BENCH_OUT)
 	go run ./cmd/bench-resources -load=$${LOAD:-200} -out=$(BENCH_OUT)/resources \
 		| tee $(BENCH_OUT)/resources.md
 
-lint:
-	golangci-lint run ./...
+lint: vet repo-lint
+
+repo-lint:
+	go run ./cmd/repolint .
 
 generate:
 	@echo "No codegen yet"

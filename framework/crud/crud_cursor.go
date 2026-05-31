@@ -61,7 +61,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	}
 
 	fields := ch.cursorFields()
-	cols := ch.VisibleFields()
+	cols := ch.visibleFields()
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)

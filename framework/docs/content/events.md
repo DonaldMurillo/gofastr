@@ -30,10 +30,15 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 ```
 
 - The connection stays open until the client disconnects.
-- Backpressure: a 32-event buffer per client. If the client cannot keep
-  up, events are **dropped silently** rather than blocking emitters.
+- Backpressure: each client has a bounded buffer. The default broker
+  keeps emitters non-blocking by dropping the oldest queued event when a
+  client cannot keep up, so the subscriber retains the latest events.
   This is intentional — SSE is for push notifications, not durable
   delivery. Use a real queue for that.
+- Clients that prefer delivery over emitter latency can opt in with
+  `?slow=block` or `X-SSE-Slow: block`. In that mode `Publish` waits
+  for buffer space for that subscriber. Use it only when a slow client is
+  allowed to backpressure the emitter.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
 

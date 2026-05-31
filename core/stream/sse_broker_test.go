@@ -1,7 +1,9 @@
 package stream
 
 import (
+	"fmt"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +108,88 @@ func TestSSEBrokerDropOnFullBuffer(t *testing.T) {
 		broker.Publish("burst", strings.Repeat("x", 100))
 	}
 	// If we reach here, backpressure drop worked without blocking
+}
+
+func TestSSEBrokerBackpressureDropsOldestAndKeepsLatest(t *testing.T) {
+	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 3})
+	sub := &subscriber{ch: make(chan sseEvent, 3), done: make(chan struct{})}
+	broker.mu.Lock()
+	broker.subscribers["slow"] = sub
+	broker.mu.Unlock()
+
+	for i := 0; i < 10; i++ {
+		broker.Publish("burst", "payload", fmt.Sprintf("%d", i))
+	}
+
+	var got []string
+	for len(sub.ch) > 0 {
+		got = append(got, (<-sub.ch).ID)
+	}
+	want := []string{"7", "8", "9"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buffer retained IDs %v, want latest events %v", got, want)
+	}
+}
+
+func TestSSEBrokerSlowBlockWaitsForBufferSpace(t *testing.T) {
+	broker := NewSSEBroker(SSEBrokerConfig{Topic: "test", DefaultBuf: 2})
+	sub := &subscriber{
+		ch:       make(chan sseEvent, 2),
+		done:     make(chan struct{}),
+		slowMode: sseSlowBlock,
+	}
+	broker.mu.Lock()
+	broker.subscribers["block"] = sub
+	broker.mu.Unlock()
+
+	broker.Publish("burst", "payload", "0")
+	broker.Publish("burst", "payload", "1")
+
+	published := make(chan struct{})
+	go func() {
+		broker.Publish("burst", "payload", "2")
+		close(published)
+	}()
+
+	select {
+	case <-published:
+		t.Fatal("slow=block publish returned before buffer space was available")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	if got := (<-sub.ch).ID; got != "0" {
+		t.Fatalf("first buffered event = %q, want 0", got)
+	}
+	select {
+	case <-published:
+	case <-time.After(time.Second):
+		t.Fatal("slow=block publish did not resume after buffer space opened")
+	}
+
+	var got []string
+	for len(sub.ch) > 0 {
+		got = append(got, (<-sub.ch).ID)
+	}
+	want := []string{"1", "2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buffer retained IDs %v, want %v", got, want)
+	}
+}
+
+func TestSSEBrokerSlowBlockParsedFromRequest(t *testing.T) {
+	req := httptest.NewRequest("GET", "/events?slow=block", nil)
+	if got := parseSlowMode(req); got != sseSlowBlock {
+		t.Fatalf("query slow mode = %v, want block", got)
+	}
+	req = httptest.NewRequest("GET", "/events", nil)
+	req.Header.Set("X-SSE-Slow", "block")
+	if got := parseSlowMode(req); got != sseSlowBlock {
+		t.Fatalf("header slow mode = %v, want block", got)
+	}
+	req = httptest.NewRequest("GET", "/events", nil)
+	if got := parseSlowMode(req); got != sseSlowDropOldest {
+		t.Fatalf("default slow mode = %v, want drop-oldest", got)
+	}
 }
 
 func TestSSEBrokerEventFilter(t *testing.T) {

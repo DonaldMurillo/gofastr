@@ -62,6 +62,12 @@ suite:
 `make bench-pg` fails fast if neither path is available; `make bench` and
 the tier targets will just skip the Postgres half.
 
+Use `make bench-pg-evidence` for CI or release notes. It runs the
+Postgres-sensitive witnesses (`StreamingVsBuffered_RealVolume`,
+`SchemaDiff`, and idempotent `AutoMigrate`), writes
+`dist/bench/postgres-evidence.txt`, and fails if no `/postgres/`
+sub-benchmark actually ran.
+
 ## Reading the output
 
 Standard Go benchmark line:
@@ -119,8 +125,11 @@ overhead but does not show the bounded-memory advantage. Worth fixing.
 - **Event bus fan-out** — synchronous is dominated by handler slice
   copy + handler calls; per-emit allocations should scale linearly with
   N (the snapshot copy).
-- **SSE backpressure** — a 32-event buffer paired with a slow consumer
-  should drop the surplus; the `drop_rate` metric records this.
+- **SSE backpressure** — a bounded subscriber buffer paired with a slow
+  consumer should drop the oldest surplus in default mode; the
+  `drop_rate` metric records this. `?slow=block` is the opt-in
+  stronger-delivery mode and intentionally trades emitter latency for
+  delivery.
 - **Cron tick** — scanning N jobs at minute boundaries. ~175µs for N=1000
   baseline; budget for in-process schedulers running many jobs.
 
@@ -218,9 +227,9 @@ These benchmarks measure those paths.
   network round-trips. The first SQLite smoke run showed 14ms vs 15ms
   (small win); Postgres showed 12ms vs 46ms — a **3.9× win** because
   one query beats 50 round-trips.
-- **SSE delivery_ratio** ≪ 1.0 under bursty emit. The 32-buffer drops
-  the surplus; this is documented behaviour. A regression means the
-  ratio drops further at a fixed emit rate.
+- **SSE delivery_ratio** ≪ 1.0 under bursty emit. Default subscribers
+  drop oldest events on overflow; this is documented behaviour. A
+  regression means the ratio drops further at a fixed emit rate.
 - **Island RPC** should stay sub-100µs for a small (~10-row) fragment.
   This is the response-time floor for "click → see new content."
 - **UIHostPageRender** vs `BenchmarkT7_JSON_GoFastr` (~500ns) tells

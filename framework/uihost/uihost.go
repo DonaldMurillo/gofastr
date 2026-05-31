@@ -26,11 +26,11 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -1071,18 +1071,13 @@ func twitterTags(tc TwitterCard) []string {
 // don't typically serve query-parameterized files. Live HTTP mode
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
 func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool) string {
-	// <head>
-	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
-	// (before any CSS parses) so dark-mode tokens take effect during
-	// the same first paint — no FOUC. Reads localStorage("gofastr.
-	// colorScheme") + prefers-color-scheme media query, sets
-	// <html data-color-scheme="dark|light">.
-	page = strings.Replace(page,
-		"<head>",
-		`<head><script src="/__gofastr/color-scheme.js"></script>`, 1)
+	headClose := borrowBuilder()
+	defer returnBuilder(headClose)
+	bodyClose := borrowBuilder()
+	defer returnBuilder(bodyClose)
+
 	if sessionID != "" {
-		sseMeta := fmt.Sprintf(`<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`, sessionID)
-		page = strings.Replace(page, "</head>", sseMeta+"\n</head>", 1)
+		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="/__gofastr/sse?session=%s">`+"\n", sessionID)
 	}
 	// app.css is injected AFTER component CSS (see further down) so
 	// that host overrides win cascade ties against the framework's
@@ -1112,7 +1107,8 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 		headParts = append(headParts, screenHead)
 	}
 	if len(headParts) > 0 {
-		page = strings.Replace(page, "</head>", strings.Join(headParts, "\n")+"\n</head>", 1)
+		headClose.WriteString(strings.Join(headParts, "\n"))
+		headClose.WriteByte('\n')
 	}
 	// Route graph + component catalog ship as inline JSON in
 	// <script type="application/json"> blocks — the browser treats
@@ -1121,7 +1117,8 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// boot. Saves two HTTP requests per page load vs separate
 	// /__gofastr/{routes,catalog}.js files.
 	if routes := routesJSONScript(ds); routes != "" {
-		page = strings.Replace(page, "</head>", routes+"\n</head>", 1)
+		headClose.WriteString(routes)
+		headClose.WriteByte('\n')
 	}
 
 	// Component CSS: scan the rendered page for data-fui-comp markers
@@ -1130,25 +1127,27 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// <head>. LoadAlways entries are included whether the page used
 	// them or not.
 	if tags := ds.componentCSSTags(page, bundle); tags != "" {
-		page = strings.Replace(page, "</head>", tags+"\n</head>", 1)
+		headClose.WriteString(tags)
+		headClose.WriteByte('\n')
 	}
 	// app.css comes AFTER the component CSS so it wins cascade ties
 	// against framework defaults. Hosts that override e.g. a button's
 	// padding or a header's drawer position can do so by writing to
 	// the same selector — no specificity gymnastics needed.
 	if ds.App != nil {
-		page = strings.Replace(page,
-			"</head>",
-			`<link rel="stylesheet" href="/__gofastr/app.css">`+"\n</head>", 1)
+		headClose.WriteString(`<link rel="stylesheet" href="/__gofastr/app.css">`)
+		headClose.WriteByte('\n')
 	}
 	if catalog := catalogJSONScript(ds); catalog != "" {
-		page = strings.Replace(page, "</head>", catalog+"\n</head>", 1)
+		headClose.WriteString(catalog)
+		headClose.WriteByte('\n')
 	}
 	// Runtime module manifest — name → ?v=<hash> for every split
 	// module under core-ui/runtime/src/. The client-side loader reads
 	// this on boot to cache-bust per-module URLs.
 	if manifest := runtimeModuleManifestScript(); manifest != "" {
-		page = strings.Replace(page, "</head>", manifest+"\n</head>", 1)
+		headClose.WriteString(manifest)
+		headClose.WriteByte('\n')
 	}
 	// Module preload hints — emit <link rel="modulepreload"> per
 	// demand-load runtime module whose marker substring appears in
@@ -1156,24 +1155,35 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// initial render instead of stalling on hover/click. Content-
 	// addressed ?v=<hash> URLs match the immutable cache headers.
 	if preloads := runtimeModulePreloadLinks(page); preloads != "" {
-		page = strings.Replace(page, "</head>", preloads+"\n</head>", 1)
+		headClose.WriteString(preloads)
+		headClose.WriteByte('\n')
 	}
 
 	// <body>
-	page = strings.Replace(page,
-		"</body>",
-		`<script src="/__gofastr/runtime.js"></script>`+"\n</body>", 1)
+	bodyClose.WriteString(`<script src="/__gofastr/runtime.js"></script>`)
+	bodyClose.WriteByte('\n')
 	if ds.GetActionJS() != "" {
-		page = strings.Replace(page,
-			"</body>",
-			`<script src="/__gofastr/actions.js"></script>`+"\n</body>", 1)
+		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
+		bodyClose.WriteByte('\n')
 	}
 	for _, src := range ds.extraScripts {
-		page = strings.Replace(page,
-			"</body>",
-			fmt.Sprintf(`<script src=%q></script>`, src)+"\n</body>", 1)
+		fmt.Fprintf(bodyClose, `<script src=%q></script>`+"\n", src)
 	}
 
+	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
+	// (before any CSS parses) so dark-mode tokens take effect during
+	// the same first paint — no FOUC. Reads localStorage("gofastr.
+	// colorScheme") + prefers-color-scheme media query, sets
+	// <html data-color-scheme="dark|light">.
+	page = strings.Replace(page,
+		"<head>",
+		`<head><script src="/__gofastr/color-scheme.js"></script>`, 1)
+	if headClose.Len() > 0 {
+		page = strings.Replace(page, "</head>", headClose.String()+"</head>", 1)
+	}
+	if bodyClose.Len() > 0 {
+		page = strings.Replace(page, "</body>", bodyClose.String()+"</body>", 1)
+	}
 	return page
 }
 
@@ -1743,7 +1753,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		sc := screen
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Cache-Control", "no-cache")
 			w.Write([]byte(app.ScreenLLMMD(sc)))
 		})
 		// Clean trailing slash to avoid double-slash patterns
