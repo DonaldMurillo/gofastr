@@ -27,10 +27,19 @@ Scaffold layout:
 myapp/
   main.go            # wires entities + UI host
   screens/home.go    # the home page you'll edit
+  screens/styles.go  # CSS via theme tokens + StyleSheet builder
   entities/          # CRUD entities (try /posts)
   migrations/
   .env
+  .gitignore
+  CLAUDE.md          # AI-agent entry point (links to AGENTS.md + skill)
+  AGENTS.md          # Framework feature TOC with trigger phrases
+  agents/            # Per-battery detail files linked from AGENTS.md
+  .claude/skills/    # Claude Code skill for framework conventions
 ```
+
+`gofastr docs` lists every framework reference doc embedded in the
+binary; `gofastr docs --grep <term>` searches them. No internet needed.
 
 ---
 

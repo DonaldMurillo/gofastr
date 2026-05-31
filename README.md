@@ -204,7 +204,11 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 ### `cmd/gofastr` — CLI
 
 ```text
-gofastr init <name>                 Scaffold a new project (UI + entities + migrations)
+gofastr init <name>                 Scaffold a new project (UI + entities + migrations + git + AI-agent onboarding)
+gofastr docs                        Browse/search embedded framework docs (48 topics, no internet needed)
+gofastr docs <topic>                Read a specific doc topic
+gofastr docs --grep <term>          Search across every doc topic
+gofastr agents sync                 Refresh AGENTS.md and agents/ detail files
 gofastr theme init                  Scaffold a typed theme/theme.go you own
 gofastr generate                    Generate Go from entities/*.json
 gofastr generate entity post t:s    Scaffold a single entity in code
@@ -215,7 +219,6 @@ gofastr test                        Run project tests
 gofastr embed index <path>          Index a project for semantic search
 gofastr embed watch <path>          Index + poll-watch for changes
 gofastr embed query "<text>"        Top-K semantic hits as JSON
-```
 
 ### `kiln/` — agent-driven build-mode runtime
 
