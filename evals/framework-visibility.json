@@ -36,6 +36,74 @@
         {"field": "docs_used", "check": "agent ran gofastr docs command"},
         {"field": "theme_approach", "check": "response mentions theme tokens, StyleSheet, or ui-getting-started"},
         {"field": "no_raw_css", "check": "response does NOT suggest writing raw CSS files (GoFastr uses Go-native StyleSheet builder)"}
+    },
+    {
+      "id": 4,
+      "name": "multi-battery-integration-no-reinvent",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs user registration+login, welcome emails on signup, full-text search for posts, hourly cron to clean expired sessions, and outbound webhooks when a post is published. Discover GoFastr batteries for ALL five. You must NOT suggest writing custom cron, custom email, custom search, or custom webhook code.",
+      "expected_output": "Agent discovers battery/auth, battery/email, battery/search, battery/queue (for cron), and battery/webhook without suggesting any custom implementations.",
+      "assertions": [
+        {"field": "auth_found", "check": "response mentions battery/auth"},
+        {"field": "email_found", "check": "response mentions battery/email"},
+        {"field": "search_found", "check": "response mentions battery/search"},
+        {"field": "cron_found", "check": "response mentions battery/queue or Scheduler or cron"},
+        {"field": "webhook_found", "check": "response mentions battery/webhook"},
+        {"field": "no_custom_cron", "check": "response does NOT suggest writing custom cron/scheduler"},
+        {"field": "no_custom_email", "check": "response does NOT suggest writing custom email sender"},
+        {"field": "no_custom_search", "check": "response does NOT suggest writing custom search"},
+        {"field": "no_custom_webhook", "check": "response does NOT suggest writing custom webhook"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "cross-cutting-audit-access-owner",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) audit log of every CRUD operation for compliance, (2) restrict /admin to 'admin' role only, (3) posts owned by the creating user so users only see their own. These are three different cross-cutting concerns in different parts of the framework.",
+      "expected_output": "Agent discovers WithAuditLog (framework), access control (framework/access), and OwnerField (entity declarations) without suggesting custom middleware.",
+      "assertions": [
+        {"field": "audit_log", "check": "response mentions WithAuditLog or audit-log"},
+        {"field": "access_control", "check": "response mentions access control, RolePolicy, or RequirePermission"},
+        {"field": "per_user_data", "check": "response mentions OwnerField or owner-scoped entities"},
+        {"field": "no_custom_middleware", "check": "response does NOT suggest writing custom middleware for any of the three"}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "non-obvious-features-i18n-flags-image",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) English + Spanish language support, (2) per-user feature flags toggled without redeploying, (3) auto-thumbnail uploaded profile photos to 200x200. These are NOT in battery/auth or battery/admin.",
+      "expected_output": "Agent discovers core/i18n, core/featureflag, and framework/image without suggesting custom image resize, custom feature flags, or custom i18n.",
+      "assertions": [
+        {"field": "i18n_found", "check": "response mentions i18n or core/i18n"},
+        {"field": "feature_flags_found", "check": "response mentions feature flags or core/featureflag"},
+        {"field": "image_pipeline_found", "check": "response mentions image pipeline or framework/image"},
+        {"field": "no_custom_image", "check": "response does NOT suggest using libvips, imaging, or other image libraries"},
+        {"field": "no_custom_flags", "check": "response does NOT suggest building a feature flag system"}
+      ]
+    },
+    {
+      "id": 7,
+      "name": "anti-reinvent-idempotency-cursor-batch",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) idempotent API so double-clicks don't create duplicates, (2) cursor-based pagination for 100k+ records, (3) bulk-create 500 records in one request. These are NOT things to build from scratch — GoFastr has built-in support for all three.",
+      "expected_output": "Agent discovers idempotency middleware, cursor pagination, and batch endpoints without suggesting custom implementations.",
+      "assertions": [
+        {"field": "idempotency_found", "check": "response mentions Idempotency-Key or idempotency middleware"},
+        {"field": "cursor_found", "check": "response mentions cursor pagination or keyset pagination"},
+        {"field": "batch_found", "check": "response mentions batch endpoints or _batch"},
+        {"field": "no_custom_idempotency", "check": "response does NOT suggest writing custom deduplication"},
+        {"field": "no_custom_pagination", "check": "response does NOT suggest writing custom cursor logic"},
+        {"field": "no_custom_batch", "check": "response does NOT suggest writing a loop that inserts one at a time"}
+      ]
+    },
+    {
+      "id": 8,
+      "name": "multi-tenant-saas-migrations-health",
+      "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user is building a multi-org SaaS. They need: (1) multi-tenant data isolation (org A can't see org B's posts), (2) database schema migrations that evolve over time, (3) a health check endpoint for their load balancer.",
+      "expected_output": "Agent discovers MultiTenant entity flag, the migration runner (AutoMigrate + SQL files), and built-in /healthz /readyz probes.",
+      "assertions": [
+        {"field": "multi_tenant_found", "check": "response mentions MultiTenant or tenant_id scoping"},
+        {"field": "migrations_found", "check": "response mentions AutoMigrate or migrate runner"},
+        {"field": "health_check_found", "check": "response mentions /healthz or /readyz or RegisterReadiness"},
+        {"field": "no_custom_tenant_filter", "check": "response does NOT suggest writing custom WHERE tenant_id = ? filters"},
+        {"field": "no_custom_migrations", "check": "response does NOT suggest writing a custom migration system"}
       ]
     }
   ]
