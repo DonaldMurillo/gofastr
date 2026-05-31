@@ -74,6 +74,10 @@ func info(format string, args ...interface{}) {
 	fmt.Printf("  %s %s\n", yellow("→"), fmt.Sprintf(format, args...))
 }
 
+func warn(format string, args ...interface{}) {
+	fmt.Printf("  %s %s\n", yellow("⚠"), fmt.Sprintf(format, args...))
+}
+
 func printHelp() {
 	fmt.Printf(`
 %s — GoFastr CLI %s

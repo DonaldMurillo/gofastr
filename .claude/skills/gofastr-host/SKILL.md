@@ -75,7 +75,7 @@ generate both the TOC and the `agents/` detail files. Refresh with
 
 1. Search the project's `AGENTS.md` for the keyword first.
 2. Search the framework with `grep -rn <symbol> $(go env GOMODCACHE)/github.com/DonaldMurillo/gofastr@*`.
-3. Run `gofastr docs search <topic>` against the embedded docs.
+3. Run `gofastr docs --grep <term>` to search the embedded docs, or `gofastr docs <topic>` to read one.
 4. Use the live `/mcp` introspection tools (`framework_docs_search`,
    `app_routes`, `app_batteries`, etc.) if the app is running locally
    with `framework.WithMCPIntrospection()`.

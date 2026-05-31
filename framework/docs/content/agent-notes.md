@@ -1,5 +1,13 @@
 # Agent Notes
 
+## 2026-05-31 - framework visibility: git init, CLAUDE.md, docs surfacing, live evals
+
+- **Scope:** `cmd/gofastr/init.go`, `cmd/gofastr/embedded/gofastr-host-skill.md`, `.claude/skills/gofastr-host/SKILL.md`, `evals/`, `README.md`, `framework/docs/content/ui-getting-started.md`.
+- **Symptom:** New users running `gofastr init` got scaffolded Go files but no git repo, no CLAUDE.md (so Claude Code had no entry point), no mention of `gofastr docs` (so agents couldn't discover features), and the host skill referenced a non-existent `gofastr docs search` command instead of `gofastr docs --grep`.
+- **Change:** `gofastr init` now runs `git init` and writes a thin `CLAUDE.md` that points to `AGENTS.md`, the gofastr-host skill, and the embedded docs (`gofastr docs`, `gofastr docs <topic>`, `gofastr docs --grep`). The host skill's wrong command was fixed. Init "Next steps" output mentions `gofastr docs`. Added 13 live-agent evals using OMP's `agent()` that verify generic AI agents (not gofastr-aware) can discover every framework feature from the scaffolded onboarding files alone — batteries, cross-cutting concerns, UI components, charts, islands, widgets, theming — with zero reinventions across all 74 assertions.
+- **Next time:** when a new battery or feature is added, add it to the eval suite to prevent the "agent doesn't know about it" regression; when the embedded doc topic count changes, update the README CLI section that mentions the count.
+
+
 ## 2026-05-31 - reliability follow-up: perf, repolint, Postgres evidence, SSE block
 
 - **Scope:** `framework/crud`, `framework/uihost`, `core/stream`, `cmd/repolint`, benchmark docs, `scripts/perf-postgres-evidence.sh`.
