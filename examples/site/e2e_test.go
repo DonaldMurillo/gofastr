@@ -169,14 +169,56 @@ func TestE2EInteractive_RPCSignal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e")
 	}
-	t.Skip("TODO: signal update not triggering in headless chromedp — works in real browser")
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var signalText string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.WaitVisible(`button[data-fui-rpc="/__site/interactive/counter"]`),
+		// Use JS click instead of chromedp.Click — chromedp's mouse
+		// event dispatch doesn't reliably trigger the runtime's
+		// delegated click handler in headless Chrome.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Sleep(1*time.Second),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("signal: %q", signalText)
+	trimmed := strings.TrimSpace(signalText)
+	if trimmed == "0" || trimmed == "" {
+		t.Errorf("counter still %q after click — signal didn't update", signalText)
+	}
 }
 
 func TestE2EInteractive_FormSubmitWithSignal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e")
 	}
-	t.Skip("TODO: signal update not triggering in headless chromedp — works in real browser")
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var signalHTML string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.WaitVisible(`form[data-fui-rpc="/__site/interactive/submit"]`),
+		// Use JS to fill + submit — same reason as RPCSignal test.
+		chromedp.Evaluate(`{
+            const form = document.querySelector('form[data-fui-rpc="/__site/interactive/submit"]');
+            const input = form.querySelector('input[name="message"]');
+            input.value = 'hello e2e';
+            form.requestSubmit();
+        }`, nil),
+		chromedp.Sleep(1*time.Second),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-form-result"]').innerHTML`, &signalHTML),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("form signal: %q", signalHTML)
+	if !strings.Contains(signalHTML, "hello e2e") {
+		t.Errorf("form signal = %q, want to contain 'hello e2e'", signalHTML)
+	}
 }
 
 
@@ -210,7 +252,22 @@ func TestE2EInteractive_SPANavigate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e")
 	}
-	t.Skip("TODO: SPA navigate from RPC not triggering in headless chromedp — runtime fix needs verification in real browser")
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var pathname string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.WaitVisible(`button[data-fui-rpc-navigate="/components/button"]`),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-navigate="/components/button"]').click()`, nil),
+		chromedp.Sleep(2*time.Second),
+		chromedp.Evaluate(`location.pathname`, &pathname),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if pathname != "/components/button" {
+		t.Errorf("after navigate, pathname = %q, want /components/button", pathname)
+	}
 }
 
 // NOTE: a chromedp mobile-overflow test was tried and removed — chromedp's

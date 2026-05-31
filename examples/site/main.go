@@ -11,6 +11,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -115,9 +116,12 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		msg := r.FormValue("message")
+		var body struct{ Message string `json:"message"` }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			body.Message = ""
+		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `"✓ Received: %s"`, htmlEscape(msg))
+		fmt.Fprintf(w, `"✓ Received: %s"`, htmlEscape(body.Message))
 	}))
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
