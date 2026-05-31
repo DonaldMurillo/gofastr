@@ -223,8 +223,9 @@ bin/
 	fmt.Println("    gofastr dev          — Start development server with hot-reload")
 	fmt.Println()
 	info("Also try:")
-	info("    gofastr theme init   — Scaffold a typed theme.go")
-	info("    gofastr build        — Build production binary")
+	info("    gofastr docs          — Browse/search framework docs (embedded in the binary)")
+	info("    gofastr theme init    — Scaffold a typed theme.go")
+	info("    gofastr build         — Build production binary")
 	fmt.Println()
 	fmt.Println("  Note: gofastr is pre-alpha and unpublished. If `go mod tidy`")
 	fmt.Println("  fails with \"Repository not found\", add a `replace` directive")
@@ -584,6 +585,15 @@ This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framew
   — Auto-loaded skill that encodes the "reach for the battery first" rule and
   the import paths you need.
 
+## Framework docs (embedded in the CLI)
+
+The ` + "`" + `gofastr` + "`" + ` binary ships with the full framework reference docs
+built in — no internet needed, always matches your installed version.
+
+- ` + "`" + `gofastr docs` + "`" + `                — list every topic
+- ` + "`" + `gofastr docs <topic>` + "`" + `        — read a topic's full markdown
+- ` + "`" + `gofastr docs --grep <term>` + "`" + `  — search across every topic
+
 ## Refreshing after a framework upgrade
 
 ` + "`" + `gofastr agents sync` + "`" + ` — refreshes AGENTS.md and agents/ detail files.
@@ -592,6 +602,7 @@ This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framew
 
 - ` + "`" + `gofastr dev` + "`" + `          — dev server with hot-reload
 - ` + "`" + `gofastr build` + "`" + `        — production binary
+- ` + "`" + `gofastr docs` + "`" + `          — browse/search framework docs
 - ` + "`" + `gofastr agents sync` + "`" + `  — refresh AI-agent onboarding files
 - ` + "`" + `gofastr theme init` + "`" + `   — scaffold a typed theme.go
 `

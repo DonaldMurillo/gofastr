@@ -114,14 +114,20 @@ func TestInitWritesCLAUDEmd(t *testing.T) {
 
 	project := filepath.Join(work, "claudeapp")
 
-	// CLAUDE.md should exist and reference AGENTS.md
+	// CLAUDE.md should exist and reference key surfaces
 	claude := filepath.Join(project, "CLAUDE.md")
 	data, err := os.ReadFile(claude)
 	if err != nil {
 		t.Fatalf("CLAUDE.md not found: %v", err)
 	}
 	body := string(data)
-	for _, substr := range []string{"AGENTS.md", "gofastr-host", "gofastr agents sync"} {
+	for _, substr := range []string{
+		"AGENTS.md",
+		"gofastr-host",
+		"gofastr agents sync",
+		"gofastr docs",
+		"gofastr docs --grep",
+	} {
 		if !strings.Contains(body, substr) {
 			t.Errorf("CLAUDE.md missing %q", substr)
 		}
