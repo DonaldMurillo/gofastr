@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -107,11 +108,15 @@ func setupServer() *framework.App {
 
 	// Interactive demo endpoints — each returns JSON the runtime pushes
 	// into a signal or triggers a widget open / SPA navigate.
-	var demoCounter int
+	//
+	// NOTE: The endpoints below are unauthenticated demo handlers for the
+	// interactive examples. They have no CSRF protection, rate limiting,
+	// or input sanitization. Do NOT copy these as a template for
+	// production code.
+	var demoCounter atomic.Int64
 	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		demoCounter++
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `%d`, demoCounter)
+		fmt.Fprintf(w, `%d`, demoCounter.Add(1))
 	}))
 	fwApp.Router().Post("/__site/interactive/open-drawer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -122,7 +127,8 @@ func setupServer() *framework.App {
 			body.Message = ""
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `"✓ Received: %s"`, htmlEscape(body.Message))
+		msg := "✓ Received: " + body.Message
+		json.NewEncoder(w).Encode(msg)
 	}))
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

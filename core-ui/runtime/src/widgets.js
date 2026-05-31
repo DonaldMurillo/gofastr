@@ -362,10 +362,7 @@
         // SPA navigate on success.
         const navigatePath = node.getAttribute('data-fui-rpc-navigate');
         if (navigatePath) {
-          try {
-            history.pushState(null, '', navigatePath);
-            window.dispatchEvent(new PopStateEvent('popstate'));
-          } catch (_) {}
+          NS.navigate(navigatePath);
         }
       } finally {
         if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;

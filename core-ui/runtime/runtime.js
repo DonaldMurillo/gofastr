@@ -224,7 +224,7 @@
       if (navigatePath) {
         try {
           history.pushState(null, '', navigatePath);
-          window.dispatchEvent(new PopStateEvent('popstate'));
+          loadPage(navigatePath);
         } catch (_) {}
       }
     } catch (err) {
@@ -1177,7 +1177,7 @@
       // already correct when AT or extensions observe the new state.
       let title, body, partial = resp.headers.get('X-Gofastr-Partial') === 'true';
       if (partial) {
-        title = resp.headers.get('X-Gofastr-Title') || document.title;
+        title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
         body = html;
       } else {
         const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -1296,13 +1296,10 @@
     // structure (sidebar + content). Extract just the inner content
     // cell so we don't nest the layout inside itself.
     let swapHTML = html;
-    const parsed = new DOMParser().parseFromString('<template>' + html + '</template>', 'text/html');
-    const tmpl = parsed.querySelector('template');
-    if (tmpl && tmpl.content) {
-      const innerLC = tmpl.content.querySelector('.layout-content');
-      if (innerLC) {
-        swapHTML = innerLC.innerHTML;
-      }
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const innerLC = parsed.body && parsed.body.querySelector('.layout-content');
+    if (innerLC) {
+      swapHTML = innerLC.innerHTML;
     }
 
     target.innerHTML = swapHTML;

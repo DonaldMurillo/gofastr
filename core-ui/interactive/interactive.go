@@ -3,18 +3,11 @@
 // attributes the runtime understands — RPC calls, signal bindings, widget
 // chaining — without writing any JavaScript.
 //
-// Two usage patterns:
+// Usage:
 //
-//  1. General wrapper — wrap any HTML with an action:
-//
-//     interactive.OnClick(btn, interactive.Post("/api/like"),
-//         interactive.OnSuccess(interactive.SetSignal("count", "response")),
-//     )
-//
-//  2. Component-level .Interactive() — components that support it:
-//
-//     ui.DataTable(config).Interactive()
-//     ui.Button("Like").Interactive(interactive.Post("/api/like"))
+//	interactive.OnClick(btn, interactive.Post("/api/like"),
+//	    interactive.OnSuccess(interactive.SetSignal("count", "response")),
+//	)
 //
 // The package only emits attributes the runtime already handles
 // (data-fui-rpc, data-fui-signal, data-fui-open, etc.) plus new ones
@@ -22,6 +15,7 @@
 package interactive
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -39,29 +33,36 @@ type Action struct {
 	effects []Effect
 }
 
-// Post creates a POST action.
+// Post creates a POST action. Panics if path does not start with "/".
 func Post(path string) Action {
-	return Action{method: "POST", path: path}
+	return newAction("POST", path)
 }
 
-// Get creates a GET action.
+// Get creates a GET action. Panics if path does not start with "/".
 func Get(path string) Action {
-	return Action{method: "GET", path: path}
+	return newAction("GET", path)
 }
 
-// Put creates a PUT action.
+// Put creates a PUT action. Panics if path does not start with "/".
 func Put(path string) Action {
-	return Action{method: "PUT", path: path}
+	return newAction("PUT", path)
 }
 
-// Delete creates a DELETE action.
+// Delete creates a DELETE action. Panics if path does not start with "/".
 func Delete(path string) Action {
-	return Action{method: "DELETE", path: path}
+	return newAction("DELETE", path)
 }
 
-// Patch creates a PATCH action.
+// Patch creates a PATCH action. Panics if path does not start with "/".
 func Patch(path string) Action {
-	return Action{method: "PATCH", path: path}
+	return newAction("PATCH", path)
+}
+
+func newAction(method, path string) Action {
+	if !strings.HasPrefix(path, "/") {
+		panic(fmt.Sprintf("interactive: path must start with '/', got %q", path))
+	}
+	return Action{method: method, path: path}
 }
 
 // OnSuccess adds effects that run when the RPC returns 2xx.
@@ -82,8 +83,11 @@ type Effect interface {
 }
 
 // SetSignal pushes the RPC response into a named client-side signal.
-// Maps to data-fui-rpc-signal="name".
+// Maps to data-fui-rpc-signal="name". Panics if name contains a double quote.
 func SetSignal(name string) Effect {
+	if strings.ContainsRune(name, '"') {
+		panic(fmt.Sprintf("interactive: signal name must not contain '\"', got %q", name))
+	}
 	return signalEffect{name: name}
 }
 
@@ -173,7 +177,9 @@ func wrapWithAction(html render.HTML, action Action) render.HTML {
 	}
 
 	// Inject attributes into the opening tag.
-	idx := strings.Index(s, ">")
+	// Find the first unquoted '>' so that attributes like title="1>2"
+	// don't cause an incorrect split.
+	idx := findUnquotedClose(s)
 	if idx == -1 {
 		return html
 	}
@@ -181,9 +187,35 @@ func wrapWithAction(html render.HTML, action Action) render.HTML {
 	return render.HTML(s[:idx] + attrStr.String() + s[idx:])
 }
 
+// findUnquotedClose returns the byte index of the first '>' that is not
+// inside a single- or double-quoted attribute value. Returns -1 if none.
+func findUnquotedClose(s string) int {
+	quote := byte(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+			continue
+		}
+		if c == '>' {
+			return i
+		}
+	}
+	return -1
+}
+
 // ─── Internal helpers ───────────────────────────────────────────────
 
 func (a Action) attrs() map[string]string {
+	if a.method == "" && a.path == "" {
+		return nil
+	}
 	m := map[string]string{
 		"data-fui-rpc":        a.path,
 		"data-fui-rpc-method": a.method,

@@ -27,6 +27,7 @@ import (
 	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
 	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -720,6 +721,12 @@ func main() {
 	{"rpc-signal", "RPC → Signal", "Interactivity",
 		"Click a button → server returns a value → it appears in a live signal region.",
 		func() render.HTML {
+			// Live demo button: uses the interactive package.
+			btn := interactive.OnClick(
+				render.Tag("button", map[string]string{"class": "ui-button ui-button--primary"}, render.Text("Count")),
+				interactive.Post("/__site/interactive/counter").
+					OnSuccess(interactive.SetSignal("demo-counter")),
+			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("You have a counter, a vote button, or any UI where a click should update a number or string on screen — without a full page reload. The server owns the state; the browser just displays the latest value."),
@@ -727,11 +734,11 @@ func main() {
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("Put data-fui-rpc on a button and data-fui-rpc-signal on the same element. Add a data-fui-signal span wherever you want the response to appear. The runtime POSTs, parses JSON or text, and pushes the result into every matching signal node."),
 				),
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "html", Code: `<button
-  data-fui-rpc="/api/like"
-  data-fui-rpc-signal="like-count"
->Like</button>
-<span data-fui-signal="like-count">0</span>`}),
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+    render.Tag("button", nil, render.Text("Like")),
+    interactive.Post("/api/like").
+        OnSuccess(interactive.SetSignal("like-count")),
+)`}),
 				html.Div(html.DivConfig{Class: "demo-stage"},
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
@@ -740,12 +747,7 @@ func main() {
 								render.Text("Click the button — the number updates from the server. No page reload."),
 							),
 							html.Div(html.DivConfig{Class: "demo-row"},
-								render.Tag("button", map[string]string{
-									"data-fui-rpc":        "/__site/interactive/counter",
-									"data-fui-rpc-method": "POST",
-									"data-fui-rpc-signal": "demo-counter",
-									"class":                "ui-button ui-button--primary",
-								}, render.Text("Count")),
+								btn,
 								render.Tag("span", map[string]string{
 									"data-fui-signal":          "demo-counter",
 									"data-fui-signal-mode":     "text",
@@ -762,6 +764,11 @@ func main() {
 	{"rpc-open-widget", "RPC → Open Widget", "Interactivity",
 		"Successful POST opens a drawer or modal — side-effect chaining without JS.",
 		func() render.HTML {
+			btn := interactive.OnClick(
+				render.Tag("button", map[string]string{"class": "ui-button ui-button--secondary"}, render.Text("Trigger Modal")),
+				interactive.Post("/__site/interactive/open-drawer").
+					OnSuccess(interactive.OpenWidget("interactive-result-modal")),
+			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("A user submits a form or clicks an action, and on success a drawer or modal should appear — showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern."),
@@ -769,10 +776,11 @@ func main() {
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal."),
 				),
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "html", Code: `<button
-  data-fui-rpc="/api/action"
-  data-fui-rpc-open="result-modal"
->Confirm Action</button>`}),
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+    render.Tag("button", nil, render.Text("Confirm")),
+    interactive.Post("/api/action").
+        OnSuccess(interactive.OpenWidget("result-modal")),
+)`}),
 				html.Div(html.DivConfig{Class: "demo-stage"},
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
@@ -780,12 +788,7 @@ func main() {
 							render.Tag("p", map[string]string{"class": "doc-head__lede"},
 								render.Text("Click — a modal pops up after the POST succeeds."),
 							),
-							render.Tag("button", map[string]string{
-								"data-fui-rpc":        "/__site/interactive/open-drawer",
-								"data-fui-rpc-method": "POST",
-								"data-fui-rpc-open":   "interactive-result-modal",
-								"class":                "ui-button ui-button--secondary",
-							}, render.Text("Trigger Modal")),
+							btn,
 						),
 					),
 				),
@@ -795,6 +798,23 @@ func main() {
 	{"rpc-form-signal", "Form Submit → Signal", "Interactivity",
 		"Submit a form via fetch and display the result inline — no page reload, no redirect.",
 		func() render.HTML {
+			form := interactive.OnSubmit(
+				render.Tag("form", map[string]string{"class": "demo-form-inline"},
+					render.Tag("input", map[string]string{
+						"type": "text", "name": "message", "placeholder": "Type something…",
+						"required": "",
+					}),
+					render.Tag("button", map[string]string{
+						"type":  "submit",
+						"class": "ui-button ui-button--primary",
+					}, render.Text("Send")),
+				),
+				interactive.Post("/__site/interactive/submit").
+					OnSuccess(
+						interactive.SetSignal("demo-form-result"),
+						interactive.ResetForm(),
+					),
+			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("A comment form, a search box, a quick-add field — submit without losing scroll position or context. The server processes it and returns a snippet (confirmation text, rendered item, status message) that appears right below the form."),
@@ -802,16 +822,17 @@ func main() {
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("Put data-fui-rpc on a <form> element. The runtime intercepts the submit, POSTs fields as JSON, and writes the response into the signal. Add data-fui-rpc-reset to clear the form after success so the user can submit again."),
 				),
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "html", Code: `<form
-  data-fui-rpc="/api/comment"
-  data-fui-rpc-signal="comment-result"
-  data-fui-rpc-reset="true"
->
-  <input name="body" required>
-  <button type="submit">Post</button>
-</form>
-<div data-fui-signal="comment-result"
-     data-fui-signal-mode="html"></div>`}),
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnSubmit(
+    render.Tag("form", nil,
+        render.Tag("input", map[string]string{"name": "body", "required": ""}),
+        render.Tag("button", map[string]string{"type": "submit"}, render.Text("Post")),
+    ),
+    interactive.Post("/api/comment").
+        OnSuccess(
+            interactive.SetSignal("comment-result"),
+            interactive.ResetForm(),
+        ),
+)`}),
 				html.Div(html.DivConfig{Class: "demo-stage"},
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
@@ -819,22 +840,7 @@ func main() {
 							render.Tag("p", map[string]string{"class": "doc-head__lede"},
 								render.Text("Type a message and press Send. The response appears below; the form clears."),
 							),
-							render.Tag("form", map[string]string{
-								"data-fui-rpc":        "/__site/interactive/submit",
-								"data-fui-rpc-method": "POST",
-								"data-fui-rpc-signal": "demo-form-result",
-								"data-fui-rpc-reset":  "true",
-								"class":                "demo-form-inline",
-							},
-								render.Tag("input", map[string]string{
-									"type": "text", "name": "message", "placeholder": "Type something…",
-									"required": "",
-								}),
-								render.Tag("button", map[string]string{
-									"type":  "submit",
-									"class": "ui-button ui-button--primary",
-								}, render.Text("Send")),
-							),
+							form,
 							render.Tag("div", map[string]string{
 								"data-fui-signal":      "demo-form-result",
 								"data-fui-signal-mode": "html",
@@ -849,6 +855,11 @@ func main() {
 	{"rpc-navigate", "RPC → SPA Navigate", "Interactivity",
 		"Successful POST navigates to a new page without a full reload.",
 		func() render.HTML {
+			btn := interactive.OnClick(
+				render.Tag("button", map[string]string{"class": "ui-button ui-button--ghost"}, render.Text("Navigate to Button →")),
+				interactive.Post("/__site/interactive/navigate").
+					OnSuccess(interactive.Navigate("/components/button")),
+			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination."),
@@ -856,10 +867,11 @@ func main() {
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
 					render.Text("Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click — but only after the server confirms the action succeeded."),
 				),
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "html", Code: `<button
-  data-fui-rpc="/api/projects"
-  data-fui-rpc-navigate="/projects/new-id"
->Create Project</button>`}),
+				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+    render.Tag("button", nil, render.Text("Create Project")),
+    interactive.Post("/api/projects").
+        OnSuccess(interactive.Navigate("/projects/new-id")),
+)`}),
 				html.Div(html.DivConfig{Class: "demo-stage"},
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
@@ -867,12 +879,7 @@ func main() {
 							render.Tag("p", map[string]string{"class": "doc-head__lede"},
 								render.Text("Click — the page transitions to the Button component via SPA. Use the back button to return."),
 							),
-							render.Tag("button", map[string]string{
-								"data-fui-rpc":          "/__site/interactive/navigate",
-								"data-fui-rpc-method":   "POST",
-								"data-fui-rpc-navigate": "/components/button",
-								"class":                  "ui-button ui-button--ghost",
-							}, render.Text("Navigate to Button →")),
+							btn,
 						),
 					),
 				),
