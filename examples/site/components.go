@@ -714,11 +714,11 @@ func main() {
 			render.Text("PipelineImage runs framework/image transforms (resize, webp) — see /examples for a live demo."),
 		)
 	}},
-	// ---------- Interactivity ----------
+	// ---------- Clientside Interactivity ----------
 	// Each pattern is its own page so the sidebar shows one entry per
-	// behaviour. All share the "Interactivity" category.
+	// behaviour. All share the "Clientside Interactivity" category.
 
-	{"rpc-signal", "Click to Update", "Interactivity",
+	{"rpc-signal", "Click to Update", "Clientside Interactivity",
 		"Click a button → server returns a value → it appears on screen without reloading.",
 		func() render.HTML {
 			// Live demo button: uses the interactive package.
@@ -761,7 +761,7 @@ func main() {
 			)
 		}},
 
-	{"rpc-open-widget", "Click to Open Popup", "Interactivity",
+	{"rpc-open-widget", "Click to Open Popup", "Clientside Interactivity",
 		"Click a button → server confirms → a modal pops up. No JavaScript needed.",
 		func() render.HTML {
 			btn := interactive.OnClick(
@@ -795,7 +795,7 @@ func main() {
 			)
 		}},
 
-	{"rpc-form-signal", "Submit Without Reload", "Interactivity",
+	{"rpc-form-signal", "Submit Without Reload", "Clientside Interactivity",
 		"Submit a form and see the result inline — the page never reloads.",
 		func() render.HTML {
 			form := interactive.OnSubmit(
@@ -852,7 +852,7 @@ func main() {
 			)
 		}},
 
-	{"rpc-navigate", "Redirect After Action", "Interactivity",
+	{"rpc-navigate", "Redirect After Action", "Clientside Interactivity",
 		"Click a button → server confirms → you land on a new page, no full reload.",
 		func() render.HTML {
 			btn := interactive.OnClick(
