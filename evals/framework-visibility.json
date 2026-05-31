@@ -1,0 +1,42 @@
+{
+  "eval_suite": "framework-visibility",
+  "description": "Evals that verify AI agents can discover GoFastr framework features when dropped into a freshly scaffolded project. Tests both the onboarding-files path (CLAUDE.md, AGENTS.md, skill) and the docs fallback path (gofastr docs --grep).",
+  "setup": "Scaffold a temp project with `gofastr init evalblog --module=example.com/evalblog` in a temp directory. Rebuild the binary first with `go build -o $HOME/go/bin/gofastr ./cmd/gofastr`.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "agent-discovers-batteries-via-onboarding",
+      "prompt": "You are working in a freshly scaffolded GoFastr web application project at {PROJECT_DIR}. The user just created this project and needs help planning a blog site with user authentication (login, register, sessions), an admin dashboard, and blog posts with CRUD. Discover what the GoFastr framework provides by reading the project's onboarding files (CLAUDE.md, AGENTS.md, agents/ directory, .claude/skills/). Do NOT write any code. Just list which GoFastr batteries to use, key import paths, and any gotchas.",
+      "expected_output": "Agent should discover battery/auth and battery/admin by reading AGENTS.md and the gofastr-host skill, without needing to shell out to gofastr docs.",
+      "assertions": [
+        {"field": "auth_battery_found", "check": "response mentions battery/auth or auth.AuthManager or AuthConfig"},
+        {"field": "admin_battery_found", "check": "response mentions battery/admin"},
+        {"field": "agents_md_read", "check": "agent read AGENTS.md (evidenced by referencing battery details from it)"},
+        {"field": "skill_or_claude_md_read", "check": "agent read CLAUDE.md or .claude/skills/gofastr-host/SKILL.md"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "agent-finds-2fa-via-docs-fallback",
+      "prompt": "You are working in a GoFastr web application project at {PROJECT_DIR}. The user needs to add two-factor authentication. CLAUDE.md mentions `gofastr docs` as a way to search the embedded framework docs. Use `gofastr docs --grep 2fa` to search, then `gofastr docs auth` to read the auth topic. Tell me the 2FA plugin name, its routes, and its import path.",
+      "expected_output": "Agent uses gofastr docs --grep to discover the 2FA topic, reads the auth doc, and returns TwoFAPlugin with its routes.",
+      "assertions": [
+        {"field": "docs_grep_used", "check": "agent ran gofastr docs --grep or similar search"},
+        {"field": "plugin_found", "check": "response mentions TwoFAPlugin"},
+        {"field": "routes_correct", "check": "response mentions /auth/2fa/ routes (enroll, verify, challenge, disable, or backup-codes)"},
+        {"field": "import_path", "check": "response mentions battery/auth import path"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "agent-finds-ui-styling-via-docs",
+      "prompt": "You are working in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user wants to customize the look of their site — change colors, fonts, and layout. Use `gofastr docs --grep theme` or `gofastr docs ui-getting-started` to find how styling works in GoFastr. Briefly explain the theming approach.",
+      "expected_output": "Agent discovers the theme/UI docs and mentions theme tokens, StyleSheet builder, or the ui-getting-started guide.",
+      "assertions": [
+        {"field": "docs_used", "check": "agent ran gofastr docs command"},
+        {"field": "theme_approach", "check": "response mentions theme tokens, StyleSheet, or ui-getting-started"},
+        {"field": "no_raw_css", "check": "response does NOT suggest writing raw CSS files (GoFastr uses Go-native StyleSheet builder)"}
+      ]
+    }
+  ]
+}
