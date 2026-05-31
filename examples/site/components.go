@@ -770,22 +770,22 @@ func main() {
 					render.Text("Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "html", Code: `<button
-  data-fui-rpc="/api/export"
-  data-fui-rpc-open="export-drawer"
->Export CSV</button>`}),
+  data-fui-rpc="/api/action"
+  data-fui-rpc-open="result-modal"
+>Confirm Action</button>`}),
 				html.Div(html.DivConfig{Class: "demo-stage"},
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
 							render.Tag("p", map[string]string{"class": "doc-head__lede"},
-								render.Text("Click — the drawer slides in after the POST succeeds."),
+								render.Text("Click — a modal pops up after the POST succeeds."),
 							),
 							render.Tag("button", map[string]string{
 								"data-fui-rpc":        "/__site/interactive/open-drawer",
 								"data-fui-rpc-method": "POST",
-								"data-fui-rpc-open":   "interactive-result-drawer",
+								"data-fui-rpc-open":   "interactive-result-modal",
 								"class":                "ui-button ui-button--secondary",
-							}, render.Text("Open Drawer")),
+							}, render.Text("Trigger Modal")),
 						),
 					),
 				),

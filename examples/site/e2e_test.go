@@ -234,10 +234,10 @@ func TestE2EInteractive_RPCOpenWidget(t *testing.T) {
 	var exists bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-open-widget"),
-		chromedp.WaitVisible(`button[data-fui-rpc-open="interactive-result-drawer"]`),
-		chromedp.Click(`button[data-fui-rpc-open="interactive-result-drawer"]`),
+		chromedp.WaitVisible(`button[data-fui-rpc-open="interactive-result-modal"]`),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-open="interactive-result-modal"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="interactive-result-drawer"]') !== null`, &exists),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="interactive-result-modal"]') !== null`, &exists),
 	); err != nil {
 		t.Fatal(err)
 	}

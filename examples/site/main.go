@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
@@ -126,17 +127,18 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	// Drawer widget for the "RPC → Open Widget" demo.
+	// Modal for the "RPC → Open Widget" demo.
 	// Hidden by default — only appears when data-fui-rpc-open triggers it.
-	drawerDef := preset.Drawer("interactive-result-drawer").
-		Slot("body", app.NewStaticComponent(
-			render.Tag("p", nil,
-				render.Text("This drawer was opened by data-fui-rpc-open after a successful POST. No JavaScript required."),
-			),
-		)).
+	modalBody := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"style": "text-align:center;padding:var(--s-8,32px) 0"}},
+		render.Tag("p", map[string]string{"style": "font-size:24px;margin:0 0 8px"}, render.Text("🎉")),
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("Congratulations!")),
+		render.Tag("p", nil, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
+	)
+	modalDef := preset.Modal("interactive-result-modal").
+		Slot("body", app.NewStaticComponent(modalBody)).
 		Build()
-	drawerDef.Hidden = true
-	widget.Mount(fwApp.Router(), &drawerDef)
+	modalDef.Hidden = true
+	widget.Mount(fwApp.Router(), &modalDef)
 
 	return fwApp
 }
