@@ -109,16 +109,23 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		}}, nil
 	}
 
+	// Postgres lowercases unquoted identifiers in information_schema.
+	// Normalize both sides so the comparison is case-insensitive on PG.
+	liveLower := make(map[string]string, len(live))
+	for k, v := range live {
+		liveLower[strings.ToLower(k)] = v
+	}
+
 	declared := make(map[string]schema.Field, len(ent.GetFields()))
 	for _, f := range ent.GetFields() {
-		declared[f.Name] = f
+		declared[strings.ToLower(f.Name)] = f
 	}
 
 	var changes []SchemaChange
 
 	// ADD COLUMN for declared-but-missing fields.
 	for _, f := range ent.GetFields() {
-		if _, ok := live[f.Name]; ok {
+		if _, ok := liveLower[strings.ToLower(f.Name)]; ok {
 			continue
 		}
 		colType := SQLType(f, dialect)
