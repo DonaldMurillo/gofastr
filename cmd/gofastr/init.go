@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -47,10 +48,16 @@ func runInit(args []string) {
 	dbDriver := "sqlite"
 	dbURL := "file:" + name + ".db"
 	noEntity := false
+	reinit := false
+	force := false
 
 	// Allow overriding via flags
 	for i := 1; i < len(args); i++ {
 		switch {
+		case args[i] == "--reinit":
+			reinit = true
+		case args[i] == "--force":
+			force = true
 		case strings.HasPrefix(args[i], "--module="):
 			modulePath = strings.TrimPrefix(args[i], "--module=")
 			if modulePath == "" {
@@ -66,6 +73,13 @@ func runInit(args []string) {
 			}
 		}
 	}
+
+	// --reinit: refresh AI onboarding files only (no Go code, no git).
+	if reinit {
+		runReinit(name, force)
+		return
+	}
+
 	fmt.Printf("\n  Creating %s project %s...\n\n", bold("GoFastr"), bold(name))
 
 	// Create directory structure
@@ -572,6 +586,12 @@ func validateProjectName(name string) error {
 // richer AGENTS.md and the gofastr-host skill. This is the entry point
 // Claude Code reads automatically when opening a project.
 func writeCLAUDEmd(dir string) error {
+	return os.WriteFile(filepath.Join(dir, "CLAUDE.md"), claudeMDContent(), 0o644)
+}
+
+
+// claudeMDContent returns the generated CLAUDE.md bytes for comparison.
+func claudeMDContent() []byte {
 	const content = `# CLAUDE.md — GoFastr host project
 
 This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framework.
@@ -606,5 +626,95 @@ built in — no internet needed, always matches your installed version.
 - ` + "`" + `gofastr agents sync` + "`" + `  — refresh AI-agent onboarding files
 - ` + "`" + `gofastr theme init` + "`" + `   — scaffold a typed theme.go
 `
-	return os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(content), 0o644)
+	return []byte(content)
+}
+
+// runReinit refreshes AI onboarding files in an existing project.
+// It does NOT touch Go source files, go.mod, or git.
+//
+// Behavior per file:
+//   - agents/*    — always overwritten (framework-owned)
+//   - .claude/skills/gofastr-host/* — always overwritten (framework-owned)
+//   - AGENTS.md   — uses sync logic (preserves user content outside markers)
+//   - CLAUDE.md   — overwrites if unmodified; prompts if user changed it
+func runReinit(dir string, force bool) {
+	fmt.Printf("\n  %s AI onboarding files in %s\n\n", bold("Refreshing"), bold(dir))
+
+	// 1. agents/ detail files — always overwrite.
+	if err := writeAgentDetailFiles(dir); err != nil {
+		fail("Failed to refresh agents/ details: %v", err)
+		os.Exit(1)
+	}
+	info("  ✓ agents/ detail files refreshed")
+
+	// 2. .claude/skills/gofastr-host/ — always overwrite.
+	if err := writeHostSkill(dir); err != nil {
+		fail("Failed to refresh gofastr-host skill: %v", err)
+		os.Exit(1)
+	}
+	info("  ✓ .claude/skills/gofastr-host/SKILL.md refreshed")
+
+	// 3. AGENTS.md — sync (preserves user content outside markers).
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	existing, err := os.ReadFile(agentsPath)
+	if err != nil {
+		// Doesn't exist yet — write fresh.
+		if err := os.WriteFile(agentsPath, buildAgentsMD(), 0o644); err != nil {
+			fail("Failed to write AGENTS.md: %v", err)
+			os.Exit(1)
+		}
+		info("  ✓ AGENTS.md created")
+	} else {
+		refreshed, changed, err := refreshAgentsMD(existing)
+		if err != nil {
+			fail("AGENTS.md sync failed: %v", err)
+			info("  The file may have been edited without preserving the auto-generated markers.")
+			info("  Run `gofastr agents init --force` to overwrite, or fix the markers manually.")
+			os.Exit(1)
+		}
+		if changed {
+			if err := os.WriteFile(agentsPath, refreshed, 0o644); err != nil {
+				fail("Failed to write AGENTS.md: %v", err)
+				os.Exit(1)
+			}
+			info("  ✓ AGENTS.md synced (auto section updated, your changes preserved)")
+		} else {
+			info("  ✓ AGENTS.md already up to date")
+		}
+	}
+
+	// 4. CLAUDE.md — detect user modifications.
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	existingClaude, err := os.ReadFile(claudePath)
+	if err != nil {
+		// Doesn't exist yet — write fresh.
+		if err := os.WriteFile(claudePath, claudeMDContent(), 0o644); err != nil {
+			fail("Failed to write CLAUDE.md: %v", err)
+			os.Exit(1)
+		}
+		info("  ✓ CLAUDE.md created")
+	} else {
+		generated := claudeMDContent()
+		if bytes.Equal(normalizeMD(existingClaude), normalizeMD(generated)) {
+			// Unmodified — safe to overwrite.
+			if err := os.WriteFile(claudePath, generated, 0o644); err != nil {
+				fail("Failed to write CLAUDE.md: %v", err)
+				os.Exit(1)
+			}
+			info("  ✓ CLAUDE.md refreshed (unchanged from generated)")
+		} else if force {
+			if err := os.WriteFile(claudePath, generated, 0o644); err != nil {
+				fail("Failed to write CLAUDE.md: %v", err)
+				os.Exit(1)
+			}
+			warn("  ⚠ CLAUDE.md overwritten (--force) — your customizations were replaced")
+		} else {
+			warn("  ⚠ CLAUDE.md has been modified — not overwriting")
+			info("     To overwrite: gofastr init --reinit --force")
+			info("     To keep your version: no action needed")
+		}
+	}
+
+	fmt.Println()
+	success("Reinit complete. All AI onboarding files refreshed.")
 }

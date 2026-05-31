@@ -211,3 +211,161 @@ func TestEvalNewUserPlansSiteNoEntity(t *testing.T) {
 		}
 	})
 }
+
+
+func TestReinitRefreshesOnboarding(t *testing.T) {
+	bin := buildGofastrBin(t)
+	work := t.TempDir()
+
+	// Scaffold fresh
+	initCmd := exec.Command(bin, "init", "reinitapp", "--module=example.com/reinitapp")
+	initCmd.Dir = work
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+	project := filepath.Join(work, "reinitapp")
+
+	// Reinit on clean project — should succeed silently
+	reinitCmd := exec.Command(bin, "init", ".", "--reinit")
+	reinitCmd.Dir = project
+	reinitOut, err := reinitCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gofastr init --reinit (clean): %v\n%s", err, reinitOut)
+	}
+	out := string(reinitOut)
+	if !strings.Contains(out, "agents/ detail files refreshed") {
+		t.Error("reinit should mention agents/ refresh")
+	}
+	if !strings.Contains(out, "gofastr-host/SKILL.md refreshed") {
+		t.Error("reinit should mention skill refresh")
+	}
+
+	// Verify files still exist
+	for _, f := range []string{"CLAUDE.md", "AGENTS.md", ".claude/skills/gofastr-host/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(project, f)); err != nil {
+			t.Errorf("missing %q after reinit: %v", f, err)
+		}
+	}
+}
+
+func TestReinitPreservesModifiedClaudeMD(t *testing.T) {
+	bin := buildGofastrBin(t)
+	work := t.TempDir()
+
+	// Scaffold
+	initCmd := exec.Command(bin, "init", "modapp", "--module=example.com/modapp")
+	initCmd.Dir = work
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+	project := filepath.Join(work, "modapp")
+
+	// Modify CLAUDE.md
+	claudePath := filepath.Join(project, "CLAUDE.md")
+	original, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modified := append(original, []byte("\n## Custom\nMy custom content.\n")...)
+	if err := os.WriteFile(claudePath, modified, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reinit without --force — should NOT overwrite
+	reinitCmd := exec.Command(bin, "init", ".", "--reinit")
+	reinitCmd.Dir = project
+	out, err := reinitCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("reinit failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "modified") {
+		t.Errorf("expected warning about modified CLAUDE.md, got:\n%s", out)
+	}
+
+	// Verify CLAUDE.md still has custom content
+	afterReinit, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(afterReinit), "My custom content") {
+		t.Error("CLAUDE.md was overwritten despite modifications")
+	}
+}
+
+func TestReinitForceOverwritesModifiedClaudeMD(t *testing.T) {
+	bin := buildGofastrBin(t)
+	work := t.TempDir()
+
+	// Scaffold
+	initCmd := exec.Command(bin, "init", "forceapp", "--module=example.com/forceapp")
+	initCmd.Dir = work
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+	project := filepath.Join(work, "forceapp")
+
+	// Modify CLAUDE.md
+	claudePath := filepath.Join(project, "CLAUDE.md")
+	if err := os.WriteFile(claudePath, []byte("# My custom CLAUDE.md\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reinit WITH --force — should overwrite
+	reinitCmd := exec.Command(bin, "init", ".", "--reinit", "--force")
+	reinitCmd.Dir = project
+	out, err := reinitCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("reinit --force failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "overwritten") {
+		t.Errorf("expected --force overwrite message, got:\n%s", out)
+	}
+
+	// Verify CLAUDE.md was replaced with generated version
+	afterForce, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(afterForce), "My custom CLAUDE.md") {
+		t.Error("--force did not overwrite CLAUDE.md")
+	}
+	if !strings.Contains(string(afterForce), "gofastr docs") {
+		t.Error("--force overwrote but content doesn't match generated template")
+	}
+}
+
+func TestReinitDoesNotTouchGoFiles(t *testing.T) {
+	bin := buildGofastrBin(t)
+	work := t.TempDir()
+
+	// Scaffold
+	initCmd := exec.Command(bin, "init", "gotest", "--module=example.com/gotest")
+	initCmd.Dir = work
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr init: %v\n%s", err, out)
+	}
+	project := filepath.Join(work, "gotest")
+
+	// Read main.go mtime
+	mainGo := filepath.Join(project, "main.go")
+	stat1, err := os.Stat(mainGo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reinit
+	reinitCmd := exec.Command(bin, "init", ".", "--reinit")
+	reinitCmd.Dir = project
+	if out, err := reinitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("reinit failed: %v\n%s", err, out)
+	}
+
+	// main.go should not have been touched
+	stat2, err := os.Stat(mainGo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stat2.ModTime().Equal(stat1.ModTime()) {
+		t.Error("reinit should not touch main.go")
+	}
+}
