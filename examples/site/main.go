@@ -127,6 +127,7 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	// Drawer widget for the "RPC → Open Widget" demo.
+	// Hidden by default — only appears when data-fui-rpc-open triggers it.
 	drawerDef := preset.Drawer("interactive-result-drawer").
 		Slot("body", app.NewStaticComponent(
 			render.Tag("p", nil,
@@ -134,6 +135,7 @@ func setupServer() *framework.App {
 			),
 		)).
 		Build()
+	drawerDef.Hidden = true
 	widget.Mount(fwApp.Router(), &drawerDef)
 
 	return fwApp
