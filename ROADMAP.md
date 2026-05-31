@@ -323,10 +323,10 @@ numbers and `dist/bench/current.txt` for the bench output.
 **P0 fixes applied:**
 
 - **7a.** `SampledLogging(sampleN, slowThreshold)` in `core/middleware/logging.go` — logs 1-in-N requests plus all errors/slow; `DiscardLogging()` for benchmarks. **Verified (2026-05-22)** — with/without ratio collapsed from 200× to ~18× (target ≤10×).
-- **7b.** `parsePagination` now raises cap to `streamListThreshold` when `?stream=true`. **Needs rerun (Postgres)** — sqlite in-memory is too fast to expose the gap; needs Postgres to verify 4× streaming win.
+- **7b.** `parsePagination` now raises cap to `streamListThreshold` when `?stream=true`. **Verified (Postgres, 2026-05-31)** — current Postgres run shows buffered-paginated-5000 ≈41.1 ms vs streaming-single-5000 ≈10.8 ms, a 3.8× win.
 - **7c/7l.** `framework/crud/pool.go` — `sync.Pool` for `[]map[string]any` row maps and `[]any` scan pointer slices; `scanRowsPooled()` uses pooled maps. **Needs rerun** — allocs 3187 → 2487 (−22%), but time gap GoFastr vs net/http is still +105% (target was −60%).
 - **7d.** JSON case conversion: `ToCamel`/`ToSnake` cached via `sync.RWMutex`; `PrecomputeMapping` + `ApplyMapping` for zero-alloc row conversion. **Verified (2026-05-22)** — 26 allocs → 4 allocs, 19 µs → 408 ns. Single-word lookups are 6 ns / 0 allocs.
-- **7e/7f.** `ReadLiveColumnsBulk` and `TableExistsBulk` in `framework/migrate/bulk.go` — single query for N tables. **Needs rerun (Postgres)** — Postgres-specific win, can't be measured on sqlite.
+- **7e/7f.** `ReadLiveColumnsBulk` and `TableExistsBulk` in `framework/migrate/bulk.go` — single query for N tables. **Verified (Postgres, 2026-05-31)** — `DiffSchema/postgres/N=50` is ≈2.73 ms and idempotent `AutoMigrate/postgres/N=50` is ≈0.75 ms.
 
 **P1 fixes applied:**
 
@@ -335,15 +335,17 @@ numbers and `dist/bench/current.txt` for the bench output.
 
 **P2 fixes applied:**
 
-- **7i.** `core/stream/sse_broker.go` — `SSEBroker` with per-subscriber configurable buffer (`?buffer=128` or `X-SSE-Buffer` header), backpressure with oldest-drop. **Needs rerun (bench stale)** — `BenchmarkSSE_BackpressureDropRate` still constructs a raw 32-cap `chan Event` and measures the OLD path. Implementation looks fixed but the bench must be rewritten to drive `SSEBroker`.
-- **7j/7k.** `framework/uihost/builder_pool.go` — pooled `strings.Builder` adopted at `injectWidgetSSR` and stylesheet link builder callsites. **Needs rerun** — `BenchmarkT9_UIHostPageRender` is now 49 µs (was 7.6 µs baseline) but response body grew from 580 → 2236 bytes; re-baseline against current page shape. `BenchmarkT9_IslandRPC_Concurrency` p99 at par=64 is still ≈60 ms (target < 10 ms).
+- **7i.** `core/stream/sse_broker.go` — `SSEBroker` with per-subscriber configurable buffer (`?buffer=128` or `X-SSE-Buffer` header), backpressure with oldest-drop. **Verified semantics (2026-05-31)** — slow subscribers use bounded, non-blocking delivery and retain latest events; high drop rate under intentionally slow clients remains expected.
+- **7j/7k.** `framework/uihost/builder_pool.go` plus `core/render` builder sizing — pooled `strings.Builder` adopted at UI host callsites, and `render.Tag`/`Join` now pre-size builders with a one-attribute fast path. **7j needs work / 7k verified** — UI host render still needs current-shape comparison, but `BenchmarkT9_IslandRPC_Concurrency/workers=64` p99 is ≈4.32 ms with 94 allocs/op.
 
 **Doc-only:**
 
 - **7m/7n.** SQLite concurrency callout + pure-Go `modernc.org/sqlite` alternative documented in `framework/docs/content/migrations.md`. **Verified (2026-05-22)** — doc-only items.
 
-**§7 verification status (2026-05-22):** 5 verified, 5 needs-rerun (3 of
-those require Postgres). See `framework/docs/content/perf-results.md` for the full table.
+**§7 verification status:** keep `framework/docs/content/perf-results.md`
+as the source of truth. Items are only verified when the named benchmark
+measures the current implementation path; Postgres-specific claims require
+a Postgres run and now have 2026-05-31 evidence where marked verified.
 
 A prioritized list of improvements the benchmark suite has surfaced. Every
 item names the benchmark that exposed it so the win can be verified after a
@@ -369,14 +371,13 @@ reach that workload because `framework/crud.go:parsePagination` caps
 `?limit=` at 100 — `streamListThreshold = 1000` is unreachable. Raise the
 cap (configurable per-entity) or add `?stream=true` that bypasses it.
 
-**7c. FilteredList is +127% slower vs hand-rolled `net/http`.**
-`BenchmarkT7_FilteredList_GoFastr/sqlite` is 161µs / 3187 allocs vs 71µs /
-1881 allocs hand-rolled. Same SQL, same JSON output. The framework's list
-handler does include parsing, filter parsing, soft-delete check, tenant
-scope, projection, JSON casing — all on every request. Precompute per-
-entity at registration time; skip parsers for entities that haven't opted
-into the feature; pool `[]map[string]any` via `sync.Pool`. Target: halve
-the gap (-127% → -60%).
+**7c. FilteredList is still >2× slower vs hand-rolled `net/http`.** — **NEEDS-WORK (partial alloc win, 2026-05-31).**
+`BenchmarkT7_FilteredList_GoFastr/sqlite3` is now 140µs / 2432 allocs vs
+62µs / 1881 allocs hand-rolled. Same SQL, same JSON output. Cached visible
+fields / JSON keys and pooled row maps cut allocations from the older 3187
+witness to 2432, but the time gap is still +127%, not the ≤60% target.
+Next pass should skip include/filter/projection parsing on entities and
+requests that have not opted into those features, then re-measure.
 
 **7d. JSON case conversion: 26 allocations per row, twice on write paths.**
 `BenchmarkJSONCasing/snake→camel` is 19µs / 1048 B / 26 allocs for a
@@ -387,15 +388,15 @@ drop snake→camel below 10 allocs.
 
 ### P1 — solid wins, contained scope
 
-**7e. SchemaDiff at 59ms for 50 entities on Postgres.**
+**7e. SchemaDiff at 59ms for 50 entities on Postgres.** — **Verified (2026-05-31).**
 `BenchmarkSchemaDiff/postgres/N=50` does N round-trips to
 `information_schema.columns`. One bulk `WHERE table_name IN (...)` query
-would do it. Target: 5-10× faster.
+now backs `DiffSchema`; latest Postgres run is ≈2.73ms at N=50.
 
-**7f. AutoMigrate idempotent re-run at 7.5ms for 50 entities (Postgres).**
+**7f. AutoMigrate idempotent re-run at 7.5ms for 50 entities (Postgres).** — **Verified (2026-05-31).**
 Same root cause as 7e — one existence check per entity. Single bulk
-`pg_tables` query before the per-entity loop. Target: sub-1ms regardless
-of entity count.
+`pg_tables` query before the per-entity loop now backs idempotent reruns;
+latest Postgres run is ≈0.75ms at N=50.
 
 **7g. CronTick allocates 1471 times per minute for 1000 jobs.**
 `BenchmarkCronTick/N=1000` reports 175µs / 213KB / 1471 allocs per tick.
@@ -413,33 +414,37 @@ string in a bounded `sync.Map` LRU. Target: ~50ns / 0 allocs on cache hit.
 
 ### P2 — broader scope, real benefit
 
-**7i. SSE backpressure drops half the burst.**
-`BenchmarkSSE_BackpressureDropRate`: drop_rate **0.99** at 5000 events
-through a 32-buffer + slow consumer. `BenchmarkT9_SSEEventStream`:
-delivery_ratio **0.48** at 500 events end-to-end. The 32-event buffer is
-hardcoded. Options: per-subscriber buffer via query param/header
-(`?buffer=128`); per-entity default via `EntityConfig.EventBuffer int`;
-`?slow=block` mode for clients willing to trade latency for delivery.
+**7i. SSE backpressure drops under slow default subscribers.** — **Semantics verified (2026-05-31).**
+`BenchmarkSSE_BackpressureDropRate`: drop_rate **0.9740** at 5000 events
+through `core/stream.SSEBroker` with `?buffer=128` and a slow consumer.
+`BenchmarkT9_SSEEventStream`: delivery_ratio **0.48** at 500 events
+end-to-end. Per-subscriber buffer sizing is available via query param/header
+(`?buffer=128` / `X-SSE-Buffer`). Current default contract is bounded,
+non-blocking delivery with oldest-drop and latest-event retention; high
+drop rate is expected under slow subscribers.
+`?slow=block` / `X-SSE-Slow: block` is now implemented for stronger
+delivery clients that can tolerate publisher backpressure.
 
-**7j. UI host page render is ~15× a bare JSON encode.**
-`BenchmarkT9_UIHostPageRender` is 7.6µs / 580 bytes for a trivial page
-vs 500ns for `BenchmarkT7_JSON_GoFastr`. The factor is the HTML tree
-build + runtime script injection. Pool the `strings.Builder` that backs
-`render.HTML`; cache the runtime script tag string; pre-flatten the
-layout shell so only the screen render varies per request. Target: halve
-render time for trivial pages.
+**7j. UI host page render is still heavier than it should be.** — **PARTIAL (2026-05-31).**
+`BenchmarkT9_UIHostPageRender` is now 35µs / 49KB / 345 allocs for `/`
+and 52µs / 61KB / 457 allocs for `/about`. Runtime injection now batches
+head/body additions and avoids repeated whole-page replacements, cutting
+the previous current-shape witness roughly in half. Remaining cost is the
+HTML tree build plus runtime/script assembly. Next pass: pre-flatten the
+layout shell so only the screen render varies per request.
 
-**7k. Island RPC tail latency at parallelism=64.**
-`BenchmarkT9_IslandRPC_Concurrency/parallelism=64`: p50 13µs, p99 **65ms**.
-Wide gap is contention through the recorder + render allocations. Pool
-the rendered output buffer at handler entry; pre-render static page
-chrome once at startup. Target: p99 at par=64 should drop below 10ms.
+**7k. Island RPC tail latency at workers=64.** — **Verified (2026-05-31).**
+`BenchmarkT9_IslandRPC_Concurrency/workers=64`: p50 ≈11.8µs, p99
+≈4.32ms. The witness now uses fixed worker counts instead of
+`testing.B.SetParallelism`, and `core/render` builder sizing cuts the
+modeled island response to 94 allocs/op. Target p99 <10ms is met.
 
 **7l. Filtered list overhead allocations.**
-Re-stated from 7c: 3187 allocs vs 1881 hand-rolled. Pool the response
-writer's byte buffer; switch `[]map[string]any` to a typed result struct
-when the entity has a generated model (the `framework/typed_query.go`
-path already supports this — auto-detect and route to it).
+Re-stated from 7c: 2432 allocs vs 1881 hand-rolled after cached visible
+fields / JSON keys and pooled row maps. Pool the response writer's byte
+buffer; switch `[]map[string]any` to a typed result struct when the entity
+has a generated model (the `framework/typed_query.go` path already supports
+this — auto-detect and route to it).
 
 ### Doc-only fixes (no code change)
 
@@ -942,6 +947,3 @@ migration story.
 
 **No further work** until prioritised — the screen-loader workaround
 covers the case in the meantime.
-
-
-

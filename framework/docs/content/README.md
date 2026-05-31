@@ -6,8 +6,9 @@ ending with a "common mistakes" callout.
 
 ## Architecture & conventions
 
-- [Project architecture review](project-architecture-review.md) —
-  living risk + gap survey. Updated only on fresh review passes.
+- [Current risk register](project-architecture-review.md) —
+  revalidated architecture risks and maintenance rules; stale findings
+  are removed instead of preserved.
 - [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — UI/runtime
   contract. **Mandatory reading** before any UI or runtime change.
 - [`ROADMAP.md`](../ROADMAP.md) — forward-looking work (proposals,

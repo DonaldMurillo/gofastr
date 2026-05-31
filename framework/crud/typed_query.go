@@ -65,7 +65,7 @@ func (q *TypedQuery[T]) Include(rels ...string) *TypedQuery[T] {
 // query's current state. Re-buildable: Find/First/Count call it
 // independently so each pass gets its own renumbered placeholders.
 func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
-	cols := q.handler.VisibleFields()
+	cols := q.handler.visibleFields()
 	qb := query.Select(cols...).From(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
 		c.Apply(qb)
@@ -95,7 +95,7 @@ func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	cols := q.handler.VisibleFields()
+	cols := q.handler.visibleFields()
 	raw, err := scanRows(rows, cols, q.handler.convertKey)
 	if err != nil {
 		return nil, err

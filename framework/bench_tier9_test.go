@@ -316,9 +316,10 @@ func BenchmarkT9_IslandRPC(b *testing.B) {
 	}
 }
 
-// BenchmarkT9_IslandRPC_Concurrency drives the same handler in parallel
-// to measure how the island path holds up under load. Mirrors what
-// happens when many users sort/filter simultaneously.
+// BenchmarkT9_IslandRPC_Concurrency drives the same handler with fixed
+// worker counts to measure how the island path holds up under load.
+// Fixed workers keep the witness honest: "workers=64" means 64 goroutines,
+// not testing.B's SetParallelism(64) multiplier over GOMAXPROCS.
 func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 	rtr := newBenchRouter()
 	rtr.GetFunc("/islands/posts/state", func(w http.ResponseWriter, r *http.Request) {
@@ -329,27 +330,42 @@ func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 		render.RespondHTML(w, out)
 	})
 
-	for _, par := range []int{1, 8, 64} {
-		par := par
-		b.Run(fmt.Sprintf("parallelism=%d", par), func(b *testing.B) {
-			rec := newLatencyRecorder(b.N + par*8)
-			b.SetParallelism(par)
+	for _, workers := range []int{1, 8, 64} {
+		workers := workers
+		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
+			rec := newLatencyRecorder(b.N)
+			var next atomic.Int64
+			var wg sync.WaitGroup
+			start := make(chan struct{})
 			b.ReportAllocs()
 			b.ResetTimer()
-			b.RunParallel(func(pb *testing.PB) {
+			for i := 0; i < workers; i++ {
+				wg.Add(1)
 				req := httptest.NewRequest(http.MethodGet,
 					"/islands/posts/state?p=1", nil)
-				for pb.Next() {
-					start := time.Now()
-					w := httptest.NewRecorder()
-					rtr.ServeHTTP(w, req)
-					rec.record(time.Since(start))
-					if w.Code != http.StatusOK {
-						b.Fatalf("status %d", w.Code)
+				go func() {
+					defer wg.Done()
+					<-start
+					for {
+						idx := next.Add(1) - 1
+						if int(idx) >= b.N {
+							return
+						}
+						begin := time.Now()
+						w := httptest.NewRecorder()
+						rtr.ServeHTTP(w, req)
+						rec.record(time.Since(begin))
+						if w.Code != http.StatusOK {
+							b.Errorf("status %d", w.Code)
+							return
+						}
 					}
-				}
-			})
+				}()
+			}
+			close(start)
+			wg.Wait()
 			b.StopTimer()
+			b.ReportMetric(float64(workers), "workers")
 			rec.report(b)
 		})
 	}

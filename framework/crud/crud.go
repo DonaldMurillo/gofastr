@@ -63,17 +63,24 @@ type CrudHandler struct {
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
 	Events     *event.EventBus    // optional; receives entity.created/updated/deleted on commit
-	Registry   entity.Registry          // optional; required for nested ?include=author.profile resolution
+	Registry   entity.Registry    // optional; required for nested ?include=author.profile resolution
+
+	visibleFieldsCache []string
+	visibleJSONKeys    []string
+	visibleFieldSig    uint64
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
 func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
-	return &CrudHandler{Entity: ent, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
+	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
+	ch.refreshFieldCache()
+	return ch
 }
 
 // WithJSONCase sets the JSON casing strategy for the handler.
 func (ch *CrudHandler) WithJSONCase(c JSONCase) *CrudHandler {
 	ch.JSONCase = c
+	ch.refreshFieldCache()
 	return ch
 }
 
@@ -193,13 +200,80 @@ func (ch *CrudHandler) entityFields() []string {
 
 // VisibleFields returns field names that are not Hidden.
 func (ch *CrudHandler) VisibleFields() []string {
-	var names []string
+	return append([]string(nil), ch.visibleFields()...)
+}
+
+func (ch *CrudHandler) visibleFields() []string {
+	sig := ch.fieldCacheSignature()
+	if len(ch.visibleFieldsCache) == 0 || ch.visibleFieldSig != sig {
+		ch.refreshFieldCache()
+	}
+	return ch.visibleFieldsCache
+}
+
+func (ch *CrudHandler) refreshFieldCache() {
+	if ch.Entity == nil {
+		ch.visibleFieldsCache = nil
+		ch.visibleJSONKeys = nil
+		ch.visibleFieldSig = 0
+		return
+	}
+	names := make([]string, 0, len(ch.Entity.GetFields()))
 	for _, f := range ch.Entity.GetFields() {
 		if !f.Hidden {
 			names = append(names, f.Name)
 		}
 	}
-	return names
+	ch.visibleFieldsCache = names
+	ch.visibleJSONKeys = convertedKeys(names, ch.convertKey)
+	ch.visibleFieldSig = ch.fieldCacheSignature()
+}
+
+func (ch *CrudHandler) jsonKeysFor(cols []string) []string {
+	if ch.visibleFieldSig != ch.fieldCacheSignature() {
+		ch.refreshFieldCache()
+	}
+	if len(cols) == len(ch.visibleFieldsCache) {
+		match := true
+		for i := range cols {
+			if cols[i] != ch.visibleFieldsCache[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return ch.visibleJSONKeys
+		}
+	}
+	return convertedKeys(cols, ch.convertKey)
+}
+
+func (ch *CrudHandler) fieldCacheSignature() uint64 {
+	if ch.Entity == nil {
+		return 0
+	}
+	const (
+		offset64 = 1469598103934665603
+		prime64  = 1099511628211
+	)
+	h := uint64(offset64)
+	for i := 0; i < len(ch.JSONCase); i++ {
+		h ^= uint64(ch.JSONCase[i])
+		h *= prime64
+	}
+	for _, f := range ch.Entity.GetFields() {
+		for i := 0; i < len(f.Name); i++ {
+			h ^= uint64(f.Name[i])
+			h *= prime64
+		}
+		if f.Hidden {
+			h ^= 1
+		} else {
+			h ^= 2
+		}
+		h *= prime64
+	}
+	return h
 }
 
 // convertKey applies the configured JSON casing to a DB column name.
@@ -311,6 +385,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		var total int
 		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		filter.ApplyToCountQuery(countQb, filters)
@@ -325,7 +400,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			countQb.Where(c.SQL, c.Args...)
 		}
 		countSQL, countArgs := countQb.Build()
-		var total int
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
 			log.Printf("crud: list count failed: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal server error")
@@ -361,7 +435,21 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		results, err := scanRows(rows, cols, ch.convertKey)
+		keys := ch.jsonKeysFor(cols)
+		var (
+			results      []map[string]any
+			pooledRows   *[]map[string]any
+			pooledEncode bool
+		)
+		if len(includes) == 0 && ch.Hooks == nil {
+			pooledRows, err = scanRowsPooledWithKeys(rows, cols, keys)
+			if err == nil {
+				results = *pooledRows
+				pooledEncode = true
+			}
+		} else {
+			results, err = scanRowsWithKeys(rows, cols, keys)
+		}
 		if err != nil {
 			log.Printf("crud: list scan failed: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal server error")
@@ -400,6 +488,9 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+		if pooledEncode {
+			returnRowSlice(pooledRows)
+		}
 	}
 }
 
@@ -740,6 +831,10 @@ func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.
 // scanRowsPooled is the pool-backed version in pool.go.
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
+	return scanRowsWithKeys(rows, cols, convertedKeys(cols, keyFunc))
+}
+
+func scanRowsWithKeys(rows *sql.Rows, cols, keys []string) ([]map[string]any, error) {
 	var results []map[string]any
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -751,8 +846,8 @@ func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map
 			return nil, err
 		}
 		row := make(map[string]any, len(cols))
-		for i, col := range cols {
-			row[keyFunc(col)] = convertValue(values[i])
+		for i := range cols {
+			row[keys[i]] = convertValue(values[i])
 		}
 		results = append(results, row)
 	}

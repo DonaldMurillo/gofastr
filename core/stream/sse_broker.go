@@ -10,8 +10,10 @@ import (
 )
 
 // SSEBroker fans out SSE events to multiple HTTP subscribers.
-// Each subscriber gets a buffered channel; when the buffer is full,
-// old events are dropped (backpressure).
+// Each subscriber gets a buffered channel. Default subscribers drop the
+// oldest queued event when the buffer is full; clients that opt into
+// ?slow=block or X-SSE-Slow: block instead backpressure Publish until
+// buffer space is available.
 //
 // Buffer size is configurable per-subscriber via query param (?buffer=128)
 // or header (X-SSE-Buffer), with a default fallback bounded by MaxBuf.
@@ -25,9 +27,10 @@ type SSEBroker struct {
 }
 
 type subscriber struct {
-	ch     chan sseEvent
-	filter string // optional event name filter
-	done   chan struct{}
+	ch       chan sseEvent
+	filter   string // optional event name filter
+	done     chan struct{}
+	slowMode sseSlowMode
 }
 
 type sseEvent struct {
@@ -35,6 +38,13 @@ type sseEvent struct {
 	Data string
 	ID   string
 }
+
+type sseSlowMode uint8
+
+const (
+	sseSlowDropOldest sseSlowMode = iota
+	sseSlowBlock
+)
 
 // SSEBrokerConfig configures the broker.
 type SSEBrokerConfig struct {
@@ -112,9 +122,10 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	filter := r.URL.Query().Get("event")
 
 	sub := &subscriber{
-		ch:     make(chan sseEvent, bufSize),
-		filter: filter,
-		done:   make(chan struct{}),
+		ch:       make(chan sseEvent, bufSize),
+		filter:   filter,
+		done:     make(chan struct{}),
+		slowMode: parseSlowMode(r),
 	}
 
 	// Register, evicting any prior subscriber with the same ID so it does
@@ -179,11 +190,12 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Publish sends an event to all subscribers. If a subscriber's buffer
-// is full, the oldest event is dropped (backpressure with delivery ratio
-// tracking via the broker's metrics). Subscribers are snapshotted under
-// the read lock; sends happen outside the lock to keep fan-out from
-// holding the broker lock during slow per-channel writes.
+// Publish sends an event to all subscribers. If a default subscriber's
+// buffer is full, the oldest event is dropped. A subscriber that opted into
+// slow=block backpressures this call until buffer space opens or that
+// subscriber is closed. Subscribers are snapshotted under the read lock;
+// sends happen outside the lock to keep fan-out from holding the broker
+// lock during slow per-channel writes.
 func (b *SSEBroker) Publish(name, data string, id ...string) {
 	var eventID string
 	if len(id) > 0 {
@@ -200,6 +212,13 @@ func (b *SSEBroker) Publish(name, data string, id ...string) {
 	b.mu.RUnlock()
 
 	for _, sub := range subs {
+		if sub.slowMode == sseSlowBlock {
+			select {
+			case sub.ch <- evt:
+			case <-sub.done:
+			}
+			continue
+		}
 		select {
 		case sub.ch <- evt:
 		default:
@@ -215,6 +234,13 @@ func (b *SSEBroker) Publish(name, data string, id ...string) {
 			}
 		}
 	}
+}
+
+func parseSlowMode(r *http.Request) sseSlowMode {
+	if r.URL.Query().Get("slow") == "block" || r.Header.Get("X-SSE-Slow") == "block" {
+		return sseSlowBlock
+	}
+	return sseSlowDropOldest
 }
 
 // SubscriberCount returns the number of active subscribers.

@@ -21,6 +21,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/email"
 	_ "github.com/DonaldMurillo/gofastr/battery/log"
 	_ "github.com/DonaldMurillo/gofastr/battery/notify"
+	_ "github.com/DonaldMurillo/gofastr/battery/print"
 	_ "github.com/DonaldMurillo/gofastr/battery/queue"
 	_ "github.com/DonaldMurillo/gofastr/battery/search"
 	_ "github.com/DonaldMurillo/gofastr/battery/storage"

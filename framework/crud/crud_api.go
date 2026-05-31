@@ -118,7 +118,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
-	cols := ch.VisibleFields()
+	cols := ch.visibleFields()
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
 		Where(ch.PrimaryKey+" = $1", id)
@@ -168,7 +168,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
-	cols := ch.VisibleFields()
+	cols := ch.visibleFields()
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, opts.Filters)
 	filter.ApplySortToQuery(qb, opts.Sorts)

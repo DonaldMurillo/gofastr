@@ -81,6 +81,7 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 		"smoke/agents/framework.md",
 		"smoke/agents/battery-admin.md",
 		"smoke/agents/battery-log.md",
+		"smoke/agents/battery-print.md",
 		"smoke/.claude/skills/gofastr-host/SKILL.md",
 	} {
 		path := filepath.Join(work, rel)

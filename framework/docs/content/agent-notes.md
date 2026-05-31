@@ -1,5 +1,33 @@
 # Agent Notes
 
+## 2026-05-31 - reliability follow-up: perf, repolint, Postgres evidence, SSE block
+
+- **Scope:** `framework/crud`, `framework/uihost`, `core/stream`, `cmd/repolint`, benchmark docs, `scripts/perf-postgres-evidence.sh`.
+- **Symptom:** The next reliability pass needed four concrete follow-ups: filtered-list/UI-host perf witnesses, repo-owned enforcement of the no-external-lint-tools policy, a CI-friendly Postgres benchmark evidence command, and an explicit stronger-delivery SSE mode for clients that do not want oldest-drop behavior.
+- **Change:** CRUD list paths now reuse cached visible-field/JSON-key slices internally and pool row maps on the no-include/no-hook path while preserving `VisibleFields()` as a copy-returning public API. UI host chrome injection batches head/body insertions to avoid repeated whole-page replacements. `repolint` now flags external lint dependencies in `go.mod`, `make bench-pg-evidence` records Postgres-tagged benchmark output, and `core/stream.SSEBroker` supports `?slow=block` / `X-SSE-Slow: block` publisher backpressure.
+- **Next time:** filtered-list allocation work helped but did not meet the latency target. Keep it marked `NEEDS-WORK` until parser short-circuiting or generated typed rows prove the time gap has closed; do not turn partial benchmark wins into roadmap closure just because the diff looks tidy.
+
+## 2026-05-31 - perf and scaffold witnesses
+
+- **Scope:** `core/render`, `framework/migrate`, `framework/bench_tier9_test.go`, `core/stream/sse_broker_test.go`, `cmd/gofastr` scaffold tests.
+- **Symptom:** Island RPC p99 was reported from `testing.B.SetParallelism(64)`, which overstates "64 concurrent users"; Postgres bulk helpers existed but were not wired into `DiffSchema` or idempotent `AutoMigrate`; several scaffold commands still had helper-level coverage instead of CLI build-through coverage.
+- **Change:** Island RPC benchmark now uses fixed worker counts, `render.Tag`/`Join` pre-size builders and skip attr sorting for single attrs, `DiffSchema` uses `ReadLiveColumnsBulk`, Postgres `AutoMigrate` reruns use `TableExistsBulk`, SSE slow-subscriber semantics are pinned as oldest-drop/latest-retained, and `generate --config`, `theme init`, and `new` have CLI E2E build guards.
+- **Next time:** when a perf helper exists, confirm the public path actually calls it before marking the roadmap item verified; when benchmark names imply concurrency, make the worker count literal.
+
+## 2026-05-31 - repo-owned lint policy
+
+- **Scope:** `Makefile`, `cmd/repolint`.
+- **Symptom:** `make lint` depended on `golangci-lint`, which violates the no-external-lint-tools policy and made the lint target fail when that binary was not installed.
+- **Change:** lint is now built from Go-team tools plus a repo-owned `cmd/repolint` checker. Keep new lint rules low-noise and first-party; do not add external lint binaries unless the dependency policy changes.
+- **Next time:** add narrow repolint rules with tests when a recurring repo hygiene issue appears, then wire them through `make lint` instead of adopting a broad third-party lint bundle.
+
+## 2026-05-31 - reliability cleanup rules
+
+- **Scope:** `cmd/gofastr` generation commands, `framework/docs/content/project-architecture-review.md`, performance benchmark witnesses, battery agent inventory.
+- **Symptom:** old review docs preserved fixed findings, `battery/print` had `agents.go`/`agents.md` but was missing from the CLI blank-import inventory, and the SSE backpressure benchmark still measured a legacy raw channel instead of `core/stream.SSEBroker`.
+- **Change:** architecture review is now a current risk register, inventory tests remain directory-driven, perf docs must say when a witness is stale/Postgres-needed/needs-work, and generated/scaffolded CLI paths should compile or run generated output through temp-module E2E tests.
+- **Next time:** when a generated, documented, or benchmarked surface changes, update the executable witness and remove stale review findings in the same commit.
+
 ## 2026-05-26 - runtime JS minifier + copy module carve
 
 - **Scope:** new `core-ui/runtime/minify` package (token-aware JS minifier, pure Go, zero deps), `core-ui/runtime/runtime.go` wires it into `RuntimeJS()` + `Module()` via `sync.Once`, new `core-ui/runtime/src/copy.js` (carved out of `runtime.js`), `core-ui/runtime/preload.go` adds copy marker, `framework/docs/content/runtime-minification.md`, ROADMAP §8 status update.

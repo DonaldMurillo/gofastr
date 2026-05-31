@@ -109,6 +109,7 @@ func isSafeAttrKey(key string) bool {
 func Tag(name string, attrs map[string]string, children ...HTML) HTML {
 	safeName := safeTagName(name)
 	var b strings.Builder
+	b.Grow(estimateTagSize(safeName, attrs, children))
 	b.WriteByte('<')
 	b.WriteString(safeName)
 	writeAttrs(&b, attrs)
@@ -130,6 +131,7 @@ func Tag(name string, attrs map[string]string, children ...HTML) HTML {
 func VoidTag(name string, attrs map[string]string) HTML {
 	safeName := safeTagName(name)
 	var b strings.Builder
+	b.Grow(estimateVoidTagSize(safeName, attrs))
 	b.WriteByte('<')
 	b.WriteString(safeName)
 	writeAttrs(&b, attrs)
@@ -163,6 +165,11 @@ func safeTagName(name string) string {
 // Join concatenates zero or more HTML fragments into a single HTML value.
 func Join(children ...HTML) HTML {
 	var b strings.Builder
+	total := 0
+	for _, child := range children {
+		total += len(child)
+	}
+	b.Grow(total)
 	for _, child := range children {
 		b.WriteString(string(child))
 	}
@@ -237,6 +244,17 @@ func writeAttrs(b *strings.Builder, attrs map[string]string) {
 	if len(attrs) == 0 {
 		return
 	}
+	if len(attrs) == 1 {
+		for k, v := range attrs {
+			rendered := Attr(k, v)
+			if rendered == "" {
+				return
+			}
+			b.WriteByte(' ')
+			b.WriteString(rendered)
+		}
+		return
+	}
 	keys := make([]string, 0, len(attrs))
 	for k := range attrs {
 		keys = append(keys, k)
@@ -253,4 +271,25 @@ func writeAttrs(b *strings.Builder, attrs map[string]string) {
 		b.WriteByte(' ')
 		b.WriteString(rendered)
 	}
+}
+
+func estimateTagSize(name string, attrs map[string]string, children []HTML) int {
+	total := 2*len(name) + 5 // <name></name>
+	total += estimateAttrsSize(attrs)
+	for _, child := range children {
+		total += len(child)
+	}
+	return total
+}
+
+func estimateVoidTagSize(name string, attrs map[string]string) int {
+	return len(name) + 2 + estimateAttrsSize(attrs) // <name>
+}
+
+func estimateAttrsSize(attrs map[string]string) int {
+	total := 0
+	for k, v := range attrs {
+		total += len(k) + len(v) + 4 // space, =, quotes
+	}
+	return total
 }

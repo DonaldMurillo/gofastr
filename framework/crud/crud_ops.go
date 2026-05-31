@@ -80,7 +80,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		vals = append(vals, tenantID)
 	}
 
-	visFields := ch.VisibleFields()
+	visFields := ch.visibleFields()
 	ib := query.Insert(ch.Entity.GetTable()).
 		Columns(cols...).
 		Values(vals...).
@@ -175,7 +175,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if ch.Entity.Config.SoftDelete {
 		ub.Where("deleted_at IS NULL")
 	}
-	visFields := ch.VisibleFields()
+	visFields := ch.visibleFields()
 	ub.Returning(visFields...)
 
 	sqlStr, args := ub.Build()
@@ -262,7 +262,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 // the row doesn't exist or the SELECT fails — callers treat that as
 // "no snapshot available" rather than aborting the surrounding mutation.
 func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
-	cols := ch.VisibleFields()
+	cols := ch.visibleFields()
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
 		Where(ch.PrimaryKey+" = $1", id)

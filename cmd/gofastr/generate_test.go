@@ -169,6 +169,65 @@ codegen:
 	}
 }
 
+func TestGenerateConfigCLIE2EGeneratedPackagesBuild(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := buildGofastrBin(t)
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/configcli\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+version: 1
+codegen:
+  output: generated
+  generators:
+    - name: go/entities
+      source:
+        type: json_dir
+        path: entities
+      output: entities
+    - name: go/client
+      source:
+        type: json_dir
+        path: entities
+      output: entities/client
+`)
+	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "entities", "posts.json"), `{
+		"name":"posts",
+		"fields":[{"name":"title","type":"string","required":true}],
+		"crud":true
+	}`)
+
+	gen := exec.Command(bin, "generate", "--config=gofastr.codegen.yml")
+	gen.Dir = dir
+	gen.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Fatalf("gofastr generate --config: %v\n%s", err, out)
+	}
+
+	cmd := exec.Command("go", "test", "-mod=mod", "./generated/entities", "./generated/entities/client")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI generated packages did not build: %v\n%s", err, output)
+	}
+}
+
 func TestGenerateProjectConfigPathRunsRelativeToConfigDir(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
