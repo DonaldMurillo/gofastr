@@ -714,12 +714,16 @@ func main() {
 		)
 	}},
 	// ---------- Interactivity ----------
-	{"interactive", "Interactive", "Interactivity", "Declarative RPC + signal + widget chaining without JS.", func() render.HTML {
+	// Each pattern is its own page so the sidebar shows one entry per
+	// behaviour. All share the "Interactivity" category.
+
+	{"rpc-signal", "RPC → Signal", "Interactivity", "Click a button → server returns a value → it appears in a live signal region.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			// 1. OnClick with signal
-			render.Tag("h3", nil, render.Text("RPC → Signal")),
 			render.Tag("p", map[string]string{"class": "doc-head__lede"},
-				render.Text("Click the button → fetch /api/counter → response flows into the signal region below."),
+				render.Text("Add data-fui-rpc and data-fui-rpc-signal to any button. The runtime POSTs to the URL, parses the response, and pushes it into every [data-fui-signal] element matching the name. No JavaScript needed."),
+			),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Try it: click the button and watch the number increment."),
 			),
 			html.Div(html.DivConfig{Class: "demo-row"},
 				render.Tag("button", map[string]string{
@@ -729,29 +733,37 @@ func main() {
 					"class":                "ui-button ui-button--primary",
 				}, render.Text("Count")),
 				render.Tag("span", map[string]string{
-					"data-fui-signal":           "demo-counter",
-					"data-fui-signal-mode":      "text",
-					"data-fui-flash-on-update":  "",
-					"class":                      "demo-signal-out",
+					"data-fui-signal":          "demo-counter",
+					"data-fui-signal-mode":     "text",
+					"data-fui-flash-on-update": "",
+					"class":                     "demo-signal-out",
 				}, render.Text("0")),
 			),
-
-			// 2. OnClick with OpenWidget
-			render.Tag("h3", nil, render.Text("RPC → Open Widget")),
+		)
+	}},
+	{"rpc-open-widget", "RPC → Open Widget", "Interactivity", "Successful POST opens a drawer/modal — declarative side-effect chaining.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
 			render.Tag("p", map[string]string{"class": "doc-head__lede"},
-				render.Text("Click → RPC succeeds → drawer opens with result. No JS."),
+				render.Text("Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. Combine with data-fui-rpc-signal to push server data into the widget body."),
+			),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Try it: click the button and a drawer slides in."),
 			),
 			render.Tag("button", map[string]string{
 				"data-fui-rpc":        "/__site/interactive/open-drawer",
 				"data-fui-rpc-method": "POST",
 				"data-fui-rpc-open":   "interactive-result-drawer",
 				"class":                "ui-button ui-button--secondary",
-			}, render.Text("Submit → Open Drawer")),
-
-			// 3. OnSubmit form with Close + Reset
-			render.Tag("h3", nil, render.Text("Form Submit → Signal + Close + Reset")),
+			}, render.Text("Open Drawer")),
+		)
+	}},
+	{"rpc-form-signal", "Form Submit → Signal", "Interactivity", "Submit a form via fetch and display the result in a signal — no page reload.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
 			render.Tag("p", map[string]string{"class": "doc-head__lede"},
-				render.Text("Form submits via fetch, pushes result to a signal, and can close/reset."),
+				render.Text("Put data-fui-rpc on a <form>. The runtime intercepts the submit, POSTs the fields as JSON, and writes the response into the signal. Add data-fui-rpc-reset to clear the form on success."),
+			),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Try it: type a message and press Send."),
 			),
 			render.Tag("form", map[string]string{
 				"data-fui-rpc":        "/__site/interactive/submit",
@@ -774,11 +786,15 @@ func main() {
 				"data-fui-signal-mode": "html",
 				"class":                 "demo-signal-out",
 			}),
-
-			// 4. SPA Navigate
-			render.Tag("h3", nil, render.Text("RPC → SPA Navigate")),
+		)
+	}},
+	{"rpc-navigate", "RPC → SPA Navigate", "Interactivity", "Successful POST triggers client-side navigation without a full page reload.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
 			render.Tag("p", map[string]string{"class": "doc-head__lede"},
-				render.Text("POST succeeds → SPA navigates to the Button component page. No full reload."),
+				render.Text("Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires a popstate event, triggering the SPA router to swap <main> content."),
+			),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Try it: click the button and watch the URL and page change to the Button component."),
 			),
 			render.Tag("button", map[string]string{
 				"data-fui-rpc":          "/__site/interactive/navigate",

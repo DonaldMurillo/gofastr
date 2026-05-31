@@ -174,7 +174,7 @@ func TestE2EInteractive_RPCSignal(t *testing.T) {
 
 	var signalText string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.Navigate(base+"/components/rpc-signal"),
 		chromedp.WaitVisible(`button[data-fui-rpc="/__site/interactive/counter"]`),
 		// Use JS click instead of chromedp.Click — chromedp's mouse
 		// event dispatch doesn't reliably trigger the runtime's
@@ -201,7 +201,7 @@ func TestE2EInteractive_FormSubmitWithSignal(t *testing.T) {
 
 	var signalHTML string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.Navigate(base+"/components/rpc-form-signal"),
 		chromedp.WaitVisible(`form[data-fui-rpc="/__site/interactive/submit"]`),
 		// Use JS to fill + submit — same reason as RPCSignal test.
 		chromedp.Evaluate(`{
@@ -233,7 +233,7 @@ func TestE2EInteractive_RPCOpenWidget(t *testing.T) {
 
 	var exists bool
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.Navigate(base+"/components/rpc-open-widget"),
 		chromedp.WaitVisible(`button[data-fui-rpc-open="interactive-result-drawer"]`),
 		chromedp.Click(`button[data-fui-rpc-open="interactive-result-drawer"]`),
 		chromedp.Sleep(1*time.Second),
@@ -257,7 +257,7 @@ func TestE2EInteractive_SPANavigate(t *testing.T) {
 
 	var pathname string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/interactive"),
+		chromedp.Navigate(base+"/components/rpc-navigate"),
 		chromedp.WaitVisible(`button[data-fui-rpc-navigate="/components/button"]`),
 		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-navigate="/components/button"]').click()`, nil),
 		chromedp.Sleep(2*time.Second),
