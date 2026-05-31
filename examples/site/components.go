@@ -718,8 +718,8 @@ func main() {
 	// Each pattern is its own page so the sidebar shows one entry per
 	// behaviour. All share the "Interactivity" category.
 
-	{"rpc-signal", "RPC → Signal", "Interactivity",
-		"Click a button → server returns a value → it appears in a live signal region.",
+	{"rpc-signal", "Click to Update", "Interactivity",
+		"Click a button → server returns a value → it appears on screen without reloading.",
 		func() render.HTML {
 			// Live demo button: uses the interactive package.
 			btn := interactive.OnClick(
@@ -761,8 +761,8 @@ func main() {
 			)
 		}},
 
-	{"rpc-open-widget", "RPC → Open Widget", "Interactivity",
-		"Successful POST opens a drawer or modal — side-effect chaining without JS.",
+	{"rpc-open-widget", "Click to Open Popup", "Interactivity",
+		"Click a button → server confirms → a modal pops up. No JavaScript needed.",
 		func() render.HTML {
 			btn := interactive.OnClick(
 				render.Tag("button", map[string]string{"class": "ui-button ui-button--secondary"}, render.Text("Trigger Modal")),
@@ -795,8 +795,8 @@ func main() {
 			)
 		}},
 
-	{"rpc-form-signal", "Form Submit → Signal", "Interactivity",
-		"Submit a form via fetch and display the result inline — no page reload, no redirect.",
+	{"rpc-form-signal", "Submit Without Reload", "Interactivity",
+		"Submit a form and see the result inline — the page never reloads.",
 		func() render.HTML {
 			form := interactive.OnSubmit(
 				render.Tag("form", map[string]string{"class": "demo-form-inline"},
@@ -852,8 +852,8 @@ func main() {
 			)
 		}},
 
-	{"rpc-navigate", "RPC → SPA Navigate", "Interactivity",
-		"Successful POST navigates to a new page without a full reload.",
+	{"rpc-navigate", "Redirect After Action", "Interactivity",
+		"Click a button → server confirms → you land on a new page, no full reload.",
 		func() render.HTML {
 			btn := interactive.OnClick(
 				render.Tag("button", map[string]string{"class": "ui-button ui-button--ghost"}, render.Text("Navigate to Button →")),
