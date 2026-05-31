@@ -713,6 +713,81 @@ func main() {
 			render.Text("PipelineImage runs framework/image transforms (resize, webp) — see /examples for a live demo."),
 		)
 	}},
+	// ---------- Interactivity ----------
+	{"interactive", "Interactive", "Interactivity", "Declarative RPC + signal + widget chaining without JS.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			// 1. OnClick with signal
+			render.Tag("h3", nil, render.Text("RPC → Signal")),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Click the button → fetch /api/counter → response flows into the signal region below."),
+			),
+			html.Div(html.DivConfig{Class: "demo-row"},
+				render.Tag("button", map[string]string{
+					"data-fui-rpc":        "/__site/interactive/counter",
+					"data-fui-rpc-method": "POST",
+					"data-fui-rpc-signal": "demo-counter",
+					"class":                "ui-button ui-button--primary",
+				}, render.Text("Count")),
+				render.Tag("span", map[string]string{
+					"data-fui-signal":           "demo-counter",
+					"data-fui-signal-mode":      "text",
+					"data-fui-flash-on-update":  "",
+					"class":                      "demo-signal-out",
+				}, render.Text("0")),
+			),
+
+			// 2. OnClick with OpenWidget
+			render.Tag("h3", nil, render.Text("RPC → Open Widget")),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Click → RPC succeeds → drawer opens with result. No JS."),
+			),
+			render.Tag("button", map[string]string{
+				"data-fui-rpc":        "/__site/interactive/open-drawer",
+				"data-fui-rpc-method": "POST",
+				"data-fui-rpc-open":   "interactive-result-drawer",
+				"class":                "ui-button ui-button--secondary",
+			}, render.Text("Submit → Open Drawer")),
+
+			// 3. OnSubmit form with Close + Reset
+			render.Tag("h3", nil, render.Text("Form Submit → Signal + Close + Reset")),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("Form submits via fetch, pushes result to a signal, and can close/reset."),
+			),
+			render.Tag("form", map[string]string{
+				"data-fui-rpc":        "/__site/interactive/submit",
+				"data-fui-rpc-method": "POST",
+				"data-fui-rpc-signal": "demo-form-result",
+				"data-fui-rpc-reset":  "true",
+				"class":                "demo-form-inline",
+			},
+				render.Tag("input", map[string]string{
+					"type": "text", "name": "message", "placeholder": "Type something…",
+					"required": "",
+				}),
+				render.Tag("button", map[string]string{
+					"type":  "submit",
+					"class": "ui-button ui-button--primary",
+				}, render.Text("Send")),
+			),
+			render.Tag("div", map[string]string{
+				"data-fui-signal":      "demo-form-result",
+				"data-fui-signal-mode": "html",
+				"class":                 "demo-signal-out",
+			}),
+
+			// 4. SPA Navigate
+			render.Tag("h3", nil, render.Text("RPC → SPA Navigate")),
+			render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				render.Text("POST succeeds → SPA navigates to the Button component page. No full reload."),
+			),
+			render.Tag("button", map[string]string{
+				"data-fui-rpc":          "/__site/interactive/navigate",
+				"data-fui-rpc-method":   "POST",
+				"data-fui-rpc-navigate": "/components/button",
+				"class":                  "ui-button ui-button--ghost",
+			}, render.Text("Navigate to Button →")),
+		)
+	}},
 }
 
 // =============================================================================

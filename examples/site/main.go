@@ -18,7 +18,9 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -100,6 +102,35 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+
+	// Interactive demo endpoints — each returns JSON the runtime pushes
+	// into a signal or triggers a widget open / SPA navigate.
+	var demoCounter int
+	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		demoCounter++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `%d`, demoCounter)
+	}))
+	fwApp.Router().Post("/__site/interactive/open-drawer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		msg := r.FormValue("message")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `"✓ Received: %s"`, htmlEscape(msg))
+	}))
+	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	// Drawer widget for the "RPC → Open Widget" demo.
+	drawerDef := preset.Drawer("interactive-result-drawer").
+		Slot("body", app.NewStaticComponent(
+			render.Tag("p", nil,
+				render.Text("This drawer was opened by data-fui-rpc-open after a successful POST. No JavaScript required."),
+			),
+		)).
+		Build()
+	widget.Mount(fwApp.Router(), &drawerDef)
 
 	return fwApp
 }
