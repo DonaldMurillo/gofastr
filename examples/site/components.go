@@ -767,7 +767,7 @@ func main() {
 			btn := interactive.OnClick(
 				render.Tag("button", map[string]string{"class": "ui-button ui-button--secondary"}, render.Text("Trigger Modal")),
 				interactive.Post("/__site/interactive/open-drawer").
-					OnSuccess(interactive.OpenWidget("interactive-result-modal")),
+					OnSuccess(interactive.OpenWidget("demo-result-modal")),
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
 				render.Tag("p", map[string]string{"class": "doc-head__lede"},
@@ -802,7 +802,7 @@ func main() {
 				render.Tag("form", map[string]string{"class": "demo-form-inline"},
 					render.Tag("input", map[string]string{
 						"type": "text", "name": "message", "placeholder": "Type something…",
-						"required": "",
+						"required": "", "aria-label": "Message",
 					}),
 					render.Tag("button", map[string]string{
 						"type":  "submit",

@@ -158,7 +158,7 @@ func OnSubmit(html render.HTML, action Action) render.HTML {
 	return wrapWithAction(html, action)
 }
 
-// wrapWithAction merges action attributes into the outermost HTML tag.
+// wrapWithAction merges action attributes into the first opening HTML tag.
 func wrapWithAction(html render.HTML, action Action) render.HTML {
 	attrs := action.attrs()
 	if len(attrs) == 0 {

@@ -221,6 +221,30 @@ func TestE2EInteractive_FormSubmitWithSignal(t *testing.T) {
 	}
 }
 
+// TestE2EInteractive_FormInputHasLabel verifies the form input has an
+// accessible label (aria-label or associated <label>) so screen
+// readers can announce it.
+func TestE2EInteractive_FormInputHasLabel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var ariaLabel string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-form-signal"),
+		chromedp.WaitVisible(`form[data-fui-rpc="/__site/interactive/submit"]`),
+		chromedp.Evaluate(`document.querySelector('form[data-fui-rpc="/__site/interactive/submit"] input[name="message"]').getAttribute('aria-label') || ''`, &ariaLabel),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("input aria-label: %q", ariaLabel)
+	if ariaLabel == "" {
+		t.Error("form input has no aria-label attribute")
+	}
+}
+
 
 // TestE2EInteractive_RPCOpenWidget clicks the "open drawer" button and
 // verifies the drawer widget appears in the DOM after the RPC succeeds.
@@ -234,15 +258,47 @@ func TestE2EInteractive_RPCOpenWidget(t *testing.T) {
 	var exists bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-open-widget"),
-		chromedp.WaitVisible(`button[data-fui-rpc-open="interactive-result-modal"]`),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-open="interactive-result-modal"]').click()`, nil),
+		chromedp.WaitVisible(`button[data-fui-rpc-open="demo-result-modal"]`),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-open="demo-result-modal"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="interactive-result-modal"]') !== null`, &exists),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="demo-result-modal"]') !== null`, &exists),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if !exists {
 		t.Error("drawer widget not found in DOM after rpc-open")
+	}
+}
+
+// TestE2EInteractive_ModalAriaLabelledBy verifies the modal widget has
+// aria-labelledby pointing to a visible heading inside the modal.
+func TestE2EInteractive_ModalAriaLabelledBy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var labelledBy string
+	var headingExists bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-open-widget"),
+		chromedp.WaitVisible(`button[data-fui-rpc-open="demo-result-modal"]`),
+		// Open the modal
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-open="demo-result-modal"]').click()`, nil),
+		chromedp.Sleep(1*time.Second),
+		// Read aria-labelledby from the widget root
+		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-fui-widget="demo-result-modal"]');return w?(w.getAttribute('aria-labelledby')||''):''})()`, &labelledBy),
+		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-fui-widget="demo-result-modal"]');var lb=w?w.getAttribute('aria-labelledby'):'';return lb&&document.getElementById(lb)!==null})()`, &headingExists),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("modal aria-labelledby: %q, heading exists: %v", labelledBy, headingExists)
+	if labelledBy == "" {
+		t.Error("modal widget has no aria-labelledby attribute")
+	}
+	if !headingExists {
+		t.Errorf("modal aria-labelledby=%q but no element with that id found", labelledBy)
 	}
 }
 
@@ -270,6 +326,233 @@ func TestE2EInteractive_SPANavigate(t *testing.T) {
 	}
 }
 
+// TestE2EInteractive_SignalHasAriaLive verifies the runtime auto-injects
+// role="status" aria-live="polite" aria-atomic="true" onto every
+// [data-fui-signal] node. This is a P0 a11y requirement: without it,
+// screen readers do not announce signal-region updates (counter clicks,
+// form results, error feedback) because the DOM mutations are silent.
+func TestE2EInteractive_SignalHasAriaLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var role, ariaLive, ariaAtomic string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-signal"),
+		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').getAttribute('role')||''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').getAttribute('aria-live')||''`, &ariaLive),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').getAttribute('aria-atomic')||''`, &ariaAtomic),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("signal attrs: role=%q aria-live=%q aria-atomic=%q", role, ariaLive, ariaAtomic)
+	if role != "status" {
+		t.Errorf(`signal node role = %q, want "status"`, role)
+	}
+	if ariaLive != "polite" {
+		t.Errorf(`signal node aria-live = %q, want "polite"`, ariaLive)
+	}
+	if ariaAtomic != "true" {
+		t.Errorf(`signal node aria-atomic = %q, want "true"`, ariaAtomic)
+	}
+}
+
+// TestE2EInteractive_RPCErrorFeedback verifies that when an RPC returns 500,
+// the signal region shows a human-readable error message, not raw JSON.
+func TestE2EInteractive_RPCErrorFeedback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var signalText string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-signal"),
+		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		// Inject a button that hits the error endpoint.
+		chromedp.Evaluate(`(function(){var b=document.createElement('button');b.setAttribute('data-fui-rpc','/__site/interactive/error');b.setAttribute('data-fui-rpc-signal','demo-counter');b.id='__test-err-btn';document.body.appendChild(b);return true})()`, nil),
+		chromedp.Evaluate(`document.getElementById('__test-err-btn').click()`, nil),
+		chromedp.Sleep(1*time.Second),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("error signal text: %q", signalText)
+	trimmed := strings.TrimSpace(signalText)
+	// Must NOT be raw JSON like {"ok":false,"status":500,"text":"..."}
+	if strings.HasPrefix(trimmed, "{") && strings.Contains(trimmed, `"ok"`) {
+		t.Errorf("error signal shows raw JSON %q — should be human-readable", trimmed)
+	}
+	// Must contain some indication of error
+	if trimmed == "" {
+		t.Error("error signal is empty after 500 response")
+	}
+}
+
+
+// TestE2EInteractive_NetworkErrorFeedback verifies that when a network error
+// occurs (fetch throws), the signal region shows a human-readable error
+// instead of staying unchanged. Before the fix, network errors propagated
+// as unhandled promise rejections and the signal stayed at its previous value.
+func TestE2EInteractive_NetworkErrorFeedback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var signalText string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-signal"),
+		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		// Override fetch to throw a network error for the counter endpoint.
+		chromedp.Evaluate(`(function(){
+			var origFetch = window.fetch;
+			window.fetch = function(url, opts) {
+				if (typeof url === 'string' && url.indexOf('counter') >= 0) {
+					return Promise.reject(new Error('Network error'));
+				}
+				return origFetch.call(this, url, opts);
+			};
+			return true;
+		})()`, nil),
+		// Click the counter button.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Sleep(2*time.Second),
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("network-error signal text: %q", signalText)
+	trimmed := strings.TrimSpace(signalText)
+	// Signal must have changed from "0" — the runtime should have written
+	// something (error message) into the signal on network failure.
+	if trimmed == "0" || trimmed == "" {
+		t.Errorf("signal still %q after network error — dispatchRPC did not write error feedback to signal", signalText)
+	}
+}
+
+// TestE2EInteractive_LoadingState verifies that the runtime adds the
+// fui-loading CSS class and aria-busy="true" attribute to the trigger
+// node during an in-flight RPC, and removes them after completion.
+func TestE2EInteractive_LoadingState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var hasLoadingClass bool
+	var hasAriaBusy string
+	var signalText string
+	var loadingClassAfter bool
+	var ariaBusyAfter string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-signal"),
+		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		// Override fetch to add a 2-second delay so we can observe the loading state.
+		chromedp.Evaluate(`(function(){
+			var origFetch = window.fetch;
+			window.fetch = function(url, opts) {
+				if (typeof url === 'string' && url.indexOf('counter') >= 0) {
+					return new Promise(function(resolve) {
+						setTimeout(function() {
+							origFetch.call(window, url, opts).then(resolve);
+						}, 2000);
+					});
+				}
+				return origFetch.call(this, url, opts);
+			};
+			return true;
+		})()`, nil),
+		// Click the counter button (returns a promise, but loading state
+		// should be set synchronously before the await).
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		// Immediately check for loading indicators.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').classList.contains('fui-loading')`, &hasLoadingClass),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').getAttribute('aria-busy')`, &hasAriaBusy),
+		// Wait for the RPC to complete.
+		chromedp.Sleep(3*time.Second),
+		// Verify the signal updated.
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+		// Verify loading state was cleaned up.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').classList.contains('fui-loading')`, &loadingClassAfter),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').getAttribute('aria-busy')`, &ariaBusyAfter),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("signal after load: %q", signalText)
+
+	if !hasLoadingClass {
+		t.Error("button did not have fui-loading CSS class during in-flight RPC")
+	}
+	if hasAriaBusy != "true" {
+		t.Error("button did not have aria-busy='true' during in-flight RPC")
+	}
+	trimmed := strings.TrimSpace(signalText)
+	if trimmed == "0" || trimmed == "" {
+		t.Errorf("counter still %q after delayed RPC — signal didn't update", signalText)
+	}
+	if loadingClassAfter {
+		t.Error("button still has fui-loading CSS class after RPC completed")
+	}
+	if ariaBusyAfter == "true" {
+		t.Error("button still has aria-busy='true' after RPC completed")
+	}
+}
+
+// TestE2EInteractive_ReducedMotionFlashSkip verifies that when
+// prefers-reduced-motion is enabled, the fui-flash class is NOT added
+// to signal nodes on update. Users who prefer reduced motion should
+// not see the flash animation.
+func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	var hadFlashClass bool
+	var signalText string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/rpc-signal"),
+		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		// Mock matchMedia to report prefers-reduced-motion: reduce.
+		chromedp.Evaluate(`(function(){
+			var origMatchMedia = window.matchMedia;
+			window.matchMedia = function(q) {
+				if (q === '(prefers-reduced-motion: reduce)') {
+					return { matches: true, media: q, addListener: function(){}, removeListener: function(){}, addEventListener: function(){}, removeEventListener: function(){} };
+				}
+				return origMatchMedia.call(this, q);
+			};
+			return true;
+		})()`, nil),
+		// Click the counter button.
+		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Sleep(1*time.Second),
+		// Check the signal updated.
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+		// Check that the fui-flash class was NOT added.
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').classList.contains('fui-flash')`, &hadFlashClass),
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("reduced-motion signal text: %q", signalText)
+
+	trimmed := strings.TrimSpace(signalText)
+	if trimmed == "0" || trimmed == "" {
+		t.Errorf("counter still %q after click — signal didn't update", signalText)
+	}
+	if hadFlashClass {
+		t.Error("signal node has fui-flash class despite prefers-reduced-motion — flash should be skipped")
+	}
+}
 // NOTE: a chromedp mobile-overflow test was tried and removed — chromedp's
 // EmulateViewport doesn't reproduce the grid-overflow that a real browser
 // resize does, so it passed even with the broken CSS (a false guard). The

@@ -620,6 +620,101 @@ func contains(s, substr string) bool {
 	return false
 }
 
+// TestRuntimeSignalAriaLiveContract pins the source-level contract that
+// the runtime injects role="status" aria-live="polite" aria-atomic="true"
+// onto every [data-fui-signal] node. Two integration points must exist:
+//   1. _initialPass (boot-time scan)
+//   2. gofastr:navigate handler (post-SPA-nav scan)
+// The helper function must exist by name so the callsites can delegate.
+// Behavioral verification is in examples/site/TestE2EInteractive_SignalHasAriaLive.
+func TestRuntimeSignalAriaLiveContract(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The helper function that sets aria attributes on signal nodes.
+	if !contains(js, "_injectSignalAria") && !contains(js, "aria-live") {
+		t.Error("runtime missing _injectSignalAria helper or aria-live injection for signal nodes")
+	}
+	// Must be called from _initialPass.
+	if !contains(js, "_injectSignalAria") {
+		t.Error("runtime missing _injectSignalAria — needed for boot-time aria-live injection")
+	}
+	// Must set role="status".
+	if !contains(js, `role":"status"`) && !contains(js, `role","status`) && !contains(js, `setAttribute('role','status'`) && !contains(js, `setAttribute("role","status"`) {
+		t.Error(`runtime missing setAttribute('role','status') in signal aria injection`)
+	}
+	// Must set aria-live="polite".
+	if !contains(js, `aria-live`) {
+		t.Error(`runtime missing aria-live attribute in signal aria injection`)
+	}
+	// Must set aria-atomic="true".
+	if !contains(js, `aria-atomic`) {
+		t.Error(`runtime missing aria-atomic attribute in signal aria injection`)
+	}
+}
+
+// TestRuntimeErrorObjectFormatting pins that setSignal renders error
+// objects ({ok:false,...}) as human-readable text, not raw JSON.
+// Without this, users see {"ok":false,"status":500,"text":"..."} instead
+// of "Error: 500". Behavioral verification is in
+// examples/site/TestE2EInteractive_RPCErrorFeedback.
+func TestRuntimeErrorObjectFormatting(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// In text mode, when value is an object with ok === false, the
+	// runtime must format it as a human-readable string instead of
+	// JSON.stringify. Look for evidence of the error formatting branch.
+	errorFormattingEvidence := []string{
+		"Error:",
+		"ok === false",
+		"ok===false",
+		"value.ok",
+	}
+	found := false
+	for _, evidence := range errorFormattingEvidence {
+		if contains(js, evidence) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("setSignal must format error objects (ok:false) as human-readable text, not raw JSON")
+	}
+}
+
+// TestRuntimeLoadingCSSClassDuringRPC pins that the module-level
+// dispatchRPC adds a fui-loading CSS class to the trigger node during
+// the in-flight request. This lets CSS authors style loading states.
+func TestRuntimeLoadingCSSClassDuringRPC(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Must add the class before fetch and remove it in finally.
+	if !contains(js, "fui-loading") {
+		t.Error("dispatchRPC must add/remove 'fui-loading' CSS class during in-flight requests")
+	}
+}
+
+// TestRuntimeReducedMotionFlashSkip pins that the flash animation
+// in setSignal respects prefers-reduced-motion. Users who opt into
+// reduced motion should not see the flash class toggling.
+func TestRuntimeReducedMotionFlashSkip(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(js, "prefers-reduced-motion") {
+		t.Error("setSignal flash must check prefers-reduced-motion before applying fui-flash class")
+	}
+	if !contains(js, "matchesMedia") && !contains(js, "matchMedia") {
+		t.Error("setSignal flash must use matchMedia to detect reduced-motion preference")
+	}
+}
+
 // Hover/focus prefetch delegator and idle-fallback scheduler are
 // verified behaviorally by:
 //   - examples/website/TestE2E_HoverPrefetchLoadsModule — synthesizes

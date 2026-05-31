@@ -334,6 +334,9 @@
         if (tok) headers['X-CSRF-Token'] = tok;
       }
       if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = true;
+      // Task C: add fui-loading CSS class and aria-busy for styling during in-flight RPC.
+      node.classList.add('fui-loading');
+      node.setAttribute('aria-busy', 'true');
       try {
         const r = await fetch(path, { method, headers, body: body || undefined, credentials: 'same-origin' });
         if (!r.ok) {
@@ -364,8 +367,16 @@
         if (navigatePath) {
           NS.navigate(navigatePath);
         }
+      } catch (err) {
+        // Network error: write human-readable feedback to the signal.
+        if (responseSignal) {
+          NS.setSignal(responseSignal, { ok: false, status: 0, text: 'Network error \u2014 please try again' });
+        }
       } finally {
         if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
+        // Task C: remove fui-loading CSS class and aria-busy after RPC completes.
+        node.classList.remove('fui-loading');
+        node.removeAttribute('aria-busy');
       }
     }
 

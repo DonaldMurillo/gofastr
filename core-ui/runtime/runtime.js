@@ -152,6 +152,9 @@
     // click's response reaches setSignal.
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
+    // Task C: add fui-loading CSS class and aria-busy for styling during in-flight RPC.
+    node.classList.add('fui-loading');
+    node.setAttribute('aria-busy', 'true');
     try {
       const r = await fetch(resolvedPath, { method, headers, body: body || undefined, signal: ctl.signal, credentials: 'same-origin' });
       if (!r.ok) {
@@ -229,8 +232,13 @@
       }
     } catch (err) {
       // Swallow AbortError — it just means a newer dispatch superseded
-      // us before the response arrived. Any other error propagates.
-      if (err && err.name !== 'AbortError') throw err;
+      // us before the response arrived.
+      if (err && err.name === 'AbortError') return;
+      // Network error (fetch threw): write a human-readable error into
+      // the signal so the user sees feedback instead of a stale value.
+      if (responseSignal) {
+        window.__gofastr.setSignal(responseSignal, { ok: false, status: 0, text: 'Network error \u2014 please try again' });
+      }
     } finally {
       // Clear the in-flight slot only if WE are still the latest
       // dispatch — a later click may have replaced us, in which case
@@ -242,6 +250,9 @@
       // disabled state (e.g. "Revealed ✓" demo button).
       const sticky = node.hasAttribute('data-fui-rpc-after-disable') && node.dataset.fuiRpcAfterDone === '1';
       if (!sticky && wantDisable) node.disabled = false;
+      // Task C: remove fui-loading CSS class after RPC completes.
+      node.classList.remove('fui-loading');
+      node.removeAttribute('aria-busy');
     }
   }
 
@@ -883,22 +894,38 @@
           if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
           node.setAttribute(attr, v);
         } else {
-          if (value == null) node.textContent = '';
-          else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') node.textContent = String(value);
-          else node.textContent = JSON.stringify(value);
+          // Task B: when the value is an error object from dispatchRPC
+          // ({ok:false, status, text}), render it as a human-readable
+          // string instead of raw JSON so users see "Error: 500" rather
+          // than {"ok":false,"status":500,"text":"..."}.
+          if (value != null && typeof value === 'object' && value.ok === false) {
+            const s = value.status ? String(value.status) : 'unknown';
+            const t = value.text ? String(value.text).substring(0, 200) : '';
+            node.textContent = 'Error: ' + s + (t ? ' \u2014 ' + t : '');
+          } else if (value == null) {
+            node.textContent = '';
+          } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+            node.textContent = String(value);
+          } else {
+            node.textContent = JSON.stringify(value);
+          }
         }
         // After-update hook: brief flash to signal the value changed.
         // Useful for headers/badges where the user might miss an
         // update otherwise. Duration overridable via
         // data-fui-flash-duration-ms; default 600ms.
+        // Task D: skip the flash when the user prefers reduced motion.
         if (node.hasAttribute('data-fui-flash-on-update')) {
-          const dur = parseInt(node.getAttribute('data-fui-flash-duration-ms') || '600', 10);
-          node.classList.remove('fui-flash');
-          // Force reflow so the next add re-runs the animation.
-          // eslint-disable-next-line no-unused-expressions
-          node.offsetWidth;
-          node.classList.add('fui-flash');
-          setTimeout(() => node.classList.remove('fui-flash'), dur);
+          const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          if (!prefersReduced) {
+            const dur = parseInt(node.getAttribute('data-fui-flash-duration-ms') || '600', 10);
+            node.classList.remove('fui-flash');
+            // Force reflow so the next add re-runs the animation.
+            // eslint-disable-next-line no-unused-expressions
+            node.offsetWidth;
+            node.classList.add('fui-flash');
+            setTimeout(() => node.classList.remove('fui-flash'), dur);
+          }
         }
         // After-update hook: scroll a container to bottom so streaming
         // chat logs / live tails surface new content without manual
@@ -1868,6 +1895,8 @@
   //     load before that DOM existed.
   window.addEventListener('gofastr:navigate', () => {
     _scanForModules(document);
+    // Task A: re-inject aria-live onto any new signal nodes from the swapped page.
+    _injectSignalAria();
     const G = window.__gofastr;
     if (G && G._moduleScanners) {
       for (const name in G._moduleScanners) {
@@ -2053,6 +2082,15 @@
     }
   });
 
+  // Task A: auto-inject aria-live onto signal nodes so screen readers
+  // announce dynamic updates. Runs at boot and after SPA navigation.
+  const _injectSignalAria = () => {
+    document.querySelectorAll('[data-fui-signal]').forEach((node) => {
+      if (!node.getAttribute('role')) node.setAttribute('role', 'status');
+      if (!node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
+      if (!node.getAttribute('aria-atomic')) node.setAttribute('aria-atomic', 'true');
+    });
+  };
   // Initial-pass hooks: these scan the CURRENT DOM, so they have
   // to wait until the document is at least parsed. updateActiveLink
   // marks server-rendered nav links; _bootstrapComponentCSS scans
@@ -2063,6 +2101,7 @@
     updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
     _scanForModules(document);
+    _injectSignalAria();
     for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
       _mirrorDisclosure(d);
     }

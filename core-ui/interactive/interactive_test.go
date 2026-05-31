@@ -184,10 +184,20 @@ func TestWrapRawHTMLGTInAttrValue(t *testing.T) {
 	s := string(result)
 
 	// RPC attributes must appear before the real '>' that closes the tag,
-	// not before the '>' inside the title value.
-	wantPrefix := `<button title="1>2" data-fui-rpc="/api/raw" data-fui-rpc-method="POST">Click</button>`
-	if s != wantPrefix {
-		t.Errorf("wrong result:\n got: %s\nwant: %s", s, wantPrefix)
+	// not before the '>' inside the title value. Use Contains because
+	// map iteration order is non-deterministic, so the two data-fui-*
+	// attributes can appear in either order.
+	if !strings.Contains(s, `data-fui-rpc="/api/raw"`) {
+		t.Errorf("missing data-fui-rpc attribute:\n got: %s", s)
+	}
+	if !strings.Contains(s, `data-fui-rpc-method="POST"`) {
+		t.Errorf("missing data-fui-rpc-method attribute:\n got: %s", s)
+	}
+	if !strings.Contains(s, `title="1>2"`) {
+		t.Error(`want title="1>2" preserved in output`)
+	}
+	if !strings.Contains(s, ">Click</button>") {
+		t.Error("want button body preserved")
 	}
 }
 
