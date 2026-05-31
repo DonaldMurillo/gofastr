@@ -1281,18 +1281,33 @@
 
   const swapScreenGroupContent = (groupEl, html) => {
     // The content cell inside a ScreenGroup layout can be:
-    //   1. <main> or [role="main"] (outermost layout)
-    //   2. .layout-content (nested layout — sidebar + content)
+    //   1. .layout-content (nested layout — sidebar + content)
+    //   2. <main> or [role="main"] (outermost layout)
     // The nested case is the common one: the ScreenGroup wrapper holds
     // a layout-body with sidebar + content. We must swap only the
     // content cell, not the sidebar.
     const target = groupEl.querySelector('.layout-content')
       ?? groupEl.querySelector('[role="main"]')
       ?? groupEl.querySelector('main');
-    if (target) {
-      target.innerHTML = html;
-      if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(target);
+    if (!target) return;
+
+    // When the HTML comes from the SPA cache (seeded at boot from the
+    // outer <main>.innerHTML), it contains the FULL screen-group
+    // structure (sidebar + content). Extract just the inner content
+    // cell so we don't nest the layout inside itself.
+    let swapHTML = html;
+    const parsed = new DOMParser().parseFromString('<template>' + html + '</template>', 'text/html');
+    const tmpl = parsed.querySelector('template');
+    if (tmpl && tmpl.content) {
+      const innerLC = tmpl.content.querySelector('.layout-content');
+      if (innerLC) {
+        swapHTML = innerLC.innerHTML;
+      }
     }
+
+    target.innerHTML = swapHTML;
+    if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(target);
+
     // Close disclosures inside the group
     for (const d of groupEl.querySelectorAll('details[data-fui-disclosure][open]')) {
       d.removeAttribute('open');
