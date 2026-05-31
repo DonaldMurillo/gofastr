@@ -356,6 +356,12 @@
         if (responseSignal) NS.setSignal(responseSignal, data);
         if (closeOnSuccess) dismiss();
         if (resetOnSuccess) node.reset();
+        // Open a widget on success (e.g. "save in drawer → open results sheet").
+        const openWidgetName = node.getAttribute('data-fui-rpc-open');
+        if (openWidgetName) NS.openWidget(openWidgetName);
+        // SPA navigate on success.
+        const navigatePath = node.getAttribute('data-fui-rpc-navigate');
+        if (navigatePath) NS._navigate(navigatePath);
       } finally {
         if (node.tagName === 'BUTTON' || node.tagName === 'INPUT') node.disabled = false;
       }

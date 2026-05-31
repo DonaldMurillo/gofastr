@@ -210,6 +210,20 @@
           catch (_) {}
         });
       }
+      // Open a widget on success (e.g. "submit form → open results drawer").
+      // Delegates to the widget module's openWidget — if the module hasn't
+      // loaded yet, loadModule handles it.
+      const openWidgetName = node.getAttribute('data-fui-rpc-open');
+      if (openWidgetName) {
+        window.__gofastr.loadModule('widgets').then(() => {
+          window.__gofastr.openWidget(openWidgetName);
+        }).catch(() => {});
+      }
+      // SPA navigate on success — swaps <main> without full page reload.
+      const navigatePath = node.getAttribute('data-fui-rpc-navigate');
+      if (navigatePath) {
+        window.__gofastr._navigate(navigatePath);
+      }
     } catch (err) {
       // Swallow AbortError — it just means a newer dispatch superseded
       // us before the response arrived. Any other error propagates.
