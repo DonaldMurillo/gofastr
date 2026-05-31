@@ -135,3 +135,6 @@ pi-agent/plugins/*
 # scratch output, never source. Regenerate the canonical .txt files
 # via GOFASTR_UPDATE_SNAPSHOTS=1.
 framework/harness/client/tui/testdata/snapshots/*.txt.new
+
+# Git worktrees live as sibling directories
+worktrees/
