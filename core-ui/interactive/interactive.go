@@ -176,6 +176,19 @@ func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	return wrapped
 }
 
+
+// ─── Scroll-triggered reveal ────────────────────────────────────────
+
+// Reveal wraps an element so it animates in when it enters the viewport.
+// The animationType determines the CSS class added on reveal
+// ("fade-up", "fade-in", "slide-left", etc.).
+// If animationType is empty, "fade-in" is used as the default.
+func Reveal(html render.HTML, animationType string) render.HTML {
+	if animationType == "" {
+		animationType = "fade-in"
+	}
+	return injectAttr(html, "data-fui-reveal", animationType)
+}
 // ─── Client-side signal mutations (no RPC) ──────────────────────────
 //
 // These mutate signals purely in the browser — no server round-trip.
@@ -203,6 +216,53 @@ func ToggleLocal(html render.HTML, signalName string) render.HTML {
 	return injectAttr(html, "data-fui-signal-toggle", signalName)
 }
 
+// ─── Dropdown ──────────────────────────────────────────────────────
+//
+// Dropdown wraps a trigger element and a panel into a click-toggle
+// dropdown. The trigger gets data-fui-dropdown, aria-expanded="false",
+// and aria-haspopup="true". The panel gets data-fui-dropdown-panel and
+// is initially hidden. Both are wrapped in a container with
+// data-fui-dropdown-wrap.
+//
+// The runtime module (dropdown.js) handles click-toggle, click-outside
+// dismiss, and Escape-to-close.
+//
+//	trigger := render.Tag("button", nil, render.Text("Menu"))
+//	panel := render.Tag("div", nil, render.Text("Dropdown content"))
+//	html := interactive.Dropdown(trigger, panel)
+func Dropdown(trigger, panel render.HTML) render.HTML {
+	triggerAttrs := map[string]string{
+		"data-fui-dropdown": "",
+		"aria-expanded":     "false",
+		"aria-haspopup":     "true",
+	}
+	panelAttrs := map[string]string{
+		"data-fui-dropdown-panel": "",
+		"hidden":                  "",
+	}
+	wrappedTrigger := injectAttrs(trigger, triggerAttrs)
+	wrappedPanel := injectAttrs(panel, panelAttrs)
+	return render.Tag("div", map[string]string{
+		"data-fui-dropdown-wrap": "",
+	}, wrappedTrigger, wrappedPanel)
+}
+
+// AnimateOnSignal wraps an element so it gets a CSS class when a signal
+// is truthy and loses it when falsy. Used for CSS transition-driven
+// animations like slide-down, fade, etc.
+//
+// Panics if signalName or cssClass is empty.
+func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML {
+	if signalName == "" {
+		panic("interactive: AnimateOnSignal signalName must not be empty")
+	}
+	if cssClass == "" {
+		panic("interactive: AnimateOnSignal cssClass must not be empty")
+	}
+	html = injectAttr(html, "data-fui-animate-signal", signalName)
+	html = injectAttr(html, "data-fui-animate-class", cssClass)
+	return html
+}
 
 // EditToggle wraps an element so clicking it toggles a boolean signal.
 // Semantic alias for ToggleLocal used in inline-edit patterns: clicking
@@ -279,6 +339,28 @@ func injectAttr(html render.HTML, key, value string) render.HTML {
 		return html
 	}
 	return render.HTML(s[:idx] + " " + a + s[idx:])
+}
+
+// injectAttrs adds multiple attributes to the first HTML tag.
+func injectAttrs(html render.HTML, attrs map[string]string) render.HTML {
+	s := string(html)
+	idx := findUnquotedClose(s)
+	if idx == -1 {
+		return html
+	}
+	var buf strings.Builder
+	for k, v := range attrs {
+		a := render.Attr(k, v)
+		if a == "" {
+			continue
+		}
+		buf.WriteByte(' ')
+		buf.WriteString(a)
+	}
+	if buf.Len() == 0 {
+		return html
+	}
+	return render.HTML(s[:idx] + buf.String() + s[idx:])
 }
 
 

@@ -329,6 +329,38 @@ func TestCancelEdit(t *testing.T) {
 
 // ─── LiveSearch tests ─────────────────────────────────────────────────
 
+// ─── Reveal tests ────────────────────────────────────────────────────
+
+func TestRevealInjectsAttr(t *testing.T) {
+	div := render.Tag("div", nil, render.Text("hello"))
+	result := Reveal(div, "fade-up")
+	s := string(result)
+	if !strings.Contains(s, `data-fui-reveal="fade-up"`) {
+		t.Fatalf("missing data-fui-reveal attr: %s", s)
+	}
+}
+
+func TestRevealDefaultAnimation(t *testing.T) {
+	div := render.Tag("div", nil, render.Text("hello"))
+	result := Reveal(div, "")
+	s := string(result)
+	if !strings.Contains(s, `data-fui-reveal="fade-in"`) {
+		t.Fatalf("expected default fade-in animation: %s", s)
+	}
+}
+
+func TestRevealPreservesContent(t *testing.T) {
+	div := render.Tag("div", map[string]string{"class": "card"}, render.Text("Content"))
+	result := Reveal(div, "slide-left")
+	s := string(result)
+	if !strings.Contains(s, "Content") {
+		t.Fatalf("original content lost: %s", s)
+	}
+	if !strings.Contains(s, `class="card"`) {
+		t.Fatalf("original class lost: %s", s)
+	}
+}
+
 func TestLiveSearchInjectsTriggerAttr(t *testing.T) {
 	form := render.Tag("form", nil,
 		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
@@ -469,5 +501,117 @@ func TestOptimisticUpdateEndpointFromAction(t *testing.T) {
 		if !strings.Contains(s, fmt.Sprintf(`data-fui-optimistic-endpoint="%s"`, method.path)) {
 			t.Fatalf("missing endpoint for %s %s: %s", method.method, method.path, s)
 		}
+	}
+}
+
+// ─── AnimateOnSignal tests ────────────────────────────────────────────────
+
+func TestAnimateOnSignalInjectsAttrs(t *testing.T) {
+	div := render.Tag("div", nil, render.Text("panel"))
+	result := AnimateOnSignal(div, "open", "fui-slide-down")
+	s := string(result)
+	if !strings.Contains(s, `data-fui-animate-signal="open"`) {
+		t.Fatalf("missing data-fui-animate-signal: %s", s)
+	}
+	if !strings.Contains(s, `data-fui-animate-class="fui-slide-down"`) {
+		t.Fatalf("missing data-fui-animate-class: %s", s)
+	}
+}
+
+func TestAnimateOnSignalPreservesContent(t *testing.T) {
+	div := render.Tag("div", nil, render.Text("inner content"))
+	result := AnimateOnSignal(div, "visible", "fui-fade")
+	s := string(result)
+	if !strings.Contains(s, "inner content") {
+		t.Fatalf("original content lost: %s", s)
+	}
+}
+
+func TestAnimateOnSignalValidation(t *testing.T) {
+	div := render.Tag("div", nil, render.Text("x"))
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for empty signal name")
+		}
+	}()
+	AnimateOnSignal(div, "", "fui-slide")
+}
+
+func TestAnimateOnSignalEmptyClassPanics(t *testing.T) {
+	div := render.Tag("div", nil, render.Text("x"))
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for empty css class")
+		}
+	}()
+	AnimateOnSignal(div, "sig", "")
+}
+
+// ─── Dropdown tests ────────────────────────────────────────────────────
+
+func TestDropdownTriggerAttrs(t *testing.T) {
+	trigger := render.Tag("button", nil, render.Text("Menu"))
+	panel := render.Tag("div", nil, render.Text("Content"))
+	result := Dropdown(trigger, panel)
+	s := string(result)
+	for _, attr := range []string{
+		`data-fui-dropdown`,
+		`aria-expanded="false"`,
+		`aria-haspopup="true"`,
+	} {
+		if !strings.Contains(s, attr) {
+			t.Errorf("dropdown trigger missing attr %q in:\n%s", attr, s)
+		}
+	}
+}
+
+func TestDropdownPanelAttrs(t *testing.T) {
+	trigger := render.Tag("button", nil, render.Text("Menu"))
+	panel := render.Tag("div", nil, render.Text("Content"))
+	result := Dropdown(trigger, panel)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-dropdown-panel`) {
+		t.Errorf("dropdown panel missing data-fui-dropdown-panel in:\n%s", s)
+	}
+}
+
+func TestDropdownWrapsBoth(t *testing.T) {
+	trigger := render.Tag("button", nil, render.Text("Menu"))
+	panel := render.Tag("div", nil, render.Text("Content"))
+	result := Dropdown(trigger, panel)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-dropdown-wrap`) {
+		t.Errorf("dropdown missing wrapper data-fui-dropdown-wrap in:\n%s", s)
+	}
+	if !strings.Contains(s, "Menu") {
+		t.Errorf("dropdown missing trigger content in:\n%s", s)
+	}
+	if !strings.Contains(s, "Content") {
+		t.Errorf("dropdown missing panel content in:\n%s", s)
+	}
+}
+
+func TestDropdownPanelInitiallyHidden(t *testing.T) {
+	trigger := render.Tag("button", nil, render.Text("Menu"))
+	panel := render.Tag("div", nil, render.Text("Content"))
+	result := Dropdown(trigger, panel)
+	s := string(result)
+	// The panel's <div> should have a hidden attribute.
+	// Find data-fui-dropdown-panel and check hidden is on same tag.
+	idx := strings.Index(s, `data-fui-dropdown-panel`)
+	if idx == -1 {
+		t.Fatalf("missing data-fui-dropdown-panel")
+	}
+	// Look backwards for the opening < and forwards for > around this attr.
+	tagStart := strings.LastIndex(s[:idx], "<")
+	tagEnd := strings.Index(s[idx:], ">")
+	if tagStart == -1 || tagEnd == -1 {
+		t.Fatalf("cannot locate panel tag boundaries")
+	}
+	panelTag := s[tagStart : idx+tagEnd+1]
+	if !strings.Contains(panelTag, `hidden`) {
+		t.Errorf("panel tag should have hidden attr, got:\n%s", panelTag)
 	}
 }
