@@ -851,6 +851,13 @@ func scanRowsWithKeys(rows *sql.Rows, cols, keys []string) ([]map[string]any, er
 		}
 		results = append(results, row)
 	}
+	// rows.Next() returning false can mean EOF OR a mid-iteration error (a
+	// dropped connection, a read fault). Without this check the read path
+	// would silently return partial/empty results as success — the eager
+	// loaders already guard this; the primary scanner must too.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return results, nil
 }
 

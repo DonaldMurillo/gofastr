@@ -115,6 +115,13 @@ func scanRowsPooledWithKeys(rows *sql.Rows, cols, keys []string) (*[]map[string]
 		*results = append(*results, row)
 		returnPtrSlice(ptrs)
 	}
+	// A false rows.Next() can be a mid-iteration error, not just EOF. Propagate
+	// it rather than returning a truncated result set as success (mirrors
+	// scanRowsWithKeys and the eager loaders). Return the borrowed slice first.
+	if err := rows.Err(); err != nil {
+		returnRowSlice(results)
+		return nil, err
+	}
 	return results, nil
 }
 
