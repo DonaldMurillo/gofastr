@@ -123,3 +123,56 @@ func TestApplySchemaDiff_AllowsDestructiveOptIn(t *testing.T) {
 		}
 	})
 }
+
+// TestApplySchemaDiff_DestructivePreservesData: a DROP COLUMN is refused without
+// opt-in (data fully intact), and when opted-in removes only that column —
+// every row and every OTHER column's data survives. Real data, both dialects.
+func TestApplySchemaDiff_DestructivePreservesData(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
+		requireDropColumn(t, db, dialect)
+		if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, legacy TEXT)`); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		for _, r := range []struct{ id, title, legacy string }{{"p1", "keep1", "drop1"}, {"p2", "keep2", "drop2"}} {
+			if _, err := db.Exec(`INSERT INTO posts (id, title, legacy) VALUES ($1,$2,$3)`, r.id, r.title, r.legacy); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+		}
+		drop := []SchemaChange{{Summary: "posts: drop column legacy", SQL: "ALTER TABLE posts DROP COLUMN legacy", Destructive: true}}
+
+		// Refused without opt-in → data untouched.
+		if _, err := ApplySchemaDiffWithOptions(context.Background(), db, drop, ApplyOptions{}); err == nil {
+			t.Fatal("a destructive DROP COLUMN must be refused without AllowDestructive")
+		}
+		var legacyCount int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM posts WHERE legacy IS NOT NULL`).Scan(&legacyCount); err != nil {
+			t.Fatal(err)
+		}
+		if legacyCount != 2 {
+			t.Fatalf("refused drop must leave the column's data intact, got %d", legacyCount)
+		}
+
+		// Opt-in → the column is gone, but rows and other columns survive.
+		if _, err := ApplySchemaDiffWithOptions(context.Background(), db, drop, ApplyOptions{AllowDestructive: true}); err != nil {
+			t.Fatalf("opted-in destructive apply: %v", err)
+		}
+		var rows int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM posts`).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 2 {
+			t.Fatalf("rows must survive DROP COLUMN, got %d", rows)
+		}
+		var title string
+		if err := db.QueryRow(`SELECT title FROM posts WHERE id = 'p1'`).Scan(&title); err != nil {
+			t.Fatal(err)
+		}
+		if title != "keep1" {
+			t.Fatalf("kept-column data was lost: title=%q, want keep1", title)
+		}
+		cols, _ := migrate.ReadLiveColumns(context.Background(), db, "posts", migrate.DetectDialect(db))
+		if _, ok := cols["legacy"]; ok {
+			t.Error("legacy column still present after opted-in destructive apply")
+		}
+	})
+}

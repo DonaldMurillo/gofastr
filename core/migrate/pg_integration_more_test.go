@@ -514,3 +514,192 @@ func TestRT_CustomTrackingTable(t *testing.T) {
 		}
 	})
 }
+
+// #33 — a deployer cannot roll back a migration it doesn't have registered (no
+// Down SQL): it errors safely and leaves that migration in place, rather than
+// corrupting the schema.
+func TestRT_DownUnregisteredMigrationFailsSafely(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		full := mig(t, db, d)
+		full.Register(migrate.Migration{Version: 1, Name: "a", Up: "CREATE TABLE ua (id INTEGER)", Down: "DROP TABLE ua"})
+		full.Register(migrate.Migration{Version: 2, Name: "b", Up: "CREATE TABLE ub (id INTEGER)", Down: "DROP TABLE ub"})
+		full.Register(migrate.Migration{Version: 3, Name: "c", Up: "CREATE TABLE uc (id INTEGER)", Down: "DROP TABLE uc"})
+		if err := full.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		// A binary that only knows 1,2 must not roll back 3 (it has no Down for it).
+		partial := mig(t, db, d)
+		partial.Register(migrate.Migration{Version: 1, Name: "a", Up: "CREATE TABLE ua (id INTEGER)", Down: "DROP TABLE ua"})
+		partial.Register(migrate.Migration{Version: 2, Name: "b", Up: "CREATE TABLE ub (id INTEGER)", Down: "DROP TABLE ub"})
+		if err := partial.Down(ctx, 1); err == nil {
+			t.Fatal("Down of an applied-but-unregistered migration must fail, not silently skip")
+		}
+		if !exists(t, db, d, "uc") {
+			t.Fatal("the unregistered migration's table must remain (no partial rollback)")
+		}
+	})
+}
+
+// #36 — a data migration applies and rolls back its data.
+func TestRT_DataMigrationRoundTrip(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 1, Name: "tbl", Up: "CREATE TABLE seed (id INTEGER)", Down: "DROP TABLE seed"})
+		m.Register(migrate.Migration{Version: 2, Name: "data", Up: "INSERT INTO seed (id) VALUES (1),(2),(3)", Down: "DELETE FROM seed"})
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		var n int
+		db.QueryRow("SELECT COUNT(*) FROM seed").Scan(&n)
+		if n != 3 {
+			t.Fatalf("after data migration: %d rows, want 3", n)
+		}
+		if err := m.Down(ctx, 1); err != nil { // roll back only the data migration
+			t.Fatalf("Down: %v", err)
+		}
+		db.QueryRow("SELECT COUNT(*) FROM seed").Scan(&n)
+		if n != 0 {
+			t.Fatalf("after data rollback: %d rows, want 0", n)
+		}
+		if !exists(t, db, d, "seed") {
+			t.Fatal("only the data migration was rolled back; the table should remain")
+		}
+	})
+}
+
+// #36 — a transactional migration whose data step fails rolls back DDL + data.
+func TestRT_DataMigrationFailureRollsBack(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 1, Name: "bad", Up: "CREATE TABLE df (id INTEGER PRIMARY KEY); INSERT INTO df VALUES (1); INSERT INTO df VALUES (1)", Down: "DROP TABLE df"})
+		if err := m.Up(ctx); err == nil {
+			t.Fatal("duplicate PK insert should fail the migration")
+		}
+		if exists(t, db, d, "df") {
+			t.Fatal("a failed transactional migration must roll back the CREATE TABLE too")
+		}
+	})
+}
+
+// #36 — Down does NOT guard checksum drift (Up does). Pinned so the asymmetry
+// is intentional and visible: rolling back uses the registered Down SQL even if
+// the Up was edited after it was applied.
+func TestRT_DownIgnoresChecksumDrift(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m1 := mig(t, db, d)
+		m1.Register(migrate.Migration{Version: 1, Name: "v", Up: "CREATE TABLE drift (a INTEGER)", Down: "DROP TABLE drift"})
+		if err := m1.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		// Same version, edited Up (would block an Up), but Down still proceeds.
+		m2 := mig(t, db, d)
+		m2.Register(migrate.Migration{Version: 1, Name: "v", Up: "CREATE TABLE drift (a BIGINT, b TEXT)", Down: "DROP TABLE drift"})
+		if err := m2.Down(ctx, 1); err != nil {
+			t.Fatalf("Down should ignore checksum drift (known asymmetry), got %v", err)
+		}
+		if exists(t, db, d, "drift") {
+			t.Fatal("Down should have dropped the table")
+		}
+	})
+}
+
+// #36 — checksum drift on a NON-latest applied migration still blocks Up.
+func TestRT_ChecksumDriftOnNonLatestBlocks(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 1, Name: "x", Up: "CREATE TABLE cx (id INTEGER)", Down: "DROP TABLE cx"})
+		m.Register(migrate.Migration{Version: 2, Name: "y", Up: "CREATE TABLE cy (id INTEGER)", Down: "DROP TABLE cy"})
+		m.Register(migrate.Migration{Version: 3, Name: "z", Up: "CREATE TABLE cz (id INTEGER)", Down: "DROP TABLE cz"})
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		// Edit v1 (the oldest) and try to migrate again — must be caught.
+		m2 := mig(t, db, d)
+		m2.Register(migrate.Migration{Version: 1, Name: "x", Up: "CREATE TABLE cx (id BIGINT)", Down: "DROP TABLE cx"})
+		m2.Register(migrate.Migration{Version: 2, Name: "y", Up: "CREATE TABLE cy (id INTEGER)", Down: "DROP TABLE cy"})
+		m2.Register(migrate.Migration{Version: 3, Name: "z", Up: "CREATE TABLE cz (id INTEGER)", Down: "DROP TABLE cz"})
+		err := m2.Up(ctx)
+		var mism *migrate.ChecksumMismatchError
+		if !errors.As(err, &mism) || mism.Version != 1 {
+			t.Fatalf("editing the oldest applied migration must be caught (ChecksumMismatchError v1), got %v", err)
+		}
+	})
+}
+
+// #36 — Force(version, true) on an unregistered version baselines it as applied.
+func TestRT_ForceUnregisteredBaseline(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		if err := m.Force(ctx, 99, true); err != nil {
+			t.Fatalf("Force baseline of an unregistered version: %v", err)
+		}
+		st, _ := m.Status(ctx)
+		var found bool
+		for _, rec := range st.Applied {
+			if rec.Version == 99 {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("Force(99, true) should record version 99 as applied, got %+v", st.Applied)
+		}
+	})
+}
+
+// #36 — Force(version, false) on a clean applied version makes it pending again
+// and re-runnable (with idempotent SQL).
+func TestRT_ForceOffCleanVersionMakesPending(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 1, Name: "f", Up: "CREATE TABLE IF NOT EXISTS fx (id INTEGER)", Down: "DROP TABLE fx"})
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		if err := m.Force(ctx, 1, false); err != nil {
+			t.Fatalf("Force off: %v", err)
+		}
+		st, _ := m.Status(ctx)
+		if len(st.Applied) != 0 || len(st.Pending) != 1 {
+			t.Fatalf("after Force-off: applied=%d pending=%d, want 0/1", len(st.Applied), len(st.Pending))
+		}
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("re-Up after Force-off should succeed (idempotent SQL): %v", err)
+		}
+	})
+}
+
+// #36 — Status on a fresh DB and on a mixed applied/pending DB.
+func TestRT_StatusFreshAndMixed(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		// Fresh: nothing registered, nothing applied.
+		fresh := mig(t, db, d)
+		st, err := fresh.Status(ctx)
+		if err != nil {
+			t.Fatalf("Status fresh: %v", err)
+		}
+		if len(st.Applied) != 0 || len(st.Pending) != 0 {
+			t.Fatalf("fresh status: applied=%d pending=%d, want 0/0", len(st.Applied), len(st.Pending))
+		}
+		// Apply 1, then observe with {1,2} registered → 1 applied, 1 pending.
+		m1 := mig(t, db, d)
+		m1.Register(migrate.Migration{Version: 1, Name: "s1", Up: "CREATE TABLE s1 (id INTEGER)", Down: "DROP TABLE s1"})
+		if err := m1.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		m2 := mig(t, db, d)
+		m2.Register(migrate.Migration{Version: 1, Name: "s1", Up: "CREATE TABLE s1 (id INTEGER)", Down: "DROP TABLE s1"})
+		m2.Register(migrate.Migration{Version: 2, Name: "s2", Up: "CREATE TABLE s2 (id INTEGER)", Down: "DROP TABLE s2"})
+		st, _ = m2.Status(ctx)
+		if len(st.Applied) != 1 || len(st.Pending) != 1 {
+			t.Fatalf("mixed status: applied=%d pending=%d, want 1/1", len(st.Applied), len(st.Pending))
+		}
+	})
+}
