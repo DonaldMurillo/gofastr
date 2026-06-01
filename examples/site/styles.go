@@ -48,9 +48,22 @@ func createStyleSheet(t style.Theme) string {
 	pagePhilosophy(ss)
 	pageNotFound(ss)
 	pageComponents(ss)
+	demoModalStyles(ss)
 	responsive(ss)
 
 	return ss.CSS()
+}
+
+// demoModalStyles backs the "RPC → Open Widget" demo modal so its markup uses
+// class names instead of inline style="…" attrs (strict-CSP strips inline
+// styles — see core-ui/check TestLintNoInlineStyles_RepoIsClean).
+func demoModalStyles(ss *style.StyleSheet) {
+	ss.Rule(".demo-modal-body").
+		Set("text-align", "center",
+			"padding", "var(--s-8, 32px) 0").End()
+	ss.Rule(".demo-modal-emoji").
+		Set("font-size", "24px",
+			"margin", "0 0 8px").End()
 }
 
 // -----------------------------------------------------------------------------

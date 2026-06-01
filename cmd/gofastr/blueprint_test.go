@@ -675,7 +675,7 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Use(RequestLoggerMiddleware)`)
 	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.RegisterPlugin(AnalyticsPlugin{})`)
 	assertContains(t, byName["main.go"], `entities.RegisterAll(fwApp)`)
-	assertContains(t, byName["main.go"], `blueprint.RegisterGenerated(fwApp, site)`)
+	assertContains(t, byName["main.go"], `blueprint.RegisterGenerated(fwApp, site, db)`)
 	assertContains(t, byName["main.go"], `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`)
 	assertContains(t, byName["main.go"], `uihost.WithStaticDir("public")`)
 	assertContains(t, byName["main.go"], `"github.com/DonaldMurillo/gofastr/framework/isolation"`)
