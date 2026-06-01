@@ -674,7 +674,7 @@ func (a *App) Routine(r migrate.Routine) *App {
 func (a *App) View(v migrate.View) *App {
 	a.migrationViews = append(a.migrationViews, v)
 
-	ent := v.ToEntity() // nil when the view declares no columns (migration-only)
+	ent := v.ToEntity() // nil when no columns (migration-only); panics if Columns lack a PrimaryKey
 	if ent == nil {
 		return a
 	}

@@ -148,6 +148,10 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 `App.CrudHandler(name)` (and the panicking `MustCrudHandler`) return a
 fully-wired in-process handler — the same shape the HTTP routes use.
 
+For a multi-tenant or owner-scoped entity, put the tenant/owner into the
+`ctx` first (the in-process methods require it, just like an HTTP request
+would carry it): `ctx = tenant.SetTenantID(ctx, "acme")` before the calls.
+
 Pass the `ctx` you receive from `InTx` into the CRUD call — that's what
 carries the transaction (via `TxFromContext`). The query builder is
 transaction-agnostic, so any hand-written `query.QueryBuilder` SQL you run

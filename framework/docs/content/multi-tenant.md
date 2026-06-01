@@ -39,10 +39,35 @@ If your tenants come from JWT claims, a subdomain, or anywhere else,
 write your own middleware that calls `framework.SetTenantID(ctx, id)`
 — the framework only cares that the context value is set.
 
+## Custom tenant column
+
+The tenant column defaults to `tenant_id`. To use a different name, set
+`TenantField` on the entity — it's the single source of the column name
+across injection, auto-migrate, and the CRUD insert/scope/filter paths:
+
+```go
+app.Entity("docs", framework.EntityConfig{
+    MultiTenant: true,
+    TenantField: "org_id",   // injected, created, written, and scoped by this column
+    Fields:      []schema.Field{{Name: "title", Type: schema.String}},
+})
+```
+
+A `TenantField` that isn't a valid SQL identifier fails loud at
+definition time. If you configure tenancy via `tenant.WithMultiTenant(ent,
+TenantConfig{Field: "org_id"})`, the `Field` flows into `TenantField`
+automatically.
+
+> The standalone helpers `framework.ApplyTenantFilter` / `InjectTenantID`
+> always use the default `tenant_id` column (they have no entity context).
+> A custom `TenantField` is honored by the automatic CRUD scoping, which is
+> the path you normally use — reach for the standalone helpers only with the
+> default column.
+
 ## Configuration
 
-`TenantConfig` and `DefaultTenantConfig()` exist for the case where
-you need to customise the column or header name. The defaults are:
+`TenantConfig` / `DefaultTenantConfig()` carry the header name and
+`AutoScope`. The defaults are:
 
 | Field        | Default       |
 |--------------|---------------|

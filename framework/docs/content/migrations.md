@@ -140,13 +140,15 @@ ALTER TABLE "posts" ADD COLUMN "published" BOOLEAN;
 ALTER TABLE "posts" DROP COLUMN "published";
 ```
 
-> **Scope.** The `migrate generate` / `migrate diff` CLI commands see only
-> `entities/*.json` declarations — they do **not** see views, routines, or
-> raw tables registered in Go via `App.View` / `App.Routine` / `App.Table`
-> (those are created idempotently on boot). To generate versioned migrations
-> that include views and routines, call the programmatic
-> `migrate.GeneratePlan(plan, snapshot, dialect)` from your own code (it
-> returns the Up/Down SQL and the next snapshot; write them with
+> **Scope.** The `migrate generate` / `migrate diff` CLI commands read schema
+> **only from `entities/*.json`** declarations (see
+> [entity-declarations](entity-declarations.md)). They do **not** see anything
+> registered in Go — neither `app.Entity(...)` entities nor `App.View` /
+> `App.Routine` / `App.Table`. For Go-defined schema, use auto-migrate
+> (`App.Start` applies it on boot) or `migrate diff` against a live DB; to emit
+> a versioned migration that includes Go-registered views/routines/tables, call
+> the programmatic `migrate.GeneratePlan(plan, snapshot, dialect)` from your own
+> code (it returns the Up/Down SQL and next snapshot; write them with
 > `migrate.RenderMigrationFile` / `SaveSnapshot`).
 
 It then updates the snapshot. The typical loop:
