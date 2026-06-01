@@ -32,6 +32,9 @@ func forEachRealDialect(t *testing.T, fn func(t *testing.T, db *sql.DB, d migrat
 			t.Fatalf("open sqlite: %v", err)
 		}
 		db.SetMaxOpenConns(1)
+		if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+			t.Fatalf("enable sqlite FKs: %v", err)
+		}
 		t.Cleanup(func() { db.Close() })
 		fn(t, db, migrate.DialectSQLite)
 	})
@@ -382,4 +385,132 @@ func TestPG_EnsureDatabaseCreatesRealDB(t *testing.T) {
 	if again {
 		t.Fatal("EnsureDatabase should report false when the database already exists")
 	}
+}
+
+// #31 — two genuine Up() calls racing on the SAME database apply the migration
+// set EXACTLY ONCE (the real rolling-deploy scenario). Without the advisory
+// lock one deployer would hit "relation already exists".
+func TestPG_ConcurrentUpAppliesExactlyOnce(t *testing.T) {
+	dsn := pgtest.FreshDatabaseDSN(t)
+	open := func() *sql.DB {
+		d, err := sql.Open("postgres", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.SetMaxOpenConns(1)
+		return d
+	}
+	dbA, dbB := open(), open()
+	defer dbA.Close()
+	defer dbB.Close()
+
+	migs := []migrate.Migration{
+		{Version: 1, Name: "a", Up: "CREATE TABLE shared_a (id INT)", Down: "DROP TABLE shared_a"},
+		{Version: 2, Name: "b", Up: "CREATE TABLE shared_b (id INT)", Down: "DROP TABLE shared_b"},
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i, d := range []*sql.DB{dbA, dbB} {
+		wg.Add(1)
+		go func(i int, d *sql.DB) {
+			defer wg.Done()
+			m := migrate.New(d, migrate.WithDialect(migrate.DialectPostgres))
+			for _, mg := range migs {
+				m.Register(mg)
+			}
+			errs[i] = m.Up(context.Background())
+		}(i, d)
+	}
+	wg.Wait()
+	for i, e := range errs {
+		if e != nil {
+			t.Fatalf("concurrent Up deployer %d failed: %v (advisory lock must prevent a double-apply)", i, e)
+		}
+	}
+	var n int
+	if err := dbA.QueryRow("SELECT COUNT(*) FROM _migrations").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("_migrations has %d rows, want exactly 2 (migrations applied once, not twice)", n)
+	}
+}
+
+// #31 — Down refuses to proceed when the database is dirty.
+func TestRT_DownBlocksOnDirty(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 1, Name: "dd", Up: "SELECT no_such_thing_here", Down: "SELECT 1", NoTransaction: true})
+		if err := m.Up(ctx); err == nil {
+			t.Fatal("expected the failing NoTransaction Up to error")
+		}
+		if err := m.Down(ctx, 1); !errors.Is(err, migrate.ErrDirty) {
+			t.Fatalf("Down on a dirty DB should return ErrDirty, got %v", err)
+		}
+	})
+}
+
+// #31 — Down rolls back in REVERSE version order. FK dependencies make a wrong
+// order fail: dropping a parent before its child violates the constraint.
+func TestRT_DownReverseOrderViaFK(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 1, Name: "p1", Up: "CREATE TABLE p1 (id INTEGER PRIMARY KEY)", Down: "DROP TABLE p1"})
+		m.Register(migrate.Migration{Version: 2, Name: "p2", Up: "CREATE TABLE p2 (id INTEGER PRIMARY KEY, p1_id INTEGER REFERENCES p1(id))", Down: "DROP TABLE p2"})
+		m.Register(migrate.Migration{Version: 3, Name: "p3", Up: "CREATE TABLE p3 (id INTEGER PRIMARY KEY, p2_id INTEGER REFERENCES p2(id))", Down: "DROP TABLE p3"})
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		// Down 2 must drop p3 then p2 (reverse). Forward order would fail the FK.
+		if err := m.Down(ctx, 2); err != nil {
+			t.Fatalf("Down(2) reverse order failed (FK?): %v", err)
+		}
+		if !exists(t, db, d, "p1") || exists(t, db, d, "p2") || exists(t, db, d, "p3") {
+			t.Fatal("after Down(2): p1 should remain, p2/p3 gone")
+		}
+	})
+}
+
+// #31 — versions registered out of order (and with gaps) apply in ascending
+// version order.
+func TestRT_OutOfOrderGappedVersions(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := mig(t, db, d)
+		m.Register(migrate.Migration{Version: 5, Name: "five", Up: "CREATE TABLE five (id INTEGER)", Down: "DROP TABLE five"})
+		m.Register(migrate.Migration{Version: 1, Name: "one", Up: "CREATE TABLE one (id INTEGER)", Down: "DROP TABLE one"})
+		m.Register(migrate.Migration{Version: 3, Name: "three", Up: "CREATE TABLE three (id INTEGER)", Down: "DROP TABLE three"})
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up out-of-order/gapped: %v", err)
+		}
+		st, _ := m.Status(ctx)
+		if len(st.Applied) != 3 || len(st.Pending) != 0 {
+			t.Fatalf("applied=%d pending=%d, want 3/0", len(st.Applied), len(st.Pending))
+		}
+		// Applied is reported in ascending version order.
+		if st.Applied[0].Version != 1 || st.Applied[1].Version != 3 || st.Applied[2].Version != 5 {
+			t.Fatalf("applied order = %d,%d,%d, want 1,3,5", st.Applied[0].Version, st.Applied[1].Version, st.Applied[2].Version)
+		}
+	})
+}
+
+// #31 — a custom tracking table name is honoured; the default _migrations is
+// not created.
+func TestRT_CustomTrackingTable(t *testing.T) {
+	forEachRealDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		ctx := context.Background()
+		m := migrate.New(db, migrate.WithDialect(d), migrate.WithTableName("schema_versions"))
+		m.Register(migrate.Migration{Version: 1, Name: "x", Up: "CREATE TABLE x (id INTEGER)", Down: "DROP TABLE x"})
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up with custom table: %v", err)
+		}
+		if !exists(t, db, d, "schema_versions") {
+			t.Fatal("custom tracking table schema_versions was not created")
+		}
+		if exists(t, db, d, "_migrations") {
+			t.Fatal("default _migrations table should not exist when a custom name is set")
+		}
+	})
 }

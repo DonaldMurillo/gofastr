@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
@@ -94,5 +95,27 @@ func TestCLI_PG_DiffApplyIdempotent(t *testing.T) {
 	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities"}) })
 	if !strings.Contains(out2, "up to date") {
 		t.Fatalf("re-diff after apply should be up to date, got: %s", out2)
+	}
+}
+
+// CLI `migrate status` renders a dirty migration (⚠ DIRTY) on Postgres.
+func TestCLI_PG_StatusShowsDirty(t *testing.T) {
+	dsn := pgtest.FreshDatabaseDSN(t)
+	covT_migrationsDir(t) // status needs a migrations/ dir present (+ chdir)
+	// Induce a dirty state with the runner: a failing NoTransaction migration.
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := coremig.New(db, coremig.WithDialect(coremig.DialectPostgres))
+	m.Register(coremig.Migration{Version: 1, Name: "wedged", Up: "SELECT definitely_not_a_function()", Down: "SELECT 1", NoTransaction: true})
+	_ = m.Up(context.Background()) // expected to fail and mark dirty
+	db.Close()
+
+	st := covT_capStdout(t, func() {
+		runMigrate([]string{"status", "--db-url=" + dsn, "--driver=postgres"})
+	})
+	if !strings.Contains(st, "DIRTY") {
+		t.Fatalf("status should flag the dirty migration, got:\n%s", st)
 	}
 }
