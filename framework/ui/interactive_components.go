@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -24,8 +25,20 @@ type TabsConfig struct {
 
 var tabsStyle = registry.RegisterStyle("fui-tabs", tabsCSS)
 
-// Tabs renders a signal-driven tab strip.
-// Panics if SignalName is empty or Tabs is empty.
+// tabsMaxPanels bounds how many tab indices the generated CSS covers.
+// Both the active-button highlight and the visible-panel rule are
+// emitted per index (the registered CSS is global — it can't know a
+// given strip's tab count), so we cover a generous fixed ceiling and
+// reject anything beyond it loudly rather than silently hiding panels.
+const tabsMaxPanels = 24
+
+// Tabs renders a signal-driven tab strip. Clicking a tab sets the signal;
+// the runtime mirrors it to data-active on the wrapper, and CSS lights up
+// both the matching button and panel — so the highlight moves with the
+// selection.
+//
+// Panics if SignalName is empty, Tabs is empty, or there are more than
+// tabsMaxPanels tabs.
 func Tabs(cfg TabsConfig) render.HTML {
 	if cfg.SignalName == "" {
 		panic("ui: Tabs requires SignalName")
@@ -33,15 +46,14 @@ func Tabs(cfg TabsConfig) render.HTML {
 	if len(cfg.Tabs) == 0 {
 		panic("ui: Tabs requires at least one TabItem")
 	}
+	if len(cfg.Tabs) > tabsMaxPanels {
+		panic(fmt.Sprintf("ui: Tabs supports at most %d tabs, got %d", tabsMaxPanels, len(cfg.Tabs)))
+	}
 
 	var buttons []render.HTML
 	for i, tab := range cfg.Tabs {
-		cls := "fui-tab"
-		if i == 0 {
-			cls = "fui-tab fui-tab--active"
-		}
 		buttons = append(buttons, render.Tag("button", map[string]string{
-			"class":               cls,
+			"class":               "fui-tab",
 			"data-fui-signal-set": cfg.SignalName + ":" + strconv.Itoa(i),
 			"role":                "tab",
 			"aria-selected":       strconv.FormatBool(i == 0),
@@ -64,26 +76,42 @@ func Tabs(cfg TabsConfig) render.HTML {
 	}, buttons...)
 
 	content := render.Tag("div", map[string]string{
-		"class":                "fui-tabs-content",
-		"data-fui-signal":      cfg.SignalName,
-		"data-fui-signal-mode": "attr",
-		"data-fui-signal-attr": "data-active",
-		"data-active":          "0",
+		"class": "fui-tabs-content",
 	}, panels...)
 
 	cls := "fui-tabs"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	wrapper := render.Tag("div", map[string]string{"class": cls}, nav, content)
+	// The signal binding lives on the outer wrapper — the common ancestor
+	// of the nav buttons and the panels — so one data-active drives both.
+	wrapper := render.Tag("div", map[string]string{
+		"class":                cls,
+		"data-fui-signal":      cfg.SignalName,
+		"data-fui-signal-mode": "attr",
+		"data-fui-signal-attr": "data-active",
+		"data-active":          "0",
+	}, nav, content)
 
 	return tabsStyle.WrapHTML(wrapper)
 }
 
 func tabsCSS(_ style.Theme) string {
-	css := `[data-fui-comp="fui-tabs"] .fui-tabs{margin:0}[data-fui-comp="fui-tabs"] .fui-tabs-nav{display:flex;gap:0;border-bottom:1px solid var(--fui-border,#e2e8f0);margin-bottom:0}[data-fui-comp="fui-tabs"] .fui-tab{padding:.5rem 1rem;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.875rem;font-weight:500;color:var(--fui-muted,#64748b);transition:color .15s,border-color .15s}[data-fui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground,#0f172a)}[data-fui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px;border-radius:2px}[data-fui-comp="fui-tabs"] .fui-tab--active,[data-fui-comp="fui-tabs"] .fui-tab[aria-selected="true"]{color:var(--fui-primary,#3b82f6);border-bottom-color:var(--fui-primary,#3b82f6)}[data-fui-comp="fui-tabs"] .fui-tabs-content{padding-top:1rem}[data-fui-comp="fui-tabs"] .fui-tab-panel{display:none}`
-	for i := 0; i < 6; i++ {
-		css += fmt.Sprintf(`[data-fui-comp="fui-tabs"] .fui-tabs-content[data-active="%d"]>.fui-tab-panel[data-fui-tab-index="%d"]{display:block}`, i, i)
+	var b strings.Builder
+	// WrapHTML stamps data-fui-comp onto the wrapper itself, so the
+	// wrapper-targeting rules are compound (no descendant combinator).
+	b.WriteString(`[data-fui-comp="fui-tabs"].fui-tabs{margin:0}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-nav{display:flex;gap:0;border-bottom:1px solid var(--fui-border,#e2e8f0);margin-bottom:0}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab{padding:.5rem 1rem;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.875rem;font-weight:500;color:var(--fui-muted,#64748b);transition:color .15s,border-color .15s}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground,#0f172a)}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px;border-radius:2px}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-content{padding-top:1rem}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
+	// Active button + visible panel both keyed off the wrapper's
+	// data-active so the highlight follows the selected tab.
+	for i := 0; i < tabsMaxPanels; i++ {
+		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-fui-tab-index="%d"]{color:var(--fui-primary,#3b82f6);border-bottom-color:var(--fui-primary,#3b82f6)}`, i, i))
+		b.WriteString(fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-fui-tab-index="%d"]{display:block}`, i, i))
 	}
-	return css
+	return b.String()
 }

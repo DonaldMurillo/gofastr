@@ -245,7 +245,6 @@ func TestE2EInteractive_FormInputHasLabel(t *testing.T) {
 	}
 }
 
-
 // TestE2EInteractive_RPCOpenWidget clicks the "open drawer" button and
 // verifies the drawer widget appears in the DOM after the RPC succeeds.
 func TestE2EInteractive_RPCOpenWidget(t *testing.T) {
@@ -393,7 +392,6 @@ func TestE2EInteractive_RPCErrorFeedback(t *testing.T) {
 		t.Error("error signal is empty after 500 response")
 	}
 }
-
 
 // TestE2EInteractive_NetworkErrorFeedback verifies that when a network error
 // occurs (fetch throws), the signal region shows a human-readable error
@@ -553,6 +551,7 @@ func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
 		t.Error("signal node has fui-flash class despite prefers-reduced-motion — flash should be skipped")
 	}
 }
+
 // NOTE: a chromedp mobile-overflow test was tried and removed — chromedp's
 // EmulateViewport doesn't reproduce the grid-overflow that a real browser
 // resize does, so it passed even with the broken CSS (a false guard). The
@@ -639,15 +638,18 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// First tab should be active.
-	var firstActive bool
+	// First tab should be active — the highlight is driven by the
+	// wrapper's data-active, so the first button's bottom border is the
+	// accent colour while the second button's is transparent.
+	var firstBorder, secondBorderInitial string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-tab--active') !== null`, &firstActive),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).borderBottomColor`, &firstBorder),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).borderBottomColor`, &secondBorderInitial),
 	); err != nil {
-		t.Fatalf("check first active: %v", err)
+		t.Fatalf("read initial borders: %v", err)
 	}
-	if !firstActive {
-		t.Fatal("first tab should have fui-tab--active class")
+	if firstBorder == secondBorderInitial {
+		t.Fatalf("first tab should be visually active initially; both borders = %q", firstBorder)
 	}
 
 	// Click the second tab.
@@ -658,10 +660,10 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 		t.Fatalf("click second tab: %v", err)
 	}
 
-	// Verify the content wrapper got the new signal value.
+	// The wrapper got the new signal value.
 	var activeAttr string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-tabs-content').getAttribute('data-active')`, &activeAttr),
+		chromedp.Evaluate(`document.querySelector('.fui-tabs').getAttribute('data-active')`, &activeAttr),
 	); err != nil {
 		t.Fatalf("read active attr: %v", err)
 	}
@@ -678,6 +680,23 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	}
 	if panel2Display == "none" {
 		t.Fatal("second tab panel should be visible after clicking second tab")
+	}
+
+	// Regression (frozen-highlight bug): the active indicator must MOVE to
+	// the second button — its bottom border now matches the original
+	// first-tab accent, and the first button no longer does.
+	var firstAfter, secondAfter string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).borderBottomColor`, &firstAfter),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).borderBottomColor`, &secondAfter),
+	); err != nil {
+		t.Fatalf("read borders after click: %v", err)
+	}
+	if secondAfter != firstBorder {
+		t.Fatalf("active highlight did not move to second tab: got %q, want %q", secondAfter, firstBorder)
+	}
+	if firstAfter == firstBorder {
+		t.Fatalf("first tab still shows the active highlight after switching (frozen highlight): %q", firstAfter)
 	}
 }
 
