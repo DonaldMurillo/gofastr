@@ -436,7 +436,7 @@ var componentCatalog = []componentEntry{
 		return ui.Switch(ui.ToggleConfig{Name: "live", Label: "Live updates"})
 	}},
 	{"textarea", "Textarea", "Forms", "Multi-line text input with autosize.", func() render.HTML {
-		return ui.TextArea(ui.TextAreaConfig{Name: "body", Label: "Body", Placeholder: "Write your post…", Rows: 6})
+		return ui.TextArea(ui.TextAreaConfig{Name: "body", Label: "Body", Placeholder: "Write your post…", Rows: 6, Autogrow: true})
 	}},
 	{"numberinput", "NumberInput", "Forms", "Numeric input with stepper buttons.", func() render.HTML {
 		return ui.NumberInput(ui.NumberInputConfig{Name: "qty", Label: "Quantity", Min: 0, Max: 99, Value: 1})
@@ -899,6 +899,42 @@ func main() {
 					),
 				),
 			)
+		}},
+	// ---------- Clientside Interactivity: new primitives ----------
+
+	{"scroll-reveal", "Scroll Reveal", "Clientside Interactivity",
+		"Elements fade in as they scroll into view — IntersectionObserver, no JS needed.",
+		func() render.HTML {
+			box := render.Tag("div", map[string]string{
+				"style": "padding:2rem;background:var(--color-surface-2, #f5f5f5);border-radius:0.5rem;margin-top:4rem",
+			}, render.Text("This box fades up when you scroll to it."))
+			return interactive.Reveal(box, "fade-up")
+		}},
+
+	{"signal-animate", "Signal Animate", "Clientside Interactivity",
+		"Toggle a CSS class when a signal changes — transitions driven by state.",
+		func() render.HTML {
+			panel := render.Tag("div", map[string]string{
+				"style": "padding:1rem;background:var(--color-surface-2, #f5f5f4);border-radius:0.5rem;transition:all 0.3s ease;overflow:hidden",
+			}, render.Text("This panel slides open when the toggle is on."))
+			animated := interactive.AnimateOnSignal(panel, "demo-animate", "fui-expanded")
+			toggle := interactive.ToggleLocal(
+				render.Tag("button", nil, render.Text("Toggle Panel")),
+				"demo-animate",
+			)
+			return render.Join(toggle, animated)
+		}},
+
+	{"dropdown", "Dropdown", "Clientside Interactivity",
+		"Click-toggle dropdown with click-outside dismiss and Escape to close.",
+		func() render.HTML {
+			trigger := render.Tag("button", map[string]string{"class": "fui-btn"}, render.Text("Open Menu"))
+			panel := render.Tag("div", map[string]string{"class": "fui-dropdown-menu"},
+				render.Tag("a", map[string]string{"href": "#", "class": "fui-dropdown-item"}, render.Text("Edit")),
+				render.Tag("a", map[string]string{"href": "#", "class": "fui-dropdown-item"}, render.Text("Duplicate")),
+				render.Tag("a", map[string]string{"href": "#", "class": "fui-dropdown-item"}, render.Text("Delete")),
+			)
+			return interactive.Dropdown(trigger, panel)
 		}},
 }
 

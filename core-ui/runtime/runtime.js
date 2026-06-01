@@ -1891,7 +1891,13 @@
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // FormRepeater: serializes field values into RPC add/remove clicks.
     { name: 'formrepeater',    selector: '[data-fui-comp="ui-form-repeater"]' },
-  ];
+      // Dropdown: click-toggle + click-outside dismiss + Esc close.
+    { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
+    // Reveal: IntersectionObserver-driven entrance animations.
+    { name: 'reveal',           selector: '[data-fui-reveal]' },
+    // Animate: signal-driven CSS class toggling.
+    { name: 'animate',          selector: '[data-fui-animate-signal]' },
+];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const idleQueue = [];
