@@ -23,5 +23,6 @@ type Routine struct {
 // entities in one pass.
 type Plan struct {
 	Registry entity.Registry
+	Views    []View
 	Routines []Routine
 }

@@ -122,8 +122,15 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
-		// Routines after tables — a function/trigger/view can reference the
-		// tables just created. CREATE OR REPLACE keeps re-runs idempotent.
+		// Views after tables (they SELECT from them), ordered so a view that
+		// depends on another view follows it.
+		for _, v := range topoSortViews(plan.Views) {
+			if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
+				return fmt.Errorf("migrate view %s: %w", v.Name, err)
+			}
+		}
+		// Routines after views — a trigger/function may reference a view.
+		// CREATE OR REPLACE keeps re-runs idempotent.
 		for _, r := range plan.Routines {
 			if _, err := tx.ExecContext(ctx, r.Up); err != nil {
 				return fmt.Errorf("migrate routine %s: %w", r.Name, err)
@@ -155,6 +162,11 @@ func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error
 // DDL runs. exec is either the *sql.DB pool (single-entity callers) or the
 // shared *sql.Tx (AutoMigrate's atomic run).
 func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, tableExists bool) error {
+	// Unmanaged objects (views, FTS virtual tables, external/legacy tables) are
+	// created elsewhere — the migration system emits no DDL for them.
+	if ent.Config.Unmanaged {
+		return nil
+	}
 	fields := ent.GetFields()
 	if len(fields) == 0 {
 		return nil

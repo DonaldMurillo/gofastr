@@ -71,6 +71,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))
 	for _, ent := range ordered {
+		if ent.Config.Unmanaged {
+			continue
+		}
 		tables = append(tables, ent.GetTable())
 	}
 	liveByTable, err := ReadLiveColumnsBulk(ctx, db, tables, dialect)
@@ -78,6 +81,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		return nil, err
 	}
 	for _, ent := range ordered {
+		if ent.Config.Unmanaged {
+			continue
+		}
 		changes, err := diffEntityFromLive(ent, all, dialect, liveByTable[ent.GetTable()])
 		if err != nil {
 			return nil, fmt.Errorf("diff %s: %w", ent.GetName(), err)

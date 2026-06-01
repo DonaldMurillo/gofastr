@@ -218,6 +218,43 @@ Use `AutoMigratePlanContext(ctx, db, migrate.Plan{Registry, Routines})` /
 `GeneratePlan(plan, snapshot, dialect)` for the programmatic path; `App.Start`
 builds the plan from `App.Table` / `App.Routine` automatically.
 
+## Views (virtual tables built from entities)
+
+A `migrate.View` is a read model defined by a SELECT over your entity
+tables — a "virtual table constructed from other entities". It belongs to
+both stories: it's created on boot after its source tables (and tracked
+reversibly by `migrate generate`), and when it declares `Columns` it's
+also exposed through the ORM as a **read-only** entity.
+
+```go
+app.Table( /* ...entities... */ )
+app.View(migrate.View{
+    Name:      "active_users",
+    Select:    "SELECT id, name FROM users WHERE active",
+    DependsOn: []string{"users"}, // created after this table
+    Columns: []migrate.Column{    // declare to expose via the ORM (read-only)
+        {Name: "id", Type: schema.String, PrimaryKey: true},
+        {Name: "name", Type: schema.String},
+    },
+    // Materialized: true, // Postgres materialized view (plain view otherwise)
+})
+```
+
+- **Migration**: emitted after all tables (and ordered among views by
+  `DependsOn`). Idempotent — `CREATE OR REPLACE VIEW` on Postgres, `DROP …
+  IF EXISTS` + `CREATE` on SQLite/materialized. `migrate generate` tracks
+  the definition by checksum and writes a reversible migration when it
+  changes (the `Down` restores the previous definition / drops a new one).
+- **ORM**: with `Columns` declared, `GET /active_users` and
+  `GET /active_users/{id}` are mounted (plus the query layer); no write
+  routes. Without `Columns`, the view is migration-only — query it with
+  raw SQL.
+- The view's ORM entity is `Unmanaged`: the migration system emits no
+  table DDL for it (the view DDL handles its existence). `Unmanaged` is a
+  general `EntityConfig` flag — use it for any externally-created table
+  (FTS virtual tables, legacy tables) you want to query through the ORM
+  without auto-migrate touching its schema.
+
 ## Creating the database
 
 By default the database must already exist. To create it on first run:

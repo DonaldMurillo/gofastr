@@ -81,7 +81,8 @@ type App struct {
 	Plugins  *PluginManager
 	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
-	migrationRoutines []migrate.Routine // stored procedures/functions/views/triggers run on boot
+	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
+	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
 
 	Batteries *BatteryManager
 
@@ -632,6 +633,34 @@ func (a *App) Routine(r migrate.Routine) *App {
 	return a
 }
 
+// View registers a database view — a virtual table built from other entities.
+// The view is created on boot after its source tables (and tracked reversibly
+// by `migrate generate`), and, when it declares Columns, it is also exposed
+// through the ORM as a READ-ONLY entity: List/Get and the query layer work, but
+// no write routes are registered. Returns App for chaining.
+func (a *App) View(v migrate.View) *App {
+	a.migrationViews = append(a.migrationViews, v)
+
+	ent := v.ToEntity() // nil when the view declares no columns (migration-only)
+	if ent == nil {
+		return a
+	}
+	if a.DB != nil {
+		ent.SetDB(a.DB)
+	}
+	if err := a.Registry.Register(ent); err != nil {
+		panic(fmt.Sprintf("framework: failed to register view %q: %v", v.Name, err))
+	}
+	if a.DB != nil {
+		ch := crud.NewCrudHandler(ent, a.DB)
+		ch.JSONCase = a.JSONCasing()
+		ch.Registry = a.Registry
+		crud.RegisterCrudRoutes(a.router, ch, "/"+ent.GetTable(),
+			crud.CrudRouteOptions{ReadOnly: true, NoLLMMD: a.Config.NoLLMMD})
+	}
+	return a
+}
+
 // RegisterEntities registers each (name, config) pair via App.Entity in
 // alphabetical-by-name order. Sorting matters: Entity has order-sensitive
 // side effects — router registration, MCP tool list order, OpenAPI tag
@@ -1044,7 +1073,7 @@ func (a *App) Start(addr string) error {
 
 	// Auto-migrate all registered entities
 	if a.DB != nil {
-		plan := migrate.Plan{Registry: a.Registry, Routines: a.migrationRoutines}
+		plan := migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
 		if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, plan); err != nil {
 			return abort(fmt.Errorf("auto-migrate: %w", err))
 		}

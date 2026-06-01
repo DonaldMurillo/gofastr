@@ -163,6 +163,18 @@ func TestAutoMigratePlan_CommitError(t *testing.T) {
 	}
 }
 
+func TestAutoMigratePlan_ViewError(t *testing.T) {
+	db, m := mock(t)
+	expectSQLiteDialect(m)
+	m.ExpectBegin()
+	m.ExpectExec("CREATE VIEW badv").WillReturnError(errors.New("bad view"))
+	m.ExpectRollback()
+	plan := Plan{Views: []View{{Name: "badv", Select: "SELECT bad"}}}
+	if err := AutoMigratePlanContext(ctxB(), db, plan); err == nil {
+		t.Error("expected view DDL error")
+	}
+}
+
 func TestAutoMigratePlan_RoutineError(t *testing.T) {
 	db, m := mock(t)
 	expectSQLiteDialect(m)

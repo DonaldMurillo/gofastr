@@ -26,6 +26,7 @@ import (
 // share one code path.
 type SchemaSnapshot struct {
 	Tables   map[string]map[string]string `json:"tables"`
+	Views    map[string]RoutineDef        `json:"views,omitempty"`
 	Routines map[string]RoutineDef        `json:"routines,omitempty"`
 }
 
@@ -48,11 +49,21 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 	snap := SchemaSnapshot{Tables: map[string]map[string]string{}}
 	if plan.Registry != nil {
 		for _, ent := range plan.Registry.All() {
+			if ent.Config.Unmanaged {
+				continue // views / external tables aren't part of the table snapshot
+			}
 			cols := map[string]string{}
 			for _, f := range ent.GetFields() {
 				cols[f.Name] = SQLType(f, dialect)
 			}
 			snap.Tables[ent.GetTable()] = cols
+		}
+	}
+	if len(plan.Views) > 0 {
+		snap.Views = map[string]RoutineDef{}
+		for _, v := range plan.Views {
+			up, down := v.render(dialect)
+			snap.Views[v.Name] = RoutineDef{Up: up, Down: down}
 		}
 	}
 	if len(plan.Routines) > 0 {
@@ -93,6 +104,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 
 	var changes []SchemaChange
 	for _, ent := range ordered {
+		if ent.Config.Unmanaged {
+			continue // views / external tables generate no table DDL
+		}
 		prevCols := prev.Tables[ent.GetTable()]
 		entChanges, derr := diffEntityFromLive(ent, all, dialect, prevCols)
 		if derr != nil {
@@ -122,9 +136,14 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		})
 	}
 
-	// Routines: emit Up for new/changed ones, restore-or-drop on Down. Appended
-	// AFTER table changes so the reverse-ordered Down drops routines before the
-	// tables they depend on.
+	// Views after table changes (they SELECT from those tables), then routines
+	// after views. The reverse-ordered Down therefore drops routines, then
+	// views, then tables — dependencies unwind cleanly.
+	viewRoutines := make([]Routine, 0, len(plan.Views))
+	for _, v := range topoSortViews(plan.Views) {
+		viewRoutines = append(viewRoutines, v.routine(dialect))
+	}
+	changes = append(changes, routineChanges(viewRoutines, prev.Views)...)
 	changes = append(changes, routineChanges(plan.Routines, prev.Routines)...)
 
 	next = SnapshotFromPlan(plan, dialect)

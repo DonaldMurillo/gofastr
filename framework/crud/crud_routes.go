@@ -14,7 +14,8 @@ func registerLLMMDRoutes(r *router.Router, ent *entity.Entity, path string) {
 
 // CrudRouteOptions controls which routes are registered by RegisterCrudRoutes.
 type CrudRouteOptions struct {
-	NoLLMMD bool // disable auto-generated /path/llm.md
+	NoLLMMD  bool // disable auto-generated /path/llm.md
+	ReadOnly bool // register only the read routes (List/Get/events) — for views and other read-only objects
 }
 
 // RegisterCrudRoutes registers the standard CRUD routes plus batch endpoints
@@ -42,13 +43,16 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 
 	r.Get(path, handler.List())
 	r.Get(path+"/{id}", handler.Get())
-	r.Post(path, handler.Create())
-	r.Put(path+"/{id}", handler.Update())
-	r.Delete(path+"/{id}", handler.Delete())
 
-	r.Post(path+"/_batch", handler.BatchCreate())
-	r.Patch(path+"/_batch", handler.BatchUpdate())
-	r.Delete(path+"/_batch", handler.BatchDelete())
+	if !opt.ReadOnly {
+		r.Post(path, handler.Create())
+		r.Put(path+"/{id}", handler.Update())
+		r.Delete(path+"/{id}", handler.Delete())
+
+		r.Post(path+"/_batch", handler.BatchCreate())
+		r.Patch(path+"/_batch", handler.BatchUpdate())
+		r.Delete(path+"/_batch", handler.BatchDelete())
+	}
 
 	r.Get(path+"/_events", handler.EventStream())
 

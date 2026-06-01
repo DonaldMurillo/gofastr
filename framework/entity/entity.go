@@ -29,6 +29,7 @@ type EntityConfig struct {
 	CursorField  string         // optional: single-field keyset cursor; defaults to PrimaryKey
 	CursorFields []string       // optional: composite cursor — ORDER BY each field in order with tuple-compared keyset. Wins over CursorField when non-empty.
 	Indices      []Index        // additional CREATE INDEX statements emitted by AutoMigrate
+	Unmanaged    bool           // when true, the migration system never emits DDL for this object (it is created elsewhere — e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
 	Properties   map[string]any // caller-owned metadata for generators, plugins, and app conventions
 	MaxListLimit int            // opt-in cap for ?limit and the streaming list path. 0 = use default (100); negative = no streaming cap above default.
 

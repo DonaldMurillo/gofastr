@@ -178,6 +178,76 @@ func TestTopoSort_CycleAndNestedUnknown(t *testing.T) {
 	}
 }
 
+func TestView_RenderAndToEntityBranches(t *testing.T) {
+	// Postgres plain view → CREATE OR REPLACE VIEW.
+	up, down := View{Name: "v", Select: "SELECT 1"}.render(DialectPostgres)
+	if !strings.Contains(up, "CREATE OR REPLACE VIEW v") || !strings.Contains(down, "DROP VIEW IF EXISTS v") {
+		t.Fatalf("pg plain view DDL: up=%q down=%q", up, down)
+	}
+	// Postgres materialized → MATERIALIZED VIEW with DROP+CREATE.
+	upM, downM := View{Name: "mv", Select: "SELECT 1", Materialized: true}.render(DialectPostgres)
+	if !strings.Contains(upM, "MATERIALIZED VIEW mv") || !strings.Contains(downM, "DROP MATERIALIZED VIEW IF EXISTS mv") {
+		t.Fatalf("pg matview DDL: up=%q down=%q", upM, downM)
+	}
+	// SQLite → DROP+CREATE plain view.
+	upS, _ := View{Name: "v", Select: "SELECT 1"}.render(DialectSQLite)
+	if !strings.Contains(upS, "DROP VIEW IF EXISTS v") || !strings.Contains(upS, "CREATE VIEW v") {
+		t.Fatalf("sqlite view DDL: %q", upS)
+	}
+	// ToEntity: nil when no columns; Unmanaged entity otherwise.
+	if (View{Name: "v", Select: "SELECT 1"}).ToEntity() != nil {
+		t.Error("ToEntity with no columns should be nil")
+	}
+	ent := View{Name: "v", Select: "SELECT 1", Columns: []Column{{Name: "id", Type: schema.String, PrimaryKey: true}}}.ToEntity()
+	if ent == nil || !ent.Config.Unmanaged || ent.PrimaryKey != "id" {
+		t.Fatalf("ToEntity with columns: %+v", ent)
+	}
+}
+
+func TestTopoSortViews_SharedDependency(t *testing.T) {
+	// A and C both depend on B → B is visited once; output has all three with B
+	// before A and C.
+	views := []View{
+		{Name: "a", DependsOn: []string{"b"}},
+		{Name: "c", DependsOn: []string{"b"}},
+		{Name: "b"},
+	}
+	out := topoSortViews(views)
+	if len(out) != 3 {
+		t.Fatalf("expected 3 views, got %d", len(out))
+	}
+	pos := map[string]int{}
+	for i, v := range out {
+		pos[v.Name] = i
+	}
+	if pos["b"] > pos["a"] || pos["b"] > pos["c"] {
+		t.Fatalf("b must come before a and c: %v", pos)
+	}
+}
+
+func TestSnapshotFromPlan_SkipsUnmanaged(t *testing.T) {
+	e := rawEnt("v", "v", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
+	e.Config.Unmanaged = true
+	reg := testReg{"v": e}
+	snap := SnapshotFromPlan(Plan{Registry: reg}, DialectSQLite)
+	if _, ok := snap.Tables["v"]; ok {
+		t.Fatal("Unmanaged entity should not appear in the snapshot tables")
+	}
+}
+
+func TestGeneratePlan_SkipsUnmanaged(t *testing.T) {
+	e := rawEnt("v", "v", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
+	e.Config.Unmanaged = true
+	reg := testReg{"v": e}
+	up, _, _, err := GeneratePlan(Plan{Registry: reg}, SchemaSnapshot{Tables: map[string]map[string]string{}}, DialectSQLite)
+	if err != nil {
+		t.Fatalf("GeneratePlan: %v", err)
+	}
+	if up != "" {
+		t.Fatalf("Unmanaged entity should generate no DDL, got: %s", up)
+	}
+}
+
 func TestBuildCreateTableSQL_NoFieldsUniqueAndFKError(t *testing.T) {
 	if _, err := buildCreateTableSQL(rawEnt("e", "e", nil, nil, ""), nil, DialectSQLite); err == nil {
 		t.Error("expected error for an entity with no fields")

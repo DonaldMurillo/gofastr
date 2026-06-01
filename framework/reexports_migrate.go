@@ -16,6 +16,7 @@ type (
 	Column                 = migrate.Column
 	ForeignKey             = migrate.ForeignKey
 	Routine                = migrate.Routine
+	View                   = migrate.View
 	MigrationPlan          = migrate.Plan
 )
 
