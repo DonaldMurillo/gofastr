@@ -1,0 +1,98 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
+)
+
+// covT_chdirEntities writes entities/posts.json into a temp dir and chdirs to it.
+func covT_chdirEntities(t *testing.T, decl string) {
+	t.Helper()
+	dir := t.TempDir()
+	ent := filepath.Join(dir, "entities")
+	if err := os.MkdirAll(ent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ent, "posts.json"), []byte(decl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_chdir(t, dir)
+}
+
+// CLI `migrate up --create-db` against Postgres: creates the database that does
+// not yet exist, then applies migrations into it.
+func TestCLI_PG_CreateDBThenUp(t *testing.T) {
+	target, drop := pgtest.UnusedDSN(t) // db does not exist yet
+	defer drop()
+	covT_migrationsDir(t) // migrations/001_create_posts.sql + chdir
+
+	out := covT_capStdout(t, func() {
+		runMigrate([]string{"up", "--create-db", "--db-url=" + target, "--driver=postgres"})
+	})
+	if strings.Contains(strings.ToLower(out), "error") {
+		t.Fatalf("up --create-db reported an error: %s", out)
+	}
+	db, err := sql.Open("postgres", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var reg sql.NullString
+	if err := db.QueryRowContext(context.Background(), "SELECT to_regclass('public.posts')").Scan(&reg); err != nil {
+		t.Fatalf("the database should have been created and migrated: %v", err)
+	}
+	if !reg.Valid {
+		t.Fatal("--create-db created the DB but migrations did not apply")
+	}
+}
+
+// CLI `migrate force` against Postgres marks a version's applied state without
+// running its SQL.
+func TestCLI_PG_Force(t *testing.T) {
+	dsn := pgtest.FreshDatabaseDSN(t)
+	dbFlag := "--db-url=" + dsn
+	drv := "--driver=postgres"
+	covT_migrationsDir(t)
+
+	covT_capStdout(t, func() { runMigrate([]string{"up", dbFlag, drv}) })
+	// Force the applied migration back to not-applied (operator reconciliation).
+	covT_capStdout(t, func() { runMigrate([]string{"force", "1", "--not-applied", dbFlag, drv}) })
+	st := covT_capStdout(t, func() { runMigrate([]string{"status", dbFlag, drv}) })
+	if !strings.Contains(st, "Applied: 0") || !strings.Contains(st, "create_posts") {
+		t.Fatalf("after force --not-applied, status should be Applied: 0 with create_posts pending, got:\n%s", st)
+	}
+}
+
+// CLI `migrate diff --apply` against a live Postgres applies the declarative
+// delta and a re-diff is idempotent (up to date).
+func TestCLI_PG_DiffApplyIdempotent(t *testing.T) {
+	dsn := pgtest.FreshDatabaseDSN(t)
+	covT_chdirEntities(t, `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}]}`)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	dbFlag := "--db-url=" + dsn
+	drv := "--driver=postgres"
+	out := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities"}) })
+	if !strings.Contains(out, "views") {
+		t.Fatalf("diff should report the missing 'views' column on PG, got: %s", out)
+	}
+	covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities", "--apply"}) })
+	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities"}) })
+	if !strings.Contains(out2, "up to date") {
+		t.Fatalf("re-diff after apply should be up to date, got: %s", out2)
+	}
+}
