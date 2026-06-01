@@ -1,0 +1,526 @@
+app:
+  name: TaskBoard
+  module: example.com/taskboard
+  db:
+    driver: sqlite
+    url: file:taskboard.db
+  auth:
+    enabled: true
+    dev_mode: true
+  theme:
+    primary: "#7C3AED"
+    primary-fg: "#FFFFFF"
+    secondary: "#06B6D4"
+    background: "#F9FAFB"
+    surface: "#FFFFFF"
+    surface-soft: "#F3F4F6"
+    text: "#111827"
+    text-muted: "#6B7280"
+    border: "#D1D5DB"
+    accent: "#7C3AED"
+    success: "#059669"
+    warning: "#D97706"
+    danger: "#DC2626"
+    info: "#2563EB"
+
+entities:
+  - name: projects
+    crud: true
+    mcp: true
+    soft_delete: true
+    properties:
+      label: Projects
+      icon: folder-kanban
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 150
+      - name: key
+        type: string
+        required: true
+        unique: true
+        max: 10
+        pattern: "^[A-Z]+$"
+      - name: description
+        type: text
+      - name: status
+        type: enum
+        values: [planning, active, on_hold, completed, archived]
+        default: planning
+      - name: color
+        type: string
+        max: 7
+        pattern: "^#[0-9a-fA-F]{6}$"
+      - name: icon
+        type: string
+        max: 50
+      - name: is_public
+        type: bool
+        default: false
+      - name: start_date
+        type: date
+      - name: target_date
+        type: date
+    relations:
+      - type: has_many
+        name: boards
+        entity: boards
+        foreign_key: project_id
+      - type: has_many
+        name: members
+        entity: project_members
+        foreign_key: project_id
+
+  - name: project_members
+    crud: true
+    indices:
+      - name: idx_project_members_unique
+        columns: [project_id, user_email]
+        unique: true
+    fields:
+      - name: project_id
+        type: relation
+        to: projects
+        required: true
+      - name: user_email
+        type: string
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: role
+        type: enum
+        values: [owner, admin, member, viewer]
+        default: member
+    relations:
+      - type: belongs_to
+        name: project
+        entity: projects
+        foreign_key: project_id
+
+  - name: boards
+    crud: true
+    mcp: true
+    properties:
+      label: Boards
+      icon: columns
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 100
+      - name: project_id
+        type: relation
+        to: projects
+        required: true
+      - name: description
+        type: text
+      - name: position
+        type: int
+        default: 0
+        min: 0
+      - name: color
+        type: string
+        max: 7
+        pattern: "^#[0-9a-fA-F]{6}$"
+    relations:
+      - type: belongs_to
+        name: project
+        entity: projects
+        foreign_key: project_id
+      - type: has_many
+        name: columns
+        entity: columns
+        foreign_key: board_id
+
+  - name: columns
+    crud: true
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 50
+      - name: board_id
+        type: relation
+        to: boards
+        required: true
+      - name: position
+        type: int
+        required: true
+        default: 0
+        min: 0
+      - name: wip_limit
+        type: int
+        min: 0
+      - name: color
+        type: string
+        max: 7
+        pattern: "^#[0-9a-fA-F]{6}$"
+    relations:
+      - type: belongs_to
+        name: board
+        entity: boards
+        foreign_key: board_id
+      - type: has_many
+        name: tasks
+        entity: tasks
+        foreign_key: column_id
+
+  - name: tasks
+    crud: true
+    mcp: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    soft_delete: true
+    indices:
+      - name: idx_tasks_column
+        columns: [column_id]
+      - name: idx_tasks_priority
+        columns: [priority]
+      - name: idx_tasks_assignee
+        columns: [assignee_email]
+    properties:
+      label: Tasks
+      icon: check-square
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 300
+      - name: description
+        type: text
+      - name: column_id
+        type: relation
+        to: columns
+        required: true
+      - name: position
+        type: int
+        default: 0
+        min: 0
+      - name: priority
+        type: enum
+        values: [none, low, medium, high, urgent]
+        default: none
+      - name: task_type
+        type: enum
+        values: [task, bug, feature, improvement, story, epic]
+        default: task
+      - name: status
+        type: enum
+        values: [todo, in_progress, in_review, done, cancelled]
+        default: todo
+      - name: assignee_email
+        type: string
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: reporter_email
+        type: string
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: due_date
+        type: date
+      - name: estimated_hours
+        type: float
+        min: 0
+      - name: logged_hours
+        type: float
+        min: 0
+        default: 0
+      - name: story_points
+        type: int
+        min: 0
+      - name: blocked
+        type: bool
+        default: false
+      - name: blocked_reason
+        type: text
+    relations:
+      - type: belongs_to
+        name: column
+        entity: columns
+        foreign_key: column_id
+      - type: has_many
+        name: comments
+        entity: comments
+        foreign_key: task_id
+      - type: has_many
+        name: task_labels
+        entity: task_labels
+        foreign_key: task_id
+
+  - name: labels
+    crud: true
+    mcp: true
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 50
+      - name: color
+        type: string
+        required: true
+        max: 7
+        pattern: "^#[0-9a-fA-F]{6}$"
+      - name: description
+        type: text
+    relations:
+      - type: has_many
+        name: task_labels
+        entity: task_labels
+        foreign_key: label_id
+
+  - name: task_labels
+    crud: true
+    indices:
+      - name: idx_task_labels_unique
+        columns: [task_id, label_id]
+        unique: true
+    fields:
+      - name: task_id
+        type: relation
+        to: tasks
+        required: true
+      - name: label_id
+        type: relation
+        to: labels
+        required: true
+    relations:
+      - type: belongs_to
+        name: task
+        entity: tasks
+        foreign_key: task_id
+      - type: belongs_to
+        name: label
+        entity: labels
+        foreign_key: label_id
+
+  - name: comments
+    crud: true
+    fields:
+      - name: task_id
+        type: relation
+        to: tasks
+        required: true
+      - name: author_email
+        type: string
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: body
+        type: text
+        required: true
+    relations:
+      - type: belongs_to
+        name: task
+        entity: tasks
+        foreign_key: task_id
+
+
+nav:
+  - label: Dashboard
+    href: /
+    icon: layout-dashboard
+  - label: Projects
+    href: /projects
+    icon: folder-kanban
+  - label: Boards
+    href: /boards
+    icon: columns
+  - label: Tasks
+    href: /tasks
+    icon: check-square
+  - label: Labels
+    href: /labels
+    icon: tag
+screens:
+  - name: home
+    route: /
+    title: TaskBoard
+    description: Project management dashboard
+    body:
+      - type: heading
+        level: 1
+        text: TaskBoard
+      - type: paragraph
+        text: Manage your projects, boards, and tasks in one place.
+      - kind: section
+        props:
+          label: Active Projects
+          class: dashboard-section
+        children:
+          - kind: entity_list
+            text: Projects
+            entity: projects
+            fields: [name, status, key]
+            limit: 10
+            empty_text: No projects yet. Create one to get started.
+
+  - name: projects
+    route: /projects
+    title: Projects
+    description: All projects
+    body:
+      - type: heading
+        level: 1
+        text: Projects
+      - kind: entity_list
+        text: All Projects
+        entity: projects
+        fields: [name, key, status]
+        limit: 50
+        empty_text: No projects yet.
+
+  - name: boards
+    route: /boards
+    title: Boards
+    description: Project boards
+    body:
+      - type: heading
+        level: 1
+        text: Boards
+      - kind: entity_list
+        text: All Boards
+        entity: boards
+        fields: [name, position]
+        limit: 50
+        empty_text: No boards yet.
+
+  - name: tasks
+    route: /tasks
+    title: Tasks
+    description: View and manage all tasks
+    body:
+      - type: heading
+        level: 1
+        text: All Tasks
+      - kind: entity_list
+        text: Task List
+        entity: tasks
+        fields: [title, status, priority, task_type]
+        limit: 30
+        empty_text: No tasks yet.
+
+  - name: labels
+    route: /labels
+    title: Labels
+    description: Manage task labels
+    body:
+      - type: heading
+        level: 1
+        text: Labels
+      - kind: entity_list
+        text: All Labels
+        entity: labels
+        fields: [name, color]
+        limit: 50
+        empty_text: No labels yet.
+
+  - name: task_new
+    route: /new-task
+    title: New Task
+    description: Create a new task
+    body:
+      - type: heading
+        level: 1
+        text: New Task
+      - kind: entity_form
+        text: Create Task
+        entity: tasks
+        mode: create
+        fields: [title, description, priority, task_type, status, assignee_email, due_date]
+
+  - name: task_detail
+    route: /task-detail
+    title: Task Details
+    description: View task details
+    body:
+      - type: heading
+        level: 1
+        text: Task Details
+      - kind: entity_detail
+        text: Task
+        entity: tasks
+        fields: [title, description, priority, task_type, status, assignee_email, due_date, blocked]
+
+endpoints:
+  - name: move_task
+    method: POST
+    path: /tasks/{id}/move
+    entity: tasks
+    handler: moveTask
+    description: Move a task to a different column
+  - name: assign_task
+    method: POST
+    path: /tasks/{id}/assign
+    entity: tasks
+    handler: assignTask
+    description: Assign a task to a user
+  - name: log_hours
+    method: POST
+    path: /tasks/{id}/log-hours
+    entity: tasks
+    handler: logHours
+    description: Log hours against a task
+
+middleware:
+  - request_logger
+
+helpers:
+  - name: generate_task_key
+  - name: calculate_burndown
+
+seed:
+  - entity: projects
+    rows:
+      - name: Website Redesign
+        key: WEB
+        description: Complete redesign of the company website with new branding
+        status: active
+        color: "#3B82F6"
+      - name: Mobile App
+        key: MOB
+        description: Native mobile app for iOS and Android
+        status: planning
+        color: "#10B981"
+  - entity: labels
+    rows:
+      - name: Bug
+        color: "#EF4444"
+        description: Something is broken
+      - name: Feature
+        color: "#3B82F6"
+        description: New functionality
+      - name: Improvement
+        color: "#F59E0B"
+        description: Enhancement to existing feature
+      - name: Documentation
+        color: "#8B5CF6"
+        description: Docs updates
+  - entity: tasks
+    rows:
+      - title: Design new homepage hero section
+        description: Create a visually striking hero section with animated gradient background
+        priority: high
+        task_type: feature
+        status: in_progress
+        estimated_hours: 8
+      - title: Fix mobile navigation overflow
+        description: Hamburger menu items overflow on screens smaller than 375px
+        priority: urgent
+        task_type: bug
+        status: todo
+        estimated_hours: 2
+      - title: Add dark mode toggle
+        description: Implement system-preference-aware dark mode with manual override
+        priority: medium
+        task_type: improvement
+        status: todo
+        estimated_hours: 4
+      - title: Write API documentation
+        description: Document all REST endpoints with request/response examples
+        priority: low
+        task_type: task
+        status: todo
+        estimated_hours: 16
+  - entity: comments
+    rows:
+      - body: The hero section looks great on desktop but needs work on mobile.
+        author_email: designer@team.dev
+      - body: Reproduced on iPhone SE. The overflow happens when nav items exceed 5.
+        author_email: dev@team.dev

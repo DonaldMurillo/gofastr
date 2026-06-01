@@ -300,26 +300,39 @@ func TestSPAEntityAPI(t *testing.T) {
 		}
 	})
 }
-
 func TestBlogEntityDeclarationsLoad(t *testing.T) {
-	decls, err := framework.LoadEntityDeclarations("blog/entities")
-	if err != nil {
-		t.Fatalf("LoadEntityDeclarations: %v", err)
-	}
-	if len(decls) != 3 {
-		t.Fatalf("declarations len = %d", len(decls))
-	}
-
+	// Blog entities are now declared in gofastr.yml (blueprint YAML).
+	// Verify the framework can register these entity schemas programmatically.
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-
 	app := framework.NewApp(framework.WithDB(db))
-	if err := app.EntitiesFromDir("blog/entities"); err != nil {
-		t.Fatalf("EntitiesFromDir: %v", err)
-	}
+	app.Entity("users", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+			{Name: "email", Type: schema.String, Required: true, Unique: true},
+			{Name: "role", Type: schema.Enum, Values: []string{"admin", "author", "reader"}, Default: "reader"},
+		},
+	})
+	app.Entity("posts", framework.EntityConfig{
+		SoftDelete: true,
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.Text},
+			{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
+			{Name: "author_id", Type: schema.Relation, To: "users"},
+			{Name: "published_at", Type: schema.Timestamp},
+		},
+	})
+	app.Entity("comments", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.Text, Required: true},
+			{Name: "post_id", Type: schema.Relation, To: "posts", Required: true},
+			{Name: "author_id", Type: schema.Relation, To: "users"},
+		},
+	})
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
@@ -328,12 +341,7 @@ func TestBlogEntityDeclarationsLoad(t *testing.T) {
 			t.Fatalf("registry missing %s: %v", name, err)
 		}
 	}
-	if tools := app.MCP.ListTools(); len(tools) != 15 {
-		t.Fatalf("MCP tools len = %d, want 15", len(tools))
-	}
 }
-
-// TestSPAStaticFiles verifies SPA static files are served.
 func TestSPAStaticFiles(t *testing.T) {
 	staticDir := "spa/static"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {

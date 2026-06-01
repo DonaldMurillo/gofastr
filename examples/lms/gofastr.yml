@@ -1,0 +1,677 @@
+app:
+  name: LearnHub
+  module: example.com/learnhub
+  db:
+    driver: sqlite
+    url: file:learnhub.db
+  auth:
+    enabled: true
+    dev_mode: true
+  theme:
+    primary: "#4F46E5"
+    primary-fg: "#FFFFFF"
+    secondary: "#10B981"
+    background: "#F8FAFC"
+    surface: "#FFFFFF"
+    surface-soft: "#F1F5F9"
+    text: "#0F172A"
+    text-muted: "#64748B"
+    text-subtle: "#94A3B8"
+    border: "#E2E8F0"
+    accent: "#8B5CF6"
+    success: "#10B981"
+    warning: "#F59E0B"
+    danger: "#EF4444"
+    info: "#3B82F6"
+
+entities:
+  - name: instructors
+    crud: true
+    mcp: true
+    properties:
+      label: Instructors
+      icon: graduation-cap
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 150
+      - name: email
+        type: string
+        required: true
+        unique: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: bio
+        type: text
+      - name: avatar
+        type: image
+      - name: title
+        type: string
+        max: 100
+      - name: company
+        type: string
+        max: 150
+      - name: website
+        type: string
+        max: 300
+      - name: social_links
+        type: json
+      - name: active
+        type: bool
+        default: true
+    relations:
+      - type: has_many
+        name: courses
+        entity: courses
+        foreign_key: instructor_id
+
+  - name: courses
+    crud: true
+    mcp: true
+    soft_delete: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_courses_status
+        columns: [status]
+      - name: idx_courses_level
+        columns: [level]
+      - name: idx_courses_instructor
+        columns: [instructor_id]
+      - name: idx_courses_category
+        columns: [category]
+    properties:
+      label: Courses
+      icon: book-open
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 200
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: subtitle
+        type: string
+        max: 300
+      - name: description
+        type: text
+      - name: instructor_id
+        type: relation
+        to: instructors
+        required: true
+      - name: category
+        type: string
+        required: true
+        max: 100
+      - name: level
+        type: enum
+        values: [beginner, intermediate, advanced, expert]
+        default: beginner
+      - name: status
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+      - name: language
+        type: string
+        max: 10
+        default: "en"
+      - name: thumbnail
+        type: image
+      - name: promo_video_url
+        type: string
+        max: 500
+      - name: price
+        type: decimal
+        min: 0
+        default: 0
+      - name: currency
+        type: string
+        max: 3
+        default: "USD"
+      - name: is_free
+        type: bool
+        default: false
+      - name: duration_hours
+        type: float
+        min: 0
+      - name: estimated_duration_weeks
+        type: int
+        min: 1
+        max: 52
+      - name: prerequisites
+        type: json
+      - name: learning_outcomes
+        type: json
+      - name: tags
+        type: json
+      - name: published_at
+        type: timestamp
+    relations:
+      - type: belongs_to
+        name: instructor
+        entity: instructors
+        foreign_key: instructor_id
+      - type: has_many
+        name: modules
+        entity: modules
+        foreign_key: course_id
+      - type: has_many
+        name: enrollments
+        entity: enrollments
+        foreign_key: course_id
+      - type: has_many
+        name: certificates
+        entity: certificates
+        foreign_key: course_id
+
+  - name: modules
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_modules_course
+        columns: [course_id]
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 200
+      - name: course_id
+        type: relation
+        to: courses
+        required: true
+      - name: description
+        type: text
+      - name: position
+        type: int
+        required: true
+        default: 0
+        min: 0
+      - name: status
+        type: enum
+        values: [draft, published]
+        default: draft
+    relations:
+      - type: belongs_to
+        name: course
+        entity: courses
+        foreign_key: course_id
+      - type: has_many
+        name: lessons
+        entity: lessons
+        foreign_key: module_id
+
+  - name: lessons
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_lessons_module
+        columns: [module_id]
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 200
+      - name: module_id
+        type: relation
+        to: modules
+        required: true
+      - name: lesson_type
+        type: enum
+        values: [video, text, quiz, assignment, live_session]
+        default: video
+      - name: content
+        type: text
+      - name: video_url
+        type: string
+        max: 500
+      - name: duration_minutes
+        type: int
+        min: 0
+      - name: position
+        type: int
+        required: true
+        default: 0
+        min: 0
+      - name: status
+        type: enum
+        values: [draft, published]
+        default: draft
+      - name: is_preview
+        type: bool
+        default: false
+      - name: resources
+        type: json
+      - name: passing_score
+        type: int
+        min: 0
+        max: 100
+    relations:
+      - type: belongs_to
+        name: module
+        entity: modules
+        foreign_key: module_id
+
+  - name: students
+    crud: true
+    mcp: true
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 150
+      - name: email
+        type: string
+        required: true
+        unique: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: avatar
+        type: image
+      - name: bio
+        type: text
+      - name: timezone
+        type: string
+        max: 50
+      - name: active
+        type: bool
+        default: true
+    relations:
+      - type: has_many
+        name: enrollments
+        entity: enrollments
+        foreign_key: student_id
+      - type: has_many
+        name: progress
+        entity: progress
+        foreign_key: student_id
+
+  - name: enrollments
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_enrollments_student_course
+        columns: [student_id, course_id]
+        unique: true
+      - name: idx_enrollments_status
+        columns: [status]
+    fields:
+      - name: student_id
+        type: relation
+        to: students
+        required: true
+      - name: course_id
+        type: relation
+        to: courses
+        required: true
+      - name: status
+        type: enum
+        values: [active, completed, dropped, suspended]
+        default: active
+      - name: enrolled_at
+        type: timestamp
+        auto_generate: timestamp
+      - name: completed_at
+        type: timestamp
+      - name: progress_percent
+        type: int
+        default: 0
+        min: 0
+        max: 100
+      - name: last_accessed_at
+        type: timestamp
+      - name: certificate_issued
+        type: bool
+        default: false
+    relations:
+      - type: belongs_to
+        name: student
+        entity: students
+        foreign_key: student_id
+      - type: belongs_to
+        name: course
+        entity: courses
+        foreign_key: course_id
+
+  - name: progress
+    crud: true
+    indices:
+      - name: idx_progress_student_lesson
+        columns: [student_id, lesson_id]
+        unique: true
+    fields:
+      - name: student_id
+        type: relation
+        to: students
+        required: true
+      - name: lesson_id
+        type: relation
+        to: lessons
+        required: true
+      - name: status
+        type: enum
+        values: [not_started, in_progress, completed]
+        default: not_started
+      - name: score
+        type: int
+        min: 0
+        max: 100
+      - name: time_spent_minutes
+        type: int
+        default: 0
+        min: 0
+      - name: completed_at
+        type: timestamp
+      - name: notes
+        type: text
+    relations:
+      - type: belongs_to
+        name: student
+        entity: students
+        foreign_key: student_id
+      - type: belongs_to
+        name: lesson
+        entity: lessons
+        foreign_key: lesson_id
+
+  - name: certificates
+    crud: true
+    indices:
+      - name: idx_certificates_code
+        columns: [code]
+        unique: true
+    fields:
+      - name: code
+        type: string
+        required: true
+        unique: true
+        auto_generate: uuid
+      - name: student_id
+        type: relation
+        to: students
+        required: true
+      - name: course_id
+        type: relation
+        to: courses
+        required: true
+      - name: enrollment_id
+        type: relation
+        to: enrollments
+        required: true
+      - name: issued_at
+        type: timestamp
+        auto_generate: timestamp
+      - name: final_score
+        type: int
+        min: 0
+        max: 100
+      - name: template
+        type: string
+        max: 50
+    relations:
+      - type: belongs_to
+        name: student
+        entity: students
+        foreign_key: student_id
+      - type: belongs_to
+        name: course
+        entity: courses
+        foreign_key: course_id
+
+
+nav:
+  - label: Dashboard
+    href: /
+    icon: layout-dashboard
+  - label: Courses
+    href: /courses
+    icon: book-open
+  - label: Instructors
+    href: /instructors
+    icon: graduation-cap
+  - label: Students
+    href: /students
+    icon: users
+  - label: Enrollments
+    href: /enrollments
+    icon: user-check
+  - label: Certificates
+    href: /certificates
+    icon: award
+screens:
+  - name: home
+    route: /
+    title: LearnHub — Online Courses
+    description: Learning management system
+    body:
+      - type: heading
+        level: 1
+        text: LearnHub
+      - type: paragraph
+        text: Expand your skills with expert-led courses at your own pace.
+      - kind: section
+        props:
+          label: Featured Courses
+          class: featured-courses
+        children:
+          - kind: entity_list
+            text: Featured Courses
+            entity: courses
+            fields: [title, level, category, price]
+            limit: 6
+            empty_text: No courses available yet.
+
+  - name: courses
+    route: /courses
+    title: Course Catalog
+    description: Browse all available courses
+    body:
+      - type: heading
+        level: 1
+        text: Course Catalog
+      - kind: entity_list
+        text: All Courses
+        entity: courses
+        fields: [title, category, level, status]
+        limit: 30
+        empty_text: No courses published yet.
+
+  - name: instructors
+    route: /instructors
+    title: Instructors
+    description: Meet our course instructors
+    body:
+      - type: heading
+        level: 1
+        text: Our Instructors
+      - kind: entity_list
+        text: Instructor Team
+        entity: instructors
+        fields: [name, title, company]
+        limit: 50
+        empty_text: No instructors yet.
+
+  - name: students
+    route: /students
+    title: Students
+    description: Student management
+    body:
+      - type: heading
+        level: 1
+        text: Students
+      - kind: entity_list
+        text: Enrolled Students
+        entity: students
+        fields: [name, email]
+        limit: 30
+        empty_text: No students enrolled yet.
+
+  - name: enrollments
+    route: /enrollments
+    title: Enrollments
+    description: Course enrollment management
+    body:
+      - type: heading
+        level: 1
+        text: Enrollments
+      - kind: entity_list
+        text: Active Enrollments
+        entity: enrollments
+        fields: [status, progress_percent, enrolled_at]
+        limit: 30
+        empty_text: No enrollments yet.
+
+  - name: certificates
+    route: /certificates
+    title: Certificates
+    description: Issued certificates
+    body:
+      - type: heading
+        level: 1
+        text: Certificates
+      - kind: entity_list
+        text: Issued Certificates
+        entity: certificates
+        fields: [code, issued_at, final_score]
+        limit: 30
+        empty_text: No certificates issued yet.
+
+  - name: course_new
+    route: /new-course
+    title: Create Course
+    description: Add a new course
+    body:
+      - type: heading
+        level: 1
+        text: Create New Course
+      - kind: entity_form
+        text: New Course
+        entity: courses
+        mode: create
+        fields: [title, slug, subtitle, description, category, level, price, is_free]
+
+  - name: course_detail
+    route: /course-detail
+    title: Course Details
+    description: View course details
+    body:
+      - type: heading
+        level: 1
+        text: Course Details
+      - kind: entity_detail
+        text: Course
+        entity: courses
+        fields: [title, slug, category, level, status, price, is_free, duration_hours]
+
+  - name: student_new
+    route: /new-student
+    title: Enroll Student
+    description: Register a new student
+    body:
+      - type: heading
+        level: 1
+        text: Register Student
+      - kind: entity_form
+        text: New Student
+        entity: students
+        mode: create
+        fields: [name, email, bio]
+
+endpoints:
+  - name: enroll_student
+    method: POST
+    path: /courses/{id}/enroll
+    entity: courses
+    handler: enrollStudent
+    description: Enroll a student in a course
+  - name: complete_lesson
+    method: POST
+    path: /lessons/{id}/complete
+    entity: lessons
+    handler: completeLesson
+    description: Mark a lesson as completed for a student
+  - name: issue_certificate
+    method: POST
+    path: /enrollments/{id}/certificate
+    entity: enrollments
+    handler: issueCertificate
+    description: Issue a completion certificate
+
+middleware:
+  - request_logger
+
+helpers:
+  - name: calculate_progress
+  - name: generate_certificate_code
+
+seed:
+  - entity: instructors
+    rows:
+      - name: Dr. Sarah Chen
+        email: sarah@learnhub.dev
+        bio: Full-stack engineer and educator with 10 years of experience teaching web development.
+        title: Senior Instructor
+        company: LearnHub
+        active: true
+      - name: Alex Martinez
+        email: alex@learnhub.dev
+        bio: Cloud architect and DevOps specialist. AWS certified.
+        title: Cloud Engineer
+        company: TechCorp
+        active: true
+  - entity: courses
+    rows:
+      - title: Introduction to Web Development
+        slug: intro-web-dev
+        subtitle: Learn HTML, CSS, and JavaScript from scratch
+        description: A comprehensive beginner course covering the fundamentals of web development. No prior experience required.
+        category: Web Development
+        level: beginner
+        status: published
+        price: 49.99
+        is_free: false
+        duration_hours: 24
+        estimated_duration_weeks: 6
+      - title: Advanced Go Programming
+        slug: advanced-go
+        subtitle: Master Go concurrency, generics, and performance
+        description: Deep dive into Go's advanced features including goroutines, channels, generics, and profiling.
+        category: Backend Development
+        level: advanced
+        status: published
+        price: 79.99
+        is_free: false
+        duration_hours: 32
+        estimated_duration_weeks: 8
+      - title: Cloud Fundamentals
+        slug: cloud-fundamentals
+        subtitle: Understanding cloud computing concepts
+        description: Free course covering AWS, GCP, and Azure basics. Perfect for beginners exploring cloud computing.
+        category: Cloud Computing
+        level: beginner
+        status: published
+        price: 0
+        is_free: true
+        duration_hours: 8
+        estimated_duration_weeks: 2
+  - entity: modules
+    rows:
+      - title: Getting Started with HTML
+        course_id: 1
+        description: Learn the building blocks of every web page
+        position: 1
+        status: published
+      - title: CSS Styling Fundamentals
+        course_id: 1
+        description: Make your web pages look beautiful
+        position: 2
+        status: published
+  - entity: students
+    rows:
+      - name: Alice Johnson
+        email: alice@student.dev
+        active: true
+      - name: Bob Smith
+        email: bob@student.dev
+        active: true

@@ -11,14 +11,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -100,6 +105,51 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+
+	// Interactive demo endpoints — each returns JSON the runtime pushes
+	// into a signal or triggers a widget open / SPA navigate.
+	//
+	// NOTE: The endpoints below are unauthenticated demo handlers for the
+	// interactive examples. They have no CSRF protection, rate limiting,
+	// or input sanitization. Do NOT copy these as a template for
+	// production code.
+	var demoCounter atomic.Int64
+	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `%d`, demoCounter.Add(1))
+	}))
+	fwApp.Router().Post("/__site/interactive/open-drawer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Message string `json:"message"` }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			body.Message = ""
+		}
+		w.Header().Set("Content-Type", "application/json")
+		msg := "✓ Received: " + body.Message
+		json.NewEncoder(w).Encode(msg)
+	}))
+	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	fwApp.Router().Post("/__site/interactive/error", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, "something went wrong")
+	}))
+	// Modal for the "RPC → Open Widget" demo.
+	// Hidden by default — only appears when data-fui-rpc-open triggers it.
+	modalBody := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"style": "text-align:center;padding:var(--s-8,32px) 0"}},
+		render.Tag("p", map[string]string{"style": "font-size:24px;margin:0 0 8px"}, render.Text("🎉")),
+		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
+		render.Tag("p", nil, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
+	)
+	modalDef := preset.Modal("demo-result-modal").
+		LabelledBy("demo-modal-heading").
+		Slot("body", app.NewStaticComponent(modalBody)).
+		Build()
+	modalDef.Hidden = true
+	widget.Mount(fwApp.Router(), &modalDef)
 
 	return fwApp
 }

@@ -50,7 +50,7 @@ code.
 | A semantic component (PageHeader, FormField, DataTable) | `framework/ui/` |
 | An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPCWithSignal(...)`) |
 | A theme token | `framework/ui/theme` (canonical typed `style.Theme`; mutate fields directly) |
-| A reactive value pushed by the server | `core-ui/signal` + an SSE binding on the widget |
+| An interactive component (RPC, signals, widget chaining) | `core-ui/interactive` (`OnClick(html, Post("/path").OnSuccess(...))`) |
 | **Per-component CSS** (loaded on demand, dedup'd, never re-fetched) | `core-ui/registry` (`RegisterStyle` + `Style.WrapHTML`) |
 
 ## Theme — typed, always emits var()

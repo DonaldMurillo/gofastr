@@ -1,0 +1,270 @@
+app:
+  name: Blog
+  module: example.com/blog
+  db:
+    driver: sqlite
+    url: file:blog.db
+  auth:
+    enabled: true
+    dev_mode: true
+  theme:
+    primary: "#1E293B"
+    primary-fg: "#FFFFFF"
+    background: "#FFFFFF"
+    surface: "#F8FAFC"
+    text: "#0F172A"
+    text-muted: "#64748B"
+    border: "#E2E8F0"
+    accent: "#3B82F6"
+    success: "#10B981"
+    danger: "#EF4444"
+
+entities:
+  - name: users
+    crud: true
+    mcp: true
+    properties:
+      label: Users
+      icon: user
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: email
+        type: string
+        required: true
+        unique: true
+      - name: role
+        type: enum
+        values: [admin, author, reader]
+        default: reader
+      - name: avatar
+        type: string
+        max: 500
+    relations:
+      - type: has_many
+        name: posts
+        entity: posts
+        foreign_key: author_id
+      - type: has_many
+        name: comments
+        entity: comments
+        foreign_key: author_id
+
+  - name: posts
+    crud: true
+    mcp: true
+    soft_delete: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_posts_status
+        columns: [status]
+    properties:
+      label: Posts
+      icon: pen-tool
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 300
+      - name: body
+        type: text
+      - name: status
+        type: enum
+        values: [draft, published]
+        default: draft
+      - name: author_id
+        type: relation
+        to: users
+      - name: published_at
+        type: timestamp
+    relations:
+      - type: belongs_to
+        name: author
+        entity: users
+        foreign_key: author_id
+      - type: has_many
+        name: comments
+        entity: comments
+        foreign_key: post_id
+
+  - name: comments
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_comments_post
+        columns: [post_id]
+    fields:
+      - name: body
+        type: text
+        required: true
+      - name: post_id
+        type: relation
+        to: posts
+        required: true
+      - name: author_id
+        type: relation
+        to: users
+    relations:
+      - type: belongs_to
+        name: post
+        entity: posts
+        foreign_key: post_id
+      - type: belongs_to
+        name: author
+        entity: users
+        foreign_key: author_id
+
+nav:
+  - label: Home
+    href: /
+    icon: home
+  - label: Posts
+    href: /posts
+    icon: pen-tool
+  - label: Users
+    href: /users
+    icon: user
+  - label: Comments
+    href: /comments
+    icon: message
+
+screens:
+  - name: home
+    route: /
+    title: Blog — Home
+    description: Blog homepage
+    body:
+      - type: heading
+        level: 1
+        text: Blog
+      - type: paragraph
+        text: A simple blog powered by GoFastr.
+      - kind: entity_list
+        text: Recent Posts
+        entity: posts
+        fields: [title, status]
+        limit: 10
+        empty_text: No posts yet.
+
+  - name: posts
+    route: /posts
+    title: Posts
+    description: All blog posts
+    body:
+      - type: heading
+        level: 1
+        text: Posts
+      - kind: entity_list
+        text: All Posts
+        entity: posts
+        fields: [title, status]
+        limit: 30
+        empty_text: No posts yet.
+
+  - name: post_new
+    route: /new-post
+    title: New Post
+    description: Write a new blog post
+    body:
+      - type: heading
+        level: 1
+        text: Write New Post
+      - kind: entity_form
+        text: New Post
+        entity: posts
+        mode: create
+        fields: [title, body, status, author_id]
+
+  - name: post_detail
+    route: /post-detail
+    title: Post Details
+    description: View blog post
+    body:
+      - type: heading
+        level: 1
+        text: Post Details
+      - kind: entity_detail
+        text: Post
+        entity: posts
+        fields: [title, status, published_at]
+
+  - name: users
+    route: /users
+    title: Users
+    description: Blog users
+    body:
+      - type: heading
+        level: 1
+        text: Users
+      - kind: entity_list
+        text: All Users
+        entity: users
+        fields: [name, email, role]
+        limit: 50
+        empty_text: No users yet.
+
+  - name: comments
+    route: /comments
+    title: Comments
+    description: Blog comments
+    body:
+      - type: heading
+        level: 1
+        text: Comments
+      - kind: entity_list
+        text: Recent Comments
+        entity: comments
+        fields: [body, post_id, author_id]
+        limit: 30
+        empty_text: No comments yet.
+
+endpoints:
+  - name: posts_published
+    method: GET
+    path: /posts/published
+    entity: posts
+    handler: postsPublished
+    description: List only published posts
+  - name: posts_search
+    method: GET
+    path: /posts/search
+    entity: posts
+    handler: postsSearch
+    description: Search posts by keyword
+
+middleware:
+  - request_logger
+
+seed:
+  - entity: users
+    rows:
+      - name: Admin User
+        email: admin@blog.dev
+        role: admin
+      - name: Jane Author
+        email: jane@blog.dev
+        role: author
+      - name: Bob Reader
+        email: bob@blog.dev
+        role: reader
+  - entity: posts
+    rows:
+      - title: Getting Started with GoFastr
+        body: "# Welcome\n\nGoFastr is a modern Go web framework that makes building web applications a breeze. With built-in CRUD, MCP tools, and server-side rendering, you can go from idea to production in minutes.\n\n## Features\n\n- Auto-generated REST APIs\n- MCP tool integration\n- Server-side rendering\n- SQLite and PostgreSQL support"
+        status: published
+      - title: Building Your First Entity
+        body: "Entities are the core of any GoFastr application. Simply define your schema in YAML and the framework generates everything you need: SQL tables, REST endpoints, OpenAPI docs, and MCP tools.\n\n## Example\n\n```yaml\nentities:\n  - name: posts\n    fields:\n      - name: title\n        type: string\n        required: true\n```"
+        status: published
+      - title: Draft Post Example
+        body: This is a draft post that won't appear on the public site.
+        status: draft
+  - entity: comments
+    rows:
+      - body: Great introduction! Really helpful for getting started.
+        post_id: 1
+      - body: The YAML entity system is so clean. Love it!
+        post_id: 1
+      - body: Can you add a tutorial on authentication next?
+        post_id: 2

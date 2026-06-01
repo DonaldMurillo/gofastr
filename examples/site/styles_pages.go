@@ -1113,6 +1113,39 @@ func pageComponents(ss *style.StyleSheet) {
 			"flex-direction", "column",
 			"gap", "{spacing.md}").End()
 
+	// .demo-signal-out — inline signal output shown beside buttons in demos.
+	ss.Rule(".demo-signal-out").
+		Set("display", "inline-flex",
+			"align-items", "center",
+			"justify-content", "center",
+			"min-width", "48px",
+			"padding", "6px 14px",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"font-family", "{fonts.mono}",
+			"font-size", "14px",
+			"color", "{colors.text}").End()
+	ss.Rule(".demo-signal-out:empty").
+		Set("min-height", "34px",
+			"color", "{colors.text-subtle}",
+			"font-style", "italic").End()
+
+	// .demo-form-inline — compact inline form for demos.
+	ss.Rule(".demo-form-inline").
+		Set("display", "flex",
+			"gap", "{spacing.sm}",
+			"align-items", "center",
+			"flex-wrap", "wrap").End()
+	ss.Rule(".demo-form-inline input").
+		Set("padding", "6px 10px",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.md}",
+			"background", "{colors.background}",
+			"color", "{colors.text}",
+			"font-size", "14px",
+			"min-width", "200px").End()
+
 	// ---------- Components ScreenGroup inner layout ----------
 	// The framework's app.Layout wraps the inner content in:
 	//   <div class="layout-components">

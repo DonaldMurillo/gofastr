@@ -1,0 +1,488 @@
+app:
+  name: ShopFront
+  module: example.com/shopfront
+  db:
+    driver: sqlite
+    url: file:shop.db
+  auth:
+    enabled: true
+    dev_mode: true
+  theme:
+    primary: "#2563EB"
+    primary-fg: "#FFFFFF"
+    secondary: "#F59E0B"
+    background: "#F8FAFC"
+    surface: "#FFFFFF"
+    text: "#0F172A"
+    text-muted: "#64748B"
+    border: "#E2E8F0"
+    success: "#10B981"
+    warning: "#F59E0B"
+    danger: "#EF4444"
+
+entities:
+  - name: categories
+    crud: true
+    mcp: true
+    properties:
+      label: Categories
+      icon: folder
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 100
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: description
+        type: text
+      - name: image
+        type: image
+      - name: sort_order
+        type: int
+        default: 0
+        min: 0
+      - name: active
+        type: bool
+        default: true
+    relations:
+      - type: has_many
+        name: products
+        entity: products
+        foreign_key: category_id
+
+  - name: products
+    crud: true
+    mcp: true
+    soft_delete: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_products_category
+        columns: [category_id]
+      - name: idx_products_status
+        columns: [status]
+    properties:
+      label: Products
+      icon: package
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 200
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: sku
+        type: string
+        unique: true
+        max: 50
+      - name: description
+        type: text
+      - name: price
+        type: decimal
+        required: true
+        min: 0
+      - name: compare_at_price
+        type: decimal
+        min: 0
+      - name: cost
+        type: decimal
+        min: 0
+        hidden: true
+      - name: stock
+        type: int
+        required: true
+        default: 0
+        min: 0
+      - name: category_id
+        type: relation
+        to: categories
+      - name: status
+        type: enum
+        values: [draft, active, archived]
+        default: draft
+      - name: featured
+        type: bool
+        default: false
+      - name: weight
+        type: float
+        min: 0
+      - name: image
+        type: image
+      - name: tags
+        type: json
+    relations:
+      - type: belongs_to
+        name: category
+        entity: categories
+        foreign_key: category_id
+      - type: has_many
+        name: reviews
+        entity: reviews
+        foreign_key: product_id
+      - type: has_many
+        name: order_items
+        entity: order_items
+        foreign_key: product_id
+
+  - name: orders
+    crud: true
+    mcp: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_orders_status
+        columns: [status]
+    properties:
+      label: Orders
+      icon: shopping-cart
+    fields:
+      - name: order_number
+        type: string
+        required: true
+        unique: true
+        auto_generate: uuid
+        read_only: true
+      - name: status
+        type: enum
+        values: [pending, confirmed, processing, shipped, delivered, cancelled, refunded]
+        default: pending
+      - name: customer_name
+        type: string
+        required: true
+        max: 200
+      - name: customer_email
+        type: string
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: customer_phone
+        type: string
+        max: 30
+      - name: shipping_address
+        type: json
+      - name: billing_address
+        type: json
+      - name: subtotal
+        type: decimal
+        required: true
+        min: 0
+      - name: tax
+        type: decimal
+        default: 0
+        min: 0
+      - name: shipping_cost
+        type: decimal
+        default: 0
+        min: 0
+      - name: total
+        type: decimal
+        required: true
+        min: 0
+      - name: notes
+        type: text
+      - name: shipped_at
+        type: timestamp
+      - name: delivered_at
+        type: timestamp
+    relations:
+      - type: has_many
+        name: items
+        entity: order_items
+        foreign_key: order_id
+
+  - name: order_items
+    crud: true
+    mcp: true
+    fields:
+      - name: order_id
+        type: relation
+        to: orders
+        required: true
+      - name: product_id
+        type: relation
+        to: products
+        required: true
+      - name: product_name
+        type: string
+        required: true
+        max: 200
+      - name: quantity
+        type: int
+        required: true
+        min: 1
+      - name: unit_price
+        type: decimal
+        required: true
+        min: 0
+      - name: total_price
+        type: decimal
+        required: true
+        min: 0
+    relations:
+      - type: belongs_to
+        name: order
+        entity: orders
+        foreign_key: order_id
+      - type: belongs_to
+        name: product
+        entity: products
+        foreign_key: product_id
+
+  - name: reviews
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_reviews_product
+        columns: [product_id]
+    fields:
+      - name: product_id
+        type: relation
+        to: products
+        required: true
+      - name: author_name
+        type: string
+        required: true
+        max: 100
+      - name: rating
+        type: int
+        required: true
+        min: 1
+        max: 5
+      - name: title
+        type: string
+        max: 200
+      - name: body
+        type: text
+      - name: verified
+        type: bool
+        default: false
+    relations:
+      - type: belongs_to
+        name: product
+        entity: products
+        foreign_key: product_id
+
+
+nav:
+  - label: Home
+    href: /
+    icon: home
+  - label: Products
+    href: /products
+    icon: package
+  - label: Categories
+    href: /categories
+    icon: folder
+  - label: Orders
+    href: /orders
+    icon: shopping-cart
+  - label: Reviews
+    href: /reviews
+    icon: star
+screens:
+  - name: home
+    route: /
+    title: ShopFront — Home
+    description: E-commerce storefront homepage
+    body:
+      - type: heading
+        level: 1
+        text: ShopFront
+      - type: paragraph
+        text: Welcome to our store. Browse our products and categories.
+      - kind: entity_list
+        text: Featured Products
+        entity: products
+        fields: [name, price, status]
+        limit: 8
+        empty_text: No products available yet.
+
+  - name: products
+    route: /products
+    title: All Products
+    description: Browse our full product catalog
+    body:
+      - type: heading
+        level: 1
+        text: Products
+      - kind: entity_list
+        text: Product Catalog
+        entity: products
+        fields: [name, price, status, stock]
+        limit: 20
+        empty_text: No products found.
+
+  - name: categories
+    route: /categories
+    title: Categories
+    description: Browse product categories
+    body:
+      - type: heading
+        level: 1
+        text: Categories
+      - kind: entity_list
+        text: All Categories
+        entity: categories
+        fields: [name, description, active]
+        limit: 50
+        empty_text: No categories yet.
+
+  - name: orders
+    route: /orders
+    title: Orders
+    description: View and manage orders
+    body:
+      - type: heading
+        level: 1
+        text: Orders
+      - kind: entity_list
+        text: Recent Orders
+        entity: orders
+        fields: [order_number, customer_name, status, total]
+        limit: 20
+        empty_text: No orders yet.
+
+  - name: reviews
+    route: /reviews
+    title: Reviews
+    description: Customer reviews and ratings
+    body:
+      - type: heading
+        level: 1
+        text: Customer Reviews
+      - kind: entity_list
+        text: Latest Reviews
+        entity: reviews
+        fields: [author_name, rating, title]
+        limit: 20
+        empty_text: No reviews yet.
+
+
+  - name: product_new
+    route: /new-product
+    title: Add Product
+    description: Create a new product listing
+    body:
+      - type: heading
+        level: 1
+        text: Add New Product
+      - kind: entity_form
+        text: New Product
+        entity: products
+        mode: create
+        fields: [name, slug, sku, description, price, stock, status, featured]
+
+  - name: product_detail
+    route: /product-detail
+    title: Product Details
+    description: View product details
+    body:
+      - type: heading
+        level: 1
+        text: Product Details
+      - kind: entity_detail
+        text: Product
+        entity: products
+        fields: [name, slug, sku, description, price, stock, status, featured]
+
+  - name: order_detail
+    route: /order-detail
+    title: Order Details
+    description: View order details
+    body:
+      - type: heading
+        level: 1
+        text: Order Details
+      - kind: entity_detail
+        text: Order
+        entity: orders
+        fields: [order_number, customer_name, customer_email, status, total, notes]
+endpoints:
+  - name: confirm_order
+    method: POST
+    path: /orders/{id}/confirm
+    entity: orders
+    handler: confirmOrder
+    description: Confirm a pending order
+  - name: ship_order
+    method: POST
+    path: /orders/{id}/ship
+    entity: orders
+    handler: shipOrder
+    description: Mark an order as shipped
+
+middleware:
+  - request_logger
+
+plugins:
+  - name: analytics
+
+seed:
+  - entity: categories
+    rows:
+      - name: Electronics
+        slug: electronics
+        description: Gadgets, devices, and tech accessories
+        active: true
+        sort_order: 1
+      - name: Clothing
+        slug: clothing
+        description: Apparel and fashion
+        active: true
+        sort_order: 2
+      - name: Home & Garden
+        slug: home-garden
+        description: Everything for your home
+        active: true
+        sort_order: 3
+  - entity: products
+    rows:
+      - name: Wireless Headphones
+        slug: wireless-headphones
+        sku: WH-001
+        description: Premium noise-cancelling wireless headphones with 30-hour battery life.
+        price: 79.99
+        stock: 150
+        status: active
+        featured: true
+      - name: USB-C Hub
+        slug: usb-c-hub
+        sku: UCH-002
+        description: 7-in-1 USB-C hub with HDMI, USB 3.0, SD card reader, and PD charging.
+        price: 49.99
+        stock: 200
+        status: active
+      - name: Mechanical Keyboard
+        slug: mechanical-keyboard
+        sku: MK-003
+        description: Hot-swappable mechanical keyboard with RGB backlighting.
+        price: 129.99
+        stock: 75
+        status: active
+        featured: true
+      - name: Webcam HD
+        slug: webcam-hd
+        sku: WC-004
+        description: 1080p HD webcam with auto-focus and built-in microphone.
+        price: 39.99
+        compare_at_price: 59.99
+        stock: 300
+        status: draft
+  - entity: reviews
+    rows:
+      - author_name: Sarah M.
+        rating: 5
+        title: Best headphones I ever owned
+        body: The noise cancellation is incredible. Battery lasts forever.
+        verified: true
+      - author_name: Mike T.
+        rating: 4
+        title: Great value
+        body: Solid build quality for the price. Wish the case was included.
+        verified: true
