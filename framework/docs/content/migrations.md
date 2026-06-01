@@ -75,7 +75,7 @@ gofastr migrate down 1
 gofastr migrate diff                     # show schema drift vs entity registry
 gofastr migrate diff --apply             # apply non-destructive changes
 gofastr migrate diff --apply --allow-destructive   # also run DROP COLUMN
-gofastr migrate generate add_views       # write a versioned migration file
+gofastr migrate generate add_email       # write a versioned migration file
 gofastr migrate force 7                  # mark version 7 cleanly applied
 gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 ```
@@ -123,22 +123,31 @@ increments — not direct applies. `migrate generate` produces them
 *offline* (no database needed):
 
 ```bash
-gofastr migrate generate add_views --driver=postgres
+gofastr migrate generate add_published --driver=postgres
 ```
 
-It diffs the entity declarations against a committed **schema snapshot**
-(`migrations/schema.snapshot.json`) and writes the next numbered file,
-e.g. `migrations/0002_add_views.sql`, with both `Up` and a computed
-`Down`:
+It diffs the **entity declarations** in `entities/*.json` against a
+committed **schema snapshot** (`migrations/schema.snapshot.json`) and
+writes the next numbered file, e.g. `migrations/0002_add_published.sql`,
+with both `Up` and a computed `Down`:
 
 ```sql
 -- +migrate Version 2
--- +migrate Name add_views
+-- +migrate Name add_published
 -- +migrate Up
-ALTER TABLE posts ADD COLUMN views INTEGER;
+ALTER TABLE "posts" ADD COLUMN "published" BOOLEAN;
 -- +migrate Down
-ALTER TABLE posts DROP COLUMN views;
+ALTER TABLE "posts" DROP COLUMN "published";
 ```
+
+> **Scope.** The `migrate generate` / `migrate diff` CLI commands see only
+> `entities/*.json` declarations — they do **not** see views, routines, or
+> raw tables registered in Go via `App.View` / `App.Routine` / `App.Table`
+> (those are created idempotently on boot). To generate versioned migrations
+> that include views and routines, call the programmatic
+> `migrate.GeneratePlan(plan, snapshot, dialect)` from your own code (it
+> returns the Up/Down SQL and the next snapshot; write them with
+> `migrate.RenderMigrationFile` / `SaveSnapshot`).
 
 It then updates the snapshot. The typical loop:
 
@@ -208,15 +217,26 @@ app.Routine(migrate.Routine{
 ```
 
 The SQL is run verbatim and is dialect-specific (functions/procedures are a
-Postgres feature; SQLite has triggers and views). `migrate generate` emits the
-new body forward and restores the previous body on rollback; a removed routine
-is dropped (and recreated on `Down`). Tables plus routines generate into one
-migration with correct rollback ordering — routines drop before the tables they
-depend on.
+Postgres feature; SQLite has triggers and views). On SQLite, which has no
+`CREATE OR REPLACE` for triggers/views, make the `Up` re-runnable with
+`DROP … IF EXISTS;\nCREATE …` so every boot is idempotent.
 
-Use `AutoMigratePlanContext(ctx, db, migrate.Plan{Registry, Routines})` /
-`GeneratePlan(plan, snapshot, dialect)` for the programmatic path; `App.Start`
-builds the plan from `App.Table` / `App.Routine` automatically.
+`App.Start` runs every routine's `Up` on boot (after tables) via the plan it
+builds from `App.Table` / `App.Routine` / `App.View`. To capture routine/view
+changes as **versioned** migrations instead, use the programmatic generator —
+the file-based `migrate generate` CLI does not see Go-registered routines/views
+(see the Scope note above):
+
+```go
+plan := migrate.Plan{Registry: reg, Routines: routines, Views: views}
+up, down, next, _ := migrate.GeneratePlan(plan, prevSnapshot, migrate.DialectPostgres)
+// then migrate.RenderMigrationFile(version, name, up, down) + migrate.SaveSnapshot(...)
+```
+
+`GeneratePlan` emits each new/changed routine's body forward and restores the
+previous body on rollback; a removed routine is dropped (and recreated on
+`Down`). Tables, then views, then routines generate into one migration with
+correct rollback ordering.
 
 ## Views (virtual tables built from entities)
 
