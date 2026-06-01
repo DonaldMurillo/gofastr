@@ -95,7 +95,11 @@ func siteFooterCSS(_ style.Theme) string {
      wanting a fixed N-column layout (5-col GoFastr-style, etc.) set
      --ui-site-footer-grid-template to override. */
   grid-template-columns: var(--ui-site-footer-grid-template, repeat(auto-fit, minmax(180px, 1fr)));
-  gap: var(--spacing-xl, 32px);
+  gap: var(--ui-site-footer-grid-gap, var(--spacing-xl, 32px));
+  /* Hosts that center the footer at a fixed measure set
+     --ui-site-footer-max-width; default is the full inline space. */
+  max-inline-size: var(--ui-site-footer-max-width, none);
+  margin-inline: auto;
   margin-block-end: var(--spacing-xl, 32px);
 }
 [data-fui-comp="ui-site-footer"] .ui-site-footer__lead {

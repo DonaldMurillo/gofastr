@@ -117,3 +117,15 @@ func TestSiteHeaderMobileExtraLinksRenderOnlyInDrawer(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteHeaderNavUnderlineVariantIsOptIn(t *testing.T) {
+	items := []SiteHeaderLink{{Label: "Docs", Href: "/docs"}}
+	on := string(SiteHeader(SiteHeaderConfig{NavUnderline: true, NavItems: items}))
+	if !strings.Contains(on, "ui-site-header--nav-underline") {
+		t.Errorf("NavUnderline:true should add the variant class:\n%s", on)
+	}
+	off := string(SiteHeader(SiteHeaderConfig{NavItems: items}))
+	if strings.Contains(off, "ui-site-header--nav-underline") {
+		t.Errorf("default header should stay flat (no underline variant):\n%s", off)
+	}
+}
