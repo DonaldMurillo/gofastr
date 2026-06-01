@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -23,8 +24,14 @@ func counterCSS(_ style.Theme) string {
 // CounterConfig configures a client-side counter with increment/decrement buttons.
 // The counter is purely local — no RPC calls. It uses the signal system for state.
 type CounterConfig struct {
-	// SignalName is the signal that holds the count value. Required.
+	// SignalName is the signal that holds the count value. Required
+	// unless Slice is set.
 	SignalName string
+
+	// Slice, when set, supplies both the signal name and the initial
+	// value from one typed source (and auto-seeds it). Takes precedence
+	// over SignalName.
+	Slice *store.Slice[int]
 
 	// Step is the increment/decrement size. Defaults to 1.
 	Step int
@@ -39,8 +46,14 @@ type CounterConfig struct {
 // The counter displays a `<span data-fui-signal="name">0</span>` that
 // the runtime updates when the signal changes.
 func Counter(cfg CounterConfig) render.HTML {
-	if cfg.SignalName == "" {
-		panic("ui: Counter requires SignalName")
+	name := cfg.SignalName
+	initial := 0
+	if cfg.Slice != nil {
+		name = cfg.Slice.Name()
+		initial = cfg.Slice.Default()
+	}
+	if name == "" {
+		panic("ui: Counter requires SignalName or Slice")
 	}
 	step := cfg.Step
 	if step == 0 {
@@ -54,16 +67,16 @@ func Counter(cfg CounterConfig) render.HTML {
 
 	decBtn := render.Tag("button", map[string]string{
 		"class":               "fui-counter__btn fui-counter__dec",
-		"data-fui-signal-inc": cfg.SignalName + ":" + strconv.Itoa(-step),
+		"data-fui-signal-inc": name + ":" + strconv.Itoa(-step),
 		"aria-label":          "Decrement",
 		"type":                "button",
 	}, render.Text("−"))
 
 	display := render.Tag("span", map[string]string{
 		"class":           "fui-counter__value",
-		"data-fui-signal": cfg.SignalName,
+		"data-fui-signal": name,
 		"aria-live":       "polite",
-	}, render.Text("0"))
+	}, render.Text(strconv.Itoa(initial)))
 
 	incAttrs := map[string]string{
 		"class":      "fui-counter__btn fui-counter__inc",
@@ -71,9 +84,9 @@ func Counter(cfg CounterConfig) render.HTML {
 		"type":       "button",
 	}
 	if step == 1 {
-		incAttrs["data-fui-signal-inc"] = cfg.SignalName
+		incAttrs["data-fui-signal-inc"] = name
 	} else {
-		incAttrs["data-fui-signal-inc"] = cfg.SignalName + ":" + strconv.Itoa(step)
+		incAttrs["data-fui-signal-inc"] = name + ":" + strconv.Itoa(step)
 	}
 	incBtn := render.Tag("button", incAttrs, render.Text("+"))
 

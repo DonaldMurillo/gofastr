@@ -368,3 +368,35 @@ Worked the 4 latent items Pass 4 deferred: 2 fixed (TDD), 2 skipped after verifi
 ### `_like` made escape-literal  ·  framework/filter
 - **Decision:** fix-prod (RESOLVES the Pass-2 deferred decision)
 - **Why:** Pass 2 reverted the `_like` wildcard-escaping because it changed a tested contract and the direction was a product call. The owner chose to make `_like` **escape-literal**, consistent with the documented DSL `contains` operator: `ApplyToQuery`/`ApplyToCountQuery` now emit `LIKE $1 ESCAPE '\'` and `escapeLikePattern` escapes the caller's `%`/`_`/`\` so a `_like` value matches the substring literally rather than as a wildcard pattern. Re-added `TestLike_WildcardEscaped`. Updated the two integration tests that encoded the old wildcard behaviour to use literal substrings (`TestNestedFilter_ComposesWithTopLevel`: `Fir%`→`Fir`; `TestCRUDApi_ListAll_FilterSortLimit`: `%a%`→`a`) and the `includes.md` operator table. This supersedes the Pass-2 `TestLike_WildcardEscaped (reverted)` entry.
+
+---
+
+## Pass 7 — store shared-state primitive audit (2026-06-01)
+
+Dual-model audit of the new `core-ui/store` shared-state primitive +
+its runtime/uihost/ui wiring. 3 confirmed issues fixed (TDD), 7 sec-recon
+candidates refuted with evidence. No existing test weakened or deleted —
+all three fixes are pure additive hardening that the prior e2e suite
+(`TestComputed_RecomputesOnDepChange`, `TestFanout_*`, `TestSeed_*`,
+real-browser chromedp) still passes unchanged.
+
+### TestBindAttrBlocksDangerousSchemeAtSSR  ·  core-ui/store
+- **Decision:** fix-prod (defense-in-depth parity)
+- **Why:** `Slice.BindAttr` stamped the resolved slice value straight into a URL-bearing HTML attribute (`href`/`src`/`action`/`xlink:href`/`formaction`) at SSR. `render.Attr` escapes quotes/HTML but does NOT block schemes, so a `javascript:`/`vbscript:`/`data:text/html` value reached `<a href="javascript:…">` on first paint — while the runtime's `_isUnsafeSignalUrl` only guarded client-side *updates* of the same attr. A producer may `Seed` a request-influenced URL into a URL-bound slice, so the SSR paint needs the same guard. Added `sanitizeSignalURL` in `slice.go` mirroring the runtime allow-list exactly (same attr set, same C0/whitespace strip before the prefix check). New tests: `TestBindAttrBlocksDangerousSchemeAtSSR` (5 attrs × dangerous schemes incl. interior-control-byte + case-fold bypasses), `TestBindAttrAllowsSafeURLAtSSR`, `TestBindAttrLeavesNonURLAttrsAlone`.
+
+### TestSeedLoopsSkipReservedKeys  ·  core-ui/runtime
+- **Decision:** fix-prod (advisory-recommended hardening)
+- **Why:** The boot seed loop and BOTH `mergeSeedFromDOM` loops assigned `store[k] = {value,…}` with `k` taken from JSON keys. With `k === "__proto__"`, the bracket assignment invokes the `__proto__` setter and re-parents the `_signals` store object (verified with node): a crafted seed then re-routes every not-yet-set signal name through the attacker object (cross-signal confusion) and `setSignal` mutates the shared prototype instead of an own property. Keys are server-controlled today, but the OWASP/MDN prototype-pollution corpus explicitly recommends stripping `__proto__`/`constructor`/`prototype` before any merge. Added a shared `isReservedSignalKey` guard and a `continue` skip in all three loops. (Go's `encoding/json` HTML-escapes keys, and JSON.parse `__proto__` is an own data-prop not a global pollution, so this is store-object integrity hardening, not a confirmed cross-tenant escalation.)
+
+### TestComputedReducerOwnPropOnly  ·  core-ui/runtime
+- **Decision:** fix-prod (contract integrity)
+- **Why:** `computed.js::recompute` looked the reducer up as `G._reducers[reducerName]` and gated only on `typeof fn === 'function'`. That guard does NOT exclude inherited `Object.prototype` methods: with no host reducer named `constructor`/`toString`/`valueOf`, `_reducers["constructor"]` resolves to `Object` (typeof `'function'`) and gets invoked as a reducer (verified with node — `setSignal` fires with the deps bag coerced through `Object()`), breaking the documented "missing reducer → no-op" contract. `validateName` accepts `constructor` (all-lowercase letters), so the typed API does not block it either. Gated the lookup on `Object.prototype.hasOwnProperty.call(_reducers, reducerName)`. Reachability is low (the attribute is server-stamped from a developer-declared reducer name), so this is contract-integrity hardening.
+
+**Refuted sec-recon candidates (no fix):**
+- **#1 escapeJSONForScript object keys** — REFUTED. `encoding/json` `<`-escapes `<`/`>`/`&` in object *keys* as well as string values (verified: `map[string]any{"</script><x>":…}` marshals with no raw `</`). The `</`→`<\/` replace is belt-and-suspenders.
+- **#3 BindHTML trusted-only** — REFUTED (acceptable). Matches the documented `innerHTML` escape-hatch convention used elsewhere (`setSignal` html-mode, `WithHeadHTML`); the doc-comment says TRUSTED VALUES ONLY and `Bind` (text mode) is the safe default. No request-input sink.
+- **#4 per-request value bag** — REFUTED. `WithValues` allocates a fresh `&values{}` per call; `Seed`/`resolve`/`ResolveSeed` are all request-context-scoped under the bag mutex. Covered by `TestRace_PerRequestValueIsolation`.
+- **#5 refRe backtracking** — REFUTED. `scan.go` uses stdlib `regexp` (RE2, linear-time, no backtracking).
+- **#6 computed deps validation** — REFUTED (developer input). `deps` are Go-declared by the developer at `Computed(...)` call sites, never request-borne.
+- **#8 uncapped dep subscriptions** — REFUTED (developer-controlled DoS only). Dep count is fixed at declaration time.
+- **#9 SignalToggle label/name interpolation** — REFUTED (wrong-layer). `Label` and `SignalName` are developer config (always string literals at call sites), not request/agent input; per the adversarial-tests policy developer config is trusted. Noted asymmetry: `Counter` routes its name through `render.Tag` (escaped) while `SignalToggle` uses raw `fmt.Sprintf` — cosmetic inconsistency, not a request-input vuln, so not flipped.

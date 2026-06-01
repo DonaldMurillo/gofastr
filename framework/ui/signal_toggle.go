@@ -2,8 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -32,9 +34,10 @@ func signalToggleCSS(_ style.Theme) string {
 // Clicking the button toggles the named signal; the signal drives both
 // the aria-checked attribute and a visible label.
 type SignalToggleConfig struct {
-	SignalName string // required — the boolean signal name
-	Label      string // optional — aria-label (falls back to SignalName)
-	Class      string // optional — extra CSS classes
+	SignalName string             // required unless Slice is set
+	Slice      *store.Slice[bool] // optional; supplies the signal name + initial value, takes precedence
+	Label      string             // optional — aria-label (falls back to the signal name)
+	Class      string             // optional — extra CSS classes
 }
 
 // SignalToggle renders a <button role="switch"> that toggles a boolean
@@ -46,23 +49,30 @@ type SignalToggleConfig struct {
 //
 // The button carries data-fui-comp="fui-toggle" for scoped CSS auto-loading.
 func SignalToggle(cfg SignalToggleConfig) render.HTML {
-	if cfg.SignalName == "" {
-		panic("ui: SignalToggle requires SignalName")
+	name := cfg.SignalName
+	initial := false
+	if cfg.Slice != nil {
+		name = cfg.Slice.Name()
+		initial = cfg.Slice.Default()
+	}
+	if name == "" {
+		panic("ui: SignalToggle requires SignalName or Slice")
 	}
 	label := cfg.Label
 	if label == "" {
-		label = cfg.SignalName
+		label = name
 	}
 	cls := "fui-toggle"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	initStr := strconv.FormatBool(initial)
 
 	// Build inner children as a single HTML string — static structure.
 	inner := fmt.Sprintf(
 		`<span class="fui-toggle__track"><span class="fui-toggle__thumb"></span></span>`+
-			`<span class="fui-toggle__label" data-fui-signal="%s">false</span>`,
-		cfg.SignalName,
+			`<span class="fui-toggle__label" data-fui-signal="%s">%s</span>`,
+		name, initStr,
 	)
 
 	// Construct the full button element.
@@ -72,7 +82,7 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 		`<button class="%s" data-fui-comp="fui-toggle"`+
 			` data-fui-signal-toggle="%s"`+
 			` data-fui-signal="%s" data-fui-signal-mode="attr" data-fui-signal-attr="aria-checked"`+
-			` role="switch" aria-checked="false" aria-label="%s">%s</button>`,
-		cls, cfg.SignalName, cfg.SignalName, label, inner,
+			` role="switch" aria-checked="%s" aria-label="%s">%s</button>`,
+		cls, name, name, initStr, label, inner,
 	))
 }

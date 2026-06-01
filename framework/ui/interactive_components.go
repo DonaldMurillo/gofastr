@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -18,9 +19,10 @@ type TabItem struct {
 
 // TabsConfig configures a signal-driven tab strip.
 type TabsConfig struct {
-	SignalName string    // required
-	Tabs       []TabItem // required, at least 1
-	Class      string    // optional extra CSS class
+	SignalName string            // required unless Slice is set
+	Slice      *store.Slice[int] // optional; supplies the signal name + initial active index, takes precedence
+	Tabs       []TabItem         // required, at least 1
+	Class      string            // optional extra CSS class
 }
 
 var tabsStyle = registry.RegisterStyle("fui-tabs", tabsCSS)
@@ -40,8 +42,14 @@ const tabsMaxPanels = 24
 // Panics if SignalName is empty, Tabs is empty, or there are more than
 // tabsMaxPanels tabs.
 func Tabs(cfg TabsConfig) render.HTML {
-	if cfg.SignalName == "" {
-		panic("ui: Tabs requires SignalName")
+	name := cfg.SignalName
+	active := 0
+	if cfg.Slice != nil {
+		name = cfg.Slice.Name()
+		active = cfg.Slice.Default()
+	}
+	if name == "" {
+		panic("ui: Tabs requires SignalName or Slice")
 	}
 	if len(cfg.Tabs) == 0 {
 		panic("ui: Tabs requires at least one TabItem")
@@ -49,14 +57,17 @@ func Tabs(cfg TabsConfig) render.HTML {
 	if len(cfg.Tabs) > tabsMaxPanels {
 		panic(fmt.Sprintf("ui: Tabs supports at most %d tabs, got %d", tabsMaxPanels, len(cfg.Tabs)))
 	}
+	if active < 0 || active >= len(cfg.Tabs) {
+		active = 0
+	}
 
 	var buttons []render.HTML
 	for i, tab := range cfg.Tabs {
 		buttons = append(buttons, render.Tag("button", map[string]string{
 			"class":               "fui-tab",
-			"data-fui-signal-set": cfg.SignalName + ":" + strconv.Itoa(i),
+			"data-fui-signal-set": name + ":" + strconv.Itoa(i),
 			"role":                "tab",
-			"aria-selected":       strconv.FormatBool(i == 0),
+			"aria-selected":       strconv.FormatBool(i == active),
 			"data-fui-tab-index":  strconv.Itoa(i),
 		}, render.Text(tab.Label)))
 	}
@@ -87,10 +98,10 @@ func Tabs(cfg TabsConfig) render.HTML {
 	// of the nav buttons and the panels — so one data-active drives both.
 	wrapper := render.Tag("div", map[string]string{
 		"class":                cls,
-		"data-fui-signal":      cfg.SignalName,
+		"data-fui-signal":      name,
 		"data-fui-signal-mode": "attr",
 		"data-fui-signal-attr": "data-active",
-		"data-active":          "0",
+		"data-active":          strconv.Itoa(active),
 	}, nav, content)
 
 	return tabsStyle.WrapHTML(wrapper)
