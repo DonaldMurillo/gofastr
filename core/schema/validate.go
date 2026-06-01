@@ -166,9 +166,13 @@ func validateDecimal(f Field, value any) error {
 	if s == "" {
 		return nil
 	}
-	// Require a canonical decimal literal. strconv.ParseFloat also accepts
-	// underscore separators, hex floats, and Inf/NaN, none of which are valid
-	// decimal text and several of which (NaN/Inf) bypass the Min/Max bounds.
+	// decimalRe is the primary form guard: it admits only canonical decimal
+	// text and rejects the float-literal forms storage can't reparse
+	// (underscore separators, hex floats) and the non-finite literals (Inf/NaN)
+	// that would bypass the Min/Max bounds. The ParseFloat + finiteness checks
+	// below are defense-in-depth: with the current regex they are unreachable
+	// (see COVERAGE_NOTES.md), but they keep the validator fail-closed if the
+	// regex is ever loosened or a typed caller bypasses it.
 	if !decimalRe.MatchString(s) {
 		return fmt.Errorf("must be a valid decimal number")
 	}
@@ -187,8 +191,7 @@ func validateDecimal(f Field, value any) error {
 	// without loss, so the comparison is exact.
 	dv, ok := new(big.Rat).SetString(s)
 	if !ok {
-		// decimalRe already vetted the form; this should not happen, but fail
-		// closed rather than skipping the bound check.
+		// decimalRe already vetted the form; defensive fail-closed.
 		return fmt.Errorf("must be a valid decimal number")
 	}
 	if f.Min != nil {
