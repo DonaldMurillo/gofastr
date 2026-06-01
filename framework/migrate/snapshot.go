@@ -144,7 +144,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 	sort.Strings(dropped)
 	for _, table := range dropped {
-		qtable, qerr := query.SafeQuote(table)
+		qtable, qerr := query.SafeIdent(table)
 		if qerr != nil {
 			return "", "", SchemaSnapshot{}, fmt.Errorf("generate: invalid table name %q: %w", table, qerr)
 		}
@@ -264,10 +264,10 @@ func recreateTableSQL(table string, cols map[string]string) string {
 	sort.Strings(names)
 	defs := make([]string, 0, len(names))
 	for _, n := range names {
-		defs = append(defs, fmt.Sprintf("%s %s", query.QuoteIdent(query.MustIdent(n)), cols[n]))
+		defs = append(defs, fmt.Sprintf("%s %s", query.MustIdent(n), cols[n]))
 	}
 	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		query.QuoteIdent(query.MustIdent(table)), strings.Join(defs, ",\n\t"))
+		query.MustIdent(table), strings.Join(defs, ",\n\t"))
 }
 
 // RenderMigrationFile formats a versioned migration in the `-- +migrate`

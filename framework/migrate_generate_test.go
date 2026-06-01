@@ -29,10 +29,10 @@ func TestGenerate_FirstMigrationCreatesTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateMigration: %v", err)
 	}
-	if !strings.Contains(up, `CREATE TABLE IF NOT EXISTS "posts"`) {
+	if !strings.Contains(up, "CREATE TABLE IF NOT EXISTS posts") {
 		t.Fatalf("up missing CREATE TABLE: %s", up)
 	}
-	if !strings.Contains(down, `DROP TABLE IF EXISTS "posts"`) {
+	if !strings.Contains(down, "DROP TABLE IF EXISTS posts") {
 		t.Fatalf("down missing DROP TABLE: %s", down)
 	}
 	if _, ok := next.Tables["posts"]; !ok {
@@ -60,10 +60,10 @@ func TestGenerate_IncrementalAddColumn(t *testing.T) {
 	if strings.Contains(up, "CREATE TABLE") {
 		t.Fatalf("incremental migration should not recreate the table: %s", up)
 	}
-	if !strings.Contains(up, `ADD COLUMN "views"`) {
+	if !strings.Contains(up, "ADD COLUMN views") {
 		t.Fatalf("up missing ADD COLUMN views: %s", up)
 	}
-	if !strings.Contains(down, `DROP COLUMN "views"`) {
+	if !strings.Contains(down, "DROP COLUMN views") {
 		t.Fatalf("down missing DROP COLUMN views: %s", down)
 	}
 }
@@ -94,10 +94,10 @@ func TestGenerate_DropTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gen: %v", err)
 	}
-	if !strings.Contains(up, `DROP TABLE IF EXISTS "posts"`) {
+	if !strings.Contains(up, "DROP TABLE IF EXISTS posts") {
 		t.Fatalf("up missing DROP TABLE: %s", up)
 	}
-	if !strings.Contains(down, `CREATE TABLE IF NOT EXISTS "posts"`) {
+	if !strings.Contains(down, "CREATE TABLE IF NOT EXISTS posts") {
 		t.Fatalf("down missing reconstructed CREATE TABLE: %s", down)
 	}
 	// Faithful reconstruction: the Down restores the PK and NOT NULL constraints
@@ -118,10 +118,10 @@ func TestGenerate_DropTableFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateMigration: %v", err)
 	}
-	if !strings.Contains(up, `DROP TABLE IF EXISTS "legacy"`) {
+	if !strings.Contains(up, "DROP TABLE IF EXISTS legacy") {
 		t.Fatalf("up: %s", up)
 	}
-	if !strings.Contains(down, `CREATE TABLE IF NOT EXISTS "legacy"`) || !strings.Contains(down, `"name" TEXT`) {
+	if !strings.Contains(down, "CREATE TABLE IF NOT EXISTS legacy") || !strings.Contains(down, "name TEXT") {
 		t.Fatalf("down fallback reconstruction wrong: %s", down)
 	}
 }

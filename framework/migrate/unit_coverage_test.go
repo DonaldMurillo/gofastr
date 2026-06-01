@@ -329,7 +329,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 	}
 	var sawNotNull bool
 	for _, c := range ch {
-		if strings.Contains(c.SQL, `ADD COLUMN "req"`) && strings.Contains(c.SQL, "NOT NULL") {
+		if strings.Contains(c.SQL, "ADD COLUMN req") && strings.Contains(c.SQL, "NOT NULL") {
 			sawNotNull = true
 		}
 	}
@@ -341,7 +341,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 	tsEnt.Config.Timestamps = true
 	ch2, _ := diffEntityFromLive(tsEnt, nil, DialectSQLite, map[string]string{"x": "TEXT", "created_at": "TIMESTAMP"})
 	for _, c := range ch2 {
-		if strings.Contains(c.SQL, `DROP COLUMN "created_at"`) {
+		if strings.Contains(c.SQL, "DROP COLUMN created_at") {
 			t.Fatal("managed created_at should not be dropped")
 		}
 	}
@@ -350,7 +350,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 		nil, DialectSQLite, map[string]string{"x": "TEXT", "legacy": ""})
 	var sawTextDown bool
 	for _, c := range ch3 {
-		if strings.Contains(c.SQL, `DROP COLUMN "legacy"`) && strings.Contains(c.Down, `ADD COLUMN "legacy" TEXT`) {
+		if strings.Contains(c.SQL, "DROP COLUMN legacy") && strings.Contains(c.Down, "ADD COLUMN legacy TEXT") {
 			sawTextDown = true
 		}
 	}

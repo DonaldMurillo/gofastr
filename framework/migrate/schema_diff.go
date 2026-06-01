@@ -144,7 +144,7 @@ func ApplySchemaDiffWithOptions(ctx context.Context, db *sql.DB, changes []Schem
 }
 
 func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
-	qtable, err := query.SafeQuote(ent.GetTable())
+	qtable, err := query.SafeIdent(ent.GetTable())
 	if err != nil {
 		return nil, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
 	}
@@ -175,7 +175,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if _, ok := live[f.Name]; ok {
 			continue
 		}
-		qcol, err := query.SafeQuote(f.Name)
+		qcol, err := query.SafeIdent(f.Name)
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
@@ -207,7 +207,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if isFrameworkManagedColumn(name, ent) {
 			continue
 		}
-		qcol, err := query.SafeQuote(name)
+		qcol, err := query.SafeIdent(name)
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", name, err)
 		}
@@ -315,12 +315,18 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 		return "", fmt.Errorf("entity %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
 	}
 	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		query.QuoteIdent(safeTable), strings.Join(columns, ",\n\t")), nil
+		safeTable, strings.Join(columns, ",\n\t")), nil
 }
 
-// columnDefs builds the per-column DDL fragments (quoted name + type + column
-// constraints) plus the FK clauses (when all is non-nil). Shared by
+// columnDefs builds the per-column DDL fragments (validated name + type +
+// column constraints) plus the FK clauses (when all is non-nil). Shared by
 // buildCreateTableSQL so there is exactly one column-rendering path.
+//
+// Identifiers are VALIDATED (SafeIdent rejects anything but [A-Za-z0-9_.]) but
+// NOT quoted, to match the runtime SQL the query builder / crud emit, which is
+// also unquoted. Quoting only the DDL would make Postgres preserve case in the
+// schema while the unquoted runtime folds it to lowercase — breaking any
+// mixed-case identifier. Validation alone provides the injection safety.
 func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]string, error) {
 	var columns []string
 	for _, f := range ent.GetFields() {
@@ -328,7 +334,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
-		col := fmt.Sprintf("%s %s", query.QuoteIdent(safeCol), SQLType(f, dialect))
+		col := fmt.Sprintf("%s %s", safeCol, SQLType(f, dialect))
 		if f.Name == ent.PrimaryKey {
 			col += " PRIMARY KEY"
 		}

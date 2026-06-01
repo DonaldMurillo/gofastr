@@ -76,7 +76,7 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read first migration: %v", err)
 	}
-	if !strings.Contains(string(body), `CREATE TABLE IF NOT EXISTS "posts"`) {
+	if !strings.Contains(string(body), "CREATE TABLE IF NOT EXISTS posts") {
 		t.Fatalf("first migration missing CREATE TABLE:\n%s", body)
 	}
 	if !strings.Contains(string(body), "-- +migrate Down") || !strings.Contains(string(body), "DROP TABLE") {
@@ -97,7 +97,7 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	if strings.Contains(string(body2), "CREATE TABLE") {
 		t.Fatalf("incremental migration should not recreate the table:\n%s", body2)
 	}
-	if !strings.Contains(string(body2), `ADD COLUMN "views"`) {
+	if !strings.Contains(string(body2), "ADD COLUMN views") {
 		t.Fatalf("second migration missing ADD COLUMN views:\n%s", body2)
 	}
 

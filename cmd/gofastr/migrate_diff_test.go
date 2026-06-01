@@ -66,7 +66,7 @@ func TestMigrateDiff_PrintsChanges(t *testing.T) {
 	if !strings.Contains(s, "posts: add column views") {
 		t.Fatalf("expected ADD COLUMN summary, got:\n%s", s)
 	}
-	if !strings.Contains(s, `ALTER TABLE "posts" ADD COLUMN "views"`) {
+	if !strings.Contains(s, "ALTER TABLE posts ADD COLUMN views") {
 		t.Fatalf("expected SQL fragment, got:\n%s", s)
 	}
 }
