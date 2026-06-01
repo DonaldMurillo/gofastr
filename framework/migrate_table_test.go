@@ -55,6 +55,25 @@ func TestRawTable_ExactColumns(t *testing.T) {
 	})
 }
 
+// TestRawTable_CompositePKPanics: marking two columns PrimaryKey fails loud
+// instead of silently keeping the last.
+func TestRawTable_CompositePKPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected a panic for a composite primary key")
+		} else if !strings.Contains(r.(string), "composite primary key") {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+	migrate.Table{
+		Name: "membership",
+		Columns: []migrate.Column{
+			{Name: "user_id", Type: schema.String, PrimaryKey: true},
+			{Name: "group_id", Type: schema.String, PrimaryKey: true},
+		},
+	}.ToEntity()
+}
+
 // TestRawTable_RawType: an explicit RawType column survives migration and diffs
 // clean.
 func TestRawTable_RawType(t *testing.T) {

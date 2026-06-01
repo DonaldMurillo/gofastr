@@ -33,7 +33,7 @@ func TestSchemaDiff_NewTable(t *testing.T) {
 		if len(changes) != 1 {
 			t.Fatalf("expected 1 change, got %d: %+v", len(changes), changes)
 		}
-		if !strings.Contains(changes[0].SQL, "CREATE TABLE IF NOT EXISTS posts") {
+		if !strings.Contains(changes[0].SQL, `CREATE TABLE IF NOT EXISTS "posts"`) {
 			t.Fatalf("expected CREATE TABLE, got %s", changes[0].SQL)
 		}
 
@@ -89,7 +89,7 @@ func TestSchemaDiff_AddColumn(t *testing.T) {
 			t.Fatalf("expected 2 changes (views, published), got %d: %+v", len(changes), changes)
 		}
 		for _, c := range changes {
-			if !strings.Contains(c.SQL, "ALTER TABLE posts ADD COLUMN") {
+			if !strings.Contains(c.SQL, `ALTER TABLE "posts" ADD COLUMN`) {
 				t.Fatalf("expected ADD COLUMN, got %s", c.SQL)
 			}
 		}
@@ -146,7 +146,7 @@ func TestSchemaDiff_DropColumn(t *testing.T) {
 		if len(changes) != 1 {
 			t.Fatalf("expected 1 change (drop legacy), got %d: %+v", len(changes), changes)
 		}
-		if !strings.Contains(changes[0].SQL, "DROP COLUMN legacy") {
+		if !strings.Contains(changes[0].SQL, `DROP COLUMN "legacy"`) {
 			t.Fatalf("expected DROP COLUMN legacy, got %s", changes[0].SQL)
 		}
 	})

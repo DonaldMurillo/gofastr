@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -25,9 +26,14 @@ import (
 // shape diffEntityFromLive consumes, so the snapshot diff and the live-DB diff
 // share one code path.
 type SchemaSnapshot struct {
-	Tables   map[string]map[string]string `json:"tables"`
-	Views    map[string]RoutineDef        `json:"views,omitempty"`
-	Routines map[string]RoutineDef        `json:"routines,omitempty"`
+	Tables map[string]map[string]string `json:"tables"`
+	// TableDDL holds the full CREATE TABLE statement per table, so a dropped
+	// table's Down recreates it WITH all constraints (PK, NOT NULL, UNIQUE,
+	// FK, defaults) rather than a lossy column-list reconstruction. Optional —
+	// snapshots written by an older gofastr fall back to recreateTableSQL.
+	TableDDL map[string]string     `json:"table_ddl,omitempty"`
+	Views    map[string]RoutineDef `json:"views,omitempty"`
+	Routines map[string]RoutineDef `json:"routines,omitempty"`
 }
 
 // RoutineDef is the snapshot record for a routine — its Up and Down bodies, so
@@ -48,7 +54,8 @@ func SnapshotFromRegistry(reg entity.Registry, dialect Dialect) SchemaSnapshot {
 func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 	snap := SchemaSnapshot{Tables: map[string]map[string]string{}}
 	if plan.Registry != nil {
-		for _, ent := range plan.Registry.All() {
+		all := plan.Registry.All()
+		for _, ent := range all {
 			if ent.Config.Unmanaged {
 				continue // views / external tables aren't part of the table snapshot
 			}
@@ -57,6 +64,15 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				cols[f.Name] = SQLType(f, dialect)
 			}
 			snap.Tables[ent.GetTable()] = cols
+			// Capture the exact CREATE TABLE so a future drop is faithfully
+			// reversible. Skip silently if the entity can't render (it would
+			// have failed the diff anyway).
+			if ddl, err := buildCreateTableSQL(ent, all, dialect); err == nil {
+				if snap.TableDDL == nil {
+					snap.TableDDL = map[string]string{}
+				}
+				snap.TableDDL[ent.GetTable()] = ddl
+			}
 		}
 	}
 	if len(plan.Views) > 0 {
@@ -128,10 +144,21 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 	sort.Strings(dropped)
 	for _, table := range dropped {
+		qtable, qerr := query.SafeQuote(table)
+		if qerr != nil {
+			return "", "", SchemaSnapshot{}, fmt.Errorf("generate: invalid table name %q: %w", table, qerr)
+		}
+		// Prefer the faithful CREATE TABLE captured in the snapshot (all
+		// constraints); fall back to a column-list reconstruction for snapshots
+		// written before TableDDL existed.
+		down := prev.TableDDL[table]
+		if down == "" {
+			down = recreateTableSQL(table, prev.Tables[table])
+		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: drop table", table),
-			SQL:         fmt.Sprintf("DROP TABLE IF EXISTS %s", table),
-			Down:        recreateTableSQL(table, prev.Tables[table]),
+			SQL:         fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
+			Down:        down,
 			Destructive: true,
 		})
 	}
@@ -224,8 +251,11 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 	return changes
 }
 
-// recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set, the
-// Down for a dropped table. Column order is sorted for deterministic output.
+// recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set —
+// the FALLBACK Down for a dropped table when the snapshot predates TableDDL.
+// Constraints (PK/NOT NULL/UNIQUE/FK) are not recoverable from a column→type
+// map, so this is column-and-type only; the TableDDL path is faithful.
+// Identifiers are quoted. Column order is sorted for deterministic output.
 func recreateTableSQL(table string, cols map[string]string) string {
 	names := make([]string, 0, len(cols))
 	for n := range cols {
@@ -234,9 +264,10 @@ func recreateTableSQL(table string, cols map[string]string) string {
 	sort.Strings(names)
 	defs := make([]string, 0, len(names))
 	for _, n := range names {
-		defs = append(defs, fmt.Sprintf("%s %s", n, cols[n]))
+		defs = append(defs, fmt.Sprintf("%s %s", query.QuoteIdent(query.MustIdent(n)), cols[n]))
 	}
-	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)", table, strings.Join(defs, ",\n\t"))
+	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
+		query.QuoteIdent(query.MustIdent(table)), strings.Join(defs, ",\n\t"))
 }
 
 // RenderMigrationFile formats a versioned migration in the `-- +migrate`

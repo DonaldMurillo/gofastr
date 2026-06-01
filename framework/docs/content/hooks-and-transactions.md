@@ -133,6 +133,9 @@ ambient transaction** when one is in the context. So several CRUD
 operations called inside `App.InTx` commit or roll back as a single unit:
 
 ```go
+ordersCH := app.MustCrudHandler("orders") // in-process handler for a registered entity
+linesCH  := app.MustCrudHandler("order_lines")
+
 err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
     // Both CreateOne calls run on the SAME transaction — if the second
     // fails, the first is rolled back too.
@@ -141,6 +144,9 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
     return nil // commit
 })
 ```
+
+`App.CrudHandler(name)` (and the panicking `MustCrudHandler`) return a
+fully-wired in-process handler — the same shape the HTTP routes use.
 
 Pass the `ctx` you receive from `InTx` into the CRUD call — that's what
 carries the transaction (via `TxFromContext`). The query builder is

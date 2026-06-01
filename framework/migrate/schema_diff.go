@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -143,6 +144,11 @@ func ApplySchemaDiffWithOptions(ctx context.Context, db *sql.DB, changes []Schem
 }
 
 func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
+	qtable, err := query.SafeQuote(ent.GetTable())
+	if err != nil {
+		return nil, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
+	}
+
 	if len(live) == 0 {
 		// Table missing entirely — emit a CREATE TABLE via the same path
 		// AutoMigrate uses, captured as SQL string.
@@ -153,7 +159,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		return []SchemaChange{{
 			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
 			SQL:     ddl,
-			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", ent.GetTable()),
+			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
 		}}, nil
 	}
 
@@ -169,17 +175,21 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if _, ok := live[f.Name]; ok {
 			continue
 		}
+		qcol, err := query.SafeQuote(f.Name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
 		colType := SQLType(f, dialect)
 		nullable := ""
 		if f.Required && f.AutoGenerate == schema.AutoNone {
 			nullable = " NOT NULL"
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
-			ent.GetTable(), f.Name, colType, nullable, ColumnDefaultClause(f, dialect))
+			qtable, qcol, colType, nullable, ColumnDefaultClause(f, dialect))
 		changes = append(changes, SchemaChange{
 			Summary: fmt.Sprintf("%s: add column %s %s", ent.GetName(), f.Name, colType),
 			SQL:     ddl,
-			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ent.GetTable(), f.Name),
+			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol),
 		})
 	}
 
@@ -197,7 +207,11 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if isFrameworkManagedColumn(name, ent) {
 			continue
 		}
-		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ent.GetTable(), name)
+		qcol, err := query.SafeQuote(name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column name %q: %w", name, err)
+		}
+		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol)
 		// Inverse re-adds the column with the type it had in the previous
 		// snapshot. Reversible at the schema level — row data is not restored.
 		downType := live[name]
@@ -207,7 +221,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: drop column %s", ent.GetName(), name),
 			SQL:         ddl,
-			Down:        fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", ent.GetTable(), name, downType),
+			Down:        fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", qtable, qcol, downType),
 			Destructive: true,
 		})
 	}
@@ -284,17 +298,37 @@ func ReadLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[s
 	return out, rows.Err()
 }
 
-// buildCreateTableSQL renders the CREATE TABLE statement for an entity,
-// identical to what AutoMigrate would emit. Used when the table is missing
-// entirely.
+// buildCreateTableSQL renders the CREATE TABLE statement for an entity. This is
+// the SINGLE source of CREATE TABLE DDL — AutoMigrate (migrateEntity) and the
+// diff/generate paths both call it, so what gets generated is byte-identical to
+// what auto-migrate applies. Every identifier is validated and quoted.
 func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) (string, error) {
-	fields := ent.GetFields()
-	if len(fields) == 0 {
+	if len(ent.GetFields()) == 0 {
 		return "", fmt.Errorf("entity %s has no fields", ent.GetName())
 	}
+	columns, err := columnDefs(ent, all, dialect)
+	if err != nil {
+		return "", fmt.Errorf("entity %s: %w", ent.GetName(), err)
+	}
+	safeTable, err := query.SafeIdent(ent.GetTable())
+	if err != nil {
+		return "", fmt.Errorf("entity %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
+	}
+	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
+		query.QuoteIdent(safeTable), strings.Join(columns, ",\n\t")), nil
+}
+
+// columnDefs builds the per-column DDL fragments (quoted name + type + column
+// constraints) plus the FK clauses (when all is non-nil). Shared by
+// buildCreateTableSQL so there is exactly one column-rendering path.
+func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]string, error) {
 	var columns []string
-	for _, f := range fields {
-		col := fmt.Sprintf("%s %s", f.Name, SQLType(f, dialect))
+	for _, f := range ent.GetFields() {
+		safeCol, err := query.SafeIdent(f.Name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
+		col := fmt.Sprintf("%s %s", query.QuoteIdent(safeCol), SQLType(f, dialect))
 		if f.Name == ent.PrimaryKey {
 			col += " PRIMARY KEY"
 		}
@@ -310,10 +344,9 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 	if all != nil {
 		fks, err := foreignKeyClauses(ent, all)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		columns = append(columns, fks...)
 	}
-	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		ent.GetTable(), strings.Join(columns, ",\n\t")), nil
+	return columns, nil
 }

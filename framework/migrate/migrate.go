@@ -167,49 +167,23 @@ func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map
 	if ent.Config.Unmanaged {
 		return nil
 	}
-	fields := ent.GetFields()
-	if len(fields) == 0 {
+	if len(ent.GetFields()) == 0 {
 		return nil
 	}
 
-	var columns []string
-	for _, f := range fields {
-		col := fmt.Sprintf("%s %s", f.Name, SQLType(f, dialect))
-		if f.Name == ent.PrimaryKey {
-			col += " PRIMARY KEY"
-		}
-		if f.Unique {
-			col += " UNIQUE"
-		}
-		if f.Required && f.AutoGenerate == schema.AutoNone {
-			col += " NOT NULL"
-		}
-		col += ColumnDefaultClause(f, dialect)
-		columns = append(columns, col)
-	}
-
-	if all != nil {
-		fks, err := foreignKeyClauses(ent, all)
+	if !tableExists {
+		stmt, err := buildCreateTableSQL(ent, all, dialect)
 		if err != nil {
+			return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
+		}
+		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
-		columns = append(columns, fks...)
 	}
 
 	safeTable, err := query.SafeIdent(ent.GetTable())
 	if err != nil {
 		return fmt.Errorf("migrate %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
-	}
-
-	if !tableExists {
-		stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-			query.QuoteIdent(safeTable),
-			strings.Join(columns, ",\n\t"),
-		)
-
-		if _, err := exec.ExecContext(ctx, stmt); err != nil {
-			return err
-		}
 	}
 
 	// Secondary indices — emit AFTER the table exists. CREATE INDEX IF NOT

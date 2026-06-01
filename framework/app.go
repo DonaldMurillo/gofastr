@@ -608,6 +608,39 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
+// CrudHandler returns a fully-wired in-process CRUD handler for a registered
+// entity — the same handler shape the HTTP routes use (hooks, events, storage,
+// JSON casing, registry). Use it to call CreateOne/UpdateOne/DeleteOne/ListAll
+// directly, e.g. to compose several writes inside App.InTx (pass the InTx ctx
+// so they join the same transaction). Returns an error if no entity is
+// registered under name or the app has no DB.
+func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
+	if a.DB == nil {
+		return nil, fmt.Errorf("app.CrudHandler: no DB configured")
+	}
+	ent, err := a.Registry.Get(name)
+	if err != nil {
+		return nil, fmt.Errorf("app.CrudHandler: %w", err)
+	}
+	ch := crud.NewCrudHandler(ent, a.DB)
+	ch.JSONCase = a.JSONCasing()
+	ch.Hooks = a.HookRegistry(name)
+	ch.Storage = a.Storage
+	ch.Events = a.Events()
+	ch.Registry = a.Registry
+	return ch, nil
+}
+
+// MustCrudHandler is CrudHandler that panics on error — for app setup where a
+// missing entity is a programming mistake.
+func (a *App) MustCrudHandler(name string) *crud.CrudHandler {
+	ch, err := a.CrudHandler(name)
+	if err != nil {
+		panic(err)
+	}
+	return ch
+}
+
 // Table registers a raw, non-entity table for migration only — no CRUD, no
 // HTTP routes, no validation, no auto-injected columns. The table participates
 // in auto-migrate, diffing, and generation alongside entities (including

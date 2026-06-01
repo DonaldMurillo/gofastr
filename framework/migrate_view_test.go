@@ -86,6 +86,42 @@ func TestView_UnmanagedSkipsTableDDL(t *testing.T) {
 	})
 }
 
+// TestView_ColumnsWithoutPKPanics: a view that exposes Columns but marks no
+// PrimaryKey fails loud rather than mounting a broken GET /{id} route.
+func TestView_ColumnsWithoutPKPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected a panic for Columns without a PrimaryKey")
+		} else if !strings.Contains(r.(string), "PrimaryKey") {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+	migrate.View{
+		Name:    "v",
+		Select:  "SELECT id FROM users",
+		Columns: []migrate.Column{{Name: "id", Type: schema.String}}, // no PrimaryKey
+	}.ToEntity()
+}
+
+// TestView_MultiplePKPanics: more than one PrimaryKey column on a view fails loud.
+func TestView_MultiplePKPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected a panic for multiple PrimaryKey columns")
+		} else if !strings.Contains(r.(string), "exactly one") {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+	migrate.View{
+		Name:   "v",
+		Select: "SELECT a, b FROM t",
+		Columns: []migrate.Column{
+			{Name: "a", Type: schema.String, PrimaryKey: true},
+			{Name: "b", Type: schema.String, PrimaryKey: true},
+		},
+	}.ToEntity()
+}
+
 // TestView_GenerateReversible: a generated view migration creates the view
 // forward and drops it on rollback, round-tripping through the runner.
 func TestView_GenerateReversible(t *testing.T) {

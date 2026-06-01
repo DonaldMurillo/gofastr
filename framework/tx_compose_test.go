@@ -6,9 +6,29 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
+
+// TestApp_CrudHandler covers the in-process handler accessor: it returns a
+// wired handler for a registered entity and errors otherwise.
+func TestApp_CrudHandler(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := NewApp(WithDB(db))
+	app.Registry.Register(entity.Define("things", entity.EntityConfig{
+		Table: "things", Fields: []schema.Field{{Name: "n", Type: schema.Int}},
+	}.WithTimestamps(false)))
+
+	ch, err := app.CrudHandler("things")
+	if err != nil || ch == nil || ch.Registry == nil {
+		t.Fatalf("CrudHandler(things): %v / %+v", err, ch)
+	}
+	if _, err := app.CrudHandler("missing"); err == nil {
+		t.Error("expected error for an unregistered entity")
+	}
+	if _, err := NewApp().CrudHandler("x"); err == nil {
+		t.Error("expected error when the app has no DB")
+	}
+}
 
 // TestInTx_ComposesCrudOperations proves the ambient-transaction reuse: two
 // CRUD writes invoked inside one App.InTx join the SAME transaction, so when
@@ -27,7 +47,7 @@ func TestInTx_ComposesCrudOperations(t *testing.T) {
 		if err := AutoMigrate(db, app.Registry); err != nil {
 			t.Fatalf("AutoMigrate: %v", err)
 		}
-		ch := crud.NewCrudHandler(ent, db)
+		ch := app.MustCrudHandler("posts") // the documented in-process accessor
 
 		// A succeeds, B violates the UNIQUE(slug) constraint → the whole
 		// InTx must roll back.
@@ -64,7 +84,7 @@ func TestInTx_ComposesCommit(t *testing.T) {
 		if err := AutoMigrate(db, app.Registry); err != nil {
 			t.Fatalf("AutoMigrate: %v", err)
 		}
-		ch := crud.NewCrudHandler(ent, db)
+		ch := app.MustCrudHandler("notes")
 
 		err := app.InTx(context.Background(), func(ctx context.Context, _ *sql.Tx) error {
 			if _, e := ch.CreateOne(ctx, map[string]any{"body": "one"}); e != nil {

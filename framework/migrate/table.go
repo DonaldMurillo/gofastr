@@ -1,6 +1,8 @@
 package migrate
 
 import (
+	"fmt"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -55,6 +57,7 @@ type ForeignKey struct {
 func (t Table) ToEntity() *entity.Entity {
 	fields := make([]schema.Field, 0, len(t.Columns))
 	pk := ""
+	pkCount := 0
 	for _, c := range t.Columns {
 		fields = append(fields, schema.Field{
 			Name:         c.Name,
@@ -67,7 +70,12 @@ func (t Table) ToEntity() *entity.Entity {
 		})
 		if c.PrimaryKey {
 			pk = c.Name
+			pkCount++
 		}
+	}
+	// Fail loud rather than silently keeping only the last PK column.
+	if pkCount > 1 {
+		panic(fmt.Sprintf("migrate: table %q marks %d columns PrimaryKey — composite primary keys are not supported on a raw Table; use a single PK plus a Unique index", t.Name, pkCount))
 	}
 	var relations []entity.Relation
 	for _, fk := range t.ForeignKeys {

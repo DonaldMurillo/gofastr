@@ -59,6 +59,7 @@ func (v View) ToEntity() *entity.Entity {
 	}
 	fields := make([]schema.Field, 0, len(v.Columns))
 	pk := ""
+	pkCount := 0
 	for _, c := range v.Columns {
 		fields = append(fields, schema.Field{
 			Name:    c.Name,
@@ -67,7 +68,16 @@ func (v View) ToEntity() *entity.Entity {
 		})
 		if c.PrimaryKey {
 			pk = c.Name
+			pkCount++
 		}
+	}
+	// A view exposed through the ORM needs exactly one primary-key column so
+	// GET /{view}/{id} resolves; fail loud rather than mounting a broken route.
+	if pk == "" {
+		panic(fmt.Sprintf("migrate: view %q declares Columns but no PrimaryKey column — mark one column PrimaryKey: true (it's the id the ORM reads), or drop Columns to keep the view migration-only", v.Name))
+	}
+	if pkCount > 1 {
+		panic(fmt.Sprintf("migrate: view %q marks %d columns PrimaryKey — exactly one is required", v.Name, pkCount))
 	}
 	ent := &entity.Entity{Config: entity.EntityConfig{
 		Name:      v.Name,

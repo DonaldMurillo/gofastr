@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,6 +265,53 @@ func TestBuildCreateTableSQL_NoFieldsUniqueAndFKError(t *testing.T) {
 	}
 }
 
+// TestDiffEntityFromLive_InvalidIdentifiers covers the SafeQuote error branches
+// for an invalid table name, an invalid ADD-COLUMN name, and an invalid live
+// DROP-COLUMN name.
+func TestDiffEntityFromLive_InvalidIdentifiers(t *testing.T) {
+	// Invalid table name.
+	if _, err := diffEntityFromLive(rawEnt("e", "bad table", []schema.Field{{Name: "x"}}, nil, ""), nil, DialectSQLite, map[string]string{}); err == nil {
+		t.Error("expected invalid table name error")
+	}
+	// Invalid declared column → ADD COLUMN path.
+	addEnt := rawEnt("e", "e", []schema.Field{{Name: "ok"}, {Name: "bad col"}}, nil, "")
+	if _, err := diffEntityFromLive(addEnt, nil, DialectSQLite, map[string]string{"ok": "TEXT"}); err == nil {
+		t.Error("expected invalid ADD COLUMN name error")
+	}
+	// Invalid live column → DROP COLUMN path.
+	dropEnt := rawEnt("e", "e", []schema.Field{{Name: "ok"}}, nil, "")
+	if _, err := diffEntityFromLive(dropEnt, nil, DialectSQLite, map[string]string{"ok": "TEXT", "bad col": "TEXT"}); err == nil {
+		t.Error("expected invalid DROP COLUMN name error")
+	}
+}
+
+// TestBuildCreateTableSQL_InvalidColumn covers the columnDefs SafeIdent error.
+func TestBuildCreateTableSQL_InvalidColumn(t *testing.T) {
+	if _, err := buildCreateTableSQL(rawEnt("e", "e", []schema.Field{{Name: "bad col"}}, nil, ""), nil, DialectSQLite); err == nil {
+		t.Error("expected invalid column name error from columnDefs")
+	}
+}
+
+// TestMigrateEntity_InvalidTableExisting covers migrateEntity's post-create
+// table-name validation, reachable only when the table already exists (so the
+// CREATE — which validates first — is skipped).
+func TestMigrateEntity_InvalidTableExisting(t *testing.T) {
+	// tableExists=true skips the CREATE (which would validate first) and never
+	// touches the executor, so a nil execer is safe here.
+	ent := rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
+	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, true); err == nil {
+		t.Error("expected invalid table name error in migrateEntity")
+	}
+}
+
+// TestGeneratePlan_InvalidDroppedTable covers the dropped-table SafeQuote error.
+func TestGeneratePlan_InvalidDroppedTable(t *testing.T) {
+	prev := SchemaSnapshot{Tables: map[string]map[string]string{"bad table": {"x": "TEXT"}}}
+	if _, _, _, err := GeneratePlan(Plan{}, prev, DialectSQLite); err == nil {
+		t.Error("expected invalid dropped-table name error")
+	}
+}
+
 // TestDiffEntityFromLive_Branches drives the no-fields-create, ADD-NOT-NULL,
 // managed-column-skip, and empty-down-type branches directly.
 func TestDiffEntityFromLive_Branches(t *testing.T) {
@@ -281,7 +329,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 	}
 	var sawNotNull bool
 	for _, c := range ch {
-		if strings.Contains(c.SQL, "ADD COLUMN req") && strings.Contains(c.SQL, "NOT NULL") {
+		if strings.Contains(c.SQL, `ADD COLUMN "req"`) && strings.Contains(c.SQL, "NOT NULL") {
 			sawNotNull = true
 		}
 	}
@@ -293,7 +341,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 	tsEnt.Config.Timestamps = true
 	ch2, _ := diffEntityFromLive(tsEnt, nil, DialectSQLite, map[string]string{"x": "TEXT", "created_at": "TIMESTAMP"})
 	for _, c := range ch2 {
-		if strings.Contains(c.SQL, "DROP COLUMN created_at") {
+		if strings.Contains(c.SQL, `DROP COLUMN "created_at"`) {
 			t.Fatal("managed created_at should not be dropped")
 		}
 	}
@@ -302,7 +350,7 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 		nil, DialectSQLite, map[string]string{"x": "TEXT", "legacy": ""})
 	var sawTextDown bool
 	for _, c := range ch3 {
-		if strings.Contains(c.SQL, "DROP COLUMN legacy") && strings.Contains(c.Down, "ADD COLUMN legacy TEXT") {
+		if strings.Contains(c.SQL, `DROP COLUMN "legacy"`) && strings.Contains(c.Down, `ADD COLUMN "legacy" TEXT`) {
 			sawTextDown = true
 		}
 	}
