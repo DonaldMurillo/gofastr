@@ -559,3 +559,241 @@ func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
 // responsive rule is guarded deterministically by
 // TestDocShellCollapsesOnMobile in site_test.go (asserts the CSS), and the
 // behavior was verified manually in a real browser at 320/375/414.
+
+// ─── Client-only Interactive Component E2E Tests ───────────────────────
+
+func TestE2E_CounterIncrementsLocally(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	// Navigate to the counter demo page.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/counter"),
+		chromedp.WaitReady(".fui-counter", chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// Initial value should be 0.
+	var initial string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-counter [data-fui-signal]').textContent`, &initial),
+	); err != nil {
+		t.Fatalf("read initial: %v", err)
+	}
+	if strings.TrimSpace(initial) != "0" {
+		t.Fatalf("initial count = %q, want 0", initial)
+	}
+
+	// Click the increment button.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-counter__inc').click()`, nil),
+		chromedp.Sleep(200*time.Millisecond),
+	); err != nil {
+		t.Fatalf("increment click: %v", err)
+	}
+
+	var afterInc string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-counter [data-fui-signal]').textContent`, &afterInc),
+	); err != nil {
+		t.Fatalf("read after inc: %v", err)
+	}
+	if strings.TrimSpace(afterInc) != "1" {
+		t.Fatalf("after increment = %q, want 1", afterInc)
+	}
+
+	// Click decrement.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-counter__dec').click()`, nil),
+		chromedp.Sleep(200*time.Millisecond),
+	); err != nil {
+		t.Fatalf("decrement click: %v", err)
+	}
+
+	var afterDec string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-counter [data-fui-signal]').textContent`, &afterDec),
+	); err != nil {
+		t.Fatalf("read after dec: %v", err)
+	}
+	if strings.TrimSpace(afterDec) != "0" {
+		t.Fatalf("after decrement = %q, want 0", afterDec)
+	}
+}
+
+func TestE2E_TabsSwitchPanels(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/tabs"),
+		chromedp.WaitReady(".fui-tabs", chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// First tab should be active.
+	var firstActive bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-tab--active') !== null`, &firstActive),
+	); err != nil {
+		t.Fatalf("check first active: %v", err)
+	}
+	if !firstActive {
+		t.Fatal("first tab should have fui-tab--active class")
+	}
+
+	// Click the second tab.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelectorAll('.fui-tab')[1].click()`, nil),
+		chromedp.Sleep(200*time.Millisecond),
+	); err != nil {
+		t.Fatalf("click second tab: %v", err)
+	}
+
+	// Verify the content wrapper got the new signal value.
+	var activeAttr string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-tabs-content').getAttribute('data-active')`, &activeAttr),
+	); err != nil {
+		t.Fatalf("read active attr: %v", err)
+	}
+	if activeAttr != "1" {
+		t.Fatalf("data-active = %q, want 1", activeAttr)
+	}
+
+	// Second panel should now be visible.
+	var panel2Display string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-tab-panel[data-fui-tab-index="1"]')).display`, &panel2Display),
+	); err != nil {
+		t.Fatalf("read panel2 display: %v", err)
+	}
+	if panel2Display == "none" {
+		t.Fatal("second tab panel should be visible after clicking second tab")
+	}
+}
+
+func TestE2E_ToggleFlipsValue(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/toggle"),
+		chromedp.WaitReady(".fui-toggle", chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// Initial value should be "false".
+	var initial string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-toggle"]').textContent`, &initial),
+	); err != nil {
+		t.Fatalf("read initial: %v", err)
+	}
+	if strings.TrimSpace(initial) != "false" {
+		t.Fatalf("initial toggle = %q, want false", initial)
+	}
+
+	// Click the toggle.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-toggle').click()`, nil),
+		chromedp.Sleep(200*time.Millisecond),
+	); err != nil {
+		t.Fatalf("toggle click: %v", err)
+	}
+
+	var afterToggle string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-toggle"]').textContent`, &afterToggle),
+	); err != nil {
+		t.Fatalf("read after toggle: %v", err)
+	}
+	if strings.TrimSpace(afterToggle) != "true" {
+		t.Fatalf("after toggle = %q, want true", afterToggle)
+	}
+
+	// Click again to flip back.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-toggle').click()`, nil),
+		chromedp.Sleep(200*time.Millisecond),
+	); err != nil {
+		t.Fatalf("toggle back click: %v", err)
+	}
+
+	var afterBack string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-toggle"]').textContent`, &afterBack),
+	); err != nil {
+		t.Fatalf("read after back: %v", err)
+	}
+	if strings.TrimSpace(afterBack) != "false" {
+		t.Fatalf("after toggle back = %q, want false", afterBack)
+	}
+}
+
+func TestE2E_CollapsibleExpandsAndCollapses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/collapsible"),
+		chromedp.WaitReady(".fui-collapsible", chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	// First collapsible should NOT be open initially.
+	var firstOpen bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-collapsible').hasAttribute('open')`, &firstOpen),
+	); err != nil {
+		t.Fatalf("check first open: %v", err)
+	}
+	if firstOpen {
+		t.Fatal("first collapsible should NOT be open initially")
+	}
+
+	// Second collapsible SHOULD be open (Open: true in config).
+	var secondOpen bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelectorAll('.fui-collapsible')[1].hasAttribute('open')`, &secondOpen),
+	); err != nil {
+		t.Fatalf("check second open: %v", err)
+	}
+	if !secondOpen {
+		t.Fatal("second collapsible should be open initially (Open: true)")
+	}
+
+	// Click the first summary to open it.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-collapsible__summary').click()`, nil),
+		chromedp.Sleep(200*time.Millisecond),
+	); err != nil {
+		t.Fatalf("click summary: %v", err)
+	}
+
+	var afterClickOpen bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('.fui-collapsible').hasAttribute('open')`, &afterClickOpen),
+	); err != nil {
+		t.Fatalf("check after click: %v", err)
+	}
+	if !afterClickOpen {
+		t.Fatal("first collapsible should be open after clicking summary")
+	}
+}

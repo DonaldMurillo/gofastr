@@ -885,6 +885,50 @@ func main() {
 				),
 			)
 		}},
+	// ---------- Client-only Interactive Components ----------
+	// These run entirely in the browser — no server round-trips.
+
+	{"counter", "Counter", "Clientside Interactivity",
+		"A numeric counter that increments and decrements purely in the browser.",
+		func() render.HTML {
+			return ui.Counter(ui.CounterConfig{SignalName: "demo-counter"})
+		}},
+
+	{"tabs", "Tabs", "Clientside Interactivity",
+		"Switch between content panels using signal-driven tabs — no page reload.",
+		func() render.HTML {
+			return ui.Tabs(ui.TabsConfig{
+				SignalName: "demo-tabs",
+				Tabs: []ui.TabItem{
+					{Label: "Overview", Content: render.Tag("p", nil, render.Text("This is the overview panel. Clicking the tabs switches content without any server round-trip."))},
+					{Label: "Details", Content: render.Tag("p", nil, render.Text("Each panel is pre-rendered on the server. The runtime shows/hides them based on the active tab signal."))},
+					{Label: "Settings", Content: render.Tag("p", nil, render.Text("No JavaScript was written for this — it's all data attributes + CSS attribute selectors."))},
+				},
+			})
+		}},
+
+	{"toggle", "Toggle Switch", "Clientside Interactivity",
+		"A boolean toggle that flips state locally — no RPC needed.",
+		func() render.HTML {
+			row := render.Tag("div", map[string]string{"style": "display:flex;align-items:center;gap:0.75rem"},
+				ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
+				render.Tag("span", map[string]string{"data-fui-signal": "demo-toggle"}, render.Text("false")),
+			)
+			return row
+		}},
+
+	{"collapsible", "Collapsible", "Clientside Interactivity",
+		"Expand and collapse content sections — uses native HTML <details>.",
+		func() render.HTML {
+			return render.Join(
+				ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
+					render.Tag("p", nil, render.Text("A collapsible section using the native <details> element. No JavaScript required for basic open/close — the browser handles it.")),
+				),
+				ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
+					render.Tag("p", nil, render.Text("Yes. The runtime adds keyboard support (Escape to close) and aria-expanded mirroring via data-fui-disclosure.")),
+				),
+			)
+		}},
 }
 
 // =============================================================================
