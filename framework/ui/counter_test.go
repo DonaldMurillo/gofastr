@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestCounterBasic(t *testing.T) {
@@ -50,6 +52,31 @@ func TestCounterMissingSignalName(t *testing.T) {
 		}
 	}()
 	Counter(CounterConfig{})
+}
+
+// TestCounterRegistersCSS guards that Counter ships its own scoped CSS
+// via the registry (otherwise the buttons render unstyled — the marker
+// is present but no style is registered under that name).
+func TestCounterRegistersCSS(t *testing.T) {
+	css := counterStyle.Entry().CSSFor(style.Theme{})
+	for _, sel := range []string{
+		`[data-fui-comp="fui-counter"]`,
+		".fui-counter__btn",
+		".fui-counter__value",
+	} {
+		if !strings.Contains(css, sel) {
+			t.Errorf("counter CSS missing %q:\n%s", sel, css)
+		}
+	}
+}
+
+// TestCounterCarriesCompMarker ensures the rendered output carries the
+// data-fui-comp marker the host scans for to emit the registered CSS.
+func TestCounterCarriesCompMarker(t *testing.T) {
+	s := string(Counter(CounterConfig{SignalName: "qty"}))
+	if !strings.Contains(s, `data-fui-comp="fui-counter"`) {
+		t.Fatalf("counter missing comp marker: %s", s)
+	}
 }
 
 // Helper to extract string from panic value.

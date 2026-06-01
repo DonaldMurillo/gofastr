@@ -4,8 +4,25 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// TestCollapsibleRegistersCSS guards that Collapsible ships its own
+// scoped CSS — it stamps data-fui-comp="fui-collapsible" but had no
+// registered style, so the summary/content rendered unstyled.
+func TestCollapsibleRegistersCSS(t *testing.T) {
+	css := collapsibleStyle.Entry().CSSFor(style.Theme{})
+	for _, sel := range []string{
+		`[data-fui-comp="fui-collapsible"]`,
+		".fui-collapsible__summary",
+		".fui-collapsible__content",
+	} {
+		if !strings.Contains(css, sel) {
+			t.Errorf("collapsible CSS missing %q:\n%s", sel, css)
+		}
+	}
+}
 
 // ─── Collapsible ───
 
