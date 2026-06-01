@@ -109,6 +109,21 @@ func rootTokens(ss *style.StyleSheet) {
 			"--t-4xl", "52px",
 			"--t-5xl", "72px",
 
+			// Framework component theming. core-ui/interactive + framework/ui
+			// components (Counter, Toggle, Collapsible, Tabs, Dropdown) are
+			// styled with --fui-* custom properties and fall back to LIGHT
+			// hardcoded colors when a host leaves them unset — which is why
+			// the dropdown menu rendered white on this dark theme. Aliasing
+			// them to the site's --color-* tokens (which flip with
+			// data-color-scheme) themes every framework component correctly
+			// in both modes from one place.
+			"--fui-surface", "var(--color-surface)",
+			"--fui-foreground", "var(--color-text)",
+			"--fui-border", "var(--color-border)",
+			"--fui-primary", "var(--color-primary)",
+			"--fui-muted", "var(--color-text-muted)",
+			"--fui-muted-bg", "var(--color-surface-soft)",
+
 			// Layout caps.
 			"--col-max", "1240px",
 			"--nav-h", "60px",

@@ -21,15 +21,22 @@ package main
 // =============================================================================
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	patternsAccordion "github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
 	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// demoCompany is a page-scoped store slice powering the /components/signal-store
+// demo: one producer renames it, every bound consumer updates client-side.
+var demoCompany = store.New("sitedemo").String("company", "Acme Corp")
 
 // componentEntry — one component in the catalog.
 type componentEntry struct {
@@ -51,6 +58,56 @@ var noteOnlyComponents = map[string]bool{
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
 	"confirmaction": true,
+}
+
+// componentCode holds the example Go for a component's showcase page —
+// the actual usage that produces the live demo. Keyed by slug so adding
+// a snippet never disturbs the catalog tuples. Rendered by usage().
+var componentCode = map[string]string{
+	"counter": `ui.Counter(ui.CounterConfig{SignalName: "qty"})
+// or typed + auto-seeded via a store slice:
+ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})`,
+
+	"toggle": `ui.SignalToggle(ui.SignalToggleConfig{SignalName: "dark"})`,
+
+	"tabs": `ui.Tabs(ui.TabsConfig{
+    SignalName: "tab",
+    Tabs: []ui.TabItem{
+        {Label: "Overview", Content: render.Text("…")},
+        {Label: "Pricing",  Content: render.Text("…")},
+    },
+})`,
+
+	"collapsible": `ui.Collapsible(
+    ui.CollapsibleConfig{Summary: "What is this?"},
+    render.Text("Body shown when expanded."),
+)`,
+
+	"dropdown": `trigger := ui.Button(ui.ButtonConfig{Label: "Open Menu"})
+panel := render.Tag("div", nil,
+    render.Tag("a", map[string]string{"href": "#"}, render.Text("Edit")),
+    render.Tag("a", map[string]string{"href": "#"}, render.Text("Delete")),
+)
+interactive.Dropdown(trigger, panel)`,
+
+	"scroll-reveal": `box := render.Tag("div", map[string]string{"class": "card"},
+    render.Text("Fades up when scrolled into view."))
+interactive.Reveal(box, "fade-up") // or "fade-in", "slide-left", "slide-right"`,
+
+	"signal-animate": `// One signal drives a CSS class toggle — wire any transition you like.
+panel := render.Tag("div", map[string]string{"class": "panel"}, render.Text("…"))
+interactive.AnimateOnSignal(panel, "open", "is-shown")
+interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: "Toggle"}), "open")`,
+
+	"signal-store": `// Declare a typed, namespaced slice (auto-seeded into the client store).
+var Company = store.New("org").String("companyName", "Acme Corp")
+
+// Producer: any control sets it client-side (or via an island RPC + .Publish).
+interactive.SetLocal(ui.Button(ui.ButtonConfig{Label: "Rename"}), Company.Name(), "Globex")
+
+// Consumers: bind read-only anywhere — all update together, no per-consumer request.
+Company.Bind(ctx, "h3", nil)
+Company.Bind(ctx, "strong", nil)`,
 }
 
 // componentPkg returns the Go source package for a component, used to
@@ -657,7 +714,7 @@ func main() {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
 	}},
 	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle — client-side signal flip, no RPC.", func() render.HTML {
-		row := render.Tag("div", map[string]string{"style": "display:flex;align-items:center;gap:0.75rem"},
+		row := render.Tag("div", map[string]string{"class": "demo-row"},
 			ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
 			render.Tag("span", map[string]string{"data-fui-signal": "demo-toggle"}, render.Text("false")),
 		)
@@ -767,7 +824,7 @@ func main() {
 									"data-fui-signal":          "demo-counter",
 									"data-fui-signal-mode":     "text",
 									"data-fui-flash-on-update": "",
-									"class":                     "demo-signal-out",
+									"class":                    "demo-signal-out",
 								}, render.Text("0")),
 							),
 						),
@@ -859,7 +916,7 @@ func main() {
 							render.Tag("div", map[string]string{
 								"data-fui-signal":      "demo-form-result",
 								"data-fui-signal-mode": "html",
-								"class":                 "demo-signal-out",
+								"class":                "demo-signal-out",
 							}),
 						),
 					),
@@ -906,35 +963,69 @@ func main() {
 		"Elements fade in as they scroll into view — IntersectionObserver, no JS needed.",
 		func() render.HTML {
 			box := render.Tag("div", map[string]string{
-				"style": "padding:2rem;background:var(--color-surface-2, #f5f5f5);border-radius:0.5rem;margin-top:4rem",
+				"class": "demo-reveal-box",
 			}, render.Text("This box fades up when you scroll to it."))
 			return interactive.Reveal(box, "fade-up")
 		}},
 
 	{"signal-animate", "Signal Animate", "Clientside Interactivity",
-		"Toggle a CSS class when a signal changes — transitions driven by state.",
+		"Toggle a CSS class when a signal changes — the same primitive drives several transition styles. Each example is one signal + one class.",
 		func() render.HTML {
-			panel := render.Tag("div", map[string]string{
-				"style": "padding:1rem;background:var(--color-surface-2, #f5f5f4);border-radius:0.5rem;transition:all 0.3s ease;overflow:hidden",
-			}, render.Text("This panel slides open when the toggle is on."))
-			animated := interactive.AnimateOnSignal(panel, "demo-animate", "fui-expanded")
-			toggle := interactive.ToggleLocal(
-				render.Tag("button", nil, render.Text("Toggle Panel")),
-				"demo-animate",
+			example := func(sig, cls, panelClass, label, copy string) render.HTML {
+				panel := render.Tag("div", map[string]string{"class": panelClass}, render.Text(copy))
+				return html.Div(html.DivConfig{Class: "demo-stack"},
+					interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}), sig),
+					interactive.AnimateOnSignal(panel, sig, cls),
+				)
+			}
+			return html.Div(html.DivConfig{Class: "demo-stack-lg"},
+				example("demo-anim-slide", "fui-expanded", "demo-animate-panel", "Toggle slide-down", "Slides open via max-height."),
+				example("demo-anim-fade", "is-shown", "demo-animate-fade", "Toggle fade-in", "Fades and lifts in (opacity + transform)."),
 			)
-			return render.Join(toggle, animated)
 		}},
 
 	{"dropdown", "Dropdown", "Clientside Interactivity",
 		"Click-toggle dropdown with click-outside dismiss and Escape to close.",
 		func() render.HTML {
-			trigger := render.Tag("button", map[string]string{"class": "fui-btn"}, render.Text("Open Menu"))
-			panel := render.Tag("div", map[string]string{"class": "fui-dropdown-menu"},
-				render.Tag("a", map[string]string{"href": "#", "class": "fui-dropdown-item"}, render.Text("Edit")),
-				render.Tag("a", map[string]string{"href": "#", "class": "fui-dropdown-item"}, render.Text("Duplicate")),
-				render.Tag("a", map[string]string{"href": "#", "class": "fui-dropdown-item"}, render.Text("Delete")),
+			trigger := ui.Button(ui.ButtonConfig{Label: "Open Menu", Variant: ui.ButtonSecondary})
+			panel := render.Tag("div", nil,
+				render.Tag("a", map[string]string{"href": "#"}, render.Text("Edit")),
+				render.Tag("a", map[string]string{"href": "#"}, render.Text("Duplicate")),
+				render.Tag("a", map[string]string{"href": "#"}, render.Text("Delete")),
 			)
-			return interactive.Dropdown(trigger, panel)
+			// Reserve vertical room so the open menu fits inside the demo
+			// frame (.demo-stage clips overflow for its rounded corners).
+			return html.Div(html.DivConfig{Class: "demo-dropdown-room"},
+				interactive.Dropdown(trigger, panel))
+		}},
+
+	{"signal-store", "Signal Store", "Clientside Interactivity",
+		"Typed shared state: one producer renames the company, every bound consumer updates client-side — no per-consumer request.",
+		func() render.HTML {
+			ctx := context.Background()
+			name := demoCompany.Name()
+			mkBtn := func(label, val string) render.HTML {
+				return interactive.SetLocal(
+					ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}),
+					name, val)
+			}
+			producers := html.Div(html.DivConfig{Class: "demo-row"},
+				mkBtn("Rename to Globex", "Globex"),
+				mkBtn("Rename to Initech", "Initech"),
+				mkBtn("Reset", "Acme Corp"),
+			)
+			consumers := html.Div(html.DivConfig{Class: "demo-stack"},
+				demoCompany.Bind(ctx, "h3", map[string]string{"id": "store-consumer-heading"}),
+				render.Tag("p", nil,
+					render.Text("Inline mention — "),
+					demoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-inline"}),
+				),
+				render.Tag("p", nil,
+					render.Text("Footer badge: "),
+					demoCompany.Bind(ctx, "span", map[string]string{"class": "demo-signal-out", "id": "store-consumer-badge"}),
+				),
+			)
+			return html.Div(html.DivConfig{Class: "demo-stack"}, producers, consumers)
 		}},
 }
 
@@ -1000,7 +1091,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 			}))
 		}
 		sections = append(sections, ui.Section(
-			ui.SectionConfig{Heading: g.Name, Class: "intent"},
+			ui.SectionConfig{Heading: g.Name, Class: "intent", ID: categorySlug(g.Name)},
 			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(g.Entries))+" primitives")),
 			html.Div(html.DivConfig{Class: "docs"}, cards...),
 		))
@@ -1105,6 +1196,23 @@ func (s *ComponentShowcaseScreen) Render() render.HTML {
 			// note (need per-page wiring) are labeled "Note" so the box is
 			// honest about what it's showing.
 			s.demoStage(),
+
+			// Example code — the Go that produced the live demo above, so
+			// the page is a usage reference, not just a preview.
+			s.usage(),
 		),
+	)
+}
+
+// usage renders the example-code block for the component, when one is
+// registered in componentCode. Returns empty HTML otherwise.
+func (s *ComponentShowcaseScreen) usage() render.HTML {
+	code := componentCode[s.Entry.Slug]
+	if code == "" {
+		return render.HTML("")
+	}
+	return html.Div(html.DivConfig{Class: "doc-usage"},
+		html.Heading(html.HeadingConfig{Level: 2, Class: "doc-usage__title"}, render.Text("Example")),
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: code}),
 	)
 }

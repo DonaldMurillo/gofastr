@@ -139,8 +139,8 @@ func setupServer() *framework.App {
 	}))
 	// Modal for the "RPC → Open Widget" demo.
 	// Hidden by default — only appears when data-fui-rpc-open triggers it.
-	modalBody := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"style": "text-align:center;padding:var(--s-8,32px) 0"}},
-		render.Tag("p", map[string]string{"style": "font-size:24px;margin:0 0 8px"}, render.Text("🎉")),
+	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+		render.Tag("p", map[string]string{"class": "demo-modal-emoji"}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
 		render.Tag("p", nil, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
 	)

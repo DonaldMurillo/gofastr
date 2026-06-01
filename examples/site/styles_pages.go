@@ -1113,6 +1113,69 @@ func pageComponents(ss *style.StyleSheet) {
 			"flex-direction", "column",
 			"gap", "{spacing.md}").End()
 
+	// Clientside-interactivity demo boxes. CSP forbids inline style="…";
+	// these classes back the scroll-reveal and signal-animate demos so the
+	// markup stays attribute-only.
+	ss.Rule(".demo-reveal-box").
+		Set("padding", "{spacing.xl}",
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radius.md}",
+			"margin-top", "60vh").End()
+	ss.Rule(".demo-animate-panel").
+		Set("max-height", "0",
+			"overflow", "hidden",
+			"padding", "0 {spacing.md}",
+			"background", "{colors.surface}",
+			"border-radius", "{radius.md}",
+			"transition", "max-height .3s ease, padding .3s ease").End()
+	ss.Rule(".demo-animate-panel.fui-expanded").
+		Set("max-height", "120px",
+			"padding", "{spacing.md}").End()
+	// Second signal-animate variant: fade + lift.
+	ss.Rule(".demo-animate-fade").
+		Set("opacity", "0",
+			"transform", "translateY(8px)",
+			"padding", "{spacing.md}",
+			"background", "{colors.surface}",
+			"border-radius", "{radius.md}",
+			"transition", "opacity .3s ease, transform .3s ease").End()
+	ss.Rule(".demo-animate-fade.is-shown").
+		Set("opacity", "1",
+			"transform", "translateY(0)").End()
+	// Bigger-gap stack for grouping multiple sub-examples.
+	ss.Rule(".demo-stack-lg").
+		Set("display", "flex",
+			"flex-direction", "column",
+			"gap", "{spacing.xl}").End()
+	// Reserves height so a click-opened dropdown menu fits inside the
+	// demo frame instead of being clipped by .demo-stage overflow.
+	ss.Rule(".demo-dropdown-room").
+		Set("min-height", "200px").End()
+
+	// .doc-usage — the example-code block under each component demo.
+	ss.Rule(".doc-usage").
+		Set("margin-top", "{spacing.xl}").End()
+	ss.Rule(".doc-usage__title").
+		Set("font-size", "{typography.lg}",
+			"margin", "0 0 {spacing.sm}").End()
+
+	// Fragment-navigation offset. The site header is sticky (~--nav-h);
+	// without scroll-margin-top, jumping to a #section anchor (e.g. the
+	// breadcrumb category links) lands the section UNDER the header and
+	// hides its heading. scroll-margin-top only affects scroll-into-view
+	// landing, so it's inert everywhere else.
+	ss.Rule(".ui-section").
+		Set("scroll-margin-top", "calc(var(--nav-h) + {spacing.md})").End()
+
+	// RPC→open-widget demo modal body.
+	ss.Rule(".demo-modal-body").
+		Set("text-align", "center",
+			"padding", "{spacing.xl} 0").End()
+	ss.Rule(".demo-modal-emoji").
+		Set("font-size", "24px",
+			"margin", "0 0 {spacing.sm}").End()
+
 	// .demo-signal-out — inline signal output shown beside buttons in demos.
 	ss.Rule(".demo-signal-out").
 		Set("display", "inline-flex",
