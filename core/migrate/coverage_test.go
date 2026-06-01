@@ -211,6 +211,70 @@ func TestRunMigrationUpNoTx_InsertAndClearErrors(t *testing.T) {
 	}
 }
 
+// TestRunMigrationDownNoTx_Protocol pins that a no-transaction migration's Down
+// runs OUTSIDE a transaction (no BEGIN) using the mark-dirty → exec → delete
+// protocol, so concurrent-DDL rollbacks (DROP INDEX CONCURRENTLY) don't fail
+// with "cannot run inside a transaction block".
+func TestRunMigrationDownNoTx_Protocol(t *testing.T) {
+	m, mock := newTestMigrator(t)
+	m.Register(Migration{Version: 1, Name: "x", Up: "U", Down: "DROP INDEX CONCURRENTLY i", NoTransaction: true})
+	expectLock(mock)
+	expectCreateTable(mock)
+	expectSelectApplied(mock, []uint64{1})
+	// No ExpectBegin — the down runs directly.
+	mock.ExpectExec("UPDATE").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY i").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("DELETE FROM").WillReturnResult(sqlmock.NewResult(0, 1))
+	expectUnlock(mock)
+	if err := m.Down(context.Background(), 1); err != nil {
+		t.Fatalf("no-tx Down: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet: %v", err)
+	}
+}
+
+func TestRunMigrationDownNoTx_FailureLeavesDirty(t *testing.T) {
+	// mark-dirty error.
+	m, mock := newTestMigrator(t)
+	m.Register(Migration{Version: 1, Name: "x", Down: "D", NoTransaction: true})
+	expectLock(mock)
+	expectCreateTable(mock)
+	expectSelectApplied(mock, []uint64{1})
+	mock.ExpectExec("UPDATE").WillReturnError(errors.New("fail"))
+	expectUnlock(mock)
+	if err := m.Down(context.Background(), 1); err == nil {
+		t.Fatal("expected mark-dirty error")
+	}
+
+	// Down-exec error leaves the dirty row (no delete).
+	m2, mock2 := newTestMigrator(t)
+	m2.Register(Migration{Version: 1, Name: "x", Down: "BAD", NoTransaction: true})
+	expectLock(mock2)
+	expectCreateTable(mock2)
+	expectSelectApplied(mock2, []uint64{1})
+	mock2.ExpectExec("UPDATE").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock2.ExpectExec("BAD").WillReturnError(errors.New("concurrent fail"))
+	expectUnlock(mock2)
+	if err := m2.Down(context.Background(), 1); err == nil {
+		t.Fatal("expected down-exec error leaving dirty")
+	}
+
+	// Delete error after a successful Down.
+	m3, mock3 := newTestMigrator(t)
+	m3.Register(Migration{Version: 1, Name: "x", Down: "OK", NoTransaction: true})
+	expectLock(mock3)
+	expectCreateTable(mock3)
+	expectSelectApplied(mock3, []uint64{1})
+	mock3.ExpectExec("UPDATE").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock3.ExpectExec("OK").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock3.ExpectExec("DELETE FROM").WillReturnError(errors.New("fail"))
+	expectUnlock(mock3)
+	if err := m3.Down(context.Background(), 1); err == nil {
+		t.Fatal("expected delete error")
+	}
+}
+
 func TestStatus_AppliedQueryError(t *testing.T) {
 	m, mock := newTestMigrator(t)
 	expectCreateTable(mock)

@@ -311,9 +311,16 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int) error
 	return nil
 }
 
-// runMigrationDown executes a single migration's Down SQL inside a transaction
-// and removes its record from the tracking table.
+// runMigrationDown executes a single migration's Down SQL and removes its
+// tracking row. Transactional migrations do both atomically. No-transaction
+// migrations (the Down counterpart of CREATE INDEX CONCURRENTLY etc.) run the
+// Down outside any transaction — the same protocol as runMigrationUpNoTx — and
+// mark the row dirty first so a failed concurrent-DDL rollback is detectable.
 func (m *Migrator) runMigrationDown(ctx context.Context, x connish, tbl string, mig Migration) error {
+	if mig.NoTransaction {
+		return m.runMigrationDownNoTx(ctx, x, tbl, mig)
+	}
+
 	tx, err := x.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -331,6 +338,26 @@ func (m *Migrator) runMigrationDown(ctx context.Context, x connish, tbl string, 
 	}
 
 	return tx.Commit()
+}
+
+// runMigrationDownNoTx rolls back a no-transaction migration. The row is marked
+// dirty before the Down runs, so a failure mid-DDL (e.g. a DROP INDEX
+// CONCURRENTLY that errors partway) leaves a dirty marker that blocks later
+// runs until reconciled; success removes the row.
+func (m *Migrator) runMigrationDownNoTx(ctx context.Context, x connish, tbl string, mig Migration) error {
+	markSQL := fmt.Sprintf("UPDATE %s SET dirty = TRUE WHERE version = %s", tbl, m.placeholder(1))
+	if _, err := x.ExecContext(ctx, markSQL, mig.Version); err != nil {
+		return fmt.Errorf("mark dirty: %w", err)
+	}
+	if _, err := x.ExecContext(ctx, mig.Down); err != nil {
+		// Leave the dirty row — the rollback half-applied and needs a human.
+		return fmt.Errorf("exec down (no-transaction, left dirty): %w", err)
+	}
+	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE version = %s", tbl, m.placeholder(1))
+	if _, err := x.ExecContext(ctx, deleteSQL, mig.Version); err != nil {
+		return fmt.Errorf("delete migration record: %w", err)
+	}
+	return nil
 }
 
 // Force reconciles the tracking table by hand, the recovery path out of a
