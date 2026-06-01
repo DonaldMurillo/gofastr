@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -93,10 +95,21 @@ func slug(s string) string {
 //   - If both ID and Heading are empty, the section gets no id and
 //     a generic aria-label.
 type SectionConfig struct {
+	// Eyebrow is an optional short decorative kicker rendered above/around
+	// the heading — e.g. a section number ("01 / what it generates"). It is
+	// marked aria-hidden because it duplicates the heading for SR users.
+	Eyebrow     string
 	Heading     string // optional <h2> heading
 	Description string // optional supporting text under the heading
-	Class       string
-	ID          string
+	// DescriptionHTML lets the supporting text carry inline markup (code,
+	// links). When non-empty it takes precedence over Description.
+	DescriptionHTML render.HTML
+	// Label sets the section's accessible name when there is no Heading.
+	// Without a Heading or Label the section falls back to a generic
+	// "Section" aria-label.
+	Label string
+	Class string
+	ID    string
 }
 
 // Section renders a content section with consistent spacing and an
@@ -115,6 +128,14 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	}
 
 	out := []render.HTML{}
+	if cfg.Eyebrow != "" {
+		// Decorative kicker (section number/label). aria-hidden because it
+		// duplicates the heading; visual-only.
+		out = append(out, html.Span(html.TextConfig{
+			Class:      "ui-section__eyebrow",
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+		}, render.Text(cfg.Eyebrow)))
+	}
 	headingID := ""
 	if cfg.Heading != "" {
 		headingID = "ui-section-" + slug(cfg.Heading)
@@ -122,7 +143,11 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 			Level: 2, ID: headingID, Class: "ui-section__heading",
 		}, render.Text(cfg.Heading)))
 	}
-	if cfg.Description != "" {
+	if cfg.DescriptionHTML != "" {
+		out = append(out, html.Paragraph(
+			html.TextConfig{Class: "ui-section__description"},
+			cfg.DescriptionHTML))
+	} else if cfg.Description != "" {
 		out = append(out, html.Paragraph(
 			html.TextConfig{Class: "ui-section__description"},
 			render.Text(cfg.Description)))
@@ -142,10 +167,12 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	secCfg := html.SectionConfig{Class: cls, ID: sectionID}
 	if headingID != "" {
 		secCfg.LabelledBy = headingID
+	} else if cfg.Label != "" {
+		// No heading → use the caller-supplied accessible name.
+		secCfg.Label = cfg.Label
 	} else {
-		// No heading → caller must label the region via the Class
-		// hook. We default to a generic aria-label so the region is
-		// at least announced, rather than panicking on every call site.
+		// No heading and no label → default to a generic aria-label so the
+		// region is at least announced, rather than panicking on every call.
 		secCfg.Label = "Section"
 	}
 	return sectionStyle.WrapHTML(html.Section(secCfg, out...))
@@ -900,46 +927,119 @@ func initials(name string) string {
 
 // CodeBlockConfig configures a styled code-sample block.
 type CodeBlockConfig struct {
-	Code     string // raw source to render
+	Code     string // raw source to render; escaped. Ignored when Lines is set.
 	Language string // optional, used for aria-label only
-	ID       string
-	Class    string
+	// Lines carries pre-rendered (e.g. syntax-highlighted) logical source
+	// lines. When non-empty it takes precedence over Code; each entry is
+	// wrapped as one line so LineNumbers can number it. Callers own the
+	// per-token markup — pass already-escaped, trusted HTML.
+	Lines []render.HTML
+	// Filename, when set, renders a chrome header (status dot + filename)
+	// above the body and switches the wrapper to a framed container.
+	Filename string
+	// ShowCopy adds a copy-to-clipboard button (the framework CopyButton)
+	// in the header, targeting this block's own body. Forces a header even
+	// when Filename is empty.
+	ShowCopy bool
+	// LineNumbers renders a left gutter numbering each line.
+	LineNumbers bool
+	ID          string
+	Class       string
 }
 
-// CodeBlock renders a syntactically un-highlighted but properly
-// styled code sample: dark background, monospaced, horizontal
-// scroll on overflow. Use for documentation / showcase code.
+// codeBlockSeq mints a process-unique id for a framed block's body so the
+// copy button can target its own <pre> via #id.
+var codeBlockSeq atomic.Uint64
+
+// CodeBlock renders a styled code sample. In its simplest form (Code only) it
+// is a bare, horizontally-scrollable <pre>. Set Filename / ShowCopy /
+// LineNumbers (or pass Lines) to get the framed variant: a chrome header with
+// the filename, an optional copy button, and an optional line-number gutter.
 //
-// The wrapper element carries data-fui-comp="ui-code-block" so the
-// runtime auto-loads the scoped stylesheet on first appearance.
+// The wrapper element carries data-fui-comp="ui-code-block" so the runtime
+// auto-loads the scoped stylesheet on first appearance.
 func CodeBlock(cfg CodeBlockConfig) render.HTML {
-	cls := "ui-code-block"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	preAttrs := map[string]string{
-		"class": cls,
-		// WCAG 2.1.1 — the <pre> scrolls horizontally for long lines;
-		// without tabindex=0 keyboard-only users can't pan to see the
-		// off-screen content (axe's `scrollable-region-focusable`).
-		// Avoid role=region here even though it's the "obvious" pair:
-		// every CodeBlock on a page would then count as a landmark,
-		// failing `landmark-unique` when two blocks share a language.
-		// tabindex + aria-label is sufficient — the pre is focusable
-		// and announced; it's just not a landmark.
-		"tabindex": "0",
-	}
-	if cfg.ID != "" {
-		preAttrs["id"] = cfg.ID
-	}
+	framed := cfg.Filename != "" || cfg.ShowCopy || cfg.LineNumbers || len(cfg.Lines) > 0
 	label := "source code"
 	if cfg.Language != "" {
 		label = cfg.Language + " source"
 	}
-	preAttrs["aria-label"] = label
-	return codeBlockStyle.WrapHTML(render.Tag("pre", preAttrs,
-		render.Tag("code", nil, render.HTML(escapeHTML(cfg.Code))),
-	))
+
+	// Body <pre>. WCAG 2.1.1: tabindex=0 so keyboard users can pan the
+	// horizontal scroll. (role=region is intentionally avoided — it would
+	// make every block a landmark and fail landmark-unique.)
+	bodyID := cfg.ID
+	if framed && cfg.ShowCopy && bodyID == "" {
+		bodyID = "ui-code-block-" + strconv.FormatUint(codeBlockSeq.Add(1), 10)
+	}
+	var body render.HTML
+	if len(cfg.Lines) > 0 {
+		wrapped := make([]render.HTML, len(cfg.Lines))
+		for i, ln := range cfg.Lines {
+			wrapped[i] = html.Span(html.TextConfig{Class: "ui-code-block__line"}, ln)
+		}
+		body = render.Join(wrapped...)
+	} else {
+		body = render.Tag("code", nil, render.HTML(escapeHTML(cfg.Code)))
+	}
+
+	if !framed {
+		cls := "ui-code-block"
+		if cfg.Class != "" {
+			cls += " " + cfg.Class
+		}
+		preAttrs := map[string]string{"class": cls, "tabindex": "0", "aria-label": label}
+		if bodyID != "" {
+			preAttrs["id"] = bodyID
+		}
+		return codeBlockStyle.WrapHTML(render.Tag("pre", preAttrs, body))
+	}
+
+	cls := "ui-code-block ui-code-block--framed"
+	if cfg.LineNumbers {
+		cls += " ui-code-block--numbered"
+	}
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+
+	headChildren := []render.HTML{}
+	if cfg.Filename != "" {
+		headChildren = append(headChildren,
+			html.Span(html.TextConfig{
+				Class:      "ui-code-block__status",
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			}),
+			html.Span(html.TextConfig{Class: "ui-code-block__file"}, render.Text(cfg.Filename)),
+		)
+	}
+	metaChildren := []render.HTML{}
+	if len(cfg.Lines) > 0 {
+		metaChildren = append(metaChildren,
+			html.Span(html.TextConfig{}, render.Text(strconv.Itoa(len(cfg.Lines))+" lines")))
+	}
+	if cfg.ShowCopy {
+		metaChildren = append(metaChildren, CopyButton(CopyButtonConfig{
+			Target:       "#" + bodyID,
+			Label:        "copy",
+			CopiedLabel:  "copied",
+			AnnounceText: "Copied",
+			Class:        "ui-code-block__copy",
+		}))
+	}
+	if len(metaChildren) > 0 {
+		headChildren = append(headChildren,
+			html.Div(html.DivConfig{Class: "ui-code-block__meta"}, metaChildren...))
+	}
+	head := html.Div(html.DivConfig{Class: "ui-code-block__head"}, headChildren...)
+
+	preAttrs := map[string]string{"class": "ui-code-block__body", "tabindex": "0", "aria-label": label}
+	if bodyID != "" {
+		preAttrs["id"] = bodyID
+	}
+	pre := render.Tag("pre", preAttrs, body)
+	return codeBlockStyle.WrapHTML(
+		html.Div(html.DivConfig{Class: cls, ID: cfg.ID}, head, pre))
 }
 
 // ─── SkipLink ──────────────────────────────────────────────────────
