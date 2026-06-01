@@ -11,8 +11,6 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	_ "github.com/mattn/go-sqlite3"
-
-	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // --- helpers ---
@@ -32,26 +30,48 @@ func newTestMigratorWithDialect(t *testing.T, d Dialect) (*Migrator, sqlmock.Sql
 	return m, mock
 }
 
-// expectCreateTable expects the CREATE TABLE IF NOT EXISTS for _migrations.
+// expectLock / expectUnlock bracket the advisory lock that Up and Down take
+// on the Postgres dialect. Status is read-only and takes no lock.
+func expectLock(mock sqlmock.Sqlmock) {
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_try_advisory_lock($1)")).
+		WithArgs(AdvisoryLockKey).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_lock"}).AddRow(true))
+}
+
+func expectUnlock(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
+		WithArgs(AdvisoryLockKey).WillReturnResult(sqlmock.NewResult(0, 0))
+}
+
+// expectCreateTable expects the CREATE TABLE IF NOT EXISTS for _migrations
+// plus the idempotent backfill ALTERs for the checksum/dirty columns.
 func expectCreateTable(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(regexp.QuoteMeta(
 		`CREATE TABLE IF NOT EXISTS "_migrations" (
 		version BIGINT NOT NULL PRIMARY KEY,
 		name    TEXT    NOT NULL DEFAULT '',
-		applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+		applied_at TIMESTAMP NOT NULL DEFAULT NOW(),
+		checksum TEXT NOT NULL DEFAULT '',
+		dirty BOOLEAN NOT NULL DEFAULT FALSE
 	)`,
+	)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(
+		`ALTER TABLE "_migrations" ADD COLUMN IF NOT EXISTS checksum TEXT NOT NULL DEFAULT ''`,
+	)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(
+		`ALTER TABLE "_migrations" ADD COLUMN IF NOT EXISTS dirty BOOLEAN NOT NULL DEFAULT FALSE`,
 	)).WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 // expectSelectApplied expects the query that fetches applied migrations.
 // versions is the list of already-applied version numbers.
 func expectSelectApplied(mock sqlmock.Sqlmock, versions []uint64) {
-	rows := sqlmock.NewRows([]string{"version", "name", "applied_at"})
+	rows := sqlmock.NewRows([]string{"version", "name", "applied_at", "checksum", "dirty"})
 	for _, v := range versions {
-		rows.AddRow(v, fmt.Sprintf("migration_%d", v), time.Now().UTC())
+		rows.AddRow(v, fmt.Sprintf("migration_%d", v), time.Now().UTC(), "", false)
 	}
 	mock.ExpectQuery(regexp.QuoteMeta(
-		`SELECT version, name, applied_at FROM "_migrations" ORDER BY version`,
+		`SELECT version, name, applied_at, checksum, dirty FROM "_migrations" ORDER BY version`,
 	)).WillReturnRows(rows)
 }
 
@@ -60,8 +80,8 @@ func expectMigrationUp(mock sqlmock.Sqlmock, version uint64, upSQL string) {
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta(upSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(
-		`INSERT INTO "_migrations" (version, name, applied_at) VALUES ($1, $2, $3)`,
-	)).WithArgs(version, sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+		`INSERT INTO "_migrations" (version, name, applied_at, checksum, dirty) VALUES ($1, $2, $3, $4, FALSE)`,
+	)).WithArgs(version, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 }
 
@@ -104,11 +124,13 @@ func TestUpRunsPendingMigrations(t *testing.T) {
 	m.Register(Migration{Version: 1, Name: "create_users", Up: up1, Down: "DROP TABLE users"})
 	m.Register(Migration{Version: 2, Name: "add_email", Up: up2, Down: "ALTER TABLE users DROP COLUMN email"})
 
-	// Expect: create table, select applied (empty), then run both migrations.
+	// Expect: lock, create table, select applied (empty), run both, unlock.
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, nil)
 	expectMigrationUp(mock, 1, up1)
 	expectMigrationUp(mock, 2, up2)
+	expectUnlock(mock)
 
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up: %v", err)
@@ -127,17 +149,21 @@ func TestUpIsIdempotent(t *testing.T) {
 	m.Register(Migration{Version: 1, Name: "create_items", Up: up1, Down: "DROP TABLE items"})
 
 	// First Up: runs the migration.
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, nil)
 	expectMigrationUp(mock, 1, up1)
+	expectUnlock(mock)
 
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("first Up: %v", err)
 	}
 
 	// Second Up: no pending migrations.
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1})
+	expectUnlock(mock)
 
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("second Up: %v", err)
@@ -160,10 +186,12 @@ func TestUpSkipsAlreadyApplied(t *testing.T) {
 	m.Register(Migration{Version: 3, Name: "add_active", Up: up3, Down: "ALTER TABLE users DROP COLUMN active"})
 
 	// Version 1 is already applied; only 2 and 3 should run.
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1})
 	expectMigrationUp(mock, 2, up2)
 	expectMigrationUp(mock, 3, up3)
+	expectUnlock(mock)
 
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up: %v", err)
@@ -184,10 +212,12 @@ func TestDownRollsBackLastN(t *testing.T) {
 	m.Register(Migration{Version: 2, Name: "add_email", Up: "ALTER TABLE users ADD COLUMN email TEXT", Down: down2})
 
 	// Down(2) should roll back version 2 then version 1.
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1, 2})
 	expectMigrationDown(mock, down2, 2)
 	expectMigrationDown(mock, down1, 1)
+	expectUnlock(mock)
 
 	if err := m.Down(ctx, 2); err != nil {
 		t.Fatalf("Down: %v", err)
@@ -207,9 +237,11 @@ func TestDownRollsBackOne(t *testing.T) {
 	m.Register(Migration{Version: 2, Name: "add_email", Up: "ALTER TABLE users ADD COLUMN email TEXT", Down: down2})
 
 	// Down(1) should only roll back version 2 (the last applied).
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1, 2})
 	expectMigrationDown(mock, down2, 2)
+	expectUnlock(mock)
 
 	if err := m.Down(ctx, 1); err != nil {
 		t.Fatalf("Down: %v", err)
@@ -347,40 +379,16 @@ DROP TABLE foo;`
 	}
 }
 
-func TestFieldTypeToSQL(t *testing.T) {
-	tests := []struct {
-		ft   schema.FieldType
-		want string
-	}{
-		{schema.String, "VARCHAR(255)"},
-		{schema.Text, "TEXT"},
-		{schema.Int, "BIGINT"},
-		{schema.Float, "DOUBLE PRECISION"},
-		{schema.Bool, "BOOLEAN"},
-		{schema.UUID, "UUID"},
-		{schema.Timestamp, "TIMESTAMP"},
-		{schema.Date, "DATE"},
-		{schema.JSON, "JSONB"},
-		{schema.Relation, "UUID"},
-		{schema.Image, "TEXT"},
-		{schema.File, "TEXT"},
-	}
-	for _, tt := range tests {
-		got := fieldTypeToSQL(tt.ft)
-		if got != tt.want {
-			t.Errorf("fieldTypeToSQL(%v) = %q, want %q", tt.ft, got, tt.want)
-		}
-	}
-}
-
 func TestDownWithNoApplied(t *testing.T) {
 	m, mock := newTestMigrator(t)
 	ctx := context.Background()
 
 	m.Register(Migration{Version: 1, Name: "create_users", Up: "CREATE TABLE users", Down: "DROP TABLE users"})
 
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, nil)
+	expectUnlock(mock)
 
 	// Down(1) with nothing applied should be a no-op.
 	if err := m.Down(ctx, 1); err != nil {
@@ -400,9 +408,11 @@ func TestDownClampsToAppliedCount(t *testing.T) {
 	m.Register(Migration{Version: 1, Name: "create_users", Up: "CREATE TABLE users", Down: down1})
 
 	// Request Down(5) but only 1 is applied; should roll back 1.
+	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1})
 	expectMigrationDown(mock, down1, 1)
+	expectUnlock(mock)
 
 	if err := m.Down(ctx, 5); err != nil {
 		t.Fatalf("Down: %v", err)
@@ -616,34 +626,3 @@ func TestSQLiteCreateMigrationsTable(t *testing.T) {
 	}
 }
 
-func TestGenerateCreateTable(t *testing.T) {
-	m, _ := newTestMigrator(t)
-
-	s := schema.Schema{
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-			{Name: "age", Type: schema.Int},
-		},
-	}
-
-	ddl := m.generateCreateTable("users", s)
-
-	if !strings.Contains(ddl, `CREATE TABLE "users"`) {
-		t.Errorf("missing CREATE TABLE users in: %s", ddl)
-	}
-	if !strings.Contains(ddl, "id BIGSERIAL PRIMARY KEY") {
-		t.Errorf("missing auto id column in: %s", ddl)
-	}
-	if !strings.Contains(ddl, `"name" VARCHAR(255) NOT NULL`) {
-		t.Errorf("missing name column in: %s", ddl)
-	}
-	if !strings.Contains(ddl, `"age" BIGINT`) {
-		t.Errorf("missing age column in: %s", ddl)
-	}
-	if !strings.Contains(ddl, "created_at TIMESTAMP") {
-		t.Errorf("missing created_at in: %s", ddl)
-	}
-	if !strings.Contains(ddl, "updated_at TIMESTAMP") {
-		t.Errorf("missing updated_at in: %s", ddl)
-	}
-}

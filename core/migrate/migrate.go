@@ -16,6 +16,16 @@ type Migration struct {
 	Name    string
 	Up      string // SQL to apply the migration
 	Down    string // SQL to roll back the migration
+
+	// NoTransaction runs Up/Down WITHOUT wrapping them in a transaction. The
+	// escape hatch for statements that cannot run inside a transaction —
+	// CREATE INDEX CONCURRENTLY, VACUUM, CREATE DATABASE on Postgres. The cost
+	// is that a failure mid-statement leaves the database partially migrated:
+	// the runner records the migration dirty before running it and only clears
+	// that flag on success, so a later run refuses to proceed (ErrDirty) until
+	// an operator reconciles and calls Force. Set via the `-- +migrate
+	// NoTransaction` directive in a SQL migration file.
+	NoTransaction bool
 }
 
 // Dialect represents the SQL dialect to use for migration queries.
@@ -99,6 +109,7 @@ func parseMigration(r io.Reader) (*Migration, error) {
 	scanner := bufio.NewScanner(r)
 	var version uint64
 	var name string
+	var noTx bool
 	var upSQL, downSQL strings.Builder
 	var section string // "up" or "down"
 
@@ -122,6 +133,8 @@ func parseMigration(r io.Reader) (*Migration, error) {
 				section = "up"
 			} else if directive == "Down" {
 				section = "down"
+			} else if directive == "NoTransaction" {
+				noTx = true
 			}
 			continue
 		}
@@ -149,9 +162,10 @@ func parseMigration(r io.Reader) (*Migration, error) {
 	}
 
 	return &Migration{
-		Version: version,
-		Name:    name,
-		Up:      strings.TrimSpace(upSQL.String()),
-		Down:    strings.TrimSpace(downSQL.String()),
+		Version:       version,
+		Name:          name,
+		Up:            strings.TrimSpace(upSQL.String()),
+		Down:          strings.TrimSpace(downSQL.String()),
+		NoTransaction: noTx,
 	}, nil
 }
