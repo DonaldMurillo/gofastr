@@ -138,3 +138,7 @@ framework/harness/client/tui/testdata/snapshots/*.txt.new
 
 # Git worktrees live as sibling directories
 worktrees/
+
+# Compiled example binaries (go build output named after the dir).
+# Canonical build output is dist/; these are stray local builds.
+examples/*/site

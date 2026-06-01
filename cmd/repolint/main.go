@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -52,6 +53,20 @@ func lintRepo(root string) ([]finding, error) {
 				return fs.SkipDir
 			}
 			return nil
+		}
+		if name := d.Name(); hasControlChar(name) {
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			// Don't ToSlash — a newline in the name would render the path
+			// unreadable; quote it so the finding is legible.
+			findings = append(findings, finding{
+				File:    strconv.Quote(filepath.ToSlash(rel)),
+				Line:    1,
+				Rule:    "bad-filename",
+				Message: "file name contains a control character (likely a botched edit artifact)",
+			})
 		}
 		if !isLintedFile(path) {
 			return nil
@@ -149,6 +164,18 @@ func lintBytes(rel string, body []byte) []finding {
 		}
 	}
 	return out
+}
+
+// hasControlChar reports whether s contains any ASCII control byte
+// (including newline/tab/CR). Legitimate file names never do; a botched
+// multi-line edit that lands a prompt fragment as a filename does.
+func hasControlChar(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func isConflictMarker(line string) bool {
