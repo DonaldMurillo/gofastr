@@ -1,0 +1,517 @@
+app:
+  name: Folio
+  module: example.com/folio
+  db:
+    driver: sqlite
+    url: file:folio.db
+  auth:
+    enabled: true
+    dev_mode: true
+  theme:
+    primary: "#18181B"
+    primary-fg: "#FAFAFA"
+    secondary: "#A78BFA"
+    background: "#FAFAFA"
+    surface: "#FFFFFF"
+    surface-soft: "#F4F4F5"
+    text: "#18181B"
+    text-muted: "#71717A"
+    border: "#E4E4E7"
+    accent: "#A78BFA"
+    success: "#22C55E"
+    danger: "#EF4444"
+    info: "#3B82F6"
+
+entities:
+  - name: posts
+    crud: true
+    mcp: true
+    soft_delete: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_posts_status
+        columns: [status]
+      - name: idx_posts_slug
+        columns: [slug]
+        unique: true
+    properties:
+      label: Posts
+      icon: pen-tool
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 250
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: body
+        type: text
+      - name: excerpt
+        type: text
+      - name: status
+        type: enum
+        values: [draft, published, archived]
+        default: draft
+      - name: category
+        type: string
+        max: 100
+      - name: cover_image
+        type: image
+      - name: featured
+        type: bool
+        default: false
+      - name: reading_time_minutes
+        type: int
+        min: 0
+      - name: seo_title
+        type: string
+        max: 60
+      - name: seo_description
+        type: string
+        max: 160
+      - name: published_at
+        type: timestamp
+    relations:
+      - type: has_many
+        name: post_tags
+        entity: post_tags
+        foreign_key: post_id
+
+  - name: tags
+    crud: true
+    mcp: true
+    fields:
+      - name: name
+        type: string
+        required: true
+        unique: true
+        max: 50
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: color
+        type: string
+        max: 7
+        pattern: "^#[0-9a-fA-F]{6}$"
+    relations:
+      - type: has_many
+        name: post_tags
+        entity: post_tags
+        foreign_key: tag_id
+
+  - name: post_tags
+    crud: true
+    indices:
+      - name: idx_post_tags_unique
+        columns: [post_id, tag_id]
+        unique: true
+    fields:
+      - name: post_id
+        type: relation
+        to: posts
+        required: true
+      - name: tag_id
+        type: relation
+        to: tags
+        required: true
+    relations:
+      - type: belongs_to
+        name: post
+        entity: posts
+        foreign_key: post_id
+      - type: belongs_to
+        name: tag
+        entity: tags
+        foreign_key: tag_id
+
+  - name: projects
+    crud: true
+    mcp: true
+    soft_delete: true
+    indices:
+      - name: idx_projects_status
+        columns: [status]
+      - name: idx_projects_featured
+        columns: [featured]
+    properties:
+      label: Projects
+      icon: briefcase
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 200
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: description
+        type: text
+      - name: category
+        type: enum
+        values: [web, mobile, desktop, api, design, consulting, other]
+        default: web
+      - name: status
+        type: enum
+        values: [planning, in_progress, completed, archived]
+        default: completed
+      - name: client
+        type: string
+        max: 150
+      - name: url
+        type: string
+        max: 500
+      - name: repo_url
+        type: string
+        max: 500
+      - name: cover_image
+        type: image
+      - name: images
+        type: json
+      - name: technologies
+        type: json
+      - name: start_date
+        type: date
+      - name: end_date
+        type: date
+      - name: featured
+        type: bool
+        default: false
+      - name: sort_order
+        type: int
+        default: 0
+        min: 0
+
+  - name: testimonials
+    crud: true
+    mcp: true
+    fields:
+      - name: author_name
+        type: string
+        required: true
+        max: 100
+      - name: author_title
+        type: string
+        max: 100
+      - name: author_company
+        type: string
+        max: 150
+      - name: author_avatar
+        type: image
+      - name: quote
+        type: text
+        required: true
+      - name: rating
+        type: int
+        min: 1
+        max: 5
+      - name: featured
+        type: bool
+        default: false
+      - name: approved
+        type: bool
+        default: false
+      - name: source_url
+        type: string
+        max: 500
+
+  - name: contacts
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_contacts_status
+        columns: [status]
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 150
+      - name: email
+        type: string
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: phone
+        type: string
+        max: 30
+      - name: company
+        type: string
+        max: 150
+      - name: subject
+        type: string
+        max: 200
+      - name: message
+        type: text
+        required: true
+      - name: budget_range
+        type: enum
+        values: [under_5k, "5k_15k", "15k_50k", "50k_100k", over_100k]
+      - name: source
+        type: enum
+        values: [contact_form, email, referral, social, linkedin, other]
+        default: contact_form
+      - name: status
+        type: enum
+        values: [new, contacted, qualified, proposal_sent, won, lost]
+        default: new
+      - name: notes
+        type: text
+
+nav:
+  - label: Home
+    href: /
+    icon: home
+  - label: Blog
+    href: /blog
+    icon: pen-tool
+  - label: Projects
+    href: /projects
+    icon: briefcase
+  - label: Testimonials
+    href: /testimonials
+    icon: message-circle
+  - label: Contact
+    href: /contact
+    icon: mail
+
+screens:
+  - name: home
+    route: /
+    title: Folio — Portfolio & Blog
+    description: Personal portfolio and blog
+    body:
+      - type: heading
+        level: 1
+        text: Folio
+      - type: paragraph
+        text: Developer, designer, and maker of things on the internet.
+      - kind: section
+        props:
+          label: Featured Work
+          class: featured-work
+        children:
+          - kind: entity_list
+            text: Featured Projects
+            entity: projects
+            fields: [title, category, status]
+            limit: 3
+            empty_text: Projects coming soon.
+
+  - name: blog
+    route: /blog
+    title: Blog
+    description: Thoughts, tutorials, and stories
+    body:
+      - type: heading
+        level: 1
+        text: Blog
+      - kind: entity_list
+        text: Recent Posts
+        entity: posts
+        fields: [title, status, category]
+        limit: 20
+        empty_text: No posts published yet.
+
+  - name: projects
+    route: /projects
+    title: Projects
+    description: Selected work and side projects
+    body:
+      - type: heading
+        level: 1
+        text: Projects
+      - kind: entity_list
+        text: All Projects
+        entity: projects
+        fields: [title, category, client, status]
+        limit: 30
+        empty_text: No projects yet.
+
+  - name: testimonials
+    route: /testimonials
+    title: Testimonials
+    description: What people say
+    body:
+      - type: heading
+        level: 1
+        text: Testimonials
+      - kind: entity_list
+        text: What People Say
+        entity: testimonials
+        fields: [author_name, author_title, author_company]
+        limit: 20
+        empty_text: No testimonials yet.
+
+  - name: contact
+    route: /contact
+    title: Contact
+    description: Get in touch
+    body:
+      - type: heading
+        level: 1
+        text: Get In Touch
+      - type: paragraph
+        text: Have a project in mind? Drop me a message.
+      - kind: entity_list
+        text: Recent Inquiries
+        entity: contacts
+        fields: [name, email, subject, status]
+        limit: 10
+        empty_text: No inquiries yet.
+
+
+  - name: post_new
+    route: /new-post
+    title: New Post
+    description: Write a new blog post
+    body:
+      - type: heading
+        level: 1
+        text: Write New Post
+      - kind: entity_form
+        text: New Post
+        entity: posts
+        mode: create
+        fields: [title, slug, body, excerpt, category, status, featured]
+
+  - name: post_detail
+    route: /post-detail
+    title: Post Details
+    description: View blog post
+    body:
+      - type: heading
+        level: 1
+        text: Post Details
+      - kind: entity_detail
+        text: Post
+        entity: posts
+        fields: [title, slug, status, category, featured, published_at]
+
+  - name: project_new
+    route: /new-project
+    title: New Project
+    description: Add a new project
+    body:
+      - type: heading
+        level: 1
+        text: Add Project
+      - kind: entity_form
+        text: New Project
+        entity: projects
+        mode: create
+        fields: [title, slug, description, category, client, url, repo_url, featured]
+
+  - name: contact_submit
+    route: /new-contact
+    title: Send Message
+    description: Submit a contact inquiry
+    body:
+      - type: heading
+        level: 1
+        text: Send a Message
+      - kind: entity_form
+        text: Contact Form
+        entity: contacts
+        mode: create
+        fields: [name, email, phone, company, subject, message, source]
+endpoints:
+  - name: submit_contact
+    method: POST
+    path: /contacts/submit
+    entity: contacts
+    handler: submitContact
+    description: Submit a contact form inquiry
+  - name: approve_testimonial
+    method: POST
+    path: /testimonials/{id}/approve
+    entity: testimonials
+    handler: approveTestimonial
+    description: Approve a testimonial for display
+
+middleware:
+  - request_logger
+
+helpers:
+  - name: generate_slug
+  - name: calculate_reading_time
+
+seed:
+  - entity: tags
+    rows:
+      - name: Go
+        slug: go
+        color: "#00ADD8"
+      - name: TypeScript
+        slug: typescript
+        color: "#3178C6"
+      - name: React
+        slug: react
+        color: "#61DAFB"
+      - name: DevOps
+        slug: devops
+        color: "#F59E0B"
+  - entity: posts
+    rows:
+      - title: Why I Chose Go for My Backend
+        slug: why-i-chose-go
+        body: "After years of Node.js, I made the switch to Go. Here is what I learned and why I am not looking back.\n\n## Performance\n\nGo compiles to native code and its goroutine model makes concurrency trivial.\n\n## Tooling\n\nThe standard library is incredible. go test, go fmt, go vet — everything you need is built in."
+        status: published
+        category: Engineering
+        featured: true
+      - title: Building a Real-Time Dashboard with React
+        slug: real-time-dashboard-react
+        body: A deep dive into building real-time dashboards using React, WebSockets, and a Go backend.
+        status: published
+        category: Engineering
+        featured: false
+  - entity: projects
+    rows:
+      - title: GoFastr Web Framework
+        slug: gofastr-framework
+        description: A full-stack Go web framework with built-in CRUD, MCP tools, and server-side rendering.
+        category: web
+        status: completed
+        url: https://github.com/example/gofastr
+        repo_url: https://github.com/example/gofastr
+        technologies: ["Go", "SQLite", "HTMX"]
+        featured: true
+        sort_order: 1
+      - title: Task Manager CLI
+        slug: task-manager-cli
+        description: A command-line task manager with natural language input and smart scheduling.
+        category: desktop
+        status: completed
+        repo_url: https://github.com/example/task-cli
+        technologies: ["Go", "Cobra", "SQLite"]
+        featured: true
+        sort_order: 2
+      - title: Analytics Dashboard
+        slug: analytics-dashboard
+        description: Real-time analytics dashboard for monitoring application metrics.
+        category: web
+        status: in_progress
+        technologies: ["React", "TypeScript", "D3.js", "Go"]
+        featured: false
+        sort_order: 3
+  - entity: testimonials
+    rows:
+      - author_name: Sarah Chen
+        author_title: CTO
+        author_company: TechStartup Inc.
+        quote: Exceptional work on our backend migration. The new Go microservices handle 10x the load with half the infrastructure cost.
+        rating: 5
+        featured: true
+        approved: true
+      - author_name: Mark Wilson
+        author_title: Product Manager
+        author_company: BigCorp
+        quote: Delivered our analytics dashboard ahead of schedule. The real-time features work flawlessly.
+        rating: 5
+        featured: true
+        approved: true

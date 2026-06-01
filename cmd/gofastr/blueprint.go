@@ -17,12 +17,25 @@ type Blueprint struct {
 	App        BlueprintApp
 	Entities   []framework.EntityDeclaration
 	Screens    []BlueprintScreen
+	Nav        []BlueprintNavItem
+	Seed       []BlueprintSeedEntity
 	Endpoints  []BlueprintEndpoint
 	Middleware []BlueprintNamedStub
 	Plugins    []BlueprintNamedStub
 	Helpers    []BlueprintNamedStub
 }
-
+// BlueprintSeedEntity holds seed data for one entity.
+type BlueprintSeedEntity struct {
+	Entity string
+	Rows   []map[string]any
+}
+// BlueprintNavItem describes a navigation entry — a link to a screen or URL.
+type BlueprintNavItem struct {
+	Label string
+	Href  string
+	Icon  string
+	Items []BlueprintNavItem
+}
 type BlueprintApp struct {
 	Name      string
 	Module    string
@@ -31,6 +44,14 @@ type BlueprintApp struct {
 	StaticDir string
 	OutputDir string
 	Theme     map[string]string
+	Auth      BlueprintAuth
+}
+// BlueprintAuth configures the built-in authentication system.
+type BlueprintAuth struct {
+	Enabled  bool
+	DevMode  bool
+	BasePath string // defaults to "/auth"
+	JWTSecret string
 }
 
 type BlueprintScreen struct {
@@ -53,6 +74,7 @@ type BlueprintBlock struct {
 	Fields    []string
 	Limit     int
 	EmptyText string
+	Mode      string // "create", "edit" for entity_form
 	Props     map[string]any
 	Children  []BlueprintBlock
 	Actions   []BlueprintAction
@@ -188,6 +210,7 @@ func mergeBlueprints(a, b Blueprint) Blueprint {
 	}
 	a.Entities = append(a.Entities, b.Entities...)
 	a.Screens = append(a.Screens, b.Screens...)
+	a.Nav = append(a.Nav, b.Nav...)
 	a.Endpoints = append(a.Endpoints, b.Endpoints...)
 	a.Middleware = append(a.Middleware, b.Middleware...)
 	a.Plugins = append(a.Plugins, b.Plugins...)
@@ -200,7 +223,7 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 	if err != nil {
 		return Blueprint{}, err
 	}
-	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "endpoints": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
+	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
 	if err := rejectUnknownKeys(m, allowed, "blueprint"); err != nil {
 		return Blueprint{}, err
 	}
@@ -226,6 +249,20 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 			return Blueprint{}, err
 		}
 		bp.Screens = screens
+	}
+	if child := m["nav"]; child != nil {
+		nav, err := decodeBlueprintNav(child)
+		if err != nil {
+			return Blueprint{}, err
+		}
+		bp.Nav = nav
+	}
+	if child := m["seed"]; child != nil {
+		seed, err := decodeBlueprintSeed(child)
+		if err != nil {
+			return Blueprint{}, err
+		}
+		bp.Seed = seed
 	}
 	if child := m["endpoints"]; child != nil {
 		endpoints, err := decodeBlueprintEndpoints(child)
@@ -263,7 +300,7 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 	if err != nil {
 		return BlueprintApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "theme": true}
+	allowed := map[string]bool{"name": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "theme": true, "auth": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return BlueprintApp{}, err
 	}
@@ -291,9 +328,31 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 		}
 		app.Theme = theme
 	}
+	if authNode := m["auth"]; authNode != nil {
+		auth, err := decodeBlueprintAuth(authNode)
+		if err != nil {
+			return BlueprintApp{}, err
+		}
+		app.Auth = auth
+	}
 	return app, nil
 }
 
+func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
+	m, err := expectMap(node, "app.auth")
+	if err != nil {
+		return BlueprintAuth{}, err
+	}
+	if err := rejectUnknownKeys(m, map[string]bool{"enabled": true, "dev_mode": true, "base_path": true, "jwt_secret": true}, "app.auth"); err != nil {
+		return BlueprintAuth{}, err
+	}
+	return BlueprintAuth{
+		Enabled:   boolValue(m["enabled"]),
+		DevMode:   boolValue(m["dev_mode"]),
+		BasePath:  stringValue(m["base_path"]),
+		JWTSecret: stringValue(m["jwt_secret"]),
+	}, nil
+}
 func decodeBlueprintTheme(node *coreyaml.Node) (map[string]string, error) {
 	m, err := expectMap(node, "app.theme")
 	if err != nil {
@@ -546,6 +605,84 @@ func decodeBlueprintScreens(node *coreyaml.Node) ([]BlueprintScreen, error) {
 	}
 	return out, nil
 }
+func decodeBlueprintNav(node *coreyaml.Node) ([]BlueprintNavItem, error) {
+	list, err := expectList(node, "nav")
+	if err != nil {
+		return nil, err
+	}
+	return decodeNavItems(list, "nav")
+}
+func decodeNavItems(list []*coreyaml.Node, label string) ([]BlueprintNavItem, error) {
+	out := make([]BlueprintNavItem, 0, len(list))
+	for i, item := range list {
+		m, err := expectMap(item, fmt.Sprintf("%s[%d]", label, i))
+		if err != nil {
+			return nil, err
+		}
+		allowed := map[string]bool{"label": true, "href": true, "icon": true, "items": true}
+		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("%s[%d]", label, i)); err != nil {
+			return nil, err
+		}
+		navItem := BlueprintNavItem{
+			Label: stringValue(m["label"]),
+			Href:  stringValue(m["href"]),
+			Icon:  stringValue(m["icon"]),
+		}
+		if child := m["items"]; child != nil {
+			subList, err := expectList(child, fmt.Sprintf("%s[%d].items", label, i))
+			if err != nil {
+				return nil, err
+			}
+			items, err := decodeNavItems(subList, fmt.Sprintf("%s[%d].items", label, i))
+			if err != nil {
+				return nil, err
+			}
+			navItem.Items = items
+		}
+		out = append(out, navItem)
+	}
+	return out, nil
+}
+func decodeBlueprintSeed(node *coreyaml.Node) ([]BlueprintSeedEntity, error) {
+	list, err := expectList(node, "seed")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlueprintSeedEntity, 0, len(list))
+	for i, item := range list {
+		m, err := expectMap(item, fmt.Sprintf("seed[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		if err := rejectUnknownKeys(m, map[string]bool{"entity": true, "rows": true}, fmt.Sprintf("seed[%d]", i)); err != nil {
+			return nil, err
+		}
+		entity := stringValue(m["entity"])
+		if entity == "" {
+			return nil, fmt.Errorf("seed[%d]: entity is required", i)
+		}
+		var rows []map[string]any
+		if rowsNode := m["rows"]; rowsNode != nil {
+			rowList, err := expectList(rowsNode, fmt.Sprintf("seed[%d].rows", i))
+			if err != nil {
+				return nil, err
+			}
+			for j, rowNode := range rowList {
+				rowMap, err := expectMap(rowNode, fmt.Sprintf("seed[%d].rows[%d]", i, j))
+				if err != nil {
+					return nil, err
+				}
+				row := make(map[string]any, len(rowMap))
+				for k, v := range rowMap {
+					row[k] = anyValue(v)
+				}
+				rows = append(rows, row)
+			}
+		}
+		out = append(out, BlueprintSeedEntity{Entity: entity, Rows: rows})
+	}
+	return out, nil
+}
 
 func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 	if node == nil {
@@ -561,7 +698,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -584,6 +721,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 			Fields:    stringListValue(m["fields"]),
 			Limit:     intValue(m["limit"]),
 			EmptyText: stringValue(m["empty_text"]),
+			Mode:      stringValue(m["mode"]),
 			Props:     mapValue(m["props"]),
 			Children:  children,
 			Actions:   actions,
@@ -905,7 +1043,33 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			}
 		}
 		if block.Limit < 0 {
-			return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
+		return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
+		}
+	case "entity_form":
+		if block.Entity == "" {
+			return fmt.Errorf("blueprint: screen %q entity_form block entity is required", screenName)
+		}
+		decl, ok := entities[block.Entity]
+		if !ok {
+			return fmt.Errorf("blueprint: screen %q entity_form targets unknown entity %q", screenName, block.Entity)
+		}
+		if decl.CRUD != nil && !*decl.CRUD {
+			return fmt.Errorf("blueprint: screen %q entity_form target %q must enable crud", screenName, block.Entity)
+		}
+		mode := strings.ToLower(strings.TrimSpace(block.Mode))
+		if mode != "" && mode != "create" && mode != "edit" {
+			return fmt.Errorf("blueprint: screen %q entity_form mode must be \"create\" or \"edit\"", screenName)
+		}
+	case "entity_detail":
+		if block.Entity == "" {
+			return fmt.Errorf("blueprint: screen %q entity_detail block entity is required", screenName)
+		}
+		decl, ok := entities[block.Entity]
+		if !ok {
+			return fmt.Errorf("blueprint: screen %q entity_detail targets unknown entity %q", screenName, block.Entity)
+		}
+		if decl.CRUD != nil && !*decl.CRUD {
+			return fmt.Errorf("blueprint: screen %q entity_detail target %q must enable crud", screenName, block.Entity)
 		}
 	default:
 		return fmt.Errorf("blueprint: screen %q has unsupported block type %q", screenName, kind)
@@ -1103,7 +1267,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 	sb.WriteString("\tfwApp.Router().Handle(\"POST\", \"/mcp\", fwApp.MCP)\n")
 	sb.WriteString("\tsite := uiapp.NewApp(blueprint.BlueprintAppName)\n")
-	sb.WriteString("\tblueprint.RegisterGenerated(fwApp, site)\n")
+	sb.WriteString("\tblueprint.RegisterGenerated(fwApp, site, db)\n")
 	if staticDir != "" {
 		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q)))\n", staticDir))
 	} else {
@@ -1151,6 +1315,10 @@ func blueprintDriverImport(driver string) string {
 }
 
 func renderBlueprintScreens(bp Blueprint) string {
+	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
+	for _, decl := range bp.Entities {
+		entityMap[decl.Name] = decl
+	}
 	var sb strings.Builder
 	imports := blueprintScreenImports(bp)
 	sb.WriteString("// Code generated by gofastr. DO NOT EDIT.\npackage blueprint\n\n")
@@ -1202,7 +1370,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 		} else {
 			sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s,\n", rootAttrs))
 			for i, block := range screen.Body {
-				sb.WriteString("\t\t" + renderBlueprintBlockForScreen(screen, block, []int{i}) + ",\n")
+				sb.WriteString("\t\t" + renderBlueprintBlockForScreen(screen, block, []int{i}, entityMap) + ",\n")
 			}
 			sb.WriteString("\t)\n")
 		}
@@ -1310,11 +1478,17 @@ func (s BlueprintScreen) TitleOrName() string {
 	return s.Name
 }
 
-func renderBlueprintBlock(block BlueprintBlock) string {
-	return renderBlueprintBlockForScreen(BlueprintScreen{}, block, nil)
-}
-
-func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock, path []int) string {
+func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration) string {
+	kind := block.Kind
+	if kind == "" {
+		kind = block.Type
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "entity_form":
+		return renderBlueprintEntityFormExpression(screen, block, path, entityMap)
+	case "entity_detail":
+		return renderBlueprintEntityDetailExpression(screen, block, path, entityMap)
+	}
 	if isEntityListBlock(block) {
 		return "kilnrender.RenderNode(" + renderBlueprintEntityListNodeExpression(screen, block, path) + ")"
 	}
@@ -1557,20 +1731,331 @@ func htmlEscapeJSString(value string) string {
 	return replacer.Replace(value)
 }
 
+// renderBlueprintEntityFormExpression generates a kiln node that renders a
+// create/edit form for the given entity. Fields are generated from the entity
+// definition; the form POSTs to the CRUD endpoint. Client JS handles submit.
+func renderBlueprintEntityFormExpression(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration) string {
+	entity := strings.Trim(block.Entity, "/")
+	decl, ok := entityMap[entity]
+	if !ok {
+		return fmt.Sprintf("render.Tag(\"div\", nil, render.Text(%q))", "entity_form: unknown entity "+entity)
+	}
+	actionName := blueprintEntityFormActionName(screen, block, path)
+	title := block.Text
+	if title == "" {
+		title = "New " + toDisplayName(entity)
+	}
+	mode := strings.ToLower(strings.TrimSpace(block.Mode))
+	if mode == "" {
+		mode = "create"
+	}
+	apiPath := "/" + entity
+	if mode == "edit" {
+		apiPath = "/" + entity + "/{id}"
+	}
+	props := map[string]any{
+		"class":              "gofastr-entity-form",
+		"data-entity-form":   entity,
+		"data-entity-mode":   mode,
+		"data-form-action":   apiPath,
+		"data-action":        actionName,
+	}
+	var children []string
+	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+		Kind: "heading",
+		Props: map[string]any{"level": int64(2), "text": title},
+	}))
+	// Generate form fields from entity definition
+	filterFields := block.Fields
+	for _, field := range decl.Fields {
+		if field.Name == "id" || field.Name == "created_at" || field.Name == "updated_at" || field.Name == "deleted_at" {
+			continue
+		}
+		if field.Hidden {
+			continue
+		}
+		if field.AutoGenerate != "" {
+			continue
+		}
+		if field.ReadOnly {
+			continue
+		}
+		if len(filterFields) > 0 {
+			found := false
+			for _, f := range filterFields {
+				if f == field.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		label := toDisplayName(field.Name)
+		inputType := "text"
+		switch field.Type {
+		case "int", "integer":
+			inputType = "number"
+		case "float", "decimal":
+			inputType = "number"
+		case "bool", "boolean":
+			inputType = "checkbox"
+		case "date":
+			inputType = "date"
+		case "timestamp", "datetime":
+			inputType = "datetime-local"
+		case "text":
+			inputType = "textarea"
+		case "image":
+			inputType = "file"
+		case "enum":
+			inputType = "select"
+		case "relation":
+			inputType = "hidden"
+		}
+		if inputType == "select" && len(field.Values) > 0 {
+			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+				Kind: "div",
+				Props: map[string]any{
+					"class": "form-field",
+					"text":  label,
+				},
+				Children: []BlueprintBlock{
+					{
+						Kind: "select",
+						Props: map[string]any{
+							"name":     field.Name,
+							"id":       "field-" + field.Name,
+							"required": field.Required,
+						},
+					},
+				},
+			}))
+		} else if inputType == "textarea" {
+			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+				Kind: "div",
+				Props: map[string]any{
+					"class": "form-field",
+					"text":  label,
+				},
+				Children: []BlueprintBlock{
+					{
+						Kind: "textarea",
+						Props: map[string]any{
+							"name":     field.Name,
+							"id":       "field-" + field.Name,
+							"required": field.Required,
+						},
+					},
+				},
+			}))
+		} else if inputType == "checkbox" {
+			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+				Kind: "div",
+				Props: map[string]any{
+					"class": "form-field form-field-checkbox",
+				},
+				Children: []BlueprintBlock{
+					{
+						Kind: "input",
+						Props: map[string]any{
+							"type": "checkbox",
+							"name": field.Name,
+							"id":   "field-" + field.Name,
+						},
+					},
+					{
+						Kind: "label",
+						Props: map[string]any{
+							"for":  "field-" + field.Name,
+							"text": label,
+						},
+					},
+				},
+			}))
+		} else {
+			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+				Kind: "div",
+				Props: map[string]any{
+					"class": "form-field",
+				},
+				Children: []BlueprintBlock{
+					{
+						Kind: "label",
+						Props: map[string]any{
+							"for":  "field-" + field.Name,
+							"text": label,
+						},
+					},
+					{
+						Kind: "input",
+						Props: map[string]any{
+							"type":     inputType,
+							"name":     field.Name,
+							"id":       "field-" + field.Name,
+							"required": field.Required,
+						},
+					},
+				},
+			}))
+		}
+		if inputType == "hidden" {
+			// relation fields get a hidden input
+			children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+				Kind: "input",
+				Props: map[string]any{
+					"type": "hidden",
+					"name": field.Name,
+					"id":   "field-" + field.Name,
+				},
+			}))
+		}
+	}
+	// Submit button
+	submitLabel := "Create"
+	if mode == "edit" {
+		submitLabel = "Update"
+	}
+	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+		Kind: "button",
+		Props: map[string]any{
+			"type":              "submit",
+			"text":              submitLabel,
+			"data-action":       actionName + "_submit",
+			"data-form-submit":  entity,
+		},
+	}))
+	literal, err := renderGoLiteral(props)
+	if err != nil {
+		literal = "nil"
+	}
+	return "kilnrender.RenderNode(world.Node{Kind: \"form\", Props: " + literal + ", Children: []world.Node{" + strings.Join(children, ", ") + "}})"
+}
+func blueprintEntityFormActionName(screen BlueprintScreen, block BlueprintBlock, path []int) string {
+	parts := []string{"entity_form"}
+	if screen.Name != "" {
+		parts = append(parts, toCamelJSON(screen.Name))
+	}
+	if block.Entity != "" {
+		parts = append(parts, toCamelJSON(block.Entity))
+	}
+	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
+}
+// renderBlueprintEntityDetailExpression generates a kiln node that renders
+// a detail view for a single entity record. Client JS fetches the entity
+// by ID and populates the field values.
+func renderBlueprintEntityDetailExpression(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration) string {
+	entity := strings.Trim(block.Entity, "/")
+	decl, ok := entityMap[entity]
+	if !ok {
+		return fmt.Sprintf("render.Tag(\"div\", nil, render.Text(%q))", "entity_detail: unknown entity "+entity)
+	}
+	actionName := blueprintEntityDetailActionName(screen, block, path)
+	title := block.Text
+	if title == "" {
+		title = toDisplayName(entity) + " Details"
+	}
+	props := map[string]any{
+		"class":                "gofastr-entity-detail",
+		"data-entity-detail":   entity,
+		"data-action":          actionName,
+	}
+	var children []string
+	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+		Kind: "heading",
+		Props: map[string]any{"level": int64(2), "text": title},
+	}))
+	filterFields := block.Fields
+	for _, field := range decl.Fields {
+		if field.Name == "deleted_at" {
+			continue
+		}
+		if field.Hidden {
+			continue
+		}
+		if len(filterFields) > 0 {
+			found := false
+			for _, f := range filterFields {
+				if f == field.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		label := toDisplayName(field.Name)
+		children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
+			Kind: "div",
+			Props: map[string]any{
+				"class":               "detail-field",
+				"data-field":          field.Name,
+				"data-field-label":    label,
+			},
+			Children: []BlueprintBlock{
+				{
+					Kind: "span",
+					Props: map[string]any{
+						"class": "detail-label",
+						"text":  label,
+					},
+				},
+				{
+					Kind: "span",
+					Props: map[string]any{
+						"class":         "detail-value",
+						"data-field-value": field.Name,
+						"text":             "—",
+					},
+				},
+			},
+		}))
+	}
+	literal, err := renderGoLiteral(props)
+	if err != nil {
+		literal = "nil"
+	}
+	return "kilnrender.RenderNode(world.Node{Kind: \"section\", Props: " + literal + ", Children: []world.Node{" + strings.Join(children, ", ") + "}})"
+}
+func blueprintEntityDetailActionName(screen BlueprintScreen, block BlueprintBlock, path []int) string {
+	parts := []string{"entity_detail"}
+	if screen.Name != "" {
+		parts = append(parts, toCamelJSON(screen.Name))
+	}
+	if block.Entity != "" {
+		parts = append(parts, toCamelJSON(block.Entity))
+	}
+	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
+}
+// toDisplayName converts a snake_case field/entity name to a human-readable Title Case display name.
+func toDisplayName(s string) string {
+	s = strings.ReplaceAll(s, "_", " ")
+	s = strings.ReplaceAll(s, "-", " ")
+	words := strings.Fields(s)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+		}
+	}
+	return strings.Join(words, " ")
+}
 func renderBlueprintStubs(bp Blueprint) string {
 	var sb strings.Builder
 	sb.WriteString("// Code generated by gofastr. DO NOT EDIT.\npackage blueprint\n\n")
 	needsHTTP := len(bp.Endpoints) > 0 || len(bp.Middleware) > 0
 	needsFramework := len(bp.Plugins) > 0
-	if needsHTTP || needsFramework {
+	needsJSON := false
+	if needsHTTP || needsFramework || needsJSON {
 		sb.WriteString("import (\n")
 		if needsHTTP {
 			sb.WriteString("\t\"net/http\"\n")
 		}
+		if needsJSON {
+			sb.WriteString("\t\"encoding/json\"\n")
+		}
 		if needsFramework {
-			if needsHTTP {
-				sb.WriteString("\n")
-			}
 			sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 		}
 		sb.WriteString(")\n\n")
@@ -1596,6 +2081,61 @@ func renderBlueprintStubs(bp Blueprint) string {
 		name := toCamelCase(item.Name)
 		sb.WriteString(fmt.Sprintf("func %s() {\n\t// TODO: implement helper %q.\n}\n\n", name, item.Name))
 	}
+	if len(bp.Seed) > 0 {
+		sb.WriteString("// BlueprintSeedData returns the initial seed data for the application.\n")
+		sb.WriteString("// Call this from main.go to populate empty tables on first boot.\n")
+		sb.WriteString("func BlueprintSeedData() map[string][]map[string]any {\n")
+		sb.WriteString("\treturn map[string][]map[string]any{\n")
+		for _, seed := range bp.Seed {
+			sb.WriteString(fmt.Sprintf("\t\t%q: {\n", seed.Entity))
+			for _, row := range seed.Rows {
+				sb.WriteString("\t\t\t{")
+				first := true
+				for k, v := range row {
+					if !first {
+						sb.WriteString(", ")
+					}
+					first = false
+					switch val := v.(type) {
+					case string:
+						sb.WriteString(fmt.Sprintf("%q: %q", k, val))
+					case int:
+						sb.WriteString(fmt.Sprintf("%q: %d", k, val))
+					case int64:
+						sb.WriteString(fmt.Sprintf("%q: %d", k, val))
+					case float64:
+						sb.WriteString(fmt.Sprintf("%q: %v", k, val))
+					case bool:
+						sb.WriteString(fmt.Sprintf("%q: %t", k, val))
+					case []any:
+						sb.WriteString(fmt.Sprintf("%q: []any{", k))
+						for i, item := range val {
+							if i > 0 {
+								sb.WriteString(", ")
+							}
+							switch itemVal := item.(type) {
+							case string:
+								sb.WriteString(fmt.Sprintf("%q", itemVal))
+							case int, int64, float64, bool:
+								sb.WriteString(fmt.Sprintf("%v", itemVal))
+							default:
+								sb.WriteString("nil")
+							}
+						}
+						sb.WriteString("}")
+					case nil:
+						sb.WriteString(fmt.Sprintf("%q: nil", k))
+					default:
+						sb.WriteString(fmt.Sprintf("%q: nil // unsupported type %T", k, val))
+					}
+				}
+				sb.WriteString("},\n")
+			}
+			sb.WriteString("\t\t},\n")
+		}
+		sb.WriteString("\t}\n}\n\n")
+		// Add json import if needed
+	}
 	return sb.String()
 }
 
@@ -1607,12 +2147,35 @@ func renderBlueprintApp(bp Blueprint) string {
 	var sb strings.Builder
 	sb.WriteString("// Code generated by gofastr. DO NOT EDIT.\npackage blueprint\n\n")
 	sb.WriteString("import (\n")
+	sb.WriteString("\t\"database/sql\"\n")
 	if len(bp.Endpoints) > 0 {
 		sb.WriteString("\t\"net/http\"\n\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
 	if len(bp.App.Theme) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/style\"\n")
+	}
+	if len(bp.Nav) > 0 {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget\"\n")
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
+	}
+	if blueprintNeedsToasts(bp) {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget/preset\"\n")
+		if len(bp.Nav) == 0 {
+			sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget\"\n")
+		}
+	}
+	if bp.App.Auth.Enabled {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/auth\"\n")
+	}
+	if blueprintHasSoftDelete(bp) {
+		if len(bp.Nav) == 0 {
+			sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
+		}
+		if len(bp.Nav) == 0 && !blueprintNeedsToasts(bp) {
+			sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget\"\n")
+		}
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n)\n\n")
 	sb.WriteString("const (\n")
@@ -1633,13 +2196,75 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\treturn theme\n")
 		sb.WriteString("}\n\n")
 	}
+	if len(bp.Nav) > 0 {
+		sb.WriteString("// BlueprintSidebarConfig returns the navigation sidebar configuration.\n")
+		sb.WriteString("func BlueprintSidebarConfig() ui.SidebarConfig {\n")
+		sb.WriteString(fmt.Sprintf("\treturn ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
+		for _, item := range bp.Nav {
+			renderNavItemGo(&sb, item, "\t\t")
+		}
+		sb.WriteString("\t}}\n}\n\n")
+	}
 	sb.WriteString("// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.\n")
-	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App) {\n")
+	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {\n")
 	sb.WriteString("\tif site == nil {\n")
 	sb.WriteString(fmt.Sprintf("\t\tsite = app.NewApp(%q)\n", name))
 	sb.WriteString("\t}\n")
 	if len(bp.App.Theme) > 0 {
 		sb.WriteString("\tsite.WithTheme(BlueprintTheme())\n")
+	}
+	if len(bp.Nav) > 0 {
+		sb.WriteString("\tsbCfg := BlueprintSidebarConfig()\n")
+		sb.WriteString("\tsb := ui.Sidebar(sbCfg)\n")
+		sb.WriteString("\tlayout := app.NewLayout(\"blueprint\").WithSidebar(sb)\n")
+		sb.WriteString("\tsite.SetDefaultLayout(layout)\n")
+		sb.WriteString("\tui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)\n")
+	}
+	// Toast stack — mount a global toast stack so server-side handlers
+	// and client-side JS can fire toasts via X-Gofastr-Toast header or
+	// window.__gofastr.toast().
+	if blueprintNeedsToasts(bp) {
+		sb.WriteString("\t{\n")
+		sb.WriteString("\t\tstack := preset.ToastStack(\"blueprint-toasts\").Build()\n")
+		sb.WriteString("\t\twidget.Mount(fwApp.Router(), &stack)\n")
+		sb.WriteString("\t}\n")
+	}
+	// Auth — wire up the built-in auth system with login, register, logout.
+	if bp.App.Auth.Enabled {
+		sb.WriteString("\t{\n")
+		sb.WriteString("\t\tauthCfg := auth.AuthConfig{DevMode: true")
+		if bp.App.Auth.BasePath != "" {
+			sb.WriteString(fmt.Sprintf(", BasePath: %q", bp.App.Auth.BasePath))
+		}
+		if bp.App.Auth.JWTSecret != "" {
+			sb.WriteString(fmt.Sprintf(", JWTSecret: %q", bp.App.Auth.JWTSecret))
+		}
+		sb.WriteString("}\n")
+		sb.WriteString("\t\tauthCfg.UserStore = auth.NewEntityUserStore(db, \"auth_users\")\n")
+		sb.WriteString("\t\tauthCfg.SessionStore = auth.NewEntitySessionStore(db, \"auth_sessions\")\n")
+		sb.WriteString("\t\tauthMgr := auth.New(authCfg)\n")
+		sb.WriteString("\t\tauthMgr.Use(auth.NewCorePlugin())\n")
+		sb.WriteString("\t\t// Auto-create auth tables if they don't exist.\n")
+		sb.WriteString("\t\tdb.Exec(`CREATE TABLE IF NOT EXISTS auth_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL DEFAULT '', roles TEXT NOT NULL DEFAULT '[]', password_set INTEGER NOT NULL DEFAULT 0)`)\n")
+		sb.WriteString("\t\tdb.Exec(`CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, two_factor_verified INTEGER NOT NULL DEFAULT 0, pending_two_factor INTEGER NOT NULL DEFAULT 0)`)\n")
+		sb.WriteString("\t\tauthMgr.Init(fwApp)\n")
+		sb.WriteString("\t}\n")
+	}
+	// ConfirmAction dialogs — mount a delete confirmation modal for each
+	// soft-delete entity so entity_detail screens can render a trigger.
+	for _, decl := range bp.Entities {
+		if decl.SoftDelete {
+			sb.WriteString("\t{\n")
+			sb.WriteString(fmt.Sprintf("\t\t_, b := ui.ConfirmAction(ui.ConfirmActionConfig{Name: %q, TriggerLabel: \"Delete\", Title: %q, Body: %q, RPCPath: %q})\n",
+				"delete-"+decl.Name,
+				"Delete this "+toDisplayName(decl.Name)+"?",
+				"This action will soft-delete the record. It can be restored later.",
+				"/"+decl.Name+"/{id}",
+			))
+			sb.WriteString("\t\td := b.Build()\n")
+			sb.WriteString("\t\twidget.Mount(fwApp.Router(), &d)\n")
+			sb.WriteString("\t}\n")
+		}
 	}
 	for _, screen := range bp.Screens {
 		sb.WriteString(fmt.Sprintf("\tsite.Register(%q, &%sScreen{}, nil)\n", screen.Route, toCamelCase(screen.Name)))
@@ -1653,8 +2278,30 @@ func renderBlueprintApp(bp Blueprint) string {
 	for _, item := range bp.Plugins {
 		sb.WriteString(fmt.Sprintf("\tfwApp.RegisterPlugin(%sPlugin{})\n", toCamelCase(item.Name)))
 	}
-	sb.WriteString("}\n")
+	if len(bp.Nav) > 0 {
+		sb.WriteString("\t_ = blueprintRouterMounter{}\n")
+	}
+	sb.WriteString("}\n\n")
+	if len(bp.Nav) > 0 {
+		sb.WriteString("// blueprintRouterMounter adapts framework's *router.Router to ui.WidgetMounter.\n")
+		sb.WriteString("type blueprintRouterMounter struct{ r *router.Router }\n\n")
+		sb.WriteString("func (m blueprintRouterMounter) MountWidget(def *widget.Definition) {\n")
+		sb.WriteString("\twidget.Mount(m.r, def)\n")
+		sb.WriteString("}\n")
+		return sb.String()
+	}
 	return sb.String()
+}
+func renderNavItemGo(sb *strings.Builder, item BlueprintNavItem, indent string) {
+	sb.WriteString(fmt.Sprintf("%s{Label: %q, Href: %q", indent, item.Label, item.Href))
+	if len(item.Items) > 0 {
+		sb.WriteString(", Children: []ui.SidebarItem{\n")
+		for _, child := range item.Items {
+			renderNavItemGo(sb, child, indent+"\t")
+		}
+		sb.WriteString(indent + "}")
+	}
+	sb.WriteString("},\n")
 }
 
 func sortedStringMapKeys(m map[string]string) []string {
@@ -1864,4 +2511,53 @@ func anyValue(node *coreyaml.Node) any {
 	default:
 		return nil
 	}
+}
+// blueprintNeedsToasts returns true when any screen uses entity_form or
+// entity_list — these blocks benefit from toast feedback on CRUD actions.
+func blueprintNeedsToasts(bp Blueprint) bool {
+	for _, screen := range bp.Screens {
+		for _, block := range screen.Body {
+			if blueprintBlockNeedsToasts(block) {
+				return true
+			}
+		}
+	}
+	return false
+}
+func blueprintBlockNeedsToasts(block BlueprintBlock) bool {
+	kind := strings.ToLower(strings.TrimSpace(block.Kind))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(block.Type))
+	}
+	if kind == "entity_form" || kind == "entity_list" || kind == "entity_detail" {
+		return true
+	}
+	for _, child := range block.Children {
+		if blueprintBlockNeedsToasts(child) {
+			return true
+		}
+	}
+	return false
+}
+func blueprintHasSoftDelete(bp Blueprint) bool {
+	for _, decl := range bp.Entities {
+		if decl.SoftDelete {
+			return true
+		}
+	}
+	return false
+}
+func blueprintSeedHasComplexValues(bp Blueprint) bool {
+	for _, seed := range bp.Seed {
+		for _, row := range seed.Rows {
+			for _, v := range row {
+				switch v.(type) {
+				case string, int, int64, float64, bool, nil:
+				default:
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

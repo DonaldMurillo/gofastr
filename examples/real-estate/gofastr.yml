@@ -1,0 +1,596 @@
+app:
+  name: HomeList
+  module: example.com/homelist
+  db:
+    driver: sqlite
+    url: file:homelist.db
+  auth:
+    enabled: true
+    dev_mode: true
+  theme:
+    primary: "#0F766E"
+    primary-fg: "#FFFFFF"
+    secondary: "#F97316"
+    background: "#FAFAF9"
+    surface: "#FFFFFF"
+    surface-soft: "#F5F5F4"
+    text: "#1C1917"
+    text-muted: "#78716C"
+    border: "#D6D3D1"
+    accent: "#F97316"
+    success: "#16A34A"
+    warning: "#EAB308"
+    danger: "#DC2626"
+    info: "#0EA5E9"
+
+entities:
+  - name: agencies
+    crud: true
+    mcp: true
+    properties:
+      label: Agencies
+      icon: building
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 200
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: description
+        type: text
+      - name: logo
+        type: image
+      - name: phone
+        type: string
+        max: 30
+      - name: email
+        type: string
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: website
+        type: string
+        max: 300
+      - name: address
+        type: string
+        max: 300
+      - name: city
+        type: string
+        max: 100
+      - name: license_number
+        type: string
+        max: 50
+      - name: active
+        type: bool
+        default: true
+    relations:
+      - type: has_many
+        name: agents
+        entity: agents
+        foreign_key: agency_id
+      - type: has_many
+        name: properties
+        entity: properties
+        foreign_key: agency_id
+
+  - name: agents
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_agents_agency
+        columns: [agency_id]
+    properties:
+      label: Agents
+      icon: user
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 150
+      - name: email
+        type: string
+        required: true
+        unique: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: phone
+        type: string
+        max: 30
+      - name: photo
+        type: image
+      - name: bio
+        type: text
+      - name: agency_id
+        type: relation
+        to: agencies
+      - name: license_number
+        type: string
+        max: 50
+      - name: specializations
+        type: json
+      - name: active
+        type: bool
+        default: true
+      - name: total_sales
+        type: int
+        default: 0
+        min: 0
+    relations:
+      - type: belongs_to
+        name: agency
+        entity: agencies
+        foreign_key: agency_id
+      - type: has_many
+        name: listings
+        entity: properties
+        foreign_key: agent_id
+
+  - name: properties
+    crud: true
+    mcp: true
+    soft_delete: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_properties_status
+        columns: [status]
+      - name: idx_properties_type
+        columns: [property_type]
+      - name: idx_properties_city
+        columns: [city]
+      - name: idx_properties_price
+        columns: [price]
+      - name: idx_properties_agent
+        columns: [agent_id]
+    properties:
+      label: Properties
+      icon: home
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 250
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: description
+        type: text
+      - name: property_type
+        type: enum
+        values: [house, apartment, condo, townhouse, land, commercial, multi_family]
+        required: true
+      - name: listing_type
+        type: enum
+        values: [sale, rent, lease]
+        default: sale
+      - name: status
+        type: enum
+        values: [draft, active, pending, sold, rented, withdrawn]
+        default: draft
+      - name: price
+        type: decimal
+        required: true
+        min: 0
+      - name: price_unit
+        type: enum
+        values: [total, per_month, per_sqft]
+        default: total
+      - name: address
+        type: string
+        required: true
+        max: 300
+      - name: city
+        type: string
+        required: true
+        max: 100
+      - name: state
+        type: string
+        max: 100
+      - name: zip_code
+        type: string
+        max: 20
+      - name: country
+        type: string
+        max: 100
+        default: "US"
+      - name: latitude
+        type: float
+        min: -90
+        max: 90
+      - name: longitude
+        type: float
+        min: -180
+        max: 180
+      - name: bedrooms
+        type: int
+        min: 0
+      - name: bathrooms
+        type: float
+        min: 0
+      - name: sqft
+        type: int
+        min: 0
+      - name: lot_sqft
+        type: int
+        min: 0
+      - name: year_built
+        type: int
+        min: 1800
+        max: 2100
+      - name: parking_spaces
+        type: int
+        min: 0
+      - name: features
+        type: json
+      - name: images
+        type: json
+      - name: cover_image
+        type: image
+      - name: virtual_tour_url
+        type: string
+        max: 500
+      - name: agency_id
+        type: relation
+        to: agencies
+      - name: agent_id
+        type: relation
+        to: agents
+      - name: featured
+        type: bool
+        default: false
+      - name: available_from
+        type: date
+      - name: mls_number
+        type: string
+        max: 30
+    relations:
+      - type: belongs_to
+        name: agency
+        entity: agencies
+        foreign_key: agency_id
+      - type: belongs_to
+        name: agent
+        entity: agents
+        foreign_key: agent_id
+      - type: has_many
+        name: tours
+        entity: tours
+        foreign_key: property_id
+      - type: has_many
+        name: inquiries
+        entity: inquiries
+        foreign_key: property_id
+
+  - name: tours
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_tours_property
+        columns: [property_id]
+      - name: idx_tours_date
+        columns: [scheduled_at]
+    fields:
+      - name: property_id
+        type: relation
+        to: properties
+        required: true
+      - name: visitor_name
+        type: string
+        required: true
+        max: 150
+      - name: visitor_email
+        type: string
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: visitor_phone
+        type: string
+        max: 30
+      - name: scheduled_at
+        type: timestamp
+        required: true
+      - name: duration_minutes
+        type: int
+        default: 30
+        min: 15
+        max: 240
+      - name: status
+        type: enum
+        values: [requested, confirmed, completed, cancelled, no_show]
+        default: requested
+      - name: notes
+        type: text
+      - name: feedback
+        type: text
+    relations:
+      - type: belongs_to
+        name: property
+        entity: properties
+        foreign_key: property_id
+
+  - name: inquiries
+    crud: true
+    mcp: true
+    indices:
+      - name: idx_inquiries_property
+        columns: [property_id]
+    fields:
+      - name: property_id
+        type: relation
+        to: properties
+        required: true
+      - name: name
+        type: string
+        required: true
+        max: 150
+      - name: email
+        type: string
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: phone
+        type: string
+        max: 30
+      - name: message
+        type: text
+        required: true
+      - name: source
+        type: enum
+        values: [website, phone, email, referral, social]
+        default: website
+      - name: status
+        type: enum
+        values: [new, contacted, qualified, lost, converted]
+        default: new
+    relations:
+      - type: belongs_to
+        name: property
+        entity: properties
+        foreign_key: property_id
+
+nav:
+  - label: Home
+    href: /
+    icon: home
+  - label: Properties
+    href: /properties
+    icon: building
+  - label: Agents
+    href: /agents
+    icon: users
+  - label: Tours
+    href: /tours
+    icon: calendar
+  - label: Inquiries
+    href: /inquiries
+    icon: mail
+
+screens:
+  - name: home
+    route: /
+    title: HomeList — Find Your Home
+    description: Real estate listing platform
+    body:
+      - type: heading
+        level: 1
+        text: HomeList
+      - type: paragraph
+        text: Discover your perfect property. Browse homes, apartments, and commercial spaces.
+      - kind: section
+        props:
+          label: Featured Listings
+          class: featured-section
+        children:
+          - kind: entity_list
+            text: Featured Properties
+            entity: properties
+            fields: [title, price, city, bedrooms, bathrooms]
+            limit: 6
+            empty_text: No featured listings right now.
+
+  - name: properties
+    route: /properties
+    title: All Properties
+    description: Browse all available listings
+    body:
+      - type: heading
+        level: 1
+        text: Properties
+      - kind: entity_list
+        text: Available Properties
+        entity: properties
+        fields: [title, property_type, listing_type, price, city, status]
+        limit: 30
+        empty_text: No properties available.
+
+  - name: agents
+    route: /agents
+    title: Our Agents
+    description: Meet our real estate agents
+    body:
+      - type: heading
+        level: 1
+        text: Our Agents
+      - kind: entity_list
+        text: Active Agents
+        entity: agents
+        fields: [name, email, specializations]
+        limit: 50
+        empty_text: No agents listed yet.
+
+  - name: tours
+    route: /tours
+    title: Property Tours
+    description: Scheduled property tours
+    body:
+      - type: heading
+        level: 1
+        text: Scheduled Tours
+      - kind: entity_list
+        text: Upcoming Tours
+        entity: tours
+        fields: [visitor_name, scheduled_at, status]
+        limit: 30
+        empty_text: No tours scheduled.
+
+  - name: inquiries
+    route: /inquiries
+    title: Inquiries
+    description: Property inquiries and leads
+    body:
+      - type: heading
+        level: 1
+        text: Inquiries
+      - kind: entity_list
+        text: Recent Inquiries
+        entity: inquiries
+        fields: [name, email, status, source]
+        limit: 30
+        empty_text: No inquiries yet.
+
+
+  - name: property_new
+    route: /new-property
+    title: List Property
+    description: Add a new property listing
+    body:
+      - type: heading
+        level: 1
+        text: List a Property
+      - kind: entity_form
+        text: New Property
+        entity: properties
+        mode: create
+        fields: [title, property_type, listing_type, price, address, city, bedrooms, bathrooms, sqft, description]
+
+  - name: property_detail
+    route: /property-detail
+    title: Property Details
+    description: View property details
+    body:
+      - type: heading
+        level: 1
+        text: Property Details
+      - kind: entity_detail
+        text: Property
+        entity: properties
+        fields: [title, property_type, listing_type, price, address, city, bedrooms, bathrooms, sqft, status]
+
+  - name: tour_schedule
+    route: /schedule-tour
+    title: Schedule Tour
+    description: Schedule a property tour
+    body:
+      - type: heading
+        level: 1
+        text: Schedule a Tour
+      - kind: entity_form
+        text: Book Tour
+        entity: tours
+        mode: create
+        fields: [visitor_name, visitor_email, visitor_phone, scheduled_at, duration_minutes]
+endpoints:
+  - name: schedule_tour
+    method: POST
+    path: /properties/{id}/tour
+    entity: properties
+    handler: scheduleTour
+    description: Schedule a property tour
+  - name: submit_inquiry
+    method: POST
+    path: /properties/{id}/inquire
+    entity: properties
+    handler: submitInquiry
+    description: Submit a property inquiry
+  - name: feature_property
+    method: POST
+    path: /properties/{id}/feature
+    entity: properties
+    handler: featureProperty
+    description: Toggle featured status on a property
+
+middleware:
+  - request_logger
+
+helpers:
+  - name: geocode_address
+  - name: format_price
+
+seed:
+  - entity: agencies
+    rows:
+      - name: Premier Realty
+        slug: premier-realty
+        description: Luxury real estate specialists
+        phone: "+1-555-0100"
+        email: info@premierrealty.dev
+        city: San Francisco
+        active: true
+      - name: Coastal Homes
+        slug: coastal-homes
+        description: Beachfront and coastal properties
+        phone: "+1-555-0200"
+        email: hello@coastalhomes.dev
+        city: Malibu
+        active: true
+  - entity: agents
+    rows:
+      - name: Emma Sterling
+        email: emma@premierrealty.dev
+        phone: "+1-555-0101"
+        bio: 15 years experience in luxury residential real estate.
+        active: true
+      - name: James Rivera
+        email: james@coastalhomes.dev
+        phone: "+1-555-0201"
+        bio: Specialist in coastal and beachfront properties.
+        active: true
+  - entity: properties
+    rows:
+      - title: Modern Downtown Loft
+        slug: modern-downtown-loft
+        description: Stunning 2-bedroom loft in the heart of downtown with floor-to-ceiling windows and city views.
+        property_type: apartment
+        listing_type: sale
+        status: active
+        price: 750000
+        address: 123 Main St, Apt 4B
+        city: San Francisco
+        state: California
+        bedrooms: 2
+        bathrooms: 2
+        sqft: 1200
+        year_built: 2019
+        featured: true
+      - title: Beachfront Villa
+        slug: beachfront-villa
+        description: Spectacular 4-bedroom beachfront villa with private pool and ocean views.
+        property_type: house
+        listing_type: sale
+        status: active
+        price: 3200000
+        address: 456 Pacific Coast Hwy
+        city: Malibu
+        state: California
+        bedrooms: 4
+        bathrooms: 3.5
+        sqft: 3800
+        lot_sqft: 8500
+        year_built: 2021
+        featured: true
+      - title: Cozy Studio Near Park
+        slug: cozy-studio-near-park
+        description: Affordable studio apartment walking distance from Golden Gate Park.
+        property_type: apartment
+        listing_type: rent
+        status: active
+        price: 2500
+        price_unit: per_month
+        address: 789 Park Ave
+        city: San Francisco
+        state: California
+        bedrooms: 0
+        bathrooms: 1
+        sqft: 450
+        year_built: 2015
