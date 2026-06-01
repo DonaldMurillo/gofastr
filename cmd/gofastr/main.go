@@ -13,6 +13,12 @@ var (
 	buildDate = "unknown"
 )
 
+// osExit is an indirection over os.Exit so tests can observe the exit
+// code of CLI entry points without terminating the test binary. In
+// production it is os.Exit verbatim — behavior is identical. Tests swap
+// it (and restore via the helper) to capture the requested exit status.
+var osExit = os.Exit
+
 // stdoutIsTTY is true when os.Stdout is connected to a terminal. ANSI
 // color helpers below return their input unchanged when this is false,
 // so `gofastr docs | less` or `gofastr docs > out.txt` don't get
@@ -129,8 +135,13 @@ func printHelp() {
 }
 
 func main() {
-	args := os.Args[1:]
+	dispatch(os.Args[1:])
+}
 
+// dispatch routes a parsed argument vector (os.Args[1:]) to the matching
+// subcommand. main() is a thin wrapper so this dispatch logic is testable
+// in-process; behavior is identical to inlining it in main().
+func dispatch(args []string) {
 	// No args → help
 	if len(args) == 0 {
 		printHelp()
@@ -191,7 +202,7 @@ func main() {
 			}
 		}
 		printHelp()
-		os.Exit(1)
+		osExit(1)
 	}
 }
 

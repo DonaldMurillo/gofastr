@@ -46,7 +46,7 @@ func runHarnessMCP(args []string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
 	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
@@ -56,7 +56,7 @@ func runHarnessMCP(args []string) {
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Stdio MCP needs stderr-only logging so JSON-RPC on stdout
@@ -77,7 +77,7 @@ func runHarnessMCP(args []string) {
 	h, err := xharness.New(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer h.Shutdown()
 
@@ -85,7 +85,7 @@ func runHarnessMCP(args []string) {
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
 		fmt.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
-		os.Exit(1)
+		osExit(1)
 	}
 	_ = h.CreateSession(prov, modelID)
 
@@ -94,6 +94,6 @@ func runHarnessMCP(args []string) {
 	srv.RequiredToken = *requiredToken
 	if err := srv.Serve(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 }

@@ -28,7 +28,7 @@ func runDocs(args []string) {
 			}
 			if term == "" {
 				fmt.Fprintln(os.Stderr, "usage: gofastr docs --grep <term>")
-				os.Exit(2)
+				osExit(2)
 			}
 			runDocsGrep(term)
 			return
@@ -52,7 +52,7 @@ func runDocs(args []string) {
 		fmt.Fprintln(os.Stderr, err.Error())
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Run `gofastr docs` to see every available topic.")
-		os.Exit(1)
+		osExit(1)
 	}
 	fmt.Print(string(body))
 }
@@ -61,7 +61,7 @@ func runDocsList() {
 	topics, err := docs.List()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		osExit(1)
 	}
 	fmt.Printf("%s framework docs (%d topics) — `gofastr docs <topic>` to read one\n\n",
 		bold("GoFastr"), len(topics))
@@ -94,7 +94,7 @@ func runDocsGrep(term string) {
 	hits, err := docs.Search(term)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		osExit(1)
 	}
 	if len(hits) == 0 {
 		fmt.Printf("No matches for %q.\n", term)

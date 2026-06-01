@@ -33,7 +33,7 @@ func runBuild(args []string) {
 		discovery, err := codegen.DiscoverConfig(".")
 		if err != nil {
 			fail("Failed to load codegen config: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		if discovery.Found {
 			info("Generating code...")
@@ -51,7 +51,7 @@ func runBuild(args []string) {
 	vetCmd.Stderr = os.Stderr
 	if err := vetCmd.Run(); err != nil {
 		fail("go vet found issues")
-		os.Exit(1)
+		osExit(1)
 	}
 	success("go vet passed")
 
@@ -62,7 +62,7 @@ func runBuild(args []string) {
 	buildCmd.Stderr = os.Stderr
 	if err := buildCmd.Run(); err != nil {
 		fail("Build failed")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	elapsed := time.Since(start)

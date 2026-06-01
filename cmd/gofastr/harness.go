@@ -79,24 +79,24 @@ func runHarness(args []string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
 	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
 	if err := os.MkdirAll(xdgConfig, 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := os.MkdirAll(xdgState, 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Pick profile.
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Logger.
@@ -122,7 +122,7 @@ func runHarness(args []string) {
 	h, err := xharness.New(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer h.Shutdown()
 
@@ -135,7 +135,7 @@ func runHarness(args []string) {
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
 		fmt.Fprintf(os.Stderr, "harness: no provider matches %q\n", prof.DefaultModel)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Spawn one engine for the session.
@@ -145,7 +145,7 @@ func runHarness(args []string) {
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	if err := h.Mux.Attach(sess, c); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer c.Close()
 
@@ -167,7 +167,7 @@ func runHarness(args []string) {
 		url, token, shutdown, err := startHTTPListener(h, sess, bind)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "harness: http listener:", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		defer shutdown()
 		webURL = url

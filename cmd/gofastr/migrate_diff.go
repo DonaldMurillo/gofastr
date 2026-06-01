@@ -24,17 +24,17 @@ func runMigrateDiff(args []string) {
 	decls, err := framework.LoadEntityDeclarations(opts.entitiesDir)
 	if err != nil {
 		fail("Failed to load entity declarations: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if len(decls) == 0 {
 		fail("No entity declarations found in %s.", opts.entitiesDir)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	db, err := openDiffDB(opts.dbURL, opts.driver)
 	if err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer db.Close()
 
@@ -45,7 +45,7 @@ func runMigrateDiff(args []string) {
 		cfg, err := decl.Config()
 		if err != nil {
 			fail("entity %q: %v", decl.Name, err)
-			os.Exit(1)
+			osExit(1)
 		}
 		reg.Register(framework.Define(decl.Name, cfg))
 	}
@@ -53,7 +53,7 @@ func runMigrateDiff(args []string) {
 	changes, err := framework.DiffSchema(context.Background(), db, reg)
 	if err != nil {
 		fail("DiffSchema failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if len(changes) == 0 {
 		success("Schema is up to date — no changes needed.")
@@ -95,10 +95,10 @@ func runMigrateDiff(args []string) {
 		var de *framework.DestructiveChangeError
 		if errors.As(err, &de) {
 			fail("Refused %d destructive change(s); re-run with --allow-destructive to apply.", len(de.Summaries))
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Apply failed at change %d: %v", n+1, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Applied %d change(s).", n)
 }

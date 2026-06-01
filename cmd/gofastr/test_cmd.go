@@ -54,7 +54,7 @@ func runTest(args []string) {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			fail("Tests failed")
-			os.Exit(1)
+			osExit(1)
 		}
 		success("All tests passed!")
 		return
@@ -62,7 +62,7 @@ func runTest(args []string) {
 
 	if err := cmd.Start(); err != nil {
 		fail("Failed to start tests: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Colorize test output
@@ -79,7 +79,7 @@ func runTest(args []string) {
 		fmt.Println()
 		fail("%d test(s) passed, %d test(s) failed", passed, failed)
 		info("Run 'gofastr test --run=TestName' to run a specific test")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	fmt.Println()

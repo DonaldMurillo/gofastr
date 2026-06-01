@@ -21,7 +21,7 @@ func runTheme(args []string) {
 	default:
 		fmt.Printf("%s Unknown theme subcommand: %s\n\n", red("✗"), args[0])
 		printThemeHelp()
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -55,23 +55,23 @@ func runThemeInit(args []string) {
 			return
 		default:
 			fmt.Printf("%s Unknown flag: %s\n", red("✗"), a)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 
 	if _, err := os.Stat(dest); err == nil && !force {
 		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", red("✗"), dest)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		fmt.Printf("%s mkdir %s: %v\n", red("✗"), filepath.Dir(dest), err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	if err := os.WriteFile(dest, []byte(themeStarter), 0o644); err != nil {
 		fmt.Printf("%s write %s: %v\n", red("✗"), dest, err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	fmt.Printf("%s wrote %s — edit values to customize your theme.\n", green("✓"), dest)

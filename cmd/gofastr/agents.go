@@ -39,7 +39,7 @@ func runAgents(args []string) {
 	if len(args) == 0 {
 		fail("Subcommand required.")
 		info("Usage: gofastr agents [init|sync]")
-		os.Exit(1)
+		osExit(1)
 	}
 	switch args[0] {
 	case "init":
@@ -51,7 +51,7 @@ func runAgents(args []string) {
 	default:
 		fail("Unknown subcommand %q.", args[0])
 		info("Try `gofastr agents init`, `gofastr agents sync`, or `gofastr agents skill`.")
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -66,15 +66,15 @@ func runAgentsInit(args []string) {
 	target := filepath.Join(dir, "AGENTS.md")
 	if _, err := os.Stat(target); err == nil {
 		fail("%s already exists. Use `gofastr agents sync` to refresh.", target)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := os.WriteFile(target, buildAgentsMD(), 0o644); err != nil {
 		fail("Failed to write %s: %v", target, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := writeAgentDetailFiles(dir); err != nil {
 		fail("Failed to write agents/ details: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Wrote %s and %d detail file(s) under agents/", target, len(agentsinv.All()))
 	warnMissingMarkdown()
@@ -90,7 +90,7 @@ func runAgentsSkill(args []string) {
 	}
 	if err := writeHostSkill(dir); err != nil {
 		fail("Failed to write skill: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Wrote %s/.claude/skills/gofastr-host/SKILL.md", dir)
 }
@@ -108,19 +108,19 @@ func runAgentsSync(args []string) {
 	if err != nil {
 		fail("Cannot read %s: %v", target, err)
 		info("Run `gofastr agents init` first.")
-		os.Exit(1)
+		osExit(1)
 	}
 	refreshed, changed, err := refreshAgentsMD(existing)
 	if err != nil {
 		fail("Refresh failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	// Always refresh the detail files — they're framework-owned and
 	// cheap to rewrite, and treating them as "changed" tracking would
 	// duplicate the marker-protection logic for ten more files.
 	if err := writeAgentDetailFiles(dir); err != nil {
 		fail("Failed to write agents/ details: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if !changed {
 		info("%s TOC already up to date (agents/ details refreshed).", target)
@@ -129,7 +129,7 @@ func runAgentsSync(args []string) {
 	}
 	if err := os.WriteFile(target, refreshed, 0o644); err != nil {
 		fail("Failed to write %s: %v", target, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Refreshed %s and %d detail file(s) under agents/", target, len(agentsinv.All()))
 	warnMissingMarkdown()

@@ -67,7 +67,7 @@ func runNew(args []string) {
 
 	if len(args) == 0 {
 		newUsage()
-		os.Exit(1)
+		osExit(1)
 	}
 
 	resource := args[0]
@@ -86,7 +86,7 @@ func runNew(args []string) {
 	default:
 		fail("Unknown resource: %s", resource)
 		info("Supported: entity, handler, route")
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -109,12 +109,12 @@ func extractOverwriteFlag(args []string) (bool, []string) {
 func runNewEntity(args []string, overwrite bool) {
 	if len(args) == 0 {
 		fail("Usage: gofastr new entity <Name> [field:type ...]")
-		os.Exit(1)
+		osExit(1)
 	}
 	name := args[0]
 	if err := scaffoldEntity(".", name, args[1:], overwrite); err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Scaffolded entity %q", titleASCII(strings.ToLower(name)))
 	info("Run 'gofastr generate entity' to update the codegen")
@@ -124,7 +124,7 @@ func runNewEntity(args []string, overwrite bool) {
 func runNewHandler(args []string, overwrite bool) {
 	if len(args) == 0 {
 		fail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	name := args[0]
@@ -141,7 +141,7 @@ func runNewHandler(args []string, overwrite bool) {
 
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Scaffolded handler %q (%s %s)", name, method, path)
 }
@@ -150,7 +150,7 @@ func runNewHandler(args []string, overwrite bool) {
 func runNewRoute(args []string) {
 	if len(args) == 0 {
 		fail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	path := args[0]

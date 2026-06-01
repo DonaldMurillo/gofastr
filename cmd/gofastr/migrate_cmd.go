@@ -37,7 +37,7 @@ func runMigrate(args []string) {
 		fail("Unknown migrate subcommand: %q", subcmd)
 		info("Available: up, down, status, diff, generate, force")
 		info("Usage: gofastr migrate [up|down|status|diff|generate|force]")
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -67,7 +67,7 @@ func runMigrateForce(args []string) {
 	}
 	if !haveVersion {
 		fail("Usage: gofastr migrate force <version> [--not-applied]")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	fmt.Printf("\n  %s\n\n", bold(fmt.Sprintf("Forcing migration %d → applied=%t...", version, applied)))
@@ -75,13 +75,13 @@ func runMigrateForce(args []string) {
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer closeDB()
 
 	if err := migrator.Force(context.Background(), version, applied); err != nil {
 		fail("Force failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Tracking table reconciled for version %d", version)
 }
@@ -95,12 +95,12 @@ func runMigrateUp(args []string) {
 		dbURL := getMigrateDBURL(args)
 		if err := ensureDriverRegistered(driver); err != nil {
 			fail("%v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		created, err := migrate.EnsureDatabase(driver, dbURL)
 		if err != nil {
 			fail("Could not ensure database exists: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		if created {
 			success("Created database")
@@ -110,13 +110,13 @@ func runMigrateUp(args []string) {
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer closeDB()
 
 	if err := migrator.Up(context.Background()); err != nil {
 		fail("Migration failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Migrations applied")
 }
@@ -135,13 +135,13 @@ func runMigrateDown(args []string) {
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer closeDB()
 
 	if err := migrator.Down(context.Background(), n); err != nil {
 		fail("Rollback failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("Rollback complete")
 }
@@ -152,14 +152,14 @@ func runMigrateStatus(args []string) {
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer closeDB()
 
 	status, err := migrator.Status(context.Background())
 	if err != nil {
 		fail("Could not read migration status: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	fmt.Printf("    Applied: %d\n", len(status.Applied))

@@ -34,11 +34,11 @@ func runGenerate(args []string) {
 	case "ts", "typescript":
 		fail("TypeScript codegen has been removed. Use gofastr.codegen.yml with a project extension to generate frontend artifacts.")
 		info("See framework/docs/content/codegen.md for the extension protocol.")
-		os.Exit(1)
+		osExit(1)
 	default:
 		fail("Unknown resource type: %s", resourceType)
 		info("Supported: all, entity")
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -52,10 +52,10 @@ func generateProject(args []string) {
 	if err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Failed to load codegen config: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if discovered.Found {
 		generateFromCodegenConfig(options, discovered)
@@ -177,10 +177,10 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 	if err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Failed to enter codegen project: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer restore()
 	cfg := discovery.Config
@@ -188,36 +188,36 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 	if err := validateOutputDir(cfg.Codegen.Output); err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	reg := codegen.NewRegistry()
 	if err := registerBuiltinGenerators(reg); err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Code generation setup failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, os.Stderr); err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Code generation setup failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	genCtx, err := reg.Run(context.Background(), ".", cfg)
 	if err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Code generation failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	files := genCtx.Files.All()
 	if options.dryRun {
@@ -234,12 +234,12 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 	if discovery.Path == "" && codegen.CleanEnabled(cfg.Codegen) {
 		if err := safeCleanOutputDir(cfg.Codegen.Output); err != nil {
 			fail("Failed to clean %s: %v", cfg.Codegen.Output, err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 	if err := codegen.WriteFiles(genCtx.Files, codegen.WriteOptions{OutputRoot: cfg.Codegen.Output, Clean: discovery.Path != "" && codegen.CleanEnabled(cfg.Codegen), SkipManifest: discovery.Path == ""}); err != nil {
 		fail("Failed to write generated files: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if options.json {
 		printCodegenFilesJSON(files)
@@ -338,10 +338,10 @@ func generateFromBlueprint(options generateOptions) {
 	if err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Failed to load blueprint: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if bp.App.OutputDir != "" && options.outputDir == ".gofastr" {
 		options.outputDir = bp.App.OutputDir
@@ -349,19 +349,19 @@ func generateFromBlueprint(options generateOptions) {
 	if err := validateOutputDir(options.outputDir); err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("%v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	files, err := renderBlueprintFiles(bp)
 	if err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fail("Blueprint code generation failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if options.dryRun {
 		if options.json {
@@ -377,17 +377,17 @@ func generateFromBlueprint(options generateOptions) {
 	if options.clean {
 		if err := safeCleanOutputDir(options.outputDir); err != nil {
 			fail("Failed to clean %s: %v", options.outputDir, err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 	fileSet, err := fileSetFromGeneratedFiles(files, "blueprint")
 	if err != nil {
 		fail("Blueprint code generation failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := codegen.WriteFiles(fileSet, codegen.WriteOptions{OutputRoot: options.outputDir, SkipManifest: true}); err != nil {
 		fail("Failed to write generated files: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if options.json {
 		printGeneratedFilesJSON(files)
@@ -905,7 +905,7 @@ func generateEntity(args []string) {
 	if len(args) == 0 {
 		fail("Entity name required.")
 		info("Usage: gofastr generate entity <name> [field:definitions...]")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	entityName := args[0]
@@ -929,7 +929,7 @@ func generateEntity(args []string) {
 		parts := strings.Split(def, ":")
 		if len(parts) < 2 {
 			fail("Invalid field definition: %s (expected name:type)", def)
-			os.Exit(1)
+			osExit(1)
 		}
 
 		fName := parts[0]
@@ -1013,19 +1013,19 @@ func register%s(app *framework.App) {
 	if _, err := os.Stat(entitiesDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(entitiesDir, 0o755); err != nil {
 			fail("Failed to create entities directory: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 
 	filename := filepath.Join(entitiesDir, tableName+".go")
 	if _, err := os.Stat(filename); err == nil {
 		fail("File %s already exists. Remove it first or use a different name.", filename)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	if err := os.WriteFile(filename, []byte(sb.String()), 0o644); err != nil {
 		fail("Failed to write %s: %v", filename, err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	success("Generated entity %s → %s", bold(entityName), filename)

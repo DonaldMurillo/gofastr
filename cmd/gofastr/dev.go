@@ -54,7 +54,7 @@ func runDev(args []string) {
 	runtimeIsolation, resolvedAddr, err := resolveDevIsolation(dir, addr)
 	if err != nil {
 		fail("Isolation failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	fmt.Printf("\n  %s Dev server with hot reload\n\n", bold("GoFastr"))

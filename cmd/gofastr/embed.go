@@ -55,7 +55,7 @@ func runEmbed(args []string) {
 	default:
 		fail("unknown embed subcommand: %s", sub)
 		printEmbedHelp()
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -141,7 +141,7 @@ func embedIndex(paths []string, watch bool) {
 	idx, err := openLocalIndex()
 	if err != nil {
 		fail("open index: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer idx.Close()
 
@@ -156,7 +156,7 @@ func embedIndex(paths []string, watch bool) {
 		info("watching %s (Ctrl-C to stop)", strings.Join(paths, ", "))
 		if err := w.Run(ctx, paths...); err != nil && err != context.Canceled {
 			fail("watcher: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		s := idx.Stats()
 		success("watch stopped: %d docs, %d chunks", s.Docs, s.Chunks)
@@ -167,11 +167,11 @@ func embedIndex(paths []string, watch bool) {
 	t0 := time.Now()
 	if err := w.ScanOnce(ctx, paths...); err != nil {
 		fail("scan: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := idx.Snapshot(); err != nil {
 		fail("snapshot: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	s := idx.Stats()
 	success("indexed %d docs, %d chunks in %s (snapshot=%s)",
@@ -181,7 +181,7 @@ func embedIndex(paths []string, watch bool) {
 func embedQuery(args []string) {
 	if len(args) == 0 {
 		fail("usage: gofastr embed query \"<text>\" [-k N] [--hybrid] [--mmr 0.4]")
-		os.Exit(1)
+		osExit(1)
 	}
 	text := args[0]
 	q := embed.Query{Text: text, K: 5}
@@ -190,12 +190,12 @@ func embedQuery(args []string) {
 		case "-k", "--k":
 			if i+1 >= len(args) {
 				fail("missing value for %s", args[i])
-				os.Exit(1)
+				osExit(1)
 			}
 			n, err := strconv.Atoi(args[i+1])
 			if err != nil {
 				fail("invalid k: %v", err)
-				os.Exit(1)
+				osExit(1)
 			}
 			q.K = n
 			i++
@@ -204,18 +204,18 @@ func embedQuery(args []string) {
 		case "--mmr":
 			if i+1 >= len(args) {
 				fail("missing value for --mmr")
-				os.Exit(1)
+				osExit(1)
 			}
 			f, err := strconv.ParseFloat(args[i+1], 64)
 			if err != nil {
 				fail("invalid mmr: %v", err)
-				os.Exit(1)
+				osExit(1)
 			}
 			q.MMRLambda = f
 			i++
 		default:
 			fail("unknown flag: %s", args[i])
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 
@@ -223,7 +223,7 @@ func embedQuery(args []string) {
 		hits, err := remoteQuery(url, q)
 		if err != nil {
 			fail("remote query: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		printHits(hits)
 		return
@@ -232,13 +232,13 @@ func embedQuery(args []string) {
 	idx, err := openLocalIndex()
 	if err != nil {
 		fail("open index: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer idx.Close()
 	hits, err := idx.Query(context.Background(), q)
 	if err != nil {
 		fail("query: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	printHits(hits)
 }
@@ -254,7 +254,7 @@ func embedStats() {
 		body, err := remoteGet(url + "/embed/stats")
 		if err != nil {
 			fail("remote stats: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		fmt.Println(string(body))
 		return
@@ -262,7 +262,7 @@ func embedStats() {
 	idx, err := openLocalIndex()
 	if err != nil {
 		fail("open index: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	defer idx.Close()
 	enc := json.NewEncoder(os.Stdout)
@@ -274,7 +274,7 @@ func embedClear() {
 	dir := localSnapshotDir()
 	if err := os.RemoveAll(dir); err != nil {
 		fail("clear %s: %v", dir, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	success("cleared %s", dir)
 }

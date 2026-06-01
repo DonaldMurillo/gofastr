@@ -14,7 +14,7 @@ func runInit(args []string) {
 		fail("Project name is required.")
 		info("Usage: gofastr init <project-name>")
 		info("Example: gofastr init myapp")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	name := args[0]
@@ -23,7 +23,7 @@ func runInit(args []string) {
 	if err := validateProjectName(name); err != nil {
 		fail("Invalid project name %q: %v", name, err)
 		info("Use lowercase letters, digits, and hyphens. Example: my-blog-app")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Check if directory already exists (skip for "." which is init-in-place)
@@ -31,7 +31,7 @@ func runInit(args []string) {
 		if _, err := os.Stat(name); err == nil {
 			fail("Directory %q already exists.", name)
 			info("Use a different name, or cd into the existing directory and run 'gofastr init .'")
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 
@@ -40,7 +40,7 @@ func runInit(args []string) {
 	if err != nil {
 		fail("Go is not installed or not in PATH.")
 		info("Install Go from https://go.dev/dl/")
-		os.Exit(1)
+		osExit(1)
 	}
 	_ = goPath
 
@@ -62,7 +62,7 @@ func runInit(args []string) {
 			modulePath = strings.TrimPrefix(args[i], "--module=")
 			if modulePath == "" {
 				fail("--module requires a non-empty value.")
-				os.Exit(1)
+				osExit(1)
 			}
 		case args[i] == "--no-entity":
 			noEntity = true
@@ -98,7 +98,7 @@ func runInit(args []string) {
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			fail("Failed to create directory %q: %v", dir, err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 
@@ -130,7 +130,7 @@ PORT=localhost:8080
 	}
 	if err := os.WriteFile(filepath.Join(name, ".env"), []byte(envContent), 0o644); err != nil {
 		fail("Failed to write .env: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	writeIsolationConfig(name, dbDriver)
@@ -143,27 +143,27 @@ bin/
 `
 	if err := os.WriteFile(filepath.Join(name, ".gitignore"), []byte(gitignoreContent), 0o644); err != nil {
 		fail("Failed to write .gitignore: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Write .gofastr/.gitkeep
 	if err := os.WriteFile(filepath.Join(name, ".gofastr", ".gitkeep"), []byte(""), 0o644); err != nil {
 		fail("Failed to write .gofastr/.gitkeep: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Write migrations/.gitkeep (only with entities)
 	if !noEntity {
 		if err := os.WriteFile(filepath.Join(name, "migrations", ".gitkeep"), []byte(""), 0o644); err != nil {
 			fail("Failed to write migrations/.gitkeep: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 
 	// Write static/.gitkeep
 	if err := os.WriteFile(filepath.Join(name, "static", ".gitkeep"), []byte(""), 0o644); err != nil {
 		fail("Failed to write static/.gitkeep: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Write AGENTS.md (thin TOC) + agents/ detail files so AI agents
@@ -171,11 +171,11 @@ bin/
 	// of reinventing them. Refresh later with `gofastr agents sync`.
 	if err := os.WriteFile(filepath.Join(name, "AGENTS.md"), buildAgentsMD(), 0o644); err != nil {
 		fail("Failed to write AGENTS.md: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := writeAgentDetailFiles(name); err != nil {
 		fail("Failed to write agents/ details: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Drop the gofastr-host Claude Code skill so AI agents working on
@@ -183,14 +183,14 @@ bin/
 	// start. Refresh manually with `gofastr agents skill`.
 	if err := writeHostSkill(name); err != nil {
 		fail("Failed to write gofastr-host skill: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Write CLAUDE.md — thin entry point for Claude Code that points
 	// agents at the richer AGENTS.md and the gofastr-host skill.
 	if err := writeCLAUDEmd(name); err != nil {
 		fail("Failed to write CLAUDE.md: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Run go mod init to generate a proper go.mod
@@ -389,7 +389,7 @@ func getEnv(key, fallback string) string {
 	}
 	if err := os.WriteFile(filepath.Join(name, "main.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write main.go: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -410,7 +410,7 @@ isolation:
 `
 	if err := os.WriteFile(filepath.Join(name, "gofastr.yml"), []byte(content), 0o644); err != nil {
 		fail("Failed to write gofastr.yml: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -448,7 +448,7 @@ func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 `, name, entityHint)
 	if err := os.WriteFile(filepath.Join(name, "screens", "home.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write screens/home.go: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -511,7 +511,7 @@ func CreateStyleSheet() string {
 `
 	if err := os.WriteFile(filepath.Join(name, "screens", "styles.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write screens/styles.go: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -560,7 +560,7 @@ func boolPtr(b bool) *bool { return &b }
 `
 	if err := os.WriteFile(filepath.Join(name, "entities", "entities.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write entities/entities.go: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -643,14 +643,14 @@ func runReinit(dir string, force bool) {
 	// 1. agents/ detail files — always overwrite.
 	if err := writeAgentDetailFiles(dir); err != nil {
 		fail("Failed to refresh agents/ details: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	info("  ✓ agents/ detail files refreshed")
 
 	// 2. .claude/skills/gofastr-host/ — always overwrite.
 	if err := writeHostSkill(dir); err != nil {
 		fail("Failed to refresh gofastr-host skill: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	info("  ✓ .claude/skills/gofastr-host/SKILL.md refreshed")
 
@@ -661,7 +661,7 @@ func runReinit(dir string, force bool) {
 		// Doesn't exist yet — write fresh.
 		if err := os.WriteFile(agentsPath, buildAgentsMD(), 0o644); err != nil {
 			fail("Failed to write AGENTS.md: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		info("  ✓ AGENTS.md created")
 	} else {
@@ -670,12 +670,12 @@ func runReinit(dir string, force bool) {
 			fail("AGENTS.md sync failed: %v", err)
 			info("  The file may have been edited without preserving the auto-generated markers.")
 			info("  Run `gofastr agents init --force` to overwrite, or fix the markers manually.")
-			os.Exit(1)
+			osExit(1)
 		}
 		if changed {
 			if err := os.WriteFile(agentsPath, refreshed, 0o644); err != nil {
 				fail("Failed to write AGENTS.md: %v", err)
-				os.Exit(1)
+				osExit(1)
 			}
 			info("  ✓ AGENTS.md synced (auto section updated, your changes preserved)")
 		} else {
@@ -690,7 +690,7 @@ func runReinit(dir string, force bool) {
 		// Doesn't exist yet — write fresh.
 		if err := os.WriteFile(claudePath, claudeMDContent(), 0o644); err != nil {
 			fail("Failed to write CLAUDE.md: %v", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		info("  ✓ CLAUDE.md created")
 	} else {
@@ -699,13 +699,13 @@ func runReinit(dir string, force bool) {
 			// Unmodified — safe to overwrite.
 			if err := os.WriteFile(claudePath, generated, 0o644); err != nil {
 				fail("Failed to write CLAUDE.md: %v", err)
-				os.Exit(1)
+				osExit(1)
 			}
 			info("  ✓ CLAUDE.md refreshed (unchanged from generated)")
 		} else if force {
 			if err := os.WriteFile(claudePath, generated, 0o644); err != nil {
 				fail("Failed to write CLAUDE.md: %v", err)
-				os.Exit(1)
+				osExit(1)
 			}
 			warn("  ⚠ CLAUDE.md overwritten (--force) — your customizations were replaced")
 		} else {

@@ -23,7 +23,7 @@ func runMigrateGenerate(args []string) {
 	opts := parseMigrateGenOptions(args)
 	if opts.name == "" {
 		fail("Usage: gofastr migrate generate <name> [--entities=dir] [--migrations=dir] [--snapshot=path] [--driver=name]")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	dialect := framework.DialectSQLite
@@ -34,18 +34,18 @@ func runMigrateGenerate(args []string) {
 	decls, err := framework.LoadEntityDeclarations(opts.entitiesDir)
 	if err != nil {
 		fail("Failed to load entity declarations: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if len(decls) == 0 {
 		fail("No entity declarations found in %s.", opts.entitiesDir)
-		os.Exit(1)
+		osExit(1)
 	}
 	reg := framework.NewRegistry()
 	for _, decl := range decls {
 		cfg, err := decl.Config()
 		if err != nil {
 			fail("entity %q: %v", decl.Name, err)
-			os.Exit(1)
+			osExit(1)
 		}
 		reg.Register(framework.Define(decl.Name, cfg))
 	}
@@ -53,13 +53,13 @@ func runMigrateGenerate(args []string) {
 	prev, err := framework.LoadSnapshot(opts.snapshotPath)
 	if err != nil {
 		fail("Failed to read snapshot %s: %v", opts.snapshotPath, err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	up, down, next, err := framework.GenerateMigration(reg, prev, dialect)
 	if err != nil {
 		fail("Generate failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if up == "" {
 		success("Schema is up to date — nothing to generate.")
@@ -68,7 +68,7 @@ func runMigrateGenerate(args []string) {
 
 	if err := os.MkdirAll(opts.migrationsDir, 0o755); err != nil {
 		fail("Could not create %s: %v", opts.migrationsDir, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	version := nextMigrationVersion(opts.migrationsDir)
 	slug := sanitizeMigrationName(opts.name)
@@ -78,11 +78,11 @@ func runMigrateGenerate(args []string) {
 	content := framework.RenderMigrationFile(version, slug, up, down)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		fail("Could not write %s: %v", path, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if err := framework.SaveSnapshot(opts.snapshotPath, next); err != nil {
 		fail("Migration written but snapshot update failed: %v", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	success("Generated %s", path)
