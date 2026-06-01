@@ -197,3 +197,81 @@ func TestSseIslandSelectorEscaped(t *testing.T) {
 		t.Error("SECURITY: [sse-selector] src/sse.js still interpolates the raw island name into the selector template `[data-island=\"${island}\"]` — must use CSS.escape(String(island))")
 	}
 }
+
+// seedLoopsSkipReservedKeys asserts both signal-seed merge loops in
+// runtime.js skip the JS reserved object keys (__proto__, constructor,
+// prototype) before assigning `store[k] = …`. With a string key of
+// "__proto__", the bracket assignment `store["__proto__"] = {…}` invokes
+// the __proto__ setter and re-parents the _signals store object — a
+// crafted seed then re-routes every not-yet-set signal name through the
+// attacker's object (cross-signal confusion) and makes setSignal mutate
+// the shared prototype instead of an own property. The host-generated
+// seed keys are server-controlled today, but skipping reserved keys is
+// cheap, advisory-recommended (strip __proto__/constructor/prototype
+// before merging) hardening.
+//
+// Surfaces: the boot seed loop (window.__gofastr_signals_seed) and BOTH
+// the page (data.p) and global (data.g) loops in mergeSeedFromDOM.
+func TestSeedLoopsSkipReservedKeys(t *testing.T) {
+	src := readSrc(t, "runtime.js")
+
+	// Locate each of the three merge loops by an anchor unique to it and
+	// require a reserved-key skip guard inside the loop body.
+	type loop struct {
+		name   string
+		anchor string // substring marking the start of the loop body
+		end    string // substring marking the end of the loop body
+	}
+	loops := []loop{
+		{"boot-seed", "const seed = window.__gofastr_signals_seed;", "// -----"},
+		{"merge-page", "const page = data.p || {};", "const glob = data.g || {};"},
+		{"merge-global", "const glob = data.g || {};", "  };\n\n  const swapMainContent"},
+	}
+	for _, lp := range loops {
+		i := strings.Index(src, lp.anchor)
+		if i < 0 {
+			t.Fatalf("could not locate %s loop anchor %q in runtime.js", lp.name, lp.anchor)
+		}
+		body := src[i:]
+		if j := strings.Index(body, lp.end); j > 0 {
+			body = body[:j]
+		}
+		// The fix must reject the three reserved keys before the
+		// store[k] = … assignment. Accept either a helper call
+		// (isReservedSignalKey) or an inline check naming all three.
+		hasHelper := strings.Contains(body, "isReservedSignalKey(")
+		hasInline := strings.Contains(body, "__proto__") &&
+			strings.Contains(body, "constructor") &&
+			strings.Contains(body, "prototype")
+		if !hasHelper && !hasInline {
+			t.Errorf("SECURITY: [proto-pollution] %s loop does not skip reserved keys (__proto__/constructor/prototype) before store[k] assignment — a seed key of \"__proto__\" re-parents the _signals store. Body:\n%s", lp.name, body)
+		}
+	}
+}
+
+// computedReducerOwnPropOnly asserts the computed module looks the
+// reducer up as an OWN property of _reducers, not via the prototype
+// chain. The `typeof fn === 'function'` guard alone does NOT protect
+// against inherited Object.prototype methods: when no reducer named
+// "constructor" / "toString" / "valueOf" is registered,
+// `G._reducers["constructor"]` resolves to Object (typeof === 'function')
+// and gets invoked as a reducer, breaking the documented "missing
+// reducer → no-op" contract. The fix gates the lookup on
+// Object.prototype.hasOwnProperty.call(_reducers, name).
+//
+// Surface: the recompute() reducer lookup in src/computed.js.
+func TestComputedReducerOwnPropOnly(t *testing.T) {
+	src := readSrc(t, filepath.Join("src", "computed.js"))
+
+	fnIdx := strings.Index(src, "const recompute = ")
+	if fnIdx < 0 {
+		t.Fatal("could not locate recompute in src/computed.js")
+	}
+	body := src[fnIdx:]
+	if end := strings.Index(body, "// Subscribe to every dependency"); end > 0 {
+		body = body[:end]
+	}
+	if !strings.Contains(body, "hasOwnProperty") {
+		t.Error("SECURITY: [computed-reducer] recompute resolves the reducer without an own-property guard — `_reducers[\"constructor\"]` resolves to the inherited Object (typeof 'function') and gets invoked, bypassing the missing-reducer no-op contract. Gate on Object.prototype.hasOwnProperty.call(_reducers, reducerName).")
+	}
+}
