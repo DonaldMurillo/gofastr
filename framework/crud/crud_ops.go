@@ -76,7 +76,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			// X-Tenant-ID through the filter middleware.
 			return nil, &tenantMissingError{}
 		}
-		cols = append(cols, "tenant_id")
+		cols = append(cols, ch.Entity.Config.TenantColumn())
 		vals = append(vals, tenantID)
 	}
 
@@ -149,7 +149,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			continue
 		}
 		// Same hazard for tenant_id when MultiTenant is on.
-		if ch.Entity.Config.MultiTenant && f.Name == "tenant_id" {
+		if ch.Entity.Config.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
 			continue
 		}
 		val, ok := body[f.Name]

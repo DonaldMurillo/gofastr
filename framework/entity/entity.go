@@ -22,7 +22,8 @@ type EntityConfig struct {
 	Relations    []Relation     // entity relationships
 	Endpoints    []Endpoint     // custom HTTP endpoints for this entity
 	SoftDelete   bool           // enable soft-delete (deleted_at column)
-	MultiTenant  bool           // scope queries by tenant_id
+	MultiTenant  bool           // scope queries by the tenant column (see TenantField)
+	TenantField  string         // tenant-scoping column name when MultiTenant; defaults to "tenant_id"
 	Timestamps   bool           // add created_at / updated_at columns
 	CRUD         *bool          // auto-generate CRUD routes. nil=auto(true when DB set), &true=always, &false=never
 	MCP          bool           // auto-generate MCP tools
@@ -114,6 +115,17 @@ type Endpoint struct {
 	MCPHandler  mcp.ToolHandler `json:"-"`
 }
 
+// TenantColumn returns the tenant-scoping column name for this entity:
+// TenantField when set, otherwise the framework default "tenant_id". This is
+// the single source of the column name across injection, auto-migrate, and the
+// CRUD insert/scope/filter paths.
+func (c EntityConfig) TenantColumn() string {
+	if c.TenantField != "" {
+		return c.TenantField
+	}
+	return "tenant_id"
+}
+
 // WithTimestamps returns a copy of the config with Timestamps set to the
 // given value. Use this to opt out of the default (true).
 func (c EntityConfig) WithTimestamps(v bool) EntityConfig {
@@ -202,15 +214,16 @@ func Define(name string, config EntityConfig) *Entity {
 	// "no such column" error. Hidden + ReadOnly keeps it out of request
 	// bodies and API responses — the framework manages its value.
 	if config.MultiTenant {
+		tenantCol := config.TenantColumn()
 		hasTenantID := false
 		for _, f := range config.Fields {
-			if f.Name == "tenant_id" {
+			if f.Name == tenantCol {
 				hasTenantID = true
 			}
 		}
 		if !hasTenantID {
 			config.Fields = append(config.Fields, schema.Field{
-				Name:         "tenant_id",
+				Name:         tenantCol,
 				Type:         schema.String,
 				AutoGenerate: schema.AutoNone,
 				ReadOnly:     true,

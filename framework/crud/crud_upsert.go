@@ -63,7 +63,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		delete(body, of)
 	}
 	if ch.Entity.Config.MultiTenant {
-		delete(body, "tenant_id")
+		delete(body, ch.Entity.Config.TenantColumn())
 	}
 
 	var result map[string]any
@@ -137,7 +137,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 		if ch.Entity.Config.MultiTenant {
 			if tid := tenant.GetTenantID(ctx); tid != "" {
-				cols = append(cols, "tenant_id")
+				cols = append(cols, ch.Entity.Config.TenantColumn())
 				vals = append(vals, tid)
 			}
 		}
@@ -227,7 +227,7 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 		cols = append(cols, ownerField)
 	}
 	if checkTenant {
-		cols = append(cols, "tenant_id")
+		cols = append(cols, ch.Entity.Config.TenantColumn())
 	}
 	if checkSoftDelete {
 		cols = append(cols, "deleted_at")

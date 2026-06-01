@@ -38,7 +38,7 @@ func TestCrudApplyTenantScope_QueryBuilder(t *testing.T) {
 	ch.ApplyTenantScope(qb, req)
 
 	sqlStr, args := qb.Build()
-	if !strings.Contains(sqlStr, "tenant_id = $") {
+	if !strings.Contains(sqlStr, `"tenant_id" = $`) {
 		t.Errorf("expected tenant_id filter in query, got: %s", sqlStr)
 	}
 	found := false
@@ -140,7 +140,7 @@ func TestCrudApplyTenantScopeCount(t *testing.T) {
 	ch.ApplyTenantScopeCount(cb, req)
 
 	sqlStr, args := cb.Build()
-	if !strings.Contains(sqlStr, "tenant_id = $") {
+	if !strings.Contains(sqlStr, `"tenant_id" = $`) {
 		t.Errorf("expected tenant_id filter in count query, got: %s", sqlStr)
 	}
 	found := false
