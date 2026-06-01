@@ -555,6 +555,19 @@ func Mount(r *router.Router, def *Definition) {
 	registryMu.Unlock()
 }
 
+// MountBuilder builds the widget from b and mounts it on r — sugar over the
+// two-step
+//
+//	def := b.Build()
+//	widget.Mount(r, &def)
+//
+// which every caller otherwise repeats. Use Builder.Hidden() in the chain for
+// widgets (modals, drawers) that start closed.
+func MountBuilder(r *router.Router, b *Builder) {
+	def := b.Build()
+	Mount(r, &def)
+}
+
 // RuntimeTag returns the markup a host page embeds to load the framework
 // runtime + auto-mount every registered widget. The URL includes a
 // content-hash query param so a new server build invalidates any cached
