@@ -5,11 +5,49 @@ import (
 	"database/sql"
 	"testing"
 
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// TestTenantField_InvalidPanicsAtDefine: a TenantField that isn't a valid SQL
+// identifier fails loud at definition time (with an actionable message), not as
+// an opaque per-request panic when it's interpolated into the WHERE clause.
+func TestTenantField_InvalidPanicsAtDefine(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for an invalid TenantField")
+		}
+		if s, ok := r.(string); !ok || !strings.Contains(s, "TenantField") {
+			t.Fatalf("panic should name TenantField, got: %v", r)
+		}
+	}()
+	entity.Define("bad", entity.EntityConfig{
+		MultiTenant: true,
+		TenantField: "org id", // space → invalid identifier
+		Fields:      []schema.Field{{Name: "x", Type: schema.String}},
+	})
+}
+
+// TestWithMultiTenant_HonorsConfigField: tenant.WithMultiTenant flows
+// TenantConfig.Field into EntityConfig.TenantField (the single source), so the
+// previously-dead config knob now works.
+func TestWithMultiTenant_HonorsConfigField(t *testing.T) {
+	ent := entity.Define("acct", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+	}.WithTimestamps(false))
+	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id"})
+	if !ent.Config.MultiTenant || ent.Config.TenantField != "org_id" {
+		t.Fatalf("WithMultiTenant should set MultiTenant + TenantField, got %+v", ent.Config)
+	}
+	if ent.Config.TenantColumn() != "org_id" {
+		t.Fatalf("TenantColumn() = %q, want org_id", ent.Config.TenantColumn())
+	}
+}
 
 // TestTenantField_CustomColumnEndToEnd proves a custom MultiTenant column name
 // (TenantField) is honored consistently: entity.Define injects it, AutoMigrate
@@ -71,6 +109,21 @@ func TestTenantField_CustomColumnEndToEnd(t *testing.T) {
 		}
 		if org != "org-A" {
 			t.Fatalf("org_id = %q, want org-A", org)
+		}
+
+		// READ ISOLATION through the custom column: tenant A sees only its row,
+		// tenant B only its own. This is the gap that would expose a fail-open
+		// if the read scope filtered on the wrong column.
+		aRows, err := ch.ListAll(ctxA, crud.ListOptions{})
+		if err != nil {
+			t.Fatalf("ListAll A: %v", err)
+		}
+		if len(aRows) != 1 || aRows[0]["title"] != "alpha" {
+			t.Fatalf("tenant A should see only its own row, got %+v", aRows)
+		}
+		bRows, _ := ch.ListAll(ctxB, crud.ListOptions{})
+		if len(bRows) != 1 || bRows[0]["title"] != "beta" {
+			t.Fatalf("tenant B should see only its own row, got %+v", bRows)
 		}
 	})
 }

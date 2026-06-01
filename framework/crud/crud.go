@@ -100,7 +100,7 @@ func (ch *CrudHandler) ApplyTenantScope(qb *query.QueryBuilder, r *http.Request)
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			qb.Where(query.QuoteIdent(query.MustIdent(ch.Entity.Config.TenantColumn()))+" = $1", tenantID)
+			qb.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
 		}
 	}
 }
@@ -111,7 +111,7 @@ func (ch *CrudHandler) ApplyTenantScopeCount(cb *query.CountBuilder, r *http.Req
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			cb.Where(query.QuoteIdent(query.MustIdent(ch.Entity.Config.TenantColumn()))+" = $1", tenantID)
+			cb.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
 		}
 	}
 }
@@ -122,7 +122,7 @@ func (ch *CrudHandler) ApplyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.R
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			ub.Where(query.QuoteIdent(query.MustIdent(ch.Entity.Config.TenantColumn()))+" = $1", tenantID)
+			ub.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
 		}
 	}
 }
@@ -133,7 +133,7 @@ func (ch *CrudHandler) ApplyTenantScopeDelete(db *query.DeleteBuilder, r *http.R
 	if ch.Entity.Config.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			db.Where(query.QuoteIdent(query.MustIdent(ch.Entity.Config.TenantColumn()))+" = $1", tenantID)
+			db.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
 		}
 	}
 }

@@ -36,11 +36,16 @@ func DefaultTenantConfig() TenantConfig {
 	}
 }
 
-// WithMultiTenant configures an entity for multi-tenancy.
-// Sets the MultiTenant flag on the entity config and stores the tenant config
-// in the entity metadata.
+// WithMultiTenant configures an entity for multi-tenancy. It honors a custom
+// tenant column: TenantConfig.Field flows into EntityConfig.TenantField, the
+// single source of the column name used by entity injection, auto-migrate, and
+// the CRUD insert/scope/filter paths. A blank or default "tenant_id" leaves
+// TenantField unset (the default applies).
 func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	ent.Config.MultiTenant = true
+	if config.Field != "" && config.Field != "tenant_id" {
+		ent.Config.TenantField = config.Field
+	}
 	return ent
 }
 
@@ -51,6 +56,11 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 // that genuinely want cross-tenant queries (admin tooling) must construct
 // them with the tenant filter disabled deliberately, not by handing in
 // an empty string here.
+//
+// This standalone helper always uses the default "tenant_id" column. For an
+// entity with a custom EntityConfig.TenantField, the CRUD auto-scope
+// (CrudHandler.ApplyTenantScope*) already filters by the right column — use
+// that rather than this helper, which has no entity context.
 func ApplyTenantFilter(builder *query.QueryBuilder, tenantID string) {
 	if tenantID == "" {
 		// Fail-closed: a missing tenant scopes the query to a tenant
@@ -104,7 +114,9 @@ func GetTenantID(ctx context.Context) string {
 
 // InjectTenantID automatically injects the tenant_id field into a data map
 // before insert/update operations. This ensures records are associated with
-// the current tenant from the context.
+// the current tenant from the context. Like ApplyTenantFilter, it uses the
+// default "tenant_id" column; entities with a custom EntityConfig.TenantField
+// are handled by the CRUD layer (CrudHandler.InjectTenant), not this helper.
 func InjectTenantID(data map[string]any, ctx context.Context) {
 	tenantID := GetTenantID(ctx)
 	if tenantID != "" {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -215,6 +216,14 @@ func Define(name string, config EntityConfig) *Entity {
 	// bodies and API responses — the framework manages its value.
 	if config.MultiTenant {
 		tenantCol := config.TenantColumn()
+		// Validate the tenant column name once, here, so a misconfigured
+		// TenantField fails loud at definition with an actionable message —
+		// rather than as an opaque "unsafe SQL identifier" panic on the first
+		// tenant-scoped request, where the column name is interpolated into the
+		// WHERE clause.
+		if _, err := query.SafeIdent(tenantCol); err != nil {
+			panic(fmt.Sprintf("entity %q: TenantField %q is not a valid SQL identifier: %v", name, tenantCol, err))
+		}
 		hasTenantID := false
 		for _, f := range config.Fields {
 			if f.Name == tenantCol {
