@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -59,22 +60,43 @@ func runMigrateDiff(args []string) {
 		return
 	}
 
+	destructive := 0
 	fmt.Printf("\n  %s\n\n", bold(fmt.Sprintf("%d change(s):", len(changes))))
 	for _, c := range changes {
-		fmt.Printf("  → %s\n", c.Summary)
+		marker := "→"
+		if c.Destructive {
+			marker = "⚠"
+			destructive++
+		}
+		fmt.Printf("  %s %s\n", marker, c.Summary)
 		for _, line := range strings.Split(strings.TrimSpace(c.SQL), "\n") {
 			fmt.Printf("      %s\n", line)
 		}
 	}
 	fmt.Println()
 
+	if destructive > 0 {
+		fmt.Printf("  %s %d destructive change(s) (⚠) can lose data.\n",
+			yellow("WARNING:"), destructive)
+		if opts.apply && !opts.allowDestructive {
+			info("Re-run with --apply --allow-destructive to execute them.")
+		}
+		fmt.Println()
+	}
+
 	if !opts.apply {
 		info("Re-run with --apply to execute these in a single transaction.")
 		return
 	}
 
-	n, err := framework.ApplySchemaDiff(context.Background(), db, changes)
+	n, err := framework.ApplySchemaDiffWithOptions(context.Background(), db, changes,
+		framework.ApplyOptions{AllowDestructive: opts.allowDestructive})
 	if err != nil {
+		var de *framework.DestructiveChangeError
+		if errors.As(err, &de) {
+			fail("Refused %d destructive change(s); re-run with --allow-destructive to apply.", len(de.Summaries))
+			os.Exit(1)
+		}
 		fail("Apply failed at change %d: %v", n+1, err)
 		os.Exit(1)
 	}
@@ -82,10 +104,11 @@ func runMigrateDiff(args []string) {
 }
 
 type diffOptions struct {
-	dbURL       string
-	driver      string
-	entitiesDir string
-	apply       bool
+	dbURL            string
+	driver           string
+	entitiesDir      string
+	apply            bool
+	allowDestructive bool
 }
 
 func parseDiffOptions(args []string) diffOptions {
@@ -103,6 +126,8 @@ func parseDiffOptions(args []string) diffOptions {
 			opts.entitiesDir = strings.TrimPrefix(arg, "--entities=")
 		case arg == "--apply":
 			opts.apply = true
+		case arg == "--allow-destructive":
+			opts.allowDestructive = true
 		}
 	}
 	if opts.dbURL == "" {

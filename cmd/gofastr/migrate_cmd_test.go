@@ -74,6 +74,56 @@ func TestMigratorFromArgsRunsSQLiteMigration(t *testing.T) {
 	}
 }
 
+// TestMigratorFromArgsForceBaseline covers the `migrate force <V>` code path
+// (migrator construction + Force) without needing the binary on PATH: a force
+// with applied=true must mark the version applied WITHOUT running its Up SQL.
+func TestMigratorFromArgsForceBaseline(t *testing.T) {
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	if err := os.Mkdir(migrationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeMigration(t, migrationsDir, "001_create_posts.sql", 1, "create_posts")
+
+	oldWD, _ := os.Getwd()
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := filepath.Join(dir, "force.db")
+	m, closeDB, err := migratorFromArgs([]string{"--db-url=" + dbPath})
+	if err != nil {
+		t.Fatalf("migratorFromArgs: %v", err)
+	}
+	defer closeDB()
+
+	// Baseline version 1 as applied without running it.
+	if err := m.Force(context.Background(), 1, true); err != nil {
+		t.Fatalf("Force: %v", err)
+	}
+	status, err := m.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Applied) != 1 || len(status.Pending) != 0 {
+		t.Fatalf("after baseline, status = %#v", status)
+	}
+	// The Up SQL (CREATE TABLE posts) must NOT have run.
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='posts'").Scan(&n); err != nil {
+		t.Fatalf("check posts table: %v", err)
+	}
+	if n != 0 {
+		t.Fatal("Force baseline ran the Up SQL — it must only record state")
+	}
+}
+
 func writeMigration(t *testing.T, dir, name string, version int, migrationName string) {
 	t.Helper()
 	content := `-- +migrate Version ` + strconv.Itoa(version) + `

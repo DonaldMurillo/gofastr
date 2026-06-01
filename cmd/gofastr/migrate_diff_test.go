@@ -116,3 +116,64 @@ func TestMigrateDiff_ApplyExecutesChanges(t *testing.T) {
 		t.Fatalf("post-apply insert: %v", err)
 	}
 }
+
+// TestMigrateDiff_RefusesDestructiveByDefault runs `migrate diff --apply`
+// against a live DB with an extra column the entity no longer declares. The
+// default must refuse the DROP and leave the column intact; --allow-destructive
+// must then drop it.
+func TestMigrateDiff_RefusesDestructiveByDefault(t *testing.T) {
+	bin, err := exec.LookPath("gofastr")
+	if err != nil {
+		t.Skip("gofastr binary not on PATH")
+	}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "live.db")
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// Live table has a legacy column the entity won't declare.
+	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, legacy TEXT)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	db.Close()
+
+	entDir := filepath.Join(dir, "entities")
+	_ = os.MkdirAll(entDir, 0o755)
+	_ = os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(`{
+		"name":"posts","table":"posts",
+		"fields":[{"name":"title","type":"string","required":true}]
+	}`), 0o644)
+
+	// Default --apply: must refuse and exit non-zero.
+	cmd := exec.Command(bin, "migrate", "diff", "--db-url=file:"+dbPath, "--entities=entities", "--apply")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected non-zero exit refusing the destructive change, got:\n%s", out)
+	}
+	if !strings.Contains(string(out), "destructive") {
+		t.Fatalf("expected a destructive-refusal message, got:\n%s", out)
+	}
+	// Column must still be there.
+	db2, _ := sql.Open("sqlite3", dbPath)
+	var n int
+	_ = db2.QueryRow("SELECT COUNT(*) FROM pragma_table_info('posts') WHERE name='legacy'").Scan(&n)
+	db2.Close()
+	if n != 1 {
+		t.Fatalf("legacy column should survive the refused apply, found %d", n)
+	}
+
+	// --allow-destructive: now it drops.
+	cmd2 := exec.Command(bin, "migrate", "diff", "--db-url=file:"+dbPath, "--entities=entities", "--apply", "--allow-destructive")
+	cmd2.Dir = dir
+	if out, err := cmd2.CombinedOutput(); err != nil {
+		t.Fatalf("allow-destructive apply failed: %v\n%s", err, out)
+	}
+	db3, _ := sql.Open("sqlite3", dbPath)
+	defer db3.Close()
+	_ = db3.QueryRow("SELECT COUNT(*) FROM pragma_table_info('posts') WHERE name='legacy'").Scan(&n)
+	if n != 0 {
+		t.Fatal("legacy column should be dropped after --allow-destructive")
+	}
+}

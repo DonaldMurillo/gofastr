@@ -29,16 +29,83 @@ func runMigrate(args []string) {
 		runMigrateStatus(args[1:])
 	case "diff":
 		runMigrateDiff(args[1:])
+	case "generate":
+		runMigrateGenerate(args[1:])
+	case "force":
+		runMigrateForce(args[1:])
 	default:
 		fail("Unknown migrate subcommand: %q", subcmd)
-		info("Available: up, down, status, diff")
-		info("Usage: gofastr migrate [up|down|status|diff]")
+		info("Available: up, down, status, diff, generate, force")
+		info("Usage: gofastr migrate [up|down|status|diff|generate|force]")
 		os.Exit(1)
 	}
 }
 
+// runMigrateForce reconciles the tracking table by hand — the recovery path out
+// of a dirty state and the baseline path for adopting an existing database.
+//
+//	gofastr migrate force <version> [--not-applied]
+//
+// By default the version is marked cleanly applied (clearing any dirty flag and
+// recording a baseline without running its Up SQL). With --not-applied the
+// version is removed from the tracking table so it becomes pending again.
+func runMigrateForce(args []string) {
+	applied := true
+	var version uint64
+	haveVersion := false
+	for _, a := range args {
+		switch {
+		case a == "--not-applied":
+			applied = false
+		case strings.HasPrefix(a, "--"):
+			// flag consumed elsewhere (e.g. --db-url) — skip
+		default:
+			if _, err := fmt.Sscanf(a, "%d", &version); err == nil {
+				haveVersion = true
+			}
+		}
+	}
+	if !haveVersion {
+		fail("Usage: gofastr migrate force <version> [--not-applied]")
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n  %s\n\n", bold(fmt.Sprintf("Forcing migration %d → applied=%t...", version, applied)))
+
+	migrator, closeDB, err := migratorFromArgs(args)
+	if err != nil {
+		fail("%v", err)
+		os.Exit(1)
+	}
+	defer closeDB()
+
+	if err := migrator.Force(context.Background(), version, applied); err != nil {
+		fail("Force failed: %v", err)
+		os.Exit(1)
+	}
+	success("Tracking table reconciled for version %d", version)
+}
+
 func runMigrateUp(args []string) {
 	fmt.Printf("\n  %s\n\n", bold("Running migrations..."))
+
+	// --create-db: create the target database first if it doesn't exist.
+	if hasFlag(args, "--create-db") {
+		driver := getMigrateDriver(args)
+		dbURL := getMigrateDBURL(args)
+		if err := ensureDriverRegistered(driver); err != nil {
+			fail("%v", err)
+			os.Exit(1)
+		}
+		created, err := migrate.EnsureDatabase(driver, dbURL)
+		if err != nil {
+			fail("Could not ensure database exists: %v", err)
+			os.Exit(1)
+		}
+		if created {
+			success("Created database")
+		}
+	}
 
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
@@ -99,6 +166,12 @@ func runMigrateStatus(args []string) {
 	fmt.Printf("    Pending: %d\n", len(status.Pending))
 	for _, pending := range status.Pending {
 		fmt.Printf("    %s %d %s\n", yellow("→"), pending.Version, pending.Name)
+	}
+	for _, rec := range status.Applied {
+		if rec.Dirty {
+			fmt.Printf("    %s %d %s — DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
+				yellow("⚠"), rec.Version, rec.Name, rec.Version)
+		}
 	}
 }
 
@@ -188,6 +261,15 @@ func ensureDriverRegistered(driver string) error {
 		}
 	}
 	return fmt.Errorf("driver %q is not registered (available: %v) — build a gofastr CLI that blank-imports the driver you need (e.g. _ \"github.com/lib/pq\")", driver, sql.Drivers())
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func getMigrateDriver(args []string) string {
