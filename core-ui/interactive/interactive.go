@@ -158,6 +158,48 @@ func OnSubmit(html render.HTML, action Action) render.HTML {
 	return wrapWithAction(html, action)
 }
 
+// ─── Client-side signal mutations (no RPC) ──────────────────────────
+//
+// These mutate signals purely in the browser — no server round-trip.
+// Use for counters, toggles, tabs, and other local-only state.
+
+// SetLocal wraps an HTML element so clicking it sets a signal to a
+// fixed value. No RPC is fired — the update is instant.
+func SetLocal(html render.HTML, signalName, value string) render.HTML {
+	return injectAttr(html, "data-fui-signal-set", signalName+":"+value)
+}
+
+// IncLocal wraps an HTML element so clicking it increments a numeric
+// signal by delta (default 1). No RPC is fired.
+func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
+	val := signalName
+	if delta != 1 {
+		val = fmt.Sprintf("%s:%d", signalName, delta)
+	}
+	return injectAttr(html, "data-fui-signal-inc", val)
+}
+
+// ToggleLocal wraps an HTML element so clicking it toggles a boolean
+// signal. No RPC is fired.
+func ToggleLocal(html render.HTML, signalName string) render.HTML {
+	return injectAttr(html, "data-fui-signal-toggle", signalName)
+}
+
+// injectAttr adds a single data-fui-* attribute to the first HTML tag.
+func injectAttr(html render.HTML, key, value string) render.HTML {
+	s := string(html)
+	a := render.Attr(key, value)
+	if a == "" {
+		return html
+	}
+	idx := findUnquotedClose(s)
+	if idx == -1 {
+		return html
+	}
+	return render.HTML(s[:idx] + " " + a + s[idx:])
+}
+
+
 // wrapWithAction merges action attributes into the first opening HTML tag.
 func wrapWithAction(html render.HTML, action Action) render.HTML {
 	attrs := action.attrs()

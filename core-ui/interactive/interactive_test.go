@@ -248,3 +248,50 @@ func TestSetSignalValidation(t *testing.T) {
 	}()
 	SetSignal(`bad"name`)
 }
+
+// ─── Client-side signal mutation tests ────────────────────────────────
+
+func TestSetLocal(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Set"))
+	result := SetLocal(btn, "tab", "settings")
+	if !strings.Contains(string(result), `data-fui-signal-set="tab:settings"`) {
+		t.Fatalf("SetLocal missing attribute: %s", result)
+	}
+	if strings.Contains(string(result), "data-fui-rpc") {
+		t.Fatal("SetLocal should not emit data-fui-rpc")
+	}
+}
+
+func TestIncLocal(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("+"))
+	result := IncLocal(btn, "count", 1)
+	if !strings.Contains(string(result), `data-fui-signal-inc="count"`) {
+		t.Fatalf("IncLocal(delta=1) missing attribute: %s", result)
+	}
+}
+
+func TestIncLocalWithDelta(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("-"))
+	result := IncLocal(btn, "count", -1)
+	if !strings.Contains(string(result), `data-fui-signal-inc="count:-1"`) {
+		t.Fatalf("IncLocal(delta=-1) missing attribute: %s", result)
+	}
+}
+
+func TestToggleLocal(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Toggle"))
+	result := ToggleLocal(btn, "dark-mode")
+	if !strings.Contains(string(result), `data-fui-signal-toggle="dark-mode"`) {
+		t.Fatalf("ToggleLocal missing attribute: %s", result)
+	}
+	if strings.Contains(string(result), "data-fui-rpc") {
+		t.Fatal("ToggleLocal should not emit data-fui-rpc")
+	}
+}
+
+func TestSetLocalOnEmptyHTML(t *testing.T) {
+	result := SetLocal(render.HTML(""), "x", "y")
+	if result != "" {
+		t.Fatalf("empty HTML should stay empty: %q", result)
+	}
+}

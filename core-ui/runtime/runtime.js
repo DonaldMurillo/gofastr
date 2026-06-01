@@ -271,6 +271,38 @@
     document.addEventListener('click', async (e) => {
       // Skip if inside a widget — that widget's handler owns the click.
       if (e.target.closest('[data-fui-widget]')) return;
+      // Client-side signal mutations — no RPC needed.
+      // Lightweight local state changes (counters, toggles, tabs).
+      const signalEl = e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]');
+      if (signalEl) {
+        e.preventDefault();
+        const G = window.__gofastr;
+        // Set: data-fui-signal-set="name:value"
+        const set = signalEl.getAttribute('data-fui-signal-set');
+        if (set) {
+          const sep = set.indexOf(':');
+          if (sep > 0) {
+            G.setSignal(set.substring(0, sep), set.substring(sep + 1));
+          }
+        }
+        // Increment: data-fui-signal-inc="name" or data-fui-signal-inc="name:delta"
+        const inc = signalEl.getAttribute('data-fui-signal-inc');
+        if (inc) {
+          const sep = inc.indexOf(':');
+          const n = sep > 0 ? inc.substring(0, sep) : inc;
+          const delta = sep > 0 ? Number(inc.substring(sep + 1)) : 1;
+          const cur = Number(G.getSignal(n)) || 0;
+          G.setSignal(n, cur + delta);
+        }
+        // Toggle: data-fui-signal-toggle="name"
+        const tog = signalEl.getAttribute('data-fui-signal-toggle');
+        if (tog) {
+          const cur = G.getSignal(tog);
+          G.setSignal(tog, !cur || cur === 'false' || cur === '0');
+        }
+        return;
+      }
+
       const btn = e.target.closest('[data-fui-rpc]');
       if (btn && btn.tagName !== 'FORM') {
         e.preventDefault();
@@ -821,6 +853,14 @@
         twice with the same name is a no-op. */
     _widgets: {},
     _signals: {},
+
+    /** Read the current value of a named signal. Returns undefined for
+        unset signals. Used by data-fui-signal-inc and data-fui-signal-toggle
+        to read-modify-write without an RPC round-trip. */
+    getSignal(name) {
+      const s = this._signals[name];
+      return s ? s.value : undefined;
+    },
 
     /** Names of currently-mounted modal (backdrop'd) widgets, oldest
         at index 0. Drives body-scroll lock + the Tab focus trap so a
