@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"github.com/chromedp/chromedp"
 )
 
 // ─── Test 1: SSE fires ready event on connect ──────────────────────────────
@@ -375,47 +377,119 @@ func TestLivereloadBuildIDConsistentAcrossClients(t *testing.T) {
 		t.Fatal("build ID is empty")
 	}
 }
+// TestLivereloadSameBuildIDDoesNotReload proves that an SSE reconnection
+// to the same server (same build ID) does NOT trigger location.reload().
+func TestLivereloadSameBuildIDDoesNotReload(t *testing.T) {
+	if testing.Short() {
+		t.Skip("needs headless Chrome")
+	}
 
-// ─── Build-ID gating tests ────────────────────────────────────────────
+	const testBuildID = "same-build-id-42"
+	sseConns := make(chan struct{}, 2)
+	var sseCancel context.CancelFunc
 
-// TestLivereloadClientOnlyReloadsOnBuildIDChange proves the livereload
-// client script only calls location.reload() when the build ID changes,
-// not on every SSE reconnection. This is critical: a transient network
-// blip or proxy timeout must NOT destroy the user's page state.
-//
-// We test this by running the client JS in a headless browser against
-// a test server that simulates a reconnect WITHOUT changing the build ID.
-func TestLivereloadClientOnlyReloadsOnBuildIDChange(t *testing.T) {
-	restore := dev.SetHeartbeatIntervalForTest(t, 100*time.Millisecond)
-	defer restore()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/__livereload", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		fl, _ := w.(http.Flusher)
+		fmt.Fprintf(w, "event: ready\ndata: %s\n\n", testBuildID)
+		fl.Flush()
+		ctx, cancel := context.WithCancel(req.Context())
+		sseCancel = cancel
+		sseConns <- struct{}{}
+		<-ctx.Done()
+	})
 
-	r := router.New()
-	dev.RegisterLiveReload(r)
-	srv := httptest.NewServer(r)
+	// Fetch the real livereload client JS from the dev package.
+	scriptRouter := router.New()
+	dev.RegisterLiveReload(scriptRouter)
+	scriptSrv := httptest.NewServer(scriptRouter)
+	defer scriptSrv.Close()
+	scriptResp, _ := http.Get(scriptSrv.URL + dev.LiveReloadScriptURL)
+	scriptBody, _ := io.ReadAll(scriptResp.Body)
+	scriptResp.Body.Close()
+
+	mux.HandleFunc("/__livereload.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(scriptBody)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!DOCTYPE html>
+<html><head>
+<script>
+window.__reloadCalled = false;
+location.reload = function() { window.__reloadCalled = true; };
+</script>
+<script src="/__livereload.js"></script>
+</head><body><h1>test</h1></body></html>`)
+	})
+
+	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	// Fetch the livereload client script.
-	scriptURL := srv.URL + dev.LiveReloadScriptURL
-	resp, err := http.Get(scriptURL)
-	if err != nil {
-		t.Fatalf("get script: %v", err)
-	}
-	scriptBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	defer browserCancel()
+	ctx, cancel := context.WithTimeout(browserCtx, 30*time.Second)
+	defer cancel()
 
-	// The script should reference "ready" event (not "message" or "open").
-	script := string(scriptBody)
-	if !strings.Contains(script, "ready") {
-		t.Fatalf("client script doesn't listen for 'ready' event:\n%s", script)
+	// Load page.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitReady("h1", chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
 	}
-	if strings.Contains(script, "addEventListener('open'") {
-		t.Fatal("client script uses 'open' event — should use 'ready' with build ID comparison")
+
+	// Wait for first SSE connection.
+	select {
+	case <-sseConns:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first SSE connection never arrived")
 	}
-	if !strings.Contains(script, "lastBuildId") {
-		t.Fatal("client script doesn't compare build IDs — will reload on any reconnect")
+
+	var reloadCalled bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__reloadCalled`, &reloadCalled),
+	); err != nil {
+		t.Fatalf("check initial: %v", err)
+	}
+	if reloadCalled {
+		t.Fatal("location.reload() called on initial SSE connect")
+	}
+
+	// Force the SSE connection to drop by cancelling its context.
+	// The EventSource will auto-reconnect to the same server, same build ID.
+	sseCancel()
+
+	// Wait for the reconnect.
+	select {
+	case <-sseConns:
+	case <-time.After(5 * time.Second):
+		t.Fatal("second SSE connection (reconnect) never arrived")
+	}
+
+	// Give the client a moment to process the ready event.
+	time.Sleep(500 * time.Millisecond)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__reloadCalled`, &reloadCalled),
+	); err != nil {
+		t.Fatalf("check after reconnect: %v", err)
+	}
+	if reloadCalled {
+		t.Fatal("location.reload() was called on same-build-ID reconnect — client is not gating on build ID")
 	}
 }
-
 // ─── Resilience tests ──────────────────────────────────────────────────
 
 // TestReloadChannelDebounces proves the reload channel's non-blocking
