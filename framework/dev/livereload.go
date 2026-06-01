@@ -174,20 +174,24 @@ func SetHeartbeatIntervalForTest(_ interface{ Helper() }, d time.Duration) func(
 
 // liveReloadJS — SSE-based change detection.
 //
-// The browser opens a single EventSource. The server fires one "ready" event
-// on connect and then idles. EventSource transparently reconnects when the
-// connection drops (server restart), so the second `onopen` is the reload
-// signal. No polling; one persistent connection per tab.
+// The browser opens a single EventSource. The server sends a "ready" event
+// with a build ID (unique per server process). On reconnection (server
+// restarted after rebuild), the client compares the new build ID against
+// the stored one. Only a changed build ID triggers location.reload().
+// Transient reconnects (network blip, proxy timeout) produce the same
+// build ID → no reload → no lost page state.
 const liveReloadJS = `(() => {
-  let everConnected = false;
+  let lastBuildId = null;
   const connect = () => {
     const es = new EventSource('/__livereload');
-    es.addEventListener('open', () => {
-      if (everConnected) {
-        location.reload();
-        return;
+    es.addEventListener('ready', (e) => {
+      if (e.data && e.data !== lastBuildId) {
+        if (lastBuildId !== null) {
+          location.reload();
+          return;
+        }
+        lastBuildId = e.data;
       }
-      everConnected = true;
     });
     es.addEventListener('error', () => {});
   };

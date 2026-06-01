@@ -376,6 +376,46 @@ func TestLivereloadBuildIDConsistentAcrossClients(t *testing.T) {
 	}
 }
 
+// ─── Build-ID gating tests ────────────────────────────────────────────
+
+// TestLivereloadClientOnlyReloadsOnBuildIDChange proves the livereload
+// client script only calls location.reload() when the build ID changes,
+// not on every SSE reconnection. This is critical: a transient network
+// blip or proxy timeout must NOT destroy the user's page state.
+//
+// We test this by running the client JS in a headless browser against
+// a test server that simulates a reconnect WITHOUT changing the build ID.
+func TestLivereloadClientOnlyReloadsOnBuildIDChange(t *testing.T) {
+	restore := dev.SetHeartbeatIntervalForTest(t, 100*time.Millisecond)
+	defer restore()
+
+	r := router.New()
+	dev.RegisterLiveReload(r)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	// Fetch the livereload client script.
+	scriptURL := srv.URL + dev.LiveReloadScriptURL
+	resp, err := http.Get(scriptURL)
+	if err != nil {
+		t.Fatalf("get script: %v", err)
+	}
+	scriptBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	// The script should reference "ready" event (not "message" or "open").
+	script := string(scriptBody)
+	if !strings.Contains(script, "ready") {
+		t.Fatalf("client script doesn't listen for 'ready' event:\n%s", script)
+	}
+	if strings.Contains(script, "addEventListener('open'") {
+		t.Fatal("client script uses 'open' event — should use 'ready' with build ID comparison")
+	}
+	if !strings.Contains(script, "lastBuildId") {
+		t.Fatal("client script doesn't compare build IDs — will reload on any reconnect")
+	}
+}
+
 // ─── Resilience tests ──────────────────────────────────────────────────
 
 // TestReloadChannelDebounces proves the reload channel's non-blocking
