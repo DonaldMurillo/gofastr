@@ -24,7 +24,7 @@ type TestApp struct {
 // behaviour silently does nothing under the harness (Init never fires).
 // Idempotent guard inside InitPlugins makes this safe even if Start is
 // called later by the same test.
-func TestHarness(t *testing.T, app *App) *TestApp {
+func TestHarness(t testing.TB, app *App) *TestApp {
 	t.Helper()
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("TestHarness: InitPlugins: %v", err)
@@ -90,7 +90,9 @@ func (ta *TestApp) doRequest(method, path string, body any, headers map[string]s
 }
 
 // Close is a no-op for in-memory testing (provided for API consistency).
-func (ta *TestApp) Close() {}
+func (ta *TestApp) Close() {
+	_ = ta // no live resources to release under the in-memory harness
+}
 
 // ---------------------------------------------------------------------------
 // TestRequest — builder for custom requests
@@ -145,7 +147,7 @@ type TestResponse struct {
 }
 
 // AssertStatus asserts the HTTP status code. Chainable.
-func (tr *TestResponse) AssertStatus(t *testing.T, expected int) *TestResponse {
+func (tr *TestResponse) AssertStatus(t testing.TB, expected int) *TestResponse {
 	t.Helper()
 	if tr.err != nil {
 		t.Fatalf("request creation error: %v", tr.err)
@@ -158,7 +160,7 @@ func (tr *TestResponse) AssertStatus(t *testing.T, expected int) *TestResponse {
 
 // AssertJSON asserts the response body equals expected after JSON normalisation.
 // Compares decoded values (not raw strings) so key order and number types don't matter.
-func (tr *TestResponse) AssertJSON(t *testing.T, expected any) *TestResponse {
+func (tr *TestResponse) AssertJSON(t testing.TB, expected any) *TestResponse {
 	t.Helper()
 	if tr.err != nil {
 		t.Fatalf("request creation error: %v", tr.err)
@@ -186,7 +188,7 @@ func (tr *TestResponse) AssertJSON(t *testing.T, expected any) *TestResponse {
 }
 
 // AssertHeader asserts a response header value. Chainable.
-func (tr *TestResponse) AssertHeader(t *testing.T, key, expected string) *TestResponse {
+func (tr *TestResponse) AssertHeader(t testing.TB, key, expected string) *TestResponse {
 	t.Helper()
 	actual := tr.recorder.Header().Get(key)
 	if actual != expected {
@@ -196,7 +198,7 @@ func (tr *TestResponse) AssertHeader(t *testing.T, key, expected string) *TestRe
 }
 
 // AssertBodyContains asserts the body contains the given substring.
-func (tr *TestResponse) AssertBodyContains(t *testing.T, substr string) *TestResponse {
+func (tr *TestResponse) AssertBodyContains(t testing.TB, substr string) *TestResponse {
 	t.Helper()
 	if !bytes.Contains(tr.recorder.Body.Bytes(), []byte(substr)) {
 		t.Fatalf("expected body to contain %q, got: %s", substr, tr.recorder.Body.String())
@@ -226,4 +228,6 @@ func (tr *TestResponse) Status() int {
 }
 
 // Close is a no-op (API consistency).
-func (tr *TestResponse) Close() {}
+func (tr *TestResponse) Close() {
+	_ = tr // no live resources to release; the recorder is in-memory
+}
