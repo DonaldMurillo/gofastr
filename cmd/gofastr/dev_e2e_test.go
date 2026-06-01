@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -92,16 +93,20 @@ func (h *devHarness) start() {
 	cmd.Env = append(os.Environ(), "PORT=localhost:"+h.port)
 	cmd.Stdout = &h.output
 	cmd.Stderr = &h.output
+	// Set process group so we can kill the entire tree (gofastr dev + child server).
+	// Without this, SIGKILL on gofastr dev leaves the child server as an orphan.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	h.cmd = cmd
 
 	if err := cmd.Start(); err != nil {
 		h.t.Fatalf("start gofastr dev: %v", err)
 	}
+	pid := cmd.Process.Pid
 	h.t.Cleanup(func() {
 		cancel()
-		if h.cmd.Process != nil {
-			h.cmd.Process.Kill()
-		}
+		// Kill the entire process group (gofastr dev + child server).
+		syscall.Kill(-pid, syscall.SIGKILL)
+		cmd.Wait()
 	})
 
 	h.waitForServer(60 * time.Second)

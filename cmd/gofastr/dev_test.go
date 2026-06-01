@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveDevIsolationRemapsAddrAndChildEnv(t *testing.T) {
@@ -296,8 +297,11 @@ func TestChangedDetectsModifiedFile(t *testing.T) {
 	dir := t.TempDir()
 	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
 	prev := scanModTimes(dir)
-	// Modify the file (ensure different mtime by waiting briefly)
+	// Modify the file. Use os.Chtimes to force a different mtime,
+	// avoiding flakiness on filesystems with coarse mtime granularity.
 	writeDevFile(t, filepath.Join(dir, "main.go"), "package main // modified")
+	future := time.Now().Add(time.Second)
+	os.Chtimes(filepath.Join(dir, "main.go"), future, future)
 	curr := scanModTimes(dir)
 	if !changed(prev, curr) {
 		t.Fatal("changed() = false, want true after modifying a file")

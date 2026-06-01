@@ -385,8 +385,14 @@ func TestLivereloadSameBuildIDDoesNotReload(t *testing.T) {
 	}
 
 	const testBuildID = "same-build-id-42"
-	sseConns := make(chan struct{}, 2)
-	var sseCancel context.CancelFunc
+
+	// Channel-based protocol: the SSE handler signals connection, and
+	// the test signals disconnect. No shared mutable state, no races.
+	type sseConn struct {
+		cancel context.CancelFunc
+	}
+	sseConnected := make(chan sseConn, 2)
+	disconnect := make(chan struct{}, 1)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__livereload", func(w http.ResponseWriter, req *http.Request) {
@@ -396,9 +402,12 @@ func TestLivereloadSameBuildIDDoesNotReload(t *testing.T) {
 		fmt.Fprintf(w, "event: ready\ndata: %s\n\n", testBuildID)
 		fl.Flush()
 		ctx, cancel := context.WithCancel(req.Context())
-		sseCancel = cancel
-		sseConns <- struct{}{}
-		<-ctx.Done()
+		sseConnected <- sseConn{cancel: cancel}
+		select {
+		case <-ctx.Done():
+		case <-disconnect:
+			cancel()
+		}
 	})
 
 	// Fetch the real livereload client JS from the dev package.
@@ -417,13 +426,27 @@ func TestLivereloadSameBuildIDDoesNotReload(t *testing.T) {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+		// The page monkey-patches location.reload AND instruments the
+		// EventSource to record how many 'ready' events it received.
 		fmt.Fprint(w, `<!DOCTYPE html>
 <html><head>
 <script>
 window.__reloadCalled = false;
+window.__readyCount = 0;
 location.reload = function() { window.__reloadCalled = true; };
 </script>
 <script src="/__livereload.js"></script>
+<script>
+// Patch the EventSource to count ready events after the client script loaded.
+(function() {
+  var orig = window.EventSource;
+  window.EventSource = function(url, opts) {
+    var es = new orig(url, opts);
+    es.addEventListener('ready', function() { window.__readyCount++; });
+    return es;
+  };
+})();
+</script>
 </head><body><h1>test</h1></body></html>`)
 	})
 
@@ -451,10 +474,18 @@ location.reload = function() { window.__reloadCalled = true; };
 	}
 
 	// Wait for first SSE connection.
-	select {
-	case <-sseConns:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first SSE connection never arrived")
+	conn1 := <-sseConnected
+
+	// Wait for the JS to have processed the first ready event.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var readyCount int64
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`window.__readyCount`, &readyCount),
+		); err == nil && readyCount >= 1 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	var reloadCalled bool
@@ -467,27 +498,41 @@ location.reload = function() { window.__reloadCalled = true; };
 		t.Fatal("location.reload() called on initial SSE connect")
 	}
 
-	// Force the SSE connection to drop by cancelling its context.
-	// The EventSource will auto-reconnect to the same server, same build ID.
-	sseCancel()
+	// Force the SSE connection to drop. The EventSource will reconnect.
+	conn1.cancel()
 
-	// Wait for the reconnect.
-	select {
-	case <-sseConns:
-	case <-time.After(5 * time.Second):
-		t.Fatal("second SSE connection (reconnect) never arrived")
+	// Wait for the second SSE connection (reconnect).
+	conn2 := <-sseConnected
+	defer conn2.cancel()
+
+	// Wait for the JS to have processed the SECOND ready event.
+	// This is the critical point: the client received the same build ID,
+	// so it should NOT call location.reload(). But we must wait for the
+	// JS event handler to actually fire before checking.
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var readyCount int64
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`window.__readyCount`, &readyCount),
+		); err == nil && readyCount >= 2 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Give the client a moment to process the ready event.
-	time.Sleep(500 * time.Millisecond)
-
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`window.__reloadCalled`, &reloadCalled),
-	); err != nil {
-		t.Fatalf("check after reconnect: %v", err)
-	}
-	if reloadCalled {
-		t.Fatal("location.reload() was called on same-build-ID reconnect — client is not gating on build ID")
+	// Now poll for reloadCalled over a window to catch delayed reloads.
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`window.__reloadCalled`, &reloadCalled),
+		); err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if reloadCalled {
+			t.Fatal("location.reload() was called on same-build-ID reconnect — client is not gating on build ID")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 // ─── Resilience tests ──────────────────────────────────────────────────
