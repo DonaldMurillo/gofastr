@@ -88,29 +88,48 @@ func BaseDSN(t *testing.T) string {
 func DB(t *testing.T) *sql.DB {
 	t.Helper()
 	base := BaseDSN(t)
-	db, err := sql.Open("postgres", base)
+	schema := fmt.Sprintf("pgt_%d_%d", os.Getpid(), schemaSeq.Add(1))
+	// Set search_path via the connection-string `options` so it applies to
+	// EVERY pooled connection — including ones the pool opens after a
+	// ctx-cancel poisons the pinned conn. A session-level `SET search_path`
+	// would be lost on that recycle, silently moving later queries to the
+	// default schema.
+	dsn, err := dsnWithSearchPath(base, schema)
+	if err != nil {
+		t.Skipf("pgtest.DB needs a URL-form base DSN, got %q (%v)", RedactDSN(base), err)
+	}
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatalf("open pg: %v", err)
 	}
-	db.SetMaxOpenConns(1) // advisory-lock + search_path correctness on one conn
+	db.SetMaxOpenConns(1) // advisory-lock correctness on one session
 	if err := ping(db); err != nil {
 		db.Close()
 		t.Fatalf("ping pg: %v", err)
 	}
-	schema := fmt.Sprintf("pgt_%d_%d", os.Getpid(), schemaSeq.Add(1))
 	if _, err := db.Exec("CREATE SCHEMA " + schema); err != nil {
 		db.Close()
 		t.Fatalf("create schema %s: %v", schema, err)
-	}
-	if _, err := db.Exec("SET search_path TO " + schema); err != nil {
-		db.Close()
-		t.Fatalf("set search_path: %v", err)
 	}
 	t.Cleanup(func() {
 		_, _ = db.Exec("DROP SCHEMA " + schema + " CASCADE")
 		db.Close()
 	})
 	return db
+}
+
+func dsnWithSearchPath(base, schema string) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" {
+		return "", fmt.Errorf("not URL-form")
+	}
+	q := u.Query()
+	q.Set("options", "-c search_path="+schema)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // FreshDatabaseDSN creates a uniquely-named database on the shared Postgres
