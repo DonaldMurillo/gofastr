@@ -317,19 +317,15 @@ var componentCatalog = []componentEntry{
 			},
 		})
 	}},
-	{"tabs", "Tabs", "Navigation", "Native <details>-based tabs (zero JS).", func() render.HTML {
-		// patterns/tabs uses Group + Stack; we render a tiny tab strip
-		// using <details> to honor the CSP-friendly pattern.
-		return render.Tag("div", map[string]string{"class": "demo-stack"},
-			render.Tag("details", map[string]string{"open": "true"},
-				render.Tag("summary", nil, render.Text("Tab A")),
-				render.Tag("div", nil, render.Text("Content for tab A.")),
-			),
-			render.Tag("details", nil,
-				render.Tag("summary", nil, render.Text("Tab B")),
-				render.Tag("div", nil, render.Text("Content for tab B.")),
-			),
-		)
+	{"tabs", "Tabs", "Navigation", "Signal-driven tab strip — client-side panel switching with zero JS.", func() render.HTML {
+		return ui.Tabs(ui.TabsConfig{
+			SignalName: "demo-tabs",
+			Tabs: []ui.TabItem{
+				{Label: "Overview", Content: render.Tag("p", nil, render.Text("Clicking tabs switches content without any server round-trip."))},
+				{Label: "Details", Content: render.Tag("p", nil, render.Text("Panels are pre-rendered; the runtime shows/hides them based on a signal."))},
+				{Label: "Settings", Content: render.Tag("p", nil, render.Text("No JavaScript needed — data attributes + CSS attribute selectors."))},
+			},
+		})
 	}},
 
 	// ---------- Disclosure ----------
@@ -361,6 +357,16 @@ var componentCatalog = []componentEntry{
 			trigger,
 			html.Div(html.DivConfig{Class: "fact"},
 				render.Text("ConfirmAction returns a trigger HTML + a modal builder; mount the modal once at app startup via widget.Mount."),
+			),
+		)
+	}},
+	{"collapsible", "Collapsible", "Disclosure", "Expand/collapse section using native <details>.", func() render.HTML {
+		return render.Join(
+			ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
+				render.Tag("p", nil, render.Text("A collapsible section using native <details>. The browser handles open/close — the runtime adds keyboard support via data-fui-disclosure.")),
+			),
+			ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
+				render.Tag("p", nil, render.Text("Yes. Escape to close, aria-expanded mirroring, all handled automatically.")),
 			),
 		)
 	}},
@@ -572,6 +578,9 @@ func main() {
 	{"rating", "Rating", "Data", "Star rating input or display.", func() render.HTML {
 		return ui.RatingInput(ui.RatingConfig{Name: "rating", Label: "Rating", Max: 5, Value: 4})
 	}},
+	{"counter", "Counter", "Data", "Numeric counter with +/− buttons — client-side only.", func() render.HTML {
+		return ui.Counter(ui.CounterConfig{SignalName: "demo-counter"})
+	}},
 
 	// ---------- Charts ----------
 	{"barchart", "BarChart", "Charts", "Vertical bar chart.", func() render.HTML {
@@ -647,7 +656,13 @@ func main() {
 	{"colorpicker", "ColorPicker", "Inputs", "Native swatch picker.", func() render.HTML {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
 	}},
-
+	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle — client-side signal flip, no RPC.", func() render.HTML {
+		row := render.Tag("div", map[string]string{"style": "display:flex;align-items:center;gap:0.75rem"},
+			ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
+			render.Tag("span", map[string]string{"data-fui-signal": "demo-toggle"}, render.Text("false")),
+		)
+		return row
+	}},
 	// ---------- Wizards + cross-cutting affordances ----------
 	// StepWizard/ProgressSteps are Wizards; the rest below are
 	// categorized into their real homes (Navigation/Feedback/Media)
@@ -882,50 +897,6 @@ func main() {
 							btn,
 						),
 					),
-				),
-			)
-		}},
-	// ---------- Client-only Interactive Components ----------
-	// These run entirely in the browser — no server round-trips.
-
-	{"counter", "Counter", "Clientside Interactivity",
-		"A numeric counter that increments and decrements purely in the browser.",
-		func() render.HTML {
-			return ui.Counter(ui.CounterConfig{SignalName: "demo-counter"})
-		}},
-
-	{"tabs", "Tabs", "Clientside Interactivity",
-		"Switch between content panels using signal-driven tabs — no page reload.",
-		func() render.HTML {
-			return ui.Tabs(ui.TabsConfig{
-				SignalName: "demo-tabs",
-				Tabs: []ui.TabItem{
-					{Label: "Overview", Content: render.Tag("p", nil, render.Text("This is the overview panel. Clicking the tabs switches content without any server round-trip."))},
-					{Label: "Details", Content: render.Tag("p", nil, render.Text("Each panel is pre-rendered on the server. The runtime shows/hides them based on the active tab signal."))},
-					{Label: "Settings", Content: render.Tag("p", nil, render.Text("No JavaScript was written for this — it's all data attributes + CSS attribute selectors."))},
-				},
-			})
-		}},
-
-	{"toggle", "Toggle Switch", "Clientside Interactivity",
-		"A boolean toggle that flips state locally — no RPC needed.",
-		func() render.HTML {
-			row := render.Tag("div", map[string]string{"style": "display:flex;align-items:center;gap:0.75rem"},
-				ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
-				render.Tag("span", map[string]string{"data-fui-signal": "demo-toggle"}, render.Text("false")),
-			)
-			return row
-		}},
-
-	{"collapsible", "Collapsible", "Clientside Interactivity",
-		"Expand and collapse content sections — uses native HTML <details>.",
-		func() render.HTML {
-			return render.Join(
-				ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
-					render.Tag("p", nil, render.Text("A collapsible section using the native <details> element. No JavaScript required for basic open/close — the browser handles it.")),
-				),
-				ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
-					render.Tag("p", nil, render.Text("Yes. The runtime adds keyboard support (Escape to close) and aria-expanded mirroring via data-fui-disclosure.")),
 				),
 			)
 		}},
