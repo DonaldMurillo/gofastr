@@ -7,8 +7,16 @@ import "github.com/DonaldMurillo/gofastr/framework/migrate"
 // extraction.
 
 type (
-	Dialect      = migrate.Dialect
-	SchemaChange = migrate.SchemaChange
+	Dialect                = migrate.Dialect
+	SchemaChange           = migrate.SchemaChange
+	ApplyOptions           = migrate.ApplyOptions
+	DestructiveChangeError = migrate.DestructiveChangeError
+	SchemaSnapshot         = migrate.SchemaSnapshot
+	Table                  = migrate.Table
+	Column                 = migrate.Column
+	ForeignKey             = migrate.ForeignKey
+	Routine                = migrate.Routine
+	MigrationPlan          = migrate.Plan
 )
 
 const (
@@ -17,10 +25,20 @@ const (
 )
 
 var (
-	AutoMigrate          = migrate.AutoMigrate
-	MigrateEntity        = migrate.MigrateEntity
-	MigrateEntityDialect = migrate.MigrateEntityDialect
-	DiffSchema           = migrate.DiffSchema
-	ApplySchemaDiff      = migrate.ApplySchemaDiff
-	DetectDialect        = migrate.DetectDialect
+	AutoMigrate                = migrate.AutoMigrate
+	AutoMigrateContext         = migrate.AutoMigrateContext
+	AutoMigratePlanContext     = migrate.AutoMigratePlanContext
+	MigrateEntity              = migrate.MigrateEntity
+	MigrateEntityDialect       = migrate.MigrateEntityDialect
+	DiffSchema                 = migrate.DiffSchema
+	ApplySchemaDiff            = migrate.ApplySchemaDiff
+	ApplySchemaDiffWithOptions = migrate.ApplySchemaDiffWithOptions
+	DetectDialect              = migrate.DetectDialect
+	GenerateMigration          = migrate.GenerateMigration
+	GeneratePlan               = migrate.GeneratePlan
+	SnapshotFromRegistry       = migrate.SnapshotFromRegistry
+	SnapshotFromPlan           = migrate.SnapshotFromPlan
+	RenderMigrationFile        = migrate.RenderMigrationFile
+	LoadSnapshot               = migrate.LoadSnapshot
+	SaveSnapshot               = migrate.SaveSnapshot
 )

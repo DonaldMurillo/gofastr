@@ -46,6 +46,7 @@ type Field struct {
 	Values       []string     // allowed values for Enum
 	To           string       // target entity name for Relation
 	Many         bool         // has-many relation flag
+	RawType      string       // explicit SQL column type, overrides Type→SQL mapping (e.g. "NUMERIC(10,2)", "INET")
 }
 
 // Schema is an ordered collection of Fields with convenience helpers.

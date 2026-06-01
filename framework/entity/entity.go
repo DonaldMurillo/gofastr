@@ -193,6 +193,31 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
+	// Inject tenant_id field if multi-tenancy is enabled and not already
+	// declared. Symmetric with deleted_at: the crud layer injects tenant_id
+	// on writes and scopes reads by it, so the column MUST exist in the
+	// table. Without this, AutoMigrate would create a table with no
+	// tenant_id column and the first create request would fail with a
+	// "no such column" error. Hidden + ReadOnly keeps it out of request
+	// bodies and API responses — the framework manages its value.
+	if config.MultiTenant {
+		hasTenantID := false
+		for _, f := range config.Fields {
+			if f.Name == "tenant_id" {
+				hasTenantID = true
+			}
+		}
+		if !hasTenantID {
+			config.Fields = append(config.Fields, schema.Field{
+				Name:         "tenant_id",
+				Type:         schema.String,
+				AutoGenerate: schema.AutoNone,
+				ReadOnly:     true,
+				Hidden:       true,
+			})
+		}
+	}
+
 	// Inject soft delete field if enabled
 	if config.SoftDelete {
 		hasDeletedAt := false

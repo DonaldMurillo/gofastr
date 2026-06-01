@@ -26,6 +26,32 @@ import (
 type SchemaChange struct {
 	Summary string // e.g. "posts: add column views INTEGER"
 	SQL     string // executable DDL statement
+
+	// Down is the inverse DDL that rolls this change back, used when
+	// generating a reversible versioned migration file. CREATE TABLE → DROP
+	// TABLE, ADD COLUMN → DROP COLUMN, DROP COLUMN → ADD COLUMN (recreates the
+	// column from its previous type; row data is NOT restored). Empty when no
+	// safe inverse is known.
+	Down string
+
+	// Destructive marks a change that can lose data — a DROP COLUMN today
+	// (DROP TABLE in future). ApplySchemaDiff refuses to run destructive
+	// changes unless the caller opts in via ApplySchemaDiffWithOptions, so a
+	// routine `migrate diff --apply` never silently deletes a column. This is
+	// the GORM-style "never drop by default" safety posture.
+	Destructive bool
+}
+
+// DestructiveChangeError is returned by ApplySchemaDiff when the change set
+// contains destructive changes and the caller did not opt in to them. The
+// Summaries list the blocked changes for a human-readable message.
+type DestructiveChangeError struct {
+	Summaries []string
+}
+
+func (e *DestructiveChangeError) Error() string {
+	return fmt.Sprintf("refusing %d destructive change(s) without explicit opt-in: %s",
+		len(e.Summaries), strings.Join(e.Summaries, "; "))
 }
 
 // DiffSchema returns the changes needed to bring db in line with every
@@ -61,12 +87,38 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	return out, nil
 }
 
+// ApplyOptions tunes ApplySchemaDiffWithOptions.
+type ApplyOptions struct {
+	// AllowDestructive permits DROP COLUMN / DROP TABLE changes. When false
+	// (the default), a change set containing any destructive change is
+	// rejected with a *DestructiveChangeError before any DDL runs.
+	AllowDestructive bool
+}
+
 // ApplySchemaDiff applies every change in sequence inside a single
-// transaction and returns the count applied. Aborts on first error,
-// rolling everything back.
+// transaction and returns the count applied. Aborts on first error, rolling
+// everything back. Destructive changes (DROP COLUMN/TABLE) are refused — use
+// ApplySchemaDiffWithOptions with AllowDestructive to opt in.
 func ApplySchemaDiff(ctx context.Context, db *sql.DB, changes []SchemaChange) (int, error) {
+	return ApplySchemaDiffWithOptions(ctx, db, changes, ApplyOptions{})
+}
+
+// ApplySchemaDiffWithOptions is ApplySchemaDiff with a destructive-change
+// opt-in. Everything still runs in a single transaction.
+func ApplySchemaDiffWithOptions(ctx context.Context, db *sql.DB, changes []SchemaChange, opts ApplyOptions) (int, error) {
 	if len(changes) == 0 {
 		return 0, nil
+	}
+	if !opts.AllowDestructive {
+		var blocked []string
+		for _, c := range changes {
+			if c.Destructive {
+				blocked = append(blocked, c.Summary)
+			}
+		}
+		if len(blocked) > 0 {
+			return 0, &DestructiveChangeError{Summaries: blocked}
+		}
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -84,17 +136,6 @@ func ApplySchemaDiff(ctx context.Context, db *sql.DB, changes []SchemaChange) (i
 	return len(changes), nil
 }
 
-// diffEntity diffs one entity against the live schema. If the table doesn't
-// exist at all, returns a single CREATE TABLE change. Otherwise compares
-// columns and emits ADD/DROP fragments.
-func diffEntity(ctx context.Context, db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]SchemaChange, error) {
-	live, err := ReadLiveColumns(ctx, db, ent.GetTable(), dialect)
-	if err != nil {
-		return nil, err
-	}
-	return diffEntityFromLive(ent, all, dialect, live)
-}
-
 func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
 	if len(live) == 0 {
 		// Table missing entirely — emit a CREATE TABLE via the same path
@@ -106,6 +147,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		return []SchemaChange{{
 			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
 			SQL:     ddl,
+			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", ent.GetTable()),
 		}}, nil
 	}
 
@@ -131,6 +173,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		changes = append(changes, SchemaChange{
 			Summary: fmt.Sprintf("%s: add column %s %s", ent.GetName(), f.Name, colType),
 			SQL:     ddl,
+			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ent.GetTable(), f.Name),
 		})
 	}
 
@@ -149,9 +192,17 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 			continue
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ent.GetTable(), name)
+		// Inverse re-adds the column with the type it had in the previous
+		// snapshot. Reversible at the schema level — row data is not restored.
+		downType := live[name]
+		if downType == "" {
+			downType = "TEXT"
+		}
 		changes = append(changes, SchemaChange{
-			Summary: fmt.Sprintf("%s: drop column %s", ent.GetName(), name),
-			SQL:     ddl,
+			Summary:     fmt.Sprintf("%s: drop column %s", ent.GetName(), name),
+			SQL:         ddl,
+			Down:        fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", ent.GetTable(), name, downType),
+			Destructive: true,
 		})
 	}
 

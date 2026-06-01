@@ -81,6 +81,8 @@ type App struct {
 	Plugins  *PluginManager
 	Storage  upload.Storage // optional; enables multipart on Image/File fields
 
+	migrationRoutines []migrate.Routine // stored procedures/functions/views/triggers run on boot
+
 	Batteries *BatteryManager
 
 	serverMu   sync.Mutex   // guards server — Start writes, Shutdown reads/nils
@@ -605,6 +607,31 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
+// Table registers a raw, non-entity table for migration only — no CRUD, no
+// HTTP routes, no validation, no auto-injected columns. The table participates
+// in auto-migrate, diffing, and generation alongside entities (including
+// foreign keys that cross between the two). For users who want migration
+// coverage of a table without the entity machinery. Returns App for chaining.
+func (a *App) Table(t migrate.Table) *App {
+	e := t.ToEntity()
+	if a.DB != nil {
+		e.SetDB(a.DB)
+	}
+	if err := a.Registry.Register(e); err != nil {
+		panic(fmt.Sprintf("framework: failed to register table %q: %v", t.Name, err))
+	}
+	return a
+}
+
+// Routine registers a stored routine (function, procedure, trigger, or view)
+// as a first-class migration object. Its Up runs on every boot (idempotent
+// CREATE OR REPLACE) after tables are migrated, and `migrate generate` tracks
+// it for reversible versioned migrations. Returns App for chaining.
+func (a *App) Routine(r migrate.Routine) *App {
+	a.migrationRoutines = append(a.migrationRoutines, r)
+	return a
+}
+
 // RegisterEntities registers each (name, config) pair via App.Entity in
 // alphabetical-by-name order. Sorting matters: Entity has order-sensitive
 // side effects — router registration, MCP tool list order, OpenAPI tag
@@ -1017,7 +1044,8 @@ func (a *App) Start(addr string) error {
 
 	// Auto-migrate all registered entities
 	if a.DB != nil {
-		if err := migrate.AutoMigrate(a.DB, a.Registry); err != nil {
+		plan := migrate.Plan{Registry: a.Registry, Routines: a.migrationRoutines}
+		if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, plan); err != nil {
 			return abort(fmt.Errorf("auto-migrate: %w", err))
 		}
 		if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {

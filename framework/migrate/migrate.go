@@ -38,34 +38,102 @@ func DetectDialect(db *sql.DB) Dialect {
 	return DialectSQLite
 }
 
-// AutoMigrate creates tables for all registered entities. Entities are
-// migrated in dependency order so FK targets exist before referencing
-// tables. Uses CREATE TABLE IF NOT EXISTS so re-running is safe.
+// execer is the subset of *sql.DB / *sql.Tx the DDL emitter needs. Taking the
+// interface lets AutoMigrate run every entity's DDL inside one transaction
+// (passing the *sql.Tx) while MigrateEntity still works against the raw pool.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// AutoMigrate creates tables for all registered entities. Equivalent to
+// AutoMigrateContext with a background context. See AutoMigrateContext for the
+// full contract (advisory lock + single-transaction atomicity).
 func AutoMigrate(db *sql.DB, registry entity.Registry) error {
-	all := registry.All()
-	ordered, err := topoSortEntities(all)
-	if err != nil {
-		return err
+	return AutoMigrateContext(context.Background(), db, registry)
+}
+
+// AutoMigrateContext creates tables for all registered entities. Entities are
+// migrated in dependency order so FK targets exist before referencing tables,
+// and CREATE TABLE/INDEX IF NOT EXISTS keeps re-runs safe.
+//
+// Two production guarantees beyond the bare DDL:
+//
+//   - Advisory lock. The whole run is serialized by a database advisory lock
+//     (coremig.WithAdvisoryLock), so booting N replicas at once cannot race
+//     two concurrent streams of DDL against the same database. No-op on
+//     SQLite, which serializes writers itself.
+//   - Atomicity. All DDL runs inside one transaction; a failure on entity K
+//     rolls back entities 1..K-1 too, so a botched migration never leaves a
+//     half-created schema behind. Both Postgres and SQLite support
+//     transactional DDL.
+//
+// db == nil is a silent no-op, matching the rest of the boot path.
+func AutoMigrateContext(ctx context.Context, db *sql.DB, registry entity.Registry) error {
+	return AutoMigratePlanContext(ctx, db, Plan{Registry: registry})
+}
+
+// AutoMigratePlanContext is AutoMigrateContext for a full Plan — entity and
+// raw-Table schema PLUS stored routines (functions / procedures / triggers /
+// views). Tables are created first, then each routine's Up runs (idempotent
+// CREATE OR REPLACE), all inside the one advisory-locked transaction so the
+// whole schema converges atomically.
+func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
+	if db == nil {
+		return nil
+	}
+	var ordered []*entity.Entity
+	all := map[string]*entity.Entity{}
+	if plan.Registry != nil {
+		all = plan.Registry.All()
+		var err error
+		ordered, err = topoSortEntities(all)
+		if err != nil {
+			return err
+		}
 	}
 	dialect := DetectDialect(db)
 	existing := map[string]bool{}
-	if dialect == DialectPostgres {
+	if dialect == DialectPostgres && len(ordered) > 0 {
 		tableNames := make([]string, 0, len(ordered))
 		for _, ent := range ordered {
 			tableNames = append(tableNames, ent.GetTable())
 		}
 		var err error
-		existing, err = TableExistsBulk(context.Background(), db, tableNames, dialect)
+		existing, err = TableExistsBulk(ctx, db, tableNames, dialect)
 		if err != nil {
 			return err
 		}
 	}
-	for _, ent := range ordered {
-		if err := migrateEntityWithRegistry(db, ent, all, dialect, existing[ent.GetTable()]); err != nil {
-			return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
+
+	return coremig.WithAdvisoryLock(ctx, db, dialect, func(conn *sql.Conn) error {
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("migrate: begin tx: %w", err)
 		}
-	}
-	return nil
+		// Always roll back on the way out. A no-op after a successful Commit,
+		// but critical on the error AND panic paths: migrateEntity can panic
+		// (e.g. an expression index with no name fails loud), and a leaked open
+		// transaction would wedge the pinned connection when it's returned to
+		// the pool. The deferred rollback runs before WithAdvisoryLock closes
+		// the conn, and the panic still propagates to the caller.
+		defer func() { _ = tx.Rollback() }()
+		for _, ent := range ordered {
+			if err := migrateEntity(ctx, tx, ent, all, dialect, existing[ent.GetTable()]); err != nil {
+				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
+			}
+		}
+		// Routines after tables — a function/trigger/view can reference the
+		// tables just created. CREATE OR REPLACE keeps re-runs idempotent.
+		for _, r := range plan.Routines {
+			if _, err := tx.ExecContext(ctx, r.Up); err != nil {
+				return fmt.Errorf("migrate routine %s: %w", r.Name, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("migrate: commit: %w", err)
+		}
+		return nil
+	})
 }
 
 // MigrateEntity creates the table for a single entity if it doesn't exist.
@@ -73,19 +141,20 @@ func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 // callers that need foreign keys should call AutoMigrate. The dialect is
 // auto-detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
-	return migrateEntityWithRegistry(db, ent, nil, DetectDialect(db), false)
+	return migrateEntity(context.Background(), db, ent, nil, DetectDialect(db), false)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
-	return migrateEntityWithRegistry(db, ent, nil, dialect, false)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, false)
 }
 
-// migrateEntityWithRegistry is the shared implementation. When `all` is
-// non-nil it is consulted for FK target tables; missing targets return an
-// error before any DDL runs.
-func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, tableExists bool) error {
+// migrateEntity is the shared implementation. When `all` is non-nil it is
+// consulted for FK target tables; missing targets return an error before any
+// DDL runs. exec is either the *sql.DB pool (single-entity callers) or the
+// shared *sql.Tx (AutoMigrate's atomic run).
+func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, tableExists bool) error {
 	fields := ent.GetFields()
 	if len(fields) == 0 {
 		return nil
@@ -126,7 +195,7 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 			strings.Join(columns, ",\n\t"),
 		)
 
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
@@ -139,7 +208,7 @@ func migrateEntityWithRegistry(db *sql.DB, ent *entity.Entity, all map[string]*e
 		if len(idx.Columns) == 0 && idx.Expression == "" {
 			continue
 		}
-		if _, err := db.Exec(indexDDL(safeTable, idx)); err != nil {
+		if _, err := exec.ExecContext(ctx, indexDDL(safeTable, idx)); err != nil {
 			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
 		}
 	}
@@ -267,10 +336,10 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 		if tempMark[name] {
 			return nil // cycle — break it; safe for IF NOT EXISTS DDL
 		}
-		ent, ok := all[name]
-		if !ok {
-			return nil
-		}
+		// name is always present: the outer loop iterates all's keys and every
+		// recursive visit(rel.Entity) is guarded by the all[rel.Entity] check
+		// below, so no membership test is needed here.
+		ent := all[name]
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
 			if rel.Type == entity.RelManyToOne {
@@ -300,6 +369,11 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 // Postgres needs concrete types (TIMESTAMPTZ, REAL, BOOLEAN); SQLite is more
 // permissive but still benefits from explicit declarations.
 func SQLType(f schema.Field, dialect Dialect) string {
+	// An explicit RawType wins — the escape hatch for column types the
+	// FieldType enum doesn't model (NUMERIC(p,s), INET, custom domains, …).
+	if f.RawType != "" {
+		return f.RawType
+	}
 	switch f.Type {
 	case schema.String:
 		if f.Max != nil && *f.Max > 0 {

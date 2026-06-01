@@ -40,10 +40,9 @@ func seedLoggerFromCtx(ctx context.Context) *slog.Logger {
 // ensureSeedLedger creates the _gofastr_seeded tracking table when
 // missing. Mirrors the shape of core/migrate's _migrations table.
 func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
-	safe, err := query.SafeIdent(seedLedgerTable)
-	if err != nil {
-		return fmt.Errorf("seed: invalid ledger table %q: %w", seedLedgerTable, err)
-	}
+	// seedLedgerTable is a compile-time constant valid identifier — MustIdent
+	// (panic on invalid) over SafeIdent avoids an unreachable error branch.
+	safe := query.MustIdent(seedLedgerTable)
 	now := "CURRENT_TIMESTAMP"
 	if dialect == coremig.DialectPostgres {
 		now = "NOW()"
@@ -52,7 +51,7 @@ func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		entity_name TEXT NOT NULL PRIMARY KEY,
 		seeded_at TIMESTAMP NOT NULL DEFAULT %s
 	)`, query.QuoteIdent(safe), now)
-	_, err = db.ExecContext(ctx, ddl)
+	_, err := db.ExecContext(ctx, ddl)
 	return err
 }
 
@@ -60,10 +59,7 @@ func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
 // ledger, in a single round-trip. Avoids the N+1 SELECT-per-entity that
 // dominated boot latency against managed-Postgres deployments.
 func readSeededSet(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
-	safe, err := query.SafeIdent(seedLedgerTable)
-	if err != nil {
-		return nil, err
-	}
+	safe := query.MustIdent(seedLedgerTable)
 	q := fmt.Sprintf("SELECT entity_name FROM %s", query.QuoteIdent(safe))
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
@@ -87,10 +83,7 @@ func readSeededSet(ctx context.Context, db *sql.DB) (map[string]struct{}, error)
 // duplicate-PK path: whichever process inserts second silently no-ops
 // instead of failing App.Start.
 func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string) error {
-	safe, err := query.SafeIdent(seedLedgerTable)
-	if err != nil {
-		return err
-	}
+	safe := query.MustIdent(seedLedgerTable)
 	placeholder := "?"
 	if dialect == coremig.DialectPostgres {
 		placeholder = "$1"
@@ -102,7 +95,7 @@ func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string)
 		"INSERT INTO %s (entity_name) VALUES (%s) ON CONFLICT (entity_name) DO NOTHING",
 		query.QuoteIdent(safe), placeholder,
 	)
-	_, err = db.ExecContext(ctx, q, name)
+	_, err := db.ExecContext(ctx, q, name)
 	return err
 }
 
