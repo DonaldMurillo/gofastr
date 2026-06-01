@@ -21,9 +21,10 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -64,7 +65,6 @@ func setupServer() *framework.App {
 		RPCPath:     "/__site/palette",
 		Placeholder: "Search docs, examples, components…",
 	})
-	paletteDef := paletteBuilder.Build()
 
 	layout := app.NewLayout("main").
 		WithHeader(&HeaderComponent{}).
@@ -85,16 +85,23 @@ func setupServer() *framework.App {
 		uihost.WithCanonicalURL("https://gofastr.dev"),
 	)
 
-	fwApp := framework.NewApp(
+	fwApp := framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "site"}),
 	)
-	fwApp.Mount(host)
 
 	// Mount the palette widget AFTER the host so its routes land on the
 	// same router instance. The palette's RPC handler runs an in-memory
 	// fuzzy match over a curated route catalog — no DB roundtrip.
-	widget.Mount(fwApp.Router(), &paletteDef)
+	widget.MountBuilder(fwApp.Router(), paletteBuilder)
 	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
+
+	// SectionMenu mobile drawers — the docs + components navs each mount a
+	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock
+	// + focus trap, all from the framework widget). The inline rails render
+	// the same config per page.
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig("")))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(componentsSectionMenuConfig()))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
 	// Kiln panel approve/reject — no-op endpoints. The OptimisticAction
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
@@ -122,7 +129,9 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ Message string `json:"message"` }
+		var body struct {
+			Message string `json:"message"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			body.Message = ""
 		}
@@ -140,16 +149,14 @@ func setupServer() *framework.App {
 	// Modal for the "RPC → Open Widget" demo.
 	// Hidden by default — only appears when data-fui-rpc-open triggers it.
 	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
-		render.Tag("p", map[string]string{"class": "demo-modal-emoji"}, render.Text("🎉")),
+		html.Paragraph(html.TextConfig{Class: "demo-modal-emoji"}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
-		render.Tag("p", nil, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
+		html.Paragraph(html.TextConfig{}, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
 	)
-	modalDef := preset.Modal("demo-result-modal").
+	widget.MountBuilder(fwApp.Router(), preset.Modal("demo-result-modal").
 		LabelledBy("demo-modal-heading").
 		Slot("body", app.NewStaticComponent(modalBody)).
-		Build()
-	modalDef.Hidden = true
-	widget.Mount(fwApp.Router(), &modalDef)
+		Hidden())
 
 	return fwApp
 }

@@ -25,7 +25,8 @@ import (
 )
 
 // HeaderComponent renders the sticky top bar:
-//   [GoFastr ver]   Docs   Get started   Examples   Components   Kiln       ⌘K   ⌥
+//
+//	[GoFastr ver]   Docs   Get started   Examples   Components   Kiln       ⌘K   ⌥
 //
 // The CommandPalette widget is mounted globally in main.go; the header's
 // own search button opens it (data-fui-open) and binds ⌘K
@@ -76,9 +77,9 @@ func (h *HeaderComponent) Render() render.HTML {
 		// the affordance. Mobile: visible; replaces the pill.
 		render.Raw(`<svg class="site-cmd__glyph" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`),
 		html.Span(html.TextConfig{Class: "site-cmd__placeholder"}, render.Text("Find docs, components, examples…")),
-		render.Tag("kbd", nil,
-			render.Tag("kbd", nil, render.Text("⌘")),
-			render.Tag("kbd", nil, render.Text("K")),
+		html.Kbd(html.TextConfig{},
+			html.Kbd(html.TextConfig{}, render.Text("⌘")),
+			html.Kbd(html.TextConfig{}, render.Text("K")),
 		),
 	)
 	themeBtn := ui.ThemeToggle(ui.ThemeToggleConfig{
@@ -110,8 +111,9 @@ func (h *HeaderComponent) Render() render.HTML {
 			{Label: "Philosophy", Href: "/philosophy", MatchPrefix: true},
 			{Label: "GitHub ↗", Href: "https://github.com/DonaldMurillo/gofastr", External: true},
 		},
-		Actions: render.Join(actionChildren...),
-		Class:   "site-header",
+		Actions:      render.Join(actionChildren...),
+		NavUnderline: true,
+		Class:        "site-header",
 	})
 }
 
@@ -126,7 +128,7 @@ func (f *FooterComponent) Render() render.HTML {
 			render.Text(" GoFastr "),
 			html.Span(html.TextConfig{Class: "site-foot-brand__ver"}, render.Text("v0.0.4")),
 		),
-		render.Tag("p", map[string]string{"class": "site-foot-brand__copy"},
+		html.Paragraph(html.TextConfig{Class: "site-foot-brand__copy"},
 			render.Text("A Go full-stack framework where agents are first-class authors. Pre-alpha. Built in public."),
 		),
 	)

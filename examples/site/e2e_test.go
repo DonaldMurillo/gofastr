@@ -151,7 +151,7 @@ func TestE2EDocCardNavigates(t *testing.T) {
 		chromedp.Click(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.ui-markdown`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.location.pathname`, &pathname),
-		chromedp.OuterHTML(".doc-content", &html, chromedp.ByQuery),
+		chromedp.OuterHTML(".ui-doc-layout__content", &html, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("doc nav: %v", err)
 	}

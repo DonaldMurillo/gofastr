@@ -83,19 +83,37 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})`,
     render.Text("Body shown when expanded."),
 )`,
 
+	"section-menu": `interactive.SectionMenu(interactive.SectionMenuConfig{
+    AriaLabel:    "Documentation sections",
+    TriggerLabel: "Sections",
+    Lead:         &interactive.SectionItem{Label: "Overview", Href: "/docs/"},
+    Groups: []interactive.SectionGroup{
+        {Eyebrow: "01", Label: "Modeling", Items: []interactive.SectionItem{
+            {Label: "Entities", Href: "/docs/entities", Active: true},
+            {Label: "Filter DSL", Href: "/docs/dsl"},
+        }},
+        {Eyebrow: "02", Label: "Serving", Collapsed: true, Items: []interactive.SectionItem{
+            {Label: "Screens", Href: "/docs/screens"},
+        }},
+    },
+})
+// Desktop: sticky rail, all groups expanded. Mobile (< 900px): a
+// "Sections" pill opens a focus-trapped slide-in sheet; collapsed groups
+// expand on tap; picking a link auto-closes the sheet.`,
+
 	"dropdown": `trigger := ui.Button(ui.ButtonConfig{Label: "Open Menu"})
-panel := render.Tag("div", nil,
+panel := html.Div(html.DivConfig{},
     render.Tag("a", map[string]string{"href": "#"}, render.Text("Edit")),
     render.Tag("a", map[string]string{"href": "#"}, render.Text("Delete")),
 )
 interactive.Dropdown(trigger, panel)`,
 
-	"scroll-reveal": `box := render.Tag("div", map[string]string{"class": "card"},
+	"scroll-reveal": `box := html.Div(html.DivConfig{Class: "card"},
     render.Text("Fades up when scrolled into view."))
 interactive.Reveal(box, "fade-up") // or "fade-in", "slide-left", "slide-right"`,
 
 	"signal-animate": `// One signal drives a CSS class toggle — wire any transition you like.
-panel := render.Tag("div", map[string]string{"class": "panel"}, render.Text("…"))
+panel := html.Div(html.DivConfig{Class: "panel"}, render.Text("…"))
 interactive.AnimateOnSignal(panel, "open", "is-shown")
 interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: "Toggle"}), "open")`,
 
@@ -119,6 +137,8 @@ func componentPkg(slug string) string {
 		return "core-ui/patterns/" + slug
 	case "image", "pipelineimage":
 		return "framework/image"
+	case "section-menu", "dropdown", "scroll-reveal", "signal-animate":
+		return "core-ui/interactive"
 	default:
 		return "framework/ui"
 	}
@@ -234,25 +254,25 @@ var componentCatalog = []componentEntry{
 			Heading:     "A typical card",
 			Description: "Header + body + footer slots; theme-skinned automatically.",
 			Footer:      html.Div(html.DivConfig{Class: "demo-row"}, ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
-		}, render.Tag("p", nil, render.Text("This is the body. The card's surface, border, and radius come from the theme.")))
+		}, html.Paragraph(html.TextConfig{}, render.Text("This is the body. The card's surface, border, and radius come from the theme.")))
 	}},
 	{"container", "Container", "Layout", "Max-width wrapper with width tokens.", func() render.HTML {
 		return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
-			render.Tag("p", nil, render.Text("Narrow container — text columns stay readable.")),
+			html.Paragraph(html.TextConfig{}, render.Text("Narrow container — text columns stay readable.")),
 		)
 	}},
 	{"stack", "Stack", "Layout", "Vertical flex stack with gap token.", func() render.HTML {
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Top")),
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Middle")),
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Bottom")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Top")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Middle")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Bottom")),
 		)
 	}},
 	{"grid", "Grid", "Layout", "CSS Grid with min column width + gap tokens.", func() render.HTML {
 		return ui.Grid(ui.GridConfig{Min: "12rem", Gap: ui.GapMD},
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Cell 1")),
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Cell 2")),
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Cell 3")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Cell 1")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Cell 2")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Cell 3")),
 		)
 	}},
 	{"cluster", "Cluster", "Layout", "Horizontal flex with wrap.", func() render.HTML {
@@ -265,7 +285,7 @@ var componentCatalog = []componentEntry{
 	}},
 	{"center", "Center", "Layout", "Centers children horizontally + vertically.", func() render.HTML {
 		return ui.Center(ui.CenterConfig{MinHeight: "viewport"},
-			render.Tag("p", nil, render.Text("This text is centered.")),
+			html.Paragraph(html.TextConfig{}, render.Text("This text is centered.")),
 		)
 	}},
 	{"box", "Box", "Layout", "Polymorphic <div> with padding/surface tokens.", func() render.HTML {
@@ -275,19 +295,19 @@ var componentCatalog = []componentEntry{
 	}},
 	{"divider", "Divider", "Layout", "Horizontal or vertical rule.", func() render.HTML {
 		return html.Div(html.DivConfig{},
-			render.Tag("p", nil, render.Text("Above the line")),
+			html.Paragraph(html.TextConfig{}, render.Text("Above the line")),
 			ui.Divider(ui.DividerConfig{}),
-			render.Tag("p", nil, render.Text("Below the line")),
+			html.Paragraph(html.TextConfig{}, render.Text("Below the line")),
 		)
 	}},
 	{"aspectratio", "AspectRatio", "Layout", "Maintains aspect ratio for media boxes.", func() render.HTML {
 		return ui.AspectRatioComponent(ui.AspectRatioConfig{Ratio: ui.AspectRatio16_9},
-			render.Tag("div", map[string]string{"class": "fact full"}, render.Text("16:9 box")),
+			html.Div(html.DivConfig{Class: "fact full"}, render.Text("16:9 box")),
 		)
 	}},
 	{"sticky", "Sticky", "Layout", "Sticky-positioned wrapper.", func() render.HTML {
 		return ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop, Offset: ui.StickyOffsetLg},
-			render.Tag("div", map[string]string{"class": "fact"}, render.Text("Stick scroll past me")),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text("Stick scroll past me")),
 		)
 	}},
 
@@ -378,9 +398,9 @@ var componentCatalog = []componentEntry{
 		return ui.Tabs(ui.TabsConfig{
 			SignalName: "demo-tabs",
 			Tabs: []ui.TabItem{
-				{Label: "Overview", Content: render.Tag("p", nil, render.Text("Clicking tabs switches content without any server round-trip."))},
-				{Label: "Details", Content: render.Tag("p", nil, render.Text("Panels are pre-rendered; the runtime shows/hides them based on a signal."))},
-				{Label: "Settings", Content: render.Tag("p", nil, render.Text("No JavaScript needed — data attributes + CSS attribute selectors."))},
+				{Label: "Overview", Content: html.Paragraph(html.TextConfig{}, render.Text("Clicking tabs switches content without any server round-trip."))},
+				{Label: "Details", Content: html.Paragraph(html.TextConfig{}, render.Text("Panels are pre-rendered; the runtime shows/hides them based on a signal."))},
+				{Label: "Settings", Content: html.Paragraph(html.TextConfig{}, render.Text("No JavaScript needed — data attributes + CSS attribute selectors."))},
 			},
 		})
 	}},
@@ -388,9 +408,9 @@ var componentCatalog = []componentEntry{
 	// ---------- Disclosure ----------
 	{"accordion", "Accordion", "Disclosure", "Native <details> accordion stack.", func() render.HTML {
 		return patternsAccordion.Stack(patternsAccordion.StackConfig{},
-			patternsAccordion.Item{Summary: "What is an entity?", Content: render.Tag("p", nil, render.Text("A typed declaration the framework turns into SQL + REST + MCP + Go."))},
-			patternsAccordion.Item{Summary: "How are migrations stored?", Content: render.Tag("p", nil, render.Text("Plain SQL up/down files under .gofastr/migrations/."))},
-			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: render.Tag("p", nil, render.Text("Only with an approved plan — see /kiln."))},
+			patternsAccordion.Item{Summary: "What is an entity?", Content: html.Paragraph(html.TextConfig{}, render.Text("A typed declaration the framework turns into SQL + REST + MCP + Go."))},
+			patternsAccordion.Item{Summary: "How are migrations stored?", Content: html.Paragraph(html.TextConfig{}, render.Text("Plain SQL up/down files under .gofastr/migrations/."))},
+			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: html.Paragraph(html.TextConfig{}, render.Text("Only with an approved plan — see /kiln."))},
 		)
 	}},
 	{"tooltip", "Tooltip", "Disclosure", "Hover/focus-triggered tip.", func() render.HTML {
@@ -420,10 +440,10 @@ var componentCatalog = []componentEntry{
 	{"collapsible", "Collapsible", "Disclosure", "Expand/collapse section using native <details>.", func() render.HTML {
 		return render.Join(
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
-				render.Tag("p", nil, render.Text("A collapsible section using native <details>. The browser handles open/close — the runtime adds keyboard support via data-fui-disclosure.")),
+				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close — the runtime adds keyboard support via data-fui-disclosure.")),
 			),
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
-				render.Tag("p", nil, render.Text("Yes. Escape to close, aria-expanded mirroring, all handled automatically.")),
+				html.Paragraph(html.TextConfig{}, render.Text("Yes. Escape to close, aria-expanded mirroring, all handled automatically.")),
 			),
 		)
 	}},
@@ -515,12 +535,12 @@ var componentCatalog = []componentEntry{
 	}},
 	{"combobox", "Combobox", "Forms", "Type-ahead suggestion picker.", func() render.HTML {
 		// Static demo since wiring the search RPC island is per-page.
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("Combobox needs an RPC search endpoint. See /docs/components for the wiring recipe."),
 		)
 	}},
 	{"multiselect", "Multiselect", "Forms", "Multi-pick from a list with chips.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("Multiselect compounds Combobox with an RPC. Demo deferred to its own integration page."),
 		)
 	}},
@@ -554,24 +574,24 @@ var componentCatalog = []componentEntry{
 		})
 	}},
 	{"conditionalfield", "ConditionalField", "Forms", "Show/hide a form field based on a sibling value.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("ConditionalField is a runtime helper. Wire it inside a Form via field watchers."),
 		)
 	}},
 	{"formrepeater", "FormRepeater", "Forms", "Add/remove rows of fields.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("FormRepeater renders a +/- chrome over a Repeater base. Per-page integration shown in the form demo."),
 		)
 	}},
 	{"repeater", "Repeater", "Forms", "Generic repeatable group.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("Repeater is the headless variant of FormRepeater — bring your own chrome."),
 		)
 	}},
 
 	// ---------- Data ----------
 	{"datatable", "DataTable", "Data", "Sortable + paginated data table island.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See /customers in examples/website for the full pattern."),
 		)
 	}},
@@ -680,12 +700,12 @@ func main() {
 		)
 	}},
 	{"gallery", "Gallery", "Media", "Image grid with lightbox.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("Gallery wraps OptimizedImage thumbnails + Lightbox. Live demo needs image sources."),
 		)
 	}},
 	{"lightbox", "Lightbox", "Media", "Modal viewer for images.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("Lightbox is a widget you mount once + open from an island click."),
 		)
 	}},
@@ -693,9 +713,9 @@ func main() {
 		return ui.Carousel(ui.CarouselConfig{
 			Label: "Demo carousel",
 			Slides: []ui.CarouselSlide{
-				{Content: render.Tag("div", map[string]string{"class": "fact"}, render.Text("Slide 1"))},
-				{Content: render.Tag("div", map[string]string{"class": "fact"}, render.Text("Slide 2"))},
-				{Content: render.Tag("div", map[string]string{"class": "fact"}, render.Text("Slide 3"))},
+				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 1"))},
+				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 2"))},
+				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 3"))},
 			},
 		})
 	}},
@@ -714,7 +734,7 @@ func main() {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
 	}},
 	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle — client-side signal flip, no RPC.", func() render.HTML {
-		row := render.Tag("div", map[string]string{"class": "demo-row"},
+		row := html.Div(html.DivConfig{Class: "demo-row"},
 			ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
 			render.Tag("span", map[string]string{"data-fui-signal": "demo-toggle"}, render.Text("false")),
 		)
@@ -782,7 +802,7 @@ func main() {
 		)
 	}},
 	{"pipelineimage", "PipelineImage", "Media", "Image processed through the framework's image pipeline.", func() render.HTML {
-		return render.Tag("div", map[string]string{"class": "fact"},
+		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("PipelineImage runs framework/image transforms (resize, webp) — see /examples for a live demo."),
 		)
 	}},
@@ -800,10 +820,10 @@ func main() {
 					OnSuccess(interactive.SetSignal("demo-counter")),
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("You have a counter, a vote button, or any UI where a click should update a number or string on screen — without a full page reload. The server owns the state; the browser just displays the latest value."),
 				),
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Put data-fui-rpc on a button and data-fui-rpc-signal on the same element. Add a data-fui-signal span wherever you want the response to appear. The runtime POSTs, parses JSON or text, and pushes the result into every matching signal node."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
@@ -815,7 +835,7 @@ func main() {
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
-							render.Tag("p", map[string]string{"class": "doc-head__lede"},
+							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 								render.Text("Click the button — the number updates from the server. No page reload."),
 							),
 							html.Div(html.DivConfig{Class: "demo-row"},
@@ -842,10 +862,10 @@ func main() {
 					OnSuccess(interactive.OpenWidget("demo-result-modal")),
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("A user submits a form or clicks an action, and on success a drawer or modal should appear — showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern."),
 				),
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
@@ -857,7 +877,7 @@ func main() {
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
-							render.Tag("p", map[string]string{"class": "doc-head__lede"},
+							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 								render.Text("Click — a modal pops up after the POST succeeds."),
 							),
 							btn,
@@ -888,10 +908,10 @@ func main() {
 					),
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("A comment form, a search box, a quick-add field — submit without losing scroll position or context. The server processes it and returns a snippet (confirmation text, rendered item, status message) that appears right below the form."),
 				),
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Put data-fui-rpc on a <form> element. The runtime intercepts the submit, POSTs fields as JSON, and writes the response into the signal. Add data-fui-rpc-reset to clear the form after success so the user can submit again."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnSubmit(
@@ -909,7 +929,7 @@ func main() {
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
-							render.Tag("p", map[string]string{"class": "doc-head__lede"},
+							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 								render.Text("Type a message and press Send. The response appears below; the form clears."),
 							),
 							form,
@@ -933,10 +953,10 @@ func main() {
 					OnSuccess(interactive.Navigate("/components/button")),
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"},
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination."),
 				),
-				render.Tag("p", map[string]string{"class": "doc-head__lede"},
+				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 					render.Text("Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click — but only after the server confirms the action succeeded."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
@@ -948,7 +968,7 @@ func main() {
 					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
 					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 						html.Div(html.DivConfig{Class: "demo-stack"},
-							render.Tag("p", map[string]string{"class": "doc-head__lede"},
+							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 								render.Text("Click — the page transitions to the Button component via SPA. Use the back button to return."),
 							),
 							btn,
@@ -988,7 +1008,7 @@ func main() {
 		"Click-toggle dropdown with click-outside dismiss and Escape to close.",
 		func() render.HTML {
 			trigger := ui.Button(ui.ButtonConfig{Label: "Open Menu", Variant: ui.ButtonSecondary})
-			panel := render.Tag("div", nil,
+			panel := html.Div(html.DivConfig{},
 				render.Tag("a", map[string]string{"href": "#"}, render.Text("Edit")),
 				render.Tag("a", map[string]string{"href": "#"}, render.Text("Duplicate")),
 				render.Tag("a", map[string]string{"href": "#"}, render.Text("Delete")),
@@ -997,6 +1017,13 @@ func main() {
 			// frame (.demo-stage clips overflow for its rounded corners).
 			return html.Div(html.DivConfig{Class: "demo-dropdown-room"},
 				interactive.Dropdown(trigger, panel))
+		}},
+
+	{"section-menu", "Section Menu", "Clientside Interactivity",
+		"Grouped, collapsible navigation: a sticky rail on desktop, a framework drawer (backdrop + click-outside close + focus trap) on mobile (< 900px). Powers the docs + components nav. Active item highlighted; auto-closes on navigation.",
+		func() render.HTML {
+			return html.Div(html.DivConfig{Class: "demo-section-menu"},
+				interactive.SectionMenu(demoSectionMenuConfig()))
 		}},
 
 	{"signal-store", "Signal Store", "Clientside Interactivity",
@@ -1016,11 +1043,11 @@ func main() {
 			)
 			consumers := html.Div(html.DivConfig{Class: "demo-stack"},
 				demoCompany.Bind(ctx, "h3", map[string]string{"id": "store-consumer-heading"}),
-				render.Tag("p", nil,
+				html.Paragraph(html.TextConfig{},
 					render.Text("Inline mention — "),
 					demoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-inline"}),
 				),
-				render.Tag("p", nil,
+				html.Paragraph(html.TextConfig{},
 					render.Text("Footer badge: "),
 					demoCompany.Bind(ctx, "span", map[string]string{"class": "demo-signal-out", "id": "store-consumer-badge"}),
 				),
@@ -1068,7 +1095,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 			html.Span(html.TextConfig{Class: "amber"}, render.Text("one page each")),
 			render.Text("."),
 		),
-		render.Tag("p", map[string]string{"class": "components-overview__lede"},
+		html.Paragraph(html.TextConfig{Class: "components-overview__lede"},
 			render.Text("framework/ui and core-ui/patterns ship typed Go constructors for each of the surfaces below. Pick from the sidebar — it stays put as you move between components."),
 		),
 	)
@@ -1164,43 +1191,39 @@ func (s *ComponentShowcaseScreen) demoStage() render.HTML {
 }
 
 func (s *ComponentShowcaseScreen) Render() render.HTML {
-	return render.Tag("div", map[string]string{"class": "doc-shell-narrow"},
-		render.Tag("article", map[string]string{"class": "doc-content"},
-			render.Tag("nav", map[string]string{"class": "doc-crumbs", "aria-label": "Breadcrumb"},
-				html.Link(html.LinkConfig{Href: "/components/", Text: "Components"}),
-				html.Span(html.TextConfig{Class: "sep"}, render.Text("/")),
-				html.Link(html.LinkConfig{Href: "/components/#" + categorySlug(s.Entry.Category), Text: s.Entry.Category}),
-				html.Span(html.TextConfig{Class: "sep"}, render.Text("/")),
-				html.Span(html.TextConfig{Class: "current"}, render.Text(s.Entry.Name)),
-			),
-			html.Div(html.DivConfig{Class: "doc-head"},
-				html.Heading(html.HeadingConfig{Level: 1},
-					render.Text(s.Entry.Name),
-				),
-				html.Div(html.DivConfig{Class: "doc-head__meta"},
-					tagAccent(s.Entry.Category),
-					// Real source package, linked to its API docs — this is
-					// the per-component "usage/reference" the page otherwise
-					// lacked. (Was hardcoded "framework/ui" for everything.)
-					html.LinkHTML(html.LinkHTMLConfig{
-						Href:       "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/" + componentPkg(s.Entry.Slug),
-						ExtraAttrs: html.Attrs{"rel": "external"},
-						Content:    render.Join(render.Text(componentPkg(s.Entry.Slug)), render.Text(" ↗")),
-					}),
-				),
-				render.Tag("p", map[string]string{"class": "doc-head__lede"}, render.Text(s.Entry.Desc)),
-			),
-
-			// Demo panel. Components that render a self-contained live
-			// instance are labeled "Live"; ones that show an explanatory
-			// note (need per-page wiring) are labeled "Note" so the box is
-			// honest about what it's showing.
-			s.demoStage(),
-
-			// Example code — the Go that produced the live demo above, so
-			// the page is a usage reference, not just a preview.
-			s.usage(),
+	head := html.Div(html.DivConfig{Class: "doc-head"},
+		html.Heading(html.HeadingConfig{Level: 1},
+			render.Text(s.Entry.Name),
 		),
+		html.Div(html.DivConfig{Class: "doc-head__meta"},
+			tagAccent(s.Entry.Category),
+			// Real source package, linked to its API docs — this is
+			// the per-component "usage/reference" the page otherwise
+			// lacked. (Was hardcoded "framework/ui" for everything.)
+			html.LinkHTML(html.LinkHTMLConfig{
+				Href:       "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/" + componentPkg(s.Entry.Slug),
+				ExtraAttrs: html.Attrs{"rel": "external"},
+				Content:    render.Join(render.Text(componentPkg(s.Entry.Slug)), render.Text(" ↗")),
+			}),
+		),
+		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(s.Entry.Desc)),
+	)
+
+	// Narrow (no-rail) DocLayout: breadcrumb + head + live demo + usage code.
+	return ui.DocLayout(ui.DocLayoutConfig{
+		Crumbs: []ui.DocCrumb{
+			{Label: "Components", Href: "/components/"},
+			{Label: s.Entry.Category, Href: "/components/#" + categorySlug(s.Entry.Category)},
+			{Label: s.Entry.Name},
+		},
+	},
+		head,
+		// Demo panel. Components that render a self-contained live instance
+		// are labeled "Live"; ones that show an explanatory note (need
+		// per-page wiring) are labeled "Note" so the box is honest.
+		s.demoStage(),
+		// Example code — the Go that produced the live demo above.
+		s.usage(),
 	)
 }
 

@@ -12,6 +12,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -205,20 +206,12 @@ func TestComponentDemoLabels(t *testing.T) {
 }
 
 func TestDocShellCollapsesOnMobile(t *testing.T) {
-	// /docs/<slug> pages must collapse their nav-rail + content grid to a
-	// block layout on mobile; otherwise a grid track resolves to the
-	// content's min-content (~600px) and overflows narrow viewports,
-	// clipping the right half of every line. (chromedp can't reliably
-	// reproduce the overflow, so this asserts the CSS rule directly.)
-	css := createStyleSheet(createTheme())
-	mq := strings.Index(css, "max-width: 900px")
-	if mq < 0 {
-		t.Fatal("docs shell is missing its mobile breakpoint")
-	}
-	rule := css[mq:]
-	sel := strings.Index(rule, ".doc-shell, .doc-shell--notoc")
-	if sel < 0 || !strings.Contains(rule[sel:sel+80], "display: block") {
-		t.Fatal("on mobile the doc shell must collapse to display:block (grid overflows)")
+	// /docs/<slug> pages render the framework's ui.DocLayout, which owns the
+	// nav-rail + content grid AND its mobile collapse (asserted directly in
+	// framework/ui's TestDocLayoutCSSCollapsesOnMobile). Here we just confirm
+	// the doc page actually mounts that component.
+	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-fui-comp="ui-doc-layout"`) {
+		t.Fatal("a /docs/<slug> page should render the ui.DocLayout component")
 	}
 }
 
@@ -267,12 +260,19 @@ func TestWizardsCategoryHoldsOnlyWizards(t *testing.T) {
 // ── Code block: real copy button + contiguous gutter (#13/#14). ─────────
 
 func TestCodeBlockHasFunctionalCopyButton(t *testing.T) {
+	// The chrome + copy button now come from the framework's ui.CodeBlock; the
+	// behaviour is unchanged — a real <button> that targets this block's own
+	// <pre> via data-fui-copy-text-from.
 	out := string(codeBlock("x.go", []render.HTML{ln(kw("package"), render.Text(" main"))}))
-	if !strings.Contains(out, `data-fui-copy-text-from="#codeblk`) {
-		t.Error("code block copy button should target its pre via data-fui-copy-text-from")
+	m := regexp.MustCompile(`data-fui-copy-text-from="#(ui-code-block-\d+)"`).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("code block copy button should target its pre via data-fui-copy-text-from; got %q", firstN(out, 300))
 	}
-	if !strings.Contains(out, `<pre class="code__body" id="codeblk`) {
+	if !strings.Contains(out, `id="`+m[1]+`"`) {
 		t.Error("code block pre should carry the id the copy button targets")
+	}
+	if !strings.Contains(out, `class="ui-code-block__body"`) {
+		t.Error("code block body should be the framework's ui-code-block__body pre")
 	}
 	if !strings.Contains(out, `<button`) {
 		t.Error("copy affordance should be a real <button>, not a span")

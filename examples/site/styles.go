@@ -300,29 +300,13 @@ func resetAndType(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func tagsAndButtons(ss *style.StyleSheet) {
-	ss.Rule(".tag").
-		Set("display", "inline-flex",
-			"align-items", "center",
-			"gap", "6px",
-			"padding", "3px 10px",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-muted}",
-			"background", "{colors.surface}",
-			"border", "1px solid var(--line-faint)",
-			"border-radius", "{radii.full}",
-			"white-space", "nowrap").End()
-	ss.Rule(".tag.accent").
-		Set("color", "{colors.primary}",
-			"border-color", "var(--accent-dim)",
-			"background", "color-mix(in oklch, {colors.primary} 8%, {colors.surface})").End()
-	ss.Rule(".tag .dot").
-		Set("width", "6px", "height", "6px",
-			"border-radius", "999px",
-			"background", "{colors.text-subtle}").End()
-	ss.Rule(".tag.accent .dot").
-		Set("background", "{colors.primary}",
-			"box-shadow", "0 0 6px {colors.primary}").End()
+	// The status pill (.tag / .tag.accent / .dot) is now ui.StatusPill, which
+	// ships its own CSS. The site only retunes the accent border/bg to the v2
+	// tokens via the component's --ui-status-pill-* vars.
+	ss.Rule(`[data-fui-comp="ui-status-pill"]`).
+		Set("border-color", "var(--line-faint)").End()
+	ss.Rule(`[data-fui-comp="ui-status-pill"].ui-status-pill--accent`).
+		Set("--ui-status-pill-accent-border", "var(--accent-dim)").End()
 
 	// Spacing utilities used in place of inline style="margin-bottom:…"
 	// attributes — strict CSP blocks inline styles, so every spacing tweak
@@ -330,44 +314,9 @@ func tagsAndButtons(ss *style.StyleSheet) {
 	ss.Rule(".mb-md").Set("margin-bottom", "{spacing.md}").End()
 	ss.Rule(".mb-lg").Set("margin-bottom", "{spacing.lg}").End()
 
-	// .code__head .alive — the green status dot in the code-block chrome.
-	// Was inline style on a <span>; class-ified for CSP compliance.
-	ss.Rule(".code__head .alive").
-		Set("width", "6px", "height", "6px",
-			"border-radius", "999px",
-			"background", "var(--tk-str)",
-			"display", "inline-block").End()
-
-	// Buttons — primary fills with amber, ghost is a transparent outline.
-	ss.Rule(".btn").
-		Set("display", "inline-flex",
-			"align-items", "center",
-			"gap", "8px",
-			"padding", "9px 14px",
-			"border-radius", "{radii.md}",
-			"font-size", "var(--t-sm)",
-			"font-weight", "500",
-			"letter-spacing", "-0.005em",
-			"border", "1px solid transparent",
-			"white-space", "nowrap").
-		Transition("background {durations.fast} {easings.ease-out}, border-color {durations.fast} {easings.ease-out}, opacity {durations.fast} {easings.ease-out}").End()
-	ss.Rule(".btn--primary").
-		Set("background", "{colors.primary}",
-			"color", "{colors.primary-fg}",
-			"border-color", "{colors.primary}").End()
-	ss.Rule(".btn--primary:hover").
-		Set("background", "var(--accent-2)",
-			"border-color", "var(--accent-2)",
-			"opacity", "1").End()
-	ss.Rule(".btn--ghost").
-		Set("color", "{colors.text}",
-			"border-color", "{colors.border}",
-			"background", "transparent").End()
-	ss.Rule(".btn--ghost:hover").
-		Set("background", "{colors.surface-soft}",
-			"border-color", "{colors.border-strong}",
-			"opacity", "1").End()
-	ss.Rule(".btn--lg").Set("padding", "11px 18px", "font-size", "var(--t-md)").End()
+	// (The site's old .btn / .btn--primary / .btn--ghost / .btn--lg rules were
+	// dead — every button in the markup is a framework ui.Button / ui.LinkButton,
+	// which ship their own CSS. Removed.)
 
 	// Focus ring — visible for keyboard nav, suppressed for pointer.
 	ss.Rule(":focus-visible").
@@ -507,19 +456,12 @@ func siteNav(ss *style.StyleSheet) {
 			"letter-spacing", "-0.005em",
 			"white-space", "nowrap",
 			"transition", "color 120ms ease").End()
-	ss.Rule(".ui-site-header__links a::after").
-		Set("content", `""`,
-			"position", "absolute",
-			"left", "0", "right", "100%",
-			"bottom", "14px",
-			"height", "1px",
-			"background", "{colors.primary}",
-			"transition", "right 200ms cubic-bezier(0.4, 0, 0.2, 1)").End()
-	ss.Rule(".ui-site-header__links a:hover").Set("color", "{colors.text}", "opacity", "1").End()
-	ss.Rule(".ui-site-header__links a:hover::after, .ui-site-header__links a:focus-visible::after").
-		Set("right", "0").End()
-	ss.Rule(`.ui-site-header__links a[aria-current="page"]`).Set("color", "{colors.text}").End()
-	ss.Rule(`.ui-site-header__links a[aria-current="page"]::after`).Set("right", "0").End()
+	// The animated underline-reveal is now ui.SiteHeader's NavUnderline
+	// variant; the site only positions it to clear the bar's baseline and
+	// tunes the active text colour via the component's vars.
+	ss.Rule(`[data-fui-comp="ui-site-header"].ui-site-header--nav-underline`).
+		Set("--ui-site-header-nav-underline-bottom", "14px",
+			"--ui-site-header-nav-active-color", "{colors.text}").End()
 
 	ss.Rule(".ui-site-header__right").
 		Set("margin-left", "auto",
@@ -630,16 +572,18 @@ func siteNav(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func siteFooter(ss *style.StyleSheet) {
+	// ui.SiteFooter owns the grid (template/gap/max-width/centering) via its
+	// --ui-site-footer-* vars; the site only supplies the 5-col template and
+	// v2 measures. The root padding is dropped to 0 horizontal because the
+	// centered grid carries its own inline padding.
 	ss.Rule(".ui-site-footer").
 		Set("padding", "var(--s-8) 0 {spacing.xxl}",
 			"border-top", "1px solid {colors.border}").End()
-	ss.Rule(".ui-site-footer__grid").
-		Set("display", "grid",
-			"grid-template-columns", "1.4fr 1fr 1fr 1fr 1fr",
-			"gap", "var(--s-8)",
-			"max-width", "var(--col-max)",
-			"margin", "0 auto",
-			"padding", "0 {spacing.xxl}").End()
+	ss.Rule(`[data-fui-comp="ui-site-footer"]`).
+		Set("--ui-site-footer-grid-template", "1.4fr 1fr 1fr 1fr 1fr",
+			"--ui-site-footer-grid-gap", "var(--s-8)",
+			"--ui-site-footer-max-width", "var(--col-max)").End()
+	ss.Rule(".ui-site-footer__grid").Set("padding", "0 {spacing.xxl}").End()
 
 	ss.Rule(".site-foot-brand").
 		Set("display", "flex", "align-items", "baseline", "gap", "8px",
@@ -697,74 +641,17 @@ func siteFooter(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func codeBlockStyles(ss *style.StyleSheet) {
-	ss.Rule(".code").
+	// The code block (.code / .code__head / .code__body / .ln chrome) is now
+	// ui.CodeBlock, which ships its own framed CSS + the framework CopyButton.
+	// The site only retunes the green status dot to the v2 string-token colour
+	// and supplies the mono font scale via the component's vars.
+	ss.Rule(`[data-fui-comp="ui-code-block"].ui-code-block--framed`).
 		Set("font-family", "{fonts.mono}",
 			"font-size", "var(--t-sm)",
 			"line-height", "1.65",
-			"background", "{colors.code-surface}",
-			"border", "1px solid {colors.code-border}",
-			"border-radius", "{radii.lg}",
-			"overflow", "hidden",
-			// Without max-width:100% and min-width:0, the inner <pre>'s
-			// intrinsic width pushes the parent past its grid column,
-			// which pushes the column past the viewport. Both are needed:
-			// max-width caps the surface, min-width:0 lets it shrink
-			// below its content's intrinsic size inside a grid/flex
-			// parent. Per-line overflow-x:auto on .code__body lets the
-			// user pan horizontally inside the surface.
+			"--ui-code-block-status-color", "var(--tk-str)",
 			"max-width", "100%",
 			"min-width", "0").End()
-	ss.Rule(".code__head").
-		Set("display", "flex", "align-items", "center", "gap", "10px",
-			"padding", "8px 14px",
-			"background", "{colors.surface}",
-			"border-bottom", "1px solid {colors.code-border}",
-			"font-family", "{fonts.mono}",
-			"font-size", "12px",
-			"color", "{colors.text-subtle}").End()
-	ss.Rule(".code__head .file").Set("color", "{colors.text}").End()
-	ss.Rule(".code__head .right").
-		Set("margin-left", "auto",
-			"display", "flex",
-			"gap", "10px",
-			"color", "{colors.text-subtle}").End()
-	// .copy is a real <button> now — reset native chrome so it reads as
-	// the same compact text chip, but stays keyboard-focusable.
-	ss.Rule(".code__head .copy").
-		Set("color", "{colors.text-subtle}", "cursor", "pointer",
-			"background", "transparent",
-			"border", "0",
-			"padding", "0",
-			"font", "inherit").
-		Transition("color {durations.fast}").End()
-	ss.Rule(".code__head .copy:hover").Set("color", "{colors.text}").End()
-	ss.Rule(".code__head .copy:focus-visible").
-		Set("outline", "2px solid {colors.accent}", "outline-offset", "2px", "border-radius", "{radii.sm}").End()
-	// Label/feedback swap driven by the runtime's .fui-copied toggle.
-	ss.Rule(".code__head .copy__done").Set("display", "none").End()
-	ss.Rule(".code__head .copy.fui-copied .copy__label").Set("display", "none").End()
-	ss.Rule(".code__head .copy.fui-copied .copy__done").Set("display", "inline", "color", "{colors.accent}").End()
-
-	// IMPORTANT: display:block on each .ln so syntax-token spans flow as one
-	// line. The prototype's first attempt used display:grid and broke layout.
-	ss.Rule(".code__body").
-		Set("padding", "14px 18px 14px 52px",
-			"color", "{colors.code-text}",
-			"white-space", "pre",
-			"overflow-x", "auto",
-			"counter-reset", "ln",
-			"position", "relative").End()
-	ss.Rule(".code__body .ln").Set("display", "block", "position", "relative").End()
-	ss.Rule(".code__body .ln::before").
-		Set("counter-increment", "ln",
-			"content", "counter(ln)",
-			"position", "absolute",
-			"left", "-36px", "top", "0",
-			"width", "28px",
-			"text-align", "right",
-			"color", "{colors.text-subtle}",
-			"font-size", "11px",
-			"user-select", "none").End()
 
 	// Syntax tokens — color only, no italic except comments.
 	ss.Rule(".tk-kw").Set("color", "var(--tk-kw)").End()
@@ -782,8 +669,12 @@ func codeBlockStyles(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func sectionFraming(ss *style.StyleSheet) {
+	// .section-v2 is layered on the framework's ui.Section component, which
+	// owns the <section> landmark, eyebrow, and scroll-margin. We reset the
+	// component's default block margin and supply the v2 framing.
 	ss.Rule(".section-v2").
-		Set("padding", "var(--s-9) 0",
+		Set("margin", "0",
+			"padding", "var(--s-9) 0",
 			"border-bottom", "1px solid var(--line-faint)",
 			"position", "relative").End()
 	ss.Rule(".section__head").
@@ -800,12 +691,12 @@ func sectionFraming(ss *style.StyleSheet) {
 		Set("color", "{colors.text-muted}",
 			"font-size", "var(--t-md)",
 			"max-width", "50ch").End()
-	ss.Rule(".section__num").
+	// The eyebrow markup is now ui.Section's .ui-section__eyebrow; the site
+	// only pins it to the section's top-right corner.
+	ss.Rule(".section-v2 .ui-section__eyebrow").
 		Set("position", "absolute",
 			"top", "{spacing.xxxl}",
 			"right", "{spacing.xxl}",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px",
 			"color", "var(--fg-4)").End()
 }
 
@@ -989,34 +880,12 @@ func agentsLayout(ss *style.StyleSheet) {
 			"color", "{colors.primary}").End()
 
 	// Terminal mock — replicated in agents pane.
-	ss.Rule(".term").
-		Set("border", "1px solid {colors.border}",
-			"border-radius", "{radii.md}",
-			"background", "{colors.background}",
-			"overflow", "hidden",
-			"font-family", "{fonts.mono}",
-			"font-size", "12px",
-			"margin-top", "{spacing.md}").End()
-	ss.Rule(".term__head").
-		Set("padding", "6px 12px",
-			"border-bottom", "1px solid var(--line-faint)",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}",
-			"display", "flex",
-			"align-items", "center",
-			"gap", "8px").End()
-	ss.Rule(".term__head .dot").
-		Set("width", "6px", "height", "6px",
-			"border-radius", "999px",
-			"background", "{colors.primary}",
-			"box-shadow", "0 0 6px {colors.primary}").End()
-	ss.Rule(".term__body").
-		Set("padding", "10px 12px",
-			"line-height", "1.7",
-			"color", "{colors.text}",
-			"white-space", "pre-wrap").End()
-	ss.Rule(".term__body .o").Set("color", "{colors.text-subtle}").End()
-	ss.Rule(".term__body .ok").Set("color", "var(--tk-str)").End()
+	// The terminal mock (.term / .term__head / .term__body) is now
+	// ui.TerminalBlock, which ships its own CSS. The site only retunes the
+	// header rule + success colour to the v2 tokens via the component vars.
+	ss.Rule(`[data-fui-comp="ui-terminal-block"]`).
+		Set("--ui-terminal-block-head-border", "var(--line-faint)",
+			"--ui-terminal-block-ok-color", "var(--tk-str)").End()
 }
 
 // -----------------------------------------------------------------------------
@@ -1102,40 +971,18 @@ func alphaLayout(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func responsive(ss *style.StyleSheet) {
-	// Tablet — single-column layouts for the components shell + tighter
-	// gutters; the nav still shows links if there's room.
-	ss.Media("(max-width: 1024px)", func(inner *style.StyleSheet) {
-		// /components/* — collapse the sidebar into a sticky <details>
-		// disclosure at the top of content. Hidden by default; tap the
-		// "Sections" pill to reveal the multi-level nav. Picking a
-		// component (link click) triggers cross-page nav and the
-		// framework runtime auto-closes the [open] state.
+	// Sidebar layouts collapse at 900px — the same breakpoint at which
+	// interactive.SectionMenu swaps its sticky rail for the mobile sheet, so
+	// the rail never renders full-width above the content.
+	ss.Media("(max-width: 900px)", func(inner *style.StyleSheet) {
+		// /components/* — drop the sticky 260px rail column; SectionMenu
+		// becomes a "Sections" trigger pill that opens the slide-in sheet.
 		inner.Rule(".layout-components > .layout-body").
 			Set("grid-template-columns", "1fr",
-				"gap", "0",
+				"gap", "{spacing.lg}",
 				"padding", "{spacing.lg}").End()
-		// Sidebar slot reverts to in-flow — framework/ui.Responsive
-		// already picks the mobile drawer variant; the layout just needs
-		// to drop its sticky-260px column.
-		inner.Rule(".layout-components > .layout-body > nav").
-			Set("position", "static",
-				"max-height", "none",
-				"overflow", "visible",
-				"margin-bottom", "{spacing.lg}").End()
-		// Leftover gymnastics from the previous CSS-only mobile attempt.
-		// Kept as inert rules so the rule set still compiles; the matched
-		// elements no longer exist in the rewritten markup.
-		inner.Rule(".components-sidebar-wrap[open] > .components-sidebar").
-			Set("display", "block").End()
-		// /docs/* and /docs/entities — drop the 3-col doc shell to a
-		// single column too (left docnav stacks above the article).
-		inner.Rule(".doc-shell").
-			Set("grid-template-columns", "1fr",
-				"padding", "{spacing.lg}",
-				"gap", "{spacing.lg}").End()
-		inner.Rule(".docnav, .toc").Set("position", "static").End()
-		// ui.Container's tablet padding (--spacing-lg) already kicks
-		// in at >=720px via its own @media — no override needed here.
+		// The in-page TOC un-sticks on mobile (ui.DocLayout self-collapses).
+		inner.Rule(".toc").Set("position", "static").End()
 	})
 
 	// Existing 980px breakpoint for the home page sections.
@@ -1151,7 +998,10 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".pane--left").
 			Set("border-right", "0", "border-bottom", "1px solid {colors.border}").End()
 		inner.Rule(".alpha__grid").Set("grid-template-columns", "1fr").End()
-		inner.Rule(".ui-site-footer__grid").Set("grid-template-columns", "1fr 1fr").End()
+		// Set the component's template var (not the property) so it wins
+		// against ui.SiteFooter's own var-based grid rule.
+		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
+			Set("--ui-site-footer-grid-template", "1fr 1fr").End()
 	})
 
 	// Phone — collapse everything to one column, hide horizontal nav links
@@ -1226,8 +1076,11 @@ func responsive(ss *style.StyleSheet) {
 		// Cap hero headline sizes.
 		inner.Rule(".hero__title, .gs-hero h1, .cx-hero h1, .ex-hero h1, .k-hero h1, .ph-hero h1").
 			Set("font-size", "clamp(32px, 10vw, 44px)").End()
-		// Footer goes single column.
-		inner.Rule(".ui-site-footer__grid").Set("grid-template-columns", "1fr", "gap", "{spacing.xl}").End()
+		// Footer goes single column — drive ui.SiteFooter's vars so the
+		// component's own grid rule picks the collapse up.
+		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
+			Set("--ui-site-footer-grid-template", "1fr",
+				"--ui-site-footer-grid-gap", "{spacing.xl}").End()
 		inner.Rule(".ui-site-footer__bottom").Set("flex-direction", "column", "gap", "{spacing.md}", "align-items", "flex-start").End()
 		// Step-rail (get-started) collapses too.
 		inner.Rule(".gs-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.xl} 0").End()

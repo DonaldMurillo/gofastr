@@ -17,6 +17,7 @@ package main
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -179,59 +180,55 @@ func (s *DocPageScreen) Render() render.HTML {
 	if body, err := docs.Get(s.Entry.Slug); err == nil {
 		content = ui.Markdown(ui.MarkdownConfig{Source: string(body)})
 	} else {
-		content = render.Tag("p", map[string]string{"class": "doc-head__lede"},
+		content = html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
 			render.Text("This doc isn't available yet. Browse the embedded docs with "),
 			codeText("gofastr docs"), render.Text(" or open the "),
 			html.Link(html.LinkConfig{Href: "/docs/", Text: "docs index"}), render.Text("."))
 	}
 
-	article := render.Tag("article", map[string]string{"class": "doc-content"},
-		render.Tag("nav", map[string]string{"class": "doc-crumbs", "aria-label": "Breadcrumb"},
-			html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs"}),
-			html.Span(html.TextConfig{Class: "sep"}, render.Text("/")),
-			html.Link(html.LinkConfig{Href: "/docs/#" + intent.Slug, Text: intent.Title}),
-			html.Span(html.TextConfig{Class: "sep"}, render.Text("/")),
-			html.Span(html.TextConfig{Class: "current"}, render.Text(s.Entry.Title)),
-		),
-		content,
-		docPrevNext(s.Entry.Slug),
-	)
-
-	return render.Tag("div", map[string]string{"class": "doc-shell doc-shell--notoc"},
-		docCatalogSidebar(s.Entry.Slug),
-		article,
-	)
+	return ui.DocLayout(ui.DocLayoutConfig{
+		Nav: docCatalogSidebar(s.Entry.Slug),
+		Crumbs: []ui.DocCrumb{
+			{Label: "Docs", Href: "/docs/"},
+			{Label: intent.Title, Href: "/docs/#" + intent.Slug},
+			{Label: s.Entry.Title},
+		},
+		Pager: docPrevNext(s.Entry.Slug),
+	}, content)
 }
 
-// docCatalogSidebar renders the full catalog grouped by intent, with the
-// current slug marked active. Replaces the old hardcoded sidebar whose
-// links pointed at routes that never existed.
+// docCatalogSidebar renders the grouped doc rail for the current slug.
 func docCatalogSidebar(active string) render.HTML {
-	groups := []render.HTML{}
-	for _, it := range docIntents {
-		items := []render.HTML{}
-		for _, d := range it.Docs {
-			cls := ""
-			if d.Slug == active {
-				cls = "active"
-			}
-			items = append(items, html.ListItem(html.ListItemConfig{},
-				html.Link(html.LinkConfig{Href: "/docs/" + d.Slug, Text: d.Title, Class: cls}),
-			))
-		}
-		groups = append(groups, html.Div(html.DivConfig{Class: "docnav__group"},
-			html.Div(html.DivConfig{Class: "label"},
-				html.Span(html.TextConfig{Class: "n"}, render.Text(it.Num)),
-				render.Text(it.Title),
-			),
-			html.UnorderedList(html.ListConfig{}, items...),
-		))
-	}
-	return render.Tag("aside", map[string]string{"class": "docnav"}, groups...)
+	return interactive.SectionMenu(docsSectionMenuConfig(active))
 }
 
-// docPrevNext links the previous and next doc in catalog order.
-func docPrevNext(slug string) render.HTML {
+// docsSectionMenuConfig is the single source of truth for the docs nav —
+// shared by the per-page inline rail (with the active slug) and the mounted
+// mobile drawer (active="" — the runtime stamps aria-current client-side).
+func docsSectionMenuConfig(active string) interactive.SectionMenuConfig {
+	groups := make([]interactive.SectionGroup, 0, len(docIntents))
+	for _, it := range docIntents {
+		items := make([]interactive.SectionItem, 0, len(it.Docs))
+		for _, d := range it.Docs {
+			items = append(items, interactive.SectionItem{
+				Label:  d.Title,
+				Href:   "/docs/" + d.Slug,
+				Active: d.Slug == active,
+			})
+		}
+		groups = append(groups, interactive.SectionGroup{Eyebrow: it.Num, Label: it.Title, Items: items})
+	}
+	return interactive.SectionMenuConfig{
+		AriaLabel:    "Documentation sections",
+		TriggerLabel: "Sections",
+		DrawerName:   "docs-section-menu",
+		Lead:         &interactive.SectionItem{Label: "Docs index", Href: "/docs/", Active: active == ""},
+		Groups:       groups,
+	}
+}
+
+// docPrevNext computes the previous/next doc in catalog order for the pager.
+func docPrevNext(slug string) *ui.DocPager {
 	flat := flatDocs()
 	idx := -1
 	for i, d := range flat {
@@ -240,31 +237,12 @@ func docPrevNext(slug string) render.HTML {
 			break
 		}
 	}
-	prevHref, prevText := "/docs/", "Docs index"
+	p := ui.DocPager{PrevHref: "/docs/", PrevLabel: "Docs index"}
 	if idx > 0 {
-		prevHref, prevText = "/docs/"+flat[idx-1].Slug, flat[idx-1].Title
-	}
-	children := []render.HTML{
-		html.LinkHTML(html.LinkHTMLConfig{
-			Href:  prevHref,
-			Class: "prev-card",
-			Content: render.Join(
-				html.Span(html.TextConfig{Class: "dir"}, render.Text("← Previous")),
-				html.Span(html.TextConfig{Class: "ttl"}, render.Text(prevText)),
-			),
-		}),
+		p.PrevHref, p.PrevLabel = "/docs/"+flat[idx-1].Slug, flat[idx-1].Title
 	}
 	if idx >= 0 && idx < len(flat)-1 {
-		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
-			Href:  "/docs/" + flat[idx+1].Slug,
-			Class: "next-card",
-			Content: render.Join(
-				html.Span(html.TextConfig{Class: "dir"}, render.Text("Next →")),
-				html.Span(html.TextConfig{Class: "ttl"}, render.Text(flat[idx+1].Title)),
-			),
-		}))
+		p.NextHref, p.NextLabel = "/docs/"+flat[idx+1].Slug, flat[idx+1].Title
 	}
-	return html.Div(html.DivConfig{Class: "doc-foot"},
-		html.Div(html.DivConfig{Class: "doc-foot__nav"}, children...),
-	)
+	return &p
 }

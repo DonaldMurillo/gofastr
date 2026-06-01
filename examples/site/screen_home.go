@@ -68,10 +68,7 @@ func container(children ...render.HTML) render.HTML {
 func heroSection() render.HTML {
 	preAlphaTag := html.Div(
 		html.DivConfig{Class: "mb-lg"},
-		html.Span(html.TextConfig{Class: "tag accent"},
-			html.Span(html.TextConfig{Class: "dot"}),
-			render.Text("pre-alpha · v0.0.4"),
-		),
+		ui.StatusPill(ui.StatusPillConfig{Label: "pre-alpha · v0.0.4", Tone: ui.StatusPillAccent, Dot: true}),
 	)
 
 	title := html.Heading(html.HeadingConfig{Level: 1, Class: "hero__title"},
@@ -80,15 +77,15 @@ func heroSection() render.HTML {
 		render.Text("."),
 	)
 
-	lede1 := render.Tag("p", map[string]string{"class": "hero__lede"},
-		render.Tag("strong", nil, render.Text("GoFastr")),
+	lede1 := html.Paragraph(html.TextConfig{Class: "hero__lede"},
+		html.Strong(html.TextConfig{}, render.Text("GoFastr")),
 		render.Text(" is a Go full-stack framework. You wire your app in Go like you'd wire "),
-		render.Tag("code", nil, render.Text("net/http")),
+		html.Code(html.TextConfig{}, render.Text("net/http")),
 		render.Text(". The framework generates REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — to disk, in plain Go you can read and step through."),
 	)
-	lede2 := render.Tag("p", map[string]string{"class": "hero__lede"},
+	lede2 := html.Paragraph(html.TextConfig{Class: "hero__lede"},
 		render.Text("The same surface is wired for AI agents from day one. Every entity ships with an MCP tool surface; "),
-		render.Tag("strong", nil, render.Text("Kiln")),
+		html.Strong(html.TextConfig{}, render.Text("Kiln")),
 		render.Text(" is a separate binary that lets an agent author your app in chat while you watch the code change."),
 	)
 
@@ -165,11 +162,11 @@ func generatesSection() render.HTML {
 			html.Div(html.DivConfig{Class: "name"}, render.Text(name)),
 			html.Div(html.DivConfig{Class: "desc"}, desc),
 			html.Div(html.DivConfig{Class: "file"},
-				render.Tag("code", nil, file),
+				html.Code(html.TextConfig{}, file),
 			),
 		)
 	}
-	codeText := func(s string) render.HTML { return render.Tag("code", nil, render.Text(s)) }
+	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 
 	list := html.Div(html.DivConfig{Class: "gen-list"},
 		row("01", "SQL table + migration",
@@ -239,14 +236,14 @@ func generatesSection() render.HTML {
 
 func architectureSection() render.HTML {
 	card := func(title, pkg, lede string, members render.HTML) render.HTML {
-		return render.Tag("article", map[string]string{"class": "arch-card"},
+		return html.Article(html.ArticleConfig{Class: "arch-card"},
 			html.Heading(html.HeadingConfig{Level: 4}, render.Text(title)),
 			html.Div(html.DivConfig{Class: "pkg"}, render.Text(pkg)),
-			render.Tag("p", nil, render.Text(lede)),
+			html.Paragraph(html.TextConfig{}, render.Text(lede)),
 			html.Div(html.DivConfig{Class: "members"}, members),
 		)
 	}
-	b := func(s string) render.HTML { return render.Tag("b", nil, render.Text(s)) }
+	b := func(s string) render.HTML { return html.Strong(html.TextConfig{}, render.Text(s)) }
 	br := render.Raw("<br>")
 
 	core := card("The floor", "core/", "Twelve primitives. Stdlib only. Works standalone.",
@@ -280,9 +277,9 @@ func architectureSection() render.HTML {
 	head := sectionHead(
 		"Two layers. Twelve batteries. Drop down whenever.",
 		render.Join(
-			render.Tag("code", nil, render.Text("core/")),
+			html.Code(html.TextConfig{}, render.Text("core/")),
 			render.Text(" is stdlib-only Go primitives. "),
-			render.Tag("code", nil, render.Text("framework/")),
+			html.Code(html.TextConfig{}, render.Text("framework/")),
 			render.Text(" is the opinionated entity layer composed on top. If the framework is in your way, you drop down to core — the imports change, your code doesn't."),
 		),
 	)
@@ -295,7 +292,7 @@ func architectureSection() render.HTML {
 // -----------------------------------------------------------------------------
 
 func agentsSection() render.HTML {
-	codeText := func(s string) render.HTML { return render.Tag("code", nil, render.Text(s)) }
+	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 	li := func(children ...render.HTML) render.HTML {
 		return html.ListItem(html.ListItemConfig{}, children...)
 	}
@@ -303,7 +300,7 @@ func agentsSection() render.HTML {
 	left := html.Div(html.DivConfig{Class: "pane pane--left"},
 		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("framework")),
 		html.Heading(html.HeadingConfig{Level: 4}, render.Text("Every entity is an MCP surface")),
-		render.Tag("p", nil,
+		html.Paragraph(html.TextConfig{},
 			render.Text("For each entity you declare, the framework registers MCP tools that map 1:1 to your REST surface. An agent connects to "),
 			codeText("/mcp"),
 			render.Text(" and calls them with the same auth context a human would have over HTTP."),
@@ -319,23 +316,17 @@ func agentsSection() render.HTML {
 	// Faux terminal — Kiln's boot banner. Static markup; not wired to a real
 	// stream yet. Once /kiln lands as a real page it can host a live SSE
 	// island instead and this becomes the placeholder fallback.
-	term := html.Div(html.DivConfig{Class: "term"},
-		html.Div(html.DivConfig{Class: "term__head"},
-			html.Span(html.TextConfig{Class: "dot"}),
-			render.Text(" $ kiln serve --agent claude-code"),
-		),
-		html.Div(html.DivConfig{Class: "term__body"},
-			html.Span(html.TextConfig{Class: "o"}, render.Text("→ panel floats on  http://localhost:8765\n")),
-			html.Span(html.TextConfig{Class: "o"}, render.Text("→ MCP server live  at  /mcp\n")),
-			html.Span(html.TextConfig{Class: "o"}, render.Text("→ journal           in  .kiln/journal\n")),
-			html.Span(html.TextConfig{Class: "ok"}, render.Text("→ ready · waiting for the agent.")),
-		),
+	term := ui.TerminalBlock(ui.TerminalBlockConfig{Label: " $ kiln serve --agent claude-code"},
+		ui.TerminalOut("→ panel floats on  http://localhost:8765\n"),
+		ui.TerminalOut("→ MCP server live  at  /mcp\n"),
+		ui.TerminalOut("→ journal           in  .kiln/journal\n"),
+		ui.TerminalOK("→ ready · waiting for the agent."),
 	)
 
 	right := html.Div(html.DivConfig{Class: "pane pane--right"},
 		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("kiln (separate binary)")),
 		html.Heading(html.HeadingConfig{Level: 4}, render.Text("An agent that authors your app")),
-		render.Tag("p", nil,
+		html.Paragraph(html.TextConfig{},
 			render.Text("Kiln mounts a floating chat panel on the running app. The agent calls a typed tool surface ("),
 			codeText("add_entity"), render.Text(", "),
 			codeText("add_field"), render.Text(", "),
@@ -360,7 +351,7 @@ func agentsSection() render.HTML {
 // -----------------------------------------------------------------------------
 
 func examplesSection() render.HTML {
-	codeText := func(s string) render.HTML { return render.Tag("code", nil, render.Text(s)) }
+	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 	// Each card deep-links to its row on /examples (anchored by slug), so
 	// "clone the one that looks like your problem" actually lands on it.
 	exCard := func(path, title string, desc render.HTML, cmd string) render.HTML {
@@ -371,8 +362,8 @@ func examplesSection() render.HTML {
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "path"}, render.Text(path)),
 				html.Heading(html.HeadingConfig{Level: 4}, render.Text(title)),
-				render.Tag("p", nil, desc),
-				render.Tag("code", map[string]string{"class": "cmd"}, render.Text(cmd)),
+				html.Paragraph(html.TextConfig{}, desc),
+				html.Code(html.TextConfig{Class: "cmd"}, render.Text(cmd)),
 			),
 		})
 	}
@@ -412,16 +403,12 @@ func examplesSection() render.HTML {
 // -----------------------------------------------------------------------------
 
 func alphaSection() render.HTML {
-	codeText := func(s string) render.HTML { return render.Tag("code", nil, render.Text(s)) }
+	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 
 	copy := html.Div(html.DivConfig{Class: "alpha__copy"},
-		html.Span(
-			html.TextConfig{Class: "tag accent mb-md"},
-			html.Span(html.TextConfig{Class: "dot"}),
-			render.Text("pre-alpha · v0.0.4"),
-		),
+		ui.StatusPill(ui.StatusPillConfig{Label: "pre-alpha · v0.0.4", Tone: ui.StatusPillAccent, Dot: true, Class: "mb-md"}),
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Built in public. Use it to learn, not to ship.")),
-		render.Tag("p", nil,
+		html.Paragraph(html.TextConfig{},
 			render.Text("APIs change between commits. "),
 			codeText("core-ui/"),
 			render.Text(" is the active research frontier. The journal is open; rough edges are visible by design. We say no to things — you should know what we're saying no to."),
@@ -459,10 +446,11 @@ func alphaSection() render.HTML {
 
 	grid := html.Div(html.DivConfig{Class: "alpha__grid"}, copy, list)
 
-	return html.Section(html.SectionConfig{Class: "section-v2", Label: "State of the project"},
-		html.Span(html.TextConfig{Class: "section__num"}, render.Text("05 / state of the project")),
-		container(grid),
-	)
+	return ui.Section(ui.SectionConfig{
+		Eyebrow: "05 / state of the project",
+		Label:   "State of the project",
+		Class:   "section-v2",
+	}, container(grid))
 }
 
 // -----------------------------------------------------------------------------
@@ -472,18 +460,21 @@ func alphaSection() render.HTML {
 // sectionHead — h2 + lede paragraph, two-column at desktop, stacked at mobile
 // (the responsive collapse lives in styles.go's @media block).
 func sectionHead(title string, lede render.HTML) render.HTML {
-	return render.Tag("header", map[string]string{"class": "section__head"},
+	return html.Header(html.HeaderConfig{Class: "section__head"},
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text(title)),
-		render.Tag("p", nil, lede),
+		html.Paragraph(html.TextConfig{}, lede),
 	)
 }
 
-// sectionWrap — common <section> + section number + container wrapper. The
-// section gets an aria-label (required by html.Section) sourced from the
-// inner section title. The numeric eyebrow (".section__num") is visual-only.
+// sectionWrap — site adapter over ui.Section. The framework component owns
+// the <section> landmark, the decorative numeric eyebrow, and the
+// scroll-margin that keeps an anchored section clear of the sticky header;
+// the site only supplies the eyebrow text, accessible name, the v2 framing
+// class, and its max-width container.
 func sectionWrap(num, ariaLabel string, head, body render.HTML) render.HTML {
-	return html.Section(html.SectionConfig{Class: "section-v2", Label: ariaLabel},
-		html.Span(html.TextConfig{Class: "section__num"}, render.Text(num)),
-		container(head, body),
-	)
+	return ui.Section(ui.SectionConfig{
+		Eyebrow: num,
+		Label:   ariaLabel,
+		Class:   "section-v2",
+	}, container(head, body))
 }

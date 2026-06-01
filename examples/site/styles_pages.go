@@ -316,78 +316,27 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func pageConceptsDoc(ss *style.StyleSheet) {
-	ss.Rule(".doc-shell").
-		Set("display", "grid",
-			"grid-template-columns", "220px minmax(0, 1fr) 220px",
-			"gap", "{spacing.xxxl}",
-			"max-width", "1360px",
-			"margin", "0 auto",
-			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)").End()
+	// The doc shell (3-col grid), the rail (.docnav), the breadcrumbs, and the
+	// prev/next pager are now ui.DocLayout, which ships its own structural CSS.
+	// The site supplies only its v2 measures via the component vars; the editorial
+	// prose + doc-head typography below stays site-owned.
+	ss.Rule(`[data-fui-comp="ui-doc-layout"]`).
+		Set("--ui-doc-layout-top", "calc(var(--nav-h) + {spacing.lg})",
+			"--ui-doc-layout-gap", "{spacing.xxxl}",
+			"--ui-doc-layout-pad", "{spacing.xxl} {spacing.xxl} var(--s-9)",
+			// Restore the site's original breadcrumb tones: amber links, dim
+			// separators (the framework default leaves links inheriting).
+			"--ui-doc-layout-crumb-link-color", "{colors.primary}",
+			"--ui-doc-layout-crumb-sep-color", "var(--fg-4)").End()
 
-	// Generic embedded-markdown doc pages drop the in-page TOC column —
-	// the markdown body owns its own headings — so they run two-column.
-	ss.Rule(".doc-shell--notoc").
-		Set("grid-template-columns", "220px minmax(0, 1fr)").End()
-
-	ss.Rule(".docnav").
-		Set("position", "sticky",
-			"top", "calc(var(--nav-h) + {spacing.lg})",
-			"align-self", "start",
-			"max-height", "calc(100vh - var(--nav-h) - {spacing.xl})",
-			"overflow-y", "auto",
-			"font-size", "var(--t-sm)").End()
-	ss.Rule(".docnav__group").Set("margin-bottom", "{spacing.lg}").End()
-	ss.Rule(".docnav__group > .label").
-		Set("font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}",
-			"display", "flex",
-			"gap", "6px",
-			"margin-bottom", "6px",
-			"font-weight", "400").End()
-	ss.Rule(".docnav__group > .label .n").Set("color", "var(--fg-4)").End()
-	ss.Rule(".docnav li a").
-		Set("display", "block",
-			"padding", "3px 0 3px 22px",
-			"color", "{colors.text-muted}").End()
-	ss.Rule(".docnav li a.active").
-		Set("color", "{colors.text}",
-			"border-left", "2px solid {colors.primary}",
-			"margin-left", "-2px",
-			"padding-left", "20px").End()
-
-	ss.Rule(".doc-content").Set("max-width", "720px").End()
-
-	// Mobile: the multi-column doc shell would otherwise lay out a fixed
-	// 220px nav rail beside the content and overflow narrow viewports
-	// (right half of every line clipped, unrecoverable). Collapse to a
-	// single column, un-stick the nav, and let content use the full width.
-	ss.Media("(max-width: 900px)", func(inner *style.StyleSheet) {
-		// Drop the grid entirely on mobile and stack the nav + content as
-		// plain blocks. A grid track (even minmax(0,1fr)) resolved to the
-		// content's min-content here (~606px) and overflowed the viewport,
-		// clipping the right half of every line. display:block makes each
-		// child take the container width; prose wraps and code blocks
-		// scroll internally (min-width:0 lets .doc-content shrink).
-		inner.Rule(".doc-shell, .doc-shell--notoc").
-			Set("display", "block",
-				"max-width", "none",
-				"padding", "{spacing.xl} {spacing.lg} var(--s-9)").End()
-		inner.Rule(".docnav").
-			Set("position", "static", "max-height", "none",
-				"margin-bottom", "{spacing.xl}").End()
-		inner.Rule(".doc-content").
-			Set("max-width", "none", "min-width", "0", "overflow-x", "hidden").End()
-	})
-
-	ss.Rule(".doc-crumbs").
-		Set("display", "flex", "gap", "6px",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}",
-			"margin-bottom", "{spacing.lg}").End()
-	ss.Rule(".doc-crumbs .sep").Set("color", "var(--fg-4)").End()
-	ss.Rule(".doc-crumbs .current").Set("color", "{colors.text-muted}").End()
+	// interactive.SectionMenu — the unified docs/components rail + mobile
+	// sheet. Clear the sticky header, tune the sheet surface + scrim + the
+	// group-eyebrow tone to the v2 palette.
+	ss.Rule(`[data-fui-comp="fui-section-menu"]`).
+		Set("--fui-section-menu-top", "calc(var(--nav-h) + {spacing.lg})",
+			"--fui-section-menu-surface", "{colors.surface}",
+			"--fui-section-menu-scrim", "rgba(0, 0, 0, 0.55)",
+			"--fui-section-menu-eyebrow-color", "var(--fg-4)").End()
 
 	ss.Rule(".doc-head").Set("margin-bottom", "{spacing.xl}").End()
 	ss.Rule(".doc-head h1").
@@ -464,53 +413,9 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"color", "{colors.text}").End()
 	ss.Rule(".prose .note p").Set("margin", "0").End()
 
-	ss.Rule(".doc-foot").
-		Set("margin-top", "var(--s-8)",
-			"padding-top", "{spacing.xl}",
-			"border-top", "1px solid {colors.border}").End()
-	ss.Rule(".doc-foot__nav").
-		Set("display", "grid",
-			"grid-template-columns", "1fr 1fr",
-			"gap", "{spacing.lg}",
-			"margin-bottom", "{spacing.xl}").End()
-	ss.Rule(".prev-card, .next-card").
-		Set("padding", "{spacing.lg}",
-			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.md}",
-			"display", "flex",
-			"flex-direction", "column",
-			"gap", "4px").End()
-	ss.Rule(".prev-card:hover, .next-card:hover").Set("border-color", "{colors.border-strong}").End()
-	ss.Rule(".next-card").Set("text-align", "right").End()
-	ss.Rule(".prev-card .dir, .next-card .dir").
-		Set("font-family", "{fonts.mono}", "font-size", "11px", "color", "{colors.text-subtle}").End()
-	ss.Rule(".prev-card .ttl, .next-card .ttl").
-		Set("color", "{colors.text}", "font-weight", "500").End()
-	ss.Rule(".doc-foot__chrome").
-		Set("display", "flex",
-			"align-items", "center",
-			"gap", "{spacing.md}",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}",
-			"flex-wrap", "wrap").End()
-	ss.Rule(".doc-foot__chrome .sep").Set("color", "var(--fg-4)").End()
-	ss.Rule(".feedback").
-		Set("margin-left", "auto",
-			"display", "flex",
-			"align-items", "center",
-			"gap", "6px").End()
-	ss.Rule(".feedback button").
-		Set("padding", "4px 10px",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.sm}",
-			"background", "{colors.surface}",
-			"color", "{colors.text-muted}",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px").End()
-	ss.Rule(".feedback button:hover").
-		Set("color", "{colors.text}", "border-color", "{colors.border-strong}").End()
+	// The prev/next pager (.doc-foot / .prev-card / .next-card) is now
+	// ui.DocLayout's footer. The .doc-foot__chrome + .feedback rules were
+	// orphaned (no markup rendered them) and are dropped.
 
 	ss.Rule(".toc").
 		Set("position", "sticky",
@@ -1153,6 +1058,12 @@ func pageComponents(ss *style.StyleSheet) {
 	ss.Rule(".demo-dropdown-room").
 		Set("min-height", "200px").End()
 
+	// .demo-section-menu — frames the SectionMenu rail in the catalog demo
+	// (the live nav that powers /docs/* and /components/*).
+	ss.Rule(".demo-section-menu").
+		Set("max-width", "260px",
+			"min-height", "220px").End()
+
 	// .doc-usage — the example-code block under each component demo.
 	ss.Rule(".doc-usage").
 		Set("margin-top", "{spacing.xl}").End()
@@ -1163,10 +1074,11 @@ func pageComponents(ss *style.StyleSheet) {
 	// Fragment-navigation offset. The site header is sticky (~--nav-h);
 	// without scroll-margin-top, jumping to a #section anchor (e.g. the
 	// breadcrumb category links) lands the section UNDER the header and
-	// hides its heading. scroll-margin-top only affects scroll-into-view
-	// landing, so it's inert everywhere else.
-	ss.Rule(".ui-section").
-		Set("scroll-margin-top", "calc(var(--nav-h) + {spacing.md})").End()
+	// hides its heading. ui.Section owns the scroll-margin-top property and
+	// reads it from this var, so we set the var (not the property) to avoid
+	// an equal-specificity fight with the component's own rule.
+	ss.Rule(`[data-fui-comp="ui-section"]`).
+		Set("--ui-section-scroll-margin", "calc(var(--nav-h) + {spacing.md})").End()
 
 	// RPC→open-widget demo modal body.
 	ss.Rule(".demo-modal-body").
@@ -1234,80 +1146,10 @@ func pageComponents(ss *style.StyleSheet) {
 			// rows to the top so the layout stays tight; min-height
 			// still keeps the background filling the viewport.
 			"align-content", "start").End()
-	ss.Rule(".layout-components > .layout-body > nav").
-		Set("position", "sticky",
-			"top", "calc(var(--nav-h) + {spacing.lg})",
-			"align-self", "start",
-			"max-height", "calc(100vh - var(--nav-h) - {spacing.xl})",
-			"overflow-y", "auto").End()
-
-	// Mobile drawer — used by the framework/ui.Responsive mobile variant
-	// on the components page. Native <details> with a tappable pill that
-	// floats the body as a popover (position: absolute) so opening the
-	// menu doesn't reflow the page below it. The user's content stays
-	// put; the menu drops over it. Tap a link → cross-page nav → the
-	// framework runtime auto-closes [open] via data-fui-disclosure.
-	ss.Rule(".components-mobile-drawer").
-		Set("display", "block",
-			"position", "relative", // anchor for absolute body
-			"margin-bottom", "{spacing.lg}").End()
-	ss.Rule(".components-mobile-drawer__toggle").
-		Set("list-style", "none",
-			"cursor", "pointer",
-			"display", "inline-flex",
-			"align-items", "center",
-			"gap", "8px",
-			"padding", "10px 16px",
-			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.md}",
-			"color", "{colors.text}",
-			"font-family", "{fonts.body}",
-			"font-size", "var(--t-md)").End()
-	ss.Rule(".components-mobile-drawer__toggle::-webkit-details-marker").
-		Set("display", "none").End()
-	ss.Rule(".components-mobile-drawer__toggle::after").
-		Set("content", `"▾"`,
-			"color", "{colors.text-subtle}",
-			"font-size", "10px").End()
-	ss.Rule(".components-mobile-drawer[open] .components-mobile-drawer__toggle::after").
-		Set("content", `"▴"`).End()
-	ss.Rule(".components-mobile-drawer__body").
-		Set(
-			// Popover positioning: absolute over the page, anchored to
-			// the drawer wrapper's top-left, full-width on phones.
-			"position", "absolute",
-			"top", "calc(100% + 8px)",
-			"left", "0",
-			"right", "0",
-			"z-index", "30",
-			"padding", "{spacing.md}",
-			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.md}",
-			"max-height", "60vh",
-			"overflow-y", "auto",
-			"box-shadow", "0 12px 32px rgba(0, 0, 0, 0.45)",
-		).End()
-
-	// .components-sidebar — re-skin nestedlist's bundled CSS to match v2
-	// tokens. nestedlist styles use var(--color-*) by default; setting
-	// our v2 token names on the wrapper wins via CSS variable cascade.
-	ss.Rule(".components-sidebar.nested-list").
-		Set("font-size", "var(--t-sm)",
-			"color", "{colors.text-muted}").End()
-	ss.Rule(".components-sidebar.nested-list summary").
-		Set("font-family", "{fonts.body}",
-			"font-weight", "500",
-			"color", "{colors.text}",
-			"padding", "4px 8px").End()
-	ss.Rule(".components-sidebar.nested-list .nested-list__link").
-		Set("color", "{colors.text-muted}",
-			"padding", "4px 8px",
-			"display", "block").End()
-	ss.Rule(".components-sidebar.nested-list .nested-list__link:hover").
-		Set("color", "{colors.text}",
-			"background", "{colors.surface-soft}").End()
+	// The components rail + mobile sheet are now interactive.SectionMenu,
+	// which ships its own sticky-rail + slide-in-sheet CSS. The site only
+	// clears the sticky header and tunes the sheet surface to the v2 tokens.
+	// (Same vars set on the doc-layout context below.)
 
 	// Overview content — the cards grid + hero, no rail (sidebar replaces it).
 	ss.Rule(".components-overview__hero").
