@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -176,19 +178,42 @@ func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	return wrapped
 }
 
-
 // ─── Scroll-triggered reveal ────────────────────────────────────────
 
+// revealStyle ships the CSS for the scroll-reveal animation. Without it
+// the reveal.js classes (fui-hidden / fui-revealed / fui-reveal-<type>)
+// have no visual effect. The host loads it when a page carries the
+// data-fui-comp="fui-reveal" marker Reveal stamps below.
+var revealStyle = registry.RegisterStyle("fui-reveal", revealCSS)
+
 // Reveal wraps an element so it animates in when it enters the viewport.
-// The animationType determines the CSS class added on reveal
-// ("fade-up", "fade-in", "slide-left", etc.).
-// If animationType is empty, "fade-in" is used as the default.
+// The animationType determines the direction ("fade-up", "fade-in",
+// "slide-left", "slide-right"). Empty → "fade-in". The element renders
+// visible without JS (progressive enhancement); reveal.js adds the
+// hidden state on boot and removes it on intersection.
 func Reveal(html render.HTML, animationType string) render.HTML {
 	if animationType == "" {
 		animationType = "fade-in"
 	}
-	return injectAttr(html, "data-fui-reveal", animationType)
+	out := injectAttr(html, "data-fui-reveal", animationType)
+	return revealStyle.WrapHTML(out)
 }
+
+func revealCSS(_ style.Theme) string {
+	// While hidden, the direction transform is keyed off the
+	// data-fui-reveal ATTRIBUTE (present the whole time) — reveal.js only
+	// adds the fui-reveal-<type> CLASS at reveal time, too late to style
+	// the from-state. On reveal, fui-hidden is removed and fui-revealed
+	// adds the transition back to the resting state.
+	return `[data-fui-comp="fui-reveal"]{opacity:1}` +
+		`[data-fui-comp="fui-reveal"].fui-hidden{opacity:0}` +
+		`[data-fui-comp="fui-reveal"][data-fui-reveal="fade-up"].fui-hidden{transform:translateY(24px)}` +
+		`[data-fui-comp="fui-reveal"][data-fui-reveal="slide-left"].fui-hidden{transform:translateX(24px)}` +
+		`[data-fui-comp="fui-reveal"][data-fui-reveal="slide-right"].fui-hidden{transform:translateX(-24px)}` +
+		`[data-fui-comp="fui-reveal"].fui-revealed{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}` +
+		`@media (prefers-reduced-motion:reduce){[data-fui-comp="fui-reveal"].fui-hidden{opacity:1;transform:none}[data-fui-comp="fui-reveal"].fui-revealed{transition:none}}`
+}
+
 // ─── Client-side signal mutations (no RPC) ──────────────────────────
 //
 // These mutate signals purely in the browser — no server round-trip.
@@ -230,6 +255,8 @@ func ToggleLocal(html render.HTML, signalName string) render.HTML {
 //	trigger := render.Tag("button", nil, render.Text("Menu"))
 //	panel := render.Tag("div", nil, render.Text("Dropdown content"))
 //	html := interactive.Dropdown(trigger, panel)
+var dropdownStyle = registry.RegisterStyle("fui-dropdown", dropdownCSS)
+
 func Dropdown(trigger, panel render.HTML) render.HTML {
 	triggerAttrs := map[string]string{
 		"data-fui-dropdown": "",
@@ -242,9 +269,22 @@ func Dropdown(trigger, panel render.HTML) render.HTML {
 	}
 	wrappedTrigger := injectAttrs(trigger, triggerAttrs)
 	wrappedPanel := injectAttrs(panel, panelAttrs)
-	return render.Tag("div", map[string]string{
+	wrap := render.Tag("div", map[string]string{
 		"data-fui-dropdown-wrap": "",
 	}, wrappedTrigger, wrappedPanel)
+	return dropdownStyle.WrapHTML(wrap)
+}
+
+func dropdownCSS(_ style.Theme) string {
+	// The wrap positions the panel; the panel is a floating surface; its
+	// links/buttons are styled as menu items. Without this the panel
+	// renders as a flat, full-width, unstyled strip (functional but not a
+	// dropdown).
+	return `[data-fui-comp="fui-dropdown"]{position:relative;display:inline-block}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface,#fff);border:1px solid var(--fui-border,#e2e8f0);border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:.25rem;z-index:50}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:.5rem .75rem;border-radius:.375rem;color:var(--fui-foreground,#0f172a);text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:.875rem}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:hover,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:hover{background:var(--fui-muted-bg,#f1f5f9)}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:focus-visible,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px}`
 }
 
 // AnimateOnSignal wraps an element so it gets a CSS class when a signal
@@ -310,8 +350,8 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 //	</button>
 func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 	attrs := map[string]string{
-		"data-fui-comp":               "ui-optimistic-action",
-		"data-state":                  "idle",
+		"data-fui-comp":                "ui-optimistic-action",
+		"data-state":                   "idle",
 		"data-fui-optimistic-endpoint": action.path,
 	}
 	if action.method != "" && action.method != "POST" {
@@ -362,7 +402,6 @@ func injectAttrs(html render.HTML, attrs map[string]string) render.HTML {
 	}
 	return render.HTML(s[:idx] + buf.String() + s[idx:])
 }
-
 
 // wrapWithAction merges action attributes into the first opening HTML tag.
 func wrapWithAction(html render.HTML, action Action) render.HTML {

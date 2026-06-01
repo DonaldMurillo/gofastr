@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -358,6 +359,50 @@ func TestRevealPreservesContent(t *testing.T) {
 	}
 	if !strings.Contains(s, `class="card"`) {
 		t.Fatalf("original class lost: %s", s)
+	}
+}
+
+// TestRevealStampsCompMarkerAndCSS guards the framework fix: Reveal must
+// stamp the data-fui-comp marker so the host loads the registered CSS, and
+// that CSS must actually style the hidden/revealed states (without it the
+// reveal.js classes are inert and the animation does nothing).
+func TestRevealStampsCompMarkerAndCSS(t *testing.T) {
+	s := string(Reveal(render.Tag("div", nil, render.Text("x")), "fade-up"))
+	if !strings.Contains(s, `data-fui-comp="fui-reveal"`) {
+		t.Fatalf("Reveal must stamp data-fui-comp=\"fui-reveal\" so the CSS loads: %s", s)
+	}
+	css := revealStyle.Entry().CSSFor(style.Theme{})
+	for _, sel := range []string{
+		`[data-fui-comp="fui-reveal"].fui-hidden{opacity:0}`,
+		`.fui-revealed{opacity:1`,
+		`prefers-reduced-motion`,
+	} {
+		if !strings.Contains(css, sel) {
+			t.Errorf("reveal CSS missing %q:\n%s", sel, css)
+		}
+	}
+}
+
+// TestDropdownStampsCompMarkerAndCSS guards that Dropdown renders as a
+// real floating menu: the wrap carries the comp marker and the CSS
+// positions the panel as an absolute, shadowed surface (without it the
+// panel is a flat, full-width, unstyled strip).
+func TestDropdownStampsCompMarkerAndCSS(t *testing.T) {
+	trigger := render.Tag("button", nil, render.Text("Menu"))
+	panel := render.Tag("div", nil, render.Tag("a", map[string]string{"href": "#"}, render.Text("Edit")))
+	s := string(Dropdown(trigger, panel))
+	if !strings.Contains(s, `data-fui-comp="fui-dropdown"`) {
+		t.Fatalf("Dropdown must stamp the comp marker so its CSS loads: %s", s)
+	}
+	css := dropdownStyle.Entry().CSSFor(style.Theme{})
+	for _, sel := range []string{
+		`[data-fui-comp="fui-dropdown"]{position:relative`,
+		`[data-fui-dropdown-panel]{position:absolute`,
+		`box-shadow:`,
+	} {
+		if !strings.Contains(css, sel) {
+			t.Errorf("dropdown CSS missing %q:\n%s", sel, css)
+		}
 	}
 }
 
