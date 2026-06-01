@@ -624,7 +624,7 @@
       // ("  javascript:") AND interior ("java<TAB>script:",
       // "<NUL>javascript:") control chars must go, or a startsWith()
       // check is defeated by an embedded tab/newline/CR or leading C0.
-      const trimmed = String(value || '').replace(/[\s -]+/g, '').toLowerCase();
+      const trimmed = String(value || '').replace(/[\s\x00-\x1f]+/g, '').toLowerCase();
       if (trimmed.startsWith('javascript:')) return true;
       if (trimmed.startsWith('vbscript:')) return true;
       if (trimmed.startsWith('data:')) {
