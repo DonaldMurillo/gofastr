@@ -126,6 +126,29 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 A non-nil error from `fn` rolls back. A panic from `fn` rolls back
 via the `Recovery` middleware higher up the stack.
 
+### Composing CRUD operations in one transaction
+
+Auto-CRUD writes are individually transactional, and they also **join an
+ambient transaction** when one is in the context. So several CRUD
+operations called inside `App.InTx` commit or roll back as a single unit:
+
+```go
+err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+    // Both CreateOne calls run on the SAME transaction — if the second
+    // fails, the first is rolled back too.
+    if _, err := ordersCH.CreateOne(ctx, order); err != nil { return err }
+    if _, err := linesCH.CreateOne(ctx, line); err != nil { return err }
+    return nil // commit
+})
+```
+
+Pass the `ctx` you receive from `InTx` into the CRUD call — that's what
+carries the transaction (via `TxFromContext`). The query builder is
+transaction-agnostic, so any hand-written `query.QueryBuilder` SQL you run
+on the provided `tx` is part of the same unit. Without an ambient
+transaction (the normal HTTP path), each CRUD write opens and commits its
+own transaction as before.
+
 ## Batch behaviour
 
 In a `_batch` request, every item shares one transaction:

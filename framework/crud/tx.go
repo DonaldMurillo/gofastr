@@ -17,6 +17,16 @@ import (
 // db.TxFromContext) and a tx-bound copy of the handler — its DB field points
 // at the transaction so all queries within fn participate.
 func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch *CrudHandler) error) error {
+	// Reuse an ambient transaction already in the context (e.g. one opened by
+	// App.InTx). This is what lets several CRUD operations — and any
+	// hand-written query-builder SQL run on the same tx — compose into one
+	// atomic unit: the operation joins the outer transaction and the outer
+	// owner commits or rolls back. We must NOT begin a nested tx or commit here.
+	if tx, ok := db.TxFromContext(ctx); ok {
+		txCh := *ch
+		txCh.DB = tx
+		return fn(ctx, &txCh)
+	}
 	starter, ok := ch.DB.(db.Beginner)
 	if !ok {
 		return fn(ctx, ch)
