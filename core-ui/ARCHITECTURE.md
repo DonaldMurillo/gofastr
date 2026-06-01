@@ -78,6 +78,8 @@ server side and the runtime does the work.
 | `data-fui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-fui-rpc-close` | Containing widget closes on 2xx |
 | `data-fui-rpc-reset` | Containing form resets on 2xx |
+| `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
+| `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx |
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
