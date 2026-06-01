@@ -135,3 +135,7 @@ pi-agent/plugins/*
 # scratch output, never source. Regenerate the canonical .txt files
 # via GOFASTR_UPDATE_SNAPSHOTS=1.
 framework/harness/client/tui/testdata/snapshots/*.txt.new
+
+# example build artifacts (compiled example apps must not be tracked)
+/examples/site/site
+examples/*/site
