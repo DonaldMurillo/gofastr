@@ -112,7 +112,7 @@ Both forms produce the exact same routes, OpenAPI, and MCP tools.
 | Cursor paging    | `?cursor=&limit=50` — keyset by `EntityConfig.CursorField` (defaults to PK)     |
 | Multipart upload | `multipart/form-data` on `Image`/`File` fields → streamed through `WithFileStorage` |
 | Validation       | Required, unique, enum, min/max, regex pattern, multi-tenant scope              |
-| Migrations       | Versioned SQL with up/down, applied via `gofastr migrate`                       |
+| Migrations       | Production-hardened versioned runner — advisory-lock serialization, checksum-drift + dirty-state guards, `NoTransaction` escape hatch, reversible down; declarative incremental generation; real-Postgres tested |
 | FK constraints   | BelongsTo relations emit `FOREIGN KEY` clauses; `AutoMigrate` topo-sorts tables |
 | Transactions     | `Create/Update/Delete` + hooks share one tx; `TxFromContext(ctx)` exposes it    |
 | OpenAPI 3        | `/openapi.json` and Swagger UI at `/docs/`                                      |
@@ -214,7 +214,11 @@ gofastr generate                    Generate Go from entities/*.json
 gofastr generate entity post t:s    Scaffold a single entity in code
 gofastr build                       Generate then go build
 gofastr dev                         Start dev server with hot-reload
-gofastr migrate up | down | status  Run versioned migrations
+gofastr migrate up | down | status  Run versioned migrations (advisory-locked, checksum + dirty-state guarded)
+gofastr migrate up --create-db      Create the target database first if it doesn't exist
+gofastr migrate generate <name>     Diff entities vs the committed snapshot → numbered reversible SQL
+gofastr migrate diff [--apply]      Declarative schema diff against a live DB (opt-in apply)
+gofastr migrate force <version>     Reconcile a dirty/baselined migration
 gofastr test                        Run project tests
 gofastr embed index <path>          Index a project for semantic search
 gofastr embed watch <path>          Index + poll-watch for changes
