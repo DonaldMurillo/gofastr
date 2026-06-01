@@ -295,3 +295,179 @@ func TestSetLocalOnEmptyHTML(t *testing.T) {
 		t.Fatalf("empty HTML should stay empty: %q", result)
 	}
 }
+
+
+func TestEditToggle(t *testing.T) {
+	span := render.Tag("span", nil, render.Text("Click to edit"))
+	result := EditToggle(span, "editing")
+	s := string(result)
+	if !strings.Contains(s, `data-fui-signal-toggle="editing"`) {
+		t.Fatalf("EditToggle missing attribute: %s", s)
+	}
+	if !strings.Contains(s, "Click to edit") {
+		t.Fatal("EditToggle lost original content")
+	}
+	if strings.Contains(s, "data-fui-rpc") {
+		t.Fatal("EditToggle should not emit data-fui-rpc")
+	}
+}
+
+func TestCancelEdit(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Cancel"))
+	result := CancelEdit(btn, "editing")
+	s := string(result)
+	if !strings.Contains(s, `data-fui-signal-set="editing:false"`) {
+		t.Fatalf("CancelEdit missing attribute: %s", s)
+	}
+	if !strings.Contains(s, "Cancel") {
+		t.Fatal("CancelEdit lost original content")
+	}
+	if strings.Contains(s, "data-fui-rpc") {
+		t.Fatal("CancelEdit should not emit data-fui-rpc")
+	}
+}
+
+// ─── LiveSearch tests ─────────────────────────────────────────────────
+
+func TestLiveSearchInjectsTriggerAttr(t *testing.T) {
+	form := render.Tag("form", nil,
+		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
+	)
+	result := LiveSearch(form, Post("/api/search").OnSuccess(SetSignal("results")), 300)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-trigger="input"`) {
+		t.Fatalf("missing data-fui-rpc-trigger attr: %s", s)
+	}
+}
+
+func TestLiveSearchInjectsRPCAttrs(t *testing.T) {
+	form := render.Tag("form", nil,
+		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
+	)
+	result := LiveSearch(form, Post("/api/search").OnSuccess(SetSignal("results")), 300)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc="/api/search"`) {
+		t.Fatalf("missing data-fui-rpc attr: %s", s)
+	}
+	if !strings.Contains(s, `data-fui-rpc-method="POST"`) {
+		t.Fatalf("missing data-fui-rpc-method attr: %s", s)
+	}
+	if !strings.Contains(s, `data-fui-rpc-signal="results"`) {
+		t.Fatalf("missing data-fui-rpc-signal attr: %s", s)
+	}
+}
+
+func TestLiveSearchDefaultDebounce(t *testing.T) {
+	form := render.Tag("form", nil,
+		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
+	)
+	result := LiveSearch(form, Post("/api/search"), 0)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-debounce="300"`) {
+		t.Fatalf("expected default 300ms debounce: %s", s)
+	}
+}
+
+func TestLiveSearchCustomDebounce(t *testing.T) {
+	form := render.Tag("form", nil,
+		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
+	)
+	result := LiveSearch(form, Get("/api/search"), 500)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-debounce="500"`) {
+		t.Fatalf("expected custom 500ms debounce: %s", s)
+	}
+	if strings.Contains(s, `data-fui-rpc-debounce="300"`) {
+		t.Fatalf("should not contain default 300ms: %s", s)
+	}
+}
+
+// ─── OptimisticUpdate tests ────────────────────────────────────────────
+
+func TestOptimisticUpdateRendersComponentAttrs(t *testing.T) {
+	result := OptimisticUpdate(
+		Post("/api/like/42"),
+		render.HTML("♡ Like"),
+		render.HTML("♥ Liked"),
+	)
+	s := string(result)
+	// Must have the component marker the runtime scans for.
+	if !strings.Contains(s, `data-fui-comp="ui-optimistic-action"`) {
+		t.Fatalf("missing data-fui-comp attr: %s", s)
+	}
+	// Must start in idle state.
+	if !strings.Contains(s, `data-state="idle"`) {
+		t.Fatalf("missing data-state=idle: %s", s)
+	}
+	// Must have the endpoint.
+	if !strings.Contains(s, `data-fui-optimistic-endpoint="/api/like/42"`) {
+		t.Fatalf("missing endpoint attr: %s", s)
+	}
+	// POST is the default — method attr should NOT be emitted.
+	if strings.Contains(s, `data-fui-optimistic-method`) {
+		t.Fatalf("POST default should not emit method attr: %s", s)
+	}
+}
+
+func TestOptimisticUpdateNonPostEmitsMethod(t *testing.T) {
+	result := OptimisticUpdate(
+		Delete("/api/like/42"),
+		render.HTML("♡ Like"),
+		render.HTML("♥ Liked"),
+	)
+	s := string(result)
+	if !strings.Contains(s, `data-fui-optimistic-method="DELETE"`) {
+		t.Fatalf("non-POST should emit method attr: %s", s)
+	}
+}
+
+func TestOptimisticUpdateContainsBothVisualStates(t *testing.T) {
+	result := OptimisticUpdate(
+		Post("/api/like/42"),
+		render.HTML(`<span class="icon">♡</span> Like`),
+		render.HTML(`<span class="icon">♥</span> Liked`),
+	)
+	s := string(result)
+	// Idle state wrapper.
+	if !strings.Contains(s, `data-fui-optimistic-idle`) {
+		t.Fatalf("missing idle wrapper: %s", s)
+	}
+	if !strings.Contains(s, `♡`) {
+		t.Fatalf("missing idle content: %s", s)
+	}
+	// Success state wrapper with hidden attribute.
+	if !strings.Contains(s, `data-fui-optimistic-success`) {
+		t.Fatalf("missing success wrapper: %s", s)
+	}
+	if !strings.Contains(s, `hidden`) {
+		t.Fatalf("success wrapper should start hidden: %s", s)
+	}
+	if !strings.Contains(s, `♥`) {
+		t.Fatalf("missing success content: %s", s)
+	}
+}
+
+func TestOptimisticUpdateRendersButton(t *testing.T) {
+	result := OptimisticUpdate(
+		Post("/api/star/99"),
+		render.Text("Star"),
+		render.Text("Starred"),
+	)
+	s := string(result)
+	if !strings.HasPrefix(s, "<button") {
+		t.Fatalf("should be a button element: %s", s)
+	}
+	if !strings.Contains(s, "</button>") {
+		t.Fatalf("button should be properly closed: %s", s)
+	}
+}
+
+func TestOptimisticUpdateEndpointFromAction(t *testing.T) {
+	for _, method := range []Action{Get("/a"), Put("/b"), Patch("/c"), Delete("/d")} {
+		result := OptimisticUpdate(method, render.HTML("idle"), render.HTML("done"))
+		s := string(result)
+		if !strings.Contains(s, fmt.Sprintf(`data-fui-optimistic-endpoint="%s"`, method.path)) {
+			t.Fatalf("missing endpoint for %s %s: %s", method.method, method.path, s)
+		}
+	}
+}

@@ -158,6 +158,24 @@ func OnSubmit(html render.HTML, action Action) render.HTML {
 	return wrapWithAction(html, action)
 }
 
+// LiveSearch wraps a form element so input changes fire debounced RPCs.
+// The search input should be the first <input> inside the form.
+// Results are written into the signal named by the action's OnSuccess effect
+// (typically via SetSignal).
+//
+// debounceMs controls the delay between keystrokes and the RPC call.
+// If debounceMs is 0, a default of 300ms is used.
+func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
+	wrapped := wrapWithAction(form, action)
+	wrapped = injectAttr(wrapped, "data-fui-rpc-trigger", "input")
+	ms := debounceMs
+	if ms == 0 {
+		ms = 300
+	}
+	wrapped = injectAttr(wrapped, "data-fui-rpc-debounce", fmt.Sprintf("%d", ms))
+	return wrapped
+}
+
 // ─── Client-side signal mutations (no RPC) ──────────────────────────
 //
 // These mutate signals purely in the browser — no server round-trip.
@@ -183,6 +201,70 @@ func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
 // signal. No RPC is fired.
 func ToggleLocal(html render.HTML, signalName string) render.HTML {
 	return injectAttr(html, "data-fui-signal-toggle", signalName)
+}
+
+
+// EditToggle wraps an element so clicking it toggles a boolean signal.
+// Semantic alias for ToggleLocal used in inline-edit patterns: clicking
+// the text span enters edit mode.
+func EditToggle(html render.HTML, signalName string) render.HTML {
+	return ToggleLocal(html, signalName)
+}
+
+// CancelEdit wraps an element so clicking it sets a signal to false,
+// closing the inline-edit mode. Typically used on a cancel button
+// inside the edit form.
+func CancelEdit(html render.HTML, signalName string) render.HTML {
+	return SetLocal(html, signalName, "false")
+}
+
+// ─── Optimistic update ─────────────────────────────────────────────
+//
+// OptimisticUpdate renders a button that flips to its "success" visual
+// state immediately on click, fires an RPC in the background, and
+// reverts to idle if the RPC fails (non-2xx or network error).
+//
+// The runtime module optimisticaction.js handles the full lifecycle:
+// idle → pending (optimistic flip) → committed (RPC 2xx) or error → idle.
+//
+// The caller provides two visual states:
+//   - idle:    the default appearance (e.g. "♡ Like")
+//   - success: the committed appearance (e.g. "♥ Liked")
+//
+// Example:
+//
+//	OptimisticUpdate(
+//	    interactive.Post("/api/like/42"),
+//	    render.HTML(`<span class="icon">♡</span> Like`),
+//	    render.HTML(`<span class="icon">♥</span> Liked`),
+//	)
+//
+// Produces:
+//
+//	<button data-fui-comp="ui-optimistic-action"
+//	        data-state="idle"
+//	        data-fui-optimistic-endpoint="/api/like/42"
+//	        data-fui-optimistic-method="POST">
+//	  <span data-fui-optimistic-idle><span class="icon">♡</span> Like</span>
+//	  <span hidden data-fui-optimistic-success><span class="icon">♥</span> Liked</span>
+//	</button>
+func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
+	attrs := map[string]string{
+		"data-fui-comp":               "ui-optimistic-action",
+		"data-state":                  "idle",
+		"data-fui-optimistic-endpoint": action.path,
+	}
+	if action.method != "" && action.method != "POST" {
+		attrs["data-fui-optimistic-method"] = action.method
+	}
+	idleSpan := render.Tag("span", map[string]string{
+		"data-fui-optimistic-idle": "",
+	}, idle)
+	successSpan := render.Tag("span", map[string]string{
+		"data-fui-optimistic-success": "",
+		"hidden":                      "",
+	}, success)
+	return render.Tag("button", attrs, idleSpan, successSpan)
 }
 
 // injectAttr adds a single data-fui-* attribute to the first HTML tag.
