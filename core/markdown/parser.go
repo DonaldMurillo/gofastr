@@ -154,7 +154,7 @@ func renderFence(p *parser, sb *strings.Builder) {
 		p.advance()
 	}
 
-	sb.WriteString("<pre><code")
+	sb.WriteString(`<pre tabindex="0"><code`)
 	if lang != "" {
 		// %q is NOT HTML-attribute-safe: it escapes " as \" (a literal
 		// backslash + quote in HTML, so the quote terminates the value)

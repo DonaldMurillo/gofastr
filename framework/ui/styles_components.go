@@ -18,26 +18,26 @@ import (
 // registry.WithLoad(registry.LoadPrewarm).
 
 var (
-	sectionStyle      = registry.RegisterStyle("ui-section", sectionCSS)
-	formFieldStyle    = registry.RegisterStyle("ui-form-field", formFieldCSS)
-	formSectionStyle  = registry.RegisterStyle("ui-form-section", formSectionCSS)
-	buttonStyle       = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
-	statusBadgeStyle  = registry.RegisterStyle("ui-badge", statusBadgeCSS)
-	emptyStateStyle   = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
-	calloutStyle      = registry.RegisterStyle("ui-callout", calloutCSS)
-	statCardStyle     = registry.RegisterStyle("ui-stat-card", statCardCSS)
-	avatarStyle       = registry.RegisterStyle("ui-avatar", avatarCSS)
-	formStyle         = registry.RegisterStyle("ui-form", formCSS)
-	notificationStyle = registry.RegisterStyle("ui-notification", notificationCSS)
-	_                 = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
-	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
-	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
-	skipLinkStyle     = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
-	themeToggleStyle    = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
-	backToTopStyle      = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
+	sectionStyle          = registry.RegisterStyle("ui-section", sectionCSS)
+	formFieldStyle        = registry.RegisterStyle("ui-form-field", formFieldCSS)
+	formSectionStyle      = registry.RegisterStyle("ui-form-section", formSectionCSS)
+	buttonStyle           = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
+	statusBadgeStyle      = registry.RegisterStyle("ui-badge", statusBadgeCSS)
+	emptyStateStyle       = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
+	calloutStyle          = registry.RegisterStyle("ui-callout", calloutCSS)
+	statCardStyle         = registry.RegisterStyle("ui-stat-card", statCardCSS)
+	avatarStyle           = registry.RegisterStyle("ui-avatar", avatarCSS)
+	formStyle             = registry.RegisterStyle("ui-form", formCSS)
+	notificationStyle     = registry.RegisterStyle("ui-notification", notificationCSS)
+	_                     = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
+	dataTableStyle        = registry.RegisterStyle("ui-data-table", dataTableCSS)
+	codeBlockStyle        = registry.RegisterStyle("ui-code-block", codeBlockCSS)
+	skipLinkStyle         = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
+	themeToggleStyle      = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
+	backToTopStyle        = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
 	conditionalFieldStyle = registry.RegisterStyle("ui-conditional-field", conditionalFieldCSS)
-	stepWizardStyle      = registry.RegisterStyle("ui-step-wizard", stepWizardCSS)
-	formRepeaterStyle    = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
+	stepWizardStyle       = registry.RegisterStyle("ui-step-wizard", stepWizardCSS)
+	formRepeaterStyle     = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
 )
 
 // buttonCSS is the base .ui-button styling that several call sites
@@ -178,6 +178,17 @@ func codeBlockCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-block"] .tok-num    { color: #F78C6C; }
 [data-fui-comp="ui-code-block"] .tok-com    { color: #676E95; font-style: italic; }
 [data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }
+/* Theme-aware token palette (emitted by the framework highlighter / markdown
+   code blocks). Hosts that define the --tk-* token vars (e.g. a typed Theme)
+   get a contrast-tuned, light/dark-aware palette; the hardcoded fallbacks keep
+   bare hosts colored. */
+[data-fui-comp="ui-code-block"] .tk-kw   { color: var(--tk-kw, #C792EA); }
+[data-fui-comp="ui-code-block"] .tk-fn   { color: var(--tk-fn, #82AAFF); }
+[data-fui-comp="ui-code-block"] .tk-str  { color: var(--tk-str, #C3E88D); }
+[data-fui-comp="ui-code-block"] .tk-num  { color: var(--tk-num, #F78C6C); }
+[data-fui-comp="ui-code-block"] .tk-com  { color: var(--tk-com, #676E95); font-style: italic; }
+[data-fui-comp="ui-code-block"] .tk-type { color: var(--tk-type, #FFCB6B); }
+[data-fui-comp="ui-code-block"] .tk-pn   { color: var(--tk-pn, inherit); }
 
 /* Framed variant: a container with a chrome header (filename + copy) over a
    scrollable body. The container owns the surface; the body owns padding. */

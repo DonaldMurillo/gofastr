@@ -173,7 +173,7 @@ func docLayoutCSS(_ style.Theme) string {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
   color: var(--color-text-subtle, #71717A);
-  margin-bottom: var(--spacing-lg, 16px);
+  margin-bottom: var(--spacing-xl, 24px);
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__crumbs a {
   color: var(--ui-doc-layout-crumb-link-color, inherit);
@@ -225,6 +225,9 @@ func docLayoutCSS(_ style.Theme) string {
     max-width: none;
     padding: var(--spacing-lg, 24px);
   }
+  /* display:block drops the grid gap — restore separation between the
+     stacked SectionMenu pill and the article below it. */
+  [data-fui-comp="ui-doc-layout"] > * + * { margin-block-start: var(--spacing-xl, 28px); }
   [data-fui-comp="ui-doc-layout"] .ui-doc-layout__content {
     max-width: none;
     overflow-x: hidden;
