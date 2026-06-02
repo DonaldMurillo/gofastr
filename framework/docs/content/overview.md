@@ -7,6 +7,14 @@ tools for agents, OpenAPI, and a typed Go model from that one source. Everything
 else is regular, readable Go you can grep, debug, and step through. No
 reflection magic, no opaque runtime.
 
+**The promise:** opinionated input, boring output, small runtime, easy escape
+hatches. GoFastr is a **code-generation platform for CRUD-heavy and AI-authored
+apps** — not a universal framework that owns your control flow. Start with one
+entity and add only what you need; when the framework is in your way, drop to
+`core/` and write plain `net/http`. And because an agent often writes the code,
+the output is built to be *more* inspectable, not less — plain Go on disk, no
+reflection injection or hidden registries.
+
 This page is the map. It explains the shape of the framework and links every
 feature to its reference doc. If you're new, read this top-to-bottom once, then
 jump to the section that matches what you're building.
@@ -51,7 +59,7 @@ Two packages, no more:
   CRUD, hooks, migrations, plugins, and the batteries below.
 
 There is no third layer of hidden magic. Generated code is regular Go that lands
-on disk under `.gofastr/` — see **[Code generation](/docs/codegen)** and
+on disk under `gen/` — see **[Code generation](/docs/codegen)** and
 **[Blueprints](/docs/blueprints)**.
 
 ## Modeling your domain
@@ -131,7 +139,7 @@ SQLite and Postgres, dialect-aware.
 
 - **[Benchmarks](/docs/benchmarks)** · **[Performance results](/docs/perf-results)** —
   how it performs and how that's measured.
-- **[Codegen](/docs/codegen)** — what lands under `.gofastr/` and how to read it.
+- **[Codegen](/docs/codegen)** — what lands under `gen/` and how to read it.
 - The **[full A–Z index](/docs/)** lists every embedded doc — nothing is hidden.
 
 ## Where to go next

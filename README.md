@@ -6,6 +6,17 @@ GoFastr is an experimental framework that treats AI agents as first-class author
 
 > **Status:** pre-alpha research. APIs change. Use it to learn, not to ship customer code.
 
+**The promise:** opinionated input, boring output, small runtime, easy escape
+hatches. You write a typed declaration; the framework emits plain Go you can
+read, debug, and step through — then gets out of the way. It's a **code-
+generation platform for CRUD-heavy and AI-authored apps**, not a universal
+framework that owns your control flow. When it's in your way, drop to `core/`
+and write `net/http`.
+
+A corollary for the AI era: an agent generating the code is a reason for the
+output to be **more** inspectable, not less. Generated code is normal Go on
+disk — no reflection injection, no hidden registries, no runtime mutation.
+
 ---
 
 ## Why
@@ -13,13 +24,64 @@ GoFastr is an experimental framework that treats AI agents as first-class author
 Most Go web frameworks assume a human will hand-write every route, query, validator, migration, and form. AI agents already generate this code — but no framework treats their output as the canonical source. GoFastr inverts that:
 
 - **One declaration, many surfaces.** A single `entities/posts.json` produces a SQL table, REST routes, OpenAPI ops, a typed Go model, and five MCP tools (`posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`).
-- **No reflection magic.** Generated code lives in `.gofastr/entities/` and is normal Go you can read, debug, and edit.
+- **No reflection magic.** Generated code lives in `gen/entities/` and is normal Go you can read, debug, and edit.
 - **Two-layer architecture.** A small `core/` of stdlib-only primitives sits under an opinionated `framework/`. Drop down to core when the framework is in your way.
 - **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
+
+## The repo in 60 seconds
+
+| Directory | What it is | Depend on it when… |
+|---|---|---|
+| `core/` | Stdlib-only primitives — router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
+| `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting ~17 subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
+| `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
+| `battery/` | Opt-in infrastructure — auth, cache, email, queue, search, storage, print, log, notify, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
+| `cmd/gofastr` | The CLI — `init`, `generate`, `migrate`, `dev`, `docs`. | you're scaffolding or generating code. |
+| `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
+| `examples/` | Runnable reference apps (blog, api-tour, spa, the docs site). | you want to see it wired end-to-end. |
+
+You import `framework` and the batteries you opt into — not 17 packages. The
+subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
+public surface is `framework.X` plus the batteries you reach for.
 
 ## Quickstart
 
 Requires Go 1.26+.
+
+**The smallest app.** One entity is a complete server — a migrated table, REST
+CRUD, an OpenAPI spec, and MCP tools. Add only what you need from there.
+
+```go
+package main
+
+import (
+	"database/sql"
+	"log"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+func main() {
+	db, _ := sql.Open("sqlite3", "app.db")
+	app := framework.NewApp(framework.WithDB(db))
+
+	// CRUD is auto-on when a DB is set (CRUD *bool: nil = auto).
+	app.Entity("posts", framework.EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
+	})
+
+	log.Fatal(app.Start(":8080")) // GET/POST /posts, /openapi.json, MCP — all live
+}
+```
+
+That's the whole program. No config files, no codegen step, no registration
+boilerplate — and nothing you didn't ask for. Reach for entities-as-JSON,
+batteries, the UI runtime, or the generator only when a real need shows up.
+For how a flat app grows into `internal/<domain>/` as boundaries appear, see
+[project structure](framework/docs/content/project-structure.md) — structure
+follows the app, not the other way around.
 
 Install the CLIs straight from GitHub:
 
@@ -79,7 +141,7 @@ log.Fatal(app.Start(":8080"))
 …or generate Go code:
 
 ```bash
-go run ./cmd/gofastr generate          # writes .gofastr/entities/{register,models}.go
+go run ./cmd/gofastr generate          # writes gen/entities/{register,models}.go
 ```
 
 ### Declare an entity (Go)
