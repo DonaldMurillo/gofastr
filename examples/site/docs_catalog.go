@@ -46,10 +46,11 @@ type docIntent struct {
 var docIntents = []docIntent{
 	{
 		Num: "00", Slug: "start", Title: "Start here",
-		Lede: "What GoFastr is and a map of every feature — the newcomer narrative before the per-feature references.",
-		Path: []string{"Overview"},
+		Lede: "What GoFastr is, how a project is laid out, and a map of every feature — the newcomer narrative before the per-feature references.",
+		Path: []string{"Overview", "Project structure"},
 		Docs: []docEntry{
 			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
+			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 		},
 	},
 	{
@@ -64,7 +65,7 @@ var docIntents = []docIntent{
 			{"hooks-and-transactions", "Hooks & transactions", "BeforeCreate / AfterUpdate hooks share the parent tx."},
 			{"migrations", "Migrations", "Versioned, ordered, reversible — versus the auto-migrate dev mode."},
 			{"multi-tenant", "Multi-tenant scope", "tenant_id column + automatic filter from request context."},
-			{"codegen", "Code generation", "What lands on disk under .gofastr/ — and how to read it."},
+			{"codegen", "Code generation", "What lands on disk under gen/ — and how to read it."},
 		},
 	},
 	{
