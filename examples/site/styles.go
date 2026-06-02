@@ -50,6 +50,11 @@ func createStyleSheet(t style.Theme) string {
 	pageComponents(ss)
 	responsive(ss)
 
+	// Fan in any co-located styles registered via style.Contribute(...) at
+	// package-init time. Applied AFTER the host base rules so a package can
+	// override base styling by re-declaring the same selector.
+	style.Apply(ss)
+
 	return ss.CSS()
 }
 
@@ -70,7 +75,12 @@ func rootTokens(ss *style.StyleSheet) {
 			"--line-faint", "oklch(0.22 0.005 75)",
 
 			// Text — fg-4 is the faintest "footnote" shade, no typed slot.
-			"--fg-4", "oklch(0.42 0.010 65)",
+			// Bumped 0.42->0.62 so it clears WCAG AA (4.5:1) on the page's
+			// near-black surfaces — it backs doc-card meta, the site +
+			// section-menu eyebrows, and gen-row numbers, all of which axe
+			// flagged at ~2.35:1. 0.62 reads ~4.9:1 on --bg, ~5.5:1 on the
+			// darkest hero panel.
+			"--fg-4", "oklch(0.62 0.010 65)",
 
 			// Accent variants — hover (-2) and low-emphasis backgrounds.
 			"--accent-2", "oklch(0.74 0.165 75)",
@@ -84,7 +94,9 @@ func rootTokens(ss *style.StyleSheet) {
 			"--tk-fn", "oklch(0.85 0.12 78)",
 			"--tk-str", "oklch(0.74 0.10 145)",
 			"--tk-num", "oklch(0.78 0.09 30)",
-			"--tk-com", "oklch(0.48 0.008 75)",
+			// Comments — bumped 0.48->0.62 so the italic // spans clear AA
+			// (4.5:1) on the code-block surface; axe flagged them at 2.7:1.
+			"--tk-com", "oklch(0.62 0.008 75)",
 			"--tk-pn", "oklch(0.65 0.008 75)",
 			"--tk-type", "oklch(0.84 0.06 220)",
 
@@ -123,6 +135,28 @@ func rootTokens(ss *style.StyleSheet) {
 			"--fui-primary", "var(--color-primary)",
 			"--fui-muted", "var(--color-text-muted)",
 			"--fui-muted-bg", "var(--color-surface-soft)",
+			// Several framework components (SegmentedControl track,
+			// ShortcutHint key, AvatarGroup overflow chip) read
+			// --color-muted as a low-emphasis FILL and fall back to a LIGHT
+			// hardcoded grey when a host leaves it unset — which painted a
+			// near-white chip on this dark theme (the dark --color-text on
+			// top then dropped to ~1:1). Alias it to the soft surface so the
+			// fill flips with the scheme and the muted/foreground text on it
+			// reads at AA.
+			"--color-muted", "var(--color-surface-soft)",
+
+			// Semantic status hues. The framework defaults (Success #15803D,
+			// Danger #DC2626, Warning #A16207, Info #2563EB) are tuned to hit
+			// AA on a WHITE surface; on this dark-default theme they read
+			// ~3.3–4.0:1 as the label colour on their own 15%-tinted dark
+			// backgrounds (Badge/Tag/StatCard trend/JSONViewer key+value).
+			// Re-tone to brighter oklch variants of the SAME hue so they
+			// clear 4.5:1 (~7:1 actual) on the tinted dark chips. The light
+			// scheme below restores the original AA-on-white values.
+			"--color-success", "oklch(0.74 0.15 150)",
+			"--color-danger", "oklch(0.72 0.16 25)",
+			"--color-warning", "oklch(0.74 0.13 80)",
+			"--color-info", "oklch(0.72 0.13 250)",
 
 			// Layout caps.
 			"--col-max", "1240px",
@@ -200,6 +234,17 @@ func rootTokens(ss *style.StyleSheet) {
 			// Accent-dim (subtle underlines, low-emphasis bg) needs to
 			// stay visible on warm-white. Bump alpha + lower L slightly.
 			"--accent-dim", "oklch(0.65 0.12 70)",
+			// Restore the framework's AA-on-WHITE semantic hues for light
+			// mode. The :root block above re-tones these BRIGHTER for the
+			// dark default (so status text reads on dark tinted chips); on
+			// the warm-white surfaces those bright variants would fail, so
+			// here we put back deeper hues that hit 4.5:1 on the 15%-tinted
+			// LIGHT chips. (Framework defaults: #15803D / #DC2626 / #A16207
+			// / #2563EB.)
+			"--color-success", "#15803D",
+			"--color-danger", "#DC2626",
+			"--color-warning", "#A16207",
+			"--color-info", "#2563EB",
 		).End()
 }
 
@@ -218,6 +263,11 @@ func resetAndType(ss *style.StyleSheet) {
 		Set("font", "inherit", "color", "inherit", "background", "none", "border", "0").End()
 	ss.Rule("button").Set("cursor", "pointer").End()
 	ss.Rule("a").Set("color", "inherit", "text-decoration", "none").End()
+	// In-content prose links must be distinguishable without colour (WCAG
+	// link-in-text-block / axe). The base rule above strips underlines for
+	// nav + card chrome; restore them for links inside body copy.
+	ss.Rule(".ph-article p a, .ph-article dd a, .ph-article li a, .doc-page p a, .doc-page li a, .doc-head__lede a, .alpha__list dd a").
+		Set("text-decoration", "underline").End()
 
 	ss.Rule("html").
 		Set("-webkit-font-smoothing", "antialiased",
@@ -494,6 +544,7 @@ func siteNav(ss *style.StyleSheet) {
 	ss.Rule(".site-cmd > span").
 		Set("flex", "1",
 			"text-align", "left",
+			"color", "{colors.text}",
 			"letter-spacing", "-0.005em").End()
 	ss.Rule(".site-cmd kbd").
 		Set("display", "inline-flex",

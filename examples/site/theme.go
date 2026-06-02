@@ -35,7 +35,7 @@ func createTheme() style.Theme {
 		BorderStrong: "oklch(0.38 0.008 75)",  // --line-strong
 		Text:         "oklch(0.96 0.006 80)",  // --fg
 		TextMuted:    "oklch(0.78 0.008 75)",  // --fg-2
-		TextSubtle:   "oklch(0.58 0.010 70)",  // --fg-3
+		TextSubtle:   "oklch(0.66 0.010 70)",  // --fg-3 (bumped 0.58->0.66 for WCAG AA on surface)
 
 		// Amber accent. Used for the brand square, the hero highlight, links,
 		// the primary CTA, the live-dot. One chromatic accent on the page.

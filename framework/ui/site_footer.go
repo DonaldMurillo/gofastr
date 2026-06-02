@@ -61,7 +61,7 @@ func SiteFooter(cfg SiteFooterConfig) render.HTML {
 			))
 		}
 		col := html.Div(html.DivConfig{Class: "ui-site-footer__col"},
-			render.Tag("h6", map[string]string{"class": "ui-site-footer__col-title"}, render.Text(c.Title)),
+			render.Tag("p", map[string]string{"class": "ui-site-footer__col-title"}, render.Text(c.Title)),
 			html.UnorderedList(html.ListConfig{}, items...),
 		)
 		gridChildren = append(gridChildren, col)
