@@ -77,6 +77,24 @@ func TestLintRepoFlagsGoSyntax(t *testing.T) {
 	mustFindRule(t, findings, "go-syntax")
 }
 
+func TestLintRepoFlagsControlCharFilename(t *testing.T) {
+	dir := t.TempDir()
+	// A botched agent edit once committed a file whose NAME was a chunk
+	// of a multi-line prompt (newlines and quotes in the filename). Go
+	// ignored it (no .go extension) so it lurked uncompiled. Guard the
+	// whole class: any committed file name with a control byte is junk.
+	bad := filepath.Join(dir, "oops\nimplement the thing.txt")
+	if err := os.WriteFile(bad, []byte("junk"), 0o644); err != nil {
+		t.Skipf("filesystem rejects control-char names: %v", err)
+	}
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	mustFindRule(t, findings, "bad-filename")
+}
+
 func writeTestFile(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, rel)

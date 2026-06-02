@@ -55,6 +55,11 @@ type SiteHeaderConfig struct {
 	// PrimaryNavAriaLabel labels the desktop <nav>. Defaults to
 	// "Primary".
 	PrimaryNavAriaLabel string
+	// NavUnderline opts the desktop nav links into an animated
+	// underline-reveal on hover / focus / active, instead of the default
+	// flat colour-only treatment. The underline colour is themeable via
+	// --ui-site-header-nav-underline-color (defaults to the primary colour).
+	NavUnderline bool
 	// Class is appended to the ui-site-header wrapper.
 	Class string
 }
@@ -135,6 +140,9 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	right := html.Div(html.DivConfig{Class: "ui-site-header__right"}, rightChildren...)
 
 	cls := "ui-site-header"
+	if cfg.NavUnderline {
+		cls += " ui-site-header--nav-underline"
+	}
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
@@ -171,6 +179,38 @@ func siteHeaderCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__links a[data-fui-active] {
   color: var(--ui-site-header-nav-active-color, var(--color-primary, currentColor));
+}
+
+/* Opt-in underline-reveal variant (NavUnderline:true). A 1px rule wipes in
+   from the left on hover / focus / active. Colour + vertical offset are
+   themeable via the --ui-site-header-nav-underline-* vars. */
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a {
+  position: relative;
+}
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 100%;
+  bottom: var(--ui-site-header-nav-underline-bottom, -4px);
+  height: 1px;
+  background: var(--ui-site-header-nav-underline-color, var(--color-primary, currentColor));
+  transition: right 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:hover,
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:focus-visible {
+  color: var(--ui-site-header-nav-active-color, var(--color-text, currentColor));
+}
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:hover::after,
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:focus-visible::after,
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a[data-fui-active]::after,
+[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a[aria-current="page"]::after {
+  right: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a::after {
+    transition: none;
+  }
 }
 [data-fui-comp="ui-site-header"] .ui-site-header__right {
   display: flex;

@@ -181,7 +181,7 @@ func (s *LibraryScreen) Load(ctx context.Context) error {
 }
 ```
 
-This is the pattern used in `examples/website`. It's deliberately simple — a
+This is the pattern used in `examples/site`. It's deliberately simple — a
 single shared handle, no DI container, no reflection. The trade-off is that
 screens become package-coupled to that handle, which is fine for one app and
 awkward for shared screens.
@@ -313,7 +313,7 @@ html.Details(html.DetailsConfig{Disclosure: true},
 )
 ```
 
-Pair with media-query CSS that hides the toggle and shows the nav inline above your mobile breakpoint. See `examples/website/theme.go` (`.site-nav` rules) for the canonical pattern.
+Pair with media-query CSS that hides the toggle and shows the nav inline above your mobile breakpoint. See `examples/site/styles.go` (`.site-nav` rules) for the canonical pattern.
 
 ---
 
@@ -324,7 +324,7 @@ Pair with media-query CSS that hides the toggle and shows the nav inline above y
 - The full `data-fui-*` primitive table is in [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md)
 - Component primitive cheat sheet (Layout, Card, Tooltip, Toggle, Spinner, …) is in [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) "UI primitive cheat sheet"
 
-For a complete worked example, read `examples/website/main.go` (45 lines of wiring) and `examples/website/screen_framework_ui.go` (one screen using every framework/ui component).
+For a complete worked example, read `examples/site/main.go` (route registration + widget mounts) and `examples/site/components.go` (every framework/ui component showcased).
 
 ## Primitives reference
 

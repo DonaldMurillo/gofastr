@@ -271,6 +271,38 @@
     document.addEventListener('click', async (e) => {
       // Skip if inside a widget — that widget's handler owns the click.
       if (e.target.closest('[data-fui-widget]')) return;
+      // Client-side signal mutations — no RPC needed.
+      // Lightweight local state changes (counters, toggles, tabs).
+      const signalEl = e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]');
+      if (signalEl) {
+        e.preventDefault();
+        const G = window.__gofastr;
+        // Set: data-fui-signal-set="name:value"
+        const set = signalEl.getAttribute('data-fui-signal-set');
+        if (set) {
+          const sep = set.indexOf(':');
+          if (sep > 0) {
+            G.setSignal(set.substring(0, sep), set.substring(sep + 1));
+          }
+        }
+        // Increment: data-fui-signal-inc="name" or data-fui-signal-inc="name:delta"
+        const inc = signalEl.getAttribute('data-fui-signal-inc');
+        if (inc) {
+          const sep = inc.indexOf(':');
+          const n = sep > 0 ? inc.substring(0, sep) : inc;
+          const delta = sep > 0 ? Number(inc.substring(sep + 1)) : 1;
+          const cur = Number(G.getSignal(n)) || 0;
+          G.setSignal(n, cur + delta);
+        }
+        // Toggle: data-fui-signal-toggle="name"
+        const tog = signalEl.getAttribute('data-fui-signal-toggle');
+        if (tog) {
+          const cur = G.getSignal(tog);
+          G.setSignal(tog, !cur || cur === 'false' || cur === '0');
+        }
+        return;
+      }
+
       const btn = e.target.closest('[data-fui-rpc]');
       if (btn && btn.tagName !== 'FORM') {
         e.preventDefault();
@@ -452,6 +484,29 @@
     const c = _readInlineJSON('gofastr-catalog');
     if (c) window.__gofastr_catalog = c;
   }
+  // isReservedSignalKey rejects the JS object keys that, when used as a
+  // dynamic property name on the _signals store, mutate the store's
+  // prototype chain instead of creating an own data property:
+  //   store["__proto__"] = {…}   // invokes the __proto__ setter
+  //   store["constructor"]/["prototype"] // shadow built-ins
+  // A seed (full-load or partial) carrying such a key would re-parent the
+  // _signals object — every not-yet-set signal name would then resolve
+  // through the attacker object (cross-signal confusion) and setSignal
+  // would mutate the shared prototype. Seed keys are server-controlled
+  // today; this is advisory-recommended defense-in-depth (strip
+  // __proto__/constructor/prototype before merging). Used by all three
+  // seed-merge loops (boot seed + mergeSeedFromDOM page/global).
+  const isReservedSignalKey = (k) =>
+    k === '__proto__' || k === 'constructor' || k === 'prototype';
+
+  // Signal store seed — server-provided initial values for the signal
+  // bus (core-ui/store). Stashed now; applied to _signals right after
+  // the __gofastr namespace is built (below), BEFORE hydration, so
+  // getSignal returns the SSR value on first paint instead of undefined.
+  if (!window.__gofastr_signals_seed) {
+    const sg = _readInlineJSON('gofastr-signals');
+    if (sg) window.__gofastr_signals_seed = sg;
+  }
 
   // Bootstrap routes from injected data
   if (Array.isArray(window.__gofastr_routes)) {
@@ -592,7 +647,7 @@
       // ("  javascript:") AND interior ("java<TAB>script:",
       // "<NUL>javascript:") control chars must go, or a startsWith()
       // check is defeated by an embedded tab/newline/CR or leading C0.
-      const trimmed = String(value || '').replace(/[\s -]+/g, '').toLowerCase();
+      const trimmed = String(value || '').replace(/[\s\x00-\x1f]+/g, '').toLowerCase();
       if (trimmed.startsWith('javascript:')) return true;
       if (trimmed.startsWith('vbscript:')) return true;
       if (trimmed.startsWith('data:')) {
@@ -822,6 +877,14 @@
     _widgets: {},
     _signals: {},
 
+    /** Read the current value of a named signal. Returns undefined for
+        unset signals. Used by data-fui-signal-inc and data-fui-signal-toggle
+        to read-modify-write without an RPC round-trip. */
+    getSignal(name) {
+      const s = this._signals[name];
+      return s ? s.value : undefined;
+    },
+
     /** Names of currently-mounted modal (backdrop'd) widgets, oldest
         at index 0. Drives body-scroll lock + the Tab focus trap so a
         modal opened from inside another modal traps Tab to itself
@@ -1040,6 +1103,24 @@
     },
   };
 
+  // Apply the SSR signal seed (stashed above) to the signal store BEFORE
+  // hydration. Existing in-memory values win (the seed never clobbers a
+  // value already mutated on the client — relevant for app-global slices
+  // across SPA navigations); fresh names are created with no listeners.
+  if (window.__gofastr_signals_seed) {
+    const store = window.__gofastr._signals;
+    const seed = window.__gofastr_signals_seed;
+    for (const k in seed) {
+      if (!Object.prototype.hasOwnProperty.call(seed, k)) continue;
+      if (isReservedSignalKey(k)) continue;
+      if (store[k]) {
+        store[k].value = seed[k];
+      } else {
+        store[k] = { value: seed[k], listeners: [] };
+      }
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
@@ -1143,6 +1224,32 @@
     t._fuiTimer = setTimeout(() => t.classList.remove('is-visible'), 4000);
   };
 
+  // scrollToHash scrolls to the element targeted by the current URL
+  // fragment after a SPA swap; falls back to the top when there is no
+  // fragment or no matching element. Reads location.hash (set by the
+  // click handler's pushState / by the browser on popstate) so back /
+  // forward and in-link fragments all land on the right section instead
+  // of always jumping to the top.
+  const scrollToHash = () => {
+    const id = (location.hash || '').replace(/^#/, '');
+    const doScroll = () => {
+      if (id) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({ block: 'start' });
+          return;
+        }
+      }
+      window.scrollTo(0, 0);
+    };
+    doScroll();
+    // Re-correct after the swapped content's layout settles — the page
+    // height can still be shifting (fonts, late reflow) the instant after
+    // the innerHTML swap, which would leave the target over/undershot; a
+    // second pass on the next painted frame lands it precisely.
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+  };
+
   /** Fetch page, swap <main>. Caches for instant back-nav. */
   const loadPage = async (path) => {
     // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
@@ -1171,7 +1278,7 @@
           swapMainContent(cached.html);
         }
         updateActiveLink(path);
-        window.scrollTo(0, 0);
+        scrollToHash();
         window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
         return;
       }
@@ -1224,7 +1331,7 @@
       cacheScreen(path, body, title);
 
       updateActiveLink(path);
-      window.scrollTo(0, 0);
+      scrollToHash();
       window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: false } }));
     } catch (err) {
       // CLAUDE.md hard rule 4 — no location.href fallback. Surface a
@@ -1263,10 +1370,41 @@
     }, 50);
   };
 
+  // mergeSeedFromDOM applies a partial (SPA-nav) signal seed embedded in
+  // freshly-swapped content (#gofastr-signals-partial). Page-scoped names
+  // (data.p) are applied unconditionally — the destination page's fresh
+  // state. Globals (data.g) are seeded only when first seen, so a value
+  // the user already mutated (cart count) survives navigation.
+  const mergeSeedFromDOM = (root) => {
+    if (!root || !root.querySelector) return;
+    const el = root.querySelector('#gofastr-signals-partial');
+    if (!el) return;
+    let data = null;
+    try { data = JSON.parse(el.textContent || 'null'); } catch (_) { /* ignore */ }
+    el.remove();
+    if (!data) return;
+    const store = window.__gofastr && window.__gofastr._signals;
+    if (!store) return;
+    const page = data.p || {};
+    for (const k in page) {
+      if (!Object.prototype.hasOwnProperty.call(page, k)) continue;
+      if (isReservedSignalKey(k)) continue;
+      if (store[k]) store[k].value = page[k];
+      else store[k] = { value: page[k], listeners: [] };
+    }
+    const glob = data.g || {};
+    for (const k in glob) {
+      if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
+      if (isReservedSignalKey(k)) continue;
+      if (!store[k]) store[k] = { value: glob[k], listeners: [] };
+    }
+  };
+
   const swapMainContent = (html) => {
     const main = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (main) {
       main.innerHTML = html;
+      mergeSeedFromDOM(main);
       if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(main);
     }
     // Close any open dismissible disclosure (e.g. mobile nav hamburger)
@@ -1330,6 +1468,7 @@
     }
 
     target.innerHTML = swapHTML;
+    mergeSeedFromDOM(target);
     if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(target);
 
     // Close disclosures inside the group
@@ -1411,7 +1550,13 @@
     // for the entire SPA fetch duration — the user perceives the
     // click as "didn't take".
     anchor.closest('details[data-fui-disclosure]')?.removeAttribute('open');
-    history.pushState(null, '', fullPath);
+    // Preserve the #fragment: resolvePath strips it (path-only is what
+    // route matching + cache keys want), but the URL bar and the
+    // post-nav scroll target need it. loadPage reads location.hash, so
+    // pushState must carry the fragment.
+    let navHash = '';
+    try { navHash = new URL(href, location.href).hash; } catch (_) { /* malformed href */ }
+    history.pushState(null, '', fullPath + navHash);
     loadPage(fullPath);
   });
 
@@ -1769,6 +1914,10 @@
     // SPA-nav). The src/copy.js module installs a single document-level
     // listener that handles every button.
     { name: 'copy',       selector: '[data-fui-copy-text-from]' },
+    // Computed: client-side derived signals (core-ui/store). The module
+    // subscribes each [data-fui-computed] node to its dependency signals
+    // and recomputes via the host-registered reducer on any change.
+    { name: 'computed',   selector: '[data-fui-computed]' },
     { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
@@ -1851,7 +2000,13 @@
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // FormRepeater: serializes field values into RPC add/remove clicks.
     { name: 'formrepeater',    selector: '[data-fui-comp="ui-form-repeater"]' },
-  ];
+      // Dropdown: click-toggle + click-outside dismiss + Esc close.
+    { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
+    // Reveal: IntersectionObserver-driven entrance animations.
+    { name: 'reveal',           selector: '[data-fui-reveal]' },
+    // Animate: signal-driven CSS class toggling.
+    { name: 'animate',          selector: '[data-fui-animate-signal]' },
+];
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const idleQueue = [];

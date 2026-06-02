@@ -58,7 +58,7 @@ func runDev(args []string) {
 	}
 
 	fmt.Printf("\n  %s Dev server with hot reload\n\n", bold("GoFastr"))
-	info("Watching %s for *.go changes...", dir)
+	info("Watching %s for changes (.go, .js, .css, .html)...", dir)
 	if runtimeIsolation.Active() && resolvedAddr != addr {
 		info("Isolation %s remapped http://%s -> http://%s", runtimeIsolation.ID(), addr, resolvedAddr)
 	} else {
@@ -147,7 +147,8 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 		tmpName += "-" + runtimeIsolation.ID()
 	}
 	tmpBin := filepath.Join(os.TempDir(), tmpName)
-	buildCmd := exec.Command("go", "build", "-o", tmpBin, dir)
+	buildCmd := exec.Command("go", "build", "-o", tmpBin, ".")
+	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
@@ -204,7 +205,9 @@ func killServer(mu *sync.Mutex, cmd **exec.Cmd) {
 	}
 }
 
-// scanModTimes walks the directory and records the latest mod time of all .go files.
+// scanModTimes walks the directory and records the latest mod time of
+// source and embedded-asset files. Go embeds .js, .css, and .html at
+// build time, so changes to those files also require a rebuild.
 func scanModTimes(dir string) map[string]time.Time {
 	result := make(map[string]time.Time)
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -216,7 +219,9 @@ func scanModTimes(dir string) map[string]time.Time {
 		if info.IsDir() && (name == "vendor" || name == ".git" || name == "node_modules" || name == "tmp") {
 			return filepath.SkipDir
 		}
-		if filepath.Ext(path) == ".go" {
+		ext := filepath.Ext(path)
+		switch ext {
+		case ".go", ".js", ".css", ".html":
 			result[path] = info.ModTime()
 		}
 		return nil

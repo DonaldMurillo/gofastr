@@ -13,9 +13,9 @@ issuing requests.
 ## Prerequisites
 
 The user's app must be built with `framework.WithMCPIntrospection()`
-and expose `POST /mcp`. The `examples/website` example does both —
+and expose `POST /mcp`. The `examples/site` example does both —
 launch it with `./scripts/dev-watch.sh` (port 8082) or
-`go run ./examples/website`.
+`go run ./examples/site`.
 
 ## The five tools
 

@@ -1,6 +1,7 @@
 // =============================================================================
-// examples/site — the public GoFastr product site. Distinct from
-// examples/website (which stays as the feature gallery / contributor demo).
+// examples/site — the GoFastr product site AND the canonical feature gallery.
+// The single example app: the product/marketing pages, the docs, and a
+// one-page-per-primitive component showcase plus SEO / wizard / print demos.
 //
 // Boot: core-ui app + typed v2 theme + StyleSheet DSL output + UIHost on :8083.
 // Plus a global ui.CommandPalette wired into the nav, a ui.ThemeToggle in the
@@ -21,9 +22,10 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -48,8 +50,8 @@ func main() {
 }
 
 // setupServer wires the whole site and returns the framework.App without
-// binding a port — main() calls Start, tests drive app.Router() directly
-// (mirrors examples/website's setupServer so the site is testable).
+// binding a port — main() calls Start, tests drive app.Router() directly so
+// the site is testable end-to-end.
 func setupServer() *framework.App {
 	site := app.NewApp("GoFastr")
 
@@ -64,7 +66,6 @@ func setupServer() *framework.App {
 		RPCPath:     "/__site/palette",
 		Placeholder: "Search docs, examples, components…",
 	})
-	paletteDef := paletteBuilder.Build()
 
 	layout := app.NewLayout("main").
 		WithHeader(&HeaderComponent{}).
@@ -82,19 +83,32 @@ func setupServer() *framework.App {
 			URL:   "https://gofastr.dev",
 			Type:  "website",
 		}),
-		uihost.WithCanonicalURL("https://gofastr.dev"),
+		// No global WithCanonicalURL — a fixed canonical on every page would
+		// declare the homepage canonical site-wide. Pages that need one
+		// implement ScreenCanonical (see /seo); the rest omit it.
+		// Sitewide SEO endpoints backing the /seo demo page.
+		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://gofastr.dev"}),
+		// Open to crawlers but keep internal runtime endpoints out of the index.
+		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}),
 	)
 
-	fwApp := framework.NewApp(
+	fwApp := framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "site"}),
 	)
-	fwApp.Mount(host)
 
 	// Mount the palette widget AFTER the host so its routes land on the
 	// same router instance. The palette's RPC handler runs an in-memory
 	// fuzzy match over a curated route catalog — no DB roundtrip.
-	widget.Mount(fwApp.Router(), &paletteDef)
+	widget.MountBuilder(fwApp.Router(), paletteBuilder)
 	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
+
+	// SectionMenu mobile drawers — the docs + components navs each mount a
+	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock
+	// + focus trap, all from the framework widget). The inline rails render
+	// the same config per page.
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig("")))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(componentsSectionMenuConfig()))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
 	// Kiln panel approve/reject — no-op endpoints. The OptimisticAction
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
@@ -122,7 +136,9 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ Message string `json:"message"` }
+		var body struct {
+			Message string `json:"message"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			body.Message = ""
 		}
@@ -140,16 +156,65 @@ func setupServer() *framework.App {
 	// Modal for the "RPC → Open Widget" demo.
 	// Hidden by default — only appears when data-fui-rpc-open triggers it.
 	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
-		render.Tag("p", map[string]string{"class": "demo-modal-emoji"}, render.Text("🎉")),
+		html.Paragraph(html.TextConfig{Class: "demo-modal-emoji"}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
-		render.Tag("p", nil, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
+		html.Paragraph(html.TextConfig{}, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
 	)
-	modalDef := preset.Modal("demo-result-modal").
+	widget.MountBuilder(fwApp.Router(), preset.Modal("demo-result-modal").
 		LabelledBy("demo-modal-heading").
 		Slot("body", app.NewStaticComponent(modalBody)).
-		Build()
-	modalDef.Hidden = true
-	widget.Mount(fwApp.Router(), &modalDef)
+		Hidden())
+
+	// Overlay widgets backing the /components/{modal,drawer,bottomsheet,toast}
+	// showcase pages. Each is mounted once here; the catalog demos render a
+	// trigger button (data-fui-open / data-fui-toast) that opens them. Modal +
+	// drawer are Hidden (lazy-fetched on open); the toast stack is auto-mount
+	// (always inlined) so a toast has somewhere to land on any page.
+	demoModalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-modal-heading"}, render.Text("Edit user")),
+		html.Paragraph(html.TextConfig{}, render.Text("Center-mounted dialog with a backdrop, focus trap, and Escape-to-close. Open a deeplinked variant and the URL gains ?modal=user-edit&user_id=42 — refresh re-opens it.")),
+	)
+	widget.MountBuilder(fwApp.Router(), preset.Modal("site-demo-modal").
+		LabelledBy("site-demo-modal-heading").
+		DeepLink("modal", "user-edit").
+		DeepLinkParam("user_id").
+		Slot("body", app.NewStaticComponent(demoModalBody)).
+		Hidden())
+
+	demoDrawerBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-drawer-heading"}, render.Text("Filters")),
+		html.Paragraph(html.TextConfig{}, render.Text("Side-mounted sliding panel. Same dismiss affordances as Modal — backdrop, Escape, focus trap, scroll lock.")),
+	)
+	widget.MountBuilder(fwApp.Router(), preset.Drawer("site-demo-drawer").
+		LabelledBy("site-demo-drawer-heading").
+		Slot("body", app.NewStaticComponent(demoDrawerBody)).
+		Hidden())
+
+	demoSheetBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-sheet-heading"}, render.Text("Share")),
+		html.Paragraph(html.TextConfig{}, render.Text("Bottom-anchored sibling of Drawer. Drag the handle down past ~80px to dismiss; Escape and backdrop click also close it.")),
+	)
+	widget.MountBuilder(fwApp.Router(), preset.BottomSheet("site-demo-bottomsheet").
+		LabelledBy("site-demo-sheet-heading").
+		Slot("body", app.NewStaticComponent(demoSheetBody)).
+		Hidden())
+
+	// Toast stack anchored top-right; auto-mount so every page can fire one.
+	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))
+	// Server-path toast demo: any data-fui-rpc handler can attach the toast
+	// header on a 2xx and the runtime fires it (no SSE, no extra request).
+	fwApp.Router().Post("/__site/toast/push", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		ui.AddToastSuccess(w, "Saved", "Pushed from the server via the X-Gofastr-Toast header.", 5000)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// Multi-step wizard round-trip demo (self-contained full-page form that
+	// POSTs to itself — no site chrome). GET renders step 0; POST advances.
+	fwApp.Router().Get(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
+	fwApp.Router().Post(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
+
+	// battery/print demo documents under /print/*.
+	registerPrintDemos(fwApp)
 
 	return fwApp
 }
@@ -168,6 +233,9 @@ var paletteCatalog = []paletteRoute{
 	{"Kiln — agent build mode", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
 	{"Components — gallery index", "/components/"},
+	{"SEO — per-page meta, canonical, JSON-LD", "/seo"},
+	{"Forms wizard — multi-step round-trip", "/forms/wizard"},
+	{"Print — invoice / receipt documents", "/print/invoice/1"},
 }
 
 // servePaletteSearch returns matching options as <li role="option">
@@ -232,6 +300,9 @@ func registerScreens(site *app.App) {
 	site.Register("/examples", &ExamplesScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
+	// SEO demo pages (per-concern interfaces + the ScreenSEO bundle).
+	site.Register("/seo", &SEOScreen{}, nil)
+	site.Register("/seo-bundle", &SEOBundleScreen{}, nil)
 
 	// Components — registered through a ScreenGroup so every /components/*
 	// page shares an inner layout. The inner layout puts the multi-level

@@ -552,6 +552,18 @@ func NewApp(opts ...AppOption) *App {
 	return a
 }
 
+// NewUIHostApp builds an App and mounts the given host on it in one call —
+// the near-universal shape for SSR/UIHost apps, which otherwise repeat
+//
+//	app := framework.NewApp(opts...)
+//	app.Mount(host)
+//
+// host is any Mountable (typically a *uihost.Host). Returns the App for
+// fluent chaining.
+func NewUIHostApp(host Mountable, opts ...AppOption) *App {
+	return NewApp(opts...).Mount(host)
+}
+
 // Entity registers an entity with the given name and configuration.
 // Returns the App for fluent chaining.
 func (a *App) Entity(name string, config entity.EntityConfig) *App {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveDevIsolationRemapsAddrAndChildEnv(t *testing.T) {
@@ -230,4 +231,91 @@ func devEnvMap(env []string) map[string]string {
 		}
 	}
 	return out
+}
+
+// ─── scanModTimes + changed ──────────────────────────────────────────
+
+func TestScanModTimesPicksUpGoFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
+	result := scanModTimes(dir)
+	if len(result) != 1 {
+		t.Fatalf("scanModTimes found %d files, want 1: %+v", len(result), result)
+	}
+}
+
+func TestScanModTimesPicksUpJSFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "runtime.js"), "// JS")
+	result := scanModTimes(dir)
+	if len(result) != 1 {
+		t.Fatalf("scanModTimes found %d files, want 1 (.js should be watched): %+v", len(result), result)
+	}
+}
+
+func TestScanModTimesPicksUpCSSFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "theme.css"), "/* CSS */")
+	result := scanModTimes(dir)
+	if len(result) != 1 {
+		t.Fatalf("scanModTimes found %d files, want 1 (.css should be watched): %+v", len(result), result)
+	}
+}
+
+func TestScanModTimesPicksUpHTMLFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "index.html"), "<html></html>")
+	result := scanModTimes(dir)
+	if len(result) != 1 {
+		t.Fatalf("scanModTimes found %d files, want 1 (.html should be watched): %+v", len(result), result)
+	}
+}
+
+func TestScanModTimesIgnoresVendorGitNodeModules(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
+	writeDevFile(t, filepath.Join(dir, "vendor", "v.go"), "package v")
+	writeDevFile(t, filepath.Join(dir, ".git", "g.go"), "package g")
+	writeDevFile(t, filepath.Join(dir, "node_modules", "n.go"), "package n")
+	result := scanModTimes(dir)
+	if len(result) != 1 {
+		t.Fatalf("scanModTimes found %d files, want 1 (vendor/.git/node_modules ignored): %+v", len(result), result)
+	}
+}
+
+func TestChangedDetectsNewFile(t *testing.T) {
+	dir := t.TempDir()
+	prev := scanModTimes(dir)
+	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
+	curr := scanModTimes(dir)
+	if !changed(prev, curr) {
+		t.Fatal("changed() = false, want true after adding a file")
+	}
+}
+
+func TestChangedDetectsModifiedFile(t *testing.T) {
+	dir := t.TempDir()
+	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
+	prev := scanModTimes(dir)
+	// Modify the file. Use os.Chtimes to force a different mtime,
+	// avoiding flakiness on filesystems with coarse mtime granularity.
+	writeDevFile(t, filepath.Join(dir, "main.go"), "package main // modified")
+	future := time.Now().Add(time.Second)
+	os.Chtimes(filepath.Join(dir, "main.go"), future, future)
+	curr := scanModTimes(dir)
+	if !changed(prev, curr) {
+		t.Fatal("changed() = false, want true after modifying a file")
+	}
+}
+
+func TestChangedDetectsDeletedFile(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "main.go")
+	writeDevFile(t, f, "package main")
+	prev := scanModTimes(dir)
+	os.Remove(f)
+	curr := scanModTimes(dir)
+	if !changed(prev, curr) {
+		t.Fatal("changed() = false, want true after deleting a file")
+	}
 }

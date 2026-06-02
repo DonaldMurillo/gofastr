@@ -29,7 +29,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -49,16 +48,16 @@ var apps = []appSpec{
 }
 
 type result struct {
-	App           string
-	BinSizeBytes  int64
-	BuildPeakRSS  int64 // bytes
-	BuildWall     time.Duration
-	IdleRSS       int64 // bytes; 0 if not run
-	LoadedRSS     int64 // bytes; 0 if not run
-	LoadDuration  time.Duration
-	LoadRequests  int
-	BuildErr      string
-	RuntimeErr    string
+	App          string
+	BinSizeBytes int64
+	BuildPeakRSS int64 // bytes
+	BuildWall    time.Duration
+	IdleRSS      int64 // bytes; 0 if not run
+	LoadedRSS    int64 // bytes; 0 if not run
+	LoadDuration time.Duration
+	LoadRequests int
+	BuildErr     string
+	RuntimeErr   string
 }
 
 func main() {
@@ -121,9 +120,7 @@ func runOne(app appSpec, outDir string, loadReqs int) result {
 		return r
 	}
 	r.BuildWall = time.Since(start)
-	if ru, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
-		r.BuildPeakRSS = normaliseRSS(ru.Maxrss)
-	}
+	r.BuildPeakRSS = peakRSSFromState(cmd.ProcessState)
 
 	// 2. Binary size.
 	if fi, err := os.Stat(binPath); err == nil {
@@ -214,19 +211,6 @@ func waitReady(url string, deadline time.Duration) bool {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return false
-}
-
-// normaliseRSS converts the platform-specific Rusage.Maxrss to bytes.
-//   - Darwin: bytes already.
-//   - Linux:  kilobytes.
-func normaliseRSS(raw int64) int64 {
-	if raw <= 0 {
-		return 0
-	}
-	if runtime.GOOS == "linux" {
-		return raw * 1024
-	}
-	return raw // darwin, freebsd
 }
 
 func printReport(results []result) {

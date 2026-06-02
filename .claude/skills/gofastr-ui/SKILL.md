@@ -1,6 +1,6 @@
 ---
 name: gofastr-ui
-description: Auto-loads when working on UI, runtime, or framework/uihost code in the GoFastr repo. Encodes the SSR-with-hydration architecture (no hard refresh, page-nav swaps content, in-page state is island RPC) and the three failure modes that have already happened. Triggers on edits to core-ui/, framework/ui/, framework/uihost/, examples/website/, or runtime.js — and on phrases like "pagination", "sort header", "tab click", "navigation", "SPA", "hydration".
+description: Auto-loads when working on UI, runtime, or framework/uihost code in the GoFastr repo. Encodes the SSR-with-hydration architecture (no hard refresh, page-nav swaps content, in-page state is island RPC) and the three failure modes that have already happened. Triggers on edits to core-ui/, framework/ui/, framework/uihost/, examples/site/, or runtime.js — and on phrases like "pagination", "sort header", "tab click", "navigation", "SPA", "hydration".
 ---
 
 # GoFastr UI architecture — load this before writing UI code

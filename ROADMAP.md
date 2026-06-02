@@ -302,7 +302,7 @@ literal.
 8. Variant standardisation across components; `framework/ui.Button(...)`
    lands; `DangerButton` becomes deprecated alias.
 9. `gofastr theme init` scaffold command.
-10. Migrate `examples/website/theme.go` to the new shape.
+10. ~~Migrate `examples/website/theme.go` to the new shape.~~ (done — folded into `examples/site`)
 11. Docs + drift: `core-ui/ARCHITECTURE.md` typed-theme section, the
     `gofastr-ui` skill, extended drift test.
 

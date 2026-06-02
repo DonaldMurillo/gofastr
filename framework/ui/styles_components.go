@@ -18,26 +18,26 @@ import (
 // registry.WithLoad(registry.LoadPrewarm).
 
 var (
-	sectionStyle      = registry.RegisterStyle("ui-section", sectionCSS)
-	formFieldStyle    = registry.RegisterStyle("ui-form-field", formFieldCSS)
-	formSectionStyle  = registry.RegisterStyle("ui-form-section", formSectionCSS)
-	buttonStyle       = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
-	statusBadgeStyle  = registry.RegisterStyle("ui-badge", statusBadgeCSS)
-	emptyStateStyle   = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
-	calloutStyle      = registry.RegisterStyle("ui-callout", calloutCSS)
-	statCardStyle     = registry.RegisterStyle("ui-stat-card", statCardCSS)
-	avatarStyle       = registry.RegisterStyle("ui-avatar", avatarCSS)
-	formStyle         = registry.RegisterStyle("ui-form", formCSS)
-	notificationStyle = registry.RegisterStyle("ui-notification", notificationCSS)
-	_                 = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
-	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
-	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
-	skipLinkStyle     = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
-	themeToggleStyle    = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
-	backToTopStyle      = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
+	sectionStyle          = registry.RegisterStyle("ui-section", sectionCSS)
+	formFieldStyle        = registry.RegisterStyle("ui-form-field", formFieldCSS)
+	formSectionStyle      = registry.RegisterStyle("ui-form-section", formSectionCSS)
+	buttonStyle           = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))
+	statusBadgeStyle      = registry.RegisterStyle("ui-badge", statusBadgeCSS)
+	emptyStateStyle       = registry.RegisterStyle("ui-empty-state", emptyStateCSS)
+	calloutStyle          = registry.RegisterStyle("ui-callout", calloutCSS)
+	statCardStyle         = registry.RegisterStyle("ui-stat-card", statCardCSS)
+	avatarStyle           = registry.RegisterStyle("ui-avatar", avatarCSS)
+	formStyle             = registry.RegisterStyle("ui-form", formCSS)
+	notificationStyle     = registry.RegisterStyle("ui-notification", notificationCSS)
+	_                     = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
+	dataTableStyle        = registry.RegisterStyle("ui-data-table", dataTableCSS)
+	codeBlockStyle        = registry.RegisterStyle("ui-code-block", codeBlockCSS)
+	skipLinkStyle         = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
+	themeToggleStyle      = registry.RegisterStyle("ui-theme-toggle", themeToggleCSS)
+	backToTopStyle        = registry.RegisterStyle("ui-back-to-top", backToTopCSS)
 	conditionalFieldStyle = registry.RegisterStyle("ui-conditional-field", conditionalFieldCSS)
-	stepWizardStyle      = registry.RegisterStyle("ui-step-wizard", stepWizardCSS)
-	formRepeaterStyle    = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
+	stepWizardStyle       = registry.RegisterStyle("ui-step-wizard", stepWizardCSS)
+	formRepeaterStyle     = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
 )
 
 // buttonCSS is the base .ui-button styling that several call sites
@@ -177,7 +177,75 @@ func codeBlockCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-block"] .tok-str    { color: #C3E88D; }
 [data-fui-comp="ui-code-block"] .tok-num    { color: #F78C6C; }
 [data-fui-comp="ui-code-block"] .tok-com    { color: #676E95; font-style: italic; }
-[data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }`
+[data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }
+/* Theme-aware token palette (emitted by the framework highlighter / markdown
+   code blocks). Hosts that define the --tk-* token vars (e.g. a typed Theme)
+   get a contrast-tuned, light/dark-aware palette; the hardcoded fallbacks keep
+   bare hosts colored. */
+[data-fui-comp="ui-code-block"] .tk-kw   { color: var(--tk-kw, #C792EA); }
+[data-fui-comp="ui-code-block"] .tk-fn   { color: var(--tk-fn, #82AAFF); }
+[data-fui-comp="ui-code-block"] .tk-str  { color: var(--tk-str, #C3E88D); }
+[data-fui-comp="ui-code-block"] .tk-num  { color: var(--tk-num, #F78C6C); }
+[data-fui-comp="ui-code-block"] .tk-com  { color: var(--tk-com, #676E95); font-style: italic; }
+[data-fui-comp="ui-code-block"] .tk-type { color: var(--tk-type, #FFCB6B); }
+[data-fui-comp="ui-code-block"] .tk-pn   { color: var(--tk-pn, inherit); }
+
+/* Framed variant: a container with a chrome header (filename + copy) over a
+   scrollable body. The container owns the surface; the body owns padding. */
+[data-fui-comp="ui-code-block"].ui-code-block--framed {
+  padding: 0;
+  overflow: hidden;
+  white-space: normal;
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--ui-code-block-head-bg, var(--color-surface, #fff));
+  border-bottom: 1px solid var(--color-code-border, #27272A);
+  font-size: 12px;
+  color: var(--color-text-subtle, #71717A);
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__status {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__file { color: var(--color-text, #18181B); }
+[data-fui-comp="ui-code-block"] .ui-code-block__meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__body {
+  display: block;
+  margin: 0;
+  padding: var(--spacing-md, 14px) var(--spacing-lg, 18px);
+  background: var(--color-code-surface, #18181B);
+  color: var(--color-code-text, #E4E4E7);
+  white-space: pre;
+  overflow-x: auto;
+}
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__body {
+  counter-reset: ui-cb-ln;
+  padding-left: 52px;
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__line { display: block; position: relative; }
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line::before {
+  counter-increment: ui-cb-ln;
+  content: counter(ui-cb-ln);
+  position: absolute;
+  left: -36px;
+  top: 0;
+  width: 28px;
+  text-align: right;
+  color: var(--color-text-subtle, #71717A);
+  font-size: 11px;
+  user-select: none;
+}`
 }
 
 func sectionCSS(_ style.Theme) string {
@@ -186,6 +254,15 @@ func sectionCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   margin: var(--spacing-xl, 24px) 0;
   border: 0;
+  /* Anchored sections clear a sticky header when scrolled into view. Apps
+     with a fixed header set --ui-section-scroll-margin to its height. */
+  scroll-margin-top: var(--ui-section-scroll-margin, 0);
+}
+[data-fui-comp="ui-section"] .ui-section__eyebrow {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--ui-section-eyebrow-size, 11px);
+  letter-spacing: 0.04em;
+  color: var(--ui-section-eyebrow-color, var(--color-text-subtle, #71717A));
 }
 [data-fui-comp="ui-section"] .ui-section__heading {
   margin: 0;

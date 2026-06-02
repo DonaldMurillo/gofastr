@@ -136,6 +136,10 @@ pi-agent/plugins/*
 # via GOFASTR_UPDATE_SNAPSHOTS=1.
 framework/harness/client/tui/testdata/snapshots/*.txt.new
 
-# example build artifacts (compiled example apps must not be tracked)
-/examples/site/site
+# Git worktrees live as sibling directories
+worktrees/
+
+# Compiled example binaries (go build output named after the dir).
+# Canonical build output is dist/; these are stray local builds.
+# (examples/*/site also covers the examples/site/site artifact scrubbed on main.)
 examples/*/site

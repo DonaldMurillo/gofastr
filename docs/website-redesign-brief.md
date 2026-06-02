@@ -1,13 +1,12 @@
 # GoFastr — Website Design Brief
 
 You are designing **the public website for GoFastr**. Not a redesign of the
-current demo site at `examples/website` — that's a dogfood gallery, not a
+dogfood example app at `examples/site` — that's a feature gallery, not a
 product website. Throw it out as a reference. Start clean.
 
-The current demo will continue to exist as `examples/website` (a feature
-showcase for contributors). What you're designing is the **front door of the
-project** — what shows up at, say, `gofastr.dev` — for engineers landing on it
-for the first time.
+The example app lives at `examples/site` (a feature showcase for contributors).
+What you're designing is the **front door of the project** — what shows up at,
+say, `gofastr.dev` — for engineers landing on it for the first time.
 
 Read this whole brief before drawing anything.
 
@@ -396,7 +395,7 @@ and move on. If it's expensive to undo, flag it and ask.
 
 ## 12. One last thing
 
-The current demo site at `examples/website` is **not** the inspiration.
+The example app at `examples/site` is **not** the inspiration.
 It's a feature checklist with chrome around it. It exists to prove the
 framework works; it does not exist to make anyone want to *use* the
 framework. Your job is the opposite: design something that, after 90

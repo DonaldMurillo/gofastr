@@ -83,6 +83,12 @@ server side and the runtime does the work.
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
+| `data-fui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
+| `data-fui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
+| `data-fui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. |
+| `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. |
+| `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe — the reducer is a real function the host registers (no `eval`). |
+| `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-fui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-fui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. |
 | `data-fui-confirm="<message>"` | Pre-flight `window.confirm(<message>)` before firing the RPC. Cancel aborts. Use for destructive actions (delete, revoke). |
@@ -141,7 +147,7 @@ server side and the runtime does the work.
 | `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` if set, otherwise re-issuing a DELETE against `endpoint`. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
 | `data-fui-toggle-idle` / `data-fui-toggle-committed` | Markers on the two label spans inside a ToggleAction button. The runtime shows/hides them as the button transitions between idle and committed states. SSR ships the initial visible state. |
 | `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy. |
-| `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/website` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
+| `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/site` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
 | `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "deprecation notice — got it" banners. |
 | `data-fui-slider-mirror` | On an `<input type="range">` inside a `framework/ui.Slider`: opt the slider into runtime value-mirroring. The slider module listens for `input` events on these elements and writes the current value into the associated `<output for="<id>">` so the displayed number tracks the thumb as the user drags. Auto-emitted when `SliderConfig.ShowValue` is true. |
 | `data-fui-number-step="<delta>"` | On a button inside a `framework/ui.NumberInput`: clicking the button increments the linked `<input type="number">` by `<delta>` (signed). Honors the input's `min` / `max` / `step` and dispatches an `input` + `change` event after writing the new value so form-RPC pipelines see the change. Pair with `data-fui-number-for`. |
@@ -222,6 +228,38 @@ For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Ad
   → every node with data-fui-signal="customers-rows" data-fui-signal-mode="html" gets innerHTML replaced
   → no URL change, no <main> swap, no other DOM touched
 ```
+
+### Shared state: the signal store (`core-ui/store`)
+
+The signal bus is stringly-typed and starts empty. `core-ui/store` layers a
+typed, server-declared API on top and — crucially — **seeds initial values
+into the client store at SSR**, so `getSignal` returns the server value on
+first paint instead of `undefined`. A `Slice[T]` is a *renderer*: declaring
+it registers a seed, and its `Bind`/`BindAttr`/`BindHTML` helpers emit both
+the `data-fui-signal` attribute and the resolved value from one source (no
+SSR/store drift). The model is **producer → signal → consumers**: an
+island/widget owns a value and `Publish`es updates through the existing
+`data-fui-rpc-signal` path; presentational consumers `Bind` to it and update
+client-side with no per-consumer round-trip.
+
+- **Seeding.** The host scans the rendered page for referenced signal names
+  (plus all app-global slices) and emits one inert
+  `<script type="application/json" id="gofastr-signals">{name:value}</script>`
+  (same CSP-safe data-island pattern as `gofastr-routes`/`gofastr-catalog`).
+  `runtime.js` reads it on boot and seeds `_signals` **before hydration**.
+- **Scope.** Page-scoped slices seed only on pages that reference them;
+  app-global slices (`.Global()`) seed on every page and survive SPA nav.
+- **SPA-nav merge.** Partial responses carry a scope-split
+  `#gofastr-signals-partial` island; the runtime applies page-scoped values
+  unconditionally but **never clobbers an app-global the user already
+  mutated** (it only seeds a global the first time it is seen).
+- **Computed.** `store.Computed` derives a value client-side from dependency
+  slices via a host-registered JS reducer (CSP-safe, no `eval`). Register
+  reducers on `window.__gofastr._reducers` from a script loaded **after**
+  `runtime.js` (e.g. via `WithExtraScripts`), since the runtime assigns the
+  `__gofastr` namespace wholesale on boot.
+
+See `framework/docs/content/signal-store.md` for the full guide.
 
 ---
 

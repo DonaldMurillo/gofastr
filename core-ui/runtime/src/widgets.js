@@ -179,14 +179,19 @@
         // after re-open) doesn't race with this focus() call. Chrome
         // logs "Autofocus processing was blocked because a document
         // already has a focused element" when both fire.
+        // preventScroll: a modal/drawer is fixed/centred and already in
+        // view, so focusing its first control must NOT scroll the document.
+        // Without this, focus races the demand-loaded position:fixed CSS and
+        // scrolls the page to the element's transient in-flow position
+        // (a tall drawer jumps the page by its own height on open).
         const explicit = widgetEl.querySelector('[autofocus]');
         if (explicit) {
           explicit.removeAttribute('autofocus');
-          explicit.focus();
+          explicit.focus({ preventScroll: true });
           return;
         }
         const focusables = widgetEl.querySelectorAll(NS._focusSel);
-        if (focusables.length > 0) focusables[0].focus();
+        if (focusables.length > 0) focusables[0].focus({ preventScroll: true });
       });
     }
 
@@ -228,8 +233,11 @@
         const idx = NS._modalStack.indexOf(cfg.name);
         if (idx >= 0) NS._modalStack.splice(idx, 1);
         if (NS._modalStack.length === 0) document.body.style.overflow = '';
+        // preventScroll: restoring focus to the trigger on close must not
+        // scroll the page to it (the trigger may be off-screen after the
+        // user scrolled), which otherwise jumps the page on dismiss.
         if (previousFocus && typeof previousFocus.focus === 'function') {
-          try { previousFocus.focus(); } catch (_) {}
+          try { previousFocus.focus({ preventScroll: true }); } catch (_) {}
         }
       }
       if (cfg.deepLinkKey && cfg.deepLinkValue) NS._deepLinkStripUrl(cfg);

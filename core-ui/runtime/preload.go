@@ -20,6 +20,7 @@ type demandLoadMarker struct {
 // SCANNERS"). The drift test enforces both sides stay aligned.
 var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-copy-text-from", "copy"},
+	{"data-fui-computed", "computed"},
 	{"data-fui-fileupload", "fileupload"},
 	{"data-fui-popover-anchor", "popover"},
 	{"data-fui-menu", "menu"},
@@ -56,6 +57,9 @@ var demandLoadMarkers = []demandLoadMarker{
 	{`data-fui-comp="ui-password-input"`, "passwordinput"},
 	{`data-fui-comp="ui-search-input"`, "searchinput"},
 	{`data-fui-comp="ui-form-repeater"`, "formrepeater"},
+	{"data-fui-dropdown-wrap", "dropdown"},
+	{"data-fui-reveal", "reveal"},
+	{"data-fui-animate-signal", "animate"},
 }
 
 // NeededModules returns the deduplicated, sorted list of demand-load

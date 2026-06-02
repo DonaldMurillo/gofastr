@@ -169,9 +169,11 @@ func (t *TUI) Run(ctx context.Context) error {
 	t.enterAltScreen()
 	defer t.exitAltScreen()
 
-	// Resize handler.
+	// Resize handler. SIGWINCH is POSIX-only; notifyWindowResize is a
+	// no-op on Windows (which ships the web client, not the raw TUI), so
+	// this package cross-compiles for GOOS=windows.
 	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
+	notifyWindowResize(winch)
 	defer signal.Stop(winch)
 	t.readSize()
 

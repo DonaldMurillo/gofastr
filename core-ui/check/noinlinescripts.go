@@ -33,7 +33,7 @@ import (
 //
 // Usage:
 //
-//	result, err := check.LintNoInlineScripts("examples/website")
+//	result, err := check.LintNoInlineScripts("examples/site")
 //	if err != nil { ... }
 //	if result.HasErrors() { t.Error(result.Error()) }
 //

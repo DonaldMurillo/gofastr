@@ -270,3 +270,20 @@ func readAll(t *testing.T, resp *http.Response) string {
 	}
 	return string(buf)
 }
+
+func TestMountBuilderBuildsAndRegisters(t *testing.T) {
+	r := router.New()
+	widget.MountBuilder(r, widget.New("mb-demo").Hidden())
+	// MountBuilder must register the widget (same as Build + Mount): its
+	// style route should now resolve.
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/core-ui/widget/mb-demo/style.css")
+	if err != nil {
+		t.Fatalf("GET style: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("MountBuilder did not mount the widget: style route = %d", resp.StatusCode)
+	}
+}

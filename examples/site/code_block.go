@@ -1,86 +1,53 @@
 package main
 
 // =============================================================================
-// Go source rendered as a hand-tokenized <pre>. Mirrors the prototype's
-// .code / .code__head / .code__body / .ln structure verbatim so the CSS in
-// styles.go works without modification.
+// Go source rendered as a hand-tokenized code block. The chrome (filename
+// header, status dot, line count, the real copy button) and the line-number
+// gutter are now owned by the framework's ui.CodeBlock; this file keeps only
+// the Go-specific tokenizer.
 //
 // Why hand-tokenized instead of go/parser → highlighter: the design wants
 // pixel-accurate control over which identifiers are styled as `tk-fn` (the
 // function-call call sites) vs `tk-type` (`framework.Config`, etc.). A
-// generic AST highlighter would mis-bucket those by Go's grammar. The pre is
-// short — the trade-off is fine for a hero block. If we add more code on
-// other pages, lift this into framework/ui/CodeBlock with a proper
-// highlight pass; mark this as the porting target then.
+// generic AST highlighter would mis-bucket those by Go's grammar. The blocks
+// are short — the trade-off is fine. The token palette (.tk-*) lives in
+// styles.go because it is intentionally site-specific.
 //
-// All token helpers escape user-supplied strings via render.Escape. Literals
-// passed at compile time are also escaped — same code path, no special case.
+// All token helpers escape user-supplied strings via render.Text. Literals
+// passed at compile time go through the same path, no special case.
 // =============================================================================
 
 import (
 	"strings"
-	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// codeBlockSeq hands each codeBlock a process-unique id so the copy button
-// can target its own <pre> via #id. The exact value is irrelevant — only
-// that the button and its pre share it within one render (they do, minted
-// together below), so it stays correct across SSR and client-nav renders.
-var codeBlockSeq atomic.Uint64
-
-// codeBlock renders the chrome (filename + line-count + copy button) plus
-// the body lines. The line count is len(lines) — every entry, including
-// blank ones, renders as a visible line (see ln), so the count matches
-// what's on screen.
+// codeBlock renders the hand-tokenized lines through the framework's
+// ui.CodeBlock — the framework owns the chrome and the line-number gutter; the
+// site only supplies the Go token markup (see kw/fn_/… and ln below).
 func codeBlock(filename string, lines []render.HTML) render.HTML {
-	id := "codeblk-" + itoa(int(codeBlockSeq.Add(1)))
-	return render.Tag("div", attrClass("code"),
-		render.Tag("div", attrClass("code__head"),
-			// Status dot — green, matches the file's "alive" pill in the
-			// prototype. Class lives in styles.go (CSP forbids inline style).
-			render.Tag("span", attrClass("alive"), render.Raw("")),
-			render.Tag("span", attrClass("file"), render.Text(filename)),
-			render.Tag("span", attrClass("right"),
-				render.Tag("span", nil, render.Text(itoa(len(lines))+" lines")),
-				// Real copy button: the runtime's data-fui-copy-text-from
-				// handler copies the <pre>'s textContent, toggles .fui-copied
-				// for ~1.2s (drives the label swap below), and announces
-				// "Copied" to screen readers via data-fui-copy-announce.
-				render.Tag("button", map[string]string{
-					"class":                   "copy",
-					"type":                    "button",
-					"data-fui-copy-text-from": "#" + id,
-					"data-fui-copy-announce":  "Copied",
-					"aria-label":              "Copy code to clipboard",
-				},
-					render.Tag("span", attrClass("copy__label"), render.Text("copy")),
-					render.Tag("span", attrClass("copy__done"), render.Text("copied")),
-				),
-			),
-		),
-		// IMPORTANT: no whitespace between <pre> and the first <span class="ln">.
-		// `white-space: pre` on .code__body would otherwise render that whitespace
-		// as a stray leading newline. We spread the line slice into Tag's
-		// children which serializes each child back-to-back, no separator.
-		render.Tag("pre", map[string]string{"class": "code__body", "id": id}, lines...),
-	)
+	return ui.CodeBlock(ui.CodeBlockConfig{
+		Filename:    filename,
+		Lines:       lines,
+		ShowCopy:    true,
+		LineNumbers: true,
+	})
 }
 
-// ln wraps a sequence of token spans as one logical source line. A blank
-// line still emits a line box (via a zero-width space) so its gutter number
-// shows — without it, the empty <span class="ln"> collapses to zero height
-// and the numbers look like they skip (1, 3, 4…).
+// ln joins a sequence of token spans into one logical source line. The
+// framework wraps each line for the gutter, so a blank line still needs a
+// zero-width space to keep its line box (and gutter number) from collapsing.
 func ln(parts ...render.HTML) render.HTML {
 	if len(parts) == 0 {
-		return render.Tag("span", attrClass("ln"), render.Raw("\u200b"))
+		return render.Raw("​")
 	}
-	return render.Tag("span", attrClass("ln"), parts...)
+	return render.Join(parts...)
 }
 
 // Token helpers. One per syntax class. All produce <span class="tk-X">…</span>
-// matching the v2.css color scale. Plain text outside any token uses
+// matching the v2 token palette. Plain text outside any token uses
 // render.Text directly.
 func kw(s string) render.HTML   { return render.Tag("span", attrClass("tk-kw"), render.Text(s)) }
 func fn_(s string) render.HTML  { return render.Tag("span", attrClass("tk-fn"), render.Text(s)) }

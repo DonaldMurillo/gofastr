@@ -52,6 +52,44 @@ func TestSectionRendersHeadingDescriptionBody(t *testing.T) {
 	}
 }
 
+func TestSectionEyebrowRendersBeforeHeadingAndIsDecorative(t *testing.T) {
+	h := Section(SectionConfig{
+		Eyebrow: "01 / what it generates",
+		Heading: "One entity call",
+	}, render.Text("BODY"))
+	s := string(h)
+	mustContain(t, h, "ui-section__eyebrow")
+	mustContain(t, h, "01 / what it generates")
+	// Decorative numeric eyebrow — hidden from the a11y tree so SR users
+	// don't hear "01 slash what it generates" then the heading.
+	mustContain(t, h, `aria-hidden="true"`)
+	eyebrowIdx := strings.Index(s, "ui-section__eyebrow")
+	headingIdx := strings.Index(s, "ui-section__heading")
+	if eyebrowIdx == -1 || headingIdx == -1 || eyebrowIdx > headingIdx {
+		t.Errorf("eyebrow must render before heading in source order:\n%s", s)
+	}
+}
+
+func TestSectionDescriptionHTMLOverridesDescription(t *testing.T) {
+	h := Section(SectionConfig{
+		Heading:         "Forms",
+		Description:     "plain",
+		DescriptionHTML: render.Raw(`lede with <code>.gofastr/</code>`),
+	}, render.Text("BODY"))
+	mustContain(t, h, `<code>.gofastr/</code>`)
+	if strings.Contains(string(h), ">plain<") {
+		t.Errorf("DescriptionHTML should win over Description:\n%s", h)
+	}
+}
+
+func TestSectionLabelUsedWhenNoHeading(t *testing.T) {
+	h := Section(SectionConfig{Label: "State of the project"}, render.Text("BODY"))
+	mustContain(t, h, `aria-label="State of the project"`)
+	if strings.Contains(string(h), `aria-label="Section"`) {
+		t.Errorf("explicit Label should replace the generic fallback:\n%s", h)
+	}
+}
+
 // ─── FormField ───
 func TestFormFieldRequiresLabelForInput(t *testing.T) {
 	defer func() { recover() }()

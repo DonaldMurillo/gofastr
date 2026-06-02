@@ -18,7 +18,7 @@ Invoke this skill when:
 - You've shipped a UI change and want to surface what a curious user finds
 
 Do NOT use this skill for:
-- Adding regression tests (use chromedp in `examples/website/e2e_*.go`)
+- Adding regression tests (use chromedp in `examples/site/e2e_*.go`)
 - Code review (use Agent with `general-purpose` or `ui-ux-advisor`)
 - Static analysis of the codebase
 

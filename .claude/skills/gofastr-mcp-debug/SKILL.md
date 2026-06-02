@@ -40,13 +40,13 @@ fwApp.RegisterPlugin(log.New(log.Config{
 fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 ```
 
-`examples/website` already has this wired. Spin it up with the
+`examples/site` already has this wired. Spin it up with the
 repo's normal dev workflow:
 
 ```bash
-./scripts/dev-watch.sh         # examples/website on :8082, auto-rebuild
+./scripts/dev-watch.sh         # examples/site on :8082, auto-rebuild
 # or
-go run ./examples/website
+go run ./examples/site
 ```
 
 Then point curl at `http://localhost:8082/mcp` and use the log-debug

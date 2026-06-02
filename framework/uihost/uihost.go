@@ -31,6 +31,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
+	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -808,6 +809,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// screens can read URL query params, headers, etc. SSG builds
 	// pass nil and the helpers degrade to empty values.
 	ctx := app.WithRequest(r.Context(), r)
+	// Install the per-request signal value bag BEFORE rendering so a
+	// producer's Slice.Seed(ctx, v) during Load (and a consumer's
+	// Bind(ctx, …) during RenderCtx) write/read the same bag that
+	// injectSignalSeed resolves below.
+	ctx = store.WithValues(ctx)
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
 		ds.serveNotFound(w, path)
@@ -845,6 +851,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := ds.injectChrome(string(html), path, sessionID)
+	page = injectSignalSeed(ctx, page)
 
 	// SSR-inline registered widgets — open ones whose deep-link
 	// matches the request URL go in unhidden; hidden ones are
@@ -1264,6 +1271,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// via app.WithRequest so partial-fetched screens can still read URL
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
+	ctx = store.WithValues(ctx) // capture producer-seeded values for the partial seed
 	res, err := ds.App.RenderPartialResult(ctx, path)
 	if err != nil {
 		ds.serveNotFound(w, path)
@@ -1313,7 +1321,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Gofastr-Partial", "true")
-	fmt.Fprint(w, res.HTML)
+	fmt.Fprint(w, partialSeedIsland(ctx, string(res.HTML))+string(res.HTML))
 }
 
 // handleSSE streams island updates to the client.
@@ -1833,6 +1841,9 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 // graph — but skips the SSE meta tag because there is no live session.
 // The result is safe to write to disk and serve from any static host.
 func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
+	// Install the value bag so producer-seeded slice values are captured
+	// during the static render (matches the live handlePage path).
+	ctx = store.WithValues(ctx)
 	html, err := ds.App.RenderPage(ctx, path)
 	if err != nil {
 		return "", err
@@ -1840,7 +1851,8 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	return ds.injectChromeMode(string(html), path, "", false), nil
+	page := ds.injectChromeMode(string(html), path, "", false)
+	return injectSignalSeed(ctx, page), nil
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript
@@ -1984,6 +1996,60 @@ func catalogJSONScript(ds *UIHost) string {
 		return ""
 	}
 	return `<script type="application/json" id="gofastr-catalog">` +
+		escapeJSONForScript(buf) +
+		`</script>`
+}
+
+// signalsJSONScript returns the inline JSON block seeding the client
+// signal store (core-ui/store) with server-resolved initial values.
+// Same inert-data pattern as catalogJSONScript: type="application/json"
+// is parsed by JSON.parse, never executed, so strict CSP is happy.
+// runtime.js reads #gofastr-signals on boot and seeds __gofastr._signals
+// BEFORE hydration. Returns "" when there is nothing to seed.
+func signalsJSONScript(seed map[string]any) string {
+	if len(seed) == 0 {
+		return ""
+	}
+	buf, err := json.Marshal(seed)
+	if err != nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-signals">` +
+		escapeJSONForScript(buf) +
+		`</script>`
+}
+
+// injectSignalSeed resolves the signal seed for the rendered page (names
+// referenced in the HTML plus all app-global slices), and splices the
+// JSON block into <head> just before </head> so it is in place before
+// runtime.js (end of <body>) reads it. ctx must carry the request value
+// bag (store.WithValues), so producer-seeded per-request values win over
+// declared defaults. No-op when there is nothing to seed.
+func injectSignalSeed(ctx context.Context, page string) string {
+	block := signalsJSONScript(store.SeedFor(ctx, page))
+	if block == "" {
+		return page
+	}
+	if i := strings.LastIndex(page, "</head>"); i >= 0 {
+		return page[:i] + block + "\n" + page[i:]
+	}
+	return page
+}
+
+// partialSeedIsland builds the scope-split seed block for a SPA-nav
+// partial. It is embedded inside the swapped content; the runtime reads
+// #gofastr-signals-partial after the swap and merges it (page-scoped
+// applied always, globals only when first seen). Returns "" when empty.
+func partialSeedIsland(ctx context.Context, html string) string {
+	page, global := store.SeedSplit(ctx, html)
+	if len(page) == 0 && len(global) == 0 {
+		return ""
+	}
+	buf, err := json.Marshal(map[string]map[string]any{"p": page, "g": global})
+	if err != nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-signals-partial">` +
 		escapeJSONForScript(buf) +
 		`</script>`
 }

@@ -16,14 +16,14 @@ The user's app must be:
 2. Built with `log.Config{EnableMCP: true}` (or wired to mount the
    plugin's MCP tools manually).
 3. Exposing `POST /mcp` (the canonical mount; the website example
-   does this — `examples/website/main.go`).
+   does this — `examples/site/main.go`).
 
 Quickest way to spin up a known-good target in this repo:
 
 ```bash
-./scripts/dev-watch.sh   # examples/website on :8082, auto-rebuilds
+./scripts/dev-watch.sh   # examples/site on :8082, auto-rebuilds
 # or
-go run ./examples/website
+go run ./examples/site
 ```
 
 Then curl `http://localhost:8082/mcp` (or whatever port your app uses).

@@ -25,7 +25,7 @@ import "sync"
 //	        End()
 //	})
 //
-// In the host's createStyleSheet (typically examples/website/theme.go):
+// In the host's createStyleSheet (typically examples/site/styles.go):
 //
 //	func createStyleSheet(theme style.Theme) *style.StyleSheet {
 //	    ss := style.NewStyleSheet(theme)

@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -156,6 +158,249 @@ func OnClick(html render.HTML, action Action) render.HTML {
 // OnSubmit wraps a form element so that submitting it fires the action.
 func OnSubmit(html render.HTML, action Action) render.HTML {
 	return wrapWithAction(html, action)
+}
+
+// LiveSearch wraps a form element so input changes fire debounced RPCs.
+// The search input should be the first <input> inside the form.
+// Results are written into the signal named by the action's OnSuccess effect
+// (typically via SetSignal).
+//
+// debounceMs controls the delay between keystrokes and the RPC call.
+// If debounceMs is 0, a default of 300ms is used.
+func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
+	wrapped := wrapWithAction(form, action)
+	wrapped = injectAttr(wrapped, "data-fui-rpc-trigger", "input")
+	ms := debounceMs
+	if ms == 0 {
+		ms = 300
+	}
+	wrapped = injectAttr(wrapped, "data-fui-rpc-debounce", fmt.Sprintf("%d", ms))
+	return wrapped
+}
+
+// ─── Scroll-triggered reveal ────────────────────────────────────────
+
+// revealStyle ships the CSS for the scroll-reveal animation. Without it
+// the reveal.js classes (fui-hidden / fui-revealed / fui-reveal-<type>)
+// have no visual effect. The host loads it when a page carries the
+// data-fui-comp="fui-reveal" marker Reveal stamps below.
+var revealStyle = registry.RegisterStyle("fui-reveal", revealCSS)
+
+// Reveal wraps an element so it animates in when it enters the viewport.
+// The animationType determines the direction ("fade-up", "fade-in",
+// "slide-left", "slide-right"). Empty → "fade-in". The element renders
+// visible without JS (progressive enhancement); reveal.js adds the
+// hidden state on boot and removes it on intersection.
+func Reveal(html render.HTML, animationType string) render.HTML {
+	if animationType == "" {
+		animationType = "fade-in"
+	}
+	out := injectAttr(html, "data-fui-reveal", animationType)
+	return revealStyle.WrapHTML(out)
+}
+
+func revealCSS(_ style.Theme) string {
+	// While hidden, the direction transform is keyed off the
+	// data-fui-reveal ATTRIBUTE (present the whole time) — reveal.js only
+	// adds the fui-reveal-<type> CLASS at reveal time, too late to style
+	// the from-state. On reveal, fui-hidden is removed and fui-revealed
+	// adds the transition back to the resting state.
+	return `[data-fui-comp="fui-reveal"]{opacity:1}` +
+		`[data-fui-comp="fui-reveal"].fui-hidden{opacity:0}` +
+		`[data-fui-comp="fui-reveal"][data-fui-reveal="fade-up"].fui-hidden{transform:translateY(24px)}` +
+		`[data-fui-comp="fui-reveal"][data-fui-reveal="slide-left"].fui-hidden{transform:translateX(24px)}` +
+		`[data-fui-comp="fui-reveal"][data-fui-reveal="slide-right"].fui-hidden{transform:translateX(-24px)}` +
+		`[data-fui-comp="fui-reveal"].fui-revealed{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}` +
+		`@media (prefers-reduced-motion:reduce){[data-fui-comp="fui-reveal"].fui-hidden{opacity:1;transform:none}[data-fui-comp="fui-reveal"].fui-revealed{transition:none}}`
+}
+
+// ─── Client-side signal mutations (no RPC) ──────────────────────────
+//
+// These mutate signals purely in the browser — no server round-trip.
+// Use for counters, toggles, tabs, and other local-only state.
+
+// SetLocal wraps an HTML element so clicking it sets a signal to a
+// fixed value. No RPC is fired — the update is instant.
+func SetLocal(html render.HTML, signalName, value string) render.HTML {
+	return injectAttr(html, "data-fui-signal-set", signalName+":"+value)
+}
+
+// IncLocal wraps an HTML element so clicking it increments a numeric
+// signal by delta (default 1). No RPC is fired.
+func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
+	val := signalName
+	if delta != 1 {
+		val = fmt.Sprintf("%s:%d", signalName, delta)
+	}
+	return injectAttr(html, "data-fui-signal-inc", val)
+}
+
+// ToggleLocal wraps an HTML element so clicking it toggles a boolean
+// signal. No RPC is fired.
+func ToggleLocal(html render.HTML, signalName string) render.HTML {
+	return injectAttr(html, "data-fui-signal-toggle", signalName)
+}
+
+// ─── Dropdown ──────────────────────────────────────────────────────
+//
+// Dropdown wraps a trigger element and a panel into a click-toggle
+// dropdown. The trigger gets data-fui-dropdown, aria-expanded="false",
+// and aria-haspopup="true". The panel gets data-fui-dropdown-panel and
+// is initially hidden. Both are wrapped in a container with
+// data-fui-dropdown-wrap.
+//
+// The runtime module (dropdown.js) handles click-toggle, click-outside
+// dismiss, and Escape-to-close.
+//
+//	trigger := render.Tag("button", nil, render.Text("Menu"))
+//	panel := render.Tag("div", nil, render.Text("Dropdown content"))
+//	html := interactive.Dropdown(trigger, panel)
+var dropdownStyle = registry.RegisterStyle("fui-dropdown", dropdownCSS)
+
+func Dropdown(trigger, panel render.HTML) render.HTML {
+	triggerAttrs := map[string]string{
+		"data-fui-dropdown": "",
+		"aria-expanded":     "false",
+		"aria-haspopup":     "true",
+	}
+	panelAttrs := map[string]string{
+		"data-fui-dropdown-panel": "",
+		"hidden":                  "",
+	}
+	wrappedTrigger := injectAttrs(trigger, triggerAttrs)
+	wrappedPanel := injectAttrs(panel, panelAttrs)
+	wrap := render.Tag("div", map[string]string{
+		"data-fui-dropdown-wrap": "",
+	}, wrappedTrigger, wrappedPanel)
+	return dropdownStyle.WrapHTML(wrap)
+}
+
+func dropdownCSS(_ style.Theme) string {
+	// The wrap positions the panel; the panel is a floating surface; its
+	// links/buttons are styled as menu items. Without this the panel
+	// renders as a flat, full-width, unstyled strip (functional but not a
+	// dropdown).
+	return `[data-fui-comp="fui-dropdown"]{position:relative;display:inline-block}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface,#fff);border:1px solid var(--fui-border,#e2e8f0);border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:.25rem;z-index:50}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:.5rem .75rem;border-radius:.375rem;color:var(--fui-foreground,#0f172a);text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:.875rem}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:hover,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:hover{background:var(--fui-muted-bg,#f1f5f9)}` +
+		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:focus-visible,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:-2px}`
+}
+
+// AnimateOnSignal wraps an element so it gets a CSS class when a signal
+// is truthy and loses it when falsy. Used for CSS transition-driven
+// animations like slide-down, fade, etc.
+//
+// Panics if signalName or cssClass is empty.
+func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML {
+	if signalName == "" {
+		panic("interactive: AnimateOnSignal signalName must not be empty")
+	}
+	if cssClass == "" {
+		panic("interactive: AnimateOnSignal cssClass must not be empty")
+	}
+	html = injectAttr(html, "data-fui-animate-signal", signalName)
+	html = injectAttr(html, "data-fui-animate-class", cssClass)
+	return html
+}
+
+// EditToggle wraps an element so clicking it toggles a boolean signal.
+// Semantic alias for ToggleLocal used in inline-edit patterns: clicking
+// the text span enters edit mode.
+func EditToggle(html render.HTML, signalName string) render.HTML {
+	return ToggleLocal(html, signalName)
+}
+
+// CancelEdit wraps an element so clicking it sets a signal to false,
+// closing the inline-edit mode. Typically used on a cancel button
+// inside the edit form.
+func CancelEdit(html render.HTML, signalName string) render.HTML {
+	return SetLocal(html, signalName, "false")
+}
+
+// ─── Optimistic update ─────────────────────────────────────────────
+//
+// OptimisticUpdate renders a button that flips to its "success" visual
+// state immediately on click, fires an RPC in the background, and
+// reverts to idle if the RPC fails (non-2xx or network error).
+//
+// The runtime module optimisticaction.js handles the full lifecycle:
+// idle → pending (optimistic flip) → committed (RPC 2xx) or error → idle.
+//
+// The caller provides two visual states:
+//   - idle:    the default appearance (e.g. "♡ Like")
+//   - success: the committed appearance (e.g. "♥ Liked")
+//
+// Example:
+//
+//	OptimisticUpdate(
+//	    interactive.Post("/api/like/42"),
+//	    render.HTML(`<span class="icon">♡</span> Like`),
+//	    render.HTML(`<span class="icon">♥</span> Liked`),
+//	)
+//
+// Produces:
+//
+//	<button data-fui-comp="ui-optimistic-action"
+//	        data-state="idle"
+//	        data-fui-optimistic-endpoint="/api/like/42"
+//	        data-fui-optimistic-method="POST">
+//	  <span data-fui-optimistic-idle><span class="icon">♡</span> Like</span>
+//	  <span hidden data-fui-optimistic-success><span class="icon">♥</span> Liked</span>
+//	</button>
+func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
+	attrs := map[string]string{
+		"data-fui-comp":                "ui-optimistic-action",
+		"data-state":                   "idle",
+		"data-fui-optimistic-endpoint": action.path,
+	}
+	if action.method != "" && action.method != "POST" {
+		attrs["data-fui-optimistic-method"] = action.method
+	}
+	idleSpan := render.Tag("span", map[string]string{
+		"data-fui-optimistic-idle": "",
+	}, idle)
+	successSpan := render.Tag("span", map[string]string{
+		"data-fui-optimistic-success": "",
+		"hidden":                      "",
+	}, success)
+	return render.Tag("button", attrs, idleSpan, successSpan)
+}
+
+// injectAttr adds a single data-fui-* attribute to the first HTML tag.
+func injectAttr(html render.HTML, key, value string) render.HTML {
+	s := string(html)
+	a := render.Attr(key, value)
+	if a == "" {
+		return html
+	}
+	idx := findUnquotedClose(s)
+	if idx == -1 {
+		return html
+	}
+	return render.HTML(s[:idx] + " " + a + s[idx:])
+}
+
+// injectAttrs adds multiple attributes to the first HTML tag.
+func injectAttrs(html render.HTML, attrs map[string]string) render.HTML {
+	s := string(html)
+	idx := findUnquotedClose(s)
+	if idx == -1 {
+		return html
+	}
+	var buf strings.Builder
+	for k, v := range attrs {
+		a := render.Attr(k, v)
+		if a == "" {
+			continue
+		}
+		buf.WriteByte(' ')
+		buf.WriteString(a)
+	}
+	if buf.Len() == 0 {
+		return html
+	}
+	return render.HTML(s[:idx] + buf.String() + s[idx:])
 }
 
 // wrapWithAction merges action attributes into the first opening HTML tag.

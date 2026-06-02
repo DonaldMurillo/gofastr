@@ -25,7 +25,7 @@ func TestParagraphAndInline(t *testing.T) {
 
 func TestFencedCodeEscapesHTML(t *testing.T) {
 	got := string(RenderHTML("```go\nfmt.Println(\"<hi>\")\n```\n"))
-	if !strings.Contains(got, `<pre><code class="language-go">`) {
+	if !strings.Contains(got, `<pre tabindex="0"><code class="language-go">`) {
 		t.Errorf("missing language class: %s", got)
 	}
 	if !strings.Contains(got, "&lt;hi&gt;") {
@@ -143,7 +143,7 @@ A paragraph with **bold**.
 > a quote
 `
 	got := string(RenderHTML(src))
-	for _, want := range []string{"<h1", "<p>", "<strong>bold</strong>", "<ul>", "<pre><code>", "<blockquote>"} {
+	for _, want := range []string{"<h1", "<p>", "<strong>bold</strong>", "<ul>", `<pre tabindex="0"><code>`, "<blockquote>"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in output:\n%s", want, got)
 		}
