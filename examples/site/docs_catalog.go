@@ -45,6 +45,14 @@ type docIntent struct {
 // in framework/docs/content/ — verified at startup by registerDocPages.
 var docIntents = []docIntent{
 	{
+		Num: "00", Slug: "start", Title: "Start here",
+		Lede: "What GoFastr is and a map of every feature — the newcomer narrative before the per-feature references.",
+		Path: []string{"Overview"},
+		Docs: []docEntry{
+			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
+		},
+	},
+	{
 		Num: "01", Slug: "modeling", Title: "Modeling your domain",
 		Lede: "Declare entities, fields, relations. The framework generates schema, CRUD, validators, and code.",
 		Path: []string{"Entity declarations", "Filter DSL", "Cursor pagination"},
@@ -88,6 +96,8 @@ var docIntents = []docIntent{
 			{"runtime-minification", "Runtime modules", "Carved per-feature so pages without X don't ship X's JS."},
 			{"print", "Print documents", "Server-rendered print-friendly documents + PDF."},
 			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit — zero config."},
+			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions."},
+			{"signal-store", "Signal store", "Typed, namespaced client state that fans out to many consumers from one declaration."},
 		},
 	},
 	{
@@ -128,6 +138,18 @@ var docIntents = []docIntent{
 			{"admin", "Admin UI", "An opt-in listing + form per entity."},
 		},
 	},
+	{
+		Num: "07", Slug: "reference", Title: "Reference & internals",
+		Lede: "Performance numbers and the deeper design + tooling docs — surfaced so nothing is hidden.",
+		Path: []string{"Benchmarks", "Performance results"},
+		Docs: []docEntry{
+			{"benchmarks", "Benchmarks", "What's measured, how, and the methodology behind the numbers."},
+			{"perf-results", "Performance results", "Latest throughput / latency results across the hot paths."},
+			{"harness-architecture", "Harness architecture", "The AI coding-harness design (contributor/internal reference)."},
+			{"harness-e2e-testing", "Harness E2E testing", "How the harness drives end-to-end browser tests."},
+			{"project-architecture-review", "Architecture review", "The revalidated risk register + maintenance rules."},
+		},
+	},
 }
 
 // docCount is the total number of individual doc pages in the catalog —
@@ -161,6 +183,42 @@ func flatDocs() []docEntry {
 		out = append(out, it.Docs...)
 	}
 	return out
+}
+
+// allDocsSection renders the flat A–Z reference: every embedded doc, sorted by
+// name (docs.List already sorts), each linked to /docs/<slug>. This is the
+// "nothing is hidden" index — it lists docs whether or not they're featured in
+// one of the reading intents above. README (the docs folder's own index) is
+// skipped since it isn't a page. Used at the bottom of /docs/.
+func allDocsSection() render.HTML {
+	topics, err := docs.List()
+	if err != nil {
+		return render.HTML("")
+	}
+	cards := make([]render.HTML, 0, len(topics))
+	for _, t := range topics {
+		if t.Name == "README" {
+			continue
+		}
+		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
+			Href:  "/docs/" + t.Name,
+			Class: "doc",
+			Content: render.Join(
+				html.Div(html.DivConfig{Class: "doc__title"}, render.Text(t.Title)),
+				html.Div(html.DivConfig{Class: "doc__meta"}, render.Text("/docs/"+t.Name)),
+			),
+		}))
+	}
+	return html.Section(html.SectionConfig{ID: "all-az", Class: "intent", Label: "All docs A–Z"},
+		html.Div(html.DivConfig{Class: "intent__head"},
+			html.Span(html.TextConfig{Class: "intent__num"}, render.Text("∑")),
+			html.Heading(html.HeadingConfig{Level: 2, Class: "intent__title"}, render.Text("Every doc · A–Z")),
+			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(cards))+" docs")),
+		),
+		html.Paragraph(html.TextConfig{Class: "intent__lede"},
+			render.Text("The complete embedded reference — every page, alphabetical, featured or not. Same content as `gofastr docs`.")),
+		html.Div(html.DivConfig{Class: "docs"}, cards...),
+	)
 }
 
 // =============================================================================

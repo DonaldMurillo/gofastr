@@ -294,6 +294,8 @@ func cxBody() render.HTML {
 			Count:   len(it.Docs),
 		}
 	}
+	// Trailing rail entry for the flat A–Z reference section.
+	items = append(items, ui.RailItem{Eyebrow: "∑", Text: "A–Z", Anchor: "all-az", Count: docCount()})
 	rail := ui.AnchoredRail(ui.AnchoredRailConfig{
 		Label:           "By intent",
 		Items:           items,
@@ -306,6 +308,8 @@ func cxBody() render.HTML {
 	for _, it := range docIntents {
 		sections = append(sections, intentSection(it))
 	}
+	// Flat A–Z reference at the bottom — every embedded doc, nothing hidden.
+	sections = append(sections, allDocsSection())
 
 	return container(html.Div(html.DivConfig{Class: "cx-body"},
 		rail,
@@ -389,14 +393,14 @@ func exRows() render.HTML {
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"tags"`), pn(","), render.Text(" …"), pn(")")),
 				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
 			}),
-		exRow("02", "examples/website", "Feature gallery", "largest", "~3000 LoC",
-			"Every framework feature lit up at once. For contributors; less useful for first-timers.",
-			[]string{"Every core-ui pattern", "Every framework/ui component", "CRUD demo, themes, dark mode, agents"},
-			"cd examples/website && go run .",
-			"examples/website/main.go", []render.HTML{
-				ln(render.Text("app "), pn(":="), render.Text(" framework."), fn_("New"), pn("(…)")),
-				ln(com("// every core-ui pattern + framework/ui component")),
-				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
+		exRow("02", "examples/site", "This site (UI showcase)", "largest", "~6000 LoC",
+			"Every core-ui pattern + framework/ui component, one page each — plus the docs, SEO, multi-step wizard, and print-battery demos. The site you're reading right now.",
+			[]string{"Every core-ui pattern + framework/ui component", "Docs, philosophy, examples, Kiln pages", "SEO interfaces, sitemap/robots, wizard, print"},
+			"cd examples/site && go run .",
+			"examples/site/main.go", []render.HTML{
+				ln(render.Text("host "), pn(":="), render.Text(" uihost."), fn_("New"), pn("("), render.Text("site"), pn(", …)")),
+				ln(render.Text("app "), pn(":="), render.Text(" framework."), fn_("NewUIHostApp"), pn("("), render.Text("host"), pn(")")),
+				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8083"`), pn(")")),
 			}),
 		exRow("03", "examples/api-tour", "API tour", "live docs", "~180 LoC",
 			"Every REST endpoint as a chapter. Each chapter has a live curl example you run from the page.",

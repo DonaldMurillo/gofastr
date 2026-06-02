@@ -90,7 +90,7 @@ func TestDocCountMatchesCatalog(t *testing.T) {
 		t.Fatalf("docCount()=%d but catalog has %d", docCount(), n)
 	}
 	html := body(t, "/docs/")
-	want := strings.Replace("X docs · 6 intents", "X", itoa(docCount()), 1)
+	want := itoa(docCount()) + " docs · " + itoa(len(docIntents)) + " intents"
 	if !strings.Contains(html, want) {
 		t.Fatalf("/docs/ header should contain %q", want)
 	}
@@ -133,7 +133,7 @@ func TestPageTitlesSingleSuffix(t *testing.T) {
 
 func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 	html := body(t, "/examples")
-	for _, slug := range []string{"blog", "website", "api-tour", "embed-demo", "spa", "static-site"} {
+	for _, slug := range []string{"blog", "site", "api-tour", "embed-demo", "spa", "static-site"} {
 		if !strings.Contains(html, `id="`+slug+`"`) {
 			t.Errorf("/examples missing anchor id=%q", slug)
 		}
@@ -149,7 +149,7 @@ func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 
 func TestHomeExampleCardsDeepLink(t *testing.T) {
 	html := body(t, "/")
-	for _, slug := range []string{"blog", "website", "api-tour"} {
+	for _, slug := range []string{"blog", "site", "api-tour"} {
 		if !strings.Contains(html, `href="/examples#`+slug+`"`) {
 			t.Errorf("home example card should deep-link to /examples#%s", slug)
 		}
