@@ -28,7 +28,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	patternsAccordion "github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
+	patternsDisclosure "github.com/DonaldMurillo/gofastr/core-ui/patterns/disclosure"
+	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
 	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
+	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -57,7 +61,8 @@ var noteOnlyComponents = map[string]bool{
 	"conditionalfield": true, "formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
-	"confirmaction": true,
+	"confirmaction": true, "scrollspy": true, "sortablelist": true,
+	"infinitescroll": true,
 }
 
 // componentCode holds the example Go for a component's showcase page —
@@ -126,6 +131,55 @@ interactive.SetLocal(ui.Button(ui.ButtonConfig{Label: "Rename"}), Company.Name()
 // Consumers: bind read-only anywhere — all update together, no per-consumer request.
 Company.Bind(ctx, "h3", nil)
 Company.Bind(ctx, "strong", nil)`,
+
+	"disclosure": `disclosure.Render(disclosure.Config{Title: "What's included?"},
+    html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, …")),
+)`,
+
+	"tree": `tree.Render(tree.Config{
+    ID: "files", Label: "Project files", SignalPrefix: "files-tree",
+    Nodes: []tree.Node{
+        {ID: "src", Label: "src", Expanded: true, Children: []tree.Node{
+            {ID: "src-main", Label: "main.go", Href: "#main"},
+        }},
+        // {ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"} // RPC lazy-load
+    },
+})`,
+
+	"nestedlist": `nestedlist.Render(nestedlist.Config{
+    AriaLabel: "Settings",
+    Items: []nestedlist.Item{
+        {Label: "Account", Expanded: true, Children: []nestedlist.Item{
+            {Label: "Profile", Href: "/settings/profile"},
+        }},
+        {Label: "Billing", Href: "/settings/billing"},
+    },
+})`,
+
+	"progress": `progress.New(progress.Config{Value: 73, Max: 100, Label: "Upload", Description: "73 of 100"})
+progress.New(progress.Config{Value: -1, Label: "Working…"}) // indeterminate`,
+
+	"kbd": `html.Paragraph(html.TextConfig{},
+    render.Text("Press "), html.Kbd(html.TextConfig{}, render.Text("Esc")), render.Text(" to dismiss."),
+)`,
+
+	"modal": `// Mount once at app start (Hidden + deeplink optional):
+widget.MountBuilder(r, preset.Modal("user-edit").
+    Hidden().DeepLink("modal", "user-edit").DeepLinkParam("user_id").
+    Slot("body", &UserEditBody{}))
+// Trigger anywhere:
+<button data-fui-open="user-edit" data-fui-deeplink="user_id=42">Edit</button>`,
+
+	"drawer": `widget.MountBuilder(r, preset.Drawer("filters").Hidden().Slot("body", &FilterForm{}))
+<button data-fui-open="filters">Open drawer</button>`,
+
+	"bottomsheet": `widget.MountBuilder(r, preset.BottomSheet("share").Hidden().Slot("body", shareBody{}))
+<button data-fui-open="share">Share</button>`,
+
+	"toast": `// Client: any element carries data-fui-toast="<json>".
+<button data-fui-toast='{"variant":"success","title":"Saved"}'>Save</button>
+// Server: any data-fui-rpc handler attaches the header on 2xx.
+func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
 }
 
 // componentPkg returns the Go source package for a component, used to
@@ -133,12 +187,18 @@ Company.Bind(ctx, "strong", nil)`,
 // framework/ui; a few are core-ui patterns or the image pipeline.
 func componentPkg(slug string) string {
 	switch slug {
-	case "accordion", "breadcrumbs", "pagination":
+	case "accordion", "breadcrumbs", "pagination",
+		"tree", "nestedlist", "progress", "scrollspy", "disclosure",
+		"sortablelist", "infinitescroll":
 		return "core-ui/patterns/" + slug
 	case "image", "pipelineimage":
 		return "framework/image"
 	case "section-menu", "dropdown", "scroll-reveal", "signal-animate":
 		return "core-ui/interactive"
+	case "modal", "drawer", "bottomsheet", "toast":
+		return "core-ui/widget/preset"
+	case "kbd":
+		return "core-ui/html"
 	default:
 		return "framework/ui"
 	}
@@ -194,6 +254,8 @@ var componentCatalog = []componentEntry{
 			ui.Tag(ui.TagConfig{Label: "warning", Variant: ui.StatusWarning}),
 			ui.Tag(ui.TagConfig{Label: "danger", Variant: ui.StatusDanger}),
 			ui.Tag(ui.TagConfig{Label: "info", Variant: ui.StatusInfo}),
+			// Dismissable variant: the × fires an RPC to Dismiss on click.
+			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "#", DismissLabel: "Remove beta"}),
 		)
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
@@ -249,12 +311,21 @@ var componentCatalog = []componentEntry{
 	}},
 
 	// ---------- Layout ----------
-	{"card", "Card", "Layout", "Surface with optional header / footer.", func() render.HTML {
-		return ui.Card(ui.CardConfig{
-			Heading:     "A typical card",
-			Description: "Header + body + footer slots; theme-skinned automatically.",
-			Footer:      html.Div(html.DivConfig{Class: "demo-row"}, ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
-		}, html.Paragraph(html.TextConfig{}, render.Text("This is the body. The card's surface, border, and radius come from the theme.")))
+	{"card", "Card", "Layout", "Surface with optional header / footer; whole-card link when Href is set.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			ui.Card(ui.CardConfig{
+				Heading:     "A typical card",
+				Description: "Header + body + footer slots; theme-skinned automatically.",
+				Footer:      html.Div(html.DivConfig{Class: "demo-row"}, ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
+			}, html.Paragraph(html.TextConfig{}, render.Text("This is the body. The card's surface, border, and radius come from the theme."))),
+			// Interactive variant: with Href the whole shell becomes a
+			// focusable <a class="ui-card ui-card--interactive">.
+			ui.Card(ui.CardConfig{
+				Heading:     "Interactive card →",
+				Description: "Set Href and the entire surface becomes one focusable link.",
+				Href:        "/docs/",
+			}),
+		)
 	}},
 	{"container", "Container", "Layout", "Max-width wrapper with width tokens.", func() render.HTML {
 		return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
@@ -328,11 +399,11 @@ var componentCatalog = []componentEntry{
 		)
 	}},
 	{"pagination", "Pagination", "Navigation", "Page-cursor controls.", func() render.HTML {
-		return patternsPagination.New(patternsPagination.Config{
-			Current:     2,
-			Total:       8,
-			HrefPattern: "?page=%d",
-		})
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			patternsPagination.New(patternsPagination.Config{Current: 2, Total: 8, HrefPattern: "?page=%d"}),
+			// First-page variant: the Previous boundary renders disabled.
+			patternsPagination.New(patternsPagination.Config{Current: 1, Total: 8, HrefPattern: "?page=%d"}),
+		)
 	}},
 	{"toolbar", "Toolbar", "Navigation", "Horizontal action group with separators.", func() render.HTML {
 		return ui.Toolbar(ui.ToolbarConfig{
@@ -375,6 +446,7 @@ var componentCatalog = []componentEntry{
 	}},
 	{"menu", "Menu", "Navigation", "Dropdown menu list.", func() render.HTML {
 		return ui.Menu(ui.MenuConfig{
+			Label: "Options",
 			Items: []ui.MenuItem{
 				{Label: "Profile", Href: "/profile"},
 				{Label: "Settings", Href: "/settings"},
@@ -519,7 +591,8 @@ var componentCatalog = []componentEntry{
 		return ui.NumberInput(ui.NumberInputConfig{Name: "qty", Label: "Quantity", Min: 0, Max: 99, Value: 1})
 	}},
 	{"passwordinput", "PasswordInput", "Forms", "Password with show/hide toggle.", func() render.HTML {
-		return ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw"})
+		return ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-pw",
+			Input: ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw"})})
 	}},
 	{"searchinput", "SearchInput", "Forms", "Search field with leading icon + clear button.", func() render.HTML {
 		return ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "demo-search", Placeholder: "Search docs…"})
@@ -531,7 +604,12 @@ var componentCatalog = []componentEntry{
 		return ui.Slider(ui.SliderConfig{Name: "vol", Label: "Volume", Min: 0, Max: 100, Value: 50, ShowValue: true})
 	}},
 	{"taginput", "TagInput", "Forms", "Free-form tag entry with chips.", func() render.HTML {
-		return ui.TagInput(ui.TagInputConfig{Name: "tags", Label: "Tags", Values: []string{"go", "framework", "agent"}})
+		// Wrapped in a <form> so the same-tick Enter guard has a real
+		// submit target to suppress (Enter commits a chip without
+		// submitting; a later genuine submit still proceeds).
+		return render.Tag("form", map[string]string{"class": "demo-stack"},
+			ui.TagInput(ui.TagInputConfig{Name: "tags", Label: "Tags", Values: []string{"go", "framework", "agent"}}),
+		)
 	}},
 	{"combobox", "Combobox", "Forms", "Type-ahead suggestion picker.", func() render.HTML {
 		// Static demo since wiring the search RPC island is per-page.
@@ -592,7 +670,7 @@ var componentCatalog = []componentEntry{
 	// ---------- Data ----------
 	{"datatable", "DataTable", "Data", "Sortable + paginated data table island.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See /customers in examples/website for the full pattern."),
+			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See the DataTable docs for the full island-RPC wiring pattern."),
 		)
 	}},
 	{"jsonviewer", "JSONViewer", "Data", "Pretty-printed expandable JSON.", func() render.HTML {
@@ -1042,7 +1120,7 @@ func main() {
 				mkBtn("Reset", "Acme Corp"),
 			)
 			consumers := html.Div(html.DivConfig{Class: "demo-stack"},
-				demoCompany.Bind(ctx, "h3", map[string]string{"id": "store-consumer-heading"}),
+				demoCompany.Bind(ctx, "div", map[string]string{"id": "store-consumer-heading", "class": "demo-store-heading"}),
 				html.Paragraph(html.TextConfig{},
 					render.Text("Inline mention — "),
 					demoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-inline"}),
@@ -1054,6 +1132,113 @@ func main() {
 			)
 			return html.Div(html.DivConfig{Class: "demo-stack"}, producers, consumers)
 		}},
+
+	// ---------- Ported from examples/website (site is now the only example app) ----------
+
+	// Disclosure / overlays / navigation patterns and the overlay widgets
+	// (modal/drawer/bottomsheet/toast) the gallery used to show.
+	{"disclosure", "Disclosure", "Disclosure", "Single styled <details>/<summary> reveal — keyboard + find-in-page work with no JS.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			patternsDisclosure.Render(patternsDisclosure.Config{Title: "What's included in the free plan?"},
+				html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, community support, and all core features."))),
+			patternsDisclosure.Render(patternsDisclosure.Config{Title: "Can I export my data?", Open: true},
+				html.Paragraph(html.TextConfig{}, render.Text("Yes — Settings → Export emits a JSON archive with everything, no questions asked."))),
+		)
+	}},
+	{"tree", "Tree", "Navigation", "WAI-ARIA treeview with roving tabindex, type-ahead, and arrow-key nav.", func() render.HTML {
+		return patternsTree.Render(patternsTree.Config{
+			ID:           "files-tree",
+			Label:        "Project files",
+			SignalPrefix: "files-tree",
+			Nodes: []patternsTree.Node{
+				{ID: "src", Label: "src", Expanded: true, Children: []patternsTree.Node{
+					{ID: "src-main", Label: "main.go", Href: "#main"},
+					{ID: "src-util", Label: "util.go", Href: "#util"},
+				}},
+				{ID: "docs", Label: "docs", Children: []patternsTree.Node{
+					{ID: "docs-readme", Label: "README.md", Href: "#readme"},
+				}},
+			},
+		})
+	}},
+	{"nestedlist", "NestedList", "Navigation", "Recursive ul/ol with native <details> collapse on branches — no runtime module.", func() render.HTML {
+		return patternsNestedlist.Render(patternsNestedlist.Config{
+			AriaLabel: "Settings",
+			Items: []patternsNestedlist.Item{
+				{Label: "Account", Expanded: true, Children: []patternsNestedlist.Item{
+					{Label: "Profile", Href: "/settings/profile"},
+					{Label: "Security", Href: "/settings/security"},
+				}},
+				{Label: "Notifications", Children: []patternsNestedlist.Item{
+					{Label: "Email", Href: "/settings/email"},
+					{Label: "Push", Href: "/settings/push"},
+				}},
+				{Label: "Billing", Href: "/settings/billing"},
+			},
+		})
+	}},
+	{"progress", "Progress", "Feedback", "Native <progress> wrapper — determinate (Value set) or indeterminate (Value < 0).", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			patternsProgress.New(patternsProgress.Config{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
+			patternsProgress.New(patternsProgress.Config{Value: 18, Max: 100, Label: "Storage used", Description: "18% of 1 TB"}),
+			patternsProgress.New(patternsProgress.Config{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
+		)
+	}},
+	{"kbd", "Kbd", "Buttons & links", "Semantic <kbd> primitive for keyboard input — pair with ShortcutHint for styled chips.", func() render.HTML {
+		return html.Paragraph(html.TextConfig{},
+			render.Text("Press "), html.Kbd(html.TextConfig{}, render.Text("Esc")),
+			render.Text(" to dismiss, or "), html.Kbd(html.TextConfig{}, render.Text("/")),
+			render.Text(" to focus search."),
+		)
+	}},
+	{"modal", "Modal", "Overlays", "Center-mounted dialog: backdrop, focus trap, Escape, URL deeplinking.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.Button(ui.ButtonConfig{Label: "Open modal", Variant: ui.ButtonPrimary,
+				ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-modal"}}),
+			ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary,
+				ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-modal", "data-fui-deeplink": "user_id=42"}}),
+		)
+	}},
+	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel — same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
+		return ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary,
+			ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-drawer"}})
+	}},
+	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
+		return ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary,
+			ExtraAttrs: html.Attrs{"data-fui-open": "site-demo-bottomsheet"}})
+	}},
+	{"toast", "Toast", "Feedback", "Stacked notifications — client (data-fui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary,
+				ExtraAttrs: html.Attrs{"data-fui-toast": `{"variant":"success","title":"Saved","body":"Triggered from JS, no round-trip.","ttl":5000}`}}),
+			ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary,
+				ExtraAttrs: html.Attrs{"data-fui-toast": `{"variant":"info","title":"FYI","body":"Body text + five-second TTL.","ttl":5000}`}}),
+			ui.Button(ui.ButtonConfig{Label: "Server: header", Variant: ui.ButtonSecondary,
+				ExtraAttrs: html.Attrs{"data-fui-rpc": "/__site/toast/push", "data-fui-rpc-body": "{}"}}),
+		)
+	}},
+	{"scrollspy", "ScrollSpy", "Navigation", "IntersectionObserver active-section tracking for in-page anchor navs.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			patternsNestedlist.Render(patternsNestedlist.Config{
+				AriaLabel: "On this page",
+				Items: []patternsNestedlist.Item{
+					{Label: "Intro", Href: "#intro"},
+					{Label: "How it works", Href: "#how"},
+					{Label: "Accessibility", Href: "#a11y"},
+				},
+			}),
+			html.Div(html.DivConfig{Class: "fact"}, render.Text(
+				"ScrollSpy wraps a nav like the one above with scrollspy.Wrap(cfg, nav) and sets aria-current + .is-active on the link whose target is in view. It needs a tall, scrollable page region — see it working live in the left rail of any /docs/* page.")),
+		)
+	}},
+	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list that POSTs the new order to an RPC.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
+			"sortablelist.Render(cfg) needs a per-page RPCPath that accepts POST ?order=<comma-keys>; a non-2xx reverts the DOM. Drag with the mouse or grab with Space + Arrow keys. Wire the endpoint to see it live."))
+	}},
+	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination — server appends HTML + a next-cursor header.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
+			"infinitescroll.Render(cfg) observes a sentinel and GETs cfg.RPCPath?cursor=X; the handler returns the next page's HTML and sets X-Gofastr-Infinite-Cursor (empty = end). Needs a per-page RPC, so it's shown as a note here."))
+	}},
 }
 
 // =============================================================================
