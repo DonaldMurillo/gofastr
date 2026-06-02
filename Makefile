@@ -184,7 +184,7 @@ dev:
 	@echo "Use: gofastr dev"
 
 clean:
-	rm -rf $(DIST_DIR)/ bin/ .gofastr/
+	rm -rf $(DIST_DIR)/ bin/ gen/ .gofastr/
 
 # ---- Security ----
 

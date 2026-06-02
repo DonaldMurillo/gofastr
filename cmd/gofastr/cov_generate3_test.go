@@ -71,7 +71,7 @@ func TestRunBuildWithGeneration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(decl), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The generated .gofastr/entities package imports the framework, which
+	// The generated gen/entities package imports the framework, which
 	// this throwaway module doesn't require — so `go vet ./...` inside
 	// runBuild fails and the function exits. We only need the codegen-
 	// detection + vet branches exercised, so capture the exit.

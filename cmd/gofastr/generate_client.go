@@ -7,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// renderClient builds .gofastr/client/client.go — a standalone Go client for
+// renderClient builds gen/client/client.go — a standalone Go client for
 // hitting the CRUD HTTP surface of every generated entity.
 //
 // The output is a separate package ("client") with its own copies of the

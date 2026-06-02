@@ -87,7 +87,7 @@ func runInit(args []string) {
 		name,
 		filepath.Join(name, "screens"),
 		filepath.Join(name, "static"),
-		filepath.Join(name, ".gofastr"),
+		filepath.Join(name, "gen"),
 	}
 	if !noEntity {
 		dirs = append(dirs,
@@ -135,8 +135,10 @@ PORT=localhost:8080
 
 	writeIsolationConfig(name, dbDriver)
 
-	// Write .gitignore
-	gitignoreContent := `.gofastr/
+	// Write .gitignore. gen/ holds generated Go (regenerated, not committed);
+	// .gofastr/ holds local runtime state (worktree DB isolation, harness).
+	gitignoreContent := `gen/
+.gofastr/
 *.db
 .env
 bin/
@@ -146,9 +148,9 @@ bin/
 		osExit(1)
 	}
 
-	// Write .gofastr/.gitkeep
-	if err := os.WriteFile(filepath.Join(name, ".gofastr", ".gitkeep"), []byte(""), 0o644); err != nil {
-		fail("Failed to write .gofastr/.gitkeep: %v", err)
+	// Write gen/.gitkeep
+	if err := os.WriteFile(filepath.Join(name, "gen", ".gitkeep"), []byte(""), 0o644); err != nil {
+		fail("Failed to write gen/.gitkeep: %v", err)
 		osExit(1)
 	}
 

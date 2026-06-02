@@ -25,7 +25,8 @@ bin/
 *.so
 *.dylib
 
-# Codegen output
+# Generated Go (codegen output) + local runtime state (worktree DB isolation, harness)
+gen/
 .gofastr/
 
 # Local Ollama model cache (bind-mount target of docker-compose.yml).

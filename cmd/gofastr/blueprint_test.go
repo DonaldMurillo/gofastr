@@ -761,7 +761,7 @@ endpoints:
 	if len(got.Files) != 0 || len(got.Errors) != 1 || !strings.Contains(got.Errors[0].Message, `method "WAT" is not supported`) {
 		t.Fatalf("unexpected dry-run JSON error payload: %#v", got)
 	}
-	if _, statErr := os.Stat(filepath.Join(dir, ".gofastr")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(dir, "gen")); !os.IsNotExist(statErr) {
 		t.Fatalf("dry-run with validation errors wrote output dir: %v", statErr)
 	}
 }
@@ -831,7 +831,7 @@ func TestRenderBlueprintFilesGeneratedPackagesBuild(t *testing.T) {
 		t.Fatalf("renderBlueprintFiles: %v", err)
 	}
 	for _, file := range files {
-		full := filepath.Join(dir, ".gofastr", file.name)
+		full := filepath.Join(dir, "gen", file.name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -839,7 +839,7 @@ func TestRenderBlueprintFilesGeneratedPackagesBuild(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("go", "test", "-mod=mod", "./.gofastr/entities", "./.gofastr/blueprint")
+	cmd := exec.Command("go", "test", "-mod=mod", "./gen/entities", "./gen/blueprint")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -874,12 +874,12 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 		t.Fatalf("gofastr generate failed: %v\n%s", err, output)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, ".gofastr", "main.go")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "gen", "main.go")); err != nil {
 		t.Fatalf("generated app entrypoint missing: %v", err)
 	}
 
 	appBin := filepath.Join(dir, "generated-blueprint-app")
-	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, "./.gofastr")
+	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, "./gen")
 	buildCmd.Dir = dir
 	buildCmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if output, err := buildCmd.CombinedOutput(); err != nil {

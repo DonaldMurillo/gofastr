@@ -12,7 +12,7 @@ import (
 // FreezeAndGenerate writes the world to dir (entities/*.json + world.json)
 // and then runs `gofastr generate` to produce the typed package alongside.
 // pkgPath is the relative output directory for the generated Go code (e.g.
-// "entities" or ".gofastr/entities").
+// "entities" or "gen/entities").
 //
 // Requires the gofastr binary on PATH — kiln-built apps that want to graduate
 // to typed-repo Go usually have the toolchain installed already. When the
@@ -22,7 +22,7 @@ func FreezeAndGenerate(w *world.World, dir, pkgPath string) error {
 		return err
 	}
 	if pkgPath == "" {
-		pkgPath = filepath.Join(".gofastr", "entities")
+		pkgPath = filepath.Join("gen", "entities")
 	}
 	bin, err := exec.LookPath("gofastr")
 	if err != nil {

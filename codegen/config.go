@@ -151,7 +151,7 @@ func decodeCodegen(node *coreyaml.Node) (CodegenConfig, error) {
 	}
 	cfg := CodegenConfig{Output: output}
 	if cfg.Output == "" {
-		cfg.Output = ".gofastr"
+		cfg.Output = "gen"
 	}
 	if m["clean"] != nil {
 		v, err := requiredBoolValue(m["clean"], "codegen.clean")
@@ -296,7 +296,7 @@ func normalizeConfig(cfg Config) (Config, error) {
 		return Config{}, fmt.Errorf("config.version %d is not supported", cfg.Version)
 	}
 	if cfg.Codegen.Output == "" {
-		cfg.Codegen.Output = ".gofastr"
+		cfg.Codegen.Output = "gen"
 	}
 	if err := validateConfig(cfg.Codegen, false); err != nil {
 		return Config{}, err

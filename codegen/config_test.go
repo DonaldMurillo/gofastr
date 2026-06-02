@@ -15,7 +15,7 @@ func TestDecodeConfig(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 version: 1
 codegen:
-  output: .gofastr
+  output: gen
   clean: false
   generators:
     - name: go/entities
@@ -43,7 +43,7 @@ codegen:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Version != 1 || cfg.Codegen.Output != ".gofastr" {
+	if cfg.Version != 1 || cfg.Codegen.Output != "gen" {
 		t.Fatalf("config = %#v", cfg)
 	}
 	if cfg.Codegen.Clean == nil || *cfg.Codegen.Clean {
@@ -66,7 +66,7 @@ func TestDecodeConfigRejectsUnknownKeys(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 version: 1
 codegen:
-  output: .gofastr
+  output: gen
   wat: true
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ codegen:
 			body: `
 version: nope
 codegen:
-  output: .gofastr
+  output: gen
 `,
 			want: "version must be an integer",
 		},
@@ -200,7 +200,7 @@ func TestDiscoverConfigReadsCodegenSectionAlongsideBlueprintKeys(t *testing.T) {
 app:
   name: Demo
 codegen:
-  output: .gofastr
+  output: gen
   generators:
     - name: go/entities
 `), 0o644); err != nil {
@@ -464,7 +464,7 @@ func TestWriteFilesRejectsUnsupportedManifestVersion(t *testing.T) {
 
 func TestRegistryRunValidatesDirectConfig(t *testing.T) {
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{
 			{ID: "same", Name: "one"},
 			{ID: "same", Name: "two"},
@@ -482,7 +482,7 @@ func TestRegistryRunsInProcessExtensionWithoutCommandConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{{
 			Name:      "custom/in-process",
 			Extension: "in-process",
@@ -508,7 +508,7 @@ func TestRegistryOverwritesExtensionResponseOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{{
 			Name:      "custom/spoof",
 			Extension: "owner-extension",
@@ -538,7 +538,7 @@ func TestRegistryRejectsExtensionDeleteOfOtherOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{
 			{Name: "base"},
 			{
@@ -574,7 +574,7 @@ printf '%s' '{"files":[{"path":"report.go","content":"package reports\\n"}]}'
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{{
 			Name:      "custom/reports",
 			Extension: "report-generator",
@@ -632,7 +632,7 @@ printf '%s' '{"surprise":true}'
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{{
 			Name:      "custom/bad",
 			Extension: "bad-extension",
@@ -667,7 +667,7 @@ printf '%s' '{"files":[{"path":"relative.go","content":"package relative\\n"}]}'
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{{
 			Name:      "custom/relative",
 			Extension: "relative-extension",
@@ -714,7 +714,7 @@ printf '%s' '{"files":[{"path":"relative.go","content":"package relative\\n"}]}'
 		t.Fatal(err)
 	}
 	cfg := Config{Version: 1, Codegen: CodegenConfig{
-		Output: ".gofastr",
+		Output: "gen",
 		Generators: []GeneratorConfig{{
 			Name:      "custom/relative",
 			Extension: "relative-extension",
@@ -740,7 +740,7 @@ func writeConfigFile(t *testing.T, path, generator string) {
 	if err := os.WriteFile(path, []byte(`
 version: 1
 codegen:
-  output: .gofastr
+  output: gen
   generators:
     - name: `+generator+`
 `), 0o644); err != nil {

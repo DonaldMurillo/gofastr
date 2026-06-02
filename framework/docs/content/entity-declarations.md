@@ -228,7 +228,7 @@ gofastr generate
 ```
 
 This reads `entities/*.json` and writes generated Go files into
-`.gofastr/entities/`:
+`gen/entities/`:
 
 - `register.go` with `RegisterAll(app *framework.App)`
 - `models.go` with basic entity model structs
@@ -250,7 +250,7 @@ For configurable generation, use `gofastr.codegen.yml`:
 ```yaml
 version: 1
 codegen:
-  output: .gofastr
+  output: gen
   generators:
     - name: go/entities
       source:

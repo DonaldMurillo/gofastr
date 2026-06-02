@@ -249,7 +249,7 @@ func TestNewCLIGeneratedHandlerAndEntityBuild(t *testing.T) {
 		t.Fatalf("gofastr generate after new entity: %v\n%s", err, out)
 	}
 
-	cmd := exec.Command("go", "test", "-mod=mod", ".", "./.gofastr/entities")
+	cmd := exec.Command("go", "test", "-mod=mod", ".", "./gen/entities")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if out, err := cmd.CombinedOutput(); err != nil {

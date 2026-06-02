@@ -22,13 +22,13 @@ func covT_writeBlueprint(t *testing.T) (dir, bp string) {
 
 func TestGenerateFromBlueprintWritesFiles(t *testing.T) {
 	dir, bp := covT_writeBlueprint(t)
-	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp, outputDir: ".gofastr", clean: true}) })
+	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", clean: true}) })
 	// Blueprint output lands under the resolved output dir.
-	matches, _ := filepath.Glob(filepath.Join(dir, ".gofastr", "**", "*.go"))
+	matches, _ := filepath.Glob(filepath.Join(dir, "gen", "**", "*.go"))
 	if len(matches) == 0 {
 		// Fall back to a recursive walk — layout may nest deeper.
 		found := false
-		_ = filepath.Walk(filepath.Join(dir, ".gofastr"), func(p string, info os.FileInfo, err error) error {
+		_ = filepath.Walk(filepath.Join(dir, "gen"), func(p string, info os.FileInfo, err error) error {
 			if err == nil && strings.HasSuffix(p, ".go") {
 				found = true
 			}
@@ -43,7 +43,7 @@ func TestGenerateFromBlueprintWritesFiles(t *testing.T) {
 func TestGenerateFromBlueprintJSON(t *testing.T) {
 	_, bp := covT_writeBlueprint(t)
 	out := covT_capStdout(t, func() {
-		generateFromBlueprint(generateOptions{from: bp, outputDir: ".gofastr", json: true})
+		generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", json: true})
 	})
 	if !strings.Contains(out, `"files"`) {
 		t.Fatalf("expected JSON, got %s", out)
@@ -53,7 +53,7 @@ func TestGenerateFromBlueprintJSON(t *testing.T) {
 func TestGenerateFromBlueprintDryRunText(t *testing.T) {
 	_, bp := covT_writeBlueprint(t)
 	out := covT_capStdout(t, func() {
-		generateFromBlueprint(generateOptions{from: bp, outputDir: ".gofastr", dryRun: true})
+		generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", dryRun: true})
 	})
 	if !strings.Contains(out, "Would generate") {
 		t.Fatalf("expected dry-run text, got %s", out)
@@ -65,7 +65,7 @@ func TestGenerateFromBlueprintLoadErrorJSON(t *testing.T) {
 	covT_chdir(t, dir)
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() {
-			generateFromBlueprint(generateOptions{from: filepath.Join(dir, "missing.yml"), outputDir: ".gofastr", dryRun: true, json: true})
+			generateFromBlueprint(generateOptions{from: filepath.Join(dir, "missing.yml"), outputDir: "gen", dryRun: true, json: true})
 		})
 	})
 	if code != 1 {

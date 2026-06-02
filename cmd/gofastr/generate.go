@@ -78,7 +78,7 @@ type generateOptions struct {
 }
 
 func parseGenerateOptions(args []string) generateOptions {
-	options := generateOptions{entitiesDir: "entities", outputDir: filepath.Join(".gofastr", "entities"), clean: true}
+	options := generateOptions{entitiesDir: "entities", outputDir: filepath.Join("gen", "entities"), clean: true}
 	for _, arg := range args {
 		switch {
 		case arg == "--dry-run":
@@ -331,8 +331,8 @@ func loadGeneratorEntityDeclarations(cfg codegen.GeneratorConfig) ([]framework.E
 }
 
 func generateFromBlueprint(options generateOptions) {
-	if options.outputDir == filepath.Join(".gofastr", "entities") {
-		options.outputDir = ".gofastr"
+	if options.outputDir == filepath.Join("gen", "entities") {
+		options.outputDir = "gen"
 	}
 	bp, err := loadBlueprint(options.from)
 	if err != nil {
@@ -343,7 +343,7 @@ func generateFromBlueprint(options generateOptions) {
 		fail("Failed to load blueprint: %v", err)
 		osExit(1)
 	}
-	if bp.App.OutputDir != "" && options.outputDir == ".gofastr" {
+	if bp.App.OutputDir != "" && options.outputDir == "gen" {
 		options.outputDir = bp.App.OutputDir
 	}
 	if err := validateOutputDir(options.outputDir); err != nil {
@@ -809,7 +809,7 @@ func validateOutputDir(dir string) error {
 		return fmt.Errorf("--out must be a relative path inside the project (got %q)", dir)
 	}
 	if clean == "." || clean == ".." {
-		return fmt.Errorf("--out=%q would target the working directory; choose a subdirectory like .gofastr/entities", dir)
+		return fmt.Errorf("--out=%q would target the working directory; choose a subdirectory like gen/entities", dir)
 	}
 	for _, part := range strings.Split(clean, string(filepath.Separator)) {
 		if part == ".." {

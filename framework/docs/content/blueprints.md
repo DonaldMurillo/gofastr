@@ -9,7 +9,7 @@ gofastr generate --from=blueprints/ --dry-run --json
 
 Blueprints are not runtime declarations. The CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files, validates them, and writes generated Go under
-`.gofastr/`. Runtime loading through `app.EntityFromFile` and
+`gen/`. Runtime loading through `app.EntityFromFile` and
 `app.EntitiesFromDir` remains JSON-only.
 
 Blueprints are also separate from general codegen config. `gofastr generate
@@ -157,14 +157,14 @@ helpers:
 
 ## Generated output
 
-Entity declarations reuse the existing `.gofastr/entities` generator, including
+Entity declarations reuse the existing `gen/entities` generator, including
 fields, relations, CRUD, MCP, timestamps, soft delete, multi-tenant, cursor
 settings, indices, and `properties`. Entity-owned endpoints and top-level
 endpoints generate Go handler stubs plus router registration under
-`.gofastr/blueprint`.
+`gen/blueprint`.
 
 When `app.module` is present, blueprint generation also emits
-`.gofastr/main.go`: a runnable app entrypoint that opens the configured SQLite
+`gen/main.go`: a runnable app entrypoint that opens the configured SQLite
 database, registers generated entities, exposes generated MCP tools at `/mcp`,
 wires generated screens/endpoints/middleware/plugins through
 `blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
@@ -230,7 +230,7 @@ The generator rejects:
 ## Testing contract
 
 Blueprint changes should be proven with a generated-app E2E test: run the real
-CLI against a blueprint, compile the generated `.gofastr` app binary, start that
+CLI against a blueprint, compile the generated `gen` app binary, start that
 generated binary as a separate process, exercise HTTP CRUD, OpenAPI, MCP tools,
 static assets, and drive generated UI in a real browser so islands, widgets,
 runtime actions, and DOM updates are covered together. Do not satisfy this with

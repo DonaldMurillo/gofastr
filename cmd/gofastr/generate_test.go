@@ -301,7 +301,7 @@ func TestGenerateProjectLegacyPathDoesNotWriteManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	generateProject(nil)
-	if _, err := os.Stat(filepath.Join(".gofastr", "entities", ".codegen-manifest.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join("gen", "entities", ".codegen-manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("legacy generate wrote manifest: %v", err)
 	}
 }
@@ -640,7 +640,7 @@ func TestGenerateProjectE2EGeneratedPackageBuilds(t *testing.T) {
 	// replaced framework into the temp module's go.mod on the fly. Without
 	// it Go refuses to build because go.mod doesn't list every transitive
 	// require explicitly.
-	cmd := exec.Command("go", "test", "-mod=mod", "./.gofastr/entities")
+	cmd := exec.Command("go", "test", "-mod=mod", "./gen/entities")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {

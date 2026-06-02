@@ -239,7 +239,7 @@ func TestValidateOutputDir(t *testing.T) {
 			t.Errorf("validateOutputDir(%q) = nil, want error", d)
 		}
 	}
-	if err := validateOutputDir(".gofastr/entities"); err != nil {
+	if err := validateOutputDir("gen/entities"); err != nil {
 		t.Errorf("valid dir rejected: %v", err)
 	}
 }

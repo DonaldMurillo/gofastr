@@ -72,7 +72,7 @@ func TestRenderClient_HonoursCustomTable(t *testing.T) {
 // to drive the generated client against a real httptest server. Kept as a
 // raw constant (with %s placeholders intentionally avoided — the file is
 // self-contained and references the generated package via the temp module's
-// own import path "example.com/cli/.gofastr/entities/client").
+// own import path "example.com/cli/gen/entities/client").
 const integrationTestSource = `package integration_test
 
 import (
@@ -86,7 +86,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 
-	gen "example.com/cli/.gofastr/entities/client"
+	gen "example.com/cli/gen/entities/client"
 )
 
 // TestGeneratedClient_RoundTrip stands up the same entity the generator was
@@ -270,14 +270,14 @@ func TestGenerateClient_E2EBuildsCleanly(t *testing.T) {
 	}
 	generateProject(nil)
 
-	clientPath := filepath.Join(dir, ".gofastr", "entities", "client", "client.go")
+	clientPath := filepath.Join(dir, "gen", "entities", "client", "client.go")
 	if _, err := os.Stat(clientPath); err != nil {
 		t.Fatalf("client file not written: %v", err)
 	}
 
 	// Client only uses the stdlib so no go mod tidy needed, but the parent
 	// module needs a clean go.sum for the build resolver.
-	cmd := exec.Command("go", "build", "./.gofastr/entities/client")
+	cmd := exec.Command("go", "build", "./gen/entities/client")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

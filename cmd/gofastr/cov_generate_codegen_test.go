@@ -29,7 +29,7 @@ func TestGenerateProjectLegacyEntitiesDir(t *testing.T) {
 	dir := covT_entitiesProject(t)
 	covT_capStdout(t, func() { generateProject([]string{"--clean"}) })
 	// register.go should land in the default output dir.
-	if _, err := os.Stat(filepath.Join(dir, ".gofastr", "entities", "register.go")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "gen", "entities", "register.go")); err != nil {
 		t.Fatalf("register.go not generated: %v", err)
 	}
 }

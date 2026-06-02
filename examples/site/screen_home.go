@@ -175,7 +175,7 @@ func generatesSection() render.HTML {
 				codeText("up"), render.Text("/"), codeText("down"),
 				render.Text(" SQL emitted as plain files."),
 			),
-			render.Text(".gofastr/migrations/")),
+			render.Text("migrations/")),
 		row("02", "REST endpoints",
 			render.Text("List, get, create, update, delete, batch. Cursor + offset pagination. Filter DSL on the query string."),
 			render.Text("GET POST /posts")),
@@ -200,7 +200,7 @@ func generatesSection() render.HTML {
 				codeText(`posts.Query(ctx).Where(posts.Status.Eq("published")).List(20)`),
 				render.Text(". No reflection, no "), codeText("interface{}"), render.Text("."),
 			),
-			render.Text(".gofastr/entities/posts.go")),
+			render.Text("gen/entities/posts.go")),
 		row("06", "Lifecycle hook slots",
 			render.Join(
 				codeText("BeforeCreate"), render.Text(", "),
@@ -221,7 +221,7 @@ func generatesSection() render.HTML {
 		"One entity call generates the surfaces your app and your agent both need.",
 		render.Join(
 			render.Text("Output lands on disk under "),
-			codeText(".gofastr/"),
+			codeText("gen/"),
 			render.Text(" as regular Go and SQL. There is no reflection at runtime; if something the framework does feels like magic, open the generated file and read it."),
 		),
 	)

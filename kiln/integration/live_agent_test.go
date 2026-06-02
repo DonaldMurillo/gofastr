@@ -1190,7 +1190,7 @@ func TestLive_ButtonToolDispatch(t *testing.T) {
 //   2. kiln freeze --dir build/ reads the journal and writes
 //      entities/*.json + world.json.
 //   3. cmd/gofastr generate reads build/entities/*.json and writes
-//      .gofastr/entities/{models.go, register.go} alongside it.
+//      gen/entities/{models.go, register.go} alongside it.
 //   4. We check that the produced Go files compile (via `go build`
 //      against a tiny synthetic main.go that imports them).
 //
@@ -1271,18 +1271,18 @@ Stop after the two add_entity calls.`,
 	}
 
 	for _, want := range []string{
-		filepath.Join(freezeDir, ".gofastr/entities/models.go"),
-		filepath.Join(freezeDir, ".gofastr/entities/register.go"),
+		filepath.Join(freezeDir, "gen/entities/models.go"),
+		filepath.Join(freezeDir, "gen/entities/register.go"),
 	} {
 		if _, err := os.Stat(want); err != nil {
 			t.Errorf("expected generated file missing: %s (%v)", want, err)
 		}
 	}
-	t.Logf("gofastr generate ok: produced .gofastr/entities/*.go")
+	t.Logf("gofastr generate ok: produced gen/entities/*.go")
 
 	// 4) Inspect a generated file for entity-specific markers — proves
 	//    the IR actually drove codegen, not a static stub.
-	body, err := os.ReadFile(filepath.Join(freezeDir, ".gofastr/entities/models.go"))
+	body, err := os.ReadFile(filepath.Join(freezeDir, "gen/entities/models.go"))
 	if err != nil {
 		t.Fatalf("read generated models.go: %v", err)
 	}
@@ -1322,9 +1322,9 @@ Stop after the two add_entity calls.`,
 		_ = os.WriteFile(filepath.Join(freezeDir, "go.sum"), existing, 0o644)
 	}
 
-	// Generated package lives at .gofastr/entities — Go's `./...` skips
+	// Generated package lives at gen/entities — Go's `./...` skips
 	// dot-prefixed directories, so target it explicitly.
-	build := exec.Command("go", "build", "./.gofastr/entities")
+	build := exec.Command("go", "build", "./gen/entities")
 	build.Dir = freezeDir
 	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 	build.Stdout = newLogPipe(t, "go-build-gen")

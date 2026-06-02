@@ -54,7 +54,7 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 - **Test all packages**: `go test ./...`.
 - **Run the FULL repo suite (build + vet + test, no cache, generous timeout)**: `./scripts/test-all.sh`. Use this before/after large refactors — it covers the slow chromedp suite (`examples/site`) and `kiln/integration`. `RACE=1`, `SHORT=1`, and a trailing package path are all supported.
 - **Test the site end-to-end (chromedp)**: `go test ./examples/site/ -run TestE2E`.
-- **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `.gofastr/`).
+- **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `gen/`, `.gofastr/`).
 - **Audit no-binaries-committed**: `find . -maxdepth 3 -type f -size +500k ! -path "./.git/*" ! -path "./dist/*" ! -name "*.go" ! -name "*.md"` — anything in the result is a stray binary in the source tree; either move it to `dist/` or remove it before commit.
 
 ## Where to look first

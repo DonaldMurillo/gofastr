@@ -481,7 +481,7 @@ var componentCatalog = []componentEntry{
 	{"accordion", "Accordion", "Disclosure", "Native <details> accordion stack.", func() render.HTML {
 		return patternsAccordion.Stack(patternsAccordion.StackConfig{},
 			patternsAccordion.Item{Summary: "What is an entity?", Content: html.Paragraph(html.TextConfig{}, render.Text("A typed declaration the framework turns into SQL + REST + MCP + Go."))},
-			patternsAccordion.Item{Summary: "How are migrations stored?", Content: html.Paragraph(html.TextConfig{}, render.Text("Plain SQL up/down files under .gofastr/migrations/."))},
+			patternsAccordion.Item{Summary: "How are migrations stored?", Content: html.Paragraph(html.TextConfig{}, render.Text("Plain SQL up/down files under migrations/."))},
 			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: html.Paragraph(html.TextConfig{}, render.Text("Only with an approved plan — see /kiln."))},
 		)
 	}},

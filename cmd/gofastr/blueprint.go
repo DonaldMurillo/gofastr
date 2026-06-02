@@ -1226,7 +1226,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 	outputDir := bp.App.OutputDir
 	if outputDir == "" {
-		outputDir = ".gofastr"
+		outputDir = "gen"
 	}
 	outputDir = strings.TrimPrefix(filepath.ToSlash(outputDir), "./")
 	baseImport := strings.TrimSuffix(bp.App.Module, "/") + "/" + strings.TrimSuffix(outputDir, "/")

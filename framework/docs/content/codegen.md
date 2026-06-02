@@ -15,7 +15,7 @@ files under a safe output root.
 4. `gofastr.yml` / `gofastr.yaml` only when the file has a top-level `codegen:`
    section.
 5. No config: legacy entity generation from `entities/*.json` into
-   `.gofastr/entities`.
+   `gen/entities`.
 
 CLI flags override config values where they overlap:
 
@@ -33,7 +33,7 @@ entity renderer where practical.
 ```yaml
 version: 1
 codegen:
-  output: .gofastr
+  output: gen
   clean: true
   generators:
     - name: go/entities
@@ -73,7 +73,7 @@ generators:
   Go HTTP client file.
 
 Without config, `gofastr generate` uses both generators to preserve the
-existing `.gofastr/entities` output.
+existing `gen/entities` output.
 
 ## Sources
 
@@ -99,7 +99,7 @@ shape rather than relying on a maintained built-in TypeScript target.
 ```yaml
 version: 1
 codegen:
-  output: .gofastr
+  output: gen
   generators:
     - name: custom/reports
       extension: report-generator
@@ -174,7 +174,7 @@ mode removes only paths listed in that manifest before writing new output.
 Unowned files are left alone.
 
 The legacy no-config entity path still performs its historical guarded clean of
-`.gofastr/entities` and does not add a manifest file. Configured codegen writes
+`gen/entities` and does not add a manifest file. Configured codegen writes
 the manifest.
 
 ## Common mistakes
