@@ -7,15 +7,15 @@
 # old binary the fetch errors and the page reloads as soon as the
 # new binary is up.
 #
-# Usage:   PORT=8082 ./scripts/dev-watch.sh                     # examples/website (default)
-#          TARGET=examples/site PORT=8083 ./scripts/dev-watch.sh
+# Usage:   PORT=8082 ./scripts/dev-watch.sh                     # examples/site (default)
+#          TARGET=examples/blog PORT=8083 ./scripts/dev-watch.sh
 # Stop:    Ctrl-C
 set -u
 
 # Run from the repo root (this script's parent directory).
 cd "$(dirname "$0")/.."
 
-TARGET=${TARGET:-examples/website}
+TARGET=${TARGET:-examples/site}
 NAME=$(basename "$TARGET")
 # Watch the framework dirs + whatever target dir was passed in. Apps under
 # examples/site, examples/blog, etc. all get the same rebuild + reload loop

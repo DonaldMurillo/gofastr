@@ -16,7 +16,7 @@ build-cmd: $(DIST_DIR)
 
 build-examples: csp-check $(DIST_DIR)
 	@for dir in examples/api-tour examples/blog examples/embed-demo \
-	            examples/spa examples/static-site examples/website; do \
+	            examples/spa examples/static-site examples/site; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \

@@ -215,12 +215,12 @@ source of truth.
 
 ## Testing
 
-`examples/website` exercises every widget surface end-to-end —
+`examples/site` exercises every widget surface end-to-end —
 Modal (`/components/modal`), Drawer (`/components/drawer`), Toast
 (`/components/toast`), Menu (`/components/menu`), Sidebar
 (`/components/sidebar`), and the trigger-anchored Popover preset
 (`/components/popover`). The chromedp tests in
-`examples/website/e2e_*_test.go` cover open + dismiss flows, focus
+`examples/site/e2e_*_test.go` cover open + dismiss flows, focus
 trap, scroll lock, deep-linking, anchored placement + auto-flip,
 scroll-tracking, and the trigger-active highlight contract.
 

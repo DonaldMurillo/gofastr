@@ -144,7 +144,7 @@ All components pass **axe-core 4.10** with zero violations:
 
 ## E2E Test Coverage
 
-14 dedicated tests in `examples/website/e2e_form_module_test.go`:
+14 dedicated tests in `examples/site/e2e_form_module_test.go`:
 
 - PasswordInput toggle (password→text)
 - SearchInput clear button

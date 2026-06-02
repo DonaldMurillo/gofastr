@@ -20,8 +20,8 @@ because each release lands the demo + the code together.
 | What's coming / deferred             | [`ROADMAP.md` §5](../ROADMAP.md)                                  |
 
 The website's components index page lists every component with a
-one-line description ([`examples/website/screen_components.go`](../examples/website/screen_components.go)
-is the source of truth). A drift test in `examples/website/drift_test.go`
+one-line description ([`examples/site/components.go`](../examples/site/components.go)
+is the source of truth). The `examples/site` test suite
 keeps every registered `/components/<slug>` paired with:
 
 - at least one chromedp e2e test
@@ -154,14 +154,14 @@ helpful pre-flight read for human reviewers.
 1. **Implementation**: `framework/ui/<name>.go` (or `core-ui/patterns/<name>/`).
 2. **Theme-token CSS only**: register your own `RegisterStyle`; use
    `var(--color-*, fallback)` etc. No top-level `.ui-*` rules in
-   `examples/website/theme.go` — the website chrome is page-only.
+   `examples/site/styles.go` — the site chrome is page-only.
 3. **Unit tests**: `<name>_test.go` exercising panic paths + emitted
    markup + variant classes.
-4. **`/components/<slug>` screen** in `examples/website/`:
-   register in `main.go`, add an entry to `componentEntries` in
-   `screen_components.go`. The `TestDrift_EveryComponentPageHasE2ETest`
+4. **`/components/<slug>` screen** in `examples/site/`:
+   register in `main.go`, add an entry to `componentCatalog` in
+   `components.go`. The `TestDrift_EveryComponentPageHasE2ETest`
    gate fails until you also add at least one chromedp test.
-5. **Chromedp e2e** in `examples/website/e2e_new_components_test.go`
+5. **Chromedp e2e** in `examples/site/e2e_new_components_test.go`
    or `e2e_new_components_interactions_test.go` — ARIA shape for
    static components, real interaction (click / type / drag) for
    runtime-driven ones.

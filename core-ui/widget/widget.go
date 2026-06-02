@@ -599,7 +599,7 @@ func RuntimeTag() string {
 //	                                          optional module-loader path)
 //	GET /__gofastr/widgets                    JSON list of registered widgets
 //
-// Call this once per host (kiln serve, examples/website, etc.).
+// Call this once per host (kiln serve, examples/site, etc.).
 // The runtime IIFE is idempotent, so re-mounting on rebuilds is safe.
 func MountRuntime(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(serveRuntime))

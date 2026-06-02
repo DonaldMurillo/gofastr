@@ -1,11 +1,11 @@
 #!/bin/bash
 # Run every Go test in the repo. Use before/after large refactors to
 # verify nothing regressed — including the slow chromedp suite in
-# examples/website and the long kiln/integration suite.
+# examples/site and the long kiln/integration suite.
 #
 # Flags:
 #   -count=1   bypass the test cache so the run is authoritative
-#   -timeout   bumped past the default 10m to cover examples/website
+#   -timeout   bumped past the default 10m to cover examples/site
 #              chromedp (~2.5m) and kiln/integration (~1.5m) on
 #              slower machines
 #   -p N       cap package-level parallelism. Go defaults to GOMAXPROCS
@@ -19,7 +19,7 @@
 #              keeping the kernel ephemeral pool from saturating —
 #              picked 2 (not higher) because the heaviest packages
 #              (cmd/gofastr blueprint subprocesses, kiln/integration
-#              chromedp, examples/website chromedp, core-ui/runtime
+#              chromedp, examples/site chromedp, core-ui/runtime
 #              chromedp) each open dozens of sockets per test and
 #              -p 4 still flakes on the M-series ephemeral range.
 #              Override via TEST_PARALLELISM=N if you have a beefier

@@ -97,7 +97,7 @@ func runThemeInit(args []string) {
 	fmt.Println()
 	fmt.Println("Then `go mod tidy && go run .`. Reference tokens in components")
 	fmt.Println("via theme.App.Colors.Primary.CSS() (or {colors.primary} in")
-	fmt.Println("StyleSheet builders). See examples/website/main.go for a full setup.")
+	fmt.Println("StyleSheet builders). See examples/site/main.go for a full setup.")
 }
 
 // themeStarter is the file the scaffold writes. The framework
