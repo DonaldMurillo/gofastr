@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -27,17 +28,26 @@ type View struct {
 //   - Postgres materialized / SQLite: DROP … IF EXISTS then CREATE (idempotent
 //     and update-capable; SQLite has neither OR REPLACE nor materialized views).
 func (v View) render(dialect Dialect) (up, down string) {
+	// View.Name is interpolated into DDL as an identifier, so it must be a
+	// safe identifier. It comes from developer code (not request input), so an
+	// unsafe name is a misconfiguration — fail loud, consistent with ToEntity.
+	// View.Select is intentionally free-form developer-authored SQL (the read
+	// model's query body), so it is not — and cannot be — identifier-escaped.
+	name, err := query.SafeIdent(v.Name)
+	if err != nil {
+		panic(fmt.Sprintf("migrate: view name %q is not a valid SQL identifier: %v", v.Name, err))
+	}
 	kind := "VIEW"
 	materialized := v.Materialized && dialect == DialectPostgres
 	if materialized {
 		kind = "MATERIALIZED VIEW"
 	}
-	down = fmt.Sprintf("DROP %s IF EXISTS %s", kind, v.Name)
+	down = fmt.Sprintf("DROP %s IF EXISTS %s", kind, name)
 	if dialect == DialectPostgres && !materialized {
-		up = fmt.Sprintf("CREATE OR REPLACE VIEW %s AS %s", v.Name, v.Select)
+		up = fmt.Sprintf("CREATE OR REPLACE VIEW %s AS %s", name, v.Select)
 		return up, down
 	}
-	up = fmt.Sprintf("%s;\nCREATE %s %s AS %s", down, kind, v.Name, v.Select)
+	up = fmt.Sprintf("%s;\nCREATE %s %s AS %s", down, kind, name, v.Select)
 	return up, down
 }
 

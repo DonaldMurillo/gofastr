@@ -184,6 +184,12 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 			args = append(args, v)
 		}
 		predicate = fmt.Sprintf("%s.%s IN (%s)", rel.Entity, col, strings.Join(ph, ","))
+	} else if nf.Op == filter.OpLike {
+		// "contains" semantics, matching the top-level _like: escape the
+		// caller's LIKE metacharacters (% _ \) and add ESCAPE so a value
+		// like "50%" is matched literally, not as a wildcard probe.
+		predicate = fmt.Sprintf("%s.%s LIKE $1 ESCAPE '\\'", rel.Entity, col)
+		args = []any{filter.EscapeLikePattern(nf.Value)}
 	} else {
 		predicate = fmt.Sprintf("%s.%s %s $1", rel.Entity, col, opToSQL(nf.Op))
 		args = []any{nf.Value}

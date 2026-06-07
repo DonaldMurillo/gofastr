@@ -9,6 +9,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Security
 
+- **Nested relation `_like` now escapes wildcards.** A nested filter like
+  `?author.name_like=50%` passed the value into `LIKE` raw, so caller-supplied
+  `%`/`_` acted as wildcards (a probe vector) — unlike the hardened top-level
+  `_like`. Nested `_like` now uses contains-semantics with escaped metacharacters
+  and an `ESCAPE` clause (new exported `filter.EscapeLikePattern`).
+- **`migrate.View` name is validated as a SQL identifier.** `View.Name` was
+  interpolated into `CREATE/DROP VIEW` DDL verbatim; it's now checked with
+  `query.SafeIdent` and panics on an unsafe name (developer misconfig, fail-fast).
+  `View.Select` remains intentionally free-form developer SQL.
 - **BREAKING — admin battery is default-deny for non-admins.** With no custom
   `Config.Authorize`, the admin now requires an authenticated user holding the
   admin role (`Config.AdminRole`, default `"admin"`) — detected via the
