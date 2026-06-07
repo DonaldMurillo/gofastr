@@ -27,14 +27,16 @@ func TestAutoMigrate_Atomic(t *testing.T) {
 			Table:  "aaa",
 			Fields: []schema.Field{{Name: "name", Type: schema.String}},
 		}.WithTimestamps(false)))
-		// "zzz" declares the same column twice, so its generated CREATE TABLE
-		// carries a duplicate column — rejected by both SQLite and Postgres.
-		// This is a deterministic, engine-agnostic mid-run failure.
+		// "zzz" carries a column whose RawType is syntactically invalid SQL
+		// (unbalanced parens), so its generated CREATE TABLE is rejected by both
+		// SQLite and Postgres. RawType is emitted verbatim, so this is a
+		// deterministic, engine-agnostic mid-run failure that still passes
+		// entity-level validation (which does not parse RawType) and therefore
+		// reaches the migrate layer after "aaa" has already been created.
 		reg.Register(entity.Define("zzz", entity.EntityConfig{
 			Table: "zzz",
 			Fields: []schema.Field{
-				{Name: "dup", Type: schema.String},
-				{Name: "dup", Type: schema.Int},
+				{Name: "bad", Type: schema.String, RawType: "TEXT))"},
 			},
 		}.WithTimestamps(false)))
 

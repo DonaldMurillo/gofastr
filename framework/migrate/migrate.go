@@ -234,12 +234,16 @@ func indexDDL(table string, idx entity.Index) string {
 	} else {
 		safeCols := make([]string, len(idx.Columns))
 		for i, col := range idx.Columns {
-			safeCols[i] = query.QuoteIdent(query.MustIdent(col))
+			// Validate but DON'T quote — same convention as columnDefs. Quoting
+			// would make Postgres preserve case here while the unquoted CREATE
+			// TABLE folds the column to lowercase, so "UserName" would reference
+			// a column that doesn't exist.
+			safeCols[i] = query.MustIdent(col)
 		}
 		body = strings.Join(safeCols, ", ")
 	}
 	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)",
-		unique, query.QuoteIdent(safeName), query.QuoteIdent(table), body)
+		unique, safeName, table, body)
 }
 
 // sanitizeIndexExpression rejects index expressions that contain SQL
@@ -292,8 +296,12 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, target.PrimaryKey, err)
 		}
+		// Validated but UNQUOTED — same convention as columnDefs. Quoting would
+		// preserve case on Postgres while the referenced CREATE TABLE folded its
+		// identifiers to lowercase, so a mixed-case target like "MixedAccount"
+		// would resolve to a relation that doesn't exist.
 		out = append(out, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-			query.QuoteIdent(safeRelFK), query.QuoteIdent(safeTargetTable), query.QuoteIdent(safeTargetPK)))
+			safeRelFK, safeTargetTable, safeTargetPK))
 	}
 	return out, nil
 }

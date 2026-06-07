@@ -85,16 +85,25 @@ func TableExistsBulk(ctx context.Context, db *sql.DB, tables []string, dialect D
 }
 
 func tableExistsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (map[string]bool, error) {
+	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
+	// folds a mixed-case table name to lowercase in pg_tables. Compare the
+	// requested names case-insensitively (lowercased $N args matched against
+	// pg_tables.tablename) and key the result by the ORIGINAL requested name
+	// so the caller's existing[ent.GetTable()] lookup hits. Without this,
+	// "MixedAccount" never matches the folded "mixedaccount" and AutoMigrate
+	// re-attempts CREATE TABLE on every boot.
 	placeholders := make([]string, len(tables))
 	args := make([]any, len(tables))
+	byLower := make(map[string]string, len(tables))
 	for i, t := range tables {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = t
+		args[i] = strings.ToLower(t)
+		byLower[strings.ToLower(t)] = t
 	}
 
 	query := fmt.Sprintf(`
 		SELECT tablename FROM pg_tables
-		WHERE schemaname = current_schema() AND tablename IN (%s)
+		WHERE schemaname = current_schema() AND lower(tablename) IN (%s)
 	`, strings.Join(placeholders, ", "))
 
 	rows, err := db.QueryContext(ctx, query, args...)
@@ -109,7 +118,11 @@ func tableExistsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		existing[name] = true
+		if orig, ok := byLower[strings.ToLower(name)]; ok {
+			existing[orig] = true
+		} else {
+			existing[name] = true
+		}
 	}
 	return existing, rows.Err()
 }

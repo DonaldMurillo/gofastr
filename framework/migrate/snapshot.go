@@ -255,7 +255,10 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 // the FALLBACK Down for a dropped table when the snapshot predates TableDDL.
 // Constraints (PK/NOT NULL/UNIQUE/FK) are not recoverable from a column→type
 // map, so this is column-and-type only; the TableDDL path is faithful.
-// Identifiers are quoted. Column order is sorted for deterministic output.
+// Identifiers are validated but UNQUOTED (via MustIdent) — the same convention
+// as buildCreateTableSQL, so a mixed-case name folds to lowercase on Postgres
+// consistently with the original CREATE rather than being case-preserved by
+// quoting. Column order is sorted for deterministic output.
 func recreateTableSQL(table string, cols map[string]string) string {
 	names := make([]string, 0, len(cols))
 	for n := range cols {
