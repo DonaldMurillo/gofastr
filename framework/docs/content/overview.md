@@ -19,9 +19,11 @@ This page is the map. It explains the shape of the framework and links every
 feature to its reference doc. If you're new, read this top-to-bottom once, then
 jump to the section that matches what you're building.
 
-> New to the framework? Pair this with **[Get started](/get-started)** for the
-> cold-machine-to-running-app path, and **[Philosophy](/philosophy)** for the
-> convictions behind the design.
+> New to the framework? Pair this with
+> **[UI getting started](/docs/ui-getting-started)** for the
+> cold-machine-to-running-app path, and the
+> **[Project structure](/docs/project-structure)** guide for how a real app
+> is laid out and grows.
 
 ## The one idea
 

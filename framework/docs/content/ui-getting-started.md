@@ -28,7 +28,7 @@ myapp/
   main.go            # wires entities + UI host
   screens/home.go    # the home page you'll edit
   screens/styles.go  # CSS via theme tokens + StyleSheet builder
-  entities/          # CRUD entities (try /posts)
+  entities/entities.go # Go-declared CRUD entities (try /posts)
   migrations/
   .env
   .gitignore

@@ -4,6 +4,30 @@
 single-instance background work. For horizontally-scaled deployments,
 use the `battery/queue` DB-backed queue instead.
 
+## Cron vs Queue — which one?
+
+They solve different problems and often pair up:
+
+| | `framework.Scheduler` (cron) | `battery/queue` |
+|---|---|---|
+| Trigger | **Time** — "every 5 min", "0 3 * * *" | **Work** — a job enqueued by code |
+| State | In-memory; runs in this process only | DB-backed; survives restart |
+| Scale-out | Single instance (every replica fires — see "Behaviour" below) | Safe across replicas via DB locking |
+| Use for | Periodic maintenance, polling, digests | Retries, async side-effects, fan-out, dead-letter |
+
+Rule of thumb: **cron decides _when_, the queue decides _how_ reliably.**
+A common pattern is a cron tick that *enqueues* durable jobs:
+
+```go
+sched.Every("@every 1m", func(ctx context.Context) error {
+    return q.Enqueue(ctx, "send-due-reminders", nil) // queue does the durable work
+})
+```
+
+On multiple replicas, gate the cron body behind a DB lock (or run the
+scheduler on a single designated instance) so the tick fires once — then
+let the queue distribute the actual work. See "Behaviour & guarantees".
+
 ## Quickstart
 
 ```go
