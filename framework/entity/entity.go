@@ -260,6 +260,31 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
+	// Derive a BelongsTo relation for every {Type: Relation} field that points
+	// at a target entity. Without this the field is only consumed for an
+	// OpenAPI x-relation annotation: migrate emits a plain column with no FK
+	// constraint and ?include= (which resolves against Config.Relations) cannot
+	// find the join. Deriving the relation here makes both work from the
+	// single field declaration. The FK column for a BelongsTo lives on the
+	// local table, so it IS the relation field's own column (Name). An
+	// explicit relation already declared for the same name wins — we never
+	// clobber caller-declared relations.
+	for _, f := range config.Fields {
+		if f.Type != schema.Relation || f.To == "" || f.Many {
+			continue
+		}
+		exists := false
+		for _, r := range config.Relations {
+			if r.Name == f.Name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			config.Relations = append(config.Relations, BelongsTo(f.Name, f.To, f.Name))
+		}
+	}
+
 	e := &Entity{
 		Config: config,
 	}

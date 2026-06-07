@@ -34,6 +34,13 @@ func (r *Registry) Register(ent *entity.Entity) error {
 		return fmt.Errorf("registry: entity name must not be empty")
 	}
 
+	// Validate the full config at registration time so misconfigs surface at
+	// app.Entity() with an actionable message, rather than as an opaque SQL
+	// error several phases later (migrate / first request).
+	if err := ent.Validate(); err != nil {
+		return fmt.Errorf("registry: %w", err)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

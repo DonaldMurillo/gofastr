@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -74,7 +75,24 @@ func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	fullPath := r.prefix + pattern
 	fullPattern := method + " " + fullPath
 	route := &cachedRoute{raw: handler, router: r}
-	r.mux.Handle(fullPattern, route)
+	// net/http's ServeMux panics with a terse "conflicts with pattern" message
+	// when two registrations want the same path. That's a common, confusing
+	// failure — e.g. an auto-generated CRUD route and a page/screen both want
+	// "/posts". Re-frame it with the colliding pattern and the usual fix so the
+	// author isn't left decoding a mux internal. (Generic on purpose — this is
+	// the framework-agnostic core layer.)
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				panic(fmt.Sprintf("router: route conflict registering %q: %v\n"+
+					"Two registrations want the same path (commonly an auto-generated "+
+					"entity/CRUD route and a page at the same name). Mount one elsewhere, "+
+					"or move the generated routes under a path prefix (e.g. an API prefix).",
+					fullPattern, rec))
+			}
+		}()
+		r.mux.Handle(fullPattern, route)
+	}()
 	// Record on the ROOT so a single Routes() call returns everything
 	// registered under the tree, including via Groups.
 	r.root.mu.Lock()

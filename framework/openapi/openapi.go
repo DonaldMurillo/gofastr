@@ -16,9 +16,17 @@ import (
 //   - CRUD paths (GET, POST, PUT, DELETE) with request/response schemas
 //   - List endpoint with pagination parameters
 //   - Proper error response schemas
-func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spec {
+// EntityOpenAPI builds the spec for every registered entity. An optional
+// basePath (e.g. "/api", from AppConfig.APIPrefix) is expressed as the server
+// URL so the documented paths match where the routes actually mount — the
+// per-path keys stay relative (e.g. "/posts"), and clients prepend the server.
+func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
-	s.AddServer("/", "current")
+	server := "/"
+	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
+		server = basePath[0]
+	}
+	s.AddServer(server, "current")
 
 	// Add common error response schema
 	s.AddSchema("Error", map[string]any{
@@ -118,6 +126,12 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		path := "/" + tableName
 
+		// An entity is auth-gated when its rows are owner-scoped or
+		// tenant-scoped: the CRUD layer rejects anonymous/foreign-owner
+		// requests. The spec must advertise that 401 so generated SDKs
+		// and docs don't claim these endpoints are public.
+		gated := ent.Config.OwnerField != "" || ent.Config.MultiTenant
+
 		includeNames := make([]string, 0, len(ent.Config.Relations))
 		for _, rel := range ent.Config.Relations {
 			includeNames = append(includeNames, rel.Name)
@@ -148,18 +162,32 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		for _, f := range visibleFields {
 			name := f.Name
 			filterSchema := fieldToFilterSchema(f)
+			// Exact match and _in apply to every field type.
 			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
-			listOp.AddParameter(name+"_gt", "query", name+" greater than", false, filterSchema)
-			listOp.AddParameter(name+"_gte", "query", name+" greater than or equal", false, filterSchema)
-			listOp.AddParameter(name+"_lt", "query", name+" less than", false, filterSchema)
-			listOp.AddParameter(name+"_lte", "query", name+" less than or equal", false, filterSchema)
-			listOp.AddParameter(name+"_like", "query", name+" contains (LIKE)", false, filterSchema)
+			// Range operators only make sense for ordered/comparable
+			// types (numbers, timestamps, dates). Advertising _gt/_lt on
+			// a boolean or JSON blob misleads SDK generators into
+			// proposing comparisons the field can't satisfy.
+			if fieldSupportsRange(f.Type) {
+				listOp.AddParameter(name+"_gt", "query", name+" greater than", false, filterSchema)
+				listOp.AddParameter(name+"_gte", "query", name+" greater than or equal", false, filterSchema)
+				listOp.AddParameter(name+"_lt", "query", name+" less than", false, filterSchema)
+				listOp.AddParameter(name+"_lte", "query", name+" less than or equal", false, filterSchema)
+			}
+			// _like is a substring match — only meaningful for text-ish
+			// fields, not booleans or JSON.
+			if fieldSupportsLike(f.Type) {
+				listOp.AddParameter(name+"_like", "query", name+" contains (LIKE)", false, filterSchema)
+			}
 			listOp.AddParameter(name+"_in", "query", name+" in comma-separated list", false, map[string]any{"type": "string"})
 		}
 
 		// 200 is one of two envelopes — clients pick by whether they sent ?cursor.
 		listOp.AddResponse(200, "List of "+entityName, map[string]any{"oneOf": []any{listRef, cursorRef}})
 		listOp.AddResponse(400, "Invalid filters or unknown include", errorRef)
+		if gated {
+			listOp.AddResponse(401, "Authentication required", errorRef)
+		}
 		s.AddPath("GET", path, *listOp)
 
 		// --- POST /{table} — Create ---
@@ -173,6 +201,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, entityRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
+		if gated {
+			createOp.AddResponse(401, "Authentication required", errorRef)
+		}
 		s.AddPath("POST", path, *createOp)
 
 		// --- GET /{table}/:id — Get by ID ---
@@ -183,6 +214,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		getOp.AddParameter("include", "query", includeDesc, false, includeSchema)
 		getOp.AddResponse(200, "Single "+entityName, entityRef)
 		getOp.AddResponse(400, "Unknown include", errorRef)
+		if gated {
+			getOp.AddResponse(401, "Authentication required", errorRef)
+		}
 		getOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("GET", path+"/:id", *getOp)
 
@@ -194,6 +228,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
 		updateOp.AddResponse(200, "Updated "+entityName, entityRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
+		if gated {
+			updateOp.AddResponse(401, "Authentication required", errorRef)
+		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PUT", path+"/:id", *updateOp)
 
@@ -204,6 +241,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 		deleteOp.Tags = []string{entityName}
 		deleteOp.Responses = map[int]map[string]any{
 			204: {"description": "Deleted"},
+		}
+		if gated {
+			deleteOp.AddResponse(401, "Authentication required", errorRef)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
@@ -309,6 +349,31 @@ func EntityOpenAPI(registry entity.Registry, title, version string) *openapi.Spe
 	}
 
 	return s
+}
+
+// fieldSupportsRange reports whether _gt/_gte/_lt/_lte filter operators are
+// meaningful for a field type. Booleans and JSON blobs have no useful
+// ordering, so advertising range comparisons on them only misleads SDK
+// generators. Every other scalar/text type keeps its range operators.
+func fieldSupportsRange(t schema.FieldType) bool {
+	switch t {
+	case schema.Bool, schema.JSON:
+		return false
+	default:
+		return true
+	}
+}
+
+// fieldSupportsLike reports whether the _like (substring) filter operator is
+// meaningful for a field type. A LIKE match makes no sense on a boolean or
+// an opaque JSON blob; all other types keep it.
+func fieldSupportsLike(t schema.FieldType) bool {
+	switch t {
+	case schema.Bool, schema.JSON:
+		return false
+	default:
+		return true
+	}
 }
 
 // fieldToFilterSchema returns an OpenAPI query parameter schema for filtering

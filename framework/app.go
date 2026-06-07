@@ -55,6 +55,15 @@ type AppConfig struct {
 	DebugEndpoints bool          // opt-in for /.debug/* endpoints
 	NoLLMMD        bool          // disable auto-generated /llm.md entity docs
 
+	// APIPrefix mounts every auto-CRUD entity route (list/get/create/update/
+	// delete + _batch + _events + per-entity llm.md) under this path — e.g.
+	// "/api" serves GET /api/posts instead of GET /posts. Empty (default)
+	// keeps the bare entity-name mounts, so this is not a breaking change.
+	// The generated OpenAPI spec expresses the prefix via its server URL.
+	// GroupEntity routes are unaffected — a group owns its own prefix. MCP
+	// tool names are unchanged.
+	APIPrefix string
+
 	// RequestTimeout caps the per-request wall-clock budget enforced by
 	// the default middleware chain. Zero (default) installs a 30s cap.
 	// Set a positive duration to override. To disable the timeout
@@ -86,7 +95,7 @@ type App struct {
 
 	Batteries *BatteryManager
 
-	serverMu   sync.Mutex   // guards server — Start writes, Shutdown reads/nils
+	serverMu   sync.Mutex   // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
 	hooks      map[string]*hook.HookRegistry
@@ -155,6 +164,32 @@ func WithConfig(config AppConfig) AppOption {
 	return func(a *App) {
 		a.Config = config
 	}
+}
+
+// WithAPIPrefix mounts auto-CRUD entity routes under prefix (e.g. "/api").
+// See AppConfig.APIPrefix. A leading slash is added and a trailing slash
+// trimmed, so "api", "/api", and "/api/" all behave identically.
+func WithAPIPrefix(prefix string) AppOption {
+	return func(a *App) {
+		a.Config.APIPrefix = prefix
+	}
+}
+
+// apiPrefix returns the normalized API prefix: "" when unset, otherwise a
+// single leading slash and no trailing slash (e.g. "/api"). Tolerates the
+// "api", "/api/", "//api" forms a user might set via WithConfig.
+func (a *App) apiPrefix() string {
+	p := strings.Trim(a.Config.APIPrefix, "/")
+	if p == "" {
+		return ""
+	}
+	return "/" + p
+}
+
+// entityMountPath is the base path an entity's CRUD routes mount at —
+// apiPrefix + "/" + table. With no prefix this is the historical "/table".
+func (a *App) entityMountPath(table string) string {
+	return a.apiPrefix() + "/" + table
 }
 
 // WithRouter sets a custom router.
@@ -343,6 +378,17 @@ func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
 	m.Mount(a.router)
 	return a
+}
+
+// Mountables returns the Mountables registered via Mount, in registration
+// order. Batteries use it to discover a mounted UI host (type-asserting to
+// *uihost.Host) so they can register screens on the host's render pipeline
+// rather than spinning up a second host. Returns a copy — callers must not
+// mutate the App's internal slice.
+func (a *App) Mountables() []Mountable {
+	out := make([]Mountable, len(a.mountables))
+	copy(out, a.mountables)
+	return out
 }
 
 // Group creates a route group with the given prefix and optional configuration.
@@ -602,7 +648,10 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
 		crudHandler.Registry = a.Registry
-		crud.RegisterCrudRoutes(a.router, crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		// MCP tools dispatch in-process against a.router, where these routes are
+		// mounted under the API prefix — tell the handler so its tool paths match.
+		crudHandler.BasePath = a.apiPrefix()
+		crud.RegisterCrudRoutes(a.router, crudHandler, a.entityMountPath(e.GetTable()), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
 	if config.MCP && a.DB != nil {
@@ -700,7 +749,7 @@ func (a *App) View(v migrate.View) *App {
 		ch := crud.NewCrudHandler(ent, a.DB)
 		ch.JSONCase = a.JSONCasing()
 		ch.Registry = a.Registry
-		crud.RegisterCrudRoutes(a.router, ch, "/"+ent.GetTable(),
+		crud.RegisterCrudRoutes(a.router, ch, a.entityMountPath(ent.GetTable()),
 			crud.CrudRouteOptions{ReadOnly: true, NoLLMMD: a.Config.NoLLMMD})
 	}
 	return a
@@ -1032,15 +1081,19 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 //
 // Call this from your signal handler.
 func (a *App) Shutdown(ctx context.Context) error {
-	if a.appCancel != nil {
-		a.appCancel()
-		a.appCancel = nil
-	}
+	// Snapshot the cancel func and detach the server under the same lock
+	// that Start/runStartHooks use to assign them. Invoke cancel OUTSIDE
+	// the lock so a cancel-triggered teardown can't re-enter and deadlock.
 	var firstErr error
 	a.serverMu.Lock()
+	cancel := a.appCancel
+	a.appCancel = nil
 	srv := a.server
 	a.server = nil
 	a.serverMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if srv != nil {
 		if err := srv.Shutdown(ctx); err != nil {
 			firstErr = err
@@ -1061,13 +1114,24 @@ func (a *App) Shutdown(ctx context.Context) error {
 	return firstErr
 }
 
+// ensureLifecycleContext lazily creates the app's cancellable lifecycle
+// context under serverMu — the same lock that guards server. Start and
+// runStartHooks both call this before binding the port, and Shutdown
+// reads/nils appCancel under the same lock, so a SIGTERM-driven Shutdown
+// racing pre-listen setup is data-race free.
+func (a *App) ensureLifecycleContext() {
+	a.serverMu.Lock()
+	if a.appCtx == nil {
+		a.appCtx, a.appCancel = context.WithCancel(context.Background())
+	}
+	a.serverMu.Unlock()
+}
+
 // runStartHooks fires every OnStart hook with the app's lifecycle context.
 // Battery lifecycle hooks are called first, then app-level start hooks.
 // Returns the first error so Start aborts cleanly before binding the port.
 func (a *App) runStartHooks() error {
-	if a.appCtx == nil {
-		a.appCtx, a.appCancel = context.WithCancel(context.Background())
-	}
+	a.ensureLifecycleContext()
 
 	// Start batteries in dependency order
 	if err := a.Batteries.StartAll(a.appCtx); err != nil {
@@ -1105,9 +1169,7 @@ func (a *App) Start(addr string) error {
 	// cancels the context and drains any goroutines an earlier phase
 	// spawned. Without this, a startHook that spawns a worker before a
 	// later startHook fails would leak that worker past Start returning.
-	if a.appCtx == nil {
-		a.appCtx, a.appCancel = context.WithCancel(context.Background())
-	}
+	a.ensureLifecycleContext()
 
 	abort := func(err error) error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1151,7 +1213,7 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0")
+		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0", a.apiPrefix())
 		a.router.Get("/openapi.json", coreoa.Handler(spec))
 		a.router.Get("/api/docs/", coreoa.SwaggerUIHandler(spec, "/api/docs"))
 

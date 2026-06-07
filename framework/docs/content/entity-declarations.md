@@ -159,19 +159,30 @@ behaviour.
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
 
+A `relation` field with a `to` target (e.g. `{"name": "author_id", "type":
+"relation", "to": "users"}`) declares a *BelongsTo*: the field's own column
+holds the foreign key. `Define` derives a matching `Config.Relations` entry
+automatically, so AutoMigrate emits the FK constraint and `?include=author_id`
+eager-loads the related row — you do not have to declare the relation twice. An
+explicit relation you declare for the same name always wins and is never
+overwritten. Has-many relations (`many: true`) keep their FK on the *other*
+table and must be declared explicitly via `HasMany`/`Relations`.
+
 ### Column naming
 
 The `name` you put in a field declaration is the SQL column name verbatim —
 case preserved, no snake-casing applied. A field named `flareVerdict` creates
 a column called `flareVerdict`, not `flare_verdict`. The same name is also the
-JSON property on REST responses when `WithJSONCase(...)` is unset (default is
-`camel`).
+JSON property on REST responses when the app's JSON casing is left at the
+default (`camel`). Set it app-wide with
+`framework.WithConfig(framework.AppConfig{JSONCase: crud.CaseSnake})`, or per
+handler with `CrudHandler.WithJSONCase(crud.CaseSnake)`.
 
 If you want snake_case columns, write them snake_case in the declaration:
 `flare_verdict` → column `flare_verdict`. The framework never rewrites field
-names; the only auto-casing happens at the JSON layer via `WithJSONCase`,
-which converts column names to/from `camel` or `snake` on the wire and leaves
-the underlying column untouched.
+names; the only auto-casing happens at the JSON layer (via `AppConfig.JSONCase`
+/ `CrudHandler.WithJSONCase`), which converts column names to/from `camel` or
+`snake` on the wire and leaves the underlying column untouched.
 
 Rule of thumb: name fields in whatever case you want the column to be in.
 camelCase is the convention used in the example apps; snake_case is the
@@ -265,6 +276,34 @@ manifest-based cleaning.
 `gofastr build` runs generation automatically when it finds a codegen config
 or, without config, when an `entities/` directory is present. Pass
 `--no-generate` to skip that step.
+
+## Mounting under a prefix (`APIPrefix`)
+
+By default an entity's CRUD routes mount at its bare name — `GET /posts`,
+`POST /posts/_batch`, `GET /posts/_events`. To move every auto-CRUD route under
+a path prefix (the usual `/api`), set `AppConfig.APIPrefix` (or the
+`framework.WithAPIPrefix` option):
+
+```go
+app := framework.NewApp(
+    framework.WithDB(db),
+    framework.WithConfig(framework.AppConfig{APIPrefix: "/api"}),
+)
+app.Entity("posts", framework.EntityConfig{ /* … */ })
+// → GET /api/posts, POST /api/posts/_batch, GET /api/posts/_events
+```
+
+This is the clean fix when a page/screen wants the same path as an entity (a
+home page at `/posts` vs. the `posts` CRUD): put the data routes under `/api`
+and let the UI own the bare paths. The generated OpenAPI spec expresses the
+prefix via its server URL, so `/openapi.json` stays consistent, and **MCP tool
+names are unchanged** (`posts_list`, not `api_posts_list`). `GroupEntity`
+routes are unaffected — a route group owns its own prefix. Leaving `APIPrefix`
+empty keeps the bare mounts, so adding it is never a breaking change.
+
+> **Common mistake:** registering a screen at `/posts` while a `posts` entity
+> mounts there too. Without `APIPrefix` you'll get a route-conflict panic naming
+> the colliding path; set `APIPrefix` (or mount the page elsewhere) to resolve it.
 
 ## MCP Tools
 

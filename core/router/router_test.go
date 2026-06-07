@@ -595,3 +595,32 @@ func TestNotFoundSeesLateMiddleware(t *testing.T) {
 		t.Fatalf("late middleware did not wrap NotFound; X-NotFound-Late = %q", got)
 	}
 }
+
+// TestRouteConflictPanicIsActionable verifies that registering two handlers at
+// the same pattern panics with a clear, framework-agnostic message (the
+// colliding pattern + the usual fix) rather than ServeMux's terse internal
+// panic. This is the "an entity CRUD route and a page both want /posts" case.
+func TestRouteConflictPanicIsActionable(t *testing.T) {
+	r := New()
+	r.Get("/posts", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatal("expected a panic on duplicate pattern registration, got none")
+		}
+		msg, _ := rec.(string)
+		if !strings.Contains(msg, "route conflict") {
+			t.Errorf("panic message should say 'route conflict'; got: %v", rec)
+		}
+		if !strings.Contains(msg, "/posts") {
+			t.Errorf("panic message should name the colliding pattern /posts; got: %v", rec)
+		}
+		if !strings.Contains(msg, "prefix") {
+			t.Errorf("panic message should hint at the path-prefix fix; got: %v", rec)
+		}
+	}()
+
+	// Second registration at the same pattern → conflict.
+	r.Get("/posts", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+}
