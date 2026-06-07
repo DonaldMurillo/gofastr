@@ -131,6 +131,13 @@ func (c *AuthConfig) defaults() {
 		c.SessionCookie = "__Host-session"
 	}
 	c.SessionSecure = true
+	// No signing key in production is a misconfiguration: an empty HMAC
+	// secret yields forgeable JWTs and sessions that don't survive a
+	// restart. Warn loudly — DevMode silently mints one, production must not.
+	if c.JWTSecret == "" {
+		slog.Default().Warn("auth: no JWTSecret set with DevMode=false — set AuthConfig.JWTSecret (e.g. from an env var/secret manager); an empty signing key means forgeable, restart-unstable sessions",
+			"component", "battery/auth")
+	}
 }
 
 // randomDevJWTSecret returns 32 cryptographically-random bytes encoded

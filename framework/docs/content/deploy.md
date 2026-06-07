@@ -59,6 +59,26 @@ development — see [dotenv](dotenv.md); real env always wins). Common vars:
 | `APP_ENV` | Selects `.env.<APP_ENV>` in development. |
 | auth secrets | If you use `battery/auth`, set its JWT/session secret explicitly in production — do not rely on the dev auto-generated secret (it rotates per process and silently invalidates sessions). See [auth](auth.md). |
 
+## Secrets
+
+GoFastr reads secrets from the process environment — it does not bundle a
+secrets manager, and `.env` files are a **development** convenience only
+(never commit them, never ship them in the image). In production, inject
+secrets as env vars from your platform's secret store:
+
+- **Kubernetes:** a `Secret` mounted as env vars (or via the CSI secrets
+  store driver).
+- **AWS:** Secrets Manager / SSM Parameter Store → env at task start
+  (ECS task definition `secrets:`, or fetch-on-boot).
+- **Vault:** the Vault Agent injector or `vault kv get` in an init step.
+
+The one secret every auth-enabled app must set is **`AuthConfig.JWTSecret`**
+(typically from env). With `DevMode=false` and no `JWTSecret`, the auth
+battery now logs a loud startup warning — an empty signing key yields
+forgeable, restart-unstable sessions. In dev, a per-process secret is
+auto-minted (also warned) so the boilerplate never ships a literal
+`change-me`.
+
 ## Migrations
 
 `App.Start` auto-migrates on boot (create tables, add columns). For

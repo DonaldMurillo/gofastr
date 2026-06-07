@@ -14,6 +14,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `%`/`_` acted as wildcards (a probe vector) — unlike the hardened top-level
   `_like`. Nested `_like` now uses contains-semantics with escaped metacharacters
   and an `ESCAPE` clause (new exported `filter.EscapeLikePattern`).
+- **`battery/auth` warns on a missing production JWT secret.** With
+  `DevMode=false` and an empty `JWTSecret`, the auth battery now logs a loud
+  startup warning (an empty HMAC key means forgeable, restart-unstable
+  sessions). DevMode still auto-mints a per-process secret, also warned. New
+  secrets guidance in `deploy.md` (env injection, Vault/SSM/K8s).
 - **`migrate.View` name is validated as a SQL identifier.** `View.Name` was
   interpolated into `CREATE/DROP VIEW` DDL verbatim; it's now checked with
   `query.SafeIdent` and panics on an unsafe name (developer misconfig, fail-fast).
