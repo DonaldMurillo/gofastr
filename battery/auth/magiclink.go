@@ -32,6 +32,11 @@ type MagicLinkConfig struct {
 	// EmailSender sends the magic link email. If nil, the URL is logged instead (dev mode).
 	EmailSender MagicLinkEmailSender
 
+	// TokenStore persists pending tokens. Defaults to an in-memory store,
+	// which does NOT survive restarts or scale across replicas — set a
+	// durable store (e.g. NewSQLMagicLinkTokenStore(db)) in production.
+	TokenStore MagicLinkTokenStore
+
 	// BodyTemplate, when non-nil, transforms the magic-link URL into
 	// the full email body before EmailSender.SendMagicLink is called.
 	// nil means "send the URL as the entire body" (historical behavior).
@@ -172,9 +177,13 @@ type MagicLinkPlugin struct {
 // NewMagicLinkPlugin creates a new magic-link plugin with the given config.
 func NewMagicLinkPlugin(config MagicLinkConfig) *MagicLinkPlugin {
 	config.defaults()
+	store := config.TokenStore
+	if store == nil {
+		store = NewMemoryMagicLinkTokenStore()
+	}
 	p := &MagicLinkPlugin{
 		config:     config,
-		tokenStore: NewMemoryMagicLinkTokenStore(),
+		tokenStore: store,
 	}
 	if config.RateLimit != nil {
 		p.sendLimit = NewRateLimiter(*config.RateLimit)

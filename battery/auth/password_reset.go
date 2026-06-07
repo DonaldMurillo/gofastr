@@ -38,6 +38,11 @@ type PasswordResetConfig struct {
 	// account enumeration, but no email is sent).
 	EmailSender EmailSender
 
+	// TokenStore persists pending reset tokens. Defaults to in-memory (does
+	// not survive restart / scale across replicas) — set a durable store
+	// (e.g. NewSQLMagicLinkTokenStore(db)) in production.
+	TokenStore MagicLinkTokenStore
+
 	// BodyTemplate, when non-nil, transforms the reset URL into the
 	// full email body before EmailSender.Send is called. nil means
 	// "send the URL as the entire body" (the historical behavior).
@@ -72,9 +77,13 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 	if cfg.TokenTTL <= 0 {
 		cfg.TokenTTL = time.Hour
 	}
+	store := cfg.TokenStore
+	if store == nil {
+		store = NewMemoryMagicLinkTokenStore()
+	}
 	p := &PasswordResetPlugin{
 		cfg:   cfg,
-		store: NewMemoryMagicLinkTokenStore(),
+		store: store,
 	}
 	if cfg.RateLimit != nil {
 		p.limit = NewRateLimiter(*cfg.RateLimit)

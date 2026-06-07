@@ -41,6 +41,10 @@ type EmailVerificationConfig struct {
 	// the full email body before EmailSender.Send is called. nil means
 	// "send the URL as the entire body" (the historical behavior).
 	BodyTemplate func(url string) string
+	// TokenStore persists pending verification tokens. Defaults to in-memory
+	// (does not survive restart / scale) — set a durable store
+	// (e.g. NewSQLMagicLinkTokenStore(db)) in production.
+	TokenStore MagicLinkTokenStore
 	// DevMode logs the verification URL when EmailSender is nil. NEVER
 	// enable in production — anyone with log read access then takes
 	// over arbitrary accounts.
@@ -66,9 +70,13 @@ func NewEmailVerificationPlugin(cfg EmailVerificationConfig) *EmailVerificationP
 	if cfg.TokenTTL <= 0 {
 		cfg.TokenTTL = 24 * time.Hour
 	}
+	store := cfg.TokenStore
+	if store == nil {
+		store = NewMemoryMagicLinkTokenStore()
+	}
 	p := &EmailVerificationPlugin{
 		cfg:   cfg,
-		store: NewMemoryMagicLinkTokenStore(),
+		store: store,
 	}
 	if cfg.RateLimit != nil {
 		p.limit = NewRateLimiter(*cfg.RateLimit)

@@ -116,6 +116,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`auth.SQLMagicLinkTokenStore` — durable token store for passwordless flows.**
+  Magic-link, password-reset, and email-verification tokens were in-memory only,
+  so those flows broke on restart and couldn't scale across replicas. Add a
+  DB-backed `MagicLinkTokenStore` (single-use via `DELETE … RETURNING`, TTL,
+  cleanup) and a `TokenStore` config field on all three plugins
+  (`MagicLinkConfig`, `PasswordResetConfig`, `EmailVerificationConfig`) — pass
+  `NewSQLMagicLinkTokenStore(db)` in production. In-memory stays the default.
 - **Observability is discoverable — `WithMetrics()` / `WithTracing()`.** The
   production-grade Prometheus metrics and OpenTelemetry tracing middleware
   existed in `core/middleware` but were never wired into `App`, re-exported, or
