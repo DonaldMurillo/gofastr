@@ -40,6 +40,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   mirror of `RequireOwner`, run alongside the owner gate through a single
   `requireScope` chokepoint. Docs: `framework/docs/content/multi-tenant.md`.
 
+### Fixed
+
+- **kiln: free-order authoring no longer bricks the rebuild.** Adding an entity
+  with a `BelongsTo` to a not-yet-created entity (e.g. `posts`→`users` before
+  `users` exists) failed the live auto-migrate and left the session unable to
+  rebuild. The live migrator now defers a dangling `BelongsTo` and re-derives it
+  once the target is added; the durable world and `kiln freeze` keep the full
+  relation. Fixes the deterministically-red `TestFreezeRoundTripWithRichWorld`.
+- **kiln: poison journal entries can no longer persist.** `live.Apply` now
+  validates an entry with a trial rebuild **before** the durable journal append,
+  so an entry that fails to rebuild is rejected and never written (previously it
+  was fsynced first, then re-failed on every restart). On any failure the
+  in-memory session is restored by replaying the journal.
+
 ### Added
 
 - **LICENSE — GoFastr is now MIT licensed.** A top-level `LICENSE` file (MIT)

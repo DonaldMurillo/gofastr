@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -18,6 +19,15 @@ import (
 // Kiln's runtime DB is SQLite (build mode); this migrator targets the
 // SQLite ALTER TABLE subset.
 func Migrate(d *sql.DB, registry *framework.Registry) error {
+	// Build mode authoring is free-order: an agent may add `posts`
+	// (BelongsTo users) before `users` exists. The framework's AutoMigrate
+	// correctly rejects a BelongsTo to an unknown entity, but for the live
+	// runtime that would brick the rebuild on a transient forward reference.
+	// Defer (drop) any BelongsTo whose target isn't registered yet; a later
+	// rebuild — once the target entity is added — re-derives it from the
+	// world and includes it. This mutates only the transient rebuild
+	// registry, never the durable world, so freeze still emits the relation.
+	deferDanglingRelations(registry)
 	if err := framework.AutoMigrate(d, registry); err != nil {
 		return err
 	}
@@ -27,6 +37,29 @@ func Migrate(d *sql.DB, registry *framework.Registry) error {
 		}
 	}
 	return nil
+}
+
+// deferDanglingRelations strips BelongsTo (ManyToOne) relations that point at
+// entities not yet in the registry, so a forward-referencing live edit doesn't
+// fail the rebuild. It operates in place on the transient rebuild registry.
+func deferDanglingRelations(registry *framework.Registry) {
+	known := make(map[string]bool)
+	for _, e := range registry.All() {
+		known[e.GetName()] = true
+	}
+	for _, e := range registry.All() {
+		rels := e.Config.Relations
+		kept := rels[:0]
+		for _, r := range rels {
+			if r.Type == framework.RelManyToOne && !known[r.Entity] {
+				log.Printf("kiln/db: deferring relation %q on %q → unknown entity %q (target not added yet)",
+					r.Name, e.GetName(), r.Entity)
+				continue
+			}
+			kept = append(kept, r)
+		}
+		e.Config.Relations = kept
+	}
 }
 
 func alignColumns(d *sql.DB, entity *framework.Entity) error {

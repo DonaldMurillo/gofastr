@@ -89,32 +89,30 @@ func New(j journal.Journal, factory AppFactory) (*Live, error) {
 // that must survive world mutations (e.g. the chat panel).
 func (l *Live) Aux() *router.Router { return l.aux }
 
-// Apply is the single funnel. It validates and applies the entry to the
-// in-memory session, persists it to the journal, rebuilds the app, then
-// broadcasts an Event. On validation failure nothing is journaled.
+// Apply is the single funnel. It applies the entry to the in-memory session,
+// validates it by rebuilding the app, and ONLY THEN persists it to the
+// journal — so a poison entry that fails the rebuild never reaches the durable
+// log (which would re-fail on every restart). On any failure the pre-entry
+// state is restored by replaying the (still-unchanged) journal.
 func (l *Live) Apply(e journal.Entry) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if err := journal.Apply(l.sess, e); err != nil {
 		return fmt.Errorf("kiln/live: apply to session: %w", err)
 	}
-	if _, err := l.journal.Append(e); err != nil {
-		// The mutation was applied to the in-memory session but never made
-		// it to the durable log — the session is now ahead of the journal.
-		// Roll it back by replaying the (unchanged) journal so in-memory
-		// state never outlives the durable record. If replay itself fails
-		// we surface both errors; the session is left as-is and the caller
-		// should treat the runtime as needing a Reload.
-		if sess, rbErr := journal.Replay(l.journal); rbErr == nil {
-			l.sess = sess
-			_ = l.rebuild()
-		} else {
-			return fmt.Errorf("kiln/live: append to journal: %w (rollback failed: %v)", err, rbErr)
-		}
-		return fmt.Errorf("kiln/live: append to journal: %w", err)
-	}
+	// Validate by rebuilding BEFORE the durable Append. If the entry can't be
+	// rebuilt, roll the in-memory session back to the journal (which does not
+	// yet contain e) and surface the error — nothing was persisted.
 	if err := l.rebuild(); err != nil {
+		l.restoreFromJournal()
 		return fmt.Errorf("kiln/live: rebuild: %w", err)
+	}
+	if _, err := l.journal.Append(e); err != nil {
+		// Rebuild succeeded but the durable write failed — the in-memory
+		// session is now ahead of the journal. Roll back so state never
+		// outlives the durable record.
+		l.restoreFromJournal()
+		return fmt.Errorf("kiln/live: append to journal: %w", err)
 	}
 	if err := l.applySideEffects(e); err != nil {
 		return fmt.Errorf("kiln/live: side-effects: %w", err)
@@ -126,6 +124,17 @@ func (l *Live) Apply(e journal.Entry) error {
 		Summary: summarizeEntry(e),
 	})
 	return nil
+}
+
+// restoreFromJournal replays the durable journal into a fresh session and
+// rebuilds, discarding any in-memory mutation not yet persisted. Best-effort:
+// if replay itself fails the caller should treat the runtime as needing a
+// Reload. Caller must hold l.mu.
+func (l *Live) restoreFromJournal() {
+	if sess, err := journal.Replay(l.journal); err == nil {
+		l.sess = sess
+		_ = l.rebuild()
+	}
 }
 
 // Notify broadcasts a synthetic SSE Event without journaling. Use for

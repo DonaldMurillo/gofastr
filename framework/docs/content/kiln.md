@@ -71,6 +71,21 @@ This reads the journal and emits:
 You commit these files; the running Kiln process is no longer needed.
 Switch your app to load `build/entities/` via `EntitiesFromDir`.
 
+## Free-order authoring & durability
+
+Build mode is **free-order**: you can add `posts` (with a `BelongsTo users`
+relation) before `users` exists. The live rebuild defers a `BelongsTo`
+whose target entity isn't registered yet and re-derives it once the target
+is added — the durable world (and `kiln freeze`) always keep the full
+relation. The framework's strict `AutoMigrate` still rejects a dangling
+`BelongsTo` outside build mode; only the kiln live runtime defers.
+
+Every mutation is **validated by a trial rebuild before it is journaled**.
+An entry that can't be rebuilt is rejected and never written to the
+durable log — so a poison entry can't survive a restart and brick the
+session. On any failure the in-memory session is restored by replaying the
+journal.
+
 ## Architecture
 
 Kiln is bigger than a single doc page; the layout under `kiln/`:
