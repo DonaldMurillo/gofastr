@@ -37,7 +37,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// without this the streaming variant would happily return every row to
 	// an anonymous caller on an OwnerField entity, or every tenant's rows
 	// on a MultiTenant entity with no tenant in context.
-	if !ch.requireScope(w, r) {
+	if !ch.requireScope(w, r, opRead) {
 		return
 	}
 	// COUNT first so the envelope has the totals up front.

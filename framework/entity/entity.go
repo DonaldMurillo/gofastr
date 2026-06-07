@@ -42,6 +42,14 @@ type EntityConfig struct {
 	// pre-existing behaviour.
 	OwnerField string
 
+	// Access declares the RBAC permission required for each CRUD operation.
+	// A blank permission leaves that operation un-gated by RBAC (owner and
+	// tenant scoping still apply). When set, auto-CRUD refuses a request
+	// whose context lacks the permission with 403. Roles + policy must be
+	// present in the request context — wire them once with access.Middleware
+	// (or battery/auth). See framework/docs/content/access-control.md.
+	Access AccessControl
+
 	// Seed runs once per entity after AutoMigrate creates the table. The
 	// framework tracks completion in the _gofastr_seeded ledger; subsequent
 	// App.Start() calls skip the entity. Errors abort App.Start.
@@ -74,6 +82,21 @@ type EntityConfig struct {
 	// timestampsSet tracks whether Timestamps was explicitly set.
 	// When false (zero value), Define defaults Timestamps to true.
 	timestampsSet bool
+}
+
+// AccessControl declares the RBAC permission required for each CRUD operation
+// on an entity. Each field holds a permission string (e.g. "posts:write");
+// blank means that operation is not RBAC-gated. Read covers both List and Get.
+//
+// Permissions are plain strings here so the entity package stays decoupled
+// from framework/access; the CRUD layer converts them to access.Permission and
+// enforces them via access.Can against the policy + roles in the request
+// context.
+type AccessControl struct {
+	Read   string // List + Get
+	Create string
+	Update string
+	Delete string
 }
 
 // Index declares a secondary index on an entity. Both dialects accept the

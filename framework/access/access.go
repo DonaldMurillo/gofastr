@@ -11,9 +11,9 @@ import (
 // Permission represents an action permission string (e.g. "posts:read", "posts:write").
 type Permission string
 
-// Policy determines whether a subject can perform an action on a resource.
+// Policy determines whether the subject in ctx holds a permission.
 type Policy interface {
-	Can(ctx context.Context, permission Permission, resource any) bool
+	Can(ctx context.Context, permission Permission) bool
 }
 
 // RolePolicy implements Policy using role-based permission grants.
@@ -78,7 +78,7 @@ func (rp *RolePolicy) permissionsFor(role string) []Permission {
 }
 
 // Can checks if the user from ctx has the given permission via any of their roles.
-func (rp *RolePolicy) Can(ctx context.Context, permission Permission, resource any) bool {
+func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 	perms := GetPermissions(ctx)
 	for _, p := range perms {
 		if p == permission {
@@ -86,6 +86,19 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission, resource a
 		}
 	}
 	return false
+}
+
+// Can reports whether the request context carries the given permission. It
+// reads the RolePolicy and roles installed via WithPolicy / WithRoles (by
+// access.Middleware or battery/auth). Returns false when no policy is present
+// — the secure-by-default answer for an un-wired request. This is the seam the
+// CRUD layer uses to enforce EntityConfig.Access.
+func Can(ctx context.Context, permission Permission) bool {
+	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
+	if policy == nil {
+		return false
+	}
+	return policy.Can(ctx, permission)
 }
 
 // GetPermissions extracts the user's permissions from context by looking up
@@ -126,12 +139,30 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
-			if policy == nil || !policy.Can(ctx, permission, nil) {
+			if policy == nil || !policy.Can(ctx, permission) {
 				herr := handler.Errorf(http.StatusForbidden, "access denied: missing permission %s", permission)
 				handler.WriteError(w, herr)
 				return
 			}
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Middleware installs the RBAC policy and the request's roles into the context
+// so downstream RequirePermission middleware and auto-CRUD permission gates
+// (EntityConfig.Access) can resolve permissions. roles maps a request context
+// to the caller's roles — typically by reading the authenticated user; pass
+// nil to install only the policy (roles resolved elsewhere). Mount this once,
+// app-wide or on a route group, ahead of any permission-gated routes.
+func Middleware(policy *RolePolicy, roles func(ctx context.Context) []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := WithPolicy(r.Context(), policy)
+			if roles != nil {
+				ctx = WithRoles(ctx, roles(ctx))
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

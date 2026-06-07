@@ -22,19 +22,19 @@ func TestRolePolicyGrantAndCheck(t *testing.T) {
 
 	// Admin can read and write
 	ctx = access.WithRoles(ctx, []string{"admin"})
-	if !policy.Can(ctx, "posts:read", nil) {
+	if !policy.Can(ctx, "posts:read") {
 		t.Error("admin should be able to read posts")
 	}
-	if !policy.Can(ctx, "posts:write", nil) {
+	if !policy.Can(ctx, "posts:write") {
 		t.Error("admin should be able to write posts")
 	}
 
 	// Viewer can only read
 	ctx = access.WithRoles(ctx, []string{"viewer"})
-	if !policy.Can(ctx, "posts:read", nil) {
+	if !policy.Can(ctx, "posts:read") {
 		t.Error("viewer should be able to read posts")
 	}
-	if policy.Can(ctx, "posts:write", nil) {
+	if policy.Can(ctx, "posts:write") {
 		t.Error("viewer should NOT be able to write posts")
 	}
 }
@@ -49,16 +49,16 @@ func TestRolePolicyMultipleRolesUnion(t *testing.T) {
 	ctx = access.WithRoles(ctx, []string{"editor", "moderator"})
 
 	// Should have permissions from both roles
-	if !policy.Can(ctx, "posts:read", nil) {
+	if !policy.Can(ctx, "posts:read") {
 		t.Error("should have posts:read from editor role")
 	}
-	if !policy.Can(ctx, "posts:write", nil) {
+	if !policy.Can(ctx, "posts:write") {
 		t.Error("should have posts:write from editor role")
 	}
-	if !policy.Can(ctx, "posts:delete", nil) {
+	if !policy.Can(ctx, "posts:delete") {
 		t.Error("should have posts:delete from moderator role")
 	}
-	if !policy.Can(ctx, "posts:moderate", nil) {
+	if !policy.Can(ctx, "posts:moderate") {
 		t.Error("should have posts:moderate from moderator role")
 	}
 }
@@ -72,7 +72,7 @@ func TestRolePolicyRevoke(t *testing.T) {
 	ctx = access.WithRoles(ctx, []string{"admin"})
 
 	// Confirm all granted
-	if !policy.Can(ctx, "posts:read", nil) || !policy.Can(ctx, "posts:write", nil) || !policy.Can(ctx, "posts:delete", nil) {
+	if !policy.Can(ctx, "posts:read") || !policy.Can(ctx, "posts:write") || !policy.Can(ctx, "posts:delete") {
 		t.Fatal("all permissions should be granted initially")
 	}
 
@@ -80,13 +80,13 @@ func TestRolePolicyRevoke(t *testing.T) {
 	policy.Revoke("admin", "posts:write")
 
 	// Build fresh context (policy is a pointer so changes are reflected)
-	if !policy.Can(ctx, "posts:read", nil) {
+	if !policy.Can(ctx, "posts:read") {
 		t.Error("should still have posts:read")
 	}
-	if policy.Can(ctx, "posts:write", nil) {
+	if policy.Can(ctx, "posts:write") {
 		t.Error("posts:write should have been revoked")
 	}
-	if !policy.Can(ctx, "posts:delete", nil) {
+	if !policy.Can(ctx, "posts:delete") {
 		t.Error("should still have posts:delete")
 	}
 }
@@ -99,7 +99,7 @@ func TestRolePolicyNoRoles(t *testing.T) {
 	ctx = access.WithPolicy(ctx, policy)
 	// No roles set
 
-	if policy.Can(ctx, "posts:read", nil) {
+	if policy.Can(ctx, "posts:read") {
 		t.Error("should deny when no roles are set")
 	}
 }

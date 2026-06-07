@@ -24,6 +24,43 @@ app.Router.With(framework.RequirePermission("posts:write")).
     Post("/posts", postsHandler)
 ```
 
+The policy + roles wiring above is common enough that there's a one-liner
+for it — `framework.AccessMiddleware`:
+
+```go
+app.Use(framework.AccessMiddleware(policy, currentUserRoles))
+// currentUserRoles has signature func(ctx context.Context) []string
+```
+
+## Gating auto-CRUD (`EntityConfig.Access`)
+
+`RequirePermission` gates routes you mount yourself. To gate the
+**auto-generated CRUD** for an entity, declare the permission for each
+operation on the entity config:
+
+```go
+app.Entity("posts", framework.EntityConfig{
+    Access: framework.AccessControl{
+        Read:   "posts:read",   // List + Get
+        Create: "posts:write",
+        Update: "posts:write",
+        Delete: "posts:delete",
+    },
+})
+```
+
+Each blank field leaves that operation un-gated by RBAC (owner and tenant
+scoping still apply). When a field is set, auto-CRUD refuses a request
+whose context lacks the permission with **403** — on List, Get, Create,
+Update, Delete, and the batch/stream variants. The roles + policy must be
+in the request context first; mount `framework.AccessMiddleware` (above)
+ahead of the CRUD routes.
+
+> Before this existed, exposing an entity granted **every authenticated
+> user full CRUD** unless you hand-composed route-group middleware.
+> `EntityConfig.Access` makes the requirement visible at the declaration
+> and enforced by default.
+
 ## Concepts
 
 - **Permission** — opaque string. By convention `"<resource>:<verb>"`

@@ -25,7 +25,7 @@ func TestCan_GrantedActionAllowed(t *testing.T) {
 	rp.Grant("editor", "posts:write")
 	ctx := ctxFor(rp, "editor")
 
-	if !rp.Can(ctx, "posts:write", nil) {
+	if !rp.Can(ctx, "posts:write") {
 		t.Fatalf("Can(posts:write) = false for editor granted posts:write, want true")
 	}
 }
@@ -41,7 +41,7 @@ func TestCan_UngrantedActionDenied(t *testing.T) {
 	rp.Grant("editor", "posts:write")
 	ctx := ctxFor(rp, "editor")
 
-	if rp.Can(ctx, "posts:delete", nil) {
+	if rp.Can(ctx, "posts:delete") {
 		t.Fatalf("Can(posts:delete) = true for editor without that grant, want false")
 	}
 }
@@ -55,10 +55,10 @@ func TestCan_RevokedActionDenied(t *testing.T) {
 	rp.Revoke("editor", "posts:delete")
 	ctx := ctxFor(rp, "editor")
 
-	if !rp.Can(ctx, "posts:write", nil) {
+	if !rp.Can(ctx, "posts:write") {
 		t.Fatalf("Can(posts:write) = false after revoking only posts:delete, want true")
 	}
-	if rp.Can(ctx, "posts:delete", nil) {
+	if rp.Can(ctx, "posts:delete") {
 		t.Fatalf("Can(posts:delete) = true after revoke, want false")
 	}
 }
@@ -71,7 +71,7 @@ func TestCan_NoRolesDenied(t *testing.T) {
 	rp.Grant("editor", "posts:write")
 	ctx := access.WithPolicy(context.Background(), rp) // no roles attached
 
-	if rp.Can(ctx, "posts:write", nil) {
+	if rp.Can(ctx, "posts:write") {
 		t.Fatalf("Can(posts:write) = true with no roles in ctx, want false")
 	}
 }
@@ -85,13 +85,13 @@ func TestCan_PermissionFromOneOfManyRoles(t *testing.T) {
 	rp.Grant("editor", "posts:write")
 	ctx := ctxFor(rp, "reader", "editor")
 
-	if !rp.Can(ctx, "posts:read", nil) {
+	if !rp.Can(ctx, "posts:read") {
 		t.Fatalf("Can(posts:read) = false for reader+editor, want true")
 	}
-	if !rp.Can(ctx, "posts:write", nil) {
+	if !rp.Can(ctx, "posts:write") {
 		t.Fatalf("Can(posts:write) = false for reader+editor, want true")
 	}
-	if rp.Can(ctx, "posts:delete", nil) {
+	if rp.Can(ctx, "posts:delete") {
 		t.Fatalf("Can(posts:delete) = true for reader+editor, want false")
 	}
 }

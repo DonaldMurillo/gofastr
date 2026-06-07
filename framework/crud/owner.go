@@ -6,9 +6,53 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
+
+// crudOp identifies which CRUD operation a request is performing, so the
+// permission gate can pick the right EntityConfig.Access permission.
+type crudOp int
+
+const (
+	opRead crudOp = iota // List + Get
+	opCreate
+	opUpdate
+	opDelete
+)
+
+// permissionForOp returns the declared RBAC permission for op, or "" when the
+// operation is not RBAC-gated.
+func (ch *CrudHandler) permissionForOp(op crudOp) string {
+	a := ch.Entity.Config.Access
+	switch op {
+	case opCreate:
+		return a.Create
+	case opUpdate:
+		return a.Update
+	case opDelete:
+		return a.Delete
+	default:
+		return a.Read
+	}
+}
+
+// requirePermission enforces EntityConfig.Access for op. When the entity
+// declares a permission for the operation and the request context does not
+// carry it, it writes 403 and returns false. No-op when the operation is not
+// gated.
+func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp) bool {
+	perm := ch.permissionForOp(op)
+	if perm == "" {
+		return true
+	}
+	if !access.Can(r.Context(), access.Permission(perm)) {
+		writeJSONError(w, http.StatusForbidden, "access denied: missing permission "+perm)
+		return false
+	}
+	return true
+}
 
 // tenantIDFromCtx is a thin wrapper so owner.go doesn't drag the
 // framework/tenant package across every helper signature.
@@ -147,11 +191,14 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 // handlers can guard with `if !ch.requireScope(w, r) { return }`. Keeping both
 // gates behind a single chokepoint guarantees a new handler can't accidentally
 // enforce one scope but forget the other.
-func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request) bool {
+func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op crudOp) bool {
 	if _, ok := ch.RequireOwner(w, r); !ok {
 		return false
 	}
-	return ch.RequireTenant(w, r)
+	if !ch.RequireTenant(w, r) {
+		return false
+	}
+	return ch.requirePermission(w, r, op)
 }
 
 // RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.

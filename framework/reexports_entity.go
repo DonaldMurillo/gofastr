@@ -9,6 +9,7 @@ import "github.com/DonaldMurillo/gofastr/framework/entity"
 type (
 	Entity             = entity.Entity
 	EntityConfig       = entity.EntityConfig
+	AccessControl      = entity.AccessControl
 	Index              = entity.Index
 	Endpoint           = entity.Endpoint
 	EntityDeclaration  = entity.EntityDeclaration

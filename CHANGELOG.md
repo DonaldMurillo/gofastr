@@ -9,6 +9,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Security
 
+- **Per-operation RBAC on auto-CRUD — `EntityConfig.Access`.** Declare the
+  permission required for each operation (`Read` covers List+Get, plus
+  `Create`/`Update`/`Delete`) and auto-CRUD refuses requests lacking it with
+  `403` — across List/Get/Create/Update/Delete and the batch/stream variants.
+  Previously auto-CRUD had **no permission check at all**: exposing an entity
+  granted every authenticated user full CRUD unless the host hand-composed
+  route-group middleware. New seams: package-level **`access.Can(ctx, perm)`**
+  and **`access.Middleware(policy, roles)`** (re-exported as `framework.Can` /
+  `framework.AccessMiddleware`) to install policy+roles in one line. **BREAKING:**
+  `access.Policy.Can` / `RolePolicy.Can` drop the unused `resource any`
+  parameter. Docs: `framework/docs/content/access-control.md`.
 - **BREAKING — multi-tenant CRUD is now fail-CLOSED over HTTP.** A
   `MultiTenant` entity served with no tenant id in the request context is
   refused with `401` on every operation (list/get/create/update/delete, batch,
