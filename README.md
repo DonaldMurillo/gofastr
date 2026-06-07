@@ -25,7 +25,7 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 
 - **One declaration, many surfaces.** A single `entities/posts.json` produces a SQL table, REST routes, OpenAPI ops, a typed Go model, and five MCP tools (`posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`).
 - **No reflection magic.** Generated code lives in `gen/entities/` and is normal Go you can read, debug, and edit.
-- **Two-layer architecture.** A small `core/` of stdlib-only primitives sits under an opinionated `framework/`. Drop down to core when the framework is in your way.
+- **Two-layer architecture.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Drop down to core when the framework is in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
 - **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
 
 ## The repo in 60 seconds
@@ -33,9 +33,9 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 | Directory | What it is | Depend on it when… |
 |---|---|---|
 | `core/` | Stdlib-only primitives — router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
-| `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting ~17 subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
+| `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting ~25 subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
 | `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
-| `battery/` | Opt-in infrastructure — auth, cache, email, queue, search, storage, print, log, notify, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
+| `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI — `init`, `generate`, `migrate`, `dev`, `docs`. | you're scaffolding or generating code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
 | `examples/` | Runnable reference apps (blog, api-tour, spa, the docs site). | you want to see it wired end-to-end. |
@@ -245,9 +245,9 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ## Surfaces
 
-### `core/` — twelve stdlib-only primitives
+### `core/` — eighteen stdlib-first primitives
 
-`router`, `handler`, `middleware`, `query`, `mcp`, `schema`, `migrate`, `render`, `static`, `upload`, `stream`, `openapi`. Each is independently usable; the framework just composes them.
+`config`, `dotenv`, `featureflag`, `handler`, `i18n`, `markdown`, `mcp`, `middleware`, `migrate`, `openapi`, `query`, `render`, `router`, `schema`, `static`, `stream`, `upload`, `yaml`. Each is independently usable; the framework just composes them. All are stdlib-only except `core/middleware/tracing.go` (OpenTelemetry).
 
 ### `framework/` — opinionated entity layer
 
@@ -259,7 +259,7 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 
 ### `battery/` — pluggable infrastructure
 
-`auth`, `cache`, `email`, `embed`, `queue`, `search`, `storage`. Each behind a small interface with at least one in-memory implementation suitable for tests and small examples; production swaps in Redis, S3, Postgres FTS, etc.
+`admin`, `auth`, `cache`, `email`, `embed`, `log`, `notify`, `print`, `queue`, `search`, `storage`, `webhook`. Each behind a small interface with at least one in-memory implementation suitable for tests and small examples; production swaps in Redis, S3, Postgres FTS, etc. (`battery/admin` is the auto-generated back-office; `battery/experimental` is internal and not part of the supported surface.)
 
 `battery/embed` is the local semantic-search battery: in-process vector index with brute-force cosine, optional hybrid keyword fusion, MMR diversity, snapshot/WAL persistence, fsnotify-free polling watcher, and a Kiln agent context hook. See [`framework/docs/content/embed.md`](framework/docs/content/embed.md).
 
@@ -267,7 +267,7 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 
 ```text
 gofastr init <name>                 Scaffold a new project (UI + entities + migrations + git + AI-agent onboarding)
-gofastr docs                        Browse/search embedded framework docs (48 topics, no internet needed)
+gofastr docs                        Browse/search embedded framework docs (no internet needed)
 gofastr docs <topic>                Read a specific doc topic
 gofastr docs --grep <term>          Search across every doc topic
 gofastr agents sync                 Refresh AGENTS.md and agents/ detail files
@@ -337,7 +337,9 @@ Without an approved plan whose `Targets` list matches, `delete_*` returns `{"ok"
 #### Or hit the HTTP API directly
 
 ```bash
-kiln serve --agent none --addr :8765 &
+kiln serve --agent none &   # binds loopback 127.0.0.1:8765 by default; the
+                            # tool API is unauthenticated — pass --addr 0.0.0.0:8765
+                            # only if you deliberately want it reachable off-host
 curl -X POST http://localhost:8765/kiln/tool/add_entity \
   -H 'Content-Type: application/json' \
   -d '{"entity":{"name":"posts","fields":[{"name":"title","type":"string","required":true}]}}'
@@ -352,15 +354,15 @@ curl http://localhost:8765/kiln/world     # current IR
 ## Repository layout
 
 ```
-core/        stdlib-only primitives (router, query, mcp, openapi, …)
+core/        stdlib-first primitives (router, query, mcp, openapi, …)
 framework/   entity system, app wiring, declarations, query DSL, hooks
 core-ui/     server-driven UI runtime (signals, components, islands)
 kiln/       agent-driven build-mode runtime + chat panel + MCP/ACP servers
-battery/     pluggable infra (auth, cache, email, queue, search, storage)
+battery/     pluggable infra (admin, auth, cache, email, embed, log, notify, print, queue, search, storage, webhook)
 cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
 docs/        feature docs (entity declarations, migrations, query DSL, …)
-examples/    website (SSR + 10 UI primitives), blog (JSON-declared entities), api-tour (cursor/include/batch/SSE/uploads), embed-demo, spa (Vue+API), static-site
+examples/    site (SSR + 10 UI primitives), blog (JSON-declared entities), api-tour (cursor/include/batch/SSE/uploads), backoffice (entity admin), embed-demo, spa (Vue+API), static-site
 ROADMAP.md   forward-looking proposals not yet built
 ```
 

@@ -12,7 +12,9 @@
 
 `framework/` used to be a single 22k-LOC package. It now exposes the same
 public API through a thin **facade** at `framework/`, with the actual
-implementations split across **17 subpackages**. The facade re-exports
+implementations split across ~25 runtime subpackages (plus a handful of
+test-infra and `experimental/` packages that are out-of-contract — see
+the map). The facade re-exports
 types/funcs via type aliases and `var` bindings so external callers
 (`framework.Entity`, `framework.NewApp`, etc.) keep working unchanged.
 Subpackages communicate via **abstract interfaces** defined in low-level
@@ -26,13 +28,16 @@ subpackage needs to back-import the framework root.
 ```
 framework/
 ├── access/          Permission / Policy / RolePolicy / RBAC helpers
-├── apiversions/     API versioning — URL prefix, deprecation headers, projections
+├── agentsinv/       Process-wide registry of agent-onboarding (agents.md) snippets
 ├── cron/            CronJob / Scheduler — minimal in-process tick loop
 ├── crud/            HTTP CRUD layer, eager loading, includes, nested
 │                    filters, typed query, MCP tool generator,
-│                    JSONCase config, in-tx helper. The biggest pkg.
+│                    JSONCase config, owner/tenant scoping, in-tx helper.
+│                    The biggest pkg.
 ├── db/              Executor + tx context primitives shared across
 │                    crud, slowquery, and the framework root tx wrapper
+├── dev/             Dev-mode-only helpers (livereload, debug surfaces)
+├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`
 ├── dsl/             ?dsl=… query string parser/builder
 ├── entity/          Entity + EntityConfig + Define, all column types
 │                    and operators (And/Or/Not/Condition/Order),
@@ -44,27 +49,44 @@ framework/
 ├── hook/            HookRegistry / HookType + lifecycle constants
 │                    (BeforeCreate, AfterCreate, etc.)
 ├── i18nui/          Translated default strings for framework UI surfaces
+├── image/           Image decode/encode + blurhash for the file/upload path
 ├── internal/casing/ snake↔camel helpers (private to the framework
 │                    module — not part of the public API)
 ├── lifecycle/       Graceful shutdown contract — drain, flush, stop phases
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
+├── owner/           "Who owns this row" seam — OwnerField scoping for CRUD
 ├── pagination/      Cursor + offset pagination
 ├── routegroup/      Route groups — prefix, middleware, access, OpenAPI tags
 ├── slowquery/       SlowQueryLogger — wraps any db.Executor
 ├── softdelete/      SoftDelete / Restore / ForceDelete + filter
 ├── tenant/          TenantConfig / Middleware / GetTenantID / etc.
-├── static/          (HTTP static-file serving, pre-existing)
-├── ui/              (server-rendered UI primitives, pre-existing)
-└── uihost/          (UI host + page renderer, pre-existing)
+├── static/          HTTP static-file serving
+├── ui/              Server-rendered UI primitives (PageHeader, FormField,
+│                    DataTable, …). The largest UI surface — composes
+│                    core-ui/html + core-ui/patterns into intent-level
+│                    components; see core-ui/ARCHITECTURE.md for the rule
+│                    on when a primitive lives here vs in core-ui/.
+└── uihost/          UI host + page renderer (SEO/Screen wiring)
+
+Out-of-contract (NOT part of the layering rules below):
+  experimental/apiversions   API versioning (URL prefix, deprecation
+                             headers, projections) — experimental surface.
+  testkit/, testdata/        Public test helpers + fixtures for host apps.
+  factory/                   Rails-style fixture/factory helpers (tests).
+  isolation/                 Per-worktree local runtime resource resolution.
+  harness/                   The GoFastr agent harness.
 ```
 
 The root package `framework/` itself contains:
 
 - **App spine**: `app.go`, `plugin.go`, `battery.go`, `registry.go`, `typed_hooks.go`
 - **App-method-tied helpers**: `audit.go` (App.WithAuditLog),
-  `tx.go` (App.InTx)
+  `tx.go` (App.InTx), `flags.go` (App feature-flag store),
+  `health.go` (App health/readiness probes), `i18n.go` (App.WithI18n / T),
+  `mcp_introspection.go` (App.WithMCPIntrospection), `agents.go`
+  (App agents-inventory wiring)
 - **Test harness**: `testharness.go` (TestApp wraps `*App`)
 - **Facade re-exports**: `reexports_*.go` — one file per subpackage
   whose symbols are referenced as `framework.X` by external code
@@ -79,10 +101,11 @@ L1  internal/casing                         (no internal deps)
 L2  entity                                   (uses casing)
 L3  hook, event, file, cron, access, db,    (each uses entity, none cross)
     pagination, filter, dsl, slowquery,
-    tenant, softdelete, migrate, openapi
+    tenant, softdelete, owner, migrate, openapi
 L4  crud                                     (uses entity, hook, event, db,
                                               file, filter, pagination,
-                                              tenant, softdelete)
+                                              tenant, owner, internal/casing;
+                                              softdelete is inlined, not imported)
 L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```

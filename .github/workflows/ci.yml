@@ -1,0 +1,50 @@
+name: CI
+
+# Runs the canonical full suite (build + vet + test) on every push and PR.
+# Mirrors scripts/test-all.sh, which caps package parallelism to keep the
+# chromedp/testcontainers-heavy packages from saturating the ephemeral port
+# range. Docker is preinstalled on ubuntu-latest (testcontainers spins up
+# Postgres automatically); Chrome is installed below for the chromedp e2e
+# suites (examples/site, core-ui/runtime, kiln/integration).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build · vet · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CGO_ENABLED: "1" # mattn/go-sqlite3 requires cgo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Chrome (for chromedp e2e suites)
+        uses: browser-actions/setup-chrome@v1
+        with:
+          install-dependencies: true
+
+      - name: Install the gofastr binary
+        # cmd/gofastr e2e tests (migrate diff/generate, blueprint) skip
+        # silently when the binary is absent — install it so they run.
+        run: go install ./cmd/gofastr
+
+      - name: Full suite (build + vet + test)
+        # test-all.sh runs: go build ./... ; go vet ./... ; go test -count=1
+        # -timeout=20m -p $TEST_PARALLELISM ./...  (Docker-backed Postgres
+        # via testcontainers is used by the migrate/crud/auth packages).
+        run: ./scripts/test-all.sh

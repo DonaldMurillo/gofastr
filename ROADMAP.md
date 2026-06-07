@@ -895,7 +895,21 @@ app := framework.NewApp(
 
 ## 12. `Component.Render(ctx)` — context-aware render
 
-**Status:** not started (captured 2026-05-24 from third-party app feedback).
+**Status:** MOSTLY DONE — the `component.ContextComponent` (`RenderCtx(ctx)`)
++ `ContextOnly` core shipped 2026-05-24 and is threaded at the screen level
+(`core-ui/component/component.go`, `core-ui/app/{screen,app}.go`). Layout chrome
+(header/sidebar/footer) now also threads the request context: `Layout.WrapCtx` /
+`WrapNestedCtx`, `ScreenGroup.RenderLayoutCtx`, and `composeLayoutsWithOverrideCtx`
+render every slot via `component.SafeRenderCtx`, and `App.RenderPageResult` calls
+the ctx variants — so context-aware nav/footers (auth state, current tenant) work
+without a forwarding shim (`TestLayoutChromeReceivesContext`). The exported
+`Wrap`/`WrapNested`/`RenderLayout` keep working (they delegate with a background
+context), so this is non-breaking. What remains is purely optional: arbitrary
+user components that call `SafeRender` on their OWN children mid-`Render()` still
+pass a background context — there is no ambient request context during a manual
+`Render()`. Components that need ctx for children should implement `RenderCtx`
+and forward it explicitly. Do NOT re-implement the screen-level or chrome work.
+(Originally captured 2026-05-24 from third-party app feedback.)
 The current `core-ui/component.Component` interface signature is:
 
 ```go
