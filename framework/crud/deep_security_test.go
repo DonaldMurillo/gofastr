@@ -900,10 +900,11 @@ func TestBatchUpdate_OwnerScopeEnforced(t *testing.T) {
 
 	// Bob's record must not be modified
 	var title string
-	if err := db.QueryRow("SELECT title FROM bou_items WHERE id = ?", "bou-bob").Scan(&title); err == nil {
-		if title == "bob hacked" {
-			t.Errorf("SECURITY: [batch] batch update modified other user's record (title=%q). Attack: batch update bypasses owner scope", title)
-		}
+	if err := db.QueryRow("SELECT title FROM bou_items WHERE id = ?", "bou-bob").Scan(&title); err != nil {
+		t.Fatalf("read bob's title after batch update: %v", err)
+	}
+	if title == "bob hacked" {
+		t.Errorf("SECURITY: [batch] batch update modified other user's record (title=%q). Attack: batch update bypasses owner scope", title)
 	}
 }
 

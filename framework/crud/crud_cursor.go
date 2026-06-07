@@ -137,7 +137,17 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	}
 
 	// Compute next cursor from the last row using all cursor field columns.
+	// buildCursorPage runs against the raw fetch order (DESC for backward),
+	// so it trims the extra sentinel row and derives the continue-cursor from
+	// the true last row of the keyset window. Only AFTER that do we flip a
+	// backward page back into ascending order so a "prev" page reads the same
+	// way a "next" page does.
 	page := buildCursorPage(results, fields, ch.convertKey, limit)
+	if direction == "backward" {
+		for i, j := 0, len(page.Data)-1; i < j; i, j = i+1, j-1 {
+			page.Data[i], page.Data[j] = page.Data[j], page.Data[i]
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page)
 }

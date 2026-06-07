@@ -237,6 +237,11 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	for _, c := range q.wheres {
 		ub.Where(c.SQL(), c.Args()...)
 	}
+	// Soft-deleted rows are logically gone — a bulk UPDATE must not reach
+	// them, mirroring the SELECT/Count paths (ApplySoftDeleteFilter).
+	if q.handler.Entity.Config.SoftDelete {
+		ub.Where("deleted_at IS NULL")
+	}
 	req := syntheticRequest(ctx, "PATCH", "/")
 	q.handler.ApplyTenantScopeUpdate(ub, req)
 	q.handler.ApplyOwnerScopeUpdate(ub, req)
@@ -260,6 +265,10 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		for _, c := range q.wheres {
 			ub.Where(c.SQL(), c.Args()...)
 		}
+		// Don't re-stamp rows that are already soft-deleted — they're
+		// logically gone, and re-touching them would resurrect their
+		// delete timestamp and inflate the affected-row count.
+		ub.Where("deleted_at IS NULL")
 		q.handler.ApplyTenantScopeUpdate(ub, req)
 		q.handler.ApplyOwnerScopeUpdate(ub, req)
 		sqlStr, args := ub.Build()

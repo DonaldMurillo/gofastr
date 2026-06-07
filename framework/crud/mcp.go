@@ -53,6 +53,14 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 	return nil
 }
 
+// mcpBase is the URL path the entity's HTTP routes are mounted at. BasePath
+// (e.g. "/api/v1", set by the app from WithAPIPrefix) is prepended so the
+// in-process MCP tool dispatch reaches the same path the REST routes live at;
+// empty BasePath yields the historical bare "/table".
+func (ch *CrudHandler) mcpBase() string {
+	return ch.BasePath + "/" + ch.Entity.GetTable()
+}
+
 func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
 		values := make(url.Values)
@@ -76,7 +84,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				}
 			}
 		}
-		path := "/" + ch.Entity.GetTable()
+		path := ch.mcpBase()
 		if encoded := values.Encode(); encoded != "" {
 			path += "?" + encoded
 		}
@@ -90,13 +98,13 @@ func (ch *CrudHandler) getTool(router http.Handler) mcp.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		return runToolRequest(ctx, router, http.MethodGet, "/"+ch.Entity.GetTable()+"/"+url.PathEscape(id), nil)
+		return runToolRequest(ctx, router, http.MethodGet, ch.mcpBase()+"/"+url.PathEscape(id), nil)
 	}
 }
 
 func (ch *CrudHandler) createTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
-		return runToolRequest(ctx, router, http.MethodPost, "/"+ch.Entity.GetTable(), params)
+		return runToolRequest(ctx, router, http.MethodPost, ch.mcpBase(), params)
 	}
 }
 
@@ -112,7 +120,7 @@ func (ch *CrudHandler) updateTool(router http.Handler) mcp.ToolHandler {
 				body[k] = v
 			}
 		}
-		return runToolRequest(ctx, router, http.MethodPut, "/"+ch.Entity.GetTable()+"/"+url.PathEscape(id), body)
+		return runToolRequest(ctx, router, http.MethodPut, ch.mcpBase()+"/"+url.PathEscape(id), body)
 	}
 }
 
@@ -122,7 +130,7 @@ func (ch *CrudHandler) deleteTool(router http.Handler) mcp.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := runToolRequest(ctx, router, http.MethodDelete, "/"+ch.Entity.GetTable()+"/"+url.PathEscape(id), nil); err != nil {
+		if _, err := runToolRequest(ctx, router, http.MethodDelete, ch.mcpBase()+"/"+url.PathEscape(id), nil); err != nil {
 			return nil, err
 		}
 		return map[string]any{"deleted": true, "id": id}, nil
@@ -143,6 +151,21 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	req := httptest.NewRequest(method, path, reader).WithContext(ctx)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	// The internal request is re-dispatched through the full middleware
+	// chain (auth, recovery, etc.). Session/JWT middleware re-resolves the
+	// caller from transport headers, NOT from ctx — so without copying the
+	// original request's auth the caller is demoted to anonymous and
+	// owner-scoped CRUD returns 401. Copy Cookie + Authorization from the
+	// original inbound request (stashed by the MCP transport) so the same
+	// identity re-resolves. See TestMCPAuthenticatedListReturnsOwnerRows.
+	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
+		if cookie := orig.Header.Get("Cookie"); cookie != "" {
+			req.Header.Set("Cookie", cookie)
+		}
+		if authz := orig.Header.Get("Authorization"); authz != "" {
+			req.Header.Set("Authorization", authz)
+		}
 	}
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)

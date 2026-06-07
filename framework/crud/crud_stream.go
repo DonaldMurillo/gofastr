@@ -24,10 +24,14 @@ const streamListThreshold = 1000
 // asks for it via ?stream=true.
 //
 // The wire shape is identical to the regular list envelope so existing
-// clients keep working: {"data": [...], "total": N, "page": 1, "perPage":
-// N, "totalPages": 1}. Streaming applies only to the data array — the
+// clients keep working: {"data": [...], "total": N, "page": P, "perPage":
+// N, "totalPages": T}. Streaming applies only to the data array — the
 // envelope fields are written before the rows start flowing.
-func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, limit int, extraWhere []hook.WhereClause) {
+//
+// `page` is honoured the same way the non-stream List handler honours it:
+// OFFSET (page-1)*limit. Without this, ?page=2&stream=true would re-stream
+// page 1 while reporting page 1 — silently dropping the offset.
+func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
 	// Same owner gate the public List handler enforces. Direct callers
 	// (in-process or chained from List) must not bypass it — without
 	// this the streaming variant would happily return every row to an
@@ -70,6 +74,9 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	}
 	filter.ApplySortToQuery(qb, sorts)
 	qb.Limit(limit)
+	if page > 1 {
+		qb.Offset((page - 1) * limit)
+	}
 
 	dataSQL, dataArgs := qb.Build()
 	rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
@@ -118,7 +125,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	if total%limit != 0 {
 		totalPages++
 	}
-	fmt.Fprintf(w, `],"total":%d,"page":1,"perPage":%d,"totalPages":%d}`, total, limit, totalPages)
+	fmt.Fprintf(w, `],"total":%d,"page":%d,"perPage":%d,"totalPages":%d}`, total, page, limit, totalPages)
 }
 
 // scanRowsOne pulls a single row from an *sql.Rows that's already been

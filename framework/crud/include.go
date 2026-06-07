@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // IncludeNode represents one segment of a (possibly nested) ?include=
@@ -317,6 +318,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	}
 	for _, node := range nodes {
 		applyRelatedOwnerScope(ctx, node)
+		applyRelatedTenantScope(ctx, node)
 		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded); err != nil {
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
@@ -372,6 +374,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 	}
 	for _, node := range children {
 		applyRelatedOwnerScope(ctx, node)
+		applyRelatedTenantScope(ctx, node)
 		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), pk, node, ids, loaded); err != nil {
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
@@ -553,5 +556,31 @@ func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
 		Field: ownerField,
 		Op:    filter.OpEq,
 		Value: val,
+	}}, node.Filters...)
+}
+
+// applyRelatedTenantScope is the tenant analog of applyRelatedOwnerScope.
+// When the included child entity is MultiTenant, it prepends a
+// `tenant_id = <ctx tenant>` predicate so an ?include= can't reach across
+// tenants — without it, `/posts?include=comments` would scope posts to the
+// caller's tenant but pull EVERY comment whose post_id matches, including
+// other tenants' rows on a shared post id.
+//
+// If the request has no tenant in context, the predicate becomes
+// `tenant_id = ""` which matches no real row — fail-closed, exactly like
+// the owner version. As with the owner scope, this is always ANDed (never
+// an opt-out) so an attacker-supplied scoped filter on the tenant column
+// can't disable it.
+func applyRelatedTenantScope(ctx context.Context, node *IncludeNode) {
+	if node == nil || node.Target == nil {
+		return
+	}
+	if !node.Target.Config.MultiTenant {
+		return
+	}
+	node.Filters = append([]filter.ParsedFilter{{
+		Field: node.Target.Config.TenantColumn(),
+		Op:    filter.OpEq,
+		Value: tenant.GetTenantID(ctx),
 	}}, node.Filters...)
 }

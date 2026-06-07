@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -79,8 +80,13 @@ func TestCreate_ReadOnlyFieldIgnored(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.Create()(rr, req)
 	if rr.Code == http.StatusCreated {
-		var role string
-		if err := db.QueryRow("SELECT role FROM accounts LIMIT 1").Scan(&role); err == nil && role == "admin" {
+		// A correctly-ignored read-only field leaves the column NULL, so
+		// scan into a nullable type — a hard error here is test-integrity.
+		var role sql.NullString
+		if err := db.QueryRow("SELECT role FROM accounts LIMIT 1").Scan(&role); err != nil {
+			t.Fatalf("read role after create: %v", err)
+		}
+		if role.Valid && role.String == "admin" {
 			t.Errorf("SECURITY: [create] read-only field 'role' was persisted as 'admin'. Attack: mass-assignment of read-only field via create body.")
 		}
 	}
@@ -192,7 +198,10 @@ func TestCreate_NegativeIntForUnsignedField(t *testing.T) {
 	ch.Create()(rr, req)
 	if rr.Code == http.StatusCreated {
 		var score int
-		if err := db.QueryRow("SELECT score FROM counters LIMIT 1").Scan(&score); err == nil && score < 0 {
+		if err := db.QueryRow("SELECT score FROM counters LIMIT 1").Scan(&score); err != nil {
+			t.Fatalf("read score after create: %v", err)
+		}
+		if score < 0 {
 			t.Errorf("SECURITY: [create] negative value %d persisted for field with Min=0. Attack: negative integer injection bypasses unsigned constraint.", score)
 		}
 	}
@@ -261,10 +270,11 @@ func TestUpdate_PartialUpdatePreservesFields(t *testing.T) {
 	ch.Update()(rr, req)
 	if rr.Code == http.StatusOK || rr.Code == http.StatusCreated {
 		var bio string
-		if err := db.QueryRow("SELECT bio FROM profiles WHERE id = ?", "p1").Scan(&bio); err == nil {
-			if bio != "original bio" {
-				t.Errorf("SECURITY: [update] partial update erased bio field: got %q, want %q. Attack: field erasure via partial update.", bio, "original bio")
-			}
+		if err := db.QueryRow("SELECT bio FROM profiles WHERE id = ?", "p1").Scan(&bio); err != nil {
+			t.Fatalf("read bio after update: %v", err)
+		}
+		if bio != "original bio" {
+			t.Errorf("SECURITY: [update] partial update erased bio field: got %q, want %q. Attack: field erasure via partial update.", bio, "original bio")
 		}
 	}
 }
@@ -315,7 +325,10 @@ func TestUpdate_ReadOnlyFieldChangeRejected(t *testing.T) {
 	ch.Update()(rr, req)
 	if rr.Code == http.StatusOK || rr.Code == http.StatusCreated {
 		var tier string
-		if err := db.QueryRow("SELECT tier FROM plans WHERE id = ?", "plan-1").Scan(&tier); err == nil && tier == "enterprise" {
+		if err := db.QueryRow("SELECT tier FROM plans WHERE id = ?", "plan-1").Scan(&tier); err != nil {
+			t.Fatalf("read tier after update: %v", err)
+		}
+		if tier == "enterprise" {
 			t.Errorf("SECURITY: [update] read-only field 'tier' was changed to 'enterprise'. Attack: read-only field escalation via update.")
 		}
 	}
@@ -392,10 +405,11 @@ func TestUpdate_OwnerIDTamper(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.Update()(rr, req)
 	var ownerID string
-	if err := db.QueryRow("SELECT user_id FROM docs WHERE id = ?", "doc-1").Scan(&ownerID); err == nil {
-		if ownerID != "alice" {
-			t.Errorf("SECURITY: [update] owner_id changed from 'alice' to %q via update body. Attack: owner ID tampering.", ownerID)
-		}
+	if err := db.QueryRow("SELECT user_id FROM docs WHERE id = ?", "doc-1").Scan(&ownerID); err != nil {
+		t.Fatalf("read user_id after update: %v", err)
+	}
+	if ownerID != "alice" {
+		t.Errorf("SECURITY: [update] owner_id changed from 'alice' to %q via update body. Attack: owner ID tampering.", ownerID)
 	}
 }
 
@@ -423,10 +437,11 @@ func TestUpdate_TenantIDTamper(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.Update()(rr, req)
 	var tid string
-	if err := db.QueryRow("SELECT tenant_id FROM tdata WHERE id = ?", "td-1").Scan(&tid); err == nil {
-		if tid != "tenant-A" {
-			t.Errorf("SECURITY: [update] tenant_id changed from 'tenant-A' to %q via update body. Attack: tenant ID tampering.", tid)
-		}
+	if err := db.QueryRow("SELECT tenant_id FROM tdata WHERE id = ?", "td-1").Scan(&tid); err != nil {
+		t.Fatalf("read tenant_id after update: %v", err)
+	}
+	if tid != "tenant-A" {
+		t.Errorf("SECURITY: [update] tenant_id changed from 'tenant-A' to %q via update body. Attack: tenant ID tampering.", tid)
 	}
 }
 
@@ -1059,10 +1074,11 @@ func TestHook_BeforeCreateModifiesData(t *testing.T) {
 	ch.Create()(rr, req)
 	if rr.Code == http.StatusCreated {
 		var hash string
-		if err := db.QueryRow("SELECT name_hash FROM hitems LIMIT 1").Scan(&hash); err == nil {
-			if hash != "hash-test" {
-				t.Errorf("SECURITY: [hook] BeforeCreate hook did not modify data correctly: got %q, want %q. Attack: hook data modification bypass.", hash, "hash-test")
-			}
+		if err := db.QueryRow("SELECT name_hash FROM hitems LIMIT 1").Scan(&hash); err != nil {
+			t.Fatalf("read name_hash after create: %v", err)
+		}
+		if hash != "hash-test" {
+			t.Errorf("SECURITY: [hook] BeforeCreate hook did not modify data correctly: got %q, want %q. Attack: hook data modification bypass.", hash, "hash-test")
 		}
 	}
 }
@@ -1127,10 +1143,11 @@ func TestHook_AfterCreateDoesntModifyResponse(t *testing.T) {
 		assertBodyNotContains(t, rr, "secret@example.com", "hook", "AfterCreate did not redact sensitive field from response")
 	}
 	var email string
-	if err := db.QueryRow("SELECT email FROM hredact LIMIT 1").Scan(&email); err == nil {
-		if email != "secret@example.com" {
-			t.Errorf("SECURITY: [hook] AfterCreate hook redacted field from DB storage. Expected email to persist but got %q.", email)
-		}
+	if err := db.QueryRow("SELECT email FROM hredact LIMIT 1").Scan(&email); err != nil {
+		t.Fatalf("read email after create: %v", err)
+	}
+	if email != "secret@example.com" {
+		t.Errorf("SECURITY: [hook] AfterCreate hook redacted field from DB storage. Expected email to persist but got %q.", email)
 	}
 }
 

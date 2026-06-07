@@ -232,6 +232,86 @@ func TestTypedQuery_DeleteAllSoftDeleteRespectsOwner(t *testing.T) {
 	}
 }
 
+// softDeleteFixture builds a soft-delete-enabled handler with one
+// already-soft-deleted row ('s-dead') and one live row ('s-live'),
+// both owned by the same user so owner scope doesn't mask the
+// soft-delete behaviour under test.
+func softDeleteFixture(t *testing.T) (*CrudHandler, *sql.DB) {
+	t.Helper()
+	db, err := openSqliteMem(t)
+	if err != nil {
+		t.Skip(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE softlogs (
+		id TEXT PRIMARY KEY, user_id TEXT NOT NULL, notes TEXT,
+		deleted_at TEXT
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO softlogs (id, user_id, notes, deleted_at) VALUES
+		('s-dead','alice','original','2020-01-01T00:00:00Z'),
+		('s-live','alice','original',NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	ent := buildSoftDeleteOwnerEntity()
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	return ch, db
+}
+
+// TestTypedQuery_UpdateAllSkipsSoftDeleted asserts UpdateAll does not
+// mutate rows whose deleted_at is set, even when the WHERE predicate
+// would otherwise match them.
+func TestTypedQuery_UpdateAllSkipsSoftDeleted(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := softDeleteFixture(t)
+
+	// Predicate matches BOTH rows (notes = 'original').
+	q := NewTypedQuery[typedLog](ch).
+		Where(entity.NewStringColumn("notes").Eq("original"))
+	n, err := q.UpdateAll(ctxAs("alice"), map[string]any{"notes": "touched"})
+	if err != nil {
+		t.Fatalf("UpdateAll: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("UpdateAll touched %d rows (want 1 — the soft-deleted row must be excluded)", n)
+	}
+	var deadNotes string
+	if err := db.QueryRow(`SELECT notes FROM softlogs WHERE id='s-dead'`).Scan(&deadNotes); err != nil {
+		t.Fatal(err)
+	}
+	if deadNotes != "original" {
+		t.Errorf("UpdateAll mutated a soft-deleted row: notes=%q (want %q)", deadNotes, "original")
+	}
+}
+
+// TestTypedQuery_DeleteAllSkipsSoftDeleted asserts DeleteAll's
+// soft-delete branch does not re-stamp deleted_at on rows that are
+// already soft-deleted (which would otherwise resurrect their delete
+// timestamp / count them as freshly touched).
+func TestTypedQuery_DeleteAllSkipsSoftDeleted(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := softDeleteFixture(t)
+
+	q := NewTypedQuery[typedLog](ch).
+		Where(entity.NewStringColumn("notes").Eq("original"))
+	n, err := q.DeleteAll(ctxAs("alice"))
+	if err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("DeleteAll touched %d rows (want 1 — the already-soft-deleted row must be excluded)", n)
+	}
+	// The already-deleted row must keep its original timestamp.
+	var deadDel string
+	if err := db.QueryRow(`SELECT deleted_at FROM softlogs WHERE id='s-dead'`).Scan(&deadDel); err != nil {
+		t.Fatal(err)
+	}
+	if deadDel != "2020-01-01T00:00:00Z" {
+		t.Errorf("DeleteAll re-stamped an already-soft-deleted row: deleted_at=%q", deadDel)
+	}
+}
+
 // Sanity: the test fixture uses real http context plumbing for HTTP
 // tests, but typed queries go through ctx. Compile-time check that
 // nothing in this file references http.

@@ -229,6 +229,25 @@ func wantsSSE(r *http.Request) bool {
 // contextKey is a private key for storing *http.Request in context.
 type contextKey struct{}
 
+// WithRequest stashes the original inbound *http.Request in ctx so tool
+// handlers can recover the caller's transport-level auth (Cookie /
+// Authorization headers). The HTTP transports call this automatically;
+// it is exported so non-HTTP callers (and tests) can populate the same
+// slot.
+func WithRequest(ctx context.Context, r *http.Request) context.Context {
+	return context.WithValue(ctx, contextKey{}, r)
+}
+
+// RequestFromContext returns the original inbound *http.Request stashed by
+// the transport, if any. Tool handlers that re-dispatch through an HTTP
+// router use it to copy the caller's auth onto the internal request so
+// session/JWT middleware re-resolves the same user instead of demoting to
+// anonymous.
+func RequestFromContext(ctx context.Context) (*http.Request, bool) {
+	r, ok := ctx.Value(contextKey{}).(*http.Request)
+	return r, ok
+}
+
 // StreamSSE writes a single SSE event to the writer. It is the
 // hardened entry point for tool-result streaming and treats both
 // arguments as untrusted:

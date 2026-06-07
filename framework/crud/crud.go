@@ -64,6 +64,7 @@ type CrudHandler struct {
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
 	Events     *event.EventBus    // optional; receives entity.created/updated/deleted on commit
 	Registry   entity.Registry    // optional; required for nested ?include=author.profile resolution
+	BasePath   string             // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
 
 	visibleFieldsCache []string
 	visibleJSONKeys    []string
@@ -381,7 +382,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// requested limit is huge. Skips include resolution to keep memory
 		// bounded.
 		if r.URL.Query().Get("stream") == "true" || perPage >= streamListThreshold {
-			ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, perPage, listPayload.Where)
+			ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, page, perPage, listPayload.Where)
 			return
 		}
 

@@ -346,20 +346,16 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 // (callers know how many placeholders precede this fragment in the outer
 // query).
 //
+// Multiple OpIn filters on the SAME field are coalesced into a single
+// `col IN ($a, $b, …)` predicate. parseScopedFilters expands a piped
+// `status_in=a|b|c` clause into one OpIn ParsedFilter per value; rendering
+// each as `col = $N` ANDed together would require a single row to equal
+// every value at once — i.e. match nothing. The IN coalescing restores
+// the intended OR semantics.
+//
 // f.Field values MUST be validated before calling this function.
 func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
-	if len(filters) == 0 {
-		return "", nil
-	}
-	var parts []string
-	var args []any
-	idx := startIdx
-	for _, f := range filters {
-		parts = append(parts, fmt.Sprintf("%s %s $%d", query.QuoteIdent(f.Field), opToSQL(f.Op), idx))
-		args = append(args, f.Value)
-		idx++
-	}
-	return " AND " + strings.Join(parts, " AND "), args
+	return renderFilterClause(filters, "", startIdx)
 }
 
 // filterClauseQualified is like filterClause but prefixes each column with
@@ -368,14 +364,43 @@ func filterClause(filters []filter.ParsedFilter, startIdx int) (string, []any) {
 //
 // Both `table` and f.Field values MUST be validated before calling.
 func filterClauseQualified(filters []filter.ParsedFilter, table string, startIdx int) (string, []any) {
+	return renderFilterClause(filters, table, startIdx)
+}
+
+// renderFilterClause is the shared body of filterClause/filterClauseQualified.
+// table is the optional column qualifier ("" for none). It preserves filter
+// order while merging adjacent OpIn predicates on the same field into one
+// IN (...) list so multi-value scoped filters keep OR semantics.
+func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx int) (string, []any) {
 	if len(filters) == 0 {
 		return "", nil
+	}
+	col := func(field string) string {
+		if table != "" {
+			return query.QuoteIdent(table) + "." + query.QuoteIdent(field)
+		}
+		return query.QuoteIdent(field)
 	}
 	var parts []string
 	var args []any
 	idx := startIdx
-	for _, f := range filters {
-		parts = append(parts, fmt.Sprintf("%s.%s %s $%d", query.QuoteIdent(table), query.QuoteIdent(f.Field), opToSQL(f.Op), idx))
+	for i := 0; i < len(filters); i++ {
+		f := filters[i]
+		if f.Op == filter.OpIn {
+			// Greedily absorb the run of same-field OpIn filters.
+			phs := []string{fmt.Sprintf("$%d", idx)}
+			args = append(args, f.Value)
+			idx++
+			for i+1 < len(filters) && filters[i+1].Op == filter.OpIn && filters[i+1].Field == f.Field {
+				i++
+				phs = append(phs, fmt.Sprintf("$%d", idx))
+				args = append(args, filters[i].Value)
+				idx++
+			}
+			parts = append(parts, fmt.Sprintf("%s IN (%s)", col(f.Field), strings.Join(phs, ", ")))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %s $%d", col(f.Field), opToSQL(f.Op), idx))
 		args = append(args, f.Value)
 		idx++
 	}

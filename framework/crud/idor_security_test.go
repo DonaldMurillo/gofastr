@@ -19,7 +19,7 @@ func TestServeStreamingList_AnonymousOwnerScopedRequestReturnsNoRows(t *testing.
 
 	req := httptest.NewRequest(http.MethodGet, "/api/logs?stream=true", nil)
 	rec := httptest.NewRecorder()
-	ch.ServeStreamingList(context.Background(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 10, nil)
+	ch.ServeStreamingList(context.Background(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 1, 10, nil)
 
 	if rec.Code != http.StatusUnauthorized {
 		resp := decodeListResponse(t, rec.Body.String())
@@ -39,7 +39,7 @@ func TestServeStreamingList_DBErrorsDoNotLeakDriverText(t *testing.T) {
 	_ = db.Close()
 
 	rec := httptest.NewRecorder()
-	ch.ServeStreamingList(context.Background(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 10, nil)
+	ch.ServeStreamingList(context.Background(), rec, req, []string{"id", "user_id", "notes"}, nil, nil, nil, 1, 10, nil)
 
 	body := rec.Body.String()
 	if strings.Contains(strings.ToLower(body), "database is closed") || strings.Contains(strings.ToLower(body), "sql:") {

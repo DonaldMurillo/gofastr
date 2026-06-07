@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -68,12 +69,17 @@ func TestMassAssignment_FieldInjection(t *testing.T) {
 				t.Logf("create status=%d body=%s", rr.Code, rr.Body.String())
 			}
 
-			// Verify DB: owner field should be "alice", not "victim"
+			// Verify DB: owner field should be "alice", not "victim".
+			// A rejected create legitimately leaves the table empty
+			// (sql.ErrNoRows is acceptable); any other query error is a
+			// test-integrity failure and must fail loud.
 			var storedOwner string
-			if err := db.QueryRow("SELECT user_id FROM profiles LIMIT 1").Scan(&storedOwner); err == nil {
-				if tc.name == "user_id_injection" && storedOwner == "victim" {
-					t.Errorf("SECURITY: [mass_assign] client-injected user_id persisted as %q. Attack: %s", storedOwner, tc.desc)
-				}
+			err := db.QueryRow("SELECT user_id FROM profiles LIMIT 1").Scan(&storedOwner)
+			if err != nil && err != sql.ErrNoRows {
+				t.Fatalf("read user_id after create: %v", err)
+			}
+			if err == nil && tc.name == "user_id_injection" && storedOwner == "victim" {
+				t.Errorf("SECURITY: [mass_assign] client-injected user_id persisted as %q. Attack: %s", storedOwner, tc.desc)
 			}
 
 			// Verify response doesn't echo the forbidden value in the owner field

@@ -216,9 +216,35 @@ func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
 	return sorts, nil
 }
 
+// inClause builds an `field IN ($1,$2,…)` fragment and its argument
+// slice for a run of OpIn filters on the same field. A single value still
+// yields `field IN ($1)`, which is equivalent to equality. Returning a
+// real set-membership predicate is what makes ?status_in=active,pending
+// match the union of values instead of ANDing one equality per value
+// (status = $1 AND status = $2), which no single row can satisfy.
+func inClause(field string, values []string) (string, []any) {
+	var sb strings.Builder
+	sb.WriteString(field)
+	sb.WriteString(" IN (")
+	args := make([]any, len(values))
+	for i, v := range values {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		// Placeholders are renumbered by the query builder; the index
+		// here only needs to be a valid $N so renumberPlaceholders
+		// advances correctly.
+		fmt.Fprintf(&sb, "$%d", i+1)
+		args[i] = v
+	}
+	sb.WriteByte(')')
+	return sb.String(), args
+}
+
 // applyFiltersToCountQuery applies parsed filters to a count builder.
 func ApplyToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
-	for _, f := range filters {
+	for i := 0; i < len(filters); i++ {
+		f := filters[i]
 		switch f.Op {
 		case OpEq:
 			cb.Where(f.Field+" = $1", f.Value)
@@ -233,14 +259,18 @@ func ApplyToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
 		case OpLike:
 			cb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
-			cb.Where(f.Field+" = $1", f.Value)
+			vals, n := collectInRun(filters, i)
+			cond, args := inClause(f.Field, vals)
+			cb.Where(cond, args...)
+			i += n - 1
 		}
 	}
 }
 
 // applyFiltersToQuery applies parsed filters to a query builder.
 func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
-	for _, f := range filters {
+	for i := 0; i < len(filters); i++ {
+		f := filters[i]
 		switch f.Op {
 		case OpEq:
 			qb.Where(f.Field+" = $1", f.Value)
@@ -255,9 +285,29 @@ func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 		case OpLike:
 			qb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
-			qb.Where(f.Field+" = $1", f.Value)
+			vals, n := collectInRun(filters, i)
+			cond, args := inClause(f.Field, vals)
+			qb.Where(cond, args...)
+			i += n - 1
 		}
 	}
+}
+
+// collectInRun gathers the contiguous run of OpIn filters on the same
+// field starting at index start (ParseFilters emits one ParsedFilter per
+// comma-separated value, all adjacent). It returns the collected values
+// and the run length so the caller can advance past them and emit a
+// single IN clause.
+func collectInRun(filters []ParsedFilter, start int) (values []string, n int) {
+	field := filters[start].Field
+	for j := start; j < len(filters); j++ {
+		if filters[j].Op != OpIn || filters[j].Field != field {
+			break
+		}
+		values = append(values, filters[j].Value)
+		n++
+	}
+	return values, n
 }
 
 // applySortToQuery applies parsed sorts to a query builder.

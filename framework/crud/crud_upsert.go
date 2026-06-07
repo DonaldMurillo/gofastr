@@ -185,6 +185,15 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 		row := ch.DB.QueryRowContext(ctx, sb.String(), vals...)
 		res, err := scanRow(row, visFields, ch.convertKey)
+		if errors.Is(err, sql.ErrNoRows) && len(setParts) == 0 {
+			// DO NOTHING fired against an existing row (nothing to update),
+			// so RETURNING produced zero rows. The contract is "return the
+			// resulting row" — fetch the pre-existing row explicitly by PK.
+			selSQL := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
+				strings.Join(visFields, ", "), ch.Entity.GetTable(), ch.PrimaryKey)
+			sel := ch.DB.QueryRowContext(ctx, selSQL, body[ch.PrimaryKey])
+			res, err = scanRow(sel, visFields, ch.convertKey)
+		}
 		if err != nil {
 			return fmt.Errorf("upsert: %w", err)
 		}
