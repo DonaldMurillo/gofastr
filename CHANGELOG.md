@@ -14,6 +14,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `%`/`_` acted as wildcards (a probe vector) — unlike the hardened top-level
   `_like`. Nested `_like` now uses contains-semantics with escaped metacharacters
   and an `ESCAPE` clause (new exported `filter.EscapeLikePattern`).
+- **kiln: same-origin guard on the unauthenticated tool API.** `POST
+  /kiln/tool/{name}`, `/kiln/agent`, and `/mcp` mutate the in-memory world with
+  no auth (loopback bind is the primary control). A new origin guard refuses
+  cross-origin browser POSTs (DNS-rebinding / CSRF from a page in the user's
+  browser), while non-browser clients (agent, curl, MCP/ACP — no `Origin`) are
+  unaffected. Docs: `kiln.md`.
 - **`battery/auth` warns on a missing production JWT secret.** With
   `DevMode=false` and an empty `JWTSecret`, the auth battery now logs a loud
   startup warning (an empty HMAC key means forgeable, restart-unstable

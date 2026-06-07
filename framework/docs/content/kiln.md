@@ -54,6 +54,19 @@ which manages its own login (`claude` reads `~/.claude/.credentials.json`,
 `pi` reads its own config, etc.). Adding a new agent is a one-entry
 change in `cmd/kiln/adapters.go`.
 
+## Mutation surface & loopback binding
+
+The tool API (`POST /kiln/tool/{name}`, `/kiln/agent`, `/mcp`) mutates the
+in-memory world **without authentication** — Kiln is local build-mode
+tooling. The primary control is the **loopback bind** (`--addr` defaults to
+`127.0.0.1:8765`); pass `--addr 0.0.0.0:8765` only when you deliberately
+want it reachable off-box, and put your own auth in front of it.
+
+As defense-in-depth, an **same-origin guard** rejects cross-origin
+browser-driven state changes (a malicious web page or DNS-rebinding POSTing
+to `localhost:8765`). Non-browser clients (the agent, `curl`, MCP/ACP) send
+no `Origin` and are unaffected.
+
 ## Freezing
 
 When the build is done:

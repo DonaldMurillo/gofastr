@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -282,10 +283,41 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	return 0
 }
 
+// originGuard refuses cross-origin browser-driven state changes. Kiln's tool
+// API (POST /kiln/tool/{name}, /kiln/agent, /mcp) mutates the in-memory world
+// with no auth — loopback bind is the primary control, but that alone does not
+// stop a malicious web page (or DNS-rebinding) in the user's browser from
+// POSTing to localhost. We allow requests with NO Origin (curl, MCP/ACP
+// clients, the agent — non-browsers) and same-origin browser requests; a
+// cross-origin Origin on an unsafe method is refused with 403.
+func originGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(origin, r.Host) {
+			http.Error(w, "cross-origin request refused", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sameOrigin reports whether an Origin header's host matches the request Host.
+func sameOrigin(origin, host string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Host == host
+}
+
 func runHTTP(ctx context.Context, logger *log.Logger, addr string, l *live.Live) {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: l,
+		Handler: originGuard(l),
 	}
 	go func() {
 		<-ctx.Done()
