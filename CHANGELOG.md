@@ -42,6 +42,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Nested `_in` filter on a BelongsTo relation now matches.** `?author.name_in=a,b`
+  split into separate AND-ed `EXISTS(... = a) AND EXISTS(... = b)` subqueries, so
+  a to-one relation could never satisfy both and silently returned nothing.
+  Nested `_in` now coalesces into a single `EXISTS(... col IN (a,b))`, matching
+  the top-level `_in` semantics, for BelongsTo/HasOne/HasMany/ManyToMany.
 - **`App.Start` no longer leaks workers on bind failure.** A non-graceful
   `ListenAndServe` error (port already in use being the common case) returned
   immediately without draining, leaking every battery/cron/queue and OnStart

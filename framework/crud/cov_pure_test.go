@@ -269,14 +269,19 @@ func TestParseNestedFilters_Paths(t *testing.T) {
 	if _, err := parseNestedFilters(r, ent, reg); err == nil {
 		t.Error("expected unknown field rejection")
 	}
-	// _in expands to multiple filters.
+	// _in coalesces into ONE filter carrying all values (emitted as a single
+	// IN (...)), so a to-one relation can actually match. Splitting into
+	// AND-ed equals made BelongsTo/HasOne unmatchable.
 	r = httptest.NewRequest("GET", "/?author.name_in=a,b,c", nil)
 	got, err := parseNestedFilters(r, ent, reg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 {
-		t.Errorf("_in expansion = %d filters, want 3", len(got))
+	if len(got) != 1 {
+		t.Fatalf("_in = %d filters, want 1 (coalesced)", len(got))
+	}
+	if got[0].Op != filter.OpIn || len(got[0].Values) != 3 {
+		t.Errorf("_in values = %v (op %v), want 3 values", got[0].Values, got[0].Op)
 	}
 	// _like suffix.
 	r = httptest.NewRequest("GET", "/?author.name_like=al%25", nil)

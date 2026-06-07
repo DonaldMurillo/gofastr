@@ -29,7 +29,8 @@ type nestedFilter struct {
 	Relation entity.Relation
 	Field    string
 	Op       filter.FilterOp
-	Value    string
+	Value    string   // single-value ops (eq/gt/like/…)
+	Values   []string // OpIn: the full value set, emitted as one IN (...)
 }
 
 // parseNestedFilters extracts dotted-path query params and resolves their
@@ -114,9 +115,12 @@ func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Reg
 		}
 
 		if op == filter.OpIn {
-			for _, p := range strings.Split(values[0], ",") {
-				out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Value: p})
-			}
+			// Coalesce into ONE filter emitting `col IN (...)`. Splitting into
+			// separate AND-ed EXISTS made a to-one relation (BelongsTo/HasOne)
+			// unmatchable — a single related row can't equal every value — so
+			// `?author.name_in=a,b` silently returned nothing. One IN matches
+			// the top-level _in semantics.
+			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Values: strings.Split(values[0], ",")})
 		} else {
 			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Value: values[0]})
 		}
@@ -164,34 +168,49 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		// this is the last-line defence.
 		return "1 = 0", nil
 	}
-	predicate := opToSQL(nf.Op)
-	args := []any{nf.Value}
+	// Build the predicate on the target column: a single `col OP $1`, or a
+	// coalesced `col IN ($1,$2,…)` for OpIn. Placeholders are local $N; the
+	// QueryBuilder renumbers them by the running offset when it composes the
+	// fragment, so multiple placeholders in one fragment are fine.
+	var predicate string
+	var args []any
+	if nf.Op == filter.OpIn {
+		if len(nf.Values) == 0 {
+			return "1 = 0", nil
+		}
+		ph := make([]string, len(nf.Values))
+		for i, v := range nf.Values {
+			ph[i] = fmt.Sprintf("$%d", i+1)
+			args = append(args, v)
+		}
+		predicate = fmt.Sprintf("%s.%s IN (%s)", rel.Entity, col, strings.Join(ph, ","))
+	} else {
+		predicate = fmt.Sprintf("%s.%s %s $1", rel.Entity, col, opToSQL(nf.Op))
+		args = []any{nf.Value}
+	}
 
 	switch rel.Type {
 	case entity.RelManyToOne:
 		// posts.author_id → users.id
-		sub := fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.id = %s.%s AND %s.%s %s $1)",
-			rel.Entity, rel.Entity, parentTable, rel.ForeignKey, rel.Entity, col, predicate,
-		)
-		return sub, args
+		return fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM %s WHERE %s.id = %s.%s AND %s)",
+			rel.Entity, rel.Entity, parentTable, rel.ForeignKey, predicate,
+		), args
 	case entity.RelHasOne, entity.RelHasMany:
 		// target.fk = parent.pk
-		sub := fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s.%s %s $1)",
-			rel.Entity, rel.Entity, rel.ForeignKey, parentTable, parentPK, rel.Entity, col, predicate,
-		)
-		return sub, args
+		return fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
+			rel.Entity, rel.Entity, rel.ForeignKey, parentTable, parentPK, predicate,
+		), args
 	case entity.RelManyToMany:
 		// parent → pivot → target
-		sub := fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s = %s.%s AND %s.%s %s $1)",
+		return fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s = %s.%s AND %s)",
 			rel.Entity, rel.Through,
 			rel.Entity, rel.Through, rel.ForeignKeyTarget,
 			rel.Through, rel.LocalKey, parentTable, parentPK,
-			rel.Entity, col, predicate,
-		)
-		return sub, args
+			predicate,
+		), args
 	}
 	return "1 = 0", nil
 }
@@ -212,7 +231,9 @@ func opToSQL(op filter.FilterOp) string {
 	case filter.OpLike:
 		return "LIKE"
 	case filter.OpIn:
-		// IN is handled by parser splitting values; we still emit "=" per row.
+		// OpIn is handled directly in buildExistsSubquery as a coalesced
+		// IN (...); this branch is unreachable for nested filters. Kept for
+		// total mapping completeness.
 		return "="
 	}
 	return "="
