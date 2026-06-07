@@ -1,109 +1,160 @@
 # Admin UI
 
-`battery/admin` is a small read-only admin battery — stock screens on
-top of the data the framework already collects:
+`battery/admin` is an admin back-office battery with two halves:
 
-- **Queue** — jobs by status, attempt counts, schedule times. Wires
-  against a `queue.Browsable` (the bundled `DBQueue` implements it).
-- **Audit log** — recent entries from the audit table the framework
-  populates when `App.WithAuditLog` is set.
-- **Overview** — per-section summary cards at `/admin`.
+- **Entity CRUD** — generated list / create / edit / delete screens for
+  your entities, rendered **through your app's UI host** so they hydrate
+  with `runtime.js`: the list is a server-driven `DataTable` island
+  (paginate without a reload), delete is a `data-fui-confirm` button, and
+  forms are server-rendered. **No bespoke JavaScript.**
+- **Ops dashboards** — read-only **Queue** and **Audit log** pages on top
+  of data the framework already collects (`battery/queue`,
+  `framework.WithAuditLog`). These are self-contained HTML and don't need a
+  UI host.
 
-Pages are self-contained server-rendered HTML — they don't pull in
-`framework/uihost` or the runtime, so the admin endpoints work even
-in apps that don't otherwise have a UI. The look is intentionally
-plain (system fonts, neutral palette, dark-mode follow) so you can
-gate it behind your auth middleware and not have to retheme to ship.
+Every screen is gated: see [Authorization](#authorization).
 
-## Wiring
+## Quick start
 
 ```go
 import (
     "github.com/DonaldMurillo/gofastr/battery/admin"
-    "github.com/DonaldMurillo/gofastr/battery/queue"
+    appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+    "github.com/DonaldMurillo/gofastr/framework"
+    "github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
-q, err := queue.NewDBQueue(db)
-if err != nil { /* ... */ }
+site := appui.NewApp("My App")
+host := uihost.New(site)
 
-app := framework.NewApp(framework.WithDB(db)).
-    WithAuditLog(framework.AuditConfig{}).
-    Entity(...).
-    RegisterBattery(admin.New(admin.Config{
-        Queue: q,
-        DB:    db, // for /admin/audit
-    }))
+app := framework.NewUIHostApp(host, framework.WithDB(db))
+app.Use(auth.SessionMiddleware(mgr)) // puts the signed-in user on the request
+
+app.Entity("products", productsConfig)
+app.Entity("customers", customersConfig)
+
+app.RegisterBattery(admin.New(admin.Config{Title: "Back office"}))
 ```
 
-The battery mounts:
-
-| Route             | Purpose                                       |
-|-------------------|-----------------------------------------------|
-| `GET /admin`      | Overview with summary cards                   |
-| `GET /admin/queue`| Jobs list with `?status=` filter chips        |
-| `GET /admin/audit`| Audit log entries newest-first                |
-
-Override the path prefix via `Config.PathPrefix`. Tune list caps via
-`QueueListLimit` and `AuditListLimit` (defaults 200, max 1000).
-
-When neither `Queue` nor `DB` is wired, the sub-pages render a
-"not wired" stub instead of 404'ing — clearer signal for "I haven't
-set this up yet" than a missing route.
-
-## Authentication
-
-`battery/admin` is intentionally not opinionated about auth. Wire any
-middleware you like in front of `/admin*` — typical patterns:
+With an empty `Entities`, the battery **auto-exposes every registered entity
+whose CRUD is enabled** — the "generate the whole back-office" default.
+Entities shipped with `CRUD=false` (e.g. `battery/auth`'s `users` /
+`sessions`) are skipped automatically, so the default never exposes
+credential tables. Name entities explicitly to override:
 
 ```go
-admin := admin.New(admin.Config{Queue: q, DB: db})
-app.RegisterBattery(admin)
+admin.New(admin.Config{Entities: []string{"products", "orders"}})
+```
 
-// Gate every /admin* route behind an auth check:
-app.Router.Group("/admin", func(r *router.Router) {
-    r.Use(requireAdminMiddleware)
+The entity screens mount at `<PathPrefix>/e/<table>`:
+
+| Route                              | Screen                              |
+|------------------------------------|-------------------------------------|
+| `GET  /admin/e/<table>`            | List (DataTable island)             |
+| `GET  /admin/e/<table>/new`        | Create form                         |
+| `GET  /admin/e/<table>/edit/:id`   | Edit form                           |
+| `POST /admin/e/<table>/_create`    | Create (→ 303 to list)              |
+| `POST /admin/e/<table>/_update/{id}` | Update (→ 303 to list)            |
+| `DELETE /admin/e/<table>/_delete/{id}` | Delete RPC (returns refreshed table) |
+| `GET  /admin/e/<table>/_rows`      | DataTable island fragment           |
+
+> **A UI host is required for the entity screens.** The battery discovers
+> the host the app mounted (via `framework.App.Mountables()`) and registers
+> the screens on it. If you list `Entities` but no host is mounted,
+> `RegisterBattery` returns an error. (In auto mode with no host, the entity
+> screens are simply skipped and you still get the ops dashboards.)
+
+### How the interactions work (no JavaScript)
+
+Everything is a declarative `data-fui-*` primitive the runtime already
+understands — the battery ships zero JS:
+
+- **List** uses `ui.DataTable` with `IslandSignal`/`IslandEndpoint`. Page
+  links fire a `GET` RPC to `_rows`, which returns the new table fragment;
+  the runtime swaps it in place and pushes the new URL.
+- **Delete** is a `<button data-fui-confirm="…" data-fui-rpc="…/_delete/{id}"
+  data-fui-rpc-method="DELETE" data-fui-rpc-signal="…">`. The runtime runs
+  the native confirm, fires the DELETE, and swaps the returned (refreshed)
+  table into the list signal. (It does **not** navigate to the list path —
+  that would hit the SPA cache and show a stale row.)
+- **Forms** are plain SSR `ui.Form`s (CSRF auto-stamped from context). On
+  success the handler 303-redirects to the list; on a validation error it
+  redirects back to the form with a one-shot flash token (`?e=…`) so the
+  re-render is a full host page with field errors + the submitted values
+  retained.
+
+Because every write goes through the entity's **own `CrudHandler`** with the
+request context forwarded, validation, `OwnerField`/tenant scoping, hooks,
+and events all apply exactly as on the JSON API — the admin never
+re-implements CRUD, pagination, or filter logic.
+
+## Ops dashboards (queue + audit)
+
+```go
+q, _ := queue.NewDBQueue(db)
+app.RegisterBattery(admin.New(admin.Config{
+    Queue: q,   // enables /admin/queue
+    DB:    db,  // enables /admin/audit
+}))
+```
+
+| Route              | Purpose                                       |
+|--------------------|-----------------------------------------------|
+| `GET /admin`       | Overview with summary cards                   |
+| `GET /admin/queue` | Jobs list with `?status=` filter chips        |
+| `GET /admin/audit` | Audit log entries newest-first                |
+
+When neither `Queue` nor `DB` is wired, the sub-pages render a "not wired"
+stub instead of 404'ing. Tune list caps via `QueueListLimit` /
+`AuditListLimit` (defaults 200, max 1000). The audit page shows
+`created_at`, `entity`, `op`, `record_id`, `actor_id`; the default table
+name is `audit_log` (`Config.AuditTable` to override).
+
+## Authorization
+
+Every admin surface is gated. By default the battery requires **any
+authenticated, non-nil user** in the request context — set by your auth
+middleware (`battery/auth`'s `SessionMiddleware` does this). Anonymous
+callers get `401` on both the SSR screens (via the host policy chain) and
+the RPC/form routes (via middleware).
+
+Supply a stricter predicate — e.g. an admin-role check — via
+`Config.Authorize`:
+
+```go
+admin.New(admin.Config{
+    Authorize: func(ctx context.Context) bool {
+        u := auth.GetCurrentUser(ctx)
+        return u != nil && u.HasRole("admin")
+    },
 })
 ```
 
-Or mount the admin battery on a separate router that's only reachable
-from your internal network.
+> The default checks the user is **non-nil**, not merely present:
+> `SessionMiddleware` seeds a nil user on every request so `GetCurrentUser`
+> works, so a naive "is a user set?" check would let anonymous callers
+> through. The battery handles this for you.
 
-## Listing jobs without battery/admin
+## CSRF
 
-If you want the data without the bundled UI, type-assert your queue
-to `queue.Browsable`:
-
-```go
-b, ok := q.(queue.Browsable)
-if !ok { return errors.New("queue doesn't support browsing") }
-jobs, _ := b.ListJobs(ctx, "failed", 50)
-stats, _ := b.Stats(ctx)
-```
-
-`DBQueue` implements `Browsable`; memory and Redis queues currently
-don't (they will when the admin story moves out of "stock screen" and
-into a richer dashboard).
-
-## Audit log
-
-The `Audit` page renders rows from the `audit_log` table the
-framework populates via `WithAuditLog`. The default table name is
-`audit_log`; override via `Config.AuditTable` if you renamed it.
-
-Columns shown: `created_at`, `entity`, `op`, `record_id`, `actor_id`.
-The `diff` column is captured but not rendered in the table because
-it's typically large JSON; future versions will provide an expandable
-row.
+Forms embed the framework's `_csrf` hidden field automatically (`ui.Form`
+reads the token from context). The delete RPC carries the token via the
+`X-CSRF-Token` header, which the runtime reads from
+`<meta name="csrf-token">` — make sure your layout emits that tag when CSRF
+is enforced.
 
 ## Common mistakes
 
-- **Don't expose `/admin` to the public.** The pages contain entity
-  identifiers, actor ids, and job payload counts that are useful for
-  reconnaissance. Always gate.
-- **Don't rely on `/admin` for write operations.** The bundled
-  battery is read-only on purpose. Retry / dequeue / dead-letter
-  workflows live in your app code.
-- **Don't bundle the admin battery into a public-facing binary.**
-  The CSS and route paths don't change between dev and prod; an
-  internal-only binary (or a feature flag on registration) keeps the
-  surface area tight.
+- **Don't expose `/admin` to the public.** It surfaces entity data, actor
+  ids, and job counts. The default gate requires auth; don't disable it.
+- **Per-user data needs `OwnerField`.** The admin honours it (a user only
+  sees/edits their own rows), but only if the entity declares it. See
+  [Entity Declarations](entity-declarations.md) → per-user scoping.
+- **The ops dashboards are read-only on purpose.** Retry / dequeue /
+  dead-letter workflows live in your app code.
+
+## See also
+
+A runnable example lives in `examples/backoffice` — SQLite, two entities,
+a demo login, and `admin.New(admin.Config{})` generating the whole
+back-office.

@@ -19,17 +19,20 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 // Config configures the Admin battery.
@@ -59,11 +62,38 @@ type Config struct {
 
 	// AuditListLimit caps rows on /admin/audit. Default 200.
 	AuditListLimit int
+
+	// Entities lists the entity names to expose as editable CRUD screens
+	// under <PathPrefix>/e/<table>. When empty (default), the battery exposes
+	// EVERY registered entity whose CRUD is enabled — the "generate the whole
+	// back-office" default. CRUD-disabled entities (e.g. battery/auth's
+	// users/sessions, which ship CRUD=false) are skipped automatically, so the
+	// default never exposes credential tables. Name an entity explicitly to
+	// override (including a CRUD=false one, if you really mean to). Screens
+	// proxy to each entity's own CrudHandler, so validation, owner/tenant
+	// scope, hooks, and events all apply exactly as on the JSON API.
+	Entities []string
+
+	// Authorize gates every admin surface — both the SSR screens (via the UI
+	// host's policy chain) and the RPC/form routes (via middleware). It returns
+	// true to allow the request. Default (nil) requires any authenticated user
+	// in context. Supply a stricter predicate — e.g. an admin-role check — to
+	// lock the back-office down further.
+	Authorize func(ctx context.Context) bool
+
+	// EntityListLimit caps rows per page on an entity list screen. Default 50.
+	EntityListLimit int
 }
 
 // Battery is the framework Battery implementation.
 type Battery struct {
-	cfg Config
+	cfg      Config
+	registry *framework.Registry // set at Init; enables the entity CRUD screens
+	db       *sql.DB             // effective DB for entity CRUD (cfg.DB or app.DB)
+	host     *uihost.UIHost      // the app's mounted UI host (entity screens render through it)
+	screens  *appui.App          // host.App — where entity CRUD screens register
+	router   *router.Router      // the framework router (entity RPC/form/delete routes)
+	flash    *flashStore         // short-lived form re-render payloads (validation errors + values)
 }
 
 // New constructs the Admin battery with the supplied config. Pass the
@@ -85,7 +115,24 @@ func New(cfg Config) *Battery {
 	if cfg.AuditListLimit <= 0 {
 		cfg.AuditListLimit = 200
 	}
-	return &Battery{cfg: cfg}
+	if cfg.EntityListLimit <= 0 {
+		cfg.EntityListLimit = 50
+	}
+	return &Battery{cfg: cfg, db: cfg.DB, flash: newFlashStore()}
+}
+
+// authorized reports whether the current request may use the admin. Default
+// (no Authorize configured) requires any authenticated user in context.
+func (b *Battery) authorized(ctx context.Context) bool {
+	if b.cfg.Authorize != nil {
+		return b.cfg.Authorize(ctx)
+	}
+	// Require a NON-NIL user. battery/auth's SessionMiddleware seeds a nil user
+	// on every request (so GetCurrentUser works) and only fills it in when
+	// authenticated — so `ok` alone is true even for anonymous callers. The
+	// nil check is what actually gates them out.
+	u, ok := handler.GetUser(ctx)
+	return ok && u != nil
 }
 
 // Name implements framework.Battery.
@@ -94,8 +141,24 @@ func (b *Battery) Name() string { return "admin" }
 // Init implements framework.Battery. Mounts the three admin pages on
 // the App's router under cfg.PathPrefix.
 func (b *Battery) Init(app *framework.App) error {
+	b.registry = app.Registry
+	if b.db == nil {
+		b.db = app.DB
+	}
+	// Discover the app's mounted UI host so entity CRUD screens render through
+	// its pipeline (runtime.js hydration, islands, widgets) instead of a second
+	// host. Batteries Init at App.Start, after Mount, so the host is present by
+	// now if one was mounted.
+	for _, m := range app.Mountables() {
+		if h, ok := m.(*uihost.UIHost); ok {
+			b.host = h
+			b.screens = h.App
+			break
+		}
+	}
+	b.router = app.Router()
 	b.RegisterRoutes(app.Router())
-	return nil
+	return b.registerEntityAdmin()
 }
 
 // RegisterRoutes mounts the three admin pages under cfg.PathPrefix on
@@ -103,22 +166,30 @@ func (b *Battery) Init(app *framework.App) error {
 // can mount the admin without going through the battery lifecycle.
 func (b *Battery) RegisterRoutes(r *router.Router) {
 	hdr := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
-	r.Get(b.cfg.PathPrefix, hdr(requireUser(http.HandlerFunc(b.handleIndex))))
-	r.Get(b.cfg.PathPrefix+"/queue", hdr(requireUser(http.HandlerFunc(b.handleQueue))))
-	r.Get(b.cfg.PathPrefix+"/audit", hdr(requireUser(http.HandlerFunc(b.handleAudit))))
+	guard := func(h http.HandlerFunc) http.Handler { return hdr(b.gate(h)) }
+
+	// Stylesheet served from a same-origin route rather than an inline <style>
+	// block — the battery's strict CSP (default-src 'self', no 'unsafe-inline')
+	// would otherwise block inline styles in the browser, rendering the admin
+	// unstyled. Ungated: it carries no data and lets the 401 page degrade
+	// gracefully. SecurityHeaders still applies.
+	r.Get(b.cfg.PathPrefix+"/admin.css", hdr(http.HandlerFunc(b.handleCSS)))
+
+	r.Get(b.cfg.PathPrefix, guard(b.handleIndex))
+	r.Get(b.cfg.PathPrefix+"/queue", guard(b.handleQueue))
+	r.Get(b.cfg.PathPrefix+"/audit", guard(b.handleAudit))
 }
 
-// requireUser is a small admin-local middleware that 401s requests
-// without an authenticated user in context. The framework's auth chain
-// is responsible for setting the user; admin pages refuse to render to
-// anonymous callers regardless of how they're mounted.
-func requireUser(next http.Handler) http.Handler {
+// gate wraps a route handler so it refuses unauthorized callers (401). The
+// framework auth chain sets the user; b.authorized decides. Used for the
+// standalone ops pages and the entity RPC/form routes.
+func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := handler.GetUser(r.Context()); !ok {
+		if !b.authorized(r.Context()) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		next(w, r)
 	})
 }
 
@@ -138,12 +209,12 @@ func (b *Battery) handleIndex(w http.ResponseWriter, r *http.Request) {
 	body := render.Raw("") +
 		section("Queue", queueSummary(b.cfg.PathPrefix, stats, b.cfg.Queue != nil)) +
 		section("Audit log", auditSummary(b.cfg.PathPrefix, auditCount, b.cfg.DB != nil))
-	writePage(w, b.cfg.Title, "Overview", body)
+	b.writePage(w, b.cfg.Title, "Overview", body)
 }
 
 func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.Queue == nil {
-		writePage(w, b.cfg.Title, "Queue",
+		b.writePage(w, b.cfg.Title, "Queue",
 			render.Raw(`<p class="muted">No queue is wired into this admin battery.</p>`))
 		return
 	}
@@ -152,19 +223,19 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 	jobs, err := b.cfg.Queue.ListJobs(r.Context(), status, limit)
 	if err != nil {
 		// Don't echo err.Error() — driver text leaks DSNs, IPs, secrets.
-		writePage(w, b.cfg.Title, "Queue",
+		b.writePage(w, b.cfg.Title, "Queue",
 			render.Raw(`<p class="err">Could not load queue jobs. Check the server logs for details.</p>`))
 		return
 	}
 	stats, _ := b.cfg.Queue.Stats(r.Context())
 	body := queueFilters(b.cfg.PathPrefix, status, stats) +
 		jobsTable(jobs)
-	writePage(w, b.cfg.Title, "Queue", body)
+	b.writePage(w, b.cfg.Title, "Queue", body)
 }
 
 func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.DB == nil {
-		writePage(w, b.cfg.Title, "Audit log",
+		b.writePage(w, b.cfg.Title, "Audit log",
 			render.Raw(`<p class="muted">No DB / audit table is wired into this admin battery.</p>`))
 		return
 	}
@@ -172,11 +243,11 @@ func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	rows, err := b.queryAudit(r.Context(), limit)
 	if err != nil {
 		// Don't echo err.Error() — driver text leaks DSNs, schema, secrets.
-		writePage(w, b.cfg.Title, "Audit log",
+		b.writePage(w, b.cfg.Title, "Audit log",
 			render.Raw(`<p class="err">Could not load audit rows. Check the server logs for details.</p>`))
 		return
 	}
-	writePage(w, b.cfg.Title, "Audit log", auditTable(rows))
+	b.writePage(w, b.cfg.Title, "Audit log", auditTable(rows))
 }
 
 // ----- audit query ---------------------------------------------------------
@@ -243,22 +314,57 @@ tr:hover td { background: rgba(0,0,0,0.02); }
              text-decoration: none; color: inherit; font-size: 0.85rem; }
 .filters a.active { background: #111827; color: white; border-color: #111827; }
 code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85em; }
+nav a.current { background: rgba(0,0,0,0.08); font-weight: 600; }
+.toolbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.toolbar .muted { margin-left: auto; font-size: 0.85rem; }
+.btn { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid #d1d5db; border-radius: 6px;
+       text-decoration: none; color: inherit; font-size: 0.9rem; background: none; cursor: pointer; }
+.btn:hover { background: rgba(0,0,0,0.04); }
+.btn.primary { background: #111827; color: white; border-color: #111827; }
+.btn.primary:hover { background: #1f2937; }
+.pager { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.row-actions { display: flex; gap: 0.75rem; align-items: center; white-space: nowrap; }
+.row-actions form { display: inline; margin: 0; }
+.link-danger { background: none; border: none; color: #b91c1c; cursor: pointer; padding: 0;
+               font: inherit; text-decoration: underline; }
+.form-row { display: grid; gap: 0.3rem; margin-bottom: 1rem; max-width: 40rem; }
+.form-row label { font-size: 0.85rem; font-weight: 600; }
+.form-row input, .form-row textarea, .form-row select {
+    font: inherit; padding: 0.45rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px;
+    background: white; color: inherit; width: 100%; box-sizing: border-box; }
+.form-row input[type=checkbox] { width: auto; }
+.form-row input[readonly] { background: #f3f4f6; color: #6b7280; }
+.form-row .req { color: #b91c1c; }
+.actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+pre { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace;
+      font-size: 0.85em; margin: 0.5rem 0 0; }
 @media (prefers-color-scheme: dark) {
     body { background: #0f172a; color: #e2e8f0; }
     nav { border-bottom-color: #334155; }
     nav a:hover, tr:hover td { background: rgba(255,255,255,0.05); }
+    nav a.current { background: rgba(255,255,255,0.1); }
     .card, th, td { border-color: #334155; }
     th { background: rgba(255,255,255,0.03); }
     .muted, .sub, .card .label { color: #94a3b8; }
     .err { color: #fca5a5; }
     .filters a { border-color: #334155; }
     .filters a.active { background: #f8fafc; color: #0f172a; border-color: #f8fafc; }
+    .btn { border-color: #334155; }
+    .btn:hover { background: rgba(255,255,255,0.06); }
+    .btn.primary { background: #e2e8f0; color: #0f172a; border-color: #e2e8f0; }
+    .btn.primary:hover { background: #f8fafc; }
+    .link-danger { color: #fca5a5; }
+    .form-row input, .form-row textarea, .form-row select { background: #1e293b; border-color: #334155; }
+    .form-row input[readonly] { background: #0b1220; color: #94a3b8; }
 }
 `
 
 // writePage emits a complete HTML document. Title is the page-level
-// title, pageName is the subheading shown above the content.
-func writePage(w http.ResponseWriter, title, pageName string, body render.HTML) {
+// title, pageName is the subheading shown above the content. The nav is
+// built from cfg.PathPrefix (so a custom prefix links correctly) and
+// includes one link per configured entity. pageName is matched against
+// the nav labels to mark the current item.
+func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body render.HTML) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprintf(w, `<!doctype html>
@@ -267,23 +373,59 @@ func writePage(w http.ResponseWriter, title, pageName string, body render.HTML) 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s · %s</title>
-  <style>%s</style>
+  <link rel="stylesheet" href="%s/admin.css">
 </head>
 <body>
   <header>
     <h1>%s</h1>
     <p class="sub">%s</p>
   </header>
-  <nav>
-    <a href="/admin">Overview</a>
-    <a href="/admin/queue">Queue</a>
-    <a href="/admin/audit">Audit log</a>
-  </nav>
+  %s
   %s
 </body>
 </html>`,
-		render.Escape(title), render.Escape(pageName), baseCSS,
-		render.Escape(title), render.Escape(pageName), body)
+		render.Escape(title), render.Escape(pageName), b.cfg.PathPrefix,
+		render.Escape(title), render.Escape(pageName), b.navHTML(pageName), body)
+}
+
+// handleCSS serves the admin stylesheet. Long-cacheable: the CSS is a build
+// constant, not per-request data.
+func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = io.WriteString(w, baseCSS)
+}
+
+// navHTML builds the admin nav. The fixed Overview/Queue/Audit links plus
+// one link per configured entity, all under cfg.PathPrefix. current is the
+// page name; the matching link gets the .current class.
+func (b *Battery) navHTML(current string) render.HTML {
+	type link struct{ label, href string }
+	links := []link{
+		{"Overview", b.cfg.PathPrefix},
+		{"Queue", b.cfg.PathPrefix + "/queue"},
+		{"Audit log", b.cfg.PathPrefix + "/audit"},
+	}
+	if b.registry != nil {
+		for _, name := range b.cfg.Entities {
+			ent, err := b.registry.Get(name)
+			if err != nil {
+				continue
+			}
+			links = append(links, link{ent.GetName(), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString(`<nav>`)
+	for _, l := range links {
+		cls := ""
+		if l.label == current {
+			cls = ` class="current"`
+		}
+		fmt.Fprintf(&sb, `<a%s href="%s">%s</a>`, cls, render.Escape(l.href), render.Escape(l.label))
+	}
+	sb.WriteString(`</nav>`)
+	return render.HTML(sb.String())
 }
 
 func section(name string, body render.HTML) render.HTML {

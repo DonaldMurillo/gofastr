@@ -23,15 +23,14 @@ func main() {
 
 	app := framework.NewApp(
 		framework.WithDB(db),
-		framework.WithConfig(framework.AppConfig{Name: "spa-example"}),
+		// Auto-CRUD mounts under /api (GET /api/articles, …) so Vue Router
+		// owns the bare paths (/articles, /projects) for client-side routes.
+		framework.WithConfig(framework.AppConfig{Name: "spa-example", APIPrefix: "/api"}),
 	)
 
-	// --- Entities (auto-register tables, but NOT routes — we mount under /api/ manually) ---
-
-	crudFalse := false
+	// --- Entities — auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
 
 	app.Entity("articles", framework.EntityConfig{
-		CRUD: &crudFalse,
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "summary", Type: schema.Text},
@@ -41,7 +40,6 @@ func main() {
 	})
 
 	app.Entity("projects", framework.EntityConfig{
-		CRUD: &crudFalse,
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "description", Type: schema.Text},
@@ -53,13 +51,9 @@ func main() {
 	framework.AutoMigrate(db, app.Registry)
 	seed(db)
 
-	// --- API routes under /api/ prefix ---
-	// Entity CRUD mounted here so Vue Router can use /articles, /projects for client-side routes.
-
-	apiGroup := app.Router().Group("/api")
-
-	// Custom API: site metadata
-	apiGroup.Get("/site", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Custom API endpoint — site metadata. Entity CRUD already mounts under
+	// /api via APIPrefix; this just adds one more route alongside it.
+	app.Router().Get("/api/site", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"name":   "GoFastr SPA Demo",
@@ -67,13 +61,6 @@ func main() {
 			"footer": "Built with GoFastr",
 		})
 	}))
-
-	// Proxy entity CRUD under /api/articles, /api/projects
-	for _, entity := range app.Registry.All() {
-		handler := framework.NewCrudHandler(entity, db)
-		handler.JSONCase = app.JSONCasing()
-		framework.RegisterCrudRoutes(apiGroup, handler, "/"+entity.GetTable())
-	}
 
 	// --- SPA static file serving ---
 	// Vue Router uses History API — real URLs like /articles, /about.
