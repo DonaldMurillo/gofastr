@@ -72,7 +72,9 @@ Usage:
                           --diff to print a review summary instead of writing
 
 Flags:
-  --addr value          HTTP listen address (default ":8765")
+  --addr value          HTTP listen address (default "127.0.0.1:8765",
+                          loopback-only; the tool API is unauthenticated —
+                          pass 0.0.0.0:8765 to expose it deliberately)
   --journal path        Path to JSONL journal (default: .kiln.session.jsonl)
   --agent value         Spawn an agent per chat_user event:
                           claude-code | pi | codex   built-in adapters (BYO auth)
@@ -109,7 +111,12 @@ type runOptions struct {
 
 func parseFlags(args []string) runOptions {
 	fs := flag.NewFlagSet("kiln", flag.ExitOnError)
-	addr := fs.String("addr", ":8765", "HTTP listen address")
+	// Default to loopback: the /kiln/tool/{name} mutation surface is
+	// unauthenticated, so binding to all interfaces would let any
+	// co-located host on a shared LAN rewrite the in-memory app. An
+	// operator who wants to expose the runtime must opt in explicitly,
+	// e.g. --addr 0.0.0.0:8765.
+	addr := fs.String("addr", "127.0.0.1:8765", "HTTP listen address (loopback by default; the tool API is unauthenticated — pass 0.0.0.0:8765 to expose it deliberately)")
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal path (use :memory: to disable persistence)")
 	noHTTP := fs.Bool("no-http", false, "Skip the HTTP server in stdio modes")
 	keepDB := fs.Bool("keep-db", false, "Don't delete the ephemeral SQLite on exit")

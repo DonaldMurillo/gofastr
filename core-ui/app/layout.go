@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -44,9 +46,17 @@ func (l *Layout) WithFooter(c component.Component) *Layout {
 
 // Wrap renders the layout as the OUTERMOST shell: its content region is
 // the page's single <main id="main-content">. If the layout is nil, Wrap
-// returns the content unchanged.
+// returns the content unchanged. Chrome renders with a background context;
+// use WrapCtx to give context-aware chrome the request context.
 func (l *Layout) Wrap(content render.HTML) render.HTML {
-	return l.wrap(content, true)
+	return l.wrap(context.Background(), content, true)
+}
+
+// WrapCtx is Wrap with an explicit context, threaded into the chrome
+// (header/sidebar/footer) so a ContextComponent in any slot renders with the
+// live request context (auth-aware nav, current tenant, etc.).
+func (l *Layout) WrapCtx(ctx context.Context, content render.HTML) render.HTML {
+	return l.wrap(ctx, content, true)
 }
 
 // WrapNested renders the layout as an INNER shell — one composed inside
@@ -55,19 +65,27 @@ func (l *Layout) Wrap(content render.HTML) render.HTML {
 // <main> landmark, so the page keeps exactly one <main id="main-content">
 // instead of emitting a duplicate (invalid id + a second landmark).
 func (l *Layout) WrapNested(content render.HTML) render.HTML {
-	return l.wrap(content, false)
+	return l.wrap(context.Background(), content, false)
 }
 
-func (l *Layout) wrap(content render.HTML, outermost bool) render.HTML {
+// WrapNestedCtx is WrapNested with an explicit context threaded into chrome.
+func (l *Layout) WrapNestedCtx(ctx context.Context, content render.HTML) render.HTML {
+	return l.wrap(ctx, content, false)
+}
+
+func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) render.HTML {
 	if l == nil {
 		return content
 	}
 
 	var bodyChildren []render.HTML
 
-	// Sidebar (optional).
+	// Sidebar (optional). Rendered ctx-aware so context-aware chrome works;
+	// SafeRenderCtx falls back to Render() for plain components and recovers
+	// panics (an errored slot renders empty rather than killing the page).
 	if l.Sidebar != nil {
-		nav := html.Nav(html.NavConfig{Label: "Sidebar"}, l.Sidebar.Render())
+		inner, _ := component.SafeRenderCtx(ctx, l.Sidebar)
+		nav := html.Nav(html.NavConfig{Label: "Sidebar"}, inner)
 		bodyChildren = append(bodyChildren, nav)
 	}
 
@@ -89,7 +107,8 @@ func (l *Layout) wrap(content render.HTML, outermost bool) render.HTML {
 	// Header (optional). Banner=true — the page-wide banner role lives
 	// here; the component supplies inner content only.
 	if l.Header != nil {
-		header := html.Header(html.HeaderConfig{Banner: true}, l.Header.Render())
+		inner, _ := component.SafeRenderCtx(ctx, l.Header)
+		header := html.Header(html.HeaderConfig{Banner: true}, inner)
 		wrapperChildren = append(wrapperChildren, header)
 	}
 
@@ -98,7 +117,8 @@ func (l *Layout) wrap(content render.HTML, outermost bool) render.HTML {
 
 	// Footer (optional). ContentInfo=true — page-wide footer role.
 	if l.Footer != nil {
-		footer := html.Footer(html.FooterConfig{ContentInfo: true}, l.Footer.Render())
+		inner, _ := component.SafeRenderCtx(ctx, l.Footer)
+		footer := html.Footer(html.FooterConfig{ContentInfo: true}, inner)
 		wrapperChildren = append(wrapperChildren, footer)
 	}
 

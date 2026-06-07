@@ -182,3 +182,18 @@ func TestRenderNodeKeepsClassProp(t *testing.T) {
 		t.Errorf("class prop should pass through: %q", got)
 	}
 }
+
+// TestRawNodeDoesNotEmitUnescapedHTML asserts a `raw` node in untrusted IR
+// (an agent-authored world.Node tree carries arbitrary Kind values, with no
+// whitelist) cannot inject live <script>. The strict CSP blocks inline
+// script in the browser, but the IR must not be a raw-HTML sink either.
+// (finding k-raw-1)
+func TestRawNodeDoesNotEmitUnescapedHTML(t *testing.T) {
+	got := render.RenderNode(world.Node{
+		Kind:  "raw",
+		Props: map[string]any{"value": "<script>alert(1)</script>"},
+	})
+	if strings.Contains(string(got), "<script>alert(1)</script>") {
+		t.Errorf("raw node leaked unescaped HTML: %q", got)
+	}
+}

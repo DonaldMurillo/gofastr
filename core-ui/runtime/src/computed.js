@@ -18,6 +18,12 @@
 
   const SEL = '[data-fui-computed]';
 
+  // Track wired elements + their dependency subscriptions so we can splice the
+  // recompute closures back out of each G._signals[dep].listeners once the
+  // element is detached by SPA navigation. Without this the closures (and the
+  // detached nodes they close over) leak across every page swap.
+  const wired = new Set();
+
   const wire = (el) => {
     if (el.__fuiComputedWired) return;
     const G = window.__gofastr;
@@ -57,8 +63,33 @@
       G._signals[d].listeners.push(recompute);
     }
 
+    // Remember the subscription so we can tear it down on SPA navigation.
+    el.__fuiComputedEntry = { deps: deps, recompute: recompute };
+    wired.add(el);
+
     // Initial compute fills the (SSR-empty) computed node on boot.
     recompute();
+  };
+
+  // Remove subscriptions for computed elements that left the document. Called
+  // on gofastr:navigate so per-page recompute listeners don't leak across swaps.
+  const teardownDetached = () => {
+    const G = window.__gofastr;
+    if (!G || !G._signals) return;
+    for (const el of Array.from(wired)) {
+      if (el.isConnected) continue;
+      const entry = el.__fuiComputedEntry;
+      wired.delete(el);
+      el.__fuiComputedWired = false;
+      el.__fuiComputedEntry = null;
+      if (!entry) continue;
+      for (const d of entry.deps) {
+        const slot = G._signals[d];
+        if (!slot || !slot.listeners) continue;
+        const i = slot.listeners.indexOf(entry.recompute);
+        if (i !== -1) slot.listeners.splice(i, 1);
+      }
+    }
   };
 
   const scan = (root) => {
@@ -72,6 +103,10 @@
   } else {
     scan(document);
   }
+
+  // On SPA navigation, tear down listeners for computed elements that left the
+  // DOM BEFORE the new page's scanner re-wires the fresh markers.
+  document.addEventListener('gofastr:navigate', teardownDetached);
 
   if (window.__gofastr) {
     window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};

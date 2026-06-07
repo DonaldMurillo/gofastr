@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -188,10 +190,16 @@ func (g *ScreenGroup) AllScreens() []*Screen {
 // the runtime knows this is a layout boundary that should be preserved
 // during sibling-screen navigation.
 func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
+	return g.RenderLayoutCtx(context.Background(), content)
+}
+
+// RenderLayoutCtx is RenderLayout with the request context threaded into the
+// group layout's chrome.
+func (g *ScreenGroup) RenderLayoutCtx(ctx context.Context, content render.HTML) render.HTML {
 	if g.layout == nil {
 		return content
 	}
-	wrapped := g.layout.Wrap(content)
+	wrapped := g.layout.WrapCtx(ctx, content)
 	// Wrap in a group marker div so the runtime can identify the boundary.
 	// The data-fui-screen-group attribute enables DOM-stable sibling nav.
 	return html.Div(html.DivConfig{
@@ -223,15 +231,22 @@ func ComposeLayouts(innermost *ScreenGroup, content render.HTML) render.HTML {
 // landmark). When false (SSG / no outer default), behavior is unchanged:
 // each group layer wraps with its own <main>.
 func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, content render.HTML, nestInner bool) render.HTML {
+	return composeLayoutsWithOverrideCtx(context.Background(), innermost, override, content, nestInner)
+}
+
+// composeLayoutsWithOverrideCtx is composeLayoutsWithOverride with the request
+// context threaded through every group layout's chrome, so context-aware
+// sidebars/headers/footers in a group chain render with the live context.
+func composeLayoutsWithOverrideCtx(ctx context.Context, innermost *ScreenGroup, override *Layout, content render.HTML, nestInner bool) render.HTML {
 	var chain []*ScreenGroup
 	for g := innermost; g != nil; g = g.parent {
 		chain = append(chain, g)
 	}
 	wrapLayout := func(l *Layout, c render.HTML) render.HTML {
 		if nestInner {
-			return l.WrapNested(c)
+			return l.WrapNestedCtx(ctx, c)
 		}
-		return l.Wrap(c)
+		return l.WrapCtx(ctx, c)
 	}
 	out := content
 	for i, g := range chain {
@@ -247,10 +262,10 @@ func composeLayoutsWithOverride(innermost *ScreenGroup, override *Layout, conten
 			out = html.Div(html.DivConfig{
 				Class:      "fui-screen-group",
 				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
-			}, g.layout.WrapNested(out))
+			}, g.layout.WrapNestedCtx(ctx, out))
 			continue
 		}
-		out = g.RenderLayout(out)
+		out = g.RenderLayoutCtx(ctx, out)
 	}
 	return out
 }

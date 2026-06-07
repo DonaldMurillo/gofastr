@@ -43,12 +43,11 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			return render.Join(children...)
 		}
 		return render.Text(s)
-	case "raw":
-		s := propString(props, "value")
-		if s == "" {
-			s = propString(props, "text")
-		}
-		return render.Raw(s)
+	// NOTE: there is intentionally no "raw" kind. The IR (world.Node) is
+	// agent-authored and untrusted — Kind is free-form with no whitelist —
+	// so a raw-HTML passthrough would be an XSS sink. A "raw" node falls
+	// through to the default branch below, which emits an escaped debug
+	// comment instead of live markup. (finding k-raw-1)
 
 	// --- structural containers -------------------------------------
 	case "div":

@@ -1942,8 +1942,9 @@
     // aria-expanded + show/hide child <ul role="group">.
     { name: 'tree',       selector: '[role="tree"]' },
     // InfiniteScroll: wrappers with the marker attribute. The module
-    // attaches an IntersectionObserver to each [data-fui-infinite-
-    // sentinel] inside and POSTs to data-fui-infinite-scroll.
+    // attaches an IntersectionObserver to each
+    // [data-fui-infinite-sentinel] inside and POSTs to
+    // data-fui-infinite-scroll.
     { name: 'infinitescroll', selector: '[data-fui-infinite-scroll]' },
     // Banner: dismissible inline-alert support. The module runs the
     // localStorage-backed hide pass for already-dismissed banners and

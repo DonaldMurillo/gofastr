@@ -780,7 +780,11 @@ func dataTableCSS(_ style.Theme) string {
    when the page itself is wide. */
 [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__scroll {
   container-type: inline-size;
-  overflow-x: visible;
+  /* Keep horizontal scroll: at container widths > 640px the table is still a
+     table and can be wider than its column — it must scroll WITHIN this
+     wrapper, not push the page. Below 640px it collapses to cards (block,
+     full-width) so there's nothing to scroll anyway. */
+  overflow-x: auto;
 }
 
 @container (max-width: 640px) {

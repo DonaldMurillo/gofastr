@@ -17,6 +17,12 @@
 
   const ANIMATE_SEL = '[data-fui-animate-signal]';
 
+  // Track wired elements + their signal subscriptions so we can splice the
+  // listener closures back out of G._signals[name].listeners once the element
+  // is detached by SPA navigation. Without this the listeners (and the
+  // detached DOM nodes they close over) accumulate across every page swap.
+  const wired = new Set();
+
   // Returns true for values that should activate the class.
   // Mirrors the runtime's toggle semantics: "false", "0", "",
   // null, undefined, and false are falsy; everything else is truthy.
@@ -58,8 +64,31 @@
     // Subscribe to future changes.
     G._signals[name].listeners.push(apply);
 
+    // Remember the subscription so we can tear it down on SPA navigation.
+    el.__fuiAnimateEntry = { name: name, apply: apply };
+    wired.add(el);
+
     // Apply current value immediately.
     apply(G._signals[name].value);
+  };
+
+  // Remove subscriptions for elements that left the document. Called on
+  // gofastr:navigate so per-page animate listeners don't leak across swaps.
+  const teardownDetached = () => {
+    const G = window.__gofastr;
+    if (!G || !G._signals) return;
+    for (const el of Array.from(wired)) {
+      if (el.isConnected) continue;
+      const entry = el.__fuiAnimateEntry;
+      wired.delete(el);
+      el.__fuiAnimateWired = false;
+      el.__fuiAnimateEntry = null;
+      if (!entry) continue;
+      const slot = G._signals[entry.name];
+      if (!slot || !slot.listeners) continue;
+      const i = slot.listeners.indexOf(entry.apply);
+      if (i !== -1) slot.listeners.splice(i, 1);
+    }
   };
 
   // Scan a root for all animate elements and wire them.
@@ -76,6 +105,10 @@
   } else {
     scan(document);
   }
+
+  // On SPA navigation, tear down listeners for elements that left the DOM
+  // BEFORE the new page's scanner re-wires the fresh markers.
+  document.addEventListener('gofastr:navigate', teardownDetached);
 
   // Register SPA rescan handler.
   if (window.__gofastr) {

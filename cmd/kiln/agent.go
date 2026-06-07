@@ -49,7 +49,10 @@ func runAgent(args []string) int {
 	port := pickPort(8765)
 	journal := filepath.Join(cwd, ".kiln.session.jsonl")
 
-	serve := exec.Command(exe, "serve", "--addr", ":"+strconv.Itoa(port), "--journal", journal)
+	// Loopback bind: the spawned serve is only ever reached via
+	// localhost (kilnURL below), and its tool API is unauthenticated, so
+	// there's no reason to expose it on all interfaces.
+	serve := exec.Command(exe, "serve", "--addr", "127.0.0.1:"+strconv.Itoa(port), "--journal", journal)
 	serve.Dir = cwd
 	serve.Stdout = os.Stderr // panel banner goes to stderr so stdout stays clean
 	serve.Stderr = os.Stderr

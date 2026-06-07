@@ -18,10 +18,14 @@ func ValidateMIME(file io.ReadSeeker, allowed []string) error {
 		return nil
 	}
 
-	// Read first 512 bytes for MIME detection
+	// Read up to the first 512 bytes for MIME detection. Use io.ReadFull
+	// rather than a single file.Read so a chunked/non-seekable reader that
+	// returns a short first Read still yields the full sniff window. A
+	// short file is fine: io.ErrUnexpectedEOF (some bytes, then EOF) and
+	// io.EOF (zero bytes) both mean "that's all there is".
 	buf := make([]byte, 512)
-	n, err := file.Read(buf)
-	if err != nil && err != io.EOF {
+	n, err := io.ReadFull(file, buf)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 		return fmt.Errorf("reading file for MIME detection: %w", err)
 	}
 

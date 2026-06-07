@@ -246,12 +246,12 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 			// their own <main> (else duplicate <main id="main-content">).
 			def := a.Router.defaultLayout
 			applyDefault := def != nil && !groupChainContainsLayout(screen.group, def)
-			wrapped = composeLayoutsWithOverride(screen.group, screen.Layout, content, applyDefault)
+			wrapped = composeLayoutsWithOverrideCtx(ctx, screen.group, screen.Layout, content, applyDefault)
 			if applyDefault {
-				wrapped = def.Wrap(wrapped)
+				wrapped = def.WrapCtx(ctx, wrapped)
 			}
 		} else if layout != nil {
-			wrapped = layout.Wrap(content)
+			wrapped = layout.WrapCtx(ctx, content)
 		} else {
 			wrapped = content
 		}

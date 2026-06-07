@@ -89,8 +89,11 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		}, render.Text("×")),
 	}
 
-	innerWrapper := render.Tag("div",
-		map[string]string{"class": cls},
+	// The wrapper is a <label> so the whole visual box (icon + padding, not just
+	// the input itself) is a click target that focuses the input — otherwise the
+	// hit area is smaller than it looks.
+	innerWrapper := render.Tag("label",
+		map[string]string{"class": cls, "for": cfg.ID},
 		inner...)
 
 	// Wrap in <form role="search"> when Action is provided.

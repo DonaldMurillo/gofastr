@@ -28,10 +28,30 @@ type binaryNode struct {
 }
 type listNode struct{ items []node }
 
+// maxDepth caps recursion through the precedence/grouping chain so a
+// pathologically deep expression (deeply nested ( or [, reachable from
+// unauthenticated add_hook input) is rejected with a validation error
+// instead of exhausting the goroutine stack.
+const maxDepth = 256
+
 type parser struct {
 	tokens []token
 	pos    int
+	depth  int
 }
+
+// enter increments the recursion depth and reports an error once the
+// configured limit is exceeded. Each grouping construct ('(' and '[')
+// calls this before recursing back into parseExpr.
+func (p *parser) enter() error {
+	p.depth++
+	if p.depth > maxDepth {
+		return fmt.Errorf("expr: expression nested too deeply (limit %d)", maxDepth)
+	}
+	return nil
+}
+
+func (p *parser) leave() { p.depth-- }
 
 func (p *parser) peek() token {
 	if p.pos >= len(p.tokens) {
@@ -69,7 +89,13 @@ func (p *parser) expectPunct(v string) error {
 
 // Pratt-style: each parse* function handles a precedence level.
 
-func (p *parser) parseExpr() (node, error) { return p.parseOr() }
+func (p *parser) parseExpr() (node, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
+	return p.parseOr()
+}
 
 func (p *parser) parseOr() (node, error) {
 	left, err := p.parseAnd()
@@ -164,6 +190,10 @@ func (p *parser) parseMul() (node, error) {
 func (p *parser) parseUnary() (node, error) {
 	t := p.peek()
 	if t.kind == tokPunct && (t.value == "!" || t.value == "-" || t.value == "+") {
+		if err := p.enter(); err != nil {
+			return nil, err
+		}
+		defer p.leave()
 		p.advance()
 		inner, err := p.parseUnary()
 		if err != nil {

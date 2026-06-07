@@ -99,7 +99,18 @@ func (l *Live) Apply(e journal.Entry) error {
 		return fmt.Errorf("kiln/live: apply to session: %w", err)
 	}
 	if _, err := l.journal.Append(e); err != nil {
-		// Session is now ahead of journal; caller may Reload.
+		// The mutation was applied to the in-memory session but never made
+		// it to the durable log — the session is now ahead of the journal.
+		// Roll it back by replaying the (unchanged) journal so in-memory
+		// state never outlives the durable record. If replay itself fails
+		// we surface both errors; the session is left as-is and the caller
+		// should treat the runtime as needing a Reload.
+		if sess, rbErr := journal.Replay(l.journal); rbErr == nil {
+			l.sess = sess
+			_ = l.rebuild()
+		} else {
+			return fmt.Errorf("kiln/live: append to journal: %w (rollback failed: %v)", err, rbErr)
+		}
 		return fmt.Errorf("kiln/live: append to journal: %w", err)
 	}
 	if err := l.rebuild(); err != nil {
