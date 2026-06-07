@@ -3,6 +3,7 @@ package island
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // IslandUpdate represents an update to push to a client.
@@ -31,7 +32,17 @@ type Manager struct {
 	islands map[string]*Island         // islandID → Island
 	clients map[string]map[string]bool // sessionID → set of islandIDs
 	streams map[string]*streamEntry    // sessionID → update stream
+
+	// dropped counts island updates discarded because a client's SSE buffer
+	// was full (slow/stalled consumer). Exposed via DroppedUpdates so the
+	// otherwise-silent loss is observable (wire it to a metric/health check).
+	dropped atomic.Int64
 }
+
+// DroppedUpdates returns the cumulative number of island updates dropped
+// because a client's SSE channel was full. A steadily climbing value means
+// consumers can't keep up (undersized buffer, stalled browsers).
+func (m *Manager) DroppedUpdates() int64 { return m.dropped.Load() }
 
 // NewManager creates a new island manager.
 func NewManager() *Manager {
@@ -105,6 +116,7 @@ func (m *Manager) Push(islandID string) error {
 		case <-entry.done:
 		default:
 			// Drop update if channel is full — client may be slow.
+			m.dropped.Add(1)
 		}
 	}
 
@@ -165,6 +177,7 @@ func (m *Manager) PushUpdate(update IslandUpdate, sessionID string) {
 		case entry.ch <- update:
 		case <-entry.done:
 		default:
+			m.dropped.Add(1)
 		}
 	}
 }

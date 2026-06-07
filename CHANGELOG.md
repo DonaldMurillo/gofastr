@@ -62,6 +62,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Island SSE drops are now observable.** When a client's island-update
+  channel is full the update is dropped (slow consumer); this was silent. The
+  manager now counts drops, exposed via `island.Manager.DroppedUpdates()` —
+  wire it to a metric/health check to detect stalled streams.
 - **`battery/cache`: bounded cache buffering.** The middleware buffered the
   entire response in memory before deciding cacheability, with no size cap — a
   pathological large response could pin unbounded memory. It now streams a
