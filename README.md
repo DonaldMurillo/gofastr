@@ -401,4 +401,7 @@ git config core.hooksPath .githooks
 
 ## License
 
-No license has been chosen yet. Until one is added, treat the code as **all rights reserved** — fine to read and learn from, not yet redistributable. A permissive license (likely MIT or Apache-2.0) will land before the first tagged release.
+GoFastr is released under the [MIT License](LICENSE) — free to use, modify, and
+distribute, including in commercial and closed-source projects, provided the
+copyright notice and license text are preserved. The software is provided "as
+is", without warranty; see [`LICENSE`](LICENSE) for the full terms.

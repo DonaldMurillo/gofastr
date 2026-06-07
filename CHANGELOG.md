@@ -9,6 +9,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **LICENSE — GoFastr is now MIT licensed.** A top-level `LICENSE` file (MIT)
+  replaces the previous "all rights reserved / no license chosen" note. The code
+  is now free to use, modify, and redistribute (including commercially) with the
+  copyright notice preserved. This unblocks adoption, vendoring, and deployment.
 - **Framework DX round-4.** Closes a focused batch from the V4 host-app feedback:
   - **`render.If(cond, html) HTML` / `render.When(cond, fn) HTML`** — inline conditional fragments. `When` is the lazy form for expensive truthy branches.
   - **`render.Classes(parts ...string) string`** — joins non-empty class strings with spaces. Pair with **`render.ClassIf(cond, name) string`** for sparse conditionals: `render.Classes("base", render.ClassIf(isActive, "active"))`. Coexists with `html.Classes(map[string]bool)` for predicate-dense cases.
