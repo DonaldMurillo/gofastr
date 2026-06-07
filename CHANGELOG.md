@@ -42,6 +42,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Scaffolded apps accept a bare `$PORT`.** `isolation.Runtime.Addr` now
+  normalizes a bare numeric port (e.g. `PORT=8088`, as Heroku/Render/Railway/
+  Cloud Run inject) to `":8088"`. Previously the generated `main.go` printed
+  `http://8088` and then died with `missing port in address` on every such PaaS.
+- **`examples/blog` runs again.** It loaded entities from a nonexistent
+  `entities/` directory (`go run ./examples/blog` failed immediately, despite
+  being the README's first step). Entities are now declared in Go (self-
+  contained, runs from any cwd; `gofastr.yml` still mirrors them for the
+  codegen path), and seeding runs after AutoMigrate so the demo data actually
+  lands. Added a boot+HTTP-200 test (`examples/blog`) — the missing test layer
+  the assessment flagged.
+
 - **kiln: free-order authoring no longer bricks the rebuild.** Adding an entity
   with a `BelongsTo` to a not-yet-created entity (e.g. `posts`→`users` before
   `users` exists) failed the live auto-migrate and left the session unable to

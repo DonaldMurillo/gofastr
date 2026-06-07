@@ -118,6 +118,19 @@ func Resolve(projectDir string) (*Runtime, error) {
 	}, nil
 }
 
+// normalizeBarePort turns a bare numeric port ("8088") into ":8088" — the form
+// http.Server.Addr expects. Anything already carrying a colon (":8080",
+// "localhost:8080", "[::1]:80") or empty is returned unchanged.
+func normalizeBarePort(addr string) string {
+	if addr == "" || strings.Contains(addr, ":") {
+		return addr
+	}
+	if _, err := strconv.Atoi(addr); err == nil {
+		return ":" + addr
+	}
+	return addr
+}
+
 // Active reports whether isolation applies to this runtime.
 func (r *Runtime) Active() bool { return r != nil && r.active }
 
@@ -129,8 +142,11 @@ func (r *Runtime) ID() string {
 	return r.id
 }
 
-// Addr returns addr with its port remapped when isolation is active.
+// Addr returns addr with its port remapped when isolation is active. It first
+// normalizes a bare numeric port to ":<port>" so a PaaS-injected $PORT (e.g.
+// "8088" from Heroku/Render/Railway/Cloud Run) is a valid http.Server address.
 func (r *Runtime) Addr(addr string) (string, error) {
+	addr = normalizeBarePort(addr)
 	if !r.Active() || addr == "" {
 		return addr, nil
 	}
