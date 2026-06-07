@@ -14,6 +14,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -902,7 +903,23 @@ func injectWidgetSSR(page string, u *url.URL) string {
 	if b.Len() == 0 {
 		return page
 	}
-	return strings.Replace(page, "</body>", b.String()+"</body>", 1)
+	return replaceChromeMarker(page, "</body>", b.String()+"</body>", "widget chrome")
+}
+
+// replaceChromeMarker replaces the first occurrence of marker in page, the way
+// the chrome-injection sites need. Unlike a bare strings.Replace, it WARNS when
+// the marker is absent instead of silently returning the page unchanged — a
+// missing <head>/</head>/</body> means a custom layout dropped a structural tag
+// the host relies on to inject the runtime, color-scheme bootstrap, SEO head,
+// and widget chrome, so the page would ship subtly broken with no signal.
+func replaceChromeMarker(page, marker, replacement, what string) string {
+	if !strings.Contains(page, marker) {
+		slog.Default().Warn("uihost: page is missing a structural marker; chrome not injected",
+			"marker", marker, "injecting", what,
+			"hint", "custom layouts must emit <head>…</head> and …</body> so the host can inject the runtime")
+		return page
+	}
+	return strings.Replace(page, marker, replacement, 1)
 }
 
 // injectChrome adds links and scripts pointing at the host's served
@@ -1182,14 +1199,14 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// the same first paint — no FOUC. Reads localStorage("gofastr.
 	// colorScheme") + prefers-color-scheme media query, sets
 	// <html data-color-scheme="dark|light">.
-	page = strings.Replace(page,
+	page = replaceChromeMarker(page,
 		"<head>",
-		`<head><script src="/__gofastr/color-scheme.js"></script>`, 1)
+		`<head><script src="/__gofastr/color-scheme.js"></script>`, "color-scheme bootstrap")
 	if headClose.Len() > 0 {
-		page = strings.Replace(page, "</head>", headClose.String()+"</head>", 1)
+		page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS)")
 	}
 	if bodyClose.Len() > 0 {
-		page = strings.Replace(page, "</body>", bodyClose.String()+"</body>", 1)
+		page = replaceChromeMarker(page, "</body>", bodyClose.String()+"</body>", "body-close scripts")
 	}
 	return page
 }

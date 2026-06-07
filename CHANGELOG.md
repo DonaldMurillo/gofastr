@@ -62,6 +62,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **UI host warns when chrome can't be injected.** The host injects the
+  runtime, color-scheme bootstrap, SEO head, and widget chrome via
+  `strings.Replace` on `<head>`/`</head>`/`</body>`. A custom layout missing one
+  of those markers made the replace a silent no-op, shipping a subtly broken
+  page. Injection now routes through a guard that logs a warning naming the
+  missing marker. Unit-tested.
 - **Island SSE drops are now observable.** When a client's island-update
   channel is full the update is dropped (slow consumer); this was silent. The
   manager now counts drops, exposed via `island.Manager.DroppedUpdates()` —
