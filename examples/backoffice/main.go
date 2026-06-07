@@ -222,6 +222,13 @@ type demoUser struct{ email string }
 
 func (u *demoUser) GetID() string { return u.email }
 
+// GetRoles makes the demo user an admin so it clears the admin battery's
+// default role gate (admin.Config.AdminRole, default "admin"). A real app
+// would derive roles from its user store; this demo treats anyone who signs
+// in as the admin. Alternatively, set admin.Config.Authorize for a custom
+// predicate.
+func (u *demoUser) GetRoles() []string { return []string{"admin"} }
+
 // demoSession reads the session cookie and puts a (non-nil) user on the
 // request context. NOT production auth — see the package doc.
 func demoSession(next http.Handler) http.Handler {
