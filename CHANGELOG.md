@@ -42,6 +42,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`App.Start` no longer leaks workers on bind failure.** A non-graceful
+  `ListenAndServe` error (port already in use being the common case) returned
+  immediately without draining, leaking every battery/cron/queue and OnStart
+  worker an earlier start phase had spawned. The bind-failure path now runs the
+  same `abort()`→`Shutdown` drain as every other start phase.
 - **Scaffolded apps accept a bare `$PORT`.** `isolation.Runtime.Addr` now
   normalizes a bare numeric port (e.g. `PORT=8088`, as Heroku/Render/Railway/
   Cloud Run inject) to `":8088"`. Previously the generated `main.go` printed

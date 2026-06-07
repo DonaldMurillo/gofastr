@@ -1388,7 +1388,10 @@ func (a *App) Start(addr string) error {
 	a.server = srv
 	a.serverMu.Unlock()
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return err
+		// Bind failure (port in use is the common case) — drain like every
+		// earlier start phase does, otherwise the batteries/cron/queue and
+		// OnStart workers spawned above leak past Start returning.
+		return abort(fmt.Errorf("listen and serve: %w", err))
 	}
 	return nil
 }
