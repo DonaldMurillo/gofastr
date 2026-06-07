@@ -32,11 +32,12 @@ const streamListThreshold = 1000
 // OFFSET (page-1)*limit. Without this, ?page=2&stream=true would re-stream
 // page 1 while reporting page 1 — silently dropping the offset.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
-	// Same owner gate the public List handler enforces. Direct callers
-	// (in-process or chained from List) must not bypass it — without
-	// this the streaming variant would happily return every row to an
-	// anonymous caller on an OwnerField entity.
-	if _, ok := ch.RequireOwner(w, r); !ok {
+	// Same owner+tenant gate the public List handler enforces. Direct
+	// callers (in-process or chained from List) must not bypass it —
+	// without this the streaming variant would happily return every row to
+	// an anonymous caller on an OwnerField entity, or every tenant's rows
+	// on a MultiTenant entity with no tenant in context.
+	if !ch.requireScope(w, r) {
 		return
 	}
 	// COUNT first so the envelope has the totals up front.

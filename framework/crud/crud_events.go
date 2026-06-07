@@ -97,6 +97,12 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 				return
 			}
 		}
+		// MultiTenant entities require a tenant in context: otherwise the
+		// per-event tenant filter below (tenantID != "") no-ops and the
+		// subscriber receives every tenant's writes in real time.
+		if !ch.RequireTenant(w, r) {
+			return
+		}
 
 		sse := stream.NewSSEWriter(w)
 		sse.WriteComment("subscribed " + ch.Entity.GetName())

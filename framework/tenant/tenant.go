@@ -13,6 +13,30 @@ import (
 // used by the framework-level tenant helpers.
 type tenantIDKey struct{}
 
+// crossTenantKey marks a context as deliberately cross-tenant. It must ONLY
+// ever be set server-side (admin routes, background jobs) — never derived from
+// a client-supplied header — or it becomes a tenant-isolation bypass.
+type crossTenantKey struct{}
+
+// AllowCrossTenant marks ctx as permitted to operate without a tenant id.
+// Multi-tenant CRUD reads then span every tenant (the scope helpers no-op on
+// an empty tenant id) and the secure-by-default RequireTenant gate stops
+// refusing the request.
+//
+// SECURITY: use ONLY on deliberately-admin routes, and gate those routes with
+// your own permission check — there is no built-in role check. Never set this
+// from a request header or any other client-controlled value.
+func AllowCrossTenant(ctx context.Context) context.Context {
+	return context.WithValue(ctx, crossTenantKey{}, true)
+}
+
+// IsCrossTenant reports whether ctx was explicitly marked for cross-tenant
+// access via AllowCrossTenant.
+func IsCrossTenant(ctx context.Context) bool {
+	v, _ := ctx.Value(crossTenantKey{}).(bool)
+	return v
+}
+
 // TenantConfig configures multi-tenancy behavior for an entity.
 type TenantConfig struct {
 	// Field is the database column name used for tenant scoping.

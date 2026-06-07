@@ -7,6 +7,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Security
+
+- **BREAKING — multi-tenant CRUD is now fail-CLOSED over HTTP.** A
+  `MultiTenant` entity served with no tenant id in the request context is
+  refused with `401` on every operation (list/get/create/update/delete, batch,
+  stream, SSE), matching the in-process CRUD API which already failed closed.
+  Previously the HTTP path failed *open* — an empty tenant id disabled filtering
+  and returned/mutated every tenant's rows, a silent cross-tenant data leak.
+  Deliberate cross-tenant access (admin tooling) must now opt in explicitly and
+  server-side via the new **`tenant.AllowCrossTenant(ctx)`** marker (never from
+  a client header). New seam: **`CrudHandler.RequireTenant(w, r)`**, the HTTP
+  mirror of `RequireOwner`, run alongside the owner gate through a single
+  `requireScope` chokepoint. Docs: `framework/docs/content/multi-tenant.md`.
+
 ### Added
 
 - **LICENSE — GoFastr is now MIT licensed.** A top-level `LICENSE` file (MIT)

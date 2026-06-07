@@ -168,23 +168,10 @@ func TestTenant_TenantOwnerComboEnforced(t *testing.T) {
 		"same-owner cross-tenant data leaked when both tenant+owner scoping active")
 }
 
-// TestTenant_ListWithoutTenantContextIsFailOpen documents the ACTUAL
-// runtime contract: when the tenant context is absent, an empty tenant
-// ID disables filtering and List returns every tenant's rows
-// (multi-tenant.md → "Cross-tenant access": "An empty tenant ID disables
-// filtering"). This is fail-OPEN. The previous version of this test
-// implied a fail-CLOSED guarantee that the framework does not provide,
-// and passed only vacuously: it omitted the entity Table name, so
-// entity.Define("") produced malformed SQL → HTTP 500, and the
-// rr.Code==200 branch never ran. With a real Table the real query path
-// runs and the documented fail-open behavior is exercised.
-//
-// SECURITY NOTE: callers must clear the tenant context only on
-// deliberately-admin/cross-tenant routes. Composing RequirePermission
-// with cross-tenant reads is the caller's responsibility — there is no
-// built-in role check (multi-tenant.md).
-func TestTenant_ListWithoutTenantContextIsFailOpen(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+// tenantItemsConfig is the shared MultiTenant entity used by the
+// secure-by-default tenant-gate tests below.
+func tenantItemsConfig() entity.EntityConfig {
+	return entity.EntityConfig{
 		Name:  "items",
 		Table: "items",
 		Fields: []schema.Field{
@@ -192,8 +179,26 @@ func TestTenant_ListWithoutTenantContextIsFailOpen(t *testing.T) {
 			{Name: "name", Type: schema.String},
 		},
 		MultiTenant: true,
-	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
+	}.WithTimestamps(false)
+}
 
+const tenantItemsDDL = `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`
+
+// TestTenant_ListWithoutContextIsRejected pins the secure-by-default
+// contract: a MultiTenant entity listed with NO tenant id in context is
+// refused with 401 rather than leaking every tenant's rows. This replaces an
+// earlier test that pinned the fail-OPEN behaviour (empty tenant disables
+// filtering → returns all rows). That was a silent cross-tenant data leak: an
+// unauthenticated request, or any code path that simply forgot to set the
+// tenant context, read across every tenant. The in-process CRUD API
+// (crud_api.go) already failed closed here; the HTTP path now matches via the
+// RequireTenant gate (BREAKING — see CHANGELOG / multi-tenant.md).
+//
+// Deliberate cross-tenant access (admin tooling) is still possible, but must
+// opt in explicitly server-side via tenant.AllowCrossTenant — see
+// TestTenant_CrossTenantOptInAllowsAccess.
+func TestTenant_ListWithoutContextIsRejected(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, tenantItemsConfig(), tenantItemsDDL)
 	seedRows(t, db, "items", []map[string]any{
 		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
 		{"id": "item-b", "tenant_id": "tenant-B", "name": "B data"},
@@ -203,31 +208,16 @@ func TestTenant_ListWithoutTenantContextIsFailOpen(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("list without tenant context returned %d, want 200 (fail-open). body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("list without tenant context = %d, want 401. body=%s", rr.Code, rr.Body.String())
 	}
-	resp := decodeListResponse(t, rr.Body.String())
-	if resp.Total != 2 || len(resp.Data) != 2 {
-		t.Fatalf("fail-open contract: expected all 2 rows across tenants with empty tenant context, got total=%d len=%d", resp.Total, len(resp.Data))
+	if strings.Contains(rr.Body.String(), "data") && strings.Contains(rr.Body.String(), "tenant-") {
+		t.Fatalf("rejected list still leaked tenant rows: %s", rr.Body.String())
 	}
 }
 
-// TestTenant_GetWithoutTenantContextIsFailOpen documents that Get with
-// an absent tenant context reads the row unfiltered (fail-open). See the
-// List variant above for why the old "cannot read" assertion was both
-// wrong (contradicts multi-tenant.md) and vacuous (missing Table name →
-// 500 short-circuit).
-func TestTenant_GetWithoutTenantContextIsFailOpen(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "items",
-		Table: "items",
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
-
+func TestTenant_GetWithoutContextIsRejected(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, tenantItemsConfig(), tenantItemsDDL)
 	seedRows(t, db, "items", []map[string]any{
 		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
 	})
@@ -237,27 +227,16 @@ func TestTenant_GetWithoutTenantContextIsFailOpen(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.Get()(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("get without tenant context returned %d, want 200 (fail-open). body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("get without tenant context = %d, want 401. body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "A data") {
-		t.Fatalf("fail-open contract: expected tenant-A row to be readable with empty tenant context. body=%s", rr.Body.String())
+	if strings.Contains(rr.Body.String(), "A data") {
+		t.Fatalf("rejected get still leaked the row: %s", rr.Body.String())
 	}
 }
 
-// TestTenant_UpdateWithoutTenantContextIsFailOpen documents that Update
-// with an absent tenant context modifies the row unfiltered (fail-open).
-func TestTenant_UpdateWithoutTenantContextIsFailOpen(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "items",
-		Table: "items",
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
-
+func TestTenant_UpdateWithoutContextIsRejected(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, tenantItemsConfig(), tenantItemsDDL)
 	seedRows(t, db, "items", []map[string]any{
 		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
 	})
@@ -271,31 +250,20 @@ func TestTenant_UpdateWithoutTenantContextIsFailOpen(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.Update()(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("update without tenant context returned %d, want 200 (fail-open). body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("update without tenant context = %d, want 401. body=%s", rr.Code, rr.Body.String())
 	}
 	var name string
 	if err := db.QueryRow(`SELECT name FROM items WHERE id = ?`, "item-a").Scan(&name); err != nil {
 		t.Fatal(err)
 	}
-	if name != "changed by empty tenant" {
-		t.Fatalf("fail-open contract: expected row mutated to %q with empty tenant context, got %q", "changed by empty tenant", name)
+	if name != "A data" {
+		t.Fatalf("rejected cross-tenant update still mutated row to %q", name)
 	}
 }
 
-// TestTenant_DeleteWithoutTenantContextIsFailOpen documents that Delete
-// with an absent tenant context removes the row unfiltered (fail-open).
-func TestTenant_DeleteWithoutTenantContextIsFailOpen(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
-		Name:  "items",
-		Table: "items",
-		Fields: []schema.Field{
-			{Name: "tenant_id", Type: schema.String},
-			{Name: "name", Type: schema.String},
-		},
-		MultiTenant: true,
-	}.WithTimestamps(false), `CREATE TABLE items (id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT)`)
-
+func TestTenant_DeleteWithoutContextIsRejected(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, tenantItemsConfig(), tenantItemsDDL)
 	seedRows(t, db, "items", []map[string]any{
 		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
 	})
@@ -305,15 +273,41 @@ func TestTenant_DeleteWithoutTenantContextIsFailOpen(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.Delete()(rr, req)
 
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("delete without tenant context returned %d, want 204 (fail-open). body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("delete without tenant context = %d, want 401. body=%s", rr.Code, rr.Body.String())
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM items WHERE id = ?`, "item-a").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 0 {
-		t.Fatalf("fail-open contract: expected row deleted with empty tenant context, still present (count=%d)", count)
+	if count != 1 {
+		t.Fatalf("rejected cross-tenant delete still removed row (count=%d)", count)
+	}
+}
+
+// TestTenant_CrossTenantOptInAllowsAccess confirms the documented admin escape
+// hatch: with tenant.AllowCrossTenant on the context, a MultiTenant List with
+// no tenant id is permitted and spans every tenant (the scope helpers no-op on
+// an empty tenant id). This is the deliberate, server-side-only opt-in that
+// replaces the old "empty context silently disables filtering" behaviour.
+func TestTenant_CrossTenantOptInAllowsAccess(t *testing.T) {
+	ch, db := setupSecurityTestHandler(t, tenantItemsConfig(), tenantItemsDDL)
+	seedRows(t, db, "items", []map[string]any{
+		{"id": "item-a", "tenant_id": "tenant-A", "name": "A data"},
+		{"id": "item-b", "tenant_id": "tenant-B", "name": "B data"},
+	})
+
+	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/items"})
+	req = req.WithContext(tenant.AllowCrossTenant(req.Context()))
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("cross-tenant List = %d, want 200. body=%s", rr.Code, rr.Body.String())
+	}
+	resp := decodeListResponse(t, rr.Body.String())
+	if resp.Total != 2 || len(resp.Data) != 2 {
+		t.Fatalf("cross-tenant List: want all 2 rows, got total=%d len=%d", resp.Total, len(resp.Data))
 	}
 }
 

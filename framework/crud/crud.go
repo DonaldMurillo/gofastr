@@ -321,7 +321,7 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 // AfterList receives the fetched results and may mutate them in place.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		ctx := r.Context()
@@ -504,7 +504,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 // (redact, transform).
 func (ch *CrudHandler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		ctx := r.Context()
@@ -592,7 +592,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
 		}
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		limitJSONBody(w, r)
@@ -637,7 +637,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
 		}
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		id := r.PathValue("id")
@@ -683,7 +683,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 // (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		id := r.PathValue("id")

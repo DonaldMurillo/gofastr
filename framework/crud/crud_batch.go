@@ -121,7 +121,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
 		}
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		limitJSONBody(w, r)
@@ -191,7 +191,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
 		}
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		limitJSONBody(w, r)
@@ -270,7 +270,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
 		}
-		if _, ok := ch.RequireOwner(w, r); !ok {
+		if !ch.requireScope(w, r) {
 			return
 		}
 		limitJSONBody(w, r)

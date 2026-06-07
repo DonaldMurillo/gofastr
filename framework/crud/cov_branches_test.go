@@ -63,13 +63,16 @@ func TestCreate_TenantMissing(t *testing.T) {
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
-	// HTTP create with no tenant in ctx → 400 tenantMissing.
+	// HTTP create with no tenant in ctx → 401: the secure-by-default
+	// RequireTenant gate refuses the request before the create-specific
+	// orphan guard (which would otherwise 400). Either way the row is
+	// never written.
 	req := httptest.NewRequest("POST", "/mt2", strings.NewReader(`{"body":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("tenant-missing create = %d, want 400", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("tenant-missing create = %d, want 401", rec.Code)
 	}
 }
 

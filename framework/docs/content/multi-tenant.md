@@ -91,18 +91,36 @@ while still writing scoped — handy for support/admin tooling.
 
 ## Cross-tenant access
 
-An empty tenant ID disables filtering. Two patterns:
+**Secure by default (since the tenant-gate change).** A `MultiTenant`
+entity served over HTTP with **no tenant id in the request context is
+refused with `401`** — on every operation (list, get, create, update,
+delete, batch, stream, SSE) and through the in-process CRUD API. A
+missing tenant context can no longer silently return or mutate every
+tenant's rows.
 
-1. **Admin user with no tenant context** — `TenantMiddleware` only
-   sets the value when the header is present. Admin routes call
-   without the header to see across tenants.
-2. **Explicit `WithoutTenant`** — write your own middleware that
-   inspects user roles and clears the tenant context for cross-tenant
-   reads.
+> **BREAKING:** earlier versions failed *open* — an empty tenant id
+> disabled filtering and returned all tenants' rows. If you relied on
+> "admin routes just omit the header to see across tenants", you must
+> now opt in explicitly (below). Auto-scope by tenant id is unchanged
+> for the normal request path.
+
+To read or write across tenants deliberately (admin tooling), mark the
+context with `tenant.AllowCrossTenant` — **server-side only**, never
+from a client-controlled header:
+
+```go
+// inside an admin-gated handler / middleware, AFTER your own role check:
+ctx := tenant.AllowCrossTenant(r.Context())
+r = r.WithContext(ctx)
+// CRUD on this request now spans every tenant (scope helpers no-op on
+// the empty tenant id) instead of being refused with 401.
+```
 
 There is no built-in role check linking permissions to tenant scope.
-Compose with `RequirePermission` to gate cross-tenant access on the
-right role.
+`AllowCrossTenant` only lifts the tenant *requirement*; you must still
+gate the route with `RequirePermission` (or equivalent) so only the
+right role can reach it. Creating a row while cross-tenant with no
+tenant id is still refused — there's no tenant to stamp it with.
 
 ## Schema implications
 
@@ -126,8 +144,10 @@ every read.
 - **Setting the tenant from a request body field.** Trivially
   spoofable. Use a signed header, JWT claim, or session lookup.
 - **Forgetting `TenantMiddleware`.** Auto-scope only fires when the
-  context has a tenant — without the middleware, every request looks
-  like cross-tenant access.
+  context has a tenant — without the middleware every request now gets a
+  `401` (secure by default), not silent cross-tenant access. Mount the
+  middleware, or set `tenant.AllowCrossTenant` deliberately on admin
+  routes.
 - **Cross-tenant joins via `?include=`.** If both parent and child
   are multi-tenant, includes scope on the parent's tenant only.
   Non-multi-tenant child entities are returned unfiltered — model

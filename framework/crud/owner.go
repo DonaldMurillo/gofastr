@@ -99,7 +99,7 @@ func (ch *CrudHandler) requireTenantContext(ctx context.Context) error {
 	if !ch.Entity.Config.MultiTenant {
 		return nil
 	}
-	if tenantIDFromCtx(ctx) == "" {
+	if tenantIDFromCtx(ctx) == "" && !tenant.IsCrossTenant(ctx) {
 		return errTenantRequired
 	}
 	return nil
@@ -139,4 +139,42 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 		return nil, false
 	}
 	return id, true
+}
+
+// requireScope runs every secure-by-default access gate for an HTTP request in
+// one place: owner (OwnerField entities) and tenant (MultiTenant entities). It
+// returns false after writing the appropriate 401 when any gate fails, so
+// handlers can guard with `if !ch.requireScope(w, r) { return }`. Keeping both
+// gates behind a single chokepoint guarantees a new handler can't accidentally
+// enforce one scope but forget the other.
+func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request) bool {
+	if _, ok := ch.RequireOwner(w, r); !ok {
+		return false
+	}
+	return ch.RequireTenant(w, r)
+}
+
+// RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.
+// ok=true means: either the entity is not MultiTenant, or a tenant id is
+// present in the request context. ok=false means the entity is MultiTenant but
+// the request carries no tenant id — the caller MUST refuse the request. Writes
+// 401 to w and returns ok=false in that case so handlers can
+// `if !ch.RequireTenant(w, r) { return }`.
+//
+// This is the secure-by-default seam matching requireTenantContext (the
+// in-process mirror). Without it, ApplyTenantScope* silently no-op when no
+// tenant is in context, leaking every tenant's rows on read and permitting
+// cross-tenant update/delete-by-id. Hosts that genuinely need cross-tenant
+// access (admin tooling) must set a tenant id deliberately rather than rely on
+// an empty context.
+func (ch *CrudHandler) RequireTenant(w http.ResponseWriter, r *http.Request) (ok bool) {
+	if !ch.Entity.Config.MultiTenant {
+		return true
+	}
+	ctx := r.Context()
+	if tenantIDFromCtx(ctx) == "" && !tenant.IsCrossTenant(ctx) {
+		writeJSONError(w, http.StatusUnauthorized, "tenant context required")
+		return false
+	}
+	return true
 }
