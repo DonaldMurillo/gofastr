@@ -55,6 +55,15 @@ type AppConfig struct {
 	DebugEndpoints bool          // opt-in for /.debug/* endpoints
 	NoLLMMD        bool          // disable auto-generated /llm.md entity docs
 
+	// PublicOpenAPI serves /openapi.json without the auth gate. By default
+	// the spec is auth-gated (it enumerates every route), so a minimal app
+	// returns 401 there — which surprised users following the quickstart
+	// curl. Set true (or use WithPublicOpenAPI) when the spec is meant to be
+	// public, e.g. a docs site or an internal API behind a network boundary.
+	// The Swagger UI at /api/docs/ is always reachable; this only governs
+	// the raw spec JSON.
+	PublicOpenAPI bool
+
 	// APIPrefix mounts every auto-CRUD entity route (list/get/create/update/
 	// delete + _batch + _events + per-entity llm.md) under this path — e.g.
 	// "/api" serves GET /api/posts instead of GET /posts. Empty (default)
@@ -172,6 +181,15 @@ func WithConfig(config AppConfig) AppOption {
 func WithAPIPrefix(prefix string) AppOption {
 	return func(a *App) {
 		a.Config.APIPrefix = prefix
+	}
+}
+
+// WithPublicOpenAPI serves /openapi.json without the auth gate. Equivalent to
+// setting AppConfig.PublicOpenAPI. Use when the spec is meant to be public
+// (docs sites, internal APIs behind a network boundary).
+func WithPublicOpenAPI() AppOption {
+	return func(a *App) {
+		a.Config.PublicOpenAPI = true
 	}
 }
 
@@ -1214,7 +1232,11 @@ func (a *App) Start(addr string) error {
 			appName = "GoFastr API"
 		}
 		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0", a.apiPrefix())
-		a.router.Get("/openapi.json", coreoa.Handler(spec))
+		if a.Config.PublicOpenAPI {
+			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
+		} else {
+			a.router.Get("/openapi.json", coreoa.Handler(spec))
+		}
 		a.router.Get("/api/docs/", coreoa.SwaggerUIHandler(spec, "/api/docs"))
 
 		// API entity index under /api/ alongside /api/docs/ (Swagger).

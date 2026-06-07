@@ -109,6 +109,9 @@ Open <http://localhost:8080>, then try:
 ```bash
 curl http://localhost:8080/posts
 curl http://localhost:8080/posts/search?q=gofastr
+# /openapi.json is auth-gated by default (it enumerates every route).
+# Browse it via Swagger UI at /api/docs/, or expose the raw spec with
+# framework.WithPublicOpenAPI() and then:
 curl http://localhost:8080/openapi.json | jq .info     # auto-generated spec
 ```
 

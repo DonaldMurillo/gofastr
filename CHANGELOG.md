@@ -68,6 +68,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`framework.WithPublicOpenAPI()` / `AppConfig.PublicOpenAPI`.** Serves
+  `/openapi.json` without the auth gate. The spec is auth-gated by default (it
+  enumerates every route), so a minimal app returned `401` there — surprising
+  anyone following the quickstart `curl`. Swagger UI at `/api/docs/` is
+  unaffected. README quickstart updated to call this out.
 - **LICENSE — GoFastr is now MIT licensed.** A top-level `LICENSE` file (MIT)
   replaces the previous "all rights reserved / no license chosen" note. The code
   is now free to use, modify, and redistribute (including commercially) with the
