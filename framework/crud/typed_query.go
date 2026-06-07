@@ -86,8 +86,26 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 	return qb
 }
 
+// requireTenantCtx enforces tenant isolation for typed-repo queries: a
+// MultiTenant entity must not be queried UNSCOPED on a context carrying no
+// tenant id, because ApplyTenantScope silently no-ops on an empty tenant and
+// the query would span every tenant (a cross-tenant data leak). Honors
+// tenant.AllowCrossTenant for deliberate admin access.
+//
+// Note: owner scope is deliberately NOT gated here — typed repos are trusted
+// in-process code and an owner-less caller (admin/system) legitimately reads
+// across owners (see TestTypedQuery_AdminCallerWithoutOwnerSeesAll). Tenant is
+// a hard isolation boundary; owner is a softer scope-to-me. The HTTP layer
+// still gates owner via RequireOwner.
+func (q *TypedQuery[T]) requireTenantCtx(ctx context.Context) error {
+	return q.handler.requireTenantContext(ctx)
+}
+
 // Find executes the query and decodes results into []*T.
 func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
+	if err := q.requireTenantCtx(ctx); err != nil {
+		return nil, err
+	}
 	qb := q.buildSelect(ctx)
 	sqlStr, args := qb.Build()
 	rows, err := q.handler.DB.QueryContext(ctx, sqlStr, args...)
@@ -141,6 +159,9 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 // Count returns the number of rows matching the current filters. Ignores
 // limit/offset/order — pure SELECT COUNT(*) over the same WHERE predicate.
 func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
+	if err := q.requireTenantCtx(ctx); err != nil {
+		return 0, err
+	}
 	cb := query.Count(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
 		cb.Where(c.SQL(), c.Args()...)
@@ -222,6 +243,9 @@ func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
 // type-safe updates, marshal a partial struct with framework.MarshalEntity
 // and pass the resulting map.
 func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (int, error) {
+	if err := q.requireTenantCtx(ctx); err != nil {
+		return 0, err
+	}
 	if len(fields) == 0 {
 		return 0, fmt.Errorf("UpdateAll: no fields to set")
 	}
@@ -258,6 +282,9 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 // DeleteAll removes every row matching the current Where chain. For
 // SoftDelete entities, sets deleted_at instead of issuing a DELETE.
 func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
+	if err := q.requireTenantCtx(ctx); err != nil {
+		return 0, err
+	}
 	req := syntheticRequest(ctx, "DELETE", "/")
 	if q.handler.Entity.Config.SoftDelete {
 		ub := query.Update(q.handler.Entity.GetTable()).
