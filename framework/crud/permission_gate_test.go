@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
 // setupPermissionedHandler builds a CrudHandler over a "docs" table whose
@@ -114,5 +116,51 @@ func TestPermissionGate_CreateAllowedWithWrite(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("Create with docs:write = %d, want 201. body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestPermissionGate_EventsDeniedNoPerm pins the SSE RBAC fix: the live
+// _events feed is a read surface and must enforce Access.Read like List/Get.
+// Without the gate, a user lacking docs:read gets 403 on GET /docs but a live
+// stream of all writes on /docs/_events. Uses an already-cancelled context so
+// that if the gate were bypassed the SSE loop exits immediately (no hang)
+// rather than the test passing by timeout.
+func TestPermissionGate_EventsDeniedNoPerm(t *testing.T) {
+	ch, _ := setupPermissionedHandler(t)
+	ch.Events = event.NewEventBus()
+
+	// Authenticated (clears the baseline auth check) but WITHOUT docs:read, so
+	// the request reaches the permission gate. Cancelled ctx so a bypassed
+	// gate exits the SSE loop immediately rather than hanging the test.
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/docs/_events", nil), "u1")
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	rec := httptest.NewRecorder()
+	ch.EventStream()(rec, req.WithContext(ctx))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("_events as authenticated-no-perm = %d, want 403. body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "subscribed") {
+		t.Errorf("denied _events still opened the stream: %s", rec.Body.String())
+	}
+}
+
+// TestPermissionGate_EventsAllowedWithPerm confirms the gate lets a permitted
+// reader through (stream opens; cancelled ctx ends it promptly).
+func TestPermissionGate_EventsAllowedWithPerm(t *testing.T) {
+	ch, _ := setupPermissionedHandler(t)
+	ch.Events = event.NewEventBus()
+
+	// Authenticated AND holding docs:read. grantReq installs policy+roles;
+	// withTestUser adds the handler user for the baseline check.
+	req := grantReq(withTestUser(httptest.NewRequest(http.MethodGet, "/api/docs/_events", nil), "u1"), "docs:read")
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	rec := httptest.NewRecorder()
+	ch.EventStream()(rec, req.WithContext(ctx))
+
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("_events with docs:read = 403, want stream opened. body=%s", rec.Body.String())
 	}
 }

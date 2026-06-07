@@ -103,6 +103,13 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		if !ch.RequireTenant(w, r) {
 			return
 		}
+		// The live feed is a READ surface — it streams every create/update/
+		// delete. Gate it with the same Access.Read permission as List/Get,
+		// or an authenticated user lacking docs:read could subscribe here for
+		// a real-time read of all writes despite 403 on the static endpoints.
+		if !ch.requirePermission(w, r, opRead) {
+			return
+		}
 
 		sse := stream.NewSSEWriter(w)
 		sse.WriteComment("subscribed " + ch.Entity.GetName())

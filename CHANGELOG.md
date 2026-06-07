@@ -9,6 +9,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Security
 
+- **BREAKING — typed-repo queries are now tenant-fail-closed.** A re-audit found
+  `Repo.Query().Find/First/Count/Exists/UpdateAll/DeleteAll` (the generated
+  typed-query builder) only applied `ApplyTenantScope` — which no-ops on an empty
+  tenant — so on a `MultiTenant` entity a tenant-less context read/mutated across
+  every tenant. The in-process `crud_api.go` already gated this; the typed-query
+  path slipped. Now gated via `requireTenantContext` (honors
+  `tenant.AllowCrossTenant`). Owner scope stays permissive for typed repos by
+  design (trusted in-process; admin reads across owners).
+- **The SSE `_events` live feed now enforces `Access.Read`.** The real-time feed
+  is a read surface but skipped the per-op RBAC gate, so an authenticated user
+  without the read permission could subscribe for a live stream of all writes
+  despite `403` on the static read endpoints. `EventStream` now runs
+  `requirePermission(opRead)` alongside the owner/tenant gates.
 - **kiln: same-origin guard on the unauthenticated tool API.** `POST
   /kiln/tool/{name}`, `/kiln/agent`, and `/mcp` mutate the in-memory world with
   no auth (loopback bind is the primary control). A new origin guard refuses
