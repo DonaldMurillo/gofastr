@@ -68,6 +68,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **`App.TryEntity(name, config) error`** — the error-returning variant of
+  `App.Entity`. `Entity` panics on misconfiguration (fail-fast for hand-written
+  declarations); `TryEntity` returns the error instead and recovers panics from
+  deeper validation, so a single bad config (e.g. an AI-authored field, a
+  dynamic schema) can't crash the process. `Entity` is now a thin panicking
+  wrapper over `TryEntity`. Docs: `framework/docs/content/entity-declarations.md`.
 - **`framework.WithPublicOpenAPI()` / `AppConfig.PublicOpenAPI`.** Serves
   `/openapi.json` without the auth gate. The spec is auth-gated by default (it
   enumerates every route), so a minimal app returned `401` there — surprising

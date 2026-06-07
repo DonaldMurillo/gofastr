@@ -54,6 +54,24 @@ app.RegisterEntities(map[string]entity.EntityConfig{
 })
 ```
 
+### `Entity` vs `TryEntity`
+
+`app.Entity(name, config)` **panics** on a misconfiguration — fail-fast,
+ideal for static hand-written declarations where a bad config is a bug
+you want surfaced immediately. When the config is generated or untrusted
+(an AI-authored field, a dynamic schema, a user-supplied declaration) and
+one bad entity should not crash the process, use `TryEntity`, which
+returns the error instead (and recovers panics from deeper validation):
+
+```go
+if err := app.TryEntity(name, cfg); err != nil {
+    log.Printf("skipping invalid entity %q: %v", name, err)
+    continue
+}
+```
+
+`Entity` is a thin panicking wrapper over `TryEntity`.
+
 ## Seeding
 
 `EntityConfig.Seed` runs once per entity after `AutoMigrate` creates the

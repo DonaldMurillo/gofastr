@@ -629,13 +629,35 @@ func NewUIHostApp(host Mountable, opts ...AppOption) *App {
 }
 
 // Entity registers an entity with the given name and configuration.
-// Returns the App for fluent chaining.
+// Returns the App for fluent chaining. Panics on any misconfiguration —
+// convenient for static, hand-written declarations where a bad config is a
+// programming error you want to fail fast on. For generated or untrusted
+// configs (e.g. an AI-authored field, a dynamic schema) where one bad entity
+// should not crash the process, use TryEntity, which returns the error.
 func (a *App) Entity(name string, config entity.EntityConfig) *App {
+	if err := a.TryEntity(name, config); err != nil {
+		panic("framework: " + err.Error())
+	}
+	return a
+}
+
+// TryEntity is the error-returning variant of Entity: it registers an entity
+// and returns an error on any misconfiguration instead of panicking. It also
+// recovers panics from deeper validation (e.g. an invalid TenantField) and
+// converts them to errors, so a single bad config can never take down the
+// process — the property an agent-driven authoring loop needs.
+func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("entity %q: %v", name, r)
+		}
+	}()
+
 	// Registration-time validation: SeedFS without SeedPath is a
 	// misconfiguration that would otherwise silently mark the entity
 	// as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
-		panic(fmt.Sprintf("framework: entity %q has SeedFS set but SeedPath empty — point SeedPath at a file within the FS or unset SeedFS", name))
+		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty — point SeedPath at a file within the FS or unset SeedFS", name)
 	}
 
 	e := entity.Define(name, config)
@@ -645,7 +667,7 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	}
 
 	if err := a.Registry.Register(e); err != nil {
-		panic(fmt.Sprintf("framework: failed to register entity %q: %v", name, err))
+		return fmt.Errorf("failed to register entity %q: %w", name, err)
 	}
 
 	// Auto-register CRUD routes.
@@ -655,7 +677,7 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	// router so they share its middleware chain (auth, recovery, etc.).
 	crudEnabled := a.DB != nil && (config.CRUD == nil || *config.CRUD)
 	if config.MCP && a.DB != nil && config.CRUD != nil && !*config.CRUD {
-		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name))
+		return fmt.Errorf("entity %q has MCP=true with CRUD=false — MCP CRUD tools require the HTTP routes to be registered", name)
 	}
 
 	var crudHandler *crud.CrudHandler
@@ -674,17 +696,17 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 
 	if config.MCP && a.DB != nil {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
-			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q: %v", name, err))
+			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}
 	}
 
 	if len(config.Endpoints) > 0 {
 		if err := a.registerEntityEndpoints(e, config.Endpoints); err != nil {
-			panic(fmt.Sprintf("framework: failed to register endpoints for entity %q: %v", name, err))
+			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
 
-	return a
+	return nil
 }
 
 // CrudHandler returns a fully-wired in-process CRUD handler for a registered
