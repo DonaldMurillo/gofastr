@@ -52,9 +52,18 @@ app.Entity("posts", framework.EntityConfig{
 Each blank field leaves that operation un-gated by RBAC (owner and tenant
 scoping still apply). When a field is set, auto-CRUD refuses a request
 whose context lacks the permission with **403** — on List, Get, Create,
-Update, Delete, and the batch/stream variants. The roles + policy must be
-in the request context first; mount `framework.AccessMiddleware` (above)
-ahead of the CRUD routes.
+Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
+roles + policy must be in the request context first; mount
+`framework.AccessMiddleware` (above) ahead of the CRUD routes.
+
+> **Scope: HTTP only.** `EntityConfig.Access` gates the HTTP CRUD surface.
+> The **in-process** APIs — `CrudHandler.CreateOne/UpdateOne/DeleteOne/
+> GetOne/ListAll/UpsertOne` and the generated typed repo (`Repo.Query()…`)
+> — are trusted Go code you call yourself; they enforce **owner and tenant
+> scope** (tenant fail-closed) but **not** per-op permissions. Apply your
+> own authorization before calling them from a handler. (Tenant isolation
+> is a hard boundary and is enforced everywhere; per-op RBAC is an
+> HTTP-request concept.)
 
 > Before this existed, exposing an entity granted **every authenticated
 > user full CRUD** unless you hand-composed route-group middleware.

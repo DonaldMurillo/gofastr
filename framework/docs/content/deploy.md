@@ -15,6 +15,12 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o app ./
 ./app                 # listens on :8080 (or $PORT)
 ```
 
+> **Go version.** `go.mod` declares `go 1.26`. The framework core only needs
+> Go 1.24 (generic type aliases); the 1.26 floor comes from the optional
+> `battery/print/chromepdf` PDF dependency (`chromedp/cdproto`). If you don't
+> use that battery, an older Go works in practice — but the declared floor is
+> what the toolchain enforces.
+
 > **SQLite vs Postgres.** The bundled `gofastr` CLI uses SQLite. For a
 > Postgres deployment, import a Postgres driver in your app and pass a
 > `*sql.DB` via `framework.WithDB`. `CGO_ENABLED=0` works with the pure-Go

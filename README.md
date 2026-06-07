@@ -4,7 +4,9 @@
 
 GoFastr is an experimental framework that treats AI agents as first-class authors of web applications. You describe your domain in JSON or Go, and the framework generates everything around it — database schema, REST endpoints, OpenAPI spec, MCP tool surface, and admin-grade UI primitives — without giving up `database/sql`, `net/http`, or compile-time safety.
 
-> **Status:** pre-alpha research. APIs change. Use it to learn, not to ship customer code.
+> **Status:** early / `v0.x` — MIT-licensed and usable, but the API may change
+> between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
+> mark the stability promise. Ship at your own risk until then.
 
 **The promise:** opinionated input, boring output, small runtime, easy escape
 hatches. You write a typed declaration; the framework emits plain Go you can

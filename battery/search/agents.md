@@ -15,12 +15,14 @@ records containing X", autocomplete, query, indexing.
 idx := search.NewMemory()
 _ = idx.Index(ctx, search.Document{
     ID:     "post-42",
-    Fields: map[string]string{"title": "Hello", "body": "world"},
-    Boost:  1.0,
+    Type:   "posts",
+    Text:   "Hello world",
+    Fields: map[string]any{"status": "published"},
 })
 results, _ := idx.Search(ctx, search.Query{
-    Text:   "hello world",
-    Limit:  20,
+    Text:  "hello world",
+    Type:  "posts",
+    Limit: 20,
 })
 ```
 
