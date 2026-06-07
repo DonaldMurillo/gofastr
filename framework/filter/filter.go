@@ -38,12 +38,6 @@ func escapeLikePattern(v string) string {
 	return "%" + likeEscapeReplacer.Replace(v) + "%"
 }
 
-// EscapeLikePattern is the exported form of escapeLikePattern for other
-// packages (e.g. nested relation filters in framework/crud) that build LIKE
-// fragments and must escape caller-supplied wildcards identically. Pair the
-// result with an `ESCAPE '\'` clause on the LIKE fragment.
-func EscapeLikePattern(v string) string { return escapeLikePattern(v) }
-
 // FilterOp represents a comparison operator for query filtering.
 type FilterOp string
 

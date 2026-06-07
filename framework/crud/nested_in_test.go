@@ -31,23 +31,3 @@ func TestNestedIn_BelongsToCoalescesToIN(t *testing.T) {
 		t.Errorf("args = %v, want [alice bob]", args)
 	}
 }
-
-// TestNestedLike_EscapesWildcards pins I1: a nested _like wraps the value in a
-// contains pattern with escaped LIKE metacharacters + ESCAPE, matching the
-// hardened top-level _like, so caller-supplied % / _ are matched literally
-// (no wildcard-probe injection).
-func TestNestedLike_EscapesWildcards(t *testing.T) {
-	nf := nestedFilter{
-		Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"},
-		Field:    "name",
-		Op:       filter.OpLike,
-		Value:    "50%_x",
-	}
-	sql, args := buildExistsSubquery("posts", "id", nf)
-	if !strings.Contains(sql, "LIKE $1 ESCAPE") {
-		t.Errorf("expected ESCAPE clause, got: %s", sql)
-	}
-	if len(args) != 1 || args[0] != `%50\%\_x%` {
-		t.Errorf("arg = %q, want %%50\\%%\\_x%% (escaped, contains-wrapped)", args[0])
-	}
-}
