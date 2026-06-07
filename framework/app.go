@@ -152,6 +152,15 @@ type App struct {
 	// the default chain so handlers can call App.T(ctx, key, ...).
 	translator *i18n.Translator
 
+	// Optional metrics. When set (via WithMetrics), the metrics middleware
+	// joins the default chain and a Prometheus /metrics endpoint is mounted.
+	metrics *middleware.Metrics
+
+	// tracing enables the OpenTelemetry tracing middleware in the default
+	// chain (via WithTracing). Spans no-op until a TracerProvider is wired
+	// through otel.SetTracerProvider.
+	tracing bool
+
 	// mcpIntrospection enables a set of read-only MCP tools that expose
 	// the app's routes, plugins, batteries, config, and readiness state
 	// for agent debugging. Set via WithMCPIntrospection().
@@ -286,6 +295,29 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	}
 }
 
+// WithMetrics enables HTTP request metrics (per-route counts, status classes,
+// latency histograms) in the default middleware chain and mounts a
+// Prometheus-format /metrics endpoint. The endpoint is unauthenticated by
+// design (scrape it from inside your network / behind your ingress). Panics
+// when paired with WithoutDefaultMiddleware — mount middleware.MetricsMiddleware
+// and middleware.MetricsHandler yourself in that case.
+func WithMetrics() AppOption {
+	return func(a *App) {
+		a.metrics = middleware.NewMetrics()
+	}
+}
+
+// WithTracing enables the OpenTelemetry tracing middleware in the default
+// chain. Each request runs in a span with method/route/status attributes.
+// Spans no-op until you install a TracerProvider via otel.SetTracerProvider
+// (e.g. an OTLP exporter), so this is safe to leave on. Panics when paired
+// with WithoutDefaultMiddleware.
+func WithTracing() AppOption {
+	return func(a *App) {
+		a.tracing = true
+	}
+}
+
 // WithI18n installs a Translator and wires its locale-negotiation
 // middleware into the default chain. Handlers downstream can call
 // App.T(ctx, key, ...) for translated strings driven by the caller's
@@ -361,6 +393,12 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	chain := []router.Middleware{
 		middleware.RecoveryFn(getLogger),
 		middleware.RequestID(),
+	}
+	if a != nil && a.tracing {
+		chain = append(chain, middleware.Tracing())
+	}
+	if a != nil && a.metrics != nil {
+		chain = append(chain, middleware.MetricsMiddleware(a.metrics))
 	}
 	if idempotency != nil {
 		chain = append(chain, middleware.Idempotency(*idempotency))
@@ -593,6 +631,14 @@ func NewApp(opts ...AppOption) *App {
 		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware — " +
 			"the i18n middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
+	}
+	if a.noDefaults && a.metrics != nil {
+		panic("framework: WithMetrics is incompatible with WithoutDefaultMiddleware — " +
+			"mount middleware.MetricsMiddleware + middleware.MetricsHandler in your custom chain instead")
+	}
+	if a.noDefaults && a.tracing {
+		panic("framework: WithTracing is incompatible with WithoutDefaultMiddleware — " +
+			"mount middleware.Tracing() in your custom chain instead")
 	}
 
 	// Install the default middleware preset unless opted out. The router
@@ -1267,6 +1313,12 @@ func (a *App) Start(addr string) error {
 			a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName))
 			hasLLMMD = true
 		}
+	}
+
+	// Prometheus /metrics endpoint when metrics are enabled (WithMetrics).
+	// Unauthenticated by design — scrape from inside the network boundary.
+	if a.metrics != nil {
+		a.router.Get("/metrics", middleware.MetricsHandler(a.metrics))
 	}
 
 	if a.Config.DebugEndpoints {

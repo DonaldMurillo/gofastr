@@ -68,6 +68,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **Observability is discoverable — `WithMetrics()` / `WithTracing()`.** The
+  production-grade Prometheus metrics and OpenTelemetry tracing middleware
+  existed in `core/middleware` but were never wired into `App`, re-exported, or
+  documented. `WithMetrics()` adds the metrics middleware to the default chain
+  and mounts a Prometheus `/metrics` endpoint; `WithTracing()` adds the otel
+  span middleware (no-ops until a TracerProvider is installed). Both panic if
+  combined with `WithoutDefaultMiddleware` (wire them yourself then). Re-exported
+  `framework.{NewMetrics,MetricsMiddleware,MetricsHandler,Tracing,Metrics}`.
+  New docs: `observability.md`, `deploy.md` (single-binary model, production
+  Dockerfile, env config, migrations-as-a-step, TLS/graceful shutdown,
+  health/metrics wiring).
 - **`App.TryEntity(name, config) error`** — the error-returning variant of
   `App.Entity`. `Entity` panics on misconfiguration (fail-fast for hand-written
   declarations); `TryEntity` returns the error instead and recovers panics from
