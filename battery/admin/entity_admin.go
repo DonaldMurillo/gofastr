@@ -113,14 +113,16 @@ type sectionNav struct{ cfg interactive.SectionMenuConfig }
 
 func (n sectionNav) Render() render.HTML { return interactive.SectionMenu(n.cfg) }
 
-// gatePolicy mirrors gate() for the SSR screen path: a Block(401) decision when
-// the request is not authorized, short-circuiting before Load/Render.
+// gatePolicy mirrors gate() for the SSR screen path: a Block decision when the
+// request is not authorized, short-circuiting before Load/Render. The status
+// distinguishes unauthenticated (401) from authenticated-but-not-admin (403).
 func (b *Battery) gatePolicy() appui.Policy {
 	return appui.PolicyFunc(func(ctx context.Context) appui.Decision {
 		if b.authorized(ctx) {
 			return decide.Allow()
 		}
-		return decide.Block(http.StatusUnauthorized, "unauthorized")
+		status := b.authzStatus(ctx)
+		return decide.Block(status, http.StatusText(status))
 	})
 }
 

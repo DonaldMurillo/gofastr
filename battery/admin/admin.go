@@ -76,10 +76,15 @@ type Config struct {
 
 	// Authorize gates every admin surface — both the SSR screens (via the UI
 	// host's policy chain) and the RPC/form routes (via middleware). It returns
-	// true to allow the request. Default (nil) requires any authenticated user
-	// in context. Supply a stricter predicate — e.g. an admin-role check — to
-	// lock the back-office down further.
+	// true to allow the request. When nil, the default authorizer requires an
+	// authenticated user that holds the AdminRole (see below) — a user whose
+	// GetRoles() []string includes it. Supply a custom predicate to override
+	// the role check entirely (e.g. a permission lookup, an allow-list).
 	Authorize func(ctx context.Context) bool
+
+	// AdminRole is the role the default authorizer requires (when Authorize is
+	// nil). Defaults to "admin". Ignored when Authorize is set.
+	AdminRole string
 
 	// EntityListLimit caps rows per page on an entity list screen. Default 50.
 	EntityListLimit int
@@ -121,8 +126,10 @@ func New(cfg Config) *Battery {
 	return &Battery{cfg: cfg, db: cfg.DB, flash: newFlashStore()}
 }
 
-// authorized reports whether the current request may use the admin. Default
-// (no Authorize configured) requires any authenticated user in context.
+// authorized reports whether the current request may use the admin. The
+// default (no Authorize configured) requires an authenticated user that holds
+// the configured AdminRole — secure by default. A custom Authorize overrides
+// the role check entirely.
 func (b *Battery) authorized(ctx context.Context) bool {
 	if b.cfg.Authorize != nil {
 		return b.cfg.Authorize(ctx)
@@ -130,9 +137,44 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	// Require a NON-NIL user. battery/auth's SessionMiddleware seeds a nil user
 	// on every request (so GetCurrentUser works) and only fills it in when
 	// authenticated — so `ok` alone is true even for anonymous callers. The
-	// nil check is what actually gates them out.
+	// nil check is what actually gates anonymous callers out.
 	u, ok := handler.GetUser(ctx)
-	return ok && u != nil
+	if !ok || u == nil {
+		return false
+	}
+	// Secure by default: an authenticated user is NOT automatically an admin.
+	// Require the AdminRole via the structural GetRoles interface (battery/auth's
+	// User satisfies it). A user that can't prove a role is denied — set a custom
+	// Config.Authorize to use a different model.
+	rh, ok := u.(interface{ GetRoles() []string })
+	if !ok {
+		return false
+	}
+	want := b.adminRole()
+	for _, role := range rh.GetRoles() {
+		if role == want {
+			return true
+		}
+	}
+	return false
+}
+
+// adminRole returns the configured admin role, defaulting to "admin".
+func (b *Battery) adminRole() string {
+	if b.cfg.AdminRole != "" {
+		return b.cfg.AdminRole
+	}
+	return "admin"
+}
+
+// authzStatus maps a failed authorization to an HTTP status: 401 when no user
+// is present (authenticate first), 403 when a user is present but lacks admin
+// rights (authenticated, just not allowed).
+func (b *Battery) authzStatus(ctx context.Context) int {
+	if u, ok := handler.GetUser(ctx); ok && u != nil {
+		return http.StatusForbidden
+	}
+	return http.StatusUnauthorized
 }
 
 // Name implements framework.Battery.
@@ -186,7 +228,8 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !b.authorized(r.Context()) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			status := b.authzStatus(r.Context())
+			http.Error(w, http.StatusText(status), status)
 			return
 		}
 		next(w, r)

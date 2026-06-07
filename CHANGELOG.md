@@ -9,6 +9,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Security
 
+- **BREAKING — admin battery is default-deny for non-admins.** With no custom
+  `Config.Authorize`, the admin now requires an authenticated user holding the
+  admin role (`Config.AdminRole`, default `"admin"`) — detected via the
+  structural `GetRoles() []string` interface (`battery/auth.User` satisfies it).
+  Previously any authenticated, non-nil user reached full admin CRUD over every
+  exposed entity, so a freshly-registered reader was effectively an admin.
+  Authenticated-but-unauthorized now returns `403` (vs `401` for anonymous).
+  Docs: `framework/docs/content/admin.md`.
 - **Per-operation RBAC on auto-CRUD — `EntityConfig.Access`.** Declare the
   permission required for each operation (`Read` covers List+Get, plus
   `Create`/`Update`/`Delete`) and auto-CRUD refuses requests lacking it with

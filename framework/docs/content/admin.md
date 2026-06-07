@@ -112,16 +112,28 @@ name is `audit_log` (`Config.AuditTable` to override).
 
 ## Authorization
 
-Every admin surface is gated. By default the battery requires **any
-authenticated, non-nil user** in the request context — set by your auth
-middleware (`battery/auth`'s `SessionMiddleware` does this). Anonymous
-callers get `401` on both the SSR screens (via the host policy chain) and
-the RPC/form routes (via middleware).
+Every admin surface is gated and **secure by default**: the battery
+requires an authenticated user that holds the **admin role** (default
+`"admin"`). A user satisfies this when its `GetRoles() []string` includes
+the role — `battery/auth`'s `User` does. Anonymous callers get `401`;
+authenticated users who lack the role get `403` — on both the SSR screens
+(via the host policy chain) and the RPC/form routes (via middleware).
 
-Supply a stricter predicate — e.g. an admin-role check — via
-`Config.Authorize`:
+> **BREAKING (since the admin default-deny change):** the default used to
+> accept **any** authenticated user, so a freshly-registered reader could
+> reach full admin CRUD. It now requires the admin role. If you relied on
+> the old behaviour, either grant users the `admin` role or supply a
+> custom `Config.Authorize`.
+
+Change the required role with `Config.AdminRole`, or replace the check
+entirely with `Config.Authorize`:
 
 ```go
+admin.New(admin.Config{
+    AdminRole: "superuser", // default is "admin"
+})
+
+// …or a fully custom predicate (overrides the role check):
 admin.New(admin.Config{
     Authorize: func(ctx context.Context) bool {
         u := auth.GetCurrentUser(ctx)
@@ -129,11 +141,6 @@ admin.New(admin.Config{
     },
 })
 ```
-
-> The default checks the user is **non-nil**, not merely present:
-> `SessionMiddleware` seeds a nil user on every request so `GetCurrentUser`
-> works, so a naive "is a user set?" check would let anonymous callers
-> through. The battery handles this for you.
 
 ## CSRF
 

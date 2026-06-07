@@ -62,7 +62,7 @@ func mountAdmin(t *testing.T, cfg Config) http.Handler {
 	t.Helper()
 	bare := mountAdminBare(t, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(handler.SetUser(r.Context(), struct{}{}))
+		r = r.WithContext(handler.SetUser(r.Context(), roleUser{roles: []string{"admin"}}))
 		bare.ServeHTTP(w, r)
 	})
 }

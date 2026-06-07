@@ -30,6 +30,11 @@ import (
 // entities.
 type testUser struct{ id string }
 
+// GetRoles makes the test user an admin so it clears the admin battery's
+// default role gate. Owner scoping keys off the id (via the extractor below),
+// independent of roles.
+func (u testUser) GetRoles() []string { return []string{"admin"} }
+
 func init() {
 	// Process-global, set once for this test binary so OwnerField entities
 	// actually scope by the signed-in test user (no battery/auth import).
