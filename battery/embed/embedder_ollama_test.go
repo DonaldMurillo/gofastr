@@ -162,3 +162,28 @@ func TestOllamaEmbedderFallsBackToOldSingleEmbeddingShape(t *testing.T) {
 		t.Fatalf("vecs = %+v", vecs)
 	}
 }
+
+// TestOllamaEmbedder_DimRaceFree exercises the lazy dim cache under concurrent
+// Embed (writer) and Dim (reader) with Dim left unset — the exact shape the
+// previous int field raced on. Run with -race; it must be clean.
+func TestOllamaEmbedder_DimRaceFree(t *testing.T) {
+	srv := fakeOllamaServer(t, 32)
+	e := NewOllamaEmbedder(OllamaConfig{BaseURL: srv.URL, Model: "test-model"}) // Dim unset
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 50; i++ {
+			_ = e.Dim()
+		}
+		close(done)
+	}()
+	for i := 0; i < 50; i++ {
+		if _, err := e.Embed(context.Background(), []string{"x"}); err != nil {
+			t.Fatalf("Embed: %v", err)
+		}
+	}
+	<-done
+	if e.Dim() != 32 {
+		t.Fatalf("Dim = %d, want 32", e.Dim())
+	}
+}

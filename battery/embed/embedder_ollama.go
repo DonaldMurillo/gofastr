@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,8 +42,11 @@ import (
 type OllamaEmbedder struct {
 	baseURL string
 	model   string
-	dim     int
-	client  *http.Client
+	// dim is the embedding dimension, lazily cached on the first successful
+	// Embed when not set at construction. Atomic because Embed (writer) and
+	// Dim (reader) may run on different goroutines concurrently.
+	dim    atomic.Int64
+	client *http.Client
 }
 
 // OllamaConfig configures an [OllamaEmbedder].
@@ -85,12 +89,13 @@ func NewOllamaEmbedder(cfg OllamaConfig) *OllamaEmbedder {
 	if client == nil {
 		client = &http.Client{Timeout: cfg.Timeout}
 	}
-	return &OllamaEmbedder{
+	e := &OllamaEmbedder{
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		model:   cfg.Model,
-		dim:     cfg.Dim,
 		client:  client,
 	}
+	e.dim.Store(int64(cfg.Dim))
+	return e
 }
 
 // Name returns "ollama:<model>" — the snapshot fingerprint baked into
@@ -102,7 +107,7 @@ func (e *OllamaEmbedder) Name() string { return "ollama:" + e.model }
 // in the config and no embedding has been produced yet, Dim returns
 // 0; [Open] should be passed a config with Dim set when the store is
 // initialised separately.
-func (e *OllamaEmbedder) Dim() int { return e.dim }
+func (e *OllamaEmbedder) Dim() int { return int(e.dim.Load()) }
 
 type ollamaRequest struct {
 	Model string   `json:"model"`
@@ -170,9 +175,10 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 		normalize(embeddings[i])
 	}
 
-	// Cache the dimension on first successful call.
-	if e.dim == 0 && len(embeddings[0]) > 0 {
-		e.dim = len(embeddings[0])
+	// Cache the dimension on first successful call. CompareAndSwap so a
+	// concurrent caller can't race two writers to a torn value.
+	if len(embeddings[0]) > 0 {
+		e.dim.CompareAndSwap(0, int64(len(embeddings[0])))
 	}
 	return embeddings, nil
 }

@@ -44,7 +44,20 @@ type cachedResponse struct {
 //     includes the values of every listed request header so different
 //     variants do not collide. A Vary: * response is treated as
 //     uncacheable and is never stored (RFC 9111 §4.1).
+// DefaultMaxCacheableBytes caps how large a response CacheMiddleware will
+// buffer for caching (8 MiB). Larger responses stream straight to the client
+// and are not cached, so a single huge response can't pin unbounded memory.
+const DefaultMaxCacheableBytes = 8 << 20
+
 func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Handler {
+	return CacheMiddlewareWithLimit(cache, ttl, DefaultMaxCacheableBytes)
+}
+
+// CacheMiddlewareWithLimit is CacheMiddleware with an explicit cap on the
+// response size that may be buffered for caching. A response exceeding
+// maxBodyBytes is streamed to the client and never stored. Pass 0 for
+// unbounded buffering (the pre-cap behaviour — not recommended in production).
+func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only cache GET requests.
@@ -89,13 +102,23 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 				}
 			}
 
-			// Cache miss — capture the response into a buffer (not the client).
+			// Cache miss — capture the response into a buffer (not the client),
+			// up to maxBodyBytes. Beyond that the recorder streams straight to
+			// the client and marks overflow.
 			rec := &responseRecorder{
 				header:     make(http.Header),
 				body:       &bytes.Buffer{},
 				statusCode: http.StatusOK,
+				w:          w,
+				maxBytes:   maxBodyBytes,
 			}
 			next.ServeHTTP(rec, r)
+
+			// Overflowed the cap: the response was already streamed to the
+			// client and is too big to cache. Nothing to store or replay.
+			if rec.overflow {
+				return
+			}
 
 			storeable := isStoreable(rec, hasCreds, reqNoStore)
 
@@ -266,12 +289,20 @@ func cloneHeader(h http.Header) map[string][]string {
 	return out
 }
 
-// responseRecorder captures an HTTP response without writing to the client.
+// responseRecorder captures an HTTP response for caching. It buffers up to
+// maxBytes; if the response grows past that, it stops buffering, flushes what
+// it has straight to the client, and streams the rest through (overflow=true).
+// This bounds memory: a pathological multi-GB response can't be fully buffered
+// just to discover it's too big to cache.
 type responseRecorder struct {
 	header     http.Header
 	body       *bytes.Buffer
 	statusCode int
 	wrote      bool
+
+	w        http.ResponseWriter // client; written to only on/after overflow
+	maxBytes int                 // 0 = unbounded buffering
+	overflow bool                // true once we gave up buffering and streamed
 }
 
 func (r *responseRecorder) Header() http.Header {
@@ -288,6 +319,28 @@ func (r *responseRecorder) WriteHeader(code int) {
 func (r *responseRecorder) Write(b []byte) (int, error) {
 	if !r.wrote {
 		r.WriteHeader(http.StatusOK)
+	}
+	if r.overflow {
+		return r.w.Write(b)
+	}
+	if r.maxBytes > 0 && r.body.Len()+len(b) > r.maxBytes {
+		// Over the cap — give up on caching this response and switch to
+		// streaming. Flush headers + already-buffered bytes to the client,
+		// then write this chunk and everything after straight through.
+		r.overflow = true
+		dst := r.w.Header()
+		for k, vals := range r.header {
+			for _, v := range vals {
+				dst.Add(k, v)
+			}
+		}
+		dst.Set("X-Cache", "MISS")
+		r.w.WriteHeader(r.statusCode)
+		if r.body.Len() > 0 {
+			_, _ = r.w.Write(r.body.Bytes())
+		}
+		r.body.Reset() // release the buffered memory
+		return r.w.Write(b)
 	}
 	return r.body.Write(b)
 }

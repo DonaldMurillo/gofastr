@@ -42,6 +42,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`battery/cache`: bounded cache buffering.** The middleware buffered the
+  entire response in memory before deciding cacheability, with no size cap — a
+  pathological large response could pin unbounded memory. It now streams a
+  response past `DefaultMaxCacheableBytes` (8 MiB) straight to the client and
+  skips caching it. New `CacheMiddlewareWithLimit(cache, ttl, maxBodyBytes)`.
+- **`battery/embed`: data race on the Ollama embedder's lazy dimension.**
+  `OllamaEmbedder.dim` was a plain int written by `Embed` and read by `Dim` from
+  another goroutine. It's now an `atomic.Int64` set via CompareAndSwap.
 - **Nested `_in` filter on a BelongsTo relation now matches.** `?author.name_in=a,b`
   split into separate AND-ed `EXISTS(... = a) AND EXISTS(... = b)` subqueries, so
   a to-one relation could never satisfy both and silently returned nothing.
