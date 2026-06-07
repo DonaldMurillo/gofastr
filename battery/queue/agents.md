@@ -55,6 +55,14 @@ dead-letter); the worker goroutine is respawned, so a poison message can never
 permanently drain the pool or crash the process. `MemoryQueue` recovers handler
 panics the same way.
 
+**Retry backoff.** By default a Nack'd `DBQueue` job retries immediately. Pass
+`queue.WithBackoff(base, max)` to delay each retry by `base*2^(attempts-1)`,
+capped at `max`, so a flapping handler can't burn through every attempt in a
+tight loop. `RegisterHandler` and `SetLeaseTimeout` are safe to call while the
+worker loop is running. `MemoryQueue.Nack(jobID)` re-enqueues a manually
+dequeued job (incrementing `Attempts`) when retries remain, rather than
+silently dropping it.
+
 `RedisQueue` records a visibility timeout per in-flight job; call
 `RedisQueue.Reclaim(ctx)` periodically (e.g. from a ticker) to re-deliver jobs
 whose worker crashed before Ack/Nack. A malformed list entry is quarantined to

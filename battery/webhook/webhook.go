@@ -122,7 +122,10 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 // attempts. Default: 30s, 1m, 5m, 15m, 1h, 3h.
 //
 // HTTPClient is the client used for outbound POSTs. Default has a
-// 10s per-request timeout and no redirect following.
+// 10s per-request timeout, no redirect following, and a dial-time SSRF
+// guard (net.Dialer.Control re-checks the resolved IP at connect time
+// to defeat DNS rebinding) unless AllowPrivateNetworks is set. A
+// caller-supplied client is used as-is — it gets no dial-time guard.
 //
 // PollInterval controls how often the worker looks for due deliveries.
 // Default 1 second.
@@ -205,6 +208,7 @@ func New(s Store, opts Options) *Manager {
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
+			Transport: ssrfGuardedTransport(opts.AllowPrivateNetworks),
 		}
 	}
 	return &Manager{

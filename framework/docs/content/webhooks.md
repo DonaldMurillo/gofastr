@@ -54,15 +54,22 @@ address (`0.0.0.0`), `localhost`, `*.localhost`, `*.internal`, and
 always rejected.
 
 The guard runs both on the hostname directly and on every resolved IP
-when the host is a name (DNS lookup at subscribe time). DNS rebinding
-that flips to a private IP between subscribe and dial is mitigated by
-the standard library's `net.DefaultResolver` honoring the dial context
-— but if your threat model needs strict resolve-at-dial enforcement,
-supply an `HTTPClient` with a `Transport.DialContext` that re-validates
-the connecting IP.
+when the host is a name (DNS lookup at subscribe time). It also runs
+**again at dial time**: the default delivery client's
+`Transport.DialContext` installs a `net.Dialer.Control` hook that
+re-validates the actual resolved IP at connect time. This closes the
+DNS-rebinding / TOCTOU window where a host validates public at
+`Subscribe` and is then re-pointed at `127.0.0.1` /
+`169.254.169.254` / an RFC1918 address before the worker fires — the
+connection is refused before any bytes leave the process.
+
+If you supply your own `Options.HTTPClient`, you are responsible for
+the dial-time check; the built-in guard only applies to the default
+client.
 
 For development and tests, opt out via `Options.AllowPrivateNetworks =
-true`. The scheme guard still applies — `file://`, `gopher://`, etc.
+true`. This disables both the subscribe-time and the dial-time IP
+checks. The scheme guard still applies — `file://`, `gopher://`, etc.
 are always refused.
 
 ## Delivered request shape

@@ -1,7 +1,12 @@
 package webhook
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 // TestSSRF_LocalhostRejected verifies that localhost URLs are rejected.
@@ -125,5 +130,89 @@ func TestSSRF_AllowPrivateStillEnforcesScheme(t *testing.T) {
 	err := validateSubscriberURL("file:///etc/passwd", true)
 	if err == nil {
 		t.Errorf("SECURITY: [ssrf] validateSubscriberURL with allowPrivate=true accepted file:// scheme. Attack: SSRF via non-HTTP protocol even with private allowed.")
+	}
+}
+
+// TestSSRF_DialTimeRejectsInternalIP verifies the delivery client refuses
+// connections whose RESOLVED address is internal — closing the DNS
+// rebinding / TOCTOU window where a host validates public at Subscribe()
+// then re-points DNS to 169.254.169.254 / 127.0.0.1 / RFC1918 before the
+// worker dials. Registration-time validation alone cannot catch this.
+//
+// Attack: register evil.example.com (resolves public), then rebind DNS to
+// loopback so the worker dials an internal service.
+func TestSSRF_DialTimeRejectsInternalIP(t *testing.T) {
+	// The default delivery client (no caller-supplied HTTPClient) must
+	// carry a Dialer.Control hook that re-checks the resolved address.
+	mgr := New(NewMemoryStore(), Options{})
+	tr, ok := mgr.opts.HTTPClient.Transport.(*http.Transport)
+	if !ok || tr == nil {
+		t.Fatalf("SECURITY: [ssrf] delivery client has no *http.Transport (cannot install dial-time SSRF guard): %T", mgr.opts.HTTPClient.Transport)
+	}
+	if tr.DialContext == nil {
+		t.Fatalf("SECURITY: [ssrf] delivery transport has no DialContext — dial-time SSRF guard absent")
+	}
+
+	// A real loopback receiver. With the dial-time guard the connection
+	// must be refused even though the server is live; the resolved address
+	// is 127.0.0.1.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := tr.DialContext(ctx, "tcp", host)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if err == nil {
+		t.Fatalf("SECURITY: [ssrf] dial to internal/loopback %s succeeded; dial-time SSRF guard missing. Attack: DNS rebinding to localhost.", host)
+	}
+}
+
+// TestSSRF_DialTimeAllowsPublicIP is the negative control: the dial-time
+// guard must NOT block legitimate public addresses.
+func TestSSRF_DialTimeAllowsPublicIP(t *testing.T) {
+	mgr := New(NewMemoryStore(), Options{})
+	tr := mgr.opts.HTTPClient.Transport.(*http.Transport)
+
+	// Don't actually open a socket to the internet; assert the Control
+	// callback accepts a public resolved address and rejects an internal
+	// one. We reach the control via the dialer indirectly: dial a public
+	// TEST-NET address that is non-routable so the connection attempt
+	// fails at the network layer, NOT at the guard. A guard rejection
+	// would mention "not allowed"; a network failure won't.
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	_, err := tr.DialContext(ctx, "tcp", "203.0.113.10:9") // TEST-NET-3, non-routable
+	if err != nil && strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("dial-time guard wrongly rejected public address: %v", err)
+	}
+}
+
+// TestSSRF_DialTimeHonorsAllowPrivate verifies that when
+// AllowPrivateNetworks is set the dial-time guard is disabled (dev/test
+// posture), so loopback receivers work.
+func TestSSRF_DialTimeHonorsAllowPrivate(t *testing.T) {
+	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
+	tr := mgr.opts.HTTPClient.Transport.(*http.Transport)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := tr.DialContext(ctx, "tcp", host)
+	if err != nil {
+		t.Fatalf("AllowPrivateNetworks=true should permit loopback dial, got %v", err)
+	}
+	if conn != nil {
+		_ = conn.Close()
 	}
 }

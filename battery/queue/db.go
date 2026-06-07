@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -28,6 +29,18 @@ type DBQueue struct {
 	lease    time.Duration
 	stop     chan struct{}
 	stopped  chan struct{}
+
+	// mu guards post-construction mutation of handlers and lease so that
+	// RegisterHandler/SetLeaseTimeout can race safely against the worker
+	// loop's reads (workerLoop, eligibleWhere).
+	mu sync.RWMutex
+
+	// Retry backoff. When backoffBase > 0, a Nack with retries remaining
+	// advances scheduled_at by backoffBase*2^(attempts-1), capped at
+	// backoffMax. Zero base preserves the original "retry immediately"
+	// behaviour.
+	backoffBase time.Duration
+	backoffMax  time.Duration
 }
 
 type dbDialect int
@@ -56,6 +69,19 @@ func WithWorkers(n int) DBQueueOption {
 // becomes eligible for re-dequeue. Defaults to 5 minutes.
 func WithLeaseTimeout(d time.Duration) DBQueueOption {
 	return func(q *DBQueue) { q.lease = d }
+}
+
+// WithBackoff enables exponential retry backoff. On a Nack with retries
+// remaining, scheduled_at is advanced by base*2^(attempts-1) — so the first
+// retry waits ~base, the second ~2*base, and so on — capped at max. A
+// non-positive base disables backoff (jobs retry immediately, the default).
+// A non-positive max means uncapped. Mirrors the webhook battery's retry
+// backoff so the two batteries behave consistently.
+func WithBackoff(base, max time.Duration) DBQueueOption {
+	return func(q *DBQueue) {
+		q.backoffBase = base
+		q.backoffMax = max
+	}
 }
 
 // NewDBQueue constructs a DBQueue and ensures its backing table exists.
@@ -136,15 +162,43 @@ func (q *DBQueue) ensureTable() error {
 	return err
 }
 
-// RegisterHandler binds a job type to a handler. Required before Start.
+// RegisterHandler binds a job type to a handler. Safe to call concurrently
+// with a running worker loop.
 func (q *DBQueue) RegisterHandler(jobType string, h Handler) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.handlers[jobType] = h
 }
 
 // SetLeaseTimeout adjusts the in-flight lease duration after construction.
-// See WithLeaseTimeout for semantics.
+// See WithLeaseTimeout for semantics. Safe to call concurrently with a
+// running worker loop.
 func (q *DBQueue) SetLeaseTimeout(d time.Duration) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.lease = d
+}
+
+// leaseTimeout returns the current lease duration under the read lock.
+func (q *DBQueue) leaseTimeout() time.Duration {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.lease
+}
+
+// handlerFor returns the handler registered for jobType under the read lock.
+func (q *DBQueue) handlerFor(jobType string) (Handler, bool) {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	h, ok := q.handlers[jobType]
+	return h, ok
+}
+
+// handlerTypes returns a snapshot of registered job types under the read lock.
+func (q *DBQueue) handlerTypes() []string {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return keys(q.handlers)
 }
 
 // Enqueue inserts a job. Fills in ID/CreatedAt/MaxAttempts/ScheduledAt
@@ -262,7 +316,7 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int) (string, []any) {
 	// lease cutoff appears first (inside the status clause), then scheduled_at.
 	// $idx: lease cutoff (claimed_at <= now-lease ⇒ abandoned)
 	leaseIdx := idx
-	args = append(args, now.Add(-q.lease))
+	args = append(args, now.Add(-q.leaseTimeout()))
 	idx++
 	// $idx: now (scheduled_at gate)
 	schedIdx := idx
@@ -296,14 +350,70 @@ func (q *DBQueue) Ack(ctx context.Context, jobID string) error {
 
 // Nack returns a claimed job to the queue (status=pending) when it still
 // has retry attempts left; otherwise marks it 'failed' for later inspection.
+// When backoff is enabled (see WithBackoff), a requeued job's scheduled_at is
+// pushed into the future so a flapping handler can't burn through every
+// attempt in a tight loop.
 func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
-	// One round-trip per nack: a CASE expression decides between requeue
-	// and dead-letter based on the row's current attempts vs max_attempts.
-	stmt := fmt.Sprintf(`UPDATE %s
-		SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END
-		WHERE id = $1`, q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, jobID)
+	if q.backoffBase <= 0 {
+		// No backoff: one round-trip. A CASE expression decides between
+		// requeue and dead-letter based on attempts vs max_attempts.
+		stmt := fmt.Sprintf(`UPDATE %s
+			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END
+			WHERE id = $1`, q.qt())
+		_, err := q.db.ExecContext(ctx, stmt, jobID)
+		return err
+	}
+
+	// Backoff path: read attempts/max_attempts to decide requeue vs
+	// dead-letter and to compute the next scheduled_at.
+	var attempts, maxAttempts int
+	row := q.db.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT attempts, max_attempts FROM %s WHERE id = $1", q.qt()), jobID)
+	if err := row.Scan(&attempts, &maxAttempts); err != nil {
+		if err == sql.ErrNoRows {
+			return nil // already acked/removed; nothing to do
+		}
+		return err
+	}
+	if attempts >= maxAttempts {
+		stmt := fmt.Sprintf("UPDATE %s SET status='failed' WHERE id = $1", q.qt())
+		_, err := q.db.ExecContext(ctx, stmt, jobID)
+		return err
+	}
+	next := time.Now().UTC().Add(q.backoffFor(attempts))
+	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2", q.qt())
+	_, err := q.db.ExecContext(ctx, stmt, next, jobID)
 	return err
+}
+
+// backoffFor returns the delay before the next retry given the number of
+// attempts already made: base*2^(attempts-1), capped at backoffMax (when
+// positive). attempts is expected to be >= 1 (Dequeue increments it before
+// the handler runs).
+func (q *DBQueue) backoffFor(attempts int) time.Duration {
+	exp := attempts - 1
+	if exp < 0 {
+		exp = 0
+	}
+	d := q.backoffBase
+	for i := 0; i < exp; i++ {
+		// Stop doubling once we hit the cap or risk int64 overflow.
+		if q.backoffMax > 0 && d >= q.backoffMax {
+			return q.backoffMax
+		}
+		if d > (1<<62)/2 {
+			// Next double would overflow; clamp to cap (or this value if uncapped).
+			if q.backoffMax > 0 {
+				return q.backoffMax
+			}
+			return d
+		}
+		d *= 2
+	}
+	if q.backoffMax > 0 && d > q.backoffMax {
+		d = q.backoffMax
+	}
+	return d
 }
 
 // ListJobs implements [Browsable]. Returns up to limit jobs in the
@@ -440,7 +550,7 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 			return
 		default:
 		}
-		job, err := q.Dequeue(ctx, keys(q.handlers)...)
+		job, err := q.Dequeue(ctx, q.handlerTypes()...)
 		if err != nil {
 			// ErrNoJob is the steady state — sleep briefly and retry.
 			t := time.NewTimer(backoff)
@@ -455,7 +565,7 @@ func (q *DBQueue) workerLoop(ctx context.Context) {
 			}
 			continue
 		}
-		h, ok := q.handlers[job.Type]
+		h, ok := q.handlerFor(job.Type)
 		if !ok {
 			// No handler — drop the row so it doesn't loop forever.
 			_ = q.Ack(ctx, job.ID)

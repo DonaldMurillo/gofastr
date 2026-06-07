@@ -3,8 +3,11 @@ package webhook
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // validateSubscriberURL rejects URLs that obviously target internal
@@ -73,6 +76,42 @@ func validateSubscriberURL(raw string, allowPrivate bool) error {
 		}
 	}
 	return nil
+}
+
+// ssrfGuardedTransport builds the outbound HTTP transport for webhook
+// delivery. The net.Dialer.Control hook re-runs rejectInternalIP on the
+// ACTUAL resolved (network, address) at connect time. This closes the
+// DNS-rebinding / TOCTOU window: validateSubscriberURL only checks the
+// host at Subscribe() time, so a host that resolves public at
+// registration and is later re-pointed at 169.254.169.254 / 127.0.0.1 /
+// an RFC1918 address would otherwise be dialed by the worker.
+//
+// When allowPrivate is true the dial-time check is skipped (dev/test
+// posture), matching the registration-time AllowPrivateNetworks opt-out.
+func ssrfGuardedTransport(allowPrivate bool) *http.Transport {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	if !allowPrivate {
+		dialer.Control = func(network, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				host = address
+			}
+			ip := net.ParseIP(host)
+			if ip == nil {
+				// Control receives the already-resolved numeric address;
+				// a non-IP here is unexpected — refuse rather than dial
+				// blind.
+				return fmt.Errorf("webhook: dial address %q is not a resolved IP", address)
+			}
+			return rejectInternalIP(ip)
+		}
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = dialer.DialContext
+	return tr
 }
 
 func rejectInternalIP(ip net.IP) error {

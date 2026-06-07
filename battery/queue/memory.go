@@ -26,6 +26,12 @@ type MemoryQueue struct {
 	// channel by subsequent Dequeue/processing. Guarded by holdoverMu.
 	holdoverMu sync.Mutex
 	holdover   []Job
+
+	// inflight tracks jobs handed out by Dequeue but not yet Ack'd/Nack'd, so
+	// Nack(jobID) can re-enqueue the right job. Guarded by inflightMu. The
+	// automatic worker pool processes jobs in-line and never touches this map.
+	inflightMu sync.Mutex
+	inflight   map[string]Job
 }
 
 // NewMemoryQueue creates a new in-memory queue with the given number of workers.
@@ -36,6 +42,7 @@ func NewMemoryQueue(workers int) *MemoryQueue {
 		jobChan:  make(chan Job, 1024),
 		handlers: make(map[string]Handler),
 		done:     make(chan struct{}),
+		inflight: make(map[string]Job),
 	}
 }
 
@@ -179,6 +186,7 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 					skipped = append(skipped, pending[i:]...)
 				}
 				q.requeueSkipped(skipped)
+				q.trackInflight(job)
 				return job, nil
 			}
 			skipped = append(skipped, job)
@@ -188,15 +196,40 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 	// Holdover jobs (drained by a prior type-filtered Dequeue but bumped off the
 	// full channel) take priority over the channel for untyped consumption.
 	if job, ok := q.popHoldover(); ok {
+		q.trackInflight(job)
 		return job, nil
 	}
 
 	select {
 	case job := <-q.jobChan:
+		q.trackInflight(job)
 		return job, nil
 	default:
 		return Job{}, ErrNoJob
 	}
+}
+
+// trackInflight records a manually-dequeued job so a later Nack(jobID) can
+// re-enqueue it. Jobs with no ID are skipped (Enqueue assigns one, so this is
+// only hit for externally-constructed jobs that bypassed Enqueue).
+func (q *MemoryQueue) trackInflight(job Job) {
+	if job.ID == "" {
+		return
+	}
+	q.inflightMu.Lock()
+	q.inflight[job.ID] = job
+	q.inflightMu.Unlock()
+}
+
+// takeInflight removes and returns a tracked in-flight job by ID.
+func (q *MemoryQueue) takeInflight(jobID string) (Job, bool) {
+	q.inflightMu.Lock()
+	defer q.inflightMu.Unlock()
+	job, ok := q.inflight[jobID]
+	if ok {
+		delete(q.inflight, jobID)
+	}
+	return job, ok
 }
 
 // requeueSkipped returns drained non-matching jobs to the queue without losing
@@ -263,18 +296,31 @@ func (q *MemoryQueue) enqueueInternal(job Job) error {
 	}
 }
 
-// Ack is a no-op for the in-memory queue — jobs are auto-acknowledged after
-// successful handler execution.
-func (q *MemoryQueue) Ack(_ context.Context, _ string) error {
+// Ack confirms a manually-dequeued job is done, discarding any tracked
+// in-flight copy. For jobs processed by the automatic worker pool it is a
+// no-op (those are auto-acknowledged after successful handler execution).
+func (q *MemoryQueue) Ack(_ context.Context, jobID string) error {
+	q.takeInflight(jobID)
 	return nil
 }
 
-// Nack increments the attempt counter and re-enqueues the job if retries remain.
+// Nack marks a manually-dequeued job as failed: it increments the attempt
+// counter and re-enqueues the job when retries remain, otherwise drops it.
+// The job must have been handed out by Dequeue (the in-flight set is consulted
+// by ID). Jobs processed by the automatic worker pool retry internally and are
+// never in the in-flight set; calling Nack for one is a harmless no-op.
 func (q *MemoryQueue) Nack(ctx context.Context, jobID string) error {
-	// For Nack to work on MemoryQueue, the caller must track the job themselves
-	// and re-enqueue. The automatic worker pool handles retries internally.
-	// This method exists to satisfy the Queue interface.
-	return nil
+	job, ok := q.takeInflight(jobID)
+	if !ok {
+		// Unknown job (auto-pool retry, or already acked) — nothing to requeue.
+		return nil
+	}
+	job.Attempts++
+	if job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts {
+		// Retries exhausted — drop it (matches the auto-pool's dead-letter).
+		return nil
+	}
+	return q.Enqueue(ctx, job)
 }
 
 // Close drains pending jobs and waits for all workers to finish.
