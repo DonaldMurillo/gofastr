@@ -18,8 +18,8 @@ import (
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -104,7 +104,7 @@ type App struct {
 
 	Batteries *BatteryManager
 
-	serverMu   sync.Mutex   // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
+	serverMu   sync.Mutex // guards server + appCtx/appCancel — Start writes, Shutdown reads/nils
 	server     *http.Server
 	events     *event.EventBus
 	hooks      map[string]*hook.HookRegistry
@@ -890,61 +890,6 @@ func (a *App) RegisterEntities(entities map[string]entity.EntityConfig) *App {
 		a.Entity(name, entities[name])
 	}
 	return a
-}
-
-// EntityFromFile loads and registers one JSON entity declaration.
-func (a *App) EntityFromFile(path string) (*entity.Entity, error) {
-	decl, err := entity.LoadEntityDeclaration(path)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := decl.Config()
-	if err != nil {
-		return nil, err
-	}
-	a.Entity(decl.Name, cfg)
-	return a.Registry.Get(decl.Name)
-}
-
-// EntitiesFromDir loads and registers every *.json declaration in dir.
-func (a *App) EntitiesFromDir(dir string) error {
-	decls, err := entity.LoadEntityDeclarations(dir)
-	if err != nil {
-		return err
-	}
-	for _, decl := range decls {
-		cfg, err := decl.Config()
-		if err != nil {
-			return err
-		}
-		a.Entity(decl.Name, cfg)
-	}
-	return nil
-}
-
-// GroupEntitiesFromDir loads every *.json declaration in dir and registers
-// each one inside the given RouteGroup — the group-scoped equivalent of
-// EntitiesFromDir. CRUD routes mount at <group-prefix>/<entity-table>,
-// MCP tools are namespaced under the group's MCPNamespace.
-//
-// Use this with a /api group when every JSON entity should live behind
-// a single prefix:
-//
-//	api := app.Group("/api")
-//	app.GroupEntitiesFromDir(api, "entities")
-func (a *App) GroupEntitiesFromDir(g *routegroup.RouteGroup, dir string) error {
-	decls, err := entity.LoadEntityDeclarations(dir)
-	if err != nil {
-		return err
-	}
-	for _, decl := range decls {
-		cfg, err := decl.Config()
-		if err != nil {
-			return err
-		}
-		a.GroupEntity(g, decl.Name, cfg)
-	}
-	return nil
 }
 
 // entityRouteCollision reports an actionable diagnostic when the entity

@@ -2,8 +2,6 @@ package entity
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -25,35 +23,35 @@ func TestColumnConditions(t *testing.T) {
 	u := NewUUIDColumn("id")
 
 	checks := map[string]Condition{
-		"name = $1":          s.Eq("x"),
-		"name != $1":         s.Neq("x"),
-		"name LIKE $1":       s.Like("%x%"),
-		"name NOT LIKE $1":   s.NotLike("%x%"),
-		"name IN ($1, $2)":   s.In("a", "b"),
-		"age = $1":           i.Eq(1),
-		"age != $1":          i.Neq(1),
-		"age > $1":           i.Gt(1),
-		"age >= $1":          i.Gte(1),
-		"age < $1":           i.Lt(1),
-		"age <= $1":          i.Lte(1),
-		"age IN ($1, $2)":    i.In(1, 2),
-		"score = $1":         f.Eq(1),
-		"score != $1":        f.Neq(1),
-		"score > $1":         f.Gt(1),
-		"score >= $1":        f.Gte(1),
-		"score < $1":         f.Lt(1),
-		"score <= $1":        f.Lte(1),
-		"active = $1":        b.Eq(true),
-		"created_at = $1":    ts.Eq(1),
-		"created_at > $1":    ts.Gt(1),
-		"created_at >= $1":   ts.Gte(1),
-		"created_at < $1":    ts.Lt(1),
-		"created_at <= $1":   ts.Lte(1),
-		"id = $1":            u.Eq("x"),
-		"id != $1":           u.Neq("x"),
-		"id IN ($1, $2)":     u.In("a", "b"),
-		"name IS NULL":       s.IsNull(),
-		"name IS NOT NULL":   s.IsNotNull(),
+		"name = $1":        s.Eq("x"),
+		"name != $1":       s.Neq("x"),
+		"name LIKE $1":     s.Like("%x%"),
+		"name NOT LIKE $1": s.NotLike("%x%"),
+		"name IN ($1, $2)": s.In("a", "b"),
+		"age = $1":         i.Eq(1),
+		"age != $1":        i.Neq(1),
+		"age > $1":         i.Gt(1),
+		"age >= $1":        i.Gte(1),
+		"age < $1":         i.Lt(1),
+		"age <= $1":        i.Lte(1),
+		"age IN ($1, $2)":  i.In(1, 2),
+		"score = $1":       f.Eq(1),
+		"score != $1":      f.Neq(1),
+		"score > $1":       f.Gt(1),
+		"score >= $1":      f.Gte(1),
+		"score < $1":       f.Lt(1),
+		"score <= $1":      f.Lte(1),
+		"active = $1":      b.Eq(true),
+		"created_at = $1":  ts.Eq(1),
+		"created_at > $1":  ts.Gt(1),
+		"created_at >= $1": ts.Gte(1),
+		"created_at < $1":  ts.Lt(1),
+		"created_at <= $1": ts.Lte(1),
+		"id = $1":          u.Eq("x"),
+		"id != $1":         u.Neq("x"),
+		"id IN ($1, $2)":   u.In("a", "b"),
+		"name IS NULL":     s.IsNull(),
+		"name IS NOT NULL": s.IsNotNull(),
 	}
 	for want, cond := range checks {
 		if got := sqlOf(cond); got != want {
@@ -126,70 +124,6 @@ func TestConditionApplyOnQueryBuilder(t *testing.T) {
 }
 
 // --- declaration.go ---
-
-func writeJSON(t *testing.T, dir, name, body string) string {
-	t.Helper()
-	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
-func TestLoadEntityDeclaration(t *testing.T) {
-	dir := t.TempDir()
-	// Missing file.
-	if _, err := LoadEntityDeclaration(filepath.Join(dir, "nope.json")); err == nil {
-		t.Error("missing file should error")
-	}
-	// Bad JSON.
-	bad := writeJSON(t, dir, "bad.json", "{not json")
-	if _, err := LoadEntityDeclaration(bad); err == nil {
-		t.Error("bad json should error")
-	}
-	// Name derived from filename when omitted.
-	noName := writeJSON(t, dir, "widgets.json", `{"fields":[{"name":"title","type":"string"}]}`)
-	d, err := LoadEntityDeclaration(noName)
-	if err != nil || d.Name != "widgets" {
-		t.Fatalf("name-from-file: %v name=%q", err, d.Name)
-	}
-	// MCP endpoint in JSON is rejected.
-	mcpDecl := writeJSON(t, dir, "mcp.json", `{"name":"x","fields":[{"name":"t","type":"string"}],"endpoints":[{"method":"GET","path":"/x","mcp":true}]}`)
-	if _, err := LoadEntityDeclaration(mcpDecl); err == nil {
-		t.Error("mcp endpoint should be rejected")
-	}
-	// Invalid config (bad field type).
-	badField := writeJSON(t, dir, "bf.json", `{"name":"x","fields":[{"name":"t","type":"bogus"}]}`)
-	if _, err := LoadEntityDeclaration(badField); err == nil {
-		t.Error("bad field type should error")
-	}
-}
-
-func TestLoadEntityDeclarations(t *testing.T) {
-	// Missing dir.
-	if _, err := LoadEntityDeclarations(filepath.Join(t.TempDir(), "absent")); err == nil {
-		t.Error("missing dir should error")
-	}
-	dir := t.TempDir()
-	writeJSON(t, dir, "b.json", `{"name":"b","fields":[{"name":"t","type":"string"}]}`)
-	writeJSON(t, dir, "a.json", `{"name":"a","fields":[{"name":"t","type":"string"}]}`)
-	writeJSON(t, dir, "ignore.txt", "not json")
-	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	decls, err := LoadEntityDeclarations(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(decls) != 2 || decls[0].Name != "a" || decls[1].Name != "b" {
-		t.Fatalf("expected sorted [a b], got %+v", decls)
-	}
-	// A bad file in the dir surfaces an error.
-	writeJSON(t, dir, "c.json", "{broken")
-	if _, err := LoadEntityDeclarations(dir); err == nil {
-		t.Error("bad file in dir should error")
-	}
-}
 
 func TestDeclarationConfigAndField(t *testing.T) {
 	// Empty name.
@@ -341,13 +275,13 @@ func TestDefine_SkipsPreDeclaredInjectedColumns(t *testing.T) {
 func TestRequired_IsZeroAllKinds(t *testing.T) {
 	req := Required("a", "b", "c", "d", "e", "f", "g")
 	data := map[string]any{
-		"a": "",          // string zero
-		"b": 0,           // int zero
-		"c": int64(0),    // int64 zero
-		"d": 0.0,         // float zero
-		"e": false,       // bool zero
-		"f": nil,         // nil
-		"g": []string{},  // default branch: non-zero (slice) -> not flagged
+		"a": "",         // string zero
+		"b": 0,          // int zero
+		"c": int64(0),   // int64 zero
+		"d": 0.0,        // float zero
+		"e": false,      // bool zero
+		"f": nil,        // nil
+		"g": []string{}, // default branch: non-zero (slice) -> not flagged
 	}
 	errs := req(context.Background(), data)
 	for _, k := range []string{"a", "b", "c", "d", "e", "f"} {

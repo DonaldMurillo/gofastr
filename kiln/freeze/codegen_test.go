@@ -1,7 +1,8 @@
 package freeze
 
 import (
-	"os/exec"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,14 +26,11 @@ func TestLookForGofastr_Reports(t *testing.T) {
 	// When gofastr IS on PATH, err is nil — nothing to assert beyond that.
 }
 
-// TestFreezeAndGenerate_RealBinary runs the codegen end-to-end via the
-// installed gofastr binary. Skips if gofastr is not on PATH so this test
-// is a no-op on machines without the toolchain.
-func TestFreezeAndGenerate_RealBinary(t *testing.T) {
-	if _, err := exec.LookPath("gofastr"); err != nil {
-		t.Skip("gofastr binary not on PATH; run `go install ./cmd/gofastr` to enable this test")
-	}
-
+// TestFreezeAndGenerate_WritesSnapshotDefersCodegen verifies the snapshot is
+// written and that automated codegen is deferred to the blueprint flow. The
+// legacy entities/*.json → gen/ codegen path was removed; FreezeAndGenerate
+// now returns ErrGenerateViaBlueprint after writing the snapshot.
+func TestFreezeAndGenerate_WritesSnapshotDefersCodegen(t *testing.T) {
 	w := world.New()
 	w.Entities["posts"] = &world.Entity{
 		Name:  "posts",
@@ -43,32 +41,17 @@ func TestFreezeAndGenerate_RealBinary(t *testing.T) {
 		},
 	}
 	dir := t.TempDir()
-	if err := FreezeAndGenerate(w, dir, "gen"); err != nil {
-		t.Fatalf("FreezeAndGenerate: %v", err)
+	err := FreezeAndGenerate(w, dir, "gen")
+	if !errors.Is(err, ErrGenerateViaBlueprint) {
+		t.Fatalf("want ErrGenerateViaBlueprint, got %v", err)
 	}
+	// The snapshot artifacts are still written.
 	for _, want := range []string{
 		filepath.Join(dir, "entities", "posts.json"),
 		filepath.Join(dir, "world.json"),
-		filepath.Join(dir, "gen", "register.go"),
-		filepath.Join(dir, "gen", "models.go"),
-		filepath.Join(dir, "gen", "columns.go"),
-		filepath.Join(dir, "gen", "repo.go"),
 	} {
-		if _, err := exec.Command("test", "-f", want).Output(); err != nil {
-			// fallback: stat via os
-			if !fileExists(want) {
-				t.Errorf("missing expected file: %s", want)
-			}
+		if _, err := os.Stat(want); err != nil {
+			t.Errorf("missing snapshot file %s: %v", want, err)
 		}
 	}
-}
-
-func fileExists(path string) bool {
-	_, err := exec.Command("test", "-f", path).Output()
-	if err == nil {
-		return true
-	}
-	// stat fallback
-	out, _ := exec.Command("ls", path).CombinedOutput()
-	return len(out) > 0 && !strings.Contains(string(out), "No such")
 }

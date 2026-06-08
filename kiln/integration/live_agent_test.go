@@ -69,10 +69,10 @@ func freePort(t *testing.T) int {
 
 // liveServer wraps a running kiln subprocess.
 type liveServer struct {
-	URL     string
-	Dir     string
-	Cmd     *exec.Cmd
-	t       *testing.T
+	URL string
+	Dir string
+	Cmd *exec.Cmd
+	t   *testing.T
 }
 
 // startLiveKiln spawns `kiln serve --agent "pi -p ..."` in a temp dir
@@ -762,8 +762,8 @@ func TestLive_SoftDeleteFromAgent(t *testing.T) {
 }
 
 // TestLive_FreezeRoundTrip: agent builds an app, then we freeze it to
-// disk and reload via vanilla framework.EntitiesFromDir. The frozen
-// JSON IS the canonical source the agent's session graduates to.
+// disk and verify the frozen entity files. The frozen JSON IS the
+// canonical source the agent's session graduates to.
 func TestLive_FreezeRoundTrip(t *testing.T) {
 	liveCheck(t)
 	srv := startLiveKiln(t)
@@ -805,7 +805,7 @@ func TestLive_FreezeRoundTrip(t *testing.T) {
 }
 
 // freezeWriteJSON serializes the agent-built entities to disk using
-// the same shape framework.LoadEntityDeclaration consumes. Mirrors
+// the same JSON declaration shape Kiln's freeze emits. Mirrors
 // kiln/freeze/freeze.go's writeEntities so the test exercises the
 // public freeze contract without depending on the internal package.
 func freezeWriteJSON(dir string, world worldDump) error {
@@ -1128,15 +1128,15 @@ func TestLive_PageElementsVariety(t *testing.T) {
 
 	body, _ := httpGet(t, srv.URL+"/showcase")
 	checks := map[string]string{
-		"<nav":      "nav element",
-		"<h1":       "heading",
-		"<ul":       "list (unordered)",
-		"<li":       "list items",
-		"<table":    "table",
-		"<td":       "table cells",
-		"<img":      "image",
-		"alpha":     "first list item content",
-		"Showcase":  "heading content",
+		"<nav":     "nav element",
+		"<h1":      "heading",
+		"<ul":      "list (unordered)",
+		"<li":      "list items",
+		"<table":   "table",
+		"<td":      "table cells",
+		"<img":     "image",
+		"alpha":    "first list item content",
+		"Showcase": "heading content",
 	}
 	for snippet, label := range checks {
 		if !strings.Contains(body, snippet) {
@@ -1186,17 +1186,22 @@ func TestLive_ButtonToolDispatch(t *testing.T) {
 
 // TestLive_FreezeAndGenerateGo: the actual ship-it pipeline.
 //
-//   1. Live kiln, agent builds an app (entities, hook, route, page).
-//   2. kiln freeze --dir build/ reads the journal and writes
-//      entities/*.json + world.json.
-//   3. cmd/gofastr generate reads build/entities/*.json and writes
-//      gen/entities/{models.go, register.go} alongside it.
-//   4. We check that the produced Go files compile (via `go build`
-//      against a tiny synthetic main.go that imports them).
+//  1. Live kiln, agent builds an app (entities, hook, route, page).
+//  2. kiln freeze --dir build/ reads the journal and writes
+//     entities/*.json + world.json.
+//  3. cmd/gofastr generate reads build/entities/*.json and writes
+//     gen/entities/{models.go, register.go} alongside it.
+//  4. We check that the produced Go files compile (via `go build`
+//     against a tiny synthetic main.go that imports them).
 //
 // If any step blows up, "the agent can build a real app you can
 // commit" is a lie. This test is the contract.
 func TestLive_FreezeAndGenerateGo(t *testing.T) {
+	// The generate step (cmd/gofastr generate over build/entities/*.json) was
+	// removed with the legacy entities/*.json codegen path. Graduating a frozen
+	// Kiln world to Go now goes through a gofastr.yml blueprint — a tracked
+	// follow-up (see framework/docs/content/agent-notes.md, 2026-06-08).
+	t.Skip("freeze→generate ship-it pipeline pending blueprint support")
 	liveCheck(t)
 	srv := startLiveKiln(t)
 

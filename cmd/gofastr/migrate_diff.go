@@ -12,22 +12,27 @@ import (
 )
 
 // runMigrateDiff prints the ALTER TABLE statements needed to reconcile the
-// live DB with the entity declarations under ./entities. With --apply, runs
-// the changes inside a single transaction.
+// live DB with the entities declared in a gofastr.yml blueprint. With
+// --apply, runs the changes inside a single transaction.
 //
-//	gofastr migrate diff [--db-url=...] [--entities=...] [--apply]
+//	gofastr migrate diff --from=<blueprint.yml> [--db-url=...] [--apply]
 //
 // Without --db-url, falls back to DATABASE_URL.
 func runMigrateDiff(args []string) {
 	opts := parseDiffOptions(args)
-
-	decls, err := framework.LoadEntityDeclarations(opts.entitiesDir)
-	if err != nil {
-		fail("Failed to load entity declarations: %v", err)
+	if opts.from == "" {
+		fail("A blueprint is required: pass --from=<blueprint.yml>.")
 		osExit(1)
 	}
+
+	bp, err := loadBlueprint(opts.from)
+	if err != nil {
+		fail("Failed to load blueprint %s: %v", opts.from, err)
+		osExit(1)
+	}
+	decls := bp.Entities
 	if len(decls) == 0 {
-		fail("No entity declarations found in %s.", opts.entitiesDir)
+		fail("Blueprint %s declares no entities.", opts.from)
 		osExit(1)
 	}
 
@@ -106,15 +111,14 @@ func runMigrateDiff(args []string) {
 type diffOptions struct {
 	dbURL            string
 	driver           string
-	entitiesDir      string
+	from             string
 	apply            bool
 	allowDestructive bool
 }
 
 func parseDiffOptions(args []string) diffOptions {
 	opts := diffOptions{
-		entitiesDir: "entities",
-		driver:      "sqlite3",
+		driver: "sqlite3",
 	}
 	for _, arg := range args {
 		switch {
@@ -122,8 +126,8 @@ func parseDiffOptions(args []string) diffOptions {
 			opts.dbURL = strings.TrimPrefix(arg, "--db-url=")
 		case strings.HasPrefix(arg, "--driver="):
 			opts.driver = strings.TrimPrefix(arg, "--driver=")
-		case strings.HasPrefix(arg, "--entities="):
-			opts.entitiesDir = strings.TrimPrefix(arg, "--entities=")
+		case strings.HasPrefix(arg, "--from="):
+			opts.from = strings.TrimPrefix(arg, "--from=")
 		case arg == "--apply":
 			opts.apply = true
 		case arg == "--allow-destructive":

@@ -18,10 +18,11 @@ func TestDispatchRoutesNonBlocking(t *testing.T) {
 	covT_capStdout(t, func() { dispatch([]string{"new", "-h"}) })
 	covT_capStdout(t, func() { dispatch([]string{"docs", "--help"}) })
 	covT_capStdout(t, func() { dispatch([]string{"embed", "help"}) })
-	covT_capStdout(t, func() { dispatch([]string{"gen", "entity", "Foo", "name:string"}) })
 
-	// These dispatch to functions whose no-/bad-arg path calls osExit.
+	// These dispatch to functions whose no-/bad-arg path — or a
+	// removed-feature path (`generate entity`) — calls osExit.
 	for _, args := range [][]string{
+		{"gen", "entity", "Foo", "name:string"},
 		{"migrate", "bogus"},
 		{"agents"},
 		{"audit"},
@@ -109,12 +110,10 @@ func TestRunMigrateDownStatusForceSucceed(t *testing.T) {
 	covT_capStdout(t, func() { runMigrateForce([]string{"1", dbURL}) })
 }
 
-func TestRunMigrateGenerateNoEntitiesExits(t *testing.T) {
+func TestRunMigrateGenerateNoBlueprintExits(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	if err := os.MkdirAll(filepath.Join(dir, "entities"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// No --from → blueprint required → exit 1.
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() { runMigrateGenerate([]string{"name"}) })
 	})
@@ -124,20 +123,11 @@ func TestRunMigrateGenerateNoEntitiesExits(t *testing.T) {
 }
 
 func TestRunMigrateDiffNoDBExits(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	entDir := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	decl := `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string"}]}`
-	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(decl), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	_, bp := covT_writeBlueprint(t)
 	t.Setenv("DATABASE_URL", "")
 	// No --db-url and no DATABASE_URL → openDiffDB errors → exit 1.
 	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateDiff([]string{"--entities=entities"}) })
+		covT_capStdout(t, func() { runMigrateDiff([]string{"--from=" + bp}) })
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)

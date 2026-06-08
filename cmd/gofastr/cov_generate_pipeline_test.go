@@ -92,11 +92,38 @@ func TestFileSetFromGeneratedFiles(t *testing.T) {
 	}
 }
 
+// .go output is gofmt'd so the emitted package is clean and stable across
+// regenerations; non-Go files pass through untouched.
+func TestFileSetFromGeneratedFilesFormatsGo(t *testing.T) {
+	fs, err := fileSetFromGeneratedFiles([]generatedFile{
+		{name: "messy.go", content: "package a\nfunc  F( ){\nreturn\n}\n"},
+		{name: "data.json", content: "{ \"x\":1 }"},
+	}, "owner")
+	if err != nil {
+		t.Fatalf("fileSet err=%v", err)
+	}
+	var goContent, jsonContent string
+	for _, f := range fs.All() {
+		switch f.Path {
+		case "messy.go":
+			goContent = f.Content
+		case "data.json":
+			jsonContent = f.Content
+		}
+	}
+	if !strings.Contains(goContent, "func F() {") {
+		t.Errorf("expected gofmt'd Go, got:\n%s", goContent)
+	}
+	if jsonContent != "{ \"x\":1 }" {
+		t.Errorf("non-Go file should pass through untouched, got %q", jsonContent)
+	}
+}
+
 func TestRenderGeneratedProjectEndpointsRejected(t *testing.T) {
 	// Endpoints require Go handlers — codegen must refuse them.
 	decls := []framework.EntityDeclaration{{
-		Name:   "users",
-		Fields: []framework.FieldDeclaration{{Name: "email", Type: "string"}},
+		Name:      "users",
+		Fields:    []framework.FieldDeclaration{{Name: "email", Type: "string"}},
 		Endpoints: []framework.Endpoint{{Method: "GET", Path: "/x", Name: "x"}},
 	}}
 	if _, err := renderGeneratedProject(decls); err == nil {

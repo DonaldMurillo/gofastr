@@ -4,8 +4,9 @@ Kiln is a separate binary that lets an AI agent (Claude Code, pi,
 Codex, any CLI with `KILN_URL`) build a GoFastr app live by mutating
 an in-memory IR over HTTP. The world re-renders, the schema migrates,
 and a chat panel streams the conversation — all in-process. Freeze
-the journal when done to emit canonical `entities/*.json` and graduate
-to regular Go source you commit.
+the journal when done to emit a canonical snapshot of the built world,
+then graduate to a `gofastr.yml` blueprint (or hand-written Go) that you
+commit and generate from.
 
 This page is an overview. Source of truth: read the package docs in
 `kiln/` and the CLI help (`kiln serve -h`).
@@ -88,12 +89,16 @@ kiln freeze --dir build/
 
 This reads the journal and emits:
 
-- `build/entities/*.json` — one declaration per entity, ready to load
-  with `app.EntitiesFromDir`.
+- `build/entities/*.json` — one declaration per entity, as a readable
+  snapshot of the frozen world's entities.
 - `build/world.json` — the canonical world IR snapshot.
 
 You commit these files; the running Kiln process is no longer needed.
-Switch your app to load `build/entities/` via `EntitiesFromDir`.
+To graduate to a running framework app, declare the frozen entities in a
+`gofastr.yml` blueprint (the snapshot makes a faithful starting point — see
+[Blueprints](blueprints.md)) or write them in Go with `app.Entity(...)`, then
+run `gofastr generate --from=gofastr.yml`. There is no file-based runtime
+loader; the generated `entities.RegisterAll(app)` wires them in.
 
 ## Free-order authoring & durability
 

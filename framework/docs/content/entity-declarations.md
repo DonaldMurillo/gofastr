@@ -16,30 +16,27 @@
 > wired automatically — no extra setup needed. See the **Per-user
 > scoping (`OwnerField`)** section below for details.
 
-GoFastr supports JSON entity declarations for agent-friendly app generation.
-Declarations live in `entities/*.json` and can be loaded at runtime or used by
-the CLI code generator. In the general codegen system, entity JSON is one
-built-in source/generator pair, not a special architecture boundary.
-
-YAML blueprints are a separate CLI-only codegen surface. Use
-`gofastr generate --from=gofastr.yml` when you want a broader app blueprint
-that can generate entities plus screens and Go stubs. Runtime loading through
-`EntityFromFile` and `EntitiesFromDir` remains JSON-only.
-
-## Runtime Loading
+An entity is registered in Go with `app.Entity(name, framework.EntityConfig{…})`.
+This is the primary, fully-supported way to declare an entity:
 
 ```go
-app := framework.NewApp(framework.WithDB(db))
-if err := app.EntitiesFromDir("entities"); err != nil {
-    log.Fatal(err)
-}
+app.Entity("posts", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "title", Type: schema.String, Required: true},
+        {Name: "body", Type: schema.Text},
+        {Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
+        {Name: "author_id", Type: schema.Relation, To: "users"},
+    },
+})
 ```
 
-For a single declaration:
-
-```go
-entity, err := app.EntityFromFile("entities/posts.json")
-```
+The same entity shape can also be **declared in a `gofastr.yml` blueprint**
+and emitted as Go by the CLI — see [Blueprints](blueprints.md), the single
+declaration format the `gofastr generate` codegen pipeline reads. The
+`EntityDeclaration` / `FieldDeclaration` types documented below
+(`framework/entity/declaration.go`) are the in-memory shape the blueprint
+loader decodes a blueprint's `entities:` list into before converting each to
+an `EntityConfig` via `.Config()`. They are not loaded from standalone files.
 
 For Go-defined configs, `RegisterEntities` is sugar over multiple
 `Entity(...)` calls. Map iteration order is randomised, but FK ordering
@@ -148,38 +145,50 @@ done` (with elapsed duration), `seed skip` (when the ledger already
 records the entity), `seed failed` (on error). When no logger is
 attached, events go to a discard handler.
 
-## JSON Shape
+## Blueprint entity shape
 
-```json
-{
-  "name": "posts",
-  "table": "posts",
-  "soft_delete": true,
-  "multi_tenant": false,
-  "owner_field": "user_id",
-  "crud": true,
-  "mcp": true,
-  "fields": [
-    { "name": "title", "type": "string", "required": true, "max": 200 },
-    { "name": "body", "type": "text" },
-    { "name": "status", "type": "enum", "values": ["draft", "published"], "default": "draft" },
-    { "name": "author_id", "type": "relation", "to": "users" }
-  ]
-}
+Inside a `gofastr.yml` blueprint, each entry in the `entities:` list maps
+onto the `EntityDeclaration` fields below. The same field-type vocabulary
+applies whether you write the entity in Go (`EntityConfig`) or in a blueprint:
+
+```yaml
+entities:
+  - name: posts
+    table: posts
+    soft_delete: true
+    multi_tenant: false
+    owner_field: user_id
+    crud: true
+    mcp: true
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 200
+      - name: body
+        type: text
+      - name: status
+        type: enum
+        values: [draft, published]
+        default: draft
+      - name: author_id
+        type: relation
+        to: users
 ```
 
 `owner_field` mirrors `EntityConfig.OwnerField` — set it to the column
-that holds the row owner's id (e.g. `"user_id"`) and the JSON-declared
+that holds the row owner's id (e.g. `user_id`) and the blueprint-declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
-behaviour. `gofastr generate` emits `OwnerField:` into the generated
-`app.Entity(...)` registration, so the scoping survives code generation.
+behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` into
+the generated `app.Entity(...)` registration, so the scoping survives code
+generation.
 
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
 
-A `relation` field with a `to` target (e.g. `{"name": "author_id", "type":
-"relation", "to": "users"}`) declares a *BelongsTo*: the field's own column
+A `relation` field with a `to` target (e.g. a field named `author_id`, type
+`relation`, `to: users`) declares a *BelongsTo*: the field's own column
 holds the foreign key. `Define` derives a matching `Config.Relations` entry
 automatically, so AutoMigrate emits the FK constraint and `?include=author_id`
 eager-loads the related row — you do not have to declare the relation twice. An
@@ -253,12 +262,13 @@ safer default.
 
 ## Code Generation
 
+Generate Go from a `gofastr.yml` blueprint:
+
 ```bash
-gofastr generate
+gofastr generate --from=gofastr.yml
 ```
 
-This reads `entities/*.json` and writes generated Go files into
-`gen/entities/`:
+This writes the generated entity package into `gen/entities/`:
 
 - `register.go` with `RegisterAll(app *framework.App)`
 - `models.go` with basic entity model structs
@@ -267,34 +277,21 @@ This reads `entities/*.json` and writes generated Go files into
 - `events.go` with typed lifecycle subscriptions
 - `client/client.go` with a standalone Go HTTP client
 
+A blueprint that declares `app.module` also emits `gen/main.go` plus the
+`gen/blueprint` package (screens, endpoints, middleware stubs). See
+[Blueprints](blueprints.md) for the full blueprint shape.
+
 Useful flags:
 
+- `--from=<blueprint.yml>` selects the blueprint to generate from (required).
 - `--dry-run` lists generated files without writing.
 - `--json` emits machine-readable output.
-- `--entities=<dir>` reads declarations from another directory.
-- `--out=<dir>` writes generated files somewhere else.
+- `--out=<dir>` writes generated files somewhere else (default `gen`).
 - `--no-clean` preserves existing files in the output directory.
 
-For configurable generation, use `gofastr.codegen.yml`:
-
-```yaml
-version: 1
-codegen:
-  output: gen
-  generators:
-    - name: go/entities
-      source:
-        type: json_dir
-        path: entities
-      output: entities
-```
-
-See [Codegen](codegen.md) for config discovery, extension support, and
-manifest-based cleaning.
-
-`gofastr build` runs generation automatically when it finds a codegen config
-or, without config, when an `entities/` directory is present. Pass
-`--no-generate` to skip that step.
+For arbitrary configured generators (not a full app blueprint), use a
+`gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
+config discovery, the extension protocol, and manifest-based cleaning.
 
 ## Mounting under a prefix (`APIPrefix`)
 

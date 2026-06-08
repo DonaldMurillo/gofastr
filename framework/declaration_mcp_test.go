@@ -5,99 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
-
-func TestEntityFromFileRegistersJSONDeclaration(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "posts.json")
-	if err := os.WriteFile(path, []byte(`{
-		"name": "posts",
-		"table": "posts",
-		"fields": [
-			{"name": "title", "type": "string", "required": true, "max": 120},
-			{"name": "status", "type": "enum", "values": ["draft", "published"]}
-		],
-		"soft_delete": true,
-		"crud": true
-	}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	app := NewApp()
-	ent, err := app.EntityFromFile(path)
-	if err != nil {
-		t.Fatalf("EntityFromFile: %v", err)
-	}
-	if ent.GetName() != "posts" {
-		t.Fatalf("entity name = %q", ent.GetName())
-	}
-	if _, err := app.Registry.Get("posts"); err != nil {
-		t.Fatalf("registry missing posts: %v", err)
-	}
-	if _, ok := ent.Schema().FieldByName("deleted_at"); !ok {
-		t.Fatal("soft delete field was not injected")
-	}
-	status, ok := ent.Schema().FieldByName("status")
-	if !ok || status.Type != schema.Enum || len(status.Values) != 2 {
-		t.Fatalf("status field not decoded correctly: %#v", status)
-	}
-}
-
-func TestEntitiesFromDirLoadsDeclarationsInDirectory(t *testing.T) {
-	dir := t.TempDir()
-	files := map[string]string{
-		"posts.json": `{"name":"posts","fields":[{"name":"title","type":"string"}]}`,
-		"users.json": `{"name":"users","fields":[{"name":"email","type":"string","required":true}]}`,
-	}
-	for name, body := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	app := NewApp()
-	if err := app.EntitiesFromDir(dir); err != nil {
-		t.Fatalf("EntitiesFromDir: %v", err)
-	}
-	for name := range files {
-		entityName := name[:len(name)-len(filepath.Ext(name))]
-		if _, err := app.Registry.Get(entityName); err != nil {
-			t.Fatalf("registry missing %s: %v", entityName, err)
-		}
-	}
-}
-
-func TestGroupEntitiesFromDirRegistersUnderPrefix(t *testing.T) {
-	dir := t.TempDir()
-	files := map[string]string{
-		"widgets.json": `{"name":"widgets","fields":[{"name":"sku","type":"string"}]}`,
-		"orders.json":  `{"name":"orders","fields":[{"name":"amount","type":"int"}]}`,
-	}
-	for name, body := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	app := NewApp()
-	api := app.Group("/api")
-	if err := app.GroupEntitiesFromDir(api, dir); err != nil {
-		t.Fatalf("GroupEntitiesFromDir: %v", err)
-	}
-	for name := range files {
-		entityName := name[:len(name)-len(filepath.Ext(name))]
-		if _, err := app.Registry.Get(entityName); err != nil {
-			t.Fatalf("registry missing %s: %v", entityName, err)
-		}
-	}
-}
 
 func TestEntityMCPToolsCRUDLifecycle(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -15,10 +14,10 @@ func covT_bool(v bool) *bool      { return &v }
 
 func TestRelationTypeConstAll(t *testing.T) {
 	cases := map[framework.RelationType]string{
-		framework.RelHasOne:     "RelHasOne",
-		framework.RelHasMany:    "RelHasMany",
-		framework.RelManyToOne:  "RelManyToOne",
-		framework.RelManyToMany: "RelManyToMany",
+		framework.RelHasOne:        "RelHasOne",
+		framework.RelHasMany:       "RelHasMany",
+		framework.RelManyToOne:     "RelManyToOne",
+		framework.RelManyToMany:    "RelManyToMany",
 		framework.RelationType(99): "RelManyToOne",
 	}
 	for in, want := range cases {
@@ -75,15 +74,12 @@ func TestGoTypeForFieldAll(t *testing.T) {
 	}
 }
 
-func TestToCamelJSONAndSnake(t *testing.T) {
+func TestToCamelJSON(t *testing.T) {
 	if toCamelJSON("") != "" {
 		t.Fatal("empty")
 	}
 	if toCamelJSON("user_name") != "userName" {
 		t.Fatalf("got %q", toCamelJSON("user_name"))
-	}
-	if toSnakeCase("UserName") != "user_name" {
-		t.Fatalf("got %q", toSnakeCase("UserName"))
 	}
 }
 
@@ -179,13 +175,13 @@ func TestRenderFieldLiteralErrors(t *testing.T) {
 func TestRenderEntityRegistrationFull(t *testing.T) {
 	got, err := renderEntityRegistration(framework.EntityDeclaration{
 		Name: "user", Table: "users",
-		Fields:       []framework.FieldDeclaration{{Name: "name", Type: "string"}},
-		Relations:    []framework.Relation{{Type: framework.RelHasMany, Name: "posts", Entity: "post"}},
-		SoftDelete:   true, MultiTenant: true, CRUD: covT_bool(true), MCP: true,
-		CursorField:  "id", CursorFields: []string{"a", "b"},
-		Indices:      []framework.Index{{Name: "ix", Columns: []string{"name"}}},
-		Properties:   map[string]any{"k": "v"},
-		Timestamps:   covT_bool(true),
+		Fields:     []framework.FieldDeclaration{{Name: "name", Type: "string"}},
+		Relations:  []framework.Relation{{Type: framework.RelHasMany, Name: "posts", Entity: "post"}},
+		SoftDelete: true, MultiTenant: true, CRUD: covT_bool(true), MCP: true,
+		CursorField: "id", CursorFields: []string{"a", "b"},
+		Indices:    []framework.Index{{Name: "ix", Columns: []string{"name"}}},
+		Properties: map[string]any{"k": "v"},
+		Timestamps: covT_bool(true),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +255,10 @@ func TestSafeCleanOutputDir(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{"register.go", "models.go", ".gitkeep"} {
+	// main.go is part of the blueprint generator's output root; the cleaner
+	// must own it so re-running `gofastr generate --from` over an existing
+	// gen/ succeeds.
+	for _, n := range []string{"main.go", "register.go", "models.go", ".gitkeep"} {
 		if err := os.WriteFile(filepath.Join(sub, n), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -267,8 +266,10 @@ func TestSafeCleanOutputDir(t *testing.T) {
 	if err := safeCleanOutputDir(sub); err != nil {
 		t.Fatalf("clean owned: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(sub, "register.go")); !os.IsNotExist(err) {
-		t.Fatal("register.go not removed")
+	for _, n := range []string{"main.go", "register.go"} {
+		if _, err := os.Stat(filepath.Join(sub, n)); !os.IsNotExist(err) {
+			t.Fatalf("%s not removed", n)
+		}
 	}
 	// Unknown file → refuse.
 	if err := os.WriteFile(filepath.Join(sub, "secret.txt"), []byte("x"), 0o644); err != nil {
@@ -305,74 +306,3 @@ func TestPrintJSONHelpers(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
-
-func TestFieldTypeConstAll(t *testing.T) {
-	cases := map[schema.FieldType]string{
-		schema.String: "String", schema.Int: "Int", schema.Float: "Float",
-		schema.Bool: "Bool", schema.Enum: "Enum", schema.Date: "String",
-	}
-	for in, want := range cases {
-		if got := fieldTypeConst(in); got != want {
-			t.Errorf("fieldTypeConst(%v)=%q want %q", in, got, want)
-		}
-	}
-}
-
-func TestGenerateEntityWritesFile(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	covT_capStdout(t, func() {
-		generateEntity([]string{"Product", "title:string:required", "price:float", "active:bool", "qty:int", "kind:enum", "made:date", "weird:zzz"})
-	})
-	data, err := os.ReadFile(filepath.Join(dir, "entities", "product.go"))
-	if err != nil {
-		t.Fatalf("read generated: %v", err)
-	}
-	s := string(data)
-	for _, want := range []string{"package entities", "registerProduct", `Table: "product"`, "schema.String", "schema.Float", "schema.Bool", "schema.Int", "schema.Enum", "Required: true"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("generated entity missing %q", want)
-		}
-	}
-}
-
-func TestGenerateEntityDefaultsField(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	covT_capStdout(t, func() { generateEntity([]string{"Tag"}) })
-	if _, err := os.Stat(filepath.Join(dir, "entities", "tag.go")); err != nil {
-		t.Fatalf("default-field entity not written: %v", err)
-	}
-}
-
-func TestGenerateEntityNoNameExits(t *testing.T) {
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { generateEntity(nil) })
-	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
-	}
-}
-
-func TestGenerateEntityBadFieldExits(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { generateEntity([]string{"X", "nocolon"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
-	}
-}
-
-func TestGenerateEntityExistingFileExits(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	covT_capStdout(t, func() { generateEntity([]string{"Dup", "name:string"}) })
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { generateEntity([]string{"Dup", "name:string"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
-	}
-}

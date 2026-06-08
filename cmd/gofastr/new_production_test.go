@@ -11,28 +11,6 @@ import (
 
 // ----- (a) Golden tests -----
 
-func TestNewEntityGolden(t *testing.T) {
-	dir := t.TempDir()
-	if err := scaffoldEntity(dir, "User", []string{"name:string", "email:string:unique"}, false); err != nil {
-		t.Fatalf("scaffoldEntity: %v", err)
-	}
-	got, err := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
-	if err != nil {
-		t.Fatalf("read generated: %v", err)
-	}
-	want := `{
-  "name": "User",
-  "table": "user",
-  "fields": [
-    {"name": "name", "type": "string"},
-    {"name": "email", "type": "string", "unique": true}
-  ]
-}`
-	if string(got) != want {
-		t.Fatalf("entity golden mismatch.\nwant:\n%s\n\ngot:\n%s", want, got)
-	}
-}
-
 func TestNewHandlerGolden(t *testing.T) {
 	dir := t.TempDir()
 	if err := scaffoldHandler(dir, "Ping", "POST", "/api/ping", false); err != nil {
@@ -72,27 +50,6 @@ func TestNewRouteGolden(t *testing.T) {
 
 // ----- (b) Idempotency -----
 
-func TestNewEntityIdempotent(t *testing.T) {
-	dir := t.TempDir()
-	if err := scaffoldEntity(dir, "User", []string{"name:string"}, false); err != nil {
-		t.Fatalf("first scaffoldEntity: %v", err)
-	}
-	first, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
-
-	err := scaffoldEntity(dir, "User", []string{"name:string", "evil:string"}, false)
-	if err == nil {
-		t.Fatal("expected error on duplicate scaffold, got nil")
-	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("expected 'already exists' error, got: %v", err)
-	}
-
-	second, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
-	if !bytes.Equal(first, second) {
-		t.Fatal("file was clobbered despite duplicate-detection error")
-	}
-}
-
 func TestNewHandlerIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	if err := scaffoldHandler(dir, "Ping", "GET", "/p", false); err != nil {
@@ -114,25 +71,6 @@ func TestNewHandlerIdempotent(t *testing.T) {
 }
 
 // ----- (c) -overwrite -----
-
-func TestNewEntityOverwrite(t *testing.T) {
-	dir := t.TempDir()
-	if err := scaffoldEntity(dir, "User", []string{"a:string"}, false); err != nil {
-		t.Fatalf("first: %v", err)
-	}
-	first, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
-
-	if err := scaffoldEntity(dir, "User", []string{"b:string"}, true); err != nil {
-		t.Fatalf("overwrite scaffoldEntity: %v", err)
-	}
-	second, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
-	if bytes.Equal(first, second) {
-		t.Fatal("overwrite did not change file")
-	}
-	if !strings.Contains(string(second), `"name": "b"`) {
-		t.Fatalf("overwrite did not contain new field: %s", second)
-	}
-}
 
 func TestNewHandlerOverwrite(t *testing.T) {
 	dir := t.TempDir()
@@ -191,68 +129,24 @@ func TestNewHelpExitsZero(t *testing.T) {
 	}
 }
 
-func TestNewCLIGeneratedHandlerAndEntityBuild(t *testing.T) {
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestNewCLIGeneratedHandlerBuilds(t *testing.T) {
 	bin := buildGofastrBin(t)
 	dir := t.TempDir()
-	goVersion, err := repoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module example.com/newcli\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := copyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
 	writeTestFile(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
 
-	run := func(args ...string) []byte {
-		t.Helper()
-		cmd := exec.Command(bin, args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("gofastr %v: %v\n%s", args, err, out)
-		}
-		return out
-	}
-	run("new", "handler", "Ping", "GET", "/ping")
-	run("new", "entity", "User", "name:string", "email:string:unique")
-
-	entityPath := filepath.Join(dir, "entities", "user.json")
-	first, err := os.ReadFile(entityPath)
-	if err != nil {
-		t.Fatalf("read entity: %v", err)
-	}
-	dup := exec.Command(bin, "new", "entity", "User", "other:string")
-	dup.Dir = dir
-	if out, err := dup.CombinedOutput(); err == nil || !strings.Contains(string(out), "already exists") {
-		t.Fatalf("duplicate entity should fail without clobbering: err=%v out=%s", err, out)
-	}
-	second, err := os.ReadFile(entityPath)
-	if err != nil {
-		t.Fatalf("read entity after duplicate: %v", err)
-	}
-	if !bytes.Equal(first, second) {
-		t.Fatal("duplicate entity command clobbered existing file")
-	}
-
-	gen := exec.Command(bin, "generate")
-	gen.Dir = dir
-	gen.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
-	if out, err := gen.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate after new entity: %v\n%s", err, out)
-	}
-
-	cmd := exec.Command("go", "test", "-mod=mod", ".", "./gen/entities")
+	cmd := exec.Command(bin, "new", "handler", "Ping", "GET", "/ping")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("new-generated output did not build: %v\n%s", err, out)
+		t.Fatalf("gofastr new handler: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ping_handler.go")); err != nil {
+		t.Fatalf("handler not scaffolded: %v", err)
+	}
+
+	// `new entity` was removed — it must exit non-zero without scaffolding.
+	ent := exec.Command(bin, "new", "entity", "User", "name:string")
+	ent.Dir = dir
+	if out, err := ent.CombinedOutput(); err == nil || !strings.Contains(string(out), "removed") {
+		t.Fatalf("new entity should report removal and fail: err=%v out=%s", err, out)
 	}
 }

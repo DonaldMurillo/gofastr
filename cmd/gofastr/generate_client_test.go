@@ -191,14 +191,18 @@ func TestGenerateClient_RoundTripAgainstLiveServer(t *testing.T) {
 	if err := copyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "entities", "posts.json"), []byte(`{
-		"name":"posts",
-		"fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}],
-		"crud":true
-	}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`app:
+  name: cli
+entities:
+  - name: posts
+    crud: true
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: views
+        type: int
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,7 +214,7 @@ func TestGenerateClient_RoundTripAgainstLiveServer(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject(nil)
+	generateProject([]string{"--from=gofastr.yml", "--out=gen"})
 
 	// Drop the integration test file into its own package directory.
 	itDir := filepath.Join(dir, "integration")
@@ -249,14 +253,18 @@ func TestGenerateClient_E2EBuildsCleanly(t *testing.T) {
 	if err := copyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "entities", "posts.json"), []byte(`{
-		"name":"posts",
-		"fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}],
-		"crud":true
-	}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`app:
+  name: cli
+entities:
+  - name: posts
+    crud: true
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: views
+        type: int
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -268,7 +276,7 @@ func TestGenerateClient_E2EBuildsCleanly(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject(nil)
+	generateProject([]string{"--from=gofastr.yml", "--out=gen"})
 
 	clientPath := filepath.Join(dir, "gen", "entities", "client", "client.go")
 	if _, err := os.Stat(clientPath); err != nil {

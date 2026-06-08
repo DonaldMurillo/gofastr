@@ -97,8 +97,6 @@ func printHelp() {
       --module=<path>  Set Go module path (default: local/<name>)
       --no-entity      Skip sample entity scaffolding
       --db=<driver>    Database driver: sqlite (default) or postgres
-  generate entity <n>   Generate an entity definition file
-  new entity <n>        Scaffold a new entity (lower-level than kiln)
   new handler <n>       Scaffold a new HTTP handler
   new route <path>      Scaffold a route registration
   generate --from=<yml> Generate code from a deterministic YAML blueprint
@@ -127,7 +125,6 @@ func printHelp() {
   gofastr init myapp
   gofastr init myapp --module=github.com/me/myapp
   gofastr init myapp --no-entity
-  gofastr generate entity user name:string email:string:unique
   gofastr generate --from=gofastr.yml --dry-run
   gofastr generate --config=gofastr.codegen.yml
   gofastr theme init

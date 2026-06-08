@@ -13,16 +13,21 @@ import (
 // runMigrateGenerate turns a change to the entity declarations into a reviewable,
 // reversible, versioned migration file — the offline declarative workflow.
 //
-//	gofastr migrate generate <name> [--entities=dir] [--migrations=dir]
+//	gofastr migrate generate <name> --from=<blueprint.yml> [--migrations=dir]
 //	                                [--snapshot=path] [--driver=name]
 //
-// It diffs the entities against a committed schema snapshot (no database
-// needed), writes `migrations/NNNN_<name>.sql` with Up and Down sections, and
-// updates the snapshot. Review the file, commit it, then `gofastr migrate up`.
+// It diffs the blueprint's entities against a committed schema snapshot (no
+// database needed), writes `migrations/NNNN_<name>.sql` with Up and Down
+// sections, and updates the snapshot. Review the file, commit it, then
+// `gofastr migrate up`.
 func runMigrateGenerate(args []string) {
 	opts := parseMigrateGenOptions(args)
 	if opts.name == "" {
-		fail("Usage: gofastr migrate generate <name> [--entities=dir] [--migrations=dir] [--snapshot=path] [--driver=name]")
+		fail("Usage: gofastr migrate generate <name> --from=<blueprint.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
+		osExit(1)
+	}
+	if opts.from == "" {
+		fail("A blueprint is required: pass --from=<blueprint.yml>.")
 		osExit(1)
 	}
 
@@ -31,13 +36,14 @@ func runMigrateGenerate(args []string) {
 		dialect = framework.DialectPostgres
 	}
 
-	decls, err := framework.LoadEntityDeclarations(opts.entitiesDir)
+	bp, err := loadBlueprint(opts.from)
 	if err != nil {
-		fail("Failed to load entity declarations: %v", err)
+		fail("Failed to load blueprint %s: %v", opts.from, err)
 		osExit(1)
 	}
+	decls := bp.Entities
 	if len(decls) == 0 {
-		fail("No entity declarations found in %s.", opts.entitiesDir)
+		fail("Blueprint %s declares no entities.", opts.from)
 		osExit(1)
 	}
 	reg := framework.NewRegistry()
@@ -94,7 +100,7 @@ func runMigrateGenerate(args []string) {
 
 type migrateGenOptions struct {
 	name          string
-	entitiesDir   string
+	from          string
 	migrationsDir string
 	snapshotPath  string
 	driver        string
@@ -102,14 +108,13 @@ type migrateGenOptions struct {
 
 func parseMigrateGenOptions(args []string) migrateGenOptions {
 	opts := migrateGenOptions{
-		entitiesDir:   "entities",
 		migrationsDir: "migrations",
 		driver:        "sqlite3",
 	}
 	for _, arg := range args {
 		switch {
-		case strings.HasPrefix(arg, "--entities="):
-			opts.entitiesDir = strings.TrimPrefix(arg, "--entities=")
+		case strings.HasPrefix(arg, "--from="):
+			opts.from = strings.TrimPrefix(arg, "--from=")
 		case strings.HasPrefix(arg, "--migrations="):
 			opts.migrationsDir = strings.TrimPrefix(arg, "--migrations=")
 		case strings.HasPrefix(arg, "--snapshot="):

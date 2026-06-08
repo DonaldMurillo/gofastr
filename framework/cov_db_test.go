@@ -3,8 +3,6 @@ package framework
 import (
 	"context"
 	"database/sql"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -230,70 +228,6 @@ func TestCovTableDuplicatePanics(t *testing.T) {
 		Name:    "dup",
 		Columns: []migrate.Column{{Name: "id", Type: schema.String, PrimaryKey: true}},
 	})
-}
-
-// ============================================================================
-// app.go — EntityFromFile / EntitiesFromDir / GroupEntitiesFromDir
-// ============================================================================
-
-const covEntityDecl = `{
-  "name": "widgets",
-  "table": "widgets",
-  "crud": false,
-  "fields": [{"name": "label", "type": "string"}]
-}`
-
-func TestCovEntityFromFileAndDir(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "widgets.json")
-	if err := os.WriteFile(path, []byte(covEntityDecl), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	// EntityFromFile happy path.
-	app := NewApp(WithoutDefaultMiddleware())
-	ent, err := app.EntityFromFile(path)
-	if err != nil || ent == nil {
-		t.Fatalf("EntityFromFile: %v", err)
-	}
-
-	// EntityFromFile error: missing file.
-	app2 := NewApp(WithoutDefaultMiddleware())
-	if _, err := app2.EntityFromFile(filepath.Join(dir, "nope.json")); err == nil {
-		t.Fatal("expected load error for missing file")
-	}
-
-	// EntitiesFromDir happy path.
-	app3 := NewApp(WithoutDefaultMiddleware())
-	if err := app3.EntitiesFromDir(dir); err != nil {
-		t.Fatalf("EntitiesFromDir: %v", err)
-	}
-	if _, err := app3.Registry.Get("widgets"); err != nil {
-		t.Fatalf("widgets not registered: %v", err)
-	}
-
-	// EntitiesFromDir error: nonexistent dir.
-	app4 := NewApp(WithoutDefaultMiddleware())
-	if err := app4.EntitiesFromDir(filepath.Join(dir, "no-such-dir")); err == nil {
-		t.Fatal("expected error for missing dir")
-	}
-
-	// GroupEntitiesFromDir happy path.
-	app5 := NewApp(WithoutDefaultMiddleware())
-	g := app5.Group("/api")
-	if err := app5.GroupEntitiesFromDir(g, dir); err != nil {
-		t.Fatalf("GroupEntitiesFromDir: %v", err)
-	}
-	if _, err := app5.Registry.Get("widgets"); err != nil {
-		t.Fatalf("widgets not registered under group: %v", err)
-	}
-
-	// GroupEntitiesFromDir error: nonexistent dir.
-	app6 := NewApp(WithoutDefaultMiddleware())
-	g6 := app6.Group("/api")
-	if err := app6.GroupEntitiesFromDir(g6, filepath.Join(dir, "no-such-dir")); err == nil {
-		t.Fatal("expected error for missing dir (group)")
-	}
 }
 
 // ============================================================================

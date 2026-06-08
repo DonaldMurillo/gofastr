@@ -76,13 +76,9 @@ Reachable failure paths ARE tested, incl. fault-injected `Query`/`rows.Err`/
 `Commit`/`Exec` errors (see `cov_faultdriver_test.go`) and failing-`ResponseWriter`
 SSE/stream client-disconnects (`cov_failwriter_test.go`).
 
-## framework (root) (5 dead + 5 hard)
+## framework (root) (2 dead + 5 hard)
 
 **Dead:**
-- `app.go:725,739,764` — `decl.Config()` error in `EntityFromFile` /
-  `EntitiesFromDir` / `GroupEntitiesFromDir`: `entity.LoadEntityDeclaration[s]`
-  already calls `Config()` and fails the load on error, so a loaded decl never
-  re-fails here.
 - `testharness.go:163` — `json.Unmarshal` of bytes just produced by
   `json.Marshal` into `any`: cannot fail.
 - `typed_hooks.go:201` — same `json.Unmarshal`-of-own-`Marshal` pattern in

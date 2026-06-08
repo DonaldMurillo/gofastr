@@ -2,43 +2,35 @@ package freeze
 
 import (
 	"errors"
-	"fmt"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-// FreezeAndGenerate writes the world to dir (entities/*.json + world.json)
-// and then runs `gofastr generate` to produce the typed package alongside.
-// pkgPath is the relative output directory for the generated Go code (e.g.
-// "entities" or "gen/entities").
+// ErrGenerateViaBlueprint signals that automated codegen from a frozen Kiln
+// world is temporarily unavailable. The legacy entities/*.json → gen/ codegen
+// path was removed in favour of the gofastr.yml blueprint; emitting a blueprint
+// from a Kiln world is a tracked follow-up (see
+// framework/docs/content/agent-notes.md, 2026-06-08).
+var ErrGenerateViaBlueprint = errors.New(
+	"kiln freeze: automated codegen is pending blueprint support — the snapshot " +
+		"under <dir>/ is written; declare the frozen entities in a gofastr.yml " +
+		"blueprint and run `gofastr generate --from=gofastr.yml` to produce Go")
+
+// FreezeAndGenerate writes the world's snapshot to dir (entities/*.json +
+// world.json) and previously also invoked `gofastr generate` to produce the
+// typed package alongside. The pkgPath argument named the relative output
+// directory for that generated Go code.
 //
-// Requires the gofastr binary on PATH — kiln-built apps that want to graduate
-// to typed-repo Go usually have the toolchain installed already. When the
-// binary isn't found, returns an error so callers can skip gracefully.
-func FreezeAndGenerate(w *world.World, dir, pkgPath string) error {
+// The generate step is currently unavailable: it depended on the removed
+// entities/*.json → gen/ codegen path. The snapshot is still written; the
+// function then returns ErrGenerateViaBlueprint so callers can graduate the
+// frozen world manually via a gofastr.yml blueprint.
+func FreezeAndGenerate(w *world.World, dir, _ string) error {
 	if err := Freeze(w, dir); err != nil {
 		return err
 	}
-	if pkgPath == "" {
-		pkgPath = filepath.Join("gen", "entities")
-	}
-	bin, err := exec.LookPath("gofastr")
-	if err != nil {
-		return fmt.Errorf("freeze: gofastr binary not on PATH: %w", err)
-	}
-	// gofastr generate rejects absolute --out paths (validateOutputDir). Run
-	// the command with cwd = dir so we can pass relative paths.
-	cmd := exec.Command(bin, "generate",
-		"--entities=entities",
-		"--out="+pkgPath,
-	)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("freeze: gofastr generate failed: %w\n%s", err, string(out))
-	}
-	return nil
+	return ErrGenerateViaBlueprint
 }
 
 // LookForGofastr reports whether the gofastr binary is reachable on PATH.

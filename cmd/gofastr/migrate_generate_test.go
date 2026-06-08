@@ -26,9 +26,9 @@ func TestNextMigrationVersion(t *testing.T) {
 func TestSanitizeMigrationName(t *testing.T) {
 	cases := map[string]string{
 		"Add Views Column": "add_views_column",
-		"  add-email!!  ":   "add_email",
-		"____":              "migration",
-		"CamelCase":         "camelcase",
+		"  add-email!!  ":  "add_email",
+		"____":             "migration",
+		"CamelCase":        "camelcase",
 	}
 	for in, want := range cases {
 		if got := sanitizeMigrationName(in); got != want {
@@ -47,19 +47,18 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 		t.Skip("gofastr binary not on PATH (run `go install ./cmd/gofastr`)")
 	}
 	dir := t.TempDir()
-	entDir := filepath.Join(dir, "entities")
 	migDir := filepath.Join(dir, "migrations")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 
-	writeDecl := func(json string) {
-		if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(json), 0o644); err != nil {
+	// writeBlueprint writes a gofastr.yml with a posts entity carrying the
+	// given fields YAML (indented under the entity's `fields:`).
+	writeBlueprint := func(fields string) {
+		bp := "app:\n  name: testapp\nentities:\n  - name: posts\n    table: posts\n    fields:\n" + fields
+		if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(bp), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	gen := func(name string) string {
-		cmd := exec.Command(bin, "migrate", "generate", name, "--entities=entities", "--migrations=migrations")
+		cmd := exec.Command(bin, "migrate", "generate", name, "--from=gofastr.yml", "--migrations=migrations")
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -69,7 +68,7 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	}
 
 	// 1) Initial schema → create migration.
-	writeDecl(`{"name":"posts","table":"posts","fields":[{"name":"title","type":"string","required":true}]}`)
+	writeBlueprint("      - name: title\n        type: string\n        required: true\n")
 	gen("create_posts")
 	first := filepath.Join(migDir, "0001_create_posts.sql")
 	body, err := os.ReadFile(first)
@@ -87,7 +86,7 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	}
 
 	// 2) Add a column → incremental migration.
-	writeDecl(`{"name":"posts","table":"posts","fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}]}`)
+	writeBlueprint("      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
 	gen("add_views")
 	second := filepath.Join(migDir, "0002_add_views.sql")
 	body2, err := os.ReadFile(second)

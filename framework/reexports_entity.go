@@ -37,8 +37,6 @@ const (
 
 var (
 	Define                 = entity.Define
-	LoadEntityDeclaration  = entity.LoadEntityDeclaration
-	LoadEntityDeclarations = entity.LoadEntityDeclarations
 	HasOne                 = entity.HasOne
 	HasMany                = entity.HasMany
 	BelongsTo              = entity.BelongsTo

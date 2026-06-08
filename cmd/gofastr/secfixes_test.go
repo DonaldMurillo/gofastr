@@ -95,24 +95,3 @@ func TestMachineKeyEncodings(t *testing.T) {
 		t.Fatalf("empty env should yield nil key")
 	}
 }
-
-// F20: generate entity and new entity agree on table name.
-func TestTableNameParity(t *testing.T) {
-	dir := t.TempDir()
-	if err := scaffoldEntity(dir, "Article", nil, false); err != nil {
-		t.Fatalf("scaffoldEntity: %v", err)
-	}
-	entries, _ := os.ReadDir(dir + "/entities")
-	var newTable string
-	for _, e := range entries {
-		data, _ := os.ReadFile(dir + "/entities/" + e.Name())
-		if i := strings.Index(string(data), `"table": "`); i >= 0 {
-			rest := string(data)[i+len(`"table": "`):]
-			newTable = rest[:strings.Index(rest, `"`)]
-		}
-	}
-	genTable := toSnakeCase("Article")
-	if newTable != genTable {
-		t.Fatalf("table name divergence: new=%q generate=%q", newTable, genTable)
-	}
-}

@@ -71,8 +71,8 @@ app.GroupEntity(v2, "posts", postsV2Config)
 
 Each group carries its own middleware stack, access policy, OpenAPI tag,
 and MCP namespace, so the two versions are independently
-gated and independently described. Use `App.GroupEntitiesFromDir(group, dir)`
-to register a whole directory of JSON declarations into one version.
+gated and independently described. Register each entity into a version with
+`app.GroupEntity(group, name, config)`.
 
 ---
 
