@@ -81,7 +81,13 @@ engine itself knows about *clients*, never about transports.
 6. **Profiles are config, not code.** `--framework` and default are
    two preset bundles loaded from `profile/framework.toml` and
    `profile/default.toml`. Adding a third profile must never require
-   touching the loop or core packages.
+   touching the loop or core packages. The two built-in presets are
+   also **embedded into the `gofastr` binary** (`go:embed`): when an
+   installed binary runs outside the source tree and the on-disk
+   `profile/*.toml` is absent, the loader falls back to the embedded
+   copy, so `gofastr harness` / `gofastr harness --framework` work
+   anywhere. An explicit `--profile <path>` still requires an on-disk
+   file (no embedded fallback).
 7. **The engine knows about *clients*, never transports.** Transports
    are owned by `control/`. The engine sees an opaque `Client` and
    tracks per-client identity (originator, `identity_class`) without
@@ -1229,9 +1235,12 @@ The full CI setup uses three pre-provisioned artifacts:
    stored as a CI secret). Subsequent CI runs read this and skip
    TOFU prompts.
 3. **`GOFASTR_HARNESS_MACHINE_KEY`** — env var holding the
-   credstore key (a 32-byte base64 string), passed as a CI secret.
-   Replaces the passphrase prompt for the encrypted credential
-   store.
+   credstore key, passed as a CI secret. Replaces the passphrase
+   prompt for the encrypted credential store. The value must decode
+   to exactly 32 bytes; three encodings are accepted: 32 raw bytes,
+   64 hex characters, or base64 (standard/URL, padded or not). A
+   value that does not decode to 32 bytes is rejected loudly — the
+   harness never silently falls back to a weaker secret.
 
 CI engineers verify acks without launching the agent loop using:
 

@@ -172,7 +172,8 @@ attached, events go to a discard handler.
 that holds the row owner's id (e.g. `"user_id"`) and the JSON-declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
-behaviour.
+behaviour. `gofastr generate` emits `OwnerField:` into the generated
+`app.Entity(...)` registration, so the scoping survives code generation.
 
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.

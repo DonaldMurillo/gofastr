@@ -108,7 +108,7 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 // if set (via GOFASTR_HARNESS_MACHINE_KEY), else a fresh random secret
 // so each process restart invalidates outstanding tokens.
 func deriveListenerSecret() []byte {
-	if mk := machineKeyFromEnv(); len(mk) > 0 {
+	if mk, err := machineKeyFromEnv(); err == nil && len(mk) > 0 {
 		h := sha256.Sum256(append([]byte("harness-http:"), mk...))
 		return h[:]
 	}

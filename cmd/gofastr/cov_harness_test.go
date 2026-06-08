@@ -30,16 +30,16 @@ func TestIsTTY(t *testing.T) {
 
 func TestMachineKeyFromEnv(t *testing.T) {
 	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "")
-	if machineKeyFromEnv() != nil {
-		t.Fatal("empty → nil")
+	if k, err := machineKeyFromEnv(); err != nil || k != nil {
+		t.Fatalf("empty → nil,nil (got %v,%v)", k, err)
 	}
-	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "0123456789abcdef0123456789abcdef") // 32 bytes
-	if len(machineKeyFromEnv()) != 32 {
-		t.Fatal("32-byte key accepted")
+	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "0123456789abcdef0123456789abcdef") // 32 raw bytes
+	if k, err := machineKeyFromEnv(); err != nil || len(k) != 32 {
+		t.Fatalf("32-byte raw key accepted (got len=%d, err=%v)", len(k), err)
 	}
 	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "tooshort")
-	if machineKeyFromEnv() != nil {
-		t.Fatal("non-32 → nil")
+	if _, err := machineKeyFromEnv(); err == nil {
+		t.Fatal("bad value should error, not silently downgrade")
 	}
 }
 

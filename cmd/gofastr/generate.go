@@ -489,6 +489,9 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	if decl.MultiTenant {
 		sb.WriteString("\t\tMultiTenant: true,\n")
 	}
+	if decl.OwnerField != "" {
+		sb.WriteString(fmt.Sprintf("\t\tOwnerField: %q,\n", decl.OwnerField))
+	}
 	if decl.CRUD != nil {
 		sb.WriteString(fmt.Sprintf("\t\tCRUD: boolPtr(%t),\n", *decl.CRUD))
 	}

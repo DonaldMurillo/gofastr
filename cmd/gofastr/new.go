@@ -195,7 +195,10 @@ func scaffoldEntity(baseDir, rawName string, fieldArgs []string, overwrite bool)
 		fields = []string{`{"name": "name", "type": "string"}`}
 	}
 
-	tableName := strings.ToLower(name) + "s"
+	// Match the framework's default table convention (entity.Define ->
+	// toSnake(name)) so migrations from both codegen paths target the
+	// same table. Singular snake_case, NOT pluralized.
+	tableName := toSnakeCase(name)
 	dir := filepath.Join(baseDir, "entities")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir entities: %w", err)

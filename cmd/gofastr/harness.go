@@ -22,6 +22,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -103,6 +105,12 @@ func runHarness(args []string) {
 	logger := buildLogger(xdgState, *logToStderr, *logLevel)
 	logger.Info("boot", "profile", prof.Name, "model", prof.DefaultModel)
 
+	machineKey, err := machineKeyFromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		osExit(1)
+	}
+
 	// Compose the harness.
 	cfg := xharness.Config{
 		Profile:           prof,
@@ -112,7 +120,7 @@ func runHarness(args []string) {
 		Logger:            logger,
 		AllowProjectHooks: *allowProjectHooks,
 		CredstorePass:     os.Getenv("GOFASTR_HARNESS_PASSPHRASE"),
-		MachineKey:        machineKeyFromEnv(),
+		MachineKey:        machineKey,
 	}
 	if cfg.CredstorePass == "" && len(cfg.MachineKey) == 0 {
 		// Best-effort default for first-run dev convenience.
@@ -206,19 +214,26 @@ func isTTY(f *os.File) bool {
 }
 
 func loadProfile(useFramework bool, explicit string) (*profile.Profile, error) {
-	var path string
-	switch {
-	case explicit != "":
-		path = explicit
-	case useFramework:
+	// An explicit --profile path must exist on disk; no embedded fallback.
+	if explicit != "" {
+		if _, err := os.Stat(explicit); err != nil {
+			return nil, fmt.Errorf("profile path %q: %w", explicit, err)
+		}
+		return profile.Load(explicit)
+	}
+	name := "default"
+	path := "framework/harness/profile/default.toml"
+	if useFramework {
+		name = "framework"
 		path = "framework/harness/profile/framework.toml"
-	default:
-		path = "framework/harness/profile/default.toml"
 	}
-	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("profile path %q: %w", path, err)
+	// Prefer the on-disk copy when running inside the source tree (so
+	// edits to the .toml take effect without rebuilding); fall back to
+	// the copy embedded in the binary for installed/out-of-tree runs.
+	if _, err := os.Stat(path); err == nil {
+		return profile.Load(path)
 	}
-	return profile.Load(path)
+	return profile.Embedded(name)
 }
 
 func buildLogger(xdgState string, toStderr bool, levelSpec string) *logging.Logger {
@@ -246,16 +261,37 @@ func buildLogger(xdgState string, toStderr bool, levelSpec string) *logging.Logg
 	return l
 }
 
-func machineKeyFromEnv() []byte {
+// machineKeyFromEnv reads GOFASTR_HARNESS_MACHINE_KEY and decodes it into
+// a 32-byte key. It accepts three encodings of a 32-byte key:
+//   - 32 raw bytes (length 32),
+//   - 64 hex characters,
+//   - base64 (standard or URL, with or without padding).
+//
+// An empty value yields (nil, nil) — no machine key configured. Any other
+// value that does not decode to exactly 32 bytes returns an error so the
+// caller fails loudly instead of silently downgrading to a weaker secret.
+func machineKeyFromEnv() ([]byte, error) {
 	raw := os.Getenv("GOFASTR_HARNESS_MACHINE_KEY")
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
-	// Accept exactly 32 raw bytes (base64) or 64 hex chars.
 	if len(raw) == 32 {
-		return []byte(raw)
+		return []byte(raw), nil
 	}
-	return nil
+	if len(raw) == 64 {
+		if b, err := hex.DecodeString(raw); err == nil && len(b) == 32 {
+			return b, nil
+		}
+	}
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding, base64.RawStdEncoding,
+		base64.URLEncoding, base64.RawURLEncoding,
+	} {
+		if b, err := enc.DecodeString(raw); err == nil && len(b) == 32 {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("GOFASTR_HARNESS_MACHINE_KEY: not a 32-byte key (raw, hex, or base64)")
 }
 
 func resolveDefaultModel(h *xharness.Harness, prof *profile.Profile) (provider.Provider, string) {

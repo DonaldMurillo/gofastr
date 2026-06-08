@@ -16,13 +16,13 @@ func TestNewEntityGolden(t *testing.T) {
 	if err := scaffoldEntity(dir, "User", []string{"name:string", "email:string:unique"}, false); err != nil {
 		t.Fatalf("scaffoldEntity: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "entities", "users.json"))
+	got, err := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
 	if err != nil {
 		t.Fatalf("read generated: %v", err)
 	}
 	want := `{
   "name": "User",
-  "table": "users",
+  "table": "user",
   "fields": [
     {"name": "name", "type": "string"},
     {"name": "email", "type": "string", "unique": true}
@@ -77,7 +77,7 @@ func TestNewEntityIdempotent(t *testing.T) {
 	if err := scaffoldEntity(dir, "User", []string{"name:string"}, false); err != nil {
 		t.Fatalf("first scaffoldEntity: %v", err)
 	}
-	first, _ := os.ReadFile(filepath.Join(dir, "entities", "users.json"))
+	first, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
 
 	err := scaffoldEntity(dir, "User", []string{"name:string", "evil:string"}, false)
 	if err == nil {
@@ -87,7 +87,7 @@ func TestNewEntityIdempotent(t *testing.T) {
 		t.Fatalf("expected 'already exists' error, got: %v", err)
 	}
 
-	second, _ := os.ReadFile(filepath.Join(dir, "entities", "users.json"))
+	second, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
 	if !bytes.Equal(first, second) {
 		t.Fatal("file was clobbered despite duplicate-detection error")
 	}
@@ -120,12 +120,12 @@ func TestNewEntityOverwrite(t *testing.T) {
 	if err := scaffoldEntity(dir, "User", []string{"a:string"}, false); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	first, _ := os.ReadFile(filepath.Join(dir, "entities", "users.json"))
+	first, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
 
 	if err := scaffoldEntity(dir, "User", []string{"b:string"}, true); err != nil {
 		t.Fatalf("overwrite scaffoldEntity: %v", err)
 	}
-	second, _ := os.ReadFile(filepath.Join(dir, "entities", "users.json"))
+	second, _ := os.ReadFile(filepath.Join(dir, "entities", "user.json"))
 	if bytes.Equal(first, second) {
 		t.Fatal("overwrite did not change file")
 	}
@@ -224,7 +224,7 @@ func TestNewCLIGeneratedHandlerAndEntityBuild(t *testing.T) {
 	run("new", "handler", "Ping", "GET", "/ping")
 	run("new", "entity", "User", "name:string", "email:string:unique")
 
-	entityPath := filepath.Join(dir, "entities", "users.json")
+	entityPath := filepath.Join(dir, "entities", "user.json")
 	first, err := os.ReadFile(entityPath)
 	if err != nil {
 		t.Fatalf("read entity: %v", err)

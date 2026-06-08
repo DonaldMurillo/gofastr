@@ -19,7 +19,7 @@ func TestRunNewDispatchesAllResources(t *testing.T) {
 	covT_chdir(t, dir)
 
 	covT_capStdout(t, func() { runNew([]string{"entity", "Widget", "name:string"}) })
-	if _, err := os.Stat(filepath.Join(dir, "entities", "widgets.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "entities", "widget.json")); err != nil {
 		t.Fatalf("entity not created: %v", err)
 	}
 
