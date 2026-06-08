@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -219,6 +220,7 @@ func (b *Battery) RegisterRoutes(r *router.Router) {
 
 	r.Get(b.cfg.PathPrefix, guard(b.handleIndex))
 	r.Get(b.cfg.PathPrefix+"/queue", guard(b.handleQueue))
+	r.Post(b.cfg.PathPrefix+"/queue/_replay/{id}", guard(b.handleQueueReplay))
 	r.Get(b.cfg.PathPrefix+"/audit", guard(b.handleAudit))
 }
 
@@ -271,9 +273,38 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stats, _ := b.cfg.Queue.Stats(r.Context())
+	// Offer per-row Replay only on the failed view and only when the backend
+	// supports replay (DBQueue does; memory/redis don't yet).
+	showReplay := false
+	if status == "failed" {
+		if _, ok := b.cfg.Queue.(queue.Replayable); ok {
+			showReplay = true
+		}
+	}
 	body := queueFilters(b.cfg.PathPrefix, status, stats) +
-		jobsTable(jobs)
+		jobsTable(jobs, b.cfg.PathPrefix, middleware.TokenFromContext(r.Context()), showReplay)
 	b.writePage(w, b.cfg.Title, "Queue", body)
+}
+
+// handleQueueReplay re-queues a dead-lettered job. Mutating + gated: it is
+// registered behind b.gate (admin-only) and the form carries the CSRF token —
+// an ungated replay would be a privilege-escalation / job-amplification vector.
+func (b *Battery) handleQueueReplay(w http.ResponseWriter, r *http.Request) {
+	rq, ok := b.cfg.Queue.(queue.Replayable)
+	if !ok {
+		http.Error(w, "queue does not support replay", http.StatusNotImplemented)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing job id", http.StatusBadRequest)
+		return
+	}
+	if err := rq.Replay(r.Context(), id); err != nil {
+		http.Error(w, "replay failed; check server logs", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, b.cfg.PathPrefix+"/queue?status=failed", http.StatusSeeOther)
 }
 
 func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
@@ -517,7 +548,10 @@ func card(label string, value int) string {
 }
 
 func queueFilters(prefix, current string, stats queue.JobStats) render.HTML {
-	all := []string{"", "pending", "claimed", "failed", "dead"}
+	// DBQueue's terminal state is 'failed' and its in-progress state is
+	// 'claimed' — it never writes 'dead'. Listing a 'dead' chip showed a
+	// permanently-empty filter. Match the statuses the queue actually writes.
+	all := []string{"", "pending", "claimed", "failed"}
 	var b strings.Builder
 	b.WriteString(`<div class="filters">`)
 	for _, k := range all {
@@ -546,15 +580,21 @@ func queueFilters(prefix, current string, stats queue.JobStats) render.HTML {
 	return render.Raw(b.String())
 }
 
-func jobsTable(jobs []queue.Job) render.HTML {
+// jobsTable renders the job list. When showReplay is true (the failed-jobs
+// view on a Replayable queue), each row gets a CSRF-protected Replay form that
+// POSTs to the gated /queue/_replay/{id} route.
+func jobsTable(jobs []queue.Job, prefix, csrfToken string, showReplay bool) render.HTML {
 	if len(jobs) == 0 {
 		return render.Raw(`<p class="muted">No jobs match this filter.</p>`)
 	}
 	var b strings.Builder
 	b.WriteString(`<table><thead><tr>
 		<th>ID</th><th>Type</th><th>Attempts</th><th>Priority</th>
-		<th>Created</th><th>Scheduled</th>
-	</tr></thead><tbody>`)
+		<th>Created</th><th>Scheduled</th>`)
+	if showReplay {
+		b.WriteString(`<th>Actions</th>`)
+	}
+	b.WriteString(`</tr></thead><tbody>`)
 	for _, j := range jobs {
 		fmt.Fprintf(&b, `<tr>
 			<td><code>%s</code></td>
@@ -562,8 +602,7 @@ func jobsTable(jobs []queue.Job) render.HTML {
 			<td>%d / %d</td>
 			<td>%d</td>
 			<td>%s</td>
-			<td>%s</td>
-		</tr>`,
+			<td>%s</td>`,
 			render.Escape(j.ID),
 			render.Escape(j.Type),
 			j.Attempts, j.MaxAttempts,
@@ -571,6 +610,13 @@ func jobsTable(jobs []queue.Job) render.HTML {
 			render.Escape(j.CreatedAt.Format(time.RFC3339)),
 			render.Escape(j.ScheduledAt.Format(time.RFC3339)),
 		)
+		if showReplay {
+			fmt.Fprintf(&b, `<td><form method="post" action="%s/queue/_replay/%s">`+
+				`<input type="hidden" name="_csrf" value="%s">`+
+				`<button type="submit">Replay</button></form></td>`,
+				render.Escape(prefix), render.Escape(url.PathEscape(j.ID)), render.Escape(csrfToken))
+		}
+		b.WriteString(`</tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
 	return render.Raw(b.String())

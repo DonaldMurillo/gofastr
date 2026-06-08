@@ -149,7 +149,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `SQLStore` + `MemoryStore`, surfaced via `Manager.DeadDeliveries`/`Manager.Replay`).
   Replay is idempotent and only touches terminal rows (`status='failed'` for
   queue, `'dead'` for webhook), so it can't double-run an in-flight job. Redis
-  queue + in-memory queue replay are not implemented yet (documented gaps).
+  queue + in-memory queue replay are not implemented yet (documented gaps). The
+  admin battery surfaces a **Replay** button on the failed-jobs view behind the
+  admin gate + CSRF (`POST /admin/queue/_replay/{id}`), and its queue filter
+  chips no longer advertise a `dead` status `DBQueue` never writes.
 - **`auth.SQLMagicLinkTokenStore` — durable token store for passwordless flows.**
   Magic-link, password-reset, and email-verification tokens were in-memory only,
   so those flows broke on restart and couldn't scale across replicas. Add a

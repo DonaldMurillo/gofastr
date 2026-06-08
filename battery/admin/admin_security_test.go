@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 type errBrowsableQueue struct {
@@ -131,3 +132,29 @@ func TestAdmin_ResponseCarriesReferrerPolicy(t *testing.T) {
 
 var _ queue.Browsable = errBrowsableQueue{}
 var _ = sql.ErrNoRows
+
+// TestAdmin_QueueReplayRequiresAuth pins that the mutating replay endpoint is
+// gated. An ungated /queue/_replay/{id} would let anyone re-fire dead-lettered
+// jobs (privilege escalation / job amplification).
+func TestAdmin_QueueReplayRequiresAuth(t *testing.T) {
+	h := mountAdminBare(t, Config{})
+	req := httptest.NewRequest(http.MethodPost, "/admin/queue/_replay/some-job-id", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("SECURITY: [admin] unauthenticated POST /queue/_replay returned %d, want 401. Attack: anyone re-fires dead jobs.", rr.Code)
+	}
+}
+
+// TestAdmin_QueueReplayForbidsNonAdmin confirms an authenticated non-admin is
+// refused (403) — same gate as the rest of the admin.
+func TestAdmin_QueueReplayForbidsNonAdmin(t *testing.T) {
+	h := mountAdminBare(t, Config{})
+	req := httptest.NewRequest(http.MethodPost, "/admin/queue/_replay/some-job-id", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: []string{"reader"}}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("non-admin POST /queue/_replay = %d, want 403", rr.Code)
+	}
+}

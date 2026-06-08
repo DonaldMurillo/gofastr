@@ -98,11 +98,18 @@ app.RegisterBattery(admin.New(admin.Config{
 }))
 ```
 
-| Route              | Purpose                                       |
-|--------------------|-----------------------------------------------|
-| `GET /admin`       | Overview with summary cards                   |
-| `GET /admin/queue` | Jobs list with `?status=` filter chips        |
-| `GET /admin/audit` | Audit log entries newest-first                |
+| Route                          | Purpose                                            |
+|--------------------------------|----------------------------------------------------|
+| `GET /admin`                   | Overview with summary cards                        |
+| `GET /admin/queue`             | Jobs list with `?status=` filter chips             |
+| `POST /admin/queue/_replay/{id}` | Re-queue a failed job (gated; failed view only)  |
+| `GET /admin/audit`             | Audit log entries newest-first                     |
+
+On the `?status=failed` view, each row gets a **Replay** button when the
+wired queue supports it (`DBQueue` does; in-memory / Redis don't yet). The
+replay route mutates state, so it runs behind the same admin gate as every
+other surface and carries a CSRF token — there is no unauthenticated way to
+re-fire jobs.
 
 When neither `Queue` nor `DB` is wired, the sub-pages render a "not wired"
 stub instead of 404'ing. Tune list caps via `QueueListLimit` /
