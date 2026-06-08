@@ -7,6 +7,83 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-08
+
+A correctness and developer-experience patch from a whole-framework
+assessment. No BREAKING changes. Twenty fixes, all with regression tests;
+the recurring theme was converting silent wrong answers into correct
+behavior or loud errors.
+
+### Security
+
+- **Codegen and blueprints no longer drop `OwnerField`.** `renderEntityRegistration`
+  emitted every scope flag except `OwnerField`, and the blueprint YAML allow-list
+  rejected `owner_field` outright — so generated/blueprinted apps silently lost the
+  per-user row scoping the docs hard-warn about. Both paths now preserve it.
+- **Streaming list can no longer bypass `AfterList` redaction.** `?stream=true`
+  skipped include resolution and the `AfterList` hook; an `AfterList` redactor would
+  have been silently bypassed, leaking the fields it exists to hide. An explicit
+  stream with `?include=` or a registered `AfterList` hook is now refused with `400`;
+  an auto-stream (very large `limit`) falls back to the buffered path so redaction
+  always runs.
+- **`GOFASTR_HARNESS_MACHINE_KEY` no longer silently downgrades.** Only a raw 32-byte
+  value was accepted; a hex or base64 key failed the length check and fell through to
+  the default passphrase with no warning. The env var now decodes raw-32/hex-64/base64
+  and errors loudly on an unparseable or wrong-length value.
+- **The OpenAPI spec advertises `401`/`403` on RBAC-gated, batch, and SSE operations.**
+  `EntityConfig.Access` is folded into the gated flag and `403` is added alongside
+  `401`, so generated SDKs/agents see the real auth contract instead of treating
+  RBAC-gated routes (and `_batch`/`_events`) as public.
+- The `UpsertOne` DO-NOTHING fallback `SELECT` now applies tenant/owner/soft-delete
+  scope (defense-in-depth; `upsertPreflight` already guarded the row).
+
+### Fixed
+
+- **`updated_at` is restamped on every UPDATE and bulk update.** It previously froze
+  at its creation value because the field loop skips all auto-generate columns; cache
+  invalidation and change detection silently saw stale timestamps. Clients still
+  cannot forge it.
+- **`ADD COLUMN` for a required field with no default no longer emits `NOT NULL`.**
+  That DDL fails on a populated table (Postgres and old SQLite); the column is now
+  added nullable with the deferral noted in the change summary (matches the kiln path).
+- **`App.InTx` joins an ambient transaction** already in the context (e.g. when called
+  from a CRUD hook) instead of silently opening a second independent transaction and
+  breaking atomicity.
+- **DSL `after(cursor)` is wired into `BuildDSLQuery`.** It was parsed and discarded,
+  so DSL pagination always returned page 1. Composite-cursor/unknown-field entities now
+  return a clear error instead of no-oping.
+- **LiveSearch debounce works.** The emitted attribute (`data-fui-rpc-debounce`) did not
+  match what the runtime reads (`…-ms`); debounce was silently ignored.
+- **Widget dismiss closes its `EventSource`s** instead of leaking a live server SSE
+  connection on every modal open/close.
+- **Signal ARIA is text-mode only.** `role=status`/`aria-live` is no longer applied to
+  attribute- or html-mode signal nodes (invalid ARIA + live-region spam on island swaps).
+- **Carousel timers and the toc `IntersectionObserver` are torn down on SPA navigation**
+  instead of leaking for the session.
+- **`RedisQueue` implements `Browsable`** (`ListJobs`/`Stats` over the dead-letter list),
+  so the admin queue page works on the most common non-DB production backend.
+- **Scheduler enqueue failures log via `slog`** instead of `fmt.Printf`, surfacing
+  otherwise-invisible job loss to the log battery/observability.
+- **`MemoryQueue` handler timeout is configurable** via `WithHandlerTimeout` (default
+  unchanged at 30s) so long jobs aren't silently cancelled and dead-lettered.
+- **Per-page Open Graph/meta beats the global default.** Per-screen SEO is emitted before
+  the sitewide `WithOpenGraph` tags, so first-match crawlers honour the page override.
+- **`gofastr new entity` and `generate entity` agree on table naming** (singular
+  snake_case, matching the framework default) so migrations target one table.
+- **Built-in harness profiles are embedded** (`go:embed`, on-disk-wins fallback), so
+  `gofastr harness --framework` works for an installed binary outside the source tree.
+
+### Documentation
+
+- Corrected the `access.Policy` interface in the docs from a non-existent 3-arg
+  `Can(ctx, permission, resource)` to the real 2-arg `Can(ctx, permission)` (custom
+  policies following the docs failed to compile), and documented that per-record
+  decisions are made via `OwnerField` scoping or `Before*` hooks. A compile-time
+  assertion now pins the doc to the interface. The Go interface is unchanged.
+- Documented the streaming/`AfterList` exclusivity, `App.InTx` ambient-tx joining,
+  the `ADD COLUMN` `NOT NULL` deferral, and corrected the stale `updated_at` hook
+  comment in `migrate.go`.
+
 ## [0.3.0] - 2026-06-07
 
 First release after the assessment-driven remediation. Highlights: MIT
