@@ -181,3 +181,19 @@ func WithPolicy(ctx context.Context, policy *RolePolicy) context.Context {
 func WithRoles(ctx context.Context, roles []string) context.Context {
 	return context.WithValue(ctx, rolesKey{}, roles)
 }
+
+// GetRoles reads back the roles installed via WithRoles (by
+// access.Middleware or battery/auth). It is the reader half of the
+// role-context seam — without it, role context is one-way (you can put
+// roles in but not read them out), which blocks role-based UI branching
+// (e.g. "show the admin nav only when the caller holds 'admin'").
+//
+// Returns nil when ctx is nil or carries no roles — never panics. A nil
+// context is treated as an anonymous request.
+func GetRoles(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	roles, _ := ctx.Value(rolesKey{}).([]string)
+	return roles
+}

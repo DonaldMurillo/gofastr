@@ -119,6 +119,24 @@ perms := framework.GetPermissions(ctx)
 // [posts:read posts:write …]
 ```
 
+To branch UI (or any logic) on the caller's roles rather than their
+resolved permissions, read the roles back with `GetRoles`:
+
+```go
+roles := framework.GetRoles(ctx)
+// [editor reader] — the same slice installed by WithRoles
+if slices.Contains(roles, "admin") {
+    // render the admin-only nav
+}
+```
+
+`GetRoles` is the reader half of the role-context seam: `WithRoles`
+puts roles in, `GetRoles` reads them back. It returns `nil` for a nil
+context or one carrying no roles — never panics, so it is safe to call
+on an un-wired (anonymous) request. Permission checks should still go
+through `GetPermissions` / `Can`; `GetRoles` is for role-shaped
+branching where the permission grant map isn't the right granularity.
+
 Or via middleware on a specific route:
 
 ```go
