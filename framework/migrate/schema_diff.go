@@ -187,14 +187,25 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
 		colType := SQLType(f, dialect)
+		defaultClause := ColumnDefaultClause(f, dialect)
+		// A NOT NULL ADD COLUMN with no default fails on a populated table
+		// (every existing row would violate the constraint) on both Postgres
+		// and older SQLite. When the field is Required but has no default, omit
+		// NOT NULL so the column is added nullable; the constraint can be
+		// tightened later once the rows are backfilled. Matches kiln/db/migrate.
+		summary := fmt.Sprintf("%s: add column %s %s", ent.GetName(), f.Name, colType)
 		nullable := ""
 		if f.Required && f.AutoGenerate == schema.AutoNone {
-			nullable = " NOT NULL"
+			if defaultClause != "" {
+				nullable = " NOT NULL"
+			} else {
+				summary += " (NOT NULL deferred: no default for existing rows)"
+			}
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
-			qtable, qcol, colType, nullable, ColumnDefaultClause(f, dialect))
+			qtable, qcol, colType, nullable, defaultClause)
 		changes = append(changes, SchemaChange{
-			Summary: fmt.Sprintf("%s: add column %s %s", ent.GetName(), f.Name, colType),
+			Summary: summary,
 			SQL:     ddl,
 			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol),
 		})

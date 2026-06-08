@@ -136,6 +136,13 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 A non-nil error from `fn` rolls back. A panic from `fn` rolls back
 via the `Recovery` middleware higher up the stack.
 
+`App.InTx` also **joins an ambient transaction** already in the
+context instead of opening a second, independent one. So calling
+`App.InTx` from inside a CRUD hook (or any code already running under a
+transaction) reuses that transaction and leaves the commit/rollback to
+the outer owner — your `fn` runs but does not commit on its own. This
+keeps nested boundaries atomic rather than silently splitting them.
+
 ### Composing CRUD operations in one transaction
 
 Auto-CRUD writes are individually transactional, and they also **join an

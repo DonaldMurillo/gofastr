@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	dbpkg "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -262,6 +263,62 @@ func TestApp_InTx_TxInContext(t *testing.T) {
 		}
 		if !sawTx {
 			t.Fatal("expected fn to find tx in ctx")
+		}
+	})
+}
+
+// ============================================================================
+// Test: app.InTx joins an ambient tx already in context instead of opening
+// a second independent transaction.
+// ============================================================================
+
+func TestApp_InTx_JoinsAmbientTx(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		createPostsTestTable(t, db)
+		app := newPostsApp(t, db)
+
+		outer, err := db.BeginTx(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("begin outer: %v", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				_ = outer.Rollback()
+			}
+		}()
+		ctx := dbpkg.WithTx(context.Background(), outer)
+
+		var inner *sql.Tx
+		if err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+			inner = tx
+			_, e := tx.ExecContext(ctx, "INSERT INTO posts(id, title, body) VALUES ($1, $2, $3)", "p1", "ambient", "")
+			return e
+		}); err != nil {
+			t.Fatalf("InTx: %v", err)
+		}
+		// The closure must have received the ambient tx, not a freshly opened
+		// one. If InTx began its own tx, inner != outer.
+		if inner != outer {
+			t.Fatal("InTx opened a new tx instead of reusing the ambient one")
+		}
+		// The write lives in the ambient tx and InTx must NOT have committed it.
+		// Read through the ambient tx (the only handle that can see pending
+		// state) to prove the row is present but still uncommitted.
+		var n int
+		if err := outer.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM posts").Scan(&n); err != nil {
+			t.Fatalf("count via ambient tx: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("expected the write to be pending in the ambient tx, saw %d rows", n)
+		}
+		// The outer owner controls the lifecycle: commit makes it durable.
+		if err := outer.Commit(); err != nil {
+			t.Fatalf("commit outer: %v", err)
+		}
+		committed = true
+		if got := rowCount(t, db); got != 1 {
+			t.Fatalf("expected 1 row after outer commit, got %d", got)
 		}
 	})
 }

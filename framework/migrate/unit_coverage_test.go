@@ -319,6 +319,8 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 		t.Error("expected no-fields create error")
 	}
 
+	// A Required field with no default must NOT be added NOT NULL — that would
+	// fail on a populated table. The constraint is deferred.
 	reqEnt := rawEnt("e", "e", []schema.Field{
 		{Name: "x", Type: schema.String},
 		{Name: "req", Type: schema.String, Required: true, AutoGenerate: schema.AutoNone},
@@ -327,14 +329,30 @@ func TestDiffEntityFromLive_Branches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("diff: %v", err)
 	}
-	var sawNotNull bool
 	for _, c := range ch {
+		if strings.Contains(c.SQL, "ADD COLUMN req") && strings.Contains(c.SQL, "NOT NULL") {
+			t.Fatalf("ADD COLUMN req must omit NOT NULL with no default, got %+v", ch)
+		}
+	}
+
+	// A Required field WITH a default keeps NOT NULL — existing rows get the
+	// default, so the constraint is safe.
+	reqDefEnt := rawEnt("e", "e", []schema.Field{
+		{Name: "x", Type: schema.String},
+		{Name: "req", Type: schema.String, Required: true, AutoGenerate: schema.AutoNone, Default: "n/a"},
+	}, nil, "")
+	chDef, err := diffEntityFromLive(reqDefEnt, nil, DialectSQLite, map[string]string{"x": "TEXT"})
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	var sawNotNull bool
+	for _, c := range chDef {
 		if strings.Contains(c.SQL, "ADD COLUMN req") && strings.Contains(c.SQL, "NOT NULL") {
 			sawNotNull = true
 		}
 	}
 	if !sawNotNull {
-		t.Fatalf("expected ADD COLUMN req NOT NULL, got %+v", ch)
+		t.Fatalf("expected ADD COLUMN req NOT NULL with a default, got %+v", chDef)
 	}
 
 	tsEnt := rawEnt("e", "e", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")

@@ -105,6 +105,51 @@ func TestSchemaDiff_AddColumn(t *testing.T) {
 }
 
 // ============================================================================
+// Test: ADD COLUMN for a Required field with no Default applies on a
+// non-empty table (must not emit NOT NULL with no default).
+// ============================================================================
+
+func TestSchemaDiff_AddRequiredColNoDefault(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		if _, err := db.Exec(`CREATE TABLE posts (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL
+		)`); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		// Existing rows make a NOT NULL-without-default ADD COLUMN fail.
+		if _, err := db.Exec("INSERT INTO posts(id, title) VALUES ($1, $2)", "p1", "hi"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		reg := NewRegistry()
+		reg.Register(entity.Define("posts", entity.EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "slug", Type: schema.String, Required: true}, // new, required, no default
+			},
+		}.WithTimestamps(false)))
+
+		changes, err := DiffSchema(context.Background(), db, reg)
+		if err != nil {
+			t.Fatalf("DiffSchema: %v", err)
+		}
+		if len(changes) != 1 {
+			t.Fatalf("expected 1 change (slug), got %d: %+v", len(changes), changes)
+		}
+		if strings.Contains(changes[0].SQL, "NOT NULL") {
+			t.Fatalf("ADD COLUMN must not be NOT NULL without a default on a populated table: %s", changes[0].SQL)
+		}
+
+		// The generated DDL must execute against the populated table.
+		if _, err := ApplySchemaDiff(context.Background(), db, changes); err != nil {
+			t.Fatalf("apply against non-empty table: %v", err)
+		}
+	})
+}
+
+// ============================================================================
 // Test: DiffSchema emits DROP COLUMN for a column the entity no longer
 // declares (skipping framework-managed columns).
 // ============================================================================

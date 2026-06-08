@@ -425,10 +425,11 @@ func SQLType(f schema.Field, dialect Dialect) string {
 //     ships gen_random_uuid in core; on older versions it lived in
 //     pgcrypto.) SQLite has no built-in UUID generator — the column
 //     stays app-managed there to avoid silently doing nothing.
-//  3. AutoTimestamp is intentionally NOT auto-defaulted; created_at /
-//     updated_at are populated by framework hooks. Auto-emitting now()
-//     would create a divergence between SQLite (no DEFAULT, app sets
-//     it) and PG (DEFAULT now(), app ALSO sets it, last write wins).
+//  3. AutoTimestamp is intentionally NOT auto-defaulted. created_at is
+//     populated at insert time by the auto-generate path; updated_at is
+//     stamped by crud's doUpdate on every write. Auto-emitting now() in
+//     the DDL would create a divergence between SQLite (no DEFAULT, app
+//     sets it) and PG (DEFAULT now(), app ALSO sets it, last write wins).
 //
 // The returned fragment is prefixed with a leading space so callers can
 // always concat without inserting one themselves.

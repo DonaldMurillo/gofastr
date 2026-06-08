@@ -164,7 +164,12 @@ field), `DROP COLUMN` (removed field, marked reversible — re-adds the
 column on `Down` but does not restore row data), and `DROP TABLE`
 (removed entity). The forward DDL is built by the same code path as
 auto-migrate, so a generated migration matches what auto-migrate would
-have applied. Type changes are out of scope (same as `diff`); express
+have applied. A new **required** field with **no default** is added
+*nullable* — a `NOT NULL` `ADD COLUMN` with nothing to fill existing
+rows fails on a populated table, so the constraint is deferred (the
+change summary notes this); backfill the rows and tighten it in a later
+migration. A required field that has a default keeps `NOT NULL`, since
+every existing row gets the default. Type changes are out of scope (same as `diff`); express
 those as a hand-written migration. The snapshot is offline state — pick
 `--driver` to match your production engine so the emitted types are
 right.

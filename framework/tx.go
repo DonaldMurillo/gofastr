@@ -25,6 +25,14 @@ func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 // boundary. If fn returns an error, the tx rolls back and that error is
 // returned unchanged.
 func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx) error) error {
+	// Join an ambient transaction already in the context (e.g. when InTx is
+	// called from inside a CRUD hook). Opening a second independent tx here
+	// would silently break atomicity — the inner work could commit while the
+	// outer rolls back, or deadlock against rows the outer tx holds. Defer the
+	// commit/rollback to the outer owner. Mirrors crud.inTx.
+	if tx, ok := db.TxFromContext(ctx); ok {
+		return fn(ctx, tx)
+	}
 	if a.DB == nil {
 		return fmt.Errorf("app.InTx: no DB configured")
 	}
