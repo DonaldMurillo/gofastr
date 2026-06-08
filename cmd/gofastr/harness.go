@@ -54,6 +54,11 @@ func runHarness(args []string) {
 		runHarnessMCP(args[1:])
 		return
 	}
+	// `gofastr harness creds` manages the encrypted credential store.
+	if len(args) > 0 && args[0] == "creds" {
+		runHarnessCreds(args[1:])
+		return
+	}
 	fs := flag.NewFlagSet("harness", flag.ExitOnError)
 	useFramework := fs.Bool("framework", false, "use the framework preset profile")
 	profilePath := fs.String("profile", "", "explicit profile TOML path")

@@ -109,6 +109,10 @@ func printHelp() {
   migrate [up|down|status]  Run database migrations
   test                  Run project tests
   embed <sub>           Local semantic index (index/watch/query/stats/clear)
+  harness               Start the AI agent harness (interactive loop / TUI)
+    mcp                 Launch harness as a stdio MCP server for IDE integration
+    creds [add|list|delete]  Manage encrypted API-key credentials
+  agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files
   docs [topic]          Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
   audit <sub>           Inspect the project for security-relevant patterns
@@ -131,6 +135,11 @@ func printHelp() {
   gofastr dev
   gofastr migrate up
   gofastr test
+  gofastr harness
+  gofastr harness creds add openrouter default sk-or-v1-...
+  gofastr harness creds list
+  gofastr agents init
+  gofastr agents sync
 `, bold("GoFastr"), version, bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
 }
 

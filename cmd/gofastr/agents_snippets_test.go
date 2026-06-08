@@ -203,8 +203,13 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 		for _, m := range reFuncDeclWithReturn.FindAllStringSubmatch(text, -1) {
 			name, ret := m[1], strings.TrimSpace(m[2])
 			api.Exports[name] = true
-			if strings.HasPrefix(name, "New") {
-				api.CtorReturn[name] = stripPointer(firstType(ret))
+			// Record the constructor's return type so a binding like
+			// `idx := embed.Open(...)` resolves to its method set. Not
+			// limited to New* — any exported func returning a LOCAL exported
+			// type counts (e.g. Open returning the Index interface). Returns
+			// of error/builtins/other-package types are skipped.
+			if rt := stripPointer(firstType(ret)); isLocalExportedType(rt) {
+				api.CtorReturn[name] = rt
 			}
 		}
 		// Methods: record under the receiver type, and ALSO add to
@@ -218,8 +223,28 @@ func loadPackageAPI(t *testing.T, dir string) packageAPI {
 			}
 			api.TypeMethods[recv][method] = true
 		}
+		// Interface methods: `type X interface { Method(...); ... }`. The
+		// receiver regex above misses these (no func receiver), so a
+		// constructor returning an interface (e.g. Open -> Index) would
+		// otherwise resolve to an empty method set and false-fail.
+		for _, m := range reInterfaceDecl.FindAllStringSubmatch(text, -1) {
+			name, body := m[1], m[2]
+			if api.TypeMethods[name] == nil {
+				api.TypeMethods[name] = map[string]bool{}
+			}
+			for _, mm := range reInterfaceMethod.FindAllStringSubmatch(body, -1) {
+				api.TypeMethods[name][mm[1]] = true
+			}
+		}
 	}
 	return api
+}
+
+// isLocalExportedType reports whether s names an exported type declared in
+// this package (uppercase initial, no package qualifier). Filters out
+// error/builtin/other-package returns when recording constructor types.
+func isLocalExportedType(s string) bool {
+	return s != "" && s[0] >= 'A' && s[0] <= 'Z' && !strings.Contains(s, ".")
 }
 
 // stripPointer drops a leading `*` so receiver / return types
@@ -257,4 +282,9 @@ var (
 	reMethodDecl   = regexp.MustCompile(`(?m)^func\s+\([^)]+\)\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
 	reTypeDecl     = regexp.MustCompile(`(?m)^type\s+([A-Z][A-Za-z0-9_]*)\s+\S`)
 	reConstVarDecl = regexp.MustCompile(`(?m)^(?:const|var)\s+([A-Z][A-Za-z0-9_]*)\s+`)
+	// `type X interface { ... }` — captures the name + body (up to the
+	// closing brace at column 0) so interface method sets are introspectable.
+	reInterfaceDecl = regexp.MustCompile(`(?sm)^type\s+([A-Z][A-Za-z0-9_]*)\s+interface\s*\{(.*?)\n\}`)
+	// A method line inside an interface body: `Method(...)`.
+	reInterfaceMethod = regexp.MustCompile(`(?m)^\s*([A-Z][A-Za-z0-9_]*)\s*\(`)
 )

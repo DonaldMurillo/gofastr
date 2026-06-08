@@ -1746,6 +1746,53 @@ Per § Threat model, the default Bash permission preset **blocks**
 the obvious credential-exfiltration paths via the agent's own tool
 surface.
 
+#### First-run setup — `gofastr harness creds`
+
+On first run, provider API keys must be stored in the credstore
+before starting the harness. The `gofastr harness creds` subcommand
+manages credentials without booting the full harness:
+
+```
+gofastr harness creds add <provider> <account> <secret>
+gofastr harness creds list
+gofastr harness creds delete <provider> <account>
+```
+
+**Examples:**
+
+```sh
+# Store an OpenRouter API key
+gofastr harness creds add openrouter default sk-or-v1-...
+
+# Store a ZAI API key
+gofastr harness creds add zai default <api-key>
+
+# List stored providers (no secrets shown)
+gofastr harness creds list
+
+# Remove a stored key
+gofastr harness creds delete openrouter default
+```
+
+**Key resolution** (same priority order as `gofastr harness`):
+1. `GOFASTR_HARNESS_MACHINE_KEY` env var — 32-byte key in raw, hex,
+   or base64 encoding. Used for CI/headless where no passphrase prompt
+   is possible.
+2. `GOFASTR_HARNESS_PASSPHRASE` env var — derives a key via
+   PBKDF2-SHA256 with a per-install salt at
+   `~/.config/gofastr/harness/salt`.
+3. A built-in dev passphrase (warns loudly; suitable for local
+   experimentation only).
+
+The credstore file is at `~/.config/gofastr/harness/creds.enc`.
+`XDG_CONFIG_HOME` overrides the `~/.config` base when set.
+
+**Note on env-var vs credstore:** The harness also reads API keys
+from `OPENROUTER_API_KEY` and `ZAI_API_KEY` environment variables
+(and from `.harness-secrets/env`). Use whichever is more convenient.
+The credstore is the recommended path for long-lived developer
+machines; env vars suit ephemeral CI environments.
+
 ### Config
 
 XDG layout:
