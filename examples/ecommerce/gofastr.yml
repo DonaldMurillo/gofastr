@@ -1,12 +1,11 @@
 app:
   name: ShopFront
-  module: example.com/shopfront
+  module: github.com/DonaldMurillo/gofastr/examples/ecommerce
   db:
     driver: sqlite
     url: file:shop.db
   auth:
-    enabled: true
-    dev_mode: true
+    enabled: false
   theme:
     primary: "#2563EB"
     primary-fg: "#FFFFFF"

@@ -1,9 +1,10 @@
 # Codegen
 
-GoFastr code generation is driven by a general YAML configuration surface. Entity
-JSON generation is one built-in generator, not the architecture boundary:
-generators can consume different structured sources and emit any generated code
-files under a safe output root.
+GoFastr code generation is driven by a general YAML configuration surface.
+Generators are project extensions that consume structured sources and emit any
+generated code files under a safe output root. This is distinct from the
+[blueprint](blueprints.md) pipeline (`gofastr generate --from=gofastr.yml`),
+which generates the framework's own entity/screen Go from a `gofastr.yml`.
 
 ## Config discovery
 
@@ -14,19 +15,17 @@ files under a safe output root.
 3. `gofastr.codegen.yaml`
 4. `gofastr.yml` / `gofastr.yaml` only when the file has a top-level `codegen:`
    section.
-5. No config: legacy entity generation from `entities/*.json` into
-   `gen/entities`.
+
+With no codegen config and no `--from` blueprint, `gofastr generate` has
+nothing to generate and exits with guidance.
 
 CLI flags override config values where they overlap:
 
 - `--out=<dir>` overrides `codegen.output`.
-- `--entities=<dir>` overrides `json_dir` sources used by built-in entity
-  generators.
 - `--clean` and `--no-clean` override `codegen.clean`.
 
-`--from=<path>` remains blueprint mode. Blueprint generation is separate from
-general codegen config, though blueprint entity output reuses the same Go
-entity renderer where practical.
+`--from=<path>` selects blueprint mode instead. Blueprint generation is
+separate from this general codegen config — see [Blueprints](blueprints.md).
 
 ## Config shape
 
@@ -36,44 +35,38 @@ codegen:
   output: gen
   clean: true
   generators:
-    - name: go/entities
+    - name: custom/reports
+      extension: report-generator
       source:
-        type: json_dir
-        path: entities
-      output: entities
-
-    - name: go/client
-      source:
-        type: json_dir
-        path: entities
-      output: entities/client
+        type: json_file
+        path: reports.codegen.json
+      output: reports
+  extensions:
+    - name: report-generator
+      command: ["./tools/report-generator"]
 ```
 
 `codegen.output` is the root for all generated paths. A generator's `output`
 is a subdirectory under that root. Generated paths must be relative and cannot
 contain parent traversal.
 
-Use optional `id` when running the same generator more than once:
+Each generator names an `extension`; the CLI does not ship built-in
+in-process generators. Use optional `id` when running the same generator more
+than once:
 
 ```yaml
 generators:
-  - id: public-models
-    name: go/entities
+  - id: public-reports
+    name: custom/reports
+    extension: report-generator
     source:
       type: json_dir
-      path: public/entities
-    output: public/entities
+      path: public/reports
+    output: public/reports
 ```
 
-## Built-in generators
-
-- `go/entities` reads an entity declaration directory and emits
-  `register.go`, `models.go`, `columns.go`, `repo.go`, and `events.go`.
-- `go/client` reads the same entity declaration format and emits a standalone
-  Go HTTP client file.
-
-Without config, `gofastr generate` uses both generators to preserve the
-existing `gen/entities` output.
+Go embedders that link `github.com/DonaldMurillo/gofastr/codegen` directly can
+also register in-process generators with `Registry.RegisterGenerator`.
 
 ## Sources
 
@@ -172,10 +165,6 @@ Go embedders can register in-process generators and extensions through
 Configured codegen writes `.codegen-manifest.json` in the output root. Clean
 mode removes only paths listed in that manifest before writing new output.
 Unowned files are left alone.
-
-The legacy no-config entity path still performs its historical guarded clean of
-`gen/entities` and does not add a manifest file. Configured codegen writes
-the manifest.
 
 ## Common mistakes
 

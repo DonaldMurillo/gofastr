@@ -7,19 +7,6 @@ import (
 	"strings"
 )
 
-// titleASCII upper-cases the first byte if it's an ASCII letter, leaving
-// the rest of the string untouched. Replaces strings.Title (deprecated).
-func titleASCII(s string) string {
-	if s == "" {
-		return s
-	}
-	b := []byte(s)
-	if b[0] >= 'a' && b[0] <= 'z' {
-		b[0] -= 'a' - 'A'
-	}
-	return string(b)
-}
-
 // validateScaffoldName rejects names that would escape the project root.
 // Scaffolding commands accept a short identifier (e.g. "User", "Post") and
 // must never accept path traversal, absolute paths, or directory separators.
@@ -46,7 +33,6 @@ func validateScaffoldName(name string) error {
 func newUsage() {
 	fmt.Println("Usage: gofastr new <resource> <name> [flags]")
 	fmt.Println("Resources:")
-	fmt.Println("  entity   <Name> [field:type ...]   Scaffold a new entity JSON declaration")
 	fmt.Println("  handler  <Name> [--method=GET] [--path=/x] [-overwrite]   Scaffold an HTTP handler")
 	fmt.Println("  route    <path>  [--method=GET] [--handler=Name]   Print a route registration snippet")
 	fmt.Println("Flags:")
@@ -78,14 +64,16 @@ func runNew(args []string) {
 
 	switch resource {
 	case "entity":
-		runNewEntity(rest, overwrite)
+		fail("`gofastr new entity` has been removed.")
+		info("Declare entities in a gofastr.yml blueprint instead. See `gofastr docs blueprints`.")
+		osExit(1)
 	case "handler":
 		runNewHandler(rest, overwrite)
 	case "route":
 		runNewRoute(rest)
 	default:
 		fail("Unknown resource: %s", resource)
-		info("Supported: entity, handler, route")
+		info("Supported: handler, route")
 		osExit(1)
 	}
 }
@@ -103,21 +91,6 @@ func extractOverwriteFlag(args []string) (bool, []string) {
 		out = append(out, a)
 	}
 	return overwrite, out
-}
-
-// runNewEntity is the CLI wrapper around scaffoldEntity. Exits on error.
-func runNewEntity(args []string, overwrite bool) {
-	if len(args) == 0 {
-		fail("Usage: gofastr new entity <Name> [field:type ...]")
-		osExit(1)
-	}
-	name := args[0]
-	if err := scaffoldEntity(".", name, args[1:], overwrite); err != nil {
-		fail("%v", err)
-		osExit(1)
-	}
-	success("Scaffolded entity %q", titleASCII(strings.ToLower(name)))
-	info("Run 'gofastr generate entity' to update the codegen")
 }
 
 // runNewHandler is the CLI wrapper around scaffoldHandler.
@@ -175,55 +148,6 @@ func routeSnippet(method, path, handler string) string {
 	return fmt.Sprintf("app.Router().Handle(%q, %q, %s)", method, path, handler)
 }
 
-// scaffoldEntity writes an entity JSON declaration under <baseDir>/entities/.
-// When overwrite is false and the file exists, returns an error. When
-// overwrite is true, replaces the file.
-func scaffoldEntity(baseDir, rawName string, fieldArgs []string, overwrite bool) error {
-	if err := validateScaffoldName(rawName); err != nil {
-		return fmt.Errorf("invalid entity name: %w", err)
-	}
-	name := titleASCII(strings.ToLower(rawName))
-
-	var fields []string
-	for _, fa := range fieldArgs {
-		field := parseFieldArg(fa)
-		if field != "" {
-			fields = append(fields, field)
-		}
-	}
-	if len(fields) == 0 {
-		fields = []string{`{"name": "name", "type": "string"}`}
-	}
-
-	// Match the framework's default table convention (entity.Define ->
-	// toSnake(name)) so migrations from both codegen paths target the
-	// same table. Singular snake_case, NOT pluralized.
-	tableName := toSnakeCase(name)
-	dir := filepath.Join(baseDir, "entities")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir entities: %w", err)
-	}
-	filename := filepath.Join(dir, tableName+".json")
-	if !overwrite {
-		if _, err := os.Stat(filename); err == nil {
-			return fmt.Errorf("entity file already exists: %s", filename)
-		}
-	}
-
-	content := fmt.Sprintf(`{
-  "name": "%s",
-  "table": "%s",
-  "fields": [
-    %s
-  ]
-}`, name, tableName, strings.Join(fields, ",\n    "))
-
-	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", filename, err)
-	}
-	return nil
-}
-
 // scaffoldHandler writes an HTTP handler file at <baseDir>/<name>_handler.go.
 // Returns an error when the file already exists and overwrite is false.
 func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) error {
@@ -257,54 +181,4 @@ func %s(w http.ResponseWriter, r *http.Request) {
 		return fmt.Errorf("write %s: %w", filename, err)
 	}
 	return nil
-}
-
-// parseFieldArg parses "name:type" or "name:type:modifier" into a JSON field def.
-func parseFieldArg(arg string) string {
-	parts := strings.Split(arg, ":")
-	if len(parts) < 2 {
-		return fmt.Sprintf(`{"name": "%s", "type": "string"}`, parts[0])
-	}
-
-	name := parts[0]
-	typeStr := parts[1]
-	ft := schemaFieldType(typeStr)
-
-	field := fmt.Sprintf(`{"name": "%s", "type": "%s"`, name, ft)
-	for _, mod := range parts[2:] {
-		switch strings.ToLower(mod) {
-		case "unique":
-			field += `, "unique": true`
-		case "required":
-			field += `, "required": true`
-		}
-	}
-	field += "}"
-	return field
-}
-
-// schemaFieldType maps a CLI type string to a schema FieldType string.
-func schemaFieldType(s string) string {
-	switch strings.ToLower(s) {
-	case "string", "text":
-		return "string"
-	case "int", "integer":
-		return "int"
-	case "float", "float64", "decimal":
-		return "float"
-	case "bool", "boolean":
-		return "bool"
-	case "datetime", "timestamp", "time":
-		return "datetime"
-	case "date":
-		return "date"
-	case "json", "jsonb":
-		return "json"
-	case "uuid":
-		return "uuid"
-	case "blob", "bytes":
-		return "blob"
-	default:
-		return "string"
-	}
 }

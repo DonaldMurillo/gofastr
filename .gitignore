@@ -79,6 +79,10 @@ vault-token
 *.sqlite3
 *.sqlitedb
 
+# Example apps write artifacts to cwd when run from the repo root.
+# (Examples redirect to a temp dir; this is belt-and-suspenders for old runs.)
+*-uploads/
+
 # ---- Security: Logs ----
 *.log
 logs/

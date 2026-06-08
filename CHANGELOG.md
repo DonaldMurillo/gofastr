@@ -7,6 +7,64 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-08
+
+The blueprint becomes GoFastr's single declaration format: the legacy
+`entities/*.json` path is removed (**BREAKING**), and a declaration-driven
+flagship (`examples/ecommerce`) proves one `gofastr.yml` → SQL + REST + OpenAPI
++ MCP + UI end to end.
+
+### Added
+
+- **Declaration-driven flagship example — `examples/ecommerce`.** A complete
+  storefront (five related entities, screens, nav, custom endpoints, seed data,
+  and a theme) declared once in `gofastr.yml` and emitted as runnable Go by
+  `gofastr generate --from=gofastr.yml` (the generated `gen/` is gitignored).
+  `flagship_test.go` regenerates, builds, and runs it to prove every surface —
+  SQL schema, REST CRUD, OpenAPI, the 25-tool MCP surface, and the
+  server-rendered UI — is live with zero hand-written application code. See
+  `examples/ecommerce/BUILD_JOURNAL.md`.
+
+### Fixed
+
+- **`gofastr generate` now gofmt's its generated Go.** Blueprint output is run
+  through `go/format` before being written, so the emitted package is clean and
+  stable across regenerations (no more spurious diffs on re-`generate`).
+- **`gofastr generate --from` re-run no longer refuses to clean `main.go`.** The
+  output-dir cleaner now owns `main.go` (the blueprint emits `gen/main.go`), so
+  regenerating over an existing `gen/` succeeds instead of erroring with
+  "refusing to clean — contains unknown entry".
+
+### Removed
+
+- **BREAKING: the legacy `entities/*.json` declaration format is gone.** The
+  `gofastr.yml` blueprint is now the single declaration format — it decodes into
+  the same `EntityDeclaration` shape and additionally emits `main.go`, screens,
+  and stubs, so the JSON-file path was a strict subset. Removed:
+  - Framework API: `App.EntityFromFile`, `App.EntitiesFromDir`,
+    `App.GroupEntitiesFromDir`, `framework.LoadEntityDeclaration`,
+    `framework.LoadEntityDeclarations`. (The `EntityDeclaration` /
+    `FieldDeclaration` types and `.Config()` remain — they are the in-memory
+    shape the blueprint loader decodes entities into.)
+  - CLI: `gofastr generate entity <name>` and `gofastr new entity <name>` (both
+    now print a removal notice and exit non-zero); the `--entities=<dir>` flag
+    on `gofastr generate`, `gofastr migrate generate`, and `gofastr migrate diff`.
+  - `gofastr generate` no longer defaults to "scan `entities/` and generate." It
+    requires `--from=<blueprint.yml>` (or a `gofastr.codegen.yml` extension
+    config). Auto-discovery of `gofastr.yml` is intentionally not done — that
+    filename is also the `gofastr init` isolation config.
+
+  **Migration:** declare entities in a `gofastr.yml` blueprint and run
+  `gofastr generate --from=gofastr.yml`, or declare them in Go via
+  `app.Entity(name, framework.EntityConfig{…})` (unchanged). `gofastr migrate
+  generate <name> --from=<blueprint.yml>` and `gofastr migrate diff
+  --from=<blueprint.yml>` replace the old `--entities=<dir>` form. The
+  `gofastr.codegen.yml` extension protocol and `codegen` package are unchanged.
+
+  _Follow-up (kiln is experimental): `kiln freeze` still writes
+  `entities/*.json` as its own snapshot artifact; emitting a `gofastr.yml`
+  blueprint directly is tracked for a later pass._
+
 ## [0.3.3] - 2026-06-08
 
 The four larger features held back from v0.3.2, each additive and

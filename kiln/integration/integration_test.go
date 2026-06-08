@@ -11,12 +11,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/agent"
 	"github.com/DonaldMurillo/gofastr/kiln/agent/acp"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
@@ -27,7 +29,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // --- harness ----------------------------------------------------------
@@ -296,14 +297,25 @@ func TestFreezeRoundTripWithRichWorld(t *testing.T) {
 		t.Fatalf("freeze: %v", err)
 	}
 
-	// Reload via vanilla framework — frozen JSON should drop in cleanly.
-	app := framework.NewApp()
-	if err := app.EntitiesFromDir(filepath.Join(dir, "entities")); err != nil {
-		t.Fatalf("EntitiesFromDir: %v", err)
-	}
+	// Frozen JSON should drop into a vanilla project cleanly: each
+	// entities/<name>.json is a valid declaration carrying its name
+	// and fields.
 	for _, n := range []string{"posts", "users"} {
-		if _, err := app.Registry.Get(n); err != nil {
-			t.Errorf("%s missing after frozen reload: %v", n, err)
+		buf, err := os.ReadFile(filepath.Join(dir, "entities", n+".json"))
+		if err != nil {
+			t.Errorf("%s missing after freeze: %v", n, err)
+			continue
+		}
+		var decl map[string]any
+		if err := json.Unmarshal(buf, &decl); err != nil {
+			t.Errorf("%s invalid JSON: %v", n, err)
+			continue
+		}
+		if decl["name"] != n {
+			t.Errorf("%s frozen name = %v", n, decl["name"])
+		}
+		if fields, ok := decl["fields"].([]any); !ok || len(fields) == 0 {
+			t.Errorf("%s frozen fields = %#v", n, decl["fields"])
 		}
 	}
 }

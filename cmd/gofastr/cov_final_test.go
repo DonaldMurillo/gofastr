@@ -72,40 +72,52 @@ func TestRunMigrateDiffApplyAndDestructive(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	entDir := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	decl := `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string"},{"name":"views","type":"int"}]}`
-	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(decl), 0o644); err != nil {
+	bp := filepath.Join(dir, "gofastr.yml")
+	blueprint := `app:
+  name: testapp
+entities:
+  - name: posts
+    table: posts
+    fields:
+      - name: title
+        type: string
+      - name: views
+        type: int
+`
+	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Plain diff (prints destructive warning + would-apply hint).
 	out := covT_capStdout(t, func() {
-		runMigrateDiff([]string{"--db-url=file:" + dbPath, "--entities=entities"})
+		runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp})
 	})
 	if !strings.Contains(out, "change") {
 		t.Fatalf("diff output: %s", out)
 	}
 	// Apply with --allow-destructive succeeds.
 	covT_capStdout(t, func() {
-		runMigrateDiff([]string{"--db-url=file:" + dbPath, "--entities=entities", "--apply", "--allow-destructive"})
+		runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp, "--apply", "--allow-destructive"})
 	})
 }
 
 func TestRunMigrateGenerateNoDownNote(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	entDir := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	decl := `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string"}]}`
-	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(decl), 0o644); err != nil {
+	bp := filepath.Join(dir, "gofastr.yml")
+	blueprint := `app:
+  name: testapp
+entities:
+  - name: posts
+    table: posts
+    fields:
+      - name: title
+        type: string
+`
+	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// postgres driver path → DialectPostgres branch.
-	covT_capStdout(t, func() { runMigrateGenerate([]string{"create", "--driver=postgres"}) })
+	covT_capStdout(t, func() { runMigrateGenerate([]string{"create", "--from=" + bp, "--driver=postgres"}) })
 	matches, _ := filepath.Glob(filepath.Join(dir, "migrations", "0001_*.sql"))
 	if len(matches) == 0 {
 		t.Fatal("no migration generated")

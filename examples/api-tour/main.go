@@ -1,11 +1,11 @@
 // Package main is a tour of the v2 API surface added to the framework:
 //
-//	- ?include=author.profile,comments    (eager-loading, nested)
-//	- ?cursor=...&limit=...               (keyset pagination)
-//	- POST/PATCH/DELETE /{table}/_batch   (atomic batches)
-//	- GET /{table}/_events                (Server-Sent Events stream)
-//	- multipart/form-data uploads on Image fields
-//	- BelongsTo FK constraints (enforced at runtime under PRAGMA on SQLite)
+//   - ?include=author.profile,comments    (eager-loading, nested)
+//   - ?cursor=...&limit=...               (keyset pagination)
+//   - POST/PATCH/DELETE /{table}/_batch   (atomic batches)
+//   - GET /{table}/_events                (Server-Sent Events stream)
+//   - multipart/form-data uploads on Image fields
+//   - BelongsTo FK constraints (enforced at runtime under PRAGMA on SQLite)
 //
 // Run with:
 //
@@ -25,6 +25,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
@@ -44,7 +45,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	uploadDir := "./api-tour-uploads"
+	// Keep upload artifacts out of the working tree (this is a demo).
+	uploadDir := filepath.Join(os.TempDir(), "gofastr-api-tour-uploads")
 	_ = os.MkdirAll(uploadDir, 0o755)
 
 	app := framework.NewApp(

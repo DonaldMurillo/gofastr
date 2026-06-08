@@ -11,9 +11,21 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// writeDiffBlueprint writes a gofastr.yml blueprint into dir declaring a
+// posts entity with the given extra fields beyond the required title.
+func writeDiffBlueprint(t *testing.T, dir, fields string) string {
+	t.Helper()
+	bp := filepath.Join(dir, "gofastr.yml")
+	blueprint := "app:\n  name: testapp\nentities:\n  - name: posts\n    table: posts\n    fields:\n" + fields
+	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
+		t.Fatalf("write blueprint: %v", err)
+	}
+	return bp
+}
+
 // TestMigrateDiff_PrintsChanges exercises the migrate diff CLI end-to-end:
 // install the binary, point it at a SQLite DB whose schema diverges from
-// the entities/*.json, and assert the printed output contains the ALTER
+// the blueprint, and assert the printed output contains the ALTER
 // statements. Skips if gofastr isn't on PATH.
 func TestMigrateDiff_PrintsChanges(t *testing.T) {
 	bin, err := exec.LookPath("gofastr")
@@ -33,28 +45,14 @@ func TestMigrateDiff_PrintsChanges(t *testing.T) {
 	}
 	db.Close()
 
-	// Entities directory declaring an extra field the live DB lacks.
-	entDir := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	declJSON := `{
-		"name": "posts",
-		"table": "posts",
-		"fields": [
-			{"name": "title", "type": "string", "required": true},
-			{"name": "views", "type": "int"}
-		]
-	}`
-	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(declJSON), 0o644); err != nil {
-		t.Fatalf("write declaration: %v", err)
-	}
+	// Blueprint declaring an extra field the live DB lacks.
+	writeDiffBlueprint(t, dir,
+		"      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
 
-	// Invoke `gofastr migrate diff` against the live DB. Run with cwd=dir
-	// so relative entity paths and the sqlite file resolve correctly.
+	// Invoke `gofastr migrate diff` against the live DB.
 	cmd := exec.Command(bin, "migrate", "diff",
 		"--db-url=file:"+dbPath,
-		"--entities=entities",
+		"--from=gofastr.yml",
 	)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
@@ -89,16 +87,12 @@ func TestMigrateDiff_ApplyExecutesChanges(t *testing.T) {
 	}
 	db.Close()
 
-	entDir := filepath.Join(dir, "entities")
-	_ = os.MkdirAll(entDir, 0o755)
-	_ = os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(`{
-		"name":"posts","table":"posts",
-		"fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}]
-	}`), 0o644)
+	writeDiffBlueprint(t, dir,
+		"      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
 
 	cmd := exec.Command(bin, "migrate", "diff",
 		"--db-url=file:"+dbPath,
-		"--entities=entities",
+		"--from=gofastr.yml",
 		"--apply",
 	)
 	cmd.Dir = dir
@@ -138,15 +132,11 @@ func TestMigrateDiff_RefusesDestructiveByDefault(t *testing.T) {
 	}
 	db.Close()
 
-	entDir := filepath.Join(dir, "entities")
-	_ = os.MkdirAll(entDir, 0o755)
-	_ = os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(`{
-		"name":"posts","table":"posts",
-		"fields":[{"name":"title","type":"string","required":true}]
-	}`), 0o644)
+	writeDiffBlueprint(t, dir,
+		"      - name: title\n        type: string\n        required: true\n")
 
 	// Default --apply: must refuse and exit non-zero.
-	cmd := exec.Command(bin, "migrate", "diff", "--db-url=file:"+dbPath, "--entities=entities", "--apply")
+	cmd := exec.Command(bin, "migrate", "diff", "--db-url=file:"+dbPath, "--from=gofastr.yml", "--apply")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -165,7 +155,7 @@ func TestMigrateDiff_RefusesDestructiveByDefault(t *testing.T) {
 	}
 
 	// --allow-destructive: now it drops.
-	cmd2 := exec.Command(bin, "migrate", "diff", "--db-url=file:"+dbPath, "--entities=entities", "--apply", "--allow-destructive")
+	cmd2 := exec.Command(bin, "migrate", "diff", "--db-url=file:"+dbPath, "--from=gofastr.yml", "--apply", "--allow-destructive")
 	cmd2.Dir = dir
 	if out, err := cmd2.CombinedOutput(); err != nil {
 		t.Fatalf("allow-destructive apply failed: %v\n%s", err, out)

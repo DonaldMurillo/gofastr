@@ -15,7 +15,7 @@ import (
 // bootBlog wires the blog exactly as main() does (entities + migrate + seed)
 // and returns the app router, without binding a port. This is the boot test
 // the assessment flagged as missing — it would have caught the dead
-// EntitiesFromDir("entities") path that made `go run ./examples/blog` fail.
+// entity-loading path that made `go run ./examples/blog` fail.
 func bootBlog(t *testing.T) *framework.App {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")

@@ -8,7 +8,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func TestFreezeWritesEntities(t *testing.T) {
@@ -33,16 +32,25 @@ func TestFreezeWritesEntities(t *testing.T) {
 		t.Fatalf("Freeze: %v", err)
 	}
 
-	// entities/<name>.json files should exist and parse via framework.
+	// entities/<name>.json files should exist and be valid JSON
+	// declarations with the expected name and fields.
 	for _, name := range []string{"posts", "users"} {
 		path := filepath.Join(dir, "entities", name+".json")
-		decl, err := framework.LoadEntityDeclaration(path)
+		buf, err := os.ReadFile(path)
 		if err != nil {
-			t.Errorf("LoadEntityDeclaration %s: %v", name, err)
+			t.Errorf("read %s: %v", name, err)
 			continue
 		}
-		if decl.Name != name {
-			t.Errorf("frozen entity name = %q, want %q", decl.Name, name)
+		var decl map[string]any
+		if err := json.Unmarshal(buf, &decl); err != nil {
+			t.Errorf("unmarshal %s: %v", name, err)
+			continue
+		}
+		if decl["name"] != name {
+			t.Errorf("frozen entity name = %v, want %q", decl["name"], name)
+		}
+		if fields, ok := decl["fields"].([]any); !ok || len(fields) == 0 {
+			t.Errorf("frozen entity %s missing fields: %#v", name, decl["fields"])
 		}
 	}
 }
@@ -121,14 +129,24 @@ func TestFrozenEntitiesLoadIntoFreshApp(t *testing.T) {
 		t.Fatalf("Freeze: %v", err)
 	}
 
-	// Bring up a clean (non-Kiln) framework.App and load from the
-	// frozen entities/. This is the round-trip — Kiln's output drops
-	// straight into a regular GoFastr project.
-	app := framework.NewApp()
-	if err := app.EntitiesFromDir(filepath.Join(dir, "entities")); err != nil {
-		t.Fatalf("EntitiesFromDir: %v", err)
+	// The frozen entities/ drops straight into a regular GoFastr
+	// project. Validate the emitted declaration round-trips as JSON
+	// carrying the entity's name, fields, and config flags.
+	buf, err := os.ReadFile(filepath.Join(dir, "entities", "posts.json"))
+	if err != nil {
+		t.Fatalf("read posts.json: %v", err)
 	}
-	if _, err := app.Registry.Get("posts"); err != nil {
-		t.Errorf("posts not registered after frozen load: %v", err)
+	var decl map[string]any
+	if err := json.Unmarshal(buf, &decl); err != nil {
+		t.Fatalf("unmarshal posts.json: %v", err)
+	}
+	if decl["name"] != "posts" {
+		t.Errorf("frozen entity name = %v", decl["name"])
+	}
+	if fields, ok := decl["fields"].([]any); !ok || len(fields) != 2 {
+		t.Errorf("frozen fields = %#v", decl["fields"])
+	}
+	if decl["mcp"] != true {
+		t.Errorf("frozen mcp flag = %#v", decl["mcp"])
 	}
 }

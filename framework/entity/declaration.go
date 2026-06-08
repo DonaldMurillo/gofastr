@@ -1,39 +1,36 @@
 package entity
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// EntityDeclaration is the JSON shape accepted by EntityFromFile and the CLI
-// code generator. It mirrors EntityConfig while keeping field types readable.
+// EntityDeclaration is the readable, JSON/YAML-friendly shape the gofastr.yml
+// blueprint loader decodes entities into before converting them to
+// EntityConfig. It mirrors EntityConfig while keeping field types readable.
 type EntityDeclaration struct {
-	Name         string             `json:"name"`
-	Table        string             `json:"table,omitempty"`
-	Fields       []FieldDeclaration `json:"fields"`
-	Relations    []Relation         `json:"relations,omitempty"`
-	Endpoints    []Endpoint         `json:"endpoints,omitempty"`
-	SoftDelete   bool               `json:"soft_delete,omitempty"`
-	MultiTenant  bool               `json:"multi_tenant,omitempty"`
+	Name        string             `json:"name"`
+	Table       string             `json:"table,omitempty"`
+	Fields      []FieldDeclaration `json:"fields"`
+	Relations   []Relation         `json:"relations,omitempty"`
+	Endpoints   []Endpoint         `json:"endpoints,omitempty"`
+	SoftDelete  bool               `json:"soft_delete,omitempty"`
+	MultiTenant bool               `json:"multi_tenant,omitempty"`
 	// OwnerField names the DB column that holds the row's owner id
 	// (e.g. "user_id"). When set AND an owner extractor is registered
 	// by a battery, auto-CRUD scopes List/Get/Update/Delete by the
 	// current request's owner and auto-stamps Create. Mirrors
 	// EntityConfig.OwnerField; leave empty to keep pre-existing behaviour.
-	OwnerField   string             `json:"owner_field,omitempty"`
-	Timestamps   *bool              `json:"timestamps,omitempty"`
-	CRUD         *bool              `json:"crud,omitempty"`
-	MCP          bool               `json:"mcp,omitempty"`
-	CursorField  string             `json:"cursor_field,omitempty"`
-	CursorFields []string           `json:"cursor_fields,omitempty"`
-	Indices      []Index            `json:"indices,omitempty"`
-	Properties   map[string]any     `json:"properties,omitempty"`
+	OwnerField   string         `json:"owner_field,omitempty"`
+	Timestamps   *bool          `json:"timestamps,omitempty"`
+	CRUD         *bool          `json:"crud,omitempty"`
+	MCP          bool           `json:"mcp,omitempty"`
+	CursorField  string         `json:"cursor_field,omitempty"`
+	CursorFields []string       `json:"cursor_fields,omitempty"`
+	Indices      []Index        `json:"indices,omitempty"`
+	Properties   map[string]any `json:"properties,omitempty"`
 }
 
 // FieldDeclaration is a JSON-friendly schema.Field.
@@ -52,57 +49,6 @@ type FieldDeclaration struct {
 	Values       []string `json:"values,omitempty"`
 	To           string   `json:"to,omitempty"`
 	Many         bool     `json:"many,omitempty"`
-}
-
-// LoadEntityDeclaration reads and validates one entity declaration file.
-func LoadEntityDeclaration(path string) (EntityDeclaration, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return EntityDeclaration{}, err
-	}
-	var decl EntityDeclaration
-	if err := json.Unmarshal(data, &decl); err != nil {
-		return EntityDeclaration{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if decl.Name == "" {
-		base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		decl.Name = base
-	}
-	for _, endpoint := range decl.Endpoints {
-		if endpoint.MCP {
-			return EntityDeclaration{}, fmt.Errorf("invalid %s: endpoint %q has mcp=true but JSON declarations cannot supply Go handlers — wire endpoints in code via app.Entity(...)", path, endpoint.Path)
-		}
-	}
-	if _, err := decl.Config(); err != nil {
-		return EntityDeclaration{}, fmt.Errorf("invalid %s: %w", path, err)
-	}
-	return decl, nil
-}
-
-// LoadEntityDeclarations reads all *.json declarations in dir in stable order.
-func LoadEntityDeclarations(dir string) ([]EntityDeclaration, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		paths = append(paths, filepath.Join(dir, entry.Name()))
-	}
-	sort.Strings(paths)
-
-	decls := make([]EntityDeclaration, 0, len(paths))
-	for _, path := range paths {
-		decl, err := LoadEntityDeclaration(path)
-		if err != nil {
-			return nil, err
-		}
-		decls = append(decls, decl)
-	}
-	return decls, nil
 }
 
 // Config converts a declaration into an EntityConfig.

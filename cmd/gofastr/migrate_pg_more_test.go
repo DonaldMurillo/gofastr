@@ -12,15 +12,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
-// covT_chdirEntities writes entities/posts.json into a temp dir and chdirs to it.
-func covT_chdirEntities(t *testing.T, decl string) {
+// covT_chdirBlueprint writes a gofastr.yml with the given fields YAML into a
+// temp dir and chdirs to it.
+func covT_chdirBlueprint(t *testing.T, fields string) {
 	t.Helper()
 	dir := t.TempDir()
-	ent := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(ent, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(ent, "posts.json"), []byte(decl), 0o644); err != nil {
+	bp := "app:\n  name: testapp\nentities:\n  - name: posts\n    table: posts\n    fields:\n" + fields
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(bp), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	covT_chdir(t, dir)
@@ -74,7 +72,7 @@ func TestCLI_PG_Force(t *testing.T) {
 // delta and a re-diff is idempotent (up to date).
 func TestCLI_PG_DiffApplyIdempotent(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t)
-	covT_chdirEntities(t, `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}]}`)
+	covT_chdirBlueprint(t, "      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -87,12 +85,12 @@ func TestCLI_PG_DiffApplyIdempotent(t *testing.T) {
 
 	dbFlag := "--db-url=" + dsn
 	drv := "--driver=postgres"
-	out := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities"}) })
+	out := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--from=gofastr.yml"}) })
 	if !strings.Contains(out, "views") {
 		t.Fatalf("diff should report the missing 'views' column on PG, got: %s", out)
 	}
-	covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities", "--apply"}) })
-	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--entities=entities"}) })
+	covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--from=gofastr.yml", "--apply"}) })
+	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--from=gofastr.yml"}) })
 	if !strings.Contains(out2, "up to date") {
 		t.Fatalf("re-diff after apply should be up to date, got: %s", out2)
 	}

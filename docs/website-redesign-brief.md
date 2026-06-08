@@ -31,7 +31,7 @@ framework generates every surface around it.
 
 **The one-declaration-many-surfaces story:**
 
-One `entities/posts.json` (or one `app.Entity(...)` call in Go) produces:
+One `gofastr.yml` blueprint (or one `app.Entity(...)` call in Go) produces:
 
 - SQL table + versioned migrations (SQLite or Postgres)
 - REST endpoints (`GET / POST /posts`, `/posts/{id}`, batch, SSE stream)
@@ -81,7 +81,8 @@ agent in a floating panel; the agent calls Kiln's typed tool surface
 (`add_entity`, `add_field`, `add_hook`, `add_page`, `propose_plan`,
 `approve_plan` …) over HTTP or MCP; the in-memory IR mutates; the schema
 migrates; the running app re-renders — all in-process. Freeze the journal
-when done to emit canonical `entities/*.json` you commit. Destructive ops
+when done to snapshot the world, then graduate to committed Go via a
+`gofastr.yml` blueprint and `gofastr generate`. Destructive ops
 require an approved plan; agents cannot drop tables without human
 confirmation in the UI.
 

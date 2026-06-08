@@ -26,12 +26,12 @@ func TestRunGenerateUnknownResourceExits(t *testing.T) {
 	}
 }
 
-func TestRunGenerateEntityDispatch(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	covT_capStdout(t, func() { runGenerate([]string{"entity", "Widget", "name:string"}) })
-	if _, err := os.Stat(filepath.Join(dir, "entities", "widget.go")); err != nil {
-		t.Fatalf("entity not generated: %v", err)
+func TestRunGenerateEntityRemovedExits(t *testing.T) {
+	code := covT_capExit(t, func() {
+		covT_capStdout(t, func() { runGenerate([]string{"entity", "Widget", "name:string"}) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
 	}
 }
 

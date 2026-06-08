@@ -72,10 +72,10 @@ zero-pad the version into the filename, e.g.
 gofastr migrate up                       # uses DATABASE_URL or .env
 gofastr migrate status --db-url=file:app.db
 gofastr migrate down 1
-gofastr migrate diff                     # show schema drift vs entity registry
-gofastr migrate diff --apply             # apply non-destructive changes
-gofastr migrate diff --apply --allow-destructive   # also run DROP COLUMN
-gofastr migrate generate add_email       # write a versioned migration file
+gofastr migrate diff --from=gofastr.yml             # show schema drift vs blueprint entities
+gofastr migrate diff --from=gofastr.yml --apply     # apply non-destructive changes
+gofastr migrate diff --from=gofastr.yml --apply --allow-destructive   # also run DROP COLUMN
+gofastr migrate generate add_email --from=gofastr.yml   # write a versioned migration file
 gofastr migrate force 7                  # mark version 7 cleanly applied
 gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 ```
@@ -85,7 +85,7 @@ gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 | `up`         | Apply all pending migrations in version order.                |
 | `status`     | Print applied count, pending versions, and any dirty version. |
 | `down N`     | Roll back the most recent `N` applied migrations in reverse.  |
-| `diff`       | Compare the database schema to registered entities.           |
+| `diff`       | Compare the database schema to a blueprint's entities.        |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 
@@ -123,10 +123,10 @@ increments — not direct applies. `migrate generate` produces them
 *offline* (no database needed):
 
 ```bash
-gofastr migrate generate add_published --driver=postgres
+gofastr migrate generate add_published --from=gofastr.yml --driver=postgres
 ```
 
-It diffs the **entity declarations** in `entities/*.json` against a
+It diffs the **entity declarations** in the `gofastr.yml` blueprint against a
 committed **schema snapshot** (`migrations/schema.snapshot.json`) and
 writes the next numbered file, e.g. `migrations/0002_add_published.sql`,
 with both `Up` and a computed `Down`:
@@ -141,8 +141,8 @@ ALTER TABLE "posts" DROP COLUMN "published";
 ```
 
 > **Scope.** The `migrate generate` / `migrate diff` CLI commands read schema
-> **only from `entities/*.json`** declarations (see
-> [entity-declarations](entity-declarations.md)). They do **not** see anything
+> **only from the `--from=<blueprint.yml>` blueprint's entities** (see
+> [blueprints](blueprints.md)). They do **not** see anything
 > registered in Go — neither `app.Entity(...)` entities nor `App.View` /
 > `App.Routine` / `App.Table`. For Go-defined schema, use auto-migrate
 > (`App.Start` applies it on boot) or `migrate diff` against a live DB; to emit
@@ -153,8 +153,8 @@ ALTER TABLE "posts" DROP COLUMN "published";
 
 It then updates the snapshot. The typical loop:
 
-1. Edit an entity declaration (add a field, add an entity, …).
-2. `gofastr migrate generate <name>` → review the generated `.sql`.
+1. Edit an entity in the blueprint (add a field, add an entity, …).
+2. `gofastr migrate generate <name> --from=gofastr.yml` → review the generated `.sql`.
 3. Commit the migration **and** the updated `schema.snapshot.json`.
 4. `gofastr migrate up` applies it through the tracked, locked,
    checksummed runner.
@@ -174,7 +174,7 @@ those as a hand-written migration. The snapshot is offline state — pick
 `--driver` to match your production engine so the emitted types are
 right.
 
-Flags: `--entities=<dir>` (default `entities`), `--migrations=<dir>`
+Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default
 `<migrations>/schema.snapshot.json`), `--driver=<name>`.
 

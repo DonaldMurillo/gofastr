@@ -28,7 +28,9 @@ func runBuild(args []string) {
 		}
 	}
 
-	// Step 1: generate code when entity declarations are present.
+	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
+	// is present. Blueprint generation (gofastr generate --from) is an
+	// explicit, separate step — `gofastr build` does not guess a blueprint.
 	if !noGenerate {
 		discovery, err := codegen.DiscoverConfig(".")
 		if err != nil {
@@ -38,9 +40,6 @@ func runBuild(args []string) {
 		if discovery.Found {
 			info("Generating code...")
 			generateProject(nil)
-		} else if _, err := os.Stat("entities"); err == nil {
-			info("Generating code...")
-			generateProject([]string{"--clean"})
 		}
 	}
 

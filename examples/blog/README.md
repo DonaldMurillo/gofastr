@@ -85,31 +85,30 @@ User ──< Post ──< Comment
 - **Post** belongs to **User** (author), has many **Comments**, and supports soft-delete
 - **Comment** belongs to both **Post** and **User**
 
-## JSON Declarations
+## Declarations
 
-The entities are declared in `examples/blog/entities/*.json`. This format is
-designed for AI code generation: describe your entities and the framework builds
-the routes, migrations, OpenAPI schemas, and MCP CRUD tools.
+The entities are declared in Go in [`main.go`](main.go) via
+`app.Entity("posts", framework.EntityConfig{…})`, so `go run ./examples/blog`
+runs with no external files. The same schema is mirrored in
+[`gofastr.yml`](gofastr.yml) — the blueprint format the CLI generates from:
 
-```json
-{
-  "name": "posts",
-  "soft_delete": true,
-  "fields": [
-    { "name": "title", "type": "string", "required": true },
-    { "name": "body", "type": "text" },
-    { "name": "status", "type": "enum", "values": ["draft", "published"] }
-  ],
-  "crud": true,
-  "mcp": true
-}
+```yaml
+entities:
+  - name: posts
+    crud: true
+    mcp: true
+    soft_delete: true
+    fields:
+      - { name: title,  type: string, required: true }
+      - { name: body,   type: text }
+      - { name: status, type: enum, values: [draft, published] }
 ```
 
-Generate Go from those declarations:
+Generate Go from the blueprint:
 
 ```bash
 cd examples/blog
-gofastr generate
+gofastr generate --from=gofastr.yml
 ```
 
 ## Search
@@ -120,7 +119,7 @@ or Elasticsearch backend.
 
 ## MCP Tools
 
-Each entity sets `"mcp": true`, so GoFastr registers CRUD tools:
+Each entity sets `mcp: true`, so GoFastr registers CRUD tools:
 
 | Tool            | Description              | Parameters              |
 | --------------- | ------------------------ | ----------------------- |

@@ -157,10 +157,11 @@ are explicit and machine-readable.
 
 ### 4b. CLI scaffolding beyond kiln — `cmd/gofastr/new.go`
 
-- `gofastr new entity Post --fields "title:string,body:text"`
 - `gofastr new handler ListOrders --method GET --path /orders`
 - `gofastr new route /api/health --method GET`
-- Generates JSON entity declarations + Go registration scaffolds
+- Generates Go handler scaffolds + route registration snippets. (The
+  `new entity` subcommand was removed — declare entities in a `gofastr.yml`
+  blueprint instead.)
 - Idempotent by default — second invocation errors with "already exists";
   `-overwrite` opts in to rewriting the target file
 - `gofastr new -h` shows usage; `gofastr new` with no resource exits non-zero
@@ -961,3 +962,63 @@ migration story.
 
 **No further work** until prioritised — the screen-loader workaround
 covers the case in the meantime.
+
+---
+
+## 13. Validation & adoption — proving the thesis
+
+**Status:** in progress (2026-06-08) — the declaration→surfaces proof shipped; external adoption is open.
+
+GoFastr makes a falsifiable bet: *an AI agent (or a human) can describe a real
+CRUD-heavy app once, in a `gofastr.yml` blueprint, and get a correct,
+inspectable, runnable app — SQL + REST + OpenAPI + MCP + UI — without
+hand-writing the glue.* This section tracks what would prove or disprove it,
+rather than leaving "is the bet sound?" as an unstated question.
+
+**Validation streams**
+
+1. **Framework stability → the `v1.0.0` gate.** The API may change until v1.0
+   (see README status). Drop `v0.x` only when the gate below is green.
+2. **Declaration-first proof.** ✓ Shipped: `examples/ecommerce` — a five-entity
+   blueprint generated, built, and surface-tested end-to-end
+   (`flagship_test.go` asserts REST/OpenAPI/MCP/UI are live, zero hand-written
+   app code).
+3. **Dogfooding.** ✓ Kiln and `examples/site` are built on the framework (README
+   → *Built with GoFastr*). Deepen by porting more internal tooling onto
+   blueprints.
+4. **External adoption — the genuinely open item.** No outside production users
+   yet. This is the part the code cannot prove for itself; named here so the
+   project doesn't pretend otherwise.
+
+**`v1.0.0` gate** (what must be true to drop `v0.x`)
+
+- The public `framework.X` + battery interfaces are frozen, with a documented
+  deprecation policy replacing ad-hoc breaking changes.
+- The declaration→surfaces proof (#2) stays green in CI, and the
+  declaration-first follow-ups below are closed or consciously scoped out.
+- At least one non-author app runs on GoFastr in a real setting (#4).
+
+**Declaration-first follow-ups** (gaps surfaced while building the flagship)
+
+- **Auto-wire seed data.** Blueprint `seed:` is emitted as an unwired
+  `BlueprintSeedData()` stub; generate `app.WithSeed(...)` so declared rows
+  actually load.
+- **`public_openapi` blueprint key.** The raw `/openapi.json` is auth-gated by
+  secure-by-default and the blueprint can't opt it public; add the key →
+  `AppConfig.PublicOpenAPI`.
+- **Split the `gofastr.yml` overload.** The same filename is both the blueprint
+  and the `gofastr init` isolation config — which is why `gofastr generate`
+  won't auto-discover it. A distinct blueprint filename makes discovery safe.
+- **`kiln freeze` → blueprint.** Freeze writes `entities/*.json` snapshots that
+  no longer have a framework loader; emit a `gofastr.yml` blueprint so the
+  graduate-to-Go path is one `gofastr generate` (see
+  `framework/docs/content/agent-notes.md`, 2026-06-08).
+
+**Acceptance**
+
+- README carries an honest validation-status line (proven vs open) — ✓.
+- The proof example is regenerated + tested in CI, not a static checkout — ✓
+  (`flagship_test.go` regenerates via `go run`).
+- The v1.0 gate is written down and revisited each release.
+
+---

@@ -16,9 +16,9 @@ import (
 // Reads the on-disk journal, replays it into a session, and either:
 //   - --dir <path>   (default): writes entities/*.json + world.json to disk
 //   - --diff         : prints a human-readable summary of what the
-//                       agent built (entities, pages, hooks, routes,
-//                       seeds). No files written. Use this to review
-//                       agent-driven changes before graduating to source.
+//     agent built (entities, pages, hooks, routes,
+//     seeds). No files written. Use this to review
+//     agent-driven changes before graduating to source.
 //
 // This is the "graduate from build mode" step. Once frozen, the
 // JSON files can be checked into a regular GoFastr project.
@@ -63,7 +63,7 @@ func runFreeze(args []string) int {
 	fmt.Fprintf(os.Stderr, "[kiln freeze] wrote to %s/\n", *dir)
 	fmt.Fprintf(os.Stderr, "  entities: %d  pages: %d  hooks: %d  routes: %d\n",
 		entCount, pageCount, hookCount, routeCount)
-	fmt.Fprintf(os.Stderr, "  next: open %s/entities/ and wire them into your app via app.EntitiesFromDir(\"entities\")\n", *dir)
+	fmt.Fprintf(os.Stderr, "  next: review %s/entities/, then declare these entities in a gofastr.yml blueprint (or in Go) and run `gofastr generate`\n", *dir)
 	return 0
 }
 

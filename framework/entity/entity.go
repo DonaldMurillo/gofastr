@@ -54,9 +54,9 @@ type EntityConfig struct {
 	// framework tracks completion in the _gofastr_seeded ledger; subsequent
 	// App.Start() calls skip the entity. Errors abort App.Start.
 	//
-	// Go-only: function values cannot be expressed in JSON entity
-	// declarations. Apps that load entities via EntityFromFile /
-	// EntitiesFromDir must wire seeding from Go after loading.
+	// Go-only: function values cannot be expressed in a blueprint
+	// declaration. Apps whose entities come from a gofastr.yml blueprint
+	// must wire seeding from Go.
 	//
 	// Concurrency: RunSeeds is NOT safe for concurrent invocation across
 	// multiple processes. The framework assumes serialized startup (one

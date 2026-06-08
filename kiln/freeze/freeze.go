@@ -3,10 +3,10 @@
 //
 // v1 emits two artifacts:
 //
-//   <dir>/entities/<name>.json — one file per entity in the JSON shape
-//                                framework.LoadEntityDeclaration accepts.
-//   <dir>/world.json           — full world snapshot (entities + pages +
-//                                hooks + routes + seeds + middleware).
+//	<dir>/entities/<name>.json — one file per entity in the readable JSON
+//	                             entity shape (mirrors EntityDeclaration).
+//	<dir>/world.json           — full world snapshot (entities + pages +
+//	                             hooks + routes + seeds + middleware).
 //
 // Pages, hooks, routes, and seeds aren't yet emittable as Go source. The
 // snapshot lets a Kiln session restart from where it left off; further

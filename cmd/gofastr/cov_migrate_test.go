@@ -121,22 +121,30 @@ func TestRunMigrateDiffInProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	entDir := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
+	bp := filepath.Join(dir, "gofastr.yml")
+	blueprint := `app:
+  name: testapp
+entities:
+  - name: posts
+    table: posts
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: views
+        type: int
+`
+	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	decl := `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string","required":true},{"name":"views","type":"int"}]}`
-	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(decl), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out := covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--entities=entities"}) })
+	out := covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp}) })
 	if !strings.Contains(out, "views") {
 		t.Fatalf("diff output: %s", out)
 	}
 	// --apply path
-	covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--entities=entities", "--apply"}) })
+	covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp, "--apply"}) })
 	// up-to-date path now
-	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--entities=entities"}) })
+	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp}) })
 	if !strings.Contains(out2, "up to date") {
 		t.Fatalf("expected up to date, got: %s", out2)
 	}
@@ -145,11 +153,12 @@ func TestRunMigrateDiffInProcess(t *testing.T) {
 func TestRunMigrateDiffNoEntitiesExits(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	if err := os.MkdirAll(filepath.Join(dir, "entities"), 0o755); err != nil {
+	bp := filepath.Join(dir, "gofastr.yml")
+	if err := os.WriteFile(bp, []byte("app:\n  name: testapp\nentities: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + filepath.Join(dir, "x.db")}) })
+		covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + filepath.Join(dir, "x.db"), "--from=" + bp}) })
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)
@@ -157,8 +166,8 @@ func TestRunMigrateDiffNoEntitiesExits(t *testing.T) {
 }
 
 func TestParseDiffOptions(t *testing.T) {
-	opts := parseDiffOptions([]string{"--db-url=u", "--driver=postgres", "--entities=e", "--apply", "--allow-destructive"})
-	if opts.dbURL != "u" || opts.driver != "postgres" || opts.entitiesDir != "e" || !opts.apply || !opts.allowDestructive {
+	opts := parseDiffOptions([]string{"--db-url=u", "--driver=postgres", "--from=bp.yml", "--apply", "--allow-destructive"})
+	if opts.dbURL != "u" || opts.driver != "postgres" || opts.from != "bp.yml" || !opts.apply || !opts.allowDestructive {
 		t.Fatalf("opts = %#v", opts)
 	}
 	t.Setenv("DATABASE_URL", "envurl")
@@ -176,21 +185,26 @@ func TestOpenDiffDBErrors(t *testing.T) {
 func TestRunMigrateGenerateInProcess(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	entDir := filepath.Join(dir, "entities")
-	if err := os.MkdirAll(entDir, 0o755); err != nil {
+	bp := filepath.Join(dir, "gofastr.yml")
+	blueprint := `app:
+  name: testapp
+entities:
+  - name: posts
+    table: posts
+    fields:
+      - name: title
+        type: string
+`
+	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	decl := `{"name":"posts","table":"posts","fields":[{"name":"title","type":"string"}]}`
-	if err := os.WriteFile(filepath.Join(entDir, "posts.json"), []byte(decl), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	covT_capStdout(t, func() { runMigrateGenerate([]string{"create_posts"}) })
+	covT_capStdout(t, func() { runMigrateGenerate([]string{"create_posts", "--from=" + bp}) })
 	matches, _ := filepath.Glob(filepath.Join(dir, "migrations", "0001_*.sql"))
 	if len(matches) == 0 {
 		t.Fatal("no migration generated")
 	}
 	// Second run with no schema change → up to date.
-	out := covT_capStdout(t, func() { runMigrateGenerate([]string{"noop"}) })
+	out := covT_capStdout(t, func() { runMigrateGenerate([]string{"noop", "--from=" + bp}) })
 	if !strings.Contains(out, "up to date") {
 		t.Fatalf("expected up to date: %s", out)
 	}
@@ -206,8 +220,8 @@ func TestRunMigrateGenerateNoNameExits(t *testing.T) {
 }
 
 func TestParseMigrateGenOptions(t *testing.T) {
-	opts := parseMigrateGenOptions([]string{"myname", "--entities=e", "--migrations=m", "--snapshot=s.json", "--driver=postgres", "--unknown"})
-	if opts.name != "myname" || opts.entitiesDir != "e" || opts.migrationsDir != "m" || opts.snapshotPath != "s.json" || opts.driver != "postgres" {
+	opts := parseMigrateGenOptions([]string{"myname", "--from=bp.yml", "--migrations=m", "--snapshot=s.json", "--driver=postgres", "--unknown"})
+	if opts.name != "myname" || opts.from != "bp.yml" || opts.migrationsDir != "m" || opts.snapshotPath != "s.json" || opts.driver != "postgres" {
 		t.Fatalf("opts = %#v", opts)
 	}
 	def := parseMigrateGenOptions([]string{"n"})

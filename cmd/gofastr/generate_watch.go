@@ -10,17 +10,15 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
-// runGenerateWatch polls the entities directory for changes and re-runs
-// generateProject whenever a *.json file's content shifts. Polling rather
-// than fsnotify so we stay dependency-free; debounced to ~200ms.
+// runGenerateWatch polls the blueprint (or gofastr.codegen.yml inputs) for
+// changes and re-runs generateProject whenever their content shifts. Polling
+// rather than fsnotify so we stay dependency-free; debounced to ~250ms.
 //
 // Usage:
 //
-//	gofastr generate --watch [--entities=...] [--out=...]
+//	gofastr generate --watch [--from=gofastr.yml] [--out=...]
 //
 // Stop with Ctrl-C.
 func runGenerateWatch(args []string) {
@@ -28,7 +26,7 @@ func runGenerateWatch(args []string) {
 	info("Watching generator inputs — Ctrl-C to stop.")
 
 	// Initial pass.
-	runOnce(args, options.entitiesDir)
+	runOnce(args)
 
 	lastHash := hashGenerateInputs(options)
 	ticker := time.NewTicker(250 * time.Millisecond)
@@ -42,13 +40,13 @@ func runGenerateWatch(args []string) {
 		lastHash = h
 		fmt.Printf("\033[2J\033[H") // clear terminal
 		info("Detected codegen input change — regenerating...")
-		runOnce(args, options.entitiesDir)
+		runOnce(args)
 	}
 }
 
 // runOnce invokes generateProject with the same args but stripping --watch
 // so it doesn't recurse.
-func runOnce(args []string, _ string) {
+func runOnce(args []string) {
 	filtered := make([]string, 0, len(args))
 	for _, a := range args {
 		if a == "--watch" {
@@ -124,28 +122,18 @@ func hashGenerateInputs(options generateOptions) string {
 				hashFileInto(h, projectRelativePath(projectDir, ext.Command[0]))
 			}
 		}
+		// A gofastr.codegen.yml extension generator may still feed itself a
+		// json_file/json_dir source via the general codegen framework; hash
+		// those inputs so --watch reacts to them.
 		for _, gen := range discovery.Config.Codegen.Generators {
-			source := gen.Source
-			if options.entitiesSet && isEntitySourceOverrideTarget(gen) {
-				source = codegen.SourceConfig{Type: "json_dir", Path: options.entitiesDir}
-			}
-			switch strings.ToLower(source.Type) {
+			switch strings.ToLower(gen.Source.Type) {
 			case "json_file":
-				hashFileInto(h, projectRelativePath(projectDir, source.Path))
-			case "json_dir", "":
-				dir := source.Path
-				if dir == "" {
-					dir = options.entitiesDir
-				}
-				fmt.Fprintln(h, hashEntitiesDir(projectRelativePath(projectDir, dir)))
+				hashFileInto(h, projectRelativePath(projectDir, gen.Source.Path))
+			case "json_dir":
+				fmt.Fprintln(h, hashEntitiesDir(projectRelativePath(projectDir, gen.Source.Path)))
 			}
 		}
-		return fmt.Sprintf("%x", h.Sum(nil))
 	}
-	if options.configPath != "" {
-		return fmt.Sprintf("%x", h.Sum(nil))
-	}
-	fmt.Fprintln(h, hashEntitiesDir(options.entitiesDir))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 

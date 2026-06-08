@@ -9,7 +9,7 @@ import (
 
 func TestNewUsagePrints(t *testing.T) {
 	out := covT_capStdout(t, newUsage)
-	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "entity") {
+	if !strings.Contains(out, "Usage:") {
 		t.Fatalf("newUsage output: %s", out)
 	}
 }
@@ -17,11 +17,6 @@ func TestNewUsagePrints(t *testing.T) {
 func TestRunNewDispatchesAllResources(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-
-	covT_capStdout(t, func() { runNew([]string{"entity", "Widget", "name:string"}) })
-	if _, err := os.Stat(filepath.Join(dir, "entities", "widget.json")); err != nil {
-		t.Fatalf("entity not created: %v", err)
-	}
 
 	covT_capStdout(t, func() { runNew([]string{"handler", "Ping", "--method=POST", "--path=/p"}) })
 	if _, err := os.Stat(filepath.Join(dir, "ping_handler.go")); err != nil {
@@ -59,18 +54,9 @@ func TestRunNewUnknownResourceExits(t *testing.T) {
 	}
 }
 
-func TestRunNewEntityNoNameExits(t *testing.T) {
+func TestRunNewEntityRemovedExits(t *testing.T) {
 	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runNewEntity(nil, false) })
-	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
-	}
-}
-
-func TestRunNewEntityInvalidNameExits(t *testing.T) {
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runNewEntity([]string{"../evil"}, false) })
+		covT_capStdout(t, func() { runNew([]string{"entity", "Widget"}) })
 	})
 	if code != 1 {
 		t.Fatalf("want exit 1, got %d", code)
@@ -116,32 +102,5 @@ func TestExtractOverwriteFlag(t *testing.T) {
 	ov3, _ := extractOverwriteFlag([]string{"x"})
 	if ov3 {
 		t.Fatalf("expected no overwrite")
-	}
-}
-
-func TestParseFieldArgVariants(t *testing.T) {
-	if got := parseFieldArg("name"); !strings.Contains(got, `"type": "string"`) {
-		t.Fatalf("bare name: %s", got)
-	}
-	if got := parseFieldArg("age:int:required"); !strings.Contains(got, `"required": true`) || !strings.Contains(got, `"int"`) {
-		t.Fatalf("required: %s", got)
-	}
-	if got := parseFieldArg("slug:string:unique"); !strings.Contains(got, `"unique": true`) {
-		t.Fatalf("unique: %s", got)
-	}
-}
-
-func TestSchemaFieldTypeAll(t *testing.T) {
-	cases := map[string]string{
-		"string": "string", "text": "string", "int": "int", "integer": "int",
-		"float": "float", "float64": "float", "decimal": "float",
-		"bool": "bool", "boolean": "bool", "datetime": "datetime", "timestamp": "datetime",
-		"time": "datetime", "date": "date", "json": "json", "jsonb": "json",
-		"uuid": "uuid", "blob": "blob", "bytes": "blob", "weird": "string",
-	}
-	for in, want := range cases {
-		if got := schemaFieldType(in); got != want {
-			t.Errorf("schemaFieldType(%q)=%q want %q", in, got, want)
-		}
 	}
 }

@@ -31,18 +31,3 @@ func TestNewAcceptsValidNames(t *testing.T) {
 		}
 	}
 }
-
-func TestTitleASCII(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"user", "User"},
-		{"User", "User"},
-		{"", ""},
-		{"x", "X"},
-		{"123abc", "123abc"},
-	}
-	for _, c := range cases {
-		if got := titleASCII(c.in); got != c.want {
-			t.Errorf("titleASCII(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}

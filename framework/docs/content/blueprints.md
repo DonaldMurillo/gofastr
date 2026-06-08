@@ -1,18 +1,25 @@
 # Blueprints
 
-GoFastr blueprints are deterministic CLI codegen inputs:
+A `gofastr.yml` blueprint is GoFastr's single declaration format. It is a
+deterministic CLI codegen input — declare your entities, screens, nav, seed
+data, and endpoint/middleware stubs in one file, then generate Go from it:
 
 ```bash
 gofastr generate --from=gofastr.yml
 gofastr generate --from=blueprints/ --dry-run --json
 ```
 
-Blueprints are not runtime declarations. The CLI reads `.yml`, `.yaml`, or
-`.json` blueprint files, validates them, and writes generated Go under
-`gen/`. Runtime loading through `app.EntityFromFile` and
-`app.EntitiesFromDir` remains JSON-only.
+Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
+`.json` blueprint files (or a directory of them), validates them, and writes
+generated Go under `gen/`. At runtime your app registers the **generated**
+entity package (`entities.RegisterAll(app)`) — there is no file-based runtime
+loader. The blueprint's `entities:` list uses the same entity shape and field
+types documented in [Entity Declarations](entity-declarations.md).
 
-Blueprints are also separate from general codegen config. `gofastr generate
+The blueprint root keys are `app`, `entities`, `screens`, `nav`, `seed`,
+`endpoints`, `middleware`, `plugins`, `helpers`, and `isolation`.
+
+Blueprints are separate from general codegen config. `gofastr generate
 --from=gofastr.yml` means "treat this file as a blueprint." Plain
 `gofastr generate` discovers `gofastr.codegen.yml` / `.yaml`, or a
 `codegen:` section in `gofastr.yml`, and runs the configurable codegen engine.
