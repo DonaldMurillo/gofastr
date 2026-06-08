@@ -159,6 +159,81 @@ to close it. The actual save uses `interactive.OnSubmit`.
 `interactive.OnClick` with a `Navigate` effect replaces the page
 content via the runtime's SPA navigation — no full browser reload.
 
+### Confirm (pre-flight confirmation dialog)
+
+`interactive.Confirm(message)` shows a `window.confirm` dialog before the
+RPC fires. If the user cancels, the request is aborted. Use for destructive
+actions (delete, revoke, bulk operations).
+
+```go
+interactive.OnClick(deleteBtn,
+    interactive.Delete("/api/items/42").OnSuccess(
+        interactive.Confirm("Delete this item? This cannot be undone."),
+    ),
+)
+```
+
+Attribute injected: `data-fui-confirm="message"`.
+
+### AfterText (one-shot button label swap on success)
+
+`interactive.AfterText(text)` replaces the trigger element's text content
+with `text` after a 2xx response. One-shot — re-clicks are idempotent. Pair
+with `AfterDisable` for "Saved ✓" feedback.
+
+```go
+interactive.OnClick(saveBtn,
+    interactive.Post("/api/save").OnSuccess(
+        interactive.AfterText("Saved ✓"),
+        interactive.AfterDisable(),
+    ),
+)
+```
+
+Attribute injected: `data-fui-rpc-after-text="text"`.
+
+### AfterDisable (permanently disable trigger on success)
+
+`interactive.AfterDisable()` sets `aria-disabled="true"` and `disabled` on
+the trigger after a 2xx response. Use with `AfterText` to prevent re-submission.
+
+Attribute injected: `data-fui-rpc-after-disable` (boolean).
+
+### ScrollTo (scroll to newly-added content on success)
+
+`interactive.ScrollTo(selector)` smooth-scrolls the element matching
+`selector` into view after a 2xx response. Use to direct the user's eye at
+content that the RPC just inserted.
+
+```go
+interactive.OnClick(addBtn,
+    interactive.Post("/api/items").OnSuccess(
+        interactive.ScrollTo("#items-list"),
+    ),
+)
+```
+
+Attribute injected: `data-fui-rpc-scroll-to="selector"`.
+
+### PushState (update URL without re-fetch on success)
+
+`interactive.PushState(path)` applies a URL change via `history.pushState`
+after a 2xx response without triggering a navigation fetch. Use for actions
+that know the canonical URL ahead of time (e.g. pagination).
+
+The server-supplied `X-Gofastr-Push-State` response header takes precedence
+when both are present.
+
+```go
+interactive.OnClick(page2Btn,
+    interactive.Post("/islands/items/page").OnSuccess(
+        interactive.PushState("?p=2"),
+    ),
+)
+```
+
+Attribute injected: `data-fui-push-state="path"`.
+
 ---
 
 ## Complex interactive components

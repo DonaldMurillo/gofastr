@@ -653,6 +653,81 @@ func TestDropdownWrapsBoth(t *testing.T) {
 	}
 }
 
+// ─── D4: Typed interactive effects ──────────────────────────────────────────
+// Failing tests that pin the exact runtime-read attribute name for each effect.
+
+func TestConfirmEmitsAttr(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Delete"))
+	result := OnClick(btn, Delete("/api/item/1").OnSuccess(Confirm("Sure?")))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-confirm="Sure?"`) {
+		t.Fatalf("Confirm must emit data-fui-confirm attr: %s", s)
+	}
+	if strings.Contains(s, "data-fui-rpc-confirm") {
+		t.Fatalf("Confirm must NOT emit data-fui-rpc-confirm (wrong prefix): %s", s)
+	}
+}
+
+func TestAfterTextEmitsAttr(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Save"))
+	result := OnClick(btn, Post("/api/save").OnSuccess(AfterText("Saved ✓")))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-after-text="Saved ✓"`) {
+		t.Fatalf("AfterText must emit data-fui-rpc-after-text attr: %s", s)
+	}
+}
+
+func TestAfterDisableEmitsAttr(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Submit"))
+	result := OnClick(btn, Post("/api/submit").OnSuccess(AfterDisable()))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-after-disable`) {
+		t.Fatalf("AfterDisable must emit data-fui-rpc-after-disable attr: %s", s)
+	}
+}
+
+func TestScrollToEmitsAttr(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Add"))
+	result := OnClick(btn, Post("/api/add").OnSuccess(ScrollTo("#results")))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-scroll-to="#results"`) {
+		t.Fatalf("ScrollTo must emit data-fui-rpc-scroll-to attr: %s", s)
+	}
+}
+
+func TestPushStateEmitsAttr(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Page 2"))
+	result := OnClick(btn, Post("/api/page").OnSuccess(PushState("?p=2")))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-push-state="?p=2"`) {
+		t.Fatalf("PushState must emit data-fui-push-state attr: %s", s)
+	}
+	if strings.Contains(s, "data-fui-rpc-push-state") {
+		t.Fatalf("PushState must NOT emit data-fui-rpc-push-state (wrong name): %s", s)
+	}
+}
+
+func TestAfterTextAndDisableCombine(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Send"))
+	result := OnClick(btn, Post("/api/send").OnSuccess(AfterText("Sent ✓"), AfterDisable()))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-rpc-after-text="Sent ✓"`) {
+		t.Fatalf("missing after-text: %s", s)
+	}
+	if !strings.Contains(s, `data-fui-rpc-after-disable`) {
+		t.Fatalf("missing after-disable: %s", s)
+	}
+}
+
+func TestConfirmNoPanicEmptyMessage(t *testing.T) {
+	// Empty message is allowed (runtime will show blank confirm dialog).
+	btn := render.Tag("button", nil, render.Text("x"))
+	result := OnClick(btn, Delete("/api/x").OnSuccess(Confirm("")))
+	if !strings.Contains(string(result), `data-fui-confirm=""`) {
+		t.Fatalf("empty confirm message should still emit attr: %s", result)
+	}
+}
+
 func TestDropdownPanelInitiallyHidden(t *testing.T) {
 	trigger := render.Tag("button", nil, render.Text("Menu"))
 	panel := render.Tag("div", nil, render.Text("Content"))

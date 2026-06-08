@@ -147,6 +147,74 @@ func (e navigateEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-fui-rpc-navigate": e.path}
 }
 
+// Confirm shows a window.confirm dialog before the RPC fires. The RPC is
+// cancelled if the user dismisses the dialog. Use for destructive actions
+// (delete, revoke). Maps to data-fui-confirm="message".
+func Confirm(message string) Effect {
+	return confirmEffect{message: message}
+}
+
+type confirmEffect struct{ message string }
+
+func (e confirmEffect) rpcAttrs() map[string]string {
+	return map[string]string{"data-fui-confirm": e.message}
+}
+
+// AfterText replaces the trigger element's text content with text on 2xx RPC
+// success. One-shot — subsequent re-clicks are idempotent via
+// data-fui-rpc-after-done. Pair with AfterDisable for "Saved ✓" feedback.
+// Maps to data-fui-rpc-after-text="text".
+func AfterText(text string) Effect {
+	return afterTextEffect{text: text}
+}
+
+type afterTextEffect struct{ text string }
+
+func (e afterTextEffect) rpcAttrs() map[string]string {
+	return map[string]string{"data-fui-rpc-after-text": e.text}
+}
+
+// AfterDisable permanently disables the trigger element on 2xx RPC success
+// (sets aria-disabled="true" and, for buttons/inputs, disabled=true). Use
+// with AfterText for "Saved ✓" / "Revealed ✓" feedback. Maps to the boolean
+// attribute data-fui-rpc-after-disable.
+func AfterDisable() Effect {
+	return afterDisableEffect{}
+}
+
+type afterDisableEffect struct{}
+
+func (e afterDisableEffect) rpcAttrs() map[string]string {
+	return map[string]string{"data-fui-rpc-after-disable": ""}
+}
+
+// ScrollTo smooth-scrolls the element matching selector into view on 2xx RPC
+// success. Use to direct the user's eye at newly-inserted content.
+// Maps to data-fui-rpc-scroll-to="selector".
+func ScrollTo(selector string) Effect {
+	return scrollToEffect{selector: selector}
+}
+
+type scrollToEffect struct{ selector string }
+
+func (e scrollToEffect) rpcAttrs() map[string]string {
+	return map[string]string{"data-fui-rpc-scroll-to": e.selector}
+}
+
+// PushState applies a URL update via history.pushState after 2xx RPC success
+// without triggering a fetch. The server-supplied X-Gofastr-Push-State header
+// takes precedence over this attribute when both are present.
+// Maps to data-fui-push-state="path".
+func PushState(path string) Effect {
+	return pushStateEffect{path: path}
+}
+
+type pushStateEffect struct{ path string }
+
+func (e pushStateEffect) rpcAttrs() map[string]string {
+	return map[string]string{"data-fui-push-state": e.path}
+}
+
 // ─── Wrapper functions ──────────────────────────────────────────────
 
 // OnClick wraps an HTML element so that clicking it fires the action.
