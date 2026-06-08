@@ -1110,12 +1110,21 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	// component CSS that uses bare var(--*) refs regardless of source
 	// order.
 
-	// Head injection: global typed tags + raw HTML + per-screen SEOScreen.
-	// Order: typed helpers → WithHeadHTML → SEOScreen. Typed helpers are
-	// set at New() time; SEOScreen is per-request.
+	// Head injection order: per-screen SEOScreen FIRST, then WithHeadHTML,
+	// then global typed tags last.
+	//
+	// Rationale: social-preview crawlers (Open Graph, Twitter Card) are
+	// first-match — they stop at the first occurrence of a given property.
+	// Putting per-page tags before global sitewide defaults ensures the
+	// per-page og:title / og:description / og:image is the one they pick.
+	// If the page provides no OG data, the global fallback still fires.
+	//
+	// Typed helpers (WithOpenGraph, WithDescription, …) are set at New()
+	// time and serve as sitewide fallbacks. Per-screen SEOScreen data is
+	// per-request.
 	var headParts []string
-	for _, tag := range ds.headTags {
-		headParts = append(headParts, tag)
+	if screenHead := ds.screenHeadHTML(pagePath); screenHead != "" {
+		headParts = append(headParts, screenHead)
 	}
 	// Caller-supplied head HTML (WithHeadHTML) is scrubbed for <script>
 	// tags before injection. The head escape hatch is intended for
@@ -1127,8 +1136,8 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 	if ds.headHTML != "" {
 		headParts = append(headParts, stripInlineScripts(ds.headHTML))
 	}
-	if screenHead := ds.screenHeadHTML(pagePath); screenHead != "" {
-		headParts = append(headParts, screenHead)
+	for _, tag := range ds.headTags {
+		headParts = append(headParts, tag)
 	}
 	if len(headParts) > 0 {
 		headClose.WriteString(strings.Join(headParts, "\n"))

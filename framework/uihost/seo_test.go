@@ -334,6 +334,45 @@ func TestSEOBundleDescriptionOverrides(t *testing.T) {
 	}
 }
 
+// ─── F13: per-page OG beats global OG for first-match crawlers ──────
+
+// ogOverrideComp returns a per-page og:title via ScreenSEO.
+type ogOverrideComp struct{}
+
+func (ogOverrideComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (ogOverrideComp) ScreenSEO() SEO {
+	return SEO{OG: &OG{Title: "Per-page OG title"}}
+}
+
+// TestPerPageOGBeatsGlobal asserts that when both global WithOpenGraph and
+// per-page ScreenSEO set og:title, the per-page tag appears FIRST in <head>
+// so first-match crawlers honour the per-page value.
+func TestPerPageOGBeatsGlobal(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/product", &ogOverrideComp{}, nil)
+	ds := New(a, WithOpenGraph(OG{Title: "Global site title"}))
+	req := httptest.NewRequest("GET", "/product", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	body := w.Body.String()
+
+	// Both tags must be present.
+	if !strings.Contains(body, `content="Per-page OG title"`) {
+		t.Fatalf("per-page og:title missing from page:\n%s", body)
+	}
+	if !strings.Contains(body, `content="Global site title"`) {
+		t.Fatalf("global og:title missing from page:\n%s", body)
+	}
+
+	// Per-page must come first: first-match crawlers honour the earlier tag.
+	perPageIdx := strings.Index(body, `content="Per-page OG title"`)
+	globalIdx := strings.Index(body, `content="Global site title"`)
+	if perPageIdx > globalIdx {
+		t.Errorf("global og:title (pos %d) appears before per-page og:title (pos %d); first-match crawlers will ignore the per-page override",
+			globalIdx, perPageIdx)
+	}
+}
+
 // Empty bundle fields fall through to per-concern interfaces.
 type partialBundleComp struct{}
 

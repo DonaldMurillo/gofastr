@@ -811,8 +811,9 @@ func TestNoMetaWithoutDescriber(t *testing.T) {
 }
 
 func TestPerPageMetaWinsOverGlobal(t *testing.T) {
-	// Per-page description must come AFTER WithDescription so search
-	// engines (which use the last meta) pick the per-page text.
+	// Per-page description must come BEFORE WithDescription so crawlers
+	// (first-match parsers) pick the per-page text rather than the global
+	// sitewide default.
 	application := app.NewApp("Test App")
 	application.Register("/", &describedHomeComp{}, nil)
 	ds := New(application, WithDescription("Global site description"))
@@ -825,7 +826,7 @@ func TestPerPageMetaWinsOverGlobal(t *testing.T) {
 	if gIdx < 0 || pIdx < 0 {
 		t.Fatalf("expected both meta tags present; global=%d per-page=%d", gIdx, pIdx)
 	}
-	if gIdx >= pIdx {
-		t.Errorf("expected global meta BEFORE per-screen meta, got global=%d per-page=%d", gIdx, pIdx)
+	if pIdx >= gIdx {
+		t.Errorf("expected per-screen meta BEFORE global meta, got per-page=%d global=%d", pIdx, gIdx)
 	}
 }
