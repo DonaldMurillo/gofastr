@@ -158,6 +158,10 @@ Or wire the bare `http.Handler` onto a `core/router.Router` or stdlib `http.Serv
 mux.Handle("/embed/", http.StripPrefix("/embed", embed.Handler(idx)))
 ```
 
+## Agent inventory
+
+Importing `battery/embed` registers a snippet in `agentsinv` (the process-wide agent-onboarding registry). Any binary that blank-imports the package — including the built `gofastr` CLI — will include the embed entry in the generated `AGENTS.md` output from `gofastr agents sync`. The snippet lives in `battery/embed/agents.md` and describes when to use the battery, the import path, and the key anti-patterns.
+
 ## Kiln integration
 
 `kiln.Loop` gained a `ContextHook func(ctx, userText) string`. It is called once per turn with the most recent user message, and its return value is prepended to the provider's system prompt. The helper `agent.NewEmbedContextHook(idx, k)` wraps an `embed.Index`:

@@ -91,6 +91,30 @@ Documents are stored in a map, so:
 The implementation is in `battery/search/memory.go` — read it before
 using it in anything user-facing.
 
+## Battery wrapper
+
+`search.NewBattery(backend)` wraps any `Backend` in a
+`framework.Battery` so the index participates in the App's
+dependency-resolved lifecycle.  This lets other batteries declare
+`"search"` as a dependency, guaranteeing the index is available before
+their own `Init` runs.
+
+```go
+idx := search.NewMemory()
+app.Batteries.Register(search.NewBattery(idx))
+
+// Retrieve the backend from within another battery:
+b, _ := app.Batteries.Get("search")
+sb := b.(*search.Battery)
+results, _ := sb.Backend().Search(ctx, search.Query{Text: "..."})
+```
+
+`search.Memory` has no background goroutine, so `Battery` implements
+`framework.Battery` only (no `BatteryLifecycle`).  If a future
+production backend starts a background goroutine, implement `io.Closer`
+on that type and the `Battery` wrapper's `OnStop` will call `Close()`
+automatically.
+
 ## Common mistakes
 
 - **Indexing inside a hook without context.** Pass the request context
