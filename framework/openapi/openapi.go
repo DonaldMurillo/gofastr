@@ -390,7 +390,13 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			}
 			customOp.OperationID = DefaultEndpointToolName(entityName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
 			customOp.Tags = []string{entityName}
-			customOp.AddResponse(200, "OK", map[string]any{"type": "object"})
+			// A typed InputSchema becomes the JSON request body — but only for
+			// methods that carry one (GET/HEAD never do). Unset schemas fall
+			// back to today's shapeless {type:object} response and no body.
+			if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
+				customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
+			}
+			customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
 			s.AddPath(endpoint.Method, EntityEndpointPath(ent, endpoint.Path), *customOp)
 		}
 	}

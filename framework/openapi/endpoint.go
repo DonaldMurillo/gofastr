@@ -3,6 +3,7 @@ package openapi
 import (
 	"strings"
 
+	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -29,6 +30,32 @@ func convertColonParams(path string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+// objectSchema is the shapeless fallback emitted when an Endpoint declares no
+// typed Input/Output schema — identical to the historical default.
+func objectSchema() map[string]any { return map[string]any{"type": "object"} }
+
+// EndpointInputSchema returns the JSON-Schema object describing an endpoint's
+// request body. When ep.InputSchema is set it is converted via the same
+// FieldsToSchema machinery the entity CRUD body uses; otherwise the historical
+// {type:object} fallback is returned. This is the single source the OpenAPI
+// requestBody and the generated MCP tool input schema both consume.
+func EndpointInputSchema(ep entity.Endpoint) map[string]any {
+	if len(ep.InputSchema) == 0 {
+		return objectSchema()
+	}
+	return coreoa.FieldsToSchema(ep.InputSchema)
+}
+
+// EndpointOutputSchema returns the JSON-Schema object describing an endpoint's
+// success (200) response body, falling back to {type:object} when
+// ep.OutputSchema is unset.
+func EndpointOutputSchema(ep entity.Endpoint) map[string]any {
+	if len(ep.OutputSchema) == 0 {
+		return objectSchema()
+	}
+	return coreoa.FieldsToSchema(ep.OutputSchema)
 }
 
 // DefaultEndpointToolName synthesises an MCP tool name from an entity +

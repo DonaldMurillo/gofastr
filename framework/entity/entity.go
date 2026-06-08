@@ -129,14 +129,24 @@ type Index struct {
 // path ("{id}/publish"). Both Go 1.22 "{id}" and older ":id" parameter syntax
 // are accepted. Handler is used for HTTP. MCPHandler is optional and is only
 // registered when MCP is true.
+//
+// InputSchema and OutputSchema are OPTIONAL typed descriptions of the request
+// body and the success (200) response, expressed as []schema.Field — the same
+// representation the entity's own CRUD schema is built from, so OpenAPI and the
+// generated MCP tool both consume one source. When unset (nil), the endpoint
+// renders exactly as before: a shapeless {type:object} request/response in
+// OpenAPI and a {type:object} MCP tool input schema. InputSchema is ignored for
+// GET endpoints (which carry no request body).
 type Endpoint struct {
-	Method      string          `json:"method"`
-	Path        string          `json:"path"`
-	Name        string          `json:"name,omitempty"`
-	Description string          `json:"description,omitempty"`
-	MCP         bool            `json:"mcp,omitempty"`
-	Handler     http.Handler    `json:"-"`
-	MCPHandler  mcp.ToolHandler `json:"-"`
+	Method       string          `json:"method"`
+	Path         string          `json:"path"`
+	Name         string          `json:"name,omitempty"`
+	Description  string          `json:"description,omitempty"`
+	MCP          bool            `json:"mcp,omitempty"`
+	InputSchema  []schema.Field  `json:"inputSchema,omitempty"`
+	OutputSchema []schema.Field  `json:"outputSchema,omitempty"`
+	Handler      http.Handler    `json:"-"`
+	MCPHandler   mcp.ToolHandler `json:"-"`
 }
 
 // TenantColumn returns the tenant-scoping column name for this entity:

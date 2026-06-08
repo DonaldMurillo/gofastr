@@ -357,3 +357,35 @@ app.Entity("posts", framework.EntityConfig{
 Endpoint paths can be absolute (`/posts/{id}/publish`) or relative to the
 entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are
 accepted.
+
+### Typed input/output schemas
+
+By default a custom endpoint is shapeless to generators: OpenAPI emits a bare
+`{type: object}` request/response and the MCP tool advertises an empty
+`{type: object}` input schema — useless SDK stubs and agent tools. Describe the
+request body and the success (200) response with the **optional** `InputSchema`
+and `OutputSchema` fields. Both take `[]schema.Field` — the same representation
+the entity's own CRUD schema is built from, so OpenAPI and the generated MCP
+tool consume one source:
+
+```go
+Endpoints: []framework.Endpoint{{
+    Method: http.MethodPost,
+    Path:   "{id}/publish",
+    Handler: publishHandler,
+    MCP:     true,
+    MCPHandler: publishTool,
+    InputSchema: []schema.Field{
+        {Name: "notify", Type: schema.Bool, Required: true},
+    },
+    OutputSchema: []schema.Field{
+        {Name: "published_at", Type: schema.String},
+    },
+}}
+```
+
+With these set, the OpenAPI operation gains a typed `requestBody` (non-GET only)
+and a typed 200 response, and the MCP tool advertises `InputSchema` as its tool
+input schema. Both fields are optional: leave them `nil` to keep the historical
+`{type: object}` behaviour byte-for-byte. `InputSchema` is ignored on `GET`/
+`HEAD` endpoints, which carry no request body.

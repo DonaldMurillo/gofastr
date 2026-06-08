@@ -557,7 +557,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, map[string]any{"type": "object"}, endpoint.MCPHandler); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler); err != nil {
 				return err
 			}
 		}
@@ -1005,7 +1005,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, map[string]any{"type": "object"}, endpoint.MCPHandler); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler); err != nil {
 				return err
 			}
 		}
