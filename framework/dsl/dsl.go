@@ -228,6 +228,29 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	if parsed.Limit > 0 {
 		qb.Limit(parsed.Limit)
 	}
+	// Wire after(cursor) into a forward keyset predicate. The DSL is the
+	// agent-facing surface: after() carries the bare keyset value (e.g.
+	// after(1024) → "rows after id 1024"), NOT the opaque base64 token the
+	// HTTP cursor layer round-trips. Resolve the keyset column from the
+	// entity config (CursorField, else the primary key); composite cursors
+	// (CursorFields) have no single-value form in the DSL, so refuse them
+	// with a clear error rather than silently paging from page 1.
+	if parsed.After != "" {
+		if len(ent.Config.CursorFields) > 0 {
+			return nil, fmt.Errorf("dsl: after() is unsupported on %s (composite cursor); use the HTTP cursor API", parsed.Entity)
+		}
+		cursorField := ent.Config.CursorField
+		if cursorField == "" {
+			cursorField = ent.PrimaryKey
+		}
+		if cursorField == "" {
+			cursorField = "id"
+		}
+		if _, ok := entitySchema.FieldByName(cursorField); !ok {
+			return nil, fmt.Errorf("dsl: after() cursor field %q not found on %s", cursorField, parsed.Entity)
+		}
+		qb.Cursor(cursorField, parsed.After, "forward")
+	}
 	return qb, nil
 }
 
