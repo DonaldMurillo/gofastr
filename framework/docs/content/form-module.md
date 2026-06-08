@@ -142,21 +142,40 @@ All components pass **axe-core 4.10** with zero violations:
 
 `/components/forms` — comprehensive demo showcasing every form component with live examples, validation round-trip, and accessible markup.
 
+## Common mistakes
+
+- **Wrapping a self-labeled component in `FormField`.** Components
+  marked "Self-labeled" in the table above (`NumberInput`, `TextArea`,
+  `RadioGroup`, `CheckboxGroup`, `ColorPicker`, `RatingInput`) already
+  render their own `<label>` element. Wrapping them in `FormField`
+  produces a double-label, breaks `for`/`id` linking, and fails axe
+  validation.
+- **Using `FormField` without setting `For` + `ID`.** The
+  label-to-input association is `<label for="X">` + `<input id="X">`.
+  If `FormField.For` and the inner input's `ID` don't match, screen
+  readers can't pair them and axe will report a violation.
+- **Passing `ui.FieldErrors` with camelCase keys.** `FieldErrors` keys
+  must match the HTML field `name` attribute exactly (typically
+  snake_case or the CRUD entity field name). A key mismatch causes the
+  error to silently not render next to the intended field.
+- **Expecting `ConditionalField` to hide server-side.** The visibility
+  toggle runs in the browser. On first load, `ConditionalField` renders
+  with the `hidden` attribute when the condition is false — but the
+  _server_ does not skip the field from the HTML. Server-side logic
+  must independently ignore values from hidden fields.
+- **Relying on `StepWizard` to prevent multi-step submission.** Each
+  Continue/Back click is a regular form POST; the wizard does not
+  disable earlier-step fields. Validate each step's data on the server
+  for the relevant step before advancing.
+
 ## E2E Test Coverage
 
-14 dedicated tests in `examples/site/e2e_form_module_test.go`:
+7 dedicated tests in `examples/site/e2e_form_module_test.go`:
 
-- PasswordInput toggle (password→text)
+- PasswordInput renders and toggles (password→text)
 - SearchInput clear button
-- InputGroup prepend/append
-- ConditionalField show/hide toggling
-- StepWizard step rendering + navigation
-- FormRepeater item count + add button
-- ValidationSummary anchor links
-- Validation round-trip error display
+- InputGroup renders prepend/append
+- ValidationSummary renders anchor links
+- Form field order and title
 - Checkbox/Radio primitives present
-- Form error callout
-- Form method attributes
-- Select dropdown options
-- Label-to-input association
-- Page load timing
+- Forms page loads quickly

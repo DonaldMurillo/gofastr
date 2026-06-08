@@ -151,6 +151,31 @@ for that version, so `v1` clients never see `summary`.
 | `v1` and `v2` live at once, same code | route groups (§2) |
 | Deprecation headers, sunset dates, per-version field shapes | `apiversions` (§3) |
 
+## Common mistakes
+
+- **Mixing `WithAPIPrefix` with `App.Group` manually.** `WithAPIPrefix` is
+  applied app-wide at `Start()` time. If you also call `app.Group("/api/v1")`
+  and register entities there, those entities receive the prefix twice
+  (`/api/v1/api/v1/posts`). Use `WithAPIPrefix` **or** route groups, not both.
+- **Not propagating the prefix to the OpenAPI `servers` list.** GoFastr does
+  this automatically when you use `WithAPIPrefix`. If you wire your own prefix
+  via a middleware or reverse-proxy rewrite, update `AppConfig.OpenAPIServers`
+  to match — otherwise SDK generators and agents read incorrect base paths.
+- **Using the `apiversions` package in stable production without pinning.**
+  The `framework/experimental/apiversions` package has an unstable API surface.
+  Treat it like a preview: write tests that compile against the types you use
+  so a breaking rename fails your build rather than silently misbehaving at
+  runtime.
+- **Registering the same entity name into two groups with identical configs.**
+  Both groups serve the same handler state. If a `BeforeList` hook scopes by
+  version, it sees the same hook registry for both — there's one entity, one
+  registry, two routes. Per-version hook logic needs a per-version entity
+  config (see `apiversions.ApplyToEntityConfig`).
+- **Forgetting `DeprecationMiddleware`.** Calling `apiversions.Version` with
+  `WithDeprecation` configures the deprecation metadata but does **not**
+  automatically add the response headers — you must also call
+  `v1.Use(v1.DeprecationMiddleware())`.
+
 ## See also
 
 - [Entity declarations](entity-declarations.md) — the config you version.

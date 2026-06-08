@@ -185,6 +185,23 @@ In a `_batch` request, every item shares one transaction:
 - Lifecycle events emit only on a successful commit — never on
   rollback — in input order.
 
+## Hook-skip matrix
+
+Not every operation fires every hook. The table below captures the
+paths that skip hooks entirely — by design, not accident:
+
+| Operation | Hooks skipped | Why |
+|---|---|---|
+| `TypedQuery.UpdateAll` | all Before/AfterUpdate | Bulk SQL UPDATE; no per-row callback, no tx wrapping per row |
+| `TypedQuery.DeleteAll` | all Before/AfterDelete | Bulk SQL DELETE/soft-delete; same reason |
+| Upsert (`UpsertOne`) that inserts | BeforeCreate/AfterCreate fire | An upsert-as-insert IS a Create |
+| Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks |
+| Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
+| `_batch` requests | none — per-item Before/After* all fire | Each item runs its hooks before the batch tx commits |
+
+Keep this matrix in mind when writing bulk operations or tests that
+assert side-effect counts.
+
 ## Typed hooks
 
 For entities generated with `gofastr generate`, typed hook helpers
@@ -198,15 +215,66 @@ framework.OnAfterCreate[Post](app, "posts",
     })
 ```
 
-Available helpers:
+Available helpers for write operations:
 
 - `OnBeforeCreate[T]`, `OnAfterCreate[T]`
 - `OnBeforeUpdate[T]`, `OnAfterUpdate[T]`
-- `OnBeforeDelete`, `OnAfterDelete` (ID is a string, no generic)
+- `OnBeforeDelete`, `OnAfterDelete` (ID is a string, no generic needed)
 
-Each takes the `App`, the entity name, and a typed callback. The
-helpers wrap the underlying `HookRegistry`; typed and untyped hooks
-can coexist on the same entity.
+### Typed List and Get hooks
+
+`OnBeforeList` and `OnAfterList` work like their untyped counterparts
+but skip the `data.(type)` assertion — the payload is already
+`*hook.ListPayload`:
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/hook"
+
+// Scope reads to published posts for non-editors.
+framework.OnBeforeList(app, "posts",
+    func(ctx context.Context, p *hook.ListPayload) error {
+        if !isEditor(p.Request) {
+            p.AddWhere("status = $1", "published")
+        }
+        return nil
+    })
+
+// Redact a field after the rows are fetched.
+framework.OnAfterList(app, "posts",
+    func(ctx context.Context, p *hook.ListPayload) error {
+        for _, row := range p.Results {
+            delete(row, "internal_notes")
+        }
+        return nil
+    })
+```
+
+`OnBeforeGet` and `OnAfterGet` follow the same pattern with
+`*hook.GetPayload`:
+
+```go
+// Scope a single-row lookup to the caller's team.
+framework.OnBeforeGet(app, "posts",
+    func(ctx context.Context, p *hook.GetPayload) error {
+        team := teamOf(p.Request)
+        p.AddWhere("team_id = $1", team)
+        return nil
+    })
+
+// Redact a field on a single-row response.
+framework.OnAfterGet(app, "posts",
+    func(ctx context.Context, p *hook.GetPayload) error {
+        delete(p.Result, "internal_notes")
+        return nil
+    })
+```
+
+`p.ID` on a `GetPayload` is the id from the URL path. `p.Request` on
+both payload types is the live `*http.Request` so you can inspect
+headers, cookies, or auth context.
+
+Each typed helper wraps the underlying `HookRegistry` — typed and
+untyped hooks can coexist on the same entity in any registration order.
 
 ## Common mistakes
 

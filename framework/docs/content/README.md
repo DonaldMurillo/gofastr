@@ -79,6 +79,12 @@ ending with a "common mistakes" callout.
   multi-channel fan-out with per-channel templates.
 - [Factories / fixtures](factories.md) — `framework/factory`
   Rails-style test setup helpers.
+- [Testkit](testkit.md) — `framework/testkit`: isolated per-test Postgres
+  databases, migrate callback, auto-drop on cleanup.
+- [Queue](queue.md) — `battery/queue`: background job processing, dead-letter
+  replay, Redis and in-memory backends. *(page created by queue agent)*
+- [Embed](embed.md) — local semantic search via brute-force cosine, no API
+  key required. *(page created by embed agent)*
 - [Admin UI](admin.md) — `battery/admin` stock screens for
   queue + audit log.
 - [Printable documents](print.md) — `battery/print`: declare a
