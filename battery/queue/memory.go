@@ -32,7 +32,20 @@ type MemoryQueue struct {
 	// automatic worker pool processes jobs in-line and never touches this map.
 	inflightMu sync.Mutex
 	inflight   map[string]Job
+
+	// dead retains jobs that exhausted MaxAttempts (terminally failed) so they
+	// can be inspected via Browsable and re-queued via Replay, instead of being
+	// silently dropped. Ordered oldest-first. It is BOUNDED at maxDeadJobs: when
+	// the cap is reached, the oldest dead job is evicted so a flood of failing
+	// jobs can never grow memory without limit. Guarded by deadMu.
+	deadMu sync.Mutex
+	dead   []Job
 }
+
+// maxDeadJobs caps the in-memory dead-letter store. Beyond this, the oldest
+// retained failed job is dropped to keep memory bounded. The durable DBQueue
+// has no such cap (rows persist); this is the price of an in-memory backend.
+const maxDeadJobs = 1000
 
 // NewMemoryQueue creates a new in-memory queue with the given number of workers.
 // The internal job channel is buffered to 1024 jobs.
@@ -88,6 +101,10 @@ func (q *MemoryQueue) processJob(job Job) {
 		if job.Attempts < job.MaxAttempts {
 			// Re-enqueue for retry.
 			_ = q.Enqueue(ctx, job)
+		} else {
+			// Retries exhausted — retain as terminally-failed for inspection
+			// and replay instead of dropping it.
+			q.retainDead(job)
 		}
 	}
 }
@@ -317,9 +334,101 @@ func (q *MemoryQueue) Nack(ctx context.Context, jobID string) error {
 	}
 	job.Attempts++
 	if job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts {
-		// Retries exhausted — drop it (matches the auto-pool's dead-letter).
+		// Retries exhausted — retain as terminally-failed (inspectable via
+		// ListJobs/Stats and re-queuable via Replay) rather than dropping it.
+		q.retainDead(job)
 		return nil
 	}
+	return q.Enqueue(ctx, job)
+}
+
+// retainDead stores a terminally-failed job in the bounded dead-letter set.
+// When the cap is reached, the oldest dead job is evicted so memory stays
+// bounded under a flood of failures. The job's Attempts is left at its
+// exhausted value so inspection reflects how many tries it took.
+func (q *MemoryQueue) retainDead(job Job) {
+	if job.ID == "" {
+		// An ID is required to inspect/replay a job; skip ID-less jobs.
+		return
+	}
+	q.deadMu.Lock()
+	defer q.deadMu.Unlock()
+	// De-dupe by ID so a re-failed replayed job doesn't appear twice.
+	for i, d := range q.dead {
+		if d.ID == job.ID {
+			q.dead[i] = job
+			return
+		}
+	}
+	q.dead = append(q.dead, job)
+	if len(q.dead) > maxDeadJobs {
+		// Drop the oldest. Copy the retained tail into a fresh slice so the
+		// dropped head can be garbage-collected (a reslice would keep it alive).
+		drop := len(q.dead) - maxDeadJobs
+		kept := make([]Job, maxDeadJobs)
+		copy(kept, q.dead[drop:])
+		q.dead = kept
+	}
+}
+
+// ListJobs implements [Browsable] for the in-memory backend. The only state it
+// can enumerate is the retained dead-letter set, so it returns those jobs for
+// status "failed" (or an empty/"all" status), newest-first, and nothing for any
+// other status — pending/claimed jobs live transiently on an unscannable
+// channel. limit <= 0 defaults to 100.
+func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit int) ([]Job, error) {
+	if status != "" && status != "failed" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	q.deadMu.Lock()
+	defer q.deadMu.Unlock()
+	out := make([]Job, 0, min(limit, len(q.dead)))
+	// Newest-first: walk the oldest-first slice in reverse.
+	for i := len(q.dead) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, q.dead[i])
+	}
+	return out, nil
+}
+
+// Stats implements [Browsable]. The in-memory backend can only count the
+// retained dead-letter jobs (pending/claimed jobs are transient on the
+// channel), so it reports those under "failed".
+func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
+	q.deadMu.Lock()
+	n := len(q.dead)
+	q.deadMu.Unlock()
+	stats := JobStats{}
+	if n > 0 {
+		stats["failed"] = n
+	}
+	return stats, nil
+}
+
+// Replay implements [Replayable]: it moves a retained terminally-failed job
+// back onto the pending set with Attempts reset to 0 so Dequeue returns it
+// again. Idempotent and safe: replaying an unknown or non-failed id matches no
+// retained job and is a no-op (nil), never a double-enqueue.
+func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
+	q.deadMu.Lock()
+	idx := -1
+	for i, d := range q.dead {
+		if d.ID == jobID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		q.deadMu.Unlock()
+		return nil // unknown / non-failed id — no-op
+	}
+	job := q.dead[idx]
+	q.dead = append(q.dead[:idx], q.dead[idx+1:]...)
+	q.deadMu.Unlock()
+
+	job.Attempts = 0
 	return q.Enqueue(ctx, job)
 }
 
