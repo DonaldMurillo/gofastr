@@ -7,6 +7,60 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-08
+
+A developer-experience patch from the same whole-framework assessment that
+drove v0.3.1 — twenty DX improvements and small features, all with tests and
+ shipped docs. No BREAKING changes; everything is additive.
+
+### Added
+
+- **`App.WithSeed(func(ctx) error)`** — register seed funcs that run AFTER
+  auto-migration (tables exist) and before the listener binds, fixing the
+  first-run "no such table" footgun.
+- **`framework.DBFromContext(ctx)` / `WithDBContext`** + an auto-wired
+  `DBContextMiddleware` — screens reach the app's `*sql.DB` from the request
+  context instead of a package-level global handle.
+- **`access.GetRoles(ctx)`** (and the `framework.GetRoles` facade) — the reader
+  half of the role-context seam, for role-based UI branching.
+- **`PluginGetAs[T]`** — typed plugin lookup mirroring the existing `GetAs[T]`.
+- **Typed interactive effects** — `Confirm`/`AfterText`/`AfterDisable`/`ScrollTo`/
+  `PushState` builders in `core-ui/interactive`, replacing hand-written
+  `data-fui-*` attribute strings.
+- **`ListOptions.NestedFilters`** — in-process `ListAll`/`CountAll` now apply the
+  same `?author.name=alice` EXISTS-subquery nested filters the HTTP path does.
+- **`RedisQueue.Start(ctx, interval)`** — background reclaim ticker recovers jobs
+  stranded by a crashed worker, matching `DBQueue`.
+- **`Battery` wrappers for cache/search/storage** (`NewBattery`) with clean
+  lifecycle shutdown of background goroutines.
+- **`gofastr harness creds add|list|delete`** — store credentials in the
+  encrypted credstore; `gofastr --help` now lists the `harness`/`agents` subcommands.
+- **`audit_log.tenant_id`** — a nullable column (idempotent `ADD COLUMN`) stamped
+  from the request tenant, so multi-tenant audit trails are scopeable.
+
+### Changed
+
+- **The OpenAPI spec advertises `?fields=` (projection) and `?trashed=`** query
+  parameters so SDK generators and agents can see them.
+- **Auto-CRUD registration pre-flights entity/screen path collisions** with an
+  actionable diagnostic (names the entity, the colliding path, and the fixes)
+  instead of the opaque ServeMux `/foods/llm.md conflicts` panic.
+- Queue `Queue`/`Browsable`/`Replayable` interface assertions moved into source
+  files (fail at build, not test-link).
+- The `agents.md` snippet validator now understands interface methods and
+  non-`New` constructors (e.g. `embed.Open` → `Index`), so it stops
+  false-flagging correct interface APIs while still catching fictional methods.
+
+### Documentation
+
+- New **`queue.md`** and **`testkit.md`** reference pages; **`battery/embed`** now
+  ships `agents.go`/`agents.md` so semantic search is discoverable to agents.
+- Documented the typed list/get hooks (`OnBeforeList`/`OnAfterList`/`OnBeforeGet`/
+  `OnAfterGet`) and a consolidated hook-skip matrix.
+- Security docstrings on the unscoped `softdelete.Restore`/`ForceDelete`/`WithTrashed`
+  helpers; "Common mistakes" sections (form-module, api-versioning); deeper
+  observability docs; `GetRoles`/`PluginGetAs` docs; and stale-claim fixes.
+
 ## [0.3.1] - 2026-06-08
 
 A correctness and developer-experience patch from a whole-framework
