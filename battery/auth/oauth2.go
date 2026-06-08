@@ -73,6 +73,13 @@ type OAuth2Config struct {
 	// If empty, a random key is generated at startup (suitable for
 	// single-instance deployments only).
 	StateSecret string
+
+	// TokenStore, when set, persists each provider's access/refresh token
+	// at login so that calls made on the user's behalf can recover after
+	// the (short-lived) access token expires — see RefreshOAuthToken /
+	// ValidOAuthToken. Opt-in: when nil, OAuth login behaves exactly as
+	// before and the provider's refresh token is discarded.
+	TokenStore OAuthTokenStore
 }
 
 // ─── Plugin ─────────────────────────────────────────────────────────────────
@@ -87,9 +94,10 @@ type OAuth2Config struct {
 // surface. Replay protection comes from a bounded usedNonces map
 // that's only touched on the (much rarer) successful callback path.
 type OAuth2Plugin struct {
-	mgr       *AuthManager
-	providers map[string]OAuth2Provider
-	stateKey  []byte
+	mgr        *AuthManager
+	providers  map[string]OAuth2Provider
+	stateKey   []byte
+	tokenStore OAuthTokenStore
 
 	// usedNonces dedup callbacks against replay. Keyed by the random
 	// nonce embedded in the state token; values are the token's
@@ -104,6 +112,7 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 	p := &OAuth2Plugin{
 		providers:  make(map[string]OAuth2Provider),
 		usedNonces: make(map[string]time.Time),
+		tokenStore: cfg.TokenStore,
 	}
 
 	// Copy providers from config
@@ -225,6 +234,20 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, http.StatusConflict, "could not create user")
 			}
 			return
+		}
+
+		// Persist the provider tokens (incl. the refresh token) when a
+		// token store is configured. Best-effort: a store failure must not
+		// block the login itself — the user still gets a session, they just
+		// lose transparent refresh until the next successful login.
+		if p.tokenStore != nil {
+			_ = p.tokenStore.Save(r.Context(), OAuthTokenRecord{
+				UserID:       user.GetID(),
+				Provider:     providerName,
+				AccessToken:  tok.AccessToken,
+				RefreshToken: tok.RefreshToken,
+				Expiry:       tok.Expiry,
+			})
 		}
 
 		// Create session
@@ -509,6 +532,11 @@ func (g *GoogleProvider) AuthURL(state string) string {
 	q.Set("response_type", "code")
 	q.Set("scope", "openid email profile")
 	q.Set("state", state)
+	// access_type=offline is required for Google to issue a refresh token;
+	// prompt=consent forces re-issuing it even after the first grant so a
+	// configured OAuthTokenStore always has something to refresh with.
+	q.Set("access_type", "offline")
+	q.Set("prompt", "consent")
 	u.RawQuery = q.Encode()
 	return u.String()
 }
@@ -537,6 +565,50 @@ func (g *GoogleProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("google: token exchange returned %d", resp.StatusCode)
+	}
+
+	var body struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+
+	return &OAuth2Token{
+		AccessToken:  body.AccessToken,
+		RefreshToken: body.RefreshToken,
+		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+	}, nil
+}
+
+// RefreshToken exchanges a Google refresh token for a fresh access token.
+// Google does not re-issue the refresh token on this grant, so the returned
+// OAuth2Token.RefreshToken is normally empty — callers keep the stored one.
+func (g *GoogleProvider) RefreshToken(ctx context.Context, refreshToken string) (*OAuth2Token, error) {
+	data := url.Values{}
+	data.Set("refresh_token", refreshToken)
+	data.Set("client_id", g.clientID)
+	data.Set("client_secret", g.clientSecret)
+	data.Set("grant_type", "refresh_token")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		g.tokenEndpoint,
+		strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("google: token refresh returned %d", resp.StatusCode)
 	}
 
 	var body struct {
@@ -652,6 +724,55 @@ func (g *GitHubProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("github: token exchange returned %d: %s", resp.StatusCode, body)
+	}
+
+	var body struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+
+	return &OAuth2Token{
+		AccessToken:  body.AccessToken,
+		RefreshToken: body.RefreshToken,
+		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+	}, nil
+}
+
+// RefreshToken exchanges a GitHub refresh token for a fresh access token.
+// Only GitHub Apps (and OAuth apps with expiring tokens enabled) issue
+// refresh tokens; classic OAuth-app tokens never expire and won't have one.
+func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) (*OAuth2Token, error) {
+	data := url.Values{}
+	data.Set("refresh_token", refreshToken)
+	data.Set("client_id", g.clientID)
+	data.Set("client_secret", g.clientSecret)
+	data.Set("grant_type", "refresh_token")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		g.tokenEndpoint,
+		strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Don't fold the provider response body into the error: it flows to
+		// caller logs, and keeping upstream bytes out of error strings matches
+		// the Google path. Status code is enough to diagnose.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("github: token refresh returned %d", resp.StatusCode)
 	}
 
 	var body struct {

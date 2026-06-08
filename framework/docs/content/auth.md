@@ -105,6 +105,7 @@ safe-but-reduced path.
 | `OAuthLinker` | `OAuth2Plugin` | Bind identity to `(provider, providerID)` instead of email. Refuse silent linking on email collision. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
 | `OAuthUserCreator` | `OAuth2Plugin`, `MagicLinkPlugin` | Record at creation time that the user has no password. Lets `PasswordChecker.HasPassword` return false correctly. |
+| `OAuthTokenRefresher` | `RefreshOAuthToken` / `ValidOAuthToken` | Exchange a stored refresh token for a fresh access token. Implemented by `GoogleProvider` and `GitHubProvider`. See "OAuth token store + refresh". |
 | `AccountLister` | `AccountsPlugin` | Power `GET /auth/accounts`. Required. |
 | `AccountUnlinker` | `AccountsPlugin` | Power `DELETE /auth/unlink/{provider}`. Required. |
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining" — fine when the user has linked accounts, less accurate when they only have a password. |
@@ -424,6 +425,62 @@ GET    /auth/oauth/{provider}/cb → callback, binds (provider, providerID)
 Unlink refuses (`409`) when the requested unlink would leave the user
 with no remaining login method. The check considers both linked OAuth
 accounts and whether the user has set a real password.
+
+## OAuth token store + refresh
+
+A provider access token is short-lived (Google's is ~1h). Without a
+durable store, the provider's refresh token is discarded at login and
+any call made on the user's behalf fails once the access token expires,
+with no recovery. The `OAuthTokenStore` makes that recoverable. It is
+**opt-in** — OAuth login behaves exactly as before when no store is
+configured.
+
+```go
+tokStore, _ := auth.NewSQLOAuthTokenStore(db, auth.SQLOAuthTokenStoreConfig{
+    EncryptionKey: []byte(os.Getenv("OAUTH_TOKEN_KEY")), // seals tokens at rest
+})
+
+oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
+    Providers:   map[string]auth.OAuth2Provider{"google": google},
+    StateSecret: os.Getenv("OAUTH_STATE_SECRET"),
+    TokenStore:  tokStore, // persist {user, provider, access, refresh, expiry} at login
+})
+```
+
+With a store wired in, the callback handler persists the access and
+refresh tokens (upsert per `(user_id, provider)`). Both token columns are
+sealed with AES-GCM before they touch the database — a raw table dump does
+not surface live secrets. `EncryptionKey` is **required and non-empty**:
+stored refresh tokens are password-equivalent, so `NewSQLOAuthTokenStore`
+fails closed rather than sealing them with a default key. Source it from a
+secret manager, not source code.
+
+> **Pass the authenticated user's id.** `RefreshOAuthToken` / `ValidOAuthToken`
+> take a `userID` — it must be the resolved session principal, never a
+> request-supplied value, or it is an IDOR onto another user's tokens.
+
+Making a call on the user's behalf:
+
+```go
+// Returns a currently-valid access token, refreshing transparently when
+// the stored one is expired or within ~60s of expiry.
+accessToken, err := auth.ValidOAuthToken(ctx, tokStore, google, userID)
+
+// Or force a refresh and get the full updated record:
+rec, err := auth.RefreshOAuthToken(ctx, tokStore, google, userID)
+```
+
+Refresh is concrete per provider — there is no generic provider registry.
+`GoogleProvider` and `GitHubProvider` implement `OAuthTokenRefresher`
+(`RefreshToken(ctx, refreshToken)`), POSTing a `refresh_token` grant to the
+provider's token endpoint. Providers commonly omit the refresh token on a
+refresh grant (Google does), so the stored refresh token is retained.
+`GoogleProvider.AuthURL` now requests `access_type=offline` so Google
+actually issues a refresh token.
+
+`RefreshOAuthToken` errors when no refresh token is stored — the user must
+re-authenticate. **Security-sensitive surface:** route changes here through
+the auth audit gate before merge.
 
 ## Threat model assumptions
 
