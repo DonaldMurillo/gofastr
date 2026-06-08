@@ -101,10 +101,22 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
 > registry when loading relations whose targets are soft-deletable or
 > carry Hidden columns; without it the helper returns unscrubbed rows.
 
+## Not supported with streaming
+
+The streaming list path (`?stream=true`) skips include resolution to
+keep memory bounded. Combining `?stream=true` with `?include=` is
+refused with **400** rather than silently returning rows without their
+relations. Drop one of the two. (When a list auto-streams because the
+requested `limit` is very large, the framework instead falls back to
+the buffered path so includes still resolve — only the explicit
+`?stream=true` opt-in 400s.)
+
 ## Errors
 
 - `unknown include "x"` — the named relation does not exist on the
   entity at that depth.
+- `streaming list does not support include` — `?stream=true` was
+  combined with `?include=`.
 - `target entity "y" not registered (required for nested includes)`
   — a path of length > 1 hit an unregistered target.
 - `scoped field "x" not on target entity` — the filter referenced a

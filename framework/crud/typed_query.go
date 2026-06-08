@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
@@ -257,6 +258,15 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 			continue
 		}
 		ub.Set(k, v)
+	}
+	// Restamp updated_at on the bulk update, mirroring the single-row
+	// doUpdate path. Skip it when the caller already supplied updated_at
+	// explicitly (e.g. a backfill) and when the entity has no auto-timestamp
+	// updated_at column.
+	if col := autoUpdatedAtColumn(q.handler.Entity); col != "" {
+		if _, supplied := fields[col]; !supplied {
+			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
+		}
 	}
 	for _, c := range q.wheres {
 		ub.Where(c.SQL(), c.Args()...)

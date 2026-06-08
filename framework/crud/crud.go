@@ -379,11 +379,37 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 
 		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
-		// requested limit is huge. Skips include resolution to keep memory
-		// bounded.
-		if r.URL.Query().Get("stream") == "true" || perPage >= streamListThreshold {
-			ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, page, perPage, listPayload.Where)
-			return
+		// requested limit is huge. Streaming skips include resolution to keep
+		// memory bounded — so it CANNOT honour ?include= or per-row AfterList
+		// transforms (AfterList runs once over the full slice the stream
+		// never materialises). Silently streaming anyway is wrong: includes
+		// would vanish, and an AfterList redactor would be BYPASSED — leaking
+		// the very fields it exists to hide.
+		//
+		// Explicit ?stream=true → refuse with 400 so the caller knows their
+		// include / hook contract can't be met. Auto-streaming (a huge limit,
+		// not an explicit opt-in) → fall through to the buffered path, which
+		// resolves includes and runs AfterList correctly. Correctness wins
+		// over the streaming memory optimisation when the two conflict.
+		explicitStream := r.URL.Query().Get("stream") == "true"
+		hasAfterList := ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterList)) > 0
+		if explicitStream || perPage >= streamListThreshold {
+			if len(includes) > 0 {
+				if explicitStream {
+					writeJSONError(w, http.StatusBadRequest, "streaming list does not support include; drop ?include= or ?stream=true")
+					return
+				}
+			} else if hasAfterList {
+				if explicitStream {
+					writeJSONError(w, http.StatusBadRequest, "streaming list does not support AfterList hooks; drop ?stream=true")
+					return
+				}
+			} else {
+				ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, page, perPage, listPayload.Where)
+				return
+			}
+			// Fall through to the buffered path (auto-stream with includes or
+			// AfterList) — it honours both correctly.
 		}
 
 		var total int

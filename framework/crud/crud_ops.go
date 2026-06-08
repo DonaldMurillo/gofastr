@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -162,6 +163,14 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if !anySet {
 		return nil, errNoFieldsToUpdate
 	}
+	// Restamp updated_at to now(). The field loop above skips every
+	// AutoGenerate field (so a client can't forge the timestamp), which
+	// would otherwise leave updated_at frozen at its creation value. Only
+	// stamp when a real update is happening (anySet) and the entity actually
+	// declares an auto-timestamp updated_at column.
+	if col := autoUpdatedAtColumn(ch.Entity); col != "" {
+		ub.Set(col, generateFieldValue(schema.AutoTimestamp))
+	}
 
 	ub.Where(ch.PrimaryKey+" = $1", id)
 	ch.ApplyTenantScopeUpdate(ub, r)
@@ -195,6 +204,18 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		}
 	}
 	return result, nil
+}
+
+// autoUpdatedAtColumn returns the name of the entity's auto-timestamp
+// "updated_at" column, or "" when the entity has no such field. Used to
+// restamp updated_at on every UPDATE / bulk update.
+func autoUpdatedAtColumn(ent *entity.Entity) string {
+	for _, f := range ent.GetFields() {
+		if f.Name == "updated_at" && f.AutoGenerate == schema.AutoTimestamp {
+			return f.Name
+		}
+	}
+	return ""
 }
 
 // doDelete runs the BeforeDelete → DELETE/UPDATE → AfterDelete chain for a

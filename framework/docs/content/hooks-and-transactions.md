@@ -82,6 +82,16 @@ app.HookRegistry("users").RegisterHook(framework.AfterList,
     })
 ```
 
+> **`AfterList` and streaming are mutually exclusive.** The streaming
+> list path (`?stream=true`) writes rows straight to the wire and never
+> materialises the full slice an `AfterList` redactor needs, so running
+> the hook there would be impossible — and silently *skipping* it would
+> leak the very fields the redactor exists to hide. When an entity has
+> any `AfterList` hook registered, an explicit `?stream=true` request is
+> refused with **400**. An auto-streamed request (a very large `limit`)
+> instead falls back to the buffered path so the hook still runs. Net:
+> `AfterList` is never bypassed.
+
 For the common case of per-user row scoping, use
 `EntityConfig.OwnerField` instead — it's a single line and covers
 all four read/write operations. See

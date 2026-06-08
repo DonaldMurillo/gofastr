@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -189,9 +190,22 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			// DO NOTHING fired against an existing row (nothing to update),
 			// so RETURNING produced zero rows. The contract is "return the
 			// resulting row" — fetch the pre-existing row explicitly by PK.
-			selSQL := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-				strings.Join(visFields, ", "), ch.Entity.GetTable(), ch.PrimaryKey)
-			sel := ch.DB.QueryRowContext(ctx, selSQL, body[ch.PrimaryKey])
+			//
+			// Build the fallback through the query builder and apply the same
+			// tenant / owner / soft-delete scopes the normal Get path uses.
+			// upsertPreflight already fails closed on a foreign or
+			// soft-deleted conflict, so this is defense in depth: it keeps the
+			// returned row consistent with what a scoped read would surface
+			// (e.g. never a soft-deleted row) even if the preflight contract
+			// ever changes.
+			selQB := query.Select(visFields...).
+				From(ch.Entity.GetTable()).
+				Where(ch.PrimaryKey+" = $1", body[ch.PrimaryKey])
+			ch.ApplyTenantScope(selQB, req)
+			ch.ApplyOwnerScope(selQB, req)
+			ch.ApplySoftDeleteFilter(selQB, req)
+			selSQL, selArgs := selQB.Build()
+			sel := ch.DB.QueryRowContext(ctx, selSQL, selArgs...)
 			res, err = scanRow(sel, visFields, ch.convertKey)
 		}
 		if err != nil {
@@ -204,7 +218,6 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}
-		_ = req
 		return nil
 	})
 	if err != nil {
