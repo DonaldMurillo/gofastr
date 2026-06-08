@@ -214,12 +214,39 @@ fmt.Printf("reclaimed %d jobs\n", n)
 
 ```go
 sched := queue.NewScheduler(q)           // or NewSchedulerWithLogger(q, logger)
+
+// Fixed interval — fires every 5 minutes.
 sched.Every(5 * time.Minute).
     Job("send-digest", json.RawMessage(`{}`)).
     Register()
 
+// Cron expression — fires every day at 02:00.
+if err := sched.Cron("0 2 * * *").
+    Job("nightly-rollup", nil).
+    Register(); err != nil {
+    log.Fatalf("bad cron spec: %v", err)
+}
+
 go sched.Start(ctx) // blocks until ctx is cancelled
 ```
+
+`Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
+fire when the cron expression's next time arrives — use it for
+time-of-day work like "every day at 02:00" that an interval cannot
+express. The spec is parsed by [`framework/cron`](cron.md) (`cron.Parse`),
+so the queue does not carry a second cron parser; it accepts the same
+5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
+in one scheduler.
+
+`Register()` returns an `error` only when a `Cron` spec is invalid —
+`Every` schedules never error, so existing callers that ignore the
+return value are unaffected. `RegisterAt(base)` is the deterministic
+variant: it anchors the first run to `base` instead of `time.Now()`,
+which is handy for tests and replayed fixtures.
+
+When the scheduler runs, the wake interval is the smallest of the
+interval schedules and one minute (cron resolution); a cron-only
+scheduler wakes once per minute.
 
 Multiple queues can be passed to `NewScheduler` — the job is enqueued
 onto all of them. Enqueue errors are logged via `slog.Default()`.

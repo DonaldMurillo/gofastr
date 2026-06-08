@@ -6,14 +6,25 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
 // ScheduledJob defines a recurring job configuration.
+//
+// A schedule fires on either a fixed Interval (set via Scheduler.Every) or a
+// cron expression (set via Scheduler.Cron). Interval and cron are mutually
+// exclusive: when cron is non-nil the Interval field is unused and NextRun is
+// advanced by the cron expression instead.
 type ScheduledJob struct {
 	Type     string          `json:"type"`
 	Payload  json.RawMessage `json:"payload"`
 	Interval time.Duration   `json:"interval"`
 	NextRun  time.Time       `json:"next_run"`
+
+	// cron, when set, drives NextRun from a cron expression instead of
+	// Interval. Nil for interval schedules (the pre-existing behaviour).
+	cron *cron.Schedule
 }
 
 // Scheduler enqueues recurring jobs onto one or more Queue backends.
@@ -46,7 +57,7 @@ func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
 	}
 }
 
-// Every returns a ScheduleBuilder that starts with the given interval.
+// Every returns a ScheduleBuilder that fires on a fixed interval.
 func (s *Scheduler) Every(interval time.Duration) *ScheduleBuilder {
 	return &ScheduleBuilder{
 		scheduler: s,
@@ -54,10 +65,26 @@ func (s *Scheduler) Every(interval time.Duration) *ScheduleBuilder {
 	}
 }
 
+// Cron returns a ScheduleBuilder that fires when the cron expression's next
+// time arrives. The spec accepts the standard 5-field syntax plus the
+// @shortcuts (e.g. "0 2 * * *" for every day at 02:00, or "@daily"); it is
+// parsed by framework/cron.Parse, so the queue does not carry a second cron
+// parser. Spec errors surface from Register / RegisterAt, not here, so the
+// fluent chain stays clean.
+func (s *Scheduler) Cron(spec string) *ScheduleBuilder {
+	return &ScheduleBuilder{
+		scheduler: s,
+		cronSpec:  spec,
+		hasCron:   true,
+	}
+}
+
 // ScheduleBuilder provides a fluent API for building scheduled jobs.
 type ScheduleBuilder struct {
 	scheduler *Scheduler
 	interval  time.Duration
+	cronSpec  string
+	hasCron   bool
 	jobType   string
 	payload   json.RawMessage
 }
@@ -81,19 +108,43 @@ func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 	return b
 }
 
-// Register adds the scheduled job to the scheduler.
-func (b *ScheduleBuilder) Register() {
+// Register adds the scheduled job to the scheduler, computing the first
+// NextRun relative to the current wall clock. It returns an error only when a
+// Cron schedule's spec is invalid; interval (Every) schedules never error, so
+// existing callers that ignore the return value are unaffected.
+func (b *ScheduleBuilder) Register() error {
+	return b.RegisterAt(time.Now())
+}
+
+// RegisterAt is like Register but anchors the first NextRun to base instead of
+// the wall clock. It exists so cron schedules can be registered deterministically
+// (tests, replayed fixtures) without depending on time.Now().
+func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.jobType == "" {
-		return
+		return nil
 	}
-	b.scheduler.mu.Lock()
-	defer b.scheduler.mu.Unlock()
-	b.scheduler.schedules = append(b.scheduler.schedules, ScheduledJob{
+
+	job := ScheduledJob{
 		Type:     b.jobType,
 		Payload:  b.payload,
 		Interval: b.interval,
-		NextRun:  time.Now().Add(b.interval),
-	})
+	}
+
+	if b.hasCron {
+		sc, err := cron.Parse(b.cronSpec)
+		if err != nil {
+			return err
+		}
+		job.cron = &sc
+		job.NextRun = sc.Next(base)
+	} else {
+		job.NextRun = base.Add(b.interval)
+	}
+
+	b.scheduler.mu.Lock()
+	b.scheduler.schedules = append(b.scheduler.schedules, job)
+	b.scheduler.mu.Unlock()
+	return nil
 }
 
 // Start begins the scheduling loop. It blocks until ctx is cancelled.
@@ -107,12 +158,26 @@ func (s *Scheduler) Start(ctx context.Context) {
 		return
 	}
 
-	// Use the shortest interval as the ticker duration.
-	minInterval := schedules[0].Interval
+	// Pick the ticker duration. Cron resolution is one minute, so a cron-only
+	// scheduler wakes once a minute. Interval schedules wake at their shortest
+	// interval. When both kinds are present, take the smaller so neither is
+	// starved: an interval finer than a minute still fires on time, and the
+	// minute-granular cron checks are cheap.
+	minInterval := time.Duration(0)
 	for _, sch := range schedules {
-		if sch.Interval < minInterval {
-			minInterval = sch.Interval
+		d := sch.Interval
+		if sch.cron != nil {
+			d = time.Minute
 		}
+		if d <= 0 {
+			continue
+		}
+		if minInterval == 0 || d < minInterval {
+			minInterval = d
+		}
+	}
+	if minInterval <= 0 {
+		minInterval = time.Minute
 	}
 
 	ticker := time.NewTicker(minInterval)
@@ -151,7 +216,11 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 				}
 			}
 
-			sch.NextRun = now.Add(sch.Interval)
+			if sch.cron != nil {
+				sch.NextRun = sch.cron.Next(now)
+			} else {
+				sch.NextRun = now.Add(sch.Interval)
+			}
 		}
 	}
 }

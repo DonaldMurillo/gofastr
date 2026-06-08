@@ -28,6 +28,19 @@ On multiple replicas, gate the cron body behind a DB lock (or run the
 scheduler on a single designated instance) so the tick fires once — then
 let the queue distribute the actual work. See "Behaviour & guarantees".
 
+### Cron expressions on the queue Scheduler
+
+The `battery/queue` `Scheduler` accepts cron specs directly via
+`sched.Cron(spec)` (alongside `sched.Every(interval)`), so a recurring
+*queue* job can fire at a time of day rather than only on a fixed
+interval. It reuses this package's parser — `cron.Parse(spec).Next(t)`
+computes each next firing — so there is exactly one cron implementation
+in the tree. Use `Cron` on the queue Scheduler when you want the durable,
+retrying queue to own a time-of-day job end to end; use the in-process
+`framework.Scheduler` (above) when the work is ephemeral and a missed
+tick after a restart is acceptable. See
+[the queue docs](queue.md) → "Scheduler".
+
 ## Quickstart
 
 ```go
