@@ -416,6 +416,17 @@ func (q *DBQueue) backoffFor(attempts int) time.Duration {
 	return d
 }
 
+// Replay implements [Replayable]: it resets a terminally-failed job to pending
+// so a worker picks it up again — attempts cleared, scheduled immediately. The
+// `AND status='failed'` clause makes it idempotent and safe: replaying an
+// unknown, pending, running, or claimed job matches no row and is a no-op, so
+// it can never double-run an in-flight job or resurrect a non-terminal one.
+func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
+	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1 WHERE id=$2 AND status='failed'", q.qt())
+	_, err := q.db.ExecContext(ctx, stmt, time.Now().UTC(), jobID)
+	return err
+}
+
 // ListJobs implements [Browsable]. Returns up to limit jobs in the
 // supplied status, newest-first. Empty status returns all jobs
 // regardless of state. limit <= 0 defaults to 100.

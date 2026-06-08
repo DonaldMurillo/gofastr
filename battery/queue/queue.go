@@ -56,6 +56,19 @@ type Browsable interface {
 	Stats(ctx context.Context) (JobStats, error)
 }
 
+// Replayable is the optional capability for re-queuing a dead-lettered job —
+// implemented by DBQueue (the durable backend). Admin tooling type-asserts for
+// it and only offers a "replay" action when the backend supports it. Memory and
+// Redis queues don't implement it yet (memory drops dead jobs; redis's
+// dead-list isn't readable through RedisClient).
+type Replayable interface {
+	// Replay resets a terminally-failed job back to pending so it is picked up
+	// again (attempts counter cleared, scheduled immediately). It MUST only
+	// touch terminal ('failed') rows and be idempotent: replaying an unknown,
+	// pending, or running job is a no-op, not an error or a double-run.
+	Replay(ctx context.Context, jobID string) error
+}
+
 // Sentinel errors.
 var (
 	ErrQueueClosed = errors.New("queue is closed")

@@ -107,6 +107,41 @@ type LeasedStore interface {
 	ClaimDueDeliveries(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error)
 }
 
+// ReplayableStore is the optional Store capability for dead-letter inspection
+// and replay. Both shipped stores (SQLStore, MemoryStore) implement it;
+// Manager.DeadDeliveries / Manager.Replay probe for it so admin tooling can
+// surface a replay action only when the backend supports it.
+type ReplayableStore interface {
+	Store
+	// ListDeadDeliveries returns up to limit terminally-failed (StatusDead)
+	// deliveries, newest-first.
+	ListDeadDeliveries(ctx context.Context, limit int) ([]Delivery, error)
+	// ResetDelivery returns a dead delivery to pending so the worker retries
+	// it (attempts + last error cleared, due immediately). Idempotent: it MUST
+	// only touch StatusDead rows, so resetting a non-dead/unknown delivery is a
+	// no-op — never resurrecting an in-flight or already-delivered one.
+	ResetDelivery(ctx context.Context, id string) error
+}
+
+// DeadDeliveries lists terminally-failed deliveries when the store supports it.
+func (m *Manager) DeadDeliveries(ctx context.Context, limit int) ([]Delivery, error) {
+	rs, ok := m.store.(ReplayableStore)
+	if !ok {
+		return nil, fmt.Errorf("webhook: store %T does not support dead-letter listing", m.store)
+	}
+	return rs.ListDeadDeliveries(ctx, limit)
+}
+
+// Replay re-queues a dead delivery when the store supports it. The worker
+// (Start) picks it up on the next tick.
+func (m *Manager) Replay(ctx context.Context, id string) error {
+	rs, ok := m.store.(ReplayableStore)
+	if !ok {
+		return fmt.Errorf("webhook: store %T does not support replay", m.store)
+	}
+	return rs.ResetDelivery(ctx, id)
+}
+
 // DefaultMaxResponseBodyBytes is the per-attempt response-body cap when
 // Options.MaxResponseBodyBytes is unset. A malicious receiver returning
 // gigabytes of body would otherwise exhaust manager memory.

@@ -92,6 +92,43 @@ func (m *MemoryStore) ListDeliveries(_ context.Context, subscriberID string, lim
 	return out, nil
 }
 
+// ListDeadDeliveries implements [ReplayableStore]: terminally-failed
+// (StatusDead) deliveries, newest-first.
+func (m *MemoryStore) ListDeadDeliveries(_ context.Context, limit int) ([]Delivery, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []Delivery{}
+	for _, d := range m.deliveries {
+		if d.Status == StatusDead {
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ResetDelivery implements [ReplayableStore]: returns a dead delivery to
+// pending (attempts + error cleared, due now). Only StatusDead rows are
+// touched, so resetting a non-dead/unknown delivery is a no-op.
+func (m *MemoryStore) ResetDelivery(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.deliveries[id]
+	if !ok || d.Status != StatusDead {
+		return nil
+	}
+	d.Status = StatusPending
+	d.Attempts = 0
+	d.LastError = ""
+	d.NextAttemptAt = time.Now().UTC()
+	d.UpdatedAt = d.NextAttemptAt
+	m.deliveries[id] = d
+	return nil
+}
+
 func (m *MemoryStore) DueDeliveries(_ context.Context, now time.Time, limit int) ([]Delivery, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

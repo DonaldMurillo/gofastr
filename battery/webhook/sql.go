@@ -276,6 +276,36 @@ func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limi
 	return scanDeliveries(rows)
 }
 
+// ListDeadDeliveries implements [ReplayableStore]: terminally-failed
+// (StatusDead) deliveries, newest-first.
+func (s *SQLStore) ListDeadDeliveries(ctx context.Context, limit int) ([]Delivery, error) {
+	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
+		last_error, next_attempt_at, created_at, updated_at FROM %s
+		WHERE status = %s ORDER BY created_at DESC`, s.delTable, s.placeholder(1))
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, string(StatusDead))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDeliveries(rows)
+}
+
+// ResetDelivery implements [ReplayableStore]: returns a dead delivery to
+// pending (attempts + error cleared, due now). The `AND status = dead` clause
+// makes it idempotent — resetting a non-dead/unknown delivery matches no row
+// and is a no-op, so it can never resurrect an in-flight or delivered one.
+func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
+	now := time.Now().UTC()
+	q := fmt.Sprintf(`UPDATE %s SET status = %s, attempts = 0, last_error = '',
+		next_attempt_at = %s, updated_at = %s WHERE id = %s AND status = %s`,
+		s.delTable, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5))
+	_, err := s.db.ExecContext(ctx, q, string(StatusPending), now, now, id, string(StatusDead))
+	return err
+}
+
 func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
 		last_error, next_attempt_at, created_at, updated_at FROM %s

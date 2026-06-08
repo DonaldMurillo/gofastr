@@ -142,6 +142,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Added
 
+- **Dead-letter inspect + replay for queue and webhook.** Terminally-failed work
+  could be listed but never re-run. Add optional capabilities —
+  `queue.Replayable{Replay}` (implemented by `DBQueue`) and
+  `webhook.ReplayableStore{ListDeadDeliveries, ResetDelivery}` (implemented by
+  `SQLStore` + `MemoryStore`, surfaced via `Manager.DeadDeliveries`/`Manager.Replay`).
+  Replay is idempotent and only touches terminal rows (`status='failed'` for
+  queue, `'dead'` for webhook), so it can't double-run an in-flight job. Redis
+  queue + in-memory queue replay are not implemented yet (documented gaps).
 - **`auth.SQLMagicLinkTokenStore` — durable token store for passwordless flows.**
   Magic-link, password-reset, and email-verification tokens were in-memory only,
   so those flows broke on restart and couldn't scale across replicas. Add a
