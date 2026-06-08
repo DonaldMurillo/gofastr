@@ -44,6 +44,9 @@ stop and use `DBQueue` instead:
 `DBQueue` ships durable storage, priority ordering, scheduled jobs,
 exponential retry, lease-based worker claim (safe under crashes), and
 a `Browsable` view consumed by `battery/admin`'s `/admin/queue` page.
+`RedisQueue` and `MemoryQueue` both implement `Browsable` as well —
+they surface dead-lettered jobs under the `"failed"` key so the admin
+queue page works with any backend.
 
 **Lease / crash-safety.** Dequeue claims a row by setting `status='claimed'`
 and stamping `claimed_at`. If the worker dies before Ack/Nack the row would
@@ -67,6 +70,17 @@ silently dropping it.
 `RedisQueue.Reclaim(ctx)` periodically (e.g. from a ticker) to re-deliver jobs
 whose worker crashed before Ack/Nack. A malformed list entry is quarantined to
 the dead-letter queue rather than dropping the valid jobs queued behind it.
+
+**MemoryQueue handler timeout.** The automatic worker pool times out each
+handler after 30 s by default. Pass `queue.WithHandlerTimeout(d)` to
+`NewMemoryQueue` for longer-running jobs:
+```go
+q := queue.NewMemoryQueue(4, queue.WithHandlerTimeout(5*time.Minute))
+```
+
+**Scheduler logging.** `NewScheduler` routes enqueue errors through
+`slog.Default()`. Use `NewSchedulerWithLogger(q, logger)` to inject a
+custom `*slog.Logger`.
 
 **Don't use `MemoryQueue` for real workloads.** Jobs die with the
 process — fine for tests, dangerous for anything users can observe.

@@ -9,15 +9,33 @@ import (
 	"time"
 )
 
+// defaultHandlerTimeout is the handler execution timeout used when none is
+// configured. Kept at 30 s for backward compatibility.
+const defaultHandlerTimeout = 30 * time.Second
+
+// MemoryQueueOption is a functional option for NewMemoryQueue.
+type MemoryQueueOption func(*MemoryQueue)
+
+// WithHandlerTimeout sets the per-job execution timeout for the automatic
+// worker pool. Jobs that run longer than the timeout have their context
+// cancelled, which the handler should respect (the job is then retried or
+// dead-lettered as usual). Defaults to 30 s.
+func WithHandlerTimeout(d time.Duration) MemoryQueueOption {
+	return func(q *MemoryQueue) {
+		q.handlerTimeout = d
+	}
+}
+
 // MemoryQueue is an in-memory queue backed by a goroutine pool.
 type MemoryQueue struct {
-	workers  int
-	jobChan  chan Job
-	handlers map[string]Handler
-	wg       sync.WaitGroup
-	mu       sync.RWMutex
-	closed   bool
-	done     chan struct{}
+	workers        int
+	handlerTimeout time.Duration
+	jobChan        chan Job
+	handlers       map[string]Handler
+	wg             sync.WaitGroup
+	mu             sync.RWMutex
+	closed         bool
+	done           chan struct{}
 
 	// holdover stores jobs that were drained by a type-filtered Dequeue but
 	// could not be re-enqueued onto the bounded jobChan because it was full at
@@ -49,14 +67,20 @@ const maxDeadJobs = 1000
 
 // NewMemoryQueue creates a new in-memory queue with the given number of workers.
 // The internal job channel is buffered to 1024 jobs.
-func NewMemoryQueue(workers int) *MemoryQueue {
-	return &MemoryQueue{
-		workers:  workers,
-		jobChan:  make(chan Job, 1024),
-		handlers: make(map[string]Handler),
-		done:     make(chan struct{}),
-		inflight: make(map[string]Job),
+// Optional functional options (e.g. WithHandlerTimeout) may be passed.
+func NewMemoryQueue(workers int, opts ...MemoryQueueOption) *MemoryQueue {
+	q := &MemoryQueue{
+		workers:        workers,
+		handlerTimeout: defaultHandlerTimeout,
+		jobChan:        make(chan Job, 1024),
+		handlers:       make(map[string]Handler),
+		done:           make(chan struct{}),
+		inflight:       make(map[string]Job),
 	}
+	for _, opt := range opts {
+		opt(q)
+	}
+	return q
 }
 
 // RegisterHandler registers a handler function for a given job type.
@@ -92,7 +116,7 @@ func (q *MemoryQueue) processJob(job Job) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), q.handlerTimeout)
 	defer cancel()
 
 	err := safeHandle(ctx, handler, job)

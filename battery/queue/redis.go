@@ -279,6 +279,54 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 	return nil
 }
 
+// ListJobs implements [Browsable] for the Redis backend. The only durable
+// job state accessible without a scan of the full main/processing lists is
+// the dead-letter queue, so this returns dead jobs for status "failed" (or
+// an empty/"all" status) and nothing for any other status value. Jobs are
+// returned newest-first (head of the Redis list) up to limit entries.
+// limit <= 0 defaults to 100.
+func (q *RedisQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job, error) {
+	if status != "" && status != "failed" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, int64(limit-1))
+	if err != nil {
+		return nil, fmt.Errorf("listjobs: read dead-letter queue: %w", err)
+	}
+	out := make([]Job, 0, len(entries))
+	for _, raw := range entries {
+		var job Job
+		if err := json.Unmarshal([]byte(raw), &job); err != nil {
+			// Skip corrupt entries so one bad entry doesn't block inspection.
+			continue
+		}
+		out = append(out, job)
+	}
+	return out, nil
+}
+
+// Stats implements [Browsable] for the Redis backend. It reports the count
+// of dead-lettered jobs under the "failed" key; pending/in-flight jobs are
+// not enumerable without a full scan and are omitted. Cheap: a single
+// LRange(0, -1) length read.
+func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
+	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, -1)
+	if err != nil {
+		return nil, fmt.Errorf("stats: read dead-letter queue: %w", err)
+	}
+	stats := JobStats{}
+	if n := len(entries); n > 0 {
+		stats["failed"] = n
+	}
+	return stats, nil
+}
+
+// Compile-time assertion that RedisQueue satisfies the Browsable interface.
+var _ Browsable = (*RedisQueue)(nil)
+
 // Close is a no-op for RedisQueue — the caller manages the Redis connection.
 func (q *RedisQueue) Close() error {
 	return nil

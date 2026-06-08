@@ -3,7 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -21,12 +21,28 @@ type Scheduler struct {
 	mu        sync.Mutex
 	queues    []Queue
 	schedules []ScheduledJob
+	logger    *slog.Logger
 }
 
 // NewScheduler creates a new Scheduler that dispatches to the given queues.
+// Enqueue errors are logged via slog.Default().
 func NewScheduler(queues ...Queue) *Scheduler {
 	return &Scheduler{
 		queues: queues,
+		logger: slog.Default(),
+	}
+}
+
+// NewSchedulerWithLogger creates a new Scheduler with an explicit logger.
+// Pass a non-nil *slog.Logger to control where enqueue-error messages are
+// routed; passing nil falls back to slog.Default().
+func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Scheduler{
+		queues: []Queue{q},
+		logger: logger,
 	}
 }
 
@@ -128,7 +144,10 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 
 			for _, q := range s.queues {
 				if err := q.Enqueue(ctx, job); err != nil {
-					fmt.Printf("scheduler: failed to enqueue job %q: %v\n", sch.Type, err)
+					s.logger.Error("scheduler: enqueue failed",
+						"job_type", sch.Type,
+						"err", err,
+					)
 				}
 			}
 
