@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// compile-time: MemoryQueue must satisfy both the inspection and replay
-// capabilities so admin tooling can list and re-queue dead jobs.
-var (
-	_ Replayable = (*MemoryQueue)(nil)
-	_ Browsable  = (*MemoryQueue)(nil)
-)
-
 // driveToFailure enqueues a job with MaxAttempts=1, dequeues it (so it is
 // tracked in the in-flight set), then Nacks it — exhausting its single attempt
 // and pushing it into the terminal dead-letter store. Returns the job ID.

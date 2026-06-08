@@ -7,9 +7,6 @@ import (
 	"testing"
 )
 
-// compile-time: DBQueue is the durable backend that supports replay.
-var _ Replayable = (*DBQueue)(nil)
-
 // TestDBQueue_ReplayFailedJob pins the dead-letter replay path: a job that
 // exhausted its attempts (status 'failed') can be reset to pending and
 // dequeued again.

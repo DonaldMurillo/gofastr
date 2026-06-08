@@ -324,8 +324,40 @@ func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
 	return stats, nil
 }
 
-// Compile-time assertion that RedisQueue satisfies the Browsable interface.
-var _ Browsable = (*RedisQueue)(nil)
+// Start launches a background goroutine that calls Reclaim on every tick
+// to re-enqueue in-flight jobs whose visibility timeout has expired (e.g.
+// because the worker that claimed them crashed before Ack/Nack). It mirrors
+// DBQueue's built-in lease-expiry reclaim so crashed-worker jobs are not
+// silently stranded.
+//
+// The goroutine exits when ctx is cancelled. interval controls how often
+// Reclaim is called; a value <= 0 defaults to 30 seconds. Typical use:
+//
+//	q.Start(ctx, 30*time.Second)
+func (q *RedisQueue) Start(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _ = q.Reclaim(ctx)
+			}
+		}
+	}()
+}
+
+// Compile-time interface assertions for RedisQueue.
+var (
+	_ Queue      = (*RedisQueue)(nil)
+	_ Browsable  = (*RedisQueue)(nil)
+	_ Replayable = (*RedisQueue)(nil)
+)
 
 // Close is a no-op for RedisQueue — the caller manages the Redis connection.
 func (q *RedisQueue) Close() error {

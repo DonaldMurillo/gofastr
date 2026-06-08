@@ -456,6 +456,13 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	return q.Enqueue(ctx, job)
 }
 
+// Compile-time interface assertions for MemoryQueue.
+var (
+	_ Queue      = (*MemoryQueue)(nil)
+	_ Browsable  = (*MemoryQueue)(nil)
+	_ Replayable = (*MemoryQueue)(nil)
+)
+
 // Close drains pending jobs and waits for all workers to finish.
 func (q *MemoryQueue) Close() error {
 	q.mu.Lock()

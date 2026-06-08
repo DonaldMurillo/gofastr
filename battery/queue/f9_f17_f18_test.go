@@ -10,9 +10,6 @@ import (
 
 // ─── F9: RedisQueue implements Browsable ────────────────────────────────────
 
-// Compile-time check that RedisQueue satisfies the Browsable interface.
-var _ Browsable = (*RedisQueue)(nil)
-
 func TestRedisBrowsable_ListJobsAndStats(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "browse")

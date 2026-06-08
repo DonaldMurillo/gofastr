@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// Compile-time check that RedisQueue satisfies the Replayable interface.
-var _ Replayable = (*RedisQueue)(nil)
-
 // LRange returns the elements of the list at key in the inclusive range
 // [start, stop]. Negative indices count from the end (-1 is the last element).
 // It operates on the same backing store mockRedis.LPush/RPop use, where

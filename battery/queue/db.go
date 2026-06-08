@@ -483,6 +483,14 @@ func (q *DBQueue) Stats(ctx context.Context) (JobStats, error) {
 	return out, rows.Err()
 }
 
+// Compile-time interface assertions — catching a missing implementation at build
+// time rather than waiting for the test binary to be compiled and linked.
+var (
+	_ Queue      = (*DBQueue)(nil)
+	_ Browsable  = (*DBQueue)(nil)
+	_ Replayable = (*DBQueue)(nil)
+)
+
 // Close stops worker goroutines started by Start. Idempotent.
 func (q *DBQueue) Close() error {
 	select {
