@@ -1,6 +1,8 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +11,107 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework"
 )
+
+// TestRenderBlueprintStubsValidGoWithoutHandler proves bug 1 is fixed:
+// an endpoint with no Handler set (only Name/Method/Path) must still
+// render valid Go in stubs.go. Previously this emitted
+// "func (w http.ResponseWriter, r *http.Request) {" which Go parses as
+// a method with multiple receivers ("method has multiple receivers").
+func TestRenderBlueprintStubsValidGoWithoutHandler(t *testing.T) {
+	bp := Blueprint{
+		App:       BlueprintApp{Name: "NoHandler", Module: "example.com/nohandler"},
+		Endpoints: []BlueprintEndpoint{{Name: "health", Method: "GET", Path: "/health"}},
+	}
+	src := renderBlueprintStubs(bp)
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "stubs.go", src, parser.AllErrors); err != nil {
+		t.Fatalf("stubs.go is not valid Go: %v\n%s", err, src)
+	}
+	// The handler must be derived from Name and registered consistently.
+	if !strings.Contains(src, "func Health(") {
+		t.Fatalf("expected handler derived from endpoint Name:\n%s", src)
+	}
+}
+
+// TestRenderBlueprintStubsSkipsAnonymousEndpoint proves that when both
+// Handler and Name are empty there is no stub emitted at all (and the
+// file stays valid Go).
+func TestRenderBlueprintStubsSkipsAnonymousEndpoint(t *testing.T) {
+	bp := Blueprint{
+		App:       BlueprintApp{Name: "Anon", Module: "example.com/anon"},
+		Endpoints: []BlueprintEndpoint{{Method: "GET", Path: "/x"}},
+	}
+	src := renderBlueprintStubs(bp)
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "stubs.go", src, parser.AllErrors); err != nil {
+		t.Fatalf("stubs.go is not valid Go: %v\n%s", err, src)
+	}
+	if strings.Contains(src, "http.ResponseWriter") {
+		t.Fatalf("expected no handler stub for anonymous endpoint:\n%s", src)
+	}
+}
+
+// TestRenderBlueprintNodeOnlyScreenBuilds proves bug 2 is fixed: a
+// screen whose body is a single node block (Kind set) with a plain
+// child must not import core-ui/html, because every node and its
+// children render via the node renderer, never html.*. Previously this
+// produced "imported and not used: core-ui/html".
+func TestRenderBlueprintNodeOnlyScreenBuilds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skips module build in -short")
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/blueprint\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	bp := Blueprint{
+		App: BlueprintApp{Name: "NodeOnly", Module: "example.com/nodeonly"},
+		Entities: []framework.EntityDeclaration{{
+			Name:   "posts",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		}},
+		Screens: []BlueprintScreen{{
+			Name:  "home",
+			Title: "Home",
+			Type:  "page",
+			Body: []BlueprintBlock{{
+				Kind:     "section",
+				Children: []BlueprintBlock{{Type: "p", Text: "child"}},
+			}},
+		}},
+	}
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("renderBlueprintFiles: %v", err)
+	}
+	for _, file := range files {
+		full := filepath.Join(dir, "gen", file.name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(file.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("go", "build", "-mod=mod", "./gen/blueprint")
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("node-only screen blueprint did not build: %v\n%s", err, output)
+	}
+}
 
 func TestBlueprintDriverImport(t *testing.T) {
 	cases := map[string]string{

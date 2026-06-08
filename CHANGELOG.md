@@ -80,6 +80,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `AllChunks`) and made `Open()` **return an error** when `Path`/`Keyword` is set
   but the store lacks the capability. `FlatStore` implements all of them, so no
   in-tree caller changes.
+- **Blueprint codegen produces compilable Go in two edge cases.** (1) An
+  endpoint with no `handler` emitted `func (w http.ResponseWriter, r *http.Request) {`
+  — read by Go as a method with two receivers; the handler name now falls back
+  to the endpoint `name`, and a fully-anonymous endpoint is skipped. (2) A screen
+  whose body was only freeform node blocks imported `core-ui/html` without using
+  it (a build error) — import accounting now only flags `html` when a top-level
+  block actually emits an `html.*` call. Both are pinned by tests that parse /
+  build the generated output.
 - **Generated apps no longer ship Kiln's authoring engine.** `gofastr generate`
   emitted `import "…/kiln/render"` into blueprint apps that use freeform node
   blocks, which transitively pulled `kiln/expr`, `kiln/effect`, and `framework`
@@ -148,8 +156,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `webhook.ReplayableStore{ListDeadDeliveries, ResetDelivery}` (implemented by
   `SQLStore` + `MemoryStore`, surfaced via `Manager.DeadDeliveries`/`Manager.Replay`).
   Replay is idempotent and only touches terminal rows (`status='failed'` for
-  queue, `'dead'` for webhook), so it can't double-run an in-flight job. Redis
-  queue + in-memory queue replay are not implemented yet (documented gaps). The
+  queue, `'dead'` for webhook), so it can't double-run an in-flight job. **All
+  three queue backends now support replay**: `RedisQueue.Replay` moves a job off
+  the dead-letter list back onto the main queue (new `LRange`/`LRem` on the
+  host-provided `RedisClient` interface — no new dependency), and `MemoryQueue`
+  now **retains** dead jobs in a bounded list (was silently dropping them),
+  implements `Browsable`/`Replayable`, and replays them. The
   admin battery surfaces a **Replay** button on the failed-jobs view behind the
   admin gate + CSRF (`POST /admin/queue/_replay/{id}`), and its queue filter
   chips no longer advertise a `dead` status `DBQueue` never writes.
