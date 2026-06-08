@@ -22,6 +22,14 @@ type RedisClient interface {
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	HDel(ctx context.Context, key string, fields ...string) error
 	Del(ctx context.Context, keys ...string) error
+	// LRange returns the elements of the list at key in the inclusive range
+	// [start, stop]; negative indices count from the tail (-1 is the last
+	// element). Used by Replay to read the dead-letter list.
+	LRange(ctx context.Context, key string, start, stop int64) ([]string, error)
+	// LRem removes up to count occurrences of value from the list at key and
+	// returns the number removed. Used by Replay to pull one entry off the
+	// dead-letter list.
+	LRem(ctx context.Context, key string, count int64, value interface{}) (int64, error)
 }
 
 // RedisQueue implements the Queue interface backed by Redis lists and hashes.
@@ -221,6 +229,54 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 		reclaimed++
 	}
 	return reclaimed, nil
+}
+
+// Replay implements [Replayable]: it pulls a terminally-failed job off the
+// dead-letter list and re-enqueues it onto the main queue with its attempts
+// counter reset, so it gets a full set of retries again. It is idempotent —
+// replaying an unknown job ID is a no-op (returns nil), matching DBQueue.Replay.
+//
+// The entry is LPush'd back onto the main queue first and only removed from the
+// dead list on success, so a failure between the two ops leaves the job on the
+// dead list (recoverable) rather than dropping it. A crash in that window can
+// leave one copy on each list; the next Replay/Dequeue tolerates the duplicate.
+func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
+	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, -1)
+	if err != nil {
+		return fmt.Errorf("replay: read dead-letter queue: %w", err)
+	}
+
+	for _, raw := range entries {
+		var job Job
+		if err := json.Unmarshal([]byte(raw), &job); err != nil {
+			// Skip corrupt dead-list entries rather than letting one bad row
+			// block replay of valid jobs.
+			continue
+		}
+		if job.ID != jobID {
+			continue
+		}
+
+		// Reset for a fresh set of retries, then re-marshal.
+		job.Attempts = 0
+		requeued, err := json.Marshal(job)
+		if err != nil {
+			return fmt.Errorf("replay: marshal job: %w", err)
+		}
+
+		// Enqueue first so a failure here leaves the original on the dead list
+		// (no loss); only then remove the original dead-list entry.
+		if err := q.client.LPush(ctx, q.queueName, requeued); err != nil {
+			return fmt.Errorf("replay: re-enqueue job: %w", err)
+		}
+		if _, err := q.client.LRem(ctx, q.deadLetterQueue, 1, raw); err != nil {
+			return fmt.Errorf("replay: remove from dead-letter queue: %w", err)
+		}
+		return nil
+	}
+
+	// No matching dead-lettered job — idempotent no-op.
+	return nil
 }
 
 // Close is a no-op for RedisQueue — the caller manages the Redis connection.
