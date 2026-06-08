@@ -7,6 +7,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-07
+
+First release after the assessment-driven remediation. Highlights: MIT
+LICENSE; secure-by-default authorization (multi-tenant fail-closed,
+per-operation RBAC on auto-CRUD, admin default-deny); kiln free-order
+authoring + same-origin guard; observability + deployment story; durable
+auth token store; dead-letter replay across all queue backends; and a
+broad sweep of build-quality fixes. **Contains BREAKING changes — read the
+entries marked BREAKING below before upgrading from v0.2.x.**
+
 ### Security
 
 - **BREAKING — typed-repo queries are now tenant-fail-closed.** A re-audit found
