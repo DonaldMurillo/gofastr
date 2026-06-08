@@ -659,8 +659,8 @@ func kTimeline() render.HTML {
 				evt("8s", "tool", "Agent calls add_entity", "Mutates the IR: posts(title, body, status). No DB write yet."),
 				evt("12s", "tool", "Agent calls propose_plan", "Lists destructive targets (none) and the three add_* operations."),
 				evt("18s", "approve", "You click Approve", "Plan id is stamped onto the agent's retry call."),
-				evt("19s", "", "Migration runs", "Up-migration generated and applied; entities/posts.json materialized."),
-				evt("25s", "", "Journal freezable", "kiln freeze --dir build/ emits the canonical entities you commit."),
+				evt("19s", "", "Migration runs", "Up-migration generated and applied; the posts table is live."),
+				evt("25s", "", "Journal freezable", "kiln freeze --dir build/ snapshots the world; graduate to Go via a gofastr.yml blueprint."),
 			),
 		),
 	)

@@ -2,11 +2,20 @@
 
 > A Go full-stack framework for the AI era. Declare your entities once, get a working app: typed CRUD, migrations, OpenAPI, MCP tools, and a server-driven UI runtime.
 
-GoFastr is an experimental framework that treats AI agents as first-class authors of web applications. You describe your domain in JSON or Go, and the framework generates everything around it — database schema, REST endpoints, OpenAPI spec, MCP tool surface, and admin-grade UI primitives — without giving up `database/sql`, `net/http`, or compile-time safety.
+GoFastr is an experimental framework that treats AI agents as first-class authors of web applications. You describe your domain in a `gofastr.yml` blueprint or in Go, and the framework generates everything around it — database schema, REST endpoints, OpenAPI spec, MCP tool surface, and admin-grade UI primitives — without giving up `database/sql`, `net/http`, or compile-time safety.
 
 > **Status:** early / `v0.x` — MIT-licensed and usable, but the API may change
 > between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
 > mark the stability promise. Ship at your own risk until then.
+
+> **Validation status (honest version).** The declaration → surfaces pipeline is
+> proven end-to-end by [`examples/ecommerce`](examples/ecommerce/): one
+> `gofastr.yml` blueprint becomes a SQL schema, REST CRUD, an OpenAPI spec, a
+> 25-tool MCP surface, and a server-rendered UI — asserted by its test, zero
+> hand-written app code. GoFastr's own build-mode tooling and docs site are
+> built on the framework (see [Built with GoFastr](#built-with-gofastr)). What's
+> still open is external production adoption and load — this is a thesis
+> framework, and that's stated plainly rather than dressed up.
 
 **The promise:** opinionated input, boring output, small runtime, easy escape
 hatches. You write a typed declaration; the framework emits plain Go you can
@@ -25,8 +34,8 @@ disk — no reflection injection, no hidden registries, no runtime mutation.
 
 Most Go web frameworks assume a human will hand-write every route, query, validator, migration, and form. AI agents already generate this code — but no framework treats their output as the canonical source. GoFastr inverts that:
 
-- **One declaration, many surfaces.** A single `entities/posts.json` produces a SQL table, REST routes, OpenAPI ops, a typed Go model, and five MCP tools (`posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`).
-- **No reflection magic.** Generated code lives in `gen/entities/` and is normal Go you can read, debug, and edit.
+- **One declaration, many surfaces.** A single `gofastr.yml` blueprint produces a SQL schema, REST routes, OpenAPI ops, typed Go models, five MCP tools per entity (`products_list`, `products_get`, `products_create`, `products_update`, `products_delete`, …), and a server-rendered UI. See [`examples/ecommerce`](examples/ecommerce/) for the whole pipeline, live and tested.
+- **No reflection magic.** Generated code lives in `gen/` and is normal Go you can read, debug, and edit.
 - **Two-layer architecture.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Drop down to core when the framework is in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
 - **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
 
@@ -40,11 +49,31 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 | `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI — `init`, `generate`, `migrate`, `dev`, `docs`. | you're scaffolding or generating code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
-| `examples/` | Runnable reference apps (blog, api-tour, spa, the docs site). | you want to see it wired end-to-end. |
+| `examples/` | Runnable reference apps — the `ecommerce` blueprint flagship, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
 
 You import `framework` and the batteries you opt into — not 17 packages. The
 subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
 public surface is `framework.X` plus the batteries you reach for.
+
+## Built with GoFastr
+
+The framework is dogfooded — GoFastr's own tooling and reference apps are built
+on the same `framework`, `core-ui`, and batteries a user app imports:
+
+- **Kiln**, the agent build-mode runtime, renders/serves/migrates live worlds
+  through the framework: `kiln/render` imports `framework` + `core-ui/widget` +
+  `core/openapi`, `kiln/live` imports `framework` + `core/router`, and
+  `kiln/chat` builds its UI on `core-ui/widget` + `core-ui/style` +
+  `battery/embed`.
+- **`examples/site`**, the docs site and canonical component gallery, runs on
+  `framework` + `framework/ui` + `framework/uihost` + the `core-ui` pattern
+  presets + `battery/print`.
+- **`examples/ecommerce`**, the declaration-first flagship, *is* generated from a
+  `gofastr.yml` blueprint and exercised by its own surface test.
+
+These are the tools the project uses on itself, not demos wired up for a
+screenshot. External production adopters are the part still ahead of us — see
+the validation status near the top.
 
 ## Quickstart
 
@@ -117,37 +146,37 @@ curl http://localhost:8080/posts/search?q=gofastr
 curl http://localhost:8080/openapi.json | jq .info     # auto-generated spec
 ```
 
-### Declare an entity (JSON)
+### Declare an app (blueprint)
 
-```json
-// examples/blog/entities/posts.json
-{
-  "name": "posts",
-  "soft_delete": true,
-  "fields": [
-    { "name": "title",  "type": "string", "required": true },
-    { "name": "body",   "type": "text" },
-    { "name": "status", "type": "enum", "values": ["draft", "published"], "default": "draft" },
-    { "name": "author_id", "type": "relation", "to": "users" }
-  ],
-  "crud": true,
-  "mcp": true
-}
+A `gofastr.yml` blueprint is the declaration-first format — one file describing
+entities, screens, nav, endpoints, and seed data:
+
+```yaml
+# gofastr.yml
+app:
+  name: Blog
+  module: example.com/blog
+entities:
+  - name: posts
+    crud: true
+    mcp: true
+    soft_delete: true
+    fields:
+      - { name: title,     type: string, required: true }
+      - { name: body,      type: text }
+      - { name: status,    type: enum, values: [draft, published], default: draft }
+      - { name: author_id, type: relation, to: users }
 ```
 
-Then either load at runtime:
-
-```go
-app := framework.NewApp(framework.WithDB(db))
-_ = app.EntitiesFromDir("entities")    // CRUD + OpenAPI + MCP wired automatically
-log.Fatal(app.Start(":8080"))
-```
-
-…or generate Go code:
+Generate the app — SQL schema + REST + OpenAPI + MCP + UI — as plain Go you commit:
 
 ```bash
-go run ./cmd/gofastr generate          # writes gen/entities/{register,models}.go
+gofastr generate --from=gofastr.yml    # writes gen/ (main.go + entities/ + blueprint/)
+go run ./gen
 ```
+
+See [`examples/ecommerce`](examples/ecommerce/) for a five-entity blueprint
+generated, built, and surface-tested end-to-end.
 
 ### Declare an entity (Go)
 
@@ -277,14 +306,13 @@ gofastr docs <topic>                Read a specific doc topic
 gofastr docs --grep <term>          Search across every doc topic
 gofastr agents sync                 Refresh AGENTS.md and agents/ detail files
 gofastr theme init                  Scaffold a typed theme/theme.go you own
-gofastr generate                    Generate Go from entities/*.json
-gofastr generate entity post t:s    Scaffold a single entity in code
+gofastr generate --from=<bp.yml>    Generate Go (SQL + REST + OpenAPI + MCP + UI) from a blueprint
 gofastr build                       Generate then go build
 gofastr dev                         Start dev server with hot-reload
 gofastr migrate up | down | status  Run versioned migrations (advisory-locked, checksum + dirty-state guarded)
 gofastr migrate up --create-db      Create the target database first if it doesn't exist
-gofastr migrate generate <name>     Diff entities vs the committed snapshot → numbered reversible SQL
-gofastr migrate diff [--apply]      Declarative schema diff against a live DB (opt-in apply)
+gofastr migrate generate <name> --from=<bp.yml>   Diff blueprint entities vs the committed snapshot → numbered reversible SQL
+gofastr migrate diff --from=<bp.yml> [--apply]    Declarative schema diff (blueprint vs live DB, opt-in apply)
 gofastr migrate force <version>     Reconcile a dirty/baselined migration
 gofastr test                        Run project tests
 gofastr embed index <path>          Index a project for semantic search
@@ -293,7 +321,7 @@ gofastr embed query "<text>"        Top-K semantic hits as JSON
 
 ### `kiln/` — agent-driven build-mode runtime
 
-Build a GoFastr app live by chatting with a coding agent (Claude Code, pi, Codex, …). The agent drives Kiln's typed tool surface; the world IR mutates; the running app re-renders; the schema migrates — all in-process. Freeze the journal when done to emit canonical `entities/*.json` and graduate to regular Go source you commit.
+Build a GoFastr app live by chatting with a coding agent (Claude Code, pi, Codex, …). The agent drives Kiln's typed tool surface; the world IR mutates; the running app re-renders; the schema migrates — all in-process. Freeze the journal when done to snapshot the world; declare the result in a `gofastr.yml` blueprint and run `gofastr generate` to graduate to regular Go source you commit.
 
 ```bash
 go install ./cmd/kiln
