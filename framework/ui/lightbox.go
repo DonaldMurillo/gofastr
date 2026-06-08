@@ -56,6 +56,12 @@ type LightboxConfig struct {
 	AllowDownload bool
 	// Pages, when non-empty, scopes the modal mount to those routes.
 	Pages []string
+
+	// Ctx carries the per-request context used to resolve i18n strings
+	// (Prev/Next nav aria-labels, Download aria-label). When nil,
+	// context.Background() is used and English fallbacks are returned —
+	// preserving today's behaviour.
+	Ctx context.Context
 }
 
 // Lightbox returns a *widget.Builder for the zoom-overlay modal.
@@ -75,6 +81,7 @@ func Lightbox(cfg LightboxConfig) *widget.Builder {
 		navArrows:     cfg.NavArrows,
 		showCaption:   cfg.ShowCaption,
 		allowDownload: cfg.AllowDownload,
+		ctx:           cfg.Ctx,
 	}
 	titleID := cfg.Name + "-title"
 	mb := preset.Modal(cfg.Name).
@@ -102,9 +109,15 @@ type lightboxSlot struct {
 	navArrows     bool
 	showCaption   bool
 	allowDownload bool
+	// ctx carries the per-request locale for i18n resolution. nil = context.Background().
+	ctx context.Context
 }
 
 func (s *lightboxSlot) Render() render.HTML {
+	ctx := s.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	figChildren := []render.HTML{
 		// SR-only title — Modal.LabelledBy() points here.
 		html.Span(html.TextConfig{
@@ -136,13 +149,13 @@ func (s *lightboxSlot) Render() render.HTML {
 			render.Tag("button", map[string]string{
 				"type":                   "button",
 				"class":                  "ui-lightbox__nav ui-lightbox__nav--prev",
-				"aria-label":             i18nui.T(context.Background(), i18nui.KeyLightboxPrev),
+				"aria-label":             i18nui.T(ctx, i18nui.KeyLightboxPrev),
 				"data-fui-lightbox-prev": s.name,
 			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
 			render.Tag("button", map[string]string{
 				"type":                   "button",
 				"class":                  "ui-lightbox__nav ui-lightbox__nav--next",
-				"aria-label":             i18nui.T(context.Background(), i18nui.KeyLightboxNext),
+				"aria-label":             i18nui.T(ctx, i18nui.KeyLightboxNext),
 				"data-fui-lightbox-next": s.name,
 			}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`)),
 		)
@@ -151,7 +164,7 @@ func (s *lightboxSlot) Render() render.HTML {
 		toolbar = append(toolbar,
 			render.Tag("a", map[string]string{
 				"class":                "ui-lightbox__download",
-				"aria-label":           i18nui.T(context.Background(), i18nui.KeyLightboxDownload),
+				"aria-label":           i18nui.T(ctx, i18nui.KeyLightboxDownload),
 				"download":             "",
 				"data-fui-signal":      "src",
 				"data-fui-signal-mode": "attr",

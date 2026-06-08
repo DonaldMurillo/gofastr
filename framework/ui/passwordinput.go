@@ -35,6 +35,11 @@ type PasswordInputConfig struct {
 	Class string
 	// Attrs lets callers attach additional attributes.
 	ExtraAttrs map[string]string
+
+	// Ctx carries the per-request context used to resolve i18n strings
+	// (show/hide toggle aria-label). When nil, context.Background() is
+	// used and English fallbacks are returned — preserving today's behaviour.
+	Ctx context.Context
 }
 
 // PasswordInput renders a password field with a show/hide toggle button.
@@ -44,6 +49,10 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	}
 	if cfg.ID == "" {
 		panic("ui: PasswordInput requires ID")
+	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	cls := "ui-password-input"
@@ -84,7 +93,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	toggleAttrs := map[string]string{
 		"type":         "button",
 		"class":        "ui-password-input__toggle",
-		"aria-label":   i18nui.T(context.Background(), i18nui.KeyPasswordInputShow),
+		"aria-label":   i18nui.T(ctx, i18nui.KeyPasswordInputShow),
 		"aria-pressed": "false",
 	}
 

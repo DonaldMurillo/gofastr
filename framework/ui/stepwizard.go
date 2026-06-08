@@ -46,6 +46,11 @@ type StepWizardConfig struct {
 	HiddenFields []render.HTML
 
 	Class string
+
+	// Ctx carries the per-request context used to resolve i18n strings
+	// (Back, Continue, Submit button labels). When nil, context.Background()
+	// is used and English fallbacks are returned — preserving today's behaviour.
+	Ctx context.Context
 }
 
 // StepWizard renders a multi-step form with a progress indicator bar.
@@ -72,6 +77,11 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		panic("ui: StepWizard Method must be GET or POST, got " + method)
 	}
 
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	cls := "ui-step-wizard"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -91,7 +101,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 	children = append(children, cfg.HiddenFields...)
 
 	// 4. Navigation buttons.
-	children = append(children, renderStepActions(cfg.CurrentStep, len(cfg.Steps)))
+	children = append(children, renderStepActions(ctx, cfg.CurrentStep, len(cfg.Steps)))
 
 	return stepWizardStyle.WrapHTML(html.Form(html.FormConfig{
 		Method: method,
@@ -155,13 +165,13 @@ func renderStepContent(step StepWizardStep, current, total int) render.HTML {
 }
 
 // renderStepActions builds the navigation buttons.
-func renderStepActions(current, total int) render.HTML {
+func renderStepActions(ctx context.Context, current, total int) render.HTML {
 	btns := []render.HTML{}
 
 	// Back button (not on first step).
 	if current > 0 {
 		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardBack),
+			Label: i18nui.T(ctx, i18nui.KeyStepWizardBack),
 			Type:  "submit",
 			Class: "ui-button ui-button--secondary",
 			ExtraAttrs: html.Attrs{
@@ -175,7 +185,7 @@ func renderStepActions(current, total int) render.HTML {
 	isLast := current == total-1
 	if isLast {
 		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardSubmit),
+			Label: i18nui.T(ctx, i18nui.KeyStepWizardSubmit),
 			Type:  "submit",
 			Class: "ui-button",
 			ExtraAttrs: html.Attrs{
@@ -185,7 +195,7 @@ func renderStepActions(current, total int) render.HTML {
 		}))
 	} else {
 		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: i18nui.T(context.Background(), i18nui.KeyStepWizardNext),
+			Label: i18nui.T(ctx, i18nui.KeyStepWizardNext),
 			Type:  "submit",
 			Class: "ui-button",
 			ExtraAttrs: html.Attrs{

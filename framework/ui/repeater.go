@@ -34,18 +34,27 @@ type RepeaterConfig struct {
 	Template    func(index int) render.HTML
 	Items       []render.HTML
 	RPCPath     string
+
+	// Ctx carries the per-request context used to resolve i18n strings
+	// (AddLabel, RemoveLabel defaults). When nil, context.Background() is
+	// used and English fallbacks are returned — preserving today's behaviour.
+	Ctx context.Context
 }
 
 // Repeater renders a dynamic list of form fields with add/remove controls.
 func Repeater(cfg RepeaterConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cfg.ID == "" {
 		cfg.ID = autoID("rep")
 	}
 	if cfg.AddLabel == "" {
-		cfg.AddLabel = i18nui.T(context.Background(), i18nui.KeyRepeaterAdd)
+		cfg.AddLabel = i18nui.T(ctx, i18nui.KeyRepeaterAdd)
 	}
 	if cfg.RemoveLabel == "" {
-		cfg.RemoveLabel = i18nui.T(context.Background(), i18nui.KeyRepeaterRemove)
+		cfg.RemoveLabel = i18nui.T(ctx, i18nui.KeyRepeaterRemove)
 	}
 
 	var children []render.HTML
