@@ -259,6 +259,92 @@ func TestJSONFieldOmitsRangeFilters(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// F19: RBAC-gated (EntityConfig.Access) entities must declare 401+403;
+//      batch and _events ops must carry them too on gated entities.
+// ---------------------------------------------------------------------------
+
+// rbacOnly has no OwnerField or MultiTenant — only Access.
+func rbacOnlyEntity() *entity.Entity {
+	return entity.Define("rbac_items", entity.EntityConfig{
+		Table: "rbac_items",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+		},
+		Access: entity.AccessControl{
+			Read:   "items:read",
+			Create: "items:write",
+			Update: "items:write",
+			Delete: "items:write",
+		},
+	})
+}
+
+func TestRBACAccessOpsDeclare401And403(t *testing.T) {
+	e := rbacOnlyEntity()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	for label, op := range gatedOpsFor(t, doc, "rbac_items") {
+		if !hasResponse(op, "401") {
+			t.Errorf("RBAC-only op %q missing 401 response", label)
+		}
+		if !hasResponse(op, "403") {
+			t.Errorf("RBAC-only op %q missing 403 response", label)
+		}
+	}
+}
+
+func TestBatchOpsDeclare401And403WhenGated(t *testing.T) {
+	e := rbacOnlyEntity()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	paths := getMap(t, doc, "paths")
+	batchPath := getMap(t, paths, "/rbac_items/_batch")
+	for _, method := range []string{"post", "patch", "delete"} {
+		op := getMap(t, batchPath, method)
+		if !hasResponse(op, "401") {
+			t.Errorf("batch %s op missing 401 on gated entity", method)
+		}
+		if !hasResponse(op, "403") {
+			t.Errorf("batch %s op missing 403 on gated entity", method)
+		}
+	}
+}
+
+func TestSSEOpDeclares401And403WhenGated(t *testing.T) {
+	e := rbacOnlyEntity()
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	paths := getMap(t, doc, "paths")
+	eventsPath := getMap(t, paths, "/rbac_items/_events")
+	get := getMap(t, eventsPath, "get")
+	if !hasResponse(get, "401") {
+		t.Error("_events op missing 401 on RBAC-gated entity")
+	}
+	if !hasResponse(get, "403") {
+		t.Error("_events op missing 403 on RBAC-gated entity")
+	}
+}
+
+// An unguarded entity must NOT get 401/403 on its batch or SSE ops.
+func TestUnguardedBatchAndSSEHaveNo401(t *testing.T) {
+	e := entity.Define("pub_items", entity.EntityConfig{
+		Table: "pub_items",
+		Fields: []schema.Field{
+			{Name: "val", Type: schema.Int},
+		},
+	}.WithTimestamps(false))
+	doc := EntityOpenAPI(reg(e), "Test", "1.0.0").Build()
+	paths := getMap(t, doc, "paths")
+	batchPath := getMap(t, paths, "/pub_items/_batch")
+	post := getMap(t, batchPath, "post")
+	if hasResponse(post, "401") {
+		t.Error("unguarded batch POST should not declare 401")
+	}
+	eventsPath := getMap(t, paths, "/pub_items/_events")
+	get := getMap(t, eventsPath, "get")
+	if hasResponse(get, "401") {
+		t.Error("unguarded _events GET should not declare 401")
+	}
+}
+
 // Comparable fields (Int/Timestamp) must KEEP their range filters, and
 // text fields must keep _like — the gate must not over-strip.
 func TestComparableFieldsKeepRangeFilters(t *testing.T) {

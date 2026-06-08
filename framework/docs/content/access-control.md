@@ -56,6 +56,12 @@ Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
 roles + policy must be in the request context first; mount
 `framework.AccessMiddleware` (above) ahead of the CRUD routes.
 
+The generated OpenAPI spec (`/openapi.json`) advertises **401** (authentication
+required) and **403** (authenticated but forbidden) on every operation of an
+RBAC-gated entity — including the `_batch` and `_events` endpoints. This means
+generated SDKs and agents see the correct error contract instead of treating
+RBAC-gated routes as public.
+
 > **Scope: HTTP only.** `EntityConfig.Access` gates the HTTP CRUD surface.
 > The **in-process** APIs — `CrudHandler.CreateOne/UpdateOne/DeleteOne/
 > GetOne/ListAll/UpsertOne` and the generated typed repo (`Repo.Query()…`)

@@ -126,11 +126,17 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		path := "/" + tableName
 
-		// An entity is auth-gated when its rows are owner-scoped or
-		// tenant-scoped: the CRUD layer rejects anonymous/foreign-owner
-		// requests. The spec must advertise that 401 so generated SDKs
-		// and docs don't claim these endpoints are public.
-		gated := ent.Config.OwnerField != "" || ent.Config.MultiTenant
+		// An entity is auth-gated when its rows are owner-scoped,
+		// tenant-scoped, or protected by an RBAC AccessControl rule.
+		// All three cases can reject unauthenticated requests (401);
+		// RBAC additionally rejects authenticated-but-unpermitted ones
+		// (403). The spec must advertise both codes so generated SDKs
+		// and agents don't assume these endpoints are public.
+		rbacGated := ent.Config.Access.Read != "" ||
+			ent.Config.Access.Create != "" ||
+			ent.Config.Access.Update != "" ||
+			ent.Config.Access.Delete != ""
+		gated := ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
 
 		includeNames := make([]string, 0, len(ent.Config.Relations))
 		for _, rel := range ent.Config.Relations {
@@ -187,6 +193,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		listOp.AddResponse(400, "Invalid filters or unknown include", errorRef)
 		if gated {
 			listOp.AddResponse(401, "Authentication required", errorRef)
+			listOp.AddResponse(403, "Forbidden", errorRef)
 		}
 		s.AddPath("GET", path, *listOp)
 
@@ -203,6 +210,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		createOp.AddResponse(400, "Validation error", errorRef)
 		if gated {
 			createOp.AddResponse(401, "Authentication required", errorRef)
+			createOp.AddResponse(403, "Forbidden", errorRef)
 		}
 		s.AddPath("POST", path, *createOp)
 
@@ -216,6 +224,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		getOp.AddResponse(400, "Unknown include", errorRef)
 		if gated {
 			getOp.AddResponse(401, "Authentication required", errorRef)
+			getOp.AddResponse(403, "Forbidden", errorRef)
 		}
 		getOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("GET", path+"/:id", *getOp)
@@ -230,6 +239,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		updateOp.AddResponse(400, "Validation error", errorRef)
 		if gated {
 			updateOp.AddResponse(401, "Authentication required", errorRef)
+			updateOp.AddResponse(403, "Forbidden", errorRef)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PUT", path+"/:id", *updateOp)
@@ -244,6 +254,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 		if gated {
 			deleteOp.AddResponse(401, "Authentication required", errorRef)
+			deleteOp.AddResponse(403, "Forbidden", errorRef)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
@@ -267,6 +278,10 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		batchCreateOp.SetRequestBody("application/json", batchCreateBody, true)
 		batchCreateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchCreateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		if gated {
+			batchCreateOp.AddResponse(401, "Authentication required", errorRef)
+			batchCreateOp.AddResponse(403, "Forbidden", errorRef)
+		}
 		s.AddPath("POST", path+"/_batch", *batchCreateOp)
 
 		// --- PATCH /{table}/_batch — BatchUpdate ---
@@ -294,6 +309,10 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		batchUpdateOp.SetRequestBody("application/json", batchUpdateBody, true)
 		batchUpdateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		if gated {
+			batchUpdateOp.AddResponse(401, "Authentication required", errorRef)
+			batchUpdateOp.AddResponse(403, "Forbidden", errorRef)
+		}
 		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
 
 		// --- GET /{table}/_events — SSE entity subscription stream ---
@@ -308,6 +327,10 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 					"schema": map[string]any{"type": "string"},
 				},
 			},
+		}
+		if gated {
+			eventsOp.AddResponse(401, "Authentication required", errorRef)
+			eventsOp.AddResponse(403, "Forbidden", errorRef)
 		}
 		s.AddPath("GET", path+"/_events", *eventsOp)
 
@@ -330,6 +353,10 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		batchDeleteOp.SetRequestBody("application/json", batchDeleteBody, true)
 		batchDeleteOp.AddResponse(200, "All items committed", batchRespRef)
 		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		if gated {
+			batchDeleteOp.AddResponse(401, "Authentication required", errorRef)
+			batchDeleteOp.AddResponse(403, "Forbidden", errorRef)
+		}
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
 
 		for _, endpoint := range ent.Config.Endpoints {
