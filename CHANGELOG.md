@@ -7,6 +7,37 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-08
+
+The four larger features held back from v0.3.2, each additive and
+backward-compatible. The OAuth token store passed the mandatory dual-model
+security audit (see `AI_TEST_AUDIT.md`).
+
+### Added
+
+- **Typed schemas for custom `entity.Endpoint`.** New optional
+  `InputSchema`/`OutputSchema` (`[]schema.Field`) fields. When set, the OpenAPI
+  spec emits a typed `requestBody`/`200` response and the generated MCP tool
+  advertises a typed input schema, instead of a shapeless `{type:object}`. A
+  single helper (`openapi.EndpointInputSchema`) feeds both the OpenAPI and MCP
+  paths. Endpoints with no schema render exactly as before.
+- **OAuth2 token store + transparent refresh** (`battery/auth`). A new
+  `OAuthTokenStore` interface + AES-GCM-sealed `SQLOAuthTokenStore` persists
+  `{access, refresh, expiry}` per `(user, provider)`; `RefreshOAuthToken` /
+  `ValidOAuthToken` refresh transparently on/near expiry via the provider's
+  refresh grant (Google + GitHub). OAuth login now persists the refresh token
+  (previously discarded) when a store is wired. **Opt-in** — login is unchanged
+  with no store configured. `EncryptionKey` is **required** (fails closed); the
+  `userID` passed to refresh/valid must be the authenticated principal.
+- **Cron-expression scheduling in the queue Scheduler.** `Scheduler.Cron(spec)`
+  fires on a standard 5-field cron expression (plus `@daily`/`@hourly`/… shortcuts),
+  alongside the existing `Every(interval)`. Reuses `framework/cron` (now exposing
+  `Parse`/`Schedule.Next`) — no second cron parser. Interval schedules are unchanged.
+- **Request context in i18n-rendering `framework/ui` components.** `RepeaterConfig`,
+  `LightboxConfig`, `StepWizardConfig`, `PasswordInputConfig` gain an optional
+  `Ctx` field so their localizable strings resolve the request's locale instead
+  of always rendering the default. Nil `Ctx` preserves today's behavior.
+
 ## [0.3.2] - 2026-06-08
 
 A developer-experience patch from the same whole-framework assessment that
