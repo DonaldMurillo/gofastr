@@ -70,6 +70,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **`battery/embed`: custom `Store` now fails closed instead of silently
+  corrupting.** A custom `Store` (anything but the built-in `FlatStore`) was
+  type-asserted to `*FlatStore` in four places, so with one it would silently:
+  skip persistence even with `Options.Path` set; **never purge keyword entries
+  on delete** (stale hits leak forever); and **drop every keyword hit** so
+  hybrid search degraded to vector-only. Replaced the assertions with optional
+  capability interfaces (`Snapshot`/`LoadSnapshot`; `ChunkIDsForDoc`/`ChunkByID`/
+  `AllChunks`) and made `Open()` **return an error** when `Path`/`Keyword` is set
+  but the store lacks the capability. `FlatStore` implements all of them, so no
+  in-tree caller changes.
 - **Generated apps no longer ship Kiln's authoring engine.** `gofastr generate`
   emitted `import "…/kiln/render"` into blueprint apps that use freeform node
   blocks, which transitively pulled `kiln/expr`, `kiln/effect`, and `framework`

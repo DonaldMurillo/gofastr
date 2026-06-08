@@ -150,6 +150,44 @@ func (s *FlatStore) Stats() Stats {
 	}
 }
 
+// ChunkIDsForDoc returns the IDs of every chunk belonging to docID. Part of
+// the chunkLister capability the hybrid/keyword index uses to purge a doc's
+// keyword entries when the doc is removed.
+func (s *FlatStore) ChunkIDsForDoc(docID string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	positions := s.byDoc[docID]
+	out := make([]string, 0, len(positions))
+	for _, p := range positions {
+		out = append(out, s.chunks[p].ID)
+	}
+	return out
+}
+
+// ChunkByID returns the chunk with the given ID. Part of chunkLister; used to
+// hydrate keyword-only hits (which carry just a chunk ID) into full Hits.
+func (s *FlatStore) ChunkByID(id string) (Chunk, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.chunks {
+		if s.chunks[i].ID == id {
+			return s.chunks[i], true
+		}
+	}
+	return Chunk{}, false
+}
+
+// AllChunks returns a copy of every stored chunk. Part of chunkLister; used to
+// rebuild the keyword index after a snapshot load (snapshots don't persist
+// keyword state).
+func (s *FlatStore) AllChunks() []Chunk {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Chunk, len(s.chunks))
+	copy(out, s.chunks)
+	return out
+}
+
 func chunkMatches(c *Chunk, f Filter) bool {
 	if f.Source != "" && c.Source != f.Source {
 		return false

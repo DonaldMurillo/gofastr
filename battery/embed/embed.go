@@ -3,6 +3,7 @@ package embed
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // Document is a unit of input to the index. A single Document is split
@@ -146,6 +147,12 @@ type Options struct {
 	// windows and 64-rune overlap if nil.
 	Chunker Chunker
 	// Store holds vectors. Defaults to an in-memory [FlatStore] if nil.
+	//
+	// A custom Store must additionally implement Snapshot(path)/LoadSnapshot(path)
+	// to be used with Path (persistence), and ChunkIDsForDoc(docID)/ChunkByID(id)/
+	// AllChunks() to be used with Keyword (hybrid search). Open returns an error
+	// rather than silently degrading if a capability is missing. FlatStore
+	// implements all of them.
 	Store Store
 	// Keyword enables hybrid retrieval. When set, chunk text is
 	// mirrored into this backend at Add time and consulted during
@@ -182,6 +189,20 @@ func Open(opts Options) (Index, error) {
 	}
 	if opts.Store == nil {
 		opts.Store = NewFlatStore(opts.Embedder.Dim(), opts.Embedder.Name())
+	}
+	// Fail closed on a custom Store that can't support the requested features,
+	// rather than silently degrading (persistence that never persists; hybrid
+	// search that drops every keyword hit; deletes that leak stale keyword
+	// entries). The default FlatStore satisfies both capabilities.
+	if opts.Path != "" {
+		if _, ok := opts.Store.(snapshotter); !ok {
+			return nil, fmt.Errorf("embed: Options.Path is set but Store %T cannot persist — it must implement Snapshot(path)/LoadSnapshot(path)", opts.Store)
+		}
+	}
+	if opts.Keyword != nil {
+		if _, ok := opts.Store.(chunkLister); !ok {
+			return nil, fmt.Errorf("embed: Options.Keyword is set but Store %T cannot list chunks — it must implement ChunkIDsForDoc(docID)/ChunkByID(id) for hybrid search", opts.Store)
+		}
 	}
 	if opts.SnapshotEvery == 0 {
 		opts.SnapshotEvery = 1000

@@ -9,6 +9,26 @@ import (
 	"sync"
 )
 
+// snapshotter is the optional Store capability needed for on-disk persistence
+// (Options.Path). FlatStore implements it; a custom Store that doesn't gets
+// rejected at Open() rather than silently never persisting.
+type snapshotter interface {
+	Snapshot(path string) error
+	LoadSnapshot(path string) error
+}
+
+// chunkLister is the optional Store capability the hybrid/keyword path needs:
+// listing a doc's chunk IDs (to purge keyword entries on delete) and looking a
+// chunk up by ID (to hydrate keyword-only hits). FlatStore implements it; a
+// custom Store that doesn't gets rejected at Open() when Options.Keyword is set
+// — otherwise hybrid search would silently drop keyword hits and deletes would
+// leave stale keyword entries.
+type chunkLister interface {
+	ChunkIDsForDoc(docID string) []string
+	ChunkByID(id string) (Chunk, bool)
+	AllChunks() []Chunk
+}
+
 type index struct {
 	embedder Embedder
 	chunker  Chunker
@@ -28,12 +48,11 @@ func (i *index) loadAndReplay() error {
 	if i.path == "" {
 		return nil
 	}
-	fs, _ := i.store.(*FlatStore)
 	snapPath := filepath.Join(i.path, "store.snap")
 	walPath := filepath.Join(i.path, "store.wal")
 
-	if fs != nil {
-		if err := fs.LoadSnapshot(snapPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if s, ok := i.store.(snapshotter); ok {
+		if err := s.LoadSnapshot(snapPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("embed: load snapshot: %w", err)
 		}
 	}
@@ -64,13 +83,14 @@ func (i *index) loadAndReplay() error {
 	}
 	// After replay, rebuild keyword index from any chunks loaded from
 	// the snapshot itself (the snapshot does not include keyword state).
-	if i.keyword != nil && fs != nil {
-		fs.mu.RLock()
-		chunks := make([]Chunk, len(fs.chunks))
-		copy(chunks, fs.chunks)
-		fs.mu.RUnlock()
-		if err := i.keywordIndexChunks(ctx, chunks); err != nil {
-			return err
+	// keyword != nil guarantees the store is a chunkLister (Open fails closed).
+	if i.keyword != nil {
+		if cl, ok := i.store.(chunkLister); ok {
+			if chunks := cl.AllChunks(); len(chunks) > 0 {
+				if err := i.keywordIndexChunks(ctx, chunks); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -161,18 +181,14 @@ func (i *index) logAndApplyRemove(ctx context.Context, docID string) error {
 }
 
 func (i *index) collectChunkIDs(docID string) []string {
-	fs, ok := i.store.(*FlatStore)
-	if !ok || i.keyword == nil {
+	if i.keyword == nil {
 		return nil
 	}
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	positions := fs.byDoc[docID]
-	out := make([]string, 0, len(positions))
-	for _, p := range positions {
-		out = append(out, fs.chunks[p].ID)
+	cl, ok := i.store.(chunkLister)
+	if !ok {
+		return nil
 	}
-	return out
+	return cl.ChunkIDsForDoc(docID)
 }
 
 func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) error {
@@ -218,12 +234,12 @@ func (i *index) Snapshot() error {
 	if i.path == "" {
 		return nil
 	}
-	fs, ok := i.store.(*FlatStore)
+	s, ok := i.store.(snapshotter)
 	if !ok {
 		return nil
 	}
 	snapPath := filepath.Join(i.path, "store.snap")
-	if err := fs.Snapshot(snapPath); err != nil {
+	if err := s.Snapshot(snapPath); err != nil {
 		return err
 	}
 	if i.wal != nil {
@@ -338,26 +354,20 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 // only knows the chunk IDs; the vectors and metadata live in the
 // store.
 func (i *index) hydrateKeywordHits(raw []KeywordHit, filter Filter) []Hit {
-	fs, ok := i.store.(*FlatStore)
+	cl, ok := i.store.(chunkLister)
 	if !ok {
 		return nil
 	}
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	byID := make(map[string]*Chunk, len(fs.chunks))
-	for idx := range fs.chunks {
-		byID[fs.chunks[idx].ID] = &fs.chunks[idx]
-	}
 	out := make([]Hit, 0, len(raw))
 	for _, kh := range raw {
-		c, ok := byID[kh.ChunkID]
+		c, ok := cl.ChunkByID(kh.ChunkID)
 		if !ok {
 			continue
 		}
-		if !chunkMatches(c, filter) {
+		if !chunkMatches(&c, filter) {
 			continue
 		}
-		out = append(out, Hit{Chunk: *c, Score: kh.Score, Reason: "kw"})
+		out = append(out, Hit{Chunk: c, Score: kh.Score, Reason: "kw"})
 	}
 	return out
 }
