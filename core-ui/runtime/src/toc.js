@@ -58,16 +58,34 @@
       });
     }, { rootMargin: '0px 0px -70% 0px', threshold: 0 });
     heads.forEach(function (h) { observer.observe(h); });
+    // Store the observer on the navEl so the SPA-nav teardown can
+    // disconnect it before the page DOM is replaced.
+    navEl._fuiTocObserver = observer;
   }
+
+  // Track wired nav elements for teardown.
+  const activeNavEls = [];
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-comp="ui-toc"]').forEach(buildList);
+    scope.querySelectorAll('[data-fui-comp="ui-toc"]').forEach(function (navEl) {
+      buildList(navEl);
+      if (navEl._fuiTocObserver) activeNavEls.push(navEl);
+    });
   }
 
   // Initial pass — wait one rAF so the page DOM has settled.
   requestAnimationFrame(function () { scan(document); });
   document.addEventListener('gofastr:navigate', function () {
+    // Disconnect all active IntersectionObservers before the page DOM
+    // is replaced so stale observers don't hold detached element refs.
+    while (activeNavEls.length) {
+      const el = activeNavEls.pop();
+      if (el._fuiTocObserver) {
+        el._fuiTocObserver.disconnect();
+        delete el._fuiTocObserver;
+      }
+    }
     requestAnimationFrame(function () { scan(document); });
   });
 

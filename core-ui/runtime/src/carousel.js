@@ -148,6 +148,8 @@
           }, rotateMs);
         }
         function stop() { if (timer) { clearInterval(timer); timer = null; } }
+        // Expose stop so the SPA-nav teardown can clear the timer.
+        carousel._fuiCarouselStop = stop;
         carousel.addEventListener('mouseenter', function () { userPaused = true; stop(); });
         carousel.addEventListener('mouseleave', function () { userPaused = false; start(); });
         carousel.addEventListener('focusin', function () { userPaused = true; stop(); });
@@ -226,7 +228,18 @@
     scope.querySelectorAll('[data-fui-carousel]').forEach(attach);
   }
   scan(document);
-  document.addEventListener('gofastr:navigate', function () { scan(document); });
+  document.addEventListener('gofastr:navigate', function () {
+    // Tear down auto-rotate timers from the previous page before
+    // rescanning so stale setIntervals don't accumulate across SPA nav.
+    // attach() stores stop() on _fuiCarouselStop for exactly this path.
+    document.querySelectorAll('[data-fui-carousel]').forEach(function (c) {
+      if (typeof c._fuiCarouselStop === 'function') {
+        c._fuiCarouselStop();
+        delete c._fuiCarouselStop;
+      }
+    });
+    scan(document);
+  });
   window.__gofastr = window.__gofastr || {};
   window.__gofastr.carousel = { rescan: scan };
 })();

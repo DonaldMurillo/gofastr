@@ -130,7 +130,7 @@ so typing fires debounced RPCs. The input event triggers the fetch
 after the specified debounce interval (default 300ms).
 
 Attributes injected: `data-fui-rpc-trigger="input"`,
-`data-fui-rpc-debounce`.
+`data-fui-rpc-debounce-ms` (milliseconds; default 300).
 
 ### Optimistic Update (immediate visual + background RPC)
 

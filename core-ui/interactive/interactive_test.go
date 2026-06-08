@@ -440,8 +440,12 @@ func TestLiveSearchDefaultDebounce(t *testing.T) {
 	)
 	result := LiveSearch(form, Post("/api/search"), 0)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-debounce="300"`) {
-		t.Fatalf("expected default 300ms debounce: %s", s)
+	if !strings.Contains(s, `data-fui-rpc-debounce-ms="300"`) {
+		t.Fatalf("expected default 300ms debounce attr data-fui-rpc-debounce-ms: %s", s)
+	}
+	// old wrong name must NOT appear
+	if strings.Contains(s, `data-fui-rpc-debounce="`) {
+		t.Fatalf("emitted stale data-fui-rpc-debounce (without -ms suffix): %s", s)
 	}
 }
 
@@ -451,11 +455,22 @@ func TestLiveSearchCustomDebounce(t *testing.T) {
 	)
 	result := LiveSearch(form, Get("/api/search"), 500)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-debounce="500"`) {
-		t.Fatalf("expected custom 500ms debounce: %s", s)
+	if !strings.Contains(s, `data-fui-rpc-debounce-ms="500"`) {
+		t.Fatalf("expected custom 500ms attr data-fui-rpc-debounce-ms: %s", s)
 	}
-	if strings.Contains(s, `data-fui-rpc-debounce="300"`) {
-		t.Fatalf("should not contain default 300ms: %s", s)
+	if strings.Contains(s, `data-fui-rpc-debounce="`) {
+		t.Fatalf("should not emit stale data-fui-rpc-debounce (without -ms suffix): %s", s)
+	}
+}
+
+// TestLiveSearchAttrMatchesRuntime pins that the attr LiveSearch emits
+// matches exactly what runtime.js reads (data-fui-rpc-debounce-ms).
+func TestLiveSearchAttrMatchesRuntime(t *testing.T) {
+	form := render.Tag("form", nil, render.Tag("input", nil))
+	s := string(LiveSearch(form, Post("/api/q"), 400))
+	// Runtime reads data-fui-rpc-debounce-ms (confirmed in runtime.js line ~448).
+	if !strings.Contains(s, `data-fui-rpc-debounce-ms="400"`) {
+		t.Fatalf("LiveSearch must emit data-fui-rpc-debounce-ms to match runtime reader: %s", s)
 	}
 }
 

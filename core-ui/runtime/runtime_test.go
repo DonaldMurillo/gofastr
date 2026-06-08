@@ -725,3 +725,116 @@ func TestRuntimeReducedMotionFlashSkip(t *testing.T) {
 //     still loads the queued module.
 //   - examples/site/TestE2E_RuntimeSplit_HoverPrefetch — covers the
 //     full network fetch path (a code-split module really lands).
+
+// TestWidgets_SSEClosedOnDismiss guards F4: every EventSource opened by
+// mountWidget must be closed when the widget is dismissed. The previous
+// code left seenStreams local to mountWidget with no close call in
+// dismiss(), leaking live SSE connections across modal open/close cycles.
+func TestWidgets_SSEClosedOnDismiss(t *testing.T) {
+	src, ok := Module("widgets")
+	if !ok {
+		t.Fatal("widgets module not embedded")
+	}
+	// The dismiss() function must iterate seenStreams and call .close()
+	// on each EventSource. Accept any of the canonical forms the
+	// minifier may emit.
+	seenClose := strings.Contains(src, "seenStreams") &&
+		(strings.Contains(src, ".close()") || strings.Contains(src, ".close();"))
+	if !seenClose {
+		t.Error("widgets dismiss() must close seenStreams EventSources on dismiss — SSE leak detected")
+	}
+}
+
+// TestWidget_InjectSignalAria_TextModeOnly guards F15: _injectSignalAria
+// must restrict role=status/aria-live injection to TEXT-mode signal nodes.
+// Applying it to attr-mode or html-mode nodes produces invalid ARIA on
+// elements like <a> and spams live-region announcements on island swaps.
+func TestWidget_InjectSignalAria_TextModeOnly(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Find the DEFINITION of _injectSignalAria (contains the forEach body),
+	// not an earlier call site. The definition contains querySelectorAll.
+	defMarker := `_injectSignalAria`
+	start := 0
+	defIdx := -1
+	for {
+		i := strings.Index(js[start:], defMarker)
+		if i == -1 {
+			break
+		}
+		abs := start + i
+		// The definition site has '=' immediately after the identifier name
+		// (const _injectSignalAria = or _injectSignalAria=) and contains
+		// querySelectorAll in the next ~300 chars.
+		peek := js[abs:min(abs+300, len(js))]
+		if strings.Contains(peek, "querySelectorAll") {
+			defIdx = abs
+			break
+		}
+		start = abs + 1
+	}
+	if defIdx == -1 {
+		t.Fatal("_injectSignalAria definition (with querySelectorAll body) not found in runtime.js")
+	}
+	body := js[defIdx:min(defIdx+600, len(js))]
+	// Must NOT unconditionally apply to all [data-fui-signal] nodes
+	// without a mode check. The mode must be checked or the selector
+	// must exclude attr/html-mode nodes.
+	appliesUnconditionally := strings.Contains(body, `querySelectorAll('[data-fui-signal]')`) &&
+		!strings.Contains(body, `signal-mode`) &&
+		!strings.Contains(body, `getAttribute('data-fui-signal-mode')`) &&
+		!strings.Contains(body, `getAttribute("data-fui-signal-mode")`) &&
+		!strings.Contains(body, `:not([data-fui-signal-mode="attr"])`) &&
+		!strings.Contains(body, `:not([data-fui-signal-mode=`)
+	if appliesUnconditionally {
+		t.Error("_injectSignalAria applies role=status to ALL signal nodes including attr/html-mode — must restrict to text-mode only")
+	}
+}
+
+// TestCarousel_TimerTeardownOnNav guards F16a: the carousel setInterval
+// must be cleared on gofastr:navigate so auto-rotate doesn't leak across
+// SPA navigation. The nav handler must call stop/clearInterval — not just
+// re-scan for new carousels.
+func TestCarousel_TimerTeardownOnNav(t *testing.T) {
+	src, ok := Module("carousel")
+	if !ok {
+		t.Fatal("carousel module not embedded")
+	}
+	// Require evidence that the navigate handler calls stop() or clearInterval
+	// on the tracked active carousels. The simplest form: the nav listener
+	// iterates a tracking structure and stops each timer. We accept any of:
+	//   - "activeCarousels" Set referenced in navigate handler
+	//   - "stop(" called inside or near the navigate handler
+	//   - "_fuiCarouselStop" teardown helper
+	idx := strings.Index(src, "gofastr:navigate")
+	if idx == -1 {
+		t.Fatal("carousel missing gofastr:navigate handler")
+	}
+	// Extract 600 chars after the navigate listener registration.
+	body := src[idx:min(idx+600, len(src))]
+	teardownEvidence := strings.Contains(body, "stop(") ||
+		strings.Contains(body, "clearInterval") ||
+		strings.Contains(body, "activeCarousels") ||
+		strings.Contains(body, "_fuiCarouselStop")
+	if !teardownEvidence {
+		t.Error("carousel gofastr:navigate handler must stop auto-rotate timers — no teardown evidence found near the navigate listener")
+	}
+}
+
+// TestTOC_ObserverTeardownOnNav guards F16b: the toc.js IntersectionObserver
+// must be disconnected on gofastr:navigate so it doesn't leak across SPA nav.
+func TestTOC_ObserverTeardownOnNav(t *testing.T) {
+	src, ok := Module("toc")
+	if !ok {
+		t.Fatal("toc module not embedded")
+	}
+	// The observer must be disconnected on navigate. The fix adds a
+	// Set of active observers and disconnects them before re-scanning.
+	hasNav := strings.Contains(src, "gofastr:navigate")
+	hasDisconnect := strings.Contains(src, ".disconnect()")
+	if !hasNav || !hasDisconnect {
+		t.Errorf("toc must disconnect IntersectionObserver on gofastr:navigate — hasNavHandler=%v hasDisconnect=%v", hasNav, hasDisconnect)
+	}
+}

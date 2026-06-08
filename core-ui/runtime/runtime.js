@@ -2239,9 +2239,19 @@
   });
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
-  // announce dynamic updates. Runs at boot and after SPA navigation.
+  // announce dynamic updates. Restricted to TEXT-mode nodes (the default
+  // when data-fui-signal-mode is absent or "text"): attr-mode and
+  // html-mode bindings must NOT receive role=status because:
+  //  - attr-mode: injects into element attributes (e.g. <a href=…>),
+  //    not text — role=status on an <a> is invalid ARIA.
+  //  - html-mode: swaps innerHTML of island wrappers; treating the
+  //    entire region as a live region causes a storm of announcements
+  //    on every island update. Those regions use their own role/aria.
+  // Runs at boot and after SPA navigation.
   const _injectSignalAria = () => {
     document.querySelectorAll('[data-fui-signal]').forEach((node) => {
+      const mode = node.getAttribute('data-fui-signal-mode') || 'text';
+      if (mode !== 'text') return;
       if (!node.getAttribute('role')) node.setAttribute('role', 'status');
       if (!node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
       if (!node.getAttribute('aria-atomic')) node.setAttribute('aria-atomic', 'true');

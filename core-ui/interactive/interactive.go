@@ -174,7 +174,7 @@ func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	if ms == 0 {
 		ms = 300
 	}
-	wrapped = injectAttr(wrapped, "data-fui-rpc-debounce", fmt.Sprintf("%d", ms))
+	wrapped = injectAttr(wrapped, "data-fui-rpc-debounce-ms", fmt.Sprintf("%d", ms))
 	return wrapped
 }
 

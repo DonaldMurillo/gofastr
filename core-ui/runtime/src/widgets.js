@@ -241,6 +241,15 @@
         }
       }
       if (cfg.deepLinkKey && cfg.deepLinkValue) NS._deepLinkStripUrl(cfg);
+      // Close any widget-scoped SSE streams opened during mount so
+      // the server-side connection is freed on every modal close.
+      const streams = NS._widgets[cfg.name]?.seenStreams;
+      if (streams) {
+        for (const path in streams) {
+          const es = streams[path];
+          if (es && typeof es.close === 'function') es.close();
+        }
+      }
     }
     NS._widgets[cfg.name].dismiss = dismiss;
 
@@ -259,8 +268,10 @@
     }
 
     // SSE bindings (per-widget, separate from the document-level
-    // sse.js island stream).
+    // sse.js island stream). seenStreams is stored on the widget entry
+    // so dismiss() can close them (see close loop above).
     const seenStreams = {};
+    NS._widgets[cfg.name].seenStreams = seenStreams;
     for (const b of cfg.sse || []) {
       if (!seenStreams[b.path]) {
         try {
