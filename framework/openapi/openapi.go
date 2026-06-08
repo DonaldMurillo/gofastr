@@ -148,6 +148,19 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			includeDesc += " Available: " + strings.Join(includeNames, ", ") + "."
 		}
 
+		// ?fields= projects the response down to the named columns (plus the
+		// primary key, always included). Advertise the visible field names so
+		// SDK generators / agents can discover the projection surface.
+		fieldNames := make([]string, 0, len(visibleFields))
+		for _, f := range visibleFields {
+			fieldNames = append(fieldNames, casing.ToCamel(f.Name))
+		}
+		fieldsDesc := "Comma-separated list of fields to return (projection); the primary key is always included."
+		if len(fieldNames) > 0 {
+			fieldsDesc += " Available: " + strings.Join(fieldNames, ", ") + "."
+		}
+		fieldsSchema := map[string]any{"type": "string"}
+
 		// --- GET /{table} — List ---
 		listOp := openapi.NewOperation()
 		listOp.Summary = "List " + entityName
@@ -159,6 +172,12 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		listOp.AddParameter("cursor", "query", "Opaque cursor; presence (even empty) switches the response to CursorPage shape and uses keyset pagination by primary key.", false, map[string]any{"type": "string"})
 		listOp.AddParameter("direction", "query", "Cursor walk direction: forward (default) or backward.", false, map[string]any{"type": "string", "enum": []string{"forward", "backward"}, "default": "forward"})
 		listOp.AddParameter("include", "query", includeDesc, false, includeSchema)
+		listOp.AddParameter("fields", "query", fieldsDesc, false, fieldsSchema)
+		// ?trashed=true retrieves soft-deleted rows (authenticated callers
+		// only). Only meaningful when the entity opts into soft-delete.
+		if ent.Config.SoftDelete {
+			listOp.AddParameter("trashed", "query", "Include soft-deleted rows (requires authentication).", false, map[string]any{"type": "boolean", "default": false})
+		}
 
 		// Add filter parameters matching the actual filter parser
 		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
@@ -220,6 +239,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		getOp.OperationID = "get_" + entityName
 		getOp.Tags = []string{entityName}
 		getOp.AddParameter("include", "query", includeDesc, false, includeSchema)
+		getOp.AddParameter("fields", "query", fieldsDesc, false, fieldsSchema)
 		getOp.AddResponse(200, "Single "+entityName, entityRef)
 		getOp.AddResponse(400, "Unknown include", errorRef)
 		if gated {

@@ -128,6 +128,68 @@ func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Reg
 	return out, nil
 }
 
+// NestedFilter is the in-process (ListOptions) equivalent of a single
+// `?author.name=alice` HTTP query param. Typed repositories construct these
+// directly instead of synthesising a URL. Relation names the declared
+// relation on the parent entity; Field is the column on the target entity;
+// Op/Value mirror ParsedFilter semantics. For Op==OpIn, set Values (Value is
+// ignored).
+type NestedFilter struct {
+	Relation string
+	Field    string
+	Op       filter.FilterOp
+	Value    string
+	Values   []string
+}
+
+// resolveNestedFilters maps in-process NestedFilter specs onto the internal
+// nestedFilter slice consumed by applyNestedFilters, running the same
+// relation/field validation and identifier-safety checks the HTTP path
+// applies in parseNestedFilters. Unknown relations, unknown fields, and
+// unsafe identifiers return an error so typed callers see the same 400-class
+// failures.
+func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []NestedFilter) ([]nestedFilter, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	relsByName := map[string]entity.Relation{}
+	for _, rel := range ent.Config.Relations {
+		relsByName[rel.Name] = rel
+	}
+	out := make([]nestedFilter, 0, len(specs))
+	for _, spec := range specs {
+		rel, ok := relsByName[spec.Relation]
+		if !ok {
+			return nil, fmt.Errorf("nested filter: unknown relation %q", spec.Relation)
+		}
+		if !isSafeIdentifier(spec.Field) {
+			return nil, fmt.Errorf("nested filter %q.%q: unsafe field name", spec.Relation, spec.Field)
+		}
+		if registry != nil {
+			if target, err := registry.Get(rel.Entity); err == nil {
+				known := false
+				for _, f := range target.GetFields() {
+					if f.Name == spec.Field {
+						known = true
+						break
+					}
+				}
+				if !known {
+					return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, rel.Entity)
+				}
+			}
+		}
+		nf := nestedFilter{Relation: rel, Field: spec.Field, Op: spec.Op}
+		if spec.Op == filter.OpIn {
+			nf.Values = spec.Values
+		} else {
+			nf.Value = spec.Value
+		}
+		out = append(out, nf)
+	}
+	return out, nil
+}
+
 // applyNestedFilters invokes addWhere once per nestedFilter with an EXISTS
 // subquery. EXISTS avoids the row duplication that a plain JOIN would
 // introduce for HasMany / ManyToMany relations and works uniformly across

@@ -151,11 +151,15 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 
 // ListOptions controls ListAll.
 type ListOptions struct {
-	Filters  []filter.ParsedFilter
-	Sorts    []filter.ParsedSort
-	Limit    int
-	Offset   int
-	Includes []string
+	Filters []filter.ParsedFilter
+	// NestedFilters express relation-scoped predicates (the in-process
+	// equivalent of HTTP ?author.name=alice). Applied as EXISTS subqueries
+	// to both ListAll and CountAll, mirroring the HTTP List handler.
+	NestedFilters []NestedFilter
+	Sorts         []filter.ParsedSort
+	Limit         int
+	Offset        int
+	Includes      []string
 }
 
 // ListAll runs a list query with optional filters/sort/limit/offset/includes
@@ -168,14 +172,22 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
+	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
+	if err != nil {
+		return nil, err
+	}
 	cols := ch.visibleFields()
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, opts.Filters)
-	filter.ApplySortToQuery(qb, opts.Sorts)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
+	applyNestedFilters(
+		func(sql string, args ...any) { qb.Where(sql, args...) },
+		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+	)
+	filter.ApplySortToQuery(qb, opts.Sorts)
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
 	}
@@ -305,12 +317,20 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return 0, err
 	}
+	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
+	if err != nil {
+		return 0, err
+	}
 	cb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(cb, opts.Filters)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScopeCount(cb, req)
 	ch.ApplyOwnerScopeCount(cb, req)
 	ch.ApplySoftDeleteFilterCount(cb, req)
+	applyNestedFilters(
+		func(sql string, args ...any) { cb.Where(sql, args...) },
+		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+	)
 	sqlStr, args := cb.Build()
 	var total int
 	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&total); err != nil {
