@@ -54,10 +54,16 @@ app.RegisterPlugin(log.New(log.Config{
 Pulling the logger out for app code:
 
 ```go
-p, _ := app.Plugins.Get("log")
-logger := p.(*log.Plugin).Logger()
-logger.Info("worker.tick", "queue", "ingest")
+logp, err := framework.PluginGetAs[*log.Plugin](app.Plugins, "log")
+if err != nil {
+    return err // not registered, or registered under a different type
+}
+logp.Logger().Info("worker.tick", "queue", "ingest")
 ```
+
+`PluginGetAs` does the lookup and the type assertion in one call and
+returns an error (never a usable zero value) when the plugin is absent
+or isn't a `*log.Plugin` — see [plugins](plugins.md) → Typed lookups.
 
 ## Real-time debugging via MCP
 
@@ -103,16 +109,16 @@ operators care about:
 Read them programmatically:
 
 ```go
-p, _ := app.Plugins.Get("log")
-m := p.(*log.Plugin).Metrics()
+logp, _ := framework.PluginGetAs[*log.Plugin](app.Plugins, "log")
+m := logp.Metrics()
 // m.PostStopDrops, m.SinkWriteFailures, m.WebhookDropped, m.WebhookGaveUp
 ```
 
 Or expose them over HTTP in Prometheus text exposition format:
 
 ```go
-p, _ := app.Plugins.Get("log")
-app.Router().Handle("GET", "/metrics", p.(*log.Plugin).MetricsHandler())
+logp, _ := framework.PluginGetAs[*log.Plugin](app.Plugins, "log")
+app.Router().Handle("GET", "/metrics", logp.MetricsHandler())
 ```
 
 The handler is stateless and safe to mount under any access-controlled

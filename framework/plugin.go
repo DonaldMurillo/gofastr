@@ -156,6 +156,27 @@ func (pm *PluginManager) Get(name string) (Plugin, error) {
 	return p, nil
 }
 
+// PluginGetAs retrieves a plugin by name and type-asserts it to T.
+// Returns an error if the plugin is not found or doesn't implement T.
+//
+// The plugin-side mirror of GetAs (the battery variant): use it to reach
+// a plugin's concrete type or an optional interface it satisfies without
+// hand-writing the lookup-and-assert boilerplate.
+//
+//	logp, err := framework.PluginGetAs[*logplugin.Plugin](app.Plugins, "log")
+func PluginGetAs[T any](pm *PluginManager, name string) (T, error) {
+	var zero T
+	p, err := pm.Get(name)
+	if err != nil {
+		return zero, err
+	}
+	typed, ok := p.(T)
+	if !ok {
+		return zero, fmt.Errorf("plugin %q does not implement %T", name, zero)
+	}
+	return typed, nil
+}
+
 // All returns all registered plugins in order.
 func (pm *PluginManager) All() []Plugin {
 	result := make([]Plugin, 0, len(pm.order))

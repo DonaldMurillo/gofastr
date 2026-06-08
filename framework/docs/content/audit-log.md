@@ -35,6 +35,7 @@ CREATE TABLE audit_log (
     op          TEXT       NOT NULL,   -- 'create' | 'update' | 'delete'
     record_id   TEXT       NOT NULL,
     actor_id    TEXT,                  -- nullable
+    tenant_id   TEXT,                  -- nullable; current tenant at write time
     created_at  TIMESTAMPTZ NOT NULL,  -- DATETIME on SQLite
     diff        TEXT                   -- JSON
 );
@@ -43,6 +44,15 @@ CREATE TABLE audit_log (
 `EnsureAuditTable(db, table)` creates this table; `WithAuditLog` calls
 it for you and panics on failure (this is initialisation-time work —
 loud failure is preferable to silent log loss).
+
+`tenant_id` is populated from `tenant.GetTenantID(ctx)` at write time, so
+multi-tenant apps can scope the audit trail per tenant instead of mixing
+every tenant's rows in one table. It is `NULL` for writes with no tenant
+in context (single-tenant apps, system/async writes). The column is added
+idempotently — an `audit_log` table created by an older binary gets a
+nullable `tenant_id` added on the next `EnsureAuditTable`, with existing
+rows left untouched. See [multi-tenant](multi-tenant.md) for the
+tenant-scoped query pattern.
 
 ## Configuration
 
@@ -100,6 +110,17 @@ There are no built-in HTTP endpoints for audit_log. Either:
 SELECT entity, op, record_id, actor_id, created_at
 FROM audit_log
 WHERE entity = 'posts'
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+In a multi-tenant app, scope the read to the caller's tenant so one
+tenant can't see another's audit trail:
+
+```sql
+SELECT entity, op, record_id, actor_id, created_at
+FROM audit_log
+WHERE tenant_id = $1
 ORDER BY created_at DESC
 LIMIT 50;
 ```

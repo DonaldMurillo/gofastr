@@ -80,6 +80,37 @@ it prepends to the hook list, so the reverse-order Shutdown iteration
 runs it last. `battery/log` uses this so log sinks are still open while
 other shutdown code emits its final entries.
 
+## Post-migrate seeding: `App.WithSeed`
+
+`App.Start` runs auto-migration as one of its first phases, so a
+`db.Exec("INSERT …")` written in `main()` *before* `Start()` fails with
+`no such table` — the table doesn't exist yet. `App.WithSeed` registers
+seed logic to run at the right moment instead:
+
+```go
+site := framework.NewApp(framework.WithDB(db))
+site.Entity("foods", foodsConfig)
+
+site.WithSeed(func(ctx context.Context) error {
+    _, err := db.ExecContext(ctx,
+        "INSERT INTO foods (id, name) VALUES ('1', 'apple') ON CONFLICT DO NOTHING")
+    return err
+})
+
+site.Start(":8080")
+```
+
+Seed funcs run during `Start` **after** auto-migration (every table
+exists) and the per-entity `EntityConfig.Seed` phase, and **before**
+plugins/batteries init and the listener binds. Multiple `WithSeed`
+calls run in registration order; the first non-nil error aborts `Start`
+(the partial-startup teardown drains anything an earlier phase spawned).
+The context is the app's lifecycle context, so a long-running seed
+respects shutdown.
+
+Use `WithSeed` for app-level or cross-entity seed logic; use
+`EntityConfig.Seed` (idempotent, ledger-tracked) for per-entity fixtures.
+
 ## Plugin vs Battery
 
 `Plugin` and `Battery` share the same single-Init contract. The
@@ -133,6 +164,25 @@ names := app.Plugins.Names()  // []string, registration order
 
 `Get` returns an error rather than nil when the name is unknown so
 callers can distinguish "not yet wired" from "wired but disabled".
+
+### Typed lookups: `PluginGetAs` / `GetAs`
+
+`Get` returns the bare `Plugin` (or `Battery`) interface — you'd then
+hand-write a type assertion and an error path. The generic helpers do
+both in one call and return a typed error when the assertion fails:
+
+```go
+// Plugin by concrete type or an optional interface it satisfies:
+logp, err := framework.PluginGetAs[*logplugin.Plugin](app.Plugins, "log")
+
+// Battery equivalent:
+searcher, err := framework.GetAs[search.Indexer](app.Batteries, "search")
+```
+
+Both return an error (never a usable zero value) when the name is
+unknown OR the registered module doesn't implement the requested type
+`T`, so a wrong-type lookup can't silently hand you a nil you'd
+dereference. Prefer these over `Get(...)` + a manual assert.
 
 ## Common mistakes
 

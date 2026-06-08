@@ -181,14 +181,26 @@ func (s *LibraryScreen) Load(ctx context.Context) error {
 }
 ```
 
-This is the pattern used in `examples/site`. It's deliberately simple — a
-single shared handle, no DI container, no reflection. The trade-off is that
-screens become package-coupled to that handle, which is fine for one app and
-awkward for shared screens.
+This is deliberately simple — a single shared handle, no DI container, no
+reflection — and fine for one app, but it couples screens to that package-level
+handle, which is awkward for shared screens.
 
-A typed `App.DB(ctx)` accessor that resolves through `context` is on the
-roadmap so screens can stay package-portable. Until then, the package-level
-handle is the documented path.
+**Preferred: pull the DB from the request context.** When the app has a DB
+configured, the framework auto-installs `App.DBContextMiddleware()` into the
+default chain, so any screen can reach the same `*sql.DB` without a global:
+
+```go
+// screens/library.go
+func (s *LibraryScreen) Load(ctx context.Context) error {
+    db := framework.DBFromContext(ctx)   // the app's *sql.DB, no global handle
+    rows, err := db.QueryContext(ctx, "SELECT id, name FROM foods")
+    ...
+}
+```
+
+This keeps screens package-portable. (`framework.WithDBContext(ctx, db)` is the
+manual injector behind the middleware, useful in tests.) The package-level
+handle above still works and remains the simplest path for a single app.
 
 ---
 

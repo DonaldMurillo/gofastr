@@ -17,6 +17,10 @@ var (
 	GetPermissions    = access.GetPermissions
 	WithPolicy        = access.WithPolicy
 	WithRoles         = access.WithRoles
+	// GetRoles reads the roles installed via WithRoles back out of the
+	// request context — the reader half of the role-context seam, for
+	// role-based UI branching.
+	GetRoles = access.GetRoles
 	// Can reports whether the request context carries a permission.
 	Can = access.Can
 	// AccessMiddleware installs the RBAC policy + roles into request context

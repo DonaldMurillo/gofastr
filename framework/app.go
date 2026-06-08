@@ -129,6 +129,10 @@ type App struct {
 	appCtx     context.Context
 	appCancel  context.CancelFunc
 
+	// seedHooks run during Start AFTER auto-migration (tables exist) and
+	// before plugin/battery init — see App.WithSeed.
+	seedHooks []func(ctx context.Context) error
+
 	// lc is the graceful-shutdown coordinator. OnStop hooks register
 	// here as Drainers so a single Shutdown() call walks both the
 	// app-level stop hooks and any battery-registered drainers /
@@ -394,6 +398,12 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		middleware.RecoveryFn(getLogger),
 		middleware.RequestID(),
 	}
+	// Stamp the App's *sql.DB onto each request context so screens and
+	// handlers can reach it via DBFromContext without a package-level
+	// global. No-op when the App has no DB.
+	if a != nil && a.DB != nil {
+		chain = append(chain, a.DBContextMiddleware())
+	}
 	if a != nil && a.tracing {
 		chain = append(chain, middleware.Tracing())
 	}
@@ -485,6 +495,12 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
+		// Pre-flight collision check against the full group-prefixed path,
+		// mirroring App.Entity. Routes() records full (prefix-applied)
+		// patterns, so compare against g.Prefix()+"/"+table.
+		if msg := a.entityRouteCollision(name, g.Prefix()+"/"+e.GetTable()); msg != "" {
+			panic("framework: " + msg)
+		}
 		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
@@ -728,6 +744,14 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
+		mountPath := a.entityMountPath(e.GetTable())
+		// Pre-flight collision check: if a screen/route already owns this
+		// entity's URL space, surface an actionable diagnostic that names
+		// the entity, the path, and the fix — BEFORE the mux panics on the
+		// opaque "/foods/llm.md conflicts with pattern" duplicate.
+		if msg := a.entityRouteCollision(name, mountPath); msg != "" {
+			return fmt.Errorf("%s", msg)
+		}
 		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
@@ -737,7 +761,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		// MCP tools dispatch in-process against a.router, where these routes are
 		// mounted under the API prefix — tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
-		crud.RegisterCrudRoutes(a.router, crudHandler, a.entityMountPath(e.GetTable()), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		crud.RegisterCrudRoutes(a.router, crudHandler, mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 	}
 
 	if config.MCP && a.DB != nil {
@@ -921,6 +945,42 @@ func (a *App) GroupEntitiesFromDir(g *routegroup.RouteGroup, dir string) error {
 		a.GroupEntity(g, decl.Name, cfg)
 	}
 	return nil
+}
+
+// entityRouteCollision reports an actionable diagnostic when the entity
+// named `name` would mount CRUD routes at a path already owned by another
+// registration (typically a UI screen registered at the same name). It
+// returns "" when there is no collision.
+//
+// The auto-CRUD mount registers GET <mountPath>, GET <mountPath>/{id},
+// GET <mountPath>/llm.md, etc. Without this check the first overlap panics
+// deep in net/http's ServeMux — usually on /llm.md — with a message that
+// points at the generated doc handler rather than the underlying name
+// clash. We catch the most common overlaps (the bare path and its /llm.md
+// doc route) and explain WHAT collided and HOW to fix it.
+func (a *App) entityRouteCollision(name, mountPath string) string {
+	mountPath = strings.TrimRight(mountPath, "/")
+	if mountPath == "" {
+		return ""
+	}
+	// The paths auto-CRUD claims that a hand-registered screen most often
+	// already owns. {id}/_batch/_events live in entity-only territory.
+	claimed := map[string]bool{
+		mountPath:             true,
+		mountPath + "/llm.md": true,
+	}
+	for _, rt := range a.router.Routes() {
+		if claimed[rt.Pattern] {
+			return fmt.Sprintf(
+				"entity %q would mount CRUD routes at %s (REST + %s/llm.md), "+
+					"but a screen/route is already registered at %q. "+
+					"Choose a different page path (e.g. /library, /library/{slug}), "+
+					"rename the entity table, or move entity CRUD under an APIPrefix "+
+					"(framework.WithAPIPrefix(\"/api\")) so the URL spaces don't collide.",
+				name, mountPath, mountPath, rt.Pattern)
+		}
+	}
+	return ""
 }
 
 func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
@@ -1273,6 +1333,13 @@ func (a *App) Start(addr string) error {
 		if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
 			return abort(fmt.Errorf("run seeds: %w", err))
 		}
+	}
+
+	// App-level seed hooks (App.WithSeed). Run after auto-migration + the
+	// per-entity RunSeeds phase so every table exists, and before plugins
+	// init so a plugin that reads seed data sees it.
+	if err := a.runSeedHooks(); err != nil {
+		return abort(fmt.Errorf("seed hooks: %w", err))
 	}
 
 	// Initialize plugins and batteries (routes, middleware, tools, hooks).

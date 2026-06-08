@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // AuditConfig configures the audit log helper.
@@ -93,11 +94,49 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 		op          TEXT NOT NULL,
 		record_id   TEXT NOT NULL,
 		actor_id    TEXT,
+		tenant_id   TEXT,
 		created_at  %s NOT NULL,
 		diff        TEXT
 	)`, query.QuoteIdent(safeTable), tsType)
-	_, err = db.Exec(stmt)
-	return err
+	if _, err = db.Exec(stmt); err != nil {
+		return err
+	}
+	// Backward-compat: a table created by an older binary has no tenant_id
+	// column. Add it (nullable) so multi-tenant stamping works against an
+	// existing audit table without a manual migration. ADD COLUMN IF NOT
+	// EXISTS keeps this idempotent on both dialects (Postgres + SQLite 3.35+).
+	alter := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS tenant_id TEXT", query.QuoteIdent(safeTable))
+	if _, err = db.Exec(alter); err != nil {
+		// Fall back to a probe-then-add for dialects without IF NOT EXISTS
+		// on ADD COLUMN. A failure here means the column already exists
+		// (the common case) or the dialect rejects the syntax; either way
+		// we only surface an error if the column is genuinely missing.
+		if !auditColumnExists(db, safeTable, "tenant_id") {
+			plain := fmt.Sprintf("ALTER TABLE %s ADD COLUMN tenant_id TEXT", query.QuoteIdent(safeTable))
+			if _, addErr := db.Exec(plain); addErr != nil {
+				return fmt.Errorf("audit: add tenant_id column: %w", addErr)
+			}
+		}
+	}
+	return nil
+}
+
+// auditColumnExists reports whether the named column is present on table.
+// Used as a dialect-agnostic fallback when ADD COLUMN IF NOT EXISTS isn't
+// supported: a plain "SELECT col FROM table WHERE 1=0" succeeds only when
+// the column exists.
+func auditColumnExists(db *sql.DB, table, col string) bool {
+	safeCol, err := query.SafeIdent(col)
+	if err != nil {
+		return false
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE 1=0", query.QuoteIdent(safeCol), query.QuoteIdent(table))
+	rows, err := db.Query(q)
+	if err != nil {
+		return false
+	}
+	_ = rows.Close()
+	return true
 }
 
 // WithAuditLog enables audit logging on every entity registered on the app
@@ -492,9 +531,13 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditO
 	if err != nil {
 		return fmt.Errorf("audit: invalid table name %q: %w", table, err)
 	}
+	// Stamp the current tenant (if any) so multi-tenant apps can scope the
+	// audit trail per tenant. Sanitised like the other TEXT columns to
+	// defuse log-injection via control characters.
+	tenantID := sanitizeAuditField(tenant.GetTenantID(ctx))
 	_, err = exec.ExecContext(ctx,
-		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7)", query.QuoteIdent(safeTable)),
-		id, ent, string(op), recordID, nullIfEmpty(actor), time.Now().UTC(), diffArg,
+		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", query.QuoteIdent(safeTable)),
+		id, ent, string(op), recordID, nullIfEmpty(actor), nullIfEmpty(tenantID), time.Now().UTC(), diffArg,
 	)
 	return err
 }

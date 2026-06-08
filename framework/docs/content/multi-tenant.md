@@ -89,6 +89,17 @@ while still writing scoped — handy for support/admin tooling.
 - `framework.ApplyTenantFilter(qb, tenantID)` — add
   `WHERE tenant_id = $1` to a query builder.
 
+## Audit log
+
+When `WithAuditLog` is enabled, every audit row stamps the current
+tenant into its own `tenant_id` column, resolved from
+`tenant.GetTenantID(ctx)` at write time. This keeps the audit trail
+scoped per tenant rather than mixing all tenants' rows in one table —
+scope your audit queries with `WHERE tenant_id = $1`. The stamp does
+not require the audited entity to be `MultiTenant`; any tenant present
+in the request context (e.g. set by your auth middleware) is recorded.
+See [audit-log](audit-log.md) for the schema and query examples.
+
 ## Cross-tenant access
 
 **Secure by default (since the tenant-gate change).** A `MultiTenant`
