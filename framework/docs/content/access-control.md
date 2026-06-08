@@ -134,18 +134,39 @@ is JSON via `core/handler.WriteError`.
 
 ```go
 type Policy interface {
-    Can(ctx context.Context, permission Permission, resource any) bool
+    Can(ctx context.Context, permission Permission) bool
 }
 ```
 
-Implement this to plug in:
+The check takes only the `ctx` and the permission string — there is
+**no** resource argument. Everything a policy needs (subject, roles,
+tenant, request metadata) travels in the context. Implement this to
+plug in:
 
 - Database-backed permission lookups.
-- Resource-level checks (`"can user X update post Y?"`).
 - External authorisation services (OPA, etc.).
 
-The `resource` argument is passed through unchanged so resource-aware
-policies can inspect it. `RolePolicy` ignores it.
+`RolePolicy` is the shipped implementation; it resolves the roles
+installed via `WithRoles` against its grant map.
+
+### Row-level ("can user X update post Y?") checks
+
+The `Policy` interface is **coarse-grained** — it answers "does this
+context hold permission P?", not "may this context act on record R?".
+There is no resource argument, so per-record decisions are made
+elsewhere:
+
+- **Owner scoping** — set `EntityConfig.OwnerField` so auto-CRUD only
+  ever reads/writes rows owned by the caller. See
+  [entity-declarations.md](entity-declarations.md) → "Per-user scoping".
+- **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks** — these run
+  with the candidate record (and, for updates, the patch) in hand, so
+  they can deny per-row. Return an error from the hook to reject. This is
+  the supported seam for "can user X update post Y?".
+
+Keep coarse permission checks in the `Policy` and put record-aware logic
+in a hook or owner scoping — don't try to smuggle the resource through
+`Can`.
 
 ## Where to apply checks
 
