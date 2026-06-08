@@ -70,6 +70,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Fixed
 
+- **Generated apps no longer ship Kiln's authoring engine.** `gofastr generate`
+  emitted `import "…/kiln/render"` into blueprint apps that use freeform node
+  blocks, which transitively pulled `kiln/expr`, `kiln/effect`, and `framework`
+  — Kiln's whole build-mode evaluator — into a shipped binary. `RenderNode` is
+  now a leaf package **`kiln/noderender`** (imports only `core-ui/html`,
+  `core/render`, `kiln/world`); codegen targets it and `kiln/render` keeps a
+  thin re-export for the live path. A new codegen build test compiles a
+  generated node app and asserts its dependency graph excludes the engine.
 - **UI host warns when chrome can't be injected.** The host injects the
   runtime, color-scheme bootstrap, SEO head, and widget chrome via
   `strings.Replace` on `<head>`/`</head>`/`</body>`. A custom layout missing one

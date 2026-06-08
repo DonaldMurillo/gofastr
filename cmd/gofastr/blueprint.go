@@ -1335,7 +1335,11 @@ func renderBlueprintScreens(bp Blueprint) string {
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
 	if imports.node {
-		sb.WriteString("\tkilnrender \"github.com/DonaldMurillo/gofastr/kiln/render\"\n")
+		// kiln/noderender is the leaf node renderer (core-ui/html + core/render
+		// + kiln/world only). Importing kiln/render here would drag Kiln's
+		// authoring engine (kiln/expr, kiln/effect, framework) into the shipped
+		// app — see G1.
+		sb.WriteString("\tkilnrender \"github.com/DonaldMurillo/gofastr/kiln/noderender\"\n")
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/kiln/world\"\n")
 	}
 	sb.WriteString(")\n\n")

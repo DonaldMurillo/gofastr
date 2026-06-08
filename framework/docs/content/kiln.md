@@ -67,6 +67,17 @@ browser-driven state changes (a malicious web page or DNS-rebinding POSTing
 to `localhost:8765`). Non-browser clients (the agent, `curl`, MCP/ACP) send
 no `Origin` and are unaffected.
 
+## Generated apps don't carry Kiln
+
+`gofastr generate --from <blueprint>` emits a plain framework app. Node
+trees render through the leaf package **`kiln/noderender`** (which imports
+only `core-ui/html`, `core/render`, and the zero-dependency `kiln/world`
+IR) — **not** `kiln/render`, which pulls Kiln's authoring engine
+(`kiln/expr`, `kiln/effect`, `framework`). So a shipped, frozen app does
+not link the build-mode evaluator. A codegen build test asserts this:
+the generated screens package compiles and its dependency graph excludes
+`kiln/expr` / `kiln/effect` / `kiln/render`.
+
 ## Freezing
 
 When the build is done:
