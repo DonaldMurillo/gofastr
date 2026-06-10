@@ -15,6 +15,20 @@ release tag. Everything below closes those findings. Note: code generated
 by this tree's CLI requires this tree's framework (`App.OnReady`, blueprint
 `access:`) — generated apps need `gofastr@main` until the next tag.
 
+### Changed
+
+- **BREAKING: `battery/auth` fails closed on an empty `JWTSecret` in
+  production.** An `AuthManager` with `DevMode=false` and no `JWTSecret`
+  now makes `Init` return an error (the app refuses to boot) instead of
+  warning and continuing — an empty HMAC key yields forgeable,
+  restart-unstable JWTs. The error names the remedy (set
+  `AuthConfig.JWTSecret`, or `DevMode: true` for local HTTP). The
+  blueprint path rejects `app.auth` with `dev_mode: false` and no
+  `jwt_secret` at `gofastr validate`/`generate` time, so a generated app
+  can't be built into the broken state. **Migration:** set
+  `AuthConfig.JWTSecret` from your secret store (most prod apps already
+  do); `DevMode` is unchanged and still mints a per-process secret.
+
 ### Added
 
 - **Blueprint `access:` key — per-operation RBAC from `gofastr.yml`.** An
@@ -82,10 +96,12 @@ by this tree's CLI requires this tree's framework (`App.OnReady`, blueprint
   to the 15 guide docs (including entity-declarations, "the heart of the
   model"); 6 data/index docs exempted with reasons; the claim text now
   matches reality and `TestGuideDocsEndWithCommonMistakes` enforces it.
-- **Security ledger status tracking.** Every SECURITY_FINDINGS.md row now
-  carries a status (35 verified-fixed including all P0/P1s with cited
-  evidence; 68 honestly `needs-verification` rather than guessed); a guard
-  test pins header-count == row-count and valid status tokens.
+- **Security ledger fully re-verified.** All 103 SECURITY_FINDINGS.md rows
+  re-checked against current code: 102 `fixed` (each with the mitigation
+  cited AND a named pinning test run and observed passing), 1 `accepted`
+  (#58, an intentional accepted-risk documented in code), 0 unverified or
+  open. A guard test pins header-count == row-count and valid status
+  tokens (`fixed`/`open`/`needs-verification`/`accepted`).
 - **Coverage floors are a CI gate.** `scripts/coverage-floors.sh` fails the
   blocking job if any claimed package drops ~2 points below its measured
   coverage. COVERAGE_NOTES.md now separates own-package numbers from the
