@@ -10,11 +10,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// Migrate brings the live SQLite schema in sync with the registry. It
-// covers the live-edit path the framework's CREATE-only AutoMigrate
-// doesn't: when the agent adds a field to an existing entity, this
-// emits ALTER TABLE ADD COLUMN for it. New tables fall through to
-// framework.AutoMigrate.
+// Migrate brings the live SQLite schema in sync with the registry.
+// framework.AutoMigrate now converges columns itself (additive ADD
+// COLUMN on existing tables), so alignColumns below is a belt-and-
+// braces second pass that predates that — it stays because it is
+// idempotent (a column the framework already added is simply found)
+// and keeps kiln's rebuild independent of the framework's diff path.
 //
 // Kiln's runtime DB is SQLite (build mode); this migrator targets the
 // SQLite ALTER TABLE subset.

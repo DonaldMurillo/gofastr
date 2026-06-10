@@ -24,18 +24,25 @@ func ReadLiveColumnsBulk(ctx context.Context, db *sql.DB, tables []string, diale
 }
 
 func readLiveColumnsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (map[string]map[string]string, error) {
-	// Build parameterized IN clause: $1, $2, $3, ...
+	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
+	// folds a mixed-case table name to lowercase in information_schema. Match
+	// case-insensitively and key the result by the ORIGINAL requested name so
+	// the caller's result[ent.GetTable()] lookup hits — same convention as
+	// TableExistsBulk. Without this, a table like "MixedAccount" reads as
+	// "doesn't exist" on every boot.
 	placeholders := make([]string, len(tables))
 	args := make([]any, len(tables))
+	byLower := make(map[string]string, len(tables))
 	for i, t := range tables {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = t
+		args[i] = strings.ToLower(t)
+		byLower[strings.ToLower(t)] = t
 	}
 
 	query := fmt.Sprintf(`
 		SELECT table_name, column_name, data_type
 		FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name IN (%s)
+		WHERE table_schema = current_schema() AND lower(table_name) IN (%s)
 		ORDER BY table_name, ordinal_position
 	`, strings.Join(placeholders, ", "))
 
@@ -50,6 +57,9 @@ func readLiveColumnsBulkPostgres(ctx context.Context, db *sql.DB, tables []strin
 		var tableName, colName, colType string
 		if err := rows.Scan(&tableName, &colName, &colType); err != nil {
 			return nil, err
+		}
+		if orig, ok := byLower[strings.ToLower(tableName)]; ok {
+			tableName = orig
 		}
 		if result[tableName] == nil {
 			result[tableName] = make(map[string]string)

@@ -38,23 +38,30 @@ func DetectDialect(db *sql.DB) Dialect {
 	return DialectSQLite
 }
 
-// execer is the subset of *sql.DB / *sql.Tx the DDL emitter needs. Taking the
+// execQueryer is the subset of *sql.DB / *sql.Tx the migrator needs: Exec for
+// DDL, Query to re-read live columns under the advisory lock. Taking the
 // interface lets AutoMigrate run every entity's DDL inside one transaction
 // (passing the *sql.Tx) while MigrateEntity still works against the raw pool.
-type execer interface {
+type execQueryer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// AutoMigrate creates tables for all registered entities. Equivalent to
+// AutoMigrate converges the database schema with all registered entities —
+// creates missing tables and adds missing columns. Equivalent to
 // AutoMigrateContext with a background context. See AutoMigrateContext for the
 // full contract (advisory lock + single-transaction atomicity).
 func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 	return AutoMigrateContext(context.Background(), db, registry)
 }
 
-// AutoMigrateContext creates tables for all registered entities. Entities are
-// migrated in dependency order so FK targets exist before referencing tables,
-// and CREATE TABLE/INDEX IF NOT EXISTS keeps re-runs safe.
+// AutoMigrateContext converges the database schema with all registered
+// entities: missing tables are created, and a field declared on an entity
+// whose existing table lacks the column is added via ALTER TABLE ADD COLUMN
+// (additive only — boot never drops, renames, or retypes; those stay behind
+// `migrate diff --apply`). Entities are migrated in dependency order so FK
+// targets exist before referencing tables, and CREATE TABLE/INDEX IF NOT
+// EXISTS keeps re-runs safe.
 //
 // Two production guarantees beyond the bare DDL:
 //
@@ -92,14 +99,23 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		}
 	}
 	dialect := DetectDialect(db)
-	existing := map[string]bool{}
-	if dialect == DialectPostgres && len(ordered) > 0 {
-		tableNames := make([]string, 0, len(ordered))
-		for _, ent := range ordered {
-			tableNames = append(tableNames, ent.GetTable())
+	// Pre-read every managed table's live columns in one pass (existence and
+	// column-drift detection in a single bulk query). This runs BEFORE the
+	// advisory lock — when drift is detected, addMissingColumns re-reads on the
+	// lock-holding connection so a peer replica's concurrent ALTERs are seen.
+	liveByTable := map[string]map[string]string{}
+	tableNames := make([]string, 0, len(ordered))
+	for _, ent := range ordered {
+		// Same skip set as migrateEntity: unmanaged objects and field-less
+		// entities get no DDL, so they need no live read either.
+		if ent.Config.Unmanaged || len(ent.GetFields()) == 0 {
+			continue
 		}
+		tableNames = append(tableNames, ent.GetTable())
+	}
+	if len(tableNames) > 0 {
 		var err error
-		existing, err = TableExistsBulk(ctx, db, tableNames, dialect)
+		liveByTable, err = ReadLiveColumnsBulk(ctx, db, tableNames, dialect)
 		if err != nil {
 			return err
 		}
@@ -118,7 +134,7 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		// the conn, and the panic still propagates to the caller.
 		defer func() { _ = tx.Rollback() }()
 		for _, ent := range ordered {
-			if err := migrateEntity(ctx, tx, ent, all, dialect, existing[ent.GetTable()]); err != nil {
+			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()]); err != nil {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
@@ -144,24 +160,29 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 }
 
 // MigrateEntity creates the table for a single entity if it doesn't exist.
-// It does not emit FK constraints since it has no view of the wider registry;
-// callers that need foreign keys should call AutoMigrate. The dialect is
+// It does not emit FK constraints since it has no view of the wider registry,
+// and it does not add columns to an existing table; callers that need foreign
+// keys or column convergence should call AutoMigrate. The dialect is
 // auto-detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
-	return migrateEntity(context.Background(), db, ent, nil, DetectDialect(db), false)
+	return migrateEntity(context.Background(), db, ent, nil, DetectDialect(db), nil)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
-	return migrateEntity(context.Background(), db, ent, nil, dialect, false)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil)
 }
 
 // migrateEntity is the shared implementation. When `all` is non-nil it is
 // consulted for FK target tables; missing targets return an error before any
 // DDL runs. exec is either the *sql.DB pool (single-entity callers) or the
-// shared *sql.Tx (AutoMigrate's atomic run).
-func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, tableExists bool) error {
+// shared *sql.Tx (AutoMigrate's atomic run). live is the table's pre-read
+// column set: empty/nil means "table absent (or unknown — single-entity
+// callers)" and triggers CREATE TABLE IF NOT EXISTS; non-empty means the
+// table pre-exists and is converged additively via addMissingColumns. Column
+// adds run BEFORE index DDL so a new field and its index land in one boot.
+func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) error {
 	// Unmanaged objects (views, FTS virtual tables, external/legacy tables) are
 	// created elsewhere — the migration system emits no DDL for them.
 	if ent.Config.Unmanaged {
@@ -171,7 +192,7 @@ func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map
 		return nil
 	}
 
-	if !tableExists {
+	if len(live) == 0 {
 		stmt, err := buildCreateTableSQL(ent, all, dialect)
 		if err != nil {
 			return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
@@ -179,6 +200,8 @@ func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map
 		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
+	} else if err := addMissingColumns(ctx, exec, ent, all, dialect, live); err != nil {
+		return err
 	}
 
 	safeTable, err := query.SafeIdent(ent.GetTable())
@@ -186,7 +209,8 @@ func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map
 		return fmt.Errorf("migrate %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
 	}
 
-	// Secondary indices — emit AFTER the table exists. CREATE INDEX IF NOT
+	// Secondary indices — emit AFTER the table exists (and after column adds,
+	// so an index on a just-added column resolves). CREATE INDEX IF NOT
 	// EXISTS works on both engines so re-running AutoMigrate is idempotent.
 	// An index with neither Columns nor Expression is a no-op (legacy: empty
 	// Columns used to silently skip; we preserve that for the all-zero case).
@@ -199,6 +223,65 @@ func migrateEntity(ctx context.Context, exec execer, ent *entity.Entity, all map
 		}
 	}
 	return nil
+}
+
+// addMissingColumns converges an EXISTING table additively: every field the
+// entity declares that the live table lacks is added via ALTER TABLE ADD
+// COLUMN — the exact DDL the declarative diff emits (shared
+// diffEntityFromLive path, so boot and `migrate diff` can never disagree).
+// Boot never drops, renames, or retypes: destructive changes are filtered
+// out here and remain behind `migrate diff --apply --allow-destructive`.
+//
+// preRead was captured BEFORE the advisory lock, so when it shows drift the
+// columns are re-read on the lock-holding connection and the diff recomputed:
+// a replica that lost the boot race sees its peer's ALTERs and no-ops instead
+// of failing on a duplicate column. (SQLite takes no lock — concurrent
+// multi-process boots could still collide there; the failed boot rolls back
+// and a restart converges.) In the steady state (no drift) this adds zero
+// queries inside the transaction.
+func addMissingColumns(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, preRead map[string]string) error {
+	adds, err := additiveChanges(ent, all, dialect, preRead)
+	if err != nil || len(adds) == 0 {
+		return err
+	}
+	liveNow, err := readLiveColumnsQ(ctx, exec, ent.GetTable(), dialect)
+	if err != nil {
+		return fmt.Errorf("re-read columns for %s: %w", ent.GetTable(), err)
+	}
+	if len(liveNow) == 0 {
+		// Table vanished between pre-read and lock (or is invisible to this
+		// session) — leave it to the CREATE path on the next boot rather than
+		// guessing here.
+		return nil
+	}
+	adds, err = additiveChanges(ent, all, dialect, liveNow)
+	if err != nil {
+		return err
+	}
+	for _, c := range adds {
+		if _, err := exec.ExecContext(ctx, c.SQL); err != nil {
+			return fmt.Errorf("%s: %w", c.Summary, err)
+		}
+	}
+	return nil
+}
+
+// additiveChanges returns the non-destructive subset of the schema diff for
+// one entity against a NON-EMPTY live column set — i.e. only the ALTER TABLE
+// ADD COLUMN statements. Callers guarantee live is non-empty (an empty set
+// would make diffEntityFromLive emit CREATE TABLE instead).
+func additiveChanges(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
+	changes, err := diffEntityFromLive(ent, all, dialect, live)
+	if err != nil {
+		return nil, err
+	}
+	adds := changes[:0]
+	for _, c := range changes {
+		if !c.Destructive {
+			adds = append(adds, c)
+		}
+	}
+	return adds, nil
 }
 
 // indexDDL builds the CREATE INDEX statement for one declared Index. Name

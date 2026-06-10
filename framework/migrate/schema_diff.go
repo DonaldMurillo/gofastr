@@ -262,20 +262,40 @@ func isFrameworkManagedColumn(name string, ent *entity.Entity) bool {
 	return false
 }
 
+// queryer is the read-only subset of *sql.DB / *sql.Tx the live-schema
+// readers need. The *sql.Tx form lets AutoMigrate re-read columns on the
+// advisory-lock-holding connection (a separate pool connection would deadlock
+// a MaxOpenConns(1) pool).
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // ReadLiveColumns returns a map of column_name → data_type from the live
 // DB. Empty map means "table doesn't exist".
 func ReadLiveColumns(ctx context.Context, db *sql.DB, table string, dialect Dialect) (map[string]string, error) {
+	return readLiveColumnsQ(ctx, db, table, dialect)
+}
+
+func readLiveColumnsQ(ctx context.Context, q queryer, table string, dialect Dialect) (map[string]string, error) {
 	if dialect == DialectPostgres {
-		return ReadLiveColumnsPostgres(ctx, db, table)
+		return readLiveColumnsPostgresQ(ctx, q, table)
 	}
-	return ReadLiveColumnsSQLite(ctx, db, table)
+	return readLiveColumnsSQLiteQ(ctx, q, table)
 }
 
 func ReadLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
-	rows, err := db.QueryContext(ctx, `
+	return readLiveColumnsPostgresQ(ctx, db, table)
+}
+
+func readLiveColumnsPostgresQ(ctx context.Context, q queryer, table string) (map[string]string, error) {
+	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
+	// folds a mixed-case table name to lowercase in information_schema.
+	// Match case-insensitively so a registry table like "MixedAccount" finds
+	// its folded live columns instead of reading as "table doesn't exist".
+	rows, err := q.QueryContext(ctx, `
 		SELECT column_name, data_type
 		FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name = $1
+		WHERE table_schema = current_schema() AND lower(table_name) = lower($1)
 	`, table)
 	if err != nil {
 		return nil, err
@@ -293,9 +313,13 @@ func ReadLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map
 }
 
 func ReadLiveColumnsSQLite(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
+	return readLiveColumnsSQLiteQ(ctx, db, table)
+}
+
+func readLiveColumnsSQLiteQ(ctx context.Context, q queryer, table string) (map[string]string, error) {
 	// PRAGMA can't be parameterised; the table name is taken from our own
 	// registry, not user input, so injection isn't a concern.
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	rows, err := q.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return nil, err
 	}

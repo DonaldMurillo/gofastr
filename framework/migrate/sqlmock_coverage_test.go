@@ -51,6 +51,13 @@ func expectSQLiteDialect(m sqlmock.Sqlmock) {
 	m.ExpectQuery("SELECT version").WillReturnError(errors.New("no such function"))
 }
 
+// expectNoLiveColumns satisfies AutoMigrate's pre-lock bulk column read with
+// an empty result ("table doesn't exist") for the SQLite dialect.
+func expectNoLiveColumns(m sqlmock.Sqlmock) {
+	m.ExpectQuery("PRAGMA table_info").WillReturnRows(
+		sqlmock.NewRows([]string{"cid", "name", "type", "notnull", "dflt_value", "pk"}))
+}
+
 const ctxBg = "bg"
 
 func ctxB() context.Context { return context.Background() }
@@ -201,6 +208,7 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	// Invalid table name → SafeIdent error.
 	db2, m2 := mock(t)
 	expectSQLiteDialect(m2)
+	expectNoLiveColumns(m2)
 	m2.ExpectBegin()
 	m2.ExpectRollback()
 	reg2 := testReg{"e": rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")}
@@ -211,6 +219,7 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	// Empty index → skipped (no index exec).
 	db3, m3 := mock(t)
 	expectSQLiteDialect(m3)
+	expectNoLiveColumns(m3)
 	m3.ExpectBegin()
 	m3.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m3.ExpectCommit()
@@ -223,6 +232,7 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	// Index create error.
 	db4, m4 := mock(t)
 	expectSQLiteDialect(m4)
+	expectNoLiveColumns(m4)
 	m4.ExpectBegin()
 	m4.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m4.ExpectExec("CREATE INDEX").WillReturnError(errors.New("idx fail"))

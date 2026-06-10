@@ -52,6 +52,15 @@ capture is produced.
 - Current: postgres/N=50 = 748 µs / 2376 allocs; sqlite3/N=50 = 157 µs / 2427 allocs
 - Claim in ROADMAP: was 7.5 ms on Postgres/N=50; target sub-1 ms regardless of N
 - Verdict: **VERIFIED** — `AutoMigrate` now uses `TableExistsBulk` on Postgres idempotent re-runs and meets the sub-1 ms target at N=50.
+- **Update 2026-06-10:** boot auto-migrate now also converges columns
+  (additive `ADD COLUMN`), so the pre-lock read is one bulk
+  `information_schema.columns` query instead of `pg_tables` existence
+  only, plus an in-memory per-entity diff. Same-machine before/after:
+  postgres/N=50 1.59 ms → 3.39 ms; sqlite3/N=50 209 µs → 501 µs
+  (Apple M4 Pro, PG in Docker). Roughly 2× the re-run cost — still one
+  round trip and well inside the ~10 ms boot budget, but the original
+  sub-1 ms wording no longer holds; the trade buys "add a field, reboot,
+  it works" without a `migrate diff --apply` step.
 
 ### 7g — CronTick allocs per minute (N=1000)
 - Benchmark: `BenchmarkCronTick`

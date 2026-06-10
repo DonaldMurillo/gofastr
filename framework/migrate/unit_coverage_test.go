@@ -292,14 +292,14 @@ func TestBuildCreateTableSQL_InvalidColumn(t *testing.T) {
 	}
 }
 
-// TestMigrateEntity_InvalidTableExisting covers migrateEntity's post-create
-// table-name validation, reachable only when the table already exists (so the
-// CREATE — which validates first — is skipped).
+// TestMigrateEntity_InvalidTableExisting covers migrateEntity's table-name
+// validation on the existing-table path (a non-empty live column set skips
+// the CREATE — which validates first — and converges additively instead).
 func TestMigrateEntity_InvalidTableExisting(t *testing.T) {
-	// tableExists=true skips the CREATE (which would validate first) and never
-	// touches the executor, so a nil execer is safe here.
+	// A live set matching the declared fields yields no column adds, so the
+	// executor is never touched and a nil execQueryer is safe here.
 	ent := rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
-	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, true); err == nil {
+	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}); err == nil {
 		t.Error("expected invalid table name error in migrateEntity")
 	}
 }

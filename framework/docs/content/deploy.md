@@ -87,7 +87,9 @@ auto-minted (also warned) so the boilerplate never ships a literal
 
 ## Migrations
 
-`App.Start` auto-migrates on boot (create tables, add columns). For
+`App.Start` auto-migrates on boot: it creates missing tables and adds
+missing columns (additive only — it never drops, renames, or retypes;
+those need `migrate diff --apply` or a versioned migration). For
 controlled rollouts, run migrations as a separate step with the CLI
 instead of on every replica's boot:
 

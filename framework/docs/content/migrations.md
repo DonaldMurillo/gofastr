@@ -3,11 +3,12 @@
 GoFastr has two migration paths:
 
 1. **Auto-migrate from declared entities.**
-   `framework.AutoMigrate(db, app.Registry)` creates every registered
-   entity's table (and indexes, and foreign keys) so the database
-   matches the entity declarations. Runs on `App.Start`. Best for
-   development and for apps where the entity declaration is the
-   source of truth.
+   `framework.AutoMigrate(db, app.Registry)` converges the database
+   with the entity declarations: it creates missing tables (with
+   indexes and foreign keys) **and adds missing columns to existing
+   tables** (`ALTER TABLE ADD COLUMN` — additive only, never a drop,
+   rename, or type change). Runs on `App.Start`. Best for development
+   and for apps where the entity declaration is the source of truth.
 2. **SQL files with directives.** `core/migrate` runs versioned `.sql`
    files. Best when you need to express data backfills, complex
    constraints, or anything the entity declaration can't.
@@ -371,10 +372,16 @@ if err := framework.AutoMigrate(db, app.Registry); err != nil { … }
 first, SQLite on failure) and emits `CREATE TABLE IF NOT EXISTS` and
 `CREATE INDEX IF NOT EXISTS` so it is safe to re-run.
 
-It creates tables, indexes, and foreign keys to make the database
-match the registered entities, **inside one transaction and under an
-advisory lock** (see [Production safety](#production-safety)). It will
-**not**:
+It creates tables, indexes, and foreign keys, and **adds missing
+columns to existing tables** (`ALTER TABLE ADD COLUMN`, built by the
+same diff path as `migrate diff`, so boot and the CLI can never
+disagree) — all to make the database match the registered entities,
+**inside one transaction and under an advisory lock** (see
+[Production safety](#production-safety)). A new **required** field
+with **no default** is added *nullable* (a `NOT NULL ADD COLUMN`
+fails on a populated table); backfill the rows, then tighten the
+constraint in a versioned migration. Column adds happen before index
+DDL, so a new field and its index land in one boot. It will **not**:
 
 - Drop columns or tables.
 - Rename columns (it sees a rename as add+drop).

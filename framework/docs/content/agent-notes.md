@@ -1,6 +1,11 @@
 # Agent Notes
 
-## 2026-05-31 - framework visibility: git init, CLAUDE.md, docs surfacing, live evals
+## 2026-06-10 - boot auto-migrate adds missing columns (additive convergence)
+
+- **Scope:** `framework/migrate/{migrate,schema_diff,bulk}.go`, `framework/migrate_addcolumn_test.go`, `framework/docs/content/{migrations,deploy,tutorial-blueprint-app,perf-results,benchmarks}.md`, `kiln/db/migrate.go` (comment only).
+- **Symptom:** docs (deploy.md "create tables, add columns"; migrations.md's will-not list) promised column convergence, but boot `AutoMigrate` only did `CREATE TABLE/INDEX IF NOT EXISTS` — adding a field to an existing entity and rebooting hit "table notes has no column named user_id". Two dogfood workarounds existed for the gap: kiln's `alignColumns` and the tutorial's `migrate diff --apply` detour.
+- **Change:** `AutoMigratePlanContext` pre-reads live columns in one bulk query (both dialects; replaces the PG-only `TableExistsBulk` call — emptiness doubles as the existence check), and `migrateEntity` converges existing tables additively via the shared `diffEntityFromLive` path with `Destructive` changes filtered out. On drift, columns are re-read on the advisory-lock-holding tx before ALTERing, so racing PG replicas no-op instead of dying on a duplicate column. Column adds run before index DDL so a field+index arrive in one boot. PG live-schema readers now match table names case-insensitively (unquoted DDL folds to lowercase — previously mixed-case tables read as "missing" in `DiffSchema` too). Drops/renames/retypes stay behind `migrate diff --apply [--allow-destructive]`. Idempotent re-run cost ~2× (PG N=50: 1.6 ms → 3.4 ms same-machine); perf-results.md §7f carries the honest update.
+- **Next time:** `MigrateEntity`/`MigrateEntityDialect` (single-entity, registryless) intentionally stay create-only; if a NOT NULL tightening story is wanted after backfill, that's a versioned-migration concern, not boot's.
 
 - **Scope:** `cmd/gofastr/init.go`, `cmd/gofastr/embedded/gofastr-host-skill.md`, `.claude/skills/gofastr-host/SKILL.md`, `evals/`, `README.md`, `framework/docs/content/ui-getting-started.md`.
 - **Symptom:** New users running `gofastr init` got scaffolded Go files but no git repo, no CLAUDE.md (so Claude Code had no entry point), no mention of `gofastr docs` (so agents couldn't discover features), and the host skill referenced a non-existent `gofastr docs search` command instead of `gofastr docs --grep`.

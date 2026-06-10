@@ -137,7 +137,9 @@ overhead but does not show the bounded-memory advantage. Worth fixing.
 
 - **AutoMigrate re-run** — the "safe to run on every boot" claim. Should
   stay under ~10ms even at 50 entities. Postgres is much slower than
-  SQLite because every existence check is a round-trip.
+  SQLite because the live-schema read (one bulk
+  `information_schema.columns` query feeding both existence and
+  column-add detection) is a network round-trip.
 - **Schema diff** — same shape, but pays for the full information_schema
   lookup. Acceptable as a one-shot CLI command, not as a hot path.
 - **In-memory search** — confirms O(corpus) scan. 10k docs ≈ 3ms per
