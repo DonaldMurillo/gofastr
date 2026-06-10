@@ -1,4 +1,4 @@
-//check-csp:ignore-file
+// check-csp:ignore-file
 // The linter itself references `style="…"` in regex patterns and
 // error messages; the directive exempts this file from its own checks.
 package check
@@ -86,7 +86,7 @@ func LintNoInlineStyles(dir string) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", filename, err)
 		}
-		if strings.Contains(string(raw), "//check-csp:ignore-file") {
+		if hasCSPIgnoreDirective(raw) {
 			continue
 		}
 		fset := token.NewFileSet()

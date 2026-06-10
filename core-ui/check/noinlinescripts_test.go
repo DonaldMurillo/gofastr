@@ -154,6 +154,24 @@ var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 	}
 }
 
+func TestLintNoInlineScripts_HonorsGofmtSpacedDirective(t *testing.T) {
+	dir := t.TempDir()
+	// gofmt rewrites //check-csp:… to "// check-csp:…" (hyphenated names
+	// don't qualify as Go directives), so the spaced form must work too.
+	writeFixture(t, dir, "bad.go", `// check-csp:ignore-file
+package x
+import "github.com/DonaldMurillo/gofastr/core/render"
+var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
+`)
+	res, err := LintNoInlineScripts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("gofmt-spaced ignore directive must suppress:\n%s", res.Error())
+	}
+}
+
 func TestLintNoInlineScripts_ReportsLineNumber(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `package x

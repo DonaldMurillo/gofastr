@@ -1,4 +1,4 @@
-//check-csp:ignore-file
+// check-csp:ignore-file
 // The linter itself references <script> in regex patterns and error
 // messages; the directive exempts this file from its own checks.
 package check
@@ -13,6 +13,17 @@ import (
 	"regexp"
 	"strings"
 )
+
+// hasCSPIgnoreDirective reports whether a source file opts out of the
+// CSP linters. Both the bare form `//check-csp:ignore-file` and the
+// gofmt-canonical spaced form `// check-csp:ignore-file` count: gofmt
+// inserts a space because hyphenated names don't qualify as Go
+// directives, so any formatted tree carries the spaced form.
+func hasCSPIgnoreDirective(raw []byte) bool {
+	s := string(raw)
+	return strings.Contains(s, "//check-csp:ignore-file") ||
+		strings.Contains(s, "// check-csp:ignore-file")
+}
 
 // Inline-script ban — compile-rule enforcement of the framework's
 // strict-CSP contract.
@@ -93,7 +104,7 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 			return nil, fmt.Errorf("read %s: %w", filename, err)
 		}
 		// File-level escape hatch.
-		if strings.Contains(string(raw), "//check-csp:ignore-file") {
+		if hasCSPIgnoreDirective(raw) {
 			continue
 		}
 		fset := token.NewFileSet()
