@@ -23,14 +23,31 @@ type EntityDeclaration struct {
 	// by a battery, auto-CRUD scopes List/Get/Update/Delete by the
 	// current request's owner and auto-stamps Create. Mirrors
 	// EntityConfig.OwnerField; leave empty to keep pre-existing behaviour.
-	OwnerField   string         `json:"owner_field,omitempty"`
-	Timestamps   *bool          `json:"timestamps,omitempty"`
-	CRUD         *bool          `json:"crud,omitempty"`
-	MCP          bool           `json:"mcp,omitempty"`
-	CursorField  string         `json:"cursor_field,omitempty"`
-	CursorFields []string       `json:"cursor_fields,omitempty"`
-	Indices      []Index        `json:"indices,omitempty"`
-	Properties   map[string]any `json:"properties,omitempty"`
+	OwnerField string `json:"owner_field,omitempty"`
+	// Access declares the RBAC permission required per CRUD operation.
+	// Mirrors EntityConfig.Access (AccessControl): each entry is a
+	// permission string (e.g. "posts:write"); a blank/omitted entry
+	// leaves that operation un-gated by RBAC. nil means no RBAC at all.
+	Access       *AccessDeclaration `json:"access,omitempty"`
+	Timestamps   *bool              `json:"timestamps,omitempty"`
+	CRUD         *bool              `json:"crud,omitempty"`
+	MCP          bool               `json:"mcp,omitempty"`
+	CursorField  string             `json:"cursor_field,omitempty"`
+	CursorFields []string           `json:"cursor_fields,omitempty"`
+	Indices      []Index            `json:"indices,omitempty"`
+	Properties   map[string]any     `json:"properties,omitempty"`
+}
+
+// AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl —
+// the per-operation RBAC permissions for a blueprint-declared entity.
+// "read" covers both List and Get. The CRUD layer enforces these via
+// access.Can against the policy + roles in the request context (403 on
+// missing permission), exactly like a Go-declared EntityConfig.Access.
+type AccessDeclaration struct {
+	Read   string `json:"read,omitempty"`
+	Create string `json:"create,omitempty"`
+	Update string `json:"update,omitempty"`
+	Delete string `json:"delete,omitempty"`
 }
 
 // FieldDeclaration is a JSON-friendly schema.Field.
@@ -79,6 +96,14 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		CursorFields: d.CursorFields,
 		Indices:      d.Indices,
 		Properties:   d.Properties,
+	}
+	if d.Access != nil {
+		cfg.Access = AccessControl{
+			Read:   d.Access.Read,
+			Create: d.Access.Create,
+			Update: d.Access.Update,
+			Delete: d.Access.Delete,
+		}
 	}
 	if d.Timestamps != nil {
 		cfg = cfg.WithTimestamps(*d.Timestamps)

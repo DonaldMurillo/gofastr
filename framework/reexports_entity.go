@@ -13,6 +13,7 @@ type (
 	Index              = entity.Index
 	Endpoint           = entity.Endpoint
 	EntityDeclaration  = entity.EntityDeclaration
+	AccessDeclaration  = entity.AccessDeclaration
 	FieldDeclaration   = entity.FieldDeclaration
 	Relation           = entity.Relation
 	RelationType       = entity.RelationType
