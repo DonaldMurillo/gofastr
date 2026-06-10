@@ -230,34 +230,50 @@ func rootTokens(ss *style.StyleSheet) {
 			"--tk-fn", "oklch(0.42 0.10 50)",
 			"--tk-str", "oklch(0.42 0.10 145)",
 			"--tk-num", "oklch(0.44 0.15 30)",
-			"--tk-com", "oklch(0.55 0.008 75)",
+			// Comments — 0.55 read 4.2:1 on the light code surface (axe
+			// color-contrast fail on Linux CI, which defaults to the light
+			// scheme). 0.50 reads ≈5.2:1 — AA with margin.
+			"--tk-com", "oklch(0.50 0.008 75)",
 			"--tk-pn", "oklch(0.42 0.008 75)",
 			"--tk-type", "oklch(0.38 0.10 220)",
 			// Amber accent retoned for light mode. The dark-mode amber
 			// (oklch 0.82 0.155 78) reads at ~9:1 on the warm-near-
 			// black surface but collapses to ~1.45:1 on warm-near-
 			// white, so it's invisible as text and weak as a CTA fill.
-			// Re-tone to oklch(0.62 0.18 60) — deeper, more saturated
-			// amber that reads as the SAME brand family but at AA
-			// contrast: ~3.6:1 on bg (passes AA-Large 3:1), ~5.5:1 vs
-			// near-black text on the amber CTA, and crisp as inline
-			// accent text in headings + labels.
-			"--color-primary", "oklch(0.62 0.18 60)",
+			// The accent is used as SMALL text everywhere (brand tag,
+			// .pkg/.path mono labels, dt eyebrows, links, card h4s), so
+			// AA-Large (3:1) is not enough — every use must clear 4.5:1.
+			// The previous oklch(0.62 0.18 60) → #d16400 read 3.2–3.7:1
+			// on the warm-white surfaces and failed axe on Linux CI
+			// (which defaults to the light scheme). Re-tone to
+			// oklch(0.51 0.115 60) — a deeper amber in the same family
+			// that is INSIDE the sRGB gamut (no browser gamut-mapping
+			// skew) and clears AA with margin: ≈5.8:1 on bg, ≈5.5:1 on
+			// surface, ≈4.9:1 on the StatusPill accent chip (8% mix),
+			// and ≈5.8:1 for the near-white CTA label on the amber fill.
+			"--color-primary", "oklch(0.51 0.115 60)",
 			"--color-primary-fg", "oklch(0.99 0.004 75)",
+			// Accent mirrors primary on this single-accent site. The
+			// typed theme sets it to the DARK amber; without this
+			// override .ex-row__src links etc. kept the bright
+			// oklch(0.82 0.155 78) in light mode — 1.7:1 on warm-white.
+			"--color-accent", "oklch(0.51 0.115 60)",
 			// Accent-dim (subtle underlines, low-emphasis bg) needs to
 			// stay visible on warm-white. Bump alpha + lower L slightly.
 			"--accent-dim", "oklch(0.65 0.12 70)",
-			// Restore the framework's AA-on-WHITE semantic hues for light
-			// mode. The :root block above re-tones these BRIGHTER for the
-			// dark default (so status text reads on dark tinted chips); on
-			// the warm-white surfaces those bright variants would fail, so
-			// here we put back deeper hues that hit 4.5:1 on the 15%-tinted
-			// LIGHT chips. (Framework defaults: #15803D / #DC2626 / #A16207
-			// / #2563EB.)
-			"--color-success", "#15803D",
-			"--color-danger", "#DC2626",
-			"--color-warning", "#A16207",
-			"--color-info", "#2563EB",
+			// Restore the framework's light-mode semantic hues. The :root
+			// block above re-tones these BRIGHTER for the dark default (so
+			// status text reads on dark tinted chips); on the warm-white
+			// surfaces those bright variants would fail, so here we put
+			// back the framework defaults — which are tuned to clear
+			// 4.6:1 as label text on the components' own 15%-tinted
+			// chips (Badge/Tag/StatCard/ValidationSummary), the binding
+			// constraint axe checks. Keep in sync with
+			// core-ui/style.DefaultTheme.
+			"--color-success", "#166534",
+			"--color-danger", "#B91C1C",
+			"--color-warning", "#854D0E",
+			"--color-info", "#1D4ED8",
 		).End()
 }
 

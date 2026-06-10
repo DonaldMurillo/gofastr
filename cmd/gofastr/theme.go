@@ -139,11 +139,13 @@ var App = style.Theme{
 		PrimaryFg: style.Color{Value: "#FFFFFF"},
 		Accent:    style.Color{Value: "#7C3AED"},
 
-		// Status colors — WCAG-AA against white text.
-		Danger:  style.Color{Value: "#DC2626"},
-		Success: style.Color{Value: "#15803D"},
-		Warning: style.Color{Value: "#A16207"},
-		Info:    style.Color{Value: "#2563EB"},
+		// Status colors — WCAG-AA against white text AND as text on the
+		// components' 15%-tinted chips (Badge/Tag/StatCard). Matches
+		// core-ui/style DefaultTheme — keep the two in sync.
+		Danger:  style.Color{Value: "#B91C1C"},
+		Success: style.Color{Value: "#166534"},
+		Warning: style.Color{Value: "#854D0E"},
+		Info:    style.Color{Value: "#1D4ED8"},
 
 		// Surfaces + text — usually leave alone.
 		Secondary:    style.Color{Value: "#6B7280"},

@@ -948,8 +948,11 @@ func pagePhilosophy(ss *style.StyleSheet) {
 	ss.Rule(".roadmap__status.shipped").
 		Set("background", "color-mix(in oklch, var(--tk-str) 18%, transparent)",
 			"color", "var(--tk-str)").End()
+	// 12% tint, not 18 — at 18% the light-scheme chip darkened enough that
+	// the amber label read 4.25:1 (axe color-contrast fail); 12% keeps the
+	// label ≥4.9:1 in light and ≥7:1 in dark.
 	ss.Rule(".roadmap__status.next").
-		Set("background", "color-mix(in oklch, {colors.primary} 18%, transparent)",
+		Set("background", "color-mix(in oklch, {colors.primary} 12%, transparent)",
 			"color", "{colors.primary}").End()
 	ss.Rule(".roadmap__status.later").
 		Set("background", "{colors.surface-soft}", "color", "{colors.text-subtle}").End()

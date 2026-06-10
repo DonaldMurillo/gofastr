@@ -1,28 +1,31 @@
 name: CI
 
-# Two jobs, split by determinism (evidence: CI runs 27100756725..27161715772,
-# all red, June 2026):
+# Two jobs, split by runtime profile (history: CI runs
+# 27100756725..27161715772, June 2026):
 #
 #   1. `test` (BLOCKING) — build + vet + every package that produced
 #      deterministic results on the runners. This is the merge gate.
 #
-#   2. `browser-e2e` (NON-BLOCKING, continue-on-error) — the chromedp
-#      suites that failed for runner-infrastructure reasons, run
-#      serialized and isolated:
-#        - examples/site: net::ERR_NETWORK_CHANGED mid-suite (5/6 runs;
-#          GitHub-hosted runner network instability, not app behavior),
-#          plus TestAxe_AllPagesAreClean reporting color-contrast
-#          violations on Linux Chrome that do not reproduce on the
-#          macOS dev gate (6/6 runs — needs an examples/site
-#          investigation before this can block).
-#        - cmd/gofastr TestBlueprintCLIGeneratesEntireWorkingAppE2E:
-#          "chrome failed to start" / dbus errors under parallel load
-#          (3/6 runs). Every other cmd/gofastr test stays blocking.
+#   2. `browser-e2e` (BLOCKING since 2026-06-10) — the slow chromedp
+#      suites, run serialized and isolated:
+#        - examples/site, including the axe gate in its own isolated
+#          invocation (it flakes when sharing a go-test run with the
+#          other chromedp tests — CLAUDE.md).
+#        - cmd/gofastr TestBlueprintCLIGeneratesEntireWorkingAppE2E
+#          ("chrome failed to start" under parallel load when it ran
+#          inside the blocking job, 3/6 runs — serialized here).
 #        - kiln/integration: chromedp-heavy, grouped here per
 #          CLAUDE.md's slow-suite guidance.
-#      A red browser-e2e job is visible on the run page but does not
-#      fail the workflow. Flip continue-on-error to false once the
-#      Linux axe discrepancy is resolved and the suites hold green.
+#      This job was continue-on-error while TestAxe_AllPagesAreClean
+#      failed 6/6 on Linux runners. Root cause: Linux Chrome defaults
+#      to prefers-color-scheme: light, so CI audited the site's LIGHT
+#      palette while macOS dev machines (Dark appearance) only ever
+#      audited the dark one — the light-scheme colors genuinely failed
+#      WCAG AA. Fixed 2026-06-10: light tokens retoned (examples/site
+#      + core-ui status tones) and the axe test now forces BOTH schemes
+#      per page, so the scan is platform-independent. If the
+#      ERR_NETWORK_CHANGED runner flake (5/6 runs, June 2026) resurges,
+#      rerun the job before reaching for continue-on-error.
 #
 # Docker is preinstalled on ubuntu-latest (testcontainers spins up
 # Postgres automatically). Chrome is installed in both jobs: several
@@ -92,14 +95,11 @@ jobs:
             $(go list ./... | grep -vE 'gofastr/(examples/site|kiln/integration)$')
 
   browser-e2e:
-    name: "browser e2e [NON-BLOCKING: runner flake + Linux axe gap — see ci.yml header]"
+    name: "browser e2e (blocking)"
     runs-on: ubuntu-latest
-    # Per-step go-test timeouts sum to 50m (15+10+15+10); the job budget
+    # Per-step go-test timeouts sum to 55m (15+15+15+10); the job budget
     # must exceed that so the !cancelled() always-report steps can run.
-    timeout-minutes: 55
-    # Reported on the run page, but does not gate the workflow result.
-    # Rationale + flip condition in the header comment.
-    continue-on-error: true
+    timeout-minutes: 60
     env:
       CGO_ENABLED: "1"
     steps:
@@ -128,8 +128,10 @@ jobs:
         run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
 
       - name: examples/site axe (isolated)
+        # 15m, not 10 — the gate scans every page under BOTH color
+        # schemes (≈3.5min locally; CI runners are slower).
         if: ${{ !cancelled() }}
-        run: go test -count=1 -timeout=10m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+        run: go test -count=1 -timeout=15m -run 'TestAxe_AllPagesAreClean' ./examples/site/
 
       - name: kiln/integration
         if: ${{ !cancelled() }}

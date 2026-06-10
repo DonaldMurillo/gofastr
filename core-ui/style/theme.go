@@ -371,11 +371,19 @@ func DefaultTheme() Theme {
 			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface — was #A1A1AA (2.56:1, fails AA)
 			Border:       Color{Name: "border", Value: "#E4E4E7"},
 			BorderStrong: Color{Name: "border-strong", Value: "#A1A1AA"},
-			Danger:       Color{Name: "danger", Value: "#DC2626"},
-			Success:      Color{Name: "success", Value: "#15803D"}, // 4.55:1 with white — was #16A34A (3.30:1)
-			Warning:      Color{Name: "warning", Value: "#A16207"}, // 4.59:1 with white — was #CA8A04 (2.94:1)
-			Info:         Color{Name: "info", Value: "#2563EB"},
-			Accent:       Color{Name: "accent", Value: "#7C3AED"},
+			// Status tones are used two ways by framework/ui components:
+			// as WHITE-TEXT FILLS (toasts, button--danger) and as LABEL
+			// TEXT on their own 15%-tinted chips (Badge, Tag, StatCard
+			// trend, ValidationSummary). The tint is the harder target —
+			// the previous values (#DC2626 / #15803D / #A16207 / #2563EB)
+			// hit 4.5:1 on white but only 3.7–4.2:1 on the tinted chips,
+			// which axe flags on any light scheme. These shades clear
+			// 4.6:1 on the chips and ≥6.4:1 with white fills.
+			Danger:  Color{Name: "danger", Value: "#B91C1C"},  // 5.2:1 on its 15% chip — was #DC2626 (3.96:1)
+			Success: Color{Name: "success", Value: "#166534"}, // 5.6:1 on its 15% chip — was #15803D (4.10:1)
+			Warning: Color{Name: "warning", Value: "#854D0E"}, // 5.4:1 on its 15% chip — was #A16207 (4.03:1)
+			Info:    Color{Name: "info", Value: "#1D4ED8"},    // 5.3:1 on its 15% chip — was #2563EB (4.23:1)
+			Accent:  Color{Name: "accent", Value: "#7C3AED"},
 			// Code surface: an always-dark panel for ui.CodeBlock and
 			// other code-display contexts. Light mode keeps the dark
 			// inkwell look (classic IDE feel); dark mode shifts it a

@@ -8,7 +8,7 @@ use the `battery/queue` DB-backed queue instead.
 
 They solve different problems and often pair up:
 
-| | `framework.Scheduler` (cron) | `battery/queue` |
+| Aspect | `framework.Scheduler` (cron) | `battery/queue` |
 |---|---|---|
 | Trigger | **Time** — "every 5 min", "0 3 * * *" | **Work** — a job enqueued by code |
 | State | In-memory; runs in this process only | DB-backed; survives restart |

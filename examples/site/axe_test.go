@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 // Injects vendored axe-core into each live page, runs the default rule set,
 // and fails on any violation. Covers WCAG 2.0/2.1 A/AA most-impactful rules
 // (color-contrast, label, aria-*, heading-order, link-in-text-block, …).
+// Every page is scanned under BOTH color schemes (see axeSchemes) so the
+// result does not depend on the host OS appearance / prefers-color-scheme.
 //
 // To defer a rule: add it to axeRuleAllowlist with a justification. To skip a
 // page: add its slug to axePageAllowlist. The bar is zero un-allowlisted
@@ -58,6 +61,15 @@ var axeRuleAllowlist = map[string]string{
 // axe can't measure (focus traps move the active element). Empty by default.
 var axePageAllowlist = map[string]string{}
 
+// axeSchemes lists the color schemes every page is scanned under. The scan
+// FORCES each one via the same <html data-color-scheme> attribute that
+// ui.ThemeToggle flips. Without forcing, the scheme bootstrap follows the
+// host's prefers-color-scheme — macOS dev machines in Dark appearance only
+// ever audited the dark palette while Linux CI runners (which default to
+// light) audited the light one, so light-mode contrast regressions were
+// invisible locally and showed up as CI-only axe failures.
+var axeSchemes = []string{"dark", "light"}
+
 type axeViolation struct {
 	ID          string            `json:"id"`
 	Impact      string            `json:"impact"`
@@ -66,6 +78,10 @@ type axeViolation struct {
 	HelpURL     string            `json:"helpUrl"`
 	Tags        []string          `json:"tags"`
 	Nodes       []axeViolatedNode `json:"nodes"`
+
+	// Scheme records which forced color scheme produced the violation.
+	// Set by runAxeIn, not part of the axe JSON.
+	Scheme string `json:"-"`
 }
 
 type axeViolatedNode struct {
@@ -91,10 +107,30 @@ func newAxeBrowser(t *testing.T) context.Context {
 	return browserCtx
 }
 
-// runAxeIn opens a FRESH tab per page (so the previous page's SSE socket is
-// torn down), injects axe-core, runs it, and returns allowlist-filtered
-// violations. Each page gets its own deadline.
+// runAxeIn scans one page under every axeSchemes entry and returns
+// allowlist-filtered violations tagged with the scheme that produced them.
 func runAxeIn(t *testing.T, browser context.Context, base, path string) []axeViolation {
+	t.Helper()
+	var kept []axeViolation
+	for _, scheme := range axeSchemes {
+		kept = append(kept, runAxeScheme(t, browser, base, path, scheme)...)
+	}
+	return kept
+}
+
+// runAxeScheme opens a FRESH tab (so the previous page's SSE socket is torn
+// down), freezes transitions, forces the color scheme, injects axe-core,
+// runs it once, and returns the allowlist-filtered violations.
+//
+// The freeze is load-bearing AND must be a constructable stylesheet: the
+// scheme flip starts 120–160ms color transitions (header links, search
+// pill), and in throttled headless tabs animation frames may never tick,
+// pinning computed colors at the PREVIOUS scheme's values indefinitely —
+// axe then reports phantom mixed-scheme contrast failures on every page.
+// An injected <style> element cannot fix this because the site ships
+// `default-src 'self'` CSP, which silently blocks inline styles;
+// adoptedStyleSheets is script-created and not subject to style-src.
+func runAxeScheme(t *testing.T, browser context.Context, base, path, scheme string) []axeViolation {
 	t.Helper()
 	tabCtx, tabCancel := chromedp.NewContext(browser)
 	defer tabCancel()
@@ -104,6 +140,15 @@ func runAxeIn(t *testing.T, browser context.Context, base, path string) []axeVio
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+path),
 		pageReady(),
+		chromedp.Evaluate(`(() => {
+			const s = new CSSStyleSheet();
+			s.replaceSync('*, *::before, *::after { transition: none !important; animation: none !important; }');
+			document.adoptedStyleSheets = [...document.adoptedStyleSheets, s];
+		})()`, nil),
+		chromedp.Evaluate(fmt.Sprintf(
+			`document.documentElement.setAttribute("data-color-scheme", %q);`, scheme), nil),
+		// Small settle so any scheme-attribute listeners run before axe.
+		chromedp.Sleep(150*time.Millisecond),
 		chromedp.Evaluate(";"+axeMinJS, nil),
 		chromedp.Evaluate(`(async () => {
 			const r = await axe.run(document, {
@@ -114,12 +159,12 @@ func runAxeIn(t *testing.T, browser context.Context, base, path string) []axeVio
 		})()`, &raw, evalAwaitPromise),
 	)
 	if err != nil {
-		t.Errorf("axe on %s: %v", path, err)
+		t.Errorf("axe on %s (%s): %v", path, scheme, err)
 		return nil
 	}
 	var vs []axeViolation
 	if err := json.Unmarshal([]byte(raw), &vs); err != nil {
-		t.Errorf("axe %s: parse violations: %v\nraw=%s", path, err, raw)
+		t.Errorf("axe %s (%s): parse violations: %v\nraw=%s", path, scheme, err, raw)
 		return nil
 	}
 	var kept []axeViolation
@@ -127,6 +172,7 @@ func runAxeIn(t *testing.T, browser context.Context, base, path string) []axeVio
 		if _, ok := axeRuleAllowlist[v.ID]; ok {
 			continue
 		}
+		v.Scheme = scheme
 		kept = append(kept, v)
 	}
 	return kept
@@ -192,7 +238,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 		any = true
 		t.Errorf("axe violations on %s:", r.path)
 		for _, v := range r.violations {
-			t.Errorf("  • [%s · %s] %s", v.ID, v.Impact, v.Help)
+			t.Errorf("  • [%s · %s · %s scheme] %s", v.ID, v.Impact, v.Scheme, v.Help)
 			for _, n := range v.Nodes {
 				snippet := n.HTML
 				if len(snippet) > 160 {
