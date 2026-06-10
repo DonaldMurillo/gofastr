@@ -7,6 +7,125 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+The first-contact release: an adversarially-verified 10-dimension audit
+(2026-06-09) found the engine strong but the first-touch surface broken —
+the README quickstart failed verbatim, the flagship example shipped
+insecure, RBAC was unreachable from the blueprint, and CI was red on every
+release tag. Everything below closes those findings. Note: code generated
+by this tree's CLI requires this tree's framework (`App.OnReady`, blueprint
+`access:`) — generated apps need `gofastr@main` until the next tag.
+
+### Added
+
+- **Blueprint `access:` key — per-operation RBAC from `gofastr.yml`.** An
+  optional `access:` map on an entity (`read` / `create` / `update` /
+  `delete`, each a permission string) threads through
+  `EntityDeclaration.Access` into the generated `register.go` as
+  `framework.AccessControl{…}`, where the existing CRUD chokepoint enforces
+  it fail-closed (403). Fully additive: blueprints without the key produce
+  byte-identical output. Closes the audit's "one leg of the secure-by-default
+  triad is unreachable from the primary declaration format". Also re-exports
+  `framework.AccessDeclaration` for symmetry with `EntityDeclaration`.
+- **`gofastr validate <blueprint.yml>`.** Parse + full blueprint validation
+  (including the module/go.mod coherence check, a render pass, and an
+  entity-name check that rejects names whose generated Go identifier would
+  not compile, e.g. `2fa_tokens`) without generating; exit 0/1 with
+  agent-friendly file:line + remedy diagnostics. `--from`, `--config`, and
+  `--out` on `gofastr generate` now also accept the space form
+  (`--from x.yml`), which previously silently did nothing.
+- **`unscoped-pii` lint — CLAUDE.md hard rule #6 in the toolchain.** Flags
+  any auto-exposed entity (CRUD default-on or `mcp: true`) with PII-shaped
+  fields and no `owner_field` / `access` / `multi_tenant`. Enabling
+  `app.auth` alone does **not** suppress it — the session middleware is
+  pass-through for anonymous requests (an adversarial review proved the
+  original auth-suppression wrong by anonymously reading user emails from
+  a generated example app). Error from `gofastr validate`, prominent
+  warning from `gofastr generate`, finding in `gofastr audit lint`.
+  Running it against the repo's own examples found and fixed shipped
+  exposures in `blog`, `lms`, `real-estate`, `portfolio`, and
+  `project-manager` — each now demonstrates a scoping pattern (RBAC-gated
+  staff rosters, public-catalog reads with gated writes, lead-capture
+  forms with open create and gated reads).
+- **Executable-README CI gate.** `cmd/gofastr/readme_quickstart_test.go`
+  extracts the README's quickstart blocks and runs them for real: blueprint
+  → generate → build → boot → `GET /posts` 200; plus drift gates (no
+  "unpublished"/replace-directive guidance anywhere in the embedded docs,
+  README blueprint relations must resolve). The audit found this single
+  gate would have caught five of its eight confirmed findings.
+- **`App.OnReady(func(addr string))`** — lifecycle hook that fires after
+  the listener has actually bound (and is skipped on start failure).
+  Generated apps now print their startup banner from it, so a migrate
+  failure can no longer print "Server starting" and then exit 1.
+- **Trust surface.** `SECURITY.md` (private vulnerability reporting,
+  honest v0.x support policy), `CONTRIBUTING.md` (truthful prereqs: Docker,
+  Chrome, the test-isolation rules), and low-ceremony issue templates.
+- **Docs: `comparison.md` and `tutorial-blueprint-app.md`.** An honest
+  head-to-head (PocketBase / Encore.go / Wasp / hand-rolled Gin+sqlc,
+  weaknesses included) and the missing thesis tutorial (blueprint →
+  generate → secure with auth + `owner_field` + `access:` → customize in
+  plain Go → deploy), every step executed end-to-end before shipping.
+  Plus a README for `examples/ecommerce`.
+
+### Fixed
+
+- **The README quickstart now runs verbatim — and CI enforces it.** The
+  blueprint example was rewritten in block style (the in-house YAML parser
+  deliberately rejects flow mappings) with every referenced entity
+  declared; a long-unclosed code fence that inverted every subsequent
+  block is closed; stale "unpublished / add a replace directive" guidance
+  is gone (the module resolves on the proxy at v0.4.0); the
+  `go test ./...` claim now states its real prerequisites.
+- **Flow mappings fail with an honest error.** `core/yaml` now says
+  `flow mapping "{ ... }" is not supported; use block style …` instead of
+  the misleading "nested mapping must be on an indented line"; flow-list
+  items that previously silently misparsed now error.
+- **Relation-typed fields are validated at generate time.** A field like
+  `author_id: {type: relation, to: users}` pointing at an undeclared
+  entity now fails `gofastr generate`/`validate` with a remedy, instead of
+  generating an app that exits 1 at startup. Blueprint `module:` that
+  contradicts the enclosing `go.mod` errors with the exact fix.
+- **Generated apps with auth actually authenticate.** The generator
+  enabled the auth battery but never mounted `auth.SessionMiddleware`, so
+  authorized requests got 401 like anonymous ones (found by dogfooding the
+  secured flagship). Generated `app.go` now mounts it after
+  `authMgr.Init`; the flagship test asserts the full register → login →
+  create → owner-isolated list flow across two users.
+- **`examples/ecommerce` no longer ships insecure.** Auth is enabled and
+  `orders` / `order_items` are owner-scoped (`owner_field: user_id`) —
+  previously any anonymous caller or MCP agent could read every customer's
+  PII and mutate orders, violating the repo's own hard rule #6.
+  `BUILD_JOURNAL.md` keeps the honest history.
+- **Deterministic CI.** `core/static` MIME detection now consults its
+  canonical extension table before the host mime database, so Content-Type
+  is identical on macOS and Linux (the 6/6-failing `TestDetectFromName` is
+  fixed at the detection layer, not the test); `.js`/`.mjs` serve the
+  RFC 9239 canonical `text/javascript`. `ci.yml` is restructured into a
+  blocking deterministic job and an isolated, serialized browser-e2e job
+  (non-blocking until the known Linux-Chrome axe contrast discrepancy in
+  `examples/site` is resolved — condition documented in the workflow).
+- **Docs drift purged.** `overview.md` core/ package count corrected
+  (twelve → eighteen); `framework/ARCHITECTURE.md`'s layering map redrawn
+  to match the real import graph (`openapi` above `crud`, the
+  `slowquery → db` edge, `crud → access`); `core-ui/ARCHITECTURE.md` now
+  states the real runtime size (~7,400 lines across budget-enforced split
+  modules, ≤12KB-gz core) instead of "a few hundred lines";
+  `examples/README.md` gained the flagship row.
+
+### Changed
+
+- **Example blueprints declare their real module paths.**
+  `blog`/`lms`/`portfolio`/`project-manager`/`real-estate` now declare
+  `module: github.com/DonaldMurillo/gofastr/examples/<name>` (matching the
+  flagship), so `gofastr validate` passes in-place inside the repo.
+- **Repo-wide gofmt sweep + CI gate.** 299 tracked files reformatted in one
+  mechanical pass; the blocking CI job now fails on any gofmt drift in
+  tracked Go files.
+- **README repositioned around the wedge.** Leads with "one blueprint
+  becomes a server-rendered UI and an API with secure scopes, in plain Go
+  you own"; MCP/OpenAPI demoted to supporting evidence (schema-derived MCP
+  became table stakes); validation-status block updated for the secured,
+  CI-gated flagship.
+
 ## [0.4.0] - 2026-06-08
 
 The blueprint becomes GoFastr's single declaration format: the legacy
