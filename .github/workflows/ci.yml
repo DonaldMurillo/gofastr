@@ -94,6 +94,13 @@ jobs:
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E' \
             $(go list ./... | grep -vE 'gofastr/(examples/site|kiln/integration)$')
 
+      - name: Coverage floors (claimed packages)
+        # Re-runs `go test -cover` for only the packages with numeric
+        # coverage claims in COVERAGE_NOTES.md and fails if any drops
+        # below its floor (~2 points under the recorded value). Floor
+        # table + exclusions live in the script.
+        run: bash scripts/coverage-floors.sh
+
   browser-e2e:
     name: "browser e2e (blocking)"
     runs-on: ubuntu-latest

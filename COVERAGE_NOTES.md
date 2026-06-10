@@ -13,19 +13,35 @@ This catalogues the statements that keep the audited packages below a literal
    fault-injecting kernel-level IO, and refactoring critical entry points to
    force coverage carries more risk than the number is worth.
 
-Every other reachable branch IS covered. The full-suite (own-package + the
-`framework` root + `examples/website` e2e) coverage after this pass:
+Every other reachable branch IS covered. Two measurements, because the
+methodology matters:
 
-| Package | Coverage | Residual |
-|---|---|---|
-| `core/migrate` | 100% | — |
-| `framework/migrate` | 100% | — |
-| `framework/tenant` | 100% | — |
-| `framework/entity` | 100% | — |
-| `core/schema` | 99.1% | 3 dead (below) |
-| `framework/crud` | 99.2% | 11 dead + 8 hard |
-| `framework` (root) | 99.1% | 5 dead + 5 hard |
-| `cmd/gofastr` | 84% | serve-loops + IO-fault `osExit` |
+- **Full-suite** (2026-06-01 audit): own-package tests + the `framework`
+  root suite + `examples/website` e2e overlaid. This is how
+  `framework/migrate`, `framework/tenant`, and `framework/entity` reached a
+  literal 100% — much of their surface is exercised from the framework root
+  and the e2e suites, not their own `_test.go` files.
+- **Own-package** (re-measured 2026-06-10): plain
+  `go test -cover ./<pkg>/ -count=1`. Cheap and reproducible, so this is
+  the column the CI gate enforces: `scripts/coverage-floors.sh` fails the
+  blocking job if any of these drops more than ~2 points below the value
+  recorded here. If you intentionally change a package's coverage profile,
+  update that script's floor table and this table in the same commit.
+
+| Package | Own-package (2026-06-10, gated) | Full-suite (2026-06-01) | Residual |
+|---|---|---|---|
+| `core/migrate` | 100% | 100% | — |
+| `framework/migrate` | 75.6% | 100% | rest covered cross-package |
+| `framework/tenant` | 87.5% | 100% | rest covered cross-package |
+| `framework/entity` | 88.6% | 100% | rest covered cross-package |
+| `core/schema` | 99.1% | 99.1% | 3 dead (below) |
+| `framework/crud` | 98.9% | 99.2% | 11 dead + 8 hard |
+| `framework` (root) | 97.7% | 99.1% | 5 dead + 5 hard |
+| `cmd/gofastr` | 79.9%* | 84% | serve-loops + IO-fault `osExit`; not gated (slow, env-sensitive e2e — see script) |
+
+\* measured with `-skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E'`,
+matching how the CI blocking job runs this package (the browser e2e runs in
+the separate `browser-e2e` job).
 
 ## A real bug this pass found & fixed
 
