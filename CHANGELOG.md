@@ -66,7 +66,57 @@ by this tree's CLI requires this tree's framework (`App.OnReady`, blueprint
   plain Go → deploy), every step executed end-to-end before shipping.
   Plus a README for `examples/ecommerce`.
 
+- **In-package Postgres coverage for `framework/crud`.** The SQL-generation
+  core had 66 sqlite-only test files; a focused testcontainers suite now
+  exercises the representative paths (filters, sort, offset+COUNT, cursor
+  keyset walk, batch rollback, upsert, eager-load include, soft-delete,
+  owner+tenant fail-closed) against real Postgres.
+- **First tests for `framework/owner`** (14): fail-closed verified at the
+  HTTP gate (anonymous → 401 with no extractor), last-call-wins override
+  warns, OwnerField-unset is inert, forged client `user_id` overridden,
+  race-checked. Two layer-level fail-open contracts (`ApplyOwnerScope`,
+  `InjectOwner` without an extractor) are pinned with tests and comments
+  documenting that `requireScope` upstream is the actual boundary.
+- **Common-mistakes callouts completed and gated.** The docs claimed every
+  topic ends with one; 21 of 60 didn't. Real, code-verified callouts added
+  to the 15 guide docs (including entity-declarations, "the heart of the
+  model"); 6 data/index docs exempted with reasons; the claim text now
+  matches reality and `TestGuideDocsEndWithCommonMistakes` enforces it.
+- **Security ledger status tracking.** Every SECURITY_FINDINGS.md row now
+  carries a status (35 verified-fixed including all P0/P1s with cited
+  evidence; 68 honestly `needs-verification` rather than guessed); a guard
+  test pins header-count == row-count and valid status tokens.
+- **Coverage floors are a CI gate.** `scripts/coverage-floors.sh` fails the
+  blocking job if any claimed package drops ~2 points below its measured
+  coverage. COVERAGE_NOTES.md now separates own-package numbers from the
+  full-suite-overlay numbers the old 100% claims were quoting.
+
 ### Fixed
+
+- **SECURITY: `EntityConfig.MaxListLimit` could be bypassed on two list
+  paths.** The cursor path never consulted the entity cap (asked for ≤3,
+  served up to 100), and an oversized `?limit` on the offset/stream path
+  silently fell back to the default page size (20) — exceeding any cap
+  below 20. Both were hidden behind the security tests' auto-skip-on-500
+  heuristic; converting those skips to hard failures (an audit
+  recommendation) exposed them immediately. Oversized `?limit` now clamps
+  to the effective cap on every path (`listLimitCap` shared by offset,
+  stream, and cursor), with regression tests un-skipped and green.
+- **crud security tests fail instead of skip on server errors.** The
+  skip-on-redacted-500 heuristic (and its "SQLite can't run $N
+  placeholders" rationale, which was false — the 500s were fixtures
+  missing `Table`) is gone across the suite.
+- **`battery/queue` tests are deterministic.** Thirteen sleep-based
+  assertions replaced with Close-drain semantics, bounded `waitFor`
+  polling, and an unexported clock seam for lease/visibility expiry —
+  stable under `-race -count=3`; no production behavior change.
+- **Doc staleness found while verifying the new callouts:** `widgets.md`
+  described a `widget.Mount` return value and bootstrap route that don't
+  exist (rewritten around `MountRuntime`/`RuntimeTag`);
+  `ui-new-components.md` cited three nonexistent drift gates (corrected to
+  the real ones); `ui-getting-started.md` had a non-compiling
+  `DBFromContext` snippet and listed `APIPrefix` as roadmap (it shipped).
+  `cursor-pagination.md` now documents the per-entity cap.
 
 - **Boot-time auto-migrate now adds missing columns.** `AutoMigrate` did
   `CREATE TABLE IF NOT EXISTS` only, while deploy.md claimed
