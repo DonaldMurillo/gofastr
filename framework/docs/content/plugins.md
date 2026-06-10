@@ -80,6 +80,26 @@ it prepends to the hook list, so the reverse-order Shutdown iteration
 runs it last. `battery/log` uses this so log sinks are still open while
 other shutdown code emits its final entries.
 
+`OnStart` runs *before* the port binds. To run code only once the HTTP
+listener is actually up — a startup banner, a "register with service
+discovery" call — use `App.OnReady`:
+
+```go
+app.OnReady(func(addr string) {
+    fmt.Printf("listening on http://%s\n", addr)
+})
+```
+
+`OnReady` hooks fire after every Start phase (auto-migrate, seeds,
+plugin init, OnStart hooks) AND the bind itself succeeded, just before
+the server accepts its first connection. The `addr` argument is the
+listener's resolved address — starting on `":0"` delivers the real
+port. Hooks run in registration order, take no error return, and must
+not block. If any Start phase fails, `OnReady` never fires — so a
+banner printed here can't lie about a server that never came up.
+Blueprint-generated apps and `gofastr init` scaffolds print their
+startup banner this way.
+
 ## Post-migrate seeding: `App.WithSeed`
 
 `App.Start` runs auto-migration as one of its first phases, so a

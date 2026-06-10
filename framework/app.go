@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -128,6 +129,10 @@ type App struct {
 	startHooks []func(ctx context.Context) error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
+
+	// readyHooks fire once the HTTP listener has bound, just before the
+	// server starts accepting connections — see App.OnReady.
+	readyHooks []func(addr string)
 
 	// seedHooks run during Start AFTER auto-migration (tables exist) and
 	// before plugin/battery init — see App.WithSeed.
@@ -1081,6 +1086,18 @@ func (a *App) OnStart(fn func(ctx context.Context) error) *App {
 	return a
 }
 
+// OnReady registers a function to run once the HTTP listener has bound
+// successfully, just before the server begins accepting connections. The
+// addr passed in is the listener's resolved address (a ":0" request
+// arrives with the real port), so it is safe to print in a startup
+// banner: every earlier phase — auto-migrate, seeds, plugin init, OnStart
+// hooks, and the bind itself — has already succeeded. Hooks run in
+// registration order and must not block.
+func (a *App) OnReady(fn func(addr string)) *App {
+	a.readyHooks = append(a.readyHooks, fn)
+	return a
+}
+
 // OnStop registers a function to run during App.Shutdown, after the
 // HTTP server has shut down. Hooks run in reverse registration order
 // — the last thing started is the first thing stopped. Internally the
@@ -1399,10 +1416,27 @@ func (a *App) Start(addr string) error {
 	}
 	a.server = srv
 	a.serverMu.Unlock()
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// Bind first, then Serve — split from ListenAndServe so OnReady hooks
+	// fire only after the port is actually held. http.ListenAndServe
+	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
+	listenAddr := addr
+	if listenAddr == "" {
+		listenAddr = ":http"
+	}
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
 		// Bind failure (port in use is the common case) — drain like every
 		// earlier start phase does, otherwise the batteries/cron/queue and
 		// OnStart workers spawned above leak past Start returning.
+		return abort(fmt.Errorf("listen and serve: %w", err))
+	}
+	// Serve closes the listener on Shutdown; this extra Close only matters
+	// on the Shutdown-raced path where Serve returns without adopting ln.
+	defer func() { _ = ln.Close() }()
+	for _, fn := range a.readyHooks {
+		fn(ln.Addr().String())
+	}
+	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return abort(fmt.Errorf("listen and serve: %w", err))
 	}
 	return nil
