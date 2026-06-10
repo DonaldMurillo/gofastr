@@ -5,7 +5,7 @@ app:
     driver: sqlite
     url: file:shop.db
   auth:
-    enabled: false
+    enabled: true
   theme:
     primary: "#2563EB"
     primary-fg: "#FFFFFF"
@@ -133,15 +133,24 @@ entities:
   - name: orders
     crud: true
     mcp: true
+    # Orders hold customer PII (name, email, phone, addresses). owner_field
+    # makes auto-CRUD and the MCP tools per-customer: anonymous callers get
+    # 401, and each logged-in customer only ever sees their own orders —
+    # the framework stamps user_id on create and scopes every read/write.
+    owner_field: user_id
     cursor_field: id
     cursor_fields: [created_at, id]
     indices:
       - name: idx_orders_status
         columns: [status]
+      - name: idx_orders_user
+        columns: [user_id]
     properties:
       label: Orders
       icon: shopping-cart
     fields:
+      - name: user_id
+        type: string
       - name: order_number
         type: string
         required: true
@@ -198,7 +207,13 @@ entities:
   - name: order_items
     crud: true
     mcp: true
+    # Line items are the order's contents — a customer's purchase history.
+    # Scope them to the same owner so they can't be enumerated anonymously
+    # or across customers via the sibling entity.
+    owner_field: user_id
     fields:
+      - name: user_id
+        type: string
       - name: order_id
         type: relation
         to: orders

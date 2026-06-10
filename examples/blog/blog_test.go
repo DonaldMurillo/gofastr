@@ -39,13 +39,23 @@ func bootBlog(t *testing.T) *framework.App {
 
 func TestBlogBoots(t *testing.T) {
 	app := bootBlog(t)
-	for _, path := range []string{"/posts", "/users", "/comments"} {
+	for _, path := range []string{"/posts", "/comments"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200. body=%s", path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestBlogUsersFailClosed(t *testing.T) {
+	app := bootBlog(t)
+	req := httptest.NewRequest(http.MethodGet, "/users", nil)
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Errorf("anonymous GET /users = 200, want fail-closed (users carries email PII). body=%s", rec.Body.String())
 	}
 }
 

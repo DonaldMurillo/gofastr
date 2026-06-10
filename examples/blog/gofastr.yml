@@ -1,6 +1,6 @@
 app:
   name: Blog
-  module: example.com/blog
+  module: github.com/DonaldMurillo/gofastr/examples/blog
   db:
     driver: sqlite
     url: file:blog.db
@@ -23,6 +23,14 @@ entities:
   - name: users
     crud: true
     mcp: true
+    # email is PII: accounts are staff-managed records, so every operation
+    # is gated behind RBAC permissions (fail-closed 403 for anonymous).
+    # Auth alone does not scope auto-CRUD — `gofastr validate` enforces this.
+    access:
+      read: users:read
+      create: users:write
+      update: users:write
+      delete: users:admin
     properties:
       label: Users
       icon: user

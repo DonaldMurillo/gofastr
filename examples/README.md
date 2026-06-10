@@ -22,12 +22,12 @@ These are **`gofastr.yml` blueprints** — no Go. They describe a whole app
 from one with:
 
 ```bash
-gofastr generate --from examples/ecommerce/gofastr.yml
+cd examples/ecommerce && gofastr generate --from=gofastr.yml
 ```
 
 | Blueprint | Domain |
 |---|---|
-| `ecommerce` | Products, carts, orders. |
+| `ecommerce` | **The flagship.** A complete storefront — 5 related entities, themed UI, custom endpoints, seed data — declared once in `gofastr.yml` and emitted as runnable Go. Ships secure-by-default: auth enabled plus owner-scoped `orders` / `order_items`. See [`ecommerce/README.md`](ecommerce/README.md) and its [`BUILD_JOURNAL.md`](ecommerce/BUILD_JOURNAL.md); `flagship_test.go` regenerates and boots it end-to-end. |
 | `lms` | Courses, lessons, enrollments. |
 | `portfolio` | Projects + case studies. |
 | `project-manager` | Projects, tasks, teams. |

@@ -1,6 +1,6 @@
 app:
   name: TaskBoard
-  module: example.com/taskboard
+  module: github.com/DonaldMurillo/gofastr/examples/project-manager
   db:
     driver: sqlite
     url: file:taskboard.db
@@ -74,6 +74,13 @@ entities:
 
   - name: project_members
     crud: true
+    # user_email is PII: membership rosters are internal team data — every
+    # operation is RBAC-gated (fail-closed 403 for anonymous).
+    access:
+      read: projects:read
+      create: projects:write
+      update: projects:write
+      delete: projects:admin
     indices:
       - name: idx_project_members_unique
         columns: [project_id, user_email]
@@ -168,6 +175,13 @@ entities:
   - name: tasks
     crud: true
     mcp: true
+    # assignee_email / reporter_email are PII: tasks are internal team data —
+    # every operation is RBAC-gated (fail-closed 403 for anonymous).
+    access:
+      read: projects:read
+      create: projects:write
+      update: projects:write
+      delete: projects:write
     cursor_field: id
     cursor_fields: [created_at, id]
     soft_delete: true
@@ -293,6 +307,13 @@ entities:
 
   - name: comments
     crud: true
+    # author_email is PII: comments are internal team data — every operation
+    # is RBAC-gated (fail-closed 403 for anonymous).
+    access:
+      read: projects:read
+      create: projects:write
+      update: projects:write
+      delete: projects:write
     fields:
       - name: task_id
         type: relation

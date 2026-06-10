@@ -1,6 +1,6 @@
 app:
   name: Folio
-  module: example.com/folio
+  module: github.com/DonaldMurillo/gofastr/examples/portfolio
   db:
     driver: sqlite
     url: file:folio.db
@@ -225,6 +225,13 @@ entities:
   - name: contacts
     crud: true
     mcp: true
+    # Lead-capture pattern: the public contact form needs create open, but
+    # the submitted email/phone are PII — reads and mutations are RBAC-gated
+    # (fail-closed 403 for anonymous). See blueprints.md "Unscoped PII".
+    access:
+      read: contacts:read
+      update: contacts:write
+      delete: contacts:admin
     indices:
       - name: idx_contacts_status
         columns: [status]

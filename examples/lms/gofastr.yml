@@ -1,6 +1,6 @@
 app:
   name: LearnHub
-  module: example.com/learnhub
+  module: github.com/DonaldMurillo/gofastr/examples/lms
   db:
     driver: sqlite
     url: file:learnhub.db
@@ -28,6 +28,13 @@ entities:
   - name: instructors
     crud: true
     mcp: true
+    # Instructor records carry PII (email); they are staff-managed admin
+    # data, so all CRUD operations are RBAC-gated rather than world-open.
+    access:
+      read: instructors:read
+      create: instructors:write
+      update: instructors:write
+      delete: instructors:admin
     properties:
       label: Instructors
       icon: graduation-cap
@@ -257,6 +264,13 @@ entities:
   - name: students
     crud: true
     mcp: true
+    # The student roster holds PII (email) and is managed by school staff —
+    # RBAC-gate every operation so anonymous callers can't enumerate students.
+    access:
+      read: students:read
+      create: students:write
+      update: students:write
+      delete: students:admin
     fields:
       - name: name
         type: string

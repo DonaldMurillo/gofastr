@@ -2,10 +2,12 @@ package ecommerce_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,20 +16,17 @@ import (
 	"time"
 )
 
-// TestFlagship_AllSurfacesFromBlueprint builds and runs the generated
-// storefront binary and asserts that every surface the thesis promises —
-// REST CRUD, OpenAPI, the MCP tool surface, and the server-rendered UI —
-// is live, all from the single gofastr.yml blueprint with zero hand-written
-// application code. This is the proof-of-thesis check.
-func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds + runs the generated binary; skipped under -short")
-	}
+// startShopfront generates the app from gofastr.yml with the in-tree CLI
+// source, builds the generated binary into a temp dir, boots it on a free
+// port with an isolated SQLite database, and returns the base URL. Each
+// caller gets its own server + database, so tests stay independent.
+func startShopfront(t *testing.T) string {
+	t.Helper()
 
-	// 0) Generate the app from the blueprint with the current CLI source —
-	// this exercises the full declaration → code pipeline, and means the
-	// gitignored gen/ need not be committed. go run uses the in-tree source,
-	// so the test never depends on a stale installed binary.
+	// Generate from the blueprint with the current CLI source — this
+	// exercises the full declaration → code pipeline, and means the
+	// gitignored gen/ need not be committed. go run uses the in-tree
+	// source, so the test never depends on a stale installed binary.
 	gen := exec.Command("go", "run", "github.com/DonaldMurillo/gofastr/cmd/gofastr",
 		"generate", "--from=gofastr.yml")
 	gen.Stderr = os.Stderr
@@ -61,6 +60,20 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 
 	base := "http://" + addr
 	waitReady(t, base)
+	return base
+}
+
+// TestFlagship_AllSurfacesFromBlueprint builds and runs the generated
+// storefront binary and asserts that every surface the thesis promises —
+// REST CRUD, OpenAPI, the MCP tool surface, and the server-rendered UI —
+// is live, all from the single gofastr.yml blueprint with zero hand-written
+// application code. This is the proof-of-thesis check.
+func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds + runs the generated binary; skipped under -short")
+	}
+
+	base := startShopfront(t)
 
 	// 1) The OpenAPI surface is wired from the blueprint. The raw spec is
 	// auth-gated by secure-by-default (PublicOpenAPI is off), so an
@@ -94,6 +107,137 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 	if home := httpGet(t, base+"/"); !strings.Contains(home, "ShopFront") {
 		t.Errorf("GET / did not render the storefront; got:\n%.400s", home)
 	}
+}
+
+// TestOrdersOwnerScoped asserts the orders entity — which carries customer
+// PII (name, email, phone, addresses) — is owner-scoped: anonymous REST and
+// MCP access is refused outright, while a logged-in customer can create and
+// read their own orders. This is the CLAUDE.md hard-rule-6 check; the
+// blueprint previously shipped with auth disabled and orders wide open.
+func TestOrdersOwnerScoped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds + runs the generated binary; skipped under -short")
+	}
+
+	base := startShopfront(t)
+
+	// Anonymous REST reads and writes against orders are rejected.
+	if code := httpStatus(t, base+"/orders"); code != http.StatusUnauthorized && code != http.StatusForbidden {
+		t.Errorf("anonymous GET /orders = %d, want 401/403", code)
+	}
+	orderJSON := `{"customer_name":"Ada Lovelace","customer_email":"ada@example.com",` +
+		`"customer_phone":"555-0100","subtotal":"79.99","total":"79.99"}`
+	if code, body := request(t, http.DefaultClient, "POST", base+"/orders", orderJSON); code != http.StatusUnauthorized && code != http.StatusForbidden {
+		t.Errorf("anonymous POST /orders = %d, want 401/403; body=%.300s", code, body)
+	}
+
+	// Anonymous order_items access is rejected too — items are the order's
+	// contents (purchase history), the obvious sibling leak.
+	if code := httpStatus(t, base+"/order_items"); code != http.StatusUnauthorized && code != http.StatusForbidden {
+		t.Errorf("anonymous GET /order_items = %d, want 401/403", code)
+	}
+
+	// The authorized path: register + login via the blueprint-enabled auth
+	// battery, then prove the session is live end-to-end (/auth/me resolves
+	// the logged-in customer from the cookie).
+	client := authedClient(t, base, "ada@shop.example", "str0ng-passphrase")
+	if code, me := request(t, client, "GET", base+"/auth/me", ""); code != http.StatusOK || !strings.Contains(me, "ada@shop.example") {
+		t.Errorf("authorized GET /auth/me = %d, want 200 with the user; body=%.300s", code, me)
+	}
+
+	// The full customer flow: the generator now mounts
+	// auth.SessionMiddleware, so the session cookie resolves to a user and
+	// owner-scoped CRUD works for the logged-in customer.
+	code, body := request(t, client, "POST", base+"/orders", orderJSON)
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("authorized POST /orders = %d, want 201; body=%.300s", code, body)
+	}
+	orderID := jsonField(t, body, "id")
+
+	// The owner sees their own order in the list.
+	if code, list := request(t, client, "GET", base+"/orders", ""); code != http.StatusOK || !strings.Contains(list, orderID) {
+		t.Errorf("owner GET /orders = %d, want 200 listing order %s; body=%.300s", code, orderID, list)
+	}
+
+	// A second customer must not see the first customer's order — neither
+	// in the list nor by direct id fetch.
+	other := authedClient(t, base, "grace@shop.example", "0ther-passphrase")
+	if code, list := request(t, other, "GET", base+"/orders", ""); code != http.StatusOK {
+		t.Errorf("second user GET /orders = %d, want 200 (empty list)", code)
+	} else if strings.Contains(list, orderID) {
+		t.Errorf("second user's GET /orders leaked another customer's order:\n%.500s", list)
+	}
+	if code, leak := request(t, other, "GET", base+"/orders/"+orderID, ""); code == http.StatusOK {
+		t.Errorf("second user read another customer's order by id; body=%.300s", leak)
+	}
+
+	// Anonymous MCP tool calls against orders are rejected — the per-entity
+	// MCP tools re-dispatch through the same fail-closed CRUD pipeline.
+	resp := httpPost(t, base+"/mcp",
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"orders_list","arguments":{}}}`)
+	if !strings.Contains(resp, "401") && !strings.Contains(resp, "403") {
+		t.Errorf("anonymous MCP orders_list not rejected; got:\n%.500s", resp)
+	}
+	if strings.Contains(resp, "customerEmail") {
+		t.Errorf("anonymous MCP orders_list leaked order rows:\n%.500s", resp)
+	}
+}
+
+// authedClient registers a fresh user and logs in via the JSON auth API,
+// returning an http.Client whose cookie jar carries the session.
+func authedClient(t *testing.T, base, email, password string) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	creds := fmt.Sprintf(`{"email":%q,"password":%q}`, email, password)
+	if code, body := request(t, client, "POST", base+"/auth/register", creds); code >= 400 {
+		t.Fatalf("POST /auth/register = %d; body=%.300s", code, body)
+	}
+	if code, body := request(t, client, "POST", base+"/auth/login", creds); code >= 400 {
+		t.Fatalf("POST /auth/login = %d; body=%.300s", code, body)
+	}
+	return client
+}
+
+// jsonField extracts a top-level string field from a JSON object body.
+func jsonField(t *testing.T, body, field string) string {
+	t.Helper()
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(body), &obj); err != nil {
+		t.Fatalf("decode JSON body: %v\nbody=%.300s", err, body)
+	}
+	val, _ := obj[field].(string)
+	if val == "" {
+		t.Fatalf("JSON body has no string field %q; body=%.300s", field, body)
+	}
+	return val
+}
+
+// request performs an HTTP call and returns status + body without failing
+// the test on 4xx/5xx — callers assert on the status themselves.
+func request(t *testing.T, client *http.Client, method, url, body string) (int, string) {
+	t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	got, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(got)
 }
 
 // freeAddr returns a localhost host:port that was free a moment ago.

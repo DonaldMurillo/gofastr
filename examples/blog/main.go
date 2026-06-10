@@ -59,6 +59,15 @@ func main() {
 // registerEntities declares the blog's three entities in Go.
 func registerEntities(app *framework.App) {
 	app.Entity("users", framework.EntityConfig{
+		// email is PII: accounts are staff-managed records, so every operation
+		// is RBAC-gated (fail-closed 403 for anonymous) — hard rule #6. This
+		// mirrors the access: block in the blueprint twin (gofastr.yml).
+		Access: framework.AccessControl{
+			Read:   "users:read",
+			Create: "users:write",
+			Update: "users:write",
+			Delete: "users:admin",
+		},
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "email", Type: schema.String, Required: true, Unique: true},
