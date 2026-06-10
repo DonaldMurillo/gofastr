@@ -92,6 +92,7 @@ func newE2EApp(t *testing.T) *e2eApp {
 
 	// Create auth manager with entity-backed store
 	mgr := auth.New(auth.AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		BasePath:      "/auth",
 		SessionCookie: "session_id",
 		SessionTTL:    24 * time.Hour,

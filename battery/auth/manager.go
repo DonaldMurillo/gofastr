@@ -18,6 +18,9 @@ import (
 // It is passed to New() and stored on AuthManager.
 type AuthConfig struct {
 	// JWTSecret is the signing key for JWT tokens. Required for JWT-based auth.
+	// In production mode (DevMode=false) it is mandatory: Init fails closed
+	// with an error when it is empty, because an empty HMAC key yields
+	// forgeable JWTs. In DevMode a random per-process secret is minted.
 	JWTSecret string
 
 	// JWTExpiry is the duration for which JWT tokens are valid.
@@ -131,13 +134,10 @@ func (c *AuthConfig) defaults() {
 		c.SessionCookie = "__Host-session"
 	}
 	c.SessionSecure = true
-	// No signing key in production is a misconfiguration: an empty HMAC
-	// secret yields forgeable JWTs and sessions that don't survive a
-	// restart. Warn loudly — DevMode silently mints one, production must not.
-	if c.JWTSecret == "" {
-		slog.Default().Warn("auth: no JWTSecret set with DevMode=false — set AuthConfig.JWTSecret (e.g. from an env var/secret manager); an empty signing key means forgeable, restart-unstable sessions",
-			"component", "battery/auth")
-	}
+	// No signing key in production is a fatal misconfiguration: an empty
+	// HMAC secret yields forgeable JWTs and sessions that don't survive
+	// a restart. Init fails closed on it (see AuthManager.Init) — DevMode
+	// mints a per-process secret; production must supply one explicitly.
 }
 
 // randomDevJWTSecret returns 32 cryptographically-random bytes encoded
@@ -345,10 +345,20 @@ func (m *AuthManager) Name() string { return "auth" }
 // (if configured), all registered auth plugins, and mounts their HTTP
 // routes on app.Router() under the configured BasePath.
 //
+// Init fails closed when DevMode=false and JWTSecret is empty: the app
+// refuses to start rather than run with a forgeable signing key.
+//
 // app may be nil for unit tests that exercise auth in isolation; in
 // that case route mounting is skipped (the test wires routes directly
 // onto a router it owns).
 func (m *AuthManager) Init(app *framework.App) error {
+	// Fail closed in production: an empty JWTSecret with DevMode=false
+	// yields forgeable, restart-unstable JWTs. Refuse to boot rather than
+	// warn — DevMode mints its own per-process secret, so it's exempt.
+	if !m.config.DevMode && m.config.JWTSecret == "" {
+		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret — set it from your secret store, or set DevMode: true for local development")
+	}
+
 	// Initialize JWT if secret is configured
 	if m.config.JWTSecret != "" {
 		expiry := m.config.JWTExpiry

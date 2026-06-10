@@ -203,7 +203,7 @@ func TestTwoFAPlugin_Name(t *testing.T) {
 
 func TestTwoFAPlugin_InitDefaults(t *testing.T) {
 	p := NewTwoFAPlugin(TwoFAConfig{})
-	mgr := New(AuthConfig{UserStore: newMemoryUserStore()})
+	mgr := New(AuthConfig{JWTSecret: "test-secret", UserStore: newMemoryUserStore()})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(p)
 	if err := mgr.Init(nil); err != nil {
@@ -223,7 +223,7 @@ func TestTwoFAPlugin_InitCustomConfig(t *testing.T) {
 		Period:          60,
 		BackupCodeCount: 5,
 	})
-	mgr := New(AuthConfig{UserStore: newMemoryUserStore()})
+	mgr := New(AuthConfig{JWTSecret: "test-secret", UserStore: newMemoryUserStore()})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(p)
 	if err := mgr.Init(nil); err != nil {
@@ -246,6 +246,7 @@ func newTwoFATestEnv(t *testing.T) (*AuthManager, *MemoryTwoFAStore, *memoryUser
 	userStore := newMemoryUserStore()
 
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionCookie: "session_id",
 		SessionTTL:    24 * time.Hour,
 		UserStore:     userStore,
@@ -568,6 +569,7 @@ func setupP17(t *testing.T) (*AuthManager, *TwoFAPlugin, *router.Router) {
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     userStore,
@@ -671,6 +673,7 @@ func TestPendingTwoFA_Me_AllowedAfterChallenge(t *testing.T) {
 func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     userStore,
@@ -798,6 +801,7 @@ func reqWithSession(method, path, sessionToken string, body []byte) *http.Reques
 func newTwoFAEnforceManager(t *testing.T) (*AuthManager, *TwoFAPlugin) {
 	t.Helper()
 	mgr := New(AuthConfig{
+		JWTSecret:  "test-secret", // prod-mode Init fails closed without one
 		SessionTTL: time.Hour, SessionCookie: "session_id",
 		UserStore: newMemoryUserStore(),
 	})

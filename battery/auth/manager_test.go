@@ -317,14 +317,18 @@ func TestAuthManager_PluginLifecycle(t *testing.T) {
 	}
 }
 
-func TestAuthManager_NoJWT(t *testing.T) {
-	mgr := New(AuthConfig{})
+// TestAuthManager_DevModeMintsJWT: with no explicit JWTSecret, the only
+// reachable boot path is DevMode (production fails closed — see
+// TestInit_ProdEmptySecretFailsClosed). DevMode mints a per-process
+// secret, so the JWT helper is configured rather than nil.
+func TestAuthManager_DevModeMintsJWT(t *testing.T) {
+	mgr := New(AuthConfig{DevMode: true})
 	mgr.Use(NewCorePlugin())
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if mgr.JWT() != nil {
-		t.Fatal("JWT should be nil when no secret configured")
+	if mgr.JWT() == nil {
+		t.Fatal("DevMode should mint a JWT secret, leaving JWT() non-nil")
 	}
 }
 

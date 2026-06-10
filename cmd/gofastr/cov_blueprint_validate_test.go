@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -60,6 +61,45 @@ func TestValidateBlueprintErrors(t *testing.T) {
 				t.Fatalf("expected error for %q", c.name)
 			}
 		})
+	}
+}
+
+// An auth-enabled blueprint with dev_mode: false and no jwt_secret
+// would generate an app whose auth battery refuses to boot (Init fails
+// closed on an empty production signing key). Catch it at validate /
+// generate time instead, with the remedy in the error.
+func TestValidateProdAuthNeedsJWTSecret(t *testing.T) {
+	bp := Blueprint{App: BlueprintApp{Auth: BlueprintAuth{Enabled: true, DevMode: false}}}
+	err := validateBlueprint(bp)
+	if err == nil {
+		t.Fatal("auth enabled + dev_mode: false + no jwt_secret must fail validation")
+	}
+	for _, want := range []string{"jwt_secret", "dev_mode"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got: %v", want, err)
+		}
+	}
+}
+
+func TestValidateProdAuthWithSecretOK(t *testing.T) {
+	bp := Blueprint{App: BlueprintApp{Auth: BlueprintAuth{Enabled: true, DevMode: false, JWTSecret: "s3cr3t"}}}
+	if err := validateBlueprint(bp); err != nil {
+		t.Fatalf("jwt_secret set should validate: %v", err)
+	}
+}
+
+func TestValidateDevAuthNoSecretOK(t *testing.T) {
+	bp := Blueprint{App: BlueprintApp{Auth: BlueprintAuth{Enabled: true, DevMode: true}}}
+	if err := validateBlueprint(bp); err != nil {
+		t.Fatalf("dev_mode auth without jwt_secret should validate: %v", err)
+	}
+}
+
+func TestValidateAuthDisabledIgnoresSecret(t *testing.T) {
+	// Zero-value BlueprintAuth (auth omitted entirely) has DevMode=false —
+	// the check must gate on Enabled or every auth-less blueprint breaks.
+	if err := validateBlueprint(Blueprint{}); err != nil {
+		t.Fatalf("blueprint without auth should validate: %v", err)
 	}
 }
 

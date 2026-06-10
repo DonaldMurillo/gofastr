@@ -39,6 +39,7 @@ func (s *flakyUserStore) CreateUser(_ context.Context, email, _ string, _ []stri
 func TestMagicLinkVerify_DBErrorDoesNotAutoCreate(t *testing.T) {
 	store := &flakyUserStore{err: errors.New("connection refused")}
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     store,
@@ -80,6 +81,7 @@ func TestMagicLinkVerify_DBErrorDoesNotAutoCreate(t *testing.T) {
 func TestOAuth2Callback_DBErrorDoesNotAutoCreate(t *testing.T) {
 	store := &flakyUserStore{err: errors.New("connection refused")}
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     store,

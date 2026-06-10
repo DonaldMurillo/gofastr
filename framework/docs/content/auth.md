@@ -53,8 +53,14 @@ name, sets `Secure=true`, and a seven-day session TTL.
 When `DevMode: true` and `JWTSecret` is empty, `New` mints a random
 per-process secret and logs a WARN. That lets demo/boilerplate apps
 skip the "change-me" literal — sessions invalidate on restart, which
-is the right trade for dev. Production builds (`DevMode: false`) still
-require an explicit `JWTSecret` if you want JWT auth.
+is the right trade for dev.
+
+In production mode (`DevMode: false`) `JWTSecret` is **mandatory**:
+`Init` fails closed with
+`auth: production mode requires AuthConfig.JWTSecret — set it from
+your secret store, or set DevMode: true for local development`, and
+`App.Start` refuses to boot. There is no warn-and-continue path — an
+empty HMAC key would make every JWT forgeable.
 
 ## The plugins
 

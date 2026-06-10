@@ -170,6 +170,7 @@ func newMagicLinkManager(t *testing.T, sender MagicLinkEmailSender) (*AuthManage
 	t.Helper()
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    24 * time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     userStore,
@@ -470,6 +471,7 @@ func TestMagicLink_SendThenVerify_EndToEnd(t *testing.T) {
 	sender := &mockEmailSender{}
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    24 * time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     userStore,
@@ -604,6 +606,7 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 func newMagicLinkPluginWithDev(t *testing.T, sender MagicLinkEmailSender, devMode bool) (*AuthManager, *MagicLinkPlugin) {
 	t.Helper()
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     newMemoryUserStore(),

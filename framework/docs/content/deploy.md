@@ -80,10 +80,10 @@ secrets as env vars from your platform's secret store:
 
 The one secret every auth-enabled app must set is **`AuthConfig.JWTSecret`**
 (typically from env). With `DevMode=false` and no `JWTSecret`, the auth
-battery now logs a loud startup warning — an empty signing key yields
-forgeable, restart-unstable sessions. In dev, a per-process secret is
-auto-minted (also warned) so the boilerplate never ships a literal
-`change-me`.
+battery **fails closed**: `Init` returns an error and the app refuses to
+start — an empty signing key yields forgeable, restart-unstable
+sessions. In dev, a per-process secret is auto-minted (with a WARN log)
+so the boilerplate never ships a literal `change-me`.
 
 ## Migrations
 
@@ -142,8 +142,9 @@ rolling deploys don't cut active requests.
   `mattn/go-sqlite3` fails at build; a CGO build on
   `distroless/static` fails at runtime (no libc — use
   `base-debian12`). Pure-Go pgx is what makes the static image work.
-- **Running production auth on the auto-minted secret.** With
-  `DevMode=false` and no `JWTSecret`, the battery logs a loud startup
-  warning for a reason: the dev fallback rotates per process, so every
-  deploy silently invalidates sessions. Set the secret explicitly from
-  env.
+- **Booting production auth without a `JWTSecret`.** With
+  `DevMode=false` and no `JWTSecret`, the battery refuses to start
+  (`Init` errors, `App.Start` fails). There is no auto-minted fallback
+  in production — the dev fallback rotates per process, which would
+  silently invalidate sessions on every deploy. Set the secret
+  explicitly from env.

@@ -861,6 +861,13 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 }
 
 func validateBlueprint(bp Blueprint) error {
+	// Production auth without a signing key: the generated app's auth
+	// battery fails closed at boot (battery/auth Init refuses an empty
+	// JWTSecret with DevMode=false). Fail at generate/validate time
+	// instead, with the same remedy.
+	if bp.App.Auth.Enabled && !bp.App.Auth.DevMode && bp.App.Auth.JWTSecret == "" {
+		return fmt.Errorf("blueprint: app.auth has dev_mode: false but no jwt_secret — the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development")
+	}
 	for key := range bp.App.Theme {
 		if _, ok := blueprintThemeColorPath(key); !ok {
 			return fmt.Errorf("blueprint: app.theme has unsupported color token %q", key)

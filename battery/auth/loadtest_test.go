@@ -39,6 +39,7 @@ func TestLoad_LoginEndpoint_RateLimiterHoldsUnderConcurrency(t *testing.T) {
 	}
 
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     newMemoryUserStore(),

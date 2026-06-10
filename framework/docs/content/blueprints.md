@@ -241,6 +241,17 @@ from a secret manager, not committed to the blueprint), serve over
 HTTPS, and regenerate. Unknown keys under `app.auth` are rejected, like
 every other blueprint section.
 
+#### `jwt_secret` is required with `dev_mode: false`
+
+`dev_mode: false` without `jwt_secret` is a **validation error**:
+`gofastr validate` and `gofastr generate` both refuse the blueprint.
+The generated app could never boot anyway — the auth battery fails
+closed at `Init` when `DevMode=false` and `JWTSecret` is empty, because
+an empty signing key yields forgeable JWTs. The blueprint check moves
+that failure to generate time, with the remedy in the error: set
+`jwt_secret` from your secret store, or set `dev_mode: true` for local
+development.
+
 #### CSRF
 
 The generated app does **not** mount `auth.CSRF`. The generated surface
@@ -406,7 +417,9 @@ the app-generator boundary.
   `app.auth.dev_mode` means **true**: an HTTP-friendly session cookie
   and a per-process JWT secret that invalidates bearer tokens on every
   restart. Before deploying, set `dev_mode: false` **and** `jwt_secret`
-  (from a secret manager), serve HTTPS, and regenerate.
+  (from a secret manager), serve HTTPS, and regenerate. `dev_mode:
+  false` without `jwt_secret` fails validation — and the generated
+  app's auth battery would refuse to boot.
 - **Expecting `app.auth: enabled` to protect entity data.** The
   session middleware is pass-through for anonymous requests. Only
   per-entity `owner_field`, `access`, or `multi_tenant` gate the

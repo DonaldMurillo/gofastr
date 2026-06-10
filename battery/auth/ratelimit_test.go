@@ -99,6 +99,7 @@ func TestRateLimit_TwoFAChallenge(t *testing.T) {
 func newRLAuthManager(t *testing.T, rlCfg RateLimiterConfig) *AuthManager {
 	t.Helper()
 	mgr := New(AuthConfig{
+		JWTSecret:      "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:     time.Hour,
 		SessionCookie:  "session_id",
 		UserStore:      newMemoryUserStore(),
@@ -163,6 +164,7 @@ func TestRateLimit_IgnoresUnconfiguredXFF(t *testing.T) {
 // per-IP-only posture is bypassable by any botnet.
 func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     newMemoryUserStore(),
@@ -206,6 +208,7 @@ func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 // burning through the per-account budget on their own account.
 func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
 	mgr := New(AuthConfig{
+		JWTSecret:     "test-secret", // prod-mode Init fails closed without one
 		SessionTTL:    time.Hour,
 		SessionCookie: "session_id",
 		UserStore:     newMemoryUserStore(),
