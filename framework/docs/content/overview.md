@@ -54,9 +54,11 @@ Go model — see **[Entity declarations](/docs/entity-declarations)**.
 
 Two packages, no more:
 
-- **`core/`** — twelve stdlib-only primitives (router, query, schema, mcp,
-  openapi, render, markdown, …), each independently usable. When the framework
-  is in your way, you drop down to `core` and write plain Go.
+- **`core/`** — eighteen dependency-light primitives (router, query, schema,
+  mcp, openapi, render, markdown, middleware, static, stream, upload, …), each
+  independently usable. All are stdlib-only except `core/middleware`, which
+  pulls in OpenTelemetry for tracing. When the framework is in your way, you
+  drop down to `core` and write plain Go.
 - **`framework/`** — the opinionated entity layer composed on top: entities,
   CRUD, hooks, migrations, plugins, and the batteries below.
 

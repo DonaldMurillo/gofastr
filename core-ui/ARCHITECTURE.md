@@ -357,7 +357,13 @@ server do the math.
 - **Server is source of truth**: pagination math, sort comparators,
   filtering rules, validation — all live in Go. The client never
   re-implements them. JS code shipped to the browser stays small and
-  generic (the runtime is a few hundred lines of vanilla JS).
+  generic — not by being tiny in source (the runtime is ~7,400 lines of
+  vanilla JS: a core `runtime.js` plus per-feature split modules under
+  `core-ui/runtime/src/`), but by being carved and budgeted: a page
+  loads `core.js` (≤12 KB gzipped, enforced by
+  `core-ui/runtime/budget_test.go`) plus only the demand modules its
+  components actually use (≤3 KB gzipped each; `widgets` carries a
+  tracked 5 KB override). None of it re-implements server logic.
 - **Hydration on SSR**: the first paint is a fully-rendered, accessible,
   scrape-able HTML document. Clients without JS get the same content,
   just without the interactivity layer. SEO + accessibility come for free.

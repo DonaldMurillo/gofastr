@@ -2,7 +2,7 @@
 
 Take `gofastr init` → a themed app with a custom-styled component in roughly 15 minutes. This doc is the linear path: do the steps in order; you'll have a working app after every one.
 
-The framework is pre-alpha and unpublished — see step 1 for the one-time `replace` directive you'll need.
+The module is published — `go mod tidy` resolves it from the Go module proxy. Pin a tagged version (e.g. `v0.4.0`) rather than tracking `main`.
 
 ---
 
@@ -12,12 +12,13 @@ The framework is pre-alpha and unpublished — see step 1 for the one-time `repl
 gofastr init myapp
 cd myapp
 
-# gofastr is pre-alpha and unpublished. Point go.mod at your local clone:
-go mod edit -replace github.com/DonaldMurillo/gofastr=/path/to/gofastr
-go mod tidy
-
+go mod tidy   # resolves github.com/DonaldMurillo/gofastr from the module proxy
 go run .
 ```
+
+Only add a `replace` directive pointing at a local checkout if you are
+hacking on the framework itself and want your app to pick up unreleased
+changes.
 
 Visit <http://localhost:8080> — you should see a placeholder home page served by `screens/home.go`. The CRUD entity at `/posts` works too.
 

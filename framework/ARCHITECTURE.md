@@ -98,17 +98,30 @@ The root package `framework/` itself contains:
 
 ```
 L1  internal/casing                         (no internal deps)
-L2  entity                                   (uses casing)
-L3  hook, event, file, cron, access, db,    (each uses entity, none cross)
-    pagination, filter, dsl, slowquery,
-    tenant, softdelete, owner, migrate, openapi
+L2  entity                                   (imports core/ only — no
+                                              framework-internal deps)
+L3  hook, event, file, cron, access, db,    (leaf packages — no framework-
+    pagination, filter, owner                internal imports at all)
+    dsl, tenant, softdelete, migrate         (each imports entity)
+    slowquery                                (imports db — the one
+                                              intra-L3 edge)
 L4  crud                                     (uses entity, hook, event, db,
                                               file, filter, pagination,
-                                              tenant, owner, internal/casing;
-                                              softdelete is inlined, not imported)
+                                              tenant, owner, access,
+                                              internal/casing; softdelete
+                                              is inlined, not imported)
+    openapi                                  (uses crud, entity,
+                                              internal/casing — sits above
+                                              crud within L4)
 L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```
+
+(The map above is the real import graph as of v0.4.0 — verify with
+`go list -f '{{join .Imports "\n"}}' ./framework/<pkg>` when in doubt.
+The rule is direction: a package may import packages in lower layers,
+never higher, and intra-layer edges should stay rare and deliberate —
+today only `slowquery → db` and `openapi → crud` exist.)
 
 **No subpackage may import `framework/`.** If a subpackage needs a type
 defined in framework root (App, Registry, CrudHandler), one of three
@@ -275,7 +288,7 @@ Why a registry instead of file globs:
 - Importing the battery = its snippet is in scope. No central allow-list
   to update on every new battery.
 - `cmd/gofastr` blank-imports the batteries it inventories, then walks
-  `agentsinv.All()` to write `AGENTS.md` (see [agents-inventory doc](docs/content/agents-inventory.md)).
+  `agentsinv.All()` to write `AGENTS.md` (see `framework/agentsinv/inventory.go`).
 - An empty `agents.md` panics at init — the file is missing or the
   `//go:embed` directive is stale.
 

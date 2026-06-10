@@ -4,6 +4,14 @@ The top-level `README.md` is the entry point. These pages are
 per-feature references — each grounded in the actual code, each
 ending with a "common mistakes" callout.
 
+## Start here
+
+- [Blueprint tutorial](tutorial-blueprint-app.md) — the thesis
+  walkthrough: blueprint → generated UI + API → auth + owner scoping
+  + RBAC → customize in plain Go → deploy.
+- [Comparison](comparison.md) — vs PocketBase, Encore, Wasp, and
+  hand-rolled Gin+sqlc; weaknesses stated honestly.
+
 ## Architecture & conventions
 
 - [Current risk register](project-architecture-review.md) —
