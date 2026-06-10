@@ -5,6 +5,7 @@ deterministic CLI codegen input — declare your entities, screens, nav, seed
 data, and endpoint/middleware stubs in one file, then generate Go from it:
 
 ```bash
+gofastr validate gofastr.yml
 gofastr generate --from=gofastr.yml
 gofastr generate --from=blueprints/ --dry-run --json
 ```
@@ -47,6 +48,19 @@ Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, and mixed advanced YAML forms are not part
 of the blueprint format.
 
+**No inline (flow-style) maps.** `{type: relation, to: users}` is invalid —
+every map must be written with indented `key: value` lines:
+
+```yaml
+# Invalid — inline map
+- {name: author_id, type: relation, to: users}
+
+# Valid — indented map
+- name: author_id
+  type: relation
+  to: users
+```
+
 ## Shape
 
 ```yaml
@@ -72,6 +86,11 @@ entities:
   - name: posts
     crud: true
     mcp: true
+    access:
+      read: posts:read
+      create: posts:write
+      update: posts:write
+      delete: posts:admin
     cursor_field: id
     cursor_fields: [created_at, id]
     properties:
@@ -165,8 +184,13 @@ helpers:
 ## Generated output
 
 Entity declarations reuse the existing `gen/entities` generator, including
-fields, relations, CRUD, MCP, timestamps, soft delete, multi-tenant, cursor
-settings, indices, and `properties`. Entity-owned endpoints and top-level
+fields, relations, CRUD, MCP, timestamps, soft delete, multi-tenant,
+`owner_field`, per-operation `access` RBAC, cursor settings, indices, and
+`properties`. The `access` map (keys `read`, `create`, `update`, `delete`;
+each value a permission string) is emitted as `Access:
+framework.AccessControl{...}` in the generated registration — see
+[entity-declarations](entity-declarations.md) for the semantics and
+[access-control](access-control.md) for wiring roles + policy. Entity-owned endpoints and top-level
 endpoints generate Go handler stubs plus router registration under
 `gen/blueprint`.
 
@@ -176,6 +200,55 @@ database, registers generated entities, exposes generated MCP tools at `/mcp`,
 wires generated screens/endpoints/middleware/plugins through
 `blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
 through the generated UI host.
+
+### Auth (`app.auth`)
+
+```yaml
+app:
+  auth:
+    enabled: true
+    base_path: /auth   # optional, defaults to /auth
+    jwt_secret: ...    # optional
+```
+
+With `enabled: true` the generated app wires the [auth battery](auth.md):
+an `AuthManager` backed by entity stores over auto-created `auth_users` /
+`auth_sessions` tables, with the core plugin's register/login/logout/me
+endpoints mounted under `base_path`. The generated app also mounts
+`auth.SessionMiddleware` on the router, so the session cookie issued at
+login resolves to a user on every request — this is what makes
+`owner_field` and `access` scoping work for logged-in users on the
+generated CRUD/MCP surface. Without a valid session, owner-scoped
+entities fail closed (401/403) for reads and writes alike.
+
+### app.module and the enclosing go.mod
+
+Generated imports are `<app.module>/<output-dir>` with the output directory
+relative to the working directory, so `app.module` must match the Go module
+you generate into:
+
+- `module:` omitted → it is derived from the go.mod enclosing the working
+  directory (plus the relative path from the module root when generating in a
+  subdirectory). Inside a module, omitting `module:` therefore also emits
+  `gen/main.go`.
+- `module:` set and equal to the enclosing module → fine.
+- `module:` set but different → `gofastr generate` and `gofastr validate`
+  fail with the expected value; generated code importing a module the
+  enclosing go.mod does not declare cannot compile. Fix `module:` or remove
+  it to derive automatically.
+- No enclosing go.mod → the declared value stands unchecked (you are
+  generating a standalone tree).
+
+`gofastr validate` anchors this check at the blueprint file's directory;
+`gofastr generate` anchors it at the working directory (where the output is
+written).
+
+### Startup banner
+
+The generated `main.go` registers its `Server running at http://...` banner
+via `framework.App.OnReady`, which fires only after auto-migrate, seeds,
+hooks, and the port bind all succeeded. A migrate failure exits non-zero
+without ever printing a success banner.
 
 Screen body blocks support the legacy sugar keys (`type`, `text`, `level`,
 `class`, `href`) and property-based nodes through `kind`, `props`, and
@@ -220,12 +293,30 @@ the generator cannot safely invent application-specific implementation logic.
 
 ## Validation
 
+Run all validations without generating anything:
+
+```bash
+gofastr validate gofastr.yml      # or a directory of blueprint files
+```
+
+`gofastr validate` parses the blueprint, runs every generate-time check
+(including the `app.module` / go.mod consistency check and a full render
+pass), and exits 0 when valid, 1 otherwise. Errors are written to be iterated
+on: each names the blueprint file (and the line, where the parser provides
+one), what is wrong, and the remedy. `gofastr generate` runs the same checks
+before writing any file.
+
 The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- relation-typed fields (`type: relation`) without a `to:` target, or whose
+  `to:` names an entity the blueprint does not declare — without this check
+  the built app would crash at startup with "auto-migrate: entity has
+  BelongsTo to unknown entity"
 - relations, endpoint entity references, and entity list blocks that target
   unknown entities
+- `app.module` values that conflict with the enclosing go.mod (see above)
 - entity list blocks that target non-CRUD entities or fields the entity does
   not define
 - unsupported HTTP methods or screen types
@@ -233,6 +324,36 @@ The generator rejects:
   on one block, unreachable combined click actions, or missing `client_js`
 - custom endpoint MCP declarations without Go MCP handlers
 - unsafe output directories
+
+### Unscoped PII (`gofastr validate` error, `gofastr generate` warning)
+
+Per-user data must be scoped before auto-CRUD/MCP exposure. When an entity
+is auto-exposed (`crud` defaults on, or `mcp: true`), declares PII-shaped
+fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
+`password`, `token`, `secret`, `card`, …), and sets none of `owner_field`,
+`access` (with at least one non-blank permission), or `multi_tenant`,
+every row would be world-readable and -writable on the generated API.
+Enabling `app.auth` alone does **not** suppress the rule — the session
+middleware is pass-through for anonymous requests; only per-entity scoping
+gates the auto-generated surfaces. `gofastr validate` reports this as an error (exit 1),
+naming the entity, the matched fields, and the remedies; `gofastr generate`
+prints the same finding as a warning and proceeds (suppressed under `--json`
+to keep stdout machine-parseable). `gofastr audit lint` also reports it
+(rule `unscoped-pii`) when a conventional `gofastr.yml` / `gofastr.yaml` /
+`gofastr.json` sits at the audited root. Fix it with any of:
+
+```yaml
+entities:
+  - name: patients
+    owner_field: user_id   # per-user rows (see entity-declarations.md)
+    # or: access: { read: patients:read, ... }   # RBAC
+    # or: multi_tenant: true                     # tenant scoping
+```
+
+The match is heuristic and name-based: relation-typed FK columns are
+skipped (the target entity is checked on its own), and matching is
+per-token (`creditCard` and `credit_card` both match `card`;
+`cardinality` does not).
 
 ## Testing contract
 

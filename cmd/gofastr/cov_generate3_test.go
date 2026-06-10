@@ -29,3 +29,23 @@ func TestParseGenerateOptionsFlags(t *testing.T) {
 		t.Fatal("set flags not tracked")
 	}
 }
+
+// The space form `--from f.yml` must work too — silently ignoring it
+// yields a misleading "Nothing to generate".
+func TestFromFlagSpaceForm(t *testing.T) {
+	opts := parseGenerateOptions([]string{"--from", "f.yml", "--dry-run"})
+	if opts.from != "f.yml" {
+		t.Fatalf("--from f.yml not parsed: %#v", opts)
+	}
+	if !opts.dryRun {
+		t.Fatalf("flag after space-form value lost: %#v", opts)
+	}
+	// A trailing bare --from has no value to consume.
+	if opts := parseGenerateOptions([]string{"--from"}); opts.from != "" {
+		t.Fatalf("bare --from must stay empty: %#v", opts)
+	}
+	// The next flag is not a value for --from.
+	if opts := parseGenerateOptions([]string{"--from", "--json"}); opts.from != "" || !opts.json {
+		t.Fatalf("--from must not eat the next flag: %#v", opts)
+	}
+}

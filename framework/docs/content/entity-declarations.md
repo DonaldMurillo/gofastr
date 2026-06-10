@@ -158,6 +158,11 @@ entities:
     soft_delete: true
     multi_tenant: false
     owner_field: user_id
+    access:
+      read: posts:read
+      create: posts:write
+      update: posts:write
+      delete: posts:admin
     crud: true
     mcp: true
     fields:
@@ -183,6 +188,38 @@ entity gets the same per-user auto-CRUD scoping as a Go-declared one
 behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` into
 the generated `app.Entity(...)` registration, so the scoping survives code
 generation.
+
+`access` mirrors `EntityConfig.Access` (`framework.AccessControl`) — the
+per-operation RBAC permission required by auto-CRUD. Keys are `read`
+(List + Get), `create`, `update`, and `delete`; each value is a permission
+string such as `posts:write`. A blank or omitted key leaves that operation
+un-gated by RBAC (owner and tenant scoping still apply); omit the whole map
+for no RBAC gating at all. When set, auto-CRUD refuses a request whose
+context lacks the permission with **403** — the roles + policy must be in
+the request context first: mount `framework.AccessMiddleware` with a policy
+(`battery/auth` only supplies the authenticated user whose roles you feed
+into it; it does not satisfy the gate by itself — see
+[access-control](access-control.md)). `gofastr generate
+--from=gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
+in the generated `app.Entity(...)` registration, so blueprint-declared
+entities get the same fail-closed enforcement as Go-declared ones:
+
+```yaml
+entities:
+  - name: posts
+    owner_field: user_id
+    access:
+      read: posts:read      # List + Get
+      create: posts:write
+      update: posts:write
+      delete: posts:admin
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: user_id
+        type: string
+```
 
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
@@ -245,6 +282,14 @@ app.Use(auth.SessionMiddleware(mgr))
 
 JWT-authenticated requests (via `auth.RequireAuth`) already populate
 the User in context.
+
+For blueprint-declared entities this rule is lint-enforced: an
+auto-exposed entity (`crud` defaults on, or `mcp: true`) with PII-shaped
+field names and no `owner_field` / `access` / `multi_tenant` while
+`app.auth` is disabled is an **error** from `gofastr validate`, a
+prominent warning from `gofastr generate`, and an `unscoped-pii` finding
+from `gofastr audit lint`. See [blueprints](blueprints.md) → "Unscoped
+PII".
 
 ### Auth entities are NOT auto-private
 

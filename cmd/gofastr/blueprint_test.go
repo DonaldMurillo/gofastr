@@ -171,6 +171,17 @@ entities:
 			want: `duplicate entity "posts"`,
 		},
 		{
+			// "2fa_tokens" camel-cases to "2faTokens", which is not a valid
+			// Go identifier — the generated package would not compile.
+			name: "bad entity identifier",
+			yml: `
+entities:
+  - name: 2fa_tokens
+    fields: []
+`,
+			want: `entity "2fa_tokens" does not produce a valid Go identifier`,
+		},
+		{
 			name: "bad relation target",
 			yml: `
 entities:
@@ -684,8 +695,25 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName["main.go"], `runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))`)
 }
 
+func TestBlueprintAuthMountsSessionMW(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Demo", Module: "example.com/demo", Auth: BlueprintAuth{Enabled: true}},
+	}
+	got := renderBlueprintApp(bp)
+	// Without the session middleware, cookie-authenticated requests never
+	// reach owner/access-scoped CRUD: anonymous AND authorized are both 401.
+	assertContains(t, got, `fwApp.Use(auth.SessionMiddleware(authMgr))`)
+	// The middleware must be mounted after the manager is initialized.
+	if mw, init := strings.Index(got, "auth.SessionMiddleware(authMgr)"), strings.Index(got, "authMgr.Init(fwApp)"); mw < init {
+		t.Errorf("SessionMiddleware mounted before authMgr.Init:\n%s", got)
+	}
+}
+
 func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 	dir := t.TempDir()
+	// Run from the blueprint's own directory — generating from the repo cwd
+	// would (correctly) trip the app.module vs enclosing-go.mod check.
+	covT_chdir(t, dir)
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, testBlueprintYAML())
 	output := captureStdout(t, func() {

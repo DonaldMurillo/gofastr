@@ -243,10 +243,9 @@ bin/
 	info("    gofastr theme init    — Scaffold a typed theme.go")
 	info("    gofastr build         — Build production binary")
 	fmt.Println()
-	fmt.Println("  Note: gofastr is pre-alpha and unpublished. If `go mod tidy`")
-	fmt.Println("  fails with \"Repository not found\", add a `replace` directive")
-	fmt.Println("  pointing at your local clone:")
-	fmt.Println("    go mod edit -replace github.com/DonaldMurillo/gofastr=/path/to/clone")
+	fmt.Println("  Note: `go mod tidy` resolves gofastr from the Go module proxy;")
+	fmt.Println("  pin a tagged release. Only add a `replace` directive pointing at")
+	fmt.Println("  a local clone if you are hacking on the framework itself.")
 	fmt.Println()
 }
 
@@ -291,7 +290,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("  %%s Server starting at http://%%s\n", "✓", addr)
+	// Banner fires via OnReady — only after migrations, hooks, and the
+	// port bind all succeeded.
+	fwApp.OnReady(func(boundAddr string) {
+		fmt.Printf("  %%s Server running at http://%%s\n", "✓", boundAddr)
+	})
 	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
@@ -375,7 +378,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("  %%s Server starting at http://%%s\n", "✓", addr)
+	// Banner fires via OnReady — only after migrations, hooks, and the
+	// port bind all succeeded.
+	fwApp.OnReady(func(boundAddr string) {
+		fmt.Printf("  %%s Server running at http://%%s\n", "✓", boundAddr)
+	})
 	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
@@ -590,7 +597,6 @@ func validateProjectName(name string) error {
 func writeCLAUDEmd(dir string) error {
 	return os.WriteFile(filepath.Join(dir, "CLAUDE.md"), claudeMDContent(), 0o644)
 }
-
 
 // claudeMDContent returns the generated CLAUDE.md bytes for comparison.
 func claudeMDContent() []byte {

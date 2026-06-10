@@ -11,6 +11,7 @@ import (
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 type Blueprint struct {
@@ -24,11 +25,13 @@ type Blueprint struct {
 	Plugins    []BlueprintNamedStub
 	Helpers    []BlueprintNamedStub
 }
+
 // BlueprintSeedEntity holds seed data for one entity.
 type BlueprintSeedEntity struct {
 	Entity string
 	Rows   []map[string]any
 }
+
 // BlueprintNavItem describes a navigation entry — a link to a screen or URL.
 type BlueprintNavItem struct {
 	Label string
@@ -46,11 +49,12 @@ type BlueprintApp struct {
 	Theme     map[string]string
 	Auth      BlueprintAuth
 }
+
 // BlueprintAuth configures the built-in authentication system.
 type BlueprintAuth struct {
-	Enabled  bool
-	DevMode  bool
-	BasePath string // defaults to "/auth"
+	Enabled   bool
+	DevMode   bool
+	BasePath  string // defaults to "/auth"
 	JWTSecret string
 }
 
@@ -380,7 +384,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		if err != nil {
 			return nil, nil, err
 		}
-		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
+		allowed := map[string]bool{"name": true, "table": true, "fields": true, "relations": true, "endpoints": true, "soft_delete": true, "multi_tenant": true, "owner_field": true, "access": true, "timestamps": true, "crud": true, "mcp": true, "cursor_field": true, "cursor_fields": true, "indices": true, "properties": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("entities[%d]", i)); err != nil {
 			return nil, nil, err
 		}
@@ -418,6 +422,11 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			return nil, nil, err
 		}
 		decl.Indices = indices
+		access, err := decodeEntityAccess(m["access"], fmt.Sprintf("entities[%d].access", i))
+		if err != nil {
+			return nil, nil, err
+		}
+		decl.Access = access
 		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
 		if err != nil {
 			return nil, nil, err
@@ -427,6 +436,28 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		out = append(out, decl)
 	}
 	return out, endpointStubs, nil
+}
+
+// decodeEntityAccess decodes an entity's `access:` map — the per-operation
+// RBAC permissions mirroring EntityConfig.Access. nil node = no RBAC gating
+// (the key is optional and additive; existing blueprints are unaffected).
+func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDeclaration, error) {
+	if node == nil {
+		return nil, nil
+	}
+	m, err := expectMap(node, context)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnknownKeys(m, map[string]bool{"read": true, "create": true, "update": true, "delete": true}, context); err != nil {
+		return nil, err
+	}
+	return &fwentity.AccessDeclaration{
+		Read:   stringValue(m["read"]),
+		Create: stringValue(m["create"]),
+		Update: stringValue(m["update"]),
+		Delete: stringValue(m["delete"]),
+	}, nil
 }
 
 func decodeIndices(node *coreyaml.Node) ([]framework.Index, error) {
@@ -822,6 +853,9 @@ func validateBlueprint(bp Blueprint) error {
 		if decl.Name == "" {
 			return fmt.Errorf("blueprint: entity name is required")
 		}
+		if !isGoIdentifier(toCamelCase(decl.Name)) {
+			return fmt.Errorf("blueprint: entity %q does not produce a valid Go identifier — the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name)
+		}
 		if entityNames[decl.Name] {
 			return fmt.Errorf("blueprint: duplicate entity %q", decl.Name)
 		}
@@ -837,12 +871,27 @@ func validateBlueprint(bp Blueprint) error {
 		}
 	}
 	for _, decl := range bp.Entities {
+		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
+		// relations at runtime. Catch a dangling target here so the failure
+		// is a generate-time error, not an auto-migrate crash in the built
+		// app ("entity has BelongsTo to unknown entity").
+		for _, field := range decl.Fields {
+			if !strings.EqualFold(strings.TrimSpace(field.Type), "relation") {
+				continue
+			}
+			if strings.TrimSpace(field.To) == "" {
+				return fmt.Errorf("blueprint: entity %q field %q has type \"relation\" but no target — add `to: <entity>` naming a declared entity", decl.Name, field.Name)
+			}
+			if !entityNames[field.To] {
+				return fmt.Errorf("blueprint: entity %q field %q is a relation to unknown entity %q — declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To)
+			}
+		}
 		for _, rel := range decl.Relations {
 			if rel.Entity == "" {
-				return fmt.Errorf("blueprint: entity %q relation %q target entity is required", decl.Name, rel.Name)
+				return fmt.Errorf("blueprint: entity %q relation %q target entity is required — add `entity: <name>` referencing a declared entity", decl.Name, rel.Name)
 			}
 			if !entityNames[rel.Entity] {
-				return fmt.Errorf("blueprint: entity %q relation %q targets unknown entity %q", decl.Name, rel.Name, rel.Entity)
+				return fmt.Errorf("blueprint: entity %q relation %q targets unknown entity %q — declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity)
 			}
 		}
 	}
@@ -1044,7 +1093,7 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			}
 		}
 		if block.Limit < 0 {
-		return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
+			return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
 		}
 	case "entity_form":
 		if block.Entity == "" {
@@ -1276,7 +1325,10 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 	sb.WriteString("\taddr, err := runtimeIsolation.Addr(getEnv(\"PORT\", \"localhost:8080\"))\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
-	sb.WriteString("\tfmt.Printf(\"Server starting at http://%s\\n\", addr)\n")
+	sb.WriteString("\t// Banner fires via OnReady — only after auto-migrate, hooks, and the\n")
+	sb.WriteString("\t// port bind all succeeded. Printing before Start would announce a\n")
+	sb.WriteString("\t// server that may never come up.\n")
+	sb.WriteString("\tfwApp.OnReady(func(boundAddr string) {\n\t\tfmt.Printf(\"Server running at http://%s\\n\", boundAddr)\n\t})\n")
 	sb.WriteString("\tif err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("}\n\n")
 
@@ -1781,15 +1833,15 @@ func renderBlueprintEntityFormExpression(screen BlueprintScreen, block Blueprint
 		apiPath = "/" + entity + "/{id}"
 	}
 	props := map[string]any{
-		"class":              "gofastr-entity-form",
-		"data-entity-form":   entity,
-		"data-entity-mode":   mode,
-		"data-form-action":   apiPath,
-		"data-action":        actionName,
+		"class":            "gofastr-entity-form",
+		"data-entity-form": entity,
+		"data-entity-mode": mode,
+		"data-form-action": apiPath,
+		"data-action":      actionName,
 	}
 	var children []string
 	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind: "heading",
+		Kind:  "heading",
 		Props: map[string]any{"level": int64(2), "text": title},
 	}))
 	// Generate form fields from entity definition
@@ -1947,10 +1999,10 @@ func renderBlueprintEntityFormExpression(screen BlueprintScreen, block Blueprint
 	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
 		Kind: "button",
 		Props: map[string]any{
-			"type":              "submit",
-			"text":              submitLabel,
-			"data-action":       actionName + "_submit",
-			"data-form-submit":  entity,
+			"type":             "submit",
+			"text":             submitLabel,
+			"data-action":      actionName + "_submit",
+			"data-form-submit": entity,
 		},
 	}))
 	literal, err := renderGoLiteral(props)
@@ -1969,6 +2021,7 @@ func blueprintEntityFormActionName(screen BlueprintScreen, block BlueprintBlock,
 	}
 	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
 }
+
 // renderBlueprintEntityDetailExpression generates a kiln node that renders
 // a detail view for a single entity record. Client JS fetches the entity
 // by ID and populates the field values.
@@ -1984,13 +2037,13 @@ func renderBlueprintEntityDetailExpression(screen BlueprintScreen, block Bluepri
 		title = toDisplayName(entity) + " Details"
 	}
 	props := map[string]any{
-		"class":                "gofastr-entity-detail",
-		"data-entity-detail":   entity,
-		"data-action":          actionName,
+		"class":              "gofastr-entity-detail",
+		"data-entity-detail": entity,
+		"data-action":        actionName,
 	}
 	var children []string
 	children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
-		Kind: "heading",
+		Kind:  "heading",
 		Props: map[string]any{"level": int64(2), "text": title},
 	}))
 	filterFields := block.Fields
@@ -2017,9 +2070,9 @@ func renderBlueprintEntityDetailExpression(screen BlueprintScreen, block Bluepri
 		children = append(children, renderBlueprintNodeExpression(BlueprintBlock{
 			Kind: "div",
 			Props: map[string]any{
-				"class":               "detail-field",
-				"data-field":          field.Name,
-				"data-field-label":    label,
+				"class":            "detail-field",
+				"data-field":       field.Name,
+				"data-field-label": label,
 			},
 			Children: []BlueprintBlock{
 				{
@@ -2032,7 +2085,7 @@ func renderBlueprintEntityDetailExpression(screen BlueprintScreen, block Bluepri
 				{
 					Kind: "span",
 					Props: map[string]any{
-						"class":         "detail-value",
+						"class":            "detail-value",
 						"data-field-value": field.Name,
 						"text":             "—",
 					},
@@ -2056,6 +2109,7 @@ func blueprintEntityDetailActionName(screen BlueprintScreen, block BlueprintBloc
 	}
 	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
 }
+
 // toDisplayName converts a snake_case field/entity name to a human-readable Title Case display name.
 func toDisplayName(s string) string {
 	s = strings.ReplaceAll(s, "_", " ")
@@ -2068,6 +2122,7 @@ func toDisplayName(s string) string {
 	}
 	return strings.Join(words, " ")
 }
+
 // blueprintEndpointHandlerName returns the Go identifier for an
 // endpoint's handler. It prefers the explicit Handler, falling back to
 // the endpoint Name when Handler is empty. When both are empty it
@@ -2301,6 +2356,11 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\tdb.Exec(`CREATE TABLE IF NOT EXISTS auth_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL DEFAULT '', roles TEXT NOT NULL DEFAULT '[]', password_set INTEGER NOT NULL DEFAULT 0)`)\n")
 		sb.WriteString("\t\tdb.Exec(`CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, two_factor_verified INTEGER NOT NULL DEFAULT 0, pending_two_factor INTEGER NOT NULL DEFAULT 0)`)\n")
 		sb.WriteString("\t\tauthMgr.Init(fwApp)\n")
+		sb.WriteString("\t\t// Resolve the session cookie to a user on every request so\n")
+		sb.WriteString("\t\t// owner/access-scoped CRUD sees the logged-in user. Without\n")
+		sb.WriteString("\t\t// this, authorized requests fail closed (401) just like\n")
+		sb.WriteString("\t\t// anonymous ones.\n")
+		sb.WriteString("\t\tfwApp.Use(auth.SessionMiddleware(authMgr))\n")
 		sb.WriteString("\t}\n")
 	}
 	// ConfirmAction dialogs — mount a delete confirmation modal for each
@@ -2569,6 +2629,7 @@ func anyValue(node *coreyaml.Node) any {
 		return nil
 	}
 }
+
 // blueprintNeedsToasts returns true when any screen uses entity_form or
 // entity_list — these blocks benefit from toast feedback on CRUD actions.
 func blueprintNeedsToasts(bp Blueprint) bool {

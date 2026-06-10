@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 func runGenerate(args []string) {
@@ -89,7 +90,19 @@ type generateOptions struct {
 
 func parseGenerateOptions(args []string) generateOptions {
 	options := generateOptions{outputDir: filepath.Join("gen", "entities"), clean: true}
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		// Space form for the value-taking flags: `--from x` ≡ `--from=x`.
+		// The next arg is consumed only when it is not itself a flag —
+		// silently dropping `--from x` used to yield a misleading
+		// "Nothing to generate".
+		nextValue := func() (string, bool) {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				i++
+				return args[i], true
+			}
+			return "", false
+		}
 		switch {
 		case arg == "--dry-run":
 			options.dryRun = true
@@ -103,11 +116,24 @@ func parseGenerateOptions(args []string) generateOptions {
 			options.cleanSet = true
 		case strings.HasPrefix(arg, "--config="):
 			options.configPath = strings.TrimPrefix(arg, "--config=")
+		case arg == "--config":
+			if v, ok := nextValue(); ok {
+				options.configPath = v
+			}
 		case strings.HasPrefix(arg, "--from="):
 			options.from = strings.TrimPrefix(arg, "--from=")
+		case arg == "--from":
+			if v, ok := nextValue(); ok {
+				options.from = v
+			}
 		case strings.HasPrefix(arg, "--out="):
 			options.outputDir = strings.TrimPrefix(arg, "--out=")
 			options.outputSet = true
+		case arg == "--out":
+			if v, ok := nextValue(); ok {
+				options.outputDir = v
+				options.outputSet = true
+			}
 		}
 	}
 	return options
@@ -233,8 +259,28 @@ func generateFromBlueprint(options generateOptions) {
 		fail("Failed to load blueprint: %v", err)
 		osExit(1)
 	}
+	// Generated imports are <module>/<output-dir> with the output dir
+	// relative to the working directory — so the go.mod that matters is the
+	// one enclosing the cwd. Derive app.module from it when omitted; refuse
+	// a conflicting declaration (the output would not compile).
+	if err := resolveBlueprintModule(&bp, "."); err != nil {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			osExit(1)
+		}
+		fail("%v", err)
+		osExit(1)
+	}
 	if bp.App.OutputDir != "" && options.outputDir == "gen" {
 		options.outputDir = bp.App.OutputDir
+	}
+	// Unscoped PII is a warning here (generation proceeds) and an error
+	// from `gofastr validate`. Suppressed in --json mode so stdout stays
+	// machine-parseable; JSON consumers get the finding from validate.
+	if !options.json {
+		for _, f := range lintUnscopedPII(bp) {
+			warn("%s", f.Message())
+		}
 	}
 	if err := validateOutputDir(options.outputDir); err != nil {
 		if options.dryRun && options.json {
@@ -391,6 +437,9 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	if decl.OwnerField != "" {
 		sb.WriteString(fmt.Sprintf("\t\tOwnerField: %q,\n", decl.OwnerField))
 	}
+	if literal := renderAccessLiteral(decl.Access); literal != "" {
+		sb.WriteString("\t\tAccess: " + literal + ",\n")
+	}
 	if decl.CRUD != nil {
 		sb.WriteString(fmt.Sprintf("\t\tCRUD: boolPtr(%t),\n", *decl.CRUD))
 	}
@@ -431,6 +480,33 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	sb.WriteString(")\n")
 	sb.WriteString(fmt.Sprintf("\t_ = %s{}\n", structName))
 	return sb.String(), nil
+}
+
+// renderAccessLiteral renders an entity's per-operation RBAC declaration as
+// a framework.AccessControl composite literal for the generated register.go.
+// Returns "" when access is nil or every operation is un-gated, so the
+// generated registration stays byte-identical for blueprints without RBAC.
+func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
+	if access == nil {
+		return ""
+	}
+	var parts []string
+	if access.Read != "" {
+		parts = append(parts, fmt.Sprintf("Read: %q", access.Read))
+	}
+	if access.Create != "" {
+		parts = append(parts, fmt.Sprintf("Create: %q", access.Create))
+	}
+	if access.Update != "" {
+		parts = append(parts, fmt.Sprintf("Update: %q", access.Update))
+	}
+	if access.Delete != "" {
+		parts = append(parts, fmt.Sprintf("Delete: %q", access.Delete))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "framework.AccessControl{" + strings.Join(parts, ", ") + "}"
 }
 
 func renderIndexLiteral(idx framework.Index) string {
