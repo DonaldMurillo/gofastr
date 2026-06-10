@@ -6,14 +6,19 @@ import (
 	"strings"
 )
 
-// mimeTypes is a fallback map of file extensions to MIME types,
-// used when mime.TypeByExtension returns an empty result.
+// mimeTypes maps file extensions to canonical web MIME types. It is
+// consulted BEFORE mime.TypeByExtension on purpose: the stdlib answer
+// depends on the host (Linux merges /etc/mime.types, which reports
+// e.g. image/vnd.microsoft.icon for .ico and audio/webm for .webm),
+// and a framework serving content must return the same Content-Type
+// on every platform. Keep entries aligned with what browsers expect
+// (.js is text/javascript per RFC 9239).
 var mimeTypes = map[string]string{
 	".html":  "text/html; charset=utf-8",
 	".htm":   "text/html; charset=utf-8",
 	".css":   "text/css; charset=utf-8",
-	".js":    "application/javascript",
-	".mjs":   "application/javascript",
+	".js":    "text/javascript; charset=utf-8",
+	".mjs":   "text/javascript; charset=utf-8",
 	".json":  "application/json",
 	".png":   "image/png",
 	".jpg":   "image/jpeg",
@@ -36,22 +41,23 @@ var mimeTypes = map[string]string{
 }
 
 // DetectFromName returns the MIME type for the given filename based on
-// its extension. It first tries mime.TypeByExtension, then falls back
-// to a built-in mapping, and finally returns "application/octet-stream"
-// if no match is found.
+// its extension. The built-in canonical table wins so detection is
+// platform-independent; mime.TypeByExtension only covers the long tail
+// of extensions not in the table, and "application/octet-stream" is
+// the final fallback.
 func DetectFromName(name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	if ext == "" {
 		return "application/octet-stream"
 	}
 
-	// Try the stdlib first.
-	if mt := mime.TypeByExtension(ext); mt != "" {
+	// Canonical table first: deterministic across platforms.
+	if mt, ok := mimeTypes[ext]; ok {
 		return mt
 	}
 
-	// Fallback to built-in map.
-	if mt, ok := mimeTypes[ext]; ok {
+	// Long tail: defer to the stdlib (host mime DB may extend this).
+	if mt := mime.TypeByExtension(ext); mt != "" {
 		return mt
 	}
 

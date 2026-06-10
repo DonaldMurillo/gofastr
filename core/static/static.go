@@ -226,10 +226,10 @@ func hasDotfileSegment(p string) bool {
 // these have a legitimate reason to live behind the public file server,
 // and probing for them is a standard reconnaissance step.
 var forbiddenConfigFiles = map[string]struct{}{
-	"web.config":        {}, // IIS site config
-	"global.asax":       {}, // ASP.NET app entry
-	"app.config":        {}, // .NET application config
-	"machine.config":    {}, // .NET machine-wide config
+	"web.config":             {}, // IIS site config
+	"global.asax":            {}, // ASP.NET app entry
+	"app.config":             {}, // .NET application config
+	"machine.config":         {}, // .NET machine-wide config
 	"applicationhost.config": {}, // IIS Express host config
 }
 

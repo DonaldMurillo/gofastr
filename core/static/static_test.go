@@ -3,6 +3,7 @@ package static
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -347,6 +348,30 @@ func TestDetectFromName(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("DetectFromName(%q) = %q, want %q", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestDetectIgnoresHostMimeDB(t *testing.T) {
+	// Linux runners load /etc/mime.types into the stdlib mime package,
+	// which answers with non-canonical types for some extensions (CI
+	// observed image/vnd.microsoft.icon for .ico and audio/webm for
+	// .webm). Simulate that host DB here and assert detection still
+	// returns the canonical web type, so serving is identical on every
+	// platform.
+	for ext, typ := range map[string]string{
+		".ico":  "image/vnd.microsoft.icon",
+		".webm": "audio/webm",
+	} {
+		if err := mime.AddExtensionType(ext, typ); err != nil {
+			t.Fatalf("AddExtensionType(%q): %v", ext, err)
+		}
+	}
+
+	if got := DetectFromName("favicon.ico"); got != "image/x-icon" {
+		t.Errorf("DetectFromName(favicon.ico) = %q, want image/x-icon", got)
+	}
+	if got := DetectFromName("clip.webm"); got != "video/webm" {
+		t.Errorf("DetectFromName(clip.webm) = %q, want video/webm", got)
 	}
 }
 

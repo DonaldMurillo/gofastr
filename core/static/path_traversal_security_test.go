@@ -85,10 +85,10 @@ func TestStatic_MethodEnforced(t *testing.T) {
 // are not served. Attack: reading configuration/secrets via dotfile access.
 func TestStatic_DotfileNotExposed(t *testing.T) {
 	files := fstest.MapFS{
-		".env":         &fstest.MapFile{Data: []byte("SECRET_KEY=abc123")},
-		".htpasswd":    &fstest.MapFile{Data: []byte("admin:$2y$10$hash")},
-		"public/.git":  &fstest.MapFile{Data: []byte("gitdir: ../.git/modules/repo")},
-		"index.html":   &fstest.MapFile{Data: []byte("<h1>ok</h1>")},
+		".env":        &fstest.MapFile{Data: []byte("SECRET_KEY=abc123")},
+		".htpasswd":   &fstest.MapFile{Data: []byte("admin:$2y$10$hash")},
+		"public/.git": &fstest.MapFile{Data: []byte("gitdir: ../.git/modules/repo")},
+		"index.html":  &fstest.MapFile{Data: []byte("<h1>ok</h1>")},
 	}
 	handler := Handler(Config{FS: files})
 
