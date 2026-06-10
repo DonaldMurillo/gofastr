@@ -130,7 +130,7 @@ func TestColumnConstructorAll(t *testing.T) {
 
 // ── blueprint.go scalar/value helpers ─────────────────────────────────
 
-func sc(v any) *coreyaml.Node  { return &coreyaml.Node{Kind: coreyaml.Scalar, Value: v} }
+func sc(v any) *coreyaml.Node { return &coreyaml.Node{Kind: coreyaml.Scalar, Value: v} }
 func lst(n ...*coreyaml.Node) *coreyaml.Node {
 	return &coreyaml.Node{Kind: coreyaml.List, List: n}
 }

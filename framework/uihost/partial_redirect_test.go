@@ -73,8 +73,8 @@ func TestPartialRedirect_RejectsUnsafeURLs(t *testing.T) {
 	cases := []struct {
 		name        string
 		url         string
-		wantHeader  bool   // expect X-Gofastr-Location set
-		wantStatus  int    // expect this HTTP status
+		wantHeader  bool // expect X-Gofastr-Location set
+		wantStatus  int  // expect this HTTP status
 		description string
 	}{
 		{"safe relative", "/login", true, 200, "normal SPA-nav path"},

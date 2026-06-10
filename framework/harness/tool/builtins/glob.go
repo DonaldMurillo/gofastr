@@ -17,9 +17,11 @@ import (
 // semantics: `**` matches any number of directories.
 type Glob struct{}
 
-func (Glob) Name() string        { return "Glob" }
-func (Glob) Description() string { return "Find files matching a glob pattern (supports ** for any depth)." }
-func (Glob) Mutating() bool      { return false }
+func (Glob) Name() string { return "Glob" }
+func (Glob) Description() string {
+	return "Find files matching a glob pattern (supports ** for any depth)."
+}
+func (Glob) Mutating() bool { return false }
 func (Glob) InputSchema() []byte {
 	return []byte(`{
   "type": "object",

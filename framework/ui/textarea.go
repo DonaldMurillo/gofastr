@@ -40,10 +40,10 @@ type TextAreaConfig struct {
 	// Error overrides Help with an error message + aria-invalid.
 	Error string
 	// MaxLength applies the native maxlength attribute.
-	MaxLength int
-	ID        string
-	Class     string
-	ExtraAttrs     html.Attrs
+	MaxLength  int
+	ID         string
+	Class      string
+	ExtraAttrs html.Attrs
 }
 
 // TextArea renders a labelled multi-line text input.
@@ -112,8 +112,8 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-textarea__error",
+			ID:         id + "-error",
+			Class:      "ui-textarea__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {

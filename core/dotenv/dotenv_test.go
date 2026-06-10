@@ -79,10 +79,10 @@ func TestParse_EmptyValue(t *testing.T) {
 func TestParse_RejectsMalformed(t *testing.T) {
 	cases := []string{
 		"NO_EQUALS",
-		"=novalue",                   // empty key
-		"123ABC=startswithdigit",     // illegal key
-		`UNTERMINATED="oops`,         // unclosed double-quote
-		`UNTERMINATED2='oops`,        // unclosed single-quote
+		"=novalue",               // empty key
+		"123ABC=startswithdigit", // illegal key
+		`UNTERMINATED="oops`,     // unclosed double-quote
+		`UNTERMINATED2='oops`,    // unclosed single-quote
 	}
 	for _, in := range cases {
 		t.Run(in, func(t *testing.T) {

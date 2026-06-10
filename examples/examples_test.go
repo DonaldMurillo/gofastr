@@ -711,4 +711,3 @@ func TestApiTourSmoke(t *testing.T) {
 	resp.AssertBodyContains(t, "Alice")
 	resp.AssertBodyContains(t, "Hi")
 }
-

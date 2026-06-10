@@ -66,20 +66,20 @@ func TestRuntimeJS(t *testing.T) {
 		"MutationObserver",
 		"hydrate",
 		"collectParams",
-		"screenCache",            // screen caching for back-navigation
-		"swapMainContent",        // partial content swapping
-		"X-Gofastr-Navigate",     // client-side navigation header
-		"X-Gofastr-Partial",      // server partial response header
-		"loadComponentCSS",       // per-component CSS loader
-		"scanAndLoadCSS",         // marker scan post-swap/post-mount
-		"_pendingLinks",          // sync dedup guard
-		"data-fui-style",         // <link> dedup key
-		"scheduleIdleLoads",      // LoadPrewarm idle queue
-		"data-fui-comp",          // marker attr the scanner reads
-		"data-fui-copy-text-from",// marker triggers copy module load
-		"data-fui-os",            // OS detection on <html> for ShortcutHint
-		"data-fui-spa",           // opt-IN form-intercept for non-JSON forms
-		"redirect:'follow'",      // form-intercept follows server Location headers (minified spacing)
+		"screenCache",                       // screen caching for back-navigation
+		"swapMainContent",                   // partial content swapping
+		"X-Gofastr-Navigate",                // client-side navigation header
+		"X-Gofastr-Partial",                 // server partial response header
+		"loadComponentCSS",                  // per-component CSS loader
+		"scanAndLoadCSS",                    // marker scan post-swap/post-mount
+		"_pendingLinks",                     // sync dedup guard
+		"data-fui-style",                    // <link> dedup key
+		"scheduleIdleLoads",                 // LoadPrewarm idle queue
+		"data-fui-comp",                     // marker attr the scanner reads
+		"data-fui-copy-text-from",           // marker triggers copy module load
+		"data-fui-os",                       // OS detection on <html> for ShortcutHint
+		"data-fui-spa",                      // opt-IN form-intercept for non-JSON forms
+		"redirect:'follow'",                 // form-intercept follows server Location headers (minified spacing)
 		"application/x-www-form-urlencoded", // SPA-opt-in body encoding
 	}
 	for _, check := range checks {
@@ -623,8 +623,9 @@ func contains(s, substr string) bool {
 // TestRuntimeSignalAriaLiveContract pins the source-level contract that
 // the runtime injects role="status" aria-live="polite" aria-atomic="true"
 // onto every [data-fui-signal] node. Two integration points must exist:
-//   1. _initialPass (boot-time scan)
-//   2. gofastr:navigate handler (post-SPA-nav scan)
+//  1. _initialPass (boot-time scan)
+//  2. gofastr:navigate handler (post-SPA-nav scan)
+//
 // The helper function must exist by name so the callsites can delegate.
 // Behavioral verification is in examples/site/TestE2EInteractive_SignalHasAriaLive.
 func TestRuntimeSignalAriaLiveContract(t *testing.T) {

@@ -137,4 +137,3 @@ func newTestAuthManagerWithSession(t *testing.T) *AuthManager {
 	}
 	return mgr
 }
-

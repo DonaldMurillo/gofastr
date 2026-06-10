@@ -19,17 +19,17 @@ func TestRecordAttemptAndQuery(t *testing.T) {
 	}
 
 	a := ProviderAttempt{
-		Session:           "sess_a",
-		Turn:              3,
-		Provider:          "openrouter",
-		Model:             "claude",
-		RequestID:         "req-123",
-		StartedAt:         time.Now().Add(-time.Second),
-		EndedAt:           time.Now(),
-		TerminatedReason:  "complete",
-		InputTokens:       100,
-		OutputTokens:      40,
-		EstimatedUSD:      0.01,
+		Session:          "sess_a",
+		Turn:             3,
+		Provider:         "openrouter",
+		Model:            "claude",
+		RequestID:        "req-123",
+		StartedAt:        time.Now().Add(-time.Second),
+		EndedAt:          time.Now(),
+		TerminatedReason: "complete",
+		InputTokens:      100,
+		OutputTokens:     40,
+		EstimatedUSD:     0.01,
 	}
 	id, err := s.RecordAttempt(ctx, a)
 	if err != nil {

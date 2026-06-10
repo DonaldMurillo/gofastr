@@ -15,6 +15,7 @@
 //  7. Control plane starts (Unix socket + optional TCP).
 //  8. mcpserver stdio mode reads GOFASTR_HARNESS_TOKEN if launched.
 //  9. Bundled clients start (TUI / web).
+//
 // 10. Engine waits for first SendInput.
 package harness
 
@@ -87,8 +88,8 @@ type Config struct {
 
 // Harness is the composed v0.1 system.
 type Harness struct {
-	Config  Config
-	Logger  *logging.Logger
+	Config Config
+	Logger *logging.Logger
 
 	Providers []provider.Provider
 	Tools     *tool.Registry

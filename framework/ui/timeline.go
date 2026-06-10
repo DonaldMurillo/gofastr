@@ -43,10 +43,10 @@ type TimelineEvent struct {
 
 // TimelineConfig configures a Timeline.
 type TimelineConfig struct {
-	Events []TimelineEvent
-	ID     string
-	Class  string
-	ExtraAttrs  html.Attrs
+	Events     []TimelineEvent
+	ID         string
+	Class      string
+	ExtraAttrs html.Attrs
 }
 
 // Timeline renders an ordered list of events on a vertical rail.

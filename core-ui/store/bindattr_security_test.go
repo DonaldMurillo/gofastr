@@ -21,9 +21,9 @@ func TestBindAttrBlocksDangerousSchemeAtSSR(t *testing.T) {
 		"javascript:alert(1)",
 		"vbscript:msgbox(1)",
 		"data:text/html,<script>alert(1)</script>",
-		"  javascript:alert(1)",          // leading whitespace
-		"java\tscript:alert(1)",          // interior control byte
-		"JavaScript:alert(1)",            // case-folded scheme
+		"  javascript:alert(1)", // leading whitespace
+		"java\tscript:alert(1)", // interior control byte
+		"JavaScript:alert(1)",   // case-folded scheme
 	}
 	for _, attr := range urlAttrs {
 		for _, val := range dangerous {

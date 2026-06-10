@@ -15,15 +15,15 @@ type Statement interface {
 
 // SelectStmt represents a SELECT statement.
 type SelectStmt struct {
-	Distinct  bool
-	Columns   []SelectColumn // nil means SELECT *
-	From      *FromClause
-	Where     Expr
-	GroupBy   []Expr
-	Having    Expr
-	OrderBy   []OrderItem
-	Limit     Expr
-	Offset    Expr
+	Distinct bool
+	Columns  []SelectColumn // nil means SELECT *
+	From     *FromClause
+	Where    Expr
+	GroupBy  []Expr
+	Having   Expr
+	OrderBy  []OrderItem
+	Limit    Expr
+	Offset   Expr
 }
 
 func (s *SelectStmt) statementNode() {}
@@ -32,7 +32,7 @@ func (s *SelectStmt) statementNode() {}
 type SetOp int
 
 const (
-	SetOpUnion     SetOp = iota
+	SetOpUnion SetOp = iota
 	SetOpUnionAll
 	SetOpIntersect
 	SetOpExcept
@@ -40,9 +40,9 @@ const (
 
 // CompoundSelect represents a compound SELECT (UNION, INTERSECT, EXCEPT).
 type CompoundSelect struct {
-	Left     Statement // SelectStmt or CompoundSelect
-	Right    Statement // SelectStmt or CompoundSelect
-	Op       SetOp
+	Left    Statement // SelectStmt or CompoundSelect
+	Right   Statement // SelectStmt or CompoundSelect
+	Op      SetOp
 	OrderBy []OrderItem
 	Limit   Expr
 	Offset  Expr
@@ -63,8 +63,8 @@ func (StarColumn) exprNode() {}
 
 // FromClause represents the FROM clause of a SELECT.
 type FromClause struct {
-	Table   *TableRef
-	Joins   []JoinClause
+	Table *TableRef
+	Joins []JoinClause
 }
 
 // TableRef represents a table name (optionally schema-qualified and aliased).
@@ -76,10 +76,10 @@ type TableRef struct {
 
 // JoinClause represents a JOIN.
 type JoinClause struct {
-	Type     JoinType
-	Table    TableRef
-	On       Expr
-	Using    []string
+	Type  JoinType
+	Table TableRef
+	On    Expr
+	Using []string
 }
 
 // JoinType represents the type of JOIN.
@@ -105,10 +105,10 @@ type OrderItem struct {
 
 // InsertStmt represents an INSERT statement.
 type InsertStmt struct {
-	Table    TableRef
-	Columns  []string // Column names, empty means all columns in order
-	Values   [][]Expr // Multiple rows of values
-	Select   *SelectStmt // INSERT ... SELECT ...
+	Table   TableRef
+	Columns []string    // Column names, empty means all columns in order
+	Values  [][]Expr    // Multiple rows of values
+	Select  *SelectStmt // INSERT ... SELECT ...
 }
 
 func (s *InsertStmt) statementNode() {}
@@ -119,9 +119,9 @@ func (s *InsertStmt) statementNode() {}
 
 // UpdateStmt represents an UPDATE statement.
 type UpdateStmt struct {
-	Table   TableRef
-	Sets    []SetClause
-	Where   Expr
+	Table TableRef
+	Sets  []SetClause
+	Where Expr
 }
 
 func (s *UpdateStmt) statementNode() {}
@@ -159,17 +159,17 @@ func (s *CreateTableStmt) statementNode() {}
 
 // ColumnDefAST is the AST version of a column definition (before resolution).
 type ColumnDefAST struct {
-	Name         string
-	Type         string
-	Constraints  []ColumnConstraint
+	Name        string
+	Type        string
+	Constraints []ColumnConstraint
 }
 
 // ColumnConstraint represents a constraint on a column.
 type ColumnConstraint struct {
-	Type    ConstraintType
-	Name    string    // Named constraint
-	Value   Expr      // For DEFAULT, CHECK
-	Collate string    // For COLLATE
+	Type     ConstraintType
+	Name     string   // Named constraint
+	Value    Expr     // For DEFAULT, CHECK
+	Collate  string   // For COLLATE
 	RefTable string   // For REFERENCES
 	RefCols  []string // For REFERENCES
 }
@@ -231,8 +231,8 @@ func (s *DropIndexStmt) statementNode() {}
 
 // AlterAddColumnStmt represents ALTER TABLE ... ADD COLUMN ...
 type AlterAddColumnStmt struct {
-	Table   string
-	Column  ColumnDefAST
+	Table  string
+	Column ColumnDefAST
 }
 
 func (s *AlterAddColumnStmt) statementNode() {}
@@ -273,15 +273,15 @@ type ReindexStmt struct {
 func (s *ReindexStmt) statementNode() {}
 
 type CreateViewStmt struct {
-	Name   string
-	As     Statement // The SELECT statement
-	SQL    string
+	Name string
+	As   Statement // The SELECT statement
+	SQL  string
 }
 
 func (s *CreateViewStmt) statementNode() {}
 
 type DropViewStmt struct {
-	Name   string
+	Name     string
 	IfExists bool
 }
 
@@ -317,7 +317,7 @@ type Expr interface {
 
 // LiteralExpr represents a literal value (integer, float, string, NULL, blob).
 type LiteralExpr struct {
-	Type  DataType
+	Type     DataType
 	IntVal   int64
 	FloatVal float64
 	TextVal  string
@@ -347,24 +347,24 @@ func (BinaryExpr) exprNode() {}
 type BinaryOp int
 
 const (
-	OpAdd BinaryOp = iota // +
-	OpSub                 // -
-	OpMul                 // *
-	OpDiv                 // /
-	OpMod                 // %
-	OpConcat              // ||
-	OpEq                  // = or ==
-	OpNe                  // != or <>
-	OpLt                  // <
-	OpLe                  // <=
-	OpGt                  // >
-	OpGe                  // >=
-	OpAnd                 // AND
-	OpOr                  // OR
-	OpBitAnd              // &
-	OpBitOr               // |
-	OpShiftLeft           // <<
-	OpShiftRight          // >>
+	OpAdd        BinaryOp = iota // +
+	OpSub                        // -
+	OpMul                        // *
+	OpDiv                        // /
+	OpMod                        // %
+	OpConcat                     // ||
+	OpEq                         // = or ==
+	OpNe                         // != or <>
+	OpLt                         // <
+	OpLe                         // <=
+	OpGt                         // >
+	OpGe                         // >=
+	OpAnd                        // AND
+	OpOr                         // OR
+	OpBitAnd                     // &
+	OpBitOr                      // |
+	OpShiftLeft                  // <<
+	OpShiftRight                 // >>
 )
 
 // UnaryExpr represents a unary operator expression.
@@ -386,10 +386,10 @@ const (
 
 // FunctionCall represents a function call.
 type FunctionCall struct {
-	Name      string
-	Args      []Expr
-	Distinct  bool
-	Star      bool // COUNT(*)
+	Name     string
+	Args     []Expr
+	Distinct bool
+	Star     bool // COUNT(*)
 }
 
 func (FunctionCall) exprNode() {}
@@ -414,9 +414,9 @@ func (BetweenExpr) exprNode() {}
 
 // InExpr represents IN (...) or IN (SELECT ...).
 type InExpr struct {
-	Expr    Expr
-	Values  []Expr     // Explicit list
-	Select  *SelectStmt // Subquery
+	Expr   Expr
+	Values []Expr      // Explicit list
+	Select *SelectStmt // Subquery
 	Negate bool
 }
 
@@ -450,7 +450,7 @@ func (ParenExpr) exprNode() {}
 
 // CaseExpr represents a CASE expression.
 type CaseExpr struct {
-	Operand Expr          // Optional
+	Operand Expr // Optional
 	Whens   []CaseWhen
 	Else    Expr
 }
@@ -478,8 +478,8 @@ func (RowIDExpr) exprNode() {}
 
 // ParamExpr represents a parameter placeholder (? or $name).
 type ParamExpr struct {
-	Name string // empty for positional (?)
-	Index int   // 1-based position for positional params
+	Name  string // empty for positional (?)
+	Index int    // 1-based position for positional params
 }
 
 func (ParamExpr) exprNode() {}

@@ -121,8 +121,8 @@ func (s *lightboxSlot) Render() render.HTML {
 	figChildren := []render.HTML{
 		// SR-only title — Modal.LabelledBy() points here.
 		html.Span(html.TextConfig{
-			ID:    s.name + "-title",
-			Class: "ui-visually-hidden",
+			ID:         s.name + "-title",
+			Class:      "ui-visually-hidden",
 			ExtraAttrs: html.Attrs{"data-fui-signal": "alt"},
 		}, render.Text(s.label)),
 		// Image — runtime writes signal value into the src attr.

@@ -165,4 +165,3 @@ func TestScreen_PerRequestInstance_RenderPartialAlsoIsolated(t *testing.T) {
 		t.Fatalf("partial: STATE LEAK — oatmeal saw previous Coffee: %s", string(res2.HTML))
 	}
 }
-

@@ -124,9 +124,9 @@ func (c *Chain) TokenCount(ctx context.Context, model string, msgs []provider.Me
 
 // breaker is a tiny circuit-breaker. Concurrency-safe.
 type breaker struct {
-	mu         sync.Mutex
-	failures   int32  // consecutive failures
-	openedAt   atomic.Int64 // unix nanos when opened; 0 if closed
+	mu       sync.Mutex
+	failures int32        // consecutive failures
+	openedAt atomic.Int64 // unix nanos when opened; 0 if closed
 }
 
 func (b *breaker) canTry(cooldown time.Duration) bool {

@@ -104,8 +104,8 @@ func (n *nestedMainScreen) Render() render.HTML {
 }
 
 func (n *nestedMainScreen) ScreenTitle() string       { return "Nested" }
-func (n *nestedMainScreen) ScreenDescription() string  { return "Test nested main" }
-func (n *nestedMainScreen) ScreenType() ScreenType     { return ScreenPage }
+func (n *nestedMainScreen) ScreenDescription() string { return "Test nested main" }
+func (n *nestedMainScreen) ScreenType() ScreenType    { return ScreenPage }
 
 // TestNestedMainWarning verifies that ValidateScreenOutput flags screens
 // whose raw component output contains <main>.
@@ -156,5 +156,3 @@ func TestNestedMainNotFlaggedForDrawer(t *testing.T) {
 		}
 	}
 }
-
-

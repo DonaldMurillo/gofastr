@@ -70,7 +70,7 @@ func TestRoundTripJSON(t *testing.T) {
 				Title: "Home",
 				Type:  "page",
 				Tree: world.Node{
-					Kind: "div",
+					Kind:  "div",
 					Props: map[string]any{"class": "container"},
 					Children: []world.Node{
 						{

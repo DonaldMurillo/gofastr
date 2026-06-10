@@ -239,7 +239,8 @@ func ScreenLLMMDHandler(screen *Screen) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Length", strconv.Itoa(len(md))); w.Write([]byte(md))
+		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
+		w.Write([]byte(md))
 	})
 }
 
@@ -250,7 +251,8 @@ func AppLLMMDHandler(a *App) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Length", strconv.Itoa(len(md))); w.Write([]byte(md))
+		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
+		w.Write([]byte(md))
 	})
 }
 
@@ -265,5 +267,3 @@ func extractParamNames(path string) []string {
 	}
 	return names
 }
-
-

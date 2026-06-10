@@ -28,12 +28,12 @@ import (
 )
 
 var (
-	once     sync.Once
-	baseDSN  string
+	once       sync.Once
+	baseDSN    string
 	resolveErr error
-	using    string
-	schemaSeq atomic.Int64
-	logged   atomic.Bool
+	using      string
+	schemaSeq  atomic.Int64
+	logged     atomic.Bool
 )
 
 // resolve returns a base DSN to a working Postgres, or an error describing why

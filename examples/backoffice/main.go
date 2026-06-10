@@ -160,9 +160,9 @@ func registerEntities(app *framework.App) {
 			{Name: "in_stock", Type: schema.Bool},
 			{Name: "category", Type: schema.Enum, Values: []string{"tools", "parts", "accessories"}, Default: "tools"},
 			{Name: "description", Type: schema.Text},
-			{Name: "photo", Type: schema.Image},      // shows a thumbnail in list/detail
-			{Name: "specs", Type: schema.JSON},        // shows a code block in detail
-			{Name: "launched_on", Type: schema.Date},  // shows a formatted date
+			{Name: "photo", Type: schema.Image},        // shows a thumbnail in list/detail
+			{Name: "specs", Type: schema.JSON},         // shows a code block in detail
+			{Name: "launched_on", Type: schema.Date},   // shows a formatted date
 			{Name: "supplier_id", Type: schema.String}, // FK → suppliers (optional)
 		},
 		Relations: []entity.Relation{

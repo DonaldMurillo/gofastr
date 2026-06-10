@@ -60,26 +60,26 @@ const (
 	KeyBannerDismiss Key = "ui.banner.dismiss"
 
 	// DataTable
-	KeyTableSortAsc    Key = "ui.table.sortAscending"
-	KeyTableSortDesc   Key = "ui.table.sortDescending"
-	KeyTableNoSort     Key = "ui.table.noSort"
-	KeyTableFilter     Key = "ui.table.filter"
-	KeyTableNoResults  Key = "ui.table.noResults"
-	KeyTableLoading    Key = "ui.table.loading"
+	KeyTableSortAsc   Key = "ui.table.sortAscending"
+	KeyTableSortDesc  Key = "ui.table.sortDescending"
+	KeyTableNoSort    Key = "ui.table.noSort"
+	KeyTableFilter    Key = "ui.table.filter"
+	KeyTableNoResults Key = "ui.table.noResults"
+	KeyTableLoading   Key = "ui.table.loading"
 
 	// File upload
-	KeyFileUploadDrop     Key = "ui.fileUpload.dropzone"
-	KeyFileUploadBrowse   Key = "ui.fileUpload.browse"
-	KeyFileUploadRemove   Key = "ui.fileUpload.remove"
+	KeyFileUploadDrop   Key = "ui.fileUpload.dropzone"
+	KeyFileUploadBrowse Key = "ui.fileUpload.browse"
+	KeyFileUploadRemove Key = "ui.fileUpload.remove"
 
 	// Form
-	KeyFormSubmit    Key = "ui.form.submit"
-	KeyFormReset     Key = "ui.form.reset"
-	KeyFormSending   Key = "ui.form.sending"
-	KeyFormSuccess   Key = "ui.form.success"
-	KeyFormError     Key = "ui.form.error"
-	KeyFormYes       Key = "ui.form.yes"
-	KeyFormNo        Key = "ui.form.no"
+	KeyFormSubmit  Key = "ui.form.submit"
+	KeyFormReset   Key = "ui.form.reset"
+	KeyFormSending Key = "ui.form.sending"
+	KeyFormSuccess Key = "ui.form.success"
+	KeyFormError   Key = "ui.form.error"
+	KeyFormYes     Key = "ui.form.yes"
+	KeyFormNo      Key = "ui.form.no"
 
 	// Search
 	KeySearchPlaceholder Key = "ui.search.placeholder"
@@ -107,9 +107,9 @@ const (
 	KeyLightboxDownload Key = "ui.lightbox.download"
 
 	// StepWizard
-	KeyStepWizardBack     Key = "ui.stepWizard.back"
-	KeyStepWizardNext     Key = "ui.stepWizard.next"
-	KeyStepWizardSubmit   Key = "ui.stepWizard.submit"
+	KeyStepWizardBack   Key = "ui.stepWizard.back"
+	KeyStepWizardNext   Key = "ui.stepWizard.next"
+	KeyStepWizardSubmit Key = "ui.stepWizard.submit"
 )
 
 // Defaults are the English fallback strings. Apps that provide their

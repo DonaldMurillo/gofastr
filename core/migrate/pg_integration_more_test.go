@@ -318,8 +318,14 @@ func maxConcurrentUnderLock(t *testing.T, ctx context.Context, dbA, dbB *sql.DB,
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); _ = migrate.WithAdvisoryLockKey(ctx, dbA, migrate.DialectPostgres, keyA, crit) }()
-	go func() { defer wg.Done(); _ = migrate.WithAdvisoryLockKey(ctx, dbB, migrate.DialectPostgres, keyB, crit) }()
+	go func() {
+		defer wg.Done()
+		_ = migrate.WithAdvisoryLockKey(ctx, dbA, migrate.DialectPostgres, keyA, crit)
+	}()
+	go func() {
+		defer wg.Done()
+		_ = migrate.WithAdvisoryLockKey(ctx, dbB, migrate.DialectPostgres, keyB, crit)
+	}()
 	wg.Wait()
 	return max
 }

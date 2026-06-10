@@ -89,8 +89,8 @@ type GalleryConfig struct {
 	// CaptionMode controls caption rendering. Default Below.
 	CaptionMode GalleryCaptionMode
 	// ID / Class / Attrs pass through to the wrapper.
-	ID    string
-	Class string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 

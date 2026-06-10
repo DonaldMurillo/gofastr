@@ -12,36 +12,36 @@ import (
 // HeadingConfig configures an <h1>–<h6> element.
 // Required: Level (1-6).
 type HeadingConfig struct {
-	Level int // required: 1-6
-	Class string
-	ID    string
+	Level      int // required: 1-6
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // TextConfig configures a text container element (Paragraph, Span, Strong, Em, etc.).
 // No required fields — used for generic text containers.
 type TextConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // AbbrConfig configures an <abbr> element.
 // Required: Title.
 type AbbrConfig struct {
-	Title string // required: full expansion
-	Class string
-	ID    string
+	Title      string // required: full expansion
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // TimeConfig configures a <time> element.
 // Required: Datetime.
 type TimeConfig struct {
-	Datetime string // required: machine-readable datetime
-	Class    string
-	ID       string
-	ExtraAttrs    Attrs
+	Datetime   string // required: machine-readable datetime
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // nonAlphaNum matches runs of non-alphanumeric characters for slug generation.

@@ -28,8 +28,8 @@ type Config struct {
 	// Open opts the disclosure into rendering open by default.
 	Open bool
 	// ID / Class / Attrs are passed through to the <details>.
-	ID    string
-	Class string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 

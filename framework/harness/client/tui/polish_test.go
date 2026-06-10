@@ -93,10 +93,10 @@ func TestThinkingCollapseAfterText(t *testing.T) {
 // TestCogitatedFor formats durations correctly.
 func TestCogitatedFor(t *testing.T) {
 	cases := map[int64]string{
-		1_000_000_000:               "cogitated for 1s",
-		8 * 1_000_000_000:           "cogitated for 8s",
-		(60 + 7) * 1_000_000_000:    "cogitated for 1m 7s",
-		(8*60 + 7) * 1_000_000_000:  "cogitated for 8m 7s",
+		1_000_000_000:              "cogitated for 1s",
+		8 * 1_000_000_000:          "cogitated for 8s",
+		(60 + 7) * 1_000_000_000:   "cogitated for 1m 7s",
+		(8*60 + 7) * 1_000_000_000: "cogitated for 8m 7s",
 	}
 	for ns, want := range cases {
 		got := cogitatedFor(ns)

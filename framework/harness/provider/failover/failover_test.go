@@ -11,9 +11,9 @@ import (
 )
 
 type fakeProv struct {
-	name string
-	err  error
-	text string
+	name  string
+	err   error
+	text  string
 	calls int
 }
 

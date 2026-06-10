@@ -12,10 +12,10 @@ import (
 // fakeSMTP is a minimal SMTP server that does NOT advertise STARTTLS.
 // It records whether it ever received DATA in cleartext.
 type fakeSMTP struct {
-	ln          net.Listener
-	mu          sync.Mutex
-	gotData     bool
-	advertise   string // extra EHLO capabilities line, empty for none
+	ln        net.Listener
+	mu        sync.Mutex
+	gotData   bool
+	advertise string // extra EHLO capabilities line, empty for none
 }
 
 func newFakeSMTP(t *testing.T, advertise string) *fakeSMTP {

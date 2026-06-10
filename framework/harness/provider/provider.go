@@ -94,10 +94,10 @@ type Model struct {
 
 // Pricing per million tokens, USD.
 type Pricing struct {
-	InputPerMTok       float64
-	OutputPerMTok      float64
-	CacheReadPerMTok   float64 // discounted cache hit rate
-	CacheWritePerMTok  float64 // cache-write surcharge
+	InputPerMTok      float64
+	OutputPerMTok     float64
+	CacheReadPerMTok  float64 // discounted cache hit rate
+	CacheWritePerMTok float64 // cache-write surcharge
 }
 
 // Capabilities describes optional features a model supports.
@@ -113,15 +113,15 @@ type Capabilities struct {
 // emits these canonical events. The engine's stream parser
 // (engine/stream.go) translates them to control.Event types.
 type StreamEvent struct {
-	Kind       StreamEventKind
-	Text       string                 // for KindTextDelta
-	Thinking   []byte                 // for KindThinkingDelta (opaque, provider-stamped)
-	ToolUse    *control.ToolUse       // for KindToolUseStart (Input filled in on Stop)
-	ToolUseID  string                 // for KindToolUseDelta / KindToolUseStop
-	InputDelta string                 // for KindToolUseDelta (concatenates to ToolUse.Input on Stop)
-	Usage      *Usage                 // for KindUsage
-	FinishReason string               // for KindStop ("stop", "tool_use", "length", "yield")
-	Err        error                  // for KindError
+	Kind         StreamEventKind
+	Text         string           // for KindTextDelta
+	Thinking     []byte           // for KindThinkingDelta (opaque, provider-stamped)
+	ToolUse      *control.ToolUse // for KindToolUseStart (Input filled in on Stop)
+	ToolUseID    string           // for KindToolUseDelta / KindToolUseStop
+	InputDelta   string           // for KindToolUseDelta (concatenates to ToolUse.Input on Stop)
+	Usage        *Usage           // for KindUsage
+	FinishReason string           // for KindStop ("stop", "tool_use", "length", "yield")
+	Err          error            // for KindError
 }
 
 type StreamEventKind int
@@ -139,8 +139,8 @@ const (
 
 // Usage is the token accounting from a provider's response.
 type Usage struct {
-	InputTokens       int
-	OutputTokens      int
-	CacheReadTokens   int
-	CacheWriteTokens  int
+	InputTokens      int
+	OutputTokens     int
+	CacheReadTokens  int
+	CacheWriteTokens int
 }

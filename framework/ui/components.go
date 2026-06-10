@@ -222,7 +222,7 @@ func FormField(cfg FormFieldConfig) render.HTML {
 		labelEl = render.Tag("div", map[string]string{"class": "ui-form-field__label-row"},
 			labelEl,
 			html.Span(html.TextConfig{
-				Class: "ui-form-field__required",
+				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")),
 		)
@@ -247,8 +247,8 @@ func FormField(cfg FormFieldConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		out = append(out, html.Paragraph(html.TextConfig{
-			Class: "ui-form-field__error",
-			ID:    cfg.For + "-error",
+			Class:      "ui-form-field__error",
+			ID:         cfg.For + "-error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	}
@@ -460,13 +460,13 @@ const (
 
 // ButtonConfig configures a button.
 type ButtonConfig struct {
-	Label   string        // required visible text + aria-label
-	Variant ButtonVariant // defaults to ButtonPrimary
-	Size    ButtonSize    // defaults to ButtonSizeDefault
-	Type    string        // "button" (default) | "submit" | "reset"
-	ExtraAttrs   html.Attrs
-	ID      string
-	Class   string
+	Label      string        // required visible text + aria-label
+	Variant    ButtonVariant // defaults to ButtonPrimary
+	Size       ButtonSize    // defaults to ButtonSizeDefault
+	Type       string        // "button" (default) | "submit" | "reset"
+	ExtraAttrs html.Attrs
+	ID         string
+	Class      string
 }
 
 // Button renders a semantic button with a typed variant. Variant
@@ -510,10 +510,10 @@ func Button(cfg ButtonConfig) render.HTML {
 	// visual delta via buttonCSS's variant rules. No legacy per-
 	// variant marker / sheet.
 	return buttonStyle.WrapHTML(html.Button(html.ButtonConfig{
-		Label: cfg.Label,
-		Type:  cfg.Type,
-		Class: cls,
-		ID:    cfg.ID,
+		Label:      cfg.Label,
+		Type:       cfg.Type,
+		Class:      cls,
+		ID:         cfg.ID,
 		ExtraAttrs: cfg.ExtraAttrs,
 	}))
 }
@@ -535,9 +535,9 @@ type LinkButtonConfig struct {
 	// naturally skips http(s):// hrefs (they're not "internal"), so
 	// External does not also need to "suppress SPA nav" — the
 	// underlying SPA router already does the right thing.
-	External bool
-	ID       string
-	Class    string
+	External   bool
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -860,10 +860,10 @@ const (
 type AvatarConfig struct {
 	// Name is required; used for alt text and to derive initials when
 	// no image source is set.
-	Name string
-	Src  string     // optional image URL; falls back to initials when empty
-	Size AvatarSize // sm | "" (default md) | lg | xl
-	ID   string
+	Name  string
+	Src   string     // optional image URL; falls back to initials when empty
+	Size  AvatarSize // sm | "" (default md) | lg | xl
+	ID    string
 	Class string
 }
 
@@ -891,7 +891,7 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	}
 	return avatarStyle.WrapHTML(html.Span(spanCfg,
 		html.Span(html.TextConfig{
-			Class: "ui-avatar__initials",
+			Class:      "ui-avatar__initials",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text(initials(cfg.Name))),
 		html.Span(html.TextConfig{Class: "ui-visually-hidden"},
@@ -1066,7 +1066,7 @@ type SkipLinkConfig struct {
 	Target string
 	// Text is the visible label shown on focus.
 	// Defaults to "Skip to main content" when empty.
-	Text string
+	Text  string
 	Class string
 	ID    string
 }

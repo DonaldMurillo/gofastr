@@ -16,8 +16,8 @@ import (
 // (tenant_security_test.go uses the "items" table; here we reuse the helper's
 // shape via a fresh handler).
 type typedTNote struct {
-	ID     string `json:"id"`
-	Notes  string `json:"notes"`
+	ID    string `json:"id"`
+	Notes string `json:"notes"`
 }
 
 // TestTypedQuery_FindFailsClosedNoTenant pins the fix for the audit's HIGH

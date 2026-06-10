@@ -135,9 +135,15 @@ func TestSegmentedControlDisabled(t *testing.T) {
 
 func TestSegmentedControlPanics(t *testing.T) {
 	cases := []func(){
-		func() { SegmentedControl(SegmentedControlConfig{Name: "x", Options: []SegmentedOption{{Label: "A", Value: "a"}}}) },        // < 2 options
-		func() { SegmentedControl(SegmentedControlConfig{Options: []SegmentedOption{{Label: "A", Value: "a"}, {Label: "B", Value: "b"}}}) }, // no Name
-		func() { SegmentedControl(SegmentedControlConfig{Name: "x", Options: []SegmentedOption{{Label: "", Value: "a"}, {Label: "B", Value: "b"}}}) }, // empty Label
+		func() {
+			SegmentedControl(SegmentedControlConfig{Name: "x", Options: []SegmentedOption{{Label: "A", Value: "a"}}})
+		}, // < 2 options
+		func() {
+			SegmentedControl(SegmentedControlConfig{Options: []SegmentedOption{{Label: "A", Value: "a"}, {Label: "B", Value: "b"}}})
+		}, // no Name
+		func() {
+			SegmentedControl(SegmentedControlConfig{Name: "x", Options: []SegmentedOption{{Label: "", Value: "a"}, {Label: "B", Value: "b"}}})
+		}, // empty Label
 	}
 	for i, fn := range cases {
 		t.Run("case-"+itoaSmall(i), func(t *testing.T) {

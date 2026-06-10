@@ -224,10 +224,10 @@ func (readOnlySource) Tools(_ context.Context) ([]tool.Tool, error) {
 
 type noopReadTool struct{}
 
-func (noopReadTool) Name() string                     { return "Read" }
-func (noopReadTool) Description() string              { return "test stub" }
-func (noopReadTool) Mutating() bool                   { return false }
-func (noopReadTool) InputSchema() []byte              { return []byte(`{}`) }
+func (noopReadTool) Name() string        { return "Read" }
+func (noopReadTool) Description() string { return "test stub" }
+func (noopReadTool) Mutating() bool      { return false }
+func (noopReadTool) InputSchema() []byte { return []byte(`{}`) }
 func (noopReadTool) Run(_ context.Context, _ tool.ToolCall, _ tool.EventSink) (*tool.ToolResult, error) {
 	return &tool.ToolResult{
 		Content: []control.ContentBlock{{Type: "text", Text: "ok"}},

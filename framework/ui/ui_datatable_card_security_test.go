@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // secHelper checks for a literal substring in rendered HTML.
@@ -40,9 +40,9 @@ func TestDataTable_ColumnKeyXSS(t *testing.T) {
 	t.Parallel()
 	// Column Key with script tags — it's URL-encoded in sort hrefs.
 	h := ui.DataTable(ui.DataTableConfig{
-		Columns:          []ui.Column{{Key: "<script>alert(1)</script>", Header: "X", Sortable: true}},
-		Rows:             []ui.Row{{Cells: map[string]render.HTML{"<script>alert(1)</script>": render.Text("ok")}}},
-		SortHrefPattern:  "?sort=%s&dir=%s",
+		Columns:         []ui.Column{{Key: "<script>alert(1)</script>", Header: "X", Sortable: true}},
+		Rows:            []ui.Row{{Cells: map[string]render.HTML{"<script>alert(1)</script>": render.Text("ok")}}},
+		SortHrefPattern: "?sort=%s&dir=%s",
 	})
 	s := string(h)
 	// The key should be URL-encoded in the href, not injected raw.
@@ -90,9 +90,9 @@ func TestDataTable_SortHrefInjection(t *testing.T) {
 	t.Parallel()
 	// SortHrefPattern with path traversal — it's a Sprintf pattern.
 	h := ui.DataTable(ui.DataTableConfig{
-		Columns: []ui.Column{{Key: "name", Header: "Name", Sortable: true}},
-		Rows:    []ui.Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
-		SortHrefPattern:  "?sort=%s&dir=%s&redirect=../../../etc/passwd",
+		Columns:         []ui.Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:            []ui.Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
+		SortHrefPattern: "?sort=%s&dir=%s&redirect=../../../etc/passwd",
 	})
 	s := string(h)
 	// The pattern is used directly — this documents that callers must provide safe patterns.
@@ -222,9 +222,9 @@ func TestDataTable_SortKeyInjection(t *testing.T) {
 	// SQL-like content in sort key — should be URL-encoded in href.
 	sqlPayload := "1; DROP TABLE users--"
 	h := ui.DataTable(ui.DataTableConfig{
-		Columns:          []ui.Column{{Key: sqlPayload, Header: "ID", Sortable: true}},
-		Rows:             []ui.Row{{Cells: map[string]render.HTML{sqlPayload: render.Text("1")}}},
-		SortHrefPattern:  "?sort=%s&dir=%s",
+		Columns:         []ui.Column{{Key: sqlPayload, Header: "ID", Sortable: true}},
+		Rows:            []ui.Row{{Cells: map[string]render.HTML{sqlPayload: render.Text("1")}}},
+		SortHrefPattern: "?sort=%s&dir=%s",
 	})
 	s := string(h)
 	// The raw SQL should NOT appear in an href value unencoded.
@@ -481,7 +481,7 @@ func TestToolbar_ButtonXSS(t *testing.T) {
 	xssBtn := render.HTML(`<button onclick="alert('toolbar-xss')">Evil</button>`)
 	_ = xssBtn
 	_ = ui.Toolbar(ui.ToolbarConfig{
-		Label: "Actions",
+		Label:  "Actions",
 		Groups: []ui.ToolbarGroup{{Children: []render.HTML{xssBtn}}},
 	})
 	// Group.Children are raw render.HTML — caller responsibility.
@@ -595,7 +595,7 @@ func TestBackToTop_ClassInjection(t *testing.T) {
 func TestTooltip_ContentXSS(t *testing.T) {
 	t.Parallel()
 	h := ui.Tooltip(ui.TooltipConfig{
-		Text:    `<script>alert('tooltip-xss')</script>`,
+		Text: `<script>alert('tooltip-xss')</script>`,
 	}, render.HTML(`<button>Hover</button>`))
 	s := string(h)
 	// Tooltip text goes through render.Text which escapes.

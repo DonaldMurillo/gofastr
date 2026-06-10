@@ -51,10 +51,10 @@ func (s *Store) DropMetadata(ctx context.Context, age time.Duration, exemptSessi
 // closed and become read-only archives. Open queries can span
 // archives by iterating Open() on each month file.
 type MonthlyRollover struct {
-	mu       sync.Mutex
-	dir      string
-	current  *Store
-	month    string // YYYYMM the current store was opened for
+	mu      sync.Mutex
+	dir     string
+	current *Store
+	month   string // YYYYMM the current store was opened for
 }
 
 // NewMonthlyRollover returns a rollover manager rooted at dir. The

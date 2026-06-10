@@ -22,7 +22,7 @@ func regWith(t *testing.T, tools ...tool.Tool) *tool.Registry {
 
 type staticToolSrc struct{ tools []tool.Tool }
 
-func (staticToolSrc) Name() string                                  { return "static-test" }
+func (staticToolSrc) Name() string                                   { return "static-test" }
 func (s staticToolSrc) Tools(_ context.Context) ([]tool.Tool, error) { return s.tools, nil }
 
 func TestToolSearchByName(t *testing.T) {

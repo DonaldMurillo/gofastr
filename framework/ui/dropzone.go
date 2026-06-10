@@ -115,13 +115,13 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	}
 
 	zoneAttrs := map[string]string{
-		"class":              "ui-dropzone__zone",
+		"class":               "ui-dropzone__zone",
 		"data-fui-fileupload": "true", // reuse the existing drag-drop runtime hook
 		// role=region + aria-label so AT users hear "<Label>, region"
 		// when the focus passes through the dropzone container,
 		// distinct from the inner file input.
-		"role":               "region",
-		"aria-label":         cfg.Label,
+		"role":       "region",
+		"aria-label": cfg.Label,
 	}
 
 	zoneChildren := []render.HTML{
@@ -141,9 +141,9 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	children := []render.HTML{zone}
 	if cfg.ShowPreview {
 		children = append(children, render.Tag("div", map[string]string{
-			"class":                          "ui-dropzone__previews",
-			"data-fui-dropzone-preview-for":  id,
-			"aria-live":                      "polite",
+			"class":                         "ui-dropzone__previews",
+			"data-fui-dropzone-preview-for": id,
+			"aria-live":                     "polite",
 		}))
 	}
 
@@ -157,8 +157,8 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-dropzone__error",
+			ID:         id + "-error",
+			Class:      "ui-dropzone__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if help != "" {

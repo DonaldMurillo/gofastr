@@ -46,16 +46,16 @@ type AppConfig struct {
 // Entity is the JSON-clean entity declaration. It tracks framework
 // EntityDeclaration plus declarative hooks and endpoints.
 type Entity struct {
-	Name        string            `json:"name"`
-	Table       string            `json:"table,omitempty"`
-	Fields      []Field           `json:"fields"`
-	Relations   []Relation        `json:"relations,omitempty"`
-	Endpoints   []EntityEndpoint  `json:"endpoints,omitempty"`
-	SoftDelete  bool              `json:"soft_delete,omitempty"`
-	MultiTenant bool              `json:"multi_tenant,omitempty"`
-	Timestamps  *bool             `json:"timestamps,omitempty"`
-	CRUD        *bool             `json:"crud,omitempty"`
-	MCP         bool              `json:"mcp,omitempty"`
+	Name        string           `json:"name"`
+	Table       string           `json:"table,omitempty"`
+	Fields      []Field          `json:"fields"`
+	Relations   []Relation       `json:"relations,omitempty"`
+	Endpoints   []EntityEndpoint `json:"endpoints,omitempty"`
+	SoftDelete  bool             `json:"soft_delete,omitempty"`
+	MultiTenant bool             `json:"multi_tenant,omitempty"`
+	Timestamps  *bool            `json:"timestamps,omitempty"`
+	CRUD        *bool            `json:"crud,omitempty"`
+	MCP         bool             `json:"mcp,omitempty"`
 }
 
 // Field mirrors framework.FieldDeclaration verbatim.
@@ -182,12 +182,12 @@ type Action struct {
 // Known Action kinds. The Phase 3 evaluator validates Kind+Params shape;
 // Phase 0 only cares that they round-trip through JSON unchanged.
 const (
-	ActionNoop          = "noop"
-	ActionSetField      = "set_field"      // params: {field, value}
-	ActionValidate      = "validate"       // params: {expression, message}
-	ActionAudit         = "audit"          // params: {channel, message}
-	ActionCreateEntity  = "create_entity"  // params: {entity, data}
-	ActionRespondJSON   = "respond_json"   // params: {status, body}
-	ActionRespondQuery  = "respond_query"  // params: {query}
-	ActionEmitEvent     = "emit_event"     // params: {topic, data}
+	ActionNoop         = "noop"
+	ActionSetField     = "set_field"     // params: {field, value}
+	ActionValidate     = "validate"      // params: {expression, message}
+	ActionAudit        = "audit"         // params: {channel, message}
+	ActionCreateEntity = "create_entity" // params: {entity, data}
+	ActionRespondJSON  = "respond_json"  // params: {status, body}
+	ActionRespondQuery = "respond_query" // params: {query}
+	ActionEmitEvent    = "emit_event"    // params: {topic, data}
 )

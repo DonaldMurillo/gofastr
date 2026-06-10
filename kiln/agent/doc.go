@@ -7,10 +7,10 @@
 //
 // Sub-packages:
 //
-//   kiln/agent/mcp — wraps protocol.Tools as an MCP server so Claude
-//                     Code, Cursor, and other MCP clients can drive Kiln.
-//   kiln/agent/acp — exposes Kiln over the Agent Client Protocol so
-//                     attached harnesses (Codex, Copilot, Pi) can drive.
+//	kiln/agent/mcp — wraps protocol.Tools as an MCP server so Claude
+//	                  Code, Cursor, and other MCP clients can drive Kiln.
+//	kiln/agent/acp — exposes Kiln over the Agent Client Protocol so
+//	                  attached harnesses (Codex, Copilot, Pi) can drive.
 //
 // All three transports share the same protocol.Tools surface; tests
 // cover each transport against a fake Provider so no LLM key is needed.

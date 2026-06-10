@@ -23,8 +23,8 @@ type staticSource struct {
 	tools []Tool
 }
 
-func (s staticSource) Name() string                                { return s.name }
-func (s staticSource) Tools(ctx context.Context) ([]Tool, error)   { return s.tools, nil }
+func (s staticSource) Name() string                              { return s.name }
+func (s staticSource) Tools(ctx context.Context) ([]Tool, error) { return s.tools, nil }
 
 func TestRegistryRegisterAndLookup(t *testing.T) {
 	r := NewRegistry()

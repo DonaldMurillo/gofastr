@@ -204,7 +204,7 @@ func TestAuthBypass_AlgNoneJWTRejected(t *testing.T) {
 	// Craft a token with alg:none
 	header := map[string]string{"alg": "none", "typ": "JWT"}
 	payload := map[string]any{
-		"sub":  "user-1",
+		"sub":   "user-1",
 		"email": "attacker@example.com",
 		"roles": []string{"admin"},
 		"iss":   "gofastr",

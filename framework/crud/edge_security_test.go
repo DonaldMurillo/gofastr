@@ -918,9 +918,9 @@ func TestMCP_ListToolOmitsHiddenFieldFilters(t *testing.T) {
 
 	handler := ch.listTool(rec)
 	_, _ = handler(context.Background(), map[string]any{
-		"name":               "visible",        // visible field — allowed
-		"password_hash":      "$2a$10$abc",      // hidden eq probe
-		"password_hash_like": "$2a$10$abc%",     // hidden LIKE probe
+		"name":               "visible",     // visible field — allowed
+		"password_hash":      "$2a$10$abc",  // hidden eq probe
+		"password_hash_like": "$2a$10$abc%", // hidden LIKE probe
 	})
 
 	for _, k := range []string{"password_hash", "password_hash_like"} {
@@ -1012,7 +1012,7 @@ func TestJSONCase_FieldInjectionViaCase(t *testing.T) {
 		rr := httptest.NewRecorder()
 		ch.List()(rr, req)
 		// The hidden field must never appear in responses regardless of casing
-			assertBodyNotContains(t, rr, "secret_key", "jsoncase", "hidden field exposed via mixed-case projection "+qs)
+		assertBodyNotContains(t, rr, "secret_key", "jsoncase", "hidden field exposed via mixed-case projection "+qs)
 	}
 }
 

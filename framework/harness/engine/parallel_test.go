@@ -16,15 +16,15 @@ import (
 // Tracks concurrent in-flight count so the test can prove parallel
 // execution happened (not just "fast sequential").
 type slowTool struct {
-	delay      time.Duration
+	delay       time.Duration
 	maxInFlight *int64 // pointer so multiple instances share the high-water mark
-	inFlight   *int64
+	inFlight    *int64
 }
 
-func (slowTool) Name() string                      { return "Slow" }
-func (slowTool) Description() string               { return "test tool that sleeps" }
-func (slowTool) Mutating() bool                    { return false }
-func (slowTool) InputSchema() []byte               { return []byte(`{}`) }
+func (slowTool) Name() string        { return "Slow" }
+func (slowTool) Description() string { return "test tool that sleeps" }
+func (slowTool) Mutating() bool      { return false }
+func (slowTool) InputSchema() []byte { return []byte(`{}`) }
 func (s slowTool) Run(_ context.Context, _ tool.ToolCall, _ tool.EventSink) (*tool.ToolResult, error) {
 	cur := atomic.AddInt64(s.inFlight, 1)
 	defer atomic.AddInt64(s.inFlight, -1)
@@ -40,8 +40,10 @@ func (s slowTool) Run(_ context.Context, _ tool.ToolCall, _ tool.EventSink) (*to
 
 type slowToolSource struct{ tool slowTool }
 
-func (s slowToolSource) Name() string                              { return "slow-src" }
-func (s slowToolSource) Tools(_ context.Context) ([]tool.Tool, error) { return []tool.Tool{s.tool}, nil }
+func (s slowToolSource) Name() string { return "slow-src" }
+func (s slowToolSource) Tools(_ context.Context) ([]tool.Tool, error) {
+	return []tool.Tool{s.tool}, nil
+}
 
 // TestDispatchRunsToolUsesConcurrently: when the model returns N
 // tool_uses in a SINGLE response, the engine should dispatch them

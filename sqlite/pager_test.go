@@ -923,11 +923,11 @@ func TestPager_ReadPageHeaderFrom(t *testing.T) {
 
 	// Build a leaf table page header
 	data := make([]byte, 12)
-	data[0] = pageTypeLeafTable // 0x0d
-	binary.BigEndian.PutUint16(data[1:3], 0)     // FirstFreeblock
-	binary.BigEndian.PutUint16(data[3:5], 3)     // CellCount
-	binary.BigEndian.PutUint16(data[5:7], 4000)  // ContentOffset
-	data[7] = 0                                    // FragmentedBytes
+	data[0] = pageTypeLeafTable                 // 0x0d
+	binary.BigEndian.PutUint16(data[1:3], 0)    // FirstFreeblock
+	binary.BigEndian.PutUint16(data[3:5], 3)    // CellCount
+	binary.BigEndian.PutUint16(data[5:7], 4000) // ContentOffset
+	data[7] = 0                                 // FragmentedBytes
 
 	ph := ReadPageHeaderFrom(data)
 	if ph.PageType != pageTypeLeafTable {
@@ -951,12 +951,12 @@ func TestPager_ReadPageHeaderFromInteriorPage(t *testing.T) {
 	t.Parallel()
 
 	data := make([]byte, 12)
-	data[0] = pageTypeInteriorTable // 0x05
+	data[0] = pageTypeInteriorTable             // 0x05
 	binary.BigEndian.PutUint16(data[1:3], 10)   // FirstFreeblock
 	binary.BigEndian.PutUint16(data[3:5], 5)    // CellCount
 	binary.BigEndian.PutUint16(data[5:7], 2000) // ContentOffset
-	data[7] = 2                                   // FragmentedBytes
-	binary.BigEndian.PutUint32(data[8:12], 42)   // RightMostPtr
+	data[7] = 2                                 // FragmentedBytes
+	binary.BigEndian.PutUint32(data[8:12], 42)  // RightMostPtr
 
 	ph := ReadPageHeaderFrom(data)
 	if ph.PageType != pageTypeInteriorTable {
@@ -1244,9 +1244,9 @@ func TestPager_WritePageHeaderToInterior(t *testing.T) {
 
 	buf := make([]byte, 12)
 	h := PageHeader{
-		PageType:      pageTypeInteriorTable,
-		CellCount:     10,
-		RightMostPtr:  0xAABBCCDD,
+		PageType:     pageTypeInteriorTable,
+		CellCount:    10,
+		RightMostPtr: 0xAABBCCDD,
 	}
 	WritePageHeaderTo(buf, h)
 

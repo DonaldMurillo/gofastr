@@ -157,7 +157,7 @@ func TestAudit_RedactFiresOnDelete(t *testing.T) {
 			t.Fatalf("decode create: %v", err)
 		}
 		id := created["id"].(string)
-		ta.Delete("/posts/" + id).AssertStatus(t, http.StatusNoContent)
+		ta.Delete("/posts/"+id).AssertStatus(t, http.StatusNoContent)
 
 		rows := readAuditRows(t, db)
 		if len(rows) != 2 {

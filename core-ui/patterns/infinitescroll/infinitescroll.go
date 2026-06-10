@@ -37,14 +37,14 @@ func Render(cfg Config) render.HTML {
 	}
 
 	wrapAttrs := map[string]string{
-		"class":                          mergeClass("infinitescroll", cfg.Class),
-		"role":                           "feed",
-		"aria-label":                     ariaLabel,
-		"aria-busy":                      "false",
-		"data-fui-infinite-scroll":       cfg.RPCPath,
-		"data-fui-infinite-cursor":       cfg.Cursor,
-		"data-fui-infinite-items":        ".infinitescroll__items",
-		"data-fui-infinite-root-margin":  rootMargin,
+		"class":                         mergeClass("infinitescroll", cfg.Class),
+		"role":                          "feed",
+		"aria-label":                    ariaLabel,
+		"aria-busy":                     "false",
+		"data-fui-infinite-scroll":      cfg.RPCPath,
+		"data-fui-infinite-cursor":      cfg.Cursor,
+		"data-fui-infinite-items":       ".infinitescroll__items",
+		"data-fui-infinite-root-margin": rootMargin,
 	}
 	if cfg.ID != "" {
 		wrapAttrs["id"] = cfg.ID
@@ -56,9 +56,9 @@ func Render(cfg Config) render.HTML {
 	items := render.Tag("div", itemsAttrs, cfg.Items...)
 
 	sentinel := render.Tag("div", map[string]string{
-		"class":                       "infinitescroll__sentinel",
-		"data-fui-infinite-sentinel":  "",
-		"aria-hidden":                 "true",
+		"class":                      "infinitescroll__sentinel",
+		"data-fui-infinite-sentinel": "",
+		"aria-hidden":                "true",
 	})
 
 	// <noscript> fallback: keyboard-operable form that submits a Load

@@ -474,7 +474,7 @@ func TestTimeoutConcurrentRequests(t *testing.T) {
 // Must run with `-race`. Reproduces deterministically because the handler
 // waits until AFTER the timeout fires before mutating headers.
 func TestTimeoutHeaderRaceAfterTimeout(t *testing.T) {
-	m := Timeout(15*time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	m := Timeout(15 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Wait long enough for the timeout to have fired and written 504.
 		time.Sleep(60 * time.Millisecond)
 		// Now mutate headers from the handler goroutine — used to race

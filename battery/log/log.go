@@ -451,4 +451,3 @@ func stateDir(appName string) (string, error) {
 	}
 	return filepath.Join(home, ".local", "state", appName), nil
 }
-

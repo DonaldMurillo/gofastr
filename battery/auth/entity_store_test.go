@@ -295,7 +295,6 @@ func TestSessionEntityFields(t *testing.T) {
 	}
 }
 
-
 // TestEntitySessionStore_ImplementsSessionTwoFAMarker pins the contract
 // that production-grade session stores can participate in 2FA enforcement.
 // Without this, RequireTwoFA fails closed for every EntitySessionStore-
@@ -401,8 +400,6 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 	}
 }
 
-
-
 // TestSessionTTL_DefaultIsNonZero pins the AuthConfig contract:
 // without explicit SessionTTL, defaults() must yield a usable lifetime.
 // Today defaults() leaves SessionTTL=0, which silently gives every
@@ -432,7 +429,6 @@ func TestEntitySessionStore_RejectsNonPositiveTTL(t *testing.T) {
 		t.Fatalf("Create(ttl<0) must error")
 	}
 }
-
 
 // EntityUserStore.CreateUser must distinguish "email already exists"
 // from generic DB errors so callers can return 409 vs 500 correctly.

@@ -536,7 +536,6 @@ func TestMagicLink_SendThenVerify_EndToEnd(t *testing.T) {
 	fmt.Printf("e2e me response: %s\n", meW.Body.String())
 }
 
-
 // First-time OAuth/magic-link signups must NOT recompute a fresh bcrypt
 // hash per request — that's ~50ms of CPU + a hash allocation just to
 // store a value nobody will ever try to verify against (the user logs
@@ -597,7 +596,6 @@ func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
 		t.Fatalf("magic-link verify mean=%v — likely doing bcrypt per signup (target: shared placeholder hash)", mean)
 	}
 }
-
 
 // MagicLink dev mode (logging the token URL) must be opt-in. Today
 // nil EmailSender silently logs live tokens — a production deploy

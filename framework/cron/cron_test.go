@@ -41,15 +41,15 @@ func TestCron_Parse_StandardAndShortcuts(t *testing.T) {
 
 func TestCron_Parse_RejectsBadInput(t *testing.T) {
 	bad := []string{
-		"",          // empty
-		"* * * *",   // too few fields
+		"",            // empty
+		"* * * *",     // too few fields
 		"* * * * * *", // too many
-		"60 * * * *", // minute > 59
-		"* 24 * * *", // hour > 23
-		"* * 0 * *",  // day-of-month < 1
-		"* * * 13 *", // month > 12
-		"* * * * 7",  // dow > 6
-		"a * * * *",  // not a number
+		"60 * * * *",  // minute > 59
+		"* 24 * * *",  // hour > 23
+		"* * 0 * *",   // day-of-month < 1
+		"* * * 13 *",  // month > 12
+		"* * * * 7",   // dow > 6
+		"a * * * *",   // not a number
 		"*/0 * * * *", // step 0
 	}
 	for _, spec := range bad {

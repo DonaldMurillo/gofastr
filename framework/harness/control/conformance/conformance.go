@@ -29,10 +29,10 @@ import (
 // Harness is the test setup the scenarios run against. Transports
 // provide their own factory functions that fulfill ClientFactory.
 type Harness struct {
-	Mux     *multiplex.Mux
-	Engine  *engine.Engine
-	Bus     *engine.Bus
-	Clock   clock.Clock
+	Mux    *multiplex.Mux
+	Engine *engine.Engine
+	Bus    *engine.Bus
+	Clock  clock.Clock
 }
 
 // ClientFactory returns a fresh Client wired through the transport

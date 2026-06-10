@@ -68,7 +68,7 @@ func widgetCSS() string {
 		{"top-right", "top", "right"},
 		{"top-left", "top", "left"},
 	} {
-		ss.Rule(".kiln-widget.kiln-corner-" + c.name).
+		ss.Rule(".kiln-widget.kiln-corner-"+c.name).
 			Set(c.vert, "20px", c.horiz, "20px").
 			End()
 	}

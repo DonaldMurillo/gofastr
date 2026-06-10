@@ -26,14 +26,14 @@ const (
 )
 
 var (
-	NewCrudHandler          = crud.NewCrudHandler
-	RegisterCrudRoutes      = crud.RegisterCrudRoutes
-	RegisterCrudRoutesFunc  = crud.RegisterCrudRoutesFunc
-	MarshalEntity           = crud.MarshalEntity
-	UnmarshalEntity         = crud.UnmarshalEntity
-	IsNotFound              = crud.IsNotFound
-	EagerLoad               = crud.EagerLoad
-	RegisterEntityMCPTools  = crud.RegisterEntityMCPTools
+	NewCrudHandler         = crud.NewCrudHandler
+	RegisterCrudRoutes     = crud.RegisterCrudRoutes
+	RegisterCrudRoutesFunc = crud.RegisterCrudRoutesFunc
+	MarshalEntity          = crud.MarshalEntity
+	UnmarshalEntity        = crud.UnmarshalEntity
+	IsNotFound             = crud.IsNotFound
+	EagerLoad              = crud.EagerLoad
+	RegisterEntityMCPTools = crud.RegisterEntityMCPTools
 )
 
 // TypedQuery and NewTypedQuery are generics — declared as wrappers since Go

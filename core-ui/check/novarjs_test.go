@@ -55,7 +55,7 @@ func TestLintNoVarJS_IgnoresStringsAndComments(t *testing.T) {
 /* var y = 2; */
 const a = 'var z = 3';
 const b = "var z = 4";
-const c = ` + "`var z = 5`" + `;`)
+const c = `+"`var z = 5`"+`;`)
 	res, err := LintNoVarJS(dir)
 	if err != nil {
 		t.Fatalf("err: %v", err)

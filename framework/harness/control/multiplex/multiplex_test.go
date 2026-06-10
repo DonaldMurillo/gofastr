@@ -49,15 +49,15 @@ type stubClient struct {
 	class control.IdentityClass
 }
 
-func (s stubClient) ID() ids.ClientID                          { return s.id }
-func (s stubClient) IdentityClass() control.IdentityClass       { return s.class }
+func (s stubClient) ID() ids.ClientID                     { return s.id }
+func (s stubClient) IdentityClass() control.IdentityClass { return s.class }
 func (s stubClient) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 	ch := make(chan control.EventEnvelope)
 	close(ch)
 	return ch
 }
 func (s stubClient) Send(_ context.Context, _ control.Command) error { return nil }
-func (s stubClient) Close() error                                   { return nil }
+func (s stubClient) Close() error                                    { return nil }
 
 func makeEngine(t *testing.T) (*engine.Engine, *fakeProvider) {
 	t.Helper()

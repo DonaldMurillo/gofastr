@@ -558,7 +558,6 @@ func TestTwoFA_Challenge_NotEnabled(t *testing.T) {
 	}
 }
 
-
 // Login of a 2FA-enrolled user must mint a "pending" session — usable
 // ONLY for /auth/2fa/challenge. Today login mints a fully-authenticated
 // session and 2FA enforcement is opt-in per route via RequireTwoFA. The
@@ -712,7 +711,6 @@ func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 	}
 }
 
-
 // MemoryTwoFAStore.ConsumeBackupCode must not hold the exclusive lock
 // while running N bcrypt comparisons. Today it does — the entire 2FA
 // store freezes for ~600ms per failed attempt, which is also the
@@ -773,7 +771,6 @@ func TestBackupCode_GetIsNotBlockedByConsume(t *testing.T) {
 	// Wait for the consume to finish so the test cleans up.
 	<-done
 }
-
 
 // 2FA must actually gate access. Today the /2fa/challenge endpoint just
 // returns {verified:true} and does nothing else — these tests pin the

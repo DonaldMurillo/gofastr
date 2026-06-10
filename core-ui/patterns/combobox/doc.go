@@ -5,7 +5,7 @@
 // runtime (core-ui/runtime/runtime.js) handles:
 //
 //   - Debounced input events (via existing data-fui-rpc-trigger="input"
-//     + data-fui-rpc-debounce-ms="N") firing the search RPC.
+//   - data-fui-rpc-debounce-ms="N") firing the search RPC.
 //   - Keyboard navigation: ArrowUp/Down/Home/End move highlight,
 //     Enter selects, Esc closes (twice clears input), Tab closes.
 //   - aria-expanded + aria-activedescendant updates on every move.

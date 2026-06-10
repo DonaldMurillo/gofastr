@@ -43,13 +43,13 @@ func validateEventName(name string) error {
 // `**` matches one-or-more segments. An entry of `*` alone (or `**`
 // alone) matches every event.
 type Subscriber struct {
-	ID       string
-	URL      string
-	Secret   string
-	Events   []string
-	Active   bool
-	Paused   bool // explicit opt-out; honored by Subscribe so callers can register paused
-	Created  time.Time
+	ID      string
+	URL     string
+	Secret  string
+	Events  []string
+	Active  bool
+	Paused  bool // explicit opt-out; honored by Subscribe so callers can register paused
+	Created time.Time
 }
 
 // DeliveryStatus is the lifecycle state of a single delivery attempt.

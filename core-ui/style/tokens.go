@@ -17,7 +17,8 @@ var tokenRefRe = regexp.MustCompile(`\{([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)\}`)
 // the CSS cascade.
 //
 // Example: ResolveAll("padding: {spacing.md} {spacing.lg}") →
-//          "padding: var(--spacing-md) var(--spacing-lg)"
+//
+//	"padding: var(--spacing-md) var(--spacing-lg)"
 func (t Theme) ResolveAll(s string) string {
 	return tokenRefRe.ReplaceAllStringFunc(s, func(match string) string {
 		inner := match[1 : len(match)-1]

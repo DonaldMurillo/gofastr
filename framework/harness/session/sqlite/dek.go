@@ -30,8 +30,8 @@ import (
 // DEKHeader is the on-disk shape of the wrapped DEK.
 type DEKHeader struct {
 	Version  int    `json:"version"`
-	Nonce    []byte `json:"nonce"`     // AES-GCM nonce for the wrap
-	Wrapped  []byte `json:"wrapped"`   // AES-GCM ciphertext of the DEK
+	Nonce    []byte `json:"nonce"`          // AES-GCM nonce for the wrap
+	Wrapped  []byte `json:"wrapped"`        // AES-GCM ciphertext of the DEK
 	Metadata string `json:"meta,omitempty"` // human-readable, e.g. "kek=machine"
 }
 

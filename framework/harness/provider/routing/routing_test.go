@@ -9,9 +9,9 @@ import (
 )
 
 type scriptedProvider struct {
-	name    string
-	text    string
-	calls   int
+	name  string
+	text  string
+	calls int
 }
 
 func (p *scriptedProvider) Name() string { return p.name }

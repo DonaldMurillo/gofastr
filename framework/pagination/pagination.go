@@ -46,9 +46,9 @@ func isUnicodeInvisible(r rune) bool {
 		0x200E, 0x200F, // LRM / RLM
 		0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // LRE/RLE/PDF/LRO/RLO
 		0x2066, 0x2067, 0x2068, 0x2069, // LRI/RLI/FSI/PDI
-		0x061C,         // Arabic letter mark
-		0x180E,         // Mongolian vowel separator
-		0xFEFF,         // BOM / zero-width no-break space
+		0x061C,                         // Arabic letter mark
+		0x180E,                         // Mongolian vowel separator
+		0xFEFF,                         // BOM / zero-width no-break space
 		0x2061, 0x2062, 0x2063, 0x2064, // invisible math operators
 		0x202F: // narrow no-break space
 		return true

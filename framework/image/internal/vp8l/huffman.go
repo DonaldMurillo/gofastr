@@ -64,9 +64,9 @@ func packageMerge(leaves []hufLeaf, L int) []int {
 	// indices into a flat origins[] buffer. We deliberately avoid
 	// per-item slice allocations because per-level merges churn.
 	type item struct {
-		w       int
-		oStart  int
-		oLen    int // number of origin entries
+		w      int
+		oStart int
+		oLen   int // number of origin entries
 	}
 	origins := make([]int, 0, 4*n*L)
 	pushItem := func(items []item, w int, starts ...int) []item {

@@ -8,11 +8,11 @@ import (
 func TestSkeletonCard_RendersCardWithSkeletonLines(t *testing.T) {
 	got := string(SkeletonCard(SkeletonCardConfig{}))
 	checks := []string{
-		"ui-card",                  // wrapped in a Card surface
-		"ui-skeleton-card",         // preset-specific class
-		"skeleton skeleton-line",   // title line
-		"skeleton-stack",           // multi-line body stack
-		`aria-hidden="true"`,       // visual-only
+		"ui-card",                // wrapped in a Card surface
+		"ui-skeleton-card",       // preset-specific class
+		"skeleton skeleton-line", // title line
+		"skeleton-stack",         // multi-line body stack
+		`aria-hidden="true"`,     // visual-only
 	}
 	for _, want := range checks {
 		if !strings.Contains(got, want) {

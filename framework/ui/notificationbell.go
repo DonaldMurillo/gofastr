@@ -66,9 +66,9 @@ type NotificationBellConfig struct {
 	// SSR initial render.
 	SignalList string
 	// Pages, when non-empty, scopes the popover mount to those routes.
-	Pages []string
-	ID    string
-	Class string
+	Pages      []string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -126,7 +126,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if badgeChild != "" || cfg.SignalUnread != "" {
 		bellChildren = append(bellChildren,
 			html.Span(html.TextConfig{
-				Class: "ui-notification-bell__badge",
+				Class:      "ui-notification-bell__badge",
 				ExtraAttrs: badgeAttrs,
 			}, badgeChild))
 	}
@@ -136,8 +136,8 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		btnAttrs["aria-describedby"] = cfg.Name + "-count"
 		bellChildren = append(bellChildren,
 			html.Span(html.TextConfig{
-				ID:    cfg.Name + "-count",
-				Class: "ui-visually-hidden",
+				ID:         cfg.Name + "-count",
+				Class:      "ui-visually-hidden",
 				ExtraAttrs: html.Attrs{"data-fui-signal": cfg.SignalUnread},
 			}, render.Text(strconv.Itoa(cfg.UnreadCount)+" unread")))
 	}

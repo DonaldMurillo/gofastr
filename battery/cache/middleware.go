@@ -44,6 +44,7 @@ type cachedResponse struct {
 //     includes the values of every listed request header so different
 //     variants do not collide. A Vary: * response is treated as
 //     uncacheable and is never stored (RFC 9111 §4.1).
+//
 // DefaultMaxCacheableBytes caps how large a response CacheMiddleware will
 // buffer for caching (8 MiB). Larger responses stream straight to the client
 // and are not cached, so a single huge response can't pin unbounded memory.

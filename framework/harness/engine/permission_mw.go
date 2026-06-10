@@ -30,10 +30,10 @@ import (
 // PermissionTimeout is the maximum time to wait for a human ack
 // before denying. The doc commits to 60s as default.
 type PermissionAnswer struct {
-	CallID  ids.CallID
-	Allow   bool
-	Scope   control.PermitScope
-	Source  ids.ClientID
+	CallID ids.CallID
+	Allow  bool
+	Scope  control.PermitScope
+	Source ids.ClientID
 }
 
 // AnswerRouter is wired by the multiplexer. It returns a channel that

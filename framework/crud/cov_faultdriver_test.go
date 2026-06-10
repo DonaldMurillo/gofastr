@@ -128,8 +128,8 @@ type covRows struct {
 	failNext bool
 }
 
-func (r *covRows) Columns() []string              { return r.inner.Columns() }
-func (r *covRows) Close() error                   { return r.inner.Close() }
+func (r *covRows) Columns() []string { return r.inner.Columns() }
+func (r *covRows) Close() error      { return r.inner.Close() }
 func (r *covRows) Next(dest []driver.Value) error {
 	if r.failNext {
 		return errCovInjected

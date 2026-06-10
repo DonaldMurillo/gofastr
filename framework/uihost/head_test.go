@@ -231,7 +231,7 @@ func TestSEOScreenPlusGlobalHead(t *testing.T) {
 	host.ServeHTTP(rec, httptest.NewRequest("GET", "/about", nil))
 	page := rec.Body.String()
 
-	assertContains(t, page, `<link rel="icon" href="/favicon.ico">`)     // global
+	assertContains(t, page, `<link rel="icon" href="/favicon.ico">`)          // global
 	assertContains(t, page, `<meta property="og:title" content="Screen OG">`) // per-screen
 
 	// Home page: global favicon, NO per-screen OG

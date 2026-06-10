@@ -40,8 +40,8 @@ type Server struct {
 	listener net.Listener
 	srv      *http.Server
 
-	mu      sync.RWMutex
-	bus     *engine.Bus // engine bus subscribed for SSE clients
+	mu  sync.RWMutex
+	bus *engine.Bus // engine bus subscribed for SSE clients
 }
 
 // New constructs a Server bound to the given inproc Client + bus.

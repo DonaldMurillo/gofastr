@@ -16,9 +16,9 @@ import (
 
 func TestEnabledMatrix(t *testing.T) {
 	cases := []struct {
-		name       string
-		env        map[string]string
-		wantOn     bool
+		name   string
+		env    map[string]string
+		wantOn bool
 	}{
 		{"default off", map[string]string{}, false},
 		{"dev set, prod env => off", map[string]string{"GOFASTR_DEV": "1", "GOFASTR_ENV": "production"}, false},

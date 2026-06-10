@@ -69,11 +69,11 @@ type Span struct {
 
 // Trace is one full per-turn span tree.
 type Trace struct {
-	TraceID   string `json:"trace_id"`
-	SessionID string `json:"session_id"`
+	TraceID   string    `json:"trace_id"`
+	SessionID string    `json:"session_id"`
 	StartedAt time.Time `json:"started_at"`
 	EndedAt   time.Time `json:"ended_at"`
-	Spans     []Span `json:"spans"`
+	Spans     []Span    `json:"spans"`
 }
 
 // Recorder collects spans for one turn and writes the trace to disk

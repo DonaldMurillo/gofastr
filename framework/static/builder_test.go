@@ -16,21 +16,26 @@ import (
 // homeScreen renders a fixed HTML body.
 type homeScreen struct{}
 
-func (homeScreen) ScreenTitle() string                { return "Home" }
-func (homeScreen) ScreenDescription() string          { return "" }
-func (homeScreen) ScreenType() coreapp.ScreenType     { return coreapp.ScreenPage }
-func (homeScreen) Render() render.HTML                { return html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home")) }
+func (homeScreen) ScreenTitle() string            { return "Home" }
+func (homeScreen) ScreenDescription() string      { return "" }
+func (homeScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (homeScreen) Render() render.HTML {
+	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home"))
+}
 
 // loadingScreen sets a body string from Load(ctx) — ensures Load runs at SSG time.
 type loadingScreen struct {
 	Body string
 }
 
-func (l *loadingScreen) Load(ctx context.Context) error { l.Body = "loaded:" + ctx.Value(loadKey{}).(string); return nil }
-func (l *loadingScreen) ScreenTitle() string             { return "Loaded" }
-func (l *loadingScreen) ScreenDescription() string       { return "" }
-func (l *loadingScreen) ScreenType() coreapp.ScreenType  { return coreapp.ScreenPage }
-func (l *loadingScreen) Render() render.HTML             { return render.HTML("<p>" + l.Body + "</p>") }
+func (l *loadingScreen) Load(ctx context.Context) error {
+	l.Body = "loaded:" + ctx.Value(loadKey{}).(string)
+	return nil
+}
+func (l *loadingScreen) ScreenTitle() string            { return "Loaded" }
+func (l *loadingScreen) ScreenDescription() string      { return "" }
+func (l *loadingScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (l *loadingScreen) Render() render.HTML            { return render.HTML("<p>" + l.Body + "</p>") }
 
 type loadKey struct{}
 
@@ -40,10 +45,10 @@ type productScreen struct {
 }
 
 func (p *productScreen) SetParams(params map[string]string) { p.slug = params["slug"] }
-func (p *productScreen) ScreenTitle() string                 { return "Product " + p.slug }
-func (p *productScreen) ScreenDescription() string           { return "" }
-func (p *productScreen) ScreenType() coreapp.ScreenType      { return coreapp.ScreenPage }
-func (p *productScreen) Render() render.HTML                 { return render.HTML("<p>product-" + p.slug + "</p>") }
+func (p *productScreen) ScreenTitle() string                { return "Product " + p.slug }
+func (p *productScreen) ScreenDescription() string          { return "" }
+func (p *productScreen) ScreenType() coreapp.ScreenType     { return coreapp.ScreenPage }
+func (p *productScreen) Render() render.HTML                { return render.HTML("<p>product-" + p.slug + "</p>") }
 func (p *productScreen) StaticPaths(ctx context.Context) []map[string]string {
 	return []map[string]string{
 		{"slug": "alpha"},
@@ -167,9 +172,9 @@ func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
 type productScreenWithoutPaths struct{}
 
 func (productScreenWithoutPaths) Render() render.HTML            { return render.HTML("ignored") }
-func (productScreenWithoutPaths) ScreenTitle() string             { return "" }
-func (productScreenWithoutPaths) ScreenDescription() string       { return "" }
-func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType  { return coreapp.ScreenPage }
+func (productScreenWithoutPaths) ScreenTitle() string            { return "" }
+func (productScreenWithoutPaths) ScreenDescription() string      { return "" }
+func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
 
 // ============================================================================
 // SSG respects NoLLMMD opt-out
@@ -177,9 +182,9 @@ func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType  { return corea
 
 type noopScreen struct{}
 
-func (noopScreen) Render() render.HTML  { return render.HTML("<p>noop</p>") }
-func (noopScreen) ScreenTitle() string  { return "Noop" }
-func (noopScreen) ScreenDescription() string { return "" }
+func (noopScreen) Render() render.HTML            { return render.HTML("<p>noop</p>") }
+func (noopScreen) ScreenTitle() string            { return "Noop" }
+func (noopScreen) ScreenDescription() string      { return "" }
 func (noopScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
 
 func TestBuild_NoLLMMD_PerScreen(t *testing.T) {

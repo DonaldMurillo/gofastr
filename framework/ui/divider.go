@@ -56,8 +56,8 @@ func Divider(cfg DividerConfig) render.HTML {
 	}
 
 	attrs := map[string]string{
-		"class":         cls,
-		"role":          "separator",
+		"class":            cls,
+		"role":             "separator",
 		"aria-orientation": string(orientationOrHorizontal(cfg.Orientation)),
 	}
 	if cfg.ID != "" {

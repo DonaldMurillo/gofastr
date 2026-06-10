@@ -51,13 +51,13 @@ func newBase(t string) base { return base{Context: "https://schema.org", Type: t
 // item. Drives Google's article rich result.
 type Article struct {
 	base
-	Headline      string   `json:"headline,omitempty"`
-	Description   string   `json:"description,omitempty"`
-	URL           string   `json:"url,omitempty"`
-	Image         string   `json:"image,omitempty"`
-	DatePublished string   `json:"datePublished,omitempty"`
-	DateModified  string   `json:"dateModified,omitempty"`
-	Author        *Person  `json:"author,omitempty"`
+	Headline      string        `json:"headline,omitempty"`
+	Description   string        `json:"description,omitempty"`
+	URL           string        `json:"url,omitempty"`
+	Image         string        `json:"image,omitempty"`
+	DatePublished string        `json:"datePublished,omitempty"`
+	DateModified  string        `json:"dateModified,omitempty"`
+	Author        *Person       `json:"author,omitempty"`
 	Publisher     *Organization `json:"publisher,omitempty"`
 }
 
@@ -176,9 +176,9 @@ func NewPerson() Person { return Person{base: newBase("Person")} }
 // PotentialAction to wire Google's sitelinks search box.
 type WebSite struct {
 	base
-	Name            string         `json:"name,omitempty"`
-	URL             string         `json:"url,omitempty"`
-	PotentialAction *SearchAction  `json:"potentialAction,omitempty"`
+	Name            string        `json:"name,omitempty"`
+	URL             string        `json:"url,omitempty"`
+	PotentialAction *SearchAction `json:"potentialAction,omitempty"`
 }
 
 // NewWebSite returns a WebSite with the envelope pre-filled.
@@ -188,8 +188,8 @@ func NewWebSite() WebSite { return WebSite{base: newBase("WebSite")} }
 // URL template with {search_term_string}.
 type SearchAction struct {
 	base
-	Target      string `json:"target,omitempty"`
-	QueryInput  string `json:"query-input,omitempty"`
+	Target     string `json:"target,omitempty"`
+	QueryInput string `json:"query-input,omitempty"`
 }
 
 // NewSearchAction returns a SearchAction targeting target with the

@@ -53,11 +53,11 @@ func TestWebFetchSSRFGuard(t *testing.T) {
 // canonical IPv4/IPv6 literals.
 func TestInternalIPRanges(t *testing.T) {
 	internal := []string{
-		"100.64.0.1",              // CGNAT (RFC 6598)
-		"100.127.255.255",         // CGNAT upper edge
-		"::ffff:169.254.169.254",  // IPv4-mapped cloud metadata
-		"::ffff:10.0.0.5",         // IPv4-mapped private
-		"::ffff:127.0.0.1",        // IPv4-mapped loopback
+		"100.64.0.1",             // CGNAT (RFC 6598)
+		"100.127.255.255",        // CGNAT upper edge
+		"::ffff:169.254.169.254", // IPv4-mapped cloud metadata
+		"::ffff:10.0.0.5",        // IPv4-mapped private
+		"::ffff:127.0.0.1",       // IPv4-mapped loopback
 	}
 	for _, s := range internal {
 		ip := net.ParseIP(s)

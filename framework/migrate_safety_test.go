@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )

@@ -132,9 +132,9 @@ func TestDatabaseHeader_RoundTrip(t *testing.T) {
 	t.Run("every individual field", func(t *testing.T) {
 		// Test every field can be non-zero and round-trips
 		fields := []struct {
-			name     string
-			modify   func(h *DatabaseHeader)
-			extract  func(h *DatabaseHeader) interface{}
+			name    string
+			modify  func(h *DatabaseHeader)
+			extract func(h *DatabaseHeader) interface{}
 		}{
 			{"FileFormatWriteVersion=2", func(h *DatabaseHeader) { h.FileFormatWriteVersion = 2 }, func(h *DatabaseHeader) interface{} { return h.FileFormatWriteVersion }},
 			{"FileFormatReadVersion=2", func(h *DatabaseHeader) { h.FileFormatReadVersion = 2 }, func(h *DatabaseHeader) interface{} { return h.FileFormatReadVersion }},
@@ -505,7 +505,7 @@ func TestCell_LeafTable_RoundTrip(t *testing.T) {
 		cell := &Cell{
 			IsLeaf:      true,
 			PayloadSize: uint64(len(payload)),
-			RowID:        1,
+			RowID:       1,
 			Payload:     payload,
 		}
 
@@ -542,11 +542,11 @@ func TestCell_LeafTable_RoundTrip(t *testing.T) {
 		}
 
 		cell := &Cell{
-			IsLeaf:        true,
-			PayloadSize:   uint64(len(payload)),
-			RowID:          5,
-			Payload:       payload,
-			OverflowPage:  42,
+			IsLeaf:       true,
+			PayloadSize:  uint64(len(payload)),
+			RowID:        5,
+			Payload:      payload,
+			OverflowPage: 42,
 		}
 
 		data := WriteLeafTableCell(cell)
@@ -580,7 +580,7 @@ func TestCell_LeafTable_RoundTrip(t *testing.T) {
 		cell := &Cell{
 			IsLeaf:      true,
 			PayloadSize: 3,
-			RowID:        0xFFFFFFFFFF, // large rowid
+			RowID:       0xFFFFFFFFFF, // large rowid
 			Payload:     []byte{1, 2, 3},
 		}
 		data := WriteLeafTableCell(cell)
@@ -597,7 +597,7 @@ func TestCell_LeafTable_RoundTrip(t *testing.T) {
 		cell := &Cell{
 			IsLeaf:      true,
 			PayloadSize: 0,
-			RowID:        1,
+			RowID:       1,
 			Payload:     nil,
 		}
 		data := WriteLeafTableCell(cell)
@@ -1072,18 +1072,18 @@ func TestRecord_SerialTypeOptimization(t *testing.T) {
 		value     int64
 		wantBytes int // expected body bytes
 	}{
-		{0, 0}, // serial type 8
-		{1, 0}, // serial type 9
-		{127, 1},  // serial type 1
-		{-128, 1}, // serial type 1
-		{128, 2},  // serial type 2
-		{-32768, 2}, // serial type 2
-		{32768, 3}, // serial type 3
-		{8388608, 4}, // serial type 4
-		{-2147483648, 4}, // serial type 4
-		{2147483648, 6}, // serial type 5
-		{-140737488355328, 6}, // serial type 5
-		{140737488355328, 8},  // serial type 6
+		{0, 0},                    // serial type 8
+		{1, 0},                    // serial type 9
+		{127, 1},                  // serial type 1
+		{-128, 1},                 // serial type 1
+		{128, 2},                  // serial type 2
+		{-32768, 2},               // serial type 2
+		{32768, 3},                // serial type 3
+		{8388608, 4},              // serial type 4
+		{-2147483648, 4},          // serial type 4
+		{2147483648, 6},           // serial type 5
+		{-140737488355328, 6},     // serial type 5
+		{140737488355328, 8},      // serial type 6
 		{-9223372036854775808, 8}, // serial type 6
 	}
 
@@ -1493,7 +1493,7 @@ func TestCompletePage_Integration(t *testing.T) {
 		cellData3 := WriteLeafTableCell(cell3)
 
 		// Layout: DB header (100) + page header (8) + cell pointers (6) + cells (from end)
-		pageHeaderOffset := headerSize // 100
+		pageHeaderOffset := headerSize            // 100
 		cellPointerOffset := pageHeaderOffset + 8 // 108
 
 		// Place cells at the end of the page
@@ -1578,10 +1578,10 @@ func TestCompletePage_Integration(t *testing.T) {
 		cellData2 := WriteInteriorTableCell(cell2)
 
 		ph := &PageHeader{
-			PageType:     pageTypeInteriorTable,
-			CellCount:    2,
+			PageType:      pageTypeInteriorTable,
+			CellCount:     2,
 			ContentOffset: uint16(pageSize - len(cellData1) - len(cellData2)),
-			RightMostPtr: 4,
+			RightMostPtr:  4,
 		}
 
 		pageData := make([]byte, pageSize)
@@ -1962,12 +1962,12 @@ func TestInt24_SignExtension(t *testing.T) {
 		bytes    []byte
 		expected int64
 	}{
-		{[]byte{0x7F, 0xFF, 0xFF}, 8388607},        // max positive
-		{[]byte{0x80, 0x00, 0x00}, -8388608},       // max negative
-		{[]byte{0xFF, 0xFF, 0xFF}, -1},             // -1
-		{[]byte{0x00, 0x00, 0x01}, 1},              // 1
-		{[]byte{0x00, 0x80, 0x00}, 32768},          // 32768
-		{[]byte{0xFF, 0x7F, 0xFF}, -32769},         // -32769
+		{[]byte{0x7F, 0xFF, 0xFF}, 8388607},  // max positive
+		{[]byte{0x80, 0x00, 0x00}, -8388608}, // max negative
+		{[]byte{0xFF, 0xFF, 0xFF}, -1},       // -1
+		{[]byte{0x00, 0x00, 0x01}, 1},        // 1
+		{[]byte{0x00, 0x80, 0x00}, 32768},    // 32768
+		{[]byte{0xFF, 0x7F, 0xFF}, -32769},   // -32769
 	}
 
 	for _, tt := range tests {

@@ -44,12 +44,12 @@ import (
 
 // Server is the REST transport.
 type Server struct {
-	Mux           *multiplex.Mux
-	Catalog       *resources.Catalog
-	Encoder       *auth.Encoder
-	Revocations   *auth.RevocationList
-	Features      []string
-	AllowedHosts  []string // exact-match Host headers permitted (e.g., "127.0.0.1:8421")
+	Mux            *multiplex.Mux
+	Catalog        *resources.Catalog
+	Encoder        *auth.Encoder
+	Revocations    *auth.RevocationList
+	Features       []string
+	AllowedHosts   []string // exact-match Host headers permitted (e.g., "127.0.0.1:8421")
 	AllowedOrigins []string // exact-match Origin headers permitted
 
 	// SessionStore, when non-nil, backs the ?past=true query on
@@ -417,15 +417,15 @@ type restClient struct {
 	class control.IdentityClass
 }
 
-func (c *restClient) ID() ids.ClientID                          { return c.id }
-func (c *restClient) IdentityClass() control.IdentityClass       { return c.class }
+func (c *restClient) ID() ids.ClientID                     { return c.id }
+func (c *restClient) IdentityClass() control.IdentityClass { return c.class }
 func (c *restClient) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 	ch := make(chan control.EventEnvelope)
 	close(ch)
 	return ch
 }
 func (c *restClient) Send(_ context.Context, _ control.Command) error { return nil }
-func (c *restClient) Close() error                                   { return nil }
+func (c *restClient) Close() error                                    { return nil }
 
 // Compile-time assertion.
 var _ control.Client = (*restClient)(nil)

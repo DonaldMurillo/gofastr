@@ -34,10 +34,10 @@ type ReadinessRegistrar interface {
 
 // healthState owns the registered readiness checks and tuning knobs.
 type healthState struct {
-	mu       sync.RWMutex
-	checks   []ReadinessCheck
-	timeout  time.Duration
-	verbose  bool // when true, /readyz includes error.Error() strings
+	mu      sync.RWMutex
+	checks  []ReadinessCheck
+	timeout time.Duration
+	verbose bool // when true, /readyz includes error.Error() strings
 }
 
 // defaultReadinessTimeout bounds how long /readyz will wait for the
@@ -182,10 +182,10 @@ type ReadinessResponse struct {
 
 // ReadinessResult is one row in the /readyz response.
 type ReadinessResult struct {
-	Name     string `json:"name"`
-	Status   string `json:"status"` // "ok", "error", or "timeout"
-	Error    string `json:"error,omitempty"`
-	DurMS    int64  `json:"durationMs"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // "ok", "error", or "timeout"
+	Error  string `json:"error,omitempty"`
+	DurMS  int64  `json:"durationMs"`
 }
 
 // runReadinessChecks invokes every check in parallel with the supplied

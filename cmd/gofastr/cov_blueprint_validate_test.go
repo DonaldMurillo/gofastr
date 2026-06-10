@@ -65,9 +65,9 @@ func TestValidateBlueprintErrors(t *testing.T) {
 
 func TestValidateBlueprintHappy(t *testing.T) {
 	bp := Blueprint{
-		Entities: []framework.EntityDeclaration{covT_entity("posts")},
-		Screens:  []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
-		Endpoints: []BlueprintEndpoint{{Name: "health", Handler: "Health", Path: "/health", Method: "GET"}},
+		Entities:   []framework.EntityDeclaration{covT_entity("posts")},
+		Screens:    []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
+		Endpoints:  []BlueprintEndpoint{{Name: "health", Handler: "Health", Path: "/health", Method: "GET"}},
 		Middleware: []BlueprintNamedStub{{Name: "logging"}},
 	}
 	if err := validateBlueprint(bp); err != nil {

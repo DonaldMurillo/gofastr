@@ -5,12 +5,12 @@
 //
 // Format (a strict subset of the de facto dotenv spec):
 //
-//   # comments and blank lines are allowed
-//   FOO=bar                       # bareword value
-//   QUOTED="hello world"          # double-quoted: escapes interpreted
-//   LITERAL='hello\nworld'        # single-quoted: VERBATIM, no escapes
-//   export PORT=8080              # optional `export` prefix tolerated
-//   PATH_TPL="${HOME}/bin"        # ${VAR} expansion (double-quoted only)
+//	# comments and blank lines are allowed
+//	FOO=bar                       # bareword value
+//	QUOTED="hello world"          # double-quoted: escapes interpreted
+//	LITERAL='hello\nworld'        # single-quoted: VERBATIM, no escapes
+//	export PORT=8080              # optional `export` prefix tolerated
+//	PATH_TPL="${HOME}/bin"        # ${VAR} expansion (double-quoted only)
 //
 // Hard rules:
 //   - Keys must start with a letter or underscore; rest is [A-Za-z0-9_].

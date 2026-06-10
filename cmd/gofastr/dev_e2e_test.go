@@ -13,9 +13,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -319,6 +319,7 @@ func TestE2E_HotReload_LivereloadScriptServed(t *testing.T) {
 		t.Fatalf("Cache-Control = %q, want no-store", cc)
 	}
 }
+
 // TestE2E_HotReload_BrowserAutoRefreshes is the keystone E2E test. It
 // proves the FULL hot-reload cycle works end-to-end in a real browser:
 //

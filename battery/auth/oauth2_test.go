@@ -379,7 +379,7 @@ func TestOAuth2Plugin_Callback_SuccessNewUser(t *testing.T) {
 
 func TestOAuth2Plugin_Callback_InvalidState(t *testing.T) {
 	mock := &mockProvider{
-		name: "mock",
+		name:      "mock",
 		tokenResp: &OAuth2Token{AccessToken: "tok"},
 		userResp:  &OAuth2UserInfo{Email: "x@x.com"},
 	}
@@ -401,7 +401,7 @@ func TestOAuth2Plugin_Callback_InvalidState(t *testing.T) {
 
 func TestOAuth2Plugin_Callback_MissingCode(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{
-		Providers:  map[string]OAuth2Provider{"mock": &mockProvider{name: "mock"}},
+		Providers:   map[string]OAuth2Provider{"mock": &mockProvider{name: "mock"}},
 		StateSecret: "test",
 	})
 	mgr := New(AuthConfig{})
@@ -428,8 +428,8 @@ func TestOAuth2Plugin_Callback_MissingCode(t *testing.T) {
 
 func TestOAuth2Plugin_Callback_ExchangeError(t *testing.T) {
 	mock := &mockProvider{
-		name:      "mock",
-		tokenErr:  fmt.Errorf("exchange failed"),
+		name:     "mock",
+		tokenErr: fmt.Errorf("exchange failed"),
 	}
 	mgr, _ := newOAuth2Manager(t, mock)
 	r := mountOAuth2Routes(mgr)
@@ -570,7 +570,6 @@ func TestGitHubProvider_AuthURL(t *testing.T) {
 	}
 }
 
-
 // OAuth providers must use an http.Client with a request timeout.
 // Today both GoogleProvider and GitHubProvider use http.DefaultClient
 // (no timeout). An IdP that hangs the connection pins one goroutine
@@ -652,7 +651,6 @@ func TestOAuthProviders_DefaultClientHasTimeout(t *testing.T) {
 	}
 }
 
-
 // GitHub returns email="" on /user when the primary email is hidden.
 // We must fall back to /user/emails (the user:email scope is already
 // requested) and pick the verified primary, NOT synthesize
@@ -703,14 +701,13 @@ func TestGitHubProvider_FallsBackToUserEmailsForHiddenPrimary(t *testing.T) {
 	}
 }
 
-
 // linkingUserStore is a stub UserStore that ALSO implements OAuthLinker.
 // Tracks calls so tests can verify what the handler did.
 type linkingUserStore struct {
-	mu    sync.Mutex
-	users map[string]User // by email
-	byID  map[string]User // by ID
-	links map[string]string // (provider+":"+providerID) -> userID
+	mu     sync.Mutex
+	users  map[string]User   // by email
+	byID   map[string]User   // by ID
+	links  map[string]string // (provider+":"+providerID) -> userID
 	nextID int
 
 	createCalls int

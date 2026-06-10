@@ -10,10 +10,10 @@ import (
 
 // TestCSRF_GetReplacesStaleCookie pins the post-restart bug:
 //
-// 1. Process A mints a cookie signed by keyA.
-// 2. Process B (after restart) has keyB only — keyA is GONE, not even in
-//    AdditionalKeys.
-// 3. The browser still sends the keyA cookie on the next GET.
+//  1. Process A mints a cookie signed by keyA.
+//  2. Process B (after restart) has keyB only — keyA is GONE, not even in
+//     AdditionalKeys.
+//  3. The browser still sends the keyA cookie on the next GET.
 //
 // Old behavior: GET path reuses the existing cookie verbatim (csrf.go:195),
 // stashes the stale value on ctx, and the rendered form's hidden _csrf
@@ -106,11 +106,11 @@ func TestCSRF_GetReplacesMalformedCookie(t *testing.T) {
 	mw := CSRF(CSRFConfig{SecretKey: key, FormField: "_csrf"})
 
 	for _, val := range []string{
-		"",                                  // empty
-		"not-a-token",                       // no separator
-		"abc.def",                           // separator but bogus HMAC
-		strings.Repeat("a", 64) + ".sig",    // shaped but wrong
-		".",                                 // degenerate
+		"",                               // empty
+		"not-a-token",                    // no separator
+		"abc.def",                        // separator but bogus HMAC
+		strings.Repeat("a", 64) + ".sig", // shaped but wrong
+		".",                              // degenerate
 	} {
 		t.Run(val, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)

@@ -66,6 +66,9 @@ func auditLint(root string) ([]LintFinding, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Blueprint rule — unscoped PII (CLAUDE.md hard rule #6) in a
+	// conventional gofastr.yml/.yaml/.json at the audited root.
+	all = append(all, lintBlueprintPIIRoot(root)...)
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].File != all[j].File {
 			return all[i].File < all[j].File

@@ -90,7 +90,7 @@ func TagInput(cfg TagInputConfig) render.HTML {
 	}
 
 	zone := render.Tag("div", map[string]string{
-		"class":              "ui-tag-input__zone",
+		"class":                   "ui-tag-input__zone",
 		"data-fui-tag-input-zone": "true",
 	},
 		append(tagInputs,

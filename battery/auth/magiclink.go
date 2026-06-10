@@ -96,7 +96,7 @@ var ErrTokenNotFound = errors.New("auth: magic-link token not found or expired")
 
 // magicLinkEntry is one stored token.
 type magicLinkEntry struct {
-	email    string
+	email     string
 	expiresAt time.Time
 }
 

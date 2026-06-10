@@ -4,17 +4,17 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 
 // DivConfig configures a <div> element. No required fields.
 type DivConfig struct {
-	Class     string
-	ID        string
-	Role      string
-	AriaLabel string
-	ExtraAttrs     Attrs // passthrough for any extra attributes
+	Class      string
+	ID         string
+	Role       string
+	AriaLabel  string
+	ExtraAttrs Attrs // passthrough for any extra attributes
 }
 
 // ArticleConfig configures an <article> element. No required fields.
 type ArticleConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
@@ -25,14 +25,14 @@ type SectionConfig struct {
 	LabelledBy string // alternative → aria-labelledby
 	Class      string
 	ID         string
-	ExtraAttrs      Attrs
+	ExtraAttrs Attrs
 }
 
 // MainConfig configures a <main> element.
 // Automatically adds role="main" and id="main-content".
 type MainConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
@@ -42,10 +42,10 @@ type MainConfig struct {
 // <header> elements (article headers, section headers, page-content
 // headers) and only ONE should carry the banner role.
 type HeaderConfig struct {
-	Class  string
-	ID     string
-	ExtraAttrs  Attrs
-	Banner bool // explicit opt-in for role="banner"
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
+	Banner     bool // explicit opt-in for role="banner"
 }
 
 // FooterConfig configures a <footer> element.
@@ -56,7 +56,7 @@ type HeaderConfig struct {
 type FooterConfig struct {
 	Class       string
 	ID          string
-	ExtraAttrs       Attrs
+	ExtraAttrs  Attrs
 	ContentInfo bool // explicit opt-in for role="contentinfo"
 }
 
@@ -68,7 +68,7 @@ type NavConfig struct {
 	LabelledBy string // alternative → aria-labelledby
 	Class      string
 	ID         string
-	ExtraAttrs      Attrs
+	ExtraAttrs Attrs
 }
 
 // AsideConfig configures an <aside> element.
@@ -79,27 +79,27 @@ type AsideConfig struct {
 	LabelledBy string // alternative → aria-labelledby
 	Class      string
 	ID         string
-	ExtraAttrs      Attrs
+	ExtraAttrs Attrs
 }
 
 // FigureConfig configures a <figure> element. No required fields.
 type FigureConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // FigCaptionConfig configures a <figcaption> element. No required fields.
 type FigCaptionConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // DetailsConfig configures a <details> element. No required fields.
 type DetailsConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 	// Disclosure marks this details element as a dismissible disclosure
 	// (mobile hamburger nav, popover, etc.). The runtime will close it
@@ -112,19 +112,19 @@ type DetailsConfig struct {
 
 // SummaryConfig configures a <summary> element. No required fields.
 type SummaryConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // GroupConfig configures a <div> with an ARIA role.
 // Required: Role.
 type GroupConfig struct {
-	Role      string // required
-	AriaLabel string
-	Class     string
-	ID        string
-	ExtraAttrs     Attrs
+	Role       string // required
+	AriaLabel  string
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // Div produces a <div> element.

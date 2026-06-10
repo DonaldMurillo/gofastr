@@ -9,18 +9,18 @@ import "testing"
 func TestNormalizePrefix_HardensInput(t *testing.T) {
 	cases := map[string]string{
 		// canonical pass-through
-		"":             "",
-		"/":            "",
-		"/api":         "/api",
-		"/api/admin":   "/api/admin",
-		"/api/admin/":  "/api/admin",
-		"api":          "/api",
+		"":            "",
+		"/":           "",
+		"/api":        "/api",
+		"/api/admin":  "/api/admin",
+		"/api/admin/": "/api/admin",
+		"api":         "/api",
 
 		// repeated separators collapse
-		"/api//admin":    "/api/admin",
-		"//api/admin":    "/api/admin",
-		"/api///admin":   "/api/admin",
-		"////admin/ops":  "/admin/ops",
+		"/api//admin":   "/api/admin",
+		"//api/admin":   "/api/admin",
+		"/api///admin":  "/api/admin",
+		"////admin/ops": "/admin/ops",
 
 		// dot segments resolve
 		"/api/./admin":      "/api/admin",
@@ -30,14 +30,14 @@ func TestNormalizePrefix_HardensInput(t *testing.T) {
 		"/..":               "",
 
 		// backslashes convert
-		"\\api\\admin":  "/api/admin",
-		"/api\\admin":   "/api/admin",
+		"\\api\\admin": "/api/admin",
+		"/api\\admin":  "/api/admin",
 
 		// control bytes strip
-		"/api/\nadmin":           "/api/admin",
-		"/api/\radmin":           "/api/admin",
-		"/api/\x00admin":         "/api/admin",
-		"/api/" + "\x1f" + "x":   "/api/x",
+		"/api/\nadmin":         "/api/admin",
+		"/api/\radmin":         "/api/admin",
+		"/api/\x00admin":       "/api/admin",
+		"/api/" + "\x1f" + "x": "/api/x",
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {

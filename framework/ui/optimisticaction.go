@@ -101,11 +101,11 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	}
 
 	attrs := map[string]string{
-		"class":                          cls,
-		"type":                           "button",
-		"data-fui-optimistic-endpoint":   cfg.Endpoint,
-		"data-fui-optimistic-method":     method,
-		"data-state":                     "idle",
+		"class":                        cls,
+		"type":                         "button",
+		"data-fui-optimistic-endpoint": cfg.Endpoint,
+		"data-fui-optimistic-method":   method,
+		"data-state":                   "idle",
 	}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID

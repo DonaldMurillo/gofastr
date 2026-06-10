@@ -32,7 +32,7 @@ type staticSource struct {
 	tools []tool.Tool
 }
 
-func (s staticSource) Name() string                               { return s.name }
+func (s staticSource) Name() string                                   { return s.name }
 func (s staticSource) Tools(ctx context.Context) ([]tool.Tool, error) { return s.tools, nil }
 
 func TestDispatchPublishesStartAndResult(t *testing.T) {

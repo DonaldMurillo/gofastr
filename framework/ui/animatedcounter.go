@@ -30,8 +30,8 @@ type AnimatedCounterConfig struct {
 	Prefix string
 	Suffix string
 	// ID / Class / Attrs are passed through.
-	ID    string
-	Class string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -47,8 +47,8 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	attrs := html.Attrs{
-		"class":                       cls,
-		"data-fui-animated-counter":   strconv.Itoa(cfg.To),
+		"class":                          cls,
+		"data-fui-animated-counter":      strconv.Itoa(cfg.To),
 		"data-fui-animated-counter-from": strconv.Itoa(cfg.From),
 		"data-fui-animated-counter-ms":   strconv.Itoa(dur),
 	}

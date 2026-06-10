@@ -28,9 +28,9 @@ import (
 //	    envs     TEXT NOT NULL     -- JSON array
 //	)
 type SQLStore struct {
-	db             *sql.DB
-	table          string
-	dialect        string
+	db              *sql.DB
+	table           string
+	dialect         string
 	dialectExplicit bool
 }
 

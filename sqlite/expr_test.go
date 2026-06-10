@@ -372,9 +372,9 @@ func TestEvalBetween(t *testing.T) {
 	val := LiteralExpr{Type: DataTypeInteger, IntVal: 5}
 
 	tests := []struct {
-		name   string
-		expr   BetweenExpr
-		want   bool
+		name string
+		expr BetweenExpr
+		want bool
 	}{
 		{"5 between 1 and 10", BetweenExpr{Expr: val, Low: LiteralExpr{Type: DataTypeInteger, IntVal: 1}, High: LiteralExpr{Type: DataTypeInteger, IntVal: 10}}, true},
 		{"5 between 5 and 10", BetweenExpr{Expr: val, Low: LiteralExpr{Type: DataTypeInteger, IntVal: 5}, High: LiteralExpr{Type: DataTypeInteger, IntVal: 10}}, true},
@@ -406,7 +406,7 @@ func TestEvalIn(t *testing.T) {
 
 	// 2 IN (1,2,3) → true
 	got, err := ev.Eval(InExpr{
-		Expr:   val,
+		Expr: val,
 		Values: []Expr{
 			LiteralExpr{Type: DataTypeInteger, IntVal: 1},
 			LiteralExpr{Type: DataTypeInteger, IntVal: 2},
@@ -450,7 +450,7 @@ func TestEvalIn(t *testing.T) {
 
 	// IN with NULL
 	got, err = ev.Eval(InExpr{
-		Expr: LiteralExpr{Type: DataTypeNull},
+		Expr:   LiteralExpr{Type: DataTypeNull},
 		Values: []Expr{LiteralExpr{Type: DataTypeInteger, IntVal: 1}},
 	})
 	if err != nil {

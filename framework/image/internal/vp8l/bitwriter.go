@@ -8,9 +8,9 @@ package vp8l
 // within each byte; this writer's output is therefore the inverse of
 // that read order.
 type bitWriter struct {
-	buf  []byte
-	cur  uint64
-	n    uint // number of bits currently buffered in cur
+	buf []byte
+	cur uint64
+	n   uint // number of bits currently buffered in cur
 }
 
 // writeBits writes the low n bits of value into the stream. n must

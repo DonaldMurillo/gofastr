@@ -121,7 +121,7 @@ func TestDataTableSortableColumnRendersClickableLink(t *testing.T) {
 		Columns: []Column{
 			{Key: "name", Header: "Name", Sortable: true},
 		},
-		Rows: []Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
+		Rows:            []Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
 		SortHrefPattern: "?sort=%s&dir=%s",
 	}))
 	if !strings.Contains(h, `ui-data-table__sort`) {
@@ -137,8 +137,8 @@ func TestDataTableSortableColumnRendersClickableLink(t *testing.T) {
 
 func TestDataTableActiveSortFlipsDirectionAndShowsIndicator(t *testing.T) {
 	hAsc := string(DataTable(DataTableConfig{
-		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
-		Rows: []Row{{Cells: map[string]render.HTML{"name": render.Text("a")}}},
+		Columns:         []Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:            []Row{{Cells: map[string]render.HTML{"name": render.Text("a")}}},
 		SortHrefPattern: "?sort=%s&dir=%s",
 		SortBy:          "name",
 		SortDir:         SortAsc,
@@ -154,8 +154,8 @@ func TestDataTableActiveSortFlipsDirectionAndShowsIndicator(t *testing.T) {
 	}
 
 	hDesc := string(DataTable(DataTableConfig{
-		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
-		Rows: []Row{{Cells: map[string]render.HTML{"name": render.Text("a")}}},
+		Columns:         []Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:            []Row{{Cells: map[string]render.HTML{"name": render.Text("a")}}},
 		SortHrefPattern: "?sort=%s&dir=%s",
 		SortBy:          "name",
 		SortDir:         SortDesc,

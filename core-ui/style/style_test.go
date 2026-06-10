@@ -221,9 +221,9 @@ func TestThemeAutoFillsTokenNames(t *testing.T) {
 	// passes Validate.
 	th := Theme{
 		Colors: ColorSet{
-			Primary:    Color{Value: "#FF0000"},  // no Name; should fill "primary"
-			Text:       Color{Value: "#000000"},  // → "text"
-			PrimaryFg:  Color{Value: "#FFFFFF"},  // → "primary-fg" (kebab from CamelCase)
+			Primary:   Color{Value: "#FF0000"}, // no Name; should fill "primary"
+			Text:      Color{Value: "#000000"}, // → "text"
+			PrimaryFg: Color{Value: "#FFFFFF"}, // → "primary-fg" (kebab from CamelCase)
 		},
 	}
 	AutoFillNames(&th)
@@ -407,4 +407,3 @@ func TestThemeValidate_AllowsNoneRadius(t *testing.T) {
 		t.Errorf("default theme should pass: %v", err)
 	}
 }
-

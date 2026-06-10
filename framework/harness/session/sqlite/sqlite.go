@@ -167,10 +167,10 @@ func (s *Store) ListPastSessions(ctx context.Context, limit int) ([]session.Past
 	var out []session.PastSession
 	for rows.Next() {
 		var (
-			sess         string
-			firstTs      string
-			lastTs       string
-			count        int64
+			sess    string
+			firstTs string
+			lastTs  string
+			count   int64
 		)
 		if err := rows.Scan(&sess, &firstTs, &lastTs, &count); err != nil {
 			return nil, err
@@ -311,7 +311,7 @@ func (s *Store) OrphanIntents(ctx context.Context, sess ids.SessionID) ([]sessio
 	for rows.Next() {
 		var (
 			callID, logID, name, hash, ts string
-			mut                            int
+			mut                           int
 		)
 		if err := rows.Scan(&callID, &logID, &name, &hash, &mut, &ts); err != nil {
 			return nil, err

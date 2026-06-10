@@ -39,16 +39,18 @@ type bashImpl struct {
 // run by default. The threat model rationale is in
 // docs/harness-architecture.md § Threat model → Standing rules.
 var DefaultBashBlocklist = []string{
-	"security",     // macOS keychain CLI
-	"secret-tool",  // Linux libsecret CLI
-	"keyctl",       // Linux kernel keyring
-	"kwalletcli",   // KDE wallet CLI
+	"security",    // macOS keychain CLI
+	"secret-tool", // Linux libsecret CLI
+	"keyctl",      // Linux kernel keyring
+	"kwalletcli",  // KDE wallet CLI
 	"systemd-ask-password",
 }
 
-func (bashImpl) Name() string        { return "Bash" }
-func (bashImpl) Description() string { return "Execute a shell command. Output is captured and returned." }
-func (bashImpl) Mutating() bool      { return true }
+func (bashImpl) Name() string { return "Bash" }
+func (bashImpl) Description() string {
+	return "Execute a shell command. Output is captured and returned."
+}
+func (bashImpl) Mutating() bool { return true }
 func (bashImpl) InputSchema() []byte {
 	return []byte(`{
   "type": "object",
@@ -173,7 +175,7 @@ func leadingCommand(cmd string) string {
 // token of each segment. It peels off env-assignment and pass-through
 // prefixes (`command`, `env`, `VAR=val`), strips surrounding quotes
 // and leading backslashes, and collapses intra-token quote-splitting
-// (`sec''urity`) so a banned tool hidden behind quoting or substitution
+// (`sec”urity`) so a banned tool hidden behind quoting or substitution
 // is still detected. This is a blocklist heuristic, not a shell parser
 // — the permission middleware remains the authoritative gate.
 func segmentCommands(cmd string) []string {
@@ -218,7 +220,7 @@ func segmentCommands(cmd string) []string {
 
 // normalizeToken strips shell quoting noise from a candidate command
 // token so the blocklist sees the bare name: it removes single/double
-// quotes anywhere in the token (collapsing `sec''urity` → `security`),
+// quotes anywhere in the token (collapsing `sec”urity` → `security`),
 // drops a leading backslash (`\security` → `security`), and unescapes
 // backslash-escaped characters. Best-effort defense in depth.
 func normalizeToken(tok string) string {

@@ -16,41 +16,41 @@ type SelectOption struct {
 // ButtonConfig configures a <button> element.
 // Required: Label (used as both visible text and aria-label).
 type ButtonConfig struct {
-	Label string // required → text content AND aria-label
-	Type  string // defaults to "button"
-	Class string
-	ID    string
+	Label      string // required → text content AND aria-label
+	Type       string // defaults to "button"
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // LinkConfig configures an <a> element.
 // Required: Href and Text.
 type LinkConfig struct {
-	Href  string // required
-	Text  string // required (visible text content)
-	Class string
-	ID    string
+	Href       string // required
+	Text       string // required (visible text content)
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // LinkHTMLConfig configures an <a> element with raw HTML content.
 // Required: Href and Content.
 type LinkHTMLConfig struct {
-	Href    string      // required
-	Content render.HTML // required (raw HTML content)
-	Class   string
-	ID      string
-	ExtraAttrs   Attrs
+	Href       string      // required
+	Content    render.HTML // required (raw HTML content)
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // FormConfig configures a <form> element.
 // Required: Method.
 type FormConfig struct {
-	Method string // required: "GET" or "POST"
-	Action string // optional: form action URL
-	Class  string
-	ID     string
-	ExtraAttrs  Attrs
+	Method     string // required: "GET" or "POST"
+	Action     string // optional: form action URL
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // InputConfig configures a void <input> element.
@@ -62,27 +62,27 @@ type InputConfig struct {
 	Placeholder string // optional: placeholder text
 	Class       string
 	ID          string
-	ExtraAttrs       Attrs // escape hatch for attributes not covered by typed fields
+	ExtraAttrs  Attrs // escape hatch for attributes not covered by typed fields
 }
 
 // LabelConfig configures a <label> element.
 // Required: For (the ID of the form control) and Text.
 type LabelConfig struct {
-	For   string // required: ID of the associated form control
-	Text  string // required: label text
-	Class string
-	ID    string
+	For        string // required: ID of the associated form control
+	Text       string // required: label text
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // SelectConfig configures a <select> element.
 // Required: Name and Options.
 type SelectConfig struct {
-	Name    string         // required: form field name
-	Options []SelectOption // required: at least one option
-	Class   string
-	ID      string
-	ExtraAttrs   Attrs
+	Name       string         // required: form field name
+	Options    []SelectOption // required: at least one option
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // TextAreaConfig configures a <textarea> element.
@@ -95,25 +95,25 @@ type TextAreaConfig struct {
 	Cols        int    // optional: cols attribute (>0 only)
 	Class       string
 	ID          string
-	ExtraAttrs       Attrs // escape hatch for attributes not covered by typed fields
+	ExtraAttrs  Attrs // escape hatch for attributes not covered by typed fields
 }
 
 // FieldSetConfig configures a <fieldset> element.
 // Required: Legend.
 type FieldSetConfig struct {
-	Legend string // required: becomes <legend> text
-	Class  string
-	ID     string
-	ExtraAttrs  Attrs
+	Legend     string // required: becomes <legend> text
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // ButtonGroupConfig configures a <div> with role="group" containing buttons.
 // No required fields.
 type ButtonGroupConfig struct {
-	AriaLabel string
-	Class     string
-	ID        string
-	ExtraAttrs     Attrs
+	AriaLabel  string
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
 }
 
 // Button produces a <button> element.
@@ -287,12 +287,12 @@ func Legend(cfg TextConfig, children ...render.HTML) render.HTML {
 // CheckboxConfig configures a void <input type="checkbox"> element.
 // Required: Name.
 type CheckboxConfig struct {
-	Name    string // required
-	Value   string // optional
-	ID      string // optional (but strongly recommended for label association)
-	Checked bool   // optional
-	Class   string
-	ExtraAttrs   Attrs
+	Name       string // required
+	Value      string // optional
+	ID         string // optional (but strongly recommended for label association)
+	Checked    bool   // optional
+	Class      string
+	ExtraAttrs Attrs
 }
 
 // Checkbox produces an <input type="checkbox"> element.
@@ -316,12 +316,12 @@ func Checkbox(cfg CheckboxConfig) render.HTML {
 // RadioConfig configures a void <input type="radio"> element.
 // Required: Name and Value.
 type RadioConfig struct {
-	Name    string // required
-	Value   string // required
-	ID      string // optional (but strongly recommended)
-	Checked bool   // optional
-	Class   string
-	ExtraAttrs   Attrs
+	Name       string // required
+	Value      string // required
+	ID         string // optional (but strongly recommended)
+	Checked    bool   // optional
+	Class      string
+	ExtraAttrs Attrs
 }
 
 // Radio produces an <input type="radio"> element.

@@ -81,12 +81,12 @@ func Render(cfg Config) render.HTML {
 	}, render.Tag("input", inputAttrs))
 
 	listboxAttrs := map[string]string{
-		"id":                    listboxID,
-		"role":                  "listbox",
-		"aria-label":            cfg.Label + " suggestions",
-		"class":                 "combobox__listbox",
-		"data-fui-signal":       cfg.SignalName,
-		"data-fui-signal-mode":  "html",
+		"id":                   listboxID,
+		"role":                 "listbox",
+		"aria-label":           cfg.Label + " suggestions",
+		"class":                "combobox__listbox",
+		"data-fui-signal":      cfg.SignalName,
+		"data-fui-signal-mode": "html",
 	}
 	if cfg.EmptyHTML == "" {
 		listboxAttrs["hidden"] = ""

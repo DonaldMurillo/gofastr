@@ -119,8 +119,8 @@ func TestStepWizardCustomMethod(t *testing.T) {
 
 func TestStepWizardHiddenFields(t *testing.T) {
 	h := string(StepWizard(StepWizardConfig{
-		Steps:       []StepWizardStep{{Heading: "A"}},
-		Action:      "/wiz",
+		Steps:        []StepWizardStep{{Heading: "A"}},
+		Action:       "/wiz",
 		HiddenFields: []render.HTML{render.Tag("input", map[string]string{"type": "hidden", "name": "token", "value": "abc"})},
 	}))
 	if !strings.Contains(h, `name="token"`) {

@@ -7,9 +7,9 @@ import (
 
 func TestOptimisticRequiresFields(t *testing.T) {
 	cases := []OptimisticActionConfig{
-		{IdleLabel: "x", SuccessLabel: "y"},          // no endpoint
-		{Endpoint: "/x", SuccessLabel: "y"},          // no idle
-		{Endpoint: "/x", IdleLabel: "y"},             // no success
+		{IdleLabel: "x", SuccessLabel: "y"}, // no endpoint
+		{Endpoint: "/x", SuccessLabel: "y"}, // no idle
+		{Endpoint: "/x", IdleLabel: "y"},    // no success
 	}
 	for i, c := range cases {
 		func() {

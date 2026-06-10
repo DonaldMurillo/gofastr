@@ -4,10 +4,10 @@ import "strings"
 
 // Schema represents the database schema (metadata tables).
 type Schema struct {
-	tables      map[string]*TableInfo
-	indexes     map[string]*IndexInfo
-	views       map[string]*ViewInfo
-	nextRowID   int64 // For sqlite_master
+	tables    map[string]*TableInfo
+	indexes   map[string]*IndexInfo
+	views     map[string]*ViewInfo
+	nextRowID int64 // For sqlite_master
 }
 
 // ViewInfo stores metadata about a view.

@@ -323,4 +323,3 @@ func TestDiscoverConfigBoundedAtGitRoot(t *testing.T) {
 		t.Fatalf("Resolve walked past git root and picked up parent gofastr.yml (offset=%d)", rt.cfg.Port.Offset)
 	}
 }
-

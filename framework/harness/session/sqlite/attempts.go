@@ -11,20 +11,20 @@ import (
 // reconciliation job to compare local estimates against provider-side
 // usage APIs (OpenRouter /credits, ZAI /billing/usage, etc.).
 type ProviderAttempt struct {
-	ID                int64
-	Session           string
-	Turn              int
-	Provider          string
-	Model             string
-	RequestID         string // upstream request ID when surfaced
-	StartedAt         time.Time
-	EndedAt           time.Time
-	TerminatedReason  string  // "complete" | "eof" | "timeout" | "cancel" | "http_error"
-	InputTokens       int
-	OutputTokens      int
-	CacheReadTokens   int
-	CacheWriteTokens  int
-	EstimatedUSD      float64
+	ID               int64
+	Session          string
+	Turn             int
+	Provider         string
+	Model            string
+	RequestID        string // upstream request ID when surfaced
+	StartedAt        time.Time
+	EndedAt          time.Time
+	TerminatedReason string // "complete" | "eof" | "timeout" | "cancel" | "http_error"
+	InputTokens      int
+	OutputTokens     int
+	CacheReadTokens  int
+	CacheWriteTokens int
+	EstimatedUSD     float64
 }
 
 // migration: provider_attempts table.
@@ -133,14 +133,14 @@ func (s *Store) AttemptsForTurn(ctx context.Context, session string, turn int) (
 // Reconciliation is one reconciliation pass against an upstream
 // provider's billing API.
 type Reconciliation struct {
-	ID           int64
-	Provider     string
-	PeriodStart  time.Time
-	PeriodEnd    time.Time
-	UpstreamUSD  float64
-	LocalUSD     float64
-	VarianceUSD  float64
-	RanAt        time.Time
+	ID          int64
+	Provider    string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	UpstreamUSD float64
+	LocalUSD    float64
+	VarianceUSD float64
+	RanAt       time.Time
 }
 
 // SaveReconciliation persists a reconciliation result.
@@ -206,12 +206,12 @@ func (s *Store) ReconcileNow(ctx context.Context, fetcher UpstreamUsageFetcher, 
 		return Reconciliation{}, err
 	}
 	r := Reconciliation{
-		Provider:     fetcher.Name(),
-		PeriodStart:  start,
-		PeriodEnd:    end,
-		UpstreamUSD:  upstream,
-		LocalUSD:     local,
-		VarianceUSD:  upstream - local,
+		Provider:    fetcher.Name(),
+		PeriodStart: start,
+		PeriodEnd:   end,
+		UpstreamUSD: upstream,
+		LocalUSD:    local,
+		VarianceUSD: upstream - local,
 	}
 	if _, err := s.SaveReconciliation(ctx, r); err != nil {
 		return Reconciliation{}, err

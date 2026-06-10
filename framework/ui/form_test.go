@@ -97,7 +97,7 @@ func TestValidationSummaryRendersErrors(t *testing.T) {
 
 func TestValidationSummaryWithFieldLabels(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
-		Errors: FieldErrors{"email": "Invalid"},
+		Errors:      FieldErrors{"email": "Invalid"},
 		FieldLabels: map[string]string{"email": "Email Address"},
 	}))
 	if !strings.Contains(h, "Email Address: Invalid") {
@@ -131,7 +131,7 @@ func TestValidationSummaryURLEncodesFieldName(t *testing.T) {
 // point to actual input element IDs (which may differ from FieldErrors keys).
 func TestValidationSummaryUsesFieldIDs(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
-		Errors: FieldErrors{"val-name": "Name is required"},
+		Errors:   FieldErrors{"val-name": "Name is required"},
 		FieldIDs: map[string]string{"val-name": "f-name"},
 	}))
 	if !strings.Contains(h, `href="#f-name"`) {

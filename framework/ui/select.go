@@ -38,9 +38,9 @@ type SelectConfig struct {
 	// Help renders supporting text under the field.
 	Help string
 	// Error overrides Help with an error message + aria-invalid.
-	Error string
-	ID    string
-	Class string
+	Error      string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -113,7 +113,7 @@ func Select(cfg SelectConfig) render.HTML {
 	if cfg.Required {
 		labelHTML = render.Join(labelHTML,
 			html.Span(html.TextConfig{
-				Class: "ui-form-field__required",
+				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
@@ -124,8 +124,8 @@ func Select(cfg SelectConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-select__error",
+			ID:         id + "-error",
+			Class:      "ui-select__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {

@@ -42,9 +42,9 @@ type Issuer struct {
 }
 
 type pendingMint struct {
-	code     string
-	claims   Claims
-	expires  time.Time
+	code    string
+	claims  Claims
+	expires time.Time
 }
 
 // NewIssuer constructs an Issuer using the given encoder and channel.
@@ -175,12 +175,12 @@ var _ Channel = PrintTTYChannel{}
 // identity class with the doc's recommended defaults.
 func ClaimsFor(session ids.SessionID, identity control.IdentityClass) Claims {
 	return Claims{
-		Ver:           VerCurrent,
-		JTI:           ids.NewJTI(),
-		Sessions:      []ids.SessionID{session},
-		IdentityClass: identity,
-		ExpiresAt:     time.Now().Add(24 * time.Hour).Unix(),
-		CanMint:       false,
+		Ver:            VerCurrent,
+		JTI:            ids.NewJTI(),
+		Sessions:       []ids.SessionID{session},
+		IdentityClass:  identity,
+		ExpiresAt:      time.Now().Add(24 * time.Hour).Unix(),
+		CanMint:        false,
 		CriticalClaims: []string{"sessions", "identity_class"},
 	}
 }

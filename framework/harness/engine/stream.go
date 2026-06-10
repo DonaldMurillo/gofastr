@@ -23,11 +23,11 @@ import (
 //     FinishReason is "length" / "error", in which case the loop
 //     surfaces an Error event and yields.
 type StreamSummary struct {
-	Text         string                    // concatenated TextDelta payloads
-	Thinking     []json.RawMessage         // provider-stamped thinking blocks
-	ToolUses     []control.ToolUse         // any tool_use blocks the model emitted
-	Usage        provider.Usage            // final accounting at message_stop
-	FinishReason string                    // raw provider finish_reason
+	Text         string            // concatenated TextDelta payloads
+	Thinking     []json.RawMessage // provider-stamped thinking blocks
+	ToolUses     []control.ToolUse // any tool_use blocks the model emitted
+	Usage        provider.Usage    // final accounting at message_stop
+	FinishReason string            // raw provider finish_reason
 }
 
 // CollectStream pumps events from a Provider stream channel into the
@@ -40,9 +40,9 @@ func CollectStream(
 	stream <-chan provider.StreamEvent,
 ) (StreamSummary, error) {
 	var (
-		summary    StreamSummary
-		textBuf    strings.Builder
-		curTool    *control.ToolUse
+		summary     StreamSummary
+		textBuf     strings.Builder
+		curTool     *control.ToolUse
 		curToolJSON strings.Builder
 	)
 	flushTool := func() {

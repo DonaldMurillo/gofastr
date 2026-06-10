@@ -31,10 +31,10 @@ type Client struct {
 	stdout io.ReadCloser
 	stderr io.ReadCloser
 
-	mu         sync.Mutex
-	nextID     atomic.Uint64
-	pending    map[uint64]chan response
-	closed     atomic.Bool
+	mu      sync.Mutex
+	nextID  atomic.Uint64
+	pending map[uint64]chan response
+	closed  atomic.Bool
 
 	// initialized is true once the MCP `initialize` handshake completed.
 	initialized atomic.Bool

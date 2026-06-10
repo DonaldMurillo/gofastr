@@ -23,7 +23,7 @@ const (
 	GapNone Gap = "none"
 	GapXS   Gap = "xs"
 	GapSM   Gap = "sm"
-	GapMD   Gap = ""   // default
+	GapMD   Gap = "" // default
 	GapLG   Gap = "lg"
 	GapXL   Gap = "xl"
 	Gap2XL  Gap = "2xl"
@@ -163,7 +163,7 @@ func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 // purely visual.
 func Spacer() render.HTML {
 	return layoutStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: "ui-layout ui-spacer",
+		Class:      "ui-layout ui-spacer",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}))
 }
@@ -284,8 +284,8 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	}
 	attrs := map[string]string{
 		"class":           cls,
-		"data-fui-sticky":  string(edge),
-		"data-fui-z-tier":  tier,
+		"data-fui-sticky": string(edge),
+		"data-fui-z-tier": tier,
 	}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID

@@ -79,7 +79,7 @@ func TestSectionMenuCollapsedGroupClosed(t *testing.T) {
 	if start == -1 {
 		t.Fatalf("no group rendered:\n%s", h)
 	}
-	openTag := h[start:strings.Index(h[start:], ">")+start]
+	openTag := h[start : strings.Index(h[start:], ">")+start]
 	if strings.Contains(openTag, "open") {
 		t.Errorf("collapsed group without an active item should be closed: %q", openTag)
 	}
@@ -141,10 +141,10 @@ func TestSectionMenuCSSScopedRailAndTrigger(t *testing.T) {
 		t.Fatal("CSS must be scoped to the component marker")
 	}
 	for _, want := range []string{
-		"@media (min-width: 900px)",          // desktop rail
-		"__rail",                             // rail layout
-		"__trigger",                          // mobile trigger button
-		"prefers-reduced-motion",             // motion guard
+		"@media (min-width: 900px)", // desktop rail
+		"__rail",                    // rail layout
+		"__trigger",                 // mobile trigger button
+		"prefers-reduced-motion",    // motion guard
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS missing %q", want)

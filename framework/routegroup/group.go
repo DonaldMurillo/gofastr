@@ -45,10 +45,10 @@ type GroupOption func(*RouteGroup)
 // metadata (prefix, OpenAPI tag, MCP namespace) that App.GroupEntity
 // reads when mounting an entity into a group.
 type RouteGroup struct {
-	prefix      string
-	sub         *router.Router // lazy-created router.Group
-	subOnce     sync.Once      // guards lazy init of sub
-	parent      *router.Router
+	prefix  string
+	sub     *router.Router // lazy-created router.Group
+	subOnce sync.Once      // guards lazy init of sub
+	parent  *router.Router
 
 	// Middleware specific to this group (applied in addition to
 	// parent middleware).
@@ -185,8 +185,6 @@ func (g *RouteGroup) Group(prefix string, opts ...GroupOption) *RouteGroup {
 func (g *RouteGroup) Prefix() string {
 	return g.prefix
 }
-
-
 
 // OpenAPITag returns the configured OpenAPI tag, or empty string.
 func (g *RouteGroup) OpenAPITag() string {

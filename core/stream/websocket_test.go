@@ -180,7 +180,7 @@ func TestReadFrameSmallMessage(t *testing.T) {
 	}
 
 	frame := []byte{
-		0x81,                   // FIN + text opcode
+		0x81,                      // FIN + text opcode
 		byte(0x80 | len(payload)), // masked + length
 	}
 	frame = append(frame, mask[:]...)
@@ -205,7 +205,7 @@ func TestReadFrameSmallMessage(t *testing.T) {
 func TestReadFrameTooLarge(t *testing.T) {
 	// Build a frame claiming 2MB payload
 	frame := []byte{
-		0x81, // FIN + text opcode
+		0x81,       // FIN + text opcode
 		0x80 | 127, // masked + 64-bit length
 	}
 	lenBytes := make([]byte, 8)
@@ -237,4 +237,4 @@ type nopConn struct {
 
 func (n *nopConn) Read(p []byte) (int, error)  { return n.r.Read(p) }
 func (n *nopConn) Write(p []byte) (int, error) { return n.w.Write(p) }
-func (n *nopConn) Close() error                 { return nil }
+func (n *nopConn) Close() error                { return nil }

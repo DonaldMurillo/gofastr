@@ -7,10 +7,10 @@ import (
 
 // Parser parses SQL statements into AST nodes.
 type Parser struct {
-	lexer *Lexer
-	cur   Token
-	peek  Token
-	param int // auto-incrementing parameter index
+	lexer         *Lexer
+	cur           Token
+	peek          Token
+	param         int // auto-incrementing parameter index
 	compoundDepth int // when > 0, parseSelect skips ORDER BY/LIMIT
 }
 

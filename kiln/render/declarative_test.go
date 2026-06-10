@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/render"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // --- routes ----------------------------------------------------------

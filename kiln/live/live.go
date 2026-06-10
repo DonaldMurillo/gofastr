@@ -10,8 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	kilndb "github.com/DonaldMurillo/gofastr/kiln/db"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
-	"github.com/DonaldMurillo/gofastr/kiln/world"
 	kilnrender "github.com/DonaldMurillo/gofastr/kiln/render"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // AppFactory builds a fresh framework.App. Kiln calls it on every rebuild

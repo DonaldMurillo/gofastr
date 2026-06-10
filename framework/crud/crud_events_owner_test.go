@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
 // TestEventStream_AnonymousIsRejected pins the security gate: an

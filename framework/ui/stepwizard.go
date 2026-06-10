@@ -104,10 +104,10 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 	children = append(children, renderStepActions(ctx, cfg.CurrentStep, len(cfg.Steps)))
 
 	return stepWizardStyle.WrapHTML(html.Form(html.FormConfig{
-		Method: method,
-		Action: cfg.Action,
-		Class:  cls,
-		ExtraAttrs:  html.Attrs{"data-fui-comp": "ui-step-wizard"},
+		Method:     method,
+		Action:     cfg.Action,
+		Class:      cls,
+		ExtraAttrs: html.Attrs{"data-fui-comp": "ui-step-wizard"},
 	}, children...))
 }
 
@@ -262,4 +262,3 @@ func stepWizardCSS(_ style.Theme) string {
 }
 `
 }
-

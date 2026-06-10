@@ -540,9 +540,9 @@ func TestInputOmitsEmptyValue(t *testing.T) {
 // the typed surface doesn't cover; the typed surface is canonical.
 func TestInputConfig_TypedFieldOverridesAttrs(t *testing.T) {
 	inp := Input(InputConfig{
-		Type:  "text",
-		Name:  "q",
-		Value: "typed-wins",
+		Type:       "text",
+		Name:       "q",
+		Value:      "typed-wins",
 		ExtraAttrs: Attrs{"value": "attrs-loses"},
 	})
 	assertContains(t, inp, `value="typed-wins"`)
@@ -613,9 +613,9 @@ func TestTextAreaCols(t *testing.T) {
 // (or has Attrs override the child text) gets caught.
 func TestTextAreaContentAndAttrsCoexist(t *testing.T) {
 	ta := TextArea(TextAreaConfig{
-		Name:    "bio",
-		Content: "hello",
-		ExtraAttrs:   Attrs{"data-extra": "x", "aria-label": "Bio"},
+		Name:       "bio",
+		Content:    "hello",
+		ExtraAttrs: Attrs{"data-extra": "x", "aria-label": "Bio"},
 	})
 	assertContains(t, ta, ">hello</textarea>")
 	assertContains(t, ta, `data-extra="x"`)

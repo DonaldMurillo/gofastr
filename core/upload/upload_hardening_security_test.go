@@ -19,11 +19,11 @@ import (
 func TestSanitize_StripsControlBytes(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"file\rname.jpg":     "filename.jpg",
-		"file\nname.jpg":     "filename.jpg",
-		"file\tname.jpg":     "filename.jpg",
-		"file\x1bname.jpg":   "filename.jpg",
-		"safe.jpg":           "safe.jpg",
+		"file\rname.jpg":   "filename.jpg",
+		"file\nname.jpg":   "filename.jpg",
+		"file\tname.jpg":   "filename.jpg",
+		"file\x1bname.jpg": "filename.jpg",
+		"safe.jpg":         "safe.jpg",
 	}
 	for in, want := range cases {
 		if got := upload.SanitizeFilename(in); got != want {

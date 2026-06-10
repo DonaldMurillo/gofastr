@@ -38,10 +38,10 @@ type SliderConfig struct {
 	// ShowEdgeLabels renders the Min and Max values under the track.
 	ShowEdgeLabels bool
 	// Disabled disables interaction.
-	Disabled bool
-	ID       string
-	Class    string
-	ExtraAttrs    html.Attrs
+	Disabled   bool
+	ID         string
+	Class      string
+	ExtraAttrs html.Attrs
 }
 
 // Slider renders a labelled range input.

@@ -51,10 +51,10 @@ type Config struct {
 	// RPCPath, when set, is POSTed with order=<keys> after every
 	// successful reorder. Server responds 2xx to confirm or non-2xx
 	// to reject + revert.
-	RPCPath string
-	ID      string
-	Class   string
-	ExtraAttrs   html.Attrs
+	RPCPath    string
+	ID         string
+	Class      string
+	ExtraAttrs html.Attrs
 }
 
 // Render renders the SortableList.

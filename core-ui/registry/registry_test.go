@@ -158,6 +158,7 @@ func TestScanRequiresAttributeBoundary(t *testing.T) {
 		t.Errorf("Scan must match anchored marker, got %v", got)
 	}
 }
+
 // Note: free-text occurrences inside <pre>/<code> can still match
 // (the regex can't distinguish "inside an open tag" from "inside
 // text content"). Harmless in practice because componentCSSTags

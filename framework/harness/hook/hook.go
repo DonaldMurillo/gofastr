@@ -65,12 +65,12 @@ type Hook struct {
 
 // Result is the outcome of running one hook.
 type Result struct {
-	Event     Event
-	Command   string
-	ExitCode  int
-	TimedOut  bool
-	Output    string // combined stdout+stderr, capped at 64KB
-	Duration  time.Duration
+	Event    Event
+	Command  string
+	ExitCode int
+	TimedOut bool
+	Output   string // combined stdout+stderr, capped at 64KB
+	Duration time.Duration
 }
 
 // Runner runs hooks per event. Concurrency-safe.
@@ -174,9 +174,9 @@ func runOne(ctx context.Context, h Hook, env []string) Result {
 // capped wraps an io.Writer with a byte limit. Writes past the limit
 // are dropped silently (and a truncation marker appended exactly once).
 type cappedWriter struct {
-	w    *bytes.Buffer
-	max  int
-	wrote int
+	w      *bytes.Buffer
+	max    int
+	wrote  int
 	marked bool
 }
 

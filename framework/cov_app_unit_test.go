@@ -179,8 +179,8 @@ func TestCovStartStopErrors(t *testing.T) {
 
 type panicBattery struct{ name string }
 
-func (p *panicBattery) Name() string        { return p.name }
-func (p *panicBattery) Init(_ *App) error    { panic("init kaboom") }
+func (p *panicBattery) Name() string      { return p.name }
+func (p *panicBattery) Init(_ *App) error { panic("init kaboom") }
 
 type countBattery struct {
 	name  string

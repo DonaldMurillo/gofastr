@@ -26,21 +26,21 @@ const (
 type Op string
 
 const (
-	OpAddEntity     Op = "add_entity"
-	OpUpdateEntity  Op = "update_entity"
-	OpDeleteEntity  Op = "delete_entity"
-	OpAddField      Op = "add_field"
-	OpDeleteField   Op = "delete_field"
+	OpAddEntity         Op = "add_entity"
+	OpUpdateEntity      Op = "update_entity"
+	OpDeleteEntity      Op = "delete_entity"
+	OpAddField          Op = "add_field"
+	OpDeleteField       Op = "delete_field"
 	OpAddPage           Op = "add_page"
 	OpDeletePage        Op = "delete_page"
 	OpUpdatePageElement Op = "update_page_element"
-	OpAddHook       Op = "add_hook"
-	OpDeleteHook    Op = "delete_hook"
-	OpAddRoute      Op = "add_route"
-	OpDeleteRoute   Op = "delete_route"
-	OpAddSeed       Op = "add_seed"
-	OpAddMiddleware Op = "add_middleware"
-	OpSetAppConfig  Op = "set_app_config"
+	OpAddHook           Op = "add_hook"
+	OpDeleteHook        Op = "delete_hook"
+	OpAddRoute          Op = "add_route"
+	OpDeleteRoute       Op = "delete_route"
+	OpAddSeed           Op = "add_seed"
+	OpAddMiddleware     Op = "add_middleware"
+	OpSetAppConfig      Op = "set_app_config"
 )
 
 // Entry is one record in the append-only log. Payload is held as raw JSON

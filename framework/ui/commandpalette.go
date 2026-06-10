@@ -93,11 +93,11 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	}
 
 	trigger := render.Tag("button", map[string]string{
-		"type":                     "button",
-		"class":                    "ui-visually-hidden",
-		"data-fui-open":            name,
-		"data-fui-shortcut-click":  shortcut,
-		"aria-label":               triggerLabel,
+		"type":                    "button",
+		"class":                   "ui-visually-hidden",
+		"data-fui-open":           name,
+		"data-fui-shortcut-click": shortcut,
+		"aria-label":              triggerLabel,
 	}, render.Text(triggerLabel))
 
 	slot := &commandPaletteSlot{
@@ -110,7 +110,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	b := preset.Modal(name).
 		Hidden().
 		Role("dialog").
-		LabelledBy(name + "-title").
+		LabelledBy(name+"-title").
 		Slot("body", slot)
 	return trigger, b
 }

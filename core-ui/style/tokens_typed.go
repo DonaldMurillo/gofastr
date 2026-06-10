@@ -40,7 +40,7 @@ type Spacing struct {
 	Value int
 }
 
-func (s Spacing) CSS() string { return varRef("spacing", s.Name) }
+func (s Spacing) CSS() string    { return varRef("spacing", s.Name) }
 func (s Spacing) String() string { return s.CSS() }
 
 // Radius is a border-radius token. Pixel values, named.

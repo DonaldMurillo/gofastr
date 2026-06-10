@@ -11,10 +11,11 @@ import (
 // the AND of another.
 //
 // Without the fix:
-//   AND visibility='public' OR author_id=$2 AND owner_id=$3
-//   → (X AND visibility='public') OR (author_id=$2 AND owner_id=$3)
-//   The owner_id scope only applies to the OR branch — public posts
-//   from OTHER owners leak.
+//
+//	AND visibility='public' OR author_id=$2 AND owner_id=$3
+//	→ (X AND visibility='public') OR (author_id=$2 AND owner_id=$3)
+//	The owner_id scope only applies to the OR branch — public posts
+//	from OTHER owners leak.
 func TestSelect_WhereClausesAreParenthesised(t *testing.T) {
 	qb := Select("id").From("posts")
 	qb.Where("tenant_id = $1", "tenant-a")

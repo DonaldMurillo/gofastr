@@ -19,18 +19,18 @@ type Provider interface {
 
 // Request is one turn's input to the provider.
 type Request struct {
-	System   string        // composed system prompt (persona + framework + project)
-	Messages []Message     // conversation so far (user, assistant, tool_result)
+	System   string    // composed system prompt (persona + framework + project)
+	Messages []Message // conversation so far (user, assistant, tool_result)
 	Tools    []protocol.Descriptor
 	OnEvent  func(StreamEvent) // optional streaming callback
 }
 
 // Message is one entry in the rolling conversation passed to the provider.
 type Message struct {
-	Role      string         // "user" | "assistant" | "tool_result"
-	Text      string         // for user/assistant text turns
-	ToolCalls []ToolCall     // assistant turns may include calls
-	ToolUseID string         // for tool_result, references the assistant's call_id
+	Role      string           // "user" | "assistant" | "tool_result"
+	Text      string           // for user/assistant text turns
+	ToolCalls []ToolCall       // assistant turns may include calls
+	ToolUseID string           // for tool_result, references the assistant's call_id
 	Result    *protocol.Result // for tool_result, the typed result
 }
 
@@ -43,8 +43,8 @@ type ToolCall struct {
 
 // Turn is the provider's response to one Stream call.
 type Turn struct {
-	Text      string
-	ToolCalls []ToolCall
+	Text       string
+	ToolCalls  []ToolCall
 	StopReason string // "end_turn" | "tool_use" | "max_tokens" | provider-specific
 }
 

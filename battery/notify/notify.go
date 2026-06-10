@@ -100,12 +100,12 @@ type Router func(notifType string, to Recipient, channels []string) []string
 // Notifier is the front door. Construct with [New], register channels
 // via [WithChannel], and call [Send] from handlers.
 type Notifier struct {
-	mu         sync.RWMutex
-	channels   map[string]Channel
-	chanOrder  []string
-	templater  Templater
-	router     Router
-	onError    func(channel string, n Notification, err error)
+	mu        sync.RWMutex
+	channels  map[string]Channel
+	chanOrder []string
+	templater Templater
+	router    Router
+	onError   func(channel string, n Notification, err error)
 }
 
 // Option configures the Notifier.

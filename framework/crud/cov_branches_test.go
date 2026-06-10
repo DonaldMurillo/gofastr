@@ -280,4 +280,3 @@ func TestProjection_DuplicateFields(t *testing.T) {
 		t.Errorf("duplicate title not de-duped: %v", cols)
 	}
 }
-

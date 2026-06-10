@@ -9,9 +9,9 @@ func TestGlobalSearchRequiresAllCoreFields(t *testing.T) {
 	cases := []GlobalSearchConfig{
 		{Name: "q", Label: "Search", RPCPath: "/s", SignalName: "search"}, // no ID
 		{ID: "s", Label: "Search", RPCPath: "/s", SignalName: "search"},   // no Name
-		{ID: "s", Name: "q", RPCPath: "/s", SignalName: "search"},          // no Label
-		{ID: "s", Name: "q", Label: "Search", SignalName: "search"},        // no RPCPath
-		{ID: "s", Name: "q", Label: "Search", RPCPath: "/s"},               // no SignalName
+		{ID: "s", Name: "q", RPCPath: "/s", SignalName: "search"},         // no Label
+		{ID: "s", Name: "q", Label: "Search", SignalName: "search"},       // no RPCPath
+		{ID: "s", Name: "q", Label: "Search", RPCPath: "/s"},              // no SignalName
 	}
 	for i, c := range cases {
 		func() {

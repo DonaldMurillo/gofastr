@@ -92,9 +92,9 @@ func (*Memory) Close() error { return nil }
 type JSONL struct {
 	path string
 
-	mu      sync.Mutex
-	file    *os.File
-	count   int // entries in file (read at Open, maintained on Append/Truncate)
+	mu    sync.Mutex
+	file  *os.File
+	count int // entries in file (read at Open, maintained on Append/Truncate)
 }
 
 // OpenJSONL opens or creates a JSONL journal at path. The parent directory

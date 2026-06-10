@@ -30,9 +30,9 @@ type SecurityHeadersConfig struct {
 	// Requires HTTPS to be active; the header is silently skipped on plain HTTP.
 	// Recommended: 31536000 seconds (1 year) for production.
 	// Only takes effect when Secure is true.
-	HSTSMaxAge    int
+	HSTSMaxAge     int
 	HSTSIncludeSub bool
-	HSTSPreload   bool
+	HSTSPreload    bool
 
 	// Secure indicates whether the connection is over HTTPS.
 	// When true AND HSTSMaxAge > 0, the Strict-Transport-Security header is added.

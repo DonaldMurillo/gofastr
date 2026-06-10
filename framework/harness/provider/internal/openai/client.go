@@ -22,11 +22,11 @@ import (
 // differences are the base URL, the auth header, and any required
 // metadata headers (HTTP-Referer / X-Title for OpenRouter).
 type Client struct {
-	BaseURL string         // e.g. "https://openrouter.ai/api/v1"
-	APIKey  string         // bearer token
-	HTTP    *http.Client   // nil → http.DefaultClient with a 5-min timeout
+	BaseURL string            // e.g. "https://openrouter.ai/api/v1"
+	APIKey  string            // bearer token
+	HTTP    *http.Client      // nil → http.DefaultClient with a 5-min timeout
 	Headers map[string]string // additional static headers (e.g. HTTP-Referer)
-	Name    string         // provider name for events ("openrouter", "zai")
+	Name    string            // provider name for events ("openrouter", "zai")
 }
 
 // Chat issues a Chat Completions request and streams events.
@@ -67,25 +67,25 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 
 // requestBody is the OpenAI-shape JSON. Only fields the harness emits are listed.
 type requestBody struct {
-	Model       string         `json:"model"`
+	Model       string          `json:"model"`
 	Messages    []openaiMessage `json:"messages"`
-	Stream      bool           `json:"stream"`
-	Temperature *float64       `json:"temperature,omitempty"`
-	MaxTokens   *int           `json:"max_tokens,omitempty"`
+	Stream      bool            `json:"stream"`
+	Temperature *float64        `json:"temperature,omitempty"`
+	MaxTokens   *int            `json:"max_tokens,omitempty"`
 	Tools       []openaiTool    `json:"tools,omitempty"`
 }
 
 type openaiMessage struct {
-	Role       string         `json:"role"`
-	Content    any            `json:"content,omitempty"`
+	Role       string           `json:"role"`
+	Content    any              `json:"content,omitempty"`
 	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
 
 type openaiToolCall struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"` // "function"
-	Function openaiToolCallFn   `json:"function"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"` // "function"
+	Function openaiToolCallFn `json:"function"`
 }
 
 type openaiToolCallFn struct {
@@ -230,8 +230,8 @@ func flattenToolResultContent(blocks []control.ContentBlock) string {
 type streamChunk struct {
 	Choices []streamChoice `json:"choices"`
 	Usage   *struct {
-		PromptTokens             int `json:"prompt_tokens"`
-		CompletionTokens         int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
 		// Provider-specific cache fields. OpenRouter passes
 		// through cache details from upstream models when
 		// available; OpenAI returns prompt_tokens_details.
@@ -258,9 +258,9 @@ type streamChoice struct {
 }
 
 type deltaToolCall struct {
-	Index    int                 `json:"index"`
-	ID       string              `json:"id,omitempty"`
-	Function *deltaToolCallFunc  `json:"function,omitempty"`
+	Index    int                `json:"index"`
+	ID       string             `json:"id,omitempty"`
+	Function *deltaToolCallFunc `json:"function,omitempty"`
 }
 
 type deltaToolCallFunc struct {

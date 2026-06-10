@@ -9,7 +9,7 @@
 //
 //   - framework/entity     Entity model, columns, relations, validators
 //   - framework/crud       HTTP CRUD handler, eager loading, includes,
-//                          typed query, MCP tool generator
+//     typed query, MCP tool generator
 //   - framework/hook       HookRegistry + lifecycle constants
 //   - framework/event      EventBus + Event types
 //   - framework/migrate    AutoMigrate + DiffSchema + Dialect detection

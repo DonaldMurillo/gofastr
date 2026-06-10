@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -453,9 +453,9 @@ func TestFormInput_AutocompleteOff(t *testing.T) {
 	t.Logf("NOTE: password input rendered — caller should add autocomplete=off via ExtraAttrs if desired")
 	// Verify ExtraAttrs can set autocomplete=off
 	h2 := html.Input(html.InputConfig{
-		Type:        "password",
-		Name:        "password",
-		ExtraAttrs:  html.Attrs{"autocomplete": "off"},
+		Type:       "password",
+		Name:       "password",
+		ExtraAttrs: html.Attrs{"autocomplete": "off"},
 	})
 	mustContain(t, h2, `autocomplete="off"`)
 }

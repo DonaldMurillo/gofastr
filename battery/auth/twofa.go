@@ -99,7 +99,7 @@ type TwoFAStore interface {
 
 // MemoryTwoFAStore is a goroutine-safe in-memory TwoFAStore for dev/test.
 type MemoryTwoFAStore struct {
-	mu    sync.RWMutex
+	mu     sync.RWMutex
 	states map[string]*TwoFAState
 }
 

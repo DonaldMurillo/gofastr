@@ -122,8 +122,8 @@ func BenchmarkT7_SingleQuery_NetHTTP(b *testing.B) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":            id,
-				"randomNumber":  randomNumber,
+				"id":           id,
+				"randomNumber": randomNumber,
 			})
 		})
 

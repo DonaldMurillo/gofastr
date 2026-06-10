@@ -77,7 +77,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 
 	inner := []render.HTML{
 		html.Span(html.TextConfig{
-			Class: "ui-search-input__icon",
+			Class:      "ui-search-input__icon",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⌕")),
 		render.VoidTag("input", inputAttrs),

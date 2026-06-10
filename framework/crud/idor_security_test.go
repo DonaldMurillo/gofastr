@@ -54,9 +54,9 @@ func TestNestedFilter_ManyToOneRejectsUnsafeFieldName(t *testing.T) {
 			Entity:     "users",
 			ForeignKey: "author_id",
 		},
-		Field:    "name OR 1=1 --",
-		Op:       filter.OpEq,
-		Value:    "alice",
+		Field: "name OR 1=1 --",
+		Op:    filter.OpEq,
+		Value: "alice",
 	})
 	if strings.Contains(sqlStr, "OR 1=1") {
 		t.Fatalf("SECURITY: [nested-filter] many-to-one query embeds attacker field name verbatim: %s", sqlStr)
@@ -70,9 +70,9 @@ func TestNestedFilter_HasManyRejectsUnsafeFieldName(t *testing.T) {
 			Entity:     "comments",
 			ForeignKey: "post_id",
 		},
-		Field:    "body OR 1=1 --",
-		Op:       filter.OpEq,
-		Value:    "x",
+		Field: "body OR 1=1 --",
+		Op:    filter.OpEq,
+		Value: "x",
 	})
 	if strings.Contains(sqlStr, "OR 1=1") {
 		t.Fatalf("SECURITY: [nested-filter] has-many query embeds attacker field name verbatim: %s", sqlStr)
@@ -89,9 +89,9 @@ func TestNestedFilter_ManyToManyRejectsUnsafeFieldName(t *testing.T) {
 			LocalKey:         "post_id",
 			ForeignKeyTarget: "id",
 		},
-		Field:    "label OR 1=1 --",
-		Op:       filter.OpEq,
-		Value:    "x",
+		Field: "label OR 1=1 --",
+		Op:    filter.OpEq,
+		Value: "x",
 	})
 	if strings.Contains(sqlStr, "OR 1=1") {
 		t.Fatalf("SECURITY: [nested-filter] many-to-many query embeds attacker field name verbatim: %s", sqlStr)

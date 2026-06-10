@@ -9,10 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // runtimeHash is the SHA256 of the embedded runtime.js, computed once

@@ -224,8 +224,8 @@ func TestHreflangEmitsAlternateLinks(t *testing.T) {
 
 type canonicalComp struct{}
 
-func (canonicalComp) Render() render.HTML        { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (canonicalComp) ScreenCanonical() string    { return "https://example.com/canonical-path" }
+func (canonicalComp) Render() render.HTML     { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (canonicalComp) ScreenCanonical() string { return "https://example.com/canonical-path" }
 
 func TestCanonicalLink(t *testing.T) {
 	a := app.NewApp("x")
@@ -314,7 +314,9 @@ func TestSEOBundleEmitsAllTags(t *testing.T) {
 // ScreenDescriber when both are present.
 type bundleAndDescriberComp struct{}
 
-func (bundleAndDescriberComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (bundleAndDescriberComp) Render() render.HTML {
+	return html.Div(html.DivConfig{}, render.Text("hi"))
+}
 func (bundleAndDescriberComp) ScreenDescription() string { return "From describer" }
 func (bundleAndDescriberComp) ScreenSEO() SEO            { return SEO{Description: "From bundle"} }
 
@@ -376,10 +378,10 @@ func TestPerPageOGBeatsGlobal(t *testing.T) {
 // Empty bundle fields fall through to per-concern interfaces.
 type partialBundleComp struct{}
 
-func (partialBundleComp) Render() render.HTML        { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (partialBundleComp) ScreenDescription() string  { return "fallback desc" }
-func (partialBundleComp) ScreenCanonical() string    { return "https://example.com/c-fallback" }
-func (partialBundleComp) ScreenSEO() SEO             { return SEO{Robots: "noindex"} } // only robots in bundle
+func (partialBundleComp) Render() render.HTML       { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (partialBundleComp) ScreenDescription() string { return "fallback desc" }
+func (partialBundleComp) ScreenCanonical() string   { return "https://example.com/c-fallback" }
+func (partialBundleComp) ScreenSEO() SEO            { return SEO{Robots: "noindex"} } // only robots in bundle
 
 func TestSEOBundleFallsThroughEmptyFields(t *testing.T) {
 	a := app.NewApp("x")
@@ -390,9 +392,9 @@ func TestSEOBundleFallsThroughEmptyFields(t *testing.T) {
 	ds.ServeHTTP(w, req)
 	body := w.Body.String()
 	for _, want := range []string{
-		`content="fallback desc"`,                   // from ScreenDescriber
-		`href="https://example.com/c-fallback"`,     // from ScreenCanonical
-		`content="noindex"`,                          // from bundle
+		`content="fallback desc"`,               // from ScreenDescriber
+		`href="https://example.com/c-fallback"`, // from ScreenCanonical
+		`content="noindex"`,                     // from bundle
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in <head>", want)

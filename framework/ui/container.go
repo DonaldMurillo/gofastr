@@ -33,9 +33,9 @@ type ContainerConfig struct {
 	Width ContainerWidth
 	// As lets the caller pick a non-<div> tag (e.g. "section", "main").
 	// Defaults to "div".
-	As    string
-	ID    string
-	Class string
+	As         string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 

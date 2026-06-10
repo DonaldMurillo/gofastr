@@ -257,7 +257,7 @@ func containsString(xs []string, s string) bool {
 // ----- package-level default ------------------------------------------------
 
 var (
-	defaultMu  sync.RWMutex
+	defaultMu   sync.RWMutex
 	defaultEval *Evaluator
 )
 

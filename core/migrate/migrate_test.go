@@ -625,4 +625,3 @@ func TestSQLiteCreateMigrationsTable(t *testing.T) {
 		t.Errorf("DDL should not contain NOW() for sqlite: %s", ddl)
 	}
 }
-

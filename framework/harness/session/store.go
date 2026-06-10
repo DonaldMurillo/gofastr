@@ -98,9 +98,9 @@ func (e ErrSession) Error() string { return string(e) }
 
 // Specific errors.
 const (
-	ErrUnknownSession   = ErrSession("session: unknown session")
-	ErrSchemaMismatch   = ErrSession("session: schema version mismatch")
-	ErrOrphanIntents    = ErrSession("session: tool intents without outcomes (orphans)")
+	ErrUnknownSession = ErrSession("session: unknown session")
+	ErrSchemaMismatch = ErrSession("session: schema version mismatch")
+	ErrOrphanIntents  = ErrSession("session: tool intents without outcomes (orphans)")
 )
 
 // Standard SQL schema. Exposed for tests + migrations. Bump

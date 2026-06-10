@@ -280,7 +280,7 @@ type depsBattery struct {
 	onStop func()
 }
 
-func (d *depsBattery) Name() string              { return d.name }
+func (d *depsBattery) Name() string { return d.name }
 func (d *depsBattery) Init(_ *App) error {
 	if d.onInit != nil {
 		d.onInit()

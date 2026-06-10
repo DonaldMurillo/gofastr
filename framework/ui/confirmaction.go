@@ -154,11 +154,11 @@ func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpc
 }
 
 type confirmDialogSlot struct {
-	titleID, bodyID                       string
-	title, body                           string
-	confirmLabel, cancelLabel             string
-	rpcMethod, rpcPath                    string
-	autofocusConfirm                      bool
+	titleID, bodyID           string
+	title, body               string
+	confirmLabel, cancelLabel string
+	rpcMethod, rpcPath        string
+	autofocusConfirm          bool
 }
 
 func (s *confirmDialogSlot) Render() render.HTML {
@@ -188,14 +188,14 @@ func (s *confirmDialogSlot) Render() render.HTML {
 			render.Text(s.body)),
 		html.Div(html.DivConfig{Class: "ui-confirm-action__actions"},
 			Button(ButtonConfig{
-				Label:   s.cancelLabel,
-				Variant: ButtonGhost,
-				ExtraAttrs:   cancelAttrs,
+				Label:      s.cancelLabel,
+				Variant:    ButtonGhost,
+				ExtraAttrs: cancelAttrs,
 			}),
 			Button(ButtonConfig{
-				Label:   s.confirmLabel,
-				Variant: ButtonDanger,
-				ExtraAttrs:   confirmAttrs,
+				Label:      s.confirmLabel,
+				Variant:    ButtonDanger,
+				ExtraAttrs: confirmAttrs,
 			}),
 		),
 	))

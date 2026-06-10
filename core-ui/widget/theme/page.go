@@ -79,7 +79,7 @@ func PageCSS(t style.Theme) string {
 		{"kiln-container-md", "960px"},
 		{"kiln-container-lg", "1200px"},
 	} {
-		ss.Rule("." + c.cls).
+		ss.Rule("."+c.cls).
 			Set("max-width", c.width, "margin", "0 auto", "padding", "0 {spacing.lg}").
 			End()
 	}
@@ -97,7 +97,7 @@ func PageCSS(t style.Theme) string {
 		{"kiln-stack-sm", "{spacing.sm}"},
 		{"kiln-stack-lg", "{spacing.lg}"},
 	} {
-		ss.Rule("." + s.cls).Set("display", "flex", "flex-direction", "column", "gap", s.gap).End()
+		ss.Rule("."+s.cls).Set("display", "flex", "flex-direction", "column", "gap", s.gap).End()
 	}
 	for _, r := range []struct{ cls, justify string }{
 		{"kiln-row", ""},

@@ -300,6 +300,5 @@ func stripSSEField(s string) string {
 	return s
 }
 
-
 // ensure handler package is imported for context propagation
 var _ = handler.SetUser

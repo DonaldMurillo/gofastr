@@ -1,4 +1,4 @@
-//check-csp:ignore-file
+// check-csp:ignore-file
 // The harness web client is a dev-only operator surface, not a
 // production browser app, so the framework's strict-CSP contract
 // does not apply. The renderTUIShell helper inlines a tiny

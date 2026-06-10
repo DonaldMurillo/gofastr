@@ -49,13 +49,13 @@ import (
 // plugins above need: PasswordSetter, EmailVerifier, AccountLister,
 // AccountUnlinker, OAuthLinker, PasswordChecker, OAuthUserCreator.
 type e2eFullStore struct {
-	mu         sync.Mutex
-	byEmail    map[string]*e2eFullEntry
-	byID       map[string]*e2eFullEntry
-	verified   map[string]bool
-	devURLs    chan string
-	links      map[string]map[string]string // userID → provider → providerID
-	devTokens  *capturedTokens
+	mu        sync.Mutex
+	byEmail   map[string]*e2eFullEntry
+	byID      map[string]*e2eFullEntry
+	verified  map[string]bool
+	devURLs   chan string
+	links     map[string]map[string]string // userID → provider → providerID
+	devTokens *capturedTokens
 }
 
 type e2eFullEntry struct {

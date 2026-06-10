@@ -121,18 +121,18 @@ type DeletePageArgs struct {
 // {ok:false,kind:"conflict",hint:"refetch"} so the agent re-reads the
 // page and re-emits the patch against the current state.
 type UpdatePageElementArgs struct {
-	Path      string         `json:"path"`
-	ElementID string         `json:"element_id"`
-	IfMatch   *int           `json:"if_match,omitempty"`
-	Patch     PageElementOp  `json:"patch"`
+	Path      string        `json:"path"`
+	ElementID string        `json:"element_id"`
+	IfMatch   *int          `json:"if_match,omitempty"`
+	Patch     PageElementOp `json:"patch"`
 }
 
 // PageElementOp is the discriminated patch shape. Op selects which
 // fields are read.
 type PageElementOp struct {
-	Op        string         `json:"op"`
-	SetProps  map[string]any `json:"set_props,omitempty"`
-	Element   *world.Node    `json:"element,omitempty"`
+	Op       string         `json:"op"`
+	SetProps map[string]any `json:"set_props,omitempty"`
+	Element  *world.Node    `json:"element,omitempty"`
 }
 
 type AddHookArgs struct {

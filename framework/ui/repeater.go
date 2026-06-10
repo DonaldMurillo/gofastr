@@ -69,7 +69,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 	var itemHTML []render.HTML
 	for i, item := range cfg.Items {
 		itemHTML = append(itemHTML, html.Div(html.DivConfig{
-			Class: "ui-repeater-item",
+			Class:      "ui-repeater-item",
 			ExtraAttrs: map[string]string{"data-index": strconv.Itoa(i)},
 		}, item, repeaterRemoveBtn(cfg, i)))
 	}
@@ -81,7 +81,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		}
 		for i := 0; i < count; i++ {
 			itemHTML = append(itemHTML, html.Div(html.DivConfig{
-				Class: "ui-repeater-item",
+				Class:      "ui-repeater-item",
 				ExtraAttrs: map[string]string{"data-index": strconv.Itoa(i)},
 			}, cfg.Template(i), repeaterRemoveBtn(cfg, i)))
 		}
@@ -108,7 +108,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		addAttrs["data-fui-rpc-signal"] = cfg.ID + "-items"
 	}
 	children = append(children, html.Button(html.ButtonConfig{
-		Label: cfg.AddLabel,
+		Label:      cfg.AddLabel,
 		ExtraAttrs: addAttrs,
 	}))
 
@@ -117,7 +117,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 
 func repeaterRemoveBtn(cfg RepeaterConfig, index int) render.HTML {
 	attrs := map[string]string{
-		"class":     "ui-repeater-remove",
+		"class":      "ui-repeater-remove",
 		"aria-label": fmt.Sprintf("Remove item %d", index+1),
 	}
 	if cfg.RPCPath != "" {
@@ -129,7 +129,7 @@ func repeaterRemoveBtn(cfg RepeaterConfig, index int) render.HTML {
 		attrs["hidden"] = ""
 	}
 	return html.Button(html.ButtonConfig{
-		Label: cfg.RemoveLabel,
+		Label:      cfg.RemoveLabel,
 		ExtraAttrs: attrs,
 	})
 }

@@ -38,12 +38,12 @@ const (
 //   - redactions.txt  — only at RedactMaintainer; counts per pattern
 //   - meta.json       — extra metadata (profile, model, turn count)
 type ExportBundle struct {
-	Store    Store
-	Session  ids.SessionID
-	Profile  string
-	Model    string
-	Level    RedactLevel
-	OutPath  string
+	Store   Store
+	Session ids.SessionID
+	Profile string
+	Model   string
+	Level   RedactLevel
+	OutPath string
 }
 
 // Write produces the bundle on disk. Returns the bundle path.

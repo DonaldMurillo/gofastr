@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
@@ -474,7 +474,6 @@ func (pe *panelEnv) agentLabel() string {
 	return name
 }
 
-
 func (pe *panelEnv) lastUserMessageMillis() int64 {
 	chat := pe.live.Session().Chat
 	for i := len(chat) - 1; i >= 0; i-- {
@@ -591,11 +590,11 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 	b.WriteString(`<ol class="kiln-log">`)
 
 	type item struct {
-		ts    time.Time
-		kind  string // "chat" | "plan" | "world_edit"
-		chat  *journal.ChatEvent
-		plan  *journal.Plan
-		op    journal.Op
+		ts   time.Time
+		kind string // "chat" | "plan" | "world_edit"
+		chat *journal.ChatEvent
+		plan *journal.Plan
+		op   journal.Op
 	}
 	items := make([]item, 0, len(sess.Chat)+len(sess.Plans))
 	// Index tool_results by their call_id so each tool_call row can

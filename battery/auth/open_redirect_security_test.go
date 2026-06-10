@@ -11,10 +11,10 @@ import (
 // rejects various open-redirect payloads.
 func TestOpenRedirect_SafeRelativePath(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		safe    bool
-		desc    string
+		name  string
+		input string
+		safe  bool
+		desc  string
 	}{
 		{"absolute_url", "https://evil.com", false, "absolute URL redirect"},
 		{"protocol_relative", "//evil.com", false, "protocol-relative redirect"},
@@ -143,5 +143,3 @@ func TestOpenRedirect_SafeRefererRejectsCrossOrigin(t *testing.T) {
 		})
 	}
 }
-
-

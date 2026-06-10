@@ -112,11 +112,11 @@ func gatedOpsFor(t *testing.T, doc map[string]any, table string) map[string]map[
 	base := getMap(t, paths, "/"+table)
 	byID := getMap(t, paths, "/"+table+"/{id}")
 	return map[string]map[string]any{
-		"GET " + table:        getMap(t, base, "get"),
-		"POST " + table:       getMap(t, base, "post"),
+		"GET " + table:         getMap(t, base, "get"),
+		"POST " + table:        getMap(t, base, "post"),
 		"GET " + table + "/id": getMap(t, byID, "get"),
 		"PUT " + table + "/id": getMap(t, byID, "put"),
-		"DELETE " + table:     getMap(t, byID, "delete"),
+		"DELETE " + table:      getMap(t, byID, "delete"),
 	}
 }
 

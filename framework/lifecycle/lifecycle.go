@@ -63,11 +63,11 @@ type HealthChecker interface {
 
 // Lifecycle manages the graceful shutdown sequence.
 type Lifecycle struct {
-	mu            sync.Mutex
-	drainers      []Drainer
-	checkers      []HealthChecker
-	timeout       time.Duration
-	shuttingDown  atomic.Bool
+	mu           sync.Mutex
+	drainers     []Drainer
+	checkers     []HealthChecker
+	timeout      time.Duration
+	shuttingDown atomic.Bool
 }
 
 // New creates a new Lifecycle manager.

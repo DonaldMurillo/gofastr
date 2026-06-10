@@ -203,8 +203,8 @@ var _ component.Component = (*HomeScreen)(nil)
 // to carry any extra functionality. Init runs once at InitPlugins time.
 type noopPlugin struct{}
 
-func (noopPlugin) Name() string                     { return "noop" }
-func (noopPlugin) Init(_ *framework.App) error      { return nil }
+func (noopPlugin) Name() string                { return "noop" }
+func (noopPlugin) Init(_ *framework.App) error { return nil }
 
 func getEnv(key, def string) string {
 	if v := os.Getenv(key); v != "" {

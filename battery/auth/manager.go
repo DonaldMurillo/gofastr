@@ -95,14 +95,14 @@ func (c *AuthConfig) defaults() {
 	// throughput can pass a custom config with a huge MaxAttempts.
 	if c.LoginRateLimit == nil {
 		c.LoginRateLimit = &RateLimiterConfig{
-			MaxAttempts:   30,              // ~ generous per-IP burst
+			MaxAttempts:   30, // ~ generous per-IP burst
 			Window:        time.Minute,
 			BlockDuration: 5 * time.Minute,
 		}
 	}
 	if c.LoginRateLimitPerAccount == nil {
 		c.LoginRateLimitPerAccount = &RateLimiterConfig{
-			MaxAttempts:   10,              // ~ tight per-account budget
+			MaxAttempts:   10, // ~ tight per-account budget
 			Window:        time.Minute,
 			BlockDuration: 15 * time.Minute,
 		}

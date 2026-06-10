@@ -26,9 +26,9 @@ import (
 //   - app_config:     return the AppConfig snapshot (Name, JSONCase, timeouts…).
 //   - app_readiness:  run every registered readiness check and report results.
 //   - framework_docs_list / framework_docs_get / framework_docs_search:
-//                     expose the framework's markdown docs (embedded at
-//                     build time, so they match the framework version
-//                     this binary was built against — no GitHub fetch).
+//     expose the framework's markdown docs (embedded at
+//     build time, so they match the framework version
+//     this binary was built against — no GitHub fetch).
 func WithMCPIntrospection() AppOption {
 	return func(a *App) {
 		a.mcpIntrospection = true

@@ -108,9 +108,9 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	}
 
 	inputAttrs := html.Attrs{
-		"type": inputType,
-		"name": cfg.Name,
-		"id":   id,
+		"type":  inputType,
+		"name":  cfg.Name,
+		"id":    id,
 		"class": "ui-toggle__input",
 	}
 	if cfg.Value != "" {
@@ -149,8 +149,8 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	children := []render.HTML{control, labelText}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-toggle__error",
+			ID:         id + "-error",
+			Class:      "ui-toggle__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
@@ -176,9 +176,9 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 
 // RadioGroupOption describes one radio button in a RadioGroup.
 type RadioGroupOption struct {
-	Value   string
-	Label   string
-	Checked bool
+	Value    string
+	Label    string
+	Checked  bool
 	Disabled bool
 }
 
@@ -196,8 +196,8 @@ type RadioGroupConfig struct {
 	Error string
 	// Required marks the group as required.
 	Required bool
-	ID      string
-	Class   string
+	ID       string
+	Class    string
 }
 
 // RadioGroup renders a <fieldset> of radio buttons with a shared
@@ -228,7 +228,7 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 	if cfg.Required {
 		legend = render.Join(legend,
 			html.Span(html.TextConfig{
-				Class: "ui-form-field__required",
+				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
@@ -251,8 +251,8 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-toggle-group__error",
+			ID:         id + "-error",
+			Class:      "ui-toggle-group__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {
@@ -298,8 +298,8 @@ type CheckboxGroupConfig struct {
 	Error string
 	// Required marks the group as required.
 	Required bool
-	ID      string
-	Class   string
+	ID       string
+	Class    string
 }
 
 // CheckboxGroup renders a <fieldset> of checkboxes with a shared
@@ -330,7 +330,7 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 	if cfg.Required {
 		legend = render.Join(legend,
 			html.Span(html.TextConfig{
-				Class: "ui-form-field__required",
+				Class:      "ui-form-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}
@@ -353,8 +353,8 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-toggle-group__error",
+			ID:         id + "-error",
+			Class:      "ui-toggle-group__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {

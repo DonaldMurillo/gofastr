@@ -52,8 +52,8 @@ type Config struct {
 	// Open opts the disclosure into rendering open by default.
 	Open bool
 	// ID / Class / Attrs are passed through to the wrapper.
-	ID    string
-	Class string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -117,10 +117,10 @@ func Render(cfg Config) render.HTML {
 	}
 
 	chips := render.Tag("div", map[string]string{
-		"class":                       "ui-multiselect__chips",
-		"data-fui-multiselect-chips":  "true",
+		"class":                            "ui-multiselect__chips",
+		"data-fui-multiselect-chips":       "true",
 		"data-fui-multiselect-placeholder": placeholder,
-		"aria-live":                   "polite",
+		"aria-live":                        "polite",
 	})
 
 	summary := render.Tag("summary",

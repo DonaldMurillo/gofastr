@@ -5,15 +5,15 @@
 //
 // The interface (Helper) admits two implementations:
 //
-//   1. InProcess — default for v0.1: the helper runs in the same
-//      process, reading from credstore.Store. Convenient for boot
-//      and tests; the agent's Bash tool can still in principle
-//      exfiltrate by reading the same credstore file (defense in
-//      depth comes from the Bash blocklist + redaction middleware).
+//  1. InProcess — default for v0.1: the helper runs in the same
+//     process, reading from credstore.Store. Convenient for boot
+//     and tests; the agent's Bash tool can still in principle
+//     exfiltrate by reading the same credstore file (defense in
+//     depth comes from the Bash blocklist + redaction middleware).
 //
-//   2. Subprocess — landed in a later phase: a separate process
-//      holding tokens and serving sign-requests over a Unix socket.
-//      Agent has no in-memory access to tokens.
+//  2. Subprocess — landed in a later phase: a separate process
+//     holding tokens and serving sign-requests over a Unix socket.
+//     Agent has no in-memory access to tokens.
 //
 // Tracked under operations hardening in the roadmap.
 package helper

@@ -86,13 +86,13 @@ func driveTurn(t *testing.T, prov provider.Provider, model, prompt string) realT
 }
 
 type realTurnResult struct {
-	Text             string
-	TextDeltaCount   int
-	InputTokens      int
-	OutputTokens     int
-	CacheReadTokens  int
-	Provider         string
-	TurnEndedReason  string
+	Text            string
+	TextDeltaCount  int
+	InputTokens     int
+	OutputTokens    int
+	CacheReadTokens int
+	Provider        string
+	TurnEndedReason string
 }
 
 // ---------- ZAI ----------

@@ -51,12 +51,12 @@ func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 	}
 
 	attrs := map[string]string{
-		"data-fui-comp":    "ui-conditional-field",
-		"class":            cls,
-		"data-when-name":   cfg.WhenName,
-		"data-when-value":  cfg.WhenValue,
-		"hidden":           "",
-		"aria-hidden":      "true",
+		"data-fui-comp":   "ui-conditional-field",
+		"class":           cls,
+		"data-when-name":  cfg.WhenName,
+		"data-when-value": cfg.WhenValue,
+		"hidden":          "",
+		"aria-hidden":     "true",
 	}
 
 	return conditionalFieldStyle.WrapHTML(
@@ -127,4 +127,3 @@ func conditionalFieldCSS(_ style.Theme) string {
   }
 }`)
 }
-

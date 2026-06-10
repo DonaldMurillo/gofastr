@@ -85,7 +85,7 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 	var visual render.HTML
 	if cfg.Variant == SpinnerDots {
 		visual = html.Span(html.TextConfig{
-			Class: "ui-spinner__dots",
+			Class:      "ui-spinner__dots",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		},
 			html.Span(html.TextConfig{Class: "ui-spinner__dot"}),
@@ -98,12 +98,12 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 			cells[i] = html.Span(html.TextConfig{Class: "ui-spinner__cell"})
 		}
 		visual = html.Span(html.TextConfig{
-			Class: "ui-spinner__grid",
+			Class:      "ui-spinner__grid",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, cells...)
 	} else {
 		visual = html.Span(html.TextConfig{
-			Class: "ui-spinner__ring",
+			Class:      "ui-spinner__ring",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		})
 	}

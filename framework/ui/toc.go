@@ -30,10 +30,10 @@ type TOCConfig struct {
 	Levels int
 	// Sticky toggles the position: sticky behaviour. Default true.
 	// When false the nav scrolls with the content.
-	Sticky bool
-	ID     string
-	Class  string
-	ExtraAttrs  html.Attrs
+	Sticky     bool
+	ID         string
+	Class      string
+	ExtraAttrs html.Attrs
 }
 
 // TableOfContents renders a TOC nav that the runtime fills in.
@@ -58,9 +58,9 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	attrs := html.Attrs{
-		"class":              cls,
-		"aria-label":         label,
-		"data-fui-toc":       cfg.Target,
+		"class":               cls,
+		"aria-label":          label,
+		"data-fui-toc":        cfg.Target,
 		"data-fui-toc-levels": tocLevelsAttr(cfg.Levels),
 	}
 	if cfg.ID != "" {

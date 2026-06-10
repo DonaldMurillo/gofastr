@@ -4,15 +4,15 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 
 // ListConfig configures a list element (<ul> or <ol>). No required fields.
 type ListConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 
 // ListItemConfig configures an <li> element. No required fields.
 type ListItemConfig struct {
-	Class string
-	ID    string
+	Class      string
+	ID         string
 	ExtraAttrs Attrs
 }
 

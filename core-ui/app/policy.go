@@ -40,10 +40,10 @@ const (
 // public only so hosts can inspect it.
 type Decision struct {
 	Kind       DecisionKind
-	URL        string                      // populated for DecisionRedirect
+	URL        string                     // populated for DecisionRedirect
 	AltFactory func() component.Component // populated for DecisionRenderAlt — called PER REQUEST
-	Status     int                         // populated for DecisionBlock
-	Message    string                      // optional, for DecisionBlock
+	Status     int                        // populated for DecisionBlock
+	Message    string                     // optional, for DecisionBlock
 }
 
 // Decision values are constructed via the helpers in subpackage

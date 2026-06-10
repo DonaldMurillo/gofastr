@@ -25,9 +25,9 @@ const (
 )
 
 type (
-	HookListPayload  = hook.ListPayload
-	HookGetPayload   = hook.GetPayload
-	HookWhereClause  = hook.WhereClause
+	HookListPayload = hook.ListPayload
+	HookGetPayload  = hook.GetPayload
+	HookWhereClause = hook.WhereClause
 )
 
 var NewHookRegistry = hook.NewHookRegistry

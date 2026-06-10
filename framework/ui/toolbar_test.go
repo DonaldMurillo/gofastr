@@ -81,8 +81,8 @@ func TestToolbarRejectsUnknownAlign(t *testing.T) {
 		}
 	}()
 	Toolbar(ToolbarConfig{
-		Label: "x",
-		Align: "bogus",
+		Label:  "x",
+		Align:  "bogus",
 		Groups: []ToolbarGroup{{Children: []render.HTML{Button(ButtonConfig{Label: "Z"})}}},
 	})
 }

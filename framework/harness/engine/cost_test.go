@@ -32,8 +32,10 @@ func (u *usageProvider) Chat(_ context.Context, _ *provider.Request) (<-chan pro
 	u.finished++
 	return ch, nil
 }
-func (*usageProvider) Models(_ context.Context) ([]provider.Model, error)                   { return nil, nil }
-func (*usageProvider) TokenCount(_ context.Context, _ string, _ []provider.Message) (int, error) { return 0, nil }
+func (*usageProvider) Models(_ context.Context) ([]provider.Model, error) { return nil, nil }
+func (*usageProvider) TokenCount(_ context.Context, _ string, _ []provider.Message) (int, error) {
+	return 0, nil
+}
 
 // TestEngineEmitsNonZeroUSDForKnownModel: when provider+model match
 // the pricing table, the CostIncremented event MUST carry a non-zero
@@ -96,9 +98,9 @@ func TestEngineEmitsNonZeroUSDForKnownModel(t *testing.T) {
 // at least shows token counts).
 func TestEngineEmitsZeroUSDForUnknownProvider(t *testing.T) {
 	prov := &usageProvider{
-		name: "nobody",
+		name:   "nobody",
 		finish: "stop",
-		usage: provider.Usage{InputTokens: 100, OutputTokens: 100},
+		usage:  provider.Usage{InputTokens: 100, OutputTokens: 100},
 	}
 	session := ids.NewSessionID()
 	bus := NewBus(session)

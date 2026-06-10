@@ -127,4 +127,3 @@ func TestCSRF_GenuineSignedTokenAccepted(t *testing.T) {
 		t.Fatalf("genuine signed token must pass; got %d", w2.Code)
 	}
 }
-

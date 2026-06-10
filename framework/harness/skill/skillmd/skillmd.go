@@ -23,9 +23,9 @@ type Skill struct {
 	Name        string
 	Description string
 	Triggers    []string
-	Body        string // markdown after frontmatter
-	Dir         string // absolute path to the directory containing SKILL.md
-	SHA256      string // hash of the SKILL.md file for TOFU
+	Body        string            // markdown after frontmatter
+	Dir         string            // absolute path to the directory containing SKILL.md
+	SHA256      string            // hash of the SKILL.md file for TOFU
 	Extra       map[string]string // pass-through frontmatter fields
 }
 

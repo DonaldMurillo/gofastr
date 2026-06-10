@@ -122,8 +122,8 @@ func TestOAuth2Callback_DBErrorDoesNotAutoCreate(t *testing.T) {
 // stubOAuthProvider is a deterministic OAuth2 provider used in tests.
 // ExchangeCode and FetchUserInfo never hit the network.
 type stubOAuthProvider struct {
-	name      string
-	userInfo  *OAuth2UserInfo
+	name        string
+	userInfo    *OAuth2UserInfo
 	exchangeErr error
 }
 

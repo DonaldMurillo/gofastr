@@ -40,10 +40,10 @@ type RangeSliderConfig struct {
 	// ShowValue renders a live "lo – hi" text alongside the label.
 	ShowValue bool
 	// Disabled disables both thumbs.
-	Disabled bool
-	ID       string
-	Class    string
-	ExtraAttrs    html.Attrs
+	Disabled   bool
+	ID         string
+	Class      string
+	ExtraAttrs html.Attrs
 }
 
 // RangeSlider renders a dual-thumb range input.
@@ -136,9 +136,9 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 	}
 
 	attrs := html.Attrs{
-		"class":       cls,
-		"role":        "group",
-		"aria-label":  cfg.Label,
+		"class":      cls,
+		"role":       "group",
+		"aria-label": cfg.Label,
 	}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID

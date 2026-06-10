@@ -16,8 +16,8 @@ import (
 
 // memoryUserStore is a simple in-memory UserStore for testing.
 type memoryUserStore struct {
-	users map[string]*storeEntry // keyed by email
-	byID  map[string]*storeEntry // keyed by id
+	users  map[string]*storeEntry // keyed by email
+	byID   map[string]*storeEntry // keyed by id
 	nextID int
 }
 
@@ -356,7 +356,6 @@ func TestAuthConfig_DevMode_RelaxedDefaults(t *testing.T) {
 		t.Errorf("DevMode should use plain session_id (no __Host- prefix); got %q", cfg.SessionCookie)
 	}
 }
-
 
 // CorePlugin.loginHandler must be timing-safe: a request with a known-
 // missing email should run the same bcrypt cost as a request with a

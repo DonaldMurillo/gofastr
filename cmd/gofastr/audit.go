@@ -297,5 +297,5 @@ func importPathFor(modulePath, root, dir string) string {
 // mkdirAll + writeFile are small wrappers used by the audit's tests
 // (and trivially elsewhere) so the test file doesn't have to import
 // "os" directly.
-func mkdirAll(path string) error  { return os.MkdirAll(path, 0o755) }
+func mkdirAll(path string) error         { return os.MkdirAll(path, 0o755) }
 func writeFile(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }

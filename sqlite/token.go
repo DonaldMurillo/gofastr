@@ -5,7 +5,7 @@ type TokenType int
 
 const (
 	// Special tokens
-	TokenEOF    TokenType = iota
+	TokenEOF   TokenType = iota
 	TokenError           // Lexer error
 
 	// Literals
@@ -15,34 +15,34 @@ const (
 	TokenBlob    // X'0123AB'
 
 	// Identifiers
-	TokenIdent   // unquoted identifier
+	TokenIdent    // unquoted identifier
 	TokenQuotedID // "quoted identifier"
 
 	// Operators
-	TokenPlus     // +
-	TokenMinus    // -
-	TokenStar     // *
-	TokenSlash    // /
-	TokenPercent  // %
-	TokenEqual    // =
+	TokenPlus        // +
+	TokenMinus       // -
+	TokenStar        // *
+	TokenSlash       // /
+	TokenPercent     // %
+	TokenEqual       // =
 	TokenDoubleEqual // == (treated as =)
-	TokenNotEqual // != or <>
-	TokenLess     // <
-	TokenLessEq   // <=
-	TokenGreater  // >
-	TokenGreaterEq // >=
-	TokenAnd      // AND keyword (but lexed as keyword)
-	TokenOr       // OR keyword (but lexed as keyword)
-	TokenNot      // NOT keyword
-	TokenConcat   // ||
+	TokenNotEqual    // != or <>
+	TokenLess        // <
+	TokenLessEq      // <=
+	TokenGreater     // >
+	TokenGreaterEq   // >=
+	TokenAnd         // AND keyword (but lexed as keyword)
+	TokenOr          // OR keyword (but lexed as keyword)
+	TokenNot         // NOT keyword
+	TokenConcat      // ||
 
 	// Punctuation
-	TokenLParen   // (
-	TokenRParen   // )
-	TokenComma    // ,
-	TokenDot      // .
+	TokenLParen    // (
+	TokenRParen    // )
+	TokenComma     // ,
+	TokenDot       // .
 	TokenSemicolon // ;
-	TokenTilde    // ~ (bitwise NOT)
+	TokenTilde     // ~ (bitwise NOT)
 
 	// Keywords (a selection — we'll lex these as identifiers and check in parser)
 	// We keep keyword tokens for better error messages

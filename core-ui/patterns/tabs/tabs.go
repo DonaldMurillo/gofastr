@@ -7,11 +7,11 @@
 //
 // Trade-off: assistive tech announces the widget as a disclosure, not
 // an ARIA tablist. We chose this over a JS-driven tablist because:
-//   1. Zero JavaScript, zero CSP complications.
-//   2. The disclosure pattern is honest about what's happening — there
-//      is no tab/panel separation, only "show one, hide others".
-//   3. Native keyboard support (Tab between summaries, Enter/Space
-//      activates, focus is automatic).
+//  1. Zero JavaScript, zero CSP complications.
+//  2. The disclosure pattern is honest about what's happening — there
+//     is no tab/panel separation, only "show one, hide others".
+//  3. Native keyboard support (Tab between summaries, Enter/Space
+//     activates, focus is automatic).
 //
 // If you need full WAI-ARIA tablist semantics (arrow-key tab cycling,
 // activation modes), build a custom widget on top of core-ui/widget

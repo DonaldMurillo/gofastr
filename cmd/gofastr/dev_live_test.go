@@ -377,6 +377,7 @@ func TestLivereloadBuildIDConsistentAcrossClients(t *testing.T) {
 		t.Fatal("build ID is empty")
 	}
 }
+
 // TestLivereloadSameBuildIDDoesNotReload proves that an SSE reconnection
 // to the same server (same build ID) does NOT trigger location.reload().
 func TestLivereloadSameBuildIDDoesNotReload(t *testing.T) {
@@ -535,6 +536,7 @@ location.reload = function() { window.__reloadCalled = true; };
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
 // ─── Resilience tests ──────────────────────────────────────────────────
 
 // TestReloadChannelDebounces proves the reload channel's non-blocking
@@ -623,9 +625,9 @@ func TestScanModTimesPicksUpAllAssetTypes(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		filepath.Join(dir, "main.go"):   true,
-		filepath.Join(dir, "app.js"):    true,
-		filepath.Join(dir, "theme.css"): true,
+		filepath.Join(dir, "main.go"):    true,
+		filepath.Join(dir, "app.js"):     true,
+		filepath.Join(dir, "theme.css"):  true,
 		filepath.Join(dir, "index.html"): true,
 	}
 	for path := range result {

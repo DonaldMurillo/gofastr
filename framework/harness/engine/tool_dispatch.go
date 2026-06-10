@@ -131,27 +131,37 @@ func FormatArgvSummary(toolName string, args []byte) string {
 	switch toolName {
 	case "Bash":
 		// Best-effort decode of {cmd: "..."}.
-		var bashLike struct{ Cmd string `json:"cmd"` }
+		var bashLike struct {
+			Cmd string `json:"cmd"`
+		}
 		if jsonTryUnmarshal(args, &bashLike) && bashLike.Cmd != "" {
 			return bashLike.Cmd
 		}
 	case "Read", "Write", "Edit", "Ls":
-		var pathLike struct{ Path string `json:"path"` }
+		var pathLike struct {
+			Path string `json:"path"`
+		}
 		if jsonTryUnmarshal(args, &pathLike) && pathLike.Path != "" {
 			return fmt.Sprintf("%s:%s", toolName, pathLike.Path)
 		}
 	case "Glob":
-		var glob struct{ Pattern string `json:"pattern"` }
+		var glob struct {
+			Pattern string `json:"pattern"`
+		}
 		if jsonTryUnmarshal(args, &glob) && glob.Pattern != "" {
 			return fmt.Sprintf("Glob:%s", glob.Pattern)
 		}
 	case "Grep":
-		var grep struct{ Pattern string `json:"pattern"` }
+		var grep struct {
+			Pattern string `json:"pattern"`
+		}
 		if jsonTryUnmarshal(args, &grep) && grep.Pattern != "" {
 			return fmt.Sprintf("Grep:%s", grep.Pattern)
 		}
 	case "WebFetch":
-		var w struct{ URL string `json:"url"` }
+		var w struct {
+			URL string `json:"url"`
+		}
 		if jsonTryUnmarshal(args, &w) && w.URL != "" {
 			return fmt.Sprintf("WebFetch:%s", w.URL)
 		}

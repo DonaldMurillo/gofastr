@@ -67,7 +67,7 @@ func TestOnClickOpenWidget(t *testing.T) {
 
 func TestOnSubmitForm(t *testing.T) {
 	form := render.Tag("form", nil,
-		render.Tag("input", map[string]string{"name": "title"},),
+		render.Tag("input", map[string]string{"name": "title"}),
 		render.Tag("button", nil, render.Text("Submit")),
 	)
 	result := OnSubmit(form, Post("/api/posts").OnSuccess(
@@ -296,7 +296,6 @@ func TestSetLocalOnEmptyHTML(t *testing.T) {
 		t.Fatalf("empty HTML should stay empty: %q", result)
 	}
 }
-
 
 func TestEditToggle(t *testing.T) {
 	span := render.Tag("span", nil, render.Text("Click to edit"))

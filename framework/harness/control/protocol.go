@@ -264,11 +264,11 @@ type Event interface {
 // WS `{"frame":"event","body":...}`, MCP `notifications/resources/updated`),
 // but the body is always this envelope.
 type EventEnvelope struct {
-	ID         uint64        `json:"id"`         // monotonic per SessionID
-	Kind       string        `json:"kind"`       // matches handshake.event_kinds
-	Session    ids.SessionID `json:"session"`
-	Originator ids.ClientID  `json:"originator,omitempty"`
-	TS         time.Time     `json:"ts"`
+	ID         uint64          `json:"id"`   // monotonic per SessionID
+	Kind       string          `json:"kind"` // matches handshake.event_kinds
+	Session    ids.SessionID   `json:"session"`
+	Originator ids.ClientID    `json:"originator,omitempty"`
+	TS         time.Time       `json:"ts"`
 	Payload    json.RawMessage `json:"payload"`
 }
 
@@ -295,9 +295,9 @@ type ToolCallProgress struct {
 }
 
 type ToolResult struct {
-	CallID  ids.CallID    `json:"callId"`
+	CallID  ids.CallID     `json:"callId"`
 	Content []ContentBlock `json:"content"`
-	IsError bool          `json:"isError,omitempty"`
+	IsError bool           `json:"isError,omitempty"`
 }
 
 type TurnStarted struct {
@@ -319,9 +319,9 @@ type TurnEnded struct {
 // TurnTiming is emitted at TurnEnded with per-component duration
 // data. Operators answer "where was the time?" from a single event.
 type TurnTiming struct {
-	Turn       int                       `json:"turn"`
-	Components map[string]time.Duration  `json:"components"`
-	ToolCalls  []ToolTimingEntry         `json:"toolCalls,omitempty"`
+	Turn       int                      `json:"turn"`
+	Components map[string]time.Duration `json:"components"`
+	ToolCalls  []ToolTimingEntry        `json:"toolCalls,omitempty"`
 }
 
 type ToolTimingEntry struct {
@@ -345,17 +345,17 @@ type CostIncremented struct {
 }
 
 type PermissionRequested struct {
-	CallID     ids.CallID    `json:"callId"`
-	Tool       string        `json:"tool"`
+	CallID     ids.CallID      `json:"callId"`
+	Tool       string          `json:"tool"`
 	Args       json.RawMessage `json:"args"`
-	Originator ids.ClientID  `json:"originator"`
-	Reason     string        `json:"reason,omitempty"` // e.g. why this is being asked
+	Originator ids.ClientID    `json:"originator"`
+	Reason     string          `json:"reason,omitempty"` // e.g. why this is being asked
 }
 
 type Cancelled struct {
-	Turn   int    `json:"turn"`
+	Turn   int          `json:"turn"`
 	By     ids.ClientID `json:"by"`
-	Reason string `json:"reason"`
+	Reason string       `json:"reason"`
 }
 
 type Error struct {
@@ -376,8 +376,8 @@ type TokenExpiring struct {
 }
 
 type HookTimeout struct {
-	Event   string `json:"event"`
-	Command string `json:"command"`
+	Event   string        `json:"event"`
+	Command string        `json:"command"`
 	After   time.Duration `json:"after"`
 }
 
@@ -406,47 +406,47 @@ type CustomEvent struct {
 }
 
 // Mark each event type as implementing the Event interface.
-func (TextDelta) isEvent()          {}
-func (ThinkingDelta) isEvent()      {}
-func (ToolCallStarted) isEvent()    {}
-func (ToolCallProgress) isEvent()   {}
-func (ToolResult) isEvent()         {}
-func (TurnStarted) isEvent()        {}
-func (TurnEnded) isEvent()          {}
-func (TurnTiming) isEvent()         {}
+func (TextDelta) isEvent()           {}
+func (ThinkingDelta) isEvent()       {}
+func (ToolCallStarted) isEvent()     {}
+func (ToolCallProgress) isEvent()    {}
+func (ToolResult) isEvent()          {}
+func (TurnStarted) isEvent()         {}
+func (TurnEnded) isEvent()           {}
+func (TurnTiming) isEvent()          {}
 func (CompactionTriggered) isEvent() {}
-func (CostIncremented) isEvent()    {}
+func (CostIncremented) isEvent()     {}
 func (PermissionRequested) isEvent() {}
-func (Cancelled) isEvent()          {}
-func (Error) isEvent()              {}
-func (StreamGap) isEvent()          {}
-func (TokenExpiring) isEvent()      {}
-func (HookTimeout) isEvent()        {}
-func (HookError) isEvent()          {}
-func (MCPServerDown) isEvent()      {}
-func (SessionEnded) isEvent()       {}
-func (CustomEvent) isEvent()        {}
+func (Cancelled) isEvent()           {}
+func (Error) isEvent()               {}
+func (StreamGap) isEvent()           {}
+func (TokenExpiring) isEvent()       {}
+func (HookTimeout) isEvent()         {}
+func (HookError) isEvent()           {}
+func (MCPServerDown) isEvent()       {}
+func (SessionEnded) isEvent()        {}
+func (CustomEvent) isEvent()         {}
 
-func (TextDelta) EventKind() string          { return "TextDelta" }
-func (ThinkingDelta) EventKind() string      { return "ThinkingDelta" }
-func (ToolCallStarted) EventKind() string    { return "ToolCallStarted" }
-func (ToolCallProgress) EventKind() string   { return "ToolCallProgress" }
-func (ToolResult) EventKind() string         { return "ToolResult" }
-func (TurnStarted) EventKind() string        { return "TurnStarted" }
-func (TurnEnded) EventKind() string          { return "TurnEnded" }
-func (TurnTiming) EventKind() string         { return "TurnTiming" }
+func (TextDelta) EventKind() string           { return "TextDelta" }
+func (ThinkingDelta) EventKind() string       { return "ThinkingDelta" }
+func (ToolCallStarted) EventKind() string     { return "ToolCallStarted" }
+func (ToolCallProgress) EventKind() string    { return "ToolCallProgress" }
+func (ToolResult) EventKind() string          { return "ToolResult" }
+func (TurnStarted) EventKind() string         { return "TurnStarted" }
+func (TurnEnded) EventKind() string           { return "TurnEnded" }
+func (TurnTiming) EventKind() string          { return "TurnTiming" }
 func (CompactionTriggered) EventKind() string { return "CompactionTriggered" }
-func (CostIncremented) EventKind() string    { return "CostIncremented" }
+func (CostIncremented) EventKind() string     { return "CostIncremented" }
 func (PermissionRequested) EventKind() string { return "PermissionRequested" }
-func (Cancelled) EventKind() string          { return "Cancelled" }
-func (Error) EventKind() string              { return "Error" }
-func (StreamGap) EventKind() string          { return "StreamGap" }
-func (TokenExpiring) EventKind() string      { return "TokenExpiring" }
-func (HookTimeout) EventKind() string        { return "HookTimeout" }
-func (HookError) EventKind() string          { return "HookError" }
-func (MCPServerDown) EventKind() string      { return "MCPServerDown" }
-func (SessionEnded) EventKind() string       { return "SessionEnded" }
-func (CustomEvent) EventKind() string        { return "CustomEvent" }
+func (Cancelled) EventKind() string           { return "Cancelled" }
+func (Error) EventKind() string               { return "Error" }
+func (StreamGap) EventKind() string           { return "StreamGap" }
+func (TokenExpiring) EventKind() string       { return "TokenExpiring" }
+func (HookTimeout) EventKind() string         { return "HookTimeout" }
+func (HookError) EventKind() string           { return "HookError" }
+func (MCPServerDown) EventKind() string       { return "MCPServerDown" }
+func (SessionEnded) EventKind() string        { return "SessionEnded" }
+func (CustomEvent) EventKind() string         { return "CustomEvent" }
 
 // AllEventKinds returns the closed set of built-in event kinds.
 func AllEventKinds() []string {
@@ -465,15 +465,15 @@ func AllEventKinds() []string {
 // Handshake is the response to GET /v1/handshake (or the first frame
 // on a WS/MCP session). Required before any other command.
 type Handshake struct {
-	ProtocolVersion        string   `json:"protocol_version"`
-	CanonicalFormVersion   int      `json:"canonical_form_version"`
-	SchemaVersionTokenClaim int     `json:"schema_version_token_claim"`
-	SchemaVersionProfile   int      `json:"schema_version_profile"`
-	SchemaVersionSessionLog int     `json:"schema_version_session_log"`
-	CommandKinds           []string `json:"command_kinds"`
-	EventKinds             []string `json:"event_kinds"`
-	Features               []string `json:"features"`
-	ResourceURIScheme      string   `json:"resource_uri_scheme"`
+	ProtocolVersion         string   `json:"protocol_version"`
+	CanonicalFormVersion    int      `json:"canonical_form_version"`
+	SchemaVersionTokenClaim int      `json:"schema_version_token_claim"`
+	SchemaVersionProfile    int      `json:"schema_version_profile"`
+	SchemaVersionSessionLog int      `json:"schema_version_session_log"`
+	CommandKinds            []string `json:"command_kinds"`
+	EventKinds              []string `json:"event_kinds"`
+	Features                []string `json:"features"`
+	ResourceURIScheme       string   `json:"resource_uri_scheme"`
 }
 
 // CurrentHandshake returns the handshake advertised by this binary.
@@ -659,20 +659,20 @@ func DecodeEvent(env EventEnvelope) (Event, error) {
 // Stable Reason codes used in Error events. Strings are documented in
 // docs/harness-architecture.md § User-facing errors.
 const (
-	ReasonHandshakeRequired      = "HandshakeRequired"
+	ReasonHandshakeRequired        = "HandshakeRequired"
 	ReasonHandshakeVersionMismatch = "HandshakeVersionMismatch"
-	ReasonTurnInProgress         = "TurnInProgress"
-	ReasonPermissionDenied       = "PermissionDenied"
-	ReasonPermissionTimeout      = "PermissionTimeout"
-	ReasonTokenExpired           = "TokenExpired"
-	ReasonTokenRevoked           = "TokenRevoked"
-	ReasonMCPServerSHA256Mismatch = "MCPServerSHA256Mismatch"
-	ReasonMCPServerUnavailable   = "MCPServerUnavailable"
-	ReasonHookHashChanged        = "HookHashChanged"
-	ReasonHookTimeout            = "HookTimeout"
-	ReasonRateLimited            = "RateLimited"
-	ReasonBashCancelledMidCommand = "BashCancelledMidCommand"
+	ReasonTurnInProgress           = "TurnInProgress"
+	ReasonPermissionDenied         = "PermissionDenied"
+	ReasonPermissionTimeout        = "PermissionTimeout"
+	ReasonTokenExpired             = "TokenExpired"
+	ReasonTokenRevoked             = "TokenRevoked"
+	ReasonMCPServerSHA256Mismatch  = "MCPServerSHA256Mismatch"
+	ReasonMCPServerUnavailable     = "MCPServerUnavailable"
+	ReasonHookHashChanged          = "HookHashChanged"
+	ReasonHookTimeout              = "HookTimeout"
+	ReasonRateLimited              = "RateLimited"
+	ReasonBashCancelledMidCommand  = "BashCancelledMidCommand"
 	ReasonNonInteractiveAckRefused = "NonInteractiveAckRefused"
-	ReasonCredentialHelperFailed = "CredentialHelperFailed"
-	ReasonInvalidCommand         = "InvalidCommand"
+	ReasonCredentialHelperFailed   = "CredentialHelperFailed"
+	ReasonInvalidCommand           = "InvalidCommand"
 )

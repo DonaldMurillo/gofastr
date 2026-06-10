@@ -15,9 +15,9 @@ type parser struct {
 	depth int
 }
 
-func (p *parser) eof() bool      { return p.pos >= len(p.lines) }
-func (p *parser) line() string   { return p.lines[p.pos] }
-func (p *parser) advance()       { p.pos++ }
+func (p *parser) eof() bool    { return p.pos >= len(p.lines) }
+func (p *parser) line() string { return p.lines[p.pos] }
+func (p *parser) advance()     { p.pos++ }
 func (p *parser) peek(n int) string {
 	if p.pos+n >= len(p.lines) {
 		return ""

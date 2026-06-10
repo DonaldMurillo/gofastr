@@ -42,8 +42,8 @@ type BannerConfig struct {
 	// rendered to the right of the body).
 	Action render.HTML
 	// ID / Class / Attrs are passed through to the outer element.
-	ID    string
-	Class string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -112,9 +112,9 @@ func Banner(cfg BannerConfig) render.HTML {
 
 	if cfg.Dismissible {
 		dismissAttrs := map[string]string{
-			"type":         "button",
-			"class":        "ui-banner__dismiss",
-			"aria-label":   "Dismiss",
+			"type":                    "button",
+			"class":                   "ui-banner__dismiss",
+			"aria-label":              "Dismiss",
 			"data-fui-banner-dismiss": "true",
 		}
 		if cfg.DismissID != "" {

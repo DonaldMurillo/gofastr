@@ -18,10 +18,10 @@ import (
 func TestMassAssignment_FieldInjection(t *testing.T) {
 
 	tests := []struct {
-		name        string
-		body        string
-		forbidden   string
-		desc        string
+		name      string
+		body      string
+		forbidden string
+		desc      string
 	}{
 		{
 			name:      "user_id_injection",

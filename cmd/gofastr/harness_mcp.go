@@ -9,8 +9,8 @@ import (
 
 	xharness "github.com/DonaldMurillo/gofastr/framework/harness"
 	"github.com/DonaldMurillo/gofastr/framework/harness/control/mcpserver"
-	"github.com/DonaldMurillo/gofastr/framework/harness/secrets"
 	"github.com/DonaldMurillo/gofastr/framework/harness/logging"
+	"github.com/DonaldMurillo/gofastr/framework/harness/secrets"
 )
 
 // runHarnessMCP is the `gofastr harness mcp` subcommand entry. It

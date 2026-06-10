@@ -426,8 +426,8 @@ func (e *Engine) executeMutation(stmt Statement, s Statement, params []Value) (*
 
 // Result represents the result of executing a statement.
 type Result struct {
-	Columns    []string
-	Rows       [][]Value
+	Columns      []string
+	Rows         [][]Value
 	RowsAffected int64
 	LastInsertID int64
 }
@@ -440,8 +440,8 @@ type Result struct {
 type joinEntry struct {
 	info    *TableInfo
 	alias   string // effective name (alias if set, otherwise table name)
-	offset  int     // column offset in the combined row
-	columns int     // number of columns (not including rowid)
+	offset  int    // column offset in the combined row
+	columns int    // number of columns (not including rowid)
 }
 
 // buildJoinPlan builds the list of tables involved in a SELECT.
@@ -515,8 +515,8 @@ func combinedRowLen(entries []joinEntry) int {
 
 // outCol represents an output column during SELECT execution.
 type outCol struct {
-	expr  Expr
-	name  string
+	expr Expr
+	name string
 }
 
 func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
@@ -684,7 +684,7 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 		idxEval := &ExprEval{
 			ColumnMap: flatColumnMap,
 			TableMap:  tableMap,
-			Params:   params,
+			Params:    params,
 		}
 		for _, combined := range indexRows {
 			matched++
@@ -710,170 +710,170 @@ func (e *Engine) executeSelect(s *SelectStmt, params []Value) (*Result, error) {
 		}
 	} else {
 
-	// Pre-allocate eval for reuse across rows
-	emitEval := &ExprEval{
-		ColumnMap: flatColumnMap,
-		TableMap:  tableMap,
-		Params:   params,
-		Engine:   e,
-	}
-
-	emitRow := func(combined []Value) error {
-		emitEval.Row = combined
-
-		if s.Where != nil {
-			val, err := emitEval.Eval(s.Where)
-			if err != nil {
-				return err
-			}
-			if val.IsNull() {
-				return nil
-			}
-			if b, ok := val.AsInt64(); !ok || b == 0 {
-				return nil
-			}
+		// Pre-allocate eval for reuse across rows
+		emitEval := &ExprEval{
+			ColumnMap: flatColumnMap,
+			TableMap:  tableMap,
+			Params:    params,
+			Engine:    e,
 		}
 
-		matched++
-		if canEarlyExit && offsetN > 0 && matched <= offsetN {
+		emitRow := func(combined []Value) error {
+			emitEval.Row = combined
+
+			if s.Where != nil {
+				val, err := emitEval.Eval(s.Where)
+				if err != nil {
+					return err
+				}
+				if val.IsNull() {
+					return nil
+				}
+				if b, ok := val.AsInt64(); !ok || b == 0 {
+					return nil
+				}
+			}
+
+			matched++
+			if canEarlyExit && offsetN > 0 && matched <= offsetN {
+				return nil
+			}
+
+			resultRow := make([]Value, len(outputCols))
+			for i, col := range outputCols {
+				val, err := emitEval.Eval(col.expr)
+				if err != nil {
+					return err
+				}
+				resultRow[i] = val
+			}
+			rows = append(rows, resultRow)
+			if len(s.GroupBy) > 0 {
+				groupKeys = append(groupKeys, e.evalGroupKey(combined, s.GroupBy, flatColumnMap, tableMap, params))
+			}
+
+			if canEarlyExit && hasLimit && len(rows) >= limitN {
+				return errEarlyExit
+			}
 			return nil
 		}
 
-		resultRow := make([]Value, len(outputCols))
-		for i, col := range outputCols {
-			val, err := emitEval.Eval(col.expr)
-			if err != nil {
-				return err
-			}
-			resultRow[i] = val
-		}
-		rows = append(rows, resultRow)
-		if len(s.GroupBy) > 0 {
-			groupKeys = append(groupKeys, e.evalGroupKey(combined, s.GroupBy, flatColumnMap, tableMap, params))
-		}
-
-		if canEarlyExit && hasLimit && len(rows) >= limitN {
-			return errEarlyExit
-		}
-		return nil
-	}
-
-	// Check if any join is RIGHT or FULL — these require scanning from the right side
-	// and cannot use the standard left-driving nested-loop approach.
-	needsRightDrive := false
-	for _, j := range s.From.Joins {
-		if j.Type == JoinRight || j.Type == JoinFull {
-			needsRightDrive = true
-			break
-		}
-	}
-
-	if needsRightDrive {
-		// Don't iterate the driving table — let the RIGHT/FULL join
-		// handle both sides internally.
-		combined := make([]Value, rowLen)
-		if err := e.probeJoins(combined, tables, s.From.Joins, 1, emitRow); err != nil {
-			if err == errEarlyExit {
-				goto doneScan
-			}
-			return nil, err
-		}
-	} else {
-	// Compute WHERE column indices for lazy evaluation (only worthwhile
-	// when table has many columns but WHERE only needs a few)
-	var whereRecordCols []int // record column indices needed by WHERE
-	var whereOnlyRefs bool
-	if s.Where != nil && !hasJoins && len(driveInfo.Columns) > 4 {
-		whereRefs := CollectColumnRefs(s.Where)
-		for _, ref := range whereRefs {
-			if ref.Table != "" {
-				if tmap, ok := tableMap[strings.ToLower(ref.Table)]; ok {
-					if idx, ok := tmap[strings.ToLower(ref.Column)]; ok {
-						recIdx := idx - tables[0].offset
-						if recIdx >= 0 {
-							whereRecordCols = append(whereRecordCols, recIdx)
-						}
-					}
-				}
-			} else {
-				colName := strings.ToLower(ref.Column)
-				if colName == "rowid" {
-					continue
-				}
-				if idx, ok := flatColumnMap[colName]; ok {
-					recIdx := idx - tables[0].offset
-					if recIdx >= 0 {
-						whereRecordCols = append(whereRecordCols, recIdx)
-					}
-				}
+		// Check if any join is RIGHT or FULL — these require scanning from the right side
+		// and cannot use the standard left-driving nested-loop approach.
+		needsRightDrive := false
+		for _, j := range s.From.Joins {
+			if j.Type == JoinRight || j.Type == JoinFull {
+				needsRightDrive = true
+				break
 			}
 		}
-		whereOnlyRefs = len(whereRecordCols) > 0 && len(driveInfo.Columns) > len(whereRecordCols)+2
-	}
 
-	var combined []Value // reusable buffer for scan loop
-	for driveCursor.Next() {
-		rowid, record, err := driveCursor.Get()
-		if err != nil {
-			return nil, err
-		}
-
-		// Lazy WHERE eval: if WHERE only needs a subset of columns,
-		// evaluate it from raw record data before decoding all columns
-		if whereOnlyRefs && !hasJoins && s.Where != nil {
-			// Build partial combined row with only WHERE columns
-			partialCombined := make([]Value, rowLen)
-			partialCombined[0] = IntegerValue(rowid)
-
-			rawData := driveCursor.RawRecordData()
-			if rawData != nil {
-				for _, recIdx := range whereRecordCols {
-					val, _ := DecodeRecordColumn(rawData, recIdx)
-					partialCombined[tables[0].offset+recIdx] = val
-				}
-
-				// Evaluate WHERE with partial row
-				emitEval.Row = partialCombined
-				whereVal, wErr := emitEval.Eval(s.Where)
-				if wErr == nil {
-					if whereVal.IsNull() {
-						continue
-					}
-					if b, ok := whereVal.AsInt64(); !ok || b == 0 {
-						continue
-					}
-				}
-			}
-			// WHERE passed — fall through to full decode
-		}
-
-		if combined == nil {
-			combined = make([]Value, rowLen)
-		}
-		vals := recordToValues(record, driveInfo)
-		combined[0] = IntegerValue(rowid)
-		for i, v := range vals {
-			combined[1+i] = v
-		}
-
-		if !hasJoins {
-			if err := emitRow(combined); err != nil {
+		if needsRightDrive {
+			// Don't iterate the driving table — let the RIGHT/FULL join
+			// handle both sides internally.
+			combined := make([]Value, rowLen)
+			if err := e.probeJoins(combined, tables, s.From.Joins, 1, emitRow); err != nil {
 				if err == errEarlyExit {
-					break
+					goto doneScan
 				}
 				return nil, err
 			}
-			continue
-		}
-
-		if err := e.probeJoins(combined, tables, s.From.Joins, 1, emitRow); err != nil {
-			if err == errEarlyExit {
-				break
+		} else {
+			// Compute WHERE column indices for lazy evaluation (only worthwhile
+			// when table has many columns but WHERE only needs a few)
+			var whereRecordCols []int // record column indices needed by WHERE
+			var whereOnlyRefs bool
+			if s.Where != nil && !hasJoins && len(driveInfo.Columns) > 4 {
+				whereRefs := CollectColumnRefs(s.Where)
+				for _, ref := range whereRefs {
+					if ref.Table != "" {
+						if tmap, ok := tableMap[strings.ToLower(ref.Table)]; ok {
+							if idx, ok := tmap[strings.ToLower(ref.Column)]; ok {
+								recIdx := idx - tables[0].offset
+								if recIdx >= 0 {
+									whereRecordCols = append(whereRecordCols, recIdx)
+								}
+							}
+						}
+					} else {
+						colName := strings.ToLower(ref.Column)
+						if colName == "rowid" {
+							continue
+						}
+						if idx, ok := flatColumnMap[colName]; ok {
+							recIdx := idx - tables[0].offset
+							if recIdx >= 0 {
+								whereRecordCols = append(whereRecordCols, recIdx)
+							}
+						}
+					}
+				}
+				whereOnlyRefs = len(whereRecordCols) > 0 && len(driveInfo.Columns) > len(whereRecordCols)+2
 			}
-			return nil, err
+
+			var combined []Value // reusable buffer for scan loop
+			for driveCursor.Next() {
+				rowid, record, err := driveCursor.Get()
+				if err != nil {
+					return nil, err
+				}
+
+				// Lazy WHERE eval: if WHERE only needs a subset of columns,
+				// evaluate it from raw record data before decoding all columns
+				if whereOnlyRefs && !hasJoins && s.Where != nil {
+					// Build partial combined row with only WHERE columns
+					partialCombined := make([]Value, rowLen)
+					partialCombined[0] = IntegerValue(rowid)
+
+					rawData := driveCursor.RawRecordData()
+					if rawData != nil {
+						for _, recIdx := range whereRecordCols {
+							val, _ := DecodeRecordColumn(rawData, recIdx)
+							partialCombined[tables[0].offset+recIdx] = val
+						}
+
+						// Evaluate WHERE with partial row
+						emitEval.Row = partialCombined
+						whereVal, wErr := emitEval.Eval(s.Where)
+						if wErr == nil {
+							if whereVal.IsNull() {
+								continue
+							}
+							if b, ok := whereVal.AsInt64(); !ok || b == 0 {
+								continue
+							}
+						}
+					}
+					// WHERE passed — fall through to full decode
+				}
+
+				if combined == nil {
+					combined = make([]Value, rowLen)
+				}
+				vals := recordToValues(record, driveInfo)
+				combined[0] = IntegerValue(rowid)
+				for i, v := range vals {
+					combined[1+i] = v
+				}
+
+				if !hasJoins {
+					if err := emitRow(combined); err != nil {
+						if err == errEarlyExit {
+							break
+						}
+						return nil, err
+					}
+					continue
+				}
+
+				if err := e.probeJoins(combined, tables, s.From.Joins, 1, emitRow); err != nil {
+					if err == errEarlyExit {
+						break
+					}
+					return nil, err
+				}
+			}
 		}
-	}
-	}
 	} // end else (table scan)
 
 doneScan:
@@ -926,7 +926,6 @@ doneScan:
 		Rows:    rows,
 	}, nil
 }
-
 
 // applyGroupBy groups rows by GROUP BY keys, computes aggregates per group,
 // applies HAVING filter, and returns the resulting rows.
@@ -1401,8 +1400,8 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 
 	var totalAffected int64
 	var toUpdate []struct {
-		rowid   int64
-		record  *Record
+		rowid  int64
+		record *Record
 	}
 
 	for cursor.Next() {
@@ -1415,7 +1414,7 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 
 		// Build eval context
 		eval := &ExprEval{
-			Row:   append([]Value{IntegerValue(rowid)}, row...),
+			Row:    append([]Value{IntegerValue(rowid)}, row...),
 			Params: params,
 		}
 		eval.ColumnMap = make(map[string]int)
@@ -1454,8 +1453,8 @@ func (e *Engine) executeUpdate(s *UpdateStmt, params []Value) (*Result, error) {
 		}
 
 		toUpdate = append(toUpdate, struct {
-			rowid   int64
-			record  *Record
+			rowid  int64
+			record *Record
 		}{rowid: rowid, record: valuesToRecord(newRow)})
 		totalAffected++
 	}
@@ -1520,7 +1519,7 @@ func (e *Engine) executeDelete(s *DeleteStmt, params []Value) (*Result, error) {
 
 		row := recordToValues(record, tableInfo)
 		eval := &ExprEval{
-			Row:   append([]Value{IntegerValue(rowid)}, row...),
+			Row:    append([]Value{IntegerValue(rowid)}, row...),
 			Params: params,
 		}
 		eval.ColumnMap = make(map[string]int)
@@ -2823,18 +2822,18 @@ func (e *Engine) tryIndexScan(tableName string, where Expr, params []Value) [][]
 
 // Schema serialization types for persistence.
 type schemaData struct {
-	Tables  []tableData  `json:"tables"`
-	Indexes []indexData  `json:"indexes"`
+	Tables  []tableData `json:"tables"`
+	Indexes []indexData `json:"indexes"`
 }
 
 type tableData struct {
-	Name        string       `json:"name"`
-	RootPage    int          `json:"root_page"`
-	SQL         string       `json:"sql"`
-	AutoInc     int64        `json:"auto_inc"`
-	PrimaryKey  int          `json:"primary_key"`
-	Columns     []colData    `json:"columns"`
-	ForeignKeys []fkDataSer  `json:"foreign_keys"`
+	Name        string      `json:"name"`
+	RootPage    int         `json:"root_page"`
+	SQL         string      `json:"sql"`
+	AutoInc     int64       `json:"auto_inc"`
+	PrimaryKey  int         `json:"primary_key"`
+	Columns     []colData   `json:"columns"`
+	ForeignKeys []fkDataSer `json:"foreign_keys"`
 }
 
 type colData struct {

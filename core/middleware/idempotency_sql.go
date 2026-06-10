@@ -33,13 +33,13 @@ import (
 //	    created_at     TIMESTAMP/TIMESTAMPTZ NOT NULL
 //	)
 type SQLIdempotencyStore struct {
-	db             *sql.DB
-	table          string
-	ttl            time.Duration
-	inFlightTTL    time.Duration
-	dialect        string // "sqlite" or "postgres"
-	dialectPinned  bool
-	lastReapUnix   atomic.Int64
+	db            *sql.DB
+	table         string
+	ttl           time.Duration
+	inFlightTTL   time.Duration
+	dialect       string // "sqlite" or "postgres"
+	dialectPinned bool
+	lastReapUnix  atomic.Int64
 }
 
 // SQLIdempotencyOption configures the SQL store.

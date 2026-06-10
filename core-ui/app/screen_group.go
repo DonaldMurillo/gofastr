@@ -203,7 +203,7 @@ func (g *ScreenGroup) RenderLayoutCtx(ctx context.Context, content render.HTML) 
 	// Wrap in a group marker div so the runtime can identify the boundary.
 	// The data-fui-screen-group attribute enables DOM-stable sibling nav.
 	return html.Div(html.DivConfig{
-		Class: "fui-screen-group",
+		Class:      "fui-screen-group",
 		ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
 	}, wrapped)
 }
@@ -253,7 +253,7 @@ func composeLayoutsWithOverrideCtx(ctx context.Context, innermost *ScreenGroup, 
 		if i == 0 && override != nil && override != g.layout {
 			wrapped := wrapLayout(override, out)
 			out = html.Div(html.DivConfig{
-				Class: "fui-screen-group",
+				Class:      "fui-screen-group",
 				ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
 			}, wrapped)
 			continue

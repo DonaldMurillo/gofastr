@@ -74,8 +74,8 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	triggerWithDescribedBy := injectAttrs(trigger, ` aria-describedby="`+id+`"`)
 
 	pop := html.Span(html.TextConfig{
-		Class: "ui-tooltip__pop",
-		ID:    id,
+		Class:      "ui-tooltip__pop",
+		ID:         id,
 		ExtraAttrs: html.Attrs{"role": "tooltip"},
 	}, render.Text(cfg.Text))
 

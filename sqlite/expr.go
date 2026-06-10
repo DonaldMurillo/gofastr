@@ -9,10 +9,10 @@ import (
 // columnMap maps column names to their indices in the row.
 type ExprEval struct {
 	Row       []Value
-	ColumnMap map[string]int // column name -> index
+	ColumnMap map[string]int            // column name -> index
 	TableMap  map[string]map[string]int // table name -> column map
-	Params    []Value // Parameter values (?1, ?2, etc.)
-	Engine    *Engine // for subquery execution
+	Params    []Value                   // Parameter values (?1, ?2, etc.)
+	Engine    *Engine                   // for subquery execution
 }
 
 // NewExprEval creates a new expression evaluator for a row.
@@ -941,8 +941,8 @@ func boolToValue(b bool) Value {
 
 // Sentinel errors
 var (
-	errUnknownExpr       = &evalError{"unknown expression type"}
-	errDivisionByZero    = &evalError{"division by zero"}
+	errUnknownExpr           = &evalError{"unknown expression type"}
+	errDivisionByZero        = &evalError{"division by zero"}
 	errUnsupportedInSubquery = &evalError{"IN subquery not yet supported"}
 )
 

@@ -74,16 +74,16 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	chips = append(chips, html.Span(html.TextConfig{Class: "ui-visually-hidden"}, render.Text("Shortcut: "+srLabel)))
 
 	return shortcutHintStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls,
-		ID:    cfg.ID,
+		Class:      cls,
+		ID:         cfg.ID,
 		ExtraAttrs: html.Attrs{"aria-hidden": "false"},
 	}, chips...))
 }
 
 // chordPart is one normalized component of a chord.
 type chordPart struct {
-	kind  string // "mod" | "shift" | "alt" | "key"
-	key   string // for kind=key: literal text (e.g. "K", "/", "Esc")
+	kind string // "mod" | "shift" | "alt" | "key"
+	key  string // for kind=key: literal text (e.g. "K", "/", "Esc")
 }
 
 func parseChordParts(chord string) []chordPart {
@@ -138,7 +138,7 @@ func renderChordPart(p chordPart) render.HTML {
 	case "mod":
 		// Two spans: ⌘ for Mac, Ctrl for others. CSS hides the wrong one.
 		return html.Kbd(html.TextConfig{
-			Class: "ui-shortcut-hint__key ui-shortcut-hint__key--mod",
+			Class:      "ui-shortcut-hint__key ui-shortcut-hint__key--mod",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		},
 			html.Span(html.TextConfig{Class: "ui-shortcut-hint__mod-mac"}, render.Text("⌘")),
@@ -146,17 +146,17 @@ func renderChordPart(p chordPart) render.HTML {
 		)
 	case "shift":
 		return html.Kbd(html.TextConfig{
-			Class: "ui-shortcut-hint__key",
+			Class:      "ui-shortcut-hint__key",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⇧"))
 	case "alt":
 		return html.Kbd(html.TextConfig{
-			Class: "ui-shortcut-hint__key",
+			Class:      "ui-shortcut-hint__key",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⌥"))
 	default:
 		return html.Kbd(html.TextConfig{
-			Class: "ui-shortcut-hint__key",
+			Class:      "ui-shortcut-hint__key",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text(p.key))
 	}

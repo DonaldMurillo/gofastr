@@ -437,7 +437,7 @@ func TestCursor_LimitEnforced(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		},
-		OwnerField:  "user_id",
+		OwnerField:   "user_id",
 		MaxListLimit: 3,
 	}.WithTimestamps(false), `CREATE TABLE cl_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
@@ -1172,7 +1172,7 @@ func TestInclude_LimitBypassViaInclude(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		},
-		OwnerField: "user_id",
+		OwnerField:   "user_id",
 		MaxListLimit: 2,
 	}.WithTimestamps(false), `CREATE TABLE lbv_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
@@ -1289,7 +1289,7 @@ func TestStreaming_LimitEnforced(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		},
-		OwnerField:  "user_id",
+		OwnerField:   "user_id",
 		MaxListLimit: 3,
 	}.WithTimestamps(false), `CREATE TABLE sl_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
@@ -1353,7 +1353,7 @@ func TestStreaming_AbortedConnectionCleanup(t *testing.T) {
 	go func() {
 		defer close(done)
 		ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
+		skipIfPostgresPlaceholderError(t, rr)
 	}()
 
 	// Cancel after a brief moment to simulate client disconnect

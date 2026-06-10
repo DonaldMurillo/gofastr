@@ -12,17 +12,17 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	ErrBadMagic          = errors.New("sqlite: bad magic header")
-	ErrHeaderTooSmall    = errors.New("sqlite: header data too small")
-	ErrBadPageSize       = errors.New("sqlite: invalid page size")
-	ErrBadPayloadFrac    = errors.New("sqlite: invalid payload fraction")
-	ErrBadPageType       = errors.New("sqlite: invalid page type")
+	ErrBadMagic           = errors.New("sqlite: bad magic header")
+	ErrHeaderTooSmall     = errors.New("sqlite: header data too small")
+	ErrBadPageSize        = errors.New("sqlite: invalid page size")
+	ErrBadPayloadFrac     = errors.New("sqlite: invalid payload fraction")
+	ErrBadPageType        = errors.New("sqlite: invalid page type")
 	ErrPageHeaderTooSmall = errors.New("sqlite: page header data too small")
-	ErrCellTooSmall      = errors.New("sqlite: cell data too small")
-	ErrRecordTooSmall    = errors.New("sqlite: record data too small")
-	ErrBadSerialType     = errors.New("sqlite: invalid serial type")
-	ErrTruncatedRecord   = errors.New("sqlite: truncated record body")
-	ErrNoColumns         = errors.New("sqlite: record has no columns")
+	ErrCellTooSmall       = errors.New("sqlite: cell data too small")
+	ErrRecordTooSmall     = errors.New("sqlite: record data too small")
+	ErrBadSerialType      = errors.New("sqlite: invalid serial type")
+	ErrTruncatedRecord    = errors.New("sqlite: truncated record body")
+	ErrNoColumns          = errors.New("sqlite: record has no columns")
 )
 
 // ---------------------------------------------------------------------------
@@ -32,29 +32,29 @@ var (
 // DatabaseHeader represents the 100-byte SQLite database header found at the
 // start of every database file (first page).
 type DatabaseHeader struct {
-	Magic                   [16]byte
-	PageSize                int // actual page size (65536 is valid, 0 in header means 65536)
-	FileFormatWriteVersion  uint8
-	FileFormatReadVersion   uint8
-	ReservedSpace           uint8
-	MaxEmbeddedPayloadFrac  uint8
-	MinEmbeddedPayloadFrac  uint8
-	LeafPayloadFrac         uint8
-	FileChangeCounter        uint32
-	DatabaseSizePages       uint32
-	FirstFreelistTrunkPage  uint32
-	TotalFreelistPages      uint32
-	SchemaCookie            uint32
-	SchemaFormatNumber      uint32
-	DefaultPageCacheSize    uint32
-	LargestRootBTreePage    uint32
-	TextEncoding            uint32
-	UserVersion             uint32
-	IncrementalVacuum       uint32
-	ApplicationID           uint32
-	ReservedExpansion       [20]byte
-	VersionValidFor         uint32
-	SQLiteVersionNumber     uint32
+	Magic                  [16]byte
+	PageSize               int // actual page size (65536 is valid, 0 in header means 65536)
+	FileFormatWriteVersion uint8
+	FileFormatReadVersion  uint8
+	ReservedSpace          uint8
+	MaxEmbeddedPayloadFrac uint8
+	MinEmbeddedPayloadFrac uint8
+	LeafPayloadFrac        uint8
+	FileChangeCounter      uint32
+	DatabaseSizePages      uint32
+	FirstFreelistTrunkPage uint32
+	TotalFreelistPages     uint32
+	SchemaCookie           uint32
+	SchemaFormatNumber     uint32
+	DefaultPageCacheSize   uint32
+	LargestRootBTreePage   uint32
+	TextEncoding           uint32
+	UserVersion            uint32
+	IncrementalVacuum      uint32
+	ApplicationID          uint32
+	ReservedExpansion      [20]byte
+	VersionValidFor        uint32
+	SQLiteVersionNumber    uint32
 }
 
 // ReadHeader parses the 100-byte database header from data.
@@ -280,7 +280,8 @@ func ReadCell(data []byte, pageType byte) (*Cell, int, error) {
 }
 
 // readLeafTableCell reads a leaf table B-tree cell:
-//   payload_size (varint) | rowid (varint) | payload | [overflow_page]
+//
+//	payload_size (varint) | rowid (varint) | payload | [overflow_page]
 func readLeafTableCell(data []byte) (*Cell, int, error) {
 	off := 0
 
@@ -350,7 +351,8 @@ func readLeafTableCell(data []byte) (*Cell, int, error) {
 }
 
 // readInteriorTableCell reads an interior table B-tree cell:
-//   left_child_page (4 bytes) | key (varint)
+//
+//	left_child_page (4 bytes) | key (varint)
 func readInteriorTableCell(data []byte) (*Cell, int, error) {
 	if len(data) < 4 {
 		return nil, 0, ErrCellTooSmall
@@ -370,7 +372,8 @@ func readInteriorTableCell(data []byte) (*Cell, int, error) {
 }
 
 // readLeafIndexCell reads a leaf index B-tree cell:
-//   payload_size (varint) | payload | [overflow_page]
+//
+//	payload_size (varint) | payload | [overflow_page]
 func readLeafIndexCell(data []byte) (*Cell, int, error) {
 	off := 0
 
@@ -405,7 +408,8 @@ func readLeafIndexCell(data []byte) (*Cell, int, error) {
 }
 
 // readInteriorIndexCell reads an interior index B-tree cell:
-//   left_child_page (4 bytes) | payload_size (varint) | payload | [overflow_page]
+//
+//	left_child_page (4 bytes) | payload_size (varint) | payload | [overflow_page]
 func readInteriorIndexCell(data []byte) (*Cell, int, error) {
 	if len(data) < 4 {
 		return nil, 0, ErrCellTooSmall

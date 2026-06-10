@@ -24,12 +24,12 @@ const (
 type ImageAspect string
 
 const (
-	ImageAspectAuto    ImageAspect = ""
-	ImageAspectSquare  ImageAspect = "1-1"
-	ImageAspect4x3     ImageAspect = "4-3"
-	ImageAspect16x9    ImageAspect = "16-9"
-	ImageAspect21x9    ImageAspect = "21-9"
-	ImageAspect3x4     ImageAspect = "3-4"
+	ImageAspectAuto   ImageAspect = ""
+	ImageAspectSquare ImageAspect = "1-1"
+	ImageAspect4x3    ImageAspect = "4-3"
+	ImageAspect16x9   ImageAspect = "16-9"
+	ImageAspect21x9   ImageAspect = "21-9"
+	ImageAspect3x4    ImageAspect = "3-4"
 )
 
 // ImageSource represents a single entry in an image's responsive
@@ -148,9 +148,9 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	}
 
 	imgAttrs := html.Attrs{
-		"width":   strconv.Itoa(cfg.Width),
-		"height":  strconv.Itoa(cfg.Height),
-		"loading": loading,
+		"width":    strconv.Itoa(cfg.Width),
+		"height":   strconv.Itoa(cfg.Height),
+		"loading":  loading,
 		"decoding": "async",
 	}
 	if cfg.HighPriority {
@@ -163,9 +163,9 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	}
 
 	imgCfg := html.ImageConfig{
-		Src:   cfg.Src,
-		Alt:   cfg.Alt,
-		Class: "ui-image__img",
+		Src:        cfg.Src,
+		Alt:        cfg.Alt,
+		Class:      "ui-image__img",
 		ExtraAttrs: imgAttrs,
 	}
 

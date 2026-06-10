@@ -28,7 +28,7 @@ type BackToTopSize string
 
 const (
 	BackToTopSM BackToTopSize = "sm"
-	BackToTopMD BackToTopSize = ""    // default (2.75rem)
+	BackToTopMD BackToTopSize = "" // default (2.75rem)
 	BackToTopLG BackToTopSize = "lg"
 )
 
@@ -36,7 +36,7 @@ const (
 type BackToTopVariant string
 
 const (
-	BackToTopPrimary   BackToTopVariant = ""        // default — solid primary
+	BackToTopPrimary   BackToTopVariant = ""          // default — solid primary
 	BackToTopSecondary BackToTopVariant = "secondary" // outlined, subtle
 	BackToTopGhost     BackToTopVariant = "ghost"     // transparent bg, only visible on hover
 )
@@ -47,7 +47,7 @@ type BackToTopOffset string
 const (
 	BackToTopOffsetNone BackToTopOffset = "none"
 	BackToTopOffsetSM   BackToTopOffset = "sm"
-	BackToTopOffsetMD   BackToTopOffset = ""   // default
+	BackToTopOffsetMD   BackToTopOffset = "" // default
 	BackToTopOffsetLG   BackToTopOffset = "lg"
 	BackToTopOffsetXL   BackToTopOffset = "xl"
 )
@@ -56,7 +56,7 @@ const (
 type BackToTopScrollBehavior string
 
 const (
-	BackToTopSmooth  BackToTopScrollBehavior = ""     // default
+	BackToTopSmooth  BackToTopScrollBehavior = "" // default
 	BackToTopInstant BackToTopScrollBehavior = "instant"
 )
 

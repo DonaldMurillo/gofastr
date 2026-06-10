@@ -128,9 +128,9 @@ func TestComponentSheetAmpersandRefersToMarkerElement(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	wants := []string{
-		`[data-fui-comp="modal"] {`,                       // & alone
-		`[data-fui-comp="modal"].open`,                    // & combined
-		`[data-fui-comp="modal"] .header`,                 // & descendant
+		`[data-fui-comp="modal"] {`,       // & alone
+		`[data-fui-comp="modal"].open`,    // & combined
+		`[data-fui-comp="modal"] .header`, // & descendant
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {

@@ -91,9 +91,9 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 			removeAttrs["disabled"] = ""
 		}
 		removeBtn := html.Button(html.ButtonConfig{
-			Label: removeLabel,
-			Type:  "submit",
-			Class: "ui-button ui-button--danger ui-button--small",
+			Label:      removeLabel,
+			Type:       "submit",
+			Class:      "ui-button ui-button--danger ui-button--small",
 			ExtraAttrs: removeAttrs,
 		})
 		itemChildren = append(itemChildren, render.Tag("div", map[string]string{
@@ -101,7 +101,7 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		}, removeBtn))
 
 		itemDiv := render.Tag("div", map[string]string{
-			"class": "ui-form-repeater__item",
+			"class":      "ui-form-repeater__item",
 			"data-index": fmt.Sprintf("%d", i),
 		}, itemChildren...)
 		children = append(children, itemDiv)
@@ -117,9 +117,9 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		addAttrs["disabled"] = ""
 	}
 	addBtn := html.Button(html.ButtonConfig{
-		Label: addLabel,
-		Type:  "submit",
-		Class: "ui-button ui-button--secondary",
+		Label:      addLabel,
+		Type:       "submit",
+		Class:      "ui-button ui-button--secondary",
 		ExtraAttrs: addAttrs,
 	})
 	children = append(children, render.Tag("div", map[string]string{

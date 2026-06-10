@@ -18,11 +18,11 @@ func TestSSGParamNoTraversal(t *testing.T) {
 		name string
 		slug string
 	}{
-		{"happy", "alpha"},                          // legitimate slug must still expand
-		{"dotdot", "../../../etc/cron.d/evil"},      // classic traversal
-		{"embedded_slash", "a/b/c"},                 // single separator escapes the leaf dir
-		{"absolute", "/etc/passwd"},                 // absolute-looking value
-		{"trailing_dotdot", "x/.."},                 // collapses back up a level
+		{"happy", "alpha"},                     // legitimate slug must still expand
+		{"dotdot", "../../../etc/cron.d/evil"}, // classic traversal
+		{"embedded_slash", "a/b/c"},            // single separator escapes the leaf dir
+		{"absolute", "/etc/passwd"},            // absolute-looking value
+		{"trailing_dotdot", "x/.."},            // collapses back up a level
 	}
 
 	out := t.TempDir()

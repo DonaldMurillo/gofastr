@@ -185,4 +185,3 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	}
 	return nil
 }
-

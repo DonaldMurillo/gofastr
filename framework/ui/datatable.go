@@ -282,7 +282,7 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 
 	href := fmt.Sprintf(pattern, url.QueryEscape(col.Key), url.QueryEscape(string(nextDir)))
 	indicatorSpan := html.Span(html.TextConfig{
-		Class: "ui-data-table__sort-indicator",
+		Class:      "ui-data-table__sort-indicator",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}, render.Text(strings.TrimSpace(indicator)))
 

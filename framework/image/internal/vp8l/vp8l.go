@@ -259,8 +259,8 @@ func emitImage(bw *bitWriter, m image.Image, w, h int, bounds image.Rectangle, m
 	bw.writeBits(1, 1)                       // transform-present
 	bw.writeBits(transformPredictor, 2)      // transform type
 	bw.writeBits(uint32(predictorBits)-2, 3) // 3-bit field; decoder adds 2
-	subW := (w + (1<<predictorBits) - 1) >> predictorBits
-	subH := (h + (1<<predictorBits) - 1) >> predictorBits
+	subW := (w + (1 << predictorBits) - 1) >> predictorBits
+	subH := (h + (1 << predictorBits) - 1) >> predictorBits
 	subPixels := buildPredictorSubImageFromModes(subW, subH, modes)
 	applyPredictorAdaptive(pixels, w, h, predictorBits, modes, subW)
 	emitPayload(bw, subPixels, subW, subH, false)

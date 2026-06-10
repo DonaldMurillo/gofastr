@@ -96,7 +96,7 @@ func TestFilterBySource(t *testing.T) {
 	)
 	hits, err := idx.Query(ctx, Query{
 		Text:   "shared keyword",
-		K:     10,
+		K:      10,
 		Filter: Filter{Source: "b.go"},
 	})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestFilterByMetadata(t *testing.T) {
 
 	hits, _ = idx.Query(ctx, Query{
 		Text:   "fn",
-		K:     10,
+		K:      10,
 		Filter: Filter{MetaMatch: map[string]any{"lang": "go"}},
 	})
 	for _, h := range hits {

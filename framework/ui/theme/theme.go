@@ -27,12 +27,12 @@ func Default(overrides ...Overrides) style.Theme {
 // ignored — zero-value RadiusXX ints likewise.
 type Overrides struct {
 	// Color tokens (CSS hex values).
-	Background, Surface, SurfaceSoft        string
-	Border, BorderStrong                    string
-	Text, TextMuted, TextSubtle             string
-	Primary, PrimaryFg                      string
-	Accent                                  string
-	Success, Warning, Danger, Info          string
+	Background, Surface, SurfaceSoft string
+	Border, BorderStrong             string
+	Text, TextMuted, TextSubtle      string
+	Primary, PrimaryFg               string
+	Accent                           string
+	Success, Warning, Danger, Info   string
 
 	// Code-display surface tokens (ui.CodeBlock + demo source panels).
 	// Intentionally a separate pair so dark mode reskins code blocks

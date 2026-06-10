@@ -40,9 +40,9 @@ type NumberInputConfig struct {
 	// Help renders supporting text under the field.
 	Help string
 	// Error overrides Help with an error message.
-	Error string
-	ID    string
-	Class string
+	Error      string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
@@ -134,8 +134,8 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-number-input__error",
+			ID:         id + "-error",
+			Class:      "ui-number-input__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if cfg.Help != "" {

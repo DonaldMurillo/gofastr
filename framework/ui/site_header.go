@@ -117,9 +117,9 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	// stroke="currentColor" so they inherit the summary's text color.
 	mobile := render.Tag("details",
 		map[string]string{
-			"class":                       "ui-site-header__mobile",
-			"data-fui-disclosure":         "",
-			"data-fui-disclosure-trap":    "",
+			"class":                    "ui-site-header__mobile",
+			"data-fui-disclosure":      "",
+			"data-fui-disclosure-trap": "",
 		},
 		render.Tag("summary",
 			map[string]string{"class": "ui-site-header__mobile-toggle", "aria-label": "Toggle navigation"},

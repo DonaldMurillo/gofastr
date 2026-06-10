@@ -95,7 +95,7 @@ func TestSiteHeaderMatchPrefixAppliesToBothDesktopAndMobile(t *testing.T) {
 
 func TestSiteHeaderMobileExtraLinksRenderOnlyInDrawer(t *testing.T) {
 	h := string(SiteHeader(SiteHeaderConfig{
-		Brand: render.Raw(`<a>x</a>`),
+		Brand:    render.Raw(`<a>x</a>`),
 		NavItems: []SiteHeaderLink{{Label: "Docs", Href: "/docs/"}},
 		MobileExtraLinks: []SiteHeaderLink{
 			{Label: "Home", Href: "/"},

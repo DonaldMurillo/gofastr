@@ -32,9 +32,10 @@ func countToolsAndErrors(l *live.Live) (calls, errors int) {
 // turnSummary renders a one-line system note appended at the end of
 // every agent turn so the user gets visible closure (vs. "did pi
 // stop or is it still working?"). Examples:
-//   "✓ turn complete · 5 tools · 23s"
-//   "⚠ turn complete · 11 tools · 2 errors · 47s"
-//   "· no tools used · 1.2s" (chat-only reply)
+//
+//	"✓ turn complete · 5 tools · 23s"
+//	"⚠ turn complete · 11 tools · 2 errors · 47s"
+//	"· no tools used · 1.2s" (chat-only reply)
 func turnSummary(toolCount, errorCount int, dur time.Duration) string {
 	prefix := "✓"
 	if errorCount > 0 {

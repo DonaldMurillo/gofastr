@@ -24,6 +24,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/agent/acp"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
 	"github.com/DonaldMurillo/gofastr/kiln/chat"
@@ -31,7 +32,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func main() {

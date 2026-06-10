@@ -23,7 +23,7 @@ import (
 // runEmbed dispatches `gofastr embed <subcommand>`.
 //
 //   - index <path...>     One-shot: walk the path(s) and add every
-//                         matching file to the local index.
+//     matching file to the local index.
 //   - watch <path...>     Index, then poll for changes until SIGINT.
 //   - query <text>        Print top-K hits as JSON.
 //   - stats               Print index stats as JSON.

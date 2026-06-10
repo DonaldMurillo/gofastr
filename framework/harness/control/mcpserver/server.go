@@ -355,7 +355,9 @@ func (s *Server) dispatchCommand(ctx context.Context, reqID json.RawMessage, arg
 func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Command, error) {
 	switch verb {
 	case "CancelTurn":
-		var v struct{ SessionID string `json:"sessionId"` }
+		var v struct {
+			SessionID string `json:"sessionId"`
+		}
 		if err := json.Unmarshal(args, &v); err != nil {
 			return nil, err
 		}
@@ -392,7 +394,9 @@ func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Comman
 		s, _ := ids.ParseSession(v.SessionID)
 		return control.SetModel{SessionID: s, Model: v.Model}, nil
 	case "EnterPlanMode":
-		var v struct{ SessionID string `json:"sessionId"` }
+		var v struct {
+			SessionID string `json:"sessionId"`
+		}
 		if err := json.Unmarshal(args, &v); err != nil {
 			return nil, err
 		}
@@ -489,8 +493,8 @@ type mcpClient struct {
 	subN  atomic.Int64
 }
 
-func (c *mcpClient) ID() ids.ClientID                       { return c.id }
-func (c *mcpClient) IdentityClass() control.IdentityClass    { return c.class }
+func (c *mcpClient) ID() ids.ClientID                     { return c.id }
+func (c *mcpClient) IdentityClass() control.IdentityClass { return c.class }
 func (c *mcpClient) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 	// MCP clients consume via the resource subscription, not via
 	// Client.Subscribe; return a closed channel.

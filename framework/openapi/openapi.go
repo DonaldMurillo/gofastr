@@ -16,6 +16,7 @@ import (
 //   - CRUD paths (GET, POST, PUT, DELETE) with request/response schemas
 //   - List endpoint with pagination parameters
 //   - Proper error response schemas
+//
 // EntityOpenAPI builds the spec for every registered entity. An optional
 // basePath (e.g. "/api", from AppConfig.APIPrefix) is expressed as the server
 // URL so the documented paths match where the routes actually mount — the

@@ -25,12 +25,12 @@ const (
 
 // LinkConfig configures a Link.
 type LinkConfig struct {
-	Href    string // required
-	Text    string // required visible text
-	Variant LinkVariant
-	Class   string
-	ID      string
-	ExtraAttrs   html.Attrs
+	Href       string // required
+	Text       string // required visible text
+	Variant    LinkVariant
+	Class      string
+	ID         string
+	ExtraAttrs html.Attrs
 }
 
 // Link renders an anchor with a typed variant. The component owns its

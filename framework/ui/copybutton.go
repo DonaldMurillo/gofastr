@@ -147,7 +147,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		inner = []render.HTML{
 			html.Span(html.TextConfig{Class: "ui-copy-btn__label"}, render.Text(label)),
 			html.Span(html.TextConfig{
-				Class: "ui-copy-btn__copied",
+				Class:      "ui-copy-btn__copied",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(copied)),
 		}

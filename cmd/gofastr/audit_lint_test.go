@@ -65,14 +65,14 @@ func f() {
 
 func TestLintFormPOSTWithoutCSRFFlagged(t *testing.T) {
 	got := lintRules(t, `package x
-const tmpl = ` + "`" + `<form method="POST" action="/save"><input name="x"></form>` + "`")
+const tmpl = `+"`"+`<form method="POST" action="/save"><input name="x"></form>`+"`")
 	mustHaveRule(t, got, "form-without-csrf")
 }
 
 func TestLintFormPOSTWithCSRFInFileAllowed(t *testing.T) {
 	got := lintRules(t, `package x
 func render() { _ = CSRFInputFromCtx(nil) }
-const tmpl = ` + "`" + `<form method="POST" action="/save"></form>` + "`")
+const tmpl = `+"`"+`<form method="POST" action="/save"></form>`+"`")
 	mustNotHaveRule(t, got, "form-without-csrf")
 }
 
@@ -81,10 +81,10 @@ const tmpl = ` + "`" + `<form method="POST" action="/save"></form>` + "`")
 // four must be flagged. Compare counts, not presence.
 func TestLintFormPOSTCountsNotFileGrep(t *testing.T) {
 	got := lintRules(t, `package x
-const tmpl = ` + "`" + `
+const tmpl = `+"`"+`
 <form method="POST" action="/a"></form>
 <form method="POST" action="/b"></form>
-` + "`" + `
+`+"`"+`
 func render() { _ = CSRFInputFromCtx(nil) }`)
 	// Two forms but only one CSRF call → one finding expected.
 	count := 0
@@ -103,7 +103,7 @@ func render() { _ = CSRFInputFromCtx(nil) }`)
 func TestLintFormPOSTCSRFInCommentDoesNotCount(t *testing.T) {
 	got := lintRules(t, `package x
 // TODO: wire CSRFInputFromCtx into this form before shipping
-const tmpl = ` + "`" + `<form method="POST" action="/save"></form>` + "`")
+const tmpl = `+"`"+`<form method="POST" action="/save"></form>`+"`")
 	mustHaveRule(t, got, "form-without-csrf")
 }
 

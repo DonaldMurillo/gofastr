@@ -64,10 +64,10 @@ type Provider struct {
 
 	HTTP *http.Client
 
-	mu        sync.Mutex
-	apiBase   string // populated from exchange response; falls back to defaultAPIBase
-	intTok    string // current internal token
-	intExpAt  time.Time
+	mu       sync.Mutex
+	apiBase  string // populated from exchange response; falls back to defaultAPIBase
+	intTok   string // current internal token
+	intExpAt time.Time
 }
 
 // Name implements provider.Provider.
@@ -88,9 +88,9 @@ func (p *Provider) Chat(ctx context.Context, req *provider.Request) (<-chan prov
 		HTTP:    p.HTTP,
 		Name:    p.Name(),
 		Headers: map[string]string{
-			"Editor-Version":           p.editorVersion(),
-			"Copilot-Integration-Id":   p.integrationID(),
-			"X-GitHub-Api-Version":     "2025-01-01",
+			"Editor-Version":         p.editorVersion(),
+			"Copilot-Integration-Id": p.integrationID(),
+			"X-GitHub-Api-Version":   "2025-01-01",
 		},
 	}
 	return client.Chat(ctx, req)

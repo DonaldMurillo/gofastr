@@ -44,7 +44,8 @@ func TestAudit_RedactPanicOnUpdateDoesNotAbortRequest(t *testing.T) {
 			return row
 		}
 		ta := TestHarness(t, auditAppWithRedact(t, db, redact))
-		create := ta.Post("/posts", map[string]any{"title": "before"}); create.AssertStatus(t, http.StatusCreated)
+		create := ta.Post("/posts", map[string]any{"title": "before"})
+		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
 		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
@@ -77,7 +78,8 @@ func TestAudit_RedactPanicOnDeleteDoesNotAbortRequest(t *testing.T) {
 			return row
 		}
 		ta := TestHarness(t, auditAppWithRedact(t, db, redact))
-		create := ta.Post("/posts", map[string]any{"title": "to-delete"}); create.AssertStatus(t, http.StatusCreated)
+		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
+		create.AssertStatus(t, http.StatusCreated)
 
 		var created map[string]any
 		if err := json.Unmarshal([]byte(create.Body()), &created); err != nil {
@@ -118,7 +120,7 @@ func TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID(t *testing.T) {
 		}
 		id := created["id"].(string)
 
-		ta.Delete("/posts/" + id).AssertStatus(t, http.StatusNoContent)
+		ta.Delete("/posts/"+id).AssertStatus(t, http.StatusNoContent)
 
 		rows := readAuditRows(t, db)
 		last := rows[len(rows)-1]
@@ -170,7 +172,7 @@ func TestAudit_DeleteRedactStripsNewlinesFromRecordID(t *testing.T) {
 			t.Fatalf("decode create: %v", err)
 		}
 
-		ta.Delete("/posts/" + created["id"].(string)).AssertStatus(t, http.StatusNoContent)
+		ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
 
 		rows := readAuditRows(t, db)
 		last := rows[len(rows)-1]
@@ -222,7 +224,7 @@ func TestAudit_DeleteRedactStripsNULFromRecordID(t *testing.T) {
 			t.Fatalf("decode create: %v", err)
 		}
 
-		ta.Delete("/posts/" + created["id"].(string)).AssertStatus(t, http.StatusNoContent)
+		ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
 
 		rows := readAuditRows(t, db)
 		last := rows[len(rows)-1]

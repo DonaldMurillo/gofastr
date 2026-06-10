@@ -12,10 +12,10 @@ import (
 // sensitiveHeaderNames lists headers that LogSender refuses to print.
 // Matched case-insensitively against header keys.
 var sensitiveHeaderNames = map[string]struct{}{
-	"authorization": {},
-	"x-api-key":     {},
-	"cookie":        {},
-	"set-cookie":    {},
+	"authorization":       {},
+	"x-api-key":           {},
+	"cookie":              {},
+	"set-cookie":          {},
 	"proxy-authorization": {},
 }
 

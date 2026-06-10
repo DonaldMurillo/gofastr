@@ -137,7 +137,7 @@ func TestSchedulerEnqueueErrorLogsViaSlog(t *testing.T) {
 	logger := slog.New(cap)
 
 	sched := NewSchedulerWithLogger(&failQueue{}, logger)
-	sched.Every(50 * time.Millisecond).Job("test-job", nil).Register()
+	sched.Every(50*time.Millisecond).Job("test-job", nil).Register()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()

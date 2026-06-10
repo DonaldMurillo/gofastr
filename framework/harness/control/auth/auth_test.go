@@ -25,10 +25,10 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	enc := newTestEncoder(t)
 	session := ids.NewSessionID()
 	claims := Claims{
-		Sessions:      []ids.SessionID{session},
-		Commands:      []string{"SendInput"},
-		IdentityClass: control.IdentityHuman,
-		ExpiresAt:     time.Now().Add(time.Hour).Unix(),
+		Sessions:       []ids.SessionID{session},
+		Commands:       []string{"SendInput"},
+		IdentityClass:  control.IdentityHuman,
+		ExpiresAt:      time.Now().Add(time.Hour).Unix(),
 		CriticalClaims: []string{"sessions"},
 	}
 	tok, err := enc.Encode(claims)

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
 // RouteMatcher decides whether a widget is available on a given
@@ -133,8 +133,8 @@ type Definition struct {
 	ExtraCSS func() string
 
 	// Modal flags
-	Backdrop      bool // dim the page behind the widget
-	CloseOnEscape bool // ESC closes the widget
+	Backdrop            bool // dim the page behind the widget
+	CloseOnEscape       bool // ESC closes the widget
 	CloseOnClickOutside bool
 
 	// Role is the ARIA role applied to the widget root element.

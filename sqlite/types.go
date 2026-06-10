@@ -55,7 +55,7 @@ const lockByteOffset = 1073741824
 type DataType int
 
 const (
-	DataTypeNull   DataType = iota
+	DataTypeNull DataType = iota
 	DataTypeInteger
 	DataTypeFloat
 	DataTypeText
@@ -172,13 +172,13 @@ const (
 
 // ColumnDef defines a column in a table.
 type ColumnDef struct {
-	Name        string
-	Type        string // Original type string from SQL
-	Affinity    ColumnAffinity
-	NotNull     bool
-	Default     *Value // Default value, nil means no default
+	Name         string
+	Type         string // Original type string from SQL
+	Affinity     ColumnAffinity
+	NotNull      bool
+	Default      *Value // Default value, nil means no default
 	IsPrimaryKey bool
-	IsRowID     bool   // True if this is the INTEGER PRIMARY KEY (aliased to rowid)
+	IsRowID      bool // True if this is the INTEGER PRIMARY KEY (aliased to rowid)
 }
 
 // CompareResult represents the outcome of comparing two values.

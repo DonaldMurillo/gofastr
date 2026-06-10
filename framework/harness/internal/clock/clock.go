@@ -18,8 +18,8 @@ func System() Clock { return systemClock{} }
 
 type systemClock struct{}
 
-func (systemClock) Now() time.Time         { return time.Now() }
-func (systemClock) Sleep(d time.Duration)  { time.Sleep(d) }
+func (systemClock) Now() time.Time        { return time.Now() }
+func (systemClock) Sleep(d time.Duration) { time.Sleep(d) }
 
 // Fake is a manually-advanced clock for deterministic tests.
 type Fake struct {

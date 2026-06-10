@@ -142,7 +142,6 @@ type Screen struct {
 	// data-fui-screen-group marker so the runtime can preserve the
 	// matching layout shell during sibling-screen navigation.
 	group *ScreenGroup
-
 }
 
 // NewScreen creates a page screen.

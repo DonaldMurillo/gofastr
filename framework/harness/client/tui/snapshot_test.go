@@ -232,7 +232,7 @@ func TestSnapshot_FullSession(t *testing.T) {
 		Args: json.RawMessage(`{"cmd":"git status"}`),
 	})
 	pushEvent(t, tui, 4, control.ToolResult{
-		CallID: ids.NewCallID(),
+		CallID:  ids.NewCallID(),
 		Content: []control.ContentBlock{{Type: "text", Text: "On branch feature/i18n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n\n\tmodified:   framework/harness/client/tui/terminal.go"}},
 	})
 	pushEvent(t, tui, 5, control.TextDelta{Text: "The worktree adds a new permission UI and fixes tool-result wrapping.\n\n### Highlights\n\n- **Multi-line results** are now split per source line\n- `[permission]` prompts route to `AnswerPermission`\n- Glyphs use text-presentation Unicode (no emoji)"})
@@ -268,7 +268,7 @@ func TestSnapshot_MultilineToolResult(t *testing.T) {
 		Args: json.RawMessage(`{"cmd":"git log --all --oneline --graph -10"}`),
 	})
 	pushEvent(t, tui, 2, control.ToolResult{
-		CallID: ids.NewCallID(),
+		CallID:  ids.NewCallID(),
 		Content: []control.ContentBlock{{Type: "text", Text: "* 3066b37 docs(roadmap,ui,entities): capture framework DX feedback\n| *   f1e9bd6 On feature/i18n: deep-auto-attempt-2\n|/|\\\n| | * d14a38c untracked files on feature/i18n: …\n| * 7c1b2a0 wip\n* a23f868 Merge pull request #16 from DonaldMurillo/codex/worktree-isolation-mode"}},
 	})
 	frame := renderFrame(t, tui)
@@ -1109,9 +1109,9 @@ func TestSnapshot_TabCompletionAmbiguous(t *testing.T) {
 // locked down without going through draw().
 func TestSlashCompletionLogic(t *testing.T) {
 	cases := []struct {
-		in              string
-		wantCompletion  string
-		wantMatchesLen  int
+		in             string
+		wantCompletion string
+		wantMatchesLen int
 	}{
 		{"/hel", "/help", 0},   // unique
 		{"/hea", "/health", 0}, // unique

@@ -30,22 +30,22 @@ func TestSafeIdent_Invalid(t *testing.T) {
 	tests := []struct {
 		input string
 	}{
-		{""},                          // empty
-		{"users; DROP TABLE users"},   // injection
-		{"users;--"},                  // comment injection
-		{"1table"},                    // starts with digit
-		{"user name"},                 // space
-		{"user'name"},                 // single quote
-		{`user"name`},                 // double quote
-		{"user`name"},                 // backtick
-		{"user\tname"},                // tab
-		{"user\nname"},                // newline
-		{"DROP TABLE users"},          // SQL keyword with space
-		{"users WHERE 1=1"},           // WHERE injection
-		{".dotstart"},                 // starts with dot
-		{"users."},                    // trailing dot
-		{"schema..table"},             // double dot
-		{"schema.1bad"},               // after dot starts with digit
+		{""},                        // empty
+		{"users; DROP TABLE users"}, // injection
+		{"users;--"},                // comment injection
+		{"1table"},                  // starts with digit
+		{"user name"},               // space
+		{"user'name"},               // single quote
+		{`user"name`},               // double quote
+		{"user`name"},               // backtick
+		{"user\tname"},              // tab
+		{"user\nname"},              // newline
+		{"DROP TABLE users"},        // SQL keyword with space
+		{"users WHERE 1=1"},         // WHERE injection
+		{".dotstart"},               // starts with dot
+		{"users."},                  // trailing dot
+		{"schema..table"},           // double dot
+		{"schema.1bad"},             // after dot starts with digit
 	}
 	for _, tt := range tests {
 		_, err := SafeIdent(tt.input)

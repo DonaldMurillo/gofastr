@@ -122,14 +122,14 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 	input := render.Tag("input", inputAttrs)
 
 	zone := html.Div(html.DivConfig{
-		Class: "ui-fileupload__zone",
+		Class:      "ui-fileupload__zone",
 		ExtraAttrs: html.Attrs{"data-fui-fileupload": ""},
 	},
 		input,
 		html.Paragraph(html.TextConfig{Class: "ui-fileupload__prompt"},
 			render.Text(uploadPrompt(cfg))),
 		html.Paragraph(html.TextConfig{
-			Class: "ui-fileupload__filename",
+			Class:      "ui-fileupload__filename",
 			ExtraAttrs: html.Attrs{"aria-live": "polite"},
 		}),
 	)
@@ -141,8 +141,8 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-error",
-			Class: "ui-fileupload__error",
+			ID:         id + "-error",
+			Class:      "ui-fileupload__error",
 			ExtraAttrs: html.Attrs{"role": "alert"},
 		}, render.Text(cfg.Error)))
 	} else if help != "" {

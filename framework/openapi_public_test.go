@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // startApp boots app on an ephemeral loopback port and returns it + a cleanup,

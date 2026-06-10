@@ -47,8 +47,8 @@ func TestRetryBannerDefaults(t *testing.T) {
 	got := string(NetworkRetryBanner(NetworkRetryBannerConfig{HealthEndpoint: "/h"}))
 	for _, want := range []string{
 		`data-fui-network-retry-threshold="3"`, // default
-		"Connection lost",                       // default title
-		"Retry now",                             // default retry label
+		"Connection lost",                      // default title
+		"Retry now",                            // default retry label
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing default %q, got: %s", want, got)

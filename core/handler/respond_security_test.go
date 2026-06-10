@@ -18,8 +18,11 @@ type ctTestResponse struct {
 	body string
 }
 
-func (r ctTestResponse) ContentType() string                  { return r.ct }
-func (r ctTestResponse) WriteBody(w http.ResponseWriter) error { _, err := w.Write([]byte(r.body)); return err }
+func (r ctTestResponse) ContentType() string { return r.ct }
+func (r ctTestResponse) WriteBody(w http.ResponseWriter) error {
+	_, err := w.Write([]byte(r.body))
+	return err
+}
 
 func TestRespond_SanitizesContentType(t *testing.T) {
 	bad := []string{

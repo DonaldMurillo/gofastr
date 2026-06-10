@@ -74,12 +74,12 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 	isBranch := len(n.Children) > 0 || n.LazyPath != ""
 
 	liAttrs := map[string]string{
-		"id":              n.ID,
-		"role":            "treeitem",
-		"aria-level":      strconv.Itoa(level),
-		"aria-posinset":   strconv.Itoa(pos),
-		"aria-setsize":    strconv.Itoa(setSize),
-		"class":           "tree__item",
+		"id":            n.ID,
+		"role":          "treeitem",
+		"aria-level":    strconv.Itoa(level),
+		"aria-posinset": strconv.Itoa(pos),
+		"aria-setsize":  strconv.Itoa(setSize),
+		"class":         "tree__item",
 	}
 	if isFirstFocusable {
 		liAttrs["tabindex"] = "0"
@@ -102,11 +102,11 @@ func renderNode(n Node, level, pos, setSize int, signalPrefix string, isFirstFoc
 	if isBranch {
 		signalName := signalPrefix + "-" + n.ID
 		toggleAttrs := map[string]string{
-			"type":                  "button",
-			"class":                 "tree__toggle",
-			"aria-hidden":           "true",
-			"tabindex":              "-1",
-			"data-fui-tree-toggle":  "",
+			"type":                 "button",
+			"class":                "tree__toggle",
+			"aria-hidden":          "true",
+			"tabindex":             "-1",
+			"data-fui-tree-toggle": "",
 		}
 		if n.LazyPath != "" && len(n.Children) == 0 {
 			// Lazy: clicking the toggle fires RPC; response populates

@@ -55,8 +55,8 @@ type sym struct {
 	cacheIdx uint32
 
 	// Backref payload (kind == symBackref).
-	lenSym, distSym uint32
-	extraLen, extraDist uint32
+	lenSym, distSym             uint32
+	extraLen, extraDist         uint32
 	extraLenBits, extraDistBits uint8
 }
 
@@ -226,7 +226,7 @@ func lz77Symbol(value uint32) (symbol uint32, e extra) {
 	threshold := uint32(3) << k
 	if value <= threshold {
 		symbol = 2*uint32(k) + 2
-		e.value = value - (uint32(2)<<k) - 1
+		e.value = value - (uint32(2) << k) - 1
 	} else {
 		symbol = 2*uint32(k) + 3
 		e.value = value - threshold - 1

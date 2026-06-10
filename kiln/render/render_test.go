@@ -11,9 +11,9 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/render"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func newTestApp(t *testing.T) (*framework.App, *sql.DB) {

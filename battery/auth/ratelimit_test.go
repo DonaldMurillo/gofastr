@@ -99,10 +99,10 @@ func TestRateLimit_TwoFAChallenge(t *testing.T) {
 func newRLAuthManager(t *testing.T, rlCfg RateLimiterConfig) *AuthManager {
 	t.Helper()
 	mgr := New(AuthConfig{
-		SessionTTL:      time.Hour,
-		SessionCookie:   "session_id",
-		UserStore:       newMemoryUserStore(),
-		LoginRateLimit:  &rlCfg,
+		SessionTTL:     time.Hour,
+		SessionCookie:  "session_id",
+		UserStore:      newMemoryUserStore(),
+		LoginRateLimit: &rlCfg,
 	})
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
@@ -119,7 +119,6 @@ func newRLAuthManager(t *testing.T, rlCfg RateLimiterConfig) *AuthManager {
 
 // Compile-time check: all wiring fields exist.
 var _ = fmt.Sprintf
-
 
 // X-Forwarded-For must NOT be trusted by default. Today an attacker
 // rotates the header per request and bypasses every per-IP rate limit.
@@ -250,10 +249,10 @@ func TestRateLimit_TrustForwardedFor_OptIn(t *testing.T) {
 	// before — this is the legitimate case (you sit behind a trusted
 	// proxy). Pin the opt-in semantics.
 	cfg := RateLimiterConfig{
-		MaxAttempts:        2,
-		Window:             time.Minute,
-		BlockDuration:      time.Minute,
-		TrustForwardedFor:  true,
+		MaxAttempts:       2,
+		Window:            time.Minute,
+		BlockDuration:     time.Minute,
+		TrustForwardedFor: true,
 	}
 	mgr := newRLAuthManager(t, cfg)
 	r := router.New()

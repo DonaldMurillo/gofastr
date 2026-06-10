@@ -163,8 +163,8 @@ func TestUploadBypass_DoubleExtensionValidation(t *testing.T) {
 // metadata that corrupts utf8mb4 DB columns and JSON consumers.
 func TestSanitize_TruncatesOnRuneBoundary(t *testing.T) {
 	cases := []string{
-		strings.Repeat("世", 200) + ".jpg", // 3-byte runes (世)
-		strings.Repeat("é", 400) + ".png", // 2-byte runes (é)
+		strings.Repeat("世", 200) + ".jpg",          // 3-byte runes (世)
+		strings.Repeat("é", 400) + ".png",          // 2-byte runes (é)
 		strings.Repeat("\U0001f600", 100) + ".gif", // 4-byte runes (😀)
 		"safe.jpg", // happy path, short
 	}
@@ -186,10 +186,10 @@ func TestSanitize_TruncatesOnRuneBoundary(t *testing.T) {
 // JSON consumers that split on Unicode newlines.
 func TestSanitize_StripsUnicodeLineSeparators(t *testing.T) {
 	cases := []string{
-		"a b.jpg", // LINE SEPARATOR
-		"a b.jpg", // PARAGRAPH SEPARATOR
-		"ab.jpg", // NEXT LINE (NEL)
-		"a\x0bb.jpg",   // VT (ASCII control, regression guard)
+		"a b.jpg",    // LINE SEPARATOR
+		"a b.jpg",    // PARAGRAPH SEPARATOR
+		"ab.jpg",    // NEXT LINE (NEL)
+		"a\x0bb.jpg", // VT (ASCII control, regression guard)
 	}
 	lineTerminators := []rune{' ', ' ', '', '\v'}
 	for _, in := range cases {
@@ -211,10 +211,10 @@ func TestSanitize_StripsUnicodeLineSeparators(t *testing.T) {
 func TestSanitize_BoundsInputBeforeWork(t *testing.T) {
 	cases := []string{
 		"x" + strings.Repeat(".", 9<<20) + ".jpg", // dot-bomb -> giant Split slice
-		strings.Repeat("a", 9<<20) + ".php.jpg",    // long base + interior exec ext
-		strings.Repeat("/", 9<<20) + "evil.jpg",    // path-separator flood
-		strings.Repeat("世", 4<<20) + ".png",        // multibyte flood
-		"safe.jpg",                                  // happy path, short
+		strings.Repeat("a", 9<<20) + ".php.jpg",   // long base + interior exec ext
+		strings.Repeat("/", 9<<20) + "evil.jpg",   // path-separator flood
+		strings.Repeat("世", 4<<20) + ".png",       // multibyte flood
+		"safe.jpg",                                // happy path, short
 	}
 	for _, in := range cases {
 		// The intermediate work must stay bounded: a correct

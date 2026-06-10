@@ -25,10 +25,10 @@ var (
 // goroutine journals "(superseded by agent harness switch)"). Callers
 // surface this in the UI before applying.
 type AdapterStore struct {
-	mu        sync.Mutex
-	cur       Adapter
-	cancelFn  func(cause error)
-	inFlight  bool
+	mu       sync.Mutex
+	cur      Adapter
+	cancelFn func(cause error)
+	inFlight bool
 }
 
 func NewAdapterStore(initial Adapter) *AdapterStore {

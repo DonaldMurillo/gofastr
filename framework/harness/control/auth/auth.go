@@ -25,15 +25,15 @@ import (
 // Ver they do not recognize. See § Protocol versioning → Token
 // versioning.
 type Claims struct {
-	Ver             int                  `json:"ver"`
-	JTI             ids.JTI              `json:"jti"`
-	Sessions        []ids.SessionID      `json:"sessions,omitempty"`
-	Commands        []string             `json:"commands,omitempty"`
-	IdentityClass   control.IdentityClass `json:"identity_class"`
-	NotBefore       int64                `json:"nbf,omitempty"`
-	ExpiresAt       int64                `json:"exp"`
-	CanMint         bool                 `json:"can_mint"`
-	CriticalClaims  []string             `json:"critical_claims,omitempty"`
+	Ver            int                   `json:"ver"`
+	JTI            ids.JTI               `json:"jti"`
+	Sessions       []ids.SessionID       `json:"sessions,omitempty"`
+	Commands       []string              `json:"commands,omitempty"`
+	IdentityClass  control.IdentityClass `json:"identity_class"`
+	NotBefore      int64                 `json:"nbf,omitempty"`
+	ExpiresAt      int64                 `json:"exp"`
+	CanMint        bool                  `json:"can_mint"`
+	CriticalClaims []string              `json:"critical_claims,omitempty"`
 }
 
 // VerCurrent is the claim set version this binary issues. Verifiers
@@ -239,7 +239,9 @@ func Verify(enc *Encoder, rl *RevocationList, token string, now time.Time) (Clai
 // ExpiredError matches control.ReasonTokenExpired on the wire.
 type ExpiredError struct{ ExpAt time.Time }
 
-func (e *ExpiredError) Error() string { return "auth: token expired at " + e.ExpAt.Format(time.RFC3339) }
+func (e *ExpiredError) Error() string {
+	return "auth: token expired at " + e.ExpAt.Format(time.RFC3339)
+}
 
 // RevokedError matches control.ReasonTokenRevoked on the wire.
 type RevokedError struct{ JTI ids.JTI }

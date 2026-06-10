@@ -12,10 +12,10 @@ import (
 func TestBashBlocklistBypass(t *testing.T) {
 	skipNonUnix(t)
 	blocked := []string{
-		"/usr/bin/security dump-keychain",   // absolute path
+		"/usr/bin/security dump-keychain",      // absolute path
 		"true; security find-generic-password", // separator after benign token
-		"command secret-tool lookup x y",    // `command` builtin prefix
-		"echo a && keyctl list @u",          // && chained after benign token
+		"command secret-tool lookup x y",       // `command` builtin prefix
+		"echo a && keyctl list @u",             // && chained after benign token
 	}
 	for _, cmd := range blocked {
 		res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
@@ -42,9 +42,9 @@ func TestBashBlocklistShellForms(t *testing.T) {
 	skipNonUnix(t)
 	blocked := []string{
 		"echo `security find-generic-password`", // backtick substitution
-		"echo $(security dump-keychain)",         // $() substitution
-		`"security" dump-keychain`,               // double-quoted name
-		`\security dump-keychain`,                // leading backslash
+		"echo $(security dump-keychain)",        // $() substitution
+		`"security" dump-keychain`,              // double-quoted name
+		`\security dump-keychain`,               // leading backslash
 	}
 	for _, cmd := range blocked {
 		res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{

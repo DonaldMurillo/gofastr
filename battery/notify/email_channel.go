@@ -19,9 +19,9 @@ var ErrUnsafeRecipient = errors.New("notify: unsafe recipient address")
 // interface. Renders Subject/TextBody/HTMLBody from the Templater into
 // the email's matching fields.
 type EmailChannel struct {
-	sender   email.Sender
-	from     string
-	channel  string
+	sender  email.Sender
+	from    string
+	channel string
 }
 
 // EmailChannelOption configures the email adapter.

@@ -22,9 +22,9 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 
 	// TOC header + at least one row.
 	mustContain(t, body, "| Section | Use this when | Details |")
-	mustContain(t, body, "**framework**")          // row exists
-	mustContain(t, body, "**battery/admin**")      // row exists
-	mustContain(t, body, "(agents/framework.md)")  // link to detail
+	mustContain(t, body, "**framework**")         // row exists
+	mustContain(t, body, "**battery/admin**")     // row exists
+	mustContain(t, body, "(agents/framework.md)") // link to detail
 	mustContain(t, body, "(agents/battery-admin.md)")
 
 	// AGENTS.md must NOT inline the full per-section bodies anymore.
@@ -181,7 +181,7 @@ func TestExtractUseWhenStripsBoilerplate(t *testing.T) {
 		"**Use this when** the prompt mentions: foo, bar, baz.\n\nnext para": "foo, bar, baz",
 		"**Use this when** the prompt mentions: just one\n\n":                "just one",
 		"**Use this when** anything goes here\n\n":                           "anything goes here",
-		"no use-when line":                                                   "—",
+		"no use-when line": "—",
 		// Multi-line paragraph — markdown wraps the trigger list across
 		// lines; the TOC must show all of them, not just the first wrap.
 		"**Use this when** the prompt mentions: a, b,\nc, d, e\n\nrest": "a, b, c, d, e",
@@ -192,7 +192,7 @@ func TestExtractUseWhenStripsBoilerplate(t *testing.T) {
 		"**Use this when** trigger phrases here\n**Import:** `pkg`\n": "trigger phrases here",
 		// And the abbreviated case where the next bolded heading
 		// shows up on the line right after the use-when phrase.
-		"**Use this when** foo, bar\n**Shape:**\n":                    "foo, bar",
+		"**Use this when** foo, bar\n**Shape:**\n": "foo, bar",
 	}
 	for in, want := range cases {
 		got := extractUseWhen(in)

@@ -146,13 +146,13 @@ func (fakePastStore) EventsSince(_ context.Context, _ ids.SessionID, _ uint64, _
 func (s fakePastStore) ListPastSessions(_ context.Context, _ int) ([]session.PastSession, error) {
 	return s.rows, nil
 }
-func (fakePastStore) RecordToolIntent(_ context.Context, _ session.ToolIntent) error  { return nil }
+func (fakePastStore) RecordToolIntent(_ context.Context, _ session.ToolIntent) error   { return nil }
 func (fakePastStore) RecordToolOutcome(_ context.Context, _ session.ToolOutcome) error { return nil }
 func (fakePastStore) OrphanIntents(_ context.Context, _ ids.SessionID) ([]session.ToolIntent, error) {
 	return nil, nil
 }
 func (fakePastStore) ApplyRetention(_ context.Context, _ time.Duration) (int64, error) { return 0, nil }
-func (fakePastStore) Close() error                                                      { return nil }
+func (fakePastStore) Close() error                                                     { return nil }
 
 // TestSessionsPastEndpoint: GET /v1/sessions?past=true returns the
 // historical sessions from the store.

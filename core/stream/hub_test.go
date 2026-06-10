@@ -148,7 +148,7 @@ func TestHubBroadcastAfterStop(t *testing.T) {
 	hub.Stop()
 	time.Sleep(50 * time.Millisecond)
 
-	hub.Broadcast([]byte("msg"))  // must not block
+	hub.Broadcast([]byte("msg"))     // must not block
 	hub.BroadcastWait([]byte("msg")) // must not block
 }
 

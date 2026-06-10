@@ -4,7 +4,8 @@
 // Tier 1: name + description loaded at startup (~100 tokens/skill).
 // Tier 2: full SKILL.md body fetched on activation.
 // Tier 3: supporting files in scripts/, references/, assets/ —
-//         fetched only on explicit reference from tier 2.
+//
+//	fetched only on explicit reference from tier 2.
 package skill
 
 import (
@@ -29,13 +30,13 @@ type Registry struct {
 }
 
 type entry struct {
-	tier1     skillmd.Tier1
-	path      string // absolute path to SKILL.md
-	sha256    string
-	body      string // tier-2, loaded on activation
+	tier1      skillmd.Tier1
+	path       string // absolute path to SKILL.md
+	sha256     string
+	body       string // tier-2, loaded on activation
 	bodyLoaded bool
-	triggers  []string
-	dir       string // skill directory containing scripts/ references/ assets/
+	triggers   []string
+	dir        string // skill directory containing scripts/ references/ assets/
 }
 
 // NewRegistry returns a Registry that scans the given search paths

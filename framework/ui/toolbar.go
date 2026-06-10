@@ -35,9 +35,9 @@ type ToolbarConfig struct {
 	Groups []ToolbarGroup
 	// Align picks justify-content. Default is "start". Options:
 	// "start", "center", "end", "between".
-	Align string
-	ID    string
-	Class string
+	Align      string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 

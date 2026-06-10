@@ -19,12 +19,12 @@ import (
 // Validation errors returned by [FileField.Validate]. Callers can match
 // on these without parsing the message.
 var (
-	ErrFileFieldURLScheme   = errors.New("filefield: URL has unsafe scheme")
-	ErrFileFieldTraversal   = errors.New("filefield: contains path traversal")
-	ErrFileFieldMimeUnsafe  = errors.New("filefield: MIME type contains unsafe characters")
-	ErrFileFieldSize        = errors.New("filefield: size is negative or oversize")
-	ErrFileFieldOversize    = errors.New("filefield: field exceeds length limit")
-	ErrFileFieldTooLarge    = errors.New("filefield: file exceeds maximum size")
+	ErrFileFieldURLScheme     = errors.New("filefield: URL has unsafe scheme")
+	ErrFileFieldTraversal     = errors.New("filefield: contains path traversal")
+	ErrFileFieldMimeUnsafe    = errors.New("filefield: MIME type contains unsafe characters")
+	ErrFileFieldSize          = errors.New("filefield: size is negative or oversize")
+	ErrFileFieldOversize      = errors.New("filefield: field exceeds length limit")
+	ErrFileFieldTooLarge      = errors.New("filefield: file exceeds maximum size")
 	ErrFileFieldUnsafeContent = errors.New("filefield: file content is unsafe by default")
 )
 
@@ -78,10 +78,10 @@ func (f *FileField) Validate() error {
 		return nil
 	}
 	for name, v := range map[string]string{
-		"url":          f.URL,
-		"filename":     f.Filename,
-		"mime_type":    f.MimeType,
-		"storage_ref":  f.StorageRef,
+		"url":         f.URL,
+		"filename":    f.Filename,
+		"mime_type":   f.MimeType,
+		"storage_ref": f.StorageRef,
 	} {
 		if len(v) > MaxFileFieldStringBytes {
 			return fmt.Errorf("%w: field %q is %d bytes (max %d)", ErrFileFieldOversize, name, len(v), MaxFileFieldStringBytes)

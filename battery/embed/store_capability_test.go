@@ -17,8 +17,8 @@ var (
 // chunkLister — to exercise Open()'s fail-closed guards.
 type bareStore struct{}
 
-func (bareStore) Add(context.Context, []Chunk) error                       { return nil }
-func (bareStore) RemoveDoc(context.Context, string) error                  { return nil }
+func (bareStore) Add(context.Context, []Chunk) error      { return nil }
+func (bareStore) RemoveDoc(context.Context, string) error { return nil }
 func (bareStore) Candidates(context.Context, []float32, Filter, int) ([]Hit, error) {
 	return nil, nil
 }

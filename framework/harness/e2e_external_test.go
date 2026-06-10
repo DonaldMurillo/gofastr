@@ -452,8 +452,8 @@ func (w *mcpWriteAdapter) Write(p []byte) (int, error) { w.b.Write(p); return le
 
 type nopSink struct{}
 
-func (nopSink) EmitProgress(_ string)       {}
-func (nopSink) EmitEvent(_ control.Event)   {}
+func (nopSink) EmitProgress(_ string)     {}
+func (nopSink) EmitEvent(_ control.Event) {}
 
 func postJSON(t *testing.T, url, body, label string) string {
 	t.Helper()

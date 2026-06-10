@@ -39,10 +39,10 @@ func TestMatch_Patterns(t *testing.T) {
 
 func TestManager_SuccessfulDeliverySignsBody(t *testing.T) {
 	var (
-		gotSig    string
-		gotEvent  string
-		gotBody   []byte
-		gotMu     sync.Mutex
+		gotSig   string
+		gotEvent string
+		gotBody  []byte
+		gotMu    sync.Mutex
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMu.Lock()

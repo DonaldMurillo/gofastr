@@ -122,13 +122,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsConn := &Conn{
-		netConn:    conn,
-		reader:     rw.Reader,
-		writer:     rw.Writer,
-		identity:   claims.IdentityClass,
-		clientID:   ids.NewClientID(),
-		mux:        h.Mux,
-		session:    sess,
+		netConn:  conn,
+		reader:   rw.Reader,
+		writer:   rw.Writer,
+		identity: claims.IdentityClass,
+		clientID: ids.NewClientID(),
+		mux:      h.Mux,
+		session:  sess,
 	}
 	// Use a fresh background context for the goroutine — the
 	// handler returns immediately after Hijack, which would cancel
@@ -287,8 +287,8 @@ func (c *Conn) subscribePump(ctx context.Context) {
 
 // ---------- control.Client implementation ----------
 
-func (c *Conn) ID() ids.ClientID                       { return c.clientID }
-func (c *Conn) IdentityClass() control.IdentityClass    { return c.identity }
+func (c *Conn) ID() ids.ClientID                     { return c.clientID }
+func (c *Conn) IdentityClass() control.IdentityClass { return c.identity }
 func (c *Conn) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 	// External clients consume the event stream directly via the
 	// WebSocket frames; nothing to subscribe to in-process.
@@ -393,4 +393,3 @@ func controlError(msg string) []byte {
 	out, _ := json.Marshal(f)
 	return out
 }
-

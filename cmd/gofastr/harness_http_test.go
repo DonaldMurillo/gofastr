@@ -230,10 +230,10 @@ func TestChatHasAllowAlwaysButton(t *testing.T) {
 func TestChatHasTaskPanel(t *testing.T) {
 	out := string(renderChat("h", "sess_x", "tok"))
 	want := []string{
-		"id=\"task-panel\"",            // SSR scaffold
-		"refreshTasks",                  // polling fn
+		"id=\"task-panel\"",                  // SSR scaffold
+		"refreshTasks",                       // polling fn
 		"/v1/sessions/' + SESSION + '/tasks", // endpoint
-		"data-status=\"in_progress\"",   // status-driven styling hook
+		"data-status=\"in_progress\"",        // status-driven styling hook
 		"data-status=\"completed\"",
 		"data-status=\"pending\"",
 	}

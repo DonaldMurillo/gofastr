@@ -34,8 +34,8 @@ func TestLexWhitespace(t *testing.T) {
 
 func TestLexInteger(t *testing.T) {
 	tests := []struct {
-		input  string
-		value  string
+		input   string
+		value   string
 		isFloat bool
 	}{
 		{"0", "0", false},
@@ -107,9 +107,9 @@ func TestLexString(t *testing.T) {
 		value string
 	}{
 		{"'hello'", "hello"},
-		{"''", ""},               // empty string
-		{"'it''s'", "it's"},      // escaped quote
-		{"'a''b''c'", "a'b'c"},   // multiple escaped quotes
+		{"''", ""},             // empty string
+		{"'it''s'", "it's"},    // escaped quote
+		{"'a''b''c'", "a'b'c"}, // multiple escaped quotes
 	}
 
 	for _, tt := range tests {

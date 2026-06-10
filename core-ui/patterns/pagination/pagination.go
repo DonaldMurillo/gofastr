@@ -202,11 +202,11 @@ func pageItemRPC(islandEndpoint, signal, hrefPattern string, page int, current b
 	rpcURL := islandEndpoint + relativeQuery(hrefPattern, page)
 	pushState := fmt.Sprintf(hrefPattern, page)
 	attrs := map[string]string{
-		"type":                  "button",
-		"data-fui-rpc":          rpcURL,
-		"data-fui-rpc-method":   "GET",
-		"data-fui-rpc-signal":   signal,
-		"data-fui-push-state":   pushState,
+		"type":                "button",
+		"data-fui-rpc":        rpcURL,
+		"data-fui-rpc-method": "GET",
+		"data-fui-rpc-signal": signal,
+		"data-fui-push-state": pushState,
 	}
 	if current {
 		attrs["aria-current"] = "page"

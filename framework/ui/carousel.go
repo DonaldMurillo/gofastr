@@ -82,7 +82,7 @@ type CarouselConfig struct {
 	VirtualPlaceholderHeight string
 	ID                       string
 	Class                    string
-	ExtraAttrs                    html.Attrs
+	ExtraAttrs               html.Attrs
 }
 
 // Carousel renders the slider.
@@ -118,12 +118,12 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	cls += " ui-carousel--cols-" + strconv.Itoa(visible)
 
 	attrs := html.Attrs{
-		"class":             cls,
-		"role":              "region",
+		"class":                cls,
+		"role":                 "region",
 		"aria-roledescription": "carousel",
-		"aria-label":        cfg.Label,
-		"id":                id,
-		"data-fui-carousel": "true",
+		"aria-label":           cfg.Label,
+		"id":                   id,
+		"data-fui-carousel":    "true",
 	}
 	if cfg.AutoRotateMs > 0 {
 		attrs["data-fui-carousel-autorotate"] = strconv.Itoa(cfg.AutoRotateMs)
@@ -201,8 +201,8 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		if buf, err := json.Marshal(deferred); err == nil {
 			s := strings.ReplaceAll(string(buf), `</`, `<\/`)
 			children = append(children, render.Tag("script", map[string]string{
-				"type":                              "application/json",
-				"data-fui-carousel-deferred-for":    id,
+				"type":                           "application/json",
+				"data-fui-carousel-deferred-for": id,
 			}, render.HTML(s)))
 		}
 	}
@@ -231,11 +231,11 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		dots := make([]render.HTML, 0, len(cfg.Slides))
 		for i := range cfg.Slides {
 			dotAttrs := map[string]string{
-				"type":                    "button",
-				"class":                   "ui-carousel__dot",
-				"aria-label":              "Go to slide " + strconv.Itoa(i+1),
-				"aria-controls":           id,
-				"data-fui-carousel-dot":   strconv.Itoa(i),
+				"type":                  "button",
+				"class":                 "ui-carousel__dot",
+				"aria-label":            "Go to slide " + strconv.Itoa(i+1),
+				"aria-controls":         id,
+				"data-fui-carousel-dot": strconv.Itoa(i),
 			}
 			if i == 0 {
 				dotAttrs["aria-current"] = "true"

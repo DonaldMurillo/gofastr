@@ -130,10 +130,10 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 	}
 
 	rootAttrs := map[string]string{
-		"class":                cls + " ui-theme-toggle--pill",
+		"class":                 cls + " ui-theme-toggle--pill",
 		"data-fui-theme-toggle": "pill",
-		"role":                 "radiogroup",
-		"aria-label":           "Color scheme",
+		"role":                  "radiogroup",
+		"aria-label":            "Color scheme",
 	}
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
@@ -141,11 +141,11 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 
 	optBtn := func(label, opt string) render.HTML {
 		return render.Tag("button", map[string]string{
-			"type":                     "button",
-			"class":                    "ui-theme-toggle__opt",
+			"type":                      "button",
+			"class":                     "ui-theme-toggle__opt",
 			"data-fui-theme-toggle-opt": opt,
-			"aria-checked":             "false",
-			"role":                     "radio",
+			"aria-checked":              "false",
+			"role":                      "radio",
 		}, render.Text(label))
 	}
 

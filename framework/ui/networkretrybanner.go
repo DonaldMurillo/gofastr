@@ -94,13 +94,13 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	attrs := map[string]string{
-		"class":                                cls,
-		"role":                                 "alert",
-		"aria-live":                            "assertive",
-		"data-fui-network-retry-health":        cfg.HealthEndpoint,
-		"data-fui-network-retry-threshold":     fmt.Sprintf("%d", threshold),
-		"data-fui-network-retry-sse-silence":   fmt.Sprintf("%d", cfg.SSESilenceMs),
-		"hidden":                               "",
+		"class":                              cls,
+		"role":                               "alert",
+		"aria-live":                          "assertive",
+		"data-fui-network-retry-health":      cfg.HealthEndpoint,
+		"data-fui-network-retry-threshold":   fmt.Sprintf("%d", threshold),
+		"data-fui-network-retry-sse-silence": fmt.Sprintf("%d", cfg.SSESilenceMs),
+		"hidden":                             "",
 	}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID

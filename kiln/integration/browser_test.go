@@ -16,14 +16,14 @@ import (
 	"github.com/chromedp/chromedp/kb"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/DonaldMurillo/gofastr/kiln/chat"
+	"github.com/DonaldMurillo/gofastr/framework"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
+	"github.com/DonaldMurillo/gofastr/kiln/chat"
 	"github.com/DonaldMurillo/gofastr/kiln/db"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // testInFlight is the integration-test handle for the simulated
@@ -493,9 +493,9 @@ func min(a, b int) int {
 // --- (8) build banner + tool-row summary feedback ------------------
 //
 // Verifies the user-facing feedback signals introduced for build mode:
-//   * a top-of-page banner flashes on every world_edit even when the
+//   - a top-of-page banner flashes on every world_edit even when the
 //     panel is collapsed
-//   * the panel tool-call rows render a glanceable summary
+//   - the panel tool-call rows render a glanceable summary
 //     (name=foo fields=N) instead of raw JSON.
 func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	t.Skip("build banner is being reimplemented as a core-ui/widget Banner preset; restore this test once that lands")
@@ -919,7 +919,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 
 	// Shared framework runtime — single URL, idempotent IIFE, fetches
 	// the widget list at startup.
-	resp, err := kilnGet(t, urlBase + "/__gofastr/runtime.js")
+	resp, err := kilnGet(t, urlBase+"/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("framework runtime not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -933,7 +933,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 
 	// Widget discovery — runtime fetches this; one entry per registered
 	// widget, with cfg + chrome HTML inline.
-	resp, err = kilnGet(t, urlBase + "/__gofastr/widgets")
+	resp, err = kilnGet(t, urlBase+"/__gofastr/widgets")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("widget discovery not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -950,7 +950,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 			t.Errorf("widget discovery list missing %q", want)
 		}
 	}
-	resp, err = kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/chrome")
+	resp, err = kilnGet(t, urlBase+"/core-ui/widget/kiln-panel/chrome")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel chrome not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -963,7 +963,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 
 	// Per-widget /state still serves the signal snapshot.
-	resp, err = kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/state")
+	resp, err = kilnGet(t, urlBase+"/core-ui/widget/kiln-panel/state")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel state not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -974,7 +974,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 
 	// Per-widget stylesheet still serves the theme-resolved CSS.
-	resp, err = kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/style.css")
+	resp, err = kilnGet(t, urlBase+"/core-ui/widget/kiln-panel/style.css")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("new panel style not reachable: status=%d err=%v", resp.StatusCode, err)
 	}
@@ -1456,7 +1456,7 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
 
-	resp, err := kilnGet(t, urlBase + "/")
+	resp, err := kilnGet(t, urlBase+"/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1562,7 +1562,7 @@ func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
 // metadata-only); assert the attribute is on the rendered chrome.
 func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	resp, err := kilnGet(t, urlBase + "/core-ui/widget/kiln-panel/chrome")
+	resp, err := kilnGet(t, urlBase+"/core-ui/widget/kiln-panel/chrome")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2041,7 +2041,7 @@ func TestBrowser_LandingLeadAdaptsToWorld(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
 
 	// Empty world: lead must say "Empty world".
-	resp, err := kilnGet(t, urlBase + "/")
+	resp, err := kilnGet(t, urlBase+"/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2057,7 +2057,7 @@ func TestBrowser_LandingLeadAdaptsToWorld(t *testing.T) {
 	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "users", Fields: []world.Field{{Name: "name", Type: "string"}}}})
 
-	resp, err = kilnGet(t, urlBase + "/")
+	resp, err = kilnGet(t, urlBase+"/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2899,7 +2899,7 @@ func TestBrowser_ResetModalMentionsFreezeDiff(t *testing.T) {
 // renders the IR human-readably. Automated parsers don't care.
 func TestBrowser_WorldEndpointReturnsIndentedJSON(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	resp, err := kilnGet(t, urlBase + "/kiln/world")
+	resp, err := kilnGet(t, urlBase+"/kiln/world")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3423,10 +3423,10 @@ func TestBrowser_LongChatLogScrollsInsidePanel(t *testing.T) {
 	}
 
 	var info struct {
-		LogScrollH    float64 `json:"logScrollH"`
-		LogClientH    float64 `json:"logClientH"`
-		PanelH        float64 `json:"panelH"`
-		PanelScrollH  float64 `json:"panelScrollH"`
+		LogScrollH   float64 `json:"logScrollH"`
+		LogClientH   float64 `json:"logClientH"`
+		PanelH       float64 `json:"panelH"`
+		PanelScrollH float64 `json:"panelScrollH"`
 	}
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
 		`(function(){

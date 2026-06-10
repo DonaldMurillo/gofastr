@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
@@ -92,9 +92,10 @@ func (s *Server) Mount(r *router.Router) {
 // HostHTML is the empty-state shell. Returned to any unmatched HTML
 // request so the floating widget is always reachable. The embedded
 // HTML uses placeholders we substitute at serve time:
-//   __KILN_BASE__   the server's scheme+host (per-request when possible)
-//   __KILN_LEAD__   the welcome paragraph (adapts to current world)
-//   the runtime <script> tag (hashed for cache-busting)
+//
+//	__KILN_BASE__   the server's scheme+host (per-request when possible)
+//	__KILN_LEAD__   the welcome paragraph (adapts to current world)
+//	the runtime <script> tag (hashed for cache-busting)
 //
 // HostHTML hard-codes localhost:8765 + the empty-world lead so non-
 // request callers (chat tests, snapshots) still produce a complete
@@ -156,7 +157,6 @@ func leadForWorld(w *world.World) string {
 	}
 	return strings.Join(parts, " · ") + " live. Open the floating panel to keep building, or visit /kiln/world for the IR."
 }
-
 
 func baseFromRequest(r *http.Request) string {
 	scheme := "http"

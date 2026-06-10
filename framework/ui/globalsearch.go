@@ -94,12 +94,12 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	}
 
 	box := combobox.Render(combobox.Config{
-		ID:         cfg.ID,
-		Name:       cfg.Name,
-		Label:      cfg.Label,
-		RPCPath:    cfg.RPCPath,
-		SignalName: cfg.SignalName,
-		DebounceMs: debounceMs,
+		ID:          cfg.ID,
+		Name:        cfg.Name,
+		Label:       cfg.Label,
+		RPCPath:     cfg.RPCPath,
+		SignalName:  cfg.SignalName,
+		DebounceMs:  debounceMs,
 		Placeholder: placeholder,
 		LabelHidden: true,
 	})

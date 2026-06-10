@@ -20,7 +20,7 @@ import (
 // registry and AutoMigrate / DiffSchema / GenerateMigration treat them
 // uniformly, including foreign keys that cross between an entity and a Table.
 type Table struct {
-	Name        string  // table name; also the registry key for FK references
+	Name        string   // table name; also the registry key for FK references
 	Columns     []Column // exactly the columns emitted — no auto-injection
 	Indices     []Index
 	ForeignKeys []ForeignKey

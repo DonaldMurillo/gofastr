@@ -257,8 +257,8 @@ func (b *BTree) insertIntoPage(pageNum int, rowid int64, cell []byte) error {
 	// Slow path: need to read all cells and possibly split
 	ph := PageHeader{
 		PageType:      pageType,
-		CellCount:      uint16(cellCount),
-		ContentOffset:  contentOffset,
+		CellCount:     uint16(cellCount),
+		ContentOffset: contentOffset,
 	}
 	cells := b.readLeafCells(data, offset, ph)
 
@@ -510,8 +510,8 @@ func (b *BTree) Search(rootPage int, rowid int64) (*Record, error) {
 	pageType := data[offset]
 
 	ph := PageHeader{
-		PageType:     pageType,
-		CellCount:    binary.BigEndian.Uint16(data[offset+3 : offset+5]),
+		PageType:      pageType,
+		CellCount:     binary.BigEndian.Uint16(data[offset+3 : offset+5]),
 		ContentOffset: binary.BigEndian.Uint16(data[offset+5 : offset+7]),
 	}
 	if pageType == pageTypeInteriorTable {
@@ -751,9 +751,9 @@ type BTreeCursor struct {
 	rootPage int
 
 	// Current leaf page state
-	currentPage int    // page number of current leaf
+	currentPage int        // page number of current leaf
 	cells       []leafCell // cells on current page (sub-slices into page data)
-	index       int    // index within cells
+	index       int        // index within cells
 
 	// Navigation stack for traversing interior nodes
 	// Each entry: (interiorPageNum, childIndex)
@@ -769,7 +769,7 @@ type BTreeCursor struct {
 }
 
 type cursorNavEntry struct {
-	pageNum int
+	pageNum  int
 	childIdx int // which child we're about to visit
 }
 

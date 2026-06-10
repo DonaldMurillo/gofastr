@@ -29,13 +29,13 @@ type evalQuery struct {
 }
 
 type evalAssertion struct {
-	desc    string
-	check   func(t *testing.T, outputs []string)
+	desc  string
+	check func(t *testing.T, outputs []string)
 }
 
 // TestEvalNewUserPlansSite simulates a fresh user who:
-//   1. Runs `gofastr init my-blog`
-//   2. Asks "I want to build a blog with auth, what features does the framework have?"
+//  1. Runs `gofastr init my-blog`
+//  2. Asks "I want to build a blog with auth, what features does the framework have?"
 //
 // The eval verifies the docs pipeline surfaces the right answers.
 func TestEvalNewUserPlansSite(t *testing.T) {
@@ -211,7 +211,6 @@ func TestEvalNewUserPlansSiteNoEntity(t *testing.T) {
 		}
 	})
 }
-
 
 func TestReinitRefreshesOnboarding(t *testing.T) {
 	bin := buildGofastrBin(t)

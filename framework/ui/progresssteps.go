@@ -23,7 +23,7 @@ import (
 type ProgressStepStatus string
 
 const (
-	ProgressStepUpcoming ProgressStepStatus = ""         // default
+	ProgressStepUpcoming ProgressStepStatus = "" // default
 	ProgressStepCurrent  ProgressStepStatus = "current"
 	ProgressStepComplete ProgressStepStatus = "complete"
 )
@@ -58,9 +58,9 @@ type ProgressStepsConfig struct {
 	Orientation ProgressStepsOrientation
 	// Label is the optional aria-label for the wrapping nav. Defaults
 	// to "Progress".
-	Label string
-	ID    string
-	Class string
+	Label      string
+	ID         string
+	Class      string
 	ExtraAttrs html.Attrs
 }
 

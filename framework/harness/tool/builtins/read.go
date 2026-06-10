@@ -27,9 +27,11 @@ type Read struct {
 
 const defaultReadMax int64 = 1 << 20
 
-func (Read) Name() string        { return "Read" }
-func (Read) Description() string { return "Read a file from the local filesystem and return its content as text." }
-func (Read) Mutating() bool      { return false }
+func (Read) Name() string { return "Read" }
+func (Read) Description() string {
+	return "Read a file from the local filesystem and return its content as text."
+}
+func (Read) Mutating() bool { return false }
 func (Read) InputSchema() []byte {
 	return []byte(`{
   "type": "object",
