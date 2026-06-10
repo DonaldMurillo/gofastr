@@ -1,0 +1,81 @@
+# Deploys a static crawl of the docs site (examples/site) to GitHub Pages.
+#
+# The site is an SSR-first GoFastr app: every page is fully server-rendered
+# on initial load, so a wget mirror of the running server produces complete,
+# readable static HTML. Interactive islands (live search, RPC-backed
+# widgets, SSE) degrade gracefully — they need the Go server and are out of
+# scope for the static deploy. Full-fidelity hosting (Fly/Render/Cloud Run)
+# or a first-class `gofastr export` remain the upgrade paths.
+#
+# Crawl notes (validated locally before this workflow existed):
+#   - robots.txt disallows /__gofastr/ (runtime JS/CSS), so the crawl runs
+#     with `-e robots=off` — otherwise pages ship without their assets.
+#   - --convert-links rewrites every internal href/src to a relative path,
+#     which is what makes the mirror work under the /<repo>/ subpath that
+#     project Pages serves from.
+#   - wget exits 8 when any URL 404s; dynamic endpoints (island RPC, SSE)
+#     do that by design, so the exit code is tolerated and index.html is
+#     asserted instead.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the docs site
+        run: go build -o /tmp/site ./examples/site/
+
+      - name: Run and crawl
+        run: |
+          PORT=8095 /tmp/site &
+          SITE_PID=$!
+          for _ in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:8095/ && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:8095/ || { echo "site never came up"; exit 1; }
+          wget -q -e robots=off --mirror --convert-links --adjust-extension \
+            --page-requisites --no-parent -P mirror http://localhost:8095/ || true
+          kill "$SITE_PID" || true
+          test -f "mirror/localhost:8095/index.html" || { echo "crawl produced no index.html"; exit 1; }
+          mv "mirror/localhost:8095" _site
+          # __gofastr/ starts with an underscore — Jekyll would drop it.
+          touch _site/.nojekyll
+          echo "pages: $(find _site -name '*.html' | wc -l) html files, $(du -sh _site | cut -f1) total"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
