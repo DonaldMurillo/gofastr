@@ -3,13 +3,13 @@ package main
 // =============================================================================
 // Home — top-level outline (matches pages/home-v2.html in the design bundle):
 //
-//   HERO        pre-alpha tag · h1 with amber span · 2 ledes · 2 CTAs · install
+//   HERO        version tag · h1 with amber span · 2 ledes · 2 CTAs · install
 //               RHS: code block (blog/main.go, hand-tokenized in code_block.go)
 //   §01         release-notes-style list (7 rows, number · name · desc · file)
 //   §02         arch cards: core / framework / batteries / core-ui
 //   §03         split pane: framework MCP (left) | Kiln (right + terminal mock)
 //   §04         6 example cards, each with path + name + desc + run command
-//   §05         pre-alpha disclosure + roadmap dl
+//   §05         v0.x status disclosure + roadmap dl
 //
 // Sections live inside <main> only — .nav and .foot are owned by the
 // HeaderComponent / FooterComponent. Built with core-ui/html primitives
@@ -39,7 +39,7 @@ type HomeScreen struct{}
 // (the app name) to form the <title>, so it must NOT be repeated here.
 func (s *HomeScreen) ScreenTitle() string { return "Full-stack Go, with agents at the table" }
 func (s *HomeScreen) ScreenDescription() string {
-	return "A pre-alpha Go full-stack framework where AI agents are first-class authors. Declare your domain in Go; get REST, MCP tools, OpenAPI, migrations, and a typed client — to disk, in plain Go."
+	return "An early (v0.x) Go full-stack framework where AI agents are first-class authors. Declare your domain in Go; get REST, MCP tools, OpenAPI, migrations, and a typed client — to disk, in plain Go."
 }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -68,7 +68,7 @@ func container(children ...render.HTML) render.HTML {
 func heroSection() render.HTML {
 	preAlphaTag := html.Div(
 		html.DivConfig{Class: "mb-lg"},
-		ui.StatusPill(ui.StatusPillConfig{Label: "pre-alpha · v0.0.4", Tone: ui.StatusPillAccent, Dot: true}),
+		ui.StatusPill(ui.StatusPillConfig{Label: "early · v" + siteVersion, Tone: ui.StatusPillAccent, Dot: true}),
 	)
 
 	title := html.Heading(html.HeadingConfig{Level: 1, Class: "hero__title"},
@@ -370,8 +370,8 @@ func examplesSection() render.HTML {
 
 	// Order matches /examples (01–06) so the two pages tell the same story.
 	grid := html.Div(html.DivConfig{Class: "ex__grid"},
-		exCard("examples/blog", "JSON-declared blog",
-			render.Text("Posts, comments, tags. Three entities. The smallest end-to-end example — start here."),
+		exCard("examples/blog", "Go-declared blog",
+			render.Text("Users, posts, comments. Three entities. The smallest end-to-end example — start here."),
 			"cd examples/blog && go run ."),
 		exCard("examples/site", "This site",
 			render.Text("The site you're reading — every framework/ui + core-ui primitive showcased one page each, plus the docs, SEO, wizard, and print demos."),
@@ -406,7 +406,7 @@ func alphaSection() render.HTML {
 	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 
 	copy := html.Div(html.DivConfig{Class: "alpha__copy"},
-		ui.StatusPill(ui.StatusPillConfig{Label: "pre-alpha · v0.0.4", Tone: ui.StatusPillAccent, Dot: true, Class: "mb-md"}),
+		ui.StatusPill(ui.StatusPillConfig{Label: "early · v" + siteVersion, Tone: ui.StatusPillAccent, Dot: true, Class: "mb-md"}),
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Built in public. Use it to learn, not to ship.")),
 		html.Paragraph(html.TextConfig{},
 			render.Text("APIs change between commits. "),

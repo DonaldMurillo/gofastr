@@ -269,8 +269,8 @@ var componentCatalog = []componentEntry{
 	// ---------- Feedback / surfaces ----------
 	{"banner", "Banner", "Feedback", "Full-width alert; optional dismiss + action.", func() render.HTML {
 		return ui.Banner(ui.BannerConfig{
-			Title:   "Pre-alpha",
-			Body:    "GoFastr is pre-alpha — APIs change between commits.",
+			Title:   "v0.x",
+			Body:    "GoFastr is v0.x — pin a version; APIs may change between releases.",
 			Variant: ui.BannerWarn,
 		})
 	}},

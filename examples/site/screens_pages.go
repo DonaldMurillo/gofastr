@@ -24,7 +24,7 @@ import (
 // codeText — shared inline <code> span used by most pages.
 func codeText(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 
-// tagAccent — the pre-alpha pill used in multiple page heroes. Thin adapter
+// tagAccent — the version pill used in multiple page heroes. Thin adapter
 // over the framework's ui.StatusPill (accent tone + dot).
 func tagAccent(label string) render.HTML {
 	return ui.StatusPill(ui.StatusPillConfig{Label: label, Tone: ui.StatusPillAccent, Dot: true})
@@ -70,7 +70,7 @@ func gsHero() render.HTML {
 	)
 
 	copy := html.Div(html.DivConfig{Class: "mb-lg"},
-		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Get started · v0.0.4")),
+		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Get started · v"+siteVersion)),
 		html.Heading(html.HeadingConfig{Level: 1},
 			render.Text("From cold machine to a running app in four minutes."),
 		),
@@ -134,7 +134,7 @@ func gsBody() render.HTML {
 		html.Paragraph(html.TextConfig{}, render.Text("One binary covers scaffold, migrate, dev, build, test, and the doc browser. Get it from GitHub:")),
 		termBlock("$ install",
 			render.Text("$ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest\n"),
-			ok("→ installed gofastr v0.0.4 to ~/go/bin\n"),
+			ok("→ installed gofastr v"+siteVersion+" to ~/go/bin\n"),
 		),
 		html.Paragraph(html.TextConfig{}, render.Text("Verify it's on your PATH with "), codeText("gofastr --version"), render.Text(".")),
 		callout("If go install fails", "Make sure $GOPATH/bin (or ~/go/bin) is in your PATH. Run echo $PATH and add the missing entry to your shell rc."),
@@ -265,7 +265,7 @@ func cxHero() render.HTML {
 	// SaaS-dashboard pattern at odds with the engineer-voice brief
 	// (code is the hero; metadata should be unobtrusive).
 	copy := html.Div(html.DivConfig{},
-		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Docs · v0.0.4")),
+		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Docs · v"+siteVersion)),
 		html.Heading(html.HeadingConfig{Level: 1},
 			render.Text("Read by what you're trying to do."),
 		),
@@ -383,9 +383,9 @@ func exHero() render.HTML {
 
 func exRows() render.HTML {
 	rows := []render.HTML{
-		exRow("01", "examples/blog", "JSON-declared blog", "smallest", "~120 LoC",
-			"Posts, comments, tags. Three entities. Start here — it's the end-to-end story in one file.",
-			[]string{"Three entities loaded from JSON", "Auto-CRUD + Swagger UI + MCP", "SQLite by default; swap for Postgres in main.go"},
+		exRow("01", "examples/blog", "Go-declared blog", "smallest", "~120 LoC",
+			"Users, posts, comments. Three entities. Start here — it's the end-to-end story in one file.",
+			[]string{"Three entities declared in Go", "Auto-CRUD + Swagger UI + MCP", "SQLite by default; swap for Postgres in main.go"},
 			"cd examples/blog && go run .",
 			"examples/blog/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
@@ -716,7 +716,7 @@ func kCli() render.HTML {
 			html.Div(html.DivConfig{Class: "cli-block"},
 				cmd("install",
 					p("$"), render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest\n"),
-					ok("→ installed kiln v0.0.4\n"),
+					ok("→ installed kiln v"+siteVersion+"\n"),
 				),
 				cmd("serve",
 					p("$"), render.Text(" kiln serve --agent claude-code\n"),

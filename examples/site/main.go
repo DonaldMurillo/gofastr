@@ -77,7 +77,7 @@ func setupServer() *framework.App {
 	host := uihost.New(site,
 		uihost.WithCustomCSS(createStyleSheet(t)),
 		uihost.WithNotFoundScreen(&NotFoundScreen{}),
-		uihost.WithDescription("A pre-alpha Go full-stack framework where AI agents are first-class authors."),
+		uihost.WithDescription("An early (v0.x) Go full-stack framework where AI agents are first-class authors."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
 			URL:   "https://gofastr.dev",

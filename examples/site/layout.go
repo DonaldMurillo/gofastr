@@ -33,27 +33,31 @@ import (
 // (data-fui-shortcut-click), so the header needs no injected trigger.
 type HeaderComponent struct{}
 
+// siteVersion is the single place the site states the framework version.
+// Bump it when tagging a release.
+const siteVersion = "0.4.0"
+
 func (h *HeaderComponent) Render() render.HTML {
 	// Brand stays site-local — the λ mark, lowercase wordmark, and the
-	// amber pre-alpha status pulse are GoFastr's identity. The framework's
+	// amber version status pulse are GoFastr's identity. The framework's
 	// SiteHeader takes Brand as a slot so each consuming site renders
 	// whatever brand it wants. See ui.SiteHeader docs for the contract.
 	brand := html.LinkHTML(html.LinkHTMLConfig{
 		Href:  "/",
 		Class: "site-brand",
 		ExtraAttrs: html.Attrs{
-			"aria-label": "gofastr — pre-alpha v0.0.4",
+			"aria-label": "gofastr — v" + siteVersion + " (v0.x, APIs may change)",
 		},
 		Content: render.Join(
 			html.Span(html.TextConfig{Class: "site-brand__mark"}, render.Text("λ")),
 			html.Span(html.TextConfig{Class: "site-brand__name"}, render.Text("gofastr")),
 			html.Span(html.TextConfig{
 				Class:      "site-brand__status",
-				ExtraAttrs: html.Attrs{"title": "Pre-alpha — APIs change between commits."},
+				ExtraAttrs: html.Attrs{"title": "v0.x — pin a version; APIs may change between releases."},
 			},
 				html.Span(html.TextConfig{Class: "site-brand__pulse"}),
-				html.Span(html.TextConfig{Class: "site-brand__tag"}, render.Text("pre-alpha")),
-				html.Span(html.TextConfig{Class: "site-brand__ver"}, render.Text("0.0.4")),
+				html.Span(html.TextConfig{Class: "site-brand__tag"}, render.Text("v0.x")),
+				html.Span(html.TextConfig{Class: "site-brand__ver"}, render.Text(siteVersion)),
 			),
 		),
 	})
@@ -126,10 +130,10 @@ func (f *FooterComponent) Render() render.HTML {
 		html.Div(html.DivConfig{Class: "site-foot-brand"},
 			html.Span(html.TextConfig{Class: "site-foot-brand__mark"}),
 			render.Text(" GoFastr "),
-			html.Span(html.TextConfig{Class: "site-foot-brand__ver"}, render.Text("v0.0.4")),
+			html.Span(html.TextConfig{Class: "site-foot-brand__ver"}, render.Text("v"+siteVersion)),
 		),
 		html.Paragraph(html.TextConfig{Class: "site-foot-brand__copy"},
-			render.Text("A Go full-stack framework where agents are first-class authors. Pre-alpha. Built in public."),
+			render.Text("A Go full-stack framework where agents are first-class authors. Early (v0.x). Built in public."),
 		),
 	)
 
