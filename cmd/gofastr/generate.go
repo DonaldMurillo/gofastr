@@ -281,6 +281,12 @@ func generateFromBlueprint(options generateOptions) {
 		for _, f := range lintUnscopedPII(bp) {
 			warn("%s", f.Message())
 		}
+		// dev_mode defaults to true (plain-HTTP cookies + per-process JWT
+		// secret) because a fresh generated app has no HTTPS. Loudly say
+		// so on every generate until the blueprint opts out.
+		if bp.App.Auth.Enabled && bp.App.Auth.DevMode {
+			warn("app.auth runs in dev mode: HTTP-friendly cookies and a per-process JWT secret. Before deploying, set dev_mode: false and jwt_secret under app.auth (requires HTTPS) and regenerate. See `gofastr docs blueprints`.")
+		}
 	}
 	if err := validateOutputDir(options.outputDir); err != nil {
 		if options.dryRun && options.json {

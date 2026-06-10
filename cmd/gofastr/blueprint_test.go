@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"io"
 	"net"
 	"net/http"
@@ -706,6 +708,87 @@ func TestBlueprintAuthMountsSessionMW(t *testing.T) {
 	// The middleware must be mounted after the manager is initialized.
 	if mw, init := strings.Index(got, "auth.SessionMiddleware(authMgr)"), strings.Index(got, "authMgr.Init(fwApp)"); mw < init {
 		t.Errorf("SessionMiddleware mounted before authMgr.Init:\n%s", got)
+	}
+}
+
+func TestAuthDevModeRejectsFuzzyBool(t *testing.T) {
+	// YAML-1.1 muscle memory: `yes` would coerce to false via boolValue,
+	// silently flipping the safe default into prod cookie mode on plain
+	// HTTP AND suppressing the dev-mode warning. Must be a hard error.
+	_, err := covT_decode(t, "app:\n  name: D\n  auth:\n    enabled: true\n    dev_mode: yes\n")
+	if err == nil {
+		t.Fatal("dev_mode: yes must be rejected, not coerced")
+	}
+	if !strings.Contains(err.Error(), "dev_mode") || !strings.Contains(err.Error(), "true or false") {
+		t.Fatalf("error should name dev_mode and the remedy, got: %v", err)
+	}
+}
+
+func TestAuthDevModeDefaultsTrue(t *testing.T) {
+	// dev_mode omitted → true: a fresh generated app serves plain HTTP,
+	// where the production cookie defaults (__Host-session + Secure)
+	// never round-trip, so login would silently break out of the box.
+	bp, err := covT_decode(t, "app:\n  name: D\n  auth:\n    enabled: true\n")
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !bp.App.Auth.DevMode {
+		t.Fatal("auth.dev_mode omitted should default to true")
+	}
+}
+
+func TestAuthDevModeFalseHonored(t *testing.T) {
+	bp, err := covT_decode(t, "app:\n  name: D\n  auth:\n    enabled: true\n    dev_mode: false\n")
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if bp.App.Auth.DevMode {
+		t.Fatal("explicit dev_mode: false was not honored")
+	}
+	got := renderBlueprintApp(bp)
+	if strings.Contains(got, "DevMode: true") {
+		t.Errorf("dev_mode: false still emitted DevMode: true:\n%s", got)
+	}
+	assertContains(t, got, "DevMode: false")
+	// The prod-mode branch is not covered by the flagship build (which
+	// uses the dev default) — prove it still renders valid Go.
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "app.go", got, parser.AllErrors); err != nil {
+		t.Fatalf("app.go is not valid Go: %v\n%s", err, got)
+	}
+}
+
+func TestAuthDevModeWarnsInGenCode(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Demo", Module: "example.com/demo", Auth: BlueprintAuth{Enabled: true, DevMode: true}},
+	}
+	got := renderBlueprintApp(bp)
+	// The dev-mode wiring must announce itself and say how to turn it off.
+	assertContains(t, got, "DEV MODE")
+	assertContains(t, got, "dev_mode: false")
+}
+
+func TestAuthCSRFGapCommentEmitted(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Demo", Module: "example.com/demo", Auth: BlueprintAuth{Enabled: true, DevMode: true}},
+	}
+	got := renderBlueprintApp(bp)
+	// auth.CSRF is deliberately not mounted (it would 403 the JSON
+	// REST/MCP surface); the generated code must say so and point at
+	// the docs for apps that add browser forms.
+	assertContains(t, got, "auth.CSRF")
+}
+
+func TestGenerateWarnsAuthDevMode(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, "app:\n  name: Demo\n  module: example.com/demo\n  auth:\n    enabled: true\n")
+	output := captureStdout(t, func() {
+		generateProject([]string{"--from=" + path, "--dry-run"})
+	})
+	if !strings.Contains(output, "dev mode") {
+		t.Errorf("generate did not warn about auth dev mode; output:\n%s", output)
 	}
 }
 

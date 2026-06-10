@@ -350,9 +350,28 @@ func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
 	if err := rejectUnknownKeys(m, map[string]bool{"enabled": true, "dev_mode": true, "base_path": true, "jwt_secret": true}, "app.auth"); err != nil {
 		return BlueprintAuth{}, err
 	}
+	// dev_mode defaults to true when omitted: a freshly generated app
+	// serves plain HTTP, where the production cookie defaults
+	// (__Host-session + Secure) never round-trip — login would silently
+	// break out of the box. `gofastr generate` warns loudly about the
+	// default; set `dev_mode: false` (plus jwt_secret + HTTPS) to deploy.
+	devMode := true
+	if dm, ok := m["dev_mode"]; ok {
+		// Strict bool only: dev_mode is the one blueprint bool whose
+		// default is true, so the usual lax "anything-but-true → false"
+		// coercion would let YAML-1.1 spellings like `yes` silently flip
+		// it to prod cookie mode on plain HTTP — the exact broken-login
+		// scenario the default exists to prevent — while also
+		// suppressing the dev-mode warning.
+		v, err := strictBoolValue(dm)
+		if err != nil {
+			return BlueprintAuth{}, fmt.Errorf("app.auth.dev_mode %w", err)
+		}
+		devMode = v
+	}
 	return BlueprintAuth{
 		Enabled:   boolValue(m["enabled"]),
-		DevMode:   boolValue(m["dev_mode"]),
+		DevMode:   devMode,
 		BasePath:  stringValue(m["base_path"]),
 		JWTSecret: stringValue(m["jwt_secret"]),
 	}, nil
@@ -2340,7 +2359,19 @@ func renderBlueprintApp(bp Blueprint) string {
 	// Auth — wire up the built-in auth system with login, register, logout.
 	if bp.App.Auth.Enabled {
 		sb.WriteString("\t{\n")
-		sb.WriteString("\t\tauthCfg := auth.AuthConfig{DevMode: true")
+		if bp.App.Auth.DevMode {
+			sb.WriteString("\t\t// WARNING: auth runs in DEV MODE — HTTP-friendly cookies (no\n")
+			sb.WriteString("\t\t// Secure flag, plain session_id name) and a per-process JWT\n")
+			sb.WriteString("\t\t// secret minted at startup. Do NOT deploy like this: set\n")
+			sb.WriteString("\t\t// `dev_mode: false` and `jwt_secret` under app.auth in the\n")
+			sb.WriteString("\t\t// blueprint, serve over HTTPS, then regenerate.\n")
+			sb.WriteString("\t\tauthCfg := auth.AuthConfig{DevMode: true")
+		} else {
+			sb.WriteString("\t\t// Production auth defaults: Secure __Host-session cookie.\n")
+			sb.WriteString("\t\t// Requires HTTPS end-to-end — over plain HTTP the browser\n")
+			sb.WriteString("\t\t// never echoes the cookie back and login silently breaks.\n")
+			sb.WriteString("\t\tauthCfg := auth.AuthConfig{DevMode: false")
+		}
 		if bp.App.Auth.BasePath != "" {
 			sb.WriteString(fmt.Sprintf(", BasePath: %q", bp.App.Auth.BasePath))
 		}
@@ -2361,6 +2392,14 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\t// this, authorized requests fail closed (401) just like\n")
 		sb.WriteString("\t\t// anonymous ones.\n")
 		sb.WriteString("\t\tfwApp.Use(auth.SessionMiddleware(authMgr))\n")
+		sb.WriteString("\t\t// auth.CSRF is intentionally NOT mounted: this generated surface\n")
+		sb.WriteString("\t\t// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s\n")
+		sb.WriteString("\t\t// any unsafe-method request that doesn't echo the csrf cookie as\n")
+		sb.WriteString("\t\t// an X-CSRF-Token header — which plain JSON/MCP clients don't.\n")
+		sb.WriteString("\t\t// Session cookies are SameSite=Strict, so cross-site form posts\n")
+		sb.WriteString("\t\t// don't carry the session in modern browsers. If you add browser\n")
+		sb.WriteString("\t\t// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`\n")
+		sb.WriteString("\t\t// (Auth section) and `gofastr docs auth`.\n")
 		sb.WriteString("\t}\n")
 	}
 	// ConfirmAction dialogs — mount a delete confirmation modal for each
@@ -2551,6 +2590,30 @@ func boolValue(node *coreyaml.Node) bool {
 		return v
 	}
 	return strings.EqualFold(fmt.Sprint(node.Value), "true")
+}
+
+// strictBoolValue accepts only a genuine bool node (or the literal
+// strings "true"/"false") and errors on anything else — for keys where
+// lax coercion would silently invert a safe default.
+func strictBoolValue(node *coreyaml.Node) (bool, error) {
+	if node != nil && node.Kind == coreyaml.Scalar {
+		if v, ok := node.Value.(bool); ok {
+			return v, nil
+		}
+		switch fmt.Sprint(node.Value) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	got := "missing"
+	line := 0
+	if node != nil {
+		got = fmt.Sprintf("%q", fmt.Sprint(node.Value))
+		line = node.Line
+	}
+	return false, fmt.Errorf("must be true or false (got %s) at line %d", got, line)
 }
 
 func intValue(node *coreyaml.Node) int {

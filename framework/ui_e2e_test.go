@@ -108,9 +108,9 @@ func setupUIE2EApp(t *testing.T) *uiE2EApp {
 	})
 
 	// Mount session middleware so cookie → user in ctx.
-	// (auth.SessionMiddleware returns core/middleware.Middleware which
-	// has the same signature as router.Middleware but Go treats them as
-	// distinct types — wrap to convert.)
+	// (router.Middleware is an alias of core/middleware.Middleware, so
+	// auth.SessionMiddleware's return value is usable directly; the
+	// wrapper below predates the aliasing and is redundant but harmless.)
 	sm := auth.SessionMiddleware(mgr)
 	app.Use(func(next http.Handler) http.Handler { return sm(next) })
 

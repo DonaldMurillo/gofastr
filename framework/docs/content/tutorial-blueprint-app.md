@@ -165,16 +165,23 @@ screens:
         empty_text: No notes yet.
 ```
 
-Regenerate, evolve the live database (auto-migrate creates missing
-*tables* on boot; adding a *column* to an existing table is the
-declarative diff's job — review first, then `--apply`), and restart:
+Regenerate and restart — auto-migrate converges the schema on boot,
+creating missing tables *and* adding the new `user_id` column to the
+existing `notes` table (additive only; it never drops or retypes):
 
 ```bash
 gofastr generate --from=gofastr.yml
 go mod tidy
+go run ./gen
+```
+
+Prefer to review schema changes before they run? The declarative diff
+shows exactly what boot would apply (and is the only path that can
+*drop* a column, behind `--allow-destructive`):
+
+```bash
 gofastr migrate diff --from=gofastr.yml --db-url='file:notes.db'          # review: ALTER TABLE notes ADD COLUMN user_id TEXT
 gofastr migrate diff --from=gofastr.yml --db-url='file:notes.db' --apply
-go run ./gen
 ```
 
 The generated app now mounts `/auth/register`, `/auth/login`,
@@ -375,10 +382,11 @@ SQLite-vs-Postgres driver decision, secrets, and the
 migrations-as-a-release-step pattern, follow [deploy](deploy.md). Two
 things to do before shipping an auth-enabled app:
 
-- set `AuthConfig.JWTSecret` from the environment and turn off
-  `DevMode` (the generated wiring uses `DevMode: true`; edit your
-  `cmd/server/main.go` to construct the auth manager yourself, or keep
-  the generated wiring for development only) — see [auth](auth.md);
+- turn off auth dev mode: set `dev_mode: false` and `jwt_secret` under
+  `app.auth` in the blueprint and regenerate (the default is
+  `dev_mode: true` because production cookies require HTTPS — `gofastr
+  generate` warns until you opt out) — see [auth](auth.md) and
+  [blueprints](blueprints.md);
 - decide whether `/openapi.json` stays auth-gated (the default) or is
   exposed via `framework.WithPublicOpenAPI()`.
 
@@ -410,5 +418,6 @@ things to do before shipping an auth-enabled app:
   decides who satisfies it.
 - **Forgetting to re-login after changing roles.** Roles travel with
   the authenticated user; refresh the session after promoting one.
-- **Shipping `DevMode: true`.** Development convenience only. Set a
-  real `JWTSecret` in production ([deploy](deploy.md) → Secrets).
+- **Shipping auth dev mode.** Development convenience only. Set
+  `dev_mode: false` plus a real `jwt_secret` under `app.auth` and
+  regenerate before deploying ([deploy](deploy.md) → Secrets).

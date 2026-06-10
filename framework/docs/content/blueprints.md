@@ -207,6 +207,7 @@ through the generated UI host.
 app:
   auth:
     enabled: true
+    dev_mode: true     # optional, defaults to true — see below
     base_path: /auth   # optional, defaults to /auth
     jwt_secret: ...    # optional
 ```
@@ -220,6 +221,40 @@ login resolves to a user on every request — this is what makes
 `owner_field` and `access` scoping work for logged-in users on the
 generated CRUD/MCP surface. Without a valid session, owner-scoped
 entities fail closed (401/403) for reads and writes alike.
+
+#### `dev_mode`
+
+`dev_mode` maps to `auth.AuthConfig.DevMode` and **defaults to true**
+when omitted. The default is deliberate: a freshly generated app serves
+plain HTTP, and the production cookie defaults (`__Host-session` name +
+`Secure` flag) only round-trip over HTTPS — with `dev_mode: false` on
+plain HTTP, register/login appear to succeed but the browser never sends
+the session cookie back, so every authenticated request fails. Dev mode
+uses an HTTP-friendly `session_id` cookie and mints a random per-process
+JWT secret at startup (JWT bearer tokens invalidate on restart; cookie
+sessions are DB-backed via `auth_sessions` and survive).
+
+`gofastr generate` prints a warning whenever an auth-enabled blueprint
+generates in dev mode, and the generated wiring carries the same notice.
+Before deploying, set `dev_mode: false` **and** `jwt_secret` (sourced
+from a secret manager, not committed to the blueprint), serve over
+HTTPS, and regenerate. Unknown keys under `app.auth` are rejected, like
+every other blueprint section.
+
+#### CSRF
+
+The generated app does **not** mount `auth.CSRF`. The generated surface
+is JSON-first (REST CRUD + `/mcp`), and the CSRF middleware rejects any
+unsafe-method request that doesn't echo the CSRF cookie back as an
+`X-CSRF-Token` header (or `_csrf` form field) — plain JSON and MCP
+clients don't, so mounting it would 403 the entire generated API for
+non-browser clients. Two mitigations bound the exposure: session cookies
+are issued `SameSite=Strict`, so modern browsers don't attach them to
+cross-site form posts, and requests authenticated by `Authorization` /
+`X-API-Key` headers aren't CSRF-able at all. If you add browser HTML
+forms to a generated app, mount `auth.CSRF` on the routes that serve
+them (every form then needs `auth.CSRFInputFromCtx`) — see
+[auth](auth.md) for the pattern.
 
 ### app.module and the enclosing go.mod
 
