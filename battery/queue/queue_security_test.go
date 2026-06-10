@@ -45,15 +45,9 @@ func TestDBWorkerSurvivesHandlerPanic(t *testing.T) {
 		t.Fatalf("enqueue ok: %v", err)
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
-	for good.Load() < 1 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	waitFor(t, func() bool { return good.Load() >= 1 }, 5*time.Second,
+		"worker died after handler panic — good job never processed")
 	q.Close()
-
-	if good.Load() < 1 {
-		t.Fatalf("worker died after handler panic — good job never processed")
-	}
 	// The poisoned job (MaxAttempts=1) must not be stuck in 'claimed'; the
 	// recovered panic should have nacked it to 'failed'.
 	var stuck int
@@ -83,10 +77,9 @@ func TestMemoryWorkerSurvivesHandlerPanic(t *testing.T) {
 	_ = q.Enqueue(context.Background(), Job{Type: "boom", MaxAttempts: 1})
 	_ = q.Enqueue(context.Background(), Job{Type: "ok"})
 
-	deadline := time.Now().Add(2 * time.Second)
-	for good.Load() < 1 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	// Close drains the channel and waits for the worker: if the panic killed
+	// the worker goroutine, Close would hang (test timeout) and the good job
+	// would never be processed.
 	q.Close()
 
 	if good.Load() < 1 {
@@ -105,7 +98,12 @@ func TestMemoryWorkerSurvivesHandlerPanic(t *testing.T) {
 // the job must be re-dequeued, not lost.
 func TestDBReclaimsStaleClaimedJob(t *testing.T) {
 	db, q := openDBQueue(t, 0)
-	q.SetLeaseTimeout(50 * time.Millisecond)
+	q.SetLeaseTimeout(time.Minute)
+	// Fake clock: no workers are running, so the single test goroutine is the
+	// only reader of q.now — lease expiry is asserted by advancing the clock,
+	// not by sleeping.
+	now := time.Now()
+	q.now = func() time.Time { return now }
 	ctx := context.Background()
 
 	if err := q.Enqueue(ctx, Job{ID: "leaky", Type: "x", MaxAttempts: 5}); err != nil {
@@ -120,13 +118,14 @@ func TestDBReclaimsStaleClaimedJob(t *testing.T) {
 		t.Fatalf("unexpected job: %s", job.ID)
 	}
 
-	// Before the lease expires the row is not re-eligible.
+	// Before the lease expires the row is not re-eligible. The clock is
+	// frozen, so this cannot race the expiry.
 	if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {
 		t.Fatalf("claimed job re-dequeued before lease expiry: %v", err)
 	}
 
-	// Wait for the lease to expire, then it must be reclaimable.
-	time.Sleep(80 * time.Millisecond)
+	// Advance the clock past the lease; the job must be reclaimable.
+	now = now.Add(time.Minute + time.Second)
 	reclaimed, err := q.Dequeue(ctx)
 	if err != nil {
 		t.Fatalf("stale claimed job was lost — not reclaimed after lease expiry: %v", err)
@@ -147,7 +146,11 @@ func TestDBReclaimsStaleClaimedJob(t *testing.T) {
 // already hit max is NOT re-run indefinitely — it must fail closed.
 func TestDBReclaimRespectsMaxAttempts(t *testing.T) {
 	_, q := openDBQueue(t, 0)
-	q.SetLeaseTimeout(50 * time.Millisecond)
+	q.SetLeaseTimeout(time.Minute)
+	// Fake clock (single test goroutine, no workers) — see
+	// TestDBReclaimsStaleClaimedJob.
+	now := time.Now()
+	q.now = func() time.Time { return now }
 	ctx := context.Background()
 
 	// MaxAttempts=1: the single claim exhausts it.
@@ -155,7 +158,8 @@ func TestDBReclaimRespectsMaxAttempts(t *testing.T) {
 	if _, err := q.Dequeue(ctx); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// Even with the lease long expired, the exhausted job must stay dead.
+	now = now.Add(time.Hour)
 	if _, err := q.Dequeue(ctx); !errors.Is(err, ErrNoJob) {
 		t.Fatalf("exhausted stale job should not be reclaimed, got %v", err)
 	}
@@ -299,7 +303,11 @@ func fmtID(i int) string { return "j" + strconv.Itoa(i) }
 func TestRedisReclaimRedeliversExpired(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
-	q.SetVisibilityTimeout(20 * time.Millisecond)
+	q.SetVisibilityTimeout(time.Minute)
+	// Fake clock: Start is never called, so the single test goroutine is the
+	// only reader of q.now — expiry is asserted by advancing the clock.
+	now := time.Now()
+	q.now = func() time.Time { return now }
 	ctx := context.Background()
 
 	_ = q.Enqueue(ctx, Job{ID: "abandoned", Type: "x"})
@@ -312,6 +320,7 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 	}
 
 	// Worker "crashes" — never Ack/Nack. Before expiry, Reclaim is a no-op.
+	// The clock is frozen, so this cannot race the visibility timeout.
 	n, err := q.Reclaim(ctx)
 	if err != nil {
 		t.Fatalf("reclaim: %v", err)
@@ -320,7 +329,8 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 		t.Fatalf("expected nothing reclaimed before expiry, got %d", n)
 	}
 
-	time.Sleep(40 * time.Millisecond)
+	// Advance the clock past the visibility timeout.
+	now = now.Add(time.Minute + time.Second)
 	n, err = q.Reclaim(ctx)
 	if err != nil {
 		t.Fatalf("reclaim after expiry: %v", err)

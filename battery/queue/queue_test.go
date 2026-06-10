@@ -10,6 +10,21 @@ import (
 	"time"
 )
 
+// waitFor polls fn until it returns true or the deadline passes, failing the
+// test with msg on timeout. Same convention as battery/webhook. Use it instead
+// of fixed sleeps so async assertions are bounded, not timing-dependent.
+func waitFor(t *testing.T, fn func() bool, max time.Duration, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out: %s", msg)
+}
+
 // ─── Memory Queue Tests ──────────────────────────────────────────────
 
 func TestEnqueueAndHandlerExecution(t *testing.T) {
@@ -31,7 +46,8 @@ func TestEnqueueAndHandlerExecution(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	// Close drains the channel and waits for workers, so the handler is
+	// guaranteed to have run by the time it returns — no sleep needed.
 	q.Close()
 
 	if got := executed.Load(); got != 1 {
@@ -58,8 +74,7 @@ func TestMultipleWorkers(t *testing.T) {
 		}
 	}
 
-	// Give workers time to process.
-	time.Sleep(500 * time.Millisecond)
+	// Close drains all pending jobs and waits for workers before returning.
 	q.Close()
 
 	if got := executed.Load(); got != numJobs {
@@ -90,8 +105,10 @@ func TestRetryOnFailure(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	// Wait for all retries.
-	time.Sleep(500 * time.Millisecond)
+	// Retries re-enqueue asynchronously, so Close alone can't be used as the
+	// barrier (it would race the re-enqueue). Poll until the third attempt.
+	waitFor(t, func() bool { return attempts.Load() >= 3 }, 5*time.Second,
+		"job was not retried to the 3rd attempt")
 	q.Close()
 
 	if got := attempts.Load(); got != 3 {
@@ -118,7 +135,10 @@ func TestMaxAttemptsExceeded(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Poll until MaxAttempts is reached, then Close (which drains anything
+	// still queued) and assert no extra attempt happened.
+	waitFor(t, func() bool { return attempts.Load() >= 3 }, 5*time.Second,
+		"job did not reach MaxAttempts")
 	q.Close()
 
 	// Should have been attempted exactly MaxAttempts times then dropped.
@@ -131,9 +151,11 @@ func TestCloseDrainsPendingJobs(t *testing.T) {
 	q := NewMemoryQueue(2)
 
 	var executed atomic.Int32
-	// Slow handler to simulate work in progress.
+	// Handlers block on a gate so jobs are still pending/in-flight when Close
+	// is called — deterministic, no sleep.
+	gate := make(chan struct{})
 	q.RegisterHandler("slow", func(ctx context.Context, job Job) error {
-		time.Sleep(50 * time.Millisecond)
+		<-gate
 		executed.Add(1)
 		return nil
 	})
@@ -144,7 +166,8 @@ func TestCloseDrainsPendingJobs(t *testing.T) {
 		_ = q.Enqueue(context.Background(), Job{Type: "slow"})
 	}
 
-	// Close should drain all jobs.
+	// Release the handlers, then Close — it must drain all 10 jobs.
+	close(gate)
 	q.Close()
 
 	if got := executed.Load(); got != 10 {
@@ -214,9 +237,9 @@ func TestSchedulerFiresAtInterval(t *testing.T) {
 	q.Start()
 
 	sched := NewScheduler(q)
-	sched.Every(100*time.Millisecond).Job("scheduled", json.RawMessage(`{}`)).Register()
+	sched.Every(20*time.Millisecond).Job("scheduled", json.RawMessage(`{}`)).Register()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -226,14 +249,13 @@ func TestSchedulerFiresAtInterval(t *testing.T) {
 		sched.Start(ctx)
 	}()
 
-	<-ctx.Done()
+	// Poll until at least 2 interval firings have been executed, instead of
+	// trusting a fixed window to contain N ticks on a loaded machine.
+	waitFor(t, func() bool { return executed.Load() >= 2 }, 5*time.Second,
+		"scheduler did not fire at least twice")
+	cancel()
 	wg.Wait()
 	q.Close()
-
-	got := executed.Load()
-	if got < 2 {
-		t.Errorf("expected at least 2 scheduled executions, got %d", got)
-	}
 }
 
 func TestDequeueByType(t *testing.T) {

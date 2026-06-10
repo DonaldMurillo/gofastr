@@ -239,10 +239,8 @@ func TestDBQueue_WorkerLoopProcessesJobs(t *testing.T) {
 		}
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
-	for done.Load() < 5 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	waitFor(t, func() bool { return done.Load() >= 5 }, 5*time.Second,
+		"worker loop did not process all 5 jobs")
 	q.Close()
 
 	if got := done.Load(); got != 5 {
@@ -274,10 +272,8 @@ func TestDBQueue_WorkerRetriesOnHandlerError(t *testing.T) {
 	q.Enqueue(ctx, Job{Type: "flaky", MaxAttempts: 3})
 
 	// Three retries should happen, then the job lands in 'failed'.
-	deadline := time.Now().Add(3 * time.Second)
-	for calls.Load() < 3 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	waitFor(t, func() bool { return calls.Load() >= 3 }, 5*time.Second,
+		"flaky handler was not attempted 3 times")
 	q.Close()
 
 	if got := calls.Load(); got != 3 {

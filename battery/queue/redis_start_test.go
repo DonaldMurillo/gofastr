@@ -32,18 +32,12 @@ func TestRedisStart_AutoReclaimStranded(t *testing.T) {
 	// Start auto-reclaim with a short ticker interval.
 	q.Start(ctx, 20*time.Millisecond)
 
-	// Wait long enough for the visibility timeout to expire and at least
-	// one reclaim tick to fire.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
+	// Poll until the visibility timeout has expired and a reclaim tick has
+	// re-delivered the job — bounded wait, fails with a message on timeout.
+	waitFor(t, func() bool {
 		got, err := q.Dequeue(ctx)
-		if err == nil && got.ID == "stranded" {
-			// Reclaimed — test passes.
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("stranded job was not auto-reclaimed within 500ms")
+		return err == nil && got.ID == "stranded"
+	}, 5*time.Second, "stranded job was not auto-reclaimed")
 }
 
 // TestRedisStart_StopsOnContextCancel asserts Start's goroutine exits when

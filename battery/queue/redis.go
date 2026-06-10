@@ -41,6 +41,11 @@ type RedisQueue struct {
 	processingQueue   string
 	deadLetterQueue   string
 	visibilityTimeout time.Duration
+
+	// now is the clock used for visibility-timeout stamps and expiry checks.
+	// Defaults to time.Now; tests substitute a fake clock so reclaim
+	// behaviour can be asserted without wall-clock sleeps.
+	now func() time.Time
 }
 
 // NewRedisQueue creates a new Redis-backed queue.
@@ -51,6 +56,7 @@ func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
 		processingQueue:   queueName + ":processing",
 		deadLetterQueue:   queueName + ":dead",
 		visibilityTimeout: 30 * time.Second,
+		now:               time.Now,
 	}
 }
 
@@ -67,7 +73,7 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) error {
 		job.ID = redisRandomID()
 	}
 	if job.CreatedAt.IsZero() {
-		job.CreatedAt = time.Now()
+		job.CreatedAt = q.now()
 	}
 	if job.MaxAttempts == 0 {
 		job.MaxAttempts = 3
@@ -133,7 +139,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// Track in processing queue for visibility timeout.
 		jobData, _ := json.Marshal(map[string]interface{}{
 			"job":       data,
-			"expiresAt": time.Now().Add(q.visibilityTimeout).UnixNano(),
+			"expiresAt": q.now().Add(q.visibilityTimeout).UnixNano(),
 		})
 		_ = q.client.HSet(ctx, q.processingQueue, job.ID, jobData)
 
@@ -204,7 +210,7 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("reclaim: scan processing: %w", err)
 	}
-	now := time.Now().UnixNano()
+	now := q.now().UnixNano()
 	reclaimed := 0
 	for jobID, raw := range entries {
 		var entry struct {

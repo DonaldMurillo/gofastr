@@ -41,6 +41,11 @@ type DBQueue struct {
 	// behaviour.
 	backoffBase time.Duration
 	backoffMax  time.Duration
+
+	// now is the clock used for claim timestamps, lease-expiry cutoffs, and
+	// scheduled_at math. Defaults to time.Now; tests substitute a fake clock
+	// so lease-reclaim behaviour can be asserted without wall-clock sleeps.
+	now func() time.Time
 }
 
 type dbDialect int
@@ -96,6 +101,7 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 		lease:    5 * time.Minute,
 		stop:     make(chan struct{}),
 		stopped:  make(chan struct{}),
+		now:      time.Now,
 	}
 	for _, opt := range opts {
 		opt(q)
@@ -207,7 +213,7 @@ func (q *DBQueue) Enqueue(ctx context.Context, job Job) error {
 	if job.ID == "" {
 		job.ID = randomID()
 	}
-	now := time.Now().UTC()
+	now := q.now().UTC()
 	if job.CreatedAt.IsZero() {
 		job.CreatedAt = now
 	} else {
@@ -251,7 +257,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, types []string) (Job, err
 	where, args := q.eligibleWhere(types, 2)
 	// $1 is the claim timestamp (claimed_at = now); eligibleWhere starts its
 	// own placeholders at $2.
-	claimArgs := append([]any{time.Now().UTC()}, args...)
+	claimArgs := append([]any{q.now().UTC()}, args...)
 	// FOR UPDATE SKIP LOCKED is the canonical Postgres pattern: holds a
 	// row lock for the surrounding UPDATE, lets concurrent workers skip
 	// it instead of blocking.
@@ -288,7 +294,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 	}
 	if _, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, attempts = attempts + 1 WHERE id = $2`, q.qt()),
-		time.Now().UTC(), job.ID,
+		q.now().UTC(), job.ID,
 	); err != nil {
 		return Job{}, err
 	}
@@ -309,7 +315,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, types []string) (Job, error
 // in-flight work crash-safe: a claimed row is reclaimed instead of lost.
 func (q *DBQueue) eligibleWhere(types []string, startIdx int) (string, []any) {
 	var args []any
-	now := time.Now().UTC()
+	now := q.now().UTC()
 	idx := startIdx
 	// Placeholder numbers must increase in textual order: go-sqlite3 binds
 	// positional args in order of appearance, ignoring the $N value. The
@@ -380,7 +386,7 @@ func (q *DBQueue) Nack(ctx context.Context, jobID string) error {
 		_, err := q.db.ExecContext(ctx, stmt, jobID)
 		return err
 	}
-	next := time.Now().UTC().Add(q.backoffFor(attempts))
+	next := q.now().UTC().Add(q.backoffFor(attempts))
 	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2", q.qt())
 	_, err := q.db.ExecContext(ctx, stmt, next, jobID)
 	return err
@@ -423,7 +429,7 @@ func (q *DBQueue) backoffFor(attempts int) time.Duration {
 // it can never double-run an in-flight job or resurrect a non-terminal one.
 func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
 	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1 WHERE id=$2 AND status='failed'", q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, time.Now().UTC(), jobID)
+	_, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
 	return err
 }
 
