@@ -153,5 +153,7 @@ SQLite and Postgres, dialect-aware.
 3. **[Examples](/examples)** — six reference apps, smallest first.
 4. **[Components](/components/)** — every UI primitive, one page each.
 
-Every doc is grounded in the actual code and ends with a "common mistakes"
-callout. This same content is browsable offline with `gofastr docs`.
+Every doc is grounded in the actual code, and every guide doc ends with a
+"common mistakes" callout (data/index artifacts like the benchmark results
+and the risk register are exempt — a test in `framework/docs` enforces the
+split). This same content is browsable offline with `gofastr docs`.

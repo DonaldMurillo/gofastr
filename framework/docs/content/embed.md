@@ -239,3 +239,26 @@ if err := embedder.Probe(ctx); err != nil {
 - The watcher does not honour `.gitignore` — only an explicit `ExcludeDirs` list. Glob-level ignore parsing is deferred.
 - The flat store is the only backend. ANN backends (HNSW, IVF) are intentional non-goals until benchmarks show brute-force losing.
 - Multiple named indexes per process are not supported; the design is one index per app, mirroring the `Options.Keyword` and `Options.Path` shape.
+
+## Common mistakes
+
+- **Switching embedders over an existing snapshot.** `Open` refuses
+  with a `*ModelMismatchError` — vectors from different models are
+  silently catastrophic for retrieval, so mixing is not allowed. To
+  change models: drop the snapshot directory and re-index from source.
+- **Setting `Hybrid: true` without `Options.Keyword`.** It silently
+  degrades to vector-only — no error, just no keyword leg in the
+  fusion. Wire `MemoryKeyword` (or `WrapSearchBackend`) if you want
+  hybrid to actually be hybrid.
+- **Setting `Rerank: true` without `Options.Reranker`.** Hard error:
+  the package ships no built-in reranker and refuses silent quality
+  loss. Implement the `Reranker` interface (typically a cross-encoder
+  behind HTTP) before opting in.
+- **Expecting real retrieval quality from `StubEmbedder`.** It's a
+  deterministic FNV bag-of-words for tests and offline development —
+  paraphrases will not cluster. Use `OllamaEmbedder` (or your own
+  `Embedder`) for anything a user sees.
+- **Pointing `index`/`watch`/`clear` at a running server.** Those
+  subcommands are always local, even with `GOFASTR_URL` set — only
+  `query` and `stats` dispatch to the server. Two writers on one
+  snapshot directory is exactly what the split prevents.

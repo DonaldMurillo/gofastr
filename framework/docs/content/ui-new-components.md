@@ -159,8 +159,9 @@ helpful pre-flight read for human reviewers.
    markup + variant classes.
 4. **`/components/<slug>` screen** in `examples/site/`:
    register in `main.go`, add an entry to `componentCatalog` in
-   `components.go`. The `TestDrift_EveryComponentPageHasE2ETest`
-   gate fails until you also add at least one chromedp test.
+   `components.go`. The catalog drives the site's page-level test
+   loops (axe, single-`<main>`, …), so an unregistered page is an
+   untested page.
 5. **Chromedp e2e** in `examples/site/e2e_new_components_test.go`
    or `e2e_new_components_interactions_test.go` — ARIA shape for
    static components, real interaction (click / type / drag) for
@@ -168,9 +169,10 @@ helpful pre-flight read for human reviewers.
 6. **`core-ui/ARCHITECTURE.md`**: any new `data-fui-*` attribute the
    runtime reads must land in the table here OR in the drift-test
    whitelist (with a justification comment). The
-   `TestDrift_RuntimeDataFuiAttributesDocumented` gate enforces it.
-7. **Axe**: `TestAxe_AllComponentPagesAreClean` runs axe-core against
-   every page and fails on any violation. The most common authoring
+   `TestRuntimeAttrsAreDocumented` gate in
+   `core-ui/runtime/attrdoc_test.go` enforces it.
+7. **Axe**: `TestAxe_AllPagesAreClean` runs axe-core against
+   every catalog page and fails on any violation. The most common authoring
    mistakes it catches: missing tap target floor (44×44),
    role/`aria-allowed-role` mismatches, color-contrast on tinted
    backgrounds, scrollable regions without `tabindex="0"`.
@@ -179,6 +181,33 @@ helpful pre-flight read for human reviewers.
    `data-fui-open` + `data-fui-deeplink` + signal-binding already
    covers the case. Lightbox and NotificationBell each ship without
    a runtime module by composing existing primitives.
+
+---
+
+## Common mistakes
+
+- **Writing a new runtime module when composition already covers it.**
+  Check `preset.Modal` / `preset.Popover` / `preset.Drawer` +
+  `data-fui-open` + `data-fui-deeplink` + signal binding first —
+  Lightbox and NotificationBell ship with zero new JS by composing
+  them. New modules are the expensive path (budget, tests, docs).
+- **Styling a component from `examples/site/styles.go`.** Top-level
+  `.ui-*` rules in the site stylesheet are forbidden — the site chrome
+  is page-only. A component owns its CSS via `registry.RegisterStyle`
+  with theme tokens, so it works in every host, not just the demo
+  site.
+- **Hardcoding colors/spacing instead of theme tokens.** Use
+  `{colors.*}` / `{spacing.*}` / `var(--color-*, fallback)` so themed
+  hosts and dark mode don't break your component.
+- **Skipping the demo page + e2e pairing.** Every `/components/<slug>`
+  page ships with at least one chromedp test and a package unit test
+  (suite convention), and `TestAxe_AllPagesAreClean` automatically
+  fails the build on any axe-core violation for every catalog page —
+  register the page and you've signed up for all three.
+- **Adding a `data-fui-*` attribute without documenting it.** The
+  runtime contract lives in `core-ui/ARCHITECTURE.md`; every attribute
+  the runtime reads must be in its table (or an explicitly justified
+  whitelist) before the change lands.
 
 ---
 

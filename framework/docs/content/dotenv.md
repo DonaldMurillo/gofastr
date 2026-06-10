@@ -99,3 +99,20 @@ err := dotenv.LoadAndApply(".env")
 `dotenv.Expand(s, local, envFn)` is exposed for callers that want to
 run the same `${VAR}` substitution against a custom lookup (e.g. when
 loading a non-`.env` config and wanting consistent expansion rules).
+
+## Common mistakes
+
+- **Expecting a `.env` value to override the real environment.**
+  Precedence is the other way: `Apply` only calls `os.Setenv` for keys
+  not already present. An operator's `DATABASE_URL=…` always beats the
+  dotfile — by design.
+- **Putting `GOFASTR_DOTENV=off` in a `.env` file.** Chicken-and-egg:
+  the loader would have to read the file to learn it shouldn't read
+  the file. The kill switch only works as a process env var set before
+  `NewApp` runs.
+- **Using bare `$VAR` expansion.** Only the bracket form `${VAR}`
+  expands, and only inside double-quoted values. Bare `$VAR`,
+  single-quoted strings, and unquoted values are left verbatim.
+- **Appending `# comment` after an unquoted value.** Inline comments
+  after an UNQUOTED value are preserved as part of the value. Quote
+  the value if the comment (or a literal `#`) shouldn't be in it.

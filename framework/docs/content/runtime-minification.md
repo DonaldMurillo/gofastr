@@ -81,3 +81,23 @@ curl -s https://your-app.example.com/__gofastr/runtime.js | head -c 80
 
 If you expected one and got the other, check `GOFASTR_ENV` /
 `GOFASTR_DEV` / `RUNTIME_NOMINIFY` on the running process.
+
+## Common mistakes
+
+- **Expecting `GOFASTR_DEV=1` to win when `GOFASTR_ENV` says
+  production.** The gating order checks the overrides first, then
+  `GOFASTR_ENV`, then `GOFASTR_DEV` — a non-dev `GOFASTR_ENV`
+  (`production`, `prod`, `live`, `staging`) beats the dev flag. To
+  force raw output regardless, set `RUNTIME_NOMINIFY=1`.
+- **Changing env vars on a running process.** The raw-vs-minified
+  decision is made once per source on first read (`sync.Once`) and
+  cached for the life of the process. Restart after changing
+  `GOFASTR_ENV` / `RUNTIME_NOMINIFY` / `RUNTIME_MINIFY`.
+- **Anchoring tests or scripts on comment text in the runtime.** The
+  minifier strips comments and collapses whitespace, so a grep for a
+  comment-only substring (or a pre-minify spacing pattern) passes in
+  dev and fails in prod. Anchor on code, and accept both spacings.
+- **Hunting for source maps.** None are emitted by design — the
+  minified output keeps identifiers and stays debuggable. For full
+  readability while reproducing an issue, restart with
+  `RUNTIME_NOMINIFY=1`.

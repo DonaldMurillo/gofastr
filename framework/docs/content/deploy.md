@@ -126,3 +126,24 @@ rolling deploys don't cut active requests.
 - [ ] Readiness/liveness probes wired.
 - [ ] `/metrics` scraped from inside the network only.
 - [ ] TLS terminated at ingress.
+
+## Common mistakes
+
+- **Shipping `.env` files in the image.** They are a development
+  convenience only. In production, inject secrets as real env vars
+  from your platform's secret store — real env always wins over file
+  values anyway, so a stowaway `.env` is at best dead weight and at
+  worst a leaked secret.
+- **Expecting boot auto-migrate to handle every schema change.** It
+  creates tables and adds columns — additive only. Drops, renames, and
+  type changes need `gofastr migrate diff --apply` (with the
+  destructive gate) or a versioned migration; booting won't do them.
+- **CGO flag and base image out of sync.** `CGO_ENABLED=0` with
+  `mattn/go-sqlite3` fails at build; a CGO build on
+  `distroless/static` fails at runtime (no libc — use
+  `base-debian12`). Pure-Go pgx is what makes the static image work.
+- **Running production auth on the auto-minted secret.** With
+  `DevMode=false` and no `JWTSecret`, the battery logs a loud startup
+  warning for a reason: the dev fallback rotates per process, so every
+  deploy silently invalidates sessions. Set the secret explicitly from
+  env.

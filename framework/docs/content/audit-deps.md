@@ -88,3 +88,19 @@ pass, not a substitute for review.
 path, unreadable file). Findings do not cause a non-zero exit — that
 keeps the command composable in dev workflows. For CI failure on new
 registrations, diff the output against a checked-in baseline.
+
+## Common mistakes
+
+- **Expecting a non-zero exit on findings.** `gofastr audit deps`
+  exits 0 whenever the walk succeeds — findings alone never fail it.
+  A CI gate that just runs the command passes forever; diff the output
+  against a checked-in baseline instead.
+- **Assuming `vendor/` and test files are covered.** The walker skips
+  `vendor/`, `node_modules/`, `.git`, hidden directories, and every
+  `_test.go` file. A registration living in vendored code will not
+  appear in the report.
+- **Treating an empty report as a vetted supply chain.** The scanner
+  only follows aliased imports of the tracked framework registries.
+  Raw `init()` side effects (`os.Exec`, `net.Dial`, file writes),
+  reflection-driven registrations, and `unsafe` tricks are invisible
+  to it — it's a fast first pass, not a dependency review.

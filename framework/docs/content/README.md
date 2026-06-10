@@ -1,8 +1,13 @@
 # GoFastr documentation index
 
 The top-level `README.md` is the entry point. These pages are
-per-feature references — each grounded in the actual code, each
-ending with a "common mistakes" callout.
+per-feature references, each grounded in the actual code. Every
+guide doc ends with a "common mistakes" callout; the handful of
+data and index artifacts (this index, the overview map, benchmark
+results, the risk register, the agent-notes log, the harness
+contract) are exempt — the exemption list lives in
+`framework/docs/docs_test.go` and is enforced by
+`TestGuideDocsEndWithCommonMistakes`.
 
 ## Start here
 

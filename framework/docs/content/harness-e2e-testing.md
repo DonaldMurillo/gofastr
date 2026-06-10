@@ -143,3 +143,21 @@ websocat -H 'X-Harness-Token: <token>' ws://127.0.0.1:8421/v1/ws?session=sess_..
 - **Large-scale cost reconciliation** — the local ledger is in place;
   reconciling against OpenRouter's `/credits` endpoint at month-end is
   an operations exercise, not a build verification.
+
+## Common mistakes
+
+- **Dropping `-tags=e2e_real` from the command.** The real-provider
+  tests are behind that build tag — without it they aren't compiled at
+  all, so `go test -run E2EReal` finds nothing and reports success
+  having tested nothing.
+- **Reading a green CI run as provider coverage.** Each test skips
+  itself when its key (`ZAI_API_KEY`, `OPENROUTER_API_KEY`) is unset.
+  A run with no keys is all skips. Use `-v` and check for `SKIP` lines
+  before trusting the result.
+- **Omitting `-count=1`.** A cached pass from a previous run can mask
+  a provider-side regression — the whole point of this suite is to hit
+  the real endpoint now.
+- **Assuming Copilot is covered.** The OAuth device flow needs
+  interactive browser auth; the adapter is unit-tested against stubs
+  only. Real Copilot validation is explicitly out of this guide's
+  scope.

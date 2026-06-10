@@ -141,3 +141,24 @@ app.Batteries.Register(myBattery, "cache") // cache is initialised first
 Importing `battery/cache` registers a snippet in `agentsinv`.  The
 entry appears in the generated `AGENTS.md` output from
 `gofastr agents sync` so AI agents know when and how to use the cache.
+
+## Common mistakes
+
+- **Forgetting `Close()` on a `MemoryCache`.** The background cleanup
+  goroutine runs until `Close()` is called — every cache you construct
+  and drop leaks one. Register it via `cache.NewBattery(c)` so graceful
+  shutdown closes it for you.
+- **Caching untrusted-input keys without `WithMaxEntries`.** Keys
+  derived from paths, query strings, or user ids let a client grow the
+  cache without bound (OOM/DoS). Set the cap; LRU eviction handles the
+  rest.
+- **Expecting `CacheMiddleware` to cache authenticated traffic.**
+  Requests carrying `Authorization` or `Cookie` headers bypass the
+  cache by design (RFC 9111), and `Set-Cookie` responses are never
+  stored. If every response says `X-Cache: MISS`, check the request
+  headers before suspecting the middleware.
+- **Hand-rolling get-miss-then-set under concurrency.** N concurrent
+  misses run the loader N times (thundering herd). `cache.GetOrSet`
+  collapses concurrent misses per key via singleflight so the loader
+  runs exactly once — and a loader error propagates without being
+  cached.

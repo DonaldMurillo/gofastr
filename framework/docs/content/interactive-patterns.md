@@ -292,6 +292,32 @@ search := interactive.LiveSearch(
 
 ---
 
+## Common mistakes
+
+- **Turning in-page state changes into routes.** Sort, paginate,
+  expand, tab-switch — these are islands (RPC swaps one fragment), not
+  navigations. Adding a route (or `location.href = …`) for them is the
+  architecture's named failure mode #1.
+- **Re-implementing pagination/sort/filter math in JS.** The server
+  owns that logic; the client's job is to fire the RPC and swap the
+  returned HTML. Duplicated math drifts from the server's the first
+  time either changes.
+- **Treating signals as typed values.** Signals are strings stored in
+  the DOM: `data-fui-signal-toggle` flips between the strings `"true"`
+  and `"false"`, and `data-fui-signal-inc` parses-then-stringifies.
+  Compare against string values (in CSS attribute selectors too), not
+  booleans or numbers.
+- **Using SSE to deliver an action's response.** SSE is push-only —
+  background events for *other* clients. The result of a user action
+  arrives in the RPC response itself (`data-fui-rpc-signal`, island
+  swap), never via the event stream.
+- **Inventing a new `data-fui-*` attribute without updating the
+  contract.** Every attribute the runtime reads must land in
+  `core-ui/ARCHITECTURE.md` and the runtime test suite — undocumented
+  attributes are drift the next author can't discover.
+
+---
+
 ## See also
 
 - [`docs/ui-new-components.md`](ui-new-components.md) — full component catalog.

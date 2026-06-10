@@ -431,3 +431,31 @@ and a typed 200 response, and the MCP tool advertises `InputSchema` as its tool
 input schema. Both fields are optional: leave them `nil` to keep the historical
 `{type: object}` behaviour byte-for-byte. `InputSchema` is ignored on `GET`/
 `HEAD` endpoints, which carry no request body.
+
+## Common mistakes
+
+- **Exposing per-user data without `OwnerField`.** The warning at the
+  top of this page is the #1 footgun: auto-CRUD with no `OwnerField`
+  lets every authenticated user read (and write) every row. Set it on
+  any entity holding per-user data — List/Get/Update/Delete scope to
+  the current user and Create stamps the column automatically.
+- **Setting `OwnerField` in an app that never wires an owner
+  extractor.** Without a registered extractor the field is inert — no
+  scoping, no stamping, no error. Importing `battery/auth` registers
+  one in `init()`; pair it with `auth.SessionMiddleware` so
+  cookie-authenticated requests carry a user.
+- **Setting `Access` and forgetting the policy middleware.** The CRUD
+  gate is fail-closed: a context without the permission gets 403 — so
+  without `framework.AccessMiddleware` (with a policy feeding roles
+  into the context), *every* request to that operation 403s, including
+  legitimate ones. `battery/auth` alone does not satisfy the gate.
+- **Expecting a `relation` field to model has-many.** A relation field
+  declares a BelongsTo — the FK lives in the field's own column, and
+  the matching relation is derived for you. Has-many keeps its FK on
+  the *other* table and must be declared explicitly via
+  `HasMany`/`Relations`.
+- **Writing a non-idempotent `Seed`.** The `_gofastr_seeded` ledger is
+  best-effort: it survives normal restarts but cannot guarantee
+  atomicity between your inserts and the ledger row. Use
+  `INSERT … ON CONFLICT DO NOTHING` (or a pre-check) so a re-run is
+  harmless.

@@ -149,9 +149,9 @@ the screen *describes* an entity:
 | `journal_entries`      | `/journal`, `/journal/:date`                 |
 
 Or scope all of CRUD under an API prefix (e.g. `/api/foods`) and reserve the
-unprefixed namespace for UI. A configurable `framework.AppConfig{APIPrefix:
-"/api"}` is on the roadmap; until then, route groups (`App.Group("/api", …)`)
-are the way.
+unprefixed namespace for UI: set `framework.AppConfig{APIPrefix: "/api"}` (or
+the `framework.WithAPIPrefix("/api")` option) — see
+[entity-declarations](entity-declarations.md) → "Mounting under a prefix".
 
 ### Accessing the database from a screen
 
@@ -193,7 +193,10 @@ default chain, so any screen can reach the same `*sql.DB` without a global:
 ```go
 // screens/library.go
 func (s *LibraryScreen) Load(ctx context.Context) error {
-    db := framework.DBFromContext(ctx)   // the app's *sql.DB, no global handle
+    db, ok := framework.DBFromContext(ctx) // the app's *sql.DB, no global handle
+    if !ok {
+        return errors.New("no DB on context")
+    }
     rows, err := db.QueryContext(ctx, "SELECT id, name FROM foods")
     ...
 }
@@ -368,3 +371,25 @@ the example website:
 The matching widget preset is `preset.Popover` — a click-triggered
 anchored surface without backdrop dim or focus trap. Closes on ESC
 and click-outside.
+
+## Common mistakes
+
+- **Registering a screen at an entity's CRUD path.** An entity named
+  `foods` already owns `/foods` (+ `/foods/:id`, `/foods/llm.md`); a
+  screen at the same path is a route-conflict panic at startup. Set
+  `framework.WithAPIPrefix("/api")` so data routes move aside, or give
+  screens their own noun space (`/library`, not `/foods`).
+- **Unscoped selectors in a `ComponentSheet`.** `body`, `:root`,
+  `::backdrop` and friends can't be scoped to
+  `[data-fui-comp="…"]` — `Build()` returns `style.ErrUnscopable` and
+  `MustBuild` panics at startup. Component CSS styles the component;
+  page-level rules belong in the host stylesheet or
+  `style.Contribute`.
+- **Booting with a half-populated theme.** `WithTheme` validates every
+  required token and panics naming the missing field path. Start from
+  `gofastr theme init` (which writes the complete default literal) and
+  edit values, rather than building a `style.Theme` from scratch.
+- **Adding a `replace` directive out of habit.** The module resolves
+  from the proxy; pin a tagged version. A local `replace` is only for
+  hacking on the framework itself — left in, it breaks everyone else's
+  build of your app.

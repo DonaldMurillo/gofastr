@@ -36,10 +36,16 @@ panel := preset.FloatingPanel("my-panel").
     RPCWithSignal("POST", "/api/inc", incHandler, "counter").
     Build()
 
-scriptTag := widget.Mount(router, &panel)
+widget.Mount(router, &panel)
+// or in one step: widget.MountBuilder(router, preset.FloatingPanel("my-panel").…)
 ```
 
-Drop `scriptTag` into any HTML page; the widget appears.
+`Mount` registers the widget's HTTP routes and adds it to the process-wide
+registry. Any page that carries the framework runtime auto-mounts every
+registered widget — the runtime fetches `/__gofastr/widgets` on boot and
+builds each one. Pages served through `framework/uihost` get the runtime
+injected automatically; a bare-router host calls `widget.MountRuntime(r)`
+once and embeds `widget.RuntimeTag()` in its page HTML.
 
 ## Anatomy
 
@@ -174,13 +180,15 @@ Any element with `data-fui-action="close"` dismisses the widget:
 
 | Path | Purpose |
 |---|---|
-| `GET  <BootstrapPath>` (default `/core-ui/widget/<name>/bootstrap.js`) | Per-widget loader script |
 | `GET  <StylePath>` (default `/core-ui/widget/<name>/style.css`) | Theme-resolved widget styles |
 | `GET  <StatePath>` (default `/core-ui/widget/<name>/state`) | JSON snapshot of every named signal |
+| `GET  /core-ui/widget/<name>/chrome` | Rendered chrome HTML, fetched lazily on first open |
 | `<RPC method> <RPC.Path>` | Each registered RPC handler |
 
-The returned string is the `<script src="…"></script>` tag; embed it
-in any page that should host the widget.
+Default paths are filled in on `def` if unset, so the caller can read
+them after `Mount` returns. Mounting is idempotent on `def.Name`. The
+process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
+come from `widget.MountRuntime(r)` — once per host, not per widget.
 
 ## Theming
 
@@ -229,3 +237,26 @@ For backend-only verification (no chromedp), see
 `core-ui/widget/preset/preset_test.go` — they cover the builder
 semantics, mounted route surface, preset defaults, and JSON state
 encoding.
+
+## Common mistakes
+
+- **Expecting `Mount` to return a script tag.** It returns nothing —
+  it registers routes and adds the widget to the process registry. The
+  widget appears only on pages that carry the framework runtime, which
+  auto-mounts everything in `/__gofastr/widgets`. If your widget never
+  shows up, the page is missing the runtime: `framework/uihost` pages
+  get it injected; bare hosts must call `widget.MountRuntime(r)` and
+  embed `widget.RuntimeTag()` themselves.
+- **Forgetting `data-fui-rpc-signal`.** The RPC fires and succeeds,
+  but the response goes nowhere — no DOM update. Name the target
+  signal on the trigger (`data-fui-rpc-signal="count"`) or register
+  the binding with `RPCWithSignal`.
+- **Inline `style=` / `onclick=` in slot HTML.** The default CSP
+  blocks both. Use theme-token class names for styling and the
+  `data-fui-*` attributes (`data-fui-rpc`, `data-fui-action="close"`)
+  for behavior — `kiln/render` strips the dangerous attrs server-side
+  anyway.
+- **Building in-page content as a widget.** Widgets are overlays that
+  float above any page. A sortable table, a form section, or anything
+  that belongs to one page's render tree is a component (or an island)
+  — see the component/widget table at the top of this doc.

@@ -399,3 +399,28 @@ static assets, and drive generated UI in a real browser so islands, widgets,
 runtime actions, and DOM updates are covered together. Do not satisfy this with
 a test-only hand-written app shell that imports generated packages; that misses
 the app-generator boundary.
+
+## Common mistakes
+
+- **Deploying with `dev_mode` left at its default.** Omitting
+  `app.auth.dev_mode` means **true**: an HTTP-friendly session cookie
+  and a per-process JWT secret that invalidates bearer tokens on every
+  restart. Before deploying, set `dev_mode: false` **and** `jwt_secret`
+  (from a secret manager), serve HTTPS, and regenerate.
+- **Expecting `app.auth: enabled` to protect entity data.** The
+  session middleware is pass-through for anonymous requests. Only
+  per-entity `owner_field`, `access`, or `multi_tenant` gate the
+  generated CRUD/MCP surface — that's why the unscoped-PII check fires
+  even with auth enabled.
+- **Writing flow-style inline maps.** `core/yaml` rejects
+  `{name: x, type: relation}` — every map must be indented
+  `key: value` lines. Anchors, aliases, block scalars, and tabs are
+  also out.
+- **Setting `module:` to something other than the enclosing go.mod.**
+  `gofastr validate` and `gofastr generate` fail with the expected
+  value, because the generated imports could never compile. Omit the
+  key to derive it from go.mod automatically.
+- **Declaring `type: relation` without `to:`.** Validation rejects it
+  (and a missing target entity too) — without the check, the built app
+  would crash at startup with "auto-migrate: entity has BelongsTo to
+  unknown entity".

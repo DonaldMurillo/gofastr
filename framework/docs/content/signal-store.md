@@ -105,3 +105,27 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
   **trusted values only**.
 - URL-bearing attributes bound via `BindAttr` keep the runtime's
   `javascript:`/`data:` scheme guard.
+
+## Common mistakes
+
+- **Re-declaring a slice name with a different default.** Panics at
+  declaration time — two producers must not claim one name with
+  different values. Declare the slice once in a shared package and
+  import it from both sides; identical re-declaration is idempotent
+  and fine.
+- **Expecting a page-scoped slice to survive navigation.** Page-scoped
+  is the default and resets to the page's value on every nav. State
+  the user mutates and carries across pages (cart count, theme) needs
+  `.Global()`.
+- **Loading computed reducers before `runtime.js`.** The runtime
+  assigns the whole `window.__gofastr` namespace on boot, wiping any
+  `_reducers` map registered earlier. Ship reducers via
+  `WithExtraScripts` so they load after the runtime.
+- **Calling `Bind` outside a ctx-aware render.** `Bind(ctx, …)` stamps
+  the *resolved* per-request value — the one a producer seeded in
+  `Load(ctx)`. Render from `RenderCtx(ctx)` with the request context;
+  a background/stub context stamps only the declared default and the
+  SSR output diverges from what the producer intended.
+- **Using `BindHTML` for user-influenced values.** It writes to
+  `innerHTML` — trusted values only. `Bind` (text mode) escapes;
+  reach for it unless you control every byte of the value.

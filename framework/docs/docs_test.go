@@ -94,6 +94,71 @@ func TestSearchFindsKnownTerm(t *testing.T) {
 	}
 }
 
+// commonMistakesExempt lists the docs that deliberately ship WITHOUT a
+// "## Common mistakes" closing section. Every other content/*.md is a
+// guide and the gate below requires the callout. To add a new doc
+// without one, add it here WITH a reason — silence is not an option.
+var commonMistakesExempt = map[string]string{
+	"README":   "docs index page — meta, not a guide",
+	"overview": "the map of the docs — index, not a guide",
+	"agent-notes": "append-only review log — the doc IS a list of " +
+		"mistakes and lessons",
+	"perf-results": "benchmark data artifact — measurements, not a " +
+		"how-to surface",
+	"project-architecture-review": "current risk register — findings " +
+		"artifact, not a guide",
+	"harness-architecture": "architecture contract — its Hard rules / " +
+		"Non-goals / Threat model sections already enumerate the " +
+		"failure modes",
+}
+
+// TestGuideDocsEndWithCommonMistakes pins the docs convention that
+// README.md and overview.md advertise: every guide doc carries a
+// "## Common mistakes" callout grounded in the actual API. Data and
+// index artifacts are exempted explicitly above; a new doc without the
+// section fails here until it is either given a real callout or
+// deliberately exempted with a reason.
+func TestGuideDocsEndWithCommonMistakes(t *testing.T) {
+	topics, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const heading = "## Common mistakes"
+	for _, top := range topics {
+		if _, ok := commonMistakesExempt[top.Name]; ok {
+			continue
+		}
+		body, err := Get(top.Name)
+		if err != nil {
+			t.Errorf("Get(%q): %v", top.Name, err)
+			continue
+		}
+		found := false
+		for _, ln := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(ln), heading) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("content/%s.md lacks a %q section — add one or "+
+				"exempt the doc (with a reason) in commonMistakesExempt",
+				top.Name, heading)
+		}
+	}
+	// Keep the exemption list honest: every entry must name a real doc.
+	byName := make(map[string]bool, len(topics))
+	for _, top := range topics {
+		byName[top.Name] = true
+	}
+	for name := range commonMistakesExempt {
+		if !byName[name] {
+			t.Errorf("commonMistakesExempt names %q, which is not an "+
+				"embedded doc — stale entry?", name)
+		}
+	}
+}
+
 func TestSearchEmptyTerm(t *testing.T) {
 	hits, _ := Search("")
 	if len(hits) != 0 {
