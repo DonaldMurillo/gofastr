@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,32 +17,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
-// skipIfPostgresPlaceholderError skips the test when the response body
-// indicates a PostgreSQL $N placeholder was used on SQLite. The CRUD
-// framework emits $N placeholders (PostgreSQL style); on SQLite-only
-// test environments these queries fail at the driver level.
-func skipIfPostgresPlaceholderError(t *testing.T, rr *httptest.ResponseRecorder) {
+// requireNot500 fails the test hard when the handler returned a 500.
+// Historically this file auto-SKIPPED on (redacted) 500s under the
+// theory that SQLite couldn't execute the framework's $N placeholders.
+// That theory was false: go-sqlite3 accepts $N fine — the 500s came
+// from test fixtures that never set EntityConfig.Table, so every query
+// ran against an empty table name. The fixtures are fixed; a 500 is
+// now a bug, full stop.
+func requireNot500(t *testing.T, rr *httptest.ResponseRecorder, category, desc string) {
 	t.Helper()
-	if rr.Code != http.StatusInternalServerError {
-		return
-	}
-	body := rr.Body.String()
-	// Original heuristic: detect driver text in the body. Kept for any
-	// path that hasn't been routed through writeJSONError's redaction.
-	if strings.Contains(body, "near \"$\": syntax error") ||
-		strings.Contains(body, "count query failed") ||
-		strings.Contains(body, "query failed") ||
-		strings.Contains(body, "scan failed") {
-		t.Skip("PostgreSQL $N placeholders not supported by SQLite driver")
-	}
-	// Post-redaction heuristic: writeJSONError now hides driver text
-	// behind a generic "internal server error" message. These test
-	// fixtures construct entities with an empty Table (the tests
-	// historically relied on SQLite to fail-and-skip), so any 500 from
-	// the CRUD list/get path under SQLite is the same placeholder
-	// incompatibility — just with the message redacted.
-	if strings.Contains(body, "internal server error") {
-		t.Skip("PostgreSQL $N placeholders not supported by SQLite driver (redacted response)")
+	if rr.Code == http.StatusInternalServerError {
+		body := rr.Body.String()
+		if len(body) > 120 {
+			body = body[:120] + "…"
+		}
+		t.Fatalf("SECURITY: [%s] handler returned 500 (body: %s). Attack: %s", category, body, desc)
 	}
 }
 
@@ -79,6 +67,8 @@ func TestPagination_HugePage(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "posts",
+		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -97,17 +87,15 @@ func TestPagination_HugePage(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	// Must not be 500 — huge page should produce empty results
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [pagination] page=999999 returned 500. Attack: huge page number causes server error")
+	// Huge page must be a 200 with empty results — anything else
+	// (especially a 500) is a server-error regression.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [pagination] page=999999 returned %d, want 200 with empty data. Attack: huge page number causes server error", rr.Code)
 	}
-	if rr.Code == http.StatusOK {
-		resp := decodeListResponse(t, rr.Body.String())
-		if len(resp.Data) != 0 {
-			t.Errorf("SECURITY: [pagination] page=999999 returned %d rows, want 0. Attack: huge page returned unexpected data", len(resp.Data))
-		}
+	resp := decodeListResponse(t, rr.Body.String())
+	if len(resp.Data) != 0 {
+		t.Errorf("SECURITY: [pagination] page=999999 returned %d rows, want 0. Attack: huge page returned unexpected data", len(resp.Data))
 	}
 }
 
@@ -135,7 +123,7 @@ func TestPagination_ZeroPerPage(t *testing.T) {
 }
 
 // TestPagination_MaxListLimitEnforced verifies that an entity with
-// MaxListLimit=10 rejects ?limit=1000 (caps to default, not 1000).
+// MaxListLimit=10 clamps ?limit=1000 to the cap (listLimitCap), not 1000.
 func TestPagination_MaxListLimitEnforced(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?limit=1000", nil)
@@ -143,7 +131,7 @@ func TestPagination_MaxListLimitEnforced(t *testing.T) {
 	if perPage == 1000 {
 		t.Errorf("SECURITY: [pagination] MaxListLimit=10 but got perPage=1000 for ?limit=1000. Attack: bypassing list limit to fetch all rows")
 	}
-	t.Logf("NOTE: MaxListLimit=10, ?limit=1000 → perPage=%d (default used when request exceeds cap)", perPage)
+	t.Logf("NOTE: MaxListLimit=10, ?limit=1000 → perPage=%d (clamped to the cap)", perPage)
 }
 
 // TestPagination_OffsetOverflow verifies that a very large page combined
@@ -189,6 +177,8 @@ func TestPagination_NonNumericPerPage(t *testing.T) {
 func TestPagination_TotalPagesRounding(t *testing.T) {
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "round_items",
+		Table: "round_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -210,7 +200,6 @@ func TestPagination_TotalPagesRounding(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unexpected status %d", rr.Code)
@@ -231,6 +220,8 @@ func TestCursor_MalformedBase64(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "cursor_items",
+		Table: "cursor_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -246,7 +237,6 @@ func TestCursor_MalformedBase64(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	if rr.Code == http.StatusInternalServerError {
 		t.Errorf("SECURITY: [cursor] malformed base64 cursor returned 500 instead of 400. Attack: malformed cursor causes server crash")
@@ -283,6 +273,8 @@ func TestCursor_EmptyCursor(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "ec_items",
+		Table: "ec_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -302,22 +294,20 @@ func TestCursor_EmptyCursor(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [cursor] empty cursor returned 500. Attack: empty cursor crashes cursor pagination path")
+	// Empty cursor must be a 200 first page with data.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [cursor] empty cursor returned %d, want 200 first page. Attack: empty cursor crashes cursor pagination path", rr.Code)
 	}
-	if rr.Code == http.StatusOK {
-		// Empty cursor should return data (first page)
-		var body map[string]any
-		if err := json.Unmarshal(rr.Body.Bytes(), &body); err == nil {
-			data, ok := body["data"]
-			if !ok {
-				t.Errorf("SECURITY: [cursor] empty cursor response missing 'data' field")
-			} else if arr, ok := data.([]any); ok && len(arr) == 0 {
-				t.Errorf("SECURITY: [cursor] empty cursor returned 0 rows, expected first page data. Attack: empty cursor treated as no-results")
-			}
-		}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode cursor page: %v; body=%s", err, rr.Body.String())
+	}
+	data, ok := body["data"]
+	if !ok {
+		t.Errorf("SECURITY: [cursor] empty cursor response missing 'data' field")
+	} else if arr, ok := data.([]any); ok && len(arr) == 0 {
+		t.Errorf("SECURITY: [cursor] empty cursor returned 0 rows, expected first page data. Attack: empty cursor treated as no-results")
 	}
 }
 
@@ -327,6 +317,8 @@ func TestCursor_SQLInjectionInCursor(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "sqli_cursor",
+		Table: "sqli_cursor",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -347,7 +339,8 @@ func TestCursor_SQLInjectionInCursor(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
+
+	requireNot500(t, rr, "cursor", "SQL payload in cursor value crashes the cursor list path")
 
 	// The table should still exist — SQL injection did not execute
 	var count int
@@ -399,6 +392,8 @@ func TestCursor_ReverseDirectionPreservesScope(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "rev_cursor",
+		Table: "rev_cursor",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -418,13 +413,14 @@ func TestCursor_ReverseDirectionPreservesScope(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusOK {
-		assertBodyNotContains(t, rr, "bob secret", "cursor",
-			"backward cursor pagination leaks other users' data")
+	// Backward first page for an authorised user must be a 200 — and it
+	// must never contain another user's rows.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [cursor] backward cursor returned %d, want 200. Attack: backward direction crashes cursor pagination", rr.Code)
 	}
-	t.Logf("NOTE: backward cursor → status %d", rr.Code)
+	assertBodyNotContains(t, rr, "bob secret", "cursor",
+		"backward cursor pagination leaks other users' data")
 }
 
 // TestCursor_LimitEnforced verifies that cursor-based list respects
@@ -433,6 +429,8 @@ func TestCursor_LimitEnforced(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "cl_items",
+		Table: "cl_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -455,15 +453,17 @@ func TestCursor_LimitEnforced(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusOK {
-		var body map[string]any
-		if err := json.Unmarshal(rr.Body.Bytes(), &body); err == nil {
-			if data, ok := body["data"].([]any); ok && len(data) > 3 {
-				t.Errorf("SECURITY: [cursor] MaxListLimit=3 but cursor returned %d rows with ?limit=100. Attack: cursor path bypasses MaxListLimit", len(data))
-			}
-		}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [cursor] cursor list returned %d, want 200. Attack: limit param crashes cursor list", rr.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode cursor page: %v; body=%s", err, rr.Body.String())
+	}
+	data, _ := body["data"].([]any)
+	if len(data) > 3 {
+		t.Fatalf("cursor path bypasses MaxListLimit — got %d rows, want <=3", len(data))
 	}
 }
 
@@ -473,6 +473,8 @@ func TestCursor_IncludeNotInCursor(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "ic_items",
+		Table: "ic_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -493,7 +495,6 @@ func TestCursor_IncludeNotInCursor(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	// Should get 400 for unknown include, not a panic or 500
 	if rr.Code == http.StatusInternalServerError {
@@ -508,6 +509,8 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "cc_items",
+		Table: "cc_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -522,7 +525,6 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	var sqliteSkip atomic.Bool
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(iter int) {
@@ -534,25 +536,14 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 			})
 			rr := httptest.NewRecorder()
 			ch.List()(rr, req)
-			// The cursor query/scan failures used to leak driver text, which
-			// this heuristic sniffed to detect SQLite's lack of $N placeholder
-			// support. Those paths now redact to "internal server error"
-			// (see error_leak_security_test.go::TestCursorListErrorDoesNotLeakDriverText),
-			// so a redacted 500 on the cursor path is the SQLite-incompat signal.
-			if rr.Code == http.StatusInternalServerError && (strings.Contains(rr.Body.String(), "near \"$\": syntax error") || strings.Contains(rr.Body.String(), "count query failed") || strings.Contains(rr.Body.String(), "query failed") || strings.Contains(rr.Body.String(), "scan failed") || strings.Contains(rr.Body.String(), "internal server error")) {
-				sqliteSkip.Store(true)
-				return
-			}
-			// Must not panic
-			if rr.Code == http.StatusInternalServerError {
-				t.Errorf("SECURITY: [cursor] concurrent cursor request %d returned 500. Attack: concurrent cursors cause server panic", iter)
+			// Every concurrent first-page read must succeed — a 500 here
+			// is a panic/deadlock regression, not an environment quirk.
+			if rr.Code != http.StatusOK {
+				t.Errorf("SECURITY: [cursor] concurrent cursor request %d returned %d, want 200. Attack: concurrent cursors cause server panic", iter, rr.Code)
 			}
 		}(i)
 	}
 	wg.Wait()
-	if sqliteSkip.Load() {
-		t.Skip("PostgreSQL $N placeholders not supported by SQLite driver")
-	}
 }
 
 // ============================================================================
@@ -565,6 +556,8 @@ func TestBatchCreate_EmptyArray(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bc_items",
+		Table: "bc_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -591,6 +584,8 @@ func TestBatchCreate_OversizedArray(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bo_items",
+		Table: "bo_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -624,6 +619,8 @@ func TestBatchCreate_MixedValidInvalid(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "mi_items",
+		Table: "mi_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
@@ -667,6 +664,8 @@ func TestBatchCreate_DuplicateIDsInOneBatch(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "dup_items",
+		Table: "dup_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -700,6 +699,8 @@ func TestBatchUpdate_IDMismatch(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bu_items",
+		Table: "bu_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -732,6 +733,8 @@ func TestBatchUpdate_NonexistentIDs(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bn_items",
+		Table: "bn_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -766,6 +769,8 @@ func TestBatchDelete_EmptyIDList(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bd_items",
+		Table: "bd_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -792,6 +797,8 @@ func TestBatchDelete_NonexistentIDs(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bdn_items",
+		Table: "bdn_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -825,6 +832,8 @@ func TestBatchCreate_HookRollback(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "hr_items",
+		Table: "hr_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String, Required: true},
@@ -875,6 +884,8 @@ func TestBatchUpdate_OwnerScopeEnforced(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "bou_items",
+		Table: "bou_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -918,6 +929,8 @@ func TestInclude_DeeplyNested(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "dn_items",
+		Table: "dn_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -932,7 +945,6 @@ func TestInclude_DeeplyNested(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	if rr.Code == http.StatusInternalServerError {
 		t.Errorf("SECURITY: [include] deeply nested include returned 500. Attack: deeply nested include causes stack overflow")
@@ -946,6 +958,8 @@ func TestInclude_CircularRelation(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "circular_items",
+		Table: "circular_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -965,7 +979,6 @@ func TestInclude_CircularRelation(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	if rr.Code == http.StatusInternalServerError {
 		t.Errorf("SECURITY: [include] self-referential include caused 500 (possible infinite recursion). Attack: circular relation causes stack overflow")
@@ -979,6 +992,8 @@ func TestInclude_NonexistentRelation(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "nr_items",
+		Table: "nr_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -993,7 +1008,6 @@ func TestInclude_NonexistentRelation(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	if rr.Code == http.StatusOK {
 		t.Errorf("SECURITY: [include] unknown relation accepted, returned 200. Attack: probing for relations via ?include=")
@@ -1006,6 +1020,8 @@ func TestInclude_SQLInjectionInRelationName(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "sqli_items",
+		Table: "sqli_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1020,7 +1036,6 @@ func TestInclude_SQLInjectionInRelationName(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	// Table must still exist
 	var count int
@@ -1037,6 +1052,8 @@ func TestInclude_SensitiveRelationNotExposed(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "sr_items",
+		Table: "sr_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1056,8 +1073,10 @@ func TestInclude_SensitiveRelationNotExposed(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [include] list returned %d, want 200. Attack: hidden-field projection crashes the list path", rr.Code)
+	}
 	assertBodyNotContains(t, rr, "super_secret_hash", "include",
 		"hidden password_hash field leaked in list response")
 }
@@ -1068,6 +1087,8 @@ func TestNestedFilter_SQLInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "nf_posts",
+		Table: "nf_posts",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1090,7 +1111,6 @@ func TestNestedFilter_SQLInjection(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	// nf_users table must still exist
 	var postCount int
@@ -1107,6 +1127,8 @@ func TestNestedFilter_DeeplyNested(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "dnf_items",
+		Table: "dnf_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1122,12 +1144,12 @@ func TestNestedFilter_DeeplyNested(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [nested_filter] deeply nested filter returned 500. Attack: deeply nested filter causes stack overflow")
+	// Multi-level nested paths are unsupported and must be rejected
+	// with a 400 — never a 500.
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("SECURITY: [nested_filter] deeply nested filter returned %d, want 400. Attack: deeply nested filter causes stack overflow", rr.Code)
 	}
-	t.Logf("NOTE: 5-level nested filter → status %d", rr.Code)
 }
 
 // TestNestedFilter_NonexistentField verifies that filtering on a
@@ -1136,6 +1158,8 @@ func TestNestedFilter_NonexistentField(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "nff_posts",
+		Table: "nff_posts",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1147,6 +1171,16 @@ func TestNestedFilter_NonexistentField(t *testing.T) {
 	}.WithTimestamps(false), `CREATE TABLE nff_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, author_id TEXT);
 	CREATE TABLE nff_users (id TEXT PRIMARY KEY, name TEXT)`)
 
+	// parseNestedFilters can only validate the field against the target
+	// entity when the registry knows it — without a registry the unknown
+	// column reaches SQL and fails as a redacted 500. Wire the target so
+	// the test exercises the intended 400 validation path.
+	usersEnt := entity.Define("nff_users", entity.EntityConfig{
+		Table:  "nff_users",
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+	}.WithTimestamps(false))
+	ch.Registry = stubRegistry{byName: map[string]*entity.Entity{"nff_users": usersEnt}}
+
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
 		Path:   "/nff_posts?author.nonexistent_field=value",
@@ -1154,12 +1188,10 @@ func TestNestedFilter_NonexistentField(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusOK {
-		t.Errorf("SECURITY: [nested_filter] unknown field in nested filter accepted, returned 200. Attack: probing for schema columns via nested filter")
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("SECURITY: [nested_filter] unknown field in nested filter returned %d, want 400. Attack: probing for schema columns via nested filter", rr.Code)
 	}
-	t.Logf("NOTE: nonexistent nested field → status %d", rr.Code)
 }
 
 // TestInclude_LimitBypassViaInclude verifies that adding ?include=
@@ -1168,6 +1200,8 @@ func TestInclude_LimitBypassViaInclude(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "lbv_items",
+		Table: "lbv_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1190,7 +1224,6 @@ func TestInclude_LimitBypassViaInclude(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	// The include will fail (nonexistent), but even if it didn't,
 	// the limit should cap results at MaxListLimit=2
@@ -1209,6 +1242,8 @@ func TestInclude_CountQueryExcludesRelations(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "cq_items",
+		Table: "cq_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1230,13 +1265,13 @@ func TestInclude_CountQueryExcludesRelations(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusOK {
-		resp := decodeListResponse(t, rr.Body.String())
-		if resp.Total != 3 {
-			t.Errorf("SECURITY: [include] count query returned total=%d, want 3. Attack: include tables inflate count via JOIN", resp.Total)
-		}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [include] list returned %d, want 200. Attack: count query crashes the list path", rr.Code)
+	}
+	resp := decodeListResponse(t, rr.Body.String())
+	if resp.Total != 3 {
+		t.Errorf("SECURITY: [include] count query returned total=%d, want 3. Attack: include tables inflate count via JOIN", resp.Total)
 	}
 }
 
@@ -1250,6 +1285,8 @@ func TestStreaming_ContentTypeSet(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "ct_items",
+		Table: "ct_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1270,8 +1307,10 @@ func TestStreaming_ContentTypeSet(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [streaming] stream returned %d, want 200. Attack: streaming list path crashes", rr.Code)
+	}
 	ct := rr.Header().Get("Content-Type")
 	if ct != "application/json" && !strings.HasPrefix(ct, "application/json") {
 		t.Errorf("SECURITY: [streaming] Content-Type=%q, want application/json. Attack: incorrect content type may cause XSS in browser", ct)
@@ -1285,6 +1324,8 @@ func TestStreaming_LimitEnforced(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "sl_items",
+		Table: "sl_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1306,15 +1347,14 @@ func TestStreaming_LimitEnforced(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusOK {
-		body := rr.Body.String()
-		// Count occurrences of "item" in data to estimate rows
-		itemCount := strings.Count(body, `"title"`)
-		if itemCount > 3 {
-			t.Errorf("SECURITY: [streaming] MaxListLimit=3 but stream returned ~%d rows. Attack: streaming bypasses MaxListLimit", itemCount)
-		}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [streaming] stream returned %d, want 200. Attack: limit param crashes streaming list", rr.Code)
+	}
+	// Count occurrences of "title" in data to estimate rows
+	itemCount := strings.Count(rr.Body.String(), `"title"`)
+	if itemCount > 3 {
+		t.Fatalf("MaxListLimit below default page size unenforced — stream returned ~%d rows, want <=3", itemCount)
 	}
 }
 
@@ -1324,6 +1364,8 @@ func TestStreaming_AbortedConnectionCleanup(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "ac_items",
+		Table: "ac_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1353,7 +1395,6 @@ func TestStreaming_AbortedConnectionCleanup(t *testing.T) {
 	go func() {
 		defer close(done)
 		ch.List()(rr, req)
-		skipIfPostgresPlaceholderError(t, rr)
 	}()
 
 	// Cancel after a brief moment to simulate client disconnect
@@ -1380,6 +1421,8 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "cs_items",
+		Table: "cs_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1394,7 +1437,6 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	var sqliteSkip atomic.Bool
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func() {
@@ -1406,19 +1448,14 @@ func TestStreaming_ConcurrentStreams(t *testing.T) {
 			})
 			rr := httptest.NewRecorder()
 			ch.List()(rr, req)
-			if rr.Code == http.StatusInternalServerError && (strings.Contains(rr.Body.String(), "near \"$\": syntax error") || strings.Contains(rr.Body.String(), "count query failed") || strings.Contains(rr.Body.String(), "query failed") || strings.Contains(rr.Body.String(), "scan failed") || strings.Contains(rr.Body.String(), "internal server error")) {
-				sqliteSkip.Store(true)
-				return
-			}
-			if rr.Code == http.StatusInternalServerError {
-				t.Errorf("SECURITY: [streaming] concurrent stream returned 500. Attack: concurrent streams cause deadlock")
+			// Every concurrent stream must succeed — a 500 is a
+			// deadlock/panic regression.
+			if rr.Code != http.StatusOK {
+				t.Errorf("SECURITY: [streaming] concurrent stream returned %d, want 200. Attack: concurrent streams cause deadlock", rr.Code)
 			}
 		}()
 	}
 	wg.Wait()
-	if sqliteSkip.Load() {
-		t.Skip("PostgreSQL $N placeholders not supported by SQLite driver")
-	}
 }
 
 // TestList_SortInjection verifies that SQL injection in the sort
@@ -1427,6 +1464,8 @@ func TestList_SortInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "si_items",
+		Table: "si_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1445,7 +1484,6 @@ func TestList_SortInjection(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	// Table must still exist
 	var count int
@@ -1462,6 +1500,8 @@ func TestList_FilterInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "fi_items",
+		Table: "fi_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1476,7 +1516,6 @@ func TestList_FilterInjection(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM fi_items").Scan(&count)
@@ -1492,6 +1531,8 @@ func TestList_FieldsParameterSQLInjection(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "fpi_items",
+		Table: "fpi_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1506,7 +1547,6 @@ func TestList_FieldsParameterSQLInjection(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM fpi_items").Scan(&count)
@@ -1522,6 +1562,8 @@ func TestList_WhereClauseFromHook(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "hc_items",
+		Table: "hc_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1554,14 +1596,17 @@ func TestList_WhereClauseFromHook(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
-	if rr.Code == http.StatusOK {
-		resp := decodeListResponse(t, rr.Body.String())
-		for _, row := range resp.Data {
-			if cat, ok := row["category"]; ok && cat != "public" {
-				t.Errorf("SECURITY: [list] hook WHERE clause leaked non-public row (category=%v). Attack: hook-injected WHERE not enforced", cat)
-			}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("SECURITY: [list] list returned %d, want 200. Attack: hook-injected WHERE crashes the list path", rr.Code)
+	}
+	resp := decodeListResponse(t, rr.Body.String())
+	if len(resp.Data) == 0 {
+		t.Errorf("SECURITY: [list] hook WHERE returned 0 rows, want the public row — over-filtering hides the enforcement check")
+	}
+	for _, row := range resp.Data {
+		if cat, ok := row["category"]; ok && cat != "public" {
+			t.Errorf("SECURITY: [list] hook WHERE clause leaked non-public row (category=%v). Attack: hook-injected WHERE not enforced", cat)
 		}
 	}
 }
@@ -1572,6 +1617,8 @@ func TestList_ConcurrentOwnerScope(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "co_items",
+		Table: "co_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1586,7 +1633,6 @@ func TestList_ConcurrentOwnerScope(t *testing.T) {
 
 	users := []string{"alice", "bob"}
 	var wg sync.WaitGroup
-	var sqliteSkip atomic.Bool
 
 	for _, user := range users {
 		for i := 0; i < 20; i++ {
@@ -1600,27 +1646,24 @@ func TestList_ConcurrentOwnerScope(t *testing.T) {
 				})
 				rr := httptest.NewRecorder()
 				ch.List()(rr, req)
-				if rr.Code == http.StatusInternalServerError && (strings.Contains(rr.Body.String(), "near \"$\": syntax error") || strings.Contains(rr.Body.String(), "count query failed") || strings.Contains(rr.Body.String(), "query failed") || strings.Contains(rr.Body.String(), "scan failed") || strings.Contains(rr.Body.String(), "internal server error")) {
-					sqliteSkip.Store(true)
+				// Every authorised list must succeed AND stay scoped to
+				// its own user — a 500 or a cross-user leak both fail.
+				if rr.Code != http.StatusOK {
+					t.Errorf("SECURITY: [list] concurrent list for %q returned %d, want 200. Attack: concurrent owner-scoped lists crash", uid, rr.Code)
 					return
 				}
-				if rr.Code == http.StatusOK {
-					if uid == "alice" {
-						assertBodyNotContains(t, rr, "bob secret", "list",
-							"concurrent list request leaks other user's data")
-					}
-					if uid == "bob" {
-						assertBodyNotContains(t, rr, "alice secret", "list",
-							"concurrent list request leaks other user's data")
-					}
+				if uid == "alice" {
+					assertBodyNotContains(t, rr, "bob secret", "list",
+						"concurrent list request leaks other user's data")
+				}
+				if uid == "bob" {
+					assertBodyNotContains(t, rr, "alice secret", "list",
+						"concurrent list request leaks other user's data")
 				}
 			}(user)
 		}
 	}
 	wg.Wait()
-	if sqliteSkip.Load() {
-		t.Skip("PostgreSQL $N placeholders not supported by SQLite driver")
-	}
 }
 
 // TestList_EmptyResultValidJSON verifies that an empty result set
@@ -1629,6 +1672,8 @@ func TestList_EmptyResultValidJSON(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{
+		Name:  "ej_items",
+		Table: "ej_items",
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
@@ -1643,7 +1688,6 @@ func TestList_EmptyResultValidJSON(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-	skipIfPostgresPlaceholderError(t, rr)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unexpected status %d", rr.Code)

@@ -839,20 +839,35 @@ func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
 		}
 	}
 
-	maxPerPage := 100
-	if entityMax > 0 {
-		maxPerPage = entityMax
-		if maxPerPage > streamListThreshold {
-			maxPerPage = streamListThreshold
-		}
-	}
+	maxPerPage := listLimitCap(entityMax)
 
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= maxPerPage {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			perPage = n
 		}
 	}
+	// Clamp BOTH the requested and the default page size: an oversized
+	// ?limit must cap (not silently fall back to the default, which
+	// itself exceeds MaxListLimit whenever the cap is below 20).
+	if perPage > maxPerPage {
+		perPage = maxPerPage
+	}
 	return
+}
+
+// listLimitCap is the effective per-request row cap for an entity:
+// the global default (100) unless EntityConfig.MaxListLimit raises or
+// lowers it, never above streamListThreshold. Shared by the offset,
+// streaming, and cursor list paths so no path can exceed the cap.
+func listLimitCap(entityMax int) int {
+	limitCap := 100
+	if entityMax > 0 {
+		limitCap = entityMax
+		if limitCap > streamListThreshold {
+			limitCap = streamListThreshold
+		}
+	}
+	return limitCap
 }
 
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.

@@ -10,7 +10,7 @@ import (
 
 func TestStreamCapDefault(t *testing.T) {
 	// Without entity opt-in, ?stream=true must NOT lift the per-page cap.
-	// limit=1000 should be rejected (out of range) and fall back to default 20.
+	// limit=1000 clamps to the effective cap (listLimitCap → 100).
 	req := httptest.NewRequest("GET", "/?stream=true&limit=1000", nil)
 	_, perPage := parsePagination(req, 0)
 	if perPage > 100 {

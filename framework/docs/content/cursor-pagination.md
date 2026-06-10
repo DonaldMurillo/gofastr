@@ -34,6 +34,10 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 
 - `DefaultPageSize = 25`
 - `MaxPageSize = 100` (`limit` is clamped silently)
+- `EntityConfig.MaxListLimit` caps the cursor path too: a `limit` above
+  the entity's cap is clamped to it, same as the offset and streaming
+  list paths. (An oversized `limit` never falls back to the default —
+  it clamps.)
 - `limit < 1` falls back to `DefaultPageSize`
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.

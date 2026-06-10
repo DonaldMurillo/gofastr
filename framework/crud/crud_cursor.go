@@ -59,6 +59,12 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")
 		return
 	}
+	// ParseCursorPagination clamps only to the global MaxPageSize; the
+	// per-entity cap must hold on this path too or ?cursor= becomes a
+	// MaxListLimit bypass.
+	if limitCap := listLimitCap(ch.Entity.Config.MaxListLimit); limit > limitCap {
+		limit = limitCap
+	}
 
 	fields := ch.cursorFields()
 	cols := ch.visibleFields()
