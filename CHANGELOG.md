@@ -68,6 +68,39 @@ by this tree's CLI requires this tree's framework (`App.OnReady`, blueprint
 
 ### Fixed
 
+- **Boot-time auto-migrate now adds missing columns.** `AutoMigrate` did
+  `CREATE TABLE IF NOT EXISTS` only, while deploy.md claimed
+  "create tables, add columns" — adding a field to an existing entity
+  broke the next boot. It now reuses the existing schema-diff machinery
+  and applies the **additive** changes only (drops/renames/retypes stay
+  behind `migrate diff`'s destructive gate); required new columns are
+  added nullable, column adds run before index DDL, and a racing replica
+  re-reads live columns on the lock-holding transaction and no-ops.
+  Also fixes Postgres live-schema readers to case-fold unquoted table
+  names (mixed-case entities were mis-reported as missing every boot).
+- **Light color scheme now passes WCAG AA — and the axe gate can no
+  longer be platform-blind.** The "Linux-only" CI axe failures were real:
+  Linux Chrome defaults to `prefers-color-scheme: light`, so CI audited
+  the light palette that Dark-mode dev Macs never did. Light primary/
+  accent/code-comment tokens retoned (worst offender was 1.71:1, now all
+  ≥4.6:1), the framework's `DefaultTheme` status tones darkened so any
+  light-theme Badge/Tag chip passes AA, the `gofastr theme init` scaffold
+  updated to match, and `TestAxe_AllPagesAreClean` now scans every page
+  under BOTH forced schemes. The browser-e2e CI job is **blocking** again.
+- **Generated auth honors `dev_mode` and validates it strictly.** The
+  generator hardcoded `DevMode: true`; the blueprint key now works, with
+  a deliberate default of `true` (production cookie posture —
+  `__Host-session` + `Secure` — never round-trips on the plain HTTP a
+  fresh app serves) announced in the generated code, the `gofastr
+  generate` output, and the docs. `dev_mode: yes` is a hard error, not a
+  silent coercion to prod mode. `auth.CSRF` is deliberately not mounted
+  (it would 403 the JSON/MCP surface); the gap and the
+  `SameSite=Strict` mitigation are documented.
+- **Docs-site copy drift caught by visual review.** The site header
+  advertised "pre-alpha 0.0.4" and the examples pages described blog as
+  "JSON-declared" — a format removed in v0.4.0. Version now lives in one
+  `siteVersion` constant; blog is correctly described as Go-declared
+  (users/posts/comments).
 - **The README quickstart now runs verbatim — and CI enforces it.** The
   blueprint example was rewritten in block style (the in-house YAML parser
   deliberately rejects flow mappings) with every referenced entity
