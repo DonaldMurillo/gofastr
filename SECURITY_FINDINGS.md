@@ -1,6 +1,6 @@
 # Security findings ledger
 
-_secure-100 campaign (2 passes) — 101 verified findings, each survived an adversarial refute pass._
+_secure-100 campaign (2 passes) — 103 verified findings, each survived an adversarial refute pass._
 
 | # | Sev | Cat | Package | Title |
 |---|---|---|---|---|
