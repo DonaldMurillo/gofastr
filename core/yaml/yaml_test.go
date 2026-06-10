@@ -91,9 +91,37 @@ screens:
 	}
 }
 
+func TestFlowMapErrMentionsBlockStyle(t *testing.T) {
+	_, err := Parse(`
+entities:
+  - name: Article
+    fields:
+      - { name: title, type: string }
+`)
+	if err == nil {
+		t.Fatal("Parse returned nil error for flow-mapping list item")
+	}
+	want := `yaml:5:9: flow mapping "{ ... }" is not supported; use block style (one "key: value" per indented line)`
+	if err.Error() != want {
+		t.Fatalf("err = %q, want %q", err, want)
+	}
+}
+
+func TestFlowMapValueErrMatches(t *testing.T) {
+	_, err := Parse("fields: { name: title }\n")
+	if err == nil {
+		t.Fatal("Parse returned nil error for flow-mapping value")
+	}
+	want := `yaml:1:9: flow mapping "{ ... }" is not supported; use block style (one "key: value" per indented line)`
+	if err.Error() != want {
+		t.Fatalf("err = %q, want %q", err, want)
+	}
+}
+
 func TestParseSubsetRejectsUnsupportedSyntax(t *testing.T) {
 	cases := []string{
 		"app: {name: demo}\n",
+		"items:\n  - [a: b, c]\n",
 		"app:\n\tname: demo\n",
 		"values: [one, \"two]\n",
 		"name: \"unterminated\n",

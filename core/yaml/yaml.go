@@ -176,6 +176,9 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		}
 		item := strings.TrimSpace(strings.TrimPrefix(line.text, "-"))
 		p.pos++
+		if strings.HasPrefix(item, "{") {
+			return nil, flowMapError(line.line, line.indent+3)
+		}
 		if item == "" {
 			if p.pos >= len(p.lines) || p.lines[p.pos].indent <= indent {
 				out.List = append(out.List, &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: line.indent + 1})
@@ -188,7 +191,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			out.List = append(out.List, child)
 			continue
 		}
-		if key, value, ok := strings.Cut(item, ":"); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(strings.TrimSpace(item), "\"") && !strings.HasPrefix(strings.TrimSpace(item), "'") {
+		if key, value, ok := strings.Cut(item, ":"); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "\"") && !strings.HasPrefix(item, "'") && !strings.HasPrefix(item, "[") {
 			child := &Node{Kind: Map, Line: line.line, Column: line.indent + 1, Map: map[string]*Node{}}
 			value = strings.TrimSpace(value)
 			if value == "" {
@@ -221,13 +224,17 @@ func (p *parser) parseList(indent int) (*Node, error) {
 	return out, nil
 }
 
+func flowMapError(line, column int) error {
+	return fmt.Errorf(`yaml:%d:%d: flow mapping "{ ... }" is not supported; use block style (one "key: value" per indented line)`, line, column)
+}
+
 func parseScalar(raw string, line, column int) (*Node, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return &Node{Kind: Scalar, Value: "", Line: line, Column: column}, nil
 	}
 	if strings.HasPrefix(raw, "{") {
-		return nil, fmt.Errorf("yaml:%d:%d: inline maps are not supported", line, column)
+		return nil, flowMapError(line, column)
 	}
 	if strings.HasPrefix(raw, "&") || strings.HasPrefix(raw, "*") || strings.HasPrefix(raw, "!!") {
 		return nil, fmt.Errorf("yaml:%d:%d: anchors, aliases, and tags are not supported", line, column)
