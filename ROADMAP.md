@@ -1022,3 +1022,32 @@ rather than leaving "is the bet sound?" as an unstated question.
 - The v1.0 gate is written down and revisited each release.
 
 ---
+
+## 14. `gofastr export` — static-site export
+
+**Status:** not started (sketch, 2026-06-10). The docs site deploys to
+GitHub Pages today via a CI wget crawl of the running server
+(`.github/workflows/pages.yml`) — that works because the runtime is
+SSR-first, but it is a deployment workaround, not a framework feature.
+
+**Sketch**
+
+- `gofastr export [--out=dir]` (or `App.Export(dir)`) renders every
+  registered screen route to static HTML at build time — no crawler, no
+  running server, no robots.txt caveats.
+- Emit the runtime assets (`/__gofastr/*`) and component CSS bundles with
+  content-hashed, query-string-free filenames so static hosts need no
+  URL-decoding tricks.
+- Islands degrade explicitly: either render their SSR state with controls
+  hidden, or accept a `--base-url` for pointing RPCs at a live backend.
+- Relative-link mode for subpath hosting (project Pages, S3 prefixes).
+
+**Why:** extends the wedge — one blueprint already becomes a UI + API in
+owned Go; static export makes the same declaration publishable to any
+static host. Replaces the pages.yml crawl when it lands.
+
+**Acceptance**
+
+- `gofastr export` on examples/site reproduces what the CI crawl produces
+  today, minus the dynamic-endpoint 404 noise, byte-stable across runs.
+- pages.yml switches from crawl to export and gets simpler.
