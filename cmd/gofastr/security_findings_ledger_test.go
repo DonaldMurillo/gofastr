@@ -60,10 +60,10 @@ func TestLedgerCountMatchesRows(t *testing.T) {
 func TestLedgerRowsCarryKnownStatus(t *testing.T) {
 	src := readLedger(t)
 
-	valid := map[string]bool{"fixed": true, "open": true, "needs-verification": true}
+	valid := map[string]bool{"fixed": true, "open": true, "needs-verification": true, "accepted": true}
 	for _, r := range ledgerRowRe.FindAllStringSubmatch(src, -1) {
 		if !valid[r[2]] {
-			t.Errorf("finding #%s has status %q — must be one of fixed/open/needs-verification (see the Status legend)", r[1], r[2])
+			t.Errorf("finding #%s has status %q — must be one of fixed/open/needs-verification/accepted (see the Status legend)", r[1], r[2])
 		}
 	}
 }

@@ -9,10 +9,14 @@ _secure-100 campaign (2 passes) — 103 verified findings, each survived an adve
 | `fixed` | Re-verified 2026-06-10: the guard is present in current code and/or a pinning `*_security_test.go` exercises the fix, or the fixing commit is in git history. |
 | `open` | Re-verified: the vulnerable pattern is still present in current code. |
 | `needs-verification` | Not yet re-checked against current code. Treat as potentially open until verified — do NOT assume fixed. |
+| `accepted` | Re-verified: the literal pattern is present, but it is a documented, intentional accepted-risk decision (WONTFIX) with the rationale in code. Not a pending vuln. |
 
-Status audit 2026-06-10: every P0/P1 row (#1–#30) was re-verified in code; P2/P3 rows were spot-checked
-(#36, #92 verified fixed; #68 resolved by package removal in `67ee2d92`; #102/#103 fixed in `ba7d63e4`).
-Remaining P2/P3 rows are `needs-verification` pending a per-row re-check, not presumed fixed.
+Status audit 2026-06-10 (complete): all 103 rows re-checked against current code. 102 are `fixed`
+— each with the mitigation cited in code AND a named pinning test that was run and observed passing
+(#1–#30 P0/P1; #31–#101 P2/P3 verified in three batches; #68 removed in `67ee2d92`; #102/#103 in
+`ba7d63e4`). One row (#58, `data:image/svg+xml` allowed by the signal-URL guard) is `accepted`: the
+pattern is present but intentional — the only sink is `<img src>`, where SVG renders inertly — and
+documented in `core-ui/runtime/runtime.js`. No rows remain `needs-verification` or `open`.
 
 ### Verification evidence for `fixed` rows
 
@@ -75,77 +79,77 @@ Remaining P2/P3 rows are `needs-verification` pending a per-row re-check, not pr
 | 28 | P1 | vuln | `core/markdown` | Unbounded inline recursion (nested links/emphasis) → stack-exhaustion DoS | fixed |
 | 29 | P1 | bug | `core-ui/di` | DI Inject writes singleton/resolved maps under RLock — concurrent-map-write panic | fixed |
 | 30 | P1 | bug | `battery/queue` | DBQueue claimed jobs never reclaimed after crash | fixed |
-| 31 | P2 | vuln | `core-ui/runtime` | _isUnsafeSignalUrl bypass via embedded tab/newline in scheme | needs-verification |
-| 32 | P2 | vuln | `framework/file` | Content sniffer misses <img onerror>, BOM-prefixed <script> | needs-verification |
-| 33 | P2 | vuln | `framework/file` | URL scheme check bypassed by whitespace inside scheme | needs-verification |
-| 34 | P2 | vuln | `framework/uihost` | Unclosed dangerous head tags bypass the scrubber (XSS) | needs-verification |
-| 35 | P2 | vuln | `framework/uihost` | Per-page SEO URLs skip the isSafeHeadURL allow-list | needs-verification |
+| 31 | P2 | vuln | `core-ui/runtime` | _isUnsafeSignalUrl bypass via embedded tab/newline in scheme | fixed |
+| 32 | P2 | vuln | `framework/file` | Content sniffer misses <img onerror>, BOM-prefixed <script> | fixed |
+| 33 | P2 | vuln | `framework/file` | URL scheme check bypassed by whitespace inside scheme | fixed |
+| 34 | P2 | vuln | `framework/uihost` | Unclosed dangerous head tags bypass the scrubber (XSS) | fixed |
+| 35 | P2 | vuln | `framework/uihost` | Per-page SEO URLs skip the isSafeHeadURL allow-list | fixed |
 | 36 | P2 | vuln | `battery/search` | Unvalidated Offset/Limit panics Memory.Search (slice OOB DoS) | fixed |
-| 37 | P2 | vuln | `battery/auth` | Password reset does not revoke existing sessions | needs-verification |
-| 38 | P2 | vuln | `core/schema` | Int float->int64 overflow saturates, accepted as valid | needs-verification |
-| 39 | P2 | vuln | `core/upload` | MaxSize used as maxMemory; body spilled to disk before size check | needs-verification |
-| 40 | P2 | vuln | `core-ui/component` | Render-panic fallback interpolates error into HTML unescaped (XSS) | needs-verification |
-| 41 | P2 | vuln | `framework/crud` | Update handler resurrects/mutates soft-deleted records | needs-verification |
-| 42 | P2 | vuln | `framework/file` | Content sniffer misses SVG/HTML when tag isn't the leading token | needs-verification |
-| 43 | P2 | vuln | `framework/filter` | Unbounded ORDER BY via repeated ?sort= params | needs-verification |
-| 44 | P2 | vuln | `framework/ui` | PieChart slice Color/ID injected raw into SVG enables XSS | needs-verification |
-| 45 | P2 | vuln | `battery/email` | STARTTLS stripping: silent plaintext fallback | needs-verification |
-| 46 | P2 | vuln | `battery/log` | Access log writes uncapped X-Forwarded-For header | needs-verification |
-| 47 | P2 | vuln | `core-ui/runtime` | Signal URL guard misses leading C0 control chars | needs-verification |
-| 48 | P2 | vuln | `framework/image` | int64 pixel-area overflow bypasses decompression-bomb guard | needs-verification |
-| 49 | P2 | vuln | `framework/image` | stdimage.Decode panic on crafted input is not recovered | needs-verification |
-| 50 | P2 | vuln | `framework/static` | SSG dynamic-route param enables path traversal of build output | needs-verification |
-| 51 | P2 | vuln | `framework/harness/engine` | Untrusted-content tag breakout via closing tag | needs-verification |
-| 52 | P2 | vuln | `framework/harness/session/sqlite` | Redactor misses provider sk- API keys | needs-verification |
-| 53 | P2 | vuln | `framework/crud` | UpsertOne skips validateMediaURLs (stored XSS via Image field) | needs-verification |
-| 54 | P2 | vuln | `framework/crud` | MCP list tool builds filter params for Hidden fields | needs-verification |
-| 55 | P2 | vuln | `battery/auth` | Login per-account rate limiter map grows unbounded (memory DoS) | needs-verification |
-| 56 | P2 | vuln | `core/upload` | Multipart temp files never removed (disk-exhaustion DoS) | needs-verification |
-| 57 | P2 | vuln | `core/markdown` | Quadratic blowup on nested blockquotes (CPU DoS) | needs-verification |
-| 58 | P2 | vuln | `core-ui/runtime` | data:image/svg+xml allowed by signal URL guard | needs-verification |
-| 59 | P2 | vuln | `framework/harness/tool/builtins` | Bash blocklist bypassed by absolute path or prefix | needs-verification |
-| 60 | P2 | vuln | `framework/file` | URL scheme guard misses leading C0 control bytes | needs-verification |
-| 61 | P2 | vuln | `framework/crud` | Cursor list path leaks raw driver error text | needs-verification |
-| 62 | P2 | vuln | `core/upload` | SanitizeFilename does unbounded work before length cap | needs-verification |
-| 63 | P2 | bug | `core-ui/runtime` | Primary RPC dispatcher omits CSRF token | needs-verification |
-| 64 | P2 | bug | `framework/harness` | Per-session persistLoop goroutine and context leak on Shutdown | needs-verification |
-| 65 | P2 | bug | `battery/queue` | RedisQueue.Dequeue silently loses jobs on a single malformed message | needs-verification |
-| 66 | P2 | bug | `battery/embed` | FixedWindow.Chunk recomputes byte offset O(N^2) | needs-verification |
-| 67 | P2 | bug | `core/upload` | Filename length-cap splits multibyte runes -> invalid UTF-8 key | needs-verification |
+| 37 | P2 | vuln | `battery/auth` | Password reset does not revoke existing sessions | fixed |
+| 38 | P2 | vuln | `core/schema` | Int float->int64 overflow saturates, accepted as valid | fixed |
+| 39 | P2 | vuln | `core/upload` | MaxSize used as maxMemory; body spilled to disk before size check | fixed |
+| 40 | P2 | vuln | `core-ui/component` | Render-panic fallback interpolates error into HTML unescaped (XSS) | fixed |
+| 41 | P2 | vuln | `framework/crud` | Update handler resurrects/mutates soft-deleted records | fixed |
+| 42 | P2 | vuln | `framework/file` | Content sniffer misses SVG/HTML when tag isn't the leading token | fixed |
+| 43 | P2 | vuln | `framework/filter` | Unbounded ORDER BY via repeated ?sort= params | fixed |
+| 44 | P2 | vuln | `framework/ui` | PieChart slice Color/ID injected raw into SVG enables XSS | fixed |
+| 45 | P2 | vuln | `battery/email` | STARTTLS stripping: silent plaintext fallback | fixed |
+| 46 | P2 | vuln | `battery/log` | Access log writes uncapped X-Forwarded-For header | fixed |
+| 47 | P2 | vuln | `core-ui/runtime` | Signal URL guard misses leading C0 control chars | fixed |
+| 48 | P2 | vuln | `framework/image` | int64 pixel-area overflow bypasses decompression-bomb guard | fixed |
+| 49 | P2 | vuln | `framework/image` | stdimage.Decode panic on crafted input is not recovered | fixed |
+| 50 | P2 | vuln | `framework/static` | SSG dynamic-route param enables path traversal of build output | fixed |
+| 51 | P2 | vuln | `framework/harness/engine` | Untrusted-content tag breakout via closing tag | fixed |
+| 52 | P2 | vuln | `framework/harness/session/sqlite` | Redactor misses provider sk- API keys | fixed |
+| 53 | P2 | vuln | `framework/crud` | UpsertOne skips validateMediaURLs (stored XSS via Image field) | fixed |
+| 54 | P2 | vuln | `framework/crud` | MCP list tool builds filter params for Hidden fields | fixed |
+| 55 | P2 | vuln | `battery/auth` | Login per-account rate limiter map grows unbounded (memory DoS) | fixed |
+| 56 | P2 | vuln | `core/upload` | Multipart temp files never removed (disk-exhaustion DoS) | fixed |
+| 57 | P2 | vuln | `core/markdown` | Quadratic blowup on nested blockquotes (CPU DoS) | fixed |
+| 58 | P2 | vuln | `core-ui/runtime` | data:image/svg+xml allowed by signal URL guard | accepted |
+| 59 | P2 | vuln | `framework/harness/tool/builtins` | Bash blocklist bypassed by absolute path or prefix | fixed |
+| 60 | P2 | vuln | `framework/file` | URL scheme guard misses leading C0 control bytes | fixed |
+| 61 | P2 | vuln | `framework/crud` | Cursor list path leaks raw driver error text | fixed |
+| 62 | P2 | vuln | `core/upload` | SanitizeFilename does unbounded work before length cap | fixed |
+| 63 | P2 | bug | `core-ui/runtime` | Primary RPC dispatcher omits CSRF token | fixed |
+| 64 | P2 | bug | `framework/harness` | Per-session persistLoop goroutine and context leak on Shutdown | fixed |
+| 65 | P2 | bug | `battery/queue` | RedisQueue.Dequeue silently loses jobs on a single malformed message | fixed |
+| 66 | P2 | bug | `battery/embed` | FixedWindow.Chunk recomputes byte offset O(N^2) | fixed |
+| 67 | P2 | bug | `core/upload` | Filename length-cap splits multibyte runes -> invalid UTF-8 key | fixed |
 | 68 | ~~P2~~ resolved | `core-ui/signal` | Global currentCtx data race — package removed in favor of `core-ui/interactive` | fixed |
-| 69 | P2 | bug | `core/mcp` | MCP tool-handler panic is never recovered | needs-verification |
-| 70 | P2 | bug | `core/middleware` | metrics/tracing writers drop Hijacker and Pusher | needs-verification |
-| 71 | P2 | bug | `framework` | App.InTx leaks tx connection + row locks when fn panics | needs-verification |
-| 72 | P2 | bug | `framework/file` | GenerateFilePath uniqueness is timestamp-only, collides | needs-verification |
-| 73 | P2 | bug | `framework/pagination` | limit=1 always resets offset to 0, breaking offset pagination | needs-verification |
-| 74 | P2 | bug | `battery/queue` | MemoryQueue type-filter Dequeue silently drops drained jobs | needs-verification |
-| 75 | P2 | bug | `battery/cache` | 206 Range response poisons cache for full GETs | needs-verification |
-| 76 | P2 | bug | `battery/log` | log access wrapper drops http.Hijacker, breaks WebSocket upgrades | needs-verification |
-| 77 | P2 | bug | `core/schema` | Decimal Min/Max compared via float64 loses precision, bypassing bounds | needs-verification |
-| 78 | P2 | bug | `core/query` | Backward cursor emits ASC ORDER BY, returns wrong page | needs-verification |
-| 79 | P3 | vuln | `core/i18n` | Unbounded Accept-Language parsing enables request-amplified DoS | needs-verification |
-| 80 | P3 | vuln | `core/middleware` | Unbounded metrics cardinality via arbitrary HTTP method | needs-verification |
-| 81 | P3 | vuln | `framework/filter` | LIKE wildcard injection in _like filter (no ESCAPE) | needs-verification |
-| 82 | P3 | vuln | `battery/search` | Unbounded query-term count amplifies search cost (DoS) | needs-verification |
-| 83 | P3 | vuln | `core/schema` | Int Min/Max check via float64 loses precision, bypassing large bounds | needs-verification |
-| 84 | P3 | vuln | `core/upload` | Unicode line separators (U+2028/U+2029/U+0085) survive sanitization | needs-verification |
-| 85 | P3 | vuln | `battery/email` | Unescaped double-quote in attachment filename injects MIME params | needs-verification |
-| 86 | P3 | vuln | `core-ui/runtime` | html-mode signal injects unescaped JSON.stringify of error object | needs-verification |
-| 87 | P3 | bug | `framework/lifecycle` | Data race on lc.timeout between Shutdown and SetShutdownTimeout | needs-verification |
-| 88 | P3 | bug | `core/schema` | String length uses byte count, not rune count | needs-verification |
-| 89 | P3 | bug | `core/router` | Params() drops catch-all {name...} segment value | needs-verification |
-| 90 | P3 | bug | `core/markdown` | Quadratic blowup on unmatched emphasis delimiters | needs-verification |
-| 91 | P3 | bug | `core/middleware` | SampledLogging logs raw r.Method (log injection) | needs-verification |
+| 69 | P2 | bug | `core/mcp` | MCP tool-handler panic is never recovered | fixed |
+| 70 | P2 | bug | `core/middleware` | metrics/tracing writers drop Hijacker and Pusher | fixed |
+| 71 | P2 | bug | `framework` | App.InTx leaks tx connection + row locks when fn panics | fixed |
+| 72 | P2 | bug | `framework/file` | GenerateFilePath uniqueness is timestamp-only, collides | fixed |
+| 73 | P2 | bug | `framework/pagination` | limit=1 always resets offset to 0, breaking offset pagination | fixed |
+| 74 | P2 | bug | `battery/queue` | MemoryQueue type-filter Dequeue silently drops drained jobs | fixed |
+| 75 | P2 | bug | `battery/cache` | 206 Range response poisons cache for full GETs | fixed |
+| 76 | P2 | bug | `battery/log` | log access wrapper drops http.Hijacker, breaks WebSocket upgrades | fixed |
+| 77 | P2 | bug | `core/schema` | Decimal Min/Max compared via float64 loses precision, bypassing bounds | fixed |
+| 78 | P2 | bug | `core/query` | Backward cursor emits ASC ORDER BY, returns wrong page | fixed |
+| 79 | P3 | vuln | `core/i18n` | Unbounded Accept-Language parsing enables request-amplified DoS | fixed |
+| 80 | P3 | vuln | `core/middleware` | Unbounded metrics cardinality via arbitrary HTTP method | fixed |
+| 81 | P3 | vuln | `framework/filter` | LIKE wildcard injection in _like filter (no ESCAPE) | fixed |
+| 82 | P3 | vuln | `battery/search` | Unbounded query-term count amplifies search cost (DoS) | fixed |
+| 83 | P3 | vuln | `core/schema` | Int Min/Max check via float64 loses precision, bypassing large bounds | fixed |
+| 84 | P3 | vuln | `core/upload` | Unicode line separators (U+2028/U+2029/U+0085) survive sanitization | fixed |
+| 85 | P3 | vuln | `battery/email` | Unescaped double-quote in attachment filename injects MIME params | fixed |
+| 86 | P3 | vuln | `core-ui/runtime` | html-mode signal injects unescaped JSON.stringify of error object | fixed |
+| 87 | P3 | bug | `framework/lifecycle` | Data race on lc.timeout between Shutdown and SetShutdownTimeout | fixed |
+| 88 | P3 | bug | `core/schema` | String length uses byte count, not rune count | fixed |
+| 89 | P3 | bug | `core/router` | Params() drops catch-all {name...} segment value | fixed |
+| 90 | P3 | bug | `core/markdown` | Quadratic blowup on unmatched emphasis delimiters | fixed |
+| 91 | P3 | bug | `core/middleware` | SampledLogging logs raw r.Method (log injection) | fixed |
 | 92 | P3 | bug | `framework/cron` | Scheduler.Stop() deadlocks if Start() never called | fixed |
-| 93 | P3 | bug | `battery/queue` | Redis visibility timeout is recorded but never enforced (lost jobs) | needs-verification |
-| 94 | P3 | bug | `core/handler` | Bind rejects valid JSON keys from embedded struct fields | needs-verification |
-| 95 | P3 | bug | `core/schema` | validateDecimal accepts non-decimal float literal forms | needs-verification |
-| 96 | P3 | bug | `core/router` | Custom NotFound swallows native 405, returns 404 | needs-verification |
-| 97 | P3 | bug | `core-ui/runtime` | SSE island name interpolated into CSS selector unescaped | needs-verification |
-| 98 | P3 | bug | `core-ui/island` | Second SSE connection per session tears down the first on disconnect | needs-verification |
-| 99 | P3 | bug | `battery/cache` | Cache key omits request Host: cross-host content leak | needs-verification |
-| 100 | P3 | bug | `battery/auth` | Reset token consumed before new-password validation/hashing | needs-verification |
-| 101 | P3 | bug | `core/migrate` | Diff emits Postgres-only DDL and catalog regardless of dialect | needs-verification |
+| 93 | P3 | bug | `battery/queue` | Redis visibility timeout is recorded but never enforced (lost jobs) | fixed |
+| 94 | P3 | bug | `core/handler` | Bind rejects valid JSON keys from embedded struct fields | fixed |
+| 95 | P3 | bug | `core/schema` | validateDecimal accepts non-decimal float literal forms | fixed |
+| 96 | P3 | bug | `core/router` | Custom NotFound swallows native 405, returns 404 | fixed |
+| 97 | P3 | bug | `core-ui/runtime` | SSE island name interpolated into CSS selector unescaped | fixed |
+| 98 | P3 | bug | `core-ui/island` | Second SSE connection per session tears down the first on disconnect | fixed |
+| 99 | P3 | bug | `battery/cache` | Cache key omits request Host: cross-host content leak | fixed |
+| 100 | P3 | bug | `battery/auth` | Reset token consumed before new-password validation/hashing | fixed |
+| 101 | P3 | bug | `core/migrate` | Diff emits Postgres-only DDL and catalog regardless of dialect | fixed |
 
 _Pass 6 — fuzz harness (`go test -fuzz`) for the five parsers; FuzzRenderHTML found two distinct markdown DoS in seconds._
 
