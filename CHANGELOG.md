@@ -7,13 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-10
+
 The first-contact release: an adversarially-verified 10-dimension audit
 (2026-06-09) found the engine strong but the first-touch surface broken —
 the README quickstart failed verbatim, the flagship example shipped
 insecure, RBAC was unreachable from the blueprint, and CI was red on every
-release tag. Everything below closes those findings. Note: code generated
-by this tree's CLI requires this tree's framework (`App.OnReady`, blueprint
-`access:`) — generated apps need `gofastr@main` until the next tag.
+release tag. Everything below closes those findings. Contains a **BREAKING**
+auth change (see below); pin a version (`go get …@v0.5.0`).
 
 ### Changed
 
