@@ -7,6 +7,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-11
+
+Patch release correcting startup readiness reporting and repository release
+metadata. No breaking changes.
+
 ### Fixed
 
 - **Startup readiness output now follows the listener bind.** `App.Start`
