@@ -89,6 +89,11 @@ func lintRepo(root string) ([]finding, error) {
 	if err != nil {
 		return nil, err
 	}
+	truthFindings, err := lintRepositoryTruth(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, truthFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
@@ -162,8 +167,89 @@ func lintBytes(rel string, body []byte) []finding {
 				Message: "lint dependencies must stay repo-owned or Go-team tools only",
 			})
 		}
+		if isBuildScript(rel) && strings.Contains(line, "framework/apiversions") {
+			out = append(out, finding{
+				File:    rel,
+				Line:    i + 1,
+				Rule:    "retired-package-path",
+				Message: "framework/apiversions moved to framework/experimental/apiversions",
+			})
+		}
+		if isBuildScript(rel) && strings.Contains(line, ".pi/worktrees/roadmap") {
+			out = append(out, finding{
+				File:    rel,
+				Line:    i + 1,
+				Rule:    "worktree-specific-script",
+				Message: "build scripts must resolve from the repository root, not a personal worktree path",
+			})
+		}
+		if rel == "Makefile" && strings.Contains(line, "No codegen yet") {
+			out = append(out, finding{
+				File:    rel,
+				Line:    i + 1,
+				Rule:    "stale-codegen-status",
+				Message: "GoFastr ships blueprint code generation; keep the generate target truthful",
+			})
+		}
 	}
 	return out
+}
+
+func lintRepositoryTruth(root string) ([]finding, error) {
+	changelog, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	minor := latestReleaseMinor(string(changelog))
+	if minor == "" {
+		return nil, nil
+	}
+	security, err := os.ReadFile(filepath.Join(root, "SECURITY.md"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	expected := "currently `" + minor + ".x`"
+	if strings.Contains(string(security), expected) {
+		return nil, nil
+	}
+	return []finding{{
+		File:    "SECURITY.md",
+		Line:    lineContaining(string(security), "currently `"),
+		Rule:    "supported-version-drift",
+		Message: "supported release must match latest CHANGELOG release (want " + minor + ".x)",
+	}}, nil
+}
+
+func latestReleaseMinor(changelog string) string {
+	for _, line := range strings.Split(changelog, "\n") {
+		if !strings.HasPrefix(line, "## [") || strings.HasPrefix(line, "## [Unreleased]") {
+			continue
+		}
+		end := strings.Index(line, "]")
+		if end < len("## [") {
+			continue
+		}
+		parts := strings.Split(line[len("## ["):end], ".")
+		if len(parts) >= 2 {
+			return parts[0] + "." + parts[1]
+		}
+	}
+	return ""
+}
+
+func lineContaining(body, needle string) int {
+	for i, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, needle) {
+			return i + 1
+		}
+	}
+	return 1
 }
 
 // hasControlChar reports whether s contains any ASCII control byte

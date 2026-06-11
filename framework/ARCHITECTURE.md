@@ -117,7 +117,7 @@ L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```
 
-(The map above is the real import graph as of v0.4.0 — verify with
+(The map above is the real import graph as of v0.5.0 — verify with
 `go list -f '{{join .Imports "\n"}}' ./framework/<pkg>` when in doubt.
 The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate —

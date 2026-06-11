@@ -53,6 +53,55 @@ func TestLintRepoFlagsExternalLintDependencies(t *testing.T) {
 	mustFindRule(t, findings, "external-lint-dependency")
 }
 
+func TestLintRepoFlagsRetiredBuildPaths(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "scripts/check.sh", "go test ./framework/apiversions\ncd /tmp/.pi/worktrees/roadmap\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	mustFindRule(t, findings, "retired-package-path")
+	mustFindRule(t, findings, "worktree-specific-script")
+}
+
+func TestLintRepoFlagsStaleCodegenStatus(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "Makefile", "generate:\n\t@echo \"No codegen yet\"\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	mustFindRule(t, findings, "stale-codegen-status")
+}
+
+func TestLintRepoFlagsSupportedVersionDrift(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.5.0] - 2026-06-10\n")
+	writeTestFile(t, dir, "SECURITY.md", "Only the latest minor release (currently `0.4.x`) is supported.\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	mustFindRule(t, findings, "supported-version-drift")
+}
+
+func TestLintRepoAcceptsCurrentSupportedVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.5.0] - 2026-06-10\n")
+	writeTestFile(t, dir, "SECURITY.md", "Only the latest minor release (currently `0.5.x`) is supported.\n")
+
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("unexpected findings: %+v", findings)
+	}
+}
+
 func TestLintRepoSkipsBuildOutput(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "dist/bad.md", "<<<<<<< ours\n")

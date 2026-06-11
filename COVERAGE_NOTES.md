@@ -17,7 +17,7 @@ Every other reachable branch IS covered. Two measurements, because the
 methodology matters:
 
 - **Full-suite** (2026-06-01 audit): own-package tests + the `framework`
-  root suite + `examples/website` e2e overlaid. This is how
+  root suite + `examples/site` e2e overlaid. This is how
   `framework/migrate`, `framework/tenant`, and `framework/entity` reached a
   literal 100% — much of their surface is exercised from the framework root
   and the e2e suites, not their own `_test.go` files.

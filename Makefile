@@ -184,7 +184,7 @@ repo-lint:
 	go run ./cmd/repolint .
 
 generate:
-	@echo "No codegen yet"
+	@echo "Use: go run ./cmd/gofastr generate --from=<blueprint.yml>"
 
 dev:
 	@echo "Use: gofastr dev"

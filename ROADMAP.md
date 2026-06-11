@@ -106,7 +106,7 @@ are explicit and machine-readable.
 
 **Implementation**
 
-- `framework/apiversions/` — `Version` type wrapping route groups with version metadata
+- `framework/experimental/apiversions/` — `Version` type wrapping route groups with version metadata
 - URL prefix scheme (`/v1`, `/v2`) via route groups
 - `WithDeprecation()` marks versions with Sunset/Link headers
 - `DeprecationMiddleware()` adds `Deprecation: true`, `Sunset`, `Link` headers
@@ -114,7 +114,7 @@ are explicit and machine-readable.
 - MCP tools namespaced by version
 - `DeprecationHeaders()` helper for individual endpoint deprecation
 
-**Files**: `framework/apiversions/version.go`, `framework/apiversions/projection.go`, `framework/apiversions/version_test.go`
+**Files**: `framework/experimental/apiversions/version.go`, `framework/experimental/apiversions/projection.go`, `framework/experimental/apiversions/version_test.go`
 
 **Sketch**
 
@@ -618,19 +618,19 @@ module is loaded.
 
 ## 9. Framework DX — feedback from the first real third-party app
 
-**Status:** not started (2026-05-23). Surfaced by a build-out of a
-"WTF do I eat?" app on top of the framework. Each item is independent;
-priority is roughly top-to-bottom.
+**Status:** partially implemented. Collision diagnostics, post-migrate seed
+hooks, and the global API prefix shipped; typed form-input wrappers remain.
+Surfaced by a build-out of a "WTF do I eat?" app on top of the framework.
 
 ### 9a. Entity↔page path collision — friendlier diagnostic
 
-Today: registering a screen at `/foods` when there's also an entity called
-`foods` panics at startup with a duplicate `/foods/llm.md` registration
-message — the error points at the auto-generated llm.md handler, not at the
-underlying name collision. Users have to trace it back themselves.
+**Status:** partially implemented. `App.Entity` and `App.GroupEntity` now
+detect a route that already owns the entity URL space and return an actionable
+diagnostic naming `WithAPIPrefix`. The reverse order — registering a screen
+after the entity — still relies on the router's conflict diagnostic.
 
-**Goal.** Detect the collision at registration time (entity OR screen,
-whichever lands second) and panic with a directly actionable message:
+**Remaining goal.** Detect the collision when the screen lands second and
+return the same actionable message:
 
 ```
 entity "foods" already owns the /foods URL space (REST + /foods/llm.md);
@@ -638,50 +638,44 @@ choose a different page path (e.g. /library, /library/:slug) or move
 entity CRUD under an APIPrefix (see 9c).
 ```
 
-**Implementation sketch.** `app.Register(path, screen, spec)` checks the
+**Remaining implementation.** `app.Register(path, screen, spec)` checks the
 entity registry for any entity whose CRUD mount prefix matches `path` (or
 is a parent of it). Symmetric check on entity registration. Error surfaces
 the colliding entity name, the path it claimed, and the recommended fix.
 
-**Acceptance.** Adding a `/foods` screen with a `foods` entity panics with
-the new message in &lt; 1 ms; existing tests covering the auto-CRUD mount path
-still pass.
+**Acceptance.** Both registration orders produce the same direct diagnostic;
+the entity-second direction is covered by `framework/collision_test.go`.
 
 ### 9b. Seed ordering — `WithSeed(func(ctx))` post-migrate hook
 
-Today: `App.Start()` runs auto-migrate as one of its first phases. Calling
-`db.Exec("INSERT …")` from `main()` before `Start()` fails with
-`no such table`. Users hit this once, file it under "easy fix" — but the
-ordering isn't obvious from the API surface.
+**Status:** implemented. `App.WithSeed(func(ctx context.Context) error)` runs
+after auto-migration and entity seeds, before plugins initialize or the
+listener binds. See `framework/seed.go`, `framework/seed_hook_test.go`, and
+`framework/docs/content/plugins.md`.
 
-**Goal.** Either:
+**Implemented shape:**
 
-1. Expose `App.WithSeed(func(ctx context.Context) error)` that the
-   lifecycle registers after auto-migrate and before "ready", so seed
-   logic lives where it composes (next to the app config), OR
-2. Document the existing `OnStart` hook idiom prominently in
-   `framework/docs/content/ui-getting-started.md` and `framework/docs/content/entity-declarations.md` with a
-   worked seed example.
-
-The exposure path is the better DX. `WithSeed` reads as "this app needs
-seed data", which is the user's intent. Multiple `WithSeed` calls run in
-registration order. Errors fail `Start()` with the seed func's file:line.
+- Multiple `WithSeed` calls run in registration order.
+- Errors abort `Start()` before the port binds.
+- The hook receives the app lifecycle context.
+- Per-entity ledger-backed seeds run first; app-level seed hooks follow.
 
 **Acceptance.** A user can write `site.WithSeed(seedFoods)` in `main()`
-and the func runs after migration, before the server accepts traffic. A
-chromedp test asserts seed rows are queryable on first request.
+and the func runs after migration, before the server accepts traffic.
+`TestWithSeed_RunsAfterMigrate` asserts the inserted row is queryable.
 
 ### 9c. `framework.AppConfig{APIPrefix: "/api"}`
 
-Today: entity CRUD mounts at the bare entity name (`/foods`, `/users`).
-The convention every real backend uses — `/api/v1/foods` or at minimum
-`/api/foods` — is achievable via route groups, but it's boilerplate the
-first-time user has to assemble.
+**Status:** implemented. `WithAPIPrefix` and `AppConfig.APIPrefix` move all
+auto-CRUD routes under one normalized prefix and update OpenAPI/MCP dispatch.
+See `framework/api_prefix_test.go`, `framework/api_prefix_mcp_test.go`, and
+`framework/docs/content/api-versioning.md`.
 
-**Goal.** First-class config:
+**Public shape:**
 
 ```go
-site := framework.NewApp("myapp",
+site := framework.NewApp(
+    framework.WithConfig(framework.AppConfig{Name: "myapp"}),
     framework.WithAPIPrefix("/api"),
     framework.WithDB(db),
 )
@@ -689,12 +683,7 @@ site := framework.NewApp("myapp",
 
 Effect: every auto-CRUD route, including `/llm.md` and the per-entity
 OpenAPI block, mounts under the prefix. MCP tool namespacing unchanged.
-The default stays bare (`""`) to avoid a breaking change; the example
-website opts in.
-
-**Open question.** Per-entity override? `EntityConfig{Mount: "/v2/foods"}`
-already gives you that today via route groups. Probably not worth a second
-config knob.
+The default stays bare (`""`) to avoid a breaking change.
 
 **Acceptance.** `WithAPIPrefix("/api")` causes `GET /api/foods` to serve
 the list; `GET /foods` 404s. Updating an existing app to add the prefix

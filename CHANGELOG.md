@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Startup readiness output now follows the listener bind.** `App.Start`
+  prints its framework banner only after `net.Listen` succeeds, uses the
+  resolved address for a new `Listening:` line, and prints API-prefixed entity
+  URLs correctly. Bind failures no longer claim the server is ready.
+- **Repository status surfaces match `v0.5.0`.** The security support line,
+  codegen Make target, roadmap implementation statuses, architecture version,
+  coverage example path, and API-versioning package paths were corrected.
+  Obsolete roadmap-worktree scripts were removed, and `repolint` now guards
+  supported-version drift plus retired build-script paths.
+
 ## [0.5.0] - 2026-06-10
 
 The first-contact release: an adversarially-verified 10-dimension audit

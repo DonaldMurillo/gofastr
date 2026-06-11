@@ -1,5 +1,14 @@
 # Agent Notes
 
+## 2026-06-11 - current-state review verification
+
+- **Scope:** framework architecture, release docs, CI/test reliability.
+- **Trigger:** a deep review of `v0.5.0` found the code healthier than several repository status surfaces, while the short full gate failed a headline browser security test that passed repeatedly in isolation.
+- **Approach:** run `SHORT=1 ./scripts/test-all.sh`, rerun browser failures isolated with `go test -count=5 -run <test>`, then compare `ROADMAP.md`, `SECURITY.md`, Make targets, and verification scripts against current package paths and source.
+- **Evidence:** `TestUIE2E_OwnerScope_CrossUserIsolation` relies on a correctness-bearing `200ms` sleep and failed under suite load; the review also found stale Roadmap §9 statuses and worktree scripts referencing the retired `framework/apiversions` path, corrected in the follow-up.
+- **Next time:** classify full-suite browser failures before trusting a green isolated rerun, and derive roadmap/release status from executable witnesses before documentation labels.
+- **Status:** active
+
 ## 2026-06-10 - boot auto-migrate adds missing columns (additive convergence)
 
 - **Scope:** `framework/migrate/{migrate,schema_diff,bulk}.go`, `framework/migrate_addcolumn_test.go`, `framework/docs/content/{migrations,deploy,tutorial-blueprint-app,perf-results,benchmarks}.md`, `kiln/db/migrate.go` (comment only).

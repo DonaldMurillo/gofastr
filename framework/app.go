@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -174,6 +175,11 @@ type App struct {
 	// the app's routes, plugins, batteries, config, and readiness state
 	// for agent debugging. Set via WithMCPIntrospection().
 	mcpIntrospection bool
+
+	// startupOutput receives the human-readable readiness banner. It defaults
+	// to os.Stdout and stays unexported so tests can verify startup ordering
+	// without replacing the process-wide stdout file descriptor.
+	startupOutput io.Writer
 }
 
 // AppOption is a functional option for configuring an App.
@@ -616,15 +622,16 @@ func NewApp(opts ...AppOption) *App {
 	}
 
 	a := &App{
-		Registry:  NewRegistry(),
-		router:    router.New(),
-		MCP:       mcp.NewServer(),
-		Config:    AppConfig{JSONCase: crud.CaseCamel},
-		Plugins:   NewPluginManager(),
-		Batteries: NewBatteryManager(),
-		events:    event.NewEventBus(),
-		hooks:     make(map[string]*hook.HookRegistry),
-		lc:        lifecycle.New(),
+		Registry:      NewRegistry(),
+		router:        router.New(),
+		MCP:           mcp.NewServer(),
+		Config:        AppConfig{JSONCase: crud.CaseCamel},
+		Plugins:       NewPluginManager(),
+		Batteries:     NewBatteryManager(),
+		events:        event.NewEventBus(),
+		hooks:         make(map[string]*hook.HookRegistry),
+		lc:            lifecycle.New(),
+		startupOutput: os.Stdout,
 	}
 
 	for _, opt := range opts {
@@ -1374,34 +1381,6 @@ func (a *App) Start(addr string) error {
 	// Set process title so it shows in ps / Activity Monitor
 	os.Args[0] = "gofastr-" + name
 
-	// Strip leading colon for display
-	host := addr
-	if len(host) > 0 && host[0] == ':' {
-		host = "localhost" + host
-	}
-
-	fmt.Printf("\n  %s %s server ready\n", bold("GoFastr"), name)
-	fmt.Printf("  %s PID: %d\n", arrow(), os.Getpid())
-	if a.Config.DebugEndpoints {
-		fmt.Printf("  %s Stats: http://%s/.debug/stats\n", arrow(), host)
-	}
-
-	// Log entity routes
-	for _, e := range a.Registry.All() {
-		fmt.Printf("  %s %-12s http://%s/%s\n", arrow(), e.GetName(), host, e.GetTable())
-	}
-
-	// Log OpenAPI surfaces — only the ones actually mounted above, so the
-	// banner never points at a route that 404s.
-	if hasAPI {
-		fmt.Printf("  %s OpenAPI:     http://%s/openapi.json\n", arrow(), host)
-		fmt.Printf("  %s Swagger UI:  http://%s/api/docs/\n", arrow(), host)
-		if hasLLMMD {
-			fmt.Printf("  %s LLM Docs:    http://%s/api/llm.md\n", arrow(), host)
-		}
-	}
-	fmt.Println()
-
 	a.serverMu.Lock()
 	srv := &http.Server{
 		Addr:    addr,
@@ -1433,6 +1412,7 @@ func (a *App) Start(addr string) error {
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
+	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD)
 	for _, fn := range a.readyHooks {
 		fn(ln.Addr().String())
 	}
@@ -1440,6 +1420,35 @@ func (a *App) Start(addr string) error {
 		return abort(fmt.Errorf("listen and serve: %w", err))
 	}
 	return nil
+}
+
+// printStartupBanner reports readiness only after the listener has bound.
+// boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
+// the actual port and a bind failure prints nothing.
+func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool) {
+	w := a.startupOutput
+	if w == nil {
+		w = os.Stdout
+	}
+	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
+	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
+	fmt.Fprintf(w, "  %s Listening: http://%s\n", arrow(), boundAddr)
+	if a.Config.DebugEndpoints {
+		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
+	}
+
+	for _, e := range a.Registry.All() {
+		fmt.Fprintf(w, "  %s %-12s http://%s%s\n", arrow(), e.GetName(), boundAddr, a.entityMountPath(e.GetTable()))
+	}
+
+	if hasAPI {
+		fmt.Fprintf(w, "  %s OpenAPI:     http://%s/openapi.json\n", arrow(), boundAddr)
+		fmt.Fprintf(w, "  %s Swagger UI:  http://%s/api/docs/\n", arrow(), boundAddr)
+		if hasLLMMD {
+			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md\n", arrow(), boundAddr)
+		}
+	}
+	_, _ = fmt.Fprintln(w)
 }
 
 // registerDebugEndpoints adds /.debug/stats for runtime diagnostics.

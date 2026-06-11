@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"sync"
@@ -23,6 +24,8 @@ func TestStart_BindFailureRunsShutdown(t *testing.T) {
 	addr := ln.Addr().String()
 
 	app := NewApp()
+	var output bytes.Buffer
+	app.startupOutput = &output
 	var mu sync.Mutex
 	stopRan := false
 	app.OnStop(func() error {
@@ -49,6 +52,9 @@ func TestStart_BindFailureRunsShutdown(t *testing.T) {
 	mu.Unlock()
 	if !ran {
 		t.Error("bind failure did not run OnStop hooks — Shutdown was skipped (leak)")
+	}
+	if output.Len() != 0 {
+		t.Errorf("bind failure printed a readiness banner: %q", output.String())
 	}
 
 	// Lifecycle context must be cancelled too.
