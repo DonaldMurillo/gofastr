@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -97,16 +98,43 @@ func SafeRelativePath(path string) (string, error) {
 	return clean, nil
 }
 
+// ConflictPolicy controls what WriteFiles does when a target file already
+// exists on disk with different content.
+type ConflictPolicy int
+
+const (
+	// ConflictOverwrite always writes — the legacy behavior, correct for a
+	// quarantined output dir that is cleaned-and-rewritten each run.
+	ConflictOverwrite ConflictPolicy = iota
+	// ConflictSkip never clobbers an existing file: absent → write,
+	// identical → no-op, differs → skip and report. This is the owned-scaffold
+	// re-run contract — re-running generate adds new files without
+	// overwriting code the user has hand-edited.
+	ConflictSkip
+)
+
 // WriteOptions controls writing a FileSet to disk.
 type WriteOptions struct {
 	OutputRoot   string
 	Clean        bool
 	SkipManifest bool
+	// Conflict selects the existing-file policy. Defaults to ConflictOverwrite
+	// so existing callers are unchanged.
+	Conflict ConflictPolicy
+	// OnConflict, if set, is called with the slash-relative path of each
+	// existing file that was skipped because it differs from the generated
+	// content (ConflictSkip only). Use it to warn the user.
+	OnConflict func(relPath string)
 }
 
 // WriteFiles writes generated files and records a manifest for future cleans.
 func WriteFiles(files *FileSet, opts WriteOptions) error {
-	root, err := SafeOutputRoot(opts.OutputRoot)
+	// The module root (".") is a legal target only when we are NOT cleaning
+	// (clean-wipe of the cwd is what SafeOutputRoot guards against). The
+	// owned-scaffold path writes individual known files to root, so it never
+	// deletes anything — safe even under ConflictOverwrite (--force).
+	allowCWD := !opts.Clean
+	root, err := safeWriteRoot(opts.OutputRoot, allowCWD)
 	if err != nil {
 		return err
 	}
@@ -140,6 +168,18 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 		if err := EnsureNoSymlinkLeaf(path); err != nil {
 			return err
 		}
+		if opts.Conflict == ConflictSkip {
+			if existing, readErr := os.ReadFile(path); readErr == nil {
+				if bytes.Equal(existing, []byte(file.Content)) {
+					continue // identical — nothing to do
+				}
+				// Exists and differs: never clobber owned code.
+				if opts.OnConflict != nil {
+					opts.OnConflict(file.Path)
+				}
+				continue
+			}
+		}
 		if err := os.WriteFile(path, []byte(file.Content), 0o644); err != nil {
 			return err
 		}
@@ -150,16 +190,31 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 	return writeManifest(root, all)
 }
 
-// SafeOutputRoot validates a root that may be cleaned.
+// SafeOutputRoot validates a root that may be cleaned. The working directory
+// itself is rejected — clean-wipe of the cwd is never safe.
 func SafeOutputRoot(root string) (string, error) {
+	return safeWriteRoot(root, false)
+}
+
+// safeWriteRoot validates an output root. When allowCWD is true the module
+// root (".", or an empty string) is permitted — used by the owned-scaffold
+// path, which writes individual known files with ConflictSkip and never
+// deletes anything.
+func safeWriteRoot(root string, allowCWD bool) (string, error) {
 	if strings.TrimSpace(root) == "" {
+		if allowCWD {
+			return ".", nil
+		}
 		return "", fmt.Errorf("codegen output must not be empty")
 	}
 	clean := filepath.Clean(root)
 	if filepath.IsAbs(clean) {
 		return "", fmt.Errorf("codegen output must be relative to the project (got %q)", root)
 	}
-	if clean == "." || clean == ".." {
+	if clean == ".." {
+		return "", fmt.Errorf("codegen output %q would target the working directory", root)
+	}
+	if clean == "." && !allowCWD {
 		return "", fmt.Errorf("codegen output %q would target the working directory", root)
 	}
 	for _, part := range strings.Split(filepath.ToSlash(clean), "/") {
