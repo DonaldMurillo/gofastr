@@ -74,9 +74,9 @@ func TestGenerateFromBlueprintCleanWriteHappy(t *testing.T) {
 	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Non-dry-run, clean enabled, json output → exercises clean + write + json.
+	// Non-dry-run, explicit --out subdir, json output → exercises write + json.
 	covT_capStdout(t, func() {
-		generateFromBlueprint(generateOptions{from: bp, outputDir: ".gen", clean: true, json: true})
+		generateFromBlueprint(generateOptions{from: bp, outputDir: ".gen", outputSet: true, json: true})
 	})
 	found := false
 	_ = filepath.Walk(filepath.Join(dir, ".gen"), func(p string, info os.FileInfo, err error) error {

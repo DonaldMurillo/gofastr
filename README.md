@@ -2,7 +2,7 @@
 
 > One `gofastr.yml` blueprint becomes a server-rendered UI **and** a REST API with secure per-user scopes — generated as plain Go you read, commit, and own.
 
-GoFastr is an experimental Go full-stack framework built around that one wedge. You describe your domain once — in a blueprint or in Go — and the framework generates the whole app around it: database schema and migrations, REST CRUD with validation and owner/RBAC scoping, and a server-rendered UI with island hydration. The same declaration also emits the supporting surfaces — an OpenAPI spec and MCP tools for agents — without giving up `database/sql`, `net/http`, or compile-time safety.
+GoFastr is an experimental Go full-stack framework built around that one wedge. A blueprint *scaffolds* the whole app — database schema and migrations, REST CRUD with validation and owner/RBAC scoping, a server-rendered UI with island hydration, plus an OpenAPI spec and MCP tools for agents — and emits it as plain Go. The blueprint is an on-ramp, not a runtime: once it has scaffolded, the **generated Go is the source of truth**, owned and edited like any code you wrote by hand — and you never give up `database/sql`, `net/http`, or compile-time safety.
 
 Nobody else in the Go ecosystem ships that combination: PocketBase is a runtime BaaS you configure, Encore couples you to its platform, Wasp shares the thesis but targets JS/TS, and hand-rolling means writing the glue yourself. The honest comparison — weaknesses included — is at [framework/docs/content/comparison.md](framework/docs/content/comparison.md); the start-to-finish walkthrough is the [blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md).
 
@@ -31,9 +31,16 @@ generation platform for CRUD-heavy and AI-authored apps**, not a universal
 framework that owns your control flow. When it's in your way, drop to `core/`
 and write `net/http`.
 
-A corollary for the AI era: an agent generating the code is a reason for the
-output to be **more** inspectable, not less. Generated code is normal Go on
-disk — no reflection injection, no hidden registries, no runtime mutation.
+A corollary for the AI era, and it cuts both ways. On the **output** side, an
+agent writing the code is a reason for it to be *more* inspectable, not less —
+normal Go on disk, no reflection injection, no hidden registries, no runtime
+mutation. On the **input** side, an agent doesn't need to learn the framework to
+author an app; it needs the blueprint schema — small, documented YAML. Low
+surface to author, high surface generated: one tool call scaffolds a multi-entity
+app. And once that app is running, agents reach it through **MCP into the live
+server** — introspecting its routes, config, and docs and driving the per-entity
+tools — instead of re-reading a file. Author-time is the blueprint; run-time is
+the live MCP surface.
 
 ---
 
@@ -41,9 +48,9 @@ disk — no reflection injection, no hidden registries, no runtime mutation.
 
 Most Go web frameworks assume a human will hand-write every route, query, validator, migration, form, and authorization check. That glue is exactly what a declaration can generate — and increasingly the declaration is written by an AI agent, which makes inspectable output matter more, not less. GoFastr's bet:
 
-- **One declaration, both halves of the app.** A single `gofastr.yml` blueprint produces a SQL schema, typed Go models, REST routes, *and* server-rendered screens with nav and islands — the UI and the API never drift because they share a source. See [`examples/ecommerce`](examples/ecommerce/) for the whole pipeline, live and tested.
+- **The blueprint is a generator, not a source of truth.** A single `gofastr.yml` scaffolds a SQL schema, typed Go models, REST routes, *and* server-rendered screens with nav and islands — both halves of the app, emitted together in one pass so they start consistent. Then it gets out of the way: the generated Go is yours to own and edit, and the running app doesn't need the blueprint at all. It's an on-ramp — `rails g scaffold` / `ng generate` for a whole Go backend *and* UI — not a declaration you live in. See [`examples/ecommerce`](examples/ecommerce/) for the whole pipeline, live and tested.
 - **Secure scopes are part of the declaration.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (fail-closed 403), `multi_tenant` scopes by tenant — and `gofastr validate` errors when per-user data is exposed without any of them.
-- **You own the output.** Generated code lives in `gen/` and is normal Go you read, debug, commit, and compose from your own `main`. No reflection magic, no hidden registries, no runtime mutation, no platform between your binary and your server.
+- **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main` — not a black box the tool rewrites behind your back. No reflection magic, no hidden registries, no runtime mutation, no platform between your binary and your server.
 - **Agent surfaces come free.** The same declaration emits an OpenAPI 3 spec and five MCP tools per entity (`products_list`, `products_create`, …) that respect the same owner/RBAC scopes. (Schema-derived MCP is table stakes in 2026 — Supabase, PocketBase, FastAPI all have it; here it's a byproduct of the pipeline, not the pitch.)
 - **Two-layer architecture.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Drop down to core when the framework is in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
 - **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
@@ -208,10 +215,15 @@ commit. From an empty directory containing that `gofastr.yml`:
 
 ```bash
 go mod init example.com/blog
-gofastr generate --from=gofastr.yml    # writes gen/ (main.go + entities/ + blueprint/)
+gofastr generate --from=gofastr.yml    # scaffolds main.go + entities/ + blueprint/ — owned Go you commit
 go mod tidy                            # pulls gofastr from the module proxy
-go run ./gen                           # users + posts CRUD, OpenAPI, MCP — live on :8080
+go run .                               # users + posts CRUD, OpenAPI, MCP — live on :8080
 ```
+
+Re-running `gofastr generate` is add-only: it writes new files but never
+overwrites code you've edited (pass `--force` to overwrite). The blueprint is a
+scaffold you can delete once the generated Go is yours — see
+[ARCHITECTURE.md](framework/ARCHITECTURE.md).
 
 See [`examples/ecommerce`](examples/ecommerce/) for a five-entity blueprint
 generated, built, and surface-tested end-to-end.

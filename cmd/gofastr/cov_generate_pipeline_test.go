@@ -22,8 +22,8 @@ func covT_writeBlueprint(t *testing.T) (dir, bp string) {
 
 func TestGenerateFromBlueprintWritesFiles(t *testing.T) {
 	dir, bp := covT_writeBlueprint(t)
-	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", clean: true}) })
-	// Blueprint output lands under the resolved output dir.
+	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", outputSet: true}) })
+	// Blueprint output lands under the resolved output dir (--out=gen here).
 	matches, _ := filepath.Glob(filepath.Join(dir, "gen", "**", "*.go"))
 	if len(matches) == 0 {
 		// Fall back to a recursive walk — layout may nest deeper.
@@ -77,7 +77,7 @@ func TestGenerateFromBlueprintBadOutputDirJSON(t *testing.T) {
 	_, bp := covT_writeBlueprint(t)
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() {
-			generateFromBlueprint(generateOptions{from: bp, outputDir: "..", dryRun: true, json: true})
+			generateFromBlueprint(generateOptions{from: bp, outputDir: "..", outputSet: true, dryRun: true, json: true})
 		})
 	})
 	if code != 1 {

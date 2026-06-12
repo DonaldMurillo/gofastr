@@ -86,6 +86,7 @@ type generateOptions struct {
 	dryRun     bool
 	json       bool
 	outputSet  bool
+	force      bool
 }
 
 func parseGenerateOptions(args []string) generateOptions {
@@ -114,6 +115,8 @@ func parseGenerateOptions(args []string) generateOptions {
 		case arg == "--no-clean":
 			options.clean = false
 			options.cleanSet = true
+		case arg == "--force":
+			options.force = true
 		case strings.HasPrefix(arg, "--config="):
 			options.configPath = strings.TrimPrefix(arg, "--config=")
 		case arg == "--config":
@@ -247,9 +250,6 @@ func enterCodegenProjectDir(discovery codegen.Discovery) (func(), error) {
 }
 
 func generateFromBlueprint(options generateOptions) {
-	if options.outputDir == filepath.Join("gen", "entities") {
-		options.outputDir = "gen"
-	}
 	bp, err := loadBlueprint(options.from)
 	if err != nil {
 		if options.dryRun && options.json {
@@ -271,9 +271,26 @@ func generateFromBlueprint(options generateOptions) {
 		fail("%v", err)
 		osExit(1)
 	}
-	if bp.App.OutputDir != "" && options.outputDir == "gen" {
-		options.outputDir = bp.App.OutputDir
+	// The blueprint scaffolds owned Go in an idiomatic layout you
+	// own outright — module root by default ("" / "."), no quarantined gen/.
+	// --out=DIR (or app.output_dir) targets a subpackage instead. Writes are
+	// conflict-skip: a re-run adds new files but never clobbers code you've
+	// hand-edited (use --force to overwrite). There is no clean-wipe.
+	outDir := ""
+	switch {
+	case options.outputSet:
+		outDir = options.outputDir
+	case bp.App.OutputDir != "":
+		outDir = bp.App.OutputDir
 	}
+	outDir = strings.TrimPrefix(filepath.ToSlash(outDir), "./")
+	outDir = strings.TrimSuffix(outDir, "/")
+	if outDir == "." {
+		outDir = ""
+	}
+	// Keep the blueprint's view of the output dir in sync so renderBlueprintMain
+	// derives the same import base.
+	bp.App.OutputDir = outDir
 	// Unscoped PII is a warning here (generation proceeds) and an error
 	// from `gofastr validate`. Suppressed in --json mode so stdout stays
 	// machine-parseable; JSON consumers get the finding from validate.
@@ -288,13 +305,17 @@ func generateFromBlueprint(options generateOptions) {
 			warn("app.auth runs in dev mode: HTTP-friendly cookies and a per-process JWT secret. Before deploying, set dev_mode: false and jwt_secret under app.auth (requires HTTPS) and regenerate. See `gofastr docs blueprints`.")
 		}
 	}
-	if err := validateOutputDir(options.outputDir); err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
+	// Only a non-root subdirectory needs the clean-safety validation; the
+	// module root is written file-by-file with conflict-skip and never wiped.
+	if outDir != "" {
+		if err := validateOutputDir(outDir); err != nil {
+			if options.dryRun && options.json {
+				printGeneratedErrorsJSON(err)
+				osExit(1)
+			}
+			fail("%v", err)
 			osExit(1)
 		}
-		fail("%v", err)
-		osExit(1)
 	}
 	files, err := renderBlueprintFiles(bp)
 	if err != nil {
@@ -305,29 +326,42 @@ func generateFromBlueprint(options generateOptions) {
 		fail("Blueprint code generation failed: %v", err)
 		osExit(1)
 	}
+	displayDir := outDir
+	if displayDir == "" {
+		displayDir = "the module root"
+	}
 	if options.dryRun {
 		if options.json {
 			printGeneratedFilesJSON(files)
 			return
 		}
-		info("Would generate %d files in %s:", len(files), options.outputDir)
+		info("Would generate %d files in %s:", len(files), displayDir)
 		for _, file := range files {
-			fmt.Printf("    %s\n", filepath.Join(options.outputDir, file.name))
+			fmt.Printf("    %s\n", filepath.Join(outDir, file.name))
 		}
 		return
-	}
-	if options.clean {
-		if err := safeCleanOutputDir(options.outputDir); err != nil {
-			fail("Failed to clean %s: %v", options.outputDir, err)
-			osExit(1)
-		}
 	}
 	fileSet, err := fileSetFromGeneratedFiles(files, "blueprint")
 	if err != nil {
 		fail("Blueprint code generation failed: %v", err)
 		osExit(1)
 	}
-	if err := codegen.WriteFiles(fileSet, codegen.WriteOptions{OutputRoot: options.outputDir, SkipManifest: true}); err != nil {
+	writeRoot := outDir
+	if writeRoot == "" {
+		writeRoot = "."
+	}
+	conflict := codegen.ConflictSkip
+	if options.force {
+		conflict = codegen.ConflictOverwrite
+	}
+	var kept []string
+	writeOpts := codegen.WriteOptions{
+		OutputRoot:   writeRoot,
+		SkipManifest: true,
+		Conflict:     conflict,
+		OnConflict:   func(p string) { kept = append(kept, p) },
+	}
+	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
 		fail("Failed to write generated files: %v", err)
 		osExit(1)
 	}
@@ -335,7 +369,13 @@ func generateFromBlueprint(options generateOptions) {
 		printGeneratedFilesJSON(files)
 		return
 	}
-	success("Generated %d blueprint file(s) in %s", len(files), options.outputDir)
+	if len(kept) > 0 {
+		for _, p := range kept {
+			warn("kept your version: %s exists and differs — not overwritten", p)
+		}
+		info("%d file(s) left untouched. Re-run with --force to overwrite them.", len(kept))
+	}
+	success("Generated %d blueprint file(s) in %s", len(files)-len(kept), displayDir)
 }
 
 type generatedFile struct {
@@ -365,8 +405,7 @@ func fileSetFromGeneratedFiles(files []generatedFile, owner string) (*codegen.Fi
 func renderGeneratedProject(decls []framework.EntityDeclaration) ([]generatedFile, error) {
 	sort.Slice(decls, func(i, j int) bool { return decls[i].Name < decls[j].Name })
 	var register strings.Builder
-	register.WriteString(`// Code generated by gofastr. DO NOT EDIT.
-package entities
+	register.WriteString(`package entities
 
 import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -395,7 +434,7 @@ func RegisterAll(app *framework.App) {
 	register.WriteString("}\n")
 
 	var models strings.Builder
-	models.WriteString("// Code generated by gofastr. DO NOT EDIT.\npackage entities\n\n")
+	models.WriteString("package entities\n\n")
 	for _, decl := range decls {
 		models.WriteString(renderEntityModel(decl))
 	}

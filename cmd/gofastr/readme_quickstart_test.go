@@ -133,7 +133,7 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 			t.Fatalf("README blueprint block lost %q — the quickstart yaml must stay a real relation-bearing blueprint:\n%s", want, yamlBlock)
 		}
 	}
-	for _, want := range []string{"go mod init", "gofastr generate --from=gofastr.yml", "go mod tidy", "go run ./gen"} {
+	for _, want := range []string{"go mod init", "gofastr generate --from=gofastr.yml", "go mod tidy", "go run ."} {
 		if !strings.Contains(bashBlock, want) {
 			t.Fatalf("README quickstart command sequence lost %q — the documented path must stay the executable path:\n%s", want, bashBlock)
 		}
@@ -219,7 +219,7 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 		t.Fatalf("README blueprint failed to generate: %v", err)
 	}
 	for _, file := range files {
-		full := filepath.Join(dir, "gen", file.name)
+		full := filepath.Join(dir, file.name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -227,7 +227,7 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 	}
 
 	appBin := filepath.Join(dir, "readme-quickstart-app")
-	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, "./gen")
+	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	buildCmd.Dir = dir
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("README quickstart app did not build: %v\n%s", err, output)

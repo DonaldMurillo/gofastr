@@ -985,12 +985,12 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 		t.Fatalf("gofastr generate failed: %v\n%s", err, output)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "gen", "main.go")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "main.go")); err != nil {
 		t.Fatalf("generated app entrypoint missing: %v", err)
 	}
 
 	appBin := filepath.Join(dir, "generated-blueprint-app")
-	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, "./gen")
+	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	buildCmd.Dir = dir
 	buildCmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if output, err := buildCmd.CombinedOutput(); err != nil {

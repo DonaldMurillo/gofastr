@@ -139,7 +139,7 @@ func TestAccessBlueprintBuilds(t *testing.T) {
 		if strings.Contains(file.content, "Access: framework.AccessControl{") {
 			sawAccessLiteral = true
 		}
-		full := filepath.Join(dir, "gen", file.name)
+		full := filepath.Join(dir, file.name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
 		}
