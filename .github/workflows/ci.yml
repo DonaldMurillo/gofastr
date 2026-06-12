@@ -86,12 +86,15 @@ jobs:
         # -p 2 to keep httptest/chromedp sockets off the ephemeral-port
         # ceiling). Excluded here and run in browser-e2e instead:
         #   - examples/site, kiln/integration (whole packages)
-        #   - cmd/gofastr browser test via -skip (the rest of the
-        #     package stays blocking)
+        #   - cmd/gofastr browser tests via -skip (the rest of the
+        #     package stays blocking). These drive a real Chrome over a
+        #     livereload websocket; under -p 2 with every other package
+        #     they contend for Chrome/sockets and the websocket connect
+        #     times out. They run serialized in browser-e2e instead.
         run: |
           # shellcheck disable=SC2046  # word splitting of go list output is intended
           go test -count=1 -timeout=20m -p 2 \
-            -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E' \
+            -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
             $(go list ./... | grep -vE 'gofastr/(examples/site|kiln/integration)$')
 
       - name: Coverage floors (claimed packages)
@@ -144,6 +147,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: go test -count=1 -timeout=15m ./kiln/integration/
 
-      - name: cmd/gofastr blueprint browser e2e
+      - name: cmd/gofastr browser e2e (blueprint + dev livereload)
         if: ${{ !cancelled() }}
-        run: go test -count=1 -timeout=10m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E' ./cmd/gofastr/
+        # Serialized, isolated run of every cmd/gofastr test that drives a
+        # real Chrome — the blueprint app E2E plus the two dev livereload
+        # browser tests. Kept out of the deterministic step so the
+        # websocket connect isn't starved by parallel package load.
+        run: go test -count=1 -timeout=10m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' ./cmd/gofastr/
