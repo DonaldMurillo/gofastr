@@ -21,12 +21,14 @@ build-examples: csp-check $(DIST_DIR)
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
 	done
-	@# ecommerce is the declaration-driven flagship: its main is generated
-	@# from gofastr.yml into the gitignored gen/ (see examples/ecommerce/BUILD_JOURNAL.md).
-	@echo "  generating ecommerce from blueprint"
-	@(cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate --from=gofastr.yml) || exit 1
+	@# ecommerce is the declaration-driven flagship: its app is scaffolded
+	@# from gofastr.yml into the owned app/ subpackage (output_dir: app — see
+	@# examples/ecommerce/BUILD_JOURNAL.md and framework/ARCHITECTURE.md).
+	@# --force refreshes the committed scaffold from the current generator.
+	@echo "  scaffolding ecommerce from blueprint"
+	@(cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate --from=gofastr.yml --force) || exit 1
 	@echo "  building ecommerce → $(DIST_DIR)/examples/ecommerce"
-	@go build -o $(DIST_DIR)/examples/ecommerce ./examples/ecommerce/gen || exit 1
+	@go build -o $(DIST_DIR)/examples/ecommerce ./examples/ecommerce/app || exit 1
 
 build-all: csp-check build-cmd build-examples
 

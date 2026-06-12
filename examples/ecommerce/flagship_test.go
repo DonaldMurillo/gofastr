@@ -23,12 +23,13 @@ import (
 func startShopfront(t *testing.T) string {
 	t.Helper()
 
-	// Generate from the blueprint with the current CLI source — this
-	// exercises the full declaration → code pipeline, and means the
-	// gitignored gen/ need not be committed. go run uses the in-tree
-	// source, so the test never depends on a stale installed binary.
+	// Regenerate from the blueprint with the current CLI source — this
+	// exercises the full declaration → code pipeline against the in-tree
+	// generator. --force overwrites the committed app/ so the test always
+	// builds FRESH generator output, not a stale snapshot (output_dir: app
+	// in gofastr.yml scaffolds into the owned app/ subpackage — see framework/ARCHITECTURE.md).
 	gen := exec.Command("go", "run", "github.com/DonaldMurillo/gofastr/cmd/gofastr",
-		"generate", "--from=gofastr.yml")
+		"generate", "--from=gofastr.yml", "--force")
 	gen.Stderr = os.Stderr
 	if err := gen.Run(); err != nil {
 		t.Fatalf("gofastr generate --from=gofastr.yml: %v", err)
@@ -36,10 +37,10 @@ func startShopfront(t *testing.T) string {
 
 	// Build the generated app (proves the blueprint → buildable Go path).
 	bin := filepath.Join(t.TempDir(), "shopfront")
-	build := exec.Command("go", "build", "-o", bin, "./gen")
+	build := exec.Command("go", "build", "-o", bin, "./app")
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
-		t.Fatalf("go build ./gen: %v", err)
+		t.Fatalf("go build ./app: %v", err)
 	}
 
 	addr := freeAddr(t)

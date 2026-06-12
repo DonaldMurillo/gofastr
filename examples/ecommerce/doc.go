@@ -12,7 +12,8 @@
 // UI — none of it hand-written. See BUILD_JOURNAL.md for the full trail and
 // flagship_test.go for the end-to-end surface check.
 //
-// This directory itself holds no application code; run the generated binary:
+// The scaffolded, owned app lives in the app/ subpackage (output_dir: app);
+// run it directly:
 //
-//	go run ./examples/ecommerce/gen
+//	go run ./examples/ecommerce/app
 package ecommerce

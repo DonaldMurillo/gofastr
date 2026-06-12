@@ -1,8 +1,10 @@
 # ShopFront — build journal
 
 This is the proof-of-thesis flagship: a complete storefront described **once**
-in [`gofastr.yml`](gofastr.yml) and emitted as runnable Go by a single command.
-Nothing under `gen/` is hand-written.
+in [`gofastr.yml`](gofastr.yml) and scaffolded as runnable, owned Go by a single
+command. Because this repo is a monorepo and `examples/ecommerce/` also hosts a
+Go test package, the blueprint sets `output_dir: app`, so the scaffold lands in
+an owned `app/` subpackage rather than at the module root.
 
 ## The declaration
 
@@ -29,26 +31,26 @@ cd examples/ecommerce
 gofastr generate --from=gofastr.yml
 ```
 
-→ `✓ Generated 10 blueprint file(s) in gen`:
+→ `✓ Generated 10 blueprint file(s) in app`:
 
 ```
-gen/main.go                      # app entry point — wires DB, entities, UI, MCP
-gen/entities/register.go         # app.Entity(...) for all 5 entities
-gen/entities/models.go           # typed Go structs
-gen/entities/columns.go          # typed column accessors
-gen/entities/repo.go             # typed repositories
-gen/entities/events.go           # per-entity event hooks
-gen/entities/client/client.go    # typed REST client
-gen/blueprint/app.go             # theme + sidebar + RegisterGenerated wiring
-gen/blueprint/screens.go         # the 8 server-rendered screens
-gen/blueprint/stubs.go           # endpoint / seed / plugin stubs
+app/main.go                      # app entry point — wires DB, entities, UI, MCP
+app/entities/register.go         # app.Entity(...) for all 5 entities
+app/entities/models.go           # typed Go structs
+app/entities/columns.go          # typed column accessors
+app/entities/repo.go             # typed repositories
+app/entities/events.go           # per-entity event hooks
+app/entities/client/client.go    # typed REST client
+app/blueprint/app.go             # theme + sidebar + RegisterGenerated wiring
+app/blueprint/screens.go         # the 8 server-rendered screens
+app/blueprint/stubs.go           # endpoint / seed / plugin stubs
 ```
 
-`gen/` is gitignored (generated code is regenerated, not committed — `make
-clean` wipes it). Run the one command above to materialise it; the output is
-normal Go you can read, debug, and step through. The end-to-end test
-(`flagship_test.go`) regenerates it on every run, so the proof never depends on
-a stale checkout.
+`app/` is owned Go you read, edit, and commit — no `DO NOT EDIT` header, and
+re-running `gofastr generate` is add-only (it never clobbers a hand-edited
+file; pass `--force` to overwrite). The end-to-end test (`flagship_test.go`)
+regenerates a fresh scaffold on every run, so the proof never depends on a
+stale checkout.
 
 ## The surfaces it produces (all from the one declaration)
 
@@ -66,13 +68,15 @@ generated binary and asserts every surface is live:
 Run it yourself:
 
 ```sh
-go run ./examples/ecommerce/gen        # serves on localhost:8080
+go run ./examples/ecommerce/app        # serves on localhost:8080
 ```
 
-## Regenerating
+## Scaffolding more
 
-The blueprint is the source of truth. To re-emit `gen/` after editing
-`gofastr.yml`:
+The blueprint is a one-way on-ramp, not a source of truth — the owned `app/` Go
+is canonical, and you can edit it directly (or delete `gofastr.yml` once the
+code is yours). To scaffold *new* entities or screens you've added to the
+blueprint, re-run generate; it's add-only and won't touch files you've edited:
 
 ```sh
 cd examples/ecommerce && gofastr generate --from=gofastr.yml
@@ -151,7 +155,7 @@ runnable behaviour:
   so lists start empty (the E2E creates its own rows). Auto-wiring seeds is a
   follow-up.
 - **Custom endpoints** (`confirm_order`, `ship_order`) — emitted as handler
-  stubs in `gen/blueprint/stubs.go` for you to implement.
+  stubs in `app/blueprint/stubs.go` for you to implement.
 - **Public OpenAPI** — the raw `/openapi.json` is auth-gated by
   secure-by-default and the blueprint has no `public_openapi` key yet, so the
   spec returns 401 unauthenticated. The Swagger surface is mounted either way.

@@ -1,5 +1,11 @@
 app:
   name: ShopFront
+  # output_dir: this is a monorepo example — examples/ecommerce/ already hosts
+  # a Go test package (doc.go + flagship_test.go), so the scaffolded app lives
+  # in an owned `app/` subpackage rather than the module root. A standalone app
+  # would omit this and scaffold straight into the root. Either way the output
+  # is owned Go (no gen/, no "DO NOT EDIT"). See framework/ARCHITECTURE.md.
+  output_dir: app
   module: github.com/DonaldMurillo/gofastr/examples/ecommerce
   db:
     driver: sqlite
