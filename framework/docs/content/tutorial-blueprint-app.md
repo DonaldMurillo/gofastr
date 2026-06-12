@@ -83,15 +83,19 @@ Validate, generate, run:
 
 ```bash
 gofastr validate gofastr.yml
-gofastr generate --from=gofastr.yml   # writes gen/ — main.go + entities/ + blueprint/
+gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + entities/ + blueprint/
 go mod tidy
-go run ./gen
+go run .
 ```
 
-`gen/` is normal Go: `gen/entities/register.go` holds the
-`app.Entity(...)` registrations, `gen/blueprint/screens.go` the screen
-components, `gen/main.go` the wiring. Read them — they are short and
-there is no hidden layer underneath.
+The scaffold is normal, owned Go laid out at the module root:
+`entities/register.go` holds the `app.Entity(...)` registrations,
+`blueprint/screens.go` the screen components, `main.go` the wiring. Read
+them — they are short, there is no hidden layer underneath, and they carry
+no `DO NOT EDIT` header because they're yours to edit and commit.
+Re-running `gofastr generate` is add-only and conflict-safe: it writes any
+new files but never overwrites one you've hand-edited (pass `--force` to
+overwrite).
 
 Prove both surfaces from a second terminal:
 
@@ -172,16 +176,16 @@ existing `notes` table (additive only; it never drops or retypes):
 ```bash
 gofastr generate --from=gofastr.yml
 go mod tidy
-go run ./gen
+go run .
 ```
 
-Prefer to review schema changes before they run? The declarative diff
-shows exactly what boot would apply (and is the only path that can
-*drop* a column, behind `--allow-destructive`):
+Prefer to review schema changes before they run rather than lean on
+boot auto-migrate? Generate a versioned migration from the owned entities
+and apply it through the tracked, locked, checksummed runner:
 
 ```bash
-gofastr migrate diff --from=gofastr.yml --db-url='file:notes.db'          # review: ALTER TABLE notes ADD COLUMN user_id TEXT
-gofastr migrate diff --from=gofastr.yml --db-url='file:notes.db' --apply
+gofastr migrate generate add_user_id   # writes migrations/0002_add_user_id.sql — review it
+gofastr migrate up --db-url='file:notes.db'
 ```
 
 The generated app now mounts `/auth/register`, `/auth/login`,
@@ -241,11 +245,13 @@ contract — see [access-control](access-control.md) and
 
 ## 3. Own the Go: policy + a hand-written screen
 
-`gen/` is deterministic output — regenerating overwrites it, so don't
-edit it in place. Instead write your own `main` that calls the same
-generated packages and layers on what the generator can't know. This
-is the escape hatch working as designed: the generated code is plain
-Go you compose, not a runtime you configure.
+The scaffolded `entities/` and `blueprint/` packages are owned Go — you
+can edit them directly. For a clean separation between the scaffold and
+your customizations, this step writes a *separate* `main` under
+`cmd/server` that calls the same generated packages and layers on what
+the generator can't know. Either way works; this is the escape hatch as
+designed: the generated code is plain Go you compose, not a runtime you
+configure.
 
 ```bash
 mkdir -p cmd/server
@@ -271,8 +277,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
 
-	"example.com/notes/gen/blueprint"
-	"example.com/notes/gen/entities"
+	"example.com/notes/blueprint"
+	"example.com/notes/entities"
 )
 
 // AboutScreen is plain Go — the same interface generated screens implement.
@@ -362,10 +368,12 @@ curl -s -o /dev/null -w "%{http_code}\n" -b ana.jar \
 curl -s http://localhost:8080/about | grep "Hand-written in Go"
 ```
 
-From here on, `go run ./gen` is the pure-blueprint app and
-`go run ./cmd/server` is yours. Re-run `gofastr generate` whenever the
-blueprint changes; your `cmd/server` keeps compiling against the
-regenerated packages because it only consumes their exported API.
+From here on, `go run .` is the scaffolded app at the root and
+`go run ./cmd/server` is your customized entrypoint. Re-run `gofastr
+generate` whenever you want to scaffold *new* entities or screens — it's
+add-only and won't touch files you've edited; your `cmd/server` keeps
+compiling against the generated packages because it only consumes their
+exported API.
 
 ## 4. Deploy
 
@@ -408,9 +416,12 @@ things to do before shipping an auth-enabled app:
 
 ## Common mistakes
 
-- **Editing `gen/` and losing it.** `gen/` is regenerated wholesale.
-  Customizations live in your own packages (`cmd/server`, or anywhere
-  that imports `gen/...`).
+- **Treating the scaffold as untouchable.** The generated `entities/`
+  and `blueprint/` are owned Go with no `DO NOT EDIT` header — edit them
+  directly. Re-running `gofastr generate` is add-only and never clobbers
+  a hand-edited file (use `--force` to overwrite). Bigger customizations
+  can also live in your own package (`cmd/server`, or anywhere that
+  imports the generated packages).
 - **Expecting `access:` to work without a policy.** The gate fails
   closed by design: declaring `access: {delete: notes:admin}` without
   mounting `framework.AccessMiddleware` means *nobody* can delete.

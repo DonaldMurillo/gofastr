@@ -62,9 +62,10 @@ Two packages, no more:
 - **`framework/`** — the opinionated entity layer composed on top: entities,
   CRUD, hooks, migrations, plugins, and the batteries below.
 
-There is no third layer of hidden magic. Generated code is regular Go that lands
-on disk under `gen/` — see **[Code generation](/docs/codegen)** and
-**[Blueprints](/docs/blueprints)**.
+There is no third layer of hidden magic. Generated code is regular, owned Go
+scaffolded straight into an idiomatic module-root layout (`main.go`,
+`entities/`, `blueprint/`) — yours to read, edit, and commit — see
+**[Code generation](/docs/codegen)** and **[Blueprints](/docs/blueprints)**.
 
 ## Modeling your domain
 
@@ -143,7 +144,7 @@ SQLite and Postgres, dialect-aware.
 
 - **[Benchmarks](/docs/benchmarks)** · **[Performance results](/docs/perf-results)** —
   how it performs and how that's measured.
-- **[Codegen](/docs/codegen)** — what lands under `gen/` and how to read it.
+- **[Codegen](/docs/codegen)** — what the scaffold emits (owned Go at the module root) and how to read it.
 - The **[full A–Z index](/docs/)** lists every embedded doc — nothing is hidden.
 
 ## Where to go next

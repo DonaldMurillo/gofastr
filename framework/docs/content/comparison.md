@@ -23,11 +23,13 @@ it by writing hooks (Go or JS) that run *inside* PocketBase's
 lifecycle.
 
 **The difference in kind:** PocketBase is a host you configure;
-GoFastr is a generator plus library. A `gofastr.yml` blueprint compiles
-to Go source in `gen/` that you commit, diff in code review, debug
-with a debugger, and refactor like any other package. There is no
-runtime schema store — the declaration *is* the code's source, and the
-escape hatch is `net/http`, not a plugin API.
+GoFastr is a scaffold-and-own generator plus library. A `gofastr.yml`
+blueprint scaffolds owned Go source (`main.go`, `entities/`,
+`blueprint/`) that you commit, diff in code review, debug with a
+debugger, and refactor like any other package. There is no runtime schema
+store — and no canonical declaration you live inside: the blueprint is a
+one-way on-ramp you can delete once the code is yours, and the escape
+hatch is `net/http`, not a plugin API.
 
 **Choose PocketBase when** you want a backend in five minutes, the
 admin dashboard is the product, and you're happy living inside its
@@ -64,14 +66,23 @@ declaration compiles to a full-stack app (auth, CRUD, jobs, email),
 and "the framework for the AI era" is literally their tagline. Wasp is
 more mature, has a team, a community, and production users.
 
-**The difference in kind:** language and runtime model. Wasp targets
-JS/TS — React SPA + Node + Prisma; the output is a JavaScript stack.
-GoFastr is the Go counterpart: SSR-first HTML with island hydration
-instead of a client-side React app, one static binary instead of a
-Node deployment, `database/sql` instead of an ORM. If you're a
-TypeScript shop, Wasp is the obvious pick. If you want this thesis
-with Go's deployment story and compile-time guarantees, that's the
-gap GoFastr exists to fill.
+**The difference in kind:** the generator philosophy, then the runtime
+model. Wasp (like Encore and Amplify) is a *canonical-declaration* tool —
+`main.wasp` *is* the program; you live in it and regenerate from it, and
+the emitted code is the tool's, not yours to hand-edit. GoFastr is
+*scaffold-and-own*: the blueprint is a one-way on-ramp that emits idiomatic
+Go you then own and edit; re-running `generate` is add-only and never
+clobbers your edits, and you can delete the blueprint entirely once the
+code is yours. The trade is real — a canonical declaration promises "no
+drift" because there's one source; scaffold-and-own trades that for a
+plain Go codebase with no second language to grow into. On top of that
+sits the runtime difference: Wasp targets JS/TS — React SPA + Node +
+Prisma — while GoFastr is the Go counterpart: SSR-first HTML with island
+hydration instead of a client-side React app, one static binary instead of
+a Node deployment, `database/sql` instead of an ORM. If you're a
+TypeScript shop, Wasp is the obvious pick. If you want this thesis with
+Go's deployment story, compile-time guarantees, and owned output, that's
+the gap GoFastr exists to fill.
 
 ## vs hand-rolled Gin/Echo + sqlc
 
@@ -120,8 +131,10 @@ v0.x bet on owned, generated Go, start with the
 ## Common mistakes
 
 - **Evaluating GoFastr as a BaaS.** There's no runtime collection
-  editor; the blueprint is a compile-time input. If you change the
-  declaration, you regenerate and redeploy — that's the model.
+  editor; the blueprint is a compile-time scaffold input, not a live
+  schema store. And it isn't a source you keep round-tripping either —
+  once it scaffolds the owned Go, that Go is canonical; you edit it
+  directly and redeploy (you can delete the blueprint).
 - **Assuming MCP support is the differentiator.** It isn't anymore;
   most schema-bearing platforms expose MCP. Compare the codegen
   pipeline and ownership story instead.

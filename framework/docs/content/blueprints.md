@@ -1,8 +1,10 @@
 # Blueprints
 
 A `gofastr.yml` blueprint is GoFastr's single declaration format. It is a
-deterministic CLI codegen input — declare your entities, screens, nav, seed
-data, and endpoint/middleware stubs in one file, then generate Go from it:
+CLI codegen *on-ramp* — declare your entities, screens, nav, seed
+data, and endpoint/middleware stubs in one file, then scaffold owned Go from
+it. The blueprint is not a source of truth: after scaffolding, the generated
+Go is canonical and you can delete `gofastr.yml`. Generate with:
 
 ```bash
 gofastr validate gofastr.yml
@@ -11,11 +13,14 @@ gofastr generate --from=blueprints/ --dry-run --json
 ```
 
 Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
-`.json` blueprint files (or a directory of them), validates them, and writes
-generated Go under `gen/`. At runtime your app registers the **generated**
-entity package (`entities.RegisterAll(app)`) — there is no file-based runtime
-loader. The blueprint's `entities:` list uses the same entity shape and field
-types documented in [Entity Declarations](entity-declarations.md).
+`.json` blueprint files (or a directory of them), validates them, and scaffolds
+owned Go into an idiomatic, module-root layout by default — `main.go` at the
+root plus `entities/` and `blueprint/` packages (set `--out=<dir>` or
+`app.output_dir` to scaffold into a subpackage instead). At runtime your app
+registers the **generated** entity package (`entities.RegisterAll(app)`) — there
+is no file-based runtime loader. The blueprint's `entities:` list uses the same
+entity shape and field types documented in
+[Entity Declarations](entity-declarations.md).
 
 The blueprint root keys are `app`, `entities`, `screens`, `nav`, `seed`,
 `endpoints`, `middleware`, `plugins`, `helpers`, and `isolation`.
@@ -183,7 +188,7 @@ helpers:
 
 ## Generated output
 
-Entity declarations reuse the existing `gen/entities` generator, including
+Entity declarations reuse the existing `entities` package generator, including
 fields, relations, CRUD, MCP, timestamps, soft delete, multi-tenant,
 `owner_field`, per-operation `access` RBAC, cursor settings, indices, and
 `properties`. The `access` map (keys `read`, `create`, `update`, `delete`;
@@ -191,11 +196,11 @@ each value a permission string) is emitted as `Access:
 framework.AccessControl{...}` in the generated registration — see
 [entity-declarations](entity-declarations.md) for the semantics and
 [access-control](access-control.md) for wiring roles + policy. Entity-owned endpoints and top-level
-endpoints generate Go handler stubs plus router registration under
-`gen/blueprint`.
+endpoints generate Go handler stubs plus router registration in the
+`blueprint` package.
 
-When `app.module` is present, blueprint generation also emits
-`gen/main.go`: a runnable app entrypoint that opens the configured SQLite
+When `app.module` is present, blueprint generation also emits a root
+`main.go`: a runnable app entrypoint that opens the configured SQLite
 database, registers generated entities, exposes generated MCP tools at `/mcp`,
 wires generated screens/endpoints/middleware/plugins through
 `blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
@@ -269,14 +274,16 @@ them (every form then needs `auth.CSRFInputFromCtx`) — see
 
 ### app.module and the enclosing go.mod
 
-Generated imports are `<app.module>/<output-dir>` with the output directory
-relative to the working directory, so `app.module` must match the Go module
-you generate into:
+Generated imports are `<app.module>/<output-dir>` — by default the output
+directory is the module root (so imports are `<app.module>/entities`,
+`<app.module>/blueprint`); with `--out=<dir>` or `app.output_dir` set, it's
+that subpackage path relative to the working directory. Either way `app.module`
+must match the Go module you generate into:
 
 - `module:` omitted → it is derived from the go.mod enclosing the working
   directory (plus the relative path from the module root when generating in a
-  subdirectory). Inside a module, omitting `module:` therefore also emits
-  `gen/main.go`.
+  subdirectory). Inside a module, omitting `module:` therefore also emits a
+  root `main.go`.
 - `module:` set and equal to the enclosing module → fine.
 - `module:` set but different → `gofastr generate` and `gofastr validate`
   fail with the expected value; generated code importing a module the
@@ -404,7 +411,7 @@ per-token (`creditCard` and `credit_card` both match `card`;
 ## Testing contract
 
 Blueprint changes should be proven with a generated-app E2E test: run the real
-CLI against a blueprint, compile the generated `gen` app binary, start that
+CLI against a blueprint, compile the generated app binary, start that
 generated binary as a separate process, exercise HTTP CRUD, OpenAPI, MCP tools,
 static assets, and drive generated UI in a real browser so islands, widgets,
 runtime actions, and DOM updates are covered together. Do not satisfy this with

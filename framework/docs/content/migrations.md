@@ -73,10 +73,7 @@ zero-pad the version into the filename, e.g.
 gofastr migrate up                       # uses DATABASE_URL or .env
 gofastr migrate status --db-url=file:app.db
 gofastr migrate down 1
-gofastr migrate diff --from=gofastr.yml             # show schema drift vs blueprint entities
-gofastr migrate diff --from=gofastr.yml --apply     # apply non-destructive changes
-gofastr migrate diff --from=gofastr.yml --apply --allow-destructive   # also run DROP COLUMN
-gofastr migrate generate add_email --from=gofastr.yml   # write a versioned migration file
+gofastr migrate generate add_email       # write a versioned migration file from entity changes
 gofastr migrate force 7                  # mark version 7 cleanly applied
 gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 ```
@@ -86,7 +83,6 @@ gofastr migrate force 7 --not-applied    # treat version 7 as pending again
 | `up`         | Apply all pending migrations in version order.                |
 | `status`     | Print applied count, pending versions, and any dirty version. |
 | `down N`     | Roll back the most recent `N` applied migrations in reverse.  |
-| `diff`       | Compare the database schema to a blueprint's entities.        |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 
@@ -96,12 +92,6 @@ Flags & inputs:
   a `.env` file in the working directory contains `DATABASE_URL=...`.
 - `--driver=<name>` — defaults to `sqlite3`. Postgres or MySQL require
   building a `gofastr` binary that blank-imports the matching driver.
-- `--apply` (`diff` only) — execute the changes in a single
-  transaction instead of just printing them.
-- `--allow-destructive` (`diff --apply` only) — permit `DROP COLUMN`.
-  Without it, a change set containing a drop is refused outright (no
-  partial apply). Destructive changes are flagged with `⚠` in the diff
-  output.
 - `--not-applied` (`force` only) — remove the version from the tracking
   table (treat as pending) instead of marking it applied.
 
@@ -118,9 +108,9 @@ runner in your own command.
 
 ## Generating migrations from entity changes (declarative workflow)
 
-`migrate diff --apply` is fine for development, but production change
+Boot auto-migrate is fine for development, but production change
 management wants **reviewable, version-controlled, reversible**
-increments — not direct applies. `migrate generate` produces them
+increments — not implicit applies. `migrate generate` produces them
 *offline* (no database needed):
 
 ```bash
@@ -141,15 +131,17 @@ ALTER TABLE "posts" ADD COLUMN "published" BOOLEAN;
 ALTER TABLE "posts" DROP COLUMN "published";
 ```
 
-> **Scope.** The `migrate generate` / `migrate diff` CLI commands read schema
+> **Scope.** The standalone `gofastr migrate generate` CLI reads schema
 > **only from the `--from=<blueprint.yml>` blueprint's entities** (see
-> [blueprints](blueprints.md)). They do **not** see anything
-> registered in Go — neither `app.Entity(...)` entities nor `App.View` /
-> `App.Routine` / `App.Table`. For Go-defined schema, use auto-migrate
-> (`App.Start` applies it on boot) or `migrate diff` against a live DB; to emit
-> a versioned migration that includes Go-registered views/routines/tables, call
-> the programmatic `migrate.GeneratePlan(plan, snapshot, dialect)` from your own
-> code (it returns the Up/Down SQL and next snapshot; write them with
+> [blueprints](blueprints.md)) — the pre-graduation bootstrap path. It does
+> **not** see anything registered in Go — neither `app.Entity(...)` entities
+> nor `App.View` / `App.Routine` / `App.Table`. For Go-defined schema, use
+> auto-migrate (`App.Start` applies it on boot); to emit a versioned migration
+> that includes Go-registered entities/views/routines/tables, run migration
+> generation from your own app's binary (it has the entities compiled in and
+> diffs them against the snapshot), or call the programmatic
+> `migrate.GeneratePlan(plan, snapshot, dialect)` from your own code (it returns
+> the Up/Down SQL and next snapshot; write them with
 > `migrate.RenderMigrationFile` / `SaveSnapshot`).
 
 It then updates the snapshot. The typical loop:
@@ -170,7 +162,7 @@ have applied. A new **required** field with **no default** is added
 rows fails on a populated table, so the constraint is deferred (the
 change summary notes this); backfill the rows and tighten it in a later
 migration. A required field that has a default keeps `NOT NULL`, since
-every existing row gets the default. Type changes are out of scope (same as `diff`); express
+every existing row gets the default. Type changes are out of scope; express
 those as a hand-written migration. The snapshot is offline state — pick
 `--driver` to match your production engine so the emitted types are
 right.
@@ -374,8 +366,9 @@ first, SQLite on failure) and emits `CREATE TABLE IF NOT EXISTS` and
 
 It creates tables, indexes, and foreign keys, and **adds missing
 columns to existing tables** (`ALTER TABLE ADD COLUMN`, built by the
-same diff path as `migrate diff`, so boot and the CLI can never
-disagree) — all to make the database match the registered entities,
+same schema-diff path as `migrate generate`, so boot and a versioned
+migration can never disagree) — all to make the database match the
+registered entities,
 **inside one transaction and under an advisory lock** (see
 [Production safety](#production-safety)). A new **required** field
 with **no default** is added *nullable* (a `NOT NULL ADD COLUMN`
@@ -394,9 +387,11 @@ these as fields — the framework injects them and auto-migrate creates
 them, so a multi-tenant entity's table always has the `tenant_id`
 column its writes scope by.
 
-For destructive changes, use `gofastr migrate diff` (which reports and,
-with `--apply --allow-destructive`, runs `DROP COLUMN`) or write a
-numbered SQL file and stop using auto-migrate for that table.
+For destructive changes (drops, renames, type changes), use `gofastr
+migrate generate <name>` to emit a reviewable versioned migration — a
+removed field generates a reversible `DROP COLUMN` — then `gofastr migrate
+up`, or write a numbered SQL file by hand and stop using auto-migrate for
+that table.
 
 `AutoMigrateContext(ctx, db, registry)` is the context-aware variant —
 boot uses it so a shutdown signal cancels a migration that's waiting on
@@ -472,8 +467,9 @@ not just dev convenience. The guarantees:
   same posture as golang-migrate's dirty flag.
 - **Destructive-change gate.** `DiffSchema` flags `DROP COLUMN` as
   destructive and `ApplySchemaDiff` refuses to run destructive changes
-  unless the caller opts in (`ApplySchemaDiffWithOptions` /
-  `--allow-destructive`). The default never drops data.
+  unless the caller opts in (`ApplySchemaDiffWithOptions`). The default
+  never drops data; `migrate generate` instead emits the drop as a
+  reviewable, reversible versioned migration you apply deliberately.
 - **Baseline / recovery.** `migrate force <V>` (programmatically
   `Migrator.Force(ctx, version, applied)`) marks a version applied
   without running it (adopt an existing database) or removes it (treat

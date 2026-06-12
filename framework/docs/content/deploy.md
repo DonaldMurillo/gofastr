@@ -89,9 +89,9 @@ so the boilerplate never ships a literal `change-me`.
 
 `App.Start` auto-migrates on boot: it creates missing tables and adds
 missing columns (additive only — it never drops, renames, or retypes;
-those need `migrate diff --apply` or a versioned migration). For
-controlled rollouts, run migrations as a separate step with the CLI
-instead of on every replica's boot:
+those need a reviewed versioned migration from `gofastr migrate generate`,
+applied with `gofastr migrate up`). For controlled rollouts, run migrations
+as a separate step with the CLI instead of on every replica's boot:
 
 ```bash
 gofastr migrate up --db-url="$DATABASE_URL"
@@ -136,8 +136,8 @@ rolling deploys don't cut active requests.
   worst a leaked secret.
 - **Expecting boot auto-migrate to handle every schema change.** It
   creates tables and adds columns — additive only. Drops, renames, and
-  type changes need `gofastr migrate diff --apply` (with the
-  destructive gate) or a versioned migration; booting won't do them.
+  type changes need a reviewed versioned migration (`gofastr migrate
+  generate <name>` then `gofastr migrate up`); booting won't do them.
 - **CGO flag and base image out of sync.** `CGO_ENABLED=0` with
   `mattn/go-sqlite3` fails at build; a CGO build on
   `distroless/static` fails at runtime (no libc — use

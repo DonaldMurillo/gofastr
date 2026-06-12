@@ -313,7 +313,7 @@ Generate Go from a `gofastr.yml` blueprint:
 gofastr generate --from=gofastr.yml
 ```
 
-This writes the generated entity package into `gen/entities/`:
+This scaffolds the owned entity package into `entities/` at the module root:
 
 - `register.go` with `RegisterAll(app *framework.App)`
 - `models.go` with basic entity model structs
@@ -322,8 +322,9 @@ This writes the generated entity package into `gen/entities/`:
 - `events.go` with typed lifecycle subscriptions
 - `client/client.go` with a standalone Go HTTP client
 
-A blueprint that declares `app.module` also emits `gen/main.go` plus the
-`gen/blueprint` package (screens, endpoints, middleware stubs). See
+A blueprint that declares `app.module` also emits a root `main.go` plus the
+`blueprint` package (screens, endpoints, middleware stubs). These are owned Go
+you read, edit, and commit — no `DO NOT EDIT` header. See
 [Blueprints](blueprints.md) for the full blueprint shape.
 
 Useful flags:
@@ -331,8 +332,11 @@ Useful flags:
 - `--from=<blueprint.yml>` selects the blueprint to generate from (required).
 - `--dry-run` lists generated files without writing.
 - `--json` emits machine-readable output.
-- `--out=<dir>` writes generated files somewhere else (default `gen`).
-- `--no-clean` preserves existing files in the output directory.
+- `--out=<dir>` scaffolds into a subpackage instead of the module root (also
+  settable as `app.output_dir` in the blueprint) — useful for monorepos and
+  examples that host their own Go test package.
+- `--force` overwrites a hand-edited file. By default re-running `generate` is
+  add-only: it writes new files but never clobbers one you've edited.
 
 For arbitrary configured generators (not a full app blueprint), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for

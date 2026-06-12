@@ -23,6 +23,155 @@ subpackage needs to back-import the framework root.
 
 ---
 
+## The blueprint is a generator, not a source of truth
+
+> Read this before changing `cmd/gofastr` (`generate`, `migrate`, future
+> `pack`), the generated-output layout, or how the project is positioned.
+> This is what the code now does. Anything that still contradicts it —
+> `gen/` output, `clean`-rewrite — is legacy to remove, not progress
+> toward it.
+
+A declaration-first generator can follow one of two mutually exclusive
+philosophies:
+
+- **Canonical declaration** (Wasp, Encore, Amplify). The declaration *is*
+  the program. You live in it, regenerate from it, and the emitted code
+  is the tool's property — you don't hand-edit it. "No drift" holds
+  because there is one source. The cost: the declaration must eventually
+  express *everything*, so it grows into a second, worse programming
+  language.
+- **Scaffold-and-own** (Rails `g scaffold`, Angular `ng generate`). The
+  generator is a one-way accelerator. It emits code you then own and
+  edit. Re-running it on the same thing would clobber you; you re-run it
+  *incrementally* to add new things. The escape hatch to plain Go is the
+  point, not a failure mode.
+
+**GoFastr is scaffold-and-own.** The blueprint is an on-ramp, not an
+address. After generation the **owned Go is the only source of truth**.
+The blueprint never has standing to be diffed against, synced with, or
+treated as canonical for a running app.
+
+### The four moves (and the one that is deleted)
+
+| move | direction | standing |
+|---|---|---|
+| `generate` | YAML → owned Go | one-way on-ramp; scaffold then leave behind |
+| `pack` *(future)* | owned Go → YAML | one-way, lossy off-ramp; snapshot of *shape* |
+| `migrate generate` | a schema → reviewable versioned SQL | a **separate action**; takes its schema from an opt-in source (blueprint `--from`, owned Go, or a live DB). Emits a migration file you review and commit — it does not treat any source as authoritative-over-the-world. |
+| `migrate diff --from=<blueprint>` | — | **deleted** — it *applied* the blueprint onto a live DB, making the blueprint authoritative over the running database. |
+
+`generate` (forward) and `pack` (backward) are **not inverses you sync
+between** — there is no merge-back, no conflict resolution between YAML
+and app. Two independent one-way moves, never a loop.
+
+Note the distinction that keeps `migrate diff` deleted but `migrate
+generate` fine: **code generation** (blueprint → owned Go) and **schema
+migration** (schema → SQL) are *separate concerns*. A migration action
+that merely *reads* a schema to emit a reviewable file claims no
+authority. `migrate diff` was deleted not because it read the blueprint,
+but because it *applied* it — reconciling the live database to the
+blueprint. Reading is fine; applying-as-source-of-truth is not.
+
+### The IR is the hub
+
+`generate` and `pack` both pivot on one primitive: **extract the
+declarable shape (entities, screens, nav, access, seed) from a
+compiled/live app → in-memory IR.** `generate` goes IR → files (forward);
+`pack` goes app → IR → YAML (backward). Build "app → IR" once and both
+land. Kiln already maintains an in-memory world IR; that extraction
+primitive is a reuse candidate, not net-new. (`migrate generate` is a
+separate concern — see below — though it could *optionally* take its
+schema from that same IR one day; it is not load-bearing for this hub.)
+
+### Schema migration is a separate action, not part of the blueprint's authority
+
+Code generation (blueprint → owned Go) and schema migration (schema →
+SQL) are different concerns. The migration *engine* (`framework/migrate`:
+`DiffSchema`, `Registry`, `Load/SaveSnapshot`) already works on entity
+declarations + a committed `schema.snapshot.json` — it never sees YAML.
+At the CLI boundary, `migrate generate` takes its schema from an opt-in
+source; today that source is `--from=<blueprint>`, which is perfectly
+fine — *reading* a schema to emit a reviewable migration file claims no
+authority over anything. Owned-Go and live-DB sources are equally valid
+inputs and can be added when wanted (e.g. the app's own binary, which has
+its entities compiled in, running `myapp migrate generate <name>` — the
+Ent/Django shape). None of this is a leftover to remove: there
+is no contradiction with "delete the blueprint," because the *running
+app* never needs the blueprint, and schema migration is simply a separate
+action you point at whatever schema you have.
+
+### `pack` is one-way by *policy*, lossy by *maturity*
+
+`pack` captures the declarable surface only — custom handlers, hooks, and
+business logic do not serialize. That is acceptable: `pack` exports
+*shape* (for sharing, templating, cheap agent-reading, re-scaffolding
+elsewhere), never *state for sync*. Fidelity will improve over time; the
+one-way rule will not. Even a perfect-fidelity `pack` has no standing to
+sync back, because the owned Go wins **by rule**, not because the YAML is
+too lossy to trust. Lossy-today is a maturity state; one-way is
+permanent. Stating this is the firewall that stops `pack` → edit →
+`generate` from quietly turning the blueprint back into a source of truth.
+
+### No `gen/` — generated code lands where a hand-written app would put it
+
+A directory named `gen/`, wiped and rewritten under `clean: true` on
+every run (today's default; see `examples/ecommerce` = `gofastr.yml` +
+`gen/main.go`), is the giveaway of canonical-declaration output: you
+cannot own a file the tool deletes on the next run. Scaffold-and-own
+emits an idiomatic layout the user owns
+immediately:
+
+```
+main.go            # wires App + batteries + Start()           — yours
+entities/          # entity registration, models, typed repos  — yours
+blueprint/         # generated screens + app wiring             — yours
+migrations/        # versioned SQL (from `migrate generate`)
+gofastr.yml        # the scaffold input — OPTIONAL, deletable once the code is yours
+```
+
+(`--out=<dir>` / `app.output_dir` scaffolds into a subpackage instead of
+the module root — used by monorepo examples like `examples/ecommerce`,
+which keeps its app in an owned `app/` subpackage.)
+
+Adding an entity later is the same move: add it to the blueprint and
+re-run `generate`. Writes are conflict-skip (see below), so the new
+entity's files appear while everything you've hand-edited stays untouched.
+There is no separate `generate entity` subcommand — the blueprint is the
+one input.
+
+Two rules fall out, and both are load-bearing:
+
+1. **Conflict policy replaces `clean`.** With no quarantine dir,
+   re-running `generate` must never clobber hand-edited code. File
+   absent → write; present & identical → skip silently; present &
+   differs → **never overwrite** (skip-with-warning when non-interactive,
+   prompt on a TTY, explicit `--force` to override). This is the Rails /
+   Angular-schematics contract.
+2. **No manifest, no `DO NOT EDIT` headers on owned scaffold.** Tracking
+   "what I generated" re-introduces tool-ownership and slides back to
+   a canonical declaration; use pure content-based conflict detection. The moment
+   `entities/product.go` carries `// Code generated — DO NOT EDIT`, you
+   have told the user it is not theirs. The header survives only on
+   genuinely *derived* build artifacts (`openapi.json`, build-time route
+   tables) that regenerate every build and may live in a build dir —
+   owned scaffold ≠ build output.
+
+### Why this is the better story to tell
+
+The AI-economics claim is two-sided. The README already argues the
+*output* should be inspectable because an agent wrote it; scaffold-and-own adds
+the *input* side: **an agent does not need to learn the framework to
+author an app — it needs to know the blueprint schema**, which is small,
+YAML, and fully documented. Low surface area to author, high surface area
+generated, one tool call → a multi-entity app. Two distinct AI surfaces
+follow: **author-time → blueprint** (write-mostly intent compression) and
+**run-time → MCP into the live server** (introspect routes/config/docs,
+drive the entity tools against the running app — the agent does *not*
+crack open the YAML to learn a running app). Kiln is the third, separate
+mode: live IR mutation that graduates to a blueprint, then to Go.
+
+---
+
 ## The package map
 
 ```
