@@ -40,11 +40,3 @@ func TestLoadMigrationFilesMalformedErrors(t *testing.T) {
 		t.Fatal("missing dir should error")
 	}
 }
-
-func TestOpenDiffDBPostgresBranch(t *testing.T) {
-	// postgres:// URL forces the postgres driver path; with no server it
-	// fails at open/ping — but the postgres branch is exercised.
-	if _, err := openDiffDB("postgres://user@127.0.0.1:1/db?sslmode=disable", "sqlite3"); err == nil {
-		t.Fatal("expected open/ping failure for unreachable postgres")
-	}
-}

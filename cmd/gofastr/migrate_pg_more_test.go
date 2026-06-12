@@ -70,32 +70,6 @@ func TestCLI_PG_Force(t *testing.T) {
 
 // CLI `migrate diff --apply` against a live Postgres applies the declarative
 // delta and a re-diff is idempotent (up to date).
-func TestCLI_PG_DiffApplyIdempotent(t *testing.T) {
-	dsn := pgtest.FreshDatabaseDSN(t)
-	covT_chdirBlueprint(t, "      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
-
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-
-	dbFlag := "--db-url=" + dsn
-	drv := "--driver=postgres"
-	out := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--from=gofastr.yml"}) })
-	if !strings.Contains(out, "views") {
-		t.Fatalf("diff should report the missing 'views' column on PG, got: %s", out)
-	}
-	covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--from=gofastr.yml", "--apply"}) })
-	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{dbFlag, drv, "--from=gofastr.yml"}) })
-	if !strings.Contains(out2, "up to date") {
-		t.Fatalf("re-diff after apply should be up to date, got: %s", out2)
-	}
-}
-
 // CLI `migrate status` renders a dirty migration (⚠ DIRTY) on Postgres.
 func TestCLI_PG_StatusShowsDirty(t *testing.T) {
 	dsn := pgtest.FreshDatabaseDSN(t)

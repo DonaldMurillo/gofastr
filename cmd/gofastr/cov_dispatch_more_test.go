@@ -121,15 +121,3 @@ func TestRunMigrateGenerateNoBlueprintExits(t *testing.T) {
 		t.Fatalf("want 1 got %d", code)
 	}
 }
-
-func TestRunMigrateDiffNoDBExits(t *testing.T) {
-	_, bp := covT_writeBlueprint(t)
-	t.Setenv("DATABASE_URL", "")
-	// No --db-url and no DATABASE_URL → openDiffDB errors → exit 1.
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateDiff([]string{"--from=" + bp}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}

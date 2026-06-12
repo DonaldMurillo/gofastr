@@ -28,15 +28,22 @@ func runMigrate(args []string) {
 	case "status":
 		runMigrateStatus(args[1:])
 	case "diff":
-		runMigrateDiff(args[1:])
+		// Removed: `migrate diff` *applied* a blueprint onto a live DB,
+		// reconciling the running database to the blueprint — i.e. treating
+		// the blueprint as authoritative over the world. Schema migration is a
+		// separate concern from code generation: emit a reviewable, versioned
+		// migration instead. See framework/ARCHITECTURE.md.
+		fail("`gofastr migrate diff` has been removed.")
+		info("It applied a blueprint directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
+		osExit(1)
 	case "generate":
 		runMigrateGenerate(args[1:])
 	case "force":
 		runMigrateForce(args[1:])
 	default:
 		fail("Unknown migrate subcommand: %q", subcmd)
-		info("Available: up, down, status, diff, generate, force")
-		info("Usage: gofastr migrate [up|down|status|diff|generate|force]")
+		info("Available: up, down, status, generate, force")
+		info("Usage: gofastr migrate [up|down|status|generate|force]")
 		osExit(1)
 	}
 }

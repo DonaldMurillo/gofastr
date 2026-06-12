@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,48 +56,7 @@ func TestLoadBlueprintPathDirectoryMerge(t *testing.T) {
 	}
 }
 
-// ── migrate diff dry-run + apply + destructive ────────────────────────
-
-func TestRunMigrateDiffApplyAndDestructive(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	dbPath := filepath.Join(dir, "live.db")
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Live DB has an extra column the declaration drops → destructive.
-	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, legacy TEXT)`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	bp := filepath.Join(dir, "gofastr.yml")
-	blueprint := `app:
-  name: testapp
-entities:
-  - name: posts
-    table: posts
-    fields:
-      - name: title
-        type: string
-      - name: views
-        type: int
-`
-	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Plain diff (prints destructive warning + would-apply hint).
-	out := covT_capStdout(t, func() {
-		runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp})
-	})
-	if !strings.Contains(out, "change") {
-		t.Fatalf("diff output: %s", out)
-	}
-	// Apply with --allow-destructive succeeds.
-	covT_capStdout(t, func() {
-		runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp, "--apply", "--allow-destructive"})
-	})
-}
+// ── migrate generate down-note coverage ──────────────────────────────
 
 func TestRunMigrateGenerateNoDownNote(t *testing.T) {
 	dir := t.TempDir()

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,79 +105,6 @@ func TestEnsureDriverRegistered(t *testing.T) {
 	}
 	if err := ensureDriverRegistered("nonexistent-driver"); err == nil {
 		t.Fatal("expected error for unregistered driver")
-	}
-}
-
-func TestRunMigrateDiffInProcess(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	dbPath := filepath.Join(dir, "live.db")
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	bp := filepath.Join(dir, "gofastr.yml")
-	blueprint := `app:
-  name: testapp
-entities:
-  - name: posts
-    table: posts
-    fields:
-      - name: title
-        type: string
-        required: true
-      - name: views
-        type: int
-`
-	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out := covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp}) })
-	if !strings.Contains(out, "views") {
-		t.Fatalf("diff output: %s", out)
-	}
-	// --apply path
-	covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp, "--apply"}) })
-	// up-to-date path now
-	out2 := covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + dbPath, "--from=" + bp}) })
-	if !strings.Contains(out2, "up to date") {
-		t.Fatalf("expected up to date, got: %s", out2)
-	}
-}
-
-func TestRunMigrateDiffNoEntitiesExits(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	bp := filepath.Join(dir, "gofastr.yml")
-	if err := os.WriteFile(bp, []byte("app:\n  name: testapp\nentities: []\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateDiff([]string{"--db-url=file:" + filepath.Join(dir, "x.db"), "--from=" + bp}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
-func TestParseDiffOptions(t *testing.T) {
-	opts := parseDiffOptions([]string{"--db-url=u", "--driver=postgres", "--from=bp.yml", "--apply", "--allow-destructive"})
-	if opts.dbURL != "u" || opts.driver != "postgres" || opts.from != "bp.yml" || !opts.apply || !opts.allowDestructive {
-		t.Fatalf("opts = %#v", opts)
-	}
-	t.Setenv("DATABASE_URL", "envurl")
-	if parseDiffOptions(nil).dbURL != "envurl" {
-		t.Fatal("env fallback")
-	}
-}
-
-func TestOpenDiffDBErrors(t *testing.T) {
-	if _, err := openDiffDB("", "sqlite3"); err == nil {
-		t.Fatal("empty url should error")
 	}
 }
 
