@@ -7,6 +7,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-12
+
+Reframes the blueprint as a **generator, not a source of truth**. `gofastr
+generate` now scaffolds owned Go in an idiomatic, module-root layout you read,
+edit, and commit — there is no quarantined `gen/` directory and no `// Code
+generated … DO NOT EDIT.` header on the scaffold. Re-running the generator is
+add-only and never clobbers your edits. Contains two **BREAKING** changes (see
+below); pin a version (`go get …@v0.6.0`).
+
+### Changed
+
+- **BREAKING: `gofastr generate` scaffolds into the module root, not `gen/`.**
+  A blueprint now scaffolds `main.go` plus `entities/` and `blueprint/`
+  subpackages at the module root (imports rooted at your module), as owned Go
+  with no `// Code generated … DO NOT EDIT.` header. Writes are **conflict-skip**:
+  a re-run writes new files but never overwrites a file you have hand-edited —
+  pass `--force` to overwrite. The blueprint is an on-ramp; once scaffolded the
+  generated Go is the source of truth and the running app does not need the
+  `gofastr.yml`. **Migration:** to keep the old quarantined layout, pass
+  `--out=gen` (or set `app.output_dir: gen` in the blueprint) — output is still
+  owned Go, just in a subpackage. Build/run with `go run .` (or `go run ./<dir>`
+  when `--out` is used) instead of `go run ./gen`. Monorepo examples that host a
+  test package alongside the app use `output_dir` for a subpackage —
+  `examples/ecommerce` now scaffolds into an owned `app/`.
+
+- **BREAKING: `gofastr migrate diff` has been removed.** It applied a blueprint
+  directly onto a live database, reconciling the running schema to the
+  blueprint — i.e. treating the blueprint as authoritative over the world. Code
+  generation and schema migration are separate concerns. **Migration:** use
+  `gofastr migrate generate <name>` to emit a reviewable, versioned migration,
+  then `gofastr migrate up` to apply it; additive column changes also converge
+  on boot via `AutoMigrate`. `migrate generate` is unchanged and still accepts
+  `--from=<blueprint.yml>` as an opt-in schema source.
+
 ## [0.5.1] - 2026-06-11
 
 Patch release correcting startup readiness reporting and repository release
