@@ -204,6 +204,24 @@ func componentPkg(slug string) string {
 	}
 }
 
+// sidebarShowcaseConfig is the config for the /components/sidebar demo. It is
+// shared between the inline render (the hamburger trigger) and the mounted
+// ui-sidebar-drawer widget (main.go) so the two agree on DrawerName + content —
+// otherwise the hamburger opens a drawer that was never mounted.
+var sidebarShowcaseConfig = ui.SidebarConfig{
+	Title: "Docs",
+	Items: []ui.SidebarItem{
+		{Label: "Modeling", Children: []ui.SidebarItem{
+			{Label: "Entities", Href: "/docs/entities"},
+			{Label: "Fields", Href: "/docs/fields"},
+		}},
+		{Label: "Serving", Children: []ui.SidebarItem{
+			{Label: "Router", Href: "/docs/router"},
+			{Label: "Middleware", Href: "/docs/middleware"},
+		}},
+	},
+}
+
 // componentCatalog — every component the site showcases. Grouped by
 // category for ComponentsIndexScreen; routes are flat at /components/<slug>.
 var componentCatalog = []componentEntry{
@@ -421,19 +439,7 @@ var componentCatalog = []componentEntry{
 		})
 	}},
 	{"sidebar", "Sidebar", "Navigation", "Hierarchical navigation sidebar.", func() render.HTML {
-		return ui.Sidebar(ui.SidebarConfig{
-			Title: "Docs",
-			Items: []ui.SidebarItem{
-				{Label: "Modeling", Children: []ui.SidebarItem{
-					{Label: "Entities", Href: "/docs/entities"},
-					{Label: "Fields", Href: "/docs/fields"},
-				}},
-				{Label: "Serving", Children: []ui.SidebarItem{
-					{Label: "Router", Href: "/docs/router"},
-					{Label: "Middleware", Href: "/docs/middleware"},
-				}},
-			},
-		}).Render()
+		return ui.Sidebar(sidebarShowcaseConfig).Render()
 	}},
 	{"toc", "TableOfContents", "Navigation", "In-page anchor list (runtime fills from headings).", func() render.HTML {
 		return ui.TableOfContents(ui.TOCConfig{Target: "main", Sticky: true})

@@ -199,6 +199,16 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(demoSheetBody)).
 		Hidden())
 
+	// /components/sidebar showcase: mount the < 900px nav drawer the Sidebar's
+	// hamburger opens. Without this the hamburger silently no-ops. Shares
+	// sidebarShowcaseConfig with the inline render so DrawerName ("ui-sidebar-
+	// drawer", the ui.Sidebar default) + nav content match. Page-scoped to the
+	// one showcase route.
+	widget.MountBuilder(fwApp.Router(), preset.Drawer("ui-sidebar-drawer").
+		Slot("body", app.NewStaticComponent(ui.SidebarBody(sidebarShowcaseConfig))).
+		Hidden().
+		Pages("/components/sidebar"))
+
 	// Toast stack anchored top-right; auto-mount so every page can fire one.
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))
 	// Server-path toast demo: any data-fui-rpc handler can attach the toast

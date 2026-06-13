@@ -273,11 +273,51 @@ func TestE2E_Menu_RolesAndKeyboardNav(t *testing.T) {
 	}
 }
 
-// Note: Sidebar tests dropped — the site's /components/sidebar showcase renders
-// a standalone ui.Sidebar demo whose drawer widget is not mounted in main.go
-// (the site's nav uses interactive.SectionMenu, not ui.Sidebar). The hamburger
-// test would always fail because ui-sidebar-drawer is not registered, and the
-// active-item test would never find aria-current="page" on the demo's static
-// links. The real sidebar behavior is covered by the SectionMenu e2e suite.
+// --- Sidebar (mobile nav drawer) -----------------------------------
+//
+// The /components/sidebar showcase renders a ui.Sidebar whose hamburger
+// (< 900px) opens the ui-sidebar-drawer widget. That drawer must be mounted
+// for the hamburger to do anything — historically it was not, so the button
+// silently no-opened. This is the contract test for "the hamburger opens the
+// drawer".
+
+func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var triggerExists, drawerPresent bool
+	var role, ariaModal string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/sidebar"),
+		pageReady(),
+		chromedp.Evaluate(`!!document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
+		// Click via JS so the test is viewport-independent — the open is gated
+		// on the runtime handler, not CSS visibility.
+		chromedp.Evaluate(`document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
+		chromedp.Sleep(350*time.Millisecond),
+		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
+		// Coalesce undefined→'' so an absent drawer fails on the assertion below
+		// rather than a chromedp "undefined value" error.
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')?.getAttribute('role') ?? ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')?.getAttribute('aria-modal') ?? ''`, &ariaModal),
+	); err != nil {
+		t.Fatalf("sidebar hamburger: %v", err)
+	}
+	if !triggerExists {
+		t.Fatal("hamburger trigger button[data-fui-open=ui-sidebar-drawer] missing from the showcase")
+	}
+	if !drawerPresent {
+		t.Fatal("hamburger click did not open the sidebar drawer — ui-sidebar-drawer is not mounted")
+	}
+	if role != "dialog" {
+		t.Errorf("sidebar drawer role = %q, want dialog", role)
+	}
+	if ariaModal != "true" {
+		t.Errorf("sidebar drawer aria-modal = %q, want true", ariaModal)
+	}
+}
 
 // Note: Popover tests dropped — the site has no /components/popover page.
