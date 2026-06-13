@@ -7,6 +7,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-12
+
+Patch release fixing two docs-site (`examples/site`) bugs. No breaking changes,
+no framework API changes.
+
+### Fixed
+
+- **The site version is stamped from the deployment's git tag instead of a
+  hand-bumped constant.** `examples/site` displayed a hardcoded `siteVersion`
+  that had drifted to `0.4.0` while releases moved on. It is now injected at
+  build time via `-ldflags "-X main.siteVersion=$(git describe --tags
+  --abbrev=0)"` (wired into `scripts/dev-watch.sh`, `make build-examples`, and
+  the Pages workflow, which now checks out with tags), so the deployed site
+  always matches the tag it was built from. An un-stamped local `go build`
+  shows `dev`.
+- **The Sidebar showcase's mobile nav drawer now opens.** At < 900px the
+  `/components/sidebar` demo rendered a hamburger wired to `ui-sidebar-drawer`,
+  but that drawer widget was never mounted, so the button silently did nothing.
+  The drawer is now mounted (page-scoped) sharing the showcase's sidebar config,
+  and a contract test (`TestE2E_Sidebar_HamburgerOpensDrawer`) covers it.
+
 ## [0.6.0] - 2026-06-12
 
 Reframes the blueprint as a **generator, not a source of truth**. `gofastr
