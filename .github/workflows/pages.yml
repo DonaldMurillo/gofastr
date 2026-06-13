@@ -37,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need the tag history so the build can stamp the displayed version
+          # from `git describe` (default shallow checkout fetches no tags).
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -45,7 +49,14 @@ jobs:
           cache: true
 
       - name: Build the docs site
-        run: go build -o /tmp/site ./examples/site/
+        # Stamp siteVersion from the deployment's latest tag so the live site
+        # matches the release instead of a hand-bumped constant.
+        run: |
+          VER=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+          LDFLAGS=""
+          [ -n "$VER" ] && LDFLAGS="-ldflags=-X=main.siteVersion=$VER"
+          echo "building site as version: ${VER:-dev}"
+          go build $LDFLAGS -o /tmp/site ./examples/site/
 
       - name: Run and crawl
         run: |

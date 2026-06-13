@@ -39,12 +39,19 @@ current_hash() {
     | sort | shasum | awk '{print $1}'
 }
 
+# Inject the framework version from the deployment's git tag so examples/site
+# shows the real version instead of a hand-bumped constant (ignored by targets
+# that don't define main.siteVersion). Empty when there's no tag → "dev".
+VER=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+LDFLAGS=""
+[ -n "$VER" ] && LDFLAGS="-ldflags=-X=main.siteVersion=$VER"
+
 while true; do
   h=$(current_hash)
   if [ "$h" != "$last_hash" ]; then
     last_hash="$h"
     [ -n "$PID" ] && kill "$PID" 2>/dev/null && wait "$PID" 2>/dev/null
-    if go build -o "$BIN" "./$TARGET" 2>&1; then
+    if go build $LDFLAGS -o "$BIN" "./$TARGET" 2>&1; then
       # GOFASTR_DEV=1 unlocks /__livereload* endpoints so the browser
       # auto-refreshes after each rebuild.
       PORT=$PORT GOFASTR_DEV=1 "$BIN" > /tmp/$NAME-live.log 2>&1 &

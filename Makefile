@@ -15,11 +15,13 @@ build-cmd: $(DIST_DIR)
 	go build -o $(DIST_DIR)/kiln    ./cmd/kiln
 
 build-examples: csp-check $(DIST_DIR)
-	@for dir in examples/api-tour examples/blog examples/embed-demo \
+	@SITE_VER=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
+	LDFLAGS=$$( [ -n "$$SITE_VER" ] && echo "-ldflags=-X=main.siteVersion=$$SITE_VER" ); \
+	for dir in examples/api-tour examples/blog examples/embed-demo \
 	            examples/spa examples/static-site examples/site; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
-		go build -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
+		go build $$LDFLAGS -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
 	done
 	@# ecommerce is the declaration-driven flagship: its app is scaffolded
 	@# from gofastr.yml into the owned app/ subpackage (output_dir: app — see

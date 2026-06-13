@@ -33,9 +33,16 @@ import (
 // (data-fui-shortcut-click), so the header needs no injected trigger.
 type HeaderComponent struct{}
 
-// siteVersion is the single place the site states the framework version.
-// Bump it when tagging a release.
-const siteVersion = "0.4.0"
+// siteVersion is the framework version the site displays. It is injected at
+// build time from the deployment's git tag via
+//
+//	-ldflags "-X 'main.siteVersion=$(git describe --tags --abbrev=0 | sed s/^v//)'"
+//
+// (see scripts/dev-watch.sh, Makefile build-examples, .github/workflows/pages.yml).
+// The "dev" fallback is what an un-injected `go build`/`go run` shows locally —
+// so the deployed site always matches the tag it was built from, instead of a
+// hand-bumped constant drifting behind releases.
+var siteVersion = "dev"
 
 func (h *HeaderComponent) Render() render.HTML {
 	// Brand stays site-local — the λ mark, lowercase wordmark, and the
