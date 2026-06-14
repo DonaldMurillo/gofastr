@@ -448,6 +448,7 @@ screens:
         fields: [name, email, company, status, mrr]
         search: name
         limit: 25
+        create: true
         empty_text: No customers yet — add your first to get started.
 
   - name: customer_detail
@@ -473,6 +474,7 @@ screens:
         fields: [number, customer_id, amount, status, issued_on, due_on]
         search: number
         limit: 25
+        create: true
         empty_text: No invoices yet.
 
   - name: subscriptions
@@ -487,6 +489,7 @@ screens:
         text: Subscriptions
         fields: [customer_id, plan_id, status, mrr, renews_on]
         limit: 25
+        create: true
         empty_text: No subscriptions yet.
 
 # =============================================================================

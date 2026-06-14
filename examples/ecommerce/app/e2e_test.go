@@ -36,8 +36,17 @@ func TestBlueprintE2E(t *testing.T) {
 	base := "http://" + addr
 	e2eWaitReady(t, base)
 
-	if h := e2eGet(t, base+"/"); !strings.Contains(h, "ShopFront") {
-		t.Errorf("home page missing brand")
+	if code, body := e2eDo(t, http.DefaultClient, "GET", base+"/", ""); code != http.StatusOK || !strings.Contains(body, "ShopFront") {
+		t.Errorf("home page = %d, missing brand? %v", code, !strings.Contains(body, "ShopFront"))
+	}
+
+	// Public screens render for anonymous visitors.
+	for _, p := range []string{"/", "/products", "/categories", "/orders", "/reviews", "/new-product", "/product-detail", "/order-detail", "/product-detail/edit", "/order-detail/edit"} {
+		if code, body := e2eDo(t, http.DefaultClient, "GET", base+p, ""); code != http.StatusOK {
+			t.Errorf("public screen %s = %d, want 200", p, code)
+		} else if len(body) < 120 {
+			t.Errorf("public screen %s body suspiciously short (%d bytes)", p, len(body))
+		}
 	}
 }
 
@@ -63,13 +72,26 @@ func e2eWaitReady(t *testing.T, base string) {
 	t.Fatal("server did not become ready")
 }
 
-func e2eGet(t *testing.T, u string) string {
+// e2eDo runs one request and returns the status code + body. A non-empty
+// body is sent as JSON. Network errors fail the test.
+func e2eDo(t *testing.T, client *http.Client, method, u, body string) (int, string) {
 	t.Helper()
-	r, err := http.Get(u)
+	var rdr io.Reader
+	if body != "" {
+		rdr = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, u, rdr)
 	if err != nil {
-		t.Fatalf("GET %s: %v", u, err)
+		t.Fatalf("%s %s: %v", method, u, err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	r, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, u, err)
 	}
 	defer r.Body.Close()
-	b, _ := io.ReadAll(r.Body)
-	return string(b)
+	bb, _ := io.ReadAll(r.Body)
+	return r.StatusCode, string(bb)
 }

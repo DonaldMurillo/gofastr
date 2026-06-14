@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -144,24 +145,25 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		site = app.NewApp("Meridian")
 	}
 	blueprintResources["customers"] = ResourceConfig{
-		Title: "Customers", Singular: "Customer", BasePath: "/app/customers",
-		Crud: fwApp.MustCrudHandler("customers"),
+		Title: "Customers", Singular: "Customer", BasePath: "/app/customers", APIPath: "/api/customers",
+		Crud:    fwApp.MustCrudHandler("customers"),
+		CanEdit: true,
 		Fields: []ResField{
 			{Key: "name", Label: "Name", Type: "string"},
 			{Key: "email", Label: "Email", Type: "string"},
 			{Key: "company", Label: "Company", Type: "string"},
-			{Key: "status", Label: "Status", Type: "enum"},
-			{Key: "mrr", Label: "Mrr", Type: "decimal"},
+			{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}},
+			{Key: "mrr", Label: "MRR", Type: "decimal"},
 		},
 	}
 	blueprintResources["invoices"] = ResourceConfig{
-		Title: "Invoices", Singular: "Invoice", BasePath: "/app/invoices",
+		Title: "Invoices", Singular: "Invoice", BasePath: "/app/invoices", APIPath: "/api/invoices",
 		Crud: fwApp.MustCrudHandler("invoices"),
 		Fields: []ResField{
 			{Key: "customer_id", Label: "Customer", Type: "relation"},
 			{Key: "number", Label: "Number", Type: "string"},
 			{Key: "amount", Label: "Amount", Type: "decimal"},
-			{Key: "status", Label: "Status", Type: "enum"},
+			{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "open", "paid", "past_due", "void"}},
 			{Key: "issued_on", Label: "Issued", Type: "date"},
 			{Key: "due_on", Label: "Due", Type: "date"},
 			{Key: "paid_on", Label: "Paid", Type: "date"},
@@ -171,24 +173,24 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	blueprintResources["plans"] = ResourceConfig{
-		Title: "Plans", Singular: "Plan", BasePath: "/pricing",
+		Title: "Plans", Singular: "Plan", BasePath: "/pricing", APIPath: "/api/plans",
 		Crud: fwApp.MustCrudHandler("plans"),
 		Fields: []ResField{
 			{Key: "name", Label: "Name", Type: "string"},
 			{Key: "slug", Label: "Slug", Type: "string"},
 			{Key: "price", Label: "Price", Type: "decimal"},
-			{Key: "interval", Label: "Interval", Type: "enum"},
+			{Key: "interval", Label: "Interval", Type: "enum", Values: []string{"month", "year"}},
 			{Key: "active", Label: "Active", Type: "bool"},
 		},
 	}
 	blueprintResources["subscriptions"] = ResourceConfig{
-		Title: "Subscriptions", Singular: "Subscription", BasePath: "/app/subscriptions",
+		Title: "Subscriptions", Singular: "Subscription", BasePath: "/app/subscriptions", APIPath: "/api/subscriptions",
 		Crud: fwApp.MustCrudHandler("subscriptions"),
 		Fields: []ResField{
 			{Key: "customer_id", Label: "Customer", Type: "relation"},
 			{Key: "plan_id", Label: "Plan", Type: "relation"},
-			{Key: "status", Label: "Status", Type: "enum"},
-			{Key: "mrr", Label: "Mrr", Type: "decimal"},
+			{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}},
+			{Key: "mrr", Label: "MRR", Type: "decimal"},
 			{Key: "started_on", Label: "Started", Type: "date"},
 			{Key: "renews_on", Label: "Renews", Type: "date"},
 		},
@@ -238,6 +240,21 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// this, authorized requests fail closed (401) just like
 		// anonymous ones.
 		fwApp.Use(auth.SessionMiddleware(authMgr))
+		// Entities declare `access:` permissions; install a RolePolicy so the
+		// signed-in user's roles resolve to those permissions on the gated
+		// CRUD API. The admin role holds the wildcard (full access, the same
+		// surface the back-office manages); add finer per-role Grants here as
+		// you define more roles. Without this, every write 403s.
+		blueprintRBAC := access.NewRolePolicy()
+		blueprintRBAC.Grant("admin", access.Wildcard)
+		fwApp.Use(access.Middleware(blueprintRBAC, func(ctx context.Context) []string {
+			if u, ok := handler.GetUser(ctx); ok && u != nil {
+				if rh, ok := u.(interface{ GetRoles() []string }); ok {
+					return rh.GetRoles()
+				}
+			}
+			return nil
+		}))
 		// auth.CSRF is intentionally NOT mounted: this generated surface
 		// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s
 		// any unsafe-method request that doesn't echo the csrf cookie as
@@ -259,6 +276,10 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.RegisterScreen(app.NewScreen("/app/customers/:id", &CustomerDetailScreen{}).WithTitle("Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
 	site.RegisterScreen(app.NewScreen("/app/invoices", &InvoicesScreen{}).WithTitle("Invoices").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
 	site.RegisterScreen(app.NewScreen("/app/subscriptions", &SubscriptionsScreen{}).WithTitle("Subscriptions").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/customers/new", &CustomersNewScreen{}).WithTitle("New Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/customers/:id/edit", &CustomersEditScreen{}).WithTitle("Edit Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/invoices/new", &InvoicesNewScreen{}).WithTitle("New Invoice").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/subscriptions/new", &SubscriptionsNewScreen{}).WithTitle("New Subscription").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
 	_ = blueprintRouterMounter{}
 }
 

@@ -124,7 +124,7 @@ func (s *CustomersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithLimit(25).List(ctx),
+		blueprintResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithLimit(25).WithCreate().List(ctx),
 	)
 }
 
@@ -152,7 +152,7 @@ func (s *InvoicesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithLimit(25).List(ctx),
+		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithLimit(25).WithCreate().List(ctx),
 	)
 }
 
@@ -164,6 +164,58 @@ func (s *SubscriptionsScreen) ScreenType() app.ScreenType { return app.ScreenPag
 
 func (s *SubscriptionsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).List(ctx),
+		blueprintResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().List(ctx),
+	)
+}
+
+type CustomersNewScreen struct{ component.ContextOnly }
+
+func (s *CustomersNewScreen) ScreenTitle() string        { return "New Customer" }
+func (s *CustomersNewScreen) ScreenDescription() string  { return "" }
+func (s *CustomersNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+func (s *CustomersNewScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["customers"].Form(ctx, ""),
+	)
+}
+
+type CustomersEditScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *CustomersEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *CustomersEditScreen) ScreenTitle() string           { return "Edit Customer" }
+func (s *CustomersEditScreen) ScreenDescription() string     { return "" }
+func (s *CustomersEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *CustomersEditScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["customers"].Form(ctx, s.id),
+	)
+}
+
+type InvoicesNewScreen struct{ component.ContextOnly }
+
+func (s *InvoicesNewScreen) ScreenTitle() string        { return "New Invoice" }
+func (s *InvoicesNewScreen) ScreenDescription() string  { return "" }
+func (s *InvoicesNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+func (s *InvoicesNewScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["invoices"].Form(ctx, ""),
+	)
+}
+
+type SubscriptionsNewScreen struct{ component.ContextOnly }
+
+func (s *SubscriptionsNewScreen) ScreenTitle() string        { return "New Subscription" }
+func (s *SubscriptionsNewScreen) ScreenDescription() string  { return "" }
+func (s *SubscriptionsNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+func (s *SubscriptionsNewScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["subscriptions"].Form(ctx, ""),
 	)
 }

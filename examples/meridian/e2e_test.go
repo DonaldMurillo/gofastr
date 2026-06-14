@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -38,30 +39,77 @@ func TestBlueprintE2E(t *testing.T) {
 	base := "http://" + addr
 	e2eWaitReady(t, base)
 
-	if h := e2eGet(t, base+"/"); !strings.Contains(h, "Meridian") {
-		t.Errorf("home page missing brand")
+	if code, body := e2eDo(t, http.DefaultClient, "GET", base+"/", ""); code != http.StatusOK || !strings.Contains(body, "Meridian") {
+		t.Errorf("home page = %d, missing brand? %v", code, !strings.Contains(body, "Meridian"))
 	}
-	noRedir := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	if r, err := noRedir.Get(base + "/app"); err == nil {
-		defer r.Body.Close()
-		if r.StatusCode != http.StatusSeeOther {
-			t.Errorf("gated /app = %d, want 303 redirect to login", r.StatusCode)
+
+	// Public screens render for anonymous visitors.
+	for _, p := range []string{"/", "/pricing", "/about", "/terms", "/privacy", "/login", "/signup"} {
+		if code, body := e2eDo(t, http.DefaultClient, "GET", base+p, ""); code != http.StatusOK {
+			t.Errorf("public screen %s = %d, want 200", p, code)
+		} else if len(body) < 120 {
+			t.Errorf("public screen %s body suspiciously short (%d bytes)", p, len(body))
 		}
 	}
+
+	// Gated screens redirect anonymous callers to the login page.
+	noRedir := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/new", "/app/invoices/new", "/app/subscriptions/new"} {
+		if r, err := noRedir.Get(base + p); err == nil {
+			r.Body.Close()
+			if r.StatusCode != http.StatusSeeOther {
+				t.Errorf("gated %s anon = %d, want 303 redirect", p, r.StatusCode)
+			}
+		}
+	}
+
+	// Sign in, then every gated screen renders.
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
-	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {"change-me-now-123"}, "next": {"/app"}}); err != nil {
+	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {"change-me-now-123"}}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	if r, err := client.Get(base + "/app"); err == nil {
-		body, _ := io.ReadAll(r.Body)
-		r.Body.Close()
-		if r.StatusCode != http.StatusOK {
-			t.Errorf("authed /app = %d, want 200", r.StatusCode)
+	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/new", "/app/invoices/new", "/app/subscriptions/new"} {
+		if code, body := e2eDo(t, client, "GET", base+p, ""); code != http.StatusOK {
+			t.Errorf("authed screen %s = %d, want 200", p, code)
+		} else if len(body) < 120 {
+			t.Errorf("authed screen %s body suspiciously short (%d bytes)", p, len(body))
 		}
-		if len(body) < 200 {
-			t.Errorf("authed screen suspiciously short")
-		}
+	}
+
+	// Full CRUD lifecycle for customers through its API + form screens.
+	code, body := e2eDo(t, client, "POST", base+"/api/customers", `{"name": "e2e-name", "email": "e2e-email@example.com"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create customers = %d, want 201: %s", code, body)
+	}
+	id := e2eExtractID(body)
+	if id == "" {
+		t.Fatalf("create customers: no id in response: %s", body)
+	}
+	if code, body := e2eDo(t, client, "GET", base+"/app/customers/new", ""); code != http.StatusOK || !strings.Contains(body, "<form") {
+		t.Errorf("new form customers = %d (has <form>? %v)", code, strings.Contains(body, "<form"))
+	}
+	if code, body := e2eDo(t, client, "GET", base+"/app/customers"+"/"+id, ""); code != http.StatusOK {
+		t.Errorf("detail customers = %d, want 200", code)
+	} else if !strings.Contains(body, "e2e-name") {
+		t.Errorf("detail customers missing created value")
+	}
+	if code, body := e2eDo(t, client, "GET", base+"/app/customers"+"/"+id+"/edit", ""); code != http.StatusOK || !strings.Contains(body, "e2e-name") {
+		t.Errorf("edit form customers = %d, prefilled? %v", code, strings.Contains(body, "e2e-name"))
+	}
+	if code, body := e2eDo(t, client, "PUT", base+"/api/customers"+"/"+id, `{"name": "e2e-updated"}`); code/100 != 2 {
+		t.Errorf("update customers = %d: %s", code, body)
+	}
+	if code, _ := e2eDo(t, client, "DELETE", base+"/api/customers"+"/"+id, ""); code/100 != 2 {
+		t.Errorf("delete customers = %d, want 2xx", code)
+	}
+	if code, _ := e2eDo(t, client, "GET", base+"/api/customers"+"/"+id, ""); code != http.StatusNotFound {
+		t.Errorf("get deleted customers = %d, want 404", code)
+	}
+
+	// RBAC: an anonymous write to the access-gated customers API is refused.
+	if code, _ := e2eDo(t, http.DefaultClient, "POST", base+"/api/customers", `{"name": "e2e-name", "email": "e2e-email@example.com"}`); code != http.StatusUnauthorized && code != http.StatusForbidden {
+		t.Errorf("anonymous write to customers = %d, want 401/403", code)
 	}
 }
 
@@ -87,13 +135,35 @@ func e2eWaitReady(t *testing.T, base string) {
 	t.Fatal("server did not become ready")
 }
 
-func e2eGet(t *testing.T, u string) string {
+// e2eDo runs one request and returns the status code + body. A non-empty
+// body is sent as JSON. Network errors fail the test.
+func e2eDo(t *testing.T, client *http.Client, method, u, body string) (int, string) {
 	t.Helper()
-	r, err := http.Get(u)
+	var rdr io.Reader
+	if body != "" {
+		rdr = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, u, rdr)
 	if err != nil {
-		t.Fatalf("GET %s: %v", u, err)
+		t.Fatalf("%s %s: %v", method, u, err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	r, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, u, err)
 	}
 	defer r.Body.Close()
-	b, _ := io.ReadAll(r.Body)
-	return string(b)
+	bb, _ := io.ReadAll(r.Body)
+	return r.StatusCode, string(bb)
+}
+
+var e2eIDRe = regexp.MustCompile(`"id"\s*:\s*"([^"]+)"`)
+
+func e2eExtractID(body string) string {
+	if m := e2eIDRe.FindStringSubmatch(body); len(m) == 2 {
+		return m[1]
+	}
+	return ""
 }

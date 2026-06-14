@@ -85,7 +85,7 @@ func (s *ProductNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *ProductNewScreen) Render() render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Add New Product")),
-		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: "New Product"}), ui.Form(ui.FormConfig{Action: "/api/products", Method: "POST", SubmitLabel: "Create", ExtraAttrs: html.Attrs{"data-entity-form": "products", "data-entity-mode": "create", "data-fui-rpc": "/api/products", "data-fui-rpc-method": "POST", "data-fui-rpc-reset": "true"}}, ui.FormField(ui.FormFieldConfig{Label: "Name", For: "field-name", Required: true, Input: render.Raw("<input type=\"text\" name=\"name\" id=\"field-name\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Slug", For: "field-slug", Required: true, Input: render.Raw("<input type=\"text\" name=\"slug\" id=\"field-slug\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Sku", For: "field-sku", Required: false, Input: render.Raw("<input type=\"text\" name=\"sku\" id=\"field-sku\">")}), ui.FormField(ui.FormFieldConfig{Label: "Description", For: "field-description", Required: false, Input: render.Raw("<textarea name=\"description\" id=\"field-description\"></textarea>")}), ui.FormField(ui.FormFieldConfig{Label: "Price", For: "field-price", Required: true, Input: render.Raw("<input type=\"number\" name=\"price\" id=\"field-price\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Stock", For: "field-stock", Required: true, Input: render.Raw("<input type=\"number\" name=\"stock\" id=\"field-stock\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Status", For: "field-status", Required: false, Input: render.Raw("<select name=\"status\" id=\"field-status\"><option value=\"\">— Select —</option><option value=\"draft\">Draft</option><option value=\"active\">Active</option><option value=\"archived\">Archived</option></select>")}), ui.FormField(ui.FormFieldConfig{Label: "Featured", For: "field-featured", Required: false, Input: render.Raw("<input type=\"checkbox\" name=\"featured\" id=\"field-featured\">")}))),
+		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: "New Product"}), ui.Form(ui.FormConfig{Action: "/api/products", Method: "POST", SubmitLabel: "Create", ExtraAttrs: html.Attrs{"data-entity-form": "products", "data-entity-mode": "create", "data-fui-rpc": "/api/products", "data-fui-rpc-method": "POST", "data-fui-rpc-reset": "true"}}, ui.FormField(ui.FormFieldConfig{Label: "Name", For: "field-name", Required: true, Input: render.Raw("<input type=\"text\" name=\"name\" id=\"field-name\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Slug", For: "field-slug", Required: true, Input: render.Raw("<input type=\"text\" name=\"slug\" id=\"field-slug\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "SKU", For: "field-sku", Required: false, Input: render.Raw("<input type=\"text\" name=\"sku\" id=\"field-sku\">")}), ui.FormField(ui.FormFieldConfig{Label: "Description", For: "field-description", Required: false, Input: render.Raw("<textarea name=\"description\" id=\"field-description\"></textarea>")}), ui.FormField(ui.FormFieldConfig{Label: "Price", For: "field-price", Required: true, Input: render.Raw("<input type=\"number\" name=\"price\" id=\"field-price\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Stock", For: "field-stock", Required: true, Input: render.Raw("<input type=\"number\" name=\"stock\" id=\"field-stock\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Status", For: "field-status", Required: false, Input: render.Raw("<select name=\"status\" id=\"field-status\"><option value=\"\">— Select —</option><option value=\"draft\">Draft</option><option value=\"active\">Active</option><option value=\"archived\">Archived</option></select>")}), ui.FormField(ui.FormFieldConfig{Label: "Featured", For: "field-featured", Required: false, Input: render.Raw("<input type=\"checkbox\" name=\"featured\" id=\"field-featured\">")}))),
 	)
 }
 
@@ -120,5 +120,37 @@ func (s *OrderDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Order Details")),
 		blueprintResources["orders"].Detail(ctx, s.id),
+	)
+}
+
+type ProductsEditScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *ProductsEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *ProductsEditScreen) ScreenTitle() string           { return "Edit Product" }
+func (s *ProductsEditScreen) ScreenDescription() string     { return "" }
+func (s *ProductsEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *ProductsEditScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["products"].Form(ctx, s.id),
+	)
+}
+
+type OrdersEditScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *OrdersEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *OrdersEditScreen) ScreenTitle() string           { return "Edit Order" }
+func (s *OrdersEditScreen) ScreenDescription() string     { return "" }
+func (s *OrdersEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *OrdersEditScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["orders"].Form(ctx, s.id),
 	)
 }

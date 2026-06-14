@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -24,9 +25,10 @@ var blueprintResources = map[string]ResourceConfig{}
 
 // ResField is one displayed entity field.
 type ResField struct {
-	Key   string
-	Label string
-	Type  string // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
+	Key    string
+	Label  string
+	Type   string   // string,text,int,float,decimal,bool,enum,date,timestamp,uuid,relation,...
+	Values []string // enum: the allowed values (drives <option>s on the form)
 }
 
 // RelSource resolves a foreign-key column to a related record's label.
@@ -35,17 +37,20 @@ type RelSource struct {
 	Display string
 }
 
-// ResourceConfig drives the server-rendered list + detail screens for one entity.
+// ResourceConfig drives the server-rendered list + detail + form screens for
+// one entity.
 type ResourceConfig struct {
 	Title     string
 	Singular  string
-	BasePath  string
+	BasePath  string // app route, e.g. "/app/customers"
+	APIPath   string // auto-CRUD JSON endpoint, e.g. "/api/customers"
 	Crud      *framework.CrudHandler
 	Fields    []ResField
 	Search    string
 	PageSize  int
 	Relations map[string]RelSource
-	CanCreate bool
+	CanCreate bool // List shows "New"; a /new create form is mounted
+	CanEdit   bool // Detail shows Edit + Delete; a /{id}/edit form is mounted
 }
 
 func (c ResourceConfig) pageSize() int {
@@ -90,6 +95,9 @@ func (c ResourceConfig) WithColumns(keys ...string) ResourceConfig {
 func (c ResourceConfig) WithSearch(field string) ResourceConfig { c.Search = field; return c }
 func (c ResourceConfig) WithLimit(n int) ResourceConfig         { c.PageSize = n; return c }
 func (c ResourceConfig) WithCreate() ResourceConfig             { c.CanCreate = true; return c }
+
+// WithEdit shows Edit + Delete on the detail screen (a /{id}/edit form is mounted).
+func (c ResourceConfig) WithEdit() ResourceConfig { c.CanEdit = true; return c }
 
 func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[string]string {
 	out := map[string]map[string]string{}
@@ -214,10 +222,115 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 	for _, f := range c.Fields {
 		items = append(items, ui.DetailItem{Label: f.Label, Value: resFormat(f, resGet(row, f.Key), rel)})
 	}
+	actions := []render.HTML{}
+	if c.CanEdit {
+		actions = append(actions,
+			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
+			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: html.Attrs{
+				"data-fui-rpc":          c.APIPath + "/" + id,
+				"data-fui-rpc-method":   "DELETE",
+				"data-fui-rpc-navigate": c.BasePath,
+				"data-fui-confirm":      "Delete this " + c.Singular + "? This cannot be undone.",
+			}}),
+		)
+	}
+	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
 	return render.Join(
-		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted})}),
+		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Cluster(ui.ClusterConfig{}, actions...)}),
 		ui.DetailList(ui.DetailListConfig{Items: items}),
 	)
+}
+
+// Form renders the create (id == "") or edit (id != "") form for one record.
+// It submits as an island: data-fui-rpc posts/puts JSON to the entity's
+// auto-CRUD endpoint, then SPA-navigates back to the list/detail on success.
+func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+	edit := id != ""
+	var row map[string]any
+	if edit {
+		r, err := c.Crud.GetOne(ctx, id, nil)
+		if err != nil || r == nil {
+			return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist."})
+		}
+		row = r
+	}
+	rel := c.relationLabels(ctx)
+
+	title, submit := "New "+c.Singular, "Create "+c.Singular
+	rpc, method, back := c.APIPath, "POST", c.BasePath
+	if edit {
+		title, submit = "Edit "+c.Singular, "Save changes"
+		rpc, method, back = c.APIPath+"/"+id, "PUT", c.BasePath+"/"+id
+	}
+	attrs := html.Attrs{
+		"data-fui-rpc":          rpc,
+		"data-fui-rpc-method":   method,
+		"data-fui-rpc-navigate": back,
+	}
+
+	fields := make([]render.HTML, 0, len(c.Fields))
+	for _, f := range c.Fields {
+		cur := ""
+		if edit {
+			cur = resCell(resGet(row, f.Key))
+		}
+		fields = append(fields, ui.FormField(ui.FormFieldConfig{
+			Label: f.Label, For: "f-" + f.Key, Input: c.formInput(ctx, f, cur, rel),
+		}))
+	}
+	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
+	return render.Join(
+		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Link(ui.LinkConfig{Href: back, Text: "← Cancel", Variant: ui.LinkMuted})}),
+		form,
+	)
+}
+
+// formInput builds the typed control for one field, prefilled with cur. Enums
+// and relations render their options server-side; relations resolve to the same
+// human label the list/detail show.
+func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, rel map[string]map[string]string) render.HTML {
+	id := "f-" + f.Key
+	if labels, ok := rel[f.Key]; ok {
+		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
+		for val, label := range labels {
+			opts = append(opts, html.SelectOption{Value: val, Text: label, Selected: val == cur})
+		}
+		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
+	}
+	switch f.Type {
+	case "enum":
+		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
+		for _, v := range f.Values {
+			opts = append(opts, html.SelectOption{Value: v, Text: resTitle(v), Selected: v == cur})
+		}
+		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
+	case "text":
+		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4})
+	case "bool", "boolean":
+		attrs := html.Attrs{}
+		if resTruthy(cur) {
+			attrs["checked"] = "checked"
+		}
+		return html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, ExtraAttrs: attrs})
+	default:
+		return html.Input(html.InputConfig{Type: resInputType(f.Type), Name: f.Key, ID: id, Value: cur})
+	}
+}
+
+// resInputType maps a field type to an <input type=...>.
+func resInputType(t string) string {
+	switch t {
+	case "int", "integer", "float", "decimal":
+		return "number"
+	case "date":
+		return "date"
+	case "timestamp", "datetime":
+		return "datetime-local"
+	case "email":
+		return "email"
+	default:
+		return "text"
+	}
 }
 
 // ----- formatting helpers ---------------------------------------------------

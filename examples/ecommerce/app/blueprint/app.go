@@ -68,7 +68,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		site = app.NewApp("ShopFront")
 	}
 	blueprintResources["categories"] = ResourceConfig{
-		Title: "Categories", Singular: "Category", BasePath: "/categories",
+		Title: "Categories", Singular: "Category", BasePath: "/categories", APIPath: "/api/categories",
 		Crud: fwApp.MustCrudHandler("categories"),
 		Fields: []ResField{
 			{Key: "name", Label: "Name", Type: "string"},
@@ -80,12 +80,13 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	blueprintResources["orders"] = ResourceConfig{
-		Title: "Orders", Singular: "Order", BasePath: "/orders",
-		Crud: fwApp.MustCrudHandler("orders"),
+		Title: "Orders", Singular: "Order", BasePath: "/orders", APIPath: "/api/orders",
+		Crud:    fwApp.MustCrudHandler("orders"),
+		CanEdit: true,
 		Fields: []ResField{
 			{Key: "user_id", Label: "User", Type: "string"},
 			{Key: "order_number", Label: "Order Number", Type: "string"},
-			{Key: "status", Label: "Status", Type: "enum"},
+			{Key: "status", Label: "Status", Type: "enum", Values: []string{"pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"}},
 			{Key: "customer_name", Label: "Customer Name", Type: "string"},
 			{Key: "customer_email", Label: "Customer Email", Type: "string"},
 			{Key: "customer_phone", Label: "Customer Phone", Type: "string"},
@@ -101,18 +102,19 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	blueprintResources["products"] = ResourceConfig{
-		Title: "Products", Singular: "Product", BasePath: "/products",
-		Crud: fwApp.MustCrudHandler("products"),
+		Title: "Products", Singular: "Product", BasePath: "/products", APIPath: "/api/products",
+		Crud:    fwApp.MustCrudHandler("products"),
+		CanEdit: true,
 		Fields: []ResField{
 			{Key: "name", Label: "Name", Type: "string"},
 			{Key: "slug", Label: "Slug", Type: "string"},
-			{Key: "sku", Label: "Sku", Type: "string"},
+			{Key: "sku", Label: "SKU", Type: "string"},
 			{Key: "description", Label: "Description", Type: "text"},
 			{Key: "price", Label: "Price", Type: "decimal"},
 			{Key: "compare_at_price", Label: "Compare At Price", Type: "decimal"},
 			{Key: "stock", Label: "Stock", Type: "int"},
 			{Key: "category_id", Label: "Category", Type: "relation"},
-			{Key: "status", Label: "Status", Type: "enum"},
+			{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "active", "archived"}},
 			{Key: "featured", Label: "Featured", Type: "bool"},
 			{Key: "weight", Label: "Weight", Type: "float"},
 			{Key: "image", Label: "Image", Type: "image"},
@@ -123,7 +125,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	blueprintResources["reviews"] = ResourceConfig{
-		Title: "Reviews", Singular: "Review", BasePath: "/reviews",
+		Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
 		Crud: fwApp.MustCrudHandler("reviews"),
 		Fields: []ResField{
 			{Key: "product_id", Label: "Product", Type: "relation"},
@@ -189,6 +191,8 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.Register("/new-product", &ProductNewScreen{}, appLayout)
 	site.Register("/product-detail", &ProductDetailScreen{}, appLayout)
 	site.Register("/order-detail", &OrderDetailScreen{}, appLayout)
+	site.Register("/product-detail/edit", &ProductsEditScreen{}, appLayout)
+	site.Register("/order-detail/edit", &OrdersEditScreen{}, appLayout)
 	fwApp.Router().Handle("POST", "/orders/{id}/confirm", http.HandlerFunc(ConfirmOrder))
 	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))
 	fwApp.Use(RequestLoggerMiddleware)
