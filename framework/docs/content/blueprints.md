@@ -39,6 +39,18 @@ keys are `primary`, `primary-fg`, `secondary`, `background`, `surface`,
 Generated apps call `site.WithTheme(...)`, so the values are emitted through
 `/__gofastr/app.css` as computed CSS custom properties.
 
+### Entity APIs live under `/api`; screens own the bare path
+
+`app.api_prefix` (default `"api"`) is the URL prefix every entity's JSON
+CRUD API mounts under, so `GET /api/posts` returns JSON while the bare
+`/posts` path is free for an HTML `screen`. Without this, a `screen` routed at
+`/posts` would collide with — and be shadowed by — the auto-generated CRUD
+handler at the same path. MCP tools and the OpenAPI spec follow the prefix
+automatically. Set `api_prefix: ""` to mount entity APIs at the bare
+`/<table>` (the historical behavior); a screen must then not reuse an entity
+path. The generated `entity_list` / `entity_form` / `entity_detail` blocks
+fetch and submit against `<api_prefix>/<entity>` accordingly.
+
 ## YAML subset
 
 GoFastr ships its own small YAML parser in `core/yaml`; no external YAML parser
@@ -206,6 +218,62 @@ wires generated screens/endpoints/middleware/plugins through
 `blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
 through the generated UI host.
 
+### Data blocks (`entity_list`, `entity_form`, `entity_detail`)
+
+A top-level `entity_list` or `entity_detail` makes its screen a **server-rendered**
+(request-time) screen that queries the entity's `CrudHandler` and composes real
+`framework/ui` components — no client-side fetch. The generator emits an owned
+engine at `blueprint/resource.go` (and a `blueprint/resource_test.go`) that the
+screens call:
+
+- `entity_list` → `ui.PageHeader` + `ui.SearchInput` + `ui.DataTable` +
+  `ui.Pagination`/`ui.EmptyState`, with **humanized headers** ("Generic Name"),
+  formatted cells (bool → Yes/No status badge, enum → status badge, `decimal` →
+  `$` money, dates trimmed), and **relation columns resolved to the related
+  record's display name** (not the raw id). Search/sort/pagination are
+  URL-driven and run server-side. `fields:` picks/orders the columns; `search:`
+  names the LIKE-search field; `limit:` sets the page size.
+- `entity_detail` reads the route `{id}`, loads the record server-side, and
+  renders the fields with the same formatting + relation resolution.
+- `entity_form` renders a `<form data-fui-rpc="<api_prefix>/<entity>">` (enum →
+  `<select>` of values; relation → `<select>` populated from the related entity).
+
+The generated `ResourceConfig` registry is populated in `RegisterGenerated` from
+each entity's `CrudHandler`, fields, and relations. `BlueprintBaseCSS()` (mounted
+ahead of `static/app.css`) ships a `box-sizing` reset, the themed page surface,
+and responsive table/card/form defaults.
+
+### UI component blocks (the framework/ui catalog)
+
+Any screen body can compose the framework's UI components directly via block
+`kind`s — the generator emits the matching `ui.X(...)` call:
+
+`page_header` · `hero` · `section` (with child blocks) · `card` · `stat_row` ·
+`stat_card` · `bar_chart` · `pie_chart` · `link_button` · `callout` · `divider`.
+
+**Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
+that computes a live metric server-side —
+`source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
+optional `filter: status=active`) for a `stat_card`, and
+`source: {entity: customers, group_by: status}` for a chart.
+
+### Layouts (`screen.layout`)
+
+`layout: marketing` wraps the screen in a `ui.SiteHeader` + `ui.SiteFooter` shell
+(for the public/front-of-house pages); `layout: app` uses the sidebar shell
+(`nav`). Omitted → the default (sidebar if `nav` is set).
+
+### Seed data
+
+When the blueprint declares `seed:`, generation emits `BlueprintSeedData()`
+and `main.go` applies it via `App.WithSeed` after auto-migration. Seeding is
+**ordered** (entities load in declared order, so a relation target is inserted
+before the rows that reference it) and **idempotent** (an entity whose table
+already has rows is skipped). Rows go through the CRUD `CreateOne` path, so
+validation, id generation, and timestamps apply; `decimal` values are coerced
+to the decimal-string form the validator expects. A row that fails validation
+is logged and skipped rather than aborting startup.
+
 ### Auth (`app.auth`)
 
 ```yaml
@@ -271,6 +339,50 @@ cross-site form posts, and requests authenticated by `Authorization` /
 forms to a generated app, mount `auth.CSRF` on the routes that serve
 them (every form then needs `auth.CSRFInputFromCtx`) — see
 [auth](auth.md) for the pattern.
+
+### Login screen (`login_form` block)
+
+A `login_form` screen block renders a plain HTML sign-in form that posts
+(urlencoded, no JavaScript) to the auth battery's `POST <action>` handler,
+which detects the form post, sets the session cookie, and `303`-redirects to
+`?next=`. Put it on a screen to give the app a real, clickable login:
+
+```yaml
+screens:
+  - name: login
+    route: /login
+    body:
+      - kind: login_form
+        text: Sign in            # form heading
+        props:
+          action: /auth/login    # default /auth/login
+          next: /admin           # where to land after login (default /)
+          register_href: /signup  # optional link
+```
+
+### Admin back-office (`app.admin`)
+
+```yaml
+app:
+  admin:
+    enabled: true
+    path: /admin                # default /admin
+    role: admin                 # required role (default "admin")
+    login_path: /login          # unauthenticated GET → redirect here
+    seed_email: admin@you.com   # bootstrap admin account (created if absent)
+    seed_password: change-me
+```
+
+With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/),
+an auto-generated HTML back-office at `path`: an overview, queue/audit pages,
+and an editable CRUD screen for every registered entity at `<path>/e/<table>`
+(View / Edit / Delete / Create), all proxying each entity's own CrudHandler so
+validation, owner/tenant scope, hooks, and events apply. Access is gated by
+`role`; an unauthenticated GET is redirected to `login_path` (pair it with a
+`login_form` screen) instead of a bare 401, and a signed-in user without the
+role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
+that admin account on a fresh database (idempotent — created only when absent),
+so the back-office is reachable on first boot. Requires `app.auth.enabled`.
 
 ### app.module and the enclosing go.mod
 

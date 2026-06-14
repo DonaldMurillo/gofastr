@@ -55,6 +55,16 @@ just rendered HTML.
 The framework primitives live in:
 
 - `core-ui/widget` — the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...).RPCWithSignal(...)`)
+- `core-ui/node` — the JSON-clean UI element tree (`Node`, `Action`, tree
+  helpers). A dependency-free, serializable description of a screen. Both the
+  blueprint codegen (`cmd/gofastr`) and Kiln's World IR (`kiln/world`, which
+  type-aliases `node.Node`/`node.Action`) compose it; neither owns it. The IR
+  used to live under `kiln/`, forcing first-party callers to import the Kiln
+  namespace — it was moved down into `core-ui` so the dependency points the
+  right way (Kiln consumes core-ui, like any other caller).
+- `core-ui/noderender` — `RenderNode(node.Node) render.HTML`: walks a node
+  tree and emits HTML via `core-ui/html`. The leaf renderer the blueprint's
+  generated screens use.
 - `core-ui/island` — the runtime-side island manager (registration, SSE push, slot lookup)
 - `core-ui/interactive` — declarative interactivity primitives (`OnClick/OnSubmit` wrapping for in-page RPC, signal binding, widget chaining)
 - `core-ui/runtime/runtime.js` — the client-side hydration runtime
@@ -217,6 +227,16 @@ server side and the runtime does the work.
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
 
+**Component-action attributes** (the compiled `data-action` family, distinct
+from the `data-fui-*` runtime primitives above): `data-action="<name>"` on an
+element inside a `[data-component]` binds the named compiled action to that
+element's click (and `data-action-<event>` / `data-action-type` to
+input/change/submit). `data-action-mount="<name>"` fires the named action
+*once on hydration* (and again after each SPA nav) — the hook a server-rendered
+island uses to populate itself on load, since the other triggers are
+user-event-driven. Any `data-param-*` on the element flows into the handler's
+`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`.
+
 **Response headers the runtime understands:**
 
 | Header | Effect |
@@ -342,6 +362,33 @@ That's a different model (Stimulus-style). It conflicts with "islands are
 server-driven" and "the server is the source of truth". For datasets
 larger than first paint it just breaks. Use an island RPC and let the
 server do the math.
+
+### Failure 4: "Ship CSS from the app / generator to make it look right"
+> Symptom: a `BlueprintBaseCSS` string (or an app `theme.go`, or a page)
+> accreting `.mrd-hero`, `.gofastr-entity-form`, `.layout-marketing`
+> rules; hand-rolled `<div class="…">` structure; overriding a component's
+> internals from outside via a CSS var or descendant selector.
+
+Caught 2026-06 building the Meridian flagship — ~70 bespoke rules accreted
+in the generator before anyone noticed, half of them re-implementing or
+working around components that already existed (`ui.Grid`, `ui.Stack`,
+`ui.ThemeToggle`) and a token that already existed (`--font-heading`).
+
+Why it's seductive and why it's wrong: a generator's (or page's) local
+success metric is "does this surface look right?", and inline CSS
+satisfies it **instantly**. The cost — CSS duplicated from the design
+system, only *this* surface gets it, divergence from every other surface —
+is invisible until someone asks "why does the generator ship CSS?". Each
+addition is individually defensible ("I need a container → add container
+CSS"); the **sum** is drift. There is no single wrong step, so a per-step
+instinct won't catch it. The tripwire is the *cumulative* shape: a
+`*BaseCSS` string that keeps growing, an invented `.mrd-`/`.gofastr-`
+class, a raw property where a `var(--*)` token belongs.
+
+The fix is **One styling surface** — see below. Treat a surface that needs
+CSS the components don't provide as a *design-system gap to fill upstream*,
+not a patch. The blueprint composing the design system is the system's
+completeness test: when it can't, you found the gap.
 
 ---
 
@@ -559,6 +606,32 @@ and **always scoped** to `[data-fui-comp="<name>"]`. There is no
 "unscoped component CSS"; global rules (resets, typography, theme
 tokens) live in `theme.css` / `WithCustomCSS`.
 
+### One styling surface (who ships CSS, and who must not)
+
+There is exactly one place each kind of styling lives. Nothing else —
+no app, no battery, no generator, no page — ships CSS:
+
+| Styling | Lives in | Mechanism |
+| --- | --- | --- |
+| A component's look | its `framework/ui` (or `core-ui/patterns`) file | `registry.RegisterStyle(name, fn)`, scoped to `[data-fui-comp]` |
+| Layout shells (`.layout-body`, the centered container, sidebar row) | `core-ui/app` | `app.LayoutBaseCSS()`, injected once by the UI host |
+| Global resets, base typography, tabular figures, landmark-focus | `framework/uihost` | `frameworkBuiltinCSS` |
+| Colors / fonts / dark scheme | `core-ui/style` | theme tokens (`--color-*`, `--font-*`, `Theme.DarkColors`) |
+
+**The blueprint generator and every app ship ZERO bespoke CSS.** They
+*compose* the design system — `ui.Hero`, `ui.Grid`, `ui.DetailList`,
+`ui.AuthCard`, `ui.Form`, `ui.SiteHeader{Drawer: Sheet}`,
+`app.NewLayout().WithContainer()` — and inherit all styling from it. Proof
+the system is cohesive and composable: a generated app's `BlueprintBaseCSS()`
+returns `""`.
+
+When a surface needs styling the design system doesn't provide, the fix is
+**upstream**: add or extend a component / layout / token, then compose it.
+Never inline CSS, never a `*BaseCSS` string of rules, never override a
+component's internals from outside — give the component a config/variant
+instead (`SiteHeaderConfig.Drawer`, `Layout.WithContainer`,
+`FormConfig.ExtraAttrs`, a new theme token). See "Failure 4" above.
+
 ### The model in one paragraph
 
 A component declares its CSS by calling
@@ -764,6 +837,7 @@ framework/
 7. **Always** prefer composing existing widget/preset shortcuts over building a new island from scratch.
 8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop — toasts are ephemeral by definition.
 9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS — read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
+9b. **One styling surface — apps and generators ship ZERO CSS.** All styling lives in the design system (component CSS via `registry.RegisterStyle`, layouts via `core-ui/app`, tokens via `core-ui/style`). A surface needing styling the components don't provide is a gap to fix *upstream*, never an inline rule, a `*BaseCSS` string, an invented `.mrd-`/`.gofastr-` class, or a property where a `var(--*)` token belongs. See "Failure 4" + "One styling surface". Survey `framework/ui`/`core-ui` for an existing primitive before hand-rolling.
 10. **State-changing fetches from runtime modules must forward the page's CSRF token.** Read `document.querySelector('meta[name="csrf-token"]')` once per fetch and set `X-CSRF-Token` on the request. `OptimisticAction`'s runtime is the canonical example. Apps verify the token server-side; the runtime doesn't enforce — it just makes the value reachable so each call site doesn't re-implement the lookup.
 11. **Async runtime modules set `aria-busy="true"` + `disabled` on the trigger during in-flight RPCs.** Without it, keyboard Enter/Space fires duplicate submits and screen readers don't announce the state change. Clear both on commit / idle / error. `OptimisticAction` and `NetworkRetryBanner` follow this contract.
 12. **Per-instance state lives in a `WeakMap` keyed by the wrapper element** — never module-globals. Multiple instances of the same widget on one page (or two banners, two scrollspies) is a normal scenario; assuming "one per page" is a bug that lands a code review later. Track active instances in a sibling `Set` so SPA-nav teardown can disconnect observers / clear timers without leaking.

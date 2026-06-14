@@ -217,8 +217,13 @@ commit. From an empty directory containing that `gofastr.yml`:
 go mod init example.com/blog
 gofastr generate --from=gofastr.yml    # scaffolds main.go + entities/ + blueprint/ — owned Go you commit
 go mod tidy                            # pulls gofastr from the module proxy
-go run .                               # users + posts CRUD, OpenAPI, MCP — live on :8080
+go run .                               # users + posts CRUD under /api, OpenAPI, MCP — live on :8080
 ```
+
+The blueprint mounts its REST API under `/api` by default (`GET /api/posts`),
+leaving bare paths free for HTML `screens`. Set `app.api_prefix: ""` to serve
+entities at the bare path instead. MCP tools and the OpenAPI spec follow the
+prefix automatically.
 
 Re-running `gofastr generate` is add-only: it writes new files but never
 overwrites code you've edited (pass `--force` to overwrite). The blueprint is a
@@ -244,7 +249,10 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
-Both forms produce the exact same routes, OpenAPI, and MCP tools.
+Both forms produce the same OpenAPI and MCP tools. The route shapes below are
+identical too — the blueprint just serves them under its `app.api_prefix`
+(default `/api`), while the Go form above mounts at the bare path unless you
+add `framework.WithAPIPrefix`.
 
 ## What you get from one entity declaration
 

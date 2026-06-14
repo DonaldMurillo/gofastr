@@ -7,6 +7,77 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added — blueprint generates real, full web apps
+
+The blueprint generator now emits **owned Go that composes the full `framework/ui`
+catalog** instead of raw HTML, turning a blueprint into a credible product (see
+the new `examples/meridian` flagship — a SaaS billing console + marketing site).
+
+- **Server-rendered entity screens.** `entity_list` / `entity_detail` are emitted
+  as request-time SSR screens (`RenderCtx`) backed by the entity's `CrudHandler`,
+  composing `ui.DataTable` / `ui.PageHeader` with an owned `blueprint/resource.go`
+  engine: humanized headers, formatted cells (bool→Yes/No + status badges, enums,
+  `$` money, dates), foreign keys resolved to the related record's name, and
+  server-side search / sort / pagination + empty states. Replaces the old
+  client-fetch raw-`<table>` islands.
+- **Full UI catalog as blueprint blocks** — `page_header`, `hero`, `section`,
+  `card`, `stat_row`, `stat_card`, `bar_chart`/`pie_chart`, `link_button`,
+  `callout`, plus data-bound dashboard widgets: `stat_card`/charts with
+  `source: {entity, agg: count|sum, field, group_by, filter}` compute live
+  metrics server-side.
+- **Marketing + app layouts** — `screen.layout: marketing` uses
+  `ui.SiteHeader`/`ui.SiteFooter`; `layout: app` uses the sidebar shell.
+- **Auth screens + RBAC gating** — `signup_form` block; `screen.access:
+  {auth: true, role: …}` emits an `appui.Policy` that redirects anonymous GETs to
+  the login page (with `?next=`) and 403s a signed-in user missing the role.
+- **The generator emits tests** — every app gets an owned unit test
+  (`blueprint/resource_test.go`) for the formatting engine and an `e2e_test.go`
+  that builds + boots the binary and asserts the marketing home, the login
+  redirect on gated routes, and the authenticated screens render.
+- A standard `box-sizing: border-box` reset + body theme surface ship in the
+  generated base CSS so padded full-width bars don't overflow on mobile.
+
+### Added
+
+- **`core-ui/node` + `core-ui/noderender`** — the JSON-clean UI node tree
+  (`Node`, `Action`, tree helpers) and its HTML renderer, extracted from
+  `kiln/world` + `kiln/noderender` into first-party `core-ui` packages. The
+  blueprint codegen no longer emits any import of the `kiln/*` namespace;
+  Kiln consumes the node packages like any other caller (`kiln/world`
+  type-aliases `node.Node`/`node.Action`, so kiln-internal code is unchanged).
+- **`data-action-mount` runtime primitive** — fires a compiled component
+  action once on hydration (and after each SPA nav), so a server-rendered
+  island can populate itself on load without a user event.
+- **Blueprint `app.api_prefix`** (default `"api"`) — entity JSON CRUD mounts
+  under `/api/<table>`, freeing the bare `/<table>` path for HTML screens.
+- **Blueprint login + admin back-office** — a `login_form` screen block renders
+  a no-JS HTML sign-in form (posts to the auth battery, redirects on success),
+  and `app.admin` wires the admin battery: an editable CRUD back-office over
+  every entity at `/admin`, gated by a role, with `seed_email`/`seed_password`
+  bootstrapping an admin account on first boot. `battery/admin` gained a
+  `LoginPath` config — an unauthenticated GET redirects to the login page
+  instead of returning a bare 401.
+
+### Changed
+
+- **Blueprint-generated apps are now usable websites end-to-end.** Screens
+  routed at an entity's path are no longer shadowed by the CRUD JSON handler
+  (the API moved under `/api`); `entity_list` / `entity_form` / `entity_detail`
+  blocks render and auto-populate on load (including when nested inside a
+  `section`/`div`, which previously degraded to an HTML comment); `enum` fields
+  render populated `<select>`s and `relation` fields render selects populated
+  from the related entity; forms submit via `data-fui-rpc`; dynamic detail
+  routes (`/x/{id}`) resolve; and declared `seed:` data is applied on first
+  boot (ordered, idempotent, decimal-coerced, non-fatal on a bad row).
+  Generated apps ship a responsive base stylesheet (`BlueprintBaseCSS`) and a
+  body font floor so they render in a system/Inter stack instead of the
+  browser serif default.
+
+  **BREAKING (generated apps):** regenerated blueprint apps serve entity JSON
+  at `/api/<table>` instead of `/<table>`. Set `app.api_prefix: ""` to keep
+  the old bare paths. MCP tools and the OpenAPI spec follow the prefix
+  automatically.
+
 ## [0.6.1] - 2026-06-12
 
 Patch release fixing two docs-site (`examples/site`) bugs. No breaking changes,
