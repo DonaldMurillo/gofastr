@@ -78,6 +78,21 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{Key: "sort_order", Label: "Sort Order", Type: "int"},
 			{Key: "active", Label: "Active", Type: "bool"},
 		},
+		Related: []RelatedList{
+			{
+				Title: "Products", ForeignKey: "category_id", BasePath: "/products",
+				Crud: fwApp.MustCrudHandler("products"),
+				Fields: []ResField{
+					{Key: "name", Label: "Name", Type: "string"},
+					{Key: "slug", Label: "Slug", Type: "string"},
+					{Key: "sku", Label: "SKU", Type: "string"},
+					{Key: "description", Label: "Description", Type: "text"},
+				},
+				Relations: map[string]RelSource{
+					"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
+				},
+			},
+		},
 	}
 	blueprintResources["orders"] = ResourceConfig{
 		Title: "Orders", Singular: "Order", BasePath: "/orders", APIPath: "/api/orders",
@@ -99,6 +114,22 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			{Key: "notes", Label: "Notes", Type: "text"},
 			{Key: "shipped_at", Label: "Shipped At", Type: "timestamp"},
 			{Key: "delivered_at", Label: "Delivered At", Type: "timestamp"},
+		},
+		Related: []RelatedList{
+			{
+				Title: "Order Items", ForeignKey: "order_id", BasePath: "",
+				Crud: fwApp.MustCrudHandler("order_items"),
+				Fields: []ResField{
+					{Key: "user_id", Label: "User", Type: "string"},
+					{Key: "product_id", Label: "Product", Type: "relation"},
+					{Key: "product_name", Label: "Product Name", Type: "string"},
+					{Key: "quantity", Label: "Quantity", Type: "int"},
+				},
+				Relations: map[string]RelSource{
+					"order_id":   {Crud: fwApp.MustCrudHandler("orders"), Display: "user_id"},
+					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
+				},
+			},
 		},
 	}
 	blueprintResources["products"] = ResourceConfig{
@@ -123,6 +154,35 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		Relations: map[string]RelSource{
 			"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
 		},
+		Related: []RelatedList{
+			{
+				Title: "Order Items", ForeignKey: "product_id", BasePath: "",
+				Crud: fwApp.MustCrudHandler("order_items"),
+				Fields: []ResField{
+					{Key: "user_id", Label: "User", Type: "string"},
+					{Key: "order_id", Label: "Order", Type: "relation"},
+					{Key: "product_name", Label: "Product Name", Type: "string"},
+					{Key: "quantity", Label: "Quantity", Type: "int"},
+				},
+				Relations: map[string]RelSource{
+					"order_id":   {Crud: fwApp.MustCrudHandler("orders"), Display: "user_id"},
+					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
+				},
+			},
+			{
+				Title: "Reviews", ForeignKey: "product_id", BasePath: "/reviews",
+				Crud: fwApp.MustCrudHandler("reviews"),
+				Fields: []ResField{
+					{Key: "author_name", Label: "Author Name", Type: "string"},
+					{Key: "rating", Label: "Rating", Type: "int"},
+					{Key: "title", Label: "Title", Type: "string"},
+					{Key: "body", Label: "Body", Type: "text"},
+				},
+				Relations: map[string]RelSource{
+					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
+				},
+			},
+		},
 	}
 	blueprintResources["reviews"] = ResourceConfig{
 		Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
@@ -142,7 +202,8 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.WithTheme(BlueprintTheme())
 	sbCfg := BlueprintSidebarConfig()
 	sb := ui.Sidebar(sbCfg)
-	appLayout := app.NewLayout("app").WithSidebar(sb)
+	appHeader := app.NewStaticComponent(ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyEnd}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})))
+	appLayout := app.NewLayout("app").WithSidebar(sb).WithHeader(appHeader)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)
 	{

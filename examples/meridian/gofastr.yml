@@ -312,12 +312,33 @@ screens:
         props:
           title: Pricing
           subtitle: Start free. Upgrade when revenue does.
-      - kind: entity_list
-        entity: plans
-        text: Plans
-        fields: [name, price, interval, active]
-        empty_text: Pricing coming soon.
+      - kind: pricing
+        props:
+          plans:
+            - name: Starter
+              price: "$29"
+              period: /mo
+              description: For solo founders finding their first customers.
+              features: ["Up to 100 customers", "Core billing & invoices", "Email support"]
+              cta_text: Start free
+              cta_href: /signup
+            - name: Pro
+              price: "$99"
+              period: /mo
+              description: For growing teams that live in their revenue.
+              featured: true
+              features: ["Unlimited customers", "MRR & churn analytics", "Subscription workflows", "Priority support"]
+              cta_text: Start free
+              cta_href: /signup
+            - name: Scale
+              price: "$299"
+              period: /mo
+              description: For high-volume revenue and finance teams.
+              features: ["Everything in Pro", "SSO & audit log", "Dedicated success manager", "99.9% uptime SLA"]
+              cta_text: Contact sales
+              cta_href: /signup
 
+  # ---- About: the plain heading/paragraph content path (readable measure) ----
   - name: about
     route: /about
     layout: marketing
@@ -332,27 +353,22 @@ screens:
       - type: paragraph
         text: It exists to show that a framework can generate a real, polished web application — not a CRUD scaffold.
 
+  # ---- Terms + Privacy: the markdown content path (rich long-form prose) ------
   - name: terms
     route: /terms
     layout: marketing
     title: Terms of Service
     body:
-      - type: heading
-        level: 1
-        text: Terms of Service
-      - type: paragraph
-        text: This is a demo application. These terms are placeholder content that demonstrates long-form, readable typography in the marketing layout.
+      - kind: markdown
+        text: "# Terms of Service\n\nThis is a demonstration application. The text below is placeholder content that shows long-form, **readable** typography rendered from Markdown in the marketing layout.\n\n## Acceptance\n\nBy using Meridian you agree these terms are illustrative only — there is no real service, billing, or obligation.\n\n## Use of the service\n\n- Evaluate Meridian freely for any purpose.\n- Sample data is reset periodically without notice.\n- Don't rely on it for anything that matters.\n\n## Liability\n\nMeridian is provided *as-is*, without warranty of any kind."
 
   - name: privacy
     route: /privacy
     layout: marketing
     title: Privacy Policy
     body:
-      - type: heading
-        level: 1
-        text: Privacy Policy
-      - type: paragraph
-        text: This is a demo application and stores only the sample data you create. Placeholder privacy content.
+      - kind: markdown
+        text: "# Privacy Policy\n\nMeridian is a demo and stores only the sample data you create while exploring it. The content below is placeholder Markdown.\n\n## What we collect\n\nNothing personal. A demo account and any records you add in the console — all reset periodically.\n\n## What we share\n\nNothing. There are no third parties, trackers, or analytics in this demonstration app."
 
   # ---- Auth ------------------------------------------------------------------
   - name: login
@@ -397,10 +413,12 @@ screens:
           - kind: stat_card
             props:
               label: MRR
+              # Real MRR: summed from ACTIVE subscriptions, not a stored column.
               source:
-                entity: customers
+                entity: subscriptions
                 agg: sum
                 field: mrr
+                filter: status=active
               format: money
           - kind: stat_card
             props:
@@ -477,6 +495,24 @@ screens:
         create: true
         empty_text: No invoices yet.
 
+  - name: invoice_detail
+    route: /app/invoices/{id}
+    layout: app
+    access:
+      auth: true
+    title: Invoice
+    body:
+      - kind: entity_detail
+        entity: invoices
+        transitions:
+          - label: Mark paid
+            status: paid
+            variant: primary
+            stamp: paid_on
+          - label: Void
+            status: void
+            variant: danger
+
   - name: subscriptions
     route: /app/subscriptions
     layout: app
@@ -491,6 +527,23 @@ screens:
         limit: 25
         create: true
         empty_text: No subscriptions yet.
+
+  - name: subscription_detail
+    route: /app/subscriptions/{id}
+    layout: app
+    access:
+      auth: true
+    title: Subscription
+    body:
+      - kind: entity_detail
+        entity: subscriptions
+        transitions:
+          - label: Activate
+            status: active
+            variant: primary
+          - label: Cancel
+            status: canceled
+            variant: danger
 
 # =============================================================================
 # NAV — marketing header/footer + app sidebar

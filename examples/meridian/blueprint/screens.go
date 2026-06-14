@@ -24,16 +24,16 @@ func (s *HomeScreen) Render() render.HTML {
 	)
 }
 
-type PricingScreen struct{ component.ContextOnly }
+type PricingScreen struct{}
 
 func (s *PricingScreen) ScreenTitle() string        { return "Pricing" }
 func (s *PricingScreen) ScreenDescription() string  { return "Plans for teams of every size." }
 func (s *PricingScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-func (s *PricingScreen) RenderCtx(ctx context.Context) render.HTML {
+func (s *PricingScreen) Render() render.HTML {
 	return render.Tag("div", nil,
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Pricing", Subtitle: "Start free. Upgrade when revenue does.", Eyebrow: ""}),
-		blueprintResources["plans"].WithColumns("name", "price", "interval", "active").WithHeading("Plans").WithEmpty("Pricing coming soon.").List(ctx),
+		ui.Grid(ui.GridConfig{Min: "16rem"}, ui.PricingCard(ui.PricingCardConfig{Name: "Starter", Price: "$29", Period: "/mo", Description: "For solo founders finding their first customers.", Features: []string{"Up to 100 customers", "Core billing & invoices", "Email support"}, CTALabel: "Start free", CTAHref: "/signup"}), ui.PricingCard(ui.PricingCardConfig{Name: "Pro", Price: "$99", Period: "/mo", Description: "For growing teams that live in their revenue.", Features: []string{"Unlimited customers", "MRR & churn analytics", "Subscription workflows", "Priority support"}, CTALabel: "Start free", CTAHref: "/signup", Featured: true}), ui.PricingCard(ui.PricingCardConfig{Name: "Scale", Price: "$299", Period: "/mo", Description: "For high-volume revenue and finance teams.", Features: []string{"Everything in Pro", "SSO & audit log", "Dedicated success manager", "99.9% uptime SLA"}, CTALabel: "Contact sales", CTAHref: "/signup"})),
 	)
 }
 
@@ -59,8 +59,7 @@ func (s *TermsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *TermsScreen) Render() render.HTML {
 	return render.Tag("div", nil,
-		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Terms of Service")),
-		render.Tag("p", nil, render.Text("This is a demo application. These terms are placeholder content that demonstrates long-form, readable typography in the marketing layout.")),
+		ui.Markdown(ui.MarkdownConfig{Source: "# Terms of Service\n\nThis is a demonstration application. The text below is placeholder content that shows long-form, **readable** typography rendered from Markdown in the marketing layout.\n\n## Acceptance\n\nBy using Meridian you agree these terms are illustrative only — there is no real service, billing, or obligation.\n\n## Use of the service\n\n- Evaluate Meridian freely for any purpose.\n- Sample data is reset periodically without notice.\n- Don't rely on it for anything that matters.\n\n## Liability\n\nMeridian is provided *as-is*, without warranty of any kind."}),
 	)
 }
 
@@ -72,8 +71,7 @@ func (s *PrivacyScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *PrivacyScreen) Render() render.HTML {
 	return render.Tag("div", nil,
-		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Privacy Policy")),
-		render.Tag("p", nil, render.Text("This is a demo application and stores only the sample data you create. Placeholder privacy content.")),
+		ui.Markdown(ui.MarkdownConfig{Source: "# Privacy Policy\n\nMeridian is a demo and stores only the sample data you create while exploring it. The content below is placeholder Markdown.\n\n## What we collect\n\nNothing personal. A demo account and any records you add in the console — all reset periodically.\n\n## What we share\n\nNothing. There are no third parties, trackers, or analytics in this demonstration app."}),
 	)
 }
 
@@ -110,7 +108,7 @@ func (s *DashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Overview", Subtitle: "Revenue at a glance", Eyebrow: ""}),
-		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: blueprintStatValue(ctx, "customers", "sum", "mrr", "", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: blueprintStatValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: blueprintStatValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: blueprintStatValue(ctx, "plans", "count", "", "", "")})),
+		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: blueprintStatValue(ctx, "subscriptions", "sum", "mrr", "status=active", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: blueprintStatValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: blueprintStatValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: blueprintStatValue(ctx, "plans", "count", "", "", "")})),
 		render.Tag("div", map[string]string{"class": "mrd-chart"}, html.Heading(html.HeadingConfig{Level: 2, Class: "mrd-chart__title"}, render.Text("Customers by status")), ui.BarChart(ui.BarChartConfig{Bars: blueprintGroupBars(ctx, "customers", "status"), ShowLabels: true})),
 		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "due_on").WithLimit(8).WithHeading("Recent invoices").WithEmpty("No invoices yet.").List(ctx),
 	)
@@ -156,6 +154,22 @@ func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
+type InvoiceDetailScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *InvoiceDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *InvoiceDetailScreen) ScreenTitle() string           { return "Invoice" }
+func (s *InvoiceDetailScreen) ScreenDescription() string     { return "" }
+func (s *InvoiceDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *InvoiceDetailScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["invoices"].WithTransitions(Transition{Label: "Mark paid", Status: "paid", Variant: "primary", Stamp: "paid_on"}, Transition{Label: "Void", Status: "void", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
+	)
+}
+
 type SubscriptionsScreen struct{ component.ContextOnly }
 
 func (s *SubscriptionsScreen) ScreenTitle() string        { return "Subscriptions" }
@@ -165,6 +179,22 @@ func (s *SubscriptionsScreen) ScreenType() app.ScreenType { return app.ScreenPag
 func (s *SubscriptionsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		blueprintResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().WithHeading("Subscriptions").WithEmpty("No subscriptions yet.").List(ctx),
+	)
+}
+
+type SubscriptionDetailScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *SubscriptionDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *SubscriptionDetailScreen) ScreenTitle() string           { return "Subscription" }
+func (s *SubscriptionDetailScreen) ScreenDescription() string     { return "" }
+func (s *SubscriptionDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *SubscriptionDetailScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["subscriptions"].WithTransitions(Transition{Label: "Activate", Status: "active", Variant: "primary", Stamp: ""}, Transition{Label: "Cancel", Status: "canceled", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
 	)
 }
 
@@ -208,6 +238,22 @@ func (s *InvoicesNewScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
+type InvoicesEditScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *InvoicesEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *InvoicesEditScreen) ScreenTitle() string           { return "Edit Invoice" }
+func (s *InvoicesEditScreen) ScreenDescription() string     { return "" }
+func (s *InvoicesEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *InvoicesEditScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["invoices"].Form(ctx, s.id),
+	)
+}
+
 type SubscriptionsNewScreen struct{ component.ContextOnly }
 
 func (s *SubscriptionsNewScreen) ScreenTitle() string        { return "New Subscription" }
@@ -217,5 +263,21 @@ func (s *SubscriptionsNewScreen) ScreenType() app.ScreenType { return app.Screen
 func (s *SubscriptionsNewScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		blueprintResources["subscriptions"].Form(ctx, ""),
+	)
+}
+
+type SubscriptionsEditScreen struct {
+	component.ContextOnly
+	id string
+}
+
+func (s *SubscriptionsEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *SubscriptionsEditScreen) ScreenTitle() string           { return "Edit Subscription" }
+func (s *SubscriptionsEditScreen) ScreenDescription() string     { return "" }
+func (s *SubscriptionsEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+
+func (s *SubscriptionsEditScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Tag("div", nil,
+		blueprintResources["subscriptions"].Form(ctx, s.id),
 	)
 }

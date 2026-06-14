@@ -37,22 +37,51 @@ type RelSource struct {
 	Display string
 }
 
+// Transition is a status-change workflow action shown on a detail page — a
+// button that PUTs {status: Status} to the entity, then refreshes (Mark paid).
+type Transition struct {
+	Label   string
+	Status  string
+	Variant string // "primary" | "secondary" | "danger" | "ghost" (default secondary)
+	Stamp   string // optional date field stamped with today on transition
+}
+
+// RelatedList is a reverse relation surfaced on a detail page: the records of
+// another entity that point back at this one via ForeignKey. Turns a detail
+// page from a row editor into an account view (a customer + their invoices).
+type RelatedList struct {
+	Title      string // e.g. "Invoices"
+	ForeignKey string // the FK column on the related entity, e.g. "customer_id"
+	BasePath   string // the related entity's app route, e.g. "/app/invoices"
+	Crud       *framework.CrudHandler
+	Fields     []ResField
+	Relations  map[string]RelSource // for resolving the related rows' own FKs
+}
+
 // ResourceConfig drives the server-rendered list + detail + form screens for
 // one entity.
 type ResourceConfig struct {
-	Title     string
-	Singular  string
-	BasePath  string // app route, e.g. "/app/customers"
-	APIPath   string // auto-CRUD JSON endpoint, e.g. "/api/customers"
-	Crud      *framework.CrudHandler
-	Fields    []ResField
-	Search    string
-	PageSize  int
-	Relations map[string]RelSource
-	CanCreate bool   // List shows "New"; a /new create form is mounted
-	CanEdit   bool   // Detail shows Edit + Delete; a /{id}/edit form is mounted
-	Heading   string // overrides the list's title (the block's text:)
-	EmptyText string // overrides the empty-state description (the block's empty_text:)
+	Title       string
+	Singular    string
+	BasePath    string // app route, e.g. "/app/customers"
+	APIPath     string // auto-CRUD JSON endpoint, e.g. "/api/customers"
+	Crud        *framework.CrudHandler
+	Fields      []ResField
+	Search      string
+	PageSize    int
+	Relations   map[string]RelSource
+	CanCreate   bool          // List shows "New"; a /new create form is mounted
+	CanEdit     bool          // Detail shows Edit + Delete; a /{id}/edit form is mounted
+	Heading     string        // overrides the list's title (the block's text:)
+	EmptyText   string        // overrides the empty-state description (the block's empty_text:)
+	Related     []RelatedList // reverse relations surfaced on the detail page
+	Transitions []Transition  // status-transition workflow buttons on the detail page
+}
+
+// WithTransitions sets the detail-page status-transition workflow buttons.
+func (c ResourceConfig) WithTransitions(ts ...Transition) ResourceConfig {
+	c.Transitions = ts
+	return c
 }
 
 func (c ResourceConfig) pageSize() int {
@@ -233,6 +262,19 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 		items = append(items, ui.DetailItem{Label: f.Label, Value: resFormat(f, resGet(row, f.Key), rel)})
 	}
 	actions := []render.HTML{}
+	for _, t := range c.Transitions {
+		body := "{\"status\":\"" + t.Status + "\""
+		if t.Stamp != "" {
+			body += ",\"" + t.Stamp + "\":\"" + resToday() + "\""
+		}
+		body += "}"
+		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: html.Attrs{
+			"data-fui-rpc":          c.APIPath + "/" + id,
+			"data-fui-rpc-method":   "PUT",
+			"data-fui-rpc-body":     body,
+			"data-fui-rpc-navigate": c.BasePath + "/" + id,
+		}}))
+	}
 	if c.CanEdit {
 		actions = append(actions,
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
@@ -245,10 +287,84 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 		)
 	}
 	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
-	return render.Join(
+	body := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Cluster(ui.ClusterConfig{}, actions...)}),
 		ui.DetailList(ui.DetailListConfig{Items: items}),
-	)
+	}
+	for _, rl := range c.Related {
+		body = append(body, c.relatedList(ctx, rl, id))
+	}
+	return render.Join(body...)
+}
+
+// relatedList renders one reverse-relation section: the related entity's rows
+// where ForeignKey == this record's id, as a compact table under a heading.
+func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
+	rows, err := rl.Crud.ListAll(ctx, framework.ListOptions{
+		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
+		Limit:   10,
+	})
+	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title)})
+	if err != nil {
+		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
+	}
+	if len(rows) == 0 {
+		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added."}))
+	}
+	relLabels := relatedRelationLabels(ctx, rl.Relations)
+	cols := make([]ui.Column, 0, len(rl.Fields)+1)
+	for _, f := range rl.Fields {
+		col := ui.Column{Key: f.Key, Header: f.Label}
+		if resNumeric(f.Type) {
+			col.Align = "end"
+		}
+		cols = append(cols, col)
+	}
+	if rl.BasePath != "" {
+		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
+	}
+	uiRows := make([]ui.Row, 0, len(rows))
+	for _, row := range rows {
+		rid := resCell(resGet(row, "id"))
+		cells := map[string]render.HTML{}
+		for _, f := range rl.Fields {
+			cells[f.Key] = resFormat(f, resGet(row, f.Key), relLabels)
+		}
+		if rl.BasePath != "" {
+			cells["_a"] = ui.Link(ui.LinkConfig{Href: rl.BasePath + "/" + rid, Text: "View", Variant: ui.LinkAction})
+		}
+		uiRows = append(uiRows, ui.Row{ID: rid, Cells: cells})
+	}
+	return render.Join(head, ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards}))
+}
+
+// relatedRelationLabels resolves the FK columns of a related entity's rows to
+// display names (so an invoice row under a customer still shows plan names etc.).
+func relatedRelationLabels(ctx context.Context, rels map[string]RelSource) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for col, rel := range rels {
+		if rel.Crud == nil {
+			continue
+		}
+		rows, err := rel.Crud.ListAll(ctx, framework.ListOptions{Limit: 1000})
+		if err != nil {
+			continue
+		}
+		m := map[string]string{}
+		for _, r := range rows {
+			rid := resCell(resGet(r, "id"))
+			if rid == "" {
+				continue
+			}
+			label := resCell(resGet(r, rel.Display))
+			if label == "" {
+				label = rid
+			}
+			m[rid] = label
+		}
+		out[col] = m
+	}
+	return out
 }
 
 // Form renders the create (id == "") or edit (id != "") form for one record.
@@ -340,6 +456,23 @@ func resInputType(t string) string {
 		return "email"
 	default:
 		return "text"
+	}
+}
+
+func resToday() string {
+	return time.Now().Format("2006-01-02")
+}
+
+func resButtonVariant(v string) ui.ButtonVariant {
+	switch v {
+	case "primary":
+		return ui.ButtonPrimary
+	case "danger":
+		return ui.ButtonDanger
+	case "ghost":
+		return ui.ButtonGhost
+	default:
+		return ui.ButtonSecondary
 	}
 }
 
