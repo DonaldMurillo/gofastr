@@ -675,7 +675,7 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.On("save_click"`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-action": "save_click"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `blueprintResources["posts"].WithColumns("title", "status").WithLimit(5).List(ctx)`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `blueprintResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.").List(ctx)`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `type AnalyticsPlugin struct{}`)

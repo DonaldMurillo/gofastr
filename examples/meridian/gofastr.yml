@@ -517,17 +517,17 @@ seed:
     rows:
       - name: Starter
         slug: starter
-        price: 29
+        price: "29"
         interval: month
         active: true
       - name: Pro
         slug: pro
-        price: 99
+        price: "99"
         interval: month
         active: true
       - name: Scale
         slug: scale
-        price: 299
+        price: "299"
         interval: month
         active: true
   - entity: customers
@@ -536,52 +536,52 @@ seed:
         email: ada@acme.io
         company: Acme Inc
         status: active
-        mrr: 99
+        mrr: "99"
       - name: Grace Hopper
         email: grace@globex.com
         company: Globex
         status: active
-        mrr: 299
+        mrr: "299"
       - name: Alan Turing
         email: alan@initech.io
         company: Initech
         status: past_due
-        mrr: 29
+        mrr: "29"
       - name: Katherine Johnson
         email: kj@umbrella.co
         company: Umbrella
         status: active
-        mrr: 99
+        mrr: "99"
       - name: Linus Torvalds
         email: linus@hooli.com
         company: Hooli
         status: canceled
-        mrr: 0
+        mrr: "0"
       - name: Margaret Hamilton
         email: mh@apollo.io
         company: Apollo
         status: active
-        mrr: 299
+        mrr: "299"
       - name: Dennis Ritchie
         email: dmr@belllabs.com
         company: Bell Labs
         status: trialing
-        mrr: 0
+        mrr: "0"
       - name: Barbara Liskov
         email: liskov@mit.edu
         company: MIT
         status: active
-        mrr: 99
+        mrr: "99"
       - name: Tim Berners-Lee
         email: tbl@w3.org
         company: W3C
         status: past_due
-        mrr: 29
+        mrr: "29"
       - name: Donald Knuth
         email: knuth@stanford.edu
         company: Stanford
         status: active
-        mrr: 299
+        mrr: "299"
 
   # Relational seed: customer_id / plan_id reference rows seeded above by a
   # natural key ("@entity.field=value"); the seed runner resolves them to the
@@ -591,61 +591,61 @@ seed:
       - customer_id: "@customers.email=ada@acme.io"
         plan_id: "@plans.slug=pro"
         status: active
-        mrr: 99
+        mrr: "99"
         started_on: "2025-09-04"
         renews_on: "2026-07-04"
       - customer_id: "@customers.email=grace@globex.com"
         plan_id: "@plans.slug=scale"
         status: active
-        mrr: 299
+        mrr: "299"
         started_on: "2025-06-12"
         renews_on: "2026-06-12"
       - customer_id: "@customers.email=alan@initech.io"
         plan_id: "@plans.slug=starter"
         status: past_due
-        mrr: 29
+        mrr: "29"
         started_on: "2025-11-20"
         renews_on: "2026-05-20"
       - customer_id: "@customers.email=kj@umbrella.co"
         plan_id: "@plans.slug=pro"
         status: active
-        mrr: 99
+        mrr: "99"
         started_on: "2025-10-01"
         renews_on: "2026-07-01"
       - customer_id: "@customers.email=linus@hooli.com"
         plan_id: "@plans.slug=scale"
         status: canceled
-        mrr: 0
+        mrr: "0"
         started_on: "2024-12-15"
         renews_on: "2025-12-15"
       - customer_id: "@customers.email=mh@apollo.io"
         plan_id: "@plans.slug=scale"
         status: active
-        mrr: 299
+        mrr: "299"
         started_on: "2025-03-22"
         renews_on: "2026-06-22"
       - customer_id: "@customers.email=dmr@belllabs.com"
         plan_id: "@plans.slug=pro"
         status: trialing
-        mrr: 0
+        mrr: "0"
         started_on: "2026-06-01"
         renews_on: "2026-06-15"
       - customer_id: "@customers.email=liskov@mit.edu"
         plan_id: "@plans.slug=pro"
         status: active
-        mrr: 99
+        mrr: "99"
         started_on: "2025-08-09"
         renews_on: "2026-07-09"
       - customer_id: "@customers.email=tbl@w3.org"
         plan_id: "@plans.slug=starter"
         status: past_due
-        mrr: 29
+        mrr: "29"
         started_on: "2025-12-02"
         renews_on: "2026-06-02"
       - customer_id: "@customers.email=knuth@stanford.edu"
         plan_id: "@plans.slug=scale"
         status: active
-        mrr: 299
+        mrr: "299"
         started_on: "2025-05-18"
         renews_on: "2026-06-18"
 
@@ -653,79 +653,79 @@ seed:
     rows:
       - customer_id: "@customers.email=ada@acme.io"
         number: INV-1001
-        amount: 99
+        amount: "99"
         status: paid
         issued_on: "2026-05-04"
         due_on: "2026-05-18"
         paid_on: "2026-05-06"
       - customer_id: "@customers.email=grace@globex.com"
         number: INV-1002
-        amount: 299
+        amount: "299"
         status: paid
         issued_on: "2026-05-12"
         due_on: "2026-05-26"
         paid_on: "2026-05-13"
       - customer_id: "@customers.email=alan@initech.io"
         number: INV-1003
-        amount: 29
+        amount: "29"
         status: past_due
         issued_on: "2026-04-20"
         due_on: "2026-05-04"
       - customer_id: "@customers.email=kj@umbrella.co"
         number: INV-1004
-        amount: 99
+        amount: "99"
         status: paid
         issued_on: "2026-05-01"
         due_on: "2026-05-15"
         paid_on: "2026-05-02"
       - customer_id: "@customers.email=mh@apollo.io"
         number: INV-1005
-        amount: 299
+        amount: "299"
         status: open
         issued_on: "2026-06-01"
         due_on: "2026-06-15"
       - customer_id: "@customers.email=liskov@mit.edu"
         number: INV-1006
-        amount: 99
+        amount: "99"
         status: paid
         issued_on: "2026-05-09"
         due_on: "2026-05-23"
         paid_on: "2026-05-11"
       - customer_id: "@customers.email=tbl@w3.org"
         number: INV-1007
-        amount: 29
+        amount: "29"
         status: past_due
         issued_on: "2026-04-02"
         due_on: "2026-04-16"
       - customer_id: "@customers.email=knuth@stanford.edu"
         number: INV-1008
-        amount: 299
+        amount: "299"
         status: paid
         issued_on: "2026-05-18"
         due_on: "2026-06-01"
         paid_on: "2026-05-19"
       - customer_id: "@customers.email=grace@globex.com"
         number: INV-1009
-        amount: 299
+        amount: "299"
         status: open
         issued_on: "2026-06-12"
         due_on: "2026-06-26"
       - customer_id: "@customers.email=ada@acme.io"
         number: INV-1010
-        amount: 99
+        amount: "99"
         status: open
         issued_on: "2026-06-04"
         due_on: "2026-06-18"
       - customer_id: "@customers.email=knuth@stanford.edu"
         number: INV-1011
-        amount: 299
+        amount: "299"
         status: paid
         issued_on: "2026-04-18"
         due_on: "2026-05-02"
         paid_on: "2026-04-20"
       - customer_id: "@customers.email=kj@umbrella.co"
         number: INV-1012
-        amount: 99
+        amount: "99"
         status: past_due
         issued_on: "2026-04-15"
         due_on: "2026-04-29"

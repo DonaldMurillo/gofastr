@@ -403,7 +403,9 @@ func fileSetFromGeneratedFiles(files []generatedFile, owner string) (*codegen.Fi
 }
 
 func renderGeneratedProject(decls []framework.EntityDeclaration) ([]generatedFile, error) {
-	sort.Slice(decls, func(i, j int) bool { return decls[i].Name < decls[j].Name })
+	// Preserve the caller's entity order (the blueprint's authored order, or the
+	// order entities were declared in Go). Inputs are ordered slices, so output
+	// stays deterministic — and `gofastr pack` can recover the authored order.
 	var register strings.Builder
 	register.WriteString(`package entities
 
