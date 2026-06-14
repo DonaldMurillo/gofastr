@@ -368,8 +368,11 @@ func examplesSection() render.HTML {
 		})
 	}
 
-	// Order matches /examples (01–06) so the two pages tell the same story.
+	// Order matches /examples (01–07) so the two pages tell the same story.
 	grid := html.Div(html.DivConfig{Class: "ex__grid"},
+		exCard("examples/meridian", "Meridian — SaaS console",
+			render.Join(render.Text("The flagship. A billing console + marketing site + auth + admin, generated from one "), codeText("gofastr.yml"), render.Text(" with writable add/edit/delete screens.")),
+			"cd examples/meridian && go run ."),
 		exCard("examples/blog", "Go-declared blog",
 			render.Text("Users, posts, comments. Three entities. The smallest end-to-end example — start here."),
 			"cd examples/blog && go run ."),
@@ -391,7 +394,7 @@ func examplesSection() render.HTML {
 	)
 
 	head := sectionHead(
-		"Six reference apps. Each runs in one command.",
+		"Seven reference apps. Each runs in one command.",
 		render.Text("Clone the one that looks like your problem; swap the entity declarations."),
 	)
 

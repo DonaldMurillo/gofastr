@@ -243,6 +243,32 @@ each entity's `CrudHandler`, fields, and relations. `BlueprintBaseCSS()` (mounte
 ahead of `static/app.css`) ships a `box-sizing` reset, the themed page surface,
 and responsive table/card/form defaults.
 
+#### Writable app screens (`create:`, edit, delete)
+
+App-side entity screens are read/write, not read-only:
+
+- Add `create: true` to an `entity_list` block → the list shows a **"New <Singular>"**
+  button and the generator synthesizes a `<route>/new` create-form screen
+  (rendered server-side by the resource engine's `Form(ctx, "")`).
+- Every `entity_detail` screen gets **Edit** + **Delete** actions in its header and
+  a synthesized `<detail-route>/edit` screen with the form **prefilled** from the
+  record (enum/relation `<select>`s render their options + selection server-side).
+
+The forms submit as islands: `data-fui-rpc` POSTs/PUTs JSON to the entity's
+`<api_prefix>/<entity>` endpoint, then `data-fui-rpc-navigate` returns to the
+list/detail on success. Delete is a `DELETE` with a native confirm. The synthesized
+screens inherit the source screen's `layout` + `access` and are not added to `nav`.
+
+#### RBAC for writable APIs
+
+When any entity declares an `access:` block, its auto-CRUD API is permission-gated
+— so the app must install a policy or every write 403s. The generator emits an
+`access.RolePolicy` that grants the **admin role** (`app.admin.role`) the wildcard
+(`*`) and an `access.Middleware` that resolves the signed-in user's roles, mounted
+after the session middleware. The admin operator can therefore manage every entity
+through its own gated API (the same surface the back-office uses); add finer
+per-role `Grant`s in `RegisterGenerated` as you define more roles.
+
 ### UI component blocks (the framework/ui catalog)
 
 Any screen body can compose the framework's UI components directly via block

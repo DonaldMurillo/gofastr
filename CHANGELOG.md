@@ -30,10 +30,25 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
 - **Auth screens + RBAC gating** — `signup_form` block; `screen.access:
   {auth: true, role: …}` emits an `appui.Policy` that redirects anonymous GETs to
   the login page (with `?next=`) and 403s a signed-in user missing the role.
-- **The generator emits tests** — every app gets an owned unit test
-  (`blueprint/resource_test.go`) for the formatting engine and an `e2e_test.go`
-  that builds + boots the binary and asserts the marketing home, the login
-  redirect on gated routes, and the authenticated screens render.
+- **Writable app screens (create / edit / delete).** `entity_list` gains a
+  `create: true` flag → a "New <Singular>" button + a synthesized `<route>/new`
+  create form; every `entity_detail` gets **Edit** + **Delete** header actions and
+  a synthesized `<detail>/edit` form prefilled from the record (enum/relation
+  `<select>`s render their options + selection server-side). Forms submit as
+  `data-fui-rpc` islands and SPA-navigate back on success. The resource engine
+  gained a `Form(ctx, id)` method; the generator installs an `access.RolePolicy`
+  (admin role → wildcard) + `access.Middleware` so the gated CRUD API actually
+  accepts the signed-in operator's writes instead of 403ing.
+- **The generator emits a test for every generated surface.** Each app gets an
+  owned `blueprint/resource_test.go` (formatting + input-type helpers) and a
+  comprehensive `e2e_test.go` that builds + boots the binary and asserts: the
+  home brand; **every** static public screen renders; **every** gated screen
+  redirects anonymous callers and renders once signed in; a full
+  **create → read (detail + edit) → update → delete** lifecycle against a
+  writable entity through its CRUD API + form screens; and that an anonymous
+  write to an access-gated entity is refused (RBAC). The create payload is
+  synthesized from the entity's required fields, so the suite stays valid across
+  schemas.
 - A standard `box-sizing: border-box` reset + body theme surface ship in the
   generated base CSS so padded full-width bars don't overflow on mobile.
 
@@ -48,6 +63,11 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
 - **`data-action-mount` runtime primitive** — fires a compiled component
   action once on hydration (and after each SPA nav), so a server-rendered
   island can populate itself on load without a user event.
+- **`ScreenGroup.Standalone()`** (`core-ui/app`) — marks a screen group as a
+  self-contained shell so the host App's default layout does NOT also wrap it.
+  `battery/admin` uses it: the back-office mounts on the host's App but renders
+  its own sidebar, which previously nested inside the app's sidebar (a
+  double-sidebar). Now the admin renders a single, correct shell.
 - **Blueprint `app.api_prefix`** (default `"api"`) — entity JSON CRUD mounts
   under `/api/<table>`, freeing the bare `/<table>` path for HTML screens.
 - **Blueprint login + admin back-office** — a `login_form` screen block renders
@@ -60,6 +80,12 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
 
 ### Changed
 
+- **Meridian is the flagship example** across the README and the website
+  (`/examples`, the home grid). It supersedes ecommerce as the headline blueprint
+  demo (ecommerce stays as a second, owner-scoped pipeline example). Acronym field
+  labels now read correctly (MRR, ID, URL, …) instead of "Mrr"/"Id".
+- **Seed rows generate with sorted keys**, so re-running `gofastr generate` no
+  longer churns `blueprint/stubs.go` with random map-iteration order.
 - **Blueprint-generated apps are now usable websites end-to-end.** Screens
   routed at an entity's path are no longer shadowed by the CRUD JSON handler
   (the API moved under `/api`); `entity_list` / `entity_form` / `entity_detail`

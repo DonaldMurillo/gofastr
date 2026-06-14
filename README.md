@@ -11,11 +11,15 @@ Nobody else in the Go ecosystem ships that combination: PocketBase is a runtime 
 > mark the stability promise. Ship at your own risk until then.
 
 > **Validation status (honest version).** The declaration → surfaces pipeline is
-> proven end-to-end by [`examples/ecommerce`](examples/ecommerce/): one
-> `gofastr.yml` blueprint becomes a SQL schema, REST CRUD, an OpenAPI spec, a
-> 25-tool MCP surface, and a server-rendered UI — secure by default, with the
-> auth battery enabled and orders/order-items owner-scoped per customer —
-> asserted by its test, zero hand-written app code. The blueprint quickstart
+> proven end-to-end by [`examples/meridian`](examples/meridian/) — the flagship:
+> one `gofastr.yml` becomes a SaaS billing console (customers, subscriptions,
+> invoices with status workflows, MRR + charts) *and* its marketing site, auth,
+> RBAC, and admin back-office, with writable app screens (add/edit/delete) — and
+> by [`examples/ecommerce`](examples/ecommerce/), which adds owner-scoped per-user
+> data (orders/order-items per customer, anonymous → 401, cross-user → 404). Both
+> are secure by default and carry a generated end-to-end test suite — every
+> screen, the full create→edit→delete lifecycle, and RBAC asserted — with zero
+> hand-written app code. The blueprint quickstart
 > below is CI-gated by an executable-README test
 > (`cmd/gofastr/readme_quickstart_test.go`) that extracts the fenced blocks,
 > generates, builds, boots, and curls the documented app. GoFastr's own
@@ -48,7 +52,7 @@ the live MCP surface.
 
 Most Go web frameworks assume a human will hand-write every route, query, validator, migration, form, and authorization check. That glue is exactly what a declaration can generate — and increasingly the declaration is written by an AI agent, which makes inspectable output matter more, not less. GoFastr's bet:
 
-- **The blueprint is a generator, not a source of truth.** A single `gofastr.yml` scaffolds a SQL schema, typed Go models, REST routes, *and* server-rendered screens with nav and islands — both halves of the app, emitted together in one pass so they start consistent. Then it gets out of the way: the generated Go is yours to own and edit, and the running app doesn't need the blueprint at all. It's an on-ramp — `rails g scaffold` / `ng generate` for a whole Go backend *and* UI — not a declaration you live in. See [`examples/ecommerce`](examples/ecommerce/) for the whole pipeline, live and tested.
+- **The blueprint is a generator, not a source of truth.** A single `gofastr.yml` scaffolds a SQL schema, typed Go models, REST routes, *and* server-rendered screens with nav and islands — both halves of the app, emitted together in one pass so they start consistent. Then it gets out of the way: the generated Go is yours to own and edit, and the running app doesn't need the blueprint at all. It's an on-ramp — `rails g scaffold` / `ng generate` for a whole Go backend *and* UI — not a declaration you live in. See [`examples/meridian`](examples/meridian/) for the whole pipeline — a polished SaaS console + marketing site — live and tested.
 - **Secure scopes are part of the declaration.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (fail-closed 403), `multi_tenant` scopes by tenant — and `gofastr validate` errors when per-user data is exposed without any of them.
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main` — not a black box the tool rewrites behind your back. No reflection magic, no hidden registries, no runtime mutation, no platform between your binary and your server.
 - **Agent surfaces come free.** The same declaration emits an OpenAPI 3 spec and five MCP tools per entity (`products_list`, `products_create`, …) that respect the same owner/RBAC scopes. (Schema-derived MCP is table stakes in 2026 — Supabase, PocketBase, FastAPI all have it; here it's a byproduct of the pipeline, not the pitch.)
@@ -65,7 +69,7 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 | `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI — `init`, `generate`, `migrate`, `dev`, `docs`. | you're scaffolding or generating code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
-| `examples/` | Runnable reference apps — the `ecommerce` blueprint flagship, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
+| `examples/` | Runnable reference apps — the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
 
 You import `framework` and the batteries you opt into — not 17 packages. The
 subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
@@ -84,8 +88,14 @@ on the same `framework`, `core-ui`, and batteries a user app imports:
 - **`examples/site`**, the docs site and canonical component gallery, runs on
   `framework` + `framework/ui` + `framework/uihost` + the `core-ui` pattern
   presets + `battery/print`.
-- **`examples/ecommerce`**, the declaration-first flagship, *is* generated from a
-  `gofastr.yml` blueprint and exercised by its own surface test.
+- **`examples/meridian`**, the declaration-first flagship, *is* generated from a
+  `gofastr.yml` blueprint — a believable SaaS billing console (customers,
+  subscriptions, invoices with status workflows, MRR + charts) *and* its public
+  marketing site, auth, RBAC, and admin back-office, with writable app screens
+  (add/edit/delete) and the generated end-to-end test suite green.
+- **`examples/ecommerce`**, a second blueprint pipeline (five entities,
+  owner-scoped orders), is generated the same way and exercised by its own
+  surface test.
 
 These are the tools the project uses on itself, not demos wired up for a
 screenshot. External production adopters are the part still ahead of us — see
@@ -230,8 +240,9 @@ overwrites code you've edited (pass `--force` to overwrite). The blueprint is a
 scaffold you can delete once the generated Go is yours — see
 [ARCHITECTURE.md](framework/ARCHITECTURE.md).
 
-See [`examples/ecommerce`](examples/ecommerce/) for a five-entity blueprint
-generated, built, and surface-tested end-to-end.
+See [`examples/meridian`](examples/meridian/) for the flagship blueprint — a SaaS
+console + marketing site generated, built, and tested end-to-end — or
+[`examples/ecommerce`](examples/ecommerce/) for a five-entity owner-scoped pipeline.
 
 ### Declare an entity (Go)
 
@@ -454,7 +465,7 @@ battery/     pluggable infra (admin, auth, cache, email, embed, log, notify, pri
 cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
 framework/docs/content/  feature docs, embedded into the binary — browse with `gofastr docs`
-examples/    ecommerce (blueprint flagship), site (SSR + 10 UI primitives), blog, api-tour (cursor/include/batch/SSE/uploads), backoffice (entity admin), embed-demo, spa (Vue+API), static-site
+examples/    meridian (blueprint flagship: SaaS console + marketing), ecommerce (owner-scoped blueprint pipeline), site (SSR + 10 UI primitives), blog, api-tour (cursor/include/batch/SSE/uploads), backoffice (entity admin), embed-demo, spa (Vue+API), static-site
 ROADMAP.md   forward-looking proposals not yet built
 ```
 
