@@ -7,6 +7,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added — `gofastr pack` (the inverse of generate)
+
+- **`gofastr pack [app-dir]`** reconstructs a `gofastr.yml` from a generated app's
+  Go source — the inverse of `gofastr generate`. It reads the real artifacts
+  (`entities/register.go`, `blueprint/app.go`, `blueprint/stubs.go`,
+  `blueprint/screens.go`) via the Go AST and re-serializes the authored blueprint:
+  app config + theme/dark + auth + admin, every entity (fields, types, access,
+  indices, relations), the screens (reversing the emitted `framework/ui` grammar —
+  hero, sections, cards, charts, stat cards, entity list/detail, auth forms,
+  headings), nav, and seed. Synthesized `/new` + `/{id}/edit` form screens are
+  dropped (they weren't authored). A round-trip test gates the invariant
+  `parse(meridian.yml)` ≡ `parse(pack(generate(meridian.yml)))`, so generator↔pack
+  divergence is caught as features are added.
+- Two supporting fixes the round-trip surfaced: generated entity order now follows
+  the blueprint's authored order (was alphabetised); and `entity_list`'s `text:` /
+  `empty_text:` are now wired (custom list heading + empty-state copy) instead of
+  silently ignored.
+
 ### Added — blueprint generates real, full web apps
 
 The blueprint generator now emits **owned Go that composes the full `framework/ui`

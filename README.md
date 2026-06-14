@@ -67,7 +67,7 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 | `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting ~25 subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
 | `core-ui/` | Server-driven UI runtime — `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
 | `battery/` | Opt-in infrastructure — admin, auth, cache, email, embed, log, notify, print, queue, search, storage, webhook. Each behind a small interface. | you need a real subsystem; import only the ones you use. |
-| `cmd/gofastr` | The CLI — `init`, `generate`, `migrate`, `dev`, `docs`. | you're scaffolding or generating code. |
+| `cmd/gofastr` | The CLI — `init`, `generate`, `pack` (generate's inverse), `migrate`, `dev`, `docs`. | you're scaffolding or generating code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
 | `examples/` | Runnable reference apps — the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
 
@@ -376,6 +376,7 @@ gofastr docs --grep <term>          Search across every doc topic
 gofastr agents sync                 Refresh AGENTS.md and agents/ detail files
 gofastr theme init                  Scaffold a typed theme/theme.go you own
 gofastr generate --from=<bp.yml>    Generate Go (SQL + REST + OpenAPI + MCP + UI) from a blueprint
+gofastr pack <app-dir>              Reconstruct the blueprint YAML from a generated app (inverse of generate)
 gofastr build                       Generate then go build
 gofastr dev                         Start dev server with hot-reload
 gofastr migrate up | down | status  Run versioned migrations (advisory-locked, checksum + dirty-state guarded)

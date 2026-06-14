@@ -218,6 +218,27 @@ wires generated screens/endpoints/middleware/plugins through
 `blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
 through the generated UI host.
 
+## Packing: `gofastr pack` (the inverse of generate)
+
+`gofastr pack [app-dir]` reconstructs a `gofastr.yml` from a generated app's Go
+source — the inverse of `gofastr generate`. It reads the real artifacts via the
+Go AST (it does **not** stash a manifest): `entities/register.go` for entities,
+`blueprint/app.go` for app config + theme + auth/admin + nav, `blueprint/stubs.go`
+for seed, and `blueprint/screens.go` (+ the `site.Register*` calls) for screens,
+reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
+`blueprintResources["x"].…List(ctx)` → `entity_list`, and so on). The result
+prints to stdout, or to a file with `-o`:
+
+```sh
+gofastr pack examples/meridian -o recovered.yml
+```
+
+Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
+authored). Generate and pack are a matched inverse pair, so the invariant
+`parse(yml)` ≡ `parse(pack(generate(yml)))` holds (modulo comments + formatting);
+the Meridian flagship round-trips exactly, gated by a test. When you add a new
+blueprint construct, teach **both** the generator and pack, or that test fails.
+
 ### Data blocks (`entity_list`, `entity_form`, `entity_detail`)
 
 A top-level `entity_list` or `entity_detail` makes its screen a **server-rendered**
