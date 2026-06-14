@@ -247,3 +247,27 @@ func TestPrintCodegenFilesJSON(t *testing.T) {
 		t.Fatalf("json: %s", out)
 	}
 }
+
+// ── toDisplayName / humanizeFieldLabel: acronym casing ────────────────
+
+func TestDisplayNameAcronyms(t *testing.T) {
+	cases := map[string]string{
+		"mrr":          "MRR",
+		"customer_id":  "Customer ID",
+		"api_key":      "API Key",
+		"generic_name": "Generic Name",
+		"url":          "URL",
+	}
+	for in, want := range cases {
+		if got := toDisplayName(in); got != want {
+			t.Errorf("toDisplayName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// humanizeFieldLabel strips the _id/_on suffix, then humanizes.
+	if got := humanizeFieldLabel("mrr"); got != "MRR" {
+		t.Errorf("humanizeFieldLabel(mrr) = %q, want MRR", got)
+	}
+	if got := humanizeFieldLabel("customer_id"); got != "Customer" {
+		t.Errorf("humanizeFieldLabel(customer_id) = %q, want Customer", got)
+	}
+}

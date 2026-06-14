@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -117,6 +118,66 @@ func TestBlueprint_FormEnumAndRelationFields(t *testing.T) {
 	// Relation field renders a select bound to its target entity.
 	if !strings.Contains(screens, `data-rel-entity=\"categories\"`) {
 		t.Error("relation field did not render a target-bound select")
+	}
+}
+
+// TestBlueprint_AppCRUDScreensSynthesized verifies that an entity_list flagged
+// `create: true` and an entity_detail produce writable app screens: a /new
+// create form, a /{id}/edit form, a List "New" affordance, and a CanEdit detail
+// (Edit + Delete) — all server-rendered through the resource engine's Form.
+func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Shop", Module: "example.com/shop", APIPrefix: "api"},
+		Entities: []framework.EntityDeclaration{
+			{Name: "widgets", Fields: []framework.FieldDeclaration{
+				{Name: "name", Type: "string", Required: true},
+				{Name: "status", Type: "enum", Values: []string{"draft", "live"}},
+			}},
+		},
+		Nav: []BlueprintNavItem{{Label: "Widgets", Href: "/app/widgets"}},
+		Screens: []BlueprintScreen{
+			{Name: "widgets", Route: "/app/widgets", Layout: "app", Body: []BlueprintBlock{
+				{Kind: "entity_list", Entity: "widgets", Fields: []string{"name", "status"}, Create: true},
+			}},
+			{Name: "widget_detail", Route: "/app/widgets/{id}", Layout: "app", Body: []BlueprintBlock{
+				{Kind: "entity_detail", Entity: "widgets"},
+			}},
+		},
+	}
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("renderBlueprintFiles: %v", err)
+	}
+	byName := map[string]string{}
+	for _, f := range files {
+		byName[f.name] = f.content
+	}
+	screens := byName[filepath.Join("blueprint", "screens.go")]
+	app := byName[filepath.Join("blueprint", "app.go")]
+
+	// Create + edit form screens render via the resource engine's Form.
+	if !strings.Contains(screens, `blueprintResources["widgets"].Form(ctx, "")`) {
+		t.Errorf("missing create form screen (Form(ctx, \"\")):\n%s", screens)
+	}
+	if !strings.Contains(screens, `blueprintResources["widgets"].Form(ctx, s.id)`) {
+		t.Errorf("missing edit form screen (Form(ctx, s.id)):\n%s", screens)
+	}
+	// List shows "New"; detail shows Edit/Delete (CanEdit) and posts to the API.
+	if !strings.Contains(screens, ".WithCreate().List(ctx)") {
+		t.Error("entity_list with create:true did not call WithCreate()")
+	}
+	if !strings.Contains(app, "CanEdit: true") {
+		t.Error("entity with a detail screen did not set CanEdit")
+	}
+	if !strings.Contains(app, `APIPath: "/api/widgets"`) {
+		t.Error("resource registry missing APIPath for the CRUD endpoint")
+	}
+	// The /new and /{id}/edit routes are registered.
+	if !strings.Contains(app, `"/app/widgets/new"`) {
+		t.Errorf("create screen route not registered:\n%s", app)
+	}
+	if !strings.Contains(app, `"/app/widgets/:id/edit"`) {
+		t.Errorf("edit screen route not registered:\n%s", app)
 	}
 }
 
