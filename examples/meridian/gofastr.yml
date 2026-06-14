@@ -1,0 +1,729 @@
+# =============================================================================
+# Meridian — SaaS billing & revenue console (GoFastr flagship demo)
+#
+# A believable product: a public marketing site + an authenticated billing
+# console (customers, subscriptions, invoices with real status workflows, MRR
+# metrics, live activity) + an admin back-office. Generated entirely from this
+# one blueprint. Design: calm, light, refined (Stripe/Notion).
+#
+# NOTE: this blueprint is the TARGET SPEC — some block kinds / features used
+# here are being built into the generator (server-rendered entity screens,
+# the full framework/ui block catalog, marketing layout, auth/RBAC). It is
+# authored first so the product is concrete; the generator is made to render it.
+# =============================================================================
+
+app:
+  name: Meridian
+  module: github.com/DonaldMurillo/gofastr/examples/meridian
+  api_prefix: api
+  static_dir: static
+  db:
+    driver: sqlite
+    url: file:meridian.db
+  auth:
+    enabled: true
+    dev_mode: true
+  admin:
+    enabled: true
+    path: /admin
+    role: admin
+    login_path: /login
+    seed_email: admin@meridian.dev
+    seed_password: change-me-now-123
+  # Calm, light, refined — warm paper, ink text, one confident indigo accent.
+  theme:
+    # Type: a distinctive editorial display face (Bricolage Grotesque) for
+    # headings + a warm humanist grotesk (Hanken Grotesk) with true tabular
+    # figures for body/data. The display face gives titles real character so
+    # the hierarchy reads as designed, not default-bold.
+    font_heading: Bricolage Grotesque
+    font_body: Hanken Grotesk
+    background: "#F8F7F4"
+    surface: "#FFFFFF"
+    surface-soft: "#F2F1EC"
+    text: "#1B1B2A"
+    text-muted: "#65657A"
+    text-subtle: "#9A9AAB"
+    border: "#E7E5DF"
+    border-strong: "#33334A"
+    primary: "#4338CA"
+    primary-fg: "#FFFFFF"
+    secondary: "#0E7C86"
+    accent: "#4338CA"
+    success: "#15803D"
+    warning: "#B45309"
+    danger: "#B42318"
+    info: "#1D4ED8"
+    # Dark scheme — a calm warm-charcoal tinted toward the indigo brand hue.
+    # The header's theme toggle flips to this; every surface that reads the
+    # --color-* tokens (marketing, app, components) recolors from one place.
+    dark:
+      background: "#15141B"
+      surface: "#1F1D27"
+      surface-soft: "#29262F"
+      text: "#ECEAF3"
+      text-muted: "#A29FB0"
+      text-subtle: "#726F80"
+      border: "#322E3D"
+      border-strong: "#494457"
+      primary: "#8B80F2"
+      primary-fg: "#15141B"
+      secondary: "#2DD4BF"
+      accent: "#8B80F2"
+      success: "#4ADE80"
+      warning: "#FBBF24"
+      danger: "#F87171"
+      info: "#60A5FA"
+
+# =============================================================================
+# DATA MODEL — the revenue domain: plans → subscriptions ← customers,
+# invoices, payments. Status enums are the real workflows the operator drives.
+# =============================================================================
+
+entities:
+
+  - name: plans
+    crud: true
+    mcp: true
+    properties:
+      label: Plans
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 80
+      - name: slug
+        type: string
+        required: true
+        unique: true
+        max: 80
+      - name: price
+        type: decimal
+        required: true
+        min: 0
+      - name: interval
+        type: enum
+        values: [month, year]
+        default: month
+      - name: active
+        type: bool
+        default: true
+
+  - name: customers
+    crud: true
+    mcp: true
+    properties:
+      label: Customers
+    access:                 # email is PII — gate the JSON/MCP API by role
+      read: customers:read
+      create: customers:write
+      update: customers:write
+      delete: customers:admin
+    indices:
+      - name: idx_customers_email
+        columns: [email]
+        unique: true
+    fields:
+      - name: name
+        type: string
+        required: true
+        max: 120
+      - name: email
+        type: string
+        required: true
+        unique: true
+      - name: company
+        type: string
+        max: 120
+      - name: status
+        type: enum
+        values: [trialing, active, past_due, canceled]
+        default: trialing
+      - name: mrr
+        type: decimal
+        min: 0
+        default: "0"
+
+  - name: subscriptions
+    crud: true
+    mcp: true
+    properties:
+      label: Subscriptions
+    fields:
+      - name: customer_id
+        type: relation
+        to: customers
+        required: true
+      - name: plan_id
+        type: relation
+        to: plans
+        required: true
+      - name: status
+        type: enum
+        values: [trialing, active, past_due, canceled]
+        default: trialing
+      - name: mrr
+        type: decimal
+        min: 0
+        default: "0"
+      - name: started_on
+        type: date
+      - name: renews_on
+        type: date
+    relations:
+      - type: belongs_to
+        name: customer
+        entity: customers
+        foreign_key: customer_id
+      - type: belongs_to
+        name: plan
+        entity: plans
+        foreign_key: plan_id
+
+  - name: invoices
+    crud: true
+    mcp: true
+    properties:
+      label: Invoices
+    fields:
+      - name: customer_id
+        type: relation
+        to: customers
+        required: true
+      - name: number
+        type: string
+        required: true
+        unique: true
+      - name: amount
+        type: decimal
+        required: true
+        min: 0
+      - name: status
+        type: enum
+        values: [draft, open, paid, past_due, void]
+        default: draft
+      - name: issued_on
+        type: date
+      - name: due_on
+        type: date
+      - name: paid_on
+        type: date
+    relations:
+      - type: belongs_to
+        name: customer
+        entity: customers
+        foreign_key: customer_id
+
+  - name: payments
+    crud: true
+    mcp: true
+    properties:
+      label: Payments
+    fields:
+      - name: invoice_id
+        type: relation
+        to: invoices
+        required: true
+      - name: customer_id
+        type: relation
+        to: customers
+        required: true
+      - name: amount
+        type: decimal
+        required: true
+        min: 0
+      - name: method
+        type: enum
+        values: [card, ach, wire]
+        default: card
+      - name: status
+        type: enum
+        values: [succeeded, failed, refunded]
+        default: succeeded
+    relations:
+      - type: belongs_to
+        name: invoice
+        entity: invoices
+        foreign_key: invoice_id
+      - type: belongs_to
+        name: customer
+        entity: customers
+        foreign_key: customer_id
+
+# =============================================================================
+# SCREENS — three layers, two layouts:
+#   layout: marketing  → public site (SiteHeader + SiteFooter)
+#   layout: app        → authenticated console (sidebar shell), access-gated
+# =============================================================================
+
+screens:
+
+  # ---- Public marketing site -------------------------------------------------
+  - name: home
+    route: /
+    layout: marketing
+    title: Meridian — billing that runs itself
+    description: The revenue console for modern SaaS.
+    body:
+      - kind: hero
+        props:
+          eyebrow: Billing & revenue
+          title: See your revenue the moment it moves.
+          subtitle: Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices — with the metrics that matter, live.
+          cta_text: Start free
+          cta_href: /signup
+          secondary_text: See pricing
+          secondary_href: /pricing
+      - kind: section
+        props:
+          heading: Everything you need to run revenue
+          eyebrow: Why Meridian
+        children:
+          - kind: card
+            props:
+              heading: Live MRR & churn
+              text: Watch monthly recurring revenue, growth, and churn update as customers sign up and pay.
+          - kind: card
+            props:
+              heading: Subscriptions that flow
+              text: Trialing, active, past-due, canceled — drive the whole lifecycle from one screen.
+          - kind: card
+            props:
+              heading: Invoices, handled
+              text: Open, paid, void — track every invoice and mark them paid in a click.
+      - kind: section
+        props:
+          heading: Simple, honest pricing
+          eyebrow: Pricing
+        children:
+          - kind: link_button
+            props:
+              label: Compare plans
+              href: /pricing
+              variant: primary
+
+  - name: pricing
+    route: /pricing
+    layout: marketing
+    title: Pricing
+    description: Plans for teams of every size.
+    body:
+      - kind: page_header
+        props:
+          title: Pricing
+          subtitle: Start free. Upgrade when revenue does.
+      - kind: entity_list
+        entity: plans
+        text: Plans
+        fields: [name, price, interval, active]
+        empty_text: Pricing coming soon.
+
+  - name: about
+    route: /about
+    layout: marketing
+    title: About Meridian
+    description: Why we built a calmer billing console.
+    body:
+      - type: heading
+        level: 1
+        text: We think billing should feel calm.
+      - type: paragraph
+        text: Meridian is a demonstration product built entirely from a GoFastr blueprint — a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.
+      - type: paragraph
+        text: It exists to show that a framework can generate a real, polished web application — not a CRUD scaffold.
+
+  - name: terms
+    route: /terms
+    layout: marketing
+    title: Terms of Service
+    body:
+      - type: heading
+        level: 1
+        text: Terms of Service
+      - type: paragraph
+        text: This is a demo application. These terms are placeholder content that demonstrates long-form, readable typography in the marketing layout.
+
+  - name: privacy
+    route: /privacy
+    layout: marketing
+    title: Privacy Policy
+    body:
+      - type: heading
+        level: 1
+        text: Privacy Policy
+      - type: paragraph
+        text: This is a demo application and stores only the sample data you create. Placeholder privacy content.
+
+  # ---- Auth ------------------------------------------------------------------
+  - name: login
+    route: /login
+    layout: marketing
+    title: Sign in
+    body:
+      - kind: login_form
+        text: Sign in to Meridian
+        props:
+          action: /auth/login
+          next: /app
+          register_href: /signup
+
+  - name: signup
+    route: /signup
+    layout: marketing
+    title: Create your account
+    body:
+      - kind: signup_form
+        text: Create your Meridian account
+        props:
+          action: /auth/register
+          next: /app
+          login_href: /login
+
+  # ---- App (authenticated, RBAC-gated) --------------------------------------
+  - name: dashboard
+    route: /app
+    layout: app
+    access:
+      auth: true
+    title: Overview
+    description: Your revenue at a glance.
+    body:
+      - kind: page_header
+        props:
+          title: Overview
+          subtitle: Revenue at a glance
+      - kind: stat_row
+        children:
+          - kind: stat_card
+            props:
+              label: MRR
+              source:
+                entity: customers
+                agg: sum
+                field: mrr
+              format: money
+          - kind: stat_card
+            props:
+              label: Active customers
+              source:
+                entity: customers
+                agg: count
+                filter: status=active
+          - kind: stat_card
+            props:
+              label: Past-due invoices
+              source:
+                entity: invoices
+                agg: count
+                filter: status=past_due
+          - kind: stat_card
+            props:
+              label: Plans
+              source:
+                entity: plans
+                agg: count
+      - kind: bar_chart
+        props:
+          title: Customers by status
+          source:
+            entity: customers
+            group_by: status
+      - kind: entity_list
+        entity: invoices
+        text: Recent invoices
+        fields: [number, customer_id, amount, status, due_on]
+        limit: 8
+        empty_text: No invoices yet.
+
+  - name: customers
+    route: /app/customers
+    layout: app
+    access:
+      auth: true
+    title: Customers
+    body:
+      - kind: entity_list
+        entity: customers
+        text: Customers
+        fields: [name, email, company, status, mrr]
+        search: name
+        limit: 25
+        empty_text: No customers yet — add your first to get started.
+
+  - name: customer_detail
+    route: /app/customers/{id}
+    layout: app
+    access:
+      auth: true
+    title: Customer
+    body:
+      - kind: entity_detail
+        entity: customers
+
+  - name: invoices
+    route: /app/invoices
+    layout: app
+    access:
+      auth: true
+    title: Invoices
+    body:
+      - kind: entity_list
+        entity: invoices
+        text: Invoices
+        fields: [number, customer_id, amount, status, issued_on, due_on]
+        search: number
+        limit: 25
+        empty_text: No invoices yet.
+
+  - name: subscriptions
+    route: /app/subscriptions
+    layout: app
+    access:
+      auth: true
+    title: Subscriptions
+    body:
+      - kind: entity_list
+        entity: subscriptions
+        text: Subscriptions
+        fields: [customer_id, plan_id, status, mrr, renews_on]
+        limit: 25
+        empty_text: No subscriptions yet.
+
+# =============================================================================
+# NAV — marketing header/footer + app sidebar
+# =============================================================================
+
+nav:
+  - label: Overview
+    href: /app
+  - label: Customers
+    href: /app/customers
+  - label: Subscriptions
+    href: /app/subscriptions
+  - label: Invoices
+    href: /app/invoices
+  - label: Admin
+    href: /admin
+
+# =============================================================================
+# SEED — realistic sample data so a fresh boot shows a populated console.
+# =============================================================================
+
+seed:
+  - entity: plans
+    rows:
+      - name: Starter
+        slug: starter
+        price: 29
+        interval: month
+        active: true
+      - name: Pro
+        slug: pro
+        price: 99
+        interval: month
+        active: true
+      - name: Scale
+        slug: scale
+        price: 299
+        interval: month
+        active: true
+  - entity: customers
+    rows:
+      - name: Ada Lovelace
+        email: ada@acme.io
+        company: Acme Inc
+        status: active
+        mrr: 99
+      - name: Grace Hopper
+        email: grace@globex.com
+        company: Globex
+        status: active
+        mrr: 299
+      - name: Alan Turing
+        email: alan@initech.io
+        company: Initech
+        status: past_due
+        mrr: 29
+      - name: Katherine Johnson
+        email: kj@umbrella.co
+        company: Umbrella
+        status: active
+        mrr: 99
+      - name: Linus Torvalds
+        email: linus@hooli.com
+        company: Hooli
+        status: canceled
+        mrr: 0
+      - name: Margaret Hamilton
+        email: mh@apollo.io
+        company: Apollo
+        status: active
+        mrr: 299
+      - name: Dennis Ritchie
+        email: dmr@belllabs.com
+        company: Bell Labs
+        status: trialing
+        mrr: 0
+      - name: Barbara Liskov
+        email: liskov@mit.edu
+        company: MIT
+        status: active
+        mrr: 99
+      - name: Tim Berners-Lee
+        email: tbl@w3.org
+        company: W3C
+        status: past_due
+        mrr: 29
+      - name: Donald Knuth
+        email: knuth@stanford.edu
+        company: Stanford
+        status: active
+        mrr: 299
+
+  # Relational seed: customer_id / plan_id reference rows seeded above by a
+  # natural key ("@entity.field=value"); the seed runner resolves them to the
+  # generated ids before insert. Order matters — plans + customers first.
+  - entity: subscriptions
+    rows:
+      - customer_id: "@customers.email=ada@acme.io"
+        plan_id: "@plans.slug=pro"
+        status: active
+        mrr: 99
+        started_on: "2025-09-04"
+        renews_on: "2026-07-04"
+      - customer_id: "@customers.email=grace@globex.com"
+        plan_id: "@plans.slug=scale"
+        status: active
+        mrr: 299
+        started_on: "2025-06-12"
+        renews_on: "2026-06-12"
+      - customer_id: "@customers.email=alan@initech.io"
+        plan_id: "@plans.slug=starter"
+        status: past_due
+        mrr: 29
+        started_on: "2025-11-20"
+        renews_on: "2026-05-20"
+      - customer_id: "@customers.email=kj@umbrella.co"
+        plan_id: "@plans.slug=pro"
+        status: active
+        mrr: 99
+        started_on: "2025-10-01"
+        renews_on: "2026-07-01"
+      - customer_id: "@customers.email=linus@hooli.com"
+        plan_id: "@plans.slug=scale"
+        status: canceled
+        mrr: 0
+        started_on: "2024-12-15"
+        renews_on: "2025-12-15"
+      - customer_id: "@customers.email=mh@apollo.io"
+        plan_id: "@plans.slug=scale"
+        status: active
+        mrr: 299
+        started_on: "2025-03-22"
+        renews_on: "2026-06-22"
+      - customer_id: "@customers.email=dmr@belllabs.com"
+        plan_id: "@plans.slug=pro"
+        status: trialing
+        mrr: 0
+        started_on: "2026-06-01"
+        renews_on: "2026-06-15"
+      - customer_id: "@customers.email=liskov@mit.edu"
+        plan_id: "@plans.slug=pro"
+        status: active
+        mrr: 99
+        started_on: "2025-08-09"
+        renews_on: "2026-07-09"
+      - customer_id: "@customers.email=tbl@w3.org"
+        plan_id: "@plans.slug=starter"
+        status: past_due
+        mrr: 29
+        started_on: "2025-12-02"
+        renews_on: "2026-06-02"
+      - customer_id: "@customers.email=knuth@stanford.edu"
+        plan_id: "@plans.slug=scale"
+        status: active
+        mrr: 299
+        started_on: "2025-05-18"
+        renews_on: "2026-06-18"
+
+  - entity: invoices
+    rows:
+      - customer_id: "@customers.email=ada@acme.io"
+        number: INV-1001
+        amount: 99
+        status: paid
+        issued_on: "2026-05-04"
+        due_on: "2026-05-18"
+        paid_on: "2026-05-06"
+      - customer_id: "@customers.email=grace@globex.com"
+        number: INV-1002
+        amount: 299
+        status: paid
+        issued_on: "2026-05-12"
+        due_on: "2026-05-26"
+        paid_on: "2026-05-13"
+      - customer_id: "@customers.email=alan@initech.io"
+        number: INV-1003
+        amount: 29
+        status: past_due
+        issued_on: "2026-04-20"
+        due_on: "2026-05-04"
+      - customer_id: "@customers.email=kj@umbrella.co"
+        number: INV-1004
+        amount: 99
+        status: paid
+        issued_on: "2026-05-01"
+        due_on: "2026-05-15"
+        paid_on: "2026-05-02"
+      - customer_id: "@customers.email=mh@apollo.io"
+        number: INV-1005
+        amount: 299
+        status: open
+        issued_on: "2026-06-01"
+        due_on: "2026-06-15"
+      - customer_id: "@customers.email=liskov@mit.edu"
+        number: INV-1006
+        amount: 99
+        status: paid
+        issued_on: "2026-05-09"
+        due_on: "2026-05-23"
+        paid_on: "2026-05-11"
+      - customer_id: "@customers.email=tbl@w3.org"
+        number: INV-1007
+        amount: 29
+        status: past_due
+        issued_on: "2026-04-02"
+        due_on: "2026-04-16"
+      - customer_id: "@customers.email=knuth@stanford.edu"
+        number: INV-1008
+        amount: 299
+        status: paid
+        issued_on: "2026-05-18"
+        due_on: "2026-06-01"
+        paid_on: "2026-05-19"
+      - customer_id: "@customers.email=grace@globex.com"
+        number: INV-1009
+        amount: 299
+        status: open
+        issued_on: "2026-06-12"
+        due_on: "2026-06-26"
+      - customer_id: "@customers.email=ada@acme.io"
+        number: INV-1010
+        amount: 99
+        status: open
+        issued_on: "2026-06-04"
+        due_on: "2026-06-18"
+      - customer_id: "@customers.email=knuth@stanford.edu"
+        number: INV-1011
+        amount: 299
+        status: paid
+        issued_on: "2026-04-18"
+        due_on: "2026-05-02"
+        paid_on: "2026-04-20"
+      - customer_id: "@customers.email=kj@umbrella.co"
+        number: INV-1012
+        amount: 99
+        status: past_due
+        issued_on: "2026-04-15"
+        due_on: "2026-04-29"
+

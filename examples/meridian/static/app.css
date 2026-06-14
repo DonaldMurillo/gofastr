@@ -1,0 +1,31 @@
+/* Meridian brand layer — loaded after the framework theme + BlueprintBaseCSS,
+   so these rules win the cascade. The @font-face rules that load the self-hosted
+   woff2 (static/fonts/) are generated from gofastr.yml's font_heading/font_body
+   and shared with the admin battery — see blueprint.BlueprintFontCSS — so every
+   surface loads identical fonts. This file only adds brand polish. */
+
+/* Display type: Bricolage Grotesque carries the headings. Push size, weight and
+   negative tracking so titles read as editorial display, not default-bold — the
+   contrast against the calm Hanken body is the point. */
+.mrd-hero__title {
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+}
+.layout-marketing main > [data-fui-comp="ui-section"] h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+[data-fui-comp="ui-page-header"] .ui-page-header__title {
+  font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+/* Eyebrows: the small uppercase kickers read better in the body face, spaced. */
+[data-fui-comp="ui-section"] .ui-section__eyebrow {
+  font-family: var(--font-body);
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
