@@ -1,5 +1,38 @@
 package world
 
+import "github.com/DonaldMurillo/gofastr/core-ui/node"
+
+// The UI node tree (Node, Action, action-kind consts) and its helpers now
+// live in the first-party core-ui/node package so the blueprint codegen
+// can compose them without importing the Kiln namespace. These aliases +
+// re-exports keep every kiln-internal caller (journal, freeze, effect,
+// protocol, render, chat, live) compiling unchanged.
+type (
+	// Node is a single element in a Page tree. See core-ui/node.Node.
+	Node = node.Node
+	// Action is the canonical declarative effect type. See core-ui/node.Action.
+	Action = node.Action
+)
+
+// Known Action kinds, re-exported from core-ui/node.
+const (
+	ActionNoop         = node.ActionNoop
+	ActionSetField     = node.ActionSetField
+	ActionValidate     = node.ActionValidate
+	ActionAudit        = node.ActionAudit
+	ActionCreateEntity = node.ActionCreateEntity
+	ActionRespondJSON  = node.ActionRespondJSON
+	ActionRespondQuery = node.ActionRespondQuery
+	ActionEmitEvent    = node.ActionEmitEvent
+)
+
+// Node-tree helpers, re-exported from core-ui/node.
+var (
+	AssignNodeIDs = node.AssignNodeIDs
+	NewElementID  = node.NewElementID
+	FindNodeByID  = node.FindNodeByID
+)
+
 // SchemaVersion identifies the on-disk shape of the World IR. Bump when a
 // non-additive change is made so old journals can be migrated explicitly
 // rather than silently misinterpreted.
@@ -149,45 +182,4 @@ type Layout struct {
 	Name string `json:"name,omitempty"`
 }
 
-// Node is a single element in a Page tree. The Kind discriminates between
-// built-in elements ("div", "button", "heading", …) and named components
-// ("component:<name>"). Props feed element configuration; Bindings express
-// signal-driven values via expressions; Actions wire events to declarative
-// effects evaluated by kiln/expr.
-//
-// ID is a stable per-element handle assigned by kiln when the page is
-// added. Agents reference it from update_page_element to address the
-// exact element they want to mutate, rather than positional tree
-// paths (which break when siblings shift) or selector queries (which
-// can be ambiguous). The renderer ignores ID — it's pure metadata.
-type Node struct {
-	ID       string            `json:"_id,omitempty"`
-	Kind     string            `json:"kind"`
-	Props    map[string]any    `json:"props,omitempty"`
-	Bindings map[string]string `json:"bindings,omitempty"`
-	Actions  map[string]Action `json:"actions,omitempty"`
-	Children []Node            `json:"children,omitempty"`
-}
-
-// Action is the canonical declarative effect type. The Kind selects from a
-// closed verb catalog evaluated by kiln/expr (Phase 3). Params is verb-
-// specific. Treating actions as data — never Go source — is what lets every
-// other Kiln subsystem (journal, freeze, MCP tool surface) round-trip them
-// losslessly.
-type Action struct {
-	Kind   string         `json:"kind"`
-	Params map[string]any `json:"params,omitempty"`
-}
-
-// Known Action kinds. The Phase 3 evaluator validates Kind+Params shape;
-// Phase 0 only cares that they round-trip through JSON unchanged.
-const (
-	ActionNoop         = "noop"
-	ActionSetField     = "set_field"     // params: {field, value}
-	ActionValidate     = "validate"      // params: {expression, message}
-	ActionAudit        = "audit"         // params: {channel, message}
-	ActionCreateEntity = "create_entity" // params: {entity, data}
-	ActionRespondJSON  = "respond_json"  // params: {status, body}
-	ActionRespondQuery = "respond_query" // params: {query}
-	ActionEmitEvent    = "emit_event"    // params: {topic, data}
-)
+// Node and Action are declared above as aliases to core-ui/node.

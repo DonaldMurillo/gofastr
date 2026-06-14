@@ -4,19 +4,19 @@ import (
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/node"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-// RenderNode walks a world.Node tree and emits HTML by dispatching to
-// the framework's core-ui/html package. The IR (world.Node) is the
-// JSON shape the agent authors; the actual element vocabulary, ARIA
-// rules, attribute escaping, and accessibility defaults all live in
-// core-ui/html — Kiln does not reimplement them.
+// RenderNode walks a node.Node tree and emits HTML by dispatching to
+// the core-ui/html package. The IR (node.Node) is the JSON shape an
+// author (blueprint codegen or Kiln) declares; the actual element
+// vocabulary, ARIA rules, attribute escaping, and accessibility defaults
+// all live in core-ui/html — this renderer does not reimplement them.
 //
 // Unknown / forbidden elements (or elements missing required ARIA
 // fields) fall back to a comment in dev so the gap is visible.
-func RenderNode(n world.Node) render.HTML {
+func RenderNode(n node.Node) render.HTML {
 	children := make([]render.HTML, 0, len(n.Children))
 	for _, c := range n.Children {
 		children = append(children, RenderNode(c))
@@ -349,7 +349,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 	default:
 		// Unknown kind — leave a debugging trace.
-		return render.Raw(fmt.Sprintf("<!-- kiln: unknown kind %q -->", render.Escape(kind)))
+		return render.Raw(fmt.Sprintf("<!-- noderender: unknown kind %q -->", render.Escape(kind)))
 	}
 }
 
