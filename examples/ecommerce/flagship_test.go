@@ -84,15 +84,17 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 		t.Errorf("/openapi.json = %d, want 200 or 401 (mounted)", code)
 	}
 
-	// 2) REST CRUD round-trip: create a product, then read it back.
-	// price is a decimal field, sent as a string per the framework contract.
-	created := httpPost(t, base+"/products",
+	// 2) REST CRUD round-trip: create a product, then read it back. Entity
+	// JSON APIs mount under /api (the blueprint default), leaving the bare
+	// /products path for the HTML screen. price is a decimal field, sent as
+	// a string per the framework contract.
+	created := httpPost(t, base+"/api/products",
 		`{"name":"Test Widget","slug":"test-widget","price":"9.99","stock":5,"status":"active"}`)
 	if !strings.Contains(created, "test-widget") {
-		t.Fatalf("POST /products did not echo the created product; got:\n%s", created)
+		t.Fatalf("POST /api/products did not echo the created product; got:\n%s", created)
 	}
-	if list := httpGet(t, base+"/products?limit=50"); !strings.Contains(list, "test-widget") {
-		t.Errorf("GET /products missing the created product; got:\n%.400s", list)
+	if list := httpGet(t, base+"/api/products?limit=50"); !strings.Contains(list, "test-widget") {
+		t.Errorf("GET /api/products missing the created product; got:\n%.400s", list)
 	}
 
 	// 3) MCP tool surface advertises the generated per-entity tools.
@@ -123,18 +125,18 @@ func TestOrdersOwnerScoped(t *testing.T) {
 	base := startShopfront(t)
 
 	// Anonymous REST reads and writes against orders are rejected.
-	if code := httpStatus(t, base+"/orders"); code != http.StatusUnauthorized && code != http.StatusForbidden {
+	if code := httpStatus(t, base+"/api/orders"); code != http.StatusUnauthorized && code != http.StatusForbidden {
 		t.Errorf("anonymous GET /orders = %d, want 401/403", code)
 	}
 	orderJSON := `{"customer_name":"Ada Lovelace","customer_email":"ada@example.com",` +
 		`"customer_phone":"555-0100","subtotal":"79.99","total":"79.99"}`
-	if code, body := request(t, http.DefaultClient, "POST", base+"/orders", orderJSON); code != http.StatusUnauthorized && code != http.StatusForbidden {
+	if code, body := request(t, http.DefaultClient, "POST", base+"/api/orders", orderJSON); code != http.StatusUnauthorized && code != http.StatusForbidden {
 		t.Errorf("anonymous POST /orders = %d, want 401/403; body=%.300s", code, body)
 	}
 
 	// Anonymous order_items access is rejected too — items are the order's
 	// contents (purchase history), the obvious sibling leak.
-	if code := httpStatus(t, base+"/order_items"); code != http.StatusUnauthorized && code != http.StatusForbidden {
+	if code := httpStatus(t, base+"/api/order_items"); code != http.StatusUnauthorized && code != http.StatusForbidden {
 		t.Errorf("anonymous GET /order_items = %d, want 401/403", code)
 	}
 
@@ -149,26 +151,26 @@ func TestOrdersOwnerScoped(t *testing.T) {
 	// The full customer flow: the generator now mounts
 	// auth.SessionMiddleware, so the session cookie resolves to a user and
 	// owner-scoped CRUD works for the logged-in customer.
-	code, body := request(t, client, "POST", base+"/orders", orderJSON)
+	code, body := request(t, client, "POST", base+"/api/orders", orderJSON)
 	if code != http.StatusCreated && code != http.StatusOK {
 		t.Fatalf("authorized POST /orders = %d, want 201; body=%.300s", code, body)
 	}
 	orderID := jsonField(t, body, "id")
 
 	// The owner sees their own order in the list.
-	if code, list := request(t, client, "GET", base+"/orders", ""); code != http.StatusOK || !strings.Contains(list, orderID) {
+	if code, list := request(t, client, "GET", base+"/api/orders", ""); code != http.StatusOK || !strings.Contains(list, orderID) {
 		t.Errorf("owner GET /orders = %d, want 200 listing order %s; body=%.300s", code, orderID, list)
 	}
 
 	// A second customer must not see the first customer's order — neither
 	// in the list nor by direct id fetch.
 	other := authedClient(t, base, "grace@shop.example", "0ther-passphrase")
-	if code, list := request(t, other, "GET", base+"/orders", ""); code != http.StatusOK {
+	if code, list := request(t, other, "GET", base+"/api/orders", ""); code != http.StatusOK {
 		t.Errorf("second user GET /orders = %d, want 200 (empty list)", code)
 	} else if strings.Contains(list, orderID) {
 		t.Errorf("second user's GET /orders leaked another customer's order:\n%.500s", list)
 	}
-	if code, leak := request(t, other, "GET", base+"/orders/"+orderID, ""); code == http.StatusOK {
+	if code, leak := request(t, other, "GET", base+"/api/orders/"+orderID, ""); code == http.StatusOK {
 		t.Errorf("second user read another customer's order by id; body=%.300s", leak)
 	}
 

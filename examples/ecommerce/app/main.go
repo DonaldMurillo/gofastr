@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
@@ -30,16 +33,34 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName})}
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName, APIPrefix: blueprint.BlueprintAPIPrefix})}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
 	fwApp := framework.NewApp(options...)
 	entities.RegisterAll(fwApp)
+	fwApp.WithSeed(func(ctx context.Context) error {
+		for _, s := range blueprint.BlueprintSeedData() {
+			ch, err := fwApp.CrudHandler(s.Entity)
+			if err != nil {
+				continue
+			}
+			if n, err := ch.CountAll(ctx, framework.ListOptions{}); err == nil && n > 0 {
+				continue
+			}
+			for _, row := range s.Rows {
+				resolveSeedRefs(ctx, fwApp, row)
+				if _, err := ch.CreateOne(ctx, row); err != nil {
+					log.Printf("seed %s: skipping row: %v", s.Entity, err)
+				}
+			}
+		}
+		return nil
+	})
 	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 	site := uiapp.NewApp(blueprint.BlueprintAppName)
 	blueprint.RegisterGenerated(fwApp, site, db)
-	fwApp.Mount(uihost.New(site))
+	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(blueprint.BlueprintFontCSS+blueprint.BlueprintBaseCSS())))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
@@ -80,4 +101,36 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// resolveSeedRefs rewrites "@entity.field=value" reference strings in a
+// seed row into the resolved primary-key id of the matching row. This lets
+// relational seed data point at rows created earlier in the same pass
+// (e.g. a subscription's customer_id: "@customers.email=ada@acme.io").
+// Unresolvable references are left as-is so the create fails loudly.
+func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]any) {
+	for k, v := range row {
+		s, ok := v.(string)
+		if !ok || !strings.HasPrefix(s, "@") {
+			continue
+		}
+		rest := s[1:]
+		dot := strings.IndexByte(rest, '.')
+		eq := strings.IndexByte(rest, '=')
+		if dot < 1 || eq <= dot+1 {
+			continue
+		}
+		ent, field, val := rest[:dot], rest[dot+1:eq], rest[eq+1:]
+		ch, err := fwApp.CrudHandler(ent)
+		if err != nil {
+			continue
+		}
+		rows, err := ch.ListAll(ctx, framework.ListOptions{Filters: []filter.ParsedFilter{{Field: field, Op: filter.OpEq, Value: val}}, Limit: 1})
+		if err != nil || len(rows) == 0 {
+			continue
+		}
+		if id, ok := rows[0]["id"]; ok {
+			row[k] = id
+		}
+	}
 }

@@ -254,14 +254,16 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 	}()
 
 	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/posts", &output)
-	resp, err := http.Get(baseURL + "/posts")
+	// Blueprint apps mount entity JSON under /api by default (app.api_prefix),
+	// leaving bare paths free for HTML screens.
+	waitForHTTP(t, baseURL+"/api/posts", &output)
+	resp, err := http.Get(baseURL + "/api/posts")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /posts = %d, want 200\n%s", resp.StatusCode, output.String())
+		t.Fatalf("GET /api/posts = %d, want 200\n%s", resp.StatusCode, output.String())
 	}
 }
 

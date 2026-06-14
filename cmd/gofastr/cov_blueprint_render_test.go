@@ -181,17 +181,17 @@ func TestRenderBlueprintFilesRichShape(t *testing.T) {
 		t.Fatal("expected main.go")
 	}
 	screens := got[filepath.Join("blueprint", "screens.go")]
-	for _, want := range []string{"HomeScreen", "EmptyScreen", "entity-list", "island.NewIsland", "component.NewWidget", "html.Link", "world.Node"} {
+	for _, want := range []string{"HomeScreen", "EmptyScreen", `blueprintResources["posts"]`, "island.NewIsland", "component.NewWidget", "html.Link", "uinode.Node"} {
 		if !strings.Contains(screens, want) {
 			t.Errorf("screens.go missing %q", want)
 		}
 	}
-	// Generated apps must render node trees via the leaf kiln/noderender
-	// package (core-ui/html + core/render + kiln/world only), NOT kiln/render —
+	// Generated apps must render node trees via the leaf core-ui/noderender
+	// package (core-ui/html + core/render + core-ui/node only), NOT kiln/render —
 	// which drags Kiln's authoring engine (kiln/expr, kiln/effect, framework)
 	// into a shipped app.
-	if !strings.Contains(screens, "kiln/noderender") {
-		t.Errorf("screens.go should import kiln/noderender:\n%s", screens)
+	if !strings.Contains(screens, "core-ui/noderender") {
+		t.Errorf("screens.go should import core-ui/noderender:\n%s", screens)
 	}
 	if strings.Contains(screens, `"github.com/DonaldMurillo/gofastr/kiln/render"`) {
 		t.Errorf("screens.go must NOT import the heavy kiln/render package")
@@ -221,9 +221,12 @@ func TestEntityListHelpers(t *testing.T) {
 	if !strings.Contains(name, "entity_list") {
 		t.Fatalf("action name: %s", name)
 	}
-	js := blueprintEntityListClientJS(block)
+	js := blueprintEntityListClientJS(block, "/api")
 	if js == "" {
 		t.Fatal("client JS empty")
+	}
+	if !strings.Contains(js, "/api") {
+		t.Fatalf("client JS should fetch under api base: %s", js)
 	}
 	if !isEntityListBlock(BlueprintBlock{Type: "entity_list"}) {
 		t.Fatal("isEntityListBlock by Type")

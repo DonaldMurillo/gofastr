@@ -159,7 +159,7 @@ app:
   theme:
     not-a-token: "#fff"
 `,
-			want: `unsupported color token "not-a-token"`,
+			want: `unsupported token "not-a-token"`,
 		},
 		{
 			name: "duplicate entities",
@@ -663,18 +663,19 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("entities", "register.go")], `Indices: []framework.Index{`)
 	assertContains(t, byName[filepath.Join("entities", "register.go")], `Properties: map[string]any{"icon": "newspaper", "label": "Posts"}`)
 	assertContains(t, byName[filepath.Join("entities", "models.go")], `type Posts struct`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `type HomeScreen struct{}`)
+	// A top-level entity_list makes the screen a server-rendered ContextOnly
+	// screen that renders the list via the resource engine (not a client island).
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `type HomeScreen struct{ component.ContextOnly }`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `html.Heading(html.HeadingConfig{Level: 1`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `kilnrender.RenderNode(world.Node{Kind: "section"`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `ui.Section(ui.SectionConfig{`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `island.NewIsland("live_status"`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.NewWidget("save_button"`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.On("save_click"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.On("entity_list_home_posts_7"`)
 	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-action": "save_click"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-entity-list": "posts"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-entity-list-refresh": "posts"`)
+	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `blueprintResources["posts"].WithColumns("title", "status").WithLimit(5).List(ctx)`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `type AnalyticsPlugin struct{}`)
@@ -1025,27 +1026,29 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 	checkBodyContains(t, baseURL+"/", http.StatusOK, "details-section")
 	checkBodyContains(t, baseURL+"/hello.txt", http.StatusOK, "static from generated app")
 
-	created := requestJSON(t, http.MethodPost, baseURL+"/posts", map[string]any{"title": "HTTP Post", "status": "draft"}, http.StatusCreated)
+	// CRUD routes mount under the default api_prefix ("api") so root paths
+	// stay free for the generated HTML screens.
+	created := requestJSON(t, http.MethodPost, baseURL+"/api/posts", map[string]any{"title": "HTTP Post", "status": "draft"}, http.StatusCreated)
 	id, ok := created["id"].(string)
 	if !ok || id == "" {
 		t.Fatalf("created id = %#v", created["id"])
 	}
-	got := requestJSON(t, http.MethodGet, baseURL+"/posts/"+id, nil, http.StatusOK)
+	got := requestJSON(t, http.MethodGet, baseURL+"/api/posts/"+id, nil, http.StatusOK)
 	if got["title"] != "HTTP Post" {
 		t.Fatalf("get title = %#v", got["title"])
 	}
-	updated := requestJSON(t, http.MethodPut, baseURL+"/posts/"+id, map[string]any{"title": "HTTP Post Updated", "status": "published"}, http.StatusOK)
+	updated := requestJSON(t, http.MethodPut, baseURL+"/api/posts/"+id, map[string]any{"title": "HTTP Post Updated", "status": "published"}, http.StatusOK)
 	if updated["status"] != "published" {
 		t.Fatalf("updated status = %#v", updated["status"])
 	}
-	list := requestJSON(t, http.MethodGet, baseURL+"/posts?limit=10", nil, http.StatusOK)
+	list := requestJSON(t, http.MethodGet, baseURL+"/api/posts?limit=10", nil, http.StatusOK)
 	data, ok := list["data"].([]any)
 	if !ok || len(data) != 1 {
 		t.Fatalf("list data = %#v", list["data"])
 	}
 	runBrowserUIE2E(t, baseURL, "HTTP Post Updated")
-	_ = requestJSON(t, http.MethodDelete, baseURL+"/posts/"+id, nil, http.StatusNoContent)
-	resp404, err := http.Get(baseURL + "/posts/" + id)
+	_ = requestJSON(t, http.MethodDelete, baseURL+"/api/posts/"+id, nil, http.StatusNoContent)
+	resp404, err := http.Get(baseURL + "/api/posts/" + id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1193,15 +1196,15 @@ func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 		chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.handlers && window.__gofastr.handlers["screen-home"])`, &hasActions),
 		chromedp.Evaluate(`!!document.querySelector('[data-island="live_status"]')`, &hasIsland),
 		chromedp.Evaluate(`!!document.querySelector('[data-widget="save_button"]')`, &hasWidget),
-		chromedp.WaitVisible(`[data-entity-list="posts"]`, chromedp.ByQuery),
+		// The entity_list is server-rendered into a ui.DataTable on first paint
+		// (no client fetch / refresh button) — the CRUD rows are already in the DOM.
+		chromedp.WaitVisible(`[data-fui-comp="ui-data-table"]`, chromedp.ByQuery),
 		chromedp.Text(`[data-action-result]`, &before, chromedp.ByQuery),
 		chromedp.Click(`#save-action`, chromedp.ByID),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Text(`[data-action-result]`, &after, chromedp.ByQuery),
 		chromedp.Evaluate(`document.body.getAttribute('data-blueprint-clicked') || ''`, &clicked),
-		chromedp.Click(`[data-entity-list-refresh="posts"]`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Text(`[data-entity-list-body]`, &entityListBody, chromedp.ByQuery),
+		chromedp.Text(`[data-fui-comp="ui-data-table"]`, &entityListBody, chromedp.ByQuery),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()`, &backgroundToken),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim()`, &primaryToken),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim()`, &textToken),
@@ -1214,7 +1217,8 @@ func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 	if before != "Waiting" || after != "Saved by browser" || clicked != "yes" {
 		t.Fatalf("browser action before=%q after=%q clicked=%q", before, after, clicked)
 	}
-	if !strings.Contains(entityListBody, wantEntityTitle) || !strings.Contains(entityListBody, "published") {
+	// The resource formatter humanizes enum values, so "published" renders "Published".
+	if !strings.Contains(entityListBody, wantEntityTitle) || !strings.Contains(entityListBody, "Published") {
 		t.Fatalf("entity list body missing generated CRUD data: %q", entityListBody)
 	}
 	if backgroundToken != "#101820" || primaryToken != "#F2AA4C" || textToken != "#F7F4EA" {

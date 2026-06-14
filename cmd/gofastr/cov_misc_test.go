@@ -170,7 +170,7 @@ func TestRenderBlueprintBlockTypes(t *testing.T) {
 		{BlueprintBlock{Type: "weird", Text: "D"}, "div"},
 	}
 	for _, c := range cases {
-		got := renderBlueprintBlockForScreen(BlueprintScreen{}, c.block, nil, nil)
+		got := renderBlueprintBlockForScreen(BlueprintScreen{}, c.block, nil, nil, "/api")
 		if !strings.Contains(got, c.want) {
 			t.Errorf("block %q → %s, want substring %q", c.block.Type, got, c.want)
 		}

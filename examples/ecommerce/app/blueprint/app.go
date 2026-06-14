@@ -20,7 +20,16 @@ const (
 	BlueprintDBDriver  = "sqlite"
 	BlueprintDBURL     = "file:shop.db"
 	BlueprintStaticDir = ""
+	BlueprintAPIPrefix = "api"
 )
+
+// BlueprintBaseCSS is an owned extension point for app-specific base CSS.
+// It's empty by default: every generated surface composes framework/ui
+// components and core-ui/app layouts that ship their own CSS, so the
+// generated app ships no bespoke styling. Add app CSS here or in static/app.css.
+func BlueprintBaseCSS() string {
+	return ""
+}
 
 func BlueprintTheme() style.Theme {
 	theme := style.DefaultTheme()
@@ -38,6 +47,10 @@ func BlueprintTheme() style.Theme {
 	return theme
 }
 
+// BlueprintFontCSS holds the @font-face rules for the app's fonts, shared by
+// the UI host and the admin battery so every surface loads identical fonts.
+const BlueprintFontCSS = ""
+
 // BlueprintSidebarConfig returns the navigation sidebar configuration.
 func BlueprintSidebarConfig() ui.SidebarConfig {
 	return ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
@@ -54,11 +67,81 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("ShopFront")
 	}
+	blueprintResources["categories"] = ResourceConfig{
+		Title: "Categories", Singular: "Category", BasePath: "/categories",
+		Crud: fwApp.MustCrudHandler("categories"),
+		Fields: []ResField{
+			{Key: "name", Label: "Name", Type: "string"},
+			{Key: "slug", Label: "Slug", Type: "string"},
+			{Key: "description", Label: "Description", Type: "text"},
+			{Key: "image", Label: "Image", Type: "image"},
+			{Key: "sort_order", Label: "Sort Order", Type: "int"},
+			{Key: "active", Label: "Active", Type: "bool"},
+		},
+	}
+	blueprintResources["orders"] = ResourceConfig{
+		Title: "Orders", Singular: "Order", BasePath: "/orders",
+		Crud: fwApp.MustCrudHandler("orders"),
+		Fields: []ResField{
+			{Key: "user_id", Label: "User", Type: "string"},
+			{Key: "order_number", Label: "Order Number", Type: "string"},
+			{Key: "status", Label: "Status", Type: "enum"},
+			{Key: "customer_name", Label: "Customer Name", Type: "string"},
+			{Key: "customer_email", Label: "Customer Email", Type: "string"},
+			{Key: "customer_phone", Label: "Customer Phone", Type: "string"},
+			{Key: "shipping_address", Label: "Shipping Address", Type: "json"},
+			{Key: "billing_address", Label: "Billing Address", Type: "json"},
+			{Key: "subtotal", Label: "Subtotal", Type: "decimal"},
+			{Key: "tax", Label: "Tax", Type: "decimal"},
+			{Key: "shipping_cost", Label: "Shipping Cost", Type: "decimal"},
+			{Key: "total", Label: "Total", Type: "decimal"},
+			{Key: "notes", Label: "Notes", Type: "text"},
+			{Key: "shipped_at", Label: "Shipped At", Type: "timestamp"},
+			{Key: "delivered_at", Label: "Delivered At", Type: "timestamp"},
+		},
+	}
+	blueprintResources["products"] = ResourceConfig{
+		Title: "Products", Singular: "Product", BasePath: "/products",
+		Crud: fwApp.MustCrudHandler("products"),
+		Fields: []ResField{
+			{Key: "name", Label: "Name", Type: "string"},
+			{Key: "slug", Label: "Slug", Type: "string"},
+			{Key: "sku", Label: "Sku", Type: "string"},
+			{Key: "description", Label: "Description", Type: "text"},
+			{Key: "price", Label: "Price", Type: "decimal"},
+			{Key: "compare_at_price", Label: "Compare At Price", Type: "decimal"},
+			{Key: "stock", Label: "Stock", Type: "int"},
+			{Key: "category_id", Label: "Category", Type: "relation"},
+			{Key: "status", Label: "Status", Type: "enum"},
+			{Key: "featured", Label: "Featured", Type: "bool"},
+			{Key: "weight", Label: "Weight", Type: "float"},
+			{Key: "image", Label: "Image", Type: "image"},
+			{Key: "tags", Label: "Tags", Type: "json"},
+		},
+		Relations: map[string]RelSource{
+			"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
+		},
+	}
+	blueprintResources["reviews"] = ResourceConfig{
+		Title: "Reviews", Singular: "Review", BasePath: "/reviews",
+		Crud: fwApp.MustCrudHandler("reviews"),
+		Fields: []ResField{
+			{Key: "product_id", Label: "Product", Type: "relation"},
+			{Key: "author_name", Label: "Author Name", Type: "string"},
+			{Key: "rating", Label: "Rating", Type: "int"},
+			{Key: "title", Label: "Title", Type: "string"},
+			{Key: "body", Label: "Body", Type: "text"},
+			{Key: "verified", Label: "Verified", Type: "bool"},
+		},
+		Relations: map[string]RelSource{
+			"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
+		},
+	}
 	site.WithTheme(BlueprintTheme())
 	sbCfg := BlueprintSidebarConfig()
 	sb := ui.Sidebar(sbCfg)
-	layout := app.NewLayout("blueprint").WithSidebar(sb)
-	site.SetDefaultLayout(layout)
+	appLayout := app.NewLayout("app").WithSidebar(sb)
+	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
@@ -98,14 +181,14 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		d := b.Build()
 		widget.Mount(fwApp.Router(), &d)
 	}
-	site.Register("/", &HomeScreen{}, nil)
-	site.Register("/products", &ProductsScreen{}, nil)
-	site.Register("/categories", &CategoriesScreen{}, nil)
-	site.Register("/orders", &OrdersScreen{}, nil)
-	site.Register("/reviews", &ReviewsScreen{}, nil)
-	site.Register("/new-product", &ProductNewScreen{}, nil)
-	site.Register("/product-detail", &ProductDetailScreen{}, nil)
-	site.Register("/order-detail", &OrderDetailScreen{}, nil)
+	site.Register("/", &HomeScreen{}, appLayout)
+	site.Register("/products", &ProductsScreen{}, appLayout)
+	site.Register("/categories", &CategoriesScreen{}, appLayout)
+	site.Register("/orders", &OrdersScreen{}, appLayout)
+	site.Register("/reviews", &ReviewsScreen{}, appLayout)
+	site.Register("/new-product", &ProductNewScreen{}, appLayout)
+	site.Register("/product-detail", &ProductDetailScreen{}, appLayout)
+	site.Register("/order-detail", &OrderDetailScreen{}, appLayout)
 	fwApp.Router().Handle("POST", "/orders/{id}/confirm", http.HandlerFunc(ConfirmOrder))
 	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))
 	fwApp.Use(RequestLoggerMiddleware)
