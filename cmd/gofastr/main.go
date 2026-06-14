@@ -101,6 +101,7 @@ func printHelp() {
   new route <path>      Scaffold a route registration
   generate --from=<yml> Generate code from a deterministic YAML blueprint
   generate --config=<yml> Run YAML-configured code generators/extensions
+  pack [app-dir]        Reconstruct gofastr.yml from a generated app (inverse of generate)
   validate <yml>        Validate a blueprint without generating (exit 0 = valid)
   theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go build
@@ -178,6 +179,8 @@ func dispatch(args []string) {
 		runTheme(cmdArgs)
 	case "generate", "gen", "g":
 		runGenerate(cmdArgs)
+	case "pack":
+		runPack(cmdArgs)
 	case "validate":
 		runValidate(cmdArgs)
 	case "build":
@@ -205,7 +208,7 @@ func dispatch(args []string) {
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "generate", "validate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "agents", "audit", "version"}
+		suggestions := []string{"init", "generate", "pack", "validate", "build", "dev", "migrate", "test", "embed", "harness", "docs", "agents", "audit", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))
