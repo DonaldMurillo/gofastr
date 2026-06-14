@@ -281,7 +281,9 @@ func listColumns(ent *entity.Entity) []string {
 // decoded rows plus the total count for pagination.
 func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string) (rows []map[string]any, total int, err error) {
 	ch := b.crudFor(ent)
-	code, raw := callCrudCtx(ctx, ch.List(), http.MethodGet, query, "", "")
+	// Screen renders bypass b.gate, so inject the admin superuser policy here too
+	// — the admin reads every entity it manages, regardless of per-entity access RBAC.
+	code, raw := callCrudCtx(adminSuperuserCtx(ctx), ch.List(), http.MethodGet, query, "", "")
 	if code != http.StatusOK {
 		return nil, 0, fmt.Errorf("list returned %d", code)
 	}
@@ -298,7 +300,7 @@ func (b *Battery) listRows(ctx context.Context, ent *entity.Entity, query string
 // getRow loads a single record by id (owner-scoped via ctx).
 func (b *Battery) getRow(ctx context.Context, ent *entity.Entity, id string) (map[string]any, error) {
 	ch := b.crudFor(ent)
-	code, raw := callCrudCtx(ctx, ch.Get(), http.MethodGet, "", id, "")
+	code, raw := callCrudCtx(adminSuperuserCtx(ctx), ch.Get(), http.MethodGet, "", id, "")
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("get returned %d", code)
 	}

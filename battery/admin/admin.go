@@ -28,11 +28,13 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -45,6 +47,19 @@ type Config struct {
 	// Title is the title shown at the top of every admin page.
 	// Defaults to "Admin".
 	Title string
+
+	// Theme supplies the shared design tokens (--color-* / --font-*) the admin
+	// renders from, so the back-office matches the surface that mounts it
+	// instead of looking like a separate tool. When zero, the framework
+	// DefaultTheme is used. Pass the same theme the app's UI host uses for a
+	// coherent experience; override any token to restyle.
+	Theme style.Theme
+
+	// FontFaceCSS is raw @font-face CSS for the app's fonts. The admin renders
+	// standalone pages (its own <head>), so without this it would reference the
+	// theme's --font-* families but never load their files. Pass the same
+	// @font-face rules the UI host serves so the admin loads identical fonts.
+	FontFaceCSS string
 
 	// Queue is the optional Browsable queue. When set, /admin/queue is
 	// active. When nil, that page returns a "no queue wired" stub so
@@ -89,6 +104,12 @@ type Config struct {
 
 	// EntityListLimit caps rows per page on an entity list screen. Default 50.
 	EntityListLimit int
+
+	// LoginPath, when set, redirects an UNAUTHENTICATED GET to a configured
+	// login page (`LoginPath?next=<requested path>`) instead of returning a
+	// bare 401. An authenticated user lacking the admin role still gets 403 —
+	// they're signed in, just not allowed. Empty (default) keeps the 401.
+	LoginPath string
 }
 
 // Battery is the framework Battery implementation.
@@ -231,11 +252,31 @@ func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !b.authorized(r.Context()) {
 			status := b.authzStatus(r.Context())
+			// Unauthenticated GET → bounce to the login page (if configured)
+			// with a next= back here, instead of a dead-end 401.
+			if status == http.StatusUnauthorized && b.cfg.LoginPath != "" && r.Method == http.MethodGet {
+				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.Path), http.StatusSeeOther)
+				return
+			}
 			http.Error(w, http.StatusText(status), status)
 			return
 		}
-		next(w, r)
+		// The admin is a fully-trusted back-office gated above by its own
+		// Authorize. Run its CRUD with a superuser policy so per-entity access
+		// RBAC (e.g. PII scoping like "customers:read") doesn't lock the admin
+		// out of the very entities it exists to manage.
+		next(w, r.WithContext(adminSuperuserCtx(r.Context())))
 	})
+}
+
+// adminSuperuserCtx installs an access policy granting the Wildcard permission,
+// so every EntityConfig.Access gate the admin's CRUD hits passes. Safe because
+// the request already cleared the admin Authorize gate.
+func adminSuperuserCtx(ctx context.Context) context.Context {
+	p := access.NewRolePolicy()
+	p.Grant("__admin", access.Wildcard)
+	ctx = access.WithPolicy(ctx, p)
+	return access.WithRoles(ctx, []string{"__admin"})
 }
 
 // ----- handlers ------------------------------------------------------------
@@ -360,77 +401,69 @@ func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error)
 
 // ----- rendering helpers ---------------------------------------------------
 
+// baseCSS styles the admin back-office entirely from the shared theme tokens
+// (--color-* / --font-*) that core-ui/style emits and framework/ui consumes, so
+// the admin renders coherently with the rest of an app and follows whatever
+// theme the host passes (Config.Theme). The hard-coded values are fallbacks for
+// a token-less host. There is intentionally NO prefers-color-scheme override —
+// light/dark is the theme's decision, not the OS's, so the admin can't diverge
+// from the surface that mounts it.
 const baseCSS = `
 :root { color-scheme: light dark; }
-body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 2rem;
-       max-width: 80rem; margin-inline: auto; line-height: 1.5; }
-h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
-.sub { color: #6b7280; margin: 0 0 1.5rem; }
-nav { display: flex; gap: 1rem; padding-block: 1rem; border-bottom: 1px solid #d1d5db;
+body { font-family: var(--font-body, -apple-system, system-ui, sans-serif); margin: 0; padding: 2rem;
+       max-width: 80rem; margin-inline: auto; line-height: 1.5;
+       background: var(--color-background, #fff); color: var(--color-text, #111827); }
+h1, h2 { font-family: var(--font-heading, var(--font-body, inherit)); }
+h1 { margin: 0 0 0.25rem; font-size: 1.5rem; letter-spacing: -0.01em; }
+a { color: var(--color-primary, #4f46e5); }
+.sub { color: var(--color-text-muted, #6b7280); margin: 0 0 1.5rem; }
+nav { display: flex; gap: 1rem; padding-block: 1rem; border-bottom: 1px solid var(--color-border, #d1d5db);
       margin-bottom: 1.5rem; }
 nav a { color: inherit; text-decoration: none; padding: 0.25rem 0.5rem; border-radius: 4px; }
-nav a:hover { background: rgba(0,0,0,0.05); }
+nav a:hover { background: color-mix(in oklab, var(--color-text, #111827) 6%, transparent); }
 section { margin-bottom: 2rem; }
 section h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
          gap: 0.75rem; }
-.card { padding: 0.75rem 1rem; border: 1px solid #d1d5db; border-radius: 6px; }
-.card .label { font-size: 0.8rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
-.card .value { font-size: 1.5rem; font-weight: 600; }
-.muted { color: #6b7280; }
-.err { color: #b91c1c; }
+.card { padding: 0.75rem 1rem; border: 1px solid var(--color-border, #d1d5db); border-radius: 6px;
+        background: var(--color-surface, #fff); }
+.card .label { font-size: 0.8rem; color: var(--color-text-muted, #6b7280); text-transform: uppercase; letter-spacing: 0.05em; }
+.card .value { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.muted { color: var(--color-text-muted, #6b7280); }
+.err { color: var(--color-danger, #b91c1c); }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb; }
-th { background: rgba(0,0,0,0.03); font-weight: 600; }
-tr:hover td { background: rgba(0,0,0,0.02); }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border, #e5e7eb); }
+th { background: color-mix(in oklab, var(--color-text, #111827) 3%, transparent); font-weight: 600; }
+tr:hover td { background: color-mix(in oklab, var(--color-text, #111827) 2%, transparent); }
 .filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.filters a { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid #d1d5db;
+.filters a { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--color-border, #d1d5db);
              text-decoration: none; color: inherit; font-size: 0.85rem; }
-.filters a.active { background: #111827; color: white; border-color: #111827; }
-code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85em; }
-nav a.current { background: rgba(0,0,0,0.08); font-weight: 600; }
+.filters a.active { background: var(--color-primary, #111827); color: var(--color-primary-fg, #fff); border-color: var(--color-primary, #111827); }
+code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); font-size: 0.85em; }
+nav a.current { background: color-mix(in oklab, var(--color-text, #111827) 8%, transparent); font-weight: 600; }
 .toolbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
 .toolbar .muted { margin-left: auto; font-size: 0.85rem; }
-.btn { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid #d1d5db; border-radius: 6px;
+.btn { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid var(--color-border, #d1d5db); border-radius: 6px;
        text-decoration: none; color: inherit; font-size: 0.9rem; background: none; cursor: pointer; }
-.btn:hover { background: rgba(0,0,0,0.04); }
-.btn.primary { background: #111827; color: white; border-color: #111827; }
-.btn.primary:hover { background: #1f2937; }
+.btn:hover { background: color-mix(in oklab, var(--color-text, #111827) 4%, transparent); }
+.btn.primary { background: var(--color-primary, #111827); color: var(--color-primary-fg, #fff); border-color: var(--color-primary, #111827); }
+.btn.primary:hover { background: color-mix(in oklab, var(--color-primary, #111827) 88%, #000); }
 .pager { display: flex; gap: 0.5rem; margin-top: 1rem; }
 .row-actions { display: flex; gap: 0.75rem; align-items: center; white-space: nowrap; }
 .row-actions form { display: inline; margin: 0; }
-.link-danger { background: none; border: none; color: #b91c1c; cursor: pointer; padding: 0;
+.link-danger { background: none; border: none; color: var(--color-danger, #b91c1c); cursor: pointer; padding: 0;
                font: inherit; text-decoration: underline; }
 .form-row { display: grid; gap: 0.3rem; margin-bottom: 1rem; max-width: 40rem; }
 .form-row label { font-size: 0.85rem; font-weight: 600; }
 .form-row input, .form-row textarea, .form-row select {
-    font: inherit; padding: 0.45rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px;
-    background: white; color: inherit; width: 100%; box-sizing: border-box; }
+    font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--color-border, #d1d5db); border-radius: 6px;
+    background: var(--color-surface, #fff); color: var(--color-text, #111827); width: 100%; box-sizing: border-box; }
 .form-row input[type=checkbox] { width: auto; }
-.form-row input[readonly] { background: #f3f4f6; color: #6b7280; }
-.form-row .req { color: #b91c1c; }
+.form-row input[readonly] { background: var(--color-surface-soft, #f3f4f6); color: var(--color-text-muted, #6b7280); }
+.form-row .req { color: var(--color-danger, #b91c1c); }
 .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
-pre { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace;
+pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono, ui-monospace, monospace);
       font-size: 0.85em; margin: 0.5rem 0 0; }
-@media (prefers-color-scheme: dark) {
-    body { background: #0f172a; color: #e2e8f0; }
-    nav { border-bottom-color: #334155; }
-    nav a:hover, tr:hover td { background: rgba(255,255,255,0.05); }
-    nav a.current { background: rgba(255,255,255,0.1); }
-    .card, th, td { border-color: #334155; }
-    th { background: rgba(255,255,255,0.03); }
-    .muted, .sub, .card .label { color: #94a3b8; }
-    .err { color: #fca5a5; }
-    .filters a { border-color: #334155; }
-    .filters a.active { background: #f8fafc; color: #0f172a; border-color: #f8fafc; }
-    .btn { border-color: #334155; }
-    .btn:hover { background: rgba(255,255,255,0.06); }
-    .btn.primary { background: #e2e8f0; color: #0f172a; border-color: #e2e8f0; }
-    .btn.primary:hover { background: #f8fafc; }
-    .link-danger { color: #fca5a5; }
-    .form-row input, .form-row textarea, .form-row select { background: #1e293b; border-color: #334155; }
-    .form-row input[readonly] { background: #0b1220; color: #94a3b8; }
-}
 `
 
 // writePage emits a complete HTML document. Title is the page-level
@@ -467,7 +500,19 @@ func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body 
 func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	_, _ = io.WriteString(w, baseCSS)
+	// Emit the theme's :root token block first so the token-based rules below
+	// resolve. Falls back to the framework default when the host passed no theme.
+	theme := b.cfg.Theme
+	if theme.Colors.Background.Value == "" {
+		theme = style.DefaultTheme()
+	}
+	// Emit the FULL theme CSS (light :root + the dark-scheme block when the
+	// theme defines one). The admin's own overview pages and its uihost-rendered
+	// entity CRUD screens then follow the same scheme — both light, or both
+	// following the OS dark preference — so the back-office is coherent with
+	// itself and with the app. (No bespoke prefers-color-scheme block of its
+	// own: light/dark is the theme's call, as everywhere.)
+	_, _ = io.WriteString(w, theme.CSSCustomProperties()+"\n"+b.cfg.FontFaceCSS+"\n"+baseCSS)
 }
 
 // navHTML builds the admin nav. The fixed Overview/Queue/Audit links plus
