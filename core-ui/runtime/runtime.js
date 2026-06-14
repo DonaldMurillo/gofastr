@@ -2263,6 +2263,27 @@
   // existing markers; _scanForModules dispatches demand-load
   // modules; the disclosure pass syncs aria-expanded on every
   // server-rendered <details data-fui-disclosure>.
+  // _runMountActions fires component actions marked data-action-mount once,
+  // right after hydration. Component clientJS handlers (data-action) only run
+  // on user events (click/input/change/submit); a server-rendered island that
+  // must populate itself on load — an entity list fetching its rows, a detail
+  // view fetching one record, a relation <select> fetching its options — opts
+  // in by carrying data-action-mount="<actionName>" on a node inside a
+  // [data-component]. Re-runs on SPA nav so a swapped-in page repopulates.
+  const _runMountActions = (root) => {
+    const G = window.__gofastr;
+    if (!G || !G.trigger) return;
+    const scope = root || document;
+    for (const el of scope.querySelectorAll('[data-action-mount]')) {
+      const action = el.getAttribute('data-action-mount');
+      if (!action) continue;
+      const componentId = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
+      if (!componentId) continue;
+      G.trigger(componentId, action, collectParams(el));
+    }
+  };
+  window.addEventListener('gofastr:navigate', () => _runMountActions(document));
+
   const _initialPass = () => {
     updateActiveLink(location.pathname);
     _bootstrapComponentCSS();
@@ -2271,6 +2292,7 @@
     for (const d of document.querySelectorAll('details[data-fui-disclosure]')) {
       _mirrorDisclosure(d);
     }
+    _runMountActions(document);
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', _initialPass);

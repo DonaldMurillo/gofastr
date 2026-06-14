@@ -19,6 +19,11 @@ type Layout struct {
 	Sidebar component.Component
 	// Footer is an optional footer component rendered with role="contentinfo".
 	Footer component.Component
+	// Container, when true, constrains the whole layout (header + content +
+	// footer) to a centered max-width column with comfortable gutters and
+	// vertical rhythm — the calm editorial shape for marketing/content pages.
+	// Width is themeable via --ui-layout-container-width. Off by default.
+	Container bool
 }
 
 // NewLayout creates a named layout.
@@ -41,6 +46,14 @@ func (l *Layout) WithSidebar(c component.Component) *Layout {
 // WithFooter sets the layout footer and returns the layout for chaining.
 func (l *Layout) WithFooter(c component.Component) *Layout {
 	l.Footer = c
+	return l
+}
+
+// WithContainer constrains the layout to a centered max-width column
+// (header + content + footer share one measure) and returns the layout for
+// chaining. The calm editorial shape for marketing/content pages.
+func (l *Layout) WithContainer() *Layout {
+	l.Container = true
 	return l
 }
 
@@ -122,6 +135,16 @@ func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) 
 		wrapperChildren = append(wrapperChildren, footer)
 	}
 
-	// Wrapper div.
-	return html.Div(html.DivConfig{Class: "layout-" + l.Name}, wrapperChildren...)
+	// Wrapper div. Modifier classes let the shared layout CSS (app.LayoutBaseCSS)
+	// style the shape generically — `layout--contained` for the centered column,
+	// `layout--has-sidebar` for the padded sidebar shell — so consumers never
+	// hand-roll per-layout-name CSS.
+	cls := "layout-" + l.Name
+	if l.Container {
+		cls += " layout--contained"
+	}
+	if l.Sidebar != nil {
+		cls += " layout--has-sidebar"
+	}
+	return html.Div(html.DivConfig{Class: cls}, wrapperChildren...)
 }

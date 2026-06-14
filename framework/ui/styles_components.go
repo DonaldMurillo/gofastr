@@ -881,7 +881,11 @@ func themeToggleCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-theme-toggle"] {
   display: inline-flex;
 }
-[data-fui-comp="ui-theme-toggle"] button {
+/* The styled button is the data-fui-comp element itself for the icon/label
+   variants (button[data-fui-comp]) and a descendant for the pill variant
+   ([data-fui-comp] button) — target both. */
+[data-fui-comp="ui-theme-toggle"] button,
+button[data-fui-comp="ui-theme-toggle"] {
   cursor: pointer;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radius-md, 0.375rem);
@@ -895,16 +899,30 @@ func themeToggleCSS(_ style.Theme) string {
   justify-content: center;
   transition: background 0.15s, border-color 0.15s;
 }
-[data-fui-comp="ui-theme-toggle"] button:hover {
+[data-fui-comp="ui-theme-toggle"] button:hover,
+button[data-fui-comp="ui-theme-toggle"]:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-theme-toggle"] button:focus-visible {
+[data-fui-comp="ui-theme-toggle"] button:focus-visible,
+button[data-fui-comp="ui-theme-toggle"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
 
-/* Icon variant: sun/moon */
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle--icon svg {
+/* Icon variant: a ghost button — transparent, borderless, just the sun/moon
+   glyph in the current text color, with a subtle hover wash. Reads as a calm
+   header affordance rather than a heavy bordered box. The variant class sits on
+   the same element as data-fui-comp, so match it as a compound selector. */
+[data-fui-comp="ui-theme-toggle"].ui-theme-toggle--icon {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-muted, #52525B);
+}
+[data-fui-comp="ui-theme-toggle"].ui-theme-toggle--icon:hover {
+  background: color-mix(in oklab, var(--color-text, #18181B) 7%, transparent);
+  color: var(--color-text, #18181B);
+}
+[data-fui-comp="ui-theme-toggle"] svg {
   width: 18px;
   height: 18px;
 }

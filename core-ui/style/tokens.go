@@ -89,7 +89,47 @@ func (t Theme) ResolveRadius(name string) string {
 // fields, callers can use CSSCustomPropertiesOf(any) on the outer
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
-	return CSSCustomPropertiesOf(t)
+	css := CSSCustomPropertiesOf(t)
+	if dark := DarkSchemeCSS(t.DarkColors); dark != "" {
+		css += "\n" + dark
+	}
+	return css
+}
+
+// DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors
+// map (token name → CSS value), or "" when empty. Two selectors cover both ways
+// the scheme is chosen: an explicit `data-color-scheme="dark"` on <html> (set by
+// a ui.ThemeToggle / the color-scheme bootstrap) and the OS preference (unless
+// the user has explicitly forced light). Both re-declare the same tokens, so any
+// surface emitting the theme CSS recolors via the CSS-variable cascade. `color`
+// + `background-color` are set on the scope so bare text/elements without their
+// own token rule still flip.
+func DarkSchemeCSS(dark map[string]string) string {
+	if len(dark) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(dark))
+	for name := range dark {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var decls strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&decls, "  --color-%s: %s;\n", name, dark[name])
+	}
+	body := decls.String() + "  color: var(--color-text);\n  background-color: var(--color-background);\n"
+	var b strings.Builder
+	b.WriteString(":root[data-color-scheme=\"dark\"] {\n")
+	b.WriteString(body)
+	b.WriteString("}\n")
+	b.WriteString("@media (prefers-color-scheme: dark) {\n")
+	b.WriteString("  :root:not([data-color-scheme=\"light\"]) {\n")
+	for _, name := range names {
+		fmt.Fprintf(&b, "    --color-%s: %s;\n", name, dark[name])
+	}
+	b.WriteString("  }\n")
+	b.WriteString("}")
+	return b.String()
 }
 
 // CSSCustomPropertiesOf walks any struct (including the app's

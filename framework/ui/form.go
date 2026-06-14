@@ -66,6 +66,10 @@ type FormConfig struct {
 
 	ID    string
 	Class string
+	// ExtraAttrs are passed through to the <form> element — e.g. the
+	// data-fui-rpc-* attributes that turn the form into an island that
+	// submits JSON to a CRUD endpoint.
+	ExtraAttrs html.Attrs
 }
 
 // Form renders a complete <form> with optional error summary above the
@@ -145,10 +149,11 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	}
 
 	return formStyle.WrapHTML(html.Form(html.FormConfig{
-		Method: method,
-		Action: action,
-		Class:  cls,
-		ID:     cfg.ID,
+		Method:     method,
+		Action:     action,
+		Class:      cls,
+		ID:         cfg.ID,
+		ExtraAttrs: cfg.ExtraAttrs,
 	}, children...))
 }
 

@@ -173,9 +173,13 @@ func TestLayoutWrap(t *testing.T) {
 	content := render.Raw("<p>Content</p>")
 	html := string(l.Wrap(content))
 
-	// Check structure.
-	if !strings.Contains(html, `class="layout-app"`) {
+	// Check structure. The wrapper carries the layout name plus modifier
+	// classes (layout--has-sidebar here, since this layout has a sidebar).
+	if !strings.Contains(html, `class="layout-app`) {
 		t.Errorf("expected layout-app class, got: %s", html)
+	}
+	if !strings.Contains(html, `layout--has-sidebar`) {
+		t.Errorf("expected layout--has-sidebar modifier (layout has a sidebar), got: %s", html)
 	}
 	if !strings.Contains(html, `role="banner"`) {
 		t.Errorf("expected role=banner, got: %s", html)

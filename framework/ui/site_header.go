@@ -60,9 +60,27 @@ type SiteHeaderConfig struct {
 	// flat colour-only treatment. The underline colour is themeable via
 	// --ui-site-header-nav-underline-color (defaults to the primary colour).
 	NavUnderline bool
+	// Drawer selects the mobile nav shape. The default is a compact
+	// trigger-anchored popover; SiteHeaderDrawerSheet renders a full-height
+	// slide-in side drawer with a backdrop scrim — the component owns the
+	// layout, so consumers don't hand-roll drawer CSS.
+	Drawer SiteHeaderDrawerVariant
 	// Class is appended to the ui-site-header wrapper.
 	Class string
 }
+
+// SiteHeaderDrawerVariant selects how the mobile nav opens.
+type SiteHeaderDrawerVariant string
+
+const (
+	// SiteHeaderDrawerPopover (default) anchors a compact panel to the
+	// hamburger trigger at the top of the bar.
+	SiteHeaderDrawerPopover SiteHeaderDrawerVariant = ""
+	// SiteHeaderDrawerSheet renders a full-height slide-in side drawer with a
+	// backdrop scrim. Closes via the ✕ (kept above the sheet), Escape, or a
+	// nav tap.
+	SiteHeaderDrawerSheet SiteHeaderDrawerVariant = "sheet"
+)
 
 // SiteHeader renders a marketing/docs top bar. The wrapper is a
 // <div> (not <header>) because the framework Layout already wraps
@@ -142,6 +160,9 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	cls := "ui-site-header"
 	if cfg.NavUnderline {
 		cls += " ui-site-header--nav-underline"
+	}
+	if cfg.Drawer == SiteHeaderDrawerSheet {
+		cls += " ui-site-header--drawer-sheet"
 	}
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
@@ -280,6 +301,48 @@ func siteHeaderCSS(_ style.Theme) string {
 @media (max-width: 720px) {
   [data-fui-comp="ui-site-header"] .ui-site-header__links { display: none; }
   [data-fui-comp="ui-site-header"] .ui-site-header__mobile { display: block; }
+}
+
+/* Sheet drawer variant: a full-height slide-in side drawer with a backdrop
+   scrim, instead of the compact popover. The panel is only in the layout when
+   the mobile <details> is shown (≤720px) and open, so these rules need no
+   extra breakpoint guard. */
+[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links {
+  position: fixed;
+  inset-block: 0;
+  inset-inline: auto 0;
+  inline-size: var(--ui-site-header-drawer-width, min(84vw, 340px));
+  block-size: 100dvh;
+  max-block-size: 100dvh;
+  border-radius: 0;
+  border-block: 0;
+  border-inline-end: 0;
+  border-inline-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
+  padding: clamp(16px, 5vw, 24px);
+  gap: 2px;
+  box-shadow: var(--ui-site-header-drawer-shadow, -16px 0 44px rgba(15,12,24,0.28));
+  animation: ui-site-header-drawer-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links a {
+  padding: var(--spacing-sm, 10px) var(--spacing-md, 12px);
+  font-size: 1.05rem;
+}
+[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet details[open]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: var(--ui-site-header-scrim, rgba(10, 9, 15, 0.42));
+  animation: ui-site-header-scrim-in 0.24s ease;
+}
+/* Keep the ✕ toggle above the sheet so there's a visible, tappable close
+   affordance (Escape and nav-tap also close the disclosure). */
+[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet summary { position: relative; z-index: 60; }
+@keyframes ui-site-header-drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes ui-site-header-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links,
+  [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet details[open]::before { animation: none; }
 }
 `
 }

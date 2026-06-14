@@ -28,6 +28,17 @@ import (
 type Theme struct {
 	Name string // theme identifier — used for telemetry and the class-scoped block name
 
+	// DarkColors is the dark-scheme palette, keyed by color token name
+	// ("background", "surface", "text", "primary", …). When non-empty,
+	// CSSCustomProperties emits a `:root[data-color-scheme="dark"]` block (and a
+	// matching prefers-color-scheme fallback) re-declaring these tokens, so a
+	// ui.ThemeToggle / the color-scheme bootstrap recolors the whole app — and
+	// every surface that emits the theme CSS — by flipping one attribute. Empty
+	// by default: an app opts into dark mode by supplying it, so existing
+	// light-only apps are never surprised into dark by an OS preference. It's a
+	// map (not a typed ColorSet) so the reflection token-walk ignores it.
+	DarkColors map[string]string
+
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet

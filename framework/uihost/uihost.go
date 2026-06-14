@@ -388,6 +388,10 @@ func (ds *UIHost) AppCSS() string {
 	// regions, etc. Inlined here (not via WithCustomCSS) so apps don't
 	// have to opt in to have working accessibility primitives.
 	out += frameworkBuiltinCSS
+	// Structural CSS for the layout shells the app package emits (.layout-body,
+	// the sidebar row, the WithContainer centered column). Owned by core-ui/app
+	// next to its markup; injected once here so no app or generator ships it.
+	out += app.LayoutBaseCSS() + "\n"
 	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
 		out += overrides + "\n"
 	}
@@ -400,6 +404,43 @@ func (ds *UIHost) AppCSS() string {
 // region). Apps can override these classes; the framework just
 // guarantees the defaults exist.
 const frameworkBuiltinCSS = `
+/* Border-box everywhere: padding/borders count toward declared widths, so
+   padded full-width bars don't overflow the viewport. The single most common
+   reset every app needs — shipping it here means no app re-declares it. */
+*, *::before, *::after { box-sizing: border-box; }
+/* Base surface + typography floor. The page picks up the theme background/text
+   tokens (so it's readable on any OS canvas, light or dark) and the --font-body
+   family. Headings use --font-heading (falls back to body). Without an explicit
+   body font-family the UA default (Times/serif) renders, which reads as
+   unstyled. Apps override via their own WithCustomCSS (appended after this
+   block — last rule wins). */
+html { background-color: var(--color-background, #fff); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-background, #fff);
+  color: var(--color-text, #18181b);
+  font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { font-family: var(--font-heading, var(--font-body, inherit)); }
+/* Columns of numbers (money, counts) align when figures are tabular. */
+[data-fui-comp="ui-data-table"] td,
+[data-fui-comp="ui-stat-card"],
+[data-fui-comp="ui-bar-chart"],
+[data-fui-comp="ui-detail-list"] .ui-detail-list__value,
+.ui-money,
+td[data-align="end"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+/* The SPA runtime focuses the <main id="main-content"> landmark after a
+   client-side nav so screen readers announce the new page. It's a
+   programmatic (tabindex=-1) focus target, not a tabbable control, so the
+   browser's default focus ring around the whole content region is noise. */
+#main-content:focus, main[tabindex="-1"]:focus { outline: none; }
 /* Visually-hidden helper — exposed under BOTH .fui-* (framework runtime
    uses this for the SPA route-announce region) and .ui-* (framework/ui
    components — CommandPalette's SR-only trigger, CopyButton's status

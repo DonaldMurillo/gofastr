@@ -77,11 +77,18 @@ func (rp *RolePolicy) permissionsFor(role string) []Permission {
 	return out
 }
 
-// Can checks if the user from ctx has the given permission via any of their roles.
+// Wildcard is the superuser permission: a role granted "*" passes every
+// permission check. Grant it deliberately and only to fully-trusted,
+// separately-gated surfaces (e.g. the admin back-office, which has its own
+// Authorize gate) — never to an end-user role.
+const Wildcard Permission = "*"
+
+// Can checks if the user from ctx has the given permission via any of their
+// roles. A role holding the Wildcard permission ("*") passes any check.
 func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 	perms := GetPermissions(ctx)
 	for _, p := range perms {
-		if p == permission {
+		if p == permission || p == Wildcard {
 			return true
 		}
 	}
