@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added — marketing pricing + long-form content blocks
+
+- **`ui.PricingCard`** (`framework/ui`) — a real marketing pricing card (plan
+  name, headline price + period, checked feature list, CTA, featured variant) so
+  pricing pages read like marketing instead of a CRUD table. Composed via a new
+  `pricing` blueprint block (`props.plans[]`).
+- **`markdown` blueprint block** renders rich long-form prose via `ui.Markdown`
+  from a `text:` string; plain `heading`/`paragraph` content is now typeset to a
+  readable measure on marketing pages instead of running full-bleed. The Meridian
+  flagship's `/pricing` is now pricing cards and `/terms` + `/privacy` are
+  markdown, demonstrating all three content treatments.
+
 ### Added — `gofastr pack` (the inverse of generate)
 
 - **`gofastr pack [app-dir]`** reconstructs a `gofastr.yml` from a generated app's

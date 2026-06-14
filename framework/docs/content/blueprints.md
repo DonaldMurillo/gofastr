@@ -296,7 +296,16 @@ Any screen body can compose the framework's UI components directly via block
 `kind`s — the generator emits the matching `ui.X(...)` call:
 
 `page_header` · `hero` · `section` (with child blocks) · `card` · `stat_row` ·
-`stat_card` · `bar_chart` · `pie_chart` · `link_button` · `callout` · `divider`.
+`stat_card` · `bar_chart` · `pie_chart` · `link_button` · `callout` · `divider` ·
+`markdown` · `pricing`.
+
+**Long-form content** — `markdown` renders rich prose (`ui.Markdown`) from a
+`text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain
+`type: heading` / `type: paragraph` blocks are also typeset to a comfortable
+column on marketing pages. **Pricing** — a `pricing` block takes
+`props: {plans: [{name, price, period, description, features: […], cta_text,
+cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
+highlighted), so a pricing page reads like marketing, not an admin grid.
 
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
 that computes a live metric server-side —
