@@ -60,8 +60,11 @@ func (b *Battery) registerEntityAdmin() error {
 	// One ScreenGroup for all entity screens, wrapped in an admin shell (a
 	// sticky nav rail of entity links) and gated by the policy chain so the
 	// host's render pipeline refuses unauthorized callers before Load runs.
+	// Standalone: the admin ships its OWN full shell, so the host App's default
+	// layout (often the app's own sidebar) must NOT wrap it — otherwise the
+	// back-office renders a double sidebar.
 	layout := appui.NewLayout("admin").WithSidebar(b.adminSidebar(ents))
-	group := appui.NewScreenGroup(b.cfg.PathPrefix+"/e", layout, b.gatePolicy())
+	group := appui.NewScreenGroup(b.cfg.PathPrefix+"/e", layout, b.gatePolicy()).Standalone()
 	for _, ent := range ents {
 		b.registerEntityScreens(group, ent)
 		b.registerEntityRoutes(ent)

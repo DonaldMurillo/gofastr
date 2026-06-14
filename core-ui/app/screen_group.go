@@ -20,13 +20,14 @@ import (
 //	group.Screen(screen2, nil)
 //	appRouter.ScreenGroup(group)
 type ScreenGroup struct {
-	prefix    string
-	layout    *Layout
-	policies  []Policy
-	screens   []*Screen
-	children  []*ScreenGroup // nested sub-groups
-	parent    *ScreenGroup
-	parentApp *Router
+	prefix     string
+	layout     *Layout
+	policies   []Policy
+	screens    []*Screen
+	children   []*ScreenGroup // nested sub-groups
+	parent     *ScreenGroup
+	parentApp  *Router
+	standalone bool // when true, the host's default layout does NOT wrap this group
 }
 
 // StaticComponent wraps raw HTML as a component.Component. Useful for
@@ -62,6 +63,17 @@ func NewScreenGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGr
 		layout:   layout,
 		policies: policies,
 	}
+}
+
+// Standalone marks this group as a self-contained shell: its own layout is the
+// outermost wrapper and the host App's default layout (SetDefaultLayout) does
+// NOT wrap it. Use this when a battery or feature mounts its screens on the
+// host's App but renders a full page shell of its own — e.g. the admin
+// back-office, whose sidebar would otherwise nest inside the app's sidebar
+// (a double-sidebar). Returns the group for chaining.
+func (g *ScreenGroup) Standalone() *ScreenGroup {
+	g.standalone = true
+	return g
 }
 
 // WithPolicy appends a Policy to the group's chain. Returns the group
@@ -280,6 +292,18 @@ var _ component.Component = (*StaticComponent)(nil)
 func groupChainContainsLayout(innermost *ScreenGroup, layout *Layout) bool {
 	for g := innermost; g != nil; g = g.parent {
 		if g.layout == layout {
+			return true
+		}
+	}
+	return false
+}
+
+// groupChainIsStandalone reports whether any group in the chain is marked
+// Standalone — in which case the host App's default layout must NOT wrap the
+// composition (the group ships its own full shell).
+func groupChainIsStandalone(innermost *ScreenGroup) bool {
+	for g := innermost; g != nil; g = g.parent {
+		if g.standalone {
 			return true
 		}
 	}

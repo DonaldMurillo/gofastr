@@ -245,7 +245,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 			// owns the single <main>; the group layers must nest WITHOUT
 			// their own <main> (else duplicate <main id="main-content">).
 			def := a.Router.defaultLayout
-			applyDefault := def != nil && !groupChainContainsLayout(screen.group, def)
+			applyDefault := def != nil && !groupChainContainsLayout(screen.group, def) && !groupChainIsStandalone(screen.group)
 			wrapped = composeLayoutsWithOverrideCtx(ctx, screen.group, screen.Layout, content, applyDefault)
 			if applyDefault {
 				wrapped = def.WrapCtx(ctx, wrapped)

@@ -473,6 +473,47 @@ func TestDefaultLayoutOverride(t *testing.T) {
 	}
 }
 
+// TestStandaloneGroupSkipsDefaultLayout guards the double-sidebar bug: a
+// ScreenGroup marked Standalone ships its own full shell, so the host App's
+// default layout must NOT also wrap it. A normal (non-standalone) group still
+// nests inside the default layout.
+func TestStandaloneGroupSkipsDefaultLayout(t *testing.T) {
+	a := NewApp("StandaloneApp")
+	a.SetDefaultLayout(NewLayout("app").WithSidebar(&stubComponent{html: render.Raw("<nav>App nav</nav>")}))
+
+	// Standalone group with its own shell (e.g. the admin back-office).
+	adminLayout := NewLayout("admin").WithSidebar(&stubComponent{html: render.Raw("<nav>Admin nav</nav>")})
+	admin := NewScreenGroup("/admin/e", adminLayout).Standalone()
+	admin.Screen(NewScreen("customers", &stubComponent{html: render.Raw("<p>Customers</p>")}), nil)
+	a.Router.ScreenGroup(admin)
+
+	// Normal group (no Standalone) — should still nest in the default layout.
+	plain := NewScreenGroup("/dash", NewLayout("dash"))
+	plain.Screen(NewScreen("home", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
+	a.Router.ScreenGroup(plain)
+
+	html, err := a.RenderPage(context.Background(), "/admin/e/customers")
+	if err != nil {
+		t.Fatalf("RenderPage admin failed: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, "layout-admin") {
+		t.Errorf("standalone group should render its own layout-admin, got: %s", s)
+	}
+	if strings.Contains(s, "layout-app") {
+		t.Errorf("standalone group must NOT be wrapped by the default layout-app (double sidebar), got: %s", s)
+	}
+
+	html, err = a.RenderPage(context.Background(), "/dash/home")
+	if err != nil {
+		t.Fatalf("RenderPage dash failed: %v", err)
+	}
+	s = string(html)
+	if !strings.Contains(s, "layout-app") {
+		t.Errorf("non-standalone group should still nest in the default layout-app, got: %s", s)
+	}
+}
+
 func TestAppProvideAndInject(t *testing.T) {
 	a := NewApp("DIApp")
 	svc := &stubService{Value: "app-injected"}
