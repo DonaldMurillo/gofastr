@@ -303,6 +303,18 @@ func blockToMap(b BlueprintBlock) map[string]any {
 		}
 		m["actions"] = acts
 	}
+	if len(b.Transitions) > 0 {
+		ts := make([]any, len(b.Transitions))
+		for i, t := range b.Transitions {
+			tm := map[string]any{}
+			putStr(tm, "label", t.Label)
+			putStr(tm, "status", t.Status)
+			putStr(tm, "variant", t.Variant)
+			putStr(tm, "stamp", t.Stamp)
+			ts[i] = tm
+		}
+		m["transitions"] = ts
+	}
 	return m
 }
 
@@ -573,7 +585,7 @@ var (
 	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
 	fieldOrder    = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
 	screenOrder   = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder    = []string{"kind", "type", "text", "level", "entity", "fields", "search", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
+	blockOrder    = []string{"kind", "type", "text", "level", "entity", "fields", "search", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
 	relationOrder = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target"}
 	indexOrder    = []string{"name", "columns", "unique"}
 	navOrder      = []string{"label", "href", "icon", "items"}
@@ -583,6 +595,7 @@ var (
 	adminOrder    = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
 	endpointOrder = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
 	actionOrder   = []string{"name", "event", "client_js"}
+	transitionOrder = []string{"label", "status", "variant", "stamp"}
 	seedOrder     = []string{"entity", "rows"}
 )
 
@@ -616,6 +629,8 @@ func orderFor(key string) []string {
 		return endpointOrder
 	case "actions":
 		return actionOrder
+	case "transitions":
+		return transitionOrder
 	case "seed":
 		return seedOrder
 	default:
@@ -1491,7 +1506,13 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 		c := cfgOf(call, 0)
 		return block("link_button", props2("label", astString(c["Label"]), "href", astString(c["Href"]), "variant", buttonVariant(c["Variant"]))), true
 	case "ui.Grid":
-		// Top-level grid of stat cards == a stat_row.
+		// A grid of pricing cards is a `pricing` block; a grid of stat cards
+		// is a stat_row.
+		if len(call.Args) > 1 {
+			if first, ok := call.Args[1].(*ast.CallExpr); ok && callSel(first) == "ui.PricingCard" {
+				return reversePricing(call), true
+			}
+		}
 		b := BlueprintBlock{Kind: "stat_row"}
 		for _, arg := range call.Args[1:] {
 			if cb, ok := reverseBlock(arg); ok {
@@ -1501,6 +1522,8 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 		return b, true
 	case "ui.StatCard":
 		return reverseStatCard(call), true
+	case "ui.Markdown":
+		return BlueprintBlock{Kind: "markdown", Text: astString(cfgOf(call, 0)["Source"])}, true
 	case "ui.AuthCard":
 		return reverseAuthCard(call), true
 	case "html.Heading":
@@ -1567,6 +1590,16 @@ func reverseEntityResource(call *ast.CallExpr) (BlueprintBlock, bool) {
 		case "WithEmpty":
 			if len(c.Args) == 1 {
 				b.EmptyText = astString(c.Args[0])
+			}
+		case "WithTransitions":
+			for _, a := range c.Args {
+				tv := fieldVals(a)
+				b.Transitions = append(b.Transitions, BlueprintTransition{
+					Label:   astString(tv["Label"]),
+					Status:  astString(tv["Status"]),
+					Variant: astString(tv["Variant"]),
+					Stamp:   astString(tv["Stamp"]),
+				})
 			}
 		case "WithEdit":
 			// detail-only affordance; not a list flag
@@ -1653,6 +1686,36 @@ func reverseStatCard(call *ast.CallExpr) BlueprintBlock {
 		}
 	}
 	return BlueprintBlock{Kind: "stat_card", Props: p}
+}
+
+func reversePricing(call *ast.CallExpr) BlueprintBlock {
+	plans := []any{}
+	for _, arg := range call.Args[1:] {
+		pc, ok := arg.(*ast.CallExpr)
+		if !ok || callSel(pc) != "ui.PricingCard" {
+			continue
+		}
+		c := cfgOf(pc, 0)
+		plan := map[string]any{}
+		putStr(plan, "name", astString(c["Name"]))
+		putStr(plan, "price", astString(c["Price"]))
+		putStr(plan, "period", astString(c["Period"]))
+		putStr(plan, "description", astString(c["Description"]))
+		if feats := astStringSlice(c["Features"]); len(feats) > 0 {
+			fa := make([]any, len(feats))
+			for i, f := range feats {
+				fa[i] = f
+			}
+			plan["features"] = fa
+		}
+		putStr(plan, "cta_text", astString(c["CTALabel"]))
+		putStr(plan, "cta_href", astString(c["CTAHref"]))
+		if astBool(c["Featured"]) {
+			plan["featured"] = true
+		}
+		plans = append(plans, plan)
+	}
+	return BlueprintBlock{Kind: "pricing", Props: map[string]any{"plans": plans}}
 }
 
 func reverseAuthCard(call *ast.CallExpr) BlueprintBlock {

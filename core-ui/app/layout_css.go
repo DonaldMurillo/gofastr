@@ -42,9 +42,12 @@ func LayoutBaseCSS() string {
   gap: clamp(24px, 4vw, 36px);
   padding-block: clamp(40px, 6vw, 64px) clamp(48px, 7vw, 80px);
 }
-/* Sections and the hero get extra room above; prose keeps the tighter rhythm. */
+/* Sections and the hero get extra room above; prose keeps the tighter rhythm.
+   Screens wrap their blocks in a div, so match both main>… and main>div>…. */
 .layout--contained main > [data-fui-comp="ui-section"]:not(:first-child),
-.layout--contained main > [data-fui-comp="ui-hero"]:not(:first-child) { margin-top: clamp(24px, 4vw, 48px); }
+.layout--contained main > [data-fui-comp="ui-hero"]:not(:first-child),
+.layout--contained main > div > [data-fui-comp="ui-section"]:not(:first-child),
+.layout--contained main > div > [data-fui-comp="ui-hero"]:not(:first-child) { margin-top: clamp(24px, 4vw, 48px); }
 /* Header + footer: full-bleed band, content centered to the measure by padding
    the difference (so the bottom border still spans edge to edge). */
 .layout--contained [data-fui-comp="ui-site-header"],
@@ -57,8 +60,19 @@ func LayoutBaseCSS() string {
   border-bottom: 1px solid var(--color-border, #e4e4e7);
 }
 .layout--contained [data-fui-comp="ui-site-header"] .ui-site-header__links { margin-inline-start: auto; }
-.layout--contained main > h1 { font-size: clamp(2rem, 4vw, 2.75rem); line-height: 1.1; letter-spacing: -0.02em; max-width: 22ch; margin: 0; }
-.layout--contained main > p { max-width: 68ch; line-height: 1.65; margin: 0; }
+/* Long-form content prose (heading + paragraph blocks live in the screen's
+   wrapper div): a comfortable measure + vertical rhythm so /about, /terms read
+   like prose, not a full-width wall. */
+.layout--contained main > h1, .layout--contained main > div > h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem); line-height: 1.1; letter-spacing: -0.02em; max-width: 24ch; margin: 0;
+}
+.layout--contained main > p, .layout--contained main > div > p {
+  max-width: 68ch; line-height: 1.7; margin: 0;
+}
+.layout--contained main > div > h1 + p,
+.layout--contained main > div > p + p { margin-top: 1.1rem; }
+/* The markdown content block keeps its own measure on long-form pages. */
+.layout--contained main > div > [data-fui-comp="ui-markdown"] { max-width: 72ch; }
 
 /* Sidebar shell: a padded content area beside the nav. */
 .layout--has-sidebar main, .layout--has-sidebar .layout-content {

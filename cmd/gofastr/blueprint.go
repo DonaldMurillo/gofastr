@@ -106,8 +106,19 @@ type BlueprintBlock struct {
 	Props     map[string]any
 	Children  []BlueprintBlock
 	Actions   []BlueprintAction
+	Transitions []BlueprintTransition // entity_detail: status-transition workflow buttons
 	Island    string
 	Widget    string
+}
+
+// BlueprintTransition is a status-change workflow action shown on a detail page:
+// a button that sets the entity's status field to Status (e.g. "Mark paid"),
+// optionally stamping a date field (Stamp, e.g. paid_on) with today.
+type BlueprintTransition struct {
+	Label   string
+	Status  string
+	Variant string
+	Stamp   string // optional date field stamped with today on transition
 }
 
 type BlueprintAction struct {
@@ -849,7 +860,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "search": true, "create": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "search": true, "create": true, "props": true, "children": true, "actions": true, "transitions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -861,25 +872,57 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
+		transitions, err := decodeTransitions(m["transitions"])
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, BlueprintBlock{
-			Type:      stringValue(m["type"]),
-			Kind:      stringValue(m["kind"]),
-			Text:      stringValue(m["text"]),
-			Level:     intValue(m["level"]),
-			Class:     stringValue(m["class"]),
-			Href:      stringValue(m["href"]),
-			Entity:    stringValue(m["entity"]),
-			Fields:    stringListValue(m["fields"]),
-			Limit:     intValue(m["limit"]),
-			EmptyText: stringValue(m["empty_text"]),
-			Mode:      stringValue(m["mode"]),
-			Search:    stringValue(m["search"]),
-			Create:    boolValue(m["create"]),
-			Props:     mapValue(m["props"]),
-			Children:  children,
-			Actions:   actions,
-			Island:    stringValue(m["island"]),
-			Widget:    stringValue(m["widget"]),
+			Type:        stringValue(m["type"]),
+			Kind:        stringValue(m["kind"]),
+			Text:        stringValue(m["text"]),
+			Level:       intValue(m["level"]),
+			Class:       stringValue(m["class"]),
+			Href:        stringValue(m["href"]),
+			Entity:      stringValue(m["entity"]),
+			Fields:      stringListValue(m["fields"]),
+			Limit:       intValue(m["limit"]),
+			EmptyText:   stringValue(m["empty_text"]),
+			Mode:        stringValue(m["mode"]),
+			Search:      stringValue(m["search"]),
+			Create:      boolValue(m["create"]),
+			Props:       mapValue(m["props"]),
+			Children:    children,
+			Actions:     actions,
+			Transitions: transitions,
+			Island:      stringValue(m["island"]),
+			Widget:      stringValue(m["widget"]),
+		})
+	}
+	return out, nil
+}
+
+func decodeTransitions(node *coreyaml.Node) ([]BlueprintTransition, error) {
+	if node == nil {
+		return nil, nil
+	}
+	list, err := expectList(node, "transitions")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlueprintTransition, 0, len(list))
+	for i, item := range list {
+		m, err := expectMap(item, fmt.Sprintf("transitions[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		if err := rejectUnknownKeys(m, map[string]bool{"label": true, "status": true, "variant": true, "stamp": true}, fmt.Sprintf("transitions[%d]", i)); err != nil {
+			return nil, err
+		}
+		out = append(out, BlueprintTransition{
+			Label:   stringValue(m["label"]),
+			Status:  stringValue(m["status"]),
+			Variant: stringValue(m["variant"]),
+			Stamp:   stringValue(m["stamp"]),
 		})
 	}
 	return out, nil
@@ -1268,7 +1311,8 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 			}
 		}
 	case "page_header", "hero", "card", "stat_row", "stat_card",
-		"bar_chart", "pie_chart", "line_chart", "link_button", "callout":
+		"bar_chart", "pie_chart", "line_chart", "link_button", "callout",
+		"markdown", "pricing", "divider":
 		// framework/ui catalog blocks — props are validated leniently (the
 		// generator reads only the props each component understands).
 	default:
@@ -1908,6 +1952,27 @@ type RelSource struct {
 	Display string
 }
 
+// Transition is a status-change workflow action shown on a detail page — a
+// button that PUTs {status: Status} to the entity, then refreshes (Mark paid).
+type Transition struct {
+	Label   string
+	Status  string
+	Variant string // "primary" | "secondary" | "danger" | "ghost" (default secondary)
+	Stamp   string // optional date field stamped with today on transition
+}
+
+// RelatedList is a reverse relation surfaced on a detail page: the records of
+// another entity that point back at this one via ForeignKey. Turns a detail
+// page from a row editor into an account view (a customer + their invoices).
+type RelatedList struct {
+	Title      string // e.g. "Invoices"
+	ForeignKey string // the FK column on the related entity, e.g. "customer_id"
+	BasePath   string // the related entity's app route, e.g. "/app/invoices"
+	Crud       *framework.CrudHandler
+	Fields     []ResField
+	Relations  map[string]RelSource // for resolving the related rows' own FKs
+}
+
 // ResourceConfig drives the server-rendered list + detail + form screens for
 // one entity.
 type ResourceConfig struct {
@@ -1922,8 +1987,16 @@ type ResourceConfig struct {
 	Relations map[string]RelSource
 	CanCreate bool // List shows "New"; a /new create form is mounted
 	CanEdit   bool   // Detail shows Edit + Delete; a /{id}/edit form is mounted
-	Heading   string // overrides the list's title (the block's text:)
-	EmptyText string // overrides the empty-state description (the block's empty_text:)
+	Heading     string        // overrides the list's title (the block's text:)
+	EmptyText   string        // overrides the empty-state description (the block's empty_text:)
+	Related     []RelatedList // reverse relations surfaced on the detail page
+	Transitions []Transition  // status-transition workflow buttons on the detail page
+}
+
+// WithTransitions sets the detail-page status-transition workflow buttons.
+func (c ResourceConfig) WithTransitions(ts ...Transition) ResourceConfig {
+	c.Transitions = ts
+	return c
 }
 
 func (c ResourceConfig) pageSize() int {
@@ -2104,6 +2177,19 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 		items = append(items, ui.DetailItem{Label: f.Label, Value: resFormat(f, resGet(row, f.Key), rel)})
 	}
 	actions := []render.HTML{}
+	for _, t := range c.Transitions {
+		body := "{\"status\":\"" + t.Status + "\""
+		if t.Stamp != "" {
+			body += ",\"" + t.Stamp + "\":\"" + resToday() + "\""
+		}
+		body += "}"
+		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: html.Attrs{
+			"data-fui-rpc":          c.APIPath + "/" + id,
+			"data-fui-rpc-method":   "PUT",
+			"data-fui-rpc-body":     body,
+			"data-fui-rpc-navigate": c.BasePath + "/" + id,
+		}}))
+	}
 	if c.CanEdit {
 		actions = append(actions,
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
@@ -2116,10 +2202,84 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
 		)
 	}
 	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
-	return render.Join(
+	body := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Cluster(ui.ClusterConfig{}, actions...)}),
 		ui.DetailList(ui.DetailListConfig{Items: items}),
-	)
+	}
+	for _, rl := range c.Related {
+		body = append(body, c.relatedList(ctx, rl, id))
+	}
+	return render.Join(body...)
+}
+
+// relatedList renders one reverse-relation section: the related entity's rows
+// where ForeignKey == this record's id, as a compact table under a heading.
+func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id string) render.HTML {
+	rows, err := rl.Crud.ListAll(ctx, framework.ListOptions{
+		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
+		Limit:   10,
+	})
+	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title)})
+	if err != nil {
+		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
+	}
+	if len(rows) == 0 {
+		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added."}))
+	}
+	relLabels := relatedRelationLabels(ctx, rl.Relations)
+	cols := make([]ui.Column, 0, len(rl.Fields)+1)
+	for _, f := range rl.Fields {
+		col := ui.Column{Key: f.Key, Header: f.Label}
+		if resNumeric(f.Type) {
+			col.Align = "end"
+		}
+		cols = append(cols, col)
+	}
+	if rl.BasePath != "" {
+		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
+	}
+	uiRows := make([]ui.Row, 0, len(rows))
+	for _, row := range rows {
+		rid := resCell(resGet(row, "id"))
+		cells := map[string]render.HTML{}
+		for _, f := range rl.Fields {
+			cells[f.Key] = resFormat(f, resGet(row, f.Key), relLabels)
+		}
+		if rl.BasePath != "" {
+			cells["_a"] = ui.Link(ui.LinkConfig{Href: rl.BasePath + "/" + rid, Text: "View", Variant: ui.LinkAction})
+		}
+		uiRows = append(uiRows, ui.Row{ID: rid, Cells: cells})
+	}
+	return render.Join(head, ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards}))
+}
+
+// relatedRelationLabels resolves the FK columns of a related entity's rows to
+// display names (so an invoice row under a customer still shows plan names etc.).
+func relatedRelationLabels(ctx context.Context, rels map[string]RelSource) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for col, rel := range rels {
+		if rel.Crud == nil {
+			continue
+		}
+		rows, err := rel.Crud.ListAll(ctx, framework.ListOptions{Limit: 1000})
+		if err != nil {
+			continue
+		}
+		m := map[string]string{}
+		for _, r := range rows {
+			rid := resCell(resGet(r, "id"))
+			if rid == "" {
+				continue
+			}
+			label := resCell(resGet(r, rel.Display))
+			if label == "" {
+				label = rid
+			}
+			m[rid] = label
+		}
+		out[col] = m
+	}
+	return out
 }
 
 // Form renders the create (id == "") or edit (id != "") form for one record.
@@ -2211,6 +2371,23 @@ func resInputType(t string) string {
 		return "email"
 	default:
 		return "text"
+	}
+}
+
+func resToday() string {
+	return time.Now().Format("2006-01-02")
+}
+
+func resButtonVariant(v string) ui.ButtonVariant {
+	switch v {
+	case "primary":
+		return ui.ButtonPrimary
+	case "danger":
+		return ui.ButtonDanger
+	case "ghost":
+		return ui.ButtonGhost
+	default:
+		return ui.ButtonSecondary
 	}
 }
 
@@ -2795,7 +2972,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 				case ctxScreen && isEntityListBlock(block):
 					expr = blueprintEntityListResourceExpr(block)
 				case ctxScreen && isEntityDetailBlock(block):
-					expr = fmt.Sprintf("blueprintResources[%q].Detail(ctx, s.id)", strings.Trim(block.Entity, "/"))
+					expr = blueprintDetailExpr(block)
 				case ctxScreen && isEntityCreateBlock(block):
 					expr = fmt.Sprintf("blueprintResources[%q].Form(ctx, \"\")", strings.Trim(block.Entity, "/"))
 				case ctxScreen && isEntityEditBlock(block):
@@ -2902,6 +3079,11 @@ func blueprintResourceRegistry(bp Blueprint) string {
 			}
 			sb.WriteString("\t\t},\n")
 		}
+		// Related: reverse relations — other entities that point back at this
+		// one via a FK. Surfaced as tables on the detail page (account view).
+		if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
+			sb.WriteString(rel)
+		}
 		sb.WriteString("\t}\n")
 	}
 	return sb.String()
@@ -2938,6 +3120,69 @@ func blueprintEntityRelations(decl framework.EntityDeclaration) map[string]strin
 		}
 	}
 	return out
+}
+
+// blueprintRelatedEmit emits the Related []RelatedList field for entity e: one
+// entry per (otherEntity, fkColumn) where otherEntity.fkColumn targets e — i.e.
+// the records that should appear on e's detail page as an account view.
+func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclaration, base map[string]string) string {
+	names := make([]string, 0, len(entityMap))
+	for n := range entityMap {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, other := range names {
+		if other == e {
+			continue
+		}
+		od := entityMap[other]
+		orels := blueprintEntityRelations(od) // fkCol -> target
+		fkCols := make([]string, 0)
+		for col, target := range orels {
+			if target == e {
+				fkCols = append(fkCols, col)
+			}
+		}
+		sort.Strings(fkCols)
+		for _, fk := range fkCols {
+			b.WriteString("\t\t{\n")
+			b.WriteString(fmt.Sprintf("\t\t\tTitle: %q, ForeignKey: %q, BasePath: %q,\n", toDisplayName(other), fk, base[other]))
+			b.WriteString(fmt.Sprintf("\t\t\tCrud: fwApp.MustCrudHandler(%q),\n", other))
+			b.WriteString("\t\t\tFields: []ResField{\n")
+			shown := 0
+			for _, f := range od.Fields {
+				if blueprintFieldSystem(f.Name) || f.Hidden || f.Name == fk || shown >= 4 {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("\t\t\t\t{Key: %q, Label: %q, Type: %q},\n", f.Name, humanizeFieldLabel(f.Name), f.Type))
+				shown++
+			}
+			b.WriteString("\t\t\t},\n")
+			if len(orels) > 0 {
+				b.WriteString("\t\t\tRelations: map[string]RelSource{\n")
+				cols := make([]string, 0, len(orels))
+				for c := range orels {
+					cols = append(cols, c)
+				}
+				sort.Strings(cols)
+				for _, col := range cols {
+					target := orels[col]
+					disp := "id"
+					if td, ok := entityMap[target]; ok {
+						disp = blueprintDisplayField(td)
+					}
+					b.WriteString(fmt.Sprintf("\t\t\t\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", col, target, disp))
+				}
+				b.WriteString("\t\t\t},\n")
+			}
+			b.WriteString("\t\t},\n")
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\t\tRelated: []RelatedList{\n" + b.String() + "\t\t},\n"
 }
 
 // blueprintDisplayField picks the human label column for an entity.
@@ -3013,6 +3258,21 @@ func screenNeedsParams(screen BlueprintScreen) bool {
 	return false
 }
 
+// blueprintDetailExpr emits the server-side detail render call, with any
+// status-transition workflow buttons chained in via WithTransitions.
+func blueprintDetailExpr(block BlueprintBlock) string {
+	entity := strings.Trim(block.Entity, "/")
+	expr := fmt.Sprintf("blueprintResources[%q]", entity)
+	if len(block.Transitions) > 0 {
+		parts := make([]string, len(block.Transitions))
+		for i, t := range block.Transitions {
+			parts[i] = fmt.Sprintf("Transition{Label: %q, Status: %q, Variant: %q, Stamp: %q}", t.Label, t.Status, t.Variant, t.Stamp)
+		}
+		expr += ".WithTransitions(" + strings.Join(parts, ", ") + ")"
+	}
+	return expr + ".Detail(ctx, s.id)"
+}
+
 // blueprintEntityListResourceExpr emits the server-side list render call for a
 // top-level entity_list block: blueprintResources["x"].WithColumns(...).List(ctx).
 func blueprintEntityListResourceExpr(block BlueprintBlock) string {
@@ -3057,7 +3317,8 @@ type screenImportNeeds struct {
 func blueprintCatalogKind(kind string) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "page_header", "hero", "section", "card", "stat_row", "stat_card",
-		"bar_chart", "pie_chart", "line_chart", "link_button", "callout", "divider":
+		"bar_chart", "pie_chart", "line_chart", "link_button", "callout", "divider",
+		"markdown", "pricing":
 		return true
 	}
 	return false
@@ -3372,8 +3633,40 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 		return fmt.Sprintf("ui.Callout(ui.CalloutConfig{Title: %q}, render.Text(%q))", blueprintProp(block, "title"), block.Text), true
 	case "divider":
 		return "ui.Divider(ui.DividerConfig{})", true
+	case "markdown":
+		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %q})", block.Text), true
+	case "pricing":
+		plans, _ := block.Props["plans"].([]any)
+		cards := make([]string, 0, len(plans))
+		for _, p := range plans {
+			if pm, ok := p.(map[string]any); ok {
+				cards = append(cards, blueprintPricingCardExpr(pm))
+			}
+		}
+		return "ui.Grid(ui.GridConfig{Min: \"16rem\"}, " + strings.Join(cards, ", ") + ")", true
 	}
 	return "", false
+}
+
+// blueprintPricingCardExpr emits a ui.PricingCard call from a plan map.
+func blueprintPricingCardExpr(p map[string]any) string {
+	s := func(k string) string { v, _ := p[k].(string); return v }
+	feats := ""
+	if fl, ok := p["features"].([]any); ok && len(fl) > 0 {
+		qs := make([]string, 0, len(fl))
+		for _, f := range fl {
+			if fs, ok := f.(string); ok {
+				qs = append(qs, fmt.Sprintf("%q", fs))
+			}
+		}
+		feats = ", Features: []string{" + strings.Join(qs, ", ") + "}"
+	}
+	featured := ""
+	if b, _ := p["featured"].(bool); b {
+		featured = ", Featured: true"
+	}
+	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Name: %q, Price: %q, Period: %q, Description: %q%s, CTALabel: %q, CTAHref: %q%s})",
+		s("name"), s("price"), s("period"), s("description"), feats, s("cta_text"), s("cta_href"), featured)
 }
 
 func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
@@ -3391,7 +3684,7 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 		return blueprintEntityFormExpr(screen, block, path, entityMap, apiBase)
 	case "entity_detail":
 		// Server-rendered via the resource engine (s.id from the route param).
-		return fmt.Sprintf("blueprintResources[%q].Detail(ctx, s.id)", strings.Trim(block.Entity, "/"))
+		return blueprintDetailExpr(block)
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
@@ -4627,7 +4920,10 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\tsbCfg := BlueprintSidebarConfig()\n")
 		sb.WriteString("\tsb := ui.Sidebar(sbCfg)\n")
-		sb.WriteString("\tappLayout := app.NewLayout(\"app\").WithSidebar(sb)\n")
+		// A minimal app top bar carrying the theme toggle (the sidebar shell has
+		// no header otherwise, so the app couldn't switch light/dark).
+		sb.WriteString("\tappHeader := app.NewStaticComponent(ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyEnd}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})))\n")
+		sb.WriteString("\tappLayout := app.NewLayout(\"app\").WithSidebar(sb).WithHeader(appHeader)\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
 		sb.WriteString("\tui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)\n")
 	}
