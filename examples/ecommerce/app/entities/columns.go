@@ -21,23 +21,31 @@ const (
 	CategoriesInclProducts = "products"
 )
 
-// ====== OrderItems column references ======
+// ====== Products column references ======
 
 var (
-	OrderItemsID          = framework.NewUUIDColumn("id")
-	OrderItemsUserId      = framework.NewStringColumn("user_id")
-	OrderItemsOrderId     = framework.NewUUIDColumn("order_id")
-	OrderItemsProductId   = framework.NewUUIDColumn("product_id")
-	OrderItemsProductName = framework.NewStringColumn("product_name")
-	OrderItemsQuantity    = framework.NewIntColumn("quantity")
-	OrderItemsUnitPrice   = framework.NewFloatColumn("unit_price")
-	OrderItemsTotalPrice  = framework.NewFloatColumn("total_price")
+	ProductsID             = framework.NewUUIDColumn("id")
+	ProductsName           = framework.NewStringColumn("name")
+	ProductsSlug           = framework.NewStringColumn("slug")
+	ProductsSku            = framework.NewStringColumn("sku")
+	ProductsDescription    = framework.NewStringColumn("description")
+	ProductsPrice          = framework.NewFloatColumn("price")
+	ProductsCompareAtPrice = framework.NewFloatColumn("compare_at_price")
+	ProductsCost           = framework.NewFloatColumn("cost")
+	ProductsStock          = framework.NewIntColumn("stock")
+	ProductsCategoryId     = framework.NewUUIDColumn("category_id")
+	ProductsStatus         = framework.NewStringColumn("status")
+	ProductsFeatured       = framework.NewBoolColumn("featured")
+	ProductsWeight         = framework.NewFloatColumn("weight")
+	ProductsImage          = framework.NewStringColumn("image")
+	ProductsTags           = framework.NewStringColumn("tags")
 )
 
-// OrderItems include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Products include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
-	OrderItemsInclOrder   = "order"
-	OrderItemsInclProduct = "product"
+	ProductsInclCategory   = "category"
+	ProductsInclReviews    = "reviews"
+	ProductsInclOrderItems = "order_items"
 )
 
 // ====== Orders column references ======
@@ -66,31 +74,23 @@ const (
 	OrdersInclItems = "items"
 )
 
-// ====== Products column references ======
+// ====== OrderItems column references ======
 
 var (
-	ProductsID             = framework.NewUUIDColumn("id")
-	ProductsName           = framework.NewStringColumn("name")
-	ProductsSlug           = framework.NewStringColumn("slug")
-	ProductsSku            = framework.NewStringColumn("sku")
-	ProductsDescription    = framework.NewStringColumn("description")
-	ProductsPrice          = framework.NewFloatColumn("price")
-	ProductsCompareAtPrice = framework.NewFloatColumn("compare_at_price")
-	ProductsCost           = framework.NewFloatColumn("cost")
-	ProductsStock          = framework.NewIntColumn("stock")
-	ProductsCategoryId     = framework.NewUUIDColumn("category_id")
-	ProductsStatus         = framework.NewStringColumn("status")
-	ProductsFeatured       = framework.NewBoolColumn("featured")
-	ProductsWeight         = framework.NewFloatColumn("weight")
-	ProductsImage          = framework.NewStringColumn("image")
-	ProductsTags           = framework.NewStringColumn("tags")
+	OrderItemsID          = framework.NewUUIDColumn("id")
+	OrderItemsUserId      = framework.NewStringColumn("user_id")
+	OrderItemsOrderId     = framework.NewUUIDColumn("order_id")
+	OrderItemsProductId   = framework.NewUUIDColumn("product_id")
+	OrderItemsProductName = framework.NewStringColumn("product_name")
+	OrderItemsQuantity    = framework.NewIntColumn("quantity")
+	OrderItemsUnitPrice   = framework.NewFloatColumn("unit_price")
+	OrderItemsTotalPrice  = framework.NewFloatColumn("total_price")
 )
 
-// Products include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// OrderItems include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
-	ProductsInclCategory   = "category"
-	ProductsInclReviews    = "reviews"
-	ProductsInclOrderItems = "order_items"
+	OrderItemsInclOrder   = "order"
+	OrderItemsInclProduct = "product"
 )
 
 // ====== Reviews column references ======

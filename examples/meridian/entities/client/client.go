@@ -76,6 +76,76 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+type Plans struct {
+	ID       string `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Slug     string `json:"slug,omitempty"`
+	Price    string `json:"price,omitempty"`
+	Interval string `json:"interval,omitempty"`
+	Active   bool   `json:"active,omitempty"`
+}
+
+type PlansInput struct {
+	Name     string `json:"name,omitempty"`
+	Slug     string `json:"slug,omitempty"`
+	Price    string `json:"price,omitempty"`
+	Interval string `json:"interval,omitempty"`
+	Active   bool   `json:"active,omitempty"`
+}
+
+type PlansListResponse struct {
+	Data       []Plans `json:"data"`
+	Total      int     `json:"total"`
+	Page       int     `json:"page"`
+	PerPage    int     `json:"perPage"`
+	TotalPages int     `json:"totalPages"`
+}
+
+// ListPlans fetches a page of plans. Pass nil for params to use server defaults.
+func (c *Client) ListPlans(ctx context.Context, params url.Values) (PlansListResponse, error) {
+	var out PlansListResponse
+	path := "/plans"
+	if params != nil {
+		path += "?" + params.Encode()
+	}
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return PlansListResponse{}, err
+	}
+	return out, nil
+}
+
+// GetPlans fetches a single record by id. Returns *APIError with 404 when missing.
+func (c *Client) GetPlans(ctx context.Context, id string) (Plans, error) {
+	var out Plans
+	if err := c.doJSON(ctx, http.MethodGet, "/plans/"+url.PathEscape(id), nil, &out); err != nil {
+		return Plans{}, err
+	}
+	return out, nil
+}
+
+// CreatePlans posts a new record and returns the server-canonical row.
+func (c *Client) CreatePlans(ctx context.Context, body PlansInput) (Plans, error) {
+	var out Plans
+	if err := c.doJSON(ctx, http.MethodPost, "/plans", body, &out); err != nil {
+		return Plans{}, err
+	}
+	return out, nil
+}
+
+// UpdatePlans updates the record at id with the partial body.
+func (c *Client) UpdatePlans(ctx context.Context, id string, body PlansInput) (Plans, error) {
+	var out Plans
+	if err := c.doJSON(ctx, http.MethodPut, "/plans/"+url.PathEscape(id), body, &out); err != nil {
+		return Plans{}, err
+	}
+	return out, nil
+}
+
+// DeletePlans removes the record at id.
+func (c *Client) DeletePlans(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/plans/"+url.PathEscape(id), nil, nil)
+}
+
 type Customers struct {
 	ID      string `json:"id"`
 	Name    string `json:"name,omitempty"`
@@ -144,6 +214,78 @@ func (c *Client) UpdateCustomers(ctx context.Context, id string, body CustomersI
 // DeleteCustomers removes the record at id.
 func (c *Client) DeleteCustomers(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/customers/"+url.PathEscape(id), nil, nil)
+}
+
+type Subscriptions struct {
+	ID         string `json:"id"`
+	CustomerId string `json:"customerId,omitempty"`
+	PlanId     string `json:"planId,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Mrr        string `json:"mrr,omitempty"`
+	StartedOn  string `json:"startedOn,omitempty"`
+	RenewsOn   string `json:"renewsOn,omitempty"`
+}
+
+type SubscriptionsInput struct {
+	CustomerId string `json:"customerId,omitempty"`
+	PlanId     string `json:"planId,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Mrr        string `json:"mrr,omitempty"`
+	StartedOn  string `json:"startedOn,omitempty"`
+	RenewsOn   string `json:"renewsOn,omitempty"`
+}
+
+type SubscriptionsListResponse struct {
+	Data       []Subscriptions `json:"data"`
+	Total      int             `json:"total"`
+	Page       int             `json:"page"`
+	PerPage    int             `json:"perPage"`
+	TotalPages int             `json:"totalPages"`
+}
+
+// ListSubscriptions fetches a page of subscriptions. Pass nil for params to use server defaults.
+func (c *Client) ListSubscriptions(ctx context.Context, params url.Values) (SubscriptionsListResponse, error) {
+	var out SubscriptionsListResponse
+	path := "/subscriptions"
+	if params != nil {
+		path += "?" + params.Encode()
+	}
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return SubscriptionsListResponse{}, err
+	}
+	return out, nil
+}
+
+// GetSubscriptions fetches a single record by id. Returns *APIError with 404 when missing.
+func (c *Client) GetSubscriptions(ctx context.Context, id string) (Subscriptions, error) {
+	var out Subscriptions
+	if err := c.doJSON(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
+}
+
+// CreateSubscriptions posts a new record and returns the server-canonical row.
+func (c *Client) CreateSubscriptions(ctx context.Context, body SubscriptionsInput) (Subscriptions, error) {
+	var out Subscriptions
+	if err := c.doJSON(ctx, http.MethodPost, "/subscriptions", body, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
+}
+
+// UpdateSubscriptions updates the record at id with the partial body.
+func (c *Client) UpdateSubscriptions(ctx context.Context, id string, body SubscriptionsInput) (Subscriptions, error) {
+	var out Subscriptions
+	if err := c.doJSON(ctx, http.MethodPut, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
+}
+
+// DeleteSubscriptions removes the record at id.
+func (c *Client) DeleteSubscriptions(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/subscriptions/"+url.PathEscape(id), nil, nil)
 }
 
 type Invoices struct {
@@ -288,146 +430,4 @@ func (c *Client) UpdatePayments(ctx context.Context, id string, body PaymentsInp
 // DeletePayments removes the record at id.
 func (c *Client) DeletePayments(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/payments/"+url.PathEscape(id), nil, nil)
-}
-
-type Plans struct {
-	ID       string `json:"id"`
-	Name     string `json:"name,omitempty"`
-	Slug     string `json:"slug,omitempty"`
-	Price    string `json:"price,omitempty"`
-	Interval string `json:"interval,omitempty"`
-	Active   bool   `json:"active,omitempty"`
-}
-
-type PlansInput struct {
-	Name     string `json:"name,omitempty"`
-	Slug     string `json:"slug,omitempty"`
-	Price    string `json:"price,omitempty"`
-	Interval string `json:"interval,omitempty"`
-	Active   bool   `json:"active,omitempty"`
-}
-
-type PlansListResponse struct {
-	Data       []Plans `json:"data"`
-	Total      int     `json:"total"`
-	Page       int     `json:"page"`
-	PerPage    int     `json:"perPage"`
-	TotalPages int     `json:"totalPages"`
-}
-
-// ListPlans fetches a page of plans. Pass nil for params to use server defaults.
-func (c *Client) ListPlans(ctx context.Context, params url.Values) (PlansListResponse, error) {
-	var out PlansListResponse
-	path := "/plans"
-	if params != nil {
-		path += "?" + params.Encode()
-	}
-	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return PlansListResponse{}, err
-	}
-	return out, nil
-}
-
-// GetPlans fetches a single record by id. Returns *APIError with 404 when missing.
-func (c *Client) GetPlans(ctx context.Context, id string) (Plans, error) {
-	var out Plans
-	if err := c.doJSON(ctx, http.MethodGet, "/plans/"+url.PathEscape(id), nil, &out); err != nil {
-		return Plans{}, err
-	}
-	return out, nil
-}
-
-// CreatePlans posts a new record and returns the server-canonical row.
-func (c *Client) CreatePlans(ctx context.Context, body PlansInput) (Plans, error) {
-	var out Plans
-	if err := c.doJSON(ctx, http.MethodPost, "/plans", body, &out); err != nil {
-		return Plans{}, err
-	}
-	return out, nil
-}
-
-// UpdatePlans updates the record at id with the partial body.
-func (c *Client) UpdatePlans(ctx context.Context, id string, body PlansInput) (Plans, error) {
-	var out Plans
-	if err := c.doJSON(ctx, http.MethodPut, "/plans/"+url.PathEscape(id), body, &out); err != nil {
-		return Plans{}, err
-	}
-	return out, nil
-}
-
-// DeletePlans removes the record at id.
-func (c *Client) DeletePlans(ctx context.Context, id string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/plans/"+url.PathEscape(id), nil, nil)
-}
-
-type Subscriptions struct {
-	ID         string `json:"id"`
-	CustomerId string `json:"customerId,omitempty"`
-	PlanId     string `json:"planId,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Mrr        string `json:"mrr,omitempty"`
-	StartedOn  string `json:"startedOn,omitempty"`
-	RenewsOn   string `json:"renewsOn,omitempty"`
-}
-
-type SubscriptionsInput struct {
-	CustomerId string `json:"customerId,omitempty"`
-	PlanId     string `json:"planId,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Mrr        string `json:"mrr,omitempty"`
-	StartedOn  string `json:"startedOn,omitempty"`
-	RenewsOn   string `json:"renewsOn,omitempty"`
-}
-
-type SubscriptionsListResponse struct {
-	Data       []Subscriptions `json:"data"`
-	Total      int             `json:"total"`
-	Page       int             `json:"page"`
-	PerPage    int             `json:"perPage"`
-	TotalPages int             `json:"totalPages"`
-}
-
-// ListSubscriptions fetches a page of subscriptions. Pass nil for params to use server defaults.
-func (c *Client) ListSubscriptions(ctx context.Context, params url.Values) (SubscriptionsListResponse, error) {
-	var out SubscriptionsListResponse
-	path := "/subscriptions"
-	if params != nil {
-		path += "?" + params.Encode()
-	}
-	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return SubscriptionsListResponse{}, err
-	}
-	return out, nil
-}
-
-// GetSubscriptions fetches a single record by id. Returns *APIError with 404 when missing.
-func (c *Client) GetSubscriptions(ctx context.Context, id string) (Subscriptions, error) {
-	var out Subscriptions
-	if err := c.doJSON(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &out); err != nil {
-		return Subscriptions{}, err
-	}
-	return out, nil
-}
-
-// CreateSubscriptions posts a new record and returns the server-canonical row.
-func (c *Client) CreateSubscriptions(ctx context.Context, body SubscriptionsInput) (Subscriptions, error) {
-	var out Subscriptions
-	if err := c.doJSON(ctx, http.MethodPost, "/subscriptions", body, &out); err != nil {
-		return Subscriptions{}, err
-	}
-	return out, nil
-}
-
-// UpdateSubscriptions updates the record at id with the partial body.
-func (c *Client) UpdateSubscriptions(ctx context.Context, id string, body SubscriptionsInput) (Subscriptions, error) {
-	var out Subscriptions
-	if err := c.doJSON(ctx, http.MethodPut, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
-		return Subscriptions{}, err
-	}
-	return out, nil
-}
-
-// DeleteSubscriptions removes the record at id.
-func (c *Client) DeleteSubscriptions(ctx context.Context, id string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/subscriptions/"+url.PathEscape(id), nil, nil)
 }

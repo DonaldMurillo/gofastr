@@ -27,58 +27,6 @@ func RegisterAll(app *framework.App) {
 		Properties: map[string]any{"icon": "folder", "label": "Categories"},
 	})
 	_ = Categories{}
-	app.Entity("order_items", framework.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String},
-			{Name: "order_id", Type: schema.Relation, Required: true, To: "orders"},
-			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},
-			{Name: "product_name", Type: schema.String, Required: true, Max: floatPtr(200)},
-			{Name: "quantity", Type: schema.Int, Required: true, Min: floatPtr(1)},
-			{Name: "unit_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-			{Name: "total_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-		},
-		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: "order_id"},
-			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
-		},
-		OwnerField: "user_id",
-		CRUD:       boolPtr(true),
-		MCP:        true,
-	})
-	_ = OrderItems{}
-	app.Entity("orders", framework.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String},
-			{Name: "order_number", Type: schema.String, Required: true, Unique: true, ReadOnly: true, AutoGenerate: schema.AutoUUID},
-			{Name: "status", Type: schema.Enum, Default: "pending", Values: []string{"pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"}},
-			{Name: "customer_name", Type: schema.String, Required: true, Max: floatPtr(200)},
-			{Name: "customer_email", Type: schema.String, Required: true, Pattern: "^[^@]+@[^@]+\\.[^@]+$"},
-			{Name: "customer_phone", Type: schema.String, Max: floatPtr(30)},
-			{Name: "shipping_address", Type: schema.JSON},
-			{Name: "billing_address", Type: schema.JSON},
-			{Name: "subtotal", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-			{Name: "tax", Type: schema.Decimal, Default: 0, Min: floatPtr(0)},
-			{Name: "shipping_cost", Type: schema.Decimal, Default: 0, Min: floatPtr(0)},
-			{Name: "total", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-			{Name: "notes", Type: schema.Text},
-			{Name: "shipped_at", Type: schema.Timestamp},
-			{Name: "delivered_at", Type: schema.Timestamp},
-		},
-		Relations: []framework.Relation{
-			{Type: framework.RelHasMany, Name: "items", Entity: "order_items", ForeignKey: "order_id"},
-		},
-		OwnerField:   "user_id",
-		CRUD:         boolPtr(true),
-		MCP:          true,
-		CursorField:  "id",
-		CursorFields: []string{"created_at", "id"},
-		Indices: []framework.Index{
-			{Name: "idx_orders_status", Columns: []string{"status"}},
-			{Name: "idx_orders_user", Columns: []string{"user_id"}},
-		},
-		Properties: map[string]any{"icon": "shopping-cart", "label": "Orders"},
-	})
-	_ = Orders{}
 	app.Entity("products", framework.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(200)},
@@ -113,6 +61,58 @@ func RegisterAll(app *framework.App) {
 		Properties: map[string]any{"icon": "package", "label": "Products"},
 	})
 	_ = Products{}
+	app.Entity("orders", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String},
+			{Name: "order_number", Type: schema.String, Required: true, Unique: true, ReadOnly: true, AutoGenerate: schema.AutoUUID},
+			{Name: "status", Type: schema.Enum, Default: "pending", Values: []string{"pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"}},
+			{Name: "customer_name", Type: schema.String, Required: true, Max: floatPtr(200)},
+			{Name: "customer_email", Type: schema.String, Required: true, Pattern: "^[^@]+@[^@]+\\.[^@]+$"},
+			{Name: "customer_phone", Type: schema.String, Max: floatPtr(30)},
+			{Name: "shipping_address", Type: schema.JSON},
+			{Name: "billing_address", Type: schema.JSON},
+			{Name: "subtotal", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "tax", Type: schema.Decimal, Default: 0, Min: floatPtr(0)},
+			{Name: "shipping_cost", Type: schema.Decimal, Default: 0, Min: floatPtr(0)},
+			{Name: "total", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "notes", Type: schema.Text},
+			{Name: "shipped_at", Type: schema.Timestamp},
+			{Name: "delivered_at", Type: schema.Timestamp},
+		},
+		Relations: []framework.Relation{
+			{Type: framework.RelHasMany, Name: "items", Entity: "order_items", ForeignKey: "order_id"},
+		},
+		OwnerField:   "user_id",
+		CRUD:         boolPtr(true),
+		MCP:          true,
+		CursorField:  "id",
+		CursorFields: []string{"created_at", "id"},
+		Indices: []framework.Index{
+			{Name: "idx_orders_status", Columns: []string{"status"}},
+			{Name: "idx_orders_user", Columns: []string{"user_id"}},
+		},
+		Properties: map[string]any{"icon": "shopping-cart", "label": "Orders"},
+	})
+	_ = Orders{}
+	app.Entity("order_items", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String},
+			{Name: "order_id", Type: schema.Relation, Required: true, To: "orders"},
+			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},
+			{Name: "product_name", Type: schema.String, Required: true, Max: floatPtr(200)},
+			{Name: "quantity", Type: schema.Int, Required: true, Min: floatPtr(1)},
+			{Name: "unit_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "total_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+		},
+		Relations: []framework.Relation{
+			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: "order_id"},
+			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
+		},
+		OwnerField: "user_id",
+		CRUD:       boolPtr(true),
+		MCP:        true,
+	})
+	_ = OrderItems{}
 	app.Entity("reviews", framework.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},

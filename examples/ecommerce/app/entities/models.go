@@ -11,17 +11,25 @@ type Categories struct {
 	Products    []*Products `json:"products,omitempty"`
 }
 
-type OrderItems struct {
-	ID          string    `json:"id"`
-	UserId      string    `json:"userId,omitempty"`
-	OrderId     string    `json:"orderId,omitempty"`
-	ProductId   string    `json:"productId,omitempty"`
-	ProductName string    `json:"productName,omitempty"`
-	Quantity    int       `json:"quantity,omitempty"`
-	UnitPrice   string    `json:"unitPrice,omitempty"`
-	TotalPrice  string    `json:"totalPrice,omitempty"`
-	Order       *Orders   `json:"order,omitempty"`
-	Product     *Products `json:"product,omitempty"`
+type Products struct {
+	ID             string         `json:"id"`
+	Name           string         `json:"name,omitempty"`
+	Slug           string         `json:"slug,omitempty"`
+	Sku            string         `json:"sku,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	Price          string         `json:"price,omitempty"`
+	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
+	Cost           string         `json:"cost,omitempty"`
+	Stock          int            `json:"stock,omitempty"`
+	CategoryId     string         `json:"categoryId,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	Featured       bool           `json:"featured,omitempty"`
+	Weight         float64        `json:"weight,omitempty"`
+	Image          string         `json:"image,omitempty"`
+	Tags           map[string]any `json:"tags,omitempty"`
+	Category       *Categories    `json:"category,omitempty"`
+	Reviews        []*Reviews     `json:"reviews,omitempty"`
+	OrderItems     []*OrderItems  `json:"orderItems,omitempty"`
 }
 
 type Orders struct {
@@ -44,25 +52,17 @@ type Orders struct {
 	Items           []*OrderItems  `json:"items,omitempty"`
 }
 
-type Products struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name,omitempty"`
-	Slug           string         `json:"slug,omitempty"`
-	Sku            string         `json:"sku,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Price          string         `json:"price,omitempty"`
-	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Cost           string         `json:"cost,omitempty"`
-	Stock          int            `json:"stock,omitempty"`
-	CategoryId     string         `json:"categoryId,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Featured       bool           `json:"featured,omitempty"`
-	Weight         float64        `json:"weight,omitempty"`
-	Image          string         `json:"image,omitempty"`
-	Tags           map[string]any `json:"tags,omitempty"`
-	Category       *Categories    `json:"category,omitempty"`
-	Reviews        []*Reviews     `json:"reviews,omitempty"`
-	OrderItems     []*OrderItems  `json:"orderItems,omitempty"`
+type OrderItems struct {
+	ID          string    `json:"id"`
+	UserId      string    `json:"userId,omitempty"`
+	OrderId     string    `json:"orderId,omitempty"`
+	ProductId   string    `json:"productId,omitempty"`
+	ProductName string    `json:"productName,omitempty"`
+	Quantity    int       `json:"quantity,omitempty"`
+	UnitPrice   string    `json:"unitPrice,omitempty"`
+	TotalPrice  string    `json:"totalPrice,omitempty"`
+	Order       *Orders   `json:"order,omitempty"`
+	Product     *Products `json:"product,omitempty"`
 }
 
 type Reviews struct {

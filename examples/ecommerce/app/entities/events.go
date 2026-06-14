@@ -47,11 +47,11 @@ func OnCategoriesDeleted(app *framework.App, fn func(ctx context.Context, id str
 	})
 }
 
-// OnOrderItemsCreated subscribes to entity.created events scoped to "order_items".
+// OnProductsCreated subscribes to entity.created events scoped to "products".
 // Returns a cancel func; call it to remove the handler.
-func OnOrderItemsCreated(app *framework.App, fn func(ctx context.Context, row *OrderItems) error) func() {
+func OnProductsCreated(app *framework.App, fn func(ctx context.Context, row *Products) error) func() {
 	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractOrderItemsRecord(ev, "order_items")
+		row, ok := extractProductsRecord(ev, "products")
 		if !ok {
 			return nil
 		}
@@ -59,10 +59,10 @@ func OnOrderItemsCreated(app *framework.App, fn func(ctx context.Context, row *O
 	})
 }
 
-// OnOrderItemsUpdated subscribes to entity.updated events scoped to "order_items".
-func OnOrderItemsUpdated(app *framework.App, fn func(ctx context.Context, row *OrderItems) error) func() {
+// OnProductsUpdated subscribes to entity.updated events scoped to "products".
+func OnProductsUpdated(app *framework.App, fn func(ctx context.Context, row *Products) error) func() {
 	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractOrderItemsRecord(ev, "order_items")
+		row, ok := extractProductsRecord(ev, "products")
 		if !ok {
 			return nil
 		}
@@ -70,13 +70,13 @@ func OnOrderItemsUpdated(app *framework.App, fn func(ctx context.Context, row *O
 	})
 }
 
-// OnOrderItemsDeleted subscribes to entity.deleted events scoped to "order_items". Callback
+// OnProductsDeleted subscribes to entity.deleted events scoped to "products". Callback
 // receives the deleted row's id only — by the time the event fires the row
 // has been removed (or soft-deleted).
-func OnOrderItemsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
+func OnProductsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
 		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "order_items" {
+		if !ok || data["entity"] != "products" {
 			return nil
 		}
 		record, _ := data["record"].(map[string]any)
@@ -129,11 +129,11 @@ func OnOrdersDeleted(app *framework.App, fn func(ctx context.Context, id string)
 	})
 }
 
-// OnProductsCreated subscribes to entity.created events scoped to "products".
+// OnOrderItemsCreated subscribes to entity.created events scoped to "order_items".
 // Returns a cancel func; call it to remove the handler.
-func OnProductsCreated(app *framework.App, fn func(ctx context.Context, row *Products) error) func() {
+func OnOrderItemsCreated(app *framework.App, fn func(ctx context.Context, row *OrderItems) error) func() {
 	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractProductsRecord(ev, "products")
+		row, ok := extractOrderItemsRecord(ev, "order_items")
 		if !ok {
 			return nil
 		}
@@ -141,10 +141,10 @@ func OnProductsCreated(app *framework.App, fn func(ctx context.Context, row *Pro
 	})
 }
 
-// OnProductsUpdated subscribes to entity.updated events scoped to "products".
-func OnProductsUpdated(app *framework.App, fn func(ctx context.Context, row *Products) error) func() {
+// OnOrderItemsUpdated subscribes to entity.updated events scoped to "order_items".
+func OnOrderItemsUpdated(app *framework.App, fn func(ctx context.Context, row *OrderItems) error) func() {
 	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractProductsRecord(ev, "products")
+		row, ok := extractOrderItemsRecord(ev, "order_items")
 		if !ok {
 			return nil
 		}
@@ -152,13 +152,13 @@ func OnProductsUpdated(app *framework.App, fn func(ctx context.Context, row *Pro
 	})
 }
 
-// OnProductsDeleted subscribes to entity.deleted events scoped to "products". Callback
+// OnOrderItemsDeleted subscribes to entity.deleted events scoped to "order_items". Callback
 // receives the deleted row's id only — by the time the event fires the row
 // has been removed (or soft-deleted).
-func OnProductsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
+func OnOrderItemsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
 		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "products" {
+		if !ok || data["entity"] != "order_items" {
 			return nil
 		}
 		record, _ := data["record"].(map[string]any)
@@ -230,10 +230,10 @@ func extractCategoriesRecord(ev framework.Event, entityName string) (*Categories
 	return &v, true
 }
 
-// extractOrderItemsRecord unmarshals an event payload's "record" field into a
-// *OrderItems, returning ok=false if the event is for a different entity or
+// extractProductsRecord unmarshals an event payload's "record" field into a
+// *Products, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
-func extractOrderItemsRecord(ev framework.Event, entityName string) (*OrderItems, bool) {
+func extractProductsRecord(ev framework.Event, entityName string) (*Products, bool) {
 	data, ok := ev.Data.(map[string]any)
 	if !ok || data["entity"] != entityName {
 		return nil, false
@@ -242,7 +242,7 @@ func extractOrderItemsRecord(ev framework.Event, entityName string) (*OrderItems
 	if !ok {
 		return nil, false
 	}
-	var v OrderItems
+	var v Products
 	if err := framework.UnmarshalEntity(record, &v); err != nil {
 		return nil, false
 	}
@@ -268,10 +268,10 @@ func extractOrdersRecord(ev framework.Event, entityName string) (*Orders, bool) 
 	return &v, true
 }
 
-// extractProductsRecord unmarshals an event payload's "record" field into a
-// *Products, returning ok=false if the event is for a different entity or
+// extractOrderItemsRecord unmarshals an event payload's "record" field into a
+// *OrderItems, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
-func extractProductsRecord(ev framework.Event, entityName string) (*Products, bool) {
+func extractOrderItemsRecord(ev framework.Event, entityName string) (*OrderItems, bool) {
 	data, ok := ev.Data.(map[string]any)
 	if !ok || data["entity"] != entityName {
 		return nil, false
@@ -280,7 +280,7 @@ func extractProductsRecord(ev framework.Event, entityName string) (*Products, bo
 	if !ok {
 		return nil, false
 	}
-	var v Products
+	var v OrderItems
 	if err := framework.UnmarshalEntity(record, &v); err != nil {
 		return nil, false
 	}

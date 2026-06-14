@@ -148,78 +148,92 @@ func (c *Client) DeleteCategories(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/categories/"+url.PathEscape(id), nil, nil)
 }
 
-type OrderItems struct {
-	ID          string `json:"id"`
-	UserId      string `json:"userId,omitempty"`
-	OrderId     string `json:"orderId,omitempty"`
-	ProductId   string `json:"productId,omitempty"`
-	ProductName string `json:"productName,omitempty"`
-	Quantity    int    `json:"quantity,omitempty"`
-	UnitPrice   string `json:"unitPrice,omitempty"`
-	TotalPrice  string `json:"totalPrice,omitempty"`
+type Products struct {
+	ID             string         `json:"id"`
+	Name           string         `json:"name,omitempty"`
+	Slug           string         `json:"slug,omitempty"`
+	Sku            string         `json:"sku,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	Price          string         `json:"price,omitempty"`
+	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
+	Cost           string         `json:"cost,omitempty"`
+	Stock          int            `json:"stock,omitempty"`
+	CategoryId     string         `json:"categoryId,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	Featured       bool           `json:"featured,omitempty"`
+	Weight         float64        `json:"weight,omitempty"`
+	Image          string         `json:"image,omitempty"`
+	Tags           map[string]any `json:"tags,omitempty"`
 }
 
-type OrderItemsInput struct {
-	UserId      string `json:"userId,omitempty"`
-	OrderId     string `json:"orderId,omitempty"`
-	ProductId   string `json:"productId,omitempty"`
-	ProductName string `json:"productName,omitempty"`
-	Quantity    int    `json:"quantity,omitempty"`
-	UnitPrice   string `json:"unitPrice,omitempty"`
-	TotalPrice  string `json:"totalPrice,omitempty"`
+type ProductsInput struct {
+	Name           string         `json:"name,omitempty"`
+	Slug           string         `json:"slug,omitempty"`
+	Sku            string         `json:"sku,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	Price          string         `json:"price,omitempty"`
+	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
+	Cost           string         `json:"cost,omitempty"`
+	Stock          int            `json:"stock,omitempty"`
+	CategoryId     string         `json:"categoryId,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	Featured       bool           `json:"featured,omitempty"`
+	Weight         float64        `json:"weight,omitempty"`
+	Image          string         `json:"image,omitempty"`
+	Tags           map[string]any `json:"tags,omitempty"`
 }
 
-type OrderItemsListResponse struct {
-	Data       []OrderItems `json:"data"`
-	Total      int          `json:"total"`
-	Page       int          `json:"page"`
-	PerPage    int          `json:"perPage"`
-	TotalPages int          `json:"totalPages"`
+type ProductsListResponse struct {
+	Data       []Products `json:"data"`
+	Total      int        `json:"total"`
+	Page       int        `json:"page"`
+	PerPage    int        `json:"perPage"`
+	TotalPages int        `json:"totalPages"`
 }
 
-// ListOrderItems fetches a page of order_items. Pass nil for params to use server defaults.
-func (c *Client) ListOrderItems(ctx context.Context, params url.Values) (OrderItemsListResponse, error) {
-	var out OrderItemsListResponse
-	path := "/order_items"
+// ListProducts fetches a page of products. Pass nil for params to use server defaults.
+func (c *Client) ListProducts(ctx context.Context, params url.Values) (ProductsListResponse, error) {
+	var out ProductsListResponse
+	path := "/products"
 	if params != nil {
 		path += "?" + params.Encode()
 	}
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return OrderItemsListResponse{}, err
+		return ProductsListResponse{}, err
 	}
 	return out, nil
 }
 
-// GetOrderItems fetches a single record by id. Returns *APIError with 404 when missing.
-func (c *Client) GetOrderItems(ctx context.Context, id string) (OrderItems, error) {
-	var out OrderItems
-	if err := c.doJSON(ctx, http.MethodGet, "/order_items/"+url.PathEscape(id), nil, &out); err != nil {
-		return OrderItems{}, err
+// GetProducts fetches a single record by id. Returns *APIError with 404 when missing.
+func (c *Client) GetProducts(ctx context.Context, id string) (Products, error) {
+	var out Products
+	if err := c.doJSON(ctx, http.MethodGet, "/products/"+url.PathEscape(id), nil, &out); err != nil {
+		return Products{}, err
 	}
 	return out, nil
 }
 
-// CreateOrderItems posts a new record and returns the server-canonical row.
-func (c *Client) CreateOrderItems(ctx context.Context, body OrderItemsInput) (OrderItems, error) {
-	var out OrderItems
-	if err := c.doJSON(ctx, http.MethodPost, "/order_items", body, &out); err != nil {
-		return OrderItems{}, err
+// CreateProducts posts a new record and returns the server-canonical row.
+func (c *Client) CreateProducts(ctx context.Context, body ProductsInput) (Products, error) {
+	var out Products
+	if err := c.doJSON(ctx, http.MethodPost, "/products", body, &out); err != nil {
+		return Products{}, err
 	}
 	return out, nil
 }
 
-// UpdateOrderItems updates the record at id with the partial body.
-func (c *Client) UpdateOrderItems(ctx context.Context, id string, body OrderItemsInput) (OrderItems, error) {
-	var out OrderItems
-	if err := c.doJSON(ctx, http.MethodPut, "/order_items/"+url.PathEscape(id), body, &out); err != nil {
-		return OrderItems{}, err
+// UpdateProducts updates the record at id with the partial body.
+func (c *Client) UpdateProducts(ctx context.Context, id string, body ProductsInput) (Products, error) {
+	var out Products
+	if err := c.doJSON(ctx, http.MethodPut, "/products/"+url.PathEscape(id), body, &out); err != nil {
+		return Products{}, err
 	}
 	return out, nil
 }
 
-// DeleteOrderItems removes the record at id.
-func (c *Client) DeleteOrderItems(ctx context.Context, id string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/order_items/"+url.PathEscape(id), nil, nil)
+// DeleteProducts removes the record at id.
+func (c *Client) DeleteProducts(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/products/"+url.PathEscape(id), nil, nil)
 }
 
 type Orders struct {
@@ -312,92 +326,78 @@ func (c *Client) DeleteOrders(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/orders/"+url.PathEscape(id), nil, nil)
 }
 
-type Products struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name,omitempty"`
-	Slug           string         `json:"slug,omitempty"`
-	Sku            string         `json:"sku,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Price          string         `json:"price,omitempty"`
-	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Cost           string         `json:"cost,omitempty"`
-	Stock          int            `json:"stock,omitempty"`
-	CategoryId     string         `json:"categoryId,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Featured       bool           `json:"featured,omitempty"`
-	Weight         float64        `json:"weight,omitempty"`
-	Image          string         `json:"image,omitempty"`
-	Tags           map[string]any `json:"tags,omitempty"`
+type OrderItems struct {
+	ID          string `json:"id"`
+	UserId      string `json:"userId,omitempty"`
+	OrderId     string `json:"orderId,omitempty"`
+	ProductId   string `json:"productId,omitempty"`
+	ProductName string `json:"productName,omitempty"`
+	Quantity    int    `json:"quantity,omitempty"`
+	UnitPrice   string `json:"unitPrice,omitempty"`
+	TotalPrice  string `json:"totalPrice,omitempty"`
 }
 
-type ProductsInput struct {
-	Name           string         `json:"name,omitempty"`
-	Slug           string         `json:"slug,omitempty"`
-	Sku            string         `json:"sku,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Price          string         `json:"price,omitempty"`
-	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Cost           string         `json:"cost,omitempty"`
-	Stock          int            `json:"stock,omitempty"`
-	CategoryId     string         `json:"categoryId,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Featured       bool           `json:"featured,omitempty"`
-	Weight         float64        `json:"weight,omitempty"`
-	Image          string         `json:"image,omitempty"`
-	Tags           map[string]any `json:"tags,omitempty"`
+type OrderItemsInput struct {
+	UserId      string `json:"userId,omitempty"`
+	OrderId     string `json:"orderId,omitempty"`
+	ProductId   string `json:"productId,omitempty"`
+	ProductName string `json:"productName,omitempty"`
+	Quantity    int    `json:"quantity,omitempty"`
+	UnitPrice   string `json:"unitPrice,omitempty"`
+	TotalPrice  string `json:"totalPrice,omitempty"`
 }
 
-type ProductsListResponse struct {
-	Data       []Products `json:"data"`
-	Total      int        `json:"total"`
-	Page       int        `json:"page"`
-	PerPage    int        `json:"perPage"`
-	TotalPages int        `json:"totalPages"`
+type OrderItemsListResponse struct {
+	Data       []OrderItems `json:"data"`
+	Total      int          `json:"total"`
+	Page       int          `json:"page"`
+	PerPage    int          `json:"perPage"`
+	TotalPages int          `json:"totalPages"`
 }
 
-// ListProducts fetches a page of products. Pass nil for params to use server defaults.
-func (c *Client) ListProducts(ctx context.Context, params url.Values) (ProductsListResponse, error) {
-	var out ProductsListResponse
-	path := "/products"
+// ListOrderItems fetches a page of order_items. Pass nil for params to use server defaults.
+func (c *Client) ListOrderItems(ctx context.Context, params url.Values) (OrderItemsListResponse, error) {
+	var out OrderItemsListResponse
+	path := "/order_items"
 	if params != nil {
 		path += "?" + params.Encode()
 	}
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return ProductsListResponse{}, err
+		return OrderItemsListResponse{}, err
 	}
 	return out, nil
 }
 
-// GetProducts fetches a single record by id. Returns *APIError with 404 when missing.
-func (c *Client) GetProducts(ctx context.Context, id string) (Products, error) {
-	var out Products
-	if err := c.doJSON(ctx, http.MethodGet, "/products/"+url.PathEscape(id), nil, &out); err != nil {
-		return Products{}, err
+// GetOrderItems fetches a single record by id. Returns *APIError with 404 when missing.
+func (c *Client) GetOrderItems(ctx context.Context, id string) (OrderItems, error) {
+	var out OrderItems
+	if err := c.doJSON(ctx, http.MethodGet, "/order_items/"+url.PathEscape(id), nil, &out); err != nil {
+		return OrderItems{}, err
 	}
 	return out, nil
 }
 
-// CreateProducts posts a new record and returns the server-canonical row.
-func (c *Client) CreateProducts(ctx context.Context, body ProductsInput) (Products, error) {
-	var out Products
-	if err := c.doJSON(ctx, http.MethodPost, "/products", body, &out); err != nil {
-		return Products{}, err
+// CreateOrderItems posts a new record and returns the server-canonical row.
+func (c *Client) CreateOrderItems(ctx context.Context, body OrderItemsInput) (OrderItems, error) {
+	var out OrderItems
+	if err := c.doJSON(ctx, http.MethodPost, "/order_items", body, &out); err != nil {
+		return OrderItems{}, err
 	}
 	return out, nil
 }
 
-// UpdateProducts updates the record at id with the partial body.
-func (c *Client) UpdateProducts(ctx context.Context, id string, body ProductsInput) (Products, error) {
-	var out Products
-	if err := c.doJSON(ctx, http.MethodPut, "/products/"+url.PathEscape(id), body, &out); err != nil {
-		return Products{}, err
+// UpdateOrderItems updates the record at id with the partial body.
+func (c *Client) UpdateOrderItems(ctx context.Context, id string, body OrderItemsInput) (OrderItems, error) {
+	var out OrderItems
+	if err := c.doJSON(ctx, http.MethodPut, "/order_items/"+url.PathEscape(id), body, &out); err != nil {
+		return OrderItems{}, err
 	}
 	return out, nil
 }
 
-// DeleteProducts removes the record at id.
-func (c *Client) DeleteProducts(ctx context.Context, id string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/products/"+url.PathEscape(id), nil, nil)
+// DeleteOrderItems removes the record at id.
+func (c *Client) DeleteOrderItems(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/order_items/"+url.PathEscape(id), nil, nil)
 }
 
 type Reviews struct {

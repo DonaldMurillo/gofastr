@@ -175,42 +175,42 @@ func (r *CategoriesRepo) BatchDelete(ctx context.Context, ids []string) error {
 	return err
 }
 
-// OrderItemsRepo is the typed repository for order_items rows.
-type OrderItemsRepo struct {
+// ProductsRepo is the typed repository for products rows.
+type ProductsRepo struct {
 	handler *framework.CrudHandler
 }
 
-// NewOrderItemsRepo wires a typed repo against the App's "order_items" entity. Panics if the
+// NewProductsRepo wires a typed repo against the App's "products" entity. Panics if the
 // entity hasn't been registered yet.
-func NewOrderItemsRepo(app *framework.App) *OrderItemsRepo {
-	entity, err := app.Registry.Get("order_items")
+func NewProductsRepo(app *framework.App) *ProductsRepo {
+	entity, err := app.Registry.Get("products")
 	if err != nil {
-		panic("entities: order_items not registered: " + err.Error())
+		panic("entities: products not registered: " + err.Error())
 	}
 	h := framework.NewCrudHandler(entity, app.DB)
 	h.JSONCase = app.JSONCasing()
-	h.Hooks = app.HookRegistry("order_items")
+	h.Hooks = app.HookRegistry("products")
 	h.Storage = app.Storage
 	h.Events = app.Events()
 	h.Registry = app.Registry
-	return &OrderItemsRepo{handler: h}
+	return &ProductsRepo{handler: h}
 }
 
 // Handler returns the underlying CrudHandler — useful for advanced wiring or
 // to feed the typed-query primitives directly.
-func (r *OrderItemsRepo) Handler() *framework.CrudHandler { return r.handler }
+func (r *ProductsRepo) Handler() *framework.CrudHandler { return r.handler }
 
 // WithTx returns a tx-bound copy of the repo. Calls within a hook can use
 // framework.TxFromContext(ctx) and pass the result here to chain typed CRUD
 // atomically with the parent operation.
-func (r *OrderItemsRepo) WithTx(tx *sql.Tx) *OrderItemsRepo {
+func (r *ProductsRepo) WithTx(tx *sql.Tx) *ProductsRepo {
 	h := *r.handler
 	h.DB = tx
-	return &OrderItemsRepo{handler: &h}
+	return &ProductsRepo{handler: &h}
 }
 
 // Create persists row and back-fills server-generated fields onto it.
-func (r *OrderItemsRepo) Create(ctx context.Context, row *OrderItems) error {
+func (r *ProductsRepo) Create(ctx context.Context, row *Products) error {
 	body, err := framework.MarshalEntity(row)
 	if err != nil {
 		return err
@@ -223,12 +223,12 @@ func (r *OrderItemsRepo) Create(ctx context.Context, row *OrderItems) error {
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
-func (r *OrderItemsRepo) Get(ctx context.Context, id string, includes ...string) (*OrderItems, error) {
+func (r *ProductsRepo) Get(ctx context.Context, id string, includes ...string) (*Products, error) {
 	out, err := r.handler.GetOne(ctx, id, includes)
 	if err != nil {
 		return nil, err
 	}
-	var row OrderItems
+	var row Products
 	if err := framework.UnmarshalEntity(out, &row); err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func (r *OrderItemsRepo) Get(ctx context.Context, id string, includes ...string)
 
 // Update merges fields from row into the persisted record by id and refreshes
 // row with the post-update state.
-func (r *OrderItemsRepo) Update(ctx context.Context, id string, row *OrderItems) error {
+func (r *ProductsRepo) Update(ctx context.Context, id string, row *Products) error {
 	body, err := framework.MarshalEntity(row)
 	if err != nil {
 		return err
@@ -252,32 +252,32 @@ func (r *OrderItemsRepo) Update(ctx context.Context, id string, row *OrderItems)
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
 // the entity).
-func (r *OrderItemsRepo) Delete(ctx context.Context, id string) error {
+func (r *ProductsRepo) Delete(ctx context.Context, id string) error {
 	return r.handler.DeleteOne(ctx, id)
 }
 
 // Query starts a typed query for chaining Where/Order/Limit/Include and
 // finishing with Find/First/Count.
-func (r *OrderItemsRepo) Query() *framework.TypedQuery[OrderItems] {
-	return framework.NewTypedQuery[OrderItems](r.handler)
+func (r *ProductsRepo) Query() *framework.TypedQuery[Products] {
+	return framework.NewTypedQuery[Products](r.handler)
 }
 
 // Exists reports whether a row with the given id is present (and not soft-
 // deleted for SoftDelete entities). Tenant scope still applies.
-func (r *OrderItemsRepo) Exists(ctx context.Context, id string) (bool, error) {
-	return r.Query().Where(OrderItemsID.Eq(id)).Exists(ctx)
+func (r *ProductsRepo) Exists(ctx context.Context, id string) (bool, error) {
+	return r.Query().Where(ProductsID.Eq(id)).Exists(ctx)
 }
 
 // Count returns the total number of rows visible under the current tenant
 // and soft-delete scope. Chain through Query() for filtered counts.
-func (r *OrderItemsRepo) Count(ctx context.Context) (int, error) {
+func (r *ProductsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
 // FirstOrCreate looks up a row by the given match condition and returns it
 // if found. Otherwise inserts row (filling in its server-generated fields)
 // and returns it.
-func (r *OrderItemsRepo) FirstOrCreate(ctx context.Context, row *OrderItems, match framework.Condition) (*OrderItems, error) {
+func (r *ProductsRepo) FirstOrCreate(ctx context.Context, row *Products, match framework.Condition) (*Products, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -293,7 +293,7 @@ func (r *OrderItemsRepo) FirstOrCreate(ctx context.Context, row *OrderItems, mat
 
 // BatchCreate inserts every row in one transaction; on any per-item error
 // the entire batch rolls back. Returned slice is in input order.
-func (r *OrderItemsRepo) BatchCreate(ctx context.Context, rows []*OrderItems) ([]*OrderItems, error) {
+func (r *ProductsRepo) BatchCreate(ctx context.Context, rows []*Products) ([]*Products, error) {
 	bodies := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		b, err := framework.MarshalEntity(row)
@@ -315,7 +315,7 @@ func (r *OrderItemsRepo) BatchCreate(ctx context.Context, rows []*OrderItems) ([
 }
 
 // BatchUpdate updates every row by its id in one transaction.
-func (r *OrderItemsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*OrderItems) ([]*OrderItems, error) {
+func (r *ProductsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Products) ([]*Products, error) {
 	bodies := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		b, err := framework.MarshalEntity(row)
@@ -338,7 +338,7 @@ func (r *OrderItemsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*
 }
 
 // BatchDelete deletes every id atomically.
-func (r *OrderItemsRepo) BatchDelete(ctx context.Context, ids []string) error {
+func (r *ProductsRepo) BatchDelete(ctx context.Context, ids []string) error {
 	_, err := r.handler.BatchDeleteMany(ctx, ids)
 	return err
 }
@@ -511,42 +511,42 @@ func (r *OrdersRepo) BatchDelete(ctx context.Context, ids []string) error {
 	return err
 }
 
-// ProductsRepo is the typed repository for products rows.
-type ProductsRepo struct {
+// OrderItemsRepo is the typed repository for order_items rows.
+type OrderItemsRepo struct {
 	handler *framework.CrudHandler
 }
 
-// NewProductsRepo wires a typed repo against the App's "products" entity. Panics if the
+// NewOrderItemsRepo wires a typed repo against the App's "order_items" entity. Panics if the
 // entity hasn't been registered yet.
-func NewProductsRepo(app *framework.App) *ProductsRepo {
-	entity, err := app.Registry.Get("products")
+func NewOrderItemsRepo(app *framework.App) *OrderItemsRepo {
+	entity, err := app.Registry.Get("order_items")
 	if err != nil {
-		panic("entities: products not registered: " + err.Error())
+		panic("entities: order_items not registered: " + err.Error())
 	}
 	h := framework.NewCrudHandler(entity, app.DB)
 	h.JSONCase = app.JSONCasing()
-	h.Hooks = app.HookRegistry("products")
+	h.Hooks = app.HookRegistry("order_items")
 	h.Storage = app.Storage
 	h.Events = app.Events()
 	h.Registry = app.Registry
-	return &ProductsRepo{handler: h}
+	return &OrderItemsRepo{handler: h}
 }
 
 // Handler returns the underlying CrudHandler — useful for advanced wiring or
 // to feed the typed-query primitives directly.
-func (r *ProductsRepo) Handler() *framework.CrudHandler { return r.handler }
+func (r *OrderItemsRepo) Handler() *framework.CrudHandler { return r.handler }
 
 // WithTx returns a tx-bound copy of the repo. Calls within a hook can use
 // framework.TxFromContext(ctx) and pass the result here to chain typed CRUD
 // atomically with the parent operation.
-func (r *ProductsRepo) WithTx(tx *sql.Tx) *ProductsRepo {
+func (r *OrderItemsRepo) WithTx(tx *sql.Tx) *OrderItemsRepo {
 	h := *r.handler
 	h.DB = tx
-	return &ProductsRepo{handler: &h}
+	return &OrderItemsRepo{handler: &h}
 }
 
 // Create persists row and back-fills server-generated fields onto it.
-func (r *ProductsRepo) Create(ctx context.Context, row *Products) error {
+func (r *OrderItemsRepo) Create(ctx context.Context, row *OrderItems) error {
 	body, err := framework.MarshalEntity(row)
 	if err != nil {
 		return err
@@ -559,12 +559,12 @@ func (r *ProductsRepo) Create(ctx context.Context, row *Products) error {
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
-func (r *ProductsRepo) Get(ctx context.Context, id string, includes ...string) (*Products, error) {
+func (r *OrderItemsRepo) Get(ctx context.Context, id string, includes ...string) (*OrderItems, error) {
 	out, err := r.handler.GetOne(ctx, id, includes)
 	if err != nil {
 		return nil, err
 	}
-	var row Products
+	var row OrderItems
 	if err := framework.UnmarshalEntity(out, &row); err != nil {
 		return nil, err
 	}
@@ -573,7 +573,7 @@ func (r *ProductsRepo) Get(ctx context.Context, id string, includes ...string) (
 
 // Update merges fields from row into the persisted record by id and refreshes
 // row with the post-update state.
-func (r *ProductsRepo) Update(ctx context.Context, id string, row *Products) error {
+func (r *OrderItemsRepo) Update(ctx context.Context, id string, row *OrderItems) error {
 	body, err := framework.MarshalEntity(row)
 	if err != nil {
 		return err
@@ -588,32 +588,32 @@ func (r *ProductsRepo) Update(ctx context.Context, id string, row *Products) err
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
 // the entity).
-func (r *ProductsRepo) Delete(ctx context.Context, id string) error {
+func (r *OrderItemsRepo) Delete(ctx context.Context, id string) error {
 	return r.handler.DeleteOne(ctx, id)
 }
 
 // Query starts a typed query for chaining Where/Order/Limit/Include and
 // finishing with Find/First/Count.
-func (r *ProductsRepo) Query() *framework.TypedQuery[Products] {
-	return framework.NewTypedQuery[Products](r.handler)
+func (r *OrderItemsRepo) Query() *framework.TypedQuery[OrderItems] {
+	return framework.NewTypedQuery[OrderItems](r.handler)
 }
 
 // Exists reports whether a row with the given id is present (and not soft-
 // deleted for SoftDelete entities). Tenant scope still applies.
-func (r *ProductsRepo) Exists(ctx context.Context, id string) (bool, error) {
-	return r.Query().Where(ProductsID.Eq(id)).Exists(ctx)
+func (r *OrderItemsRepo) Exists(ctx context.Context, id string) (bool, error) {
+	return r.Query().Where(OrderItemsID.Eq(id)).Exists(ctx)
 }
 
 // Count returns the total number of rows visible under the current tenant
 // and soft-delete scope. Chain through Query() for filtered counts.
-func (r *ProductsRepo) Count(ctx context.Context) (int, error) {
+func (r *OrderItemsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
 // FirstOrCreate looks up a row by the given match condition and returns it
 // if found. Otherwise inserts row (filling in its server-generated fields)
 // and returns it.
-func (r *ProductsRepo) FirstOrCreate(ctx context.Context, row *Products, match framework.Condition) (*Products, error) {
+func (r *OrderItemsRepo) FirstOrCreate(ctx context.Context, row *OrderItems, match framework.Condition) (*OrderItems, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -629,7 +629,7 @@ func (r *ProductsRepo) FirstOrCreate(ctx context.Context, row *Products, match f
 
 // BatchCreate inserts every row in one transaction; on any per-item error
 // the entire batch rolls back. Returned slice is in input order.
-func (r *ProductsRepo) BatchCreate(ctx context.Context, rows []*Products) ([]*Products, error) {
+func (r *OrderItemsRepo) BatchCreate(ctx context.Context, rows []*OrderItems) ([]*OrderItems, error) {
 	bodies := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		b, err := framework.MarshalEntity(row)
@@ -651,7 +651,7 @@ func (r *ProductsRepo) BatchCreate(ctx context.Context, rows []*Products) ([]*Pr
 }
 
 // BatchUpdate updates every row by its id in one transaction.
-func (r *ProductsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Products) ([]*Products, error) {
+func (r *OrderItemsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*OrderItems) ([]*OrderItems, error) {
 	bodies := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		b, err := framework.MarshalEntity(row)
@@ -674,7 +674,7 @@ func (r *ProductsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Pr
 }
 
 // BatchDelete deletes every id atomically.
-func (r *ProductsRepo) BatchDelete(ctx context.Context, ids []string) error {
+func (r *OrderItemsRepo) BatchDelete(ctx context.Context, ids []string) error {
 	_, err := r.handler.BatchDeleteMany(ctx, ids)
 	return err
 }

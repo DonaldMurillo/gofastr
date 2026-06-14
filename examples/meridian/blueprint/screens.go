@@ -33,7 +33,7 @@ func (s *PricingScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *PricingScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Pricing", Subtitle: "Start free. Upgrade when revenue does.", Eyebrow: ""}),
-		blueprintResources["plans"].WithColumns("name", "price", "interval", "active").List(ctx),
+		blueprintResources["plans"].WithColumns("name", "price", "interval", "active").WithHeading("Plans").WithEmpty("Pricing coming soon.").List(ctx),
 	)
 }
 
@@ -112,7 +112,7 @@ func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Overview", Subtitle: "Revenue at a glance", Eyebrow: ""}),
 		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: blueprintStatValue(ctx, "customers", "sum", "mrr", "", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: blueprintStatValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: blueprintStatValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: blueprintStatValue(ctx, "plans", "count", "", "", "")})),
 		render.Tag("div", map[string]string{"class": "mrd-chart"}, html.Heading(html.HeadingConfig{Level: 2, Class: "mrd-chart__title"}, render.Text("Customers by status")), ui.BarChart(ui.BarChartConfig{Bars: blueprintGroupBars(ctx, "customers", "status"), ShowLabels: true})),
-		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "due_on").WithLimit(8).List(ctx),
+		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "due_on").WithLimit(8).WithHeading("Recent invoices").WithEmpty("No invoices yet.").List(ctx),
 	)
 }
 
@@ -124,7 +124,7 @@ func (s *CustomersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithLimit(25).WithCreate().List(ctx),
+		blueprintResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithLimit(25).WithCreate().WithHeading("Customers").WithEmpty("No customers yet — add your first to get started.").List(ctx),
 	)
 }
 
@@ -152,7 +152,7 @@ func (s *InvoicesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithLimit(25).WithCreate().List(ctx),
+		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithLimit(25).WithCreate().WithHeading("Invoices").WithEmpty("No invoices yet.").List(ctx),
 	)
 }
 
@@ -164,7 +164,7 @@ func (s *SubscriptionsScreen) ScreenType() app.ScreenType { return app.ScreenPag
 
 func (s *SubscriptionsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().List(ctx),
+		blueprintResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().WithHeading("Subscriptions").WithEmpty("No subscriptions yet.").List(ctx),
 	)
 }
 

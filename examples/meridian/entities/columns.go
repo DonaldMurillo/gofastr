@@ -4,6 +4,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
+// ====== Plans column references ======
+
+var (
+	PlansID       = framework.NewUUIDColumn("id")
+	PlansName     = framework.NewStringColumn("name")
+	PlansSlug     = framework.NewStringColumn("slug")
+	PlansPrice    = framework.NewFloatColumn("price")
+	PlansInterval = framework.NewStringColumn("interval")
+	PlansActive   = framework.NewBoolColumn("active")
+)
+
 // ====== Customers column references ======
 
 var (
@@ -13,6 +24,24 @@ var (
 	CustomersCompany = framework.NewStringColumn("company")
 	CustomersStatus  = framework.NewStringColumn("status")
 	CustomersMrr     = framework.NewFloatColumn("mrr")
+)
+
+// ====== Subscriptions column references ======
+
+var (
+	SubscriptionsID         = framework.NewUUIDColumn("id")
+	SubscriptionsCustomerId = framework.NewUUIDColumn("customer_id")
+	SubscriptionsPlanId     = framework.NewUUIDColumn("plan_id")
+	SubscriptionsStatus     = framework.NewStringColumn("status")
+	SubscriptionsMrr        = framework.NewFloatColumn("mrr")
+	SubscriptionsStartedOn  = framework.NewTimestampColumn("started_on")
+	SubscriptionsRenewsOn   = framework.NewTimestampColumn("renews_on")
+)
+
+// Subscriptions include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+const (
+	SubscriptionsInclCustomer = "customer"
+	SubscriptionsInclPlan     = "plan"
 )
 
 // ====== Invoices column references ======
@@ -48,33 +77,4 @@ var (
 const (
 	PaymentsInclInvoice  = "invoice"
 	PaymentsInclCustomer = "customer"
-)
-
-// ====== Plans column references ======
-
-var (
-	PlansID       = framework.NewUUIDColumn("id")
-	PlansName     = framework.NewStringColumn("name")
-	PlansSlug     = framework.NewStringColumn("slug")
-	PlansPrice    = framework.NewFloatColumn("price")
-	PlansInterval = framework.NewStringColumn("interval")
-	PlansActive   = framework.NewBoolColumn("active")
-)
-
-// ====== Subscriptions column references ======
-
-var (
-	SubscriptionsID         = framework.NewUUIDColumn("id")
-	SubscriptionsCustomerId = framework.NewUUIDColumn("customer_id")
-	SubscriptionsPlanId     = framework.NewUUIDColumn("plan_id")
-	SubscriptionsStatus     = framework.NewStringColumn("status")
-	SubscriptionsMrr        = framework.NewFloatColumn("mrr")
-	SubscriptionsStartedOn  = framework.NewTimestampColumn("started_on")
-	SubscriptionsRenewsOn   = framework.NewTimestampColumn("renews_on")
-)
-
-// Subscriptions include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
-const (
-	SubscriptionsInclCustomer = "customer"
-	SubscriptionsInclPlan     = "plan"
 )

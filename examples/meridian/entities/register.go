@@ -10,6 +10,19 @@ func floatPtr(v float64) *float64 { return &v }
 
 // RegisterAll registers every generated entity declaration with app.
 func RegisterAll(app *framework.App) {
+	app.Entity("plans", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(80)},
+			{Name: "slug", Type: schema.String, Required: true, Unique: true, Max: floatPtr(80)},
+			{Name: "price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "interval", Type: schema.Enum, Default: "month", Values: []string{"month", "year"}},
+			{Name: "active", Type: schema.Bool, Default: true},
+		},
+		CRUD:       boolPtr(true),
+		MCP:        true,
+		Properties: map[string]any{"label": "Plans"},
+	})
+	_ = Plans{}
 	app.Entity("customers", framework.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(120)},
@@ -27,6 +40,24 @@ func RegisterAll(app *framework.App) {
 		Properties: map[string]any{"label": "Customers"},
 	})
 	_ = Customers{}
+	app.Entity("subscriptions", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
+			{Name: "plan_id", Type: schema.Relation, Required: true, To: "plans"},
+			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
+			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
+			{Name: "started_on", Type: schema.Date},
+			{Name: "renews_on", Type: schema.Date},
+		},
+		Relations: []framework.Relation{
+			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
+			{Type: framework.RelManyToOne, Name: "plan", Entity: "plans", ForeignKey: "plan_id"},
+		},
+		CRUD:       boolPtr(true),
+		MCP:        true,
+		Properties: map[string]any{"label": "Subscriptions"},
+	})
+	_ = Subscriptions{}
 	app.Entity("invoices", framework.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
@@ -62,35 +93,4 @@ func RegisterAll(app *framework.App) {
 		Properties: map[string]any{"label": "Payments"},
 	})
 	_ = Payments{}
-	app.Entity("plans", framework.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(80)},
-			{Name: "slug", Type: schema.String, Required: true, Unique: true, Max: floatPtr(80)},
-			{Name: "price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-			{Name: "interval", Type: schema.Enum, Default: "month", Values: []string{"month", "year"}},
-			{Name: "active", Type: schema.Bool, Default: true},
-		},
-		CRUD:       boolPtr(true),
-		MCP:        true,
-		Properties: map[string]any{"label": "Plans"},
-	})
-	_ = Plans{}
-	app.Entity("subscriptions", framework.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
-			{Name: "plan_id", Type: schema.Relation, Required: true, To: "plans"},
-			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
-			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
-			{Name: "started_on", Type: schema.Date},
-			{Name: "renews_on", Type: schema.Date},
-		},
-		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-			{Type: framework.RelManyToOne, Name: "plan", Entity: "plans", ForeignKey: "plan_id"},
-		},
-		CRUD:       boolPtr(true),
-		MCP:        true,
-		Properties: map[string]any{"label": "Subscriptions"},
-	})
-	_ = Subscriptions{}
 }

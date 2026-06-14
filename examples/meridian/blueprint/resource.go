@@ -49,8 +49,10 @@ type ResourceConfig struct {
 	Search    string
 	PageSize  int
 	Relations map[string]RelSource
-	CanCreate bool // List shows "New"; a /new create form is mounted
-	CanEdit   bool // Detail shows Edit + Delete; a /{id}/edit form is mounted
+	CanCreate bool   // List shows "New"; a /new create form is mounted
+	CanEdit   bool   // Detail shows Edit + Delete; a /{id}/edit form is mounted
+	Heading   string // overrides the list's title (the block's text:)
+	EmptyText string // overrides the empty-state description (the block's empty_text:)
 }
 
 func (c ResourceConfig) pageSize() int {
@@ -98,6 +100,10 @@ func (c ResourceConfig) WithCreate() ResourceConfig             { c.CanCreate = 
 
 // WithEdit shows Edit + Delete on the detail screen (a /{id}/edit form is mounted).
 func (c ResourceConfig) WithEdit() ResourceConfig { c.CanEdit = true; return c }
+
+// WithHeading overrides the list's title; WithEmpty overrides the empty-state text.
+func (c ResourceConfig) WithHeading(s string) ResourceConfig { c.Heading = s; return c }
+func (c ResourceConfig) WithEmpty(s string) ResourceConfig   { c.EmptyText = s; return c }
 
 func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[string]string {
 	out := map[string]map[string]string{}
@@ -153,7 +159,11 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	if c.CanCreate {
 		actions = ui.LinkButton(ui.LinkButtonConfig{Label: "New " + c.Singular, Href: c.BasePath + "/new", Variant: ui.ButtonPrimary})
 	}
-	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: c.Title, Subtitle: resCountLabel(total, c.Singular, c.Title), Actions: actions})}
+	title := c.Title
+	if c.Heading != "" {
+		title = c.Heading
+	}
+	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: title, Subtitle: resCountLabel(total, c.Singular, c.Title), Actions: actions})}
 	if c.Search != "" {
 		body = append(body, ui.SearchInput(ui.SearchInputConfig{
 			Name: "q", ID: "search-" + c.Title, Action: c.BasePath, Method: "GET",
@@ -195,7 +205,7 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
 		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: "They will appear here once created."},
+		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText)},
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
 		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
@@ -523,6 +533,13 @@ func resCountLabel(total int, singular, title string) string {
 		return "1 " + singular
 	}
 	return fmt.Sprintf("%d %s", total, strings.ToLower(title))
+}
+
+func resEmptyDesc(custom string) string {
+	if custom != "" {
+		return custom
+	}
+	return "They will appear here once created."
 }
 
 // ----- dashboard data binding (stat_card / charts with source) --------------
