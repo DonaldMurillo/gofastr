@@ -54,10 +54,12 @@
     const btn = e.target.closest('[data-fui-theme-toggle]');
     if (!btn || btn.getAttribute('data-fui-theme-toggle') === 'pill') return;
     e.preventDefault();
-    const cur = currentScheme();
-    const idx = CYCLE.indexOf(cur);
-    const next = CYCLE[(idx + 1) % CYCLE.length];
-    window.__gofastr_colorScheme.set(next);
+    // Flip the EFFECTIVE displayed scheme so a click always visibly toggles
+    // light<->dark. (Cycling the stored preference dark→light→auto made the
+    // first click a no-op when the stored value was 'auto' and the OS already
+    // showed the next step.)
+    const effective = document.documentElement.getAttribute('data-color-scheme') === 'dark' ? 'dark' : 'light';
+    window.__gofastr_colorScheme.set(effective === 'dark' ? 'light' : 'dark');
     syncAllPills();
   });
 
