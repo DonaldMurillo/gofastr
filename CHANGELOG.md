@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-15
+
 ### Added — marketing pricing + long-form content blocks
 
 - **`ui.PricingCard`** (`framework/ui`) — a real marketing pricing card (plan
@@ -133,6 +135,60 @@ the new `examples/meridian` flagship — a SaaS billing console + marketing site
   at `/api/<table>` instead of `/<table>`. Set `app.api_prefix: ""` to keep
   the old bare paths. MCP tools and the OpenAPI spec follow the prefix
   automatically.
+
+### Added — per-user data isolation + complete auth UX
+
+- **`owner_field` auto-creates the owner column.** Declaring `owner_field` now
+  synthesizes a hidden owner column (AutoMigrate creates it; it never appears in
+  generated forms/tables) — you no longer hand-declare the field. The generated
+  seed runs *as* the bootstrap admin, so demo data is owned and a freshly
+  registered user starts with an empty, owner-scoped workspace. Meridian's
+  customers/subscriptions/invoices/payments are now per-user (`owner_field:
+  user_id`); plans stays a shared catalog.
+- **Auth is a full UX, not just a gate.** `ui.SignOut` (a POST logout control)
+  in the app sidebar footer and the marketing header; an **auth-aware marketing
+  header** (`app.NewContextComponent`) that shows a Dashboard link + Sign out
+  when signed in, Sign in when not; a **guest policy** that redirects
+  already-signed-in visitors off the login/signup screens.
+- **Inline auth errors.** `ui.AuthCard` gained an `Alert` slot, and a failed
+  form login now redirects back to the login page with `?error=` (via
+  `auth.SetDefaultLoginErrorPath`) and renders "Invalid email or password."
+  inline — instead of dumping a raw JSON error body.
+- **Role-aware navigation.** A nav item `role:` (→ `ui.SidebarItem.Roles` +
+  `ui.SetRolesExtractor`) filters role-gated entries by the signed-in user's
+  roles, on both the desktop sidebar and the mobile drawer — a link a user can't
+  use never appears (and is never a dead end into a 403).
+- **The auth battery self-migrates** its `auth_users` / `auth_sessions` tables
+  (`EntityUserStore`/`EntitySessionStore.EnsureSchema`, dialect-aware), so the
+  generated app ships **zero** hand-rolled DDL.
+
+### Added — SPA cross-layout navigation + resilient chrome
+
+- **Cross-layout SPA navigation.** The outermost shell carries
+  `data-fui-layout`; the route manifest carries each route's layout; the runtime
+  detects a layout change (e.g. marketing → app) and swaps the *whole* shell
+  instead of just the content, so the new screen renders in the right chrome —
+  no hard reload.
+- **Charts render an empty state instead of panicking.**
+  `ui.BarChart`/`PieChart`/`LineChart`/`Sparkline` no longer crash the page on
+  empty data (a zero-data user's dashboard previously 404'd behind the SSR host's
+  panic recovery) — they show a calm "No data yet" placeholder.
+- **`ui.SiteHeader` collapses its actions into the mobile drawer**, so an auth
+  header no longer overflows a phone bar; the bar becomes brand + hamburger.
+- **`app.NewContextComponent`** + ctx-aware widget chrome
+  (`component.RenderComponentCtx`, `serveChrome` renders with the request
+  context), so per-request chrome (role-aware nav drawer, auth-aware header) sees
+  the signed-in user.
+- The app shell drops its empty top bar — the theme toggle lives in the sidebar
+  footer (visible on desktop, in the drawer on mobile).
+
+### Fixed
+
+- **The framework-managed owner column is persisted on create/upsert.**
+  `doCreate`/`doUpsert` skipped Hidden/ReadOnly fields when building the INSERT,
+  silently dropping the owner id `InjectOwner` stamps — so owner-scoping matched
+  nothing and a seeded admin's rows were invisible. The owner column is now
+  exempt from the skip.
 
 ## [0.6.1] - 2026-06-12
 
