@@ -187,6 +187,7 @@ type routeInfoJSON struct {
 	Description string `json:"description"`
 	Preload     bool   `json:"preload"`
 	CSSChunk    string `json:"cssChunk,omitempty"`
+	Layout      string `json:"layout,omitempty"`
 }
 
 // Option configures a UIHost.
@@ -668,6 +669,7 @@ func (ds *UIHost) buildRouteScript() string {
 			Description: r.Description,
 			Preload:     i == 0, // preload first route
 			CSSChunk:    pathToChunkName(r.Path),
+			Layout:      r.Layout,
 		}
 	}
 	rgJSON, _ := json.Marshal(infos)

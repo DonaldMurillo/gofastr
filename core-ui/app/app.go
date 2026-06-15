@@ -102,6 +102,11 @@ type RouteEntry struct {
 	Path        string
 	Title       string
 	Description string
+	// Layout is the name of the layout the route renders in (e.g. "app",
+	// "marketing"). The runtime uses it to detect cross-layout navigation —
+	// where the chrome itself changes — and swap the whole shell instead of
+	// just the content. Empty when the route has no layout.
+	Layout string
 }
 
 // Routes returns all registered screen paths as RouteEntry slices.
@@ -112,10 +117,19 @@ func (a *App) Routes() []RouteEntry {
 		if !ok {
 			continue
 		}
+		layout := screen.Layout
+		if layout == nil {
+			layout = a.Router.GetDefaultLayout()
+		}
+		layoutName := ""
+		if layout != nil {
+			layoutName = layout.Name
+		}
 		entries = append(entries, RouteEntry{
 			Path:        screen.Path,
 			Title:       screen.Title,
 			Description: screen.Description,
+			Layout:      layoutName,
 		})
 	}
 	return entries

@@ -146,5 +146,12 @@ func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) 
 	if l.Sidebar != nil {
 		cls += " layout--has-sidebar"
 	}
-	return html.Div(html.DivConfig{Class: cls}, wrapperChildren...)
+	var attrs html.Attrs
+	if outermost && l.Name != "" {
+		// Mark the outermost shell with its layout name so the runtime can
+		// detect cross-layout navigation (where the chrome itself changes) and
+		// swap the whole shell rather than just the content region.
+		attrs = html.Attrs{"data-fui-layout": l.Name}
+	}
+	return html.Div(html.DivConfig{Class: cls, ExtraAttrs: attrs}, wrapperChildren...)
 }

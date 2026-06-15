@@ -461,6 +461,7 @@
       routes.set(r.path ?? r.Path, {
         title: r.title ?? r.Title ?? '',
         preload: r.preload ?? r.Preload ?? false,
+        layout: r.layout ?? r.Layout ?? '',
       });
     }
   };
@@ -1250,6 +1251,34 @@
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   };
 
+  // --- Cross-layout navigation ---
+  // When the destination route's layout differs from the current page's, the
+  // chrome (header/sidebar/footer) itself changes — swapping only <main> would
+  // render the new screen in the wrong shell. We detect it via the route
+  // manifest `layout` + the [data-fui-layout] marker the shell carries, then
+  // fetch the FULL page and replace the whole shell. No hard reload (hard rule
+  // 4): the chrome's interactive bits are delegated, so they survive the swap.
+  const domLayout = () => {
+    const el = document.querySelector('[data-fui-layout]');
+    return el ? el.getAttribute('data-fui-layout') : '';
+  };
+  const layoutWillChange = (path) => {
+    const r = routes.get(path);
+    const to = (r && r.layout) || '';
+    return !!to && to !== domLayout();
+  };
+  const swapLayoutShell = (newShellEl) => {
+    const cur = document.querySelector('[data-fui-layout]');
+    if (!cur || !newShellEl) return false;
+    const el = document.importNode(newShellEl, true);
+    cur.replaceWith(el);
+    mergeSeedFromDOM(el);
+    if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(el);
+    const main = el.querySelector('[role="main"]') || el.querySelector('main');
+    if (main && main.focus) { try { main.focus({ preventScroll: true }); } catch (_) {} }
+    return true;
+  };
+
   /** Fetch page, swap <main>. Caches for instant back-nav. */
   const loadPage = async (path) => {
     // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
@@ -1264,7 +1293,10 @@
 
     try {
       const cached = getCachedScreen(path);
-      if (cached) {
+      // Skip the cached content-swap when the layout changes — the cache holds
+      // only the <main> fragment, not the new chrome; fall through to a full
+      // fetch + shell swap.
+      if (cached && !layoutWillChange(path)) {
         // Title first so SR + browser-history see the new title
         // before pushState fires (the click handler does pushState).
         document.title = cached.title;
@@ -1280,6 +1312,32 @@
         updateActiveLink(path);
         scrollToHash();
         window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached: true } }));
+        return;
+      }
+
+      // Cross-layout nav: fetch the FULL page (no navigate header → server
+      // returns the whole shell, not just <main>) and replace the layout
+      // shell. Delegated chrome handlers survive the swap — no hard reload.
+      if (layoutWillChange(path)) {
+        const fr = await fetch(path);
+        if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
+        const doc = new DOMParser().parseFromString(await fr.text(), 'text/html');
+        let dest = path;
+        if (fr.redirected && fr.url) { try { dest = new URL(fr.url).pathname; } catch (_) {} }
+        if (dest !== path) { try { history.replaceState(null, '', dest); } catch (_) {} currentPath = dest; }
+        const t = doc.querySelector('title')?.textContent || document.title;
+        document.title = t;
+        announceRoute(t);
+        const shell = doc.querySelector('[data-fui-layout]');
+        const nm = doc.querySelector('main');
+        if (shell && swapLayoutShell(shell)) {
+          cacheScreen(dest, nm ? nm.innerHTML : '', t);
+        } else {
+          swapMainContent(nm ? nm.innerHTML : '');
+        }
+        updateActiveLink(dest);
+        scrollToHash();
+        window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: dest, prevPath, cached: false } }));
         return;
       }
 
