@@ -166,6 +166,94 @@ func TestOwnerScope_CreateAutoStampsOwner(t *testing.T) {
 	}
 }
 
+// setupHiddenOwnerHandler mirrors setupOwnerScopedHandler but marks the owner
+// column Hidden — the blueprint generator synthesizes the owner column this way
+// so it never appears in generated forms/tables. The framework still manages it
+// (InjectOwner stamps it; ApplyOwnerScope filters on it), so it MUST be
+// persisted on create even though it's hidden from the API surface.
+func setupHiddenOwnerHandler(t *testing.T) (*CrudHandler, *sql.DB) {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`CREATE TABLE logs (
+		id TEXT PRIMARY KEY,
+		user_id TEXT,
+		notes TEXT
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	ent := entity.Define("logs", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String, Hidden: true},
+			{Name: "notes", Type: schema.String},
+		},
+		OwnerField: "user_id",
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	return NewCrudHandler(ent, db).WithJSONCase(CaseSnake), db
+}
+
+// Regression: a Hidden owner column must still be written on create. doCreate
+// skips ReadOnly/Hidden fields, but the owner column is framework-managed and
+// was silently dropped — leaving every row's owner blank, which made
+// owner-scoping match nothing and a seeded admin's rows invisible.
+func TestOwnerScope_HiddenOwnerColumnPersistedOnCreate(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, db := setupHiddenOwnerHandler(t)
+
+	body := strings.NewReader(`{"notes":"hidden owner row"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/logs", body)
+	req.Header.Set("Content-Type", "application/json")
+	req = withTestUser(req, "carol")
+	rec := httptest.NewRecorder()
+	ch.Create()(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	// Hidden from the response surface...
+	if _, leaked := got["user_id"]; leaked {
+		t.Errorf("hidden owner column leaked into API response: %+v", got)
+	}
+	// ...but persisted to the DB so scoping works.
+	var uid string
+	if err := db.QueryRow("SELECT user_id FROM logs WHERE id = ?", got["id"]).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	if uid != "carol" {
+		t.Fatalf("stored user_id = %q, want carol — hidden owner column was dropped on insert", uid)
+	}
+
+	// And the owner scope now finds the row for its owner, nobody else.
+	listReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/logs", nil), "carol")
+	listRec := httptest.NewRecorder()
+	ch.List()(listRec, listReq)
+	var resp ListResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("owner sees %d rows, want 1", resp.Total)
+	}
+	otherReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/logs", nil), "mallory")
+	otherRec := httptest.NewRecorder()
+	ch.List()(otherRec, otherReq)
+	var otherResp ListResponse
+	if err := json.Unmarshal(otherRec.Body.Bytes(), &otherResp); err != nil {
+		t.Fatal(err)
+	}
+	if otherResp.Total != 0 {
+		t.Fatalf("non-owner sees %d rows, want 0", otherResp.Total)
+	}
+}
+
 func TestOwnerScope_UpdateRejectsOtherUsersRow(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, db := setupOwnerScopedHandler(t)

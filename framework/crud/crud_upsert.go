@@ -113,7 +113,8 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 		// Build the column + value lists, same shape Create uses: auto-gen
 		// fields are always included (the body has the generated value);
-		// ReadOnly/Hidden non-auto fields are skipped.
+		// ReadOnly/Hidden non-auto fields are skipped — except the
+		// framework-managed owner column, which InjectOwner stamps above.
 		var cols []string
 		var vals []any
 		for _, f := range ch.Entity.GetFields() {
@@ -122,7 +123,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, body[f.Name])
 				continue
 			}
-			if f.ReadOnly || f.Hidden {
+			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.OwnerField {
 				continue
 			}
 			val, ok := body[f.Name]

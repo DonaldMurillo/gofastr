@@ -53,7 +53,10 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			vals = append(vals, body[f.Name])
 			continue
 		}
-		if f.ReadOnly || f.Hidden {
+		// The owner column is framework-managed: InjectOwner stamps it above,
+		// so it must be persisted even when hidden from the UI/API surface.
+		// Every other ReadOnly/Hidden field is client-unsettable and skipped.
+		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.OwnerField {
 			continue
 		}
 		val, ok := body[f.Name]
