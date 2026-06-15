@@ -5,13 +5,16 @@ import (
 	"testing"
 )
 
-func TestSparklineRequiresTwoPoints(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Sparkline with <2 Values should panic")
-		}
-	}()
-	Sparkline(SparklineConfig{Values: []float64{1}})
+func TestSparklineTooFewPointsRendersDash(t *testing.T) {
+	// Too few points renders a calm inline "no trend" dash, never a panic —
+	// a sparkline embedded in a row must not take the page down.
+	h := string(Sparkline(SparklineConfig{Values: []float64{1}}))
+	if strings.Contains(h, "<svg ") {
+		t.Errorf("sparse Sparkline should not emit an svg:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-comp="ui-sparkline"`) {
+		t.Errorf("sparse Sparkline should still carry its comp marker:\n%s", h)
+	}
 }
 
 func TestSparklineEmitsSVGPath(t *testing.T) {

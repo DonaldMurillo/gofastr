@@ -54,7 +54,7 @@ var pieDefaultPalette = []string{"primary", "info", "success", "warning", "dange
 // PieChart renders a pie or donut chart.
 func PieChart(cfg PieChartConfig) render.HTML {
 	if len(cfg.Slices) == 0 {
-		panic("ui: PieChart requires ≥1 Slice")
+		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet")
 	}
 	var total float64
 	for _, s := range cfg.Slices {
@@ -64,7 +64,8 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		total += s.Value
 	}
 	if total == 0 {
-		panic("ui: PieChart total of all Slice.Value must be > 0")
+		// Every slice is zero — nothing to draw, but a legitimate empty state.
+		return chartEmpty(cfg.Size, cfg.LabelledBy, cfg.Class, "No data yet")
 	}
 
 	size := cfg.Size

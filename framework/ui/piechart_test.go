@@ -5,22 +5,20 @@ import (
 	"testing"
 )
 
-func TestPieChartRequiresSlices(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("PieChart without Slices should panic")
-		}
-	}()
-	PieChart(PieChartConfig{})
+func TestPieChartEmptyRendersEmptyState(t *testing.T) {
+	// No slices is a normal data-bound zero state, not misuse.
+	h := string(PieChart(PieChartConfig{}))
+	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+		t.Errorf("empty PieChart should render the chart empty state:\n%s", h)
+	}
 }
 
-func TestPieChartRequiresPositiveTotal(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("PieChart with all-zero Values should panic")
-		}
-	}()
-	PieChart(PieChartConfig{Slices: []PieSlice{{Value: 0}, {Value: 0}}})
+func TestPieChartAllZeroRendersEmptyState(t *testing.T) {
+	// Every slice zero — nothing to draw, but a legitimate empty state.
+	h := string(PieChart(PieChartConfig{Slices: []PieSlice{{Value: 0}, {Value: 0}}}))
+	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+		t.Errorf("all-zero PieChart should render the chart empty state:\n%s", h)
+	}
 }
 
 func TestPieChartRejectsNegative(t *testing.T) {

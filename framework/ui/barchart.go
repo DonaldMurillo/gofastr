@@ -46,7 +46,7 @@ type BarChartConfig struct {
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
 	if len(cfg.Bars) == 0 {
-		panic("ui: BarChart requires ≥1 Bar")
+		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet")
 	}
 	w := cfg.Width
 	if w == 0 {

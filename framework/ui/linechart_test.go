@@ -5,16 +5,16 @@ import (
 	"testing"
 )
 
-func TestLineChartRequiresSeries(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("LineChart without Series should panic")
-		}
-	}()
-	LineChart(LineChartConfig{})
+func TestLineChartEmptyRendersEmptyState(t *testing.T) {
+	// No series is a normal data-bound zero state, not misuse.
+	h := string(LineChart(LineChartConfig{}))
+	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+		t.Errorf("empty LineChart should render the chart empty state:\n%s", h)
+	}
 }
 
 func TestLineChartSeriesRequiresName(t *testing.T) {
+	// A missing series name is a programmer error — still a panic.
 	defer func() {
 		if recover() == nil {
 			t.Fatal("LineSeries without Name should panic")
@@ -23,15 +23,14 @@ func TestLineChartSeriesRequiresName(t *testing.T) {
 	LineChart(LineChartConfig{Series: []LineSeries{{Values: []float64{1, 2}}}})
 }
 
-func TestLineChartSeriesRequiresTwoPoints(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("LineSeries with <2 Values should panic")
-		}
-	}()
-	LineChart(LineChartConfig{Series: []LineSeries{
+func TestLineChartTooFewPointsRendersEmptyState(t *testing.T) {
+	// A series with <2 points can't draw a trend yet — empty state, no crash.
+	h := string(LineChart(LineChartConfig{Series: []LineSeries{
 		{Name: "S", Values: []float64{1}},
-	}})
+	}}))
+	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+		t.Errorf("sparse LineChart should render the chart empty state:\n%s", h)
+	}
 }
 
 func TestLineChartEmitsOnePathPerSeries(t *testing.T) {

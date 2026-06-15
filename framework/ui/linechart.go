@@ -50,14 +50,16 @@ type LineChartConfig struct {
 // LineChart renders a multi-series line chart.
 func LineChart(cfg LineChartConfig) render.HTML {
 	if len(cfg.Series) == 0 {
-		panic("ui: LineChart requires ≥1 Series")
+		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet")
 	}
 	for _, s := range cfg.Series {
 		if s.Name == "" {
 			panic("ui: LineChart Series.Name required")
 		}
+		// A line needs ≥2 points to draw a trend; with fewer there's simply
+		// not enough data yet — a calm empty state, not a crash.
 		if len(s.Values) < 2 {
-			panic("ui: LineChart Series.Values must have ≥2 points")
+			return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "Not enough data yet")
 		}
 	}
 	w := cfg.Width

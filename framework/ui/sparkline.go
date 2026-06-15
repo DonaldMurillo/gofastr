@@ -50,7 +50,13 @@ type SparklineConfig struct {
 // Sparkline renders a tiny inline trend chart.
 func Sparkline(cfg SparklineConfig) render.HTML {
 	if len(cfg.Values) < 2 {
-		panic("ui: Sparkline requires ≥2 Values")
+		// Inline trend with too few points: render a calm "no trend" dash
+		// rather than crashing the host that embeds it.
+		attrs := map[string]string{"data-fui-comp": "ui-sparkline", "aria-label": "No trend data"}
+		if cfg.Class != "" {
+			attrs["class"] = cfg.Class
+		}
+		return render.Tag("span", attrs, render.Text("—"))
 	}
 	switch cfg.Shape {
 	case SparklineLine, SparklineArea:

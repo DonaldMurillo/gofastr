@@ -5,13 +5,16 @@ import (
 	"testing"
 )
 
-func TestBarChartRequiresBars(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("BarChart without Bars should panic")
-		}
-	}()
-	BarChart(BarChartConfig{})
+func TestBarChartEmptyRendersEmptyState(t *testing.T) {
+	// No bars is a normal data-bound state (a brand-new user has no rows),
+	// not misuse — it must render a calm empty state, never panic.
+	h := string(BarChart(BarChartConfig{}))
+	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+		t.Errorf("empty BarChart should render the chart empty state:\n%s", h)
+	}
+	if strings.Contains(h, "<rect ") {
+		t.Errorf("empty BarChart should not emit bars:\n%s", h)
+	}
 }
 
 func TestBarChartRejectsNegative(t *testing.T) {
