@@ -196,11 +196,19 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 		m["indices"] = idx
 	}
 	if len(e.Fields) > 0 {
-		fields := make([]any, len(e.Fields))
-		for i, f := range e.Fields {
-			fields[i] = fieldToMap(f)
+		fields := make([]any, 0, len(e.Fields))
+		for _, f := range e.Fields {
+			// Drop the hidden owner column the generator synthesizes from
+			// owner_field — the author never wrote it, so packing it back
+			// would diverge from the source blueprint.
+			if e.OwnerField != "" && f.Name == e.OwnerField && f.Hidden {
+				continue
+			}
+			fields = append(fields, fieldToMap(f))
 		}
-		m["fields"] = fields
+		if len(fields) > 0 {
+			m["fields"] = fields
+		}
 	}
 	if len(e.Relations) > 0 {
 		rels := make([]any, len(e.Relations))
@@ -325,6 +333,7 @@ func navItemsToAny(items []BlueprintNavItem) []any {
 		putStr(nm, "label", n.Label)
 		putStr(nm, "href", n.Href)
 		putStr(nm, "icon", n.Icon)
+		putStr(nm, "role", n.Role)
 		if len(n.Items) > 0 {
 			nm["items"] = navItemsToAny(n.Items)
 		}
@@ -588,7 +597,7 @@ var (
 	blockOrder    = []string{"kind", "type", "text", "level", "entity", "fields", "search", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
 	relationOrder = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target"}
 	indexOrder    = []string{"name", "columns", "unique"}
-	navOrder      = []string{"label", "href", "icon", "items"}
+	navOrder      = []string{"label", "href", "icon", "role", "items"}
 	accessOrder   = []string{"auth", "role", "read", "create", "update", "delete"}
 	dbOrder       = []string{"driver", "url"}
 	authOrder     = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
@@ -1060,10 +1069,15 @@ func packReadNav(dir string) ([]BlueprintNavItem, error) {
 	var out []BlueprintNavItem
 	for _, el := range itemsLit.Elts {
 		iv := fieldVals(el)
+		role := ""
+		if rolesLit, ok := iv["Roles"].(*ast.CompositeLit); ok && len(rolesLit.Elts) > 0 {
+			role = astString(rolesLit.Elts[0])
+		}
 		out = append(out, BlueprintNavItem{
 			Label: astString(iv["Label"]),
 			Href:  astString(iv["Href"]),
 			Icon:  astString(iv["Icon"]),
+			Role:  role,
 		})
 	}
 	return out, nil

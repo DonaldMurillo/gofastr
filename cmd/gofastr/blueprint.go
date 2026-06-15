@@ -38,6 +38,7 @@ type BlueprintNavItem struct {
 	Label string
 	Href  string
 	Icon  string
+	Role  string // optional: only shown to users holding this role
 	Items []BlueprintNavItem
 }
 type BlueprintApp struct {
@@ -516,6 +517,17 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			return nil, nil, err
 		}
 		decl.Fields = fields
+		// owner_field names a per-row owner column. Auto-inject it as a hidden
+		// string column so AutoMigrate creates it and auto-CRUD can stamp/scope
+		// it, without the author hand-declaring a field they never want shown in
+		// a form or table. pack drops this synthesized column on the way back.
+		if decl.OwnerField != "" && !blueprintEntityHasField(decl, decl.OwnerField) {
+			decl.Fields = append(decl.Fields, framework.FieldDeclaration{
+				Name:   decl.OwnerField,
+				Type:   "string",
+				Hidden: true,
+			})
+		}
 		relations, err := decodeRelations(m["relations"])
 		if err != nil {
 			return nil, nil, err
@@ -548,6 +560,90 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 func blueprintHasEntityAccess(bp Blueprint) bool {
 	for _, e := range bp.Entities {
 		if e.Access != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// blueprintHasOwnerScopedEntity reports whether any entity declares an
+// owner_field. When it does and an admin account is bootstrapped, the seed
+// runs *as* that admin so demo rows belong to them and a fresh signup starts
+// with an empty, owner-scoped workspace.
+// blueprintLoginRoute returns the route of the screen hosting the login form,
+// defaulting to "/login". Used to point the auth battery's form-error redirect
+// at the login page (so a failed login lands back on the form, not raw JSON).
+func blueprintLoginRoute(bp Blueprint) string {
+	for _, s := range bp.Screens {
+		for _, b := range s.Body {
+			if isLoginFormBlock(b) {
+				return s.Route
+			}
+		}
+	}
+	return "/login"
+}
+
+// blueprintAppHome returns the post-login landing route — the first app-layout
+// screen, defaulting to "/". Used for the auth-aware header's "Dashboard" link
+// and to bounce already-signed-in visitors off the login/signup screens.
+func blueprintAppHome(bp Blueprint) string {
+	for _, s := range bp.Screens {
+		if s.Layout == "app" {
+			return s.Route
+		}
+	}
+	return "/"
+}
+
+// screenHasAuthForm reports whether a screen hosts a login or signup form, so
+// the generator gates it with a guest policy (signed-in users are redirected
+// to the app instead of seeing a sign-in form they don't need).
+func screenHasAuthForm(s BlueprintScreen) bool {
+	for _, b := range s.Body {
+		if isLoginFormBlock(b) || isSignupFormBlock(b) {
+			return true
+		}
+	}
+	return false
+}
+
+// blueprintHasAuthFormScreen reports whether any screen hosts an auth form.
+func blueprintHasAuthFormScreen(bp Blueprint) bool {
+	for _, s := range bp.Screens {
+		if screenHasAuthForm(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// blueprintNavHasRoles reports whether any nav item (at any depth) is
+// role-restricted, so the generated app wires ui.SetRolesExtractor to filter
+// the sidebar/drawer by the signed-in user's roles.
+func blueprintNavHasRoles(items []BlueprintNavItem) bool {
+	for _, it := range items {
+		if it.Role != "" || blueprintNavHasRoles(it.Items) {
+			return true
+		}
+	}
+	return false
+}
+
+// blueprintEntityHasField reports whether the declaration already lists a field
+// of the given name (case-sensitive — column names are verbatim).
+func blueprintEntityHasField(decl framework.EntityDeclaration, name string) bool {
+	for _, f := range decl.Fields {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func blueprintHasOwnerScopedEntity(bp Blueprint) bool {
+	for _, e := range bp.Entities {
+		if e.OwnerField != "" {
 			return true
 		}
 	}
@@ -781,7 +877,7 @@ func decodeNavItems(list []*coreyaml.Node, label string) ([]BlueprintNavItem, er
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"label": true, "href": true, "icon": true, "items": true}
+		allowed := map[string]bool{"label": true, "href": true, "icon": true, "role": true, "items": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("%s[%d]", label, i)); err != nil {
 			return nil, err
 		}
@@ -789,6 +885,7 @@ func decodeNavItems(list []*coreyaml.Node, label string) ([]BlueprintNavItem, er
 			Label: stringValue(m["label"]),
 			Href:  stringValue(m["href"]),
 			Icon:  stringValue(m["icon"]),
+			Role:  stringValue(m["role"]),
 		}
 		if child := m["items"]; child != nil {
 			subList, err := expectList(child, fmt.Sprintf("%s[%d].items", label, i))
@@ -1605,7 +1702,7 @@ type blueprintCRUDTarget struct {
 	createJSON  string // a valid create payload
 	updateJSON  string // a payload mutating one field
 	probe       string // a value present in the created record (to find in detail/edit HTML)
-	accessGated bool   // entity declares `access:` → anonymous writes must be refused
+	accessGated bool   // entity is access- or owner-scoped → anonymous writes must be refused
 }
 
 // blueprintE2EWritableTarget picks an entity to lifecycle-test: one whose list
@@ -1647,7 +1744,7 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 			createJSON:  createJSON,
 			updateJSON:  updateJSON,
 			probe:       probe,
-			accessGated: decl.Access != nil,
+			accessGated: decl.Access != nil || decl.OwnerField != "",
 		}
 		if dr, ok := detailOf[e]; ok {
 			r := dr
@@ -1852,7 +1949,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"get deleted %s = %%d, want 404\", code)\n", target.entity))
 		b.WriteString("\t}\n")
 		if target.accessGated {
-			b.WriteString(fmt.Sprintf("\n\t// RBAC: an anonymous write to the access-gated %s API is refused.\n", target.entity))
+			b.WriteString(fmt.Sprintf("\n\t// Scoping: an anonymous write to the access-/owner-scoped %s API is refused.\n", target.entity))
 			b.WriteString(fmt.Sprintf("\tif code, _ := e2eDo(t, http.DefaultClient, \"POST\", base+%q, `%s`); code != http.StatusUnauthorized && code != http.StatusForbidden {\n", target.apiPath, target.createJSON))
 			b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"anonymous write to %s = %%d, want 401/403\", code)\n", target.entity))
 			b.WriteString("\t}\n")
@@ -2590,6 +2687,27 @@ func resEmptyDesc(custom string) string {
 	return "They will appear here once created."
 }
 
+// blueprintAuthError reads the ?error= code an auth redirect sets and returns a
+// human message for an auth card's alert slot, or "" when there's no error. The
+// auth battery redirects a failed form login back to the login page with this
+// code instead of rendering a raw JSON error body.
+func blueprintAuthError(ctx context.Context) render.HTML {
+	switch appui.QueryFromContext(ctx).Get("error") {
+	case "":
+		return ""
+	case "invalid_credentials":
+		return render.Text("Invalid email or password.")
+	case "credentials_required":
+		return render.Text("Enter your email and password.")
+	case "rate_limit":
+		return render.Text("Too many attempts — please wait a moment and try again.")
+	case "email_taken", "user_exists", "duplicate":
+		return render.Text("That email is already registered.")
+	default:
+		return render.Text("Sorry, something went wrong. Please try again.")
+	}
+}
+
 // ----- dashboard data binding (stat_card / charts with source) --------------
 
 // blueprintStatValue computes a single metric over an entity for a stat_card:
@@ -2709,6 +2827,10 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 
 	hasSeed := len(bp.Seed) > 0
+	// ownerSeed: any owner_field entity + a bootstrapped admin → seed runs as
+	// that admin so demo rows are owned and a fresh signup starts empty.
+	ownerSeed := hasSeed && bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" &&
+		bp.App.Admin.SeedPassword != "" && blueprintHasOwnerScopedEntity(bp)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
 	sb.WriteString("import (\n")
@@ -2725,8 +2847,14 @@ func renderBlueprintMain(bp Blueprint) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString("\tuiapp \"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
+	if ownerSeed {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/auth\"\n")
+	}
 	if bp.App.Admin.Enabled {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/admin\"\n")
+	}
+	if ownerSeed {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 	if hasSeed {
@@ -2764,6 +2892,15 @@ func renderBlueprintMain(bp Blueprint) string {
 		// skipped rather than aborting startup — sample seed data shouldn't
 		// take the whole app down.
 		sb.WriteString("\tfwApp.WithSeed(func(ctx context.Context) error {\n")
+		if ownerSeed {
+			sb.WriteString("\t\t// Seed owner-scoped rows as the bootstrap admin so the demo data\n")
+			sb.WriteString("\t\t// belongs to them; a fresh signup then starts with an empty\n")
+			sb.WriteString("\t\t// workspace and adds its own. CreateOne stamps the owner column\n")
+			sb.WriteString("\t\t// from the user on the context.\n")
+			sb.WriteString(fmt.Sprintf("\t\tif u, _, err := auth.NewEntityUserStore(db, \"auth_users\").FindByEmail(ctx, %q); err == nil && u != nil {\n", bp.App.Admin.SeedEmail))
+			sb.WriteString("\t\t\tctx = handler.SetUser(ctx, u)\n")
+			sb.WriteString("\t\t}\n")
+		}
 		sb.WriteString("\t\tfor _, s := range blueprint.BlueprintSeedData() {\n")
 		sb.WriteString("\t\t\tch, err := fwApp.CrudHandler(s.Entity)\n")
 		sb.WriteString("\t\t\tif err != nil {\n\t\t\t\tcontinue\n\t\t\t}\n")
@@ -3225,6 +3362,11 @@ func screenNeedsCtx(screen BlueprintScreen) bool {
 			// Any entity list/detail/form — at any nesting level — is
 			// server-rendered via the resource engine, which needs the request ctx.
 			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) || isEntityEditBlock(b) {
+				return true
+			}
+			// Auth forms read ?error= from the request to surface a failed-login
+			// message inline, so they render with the request ctx too.
+			if isLoginFormBlock(b) || isSignupFormBlock(b) {
 				return true
 			}
 			if blueprintBlockHasSource(b) {
@@ -3869,7 +4011,9 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete, p
 	if footerHref != "" {
 		footer = fmt.Sprintf(", Footer: render.Raw(%q)", `<a href="`+e(footerHref)+`">`+e(footerText)+`</a>`)
 	}
-	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %q, Body: %s%s})", heading, form, footer)
+	// Auth screens render with the request ctx (screenNeedsCtx), so the card
+	// surfaces a failed-login / duplicate-email message inline from ?error=.
+	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %q, Alert: blueprintAuthError(ctx), Body: %s%s})", heading, form, footer)
 }
 
 // renderBlueprintSignupFormExpr emits the registration form (posts to the auth
@@ -4766,9 +4910,14 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	needWidget := len(bp.Nav) > 0 || blueprintNeedsToasts(bp) || blueprintHasSoftDelete(bp)
 	needUI := len(bp.Nav) > 0 || hasMarketing || blueprintHasSoftDelete(bp)
+	roleNav := bp.App.Auth.Enabled && blueprintNavHasRoles(bp.Nav)
+	// authHeader: an auth-aware marketing header (Sign in ↔ account + Sign out).
+	// guestRedirect: bounce already-signed-in visitors off the auth screens.
+	authHeader := hasMarketing && bp.App.Auth.Enabled
+	guestRedirect := bp.App.Auth.Enabled && blueprintHasAuthFormScreen(bp)
 	sb.WriteString("package blueprint\n\n")
 	sb.WriteString("import (\n")
-	if adminSeed || hasAccess {
+	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect {
 		sb.WriteString("\t\"context\"\n")
 	}
 	sb.WriteString("\t\"database/sql\"\n")
@@ -4780,7 +4929,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
-	if hasAccess {
+	if hasAccess || guestRedirect {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app/decide\"\n")
 	}
 	if hasMarketing {
@@ -4799,7 +4948,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
 	rbac := bp.App.Auth.Enabled && blueprintHasEntityAccess(bp)
-	if hasAccess || rbac {
+	if hasAccess || rbac || roleNav || authHeader || guestRedirect {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if needUI {
@@ -4842,20 +4991,59 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t})\n")
 		sb.WriteString("}\n\n")
 	}
+	if guestRedirect {
+		sb.WriteString("// blueprintGuestPolicy gates a guest-only screen (login / signup): a\n")
+		sb.WriteString("// signed-in visitor is redirected to the app instead of seeing a sign-in\n")
+		sb.WriteString("// form they're already past.\n")
+		sb.WriteString("func blueprintGuestPolicy(appHome string) app.Policy {\n")
+		sb.WriteString("\treturn app.PolicyFunc(func(ctx context.Context) app.Decision {\n")
+		sb.WriteString("\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
+		sb.WriteString("\t\t\treturn decide.Redirect(appHome)\n")
+		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t\treturn decide.Allow()\n")
+		sb.WriteString("\t})\n")
+		sb.WriteString("}\n\n")
+	}
 	if hasMarketing {
 		sb.WriteString("// BlueprintMarketingHeader / Footer wrap the public marketing layout.\n")
-		sb.WriteString("func BlueprintMarketingHeader() render.HTML {\n")
-		sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
-		sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
-		sb.WriteString("\t\tNavItems: []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}, {Label: \"Sign in\", Href: \"/login\"}},\n")
-		sb.WriteString("\t\tDrawer: ui.SiteHeaderDrawerSheet,\n")
+		toggleArg := ""
 		if len(bp.App.ThemeDark) > 0 {
-			// The app declares a dark scheme — surface the toggle in the header's
-			// Actions slot (the component's purpose-built slot) so the toggle is a
-			// real ui.ThemeToggle, not hand-rolled markup.
-			sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n")
+			// The app declares a dark scheme — surface the toggle as a real
+			// ui.ThemeToggle in the header's Actions slot, never hand-rolled.
+			toggleArg = ", ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
 		}
-		sb.WriteString("\t})\n}\n\n")
+		if authHeader {
+			// Auth-aware header. Dashboard is a plain nav link (cohesive with
+			// Pricing/About, and it collapses into the mobile drawer like them); the
+			// single auth action — Sign out when signed in, Sign in when not — is the
+			// one button, sized to match. No "Sign in" loop for users already past it.
+			appHome := blueprintAppHome(bp)
+			sb.WriteString("func BlueprintMarketingHeader(ctx context.Context) render.HTML {\n")
+			sb.WriteString("\tnav := []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}}\n")
+			sb.WriteString("\tvar actions render.HTML\n")
+			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
+			sb.WriteString(fmt.Sprintf("\t\tnav = append(nav, ui.SiteHeaderLink{Label: \"Dashboard\", Href: %q})\n", appHome))
+			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: false}, ui.SignOut(ui.SignOutConfig{Next: \"/\"})%s)\n", toggleArg))
+			sb.WriteString("\t} else {\n")
+			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: false}, ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: \"/login\", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})%s)\n", toggleArg))
+			sb.WriteString("\t}\n")
+			sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
+			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
+			sb.WriteString("\t\tNavItems: nav,\n")
+			sb.WriteString("\t\tDrawer: ui.SiteHeaderDrawerSheet,\n")
+			sb.WriteString("\t\tActions: actions,\n")
+			sb.WriteString("\t})\n}\n\n")
+		} else {
+			sb.WriteString("func BlueprintMarketingHeader() render.HTML {\n")
+			sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
+			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
+			sb.WriteString("\t\tNavItems: []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}},\n")
+			sb.WriteString("\t\tDrawer: ui.SiteHeaderDrawerSheet,\n")
+			if toggleArg != "" {
+				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n")
+			}
+			sb.WriteString("\t})\n}\n\n")
+		}
 		sb.WriteString("func BlueprintMarketingFooter() render.HTML {\n")
 		sb.WriteString("\treturn ui.SiteFooter(ui.SiteFooterConfig{\n")
 		sb.WriteString("\t\tLead: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
@@ -4906,7 +5094,25 @@ func renderBlueprintApp(bp Blueprint) string {
 		for _, item := range bp.Nav {
 			renderNavItemGo(&sb, item, "\t\t")
 		}
-		sb.WriteString("\t}}\n}\n\n")
+		sb.WriteString("\t}")
+		// The app shell has no top bar, so account/appearance controls live in
+		// the sidebar footer (visible on desktop, in the drawer on mobile) — the
+		// theme toggle and, when auth is on, a Sign out. Kept inside the returned
+		// literal so pack's AST nav reader stays simple.
+		var footerParts []string
+		if len(bp.App.ThemeDark) > 0 {
+			footerParts = append(footerParts, "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})")
+		}
+		if bp.App.Auth.Enabled {
+			footerParts = append(footerParts, `ui.SignOut(ui.SignOutConfig{Next: "/"})`)
+		}
+		switch len(footerParts) {
+		case 1:
+			sb.WriteString(", Footer: " + footerParts[0])
+		case 2:
+			sb.WriteString(", Footer: ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, " + strings.Join(footerParts, ", ") + ")")
+		}
+		sb.WriteString("}\n}\n\n")
 	}
 	sb.WriteString("// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.\n")
 	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {\n")
@@ -4920,17 +5126,22 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\tsbCfg := BlueprintSidebarConfig()\n")
 		sb.WriteString("\tsb := ui.Sidebar(sbCfg)\n")
-		// A minimal app top bar carrying the theme toggle (the sidebar shell has
-		// no header otherwise, so the app couldn't switch light/dark).
-		sb.WriteString("\tappHeader := app.NewStaticComponent(ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyEnd}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})))\n")
-		sb.WriteString("\tappLayout := app.NewLayout(\"app\").WithSidebar(sb).WithHeader(appHeader)\n")
+		// No standalone app top bar: the sidebar owns brand + nav + the theme
+		// toggle (in its footer), so content fills from the top with no empty
+		// header band — the way real app shells (Linear/Notion/Stripe) read.
+		sb.WriteString("\tappLayout := app.NewLayout(\"app\").WithSidebar(sb)\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
 		sb.WriteString("\tui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)\n")
 	}
 	if hasMarketing {
+		headerExpr := "app.NewStaticComponent(BlueprintMarketingHeader())"
+		if authHeader {
+			// Render per-request so the header reflects the live session.
+			headerExpr = "app.NewContextComponent(BlueprintMarketingHeader)"
+		}
 		sb.WriteString("\tmarketingLayout := app.NewLayout(\"marketing\").\n")
 		sb.WriteString("\t\tWithContainer().\n")
-		sb.WriteString("\t\tWithHeader(app.NewStaticComponent(BlueprintMarketingHeader())).\n")
+		sb.WriteString(fmt.Sprintf("\t\tWithHeader(%s).\n", headerExpr))
 		sb.WriteString("\t\tWithFooter(app.NewStaticComponent(BlueprintMarketingFooter()))\n")
 	}
 	// Toast stack — mount a global toast stack so server-side handlers
@@ -4969,10 +5180,13 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\tauthCfg.SessionStore = auth.NewEntitySessionStore(db, \"auth_sessions\")\n")
 		sb.WriteString("\t\tauthMgr := auth.New(authCfg)\n")
 		sb.WriteString("\t\tauthMgr.Use(auth.NewCorePlugin())\n")
-		sb.WriteString("\t\t// Auto-create auth tables if they don't exist.\n")
-		sb.WriteString("\t\tdb.Exec(`CREATE TABLE IF NOT EXISTS auth_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL DEFAULT '', roles TEXT NOT NULL DEFAULT '[]', password_set INTEGER NOT NULL DEFAULT 0)`)\n")
-		sb.WriteString("\t\tdb.Exec(`CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, two_factor_verified INTEGER NOT NULL DEFAULT 0, pending_two_factor INTEGER NOT NULL DEFAULT 0)`)\n")
+		// auth_users / auth_sessions are the auth battery's own tables; it
+		// creates them in Init (EnsureSchema). The generated app ships no DDL.
 		sb.WriteString("\t\tauthMgr.Init(fwApp)\n")
+		// Point the auth battery's form-error redirect at the login page, so a
+		// failed form login (wrong password, no Referer) lands back on the login
+		// form with ?error=… instead of rendering the raw JSON error body.
+		sb.WriteString(fmt.Sprintf("\t\tauth.SetDefaultLoginErrorPath(%q)\n", blueprintLoginRoute(bp)))
 		if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != "" {
 			sb.WriteString("\t\t// Bootstrap admin account so the back-office is reachable on a\n")
 			sb.WriteString("\t\t// fresh database. Created only when absent (idempotent).\n")
@@ -4991,6 +5205,19 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\t// this, authorized requests fail closed (401) just like\n")
 		sb.WriteString("\t\t// anonymous ones.\n")
 		sb.WriteString("\t\tfwApp.Use(auth.SessionMiddleware(authMgr))\n")
+		if roleNav {
+			// Role-aware nav: the sidebar/drawer filter role-restricted items
+			// (e.g. an admin-only link) by the signed-in user's roles, so a
+			// link the user can't use never appears.
+			sb.WriteString("\t\tui.SetRolesExtractor(func(ctx context.Context) []string {\n")
+			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
+			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
+			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")
+			sb.WriteString("\t\t\t\t}\n")
+			sb.WriteString("\t\t\t}\n")
+			sb.WriteString("\t\t\treturn nil\n")
+			sb.WriteString("\t\t})\n")
+		}
 		if blueprintHasEntityAccess(bp) {
 			adminRole := bp.App.Admin.Role
 			if adminRole == "" {
@@ -5054,10 +5281,15 @@ func renderBlueprintApp(bp Blueprint) string {
 				layoutExpr = "appLayout"
 			}
 		}
-		if screen.Access.Auth {
+		switch {
+		case screen.Access.Auth:
 			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(blueprintAuthPolicy(%q, %q)), %s)\n",
 				route, typeName, screen.Title, "/login", screen.Access.Role, layoutExpr))
-		} else {
+		case guestRedirect && screenHasAuthForm(screen):
+			// Login / signup: redirect already-signed-in visitors to the app.
+			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(blueprintGuestPolicy(%q)), %s)\n",
+				route, typeName, screen.Title, blueprintAppHome(bp), layoutExpr))
+		default:
 			sb.WriteString(fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)\n", route, typeName, layoutExpr))
 		}
 	}
@@ -5109,6 +5341,9 @@ func blueprintBaseCSSFunc() string {
 
 func renderNavItemGo(sb *strings.Builder, item BlueprintNavItem, indent string) {
 	sb.WriteString(fmt.Sprintf("%s{Label: %q, Href: %q", indent, item.Label, item.Href))
+	if item.Role != "" {
+		sb.WriteString(fmt.Sprintf(", Roles: []string{%q}", item.Role))
+	}
 	if len(item.Items) > 0 {
 		sb.WriteString(", Children: []ui.SidebarItem{\n")
 		for _, child := range item.Items {
