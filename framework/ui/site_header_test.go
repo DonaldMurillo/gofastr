@@ -118,6 +118,28 @@ func TestSiteHeaderMobileExtraLinksRenderOnlyInDrawer(t *testing.T) {
 	}
 }
 
+func TestSiteHeaderActionsCollapseIntoDrawer(t *testing.T) {
+	// Actions render in the bar (desktop) AND at the foot of the mobile drawer,
+	// so on phones they collapse into the hamburger instead of overflowing the
+	// bar. CSS hides the bar copy ≤720px.
+	h := string(SiteHeader(SiteHeaderConfig{
+		Brand:    render.Raw(`<a>x</a>`),
+		NavItems: []SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}},
+		Actions:  render.Raw(`<button id="act">Sign out</button>`),
+	}))
+	if !strings.Contains(h, "ui-site-header__bar-actions") {
+		t.Error("missing bar-actions wrapper (needed to hide the bar copy on mobile)")
+	}
+	if !strings.Contains(h, "ui-site-header__mobile-actions") {
+		t.Error("Actions did not render into the mobile drawer")
+	}
+	// The drawer copy sits after the disclosure marker (mobile block).
+	idx := strings.Index(h, `data-fui-disclosure`)
+	if idx == -1 || !strings.Contains(h[idx:], "ui-site-header__mobile-actions") {
+		t.Error("mobile-actions must live inside the mobile drawer")
+	}
+}
+
 func TestSiteHeaderNavUnderlineVariantIsOptIn(t *testing.T) {
 	items := []SiteHeaderLink{{Label: "Docs", Href: "/docs"}}
 	on := string(SiteHeader(SiteHeaderConfig{NavUnderline: true, NavItems: items}))

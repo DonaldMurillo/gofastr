@@ -122,12 +122,19 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 		desktopChildren...,
 	)
 
-	mobileChildren := make([]render.HTML, 0, len(cfg.NavItems)+len(cfg.MobileExtraLinks))
+	mobileChildren := make([]render.HTML, 0, len(cfg.NavItems)+len(cfg.MobileExtraLinks)+1)
 	for _, item := range cfg.NavItems {
 		mobileChildren = append(mobileChildren, navLink(item))
 	}
 	for _, item := range cfg.MobileExtraLinks {
 		mobileChildren = append(mobileChildren, navLink(item))
+	}
+	// Actions (theme toggle, sign in/out, …) live in the bar on desktop but
+	// would overflow a phone bar, so they also render at the foot of the mobile
+	// drawer; CSS hides the bar copy ≤720px so they collapse into the hamburger.
+	if cfg.Actions != "" {
+		mobileChildren = append(mobileChildren,
+			html.Div(html.DivConfig{Class: "ui-site-header__mobile-actions"}, cfg.Actions))
 	}
 	// SVG icons: menu (3 bars) shown in closed state, close (×) shown
 	// in open state. The swap is purely CSS-driven (display: none on
@@ -152,7 +159,10 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 
 	rightChildren := []render.HTML{}
 	if cfg.Actions != "" {
-		rightChildren = append(rightChildren, cfg.Actions)
+		// Wrapped so CSS can hide just the bar copy on phones (the same Actions
+		// also render inside the drawer).
+		rightChildren = append(rightChildren,
+			html.Div(html.DivConfig{Class: "ui-site-header__bar-actions"}, cfg.Actions))
 	}
 	rightChildren = append(rightChildren, mobile)
 	right := html.Div(html.DivConfig{Class: "ui-site-header__right"}, rightChildren...)
@@ -298,9 +308,23 @@ func siteHeaderCSS(_ style.Theme) string {
   background: var(--color-surface-soft, rgba(0,0,0,0.04));
 }
 
+/* Bar actions are layout-transparent on desktop (their cluster participates in
+   the right group directly); the foot-of-drawer copy is hidden until ≤720px. */
+[data-fui-comp="ui-site-header"] .ui-site-header__bar-actions { display: contents; }
+[data-fui-comp="ui-site-header"] .ui-site-header__mobile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 10px);
+  margin-block-start: var(--spacing-md, 16px);
+  padding-block-start: var(--spacing-md, 16px);
+  border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
+}
 @media (max-width: 720px) {
   [data-fui-comp="ui-site-header"] .ui-site-header__links { display: none; }
   [data-fui-comp="ui-site-header"] .ui-site-header__mobile { display: block; }
+  /* Collapse the bar actions into the drawer so the phone bar is just brand +
+     hamburger. The drawer copy (.ui-site-header__mobile-actions) carries them. */
+  [data-fui-comp="ui-site-header"] .ui-site-header__bar-actions { display: none; }
 }
 
 /* Sheet drawer variant: a full-height slide-in side drawer with a backdrop
