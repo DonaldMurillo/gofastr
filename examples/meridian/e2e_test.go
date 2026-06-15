@@ -107,7 +107,7 @@ func TestBlueprintE2E(t *testing.T) {
 		t.Errorf("get deleted customers = %d, want 404", code)
 	}
 
-	// RBAC: an anonymous write to the access-gated customers API is refused.
+	// Scoping: an anonymous write to the access-/owner-scoped customers API is refused.
 	if code, _ := e2eDo(t, http.DefaultClient, "POST", base+"/api/customers", `{"name": "e2e-name", "email": "e2e-email@example.com"}`); code != http.StatusUnauthorized && code != http.StatusForbidden {
 		t.Errorf("anonymous write to customers = %d, want 401/403", code)
 	}

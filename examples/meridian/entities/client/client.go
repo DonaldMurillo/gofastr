@@ -153,6 +153,7 @@ type Customers struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	UserId  string `json:"userId,omitempty"`
 }
 
 type CustomersInput struct {
@@ -161,6 +162,7 @@ type CustomersInput struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	UserId  string `json:"userId,omitempty"`
 }
 
 type CustomersListResponse struct {
@@ -224,6 +226,7 @@ type Subscriptions struct {
 	Mrr        string `json:"mrr,omitempty"`
 	StartedOn  string `json:"startedOn,omitempty"`
 	RenewsOn   string `json:"renewsOn,omitempty"`
+	UserId     string `json:"userId,omitempty"`
 }
 
 type SubscriptionsInput struct {
@@ -233,6 +236,7 @@ type SubscriptionsInput struct {
 	Mrr        string `json:"mrr,omitempty"`
 	StartedOn  string `json:"startedOn,omitempty"`
 	RenewsOn   string `json:"renewsOn,omitempty"`
+	UserId     string `json:"userId,omitempty"`
 }
 
 type SubscriptionsListResponse struct {
@@ -297,6 +301,7 @@ type Invoices struct {
 	IssuedOn   string `json:"issuedOn,omitempty"`
 	DueOn      string `json:"dueOn,omitempty"`
 	PaidOn     string `json:"paidOn,omitempty"`
+	UserId     string `json:"userId,omitempty"`
 }
 
 type InvoicesInput struct {
@@ -307,6 +312,7 @@ type InvoicesInput struct {
 	IssuedOn   string `json:"issuedOn,omitempty"`
 	DueOn      string `json:"dueOn,omitempty"`
 	PaidOn     string `json:"paidOn,omitempty"`
+	UserId     string `json:"userId,omitempty"`
 }
 
 type InvoicesListResponse struct {
@@ -369,6 +375,7 @@ type Payments struct {
 	Amount     string `json:"amount,omitempty"`
 	Method     string `json:"method,omitempty"`
 	Status     string `json:"status,omitempty"`
+	UserId     string `json:"userId,omitempty"`
 }
 
 type PaymentsInput struct {
@@ -377,6 +384,7 @@ type PaymentsInput struct {
 	Amount     string `json:"amount,omitempty"`
 	Method     string `json:"method,omitempty"`
 	Status     string `json:"status,omitempty"`
+	UserId     string `json:"userId,omitempty"`
 }
 
 type PaymentsListResponse struct {

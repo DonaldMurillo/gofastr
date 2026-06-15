@@ -75,27 +75,27 @@ func (s *PrivacyScreen) Render() render.HTML {
 	)
 }
 
-type LoginScreen struct{}
+type LoginScreen struct{ component.ContextOnly }
 
 func (s *LoginScreen) ScreenTitle() string        { return "Sign in" }
 func (s *LoginScreen) ScreenDescription() string  { return "" }
 func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-func (s *LoginScreen) Render() render.HTML {
+func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>")})), Footer: render.Raw("<a href=\"/signup\">Create an account</a>")}),
+		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: blueprintAuthError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>")})), Footer: render.Raw("<a href=\"/signup\">Create an account</a>")}),
 	)
 }
 
-type SignupScreen struct{}
+type SignupScreen struct{ component.ContextOnly }
 
 func (s *SignupScreen) ScreenTitle() string        { return "Create your account" }
 func (s *SignupScreen) ScreenDescription() string  { return "" }
 func (s *SignupScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-func (s *SignupScreen) Render() render.HTML {
+func (s *SignupScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		ui.AuthCard(ui.AuthCardConfig{Title: "Create your Meridian account", Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: "Create account"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\">")})), Footer: render.Raw("<a href=\"/login\">Already have an account? Sign in</a>")}),
+		ui.AuthCard(ui.AuthCardConfig{Title: "Create your Meridian account", Alert: blueprintAuthError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: "Create account"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\">")})), Footer: render.Raw("<a href=\"/login\">Already have an account? Sign in</a>")}),
 	)
 }
 

@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/admin"
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -41,6 +43,13 @@ func main() {
 	fwApp := framework.NewApp(options...)
 	entities.RegisterAll(fwApp)
 	fwApp.WithSeed(func(ctx context.Context) error {
+		// Seed owner-scoped rows as the bootstrap admin so the demo data
+		// belongs to them; a fresh signup then starts with an empty
+		// workspace and adds its own. CreateOne stamps the owner column
+		// from the user on the context.
+		if u, _, err := auth.NewEntityUserStore(db, "auth_users").FindByEmail(ctx, "admin@meridian.dev"); err == nil && u != nil {
+			ctx = handler.SetUser(ctx, u)
+		}
 		for _, s := range blueprint.BlueprintSeedData() {
 			ch, err := fwApp.CrudHandler(s.Entity)
 			if err != nil {

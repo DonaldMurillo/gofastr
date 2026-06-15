@@ -112,13 +112,9 @@ entities:
   - name: customers
     crud: true
     mcp: true
+    owner_field: user_id    # per-user: each signed-in account owns its own customers
     properties:
       label: Customers
-    access:                 # email is PII — gate the JSON/MCP API by role
-      read: customers:read
-      create: customers:write
-      update: customers:write
-      delete: customers:admin
     indices:
       - name: idx_customers_email
         columns: [email]
@@ -147,6 +143,7 @@ entities:
   - name: subscriptions
     crud: true
     mcp: true
+    owner_field: user_id
     properties:
       label: Subscriptions
     fields:
@@ -183,6 +180,7 @@ entities:
   - name: invoices
     crud: true
     mcp: true
+    owner_field: user_id
     properties:
       label: Invoices
     fields:
@@ -217,6 +215,7 @@ entities:
   - name: payments
     crud: true
     mcp: true
+    owner_field: user_id
     properties:
       label: Payments
     fields:
@@ -560,6 +559,7 @@ nav:
     href: /app/invoices
   - label: Admin
     href: /admin
+    role: admin          # only signed-in admins see this link
 
 # =============================================================================
 # SEED — realistic sample data so a fresh boot shows a populated console.

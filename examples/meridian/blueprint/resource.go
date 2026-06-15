@@ -675,6 +675,27 @@ func resEmptyDesc(custom string) string {
 	return "They will appear here once created."
 }
 
+// blueprintAuthError reads the ?error= code an auth redirect sets and returns a
+// human message for an auth card's alert slot, or "" when there's no error. The
+// auth battery redirects a failed form login back to the login page with this
+// code instead of rendering a raw JSON error body.
+func blueprintAuthError(ctx context.Context) render.HTML {
+	switch appui.QueryFromContext(ctx).Get("error") {
+	case "":
+		return ""
+	case "invalid_credentials":
+		return render.Text("Invalid email or password.")
+	case "credentials_required":
+		return render.Text("Enter your email and password.")
+	case "rate_limit":
+		return render.Text("Too many attempts — please wait a moment and try again.")
+	case "email_taken", "user_exists", "duplicate":
+		return render.Text("That email is already registered.")
+	default:
+		return render.Text("Sorry, something went wrong. Please try again.")
+	}
+}
+
 // ----- dashboard data binding (stat_card / charts with source) --------------
 
 // blueprintStatValue computes a single metric over an entity for a stat_card:

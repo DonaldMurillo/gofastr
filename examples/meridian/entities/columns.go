@@ -24,6 +24,7 @@ var (
 	CustomersCompany = framework.NewStringColumn("company")
 	CustomersStatus  = framework.NewStringColumn("status")
 	CustomersMrr     = framework.NewFloatColumn("mrr")
+	CustomersUserId  = framework.NewStringColumn("user_id")
 )
 
 // ====== Subscriptions column references ======
@@ -36,6 +37,7 @@ var (
 	SubscriptionsMrr        = framework.NewFloatColumn("mrr")
 	SubscriptionsStartedOn  = framework.NewTimestampColumn("started_on")
 	SubscriptionsRenewsOn   = framework.NewTimestampColumn("renews_on")
+	SubscriptionsUserId     = framework.NewStringColumn("user_id")
 )
 
 // Subscriptions include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
@@ -55,6 +57,7 @@ var (
 	InvoicesIssuedOn   = framework.NewTimestampColumn("issued_on")
 	InvoicesDueOn      = framework.NewTimestampColumn("due_on")
 	InvoicesPaidOn     = framework.NewTimestampColumn("paid_on")
+	InvoicesUserId     = framework.NewStringColumn("user_id")
 )
 
 // Invoices include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).
@@ -71,6 +74,7 @@ var (
 	PaymentsAmount     = framework.NewFloatColumn("amount")
 	PaymentsMethod     = framework.NewStringColumn("method")
 	PaymentsStatus     = framework.NewStringColumn("status")
+	PaymentsUserId     = framework.NewStringColumn("user_id")
 )
 
 // Payments include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).

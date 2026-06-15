@@ -15,7 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -62,13 +61,33 @@ func blueprintAuthPolicy(loginPath, role string) app.Policy {
 	})
 }
 
+// blueprintGuestPolicy gates a guest-only screen (login / signup): a
+// signed-in visitor is redirected to the app instead of seeing a sign-in
+// form they're already past.
+func blueprintGuestPolicy(appHome string) app.Policy {
+	return app.PolicyFunc(func(ctx context.Context) app.Decision {
+		if u, ok := handler.GetUser(ctx); ok && u != nil {
+			return decide.Redirect(appHome)
+		}
+		return decide.Allow()
+	})
+}
+
 // BlueprintMarketingHeader / Footer wrap the public marketing layout.
-func BlueprintMarketingHeader() render.HTML {
+func BlueprintMarketingHeader(ctx context.Context) render.HTML {
+	nav := []ui.SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}}
+	var actions render.HTML
+	if u, ok := handler.GetUser(ctx); ok && u != nil {
+		nav = append(nav, ui.SiteHeaderLink{Label: "Dashboard", Href: "/app"})
+		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: false}, ui.SignOut(ui.SignOutConfig{Next: "/"}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
+	} else {
+		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: false}, ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
+	}
 	return ui.SiteHeader(ui.SiteHeaderConfig{
 		Brand:    ui.Link(ui.LinkConfig{Href: "/", Text: BlueprintAppName}),
-		NavItems: []ui.SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}, {Label: "Sign in", Href: "/login"}},
+		NavItems: nav,
 		Drawer:   ui.SiteHeaderDrawerSheet,
-		Actions:  ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),
+		Actions:  actions,
 	})
 }
 
@@ -135,8 +154,8 @@ func BlueprintSidebarConfig() ui.SidebarConfig {
 		{Label: "Customers", Href: "/app/customers"},
 		{Label: "Subscriptions", Href: "/app/subscriptions"},
 		{Label: "Invoices", Href: "/app/invoices"},
-		{Label: "Admin", Href: "/admin"},
-	}}
+		{Label: "Admin", Href: "/admin", Roles: []string{"admin"}},
+	}, Footer: ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel}), ui.SignOut(ui.SignOutConfig{Next: "/"}))}
 }
 
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
@@ -252,13 +271,12 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.WithTheme(BlueprintTheme())
 	sbCfg := BlueprintSidebarConfig()
 	sb := ui.Sidebar(sbCfg)
-	appHeader := app.NewStaticComponent(ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyEnd}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})))
-	appLayout := app.NewLayout("app").WithSidebar(sb).WithHeader(appHeader)
+	appLayout := app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)
 	marketingLayout := app.NewLayout("marketing").
 		WithContainer().
-		WithHeader(app.NewStaticComponent(BlueprintMarketingHeader())).
+		WithHeader(app.NewContextComponent(BlueprintMarketingHeader)).
 		WithFooter(app.NewStaticComponent(BlueprintMarketingFooter()))
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
@@ -275,10 +293,8 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr := auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
-		// Auto-create auth tables if they don't exist.
-		db.Exec(`CREATE TABLE IF NOT EXISTS auth_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL DEFAULT '', roles TEXT NOT NULL DEFAULT '[]', password_set INTEGER NOT NULL DEFAULT 0)`)
-		db.Exec(`CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, two_factor_verified INTEGER NOT NULL DEFAULT 0, pending_two_factor INTEGER NOT NULL DEFAULT 0)`)
 		authMgr.Init(fwApp)
+		auth.SetDefaultLoginErrorPath("/login")
 		// Bootstrap admin account so the back-office is reachable on a
 		// fresh database. Created only when absent (idempotent).
 		if _, _, err := authCfg.UserStore.FindByEmail(context.Background(), "admin@meridian.dev"); err != nil {
@@ -291,21 +307,14 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// this, authorized requests fail closed (401) just like
 		// anonymous ones.
 		fwApp.Use(auth.SessionMiddleware(authMgr))
-		// Entities declare `access:` permissions; install a RolePolicy so the
-		// signed-in user's roles resolve to those permissions on the gated
-		// CRUD API. The admin role holds the wildcard (full access, the same
-		// surface the back-office manages); add finer per-role Grants here as
-		// you define more roles. Without this, every write 403s.
-		blueprintRBAC := access.NewRolePolicy()
-		blueprintRBAC.Grant("admin", access.Wildcard)
-		fwApp.Use(access.Middleware(blueprintRBAC, func(ctx context.Context) []string {
+		ui.SetRolesExtractor(func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
 				if rh, ok := u.(interface{ GetRoles() []string }); ok {
 					return rh.GetRoles()
 				}
 			}
 			return nil
-		}))
+		})
 		// auth.CSRF is intentionally NOT mounted: this generated surface
 		// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s
 		// any unsafe-method request that doesn't echo the csrf cookie as
@@ -320,8 +329,8 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.Register("/about", &AboutScreen{}, marketingLayout)
 	site.Register("/terms", &TermsScreen{}, marketingLayout)
 	site.Register("/privacy", &PrivacyScreen{}, marketingLayout)
-	site.Register("/login", &LoginScreen{}, marketingLayout)
-	site.Register("/signup", &SignupScreen{}, marketingLayout)
+	site.RegisterScreen(app.NewScreen("/login", &LoginScreen{}).WithTitle("Sign in").WithPolicy(blueprintGuestPolicy("/app")), marketingLayout)
+	site.RegisterScreen(app.NewScreen("/signup", &SignupScreen{}).WithTitle("Create your account").WithPolicy(blueprintGuestPolicy("/app")), marketingLayout)
 	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
 	site.RegisterScreen(app.NewScreen("/app/customers", &CustomersScreen{}).WithTitle("Customers").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
 	site.RegisterScreen(app.NewScreen("/app/customers/:id", &CustomerDetailScreen{}).WithTitle("Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)

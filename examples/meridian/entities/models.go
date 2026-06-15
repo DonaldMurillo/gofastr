@@ -16,6 +16,7 @@ type Customers struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	UserId  string `json:"userId,omitempty"`
 }
 
 type Subscriptions struct {
@@ -26,6 +27,7 @@ type Subscriptions struct {
 	Mrr        string     `json:"mrr,omitempty"`
 	StartedOn  string     `json:"startedOn,omitempty"`
 	RenewsOn   string     `json:"renewsOn,omitempty"`
+	UserId     string     `json:"userId,omitempty"`
 	Customer   *Customers `json:"customer,omitempty"`
 	Plan       *Plans     `json:"plan,omitempty"`
 }
@@ -39,6 +41,7 @@ type Invoices struct {
 	IssuedOn   string     `json:"issuedOn,omitempty"`
 	DueOn      string     `json:"dueOn,omitempty"`
 	PaidOn     string     `json:"paidOn,omitempty"`
+	UserId     string     `json:"userId,omitempty"`
 	Customer   *Customers `json:"customer,omitempty"`
 }
 
@@ -49,6 +52,7 @@ type Payments struct {
 	Amount     string     `json:"amount,omitempty"`
 	Method     string     `json:"method,omitempty"`
 	Status     string     `json:"status,omitempty"`
+	UserId     string     `json:"userId,omitempty"`
 	Invoice    *Invoices  `json:"invoice,omitempty"`
 	Customer   *Customers `json:"customer,omitempty"`
 }
