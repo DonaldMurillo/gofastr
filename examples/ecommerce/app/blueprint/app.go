@@ -59,7 +59,7 @@ func BlueprintSidebarConfig() ui.SidebarConfig {
 		{Label: "Categories", Href: "/categories"},
 		{Label: "Orders", Href: "/orders"},
 		{Label: "Reviews", Href: "/reviews"},
-	}}
+	}, Footer: ui.SignOut(ui.SignOutConfig{Next: "/"})}
 }
 
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
@@ -202,8 +202,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.WithTheme(BlueprintTheme())
 	sbCfg := BlueprintSidebarConfig()
 	sb := ui.Sidebar(sbCfg)
-	appHeader := app.NewStaticComponent(ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyEnd}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})))
-	appLayout := app.NewLayout("app").WithSidebar(sb).WithHeader(appHeader)
+	appLayout := app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)
 	{
@@ -221,10 +220,8 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr := auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
-		// Auto-create auth tables if they don't exist.
-		db.Exec(`CREATE TABLE IF NOT EXISTS auth_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL DEFAULT '', roles TEXT NOT NULL DEFAULT '[]', password_set INTEGER NOT NULL DEFAULT 0)`)
-		db.Exec(`CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, two_factor_verified INTEGER NOT NULL DEFAULT 0, pending_two_factor INTEGER NOT NULL DEFAULT 0)`)
 		authMgr.Init(fwApp)
+		auth.SetDefaultLoginErrorPath("/login")
 		// Resolve the session cookie to a user on every request so
 		// owner/access-scoped CRUD sees the logged-in user. Without
 		// this, authorized requests fail closed (401) just like
