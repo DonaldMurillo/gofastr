@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -36,6 +37,12 @@ type SidebarItem struct {
 	Href     string
 	Icon     render.HTML
 	Children []SidebarItem
+
+	// Roles, when non-empty, restricts the item to users holding at least
+	// one of the named roles. Empty = visible to everyone. Filtering happens
+	// at render time via the roles extractor (SetRolesExtractor); when no
+	// extractor is registered, items render unfiltered (opt-in feature).
+	Roles []string
 
 	// Active forces the item into the active state regardless of the
 	// caller's MatchPath. Useful for pages that don't map 1:1 to a URL.
@@ -99,9 +106,72 @@ func Sidebar(cfg SidebarConfig) component.Component {
 	return sidebarComponent{cfg: cfg}
 }
 
+// rolesExtractor reads the signed-in user's roles from the request context.
+// nil = role-aware nav not wired (items render unfiltered). The app registers
+// it once via SetRolesExtractor (the generated app wires it to the auth user).
+var rolesExtractor func(ctx context.Context) []string
+
+// SetRolesExtractor installs the function that pulls the current user's roles
+// from a request context, enabling SidebarItem.Roles filtering. Idempotent;
+// pass nil to disable.
+func SetRolesExtractor(f func(ctx context.Context) []string) { rolesExtractor = f }
+
+// sidebarVisible reports whether an item is visible to the ctx user: items with
+// no Roles are always visible; otherwise the user must hold one of them. With
+// no extractor wired, everything is visible (the feature is opt-in).
+func sidebarVisible(ctx context.Context, it SidebarItem) bool {
+	if len(it.Roles) == 0 || rolesExtractor == nil {
+		return true
+	}
+	have := rolesExtractor(ctx)
+	for _, want := range it.Roles {
+		for _, h := range have {
+			if h == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// filterSidebarItems returns the items visible to the ctx user, recursing into
+// children. Returns the input unchanged when no extractor is wired.
+func filterSidebarItems(ctx context.Context, items []SidebarItem) []SidebarItem {
+	if rolesExtractor == nil {
+		return items
+	}
+	out := make([]SidebarItem, 0, len(items))
+	for _, it := range items {
+		if !sidebarVisible(ctx, it) {
+			continue
+		}
+		if len(it.Children) > 0 {
+			it.Children = filterSidebarItems(ctx, it.Children)
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// withFilteredItems returns a copy of cfg whose Items are filtered for the ctx
+// user. Footer/Title/etc. are unchanged.
+func (c SidebarConfig) withFilteredItems(ctx context.Context) SidebarConfig {
+	c.Items = filterSidebarItems(ctx, c.Items)
+	return c
+}
+
 type sidebarComponent struct{ cfg SidebarConfig }
 
-func (s sidebarComponent) Render() render.HTML {
+// RenderCtx renders the sidebar with role-filtered items. The app layout
+// threads the request context here (WrapCtx), so role-gated entries (e.g. an
+// admin-only link) never appear for users who lack the role.
+func (s sidebarComponent) RenderCtx(ctx context.Context) render.HTML {
+	return sidebarComponent{cfg: s.cfg.withFilteredItems(ctx)}.render()
+}
+
+func (s sidebarComponent) Render() render.HTML { return s.render() }
+
+func (s sidebarComponent) render() render.HTML {
 	cfg := s.cfg
 	var b strings.Builder
 	b.WriteString(`<aside class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar>`)
@@ -202,6 +272,14 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 // inside the drawer too (the framework's per-component CSS scoping
 // keys on that marker).
 type sidebarDrawerSlot struct{ cfg SidebarConfig }
+
+// RenderCtx renders the drawer body with role-filtered items. The widget host
+// serves the drawer chrome per-request (serveChrome) and threads the request
+// context here, so the mobile drawer hides the same role-gated entries the
+// desktop sidebar does.
+func (s sidebarDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
+	return sidebarDrawerSlot{cfg: s.cfg.withFilteredItems(ctx)}.Render()
+}
 
 func (s sidebarDrawerSlot) Render() render.HTML {
 	return sidebarStyle.WrapHTML(render.HTML(
