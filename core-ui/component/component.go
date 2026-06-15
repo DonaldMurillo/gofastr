@@ -68,6 +68,18 @@ func RenderComponent(c Component) render.HTML {
 	return c.Render()
 }
 
+// RenderComponentCtx renders a component with a request context, preferring
+// RenderCtx when the component implements ContextComponent (the same
+// preference the screen/layout dispatch uses). Falls back to Render otherwise.
+// Lets per-request chrome (e.g. role-aware nav in a drawer widget) see the
+// signed-in user instead of a background context.
+func RenderComponentCtx(ctx context.Context, c Component) render.HTML {
+	if cc, ok := c.(ContextComponent); ok {
+		return cc.RenderCtx(ctx)
+	}
+	return c.Render()
+}
+
 // IsInteractive returns true if the component implements InteractiveComponent.
 func IsInteractive(c Component) bool {
 	_, ok := c.(InteractiveComponent)

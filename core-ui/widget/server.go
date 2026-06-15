@@ -1,6 +1,7 @@
 package widget
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -229,8 +230,12 @@ func chromePathFor(d *Definition) string {
 // Cache-Control: no-store because the chrome may depend on per-widget
 // signal defaults that change between deploys; let the client refetch
 // rather than serve stale HTML from a CDN.
-func (s *server) serveChrome(w http.ResponseWriter, _ *http.Request) {
-	chrome := s.renderSkeleton()
+func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
+	// Render with the request context so context-aware slots (e.g. a
+	// role-aware nav drawer) see the signed-in user the session middleware
+	// placed on r — a hidden drawer is fetched here, not SSR-inlined, so this
+	// is the only point where it can be personalised.
+	chrome := s.renderSkeletonCtx(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(chrome))
@@ -270,9 +275,16 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 // for the position, OR the host's custom Skeleton if provided. Slots
 // are rendered to HTML and looked up by name.
 func (s *server) renderSkeleton() render.HTML {
+	return s.renderSkeletonCtx(context.Background())
+}
+
+// renderSkeletonCtx is renderSkeleton with an explicit request context, threaded
+// into each slot so context-aware slots render per-request (role-aware nav,
+// tenant-scoped chrome, …). Slots that aren't context-aware are unaffected.
+func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
 	slots := map[string]render.HTML{}
 	for _, sl := range s.def.Slots {
-		slots[sl.Name] = component.RenderComponent(sl.Component)
+		slots[sl.Name] = component.RenderComponentCtx(ctx, sl.Component)
 	}
 	if s.def.Skeleton != nil {
 		return s.def.Skeleton(slots)

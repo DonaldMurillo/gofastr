@@ -44,6 +44,20 @@ func NewStaticComponent(h render.HTML) *StaticComponent {
 	return &StaticComponent{HTML: h}
 }
 
+// contextComponentFunc adapts a ctx→HTML func into a ContextComponent.
+type contextComponentFunc func(ctx context.Context) render.HTML
+
+func (f contextComponentFunc) Render() render.HTML                    { return f(context.Background()) }
+func (f contextComponentFunc) RenderCtx(c context.Context) render.HTML { return f(c) }
+
+// NewContextComponent creates a component whose output depends on the request
+// context (auth-aware chrome, tenant-scoped headers, …). The layout threads the
+// live request context in via WrapCtx, so RenderCtx receives the signed-in
+// user; Render() falls back to a background context.
+func NewContextComponent(fn func(ctx context.Context) render.HTML) component.Component {
+	return contextComponentFunc(fn)
+}
+
 // NewScreenGroup creates a screen group with the given prefix and layout.
 // The prefix is the URL path prefix shared by all screens in the group.
 // The layout wraps every child screen's content.
