@@ -207,6 +207,25 @@ entities get the same fail-closed enforcement as Go-declared ones:
 ```yaml
 entities:
   - name: posts
+    owner_field: user_id    # the column is auto-created; no field needed
+    fields:
+      - name: title
+        type: string
+        required: true
+```
+
+You do **not** declare the owner column as a field: `gofastr generate`
+synthesizes it as a hidden string column, so AutoMigrate creates it while it
+stays out of generated forms and tables. The framework manages it end to end —
+`CreateOne` stamps it from the current user and every read scopes by it. (A
+field you *do* declare with the owner's name always wins and is left untouched.)
+`owner_field` alone satisfies the per-user PII gate, so it does not need an
+`access:` block; add one only when you also want role-based API gating on top of
+ownership:
+
+```yaml
+entities:
+  - name: posts
     owner_field: user_id
     access:
       read: posts:read      # List + Get
@@ -217,8 +236,6 @@ entities:
       - name: title
         type: string
         required: true
-      - name: user_id
-        type: string
 ```
 
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,

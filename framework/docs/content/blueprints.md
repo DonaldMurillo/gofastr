@@ -319,6 +319,31 @@ optional `filter: status=active`) for a `stat_card`, and
 (for the public/front-of-house pages); `layout: app` uses the sidebar shell
 (`nav`). Omitted → the default (sidebar if `nav` is set).
 
+### Navigation (`nav`)
+
+`nav` is a list of sidebar entries — each `{label, href}`, with an optional
+`icon` and nested `items`. The app shell renders them as the sidebar (and, at
+narrow viewports, the hamburger drawer); the theme toggle lives in the sidebar
+footer, so there is no separate app top bar.
+
+A nav item may carry `role:` to restrict it to users holding that role:
+
+```yaml
+nav:
+  - label: Overview
+    href: /app
+  - label: Admin
+    href: /admin
+    role: admin     # only signed-in admins see this link
+```
+
+Role-gated items are filtered by the signed-in user's roles at render time, on
+**both** the desktop sidebar and the mobile drawer — a link a user can't use
+never appears (and is never a dead end into a 403). Items without `role:` are
+visible to everyone. This is the nav-visibility complement to the server-side
+gate on the destination itself (`access:` / the admin battery's `role`); the
+route stays protected regardless.
+
 ### Seed data
 
 When the blueprint declares `seed:`, generation emits `BlueprintSeedData()`
@@ -329,6 +354,15 @@ already has rows is skipped). Rows go through the CRUD `CreateOne` path, so
 validation, id generation, and timestamps apply; `decimal` values are coerced
 to the decimal-string form the validator expects. A row that fails validation
 is logged and skipped rather than aborting startup.
+
+When any entity declares `owner_field` (per-user scoping) **and** an admin
+account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed
+runs *as that admin*: the generated hook looks the admin up and stamps every
+seeded owner column with their id. The demo data therefore belongs to the
+admin, and a freshly registered user starts with an empty, owner-scoped
+workspace they fill themselves — no other user's rows ever leak in. Without an
+admin to attribute the rows to, an owner-scoped seed would have no valid owner
+and fail closed.
 
 ### Auth (`app.auth`)
 
@@ -350,6 +384,21 @@ login resolves to a user on every request — this is what makes
 `owner_field` and `access` scoping work for logged-in users on the
 generated CRUD/MCP surface. Without a valid session, owner-scoped
 entities fail closed (401/403) for reads and writes alike.
+
+The generated app also wires the **auth UX** so the session is reflected
+everywhere, not just enforced:
+
+- **Sign out** — the app sidebar footer and (on marketing pages) the header
+  carry a `ui.SignOut` control that POSTs to `/auth/logout` and returns home.
+- **Auth-aware marketing header** — a signed-in visitor sees a *Dashboard* link
+  + *Sign out* instead of *Sign in*; the header re-renders per request from the
+  session (`app.NewContextComponent`).
+- **Guest-only auth screens** — the login and signup screens redirect an
+  already-signed-in visitor to the app instead of showing a form they're past.
+
+The bootstrap admin (`app.admin.seed_email` / `seed_password`) is created on a
+fresh database, and the auth battery creates its own `auth_users` /
+`auth_sessions` tables in `Init` — the generated app ships no DDL.
 
 #### `dev_mode`
 
