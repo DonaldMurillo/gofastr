@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // Both SQLite (via mattn/go-sqlite3) and PostgreSQL (via lib/pq) accept
@@ -83,6 +84,24 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 		table:    table,
 		fieldMap: fm,
 	}
+}
+
+// EnsureSchema creates the user table if it does not already exist. The auth
+// battery owns its schema, so hosts never hand-roll the DDL — AuthManager.Init
+// calls this. Idempotent (CREATE TABLE IF NOT EXISTS). The column types here
+// (TEXT, INTEGER) are portable across SQLite and PostgreSQL.
+func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
+	stmt := fmt.Sprintf(
+		"CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT UNIQUE NOT NULL, %s TEXT NOT NULL DEFAULT '', %s TEXT NOT NULL DEFAULT '[]', %s INTEGER NOT NULL DEFAULT 0)",
+		query.QuoteIdent(s.table),
+		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteIdent(s.fieldMap.Email),
+		query.QuoteIdent(s.fieldMap.PasswordHash),
+		query.QuoteIdent(s.fieldMap.Roles),
+		query.QuoteIdent(s.fieldMap.PasswordSet),
+	)
+	_, err := s.db.ExecContext(ctx, stmt)
+	return err
 }
 
 // q builds a query using validated identifiers. All table/field names were
@@ -350,6 +369,23 @@ func NewEntitySessionStore(db *sql.DB, table string) *EntitySessionStore {
 		db:    db,
 		table: table,
 	}
+}
+
+// EnsureSchema creates the session table if it does not already exist. Called
+// by AuthManager.Init so hosts never hand-roll the DDL. Idempotent. The
+// datetime and boolean column types are chosen per dialect (SQLite vs
+// PostgreSQL) so the same battery boots on either.
+func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
+	tsType, boolType, boolFalse := "DATETIME", "INTEGER", "0"
+	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		tsType, boolType, boolFalse = "TIMESTAMP", "BOOLEAN", "FALSE"
+	}
+	stmt := fmt.Sprintf(
+		"CREATE TABLE IF NOT EXISTS %s (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at %s NOT NULL, expires_at %s NOT NULL, two_factor_verified %s NOT NULL DEFAULT %s, pending_two_factor %s NOT NULL DEFAULT %s)",
+		query.QuoteIdent(s.table), tsType, tsType, boolType, boolFalse, boolType, boolFalse,
+	)
+	_, err := s.db.ExecContext(ctx, stmt)
+	return err
 }
 
 // qTable wraps a statement template with the validated table name.

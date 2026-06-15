@@ -368,6 +368,20 @@ func (m *AuthManager) Init(app *framework.App) error {
 		m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
 	}
 
+	// The auth battery owns its tables: create them if absent so hosts never
+	// hand-roll the auth_users / auth_sessions DDL. Stores that don't manage a
+	// schema (custom backends) simply don't implement the optional interface.
+	ctx := context.Background()
+	for _, st := range []any{m.userStore, m.sessionStore} {
+		if se, ok := st.(interface {
+			EnsureSchema(context.Context) error
+		}); ok {
+			if err := se.EnsureSchema(ctx); err != nil {
+				return fmt.Errorf("auth: ensure schema: %w", err)
+			}
+		}
+	}
+
 	// Init all plugins
 	if err := m.initPlugins(); err != nil {
 		return err
