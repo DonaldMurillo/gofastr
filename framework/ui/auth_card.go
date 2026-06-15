@@ -16,6 +16,9 @@ import (
 type AuthCardConfig struct {
 	// Title is the card heading (e.g. "Sign in to Acme").
 	Title string
+	// Alert is an optional message shown above the body — typically a
+	// failed-login notice. Empty renders nothing.
+	Alert render.HTML
 	// Body is the card contents — typically a ui.Form.
 	Body render.HTML
 	// Footer is an optional row below the body, e.g. a "Create an
@@ -26,9 +29,12 @@ type AuthCardConfig struct {
 
 // AuthCard renders a centered, constrained auth card.
 func AuthCard(cfg AuthCardConfig) render.HTML {
-	inner := make([]render.HTML, 0, 3)
+	inner := make([]render.HTML, 0, 4)
 	if cfg.Title != "" {
 		inner = append(inner, html.Heading(html.HeadingConfig{Level: 1, Class: "ui-auth-card__title"}, render.Text(cfg.Title)))
+	}
+	if cfg.Alert != "" {
+		inner = append(inner, html.Div(html.DivConfig{Class: "ui-auth-card__alert", Role: "alert"}, cfg.Alert))
 	}
 	if cfg.Body != "" {
 		inner = append(inner, cfg.Body)
@@ -69,6 +75,14 @@ func authCardCSS(_ style.Theme) string {
   font-family: var(--font-heading, inherit);
   font-size: 1.25rem;
   letter-spacing: -0.01em;
+}
+[data-fui-comp="ui-auth-card"] .ui-auth-card__alert {
+  font-size: 0.875rem;
+  color: var(--color-danger, #b91c1c);
+  background: color-mix(in srgb, var(--color-danger, #b91c1c) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #b91c1c) 28%, transparent);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.625rem 0.75rem;
 }
 [data-fui-comp="ui-auth-card"] .ui-auth-card__footer {
   font-size: 0.875rem;
