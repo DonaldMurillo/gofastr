@@ -28,13 +28,16 @@ func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
 
 	sse := stream.NewSSEWriter(w)
 
-	// Send a comment to flush response headers immediately,
-	// so the HTTP client doesn't block waiting for headers.
-	if err := sse.WriteComment("connected"); err != nil {
-		return
-	}
-
+	// Subscribe BEFORE flushing headers. Flushing headers (the "connected"
+	// comment below) unblocks the HTTP client — its Do() returns — so a
+	// client that pushes immediately on connect would otherwise win the
+	// race against this subscription and have its update silently dropped
+	// by Push (which no-ops while no stream entry exists yet). Subscribing
+	// first guarantees the buffered stream exists before the client can
+	// observe the connection as ready. This was a timing-dependent CI flake
+	// in TestServeSSE (5s timeout) on loaded runners.
 	ch := m.ConnectSession(sessionID)
+	defer m.Unsubscribe(sessionID)
 
 	// Get the done channel so we can detect unsubscribe.
 	m.mu.RLock()
@@ -43,7 +46,12 @@ func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	if !hasEntry {
 		return
 	}
-	defer m.Unsubscribe(sessionID)
+
+	// Flush response headers immediately so the HTTP client doesn't block
+	// waiting for them.
+	if err := sse.WriteComment("connected"); err != nil {
+		return
+	}
 
 	// Respect client context cancellation.
 	ctx := r.Context()
