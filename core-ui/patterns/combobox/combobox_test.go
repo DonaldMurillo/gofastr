@@ -138,3 +138,45 @@ func TestRenderEmitsDataFuiComp(t *testing.T) {
 		t.Errorf("Render must emit data-fui-comp for auto-load, got: %s", out)
 	}
 }
+
+// Static Options render inline + the data-fui-static-options marker, and
+// emit NO data-fui-rpc (search is client-side). This is what makes a docs/nav
+// palette work on a serverless export.
+func TestRenderStaticOptions(t *testing.T) {
+	out := string(Render(Config{
+		ID: "pal", Name: "q", Label: "Search",
+		Options: []Option{
+			{Label: "Docs", Href: "/docs/", Meta: "/docs/"},
+			{Label: "Examples", Href: "/examples"},
+		},
+	}))
+	for _, w := range []string{
+		`data-fui-static-options`,
+		`id="pal-listbox-opt-0"`,
+		`data-value="Docs"`,
+		`data-fui-push-state="/docs/"`,
+		`combobox__opt-label`,
+		`combobox__opt-meta">/docs/<`, // meta text renders the path
+		`>Examples<`,
+	} {
+		if !strings.Contains(out, w) {
+			t.Errorf("static-options combobox missing %q:\n%s", w, out)
+		}
+	}
+	// No RPC wired — search is client-side, no network round-trip.
+	if strings.Contains(out, "data-fui-rpc") {
+		t.Errorf("static-options combobox must not emit data-fui-rpc:\n%s", out)
+	}
+}
+
+// A static-only combobox (no RPCPath) is valid — the panic only fires when
+// neither RPCPath nor Options is set.
+func TestRenderStaticOptionsNoRPCPath(t *testing.T) {
+	out := string(Render(Config{
+		ID: "s", Name: "q", Label: "S",
+		Options: []Option{{Label: "Only"}},
+	}))
+	if !strings.Contains(out, `data-value="Only"`) {
+		t.Fatalf("static-only combobox missing option:\n%s", out)
+	}
+}

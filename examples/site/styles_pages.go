@@ -1149,6 +1149,17 @@ func pageComponents(ss *style.StyleSheet) {
 			// rows to the top so the layout stays tight; min-height
 			// still keeps the background filling the viewport.
 			"align-content", "start").End()
+	// app.Layout wraps the sidebar in <nav aria-label="Sidebar">, which becomes
+	// this grid's 260px column and stretches to the row height. But the
+	// interactive.SectionMenu widget rendered inside it sits at height:auto (==
+	// its rail), so the sticky rail's containing block is too short to pin. Make
+	// the wrapper a flex column so the widget fills the column → the rail sticks
+	// across the full page. No-op when the content column is shorter than the
+	// rail (nothing to pin past).
+	ss.Rule(".layout-components > .layout-body > nav").
+		Set("display", "flex", "flex-direction", "column").End()
+	ss.Rule(".layout-components > .layout-body > nav > .fui-section-menu").
+		Set("flex", "1 1 auto", "min-height", "0").End()
 	// The components rail + mobile sheet are now interactive.SectionMenu,
 	// which ships its own sticky-rail + slide-in-sheet CSS. The site only
 	// clears the sticky header and tunes the sheet surface to the v2 tokens.

@@ -17,6 +17,15 @@
     );
   } catch (_) { /* SSR / non-browser */ }
 
+  // Static-export mode: when the page is a serverless static export (no Go
+  // server behind it), the runtime adapts instead of 404'ing — it fetches
+  // the dumped widget catalog file (widgets.json) so data-fui-open overlays
+  // still work, and a data-fui-rpc click/submit surfaces a "Needs the Go
+  // server" notice (via _showNavToast) instead of firing a dead request.
+  // Client-only features (theme toggle, copy, signals) are untouched. The
+  // marker is injected ONLY by the static exporter (framework/static.Builder);
+  // live pages never carry it, so every guard below is a no-op live.
+  const _staticMode = document.documentElement.hasAttribute('data-fui-static');
   // -----------------------------------------------------------------------
   // Component handler registry
   // -----------------------------------------------------------------------
@@ -82,12 +91,20 @@
   const _rpcInFlight = new Map(); // signal name → AbortController
 
   async function dispatchRPC(node) {
+    if (_staticMode) {
+      // Serverless export — no RPC endpoint exists. Instead of failing
+      // silently, surface a notice so the user knows the demo needs the
+      // Go server and how to run it live. _showNavToast is the synchronous
+      // CSP-clean mini toast; re-clicks just refresh the single element
+      // (it self-clears after 4s) so no throttle is needed.
+      _showNavToast('Needs the Go server.');
+      return;
+    }
     const path = node.getAttribute('data-fui-rpc');
     const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
     const responseSignal = node.getAttribute('data-fui-rpc-signal');
     const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
-
     // Abort any in-flight dispatch for this signal. The previous
     // fetch will reject with AbortError; we ignore that branch below.
     if (responseSignal) {
@@ -535,11 +552,16 @@
   let _widgetCatalogResolve;
   const _widgetCatalogReady = new Promise((resolve) => { _widgetCatalogResolve = resolve; });
 
-  fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
+  // Serverless export: the exporter dumps every widget's metadata to
+  // __gofastr/widgets.json (the live endpoint is session-gated and absent
+  // on a static host). Fetch that file instead; the processing below is
+  // identical, so openWidget can resolve a hidden widget's chrome against
+  // the static tree instead of 404'ing against the server.
+  fetch('/__gofastr/widgets' + (_staticMode ? '.json' : '?page=' + encodeURIComponent(location.pathname)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
     .then(async (list) => {
-      if (!Array.isArray(list)) return;
+      if (!Array.isArray(list)) { _widgetCatalogResolve(); return; }
       // The widget runtime now ships as a split module. Make sure it's
       // loaded before iterating mounts — covers the case where no
       // [data-fui-widget] marker is present in initial HTML (the
@@ -1069,8 +1091,8 @@
         container = document.createElement('div');
         container.setAttribute('data-fui-toast-fallback', '');
         container.setAttribute('role', 'region');
-        container.setAttribute('aria-label', 'Notifications (degraded)');
-        container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem));pointer-events:auto;';
+        container.setAttribute('aria-label', 'Notifications');
+        container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
         document.body.appendChild(container);
       }
       const variant = cfg.variant || 'info';
@@ -1844,6 +1866,10 @@
       }
       const btn = e.target.closest && e.target.closest('[data-fui-open]');
       if (!btn) return;
+      // Static mode no longer short-circuits here: the exporter dumps the
+      // widget catalog + chrome as static files, so openWidget resolves
+      // against the file tree. (Server-backed RPCs inside a widget are
+      // still gated in dispatchRPC.)
       const name = btn.getAttribute('data-fui-open');
       if (!name) return;
       e.preventDefault();

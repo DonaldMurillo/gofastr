@@ -1256,7 +1256,7 @@ type ComponentsIndexScreen struct{}
 
 func (s *ComponentsIndexScreen) ScreenTitle() string { return "Components" }
 func (s *ComponentsIndexScreen) ScreenDescription() string {
-	return "Every framework/ui and core-ui/patterns primitive, one page each."
+	return "Every framework/ui and core-ui/patterns constructor, one page each."
 }
 func (s *ComponentsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -1280,14 +1280,14 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 	}
 
 	hero := html.Div(html.DivConfig{Class: "components-overview__hero"},
-		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Components · "+itoa(len(componentCatalog))+" primitives")),
+		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Components · v"+siteVersion)),
 		html.Heading(html.HeadingConfig{Level: 1, Class: "components-overview__title"},
-			render.Text("Every primitive, "),
-			html.Span(html.TextConfig{Class: "amber"}, render.Text("one page each")),
+			render.Text("Every UI surface, "),
+			html.Span(html.TextConfig{Class: "amber"}, render.Text("as typed Go")),
 			render.Text("."),
 		),
 		html.Paragraph(html.TextConfig{Class: "components-overview__lede"},
-			render.Text("framework/ui and core-ui/patterns ship typed Go constructors for each of the surfaces below. Pick from the sidebar — it stays put as you move between components."),
+			render.Text("One page per constructor. Use the sidebar to jump between them — it tracks the page you're on."),
 		),
 	)
 
@@ -1310,7 +1310,7 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 		}
 		sections = append(sections, ui.Section(
 			ui.SectionConfig{Heading: g.Name, Class: "intent", ID: categorySlug(g.Name)},
-			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(g.Entries))+" primitives")),
+			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(g.Entries))+" constructors")),
 			html.Div(html.DivConfig{Class: "docs"}, cards...),
 		))
 	}

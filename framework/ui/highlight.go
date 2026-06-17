@@ -26,11 +26,12 @@ type hlToken struct {
 	text  string // raw (un-escaped) source slice
 }
 
-// highlightLines tokenizes code for the given language and returns one
+// HighlightLines tokenizes code for the given language and returns one
 // []render.HTML per source line (newline-split AFTER tokenizing, so multi-line
 // strings/comments keep their class across the break). Each entry is the line's
-// concatenated token spans, ready to pass as ui.CodeBlockConfig.Lines.
-func highlightLines(code, lang string) []render.HTML {
+// concatenated token spans, ready to pass as ui.CodeBlockConfig.Lines. Pass the
+// result as CodeBlockConfig.Lines with ShowCopy/LineNumbers/Scroll as desired.
+func HighlightLines(code, lang string) []render.HTML {
 	tokens := tokenize(code, normalizeLang(lang))
 
 	// Split tokens on newlines into logical lines.

@@ -116,10 +116,10 @@ var docIntents = []docIntent{
 	},
 	{
 		Num: "05", Slug: "agents", Title: "Working with agents",
-		Lede: "MCP tools, Kiln build mode, agent permissions, plan-gated destructive ops.",
+		Lede: "MCP tools, Kiln build mode (experimental), agent permissions, plan-gated destructive ops.",
 		Path: []string{"Kiln overview", "Embed", "Agent notes"},
 		Docs: []docEntry{
-			{"kiln", "Kiln overview", "The agent-driven build-mode binary."},
+			{"kiln", "Kiln overview", "Experimental — the agent-driven build-mode binary."},
 			{"embed", "Embed", "Local semantic search via brute-force cosine — no API key."},
 			{"agent-notes", "Agent notes", "Append-only review log for agents working on the framework."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},

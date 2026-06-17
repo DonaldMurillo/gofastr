@@ -112,6 +112,12 @@ contract) are exempt — the exemption list lives in
 
 ## Build-time tooling
 
+- [Static-site export](static-export.md) — `app.ExportStatic`: render
+  every route in-process to a directory of query-free HTML + assets for
+  any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
+  stamps pages with `data-fui-static` so server-backed islands no-op
+  instead of 404'ing.
+
 - [Codegen](codegen.md) — YAML-configured generators, external extension
   protocol, safe output paths, and manifest-based cleaning.
 - [Blueprints](blueprints.md) — deterministic YAML-to-code input for

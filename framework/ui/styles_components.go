@@ -233,6 +233,13 @@ func codeBlockCSS(_ style.Theme) string {
   counter-reset: ui-cb-ln;
   padding-left: 52px;
 }
+[data-fui-comp="ui-code-block"].ui-code-block--scroll .ui-code-block__body {
+  /* Cap the body so a long file scrolls internally instead of dominating the
+     page. Override per-page via --ui-code-block-scroll-max if a taller/shorter
+     window is wanted. Horizontal panning still works (overflow-x above). */
+  max-block-size: var(--ui-code-block-scroll-max, 26rem);
+  overflow-y: auto;
+}
 [data-fui-comp="ui-code-block"] .ui-code-block__line { display: block; position: relative; }
 [data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line::before {
   counter-increment: ui-cb-ln;

@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,6 +35,19 @@ import (
 func main() {
 	fwApp := setupServer()
 
+	// `site --export <dir>` renders the whole site to static HTML + assets
+	// and exits — the native replacement for the wget mirror pages.yml used
+	// to ship. Declaration-driven (no crawling) and dumps the split runtime
+	// modules the crawl broke. See framework.App.ExportStatic.
+	if dir := exportDir(os.Args[1:]); dir != "" {
+		if err := fwApp.ExportStatic(context.Background(), dir, exportBase(os.Args[1:])); err != nil {
+			fmt.Fprintf(os.Stderr, "export: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("static site exported to %s\n", dir)
+		return
+	}
+
 	// Port from $PORT (dev-watch sets it); default 8083 for plain `go run .`.
 	addr := ":8083"
 	if p := os.Getenv("PORT"); p != "" {
@@ -47,6 +61,36 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// exportDir scans args for `--export <dir>` or `--export=<dir>`, returning
+// the target directory or "" when the flag is absent. Used by main to switch
+// between serving and one-shot static export.
+func exportDir(args []string) string {
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--export" && i+1 < len(args):
+			return args[i+1]
+		case strings.HasPrefix(args[i], "--export="):
+			return strings.TrimPrefix(args[i], "--export=")
+		}
+	}
+	return ""
+}
+
+// exportBase extracts the --export-base <path> flag (the URL subpath the
+// static site is served under, e.g. "/gofastr" for a GitHub Pages project
+// site). Returns "" when absent (apex deploy). Paired with --export.
+func exportBase(args []string) string {
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--export-base" && i+1 < len(args):
+			return args[i+1]
+		case strings.HasPrefix(args[i], "--export-base="):
+			return strings.TrimPrefix(args[i], "--export-base=")
+		}
+	}
+	return ""
 }
 
 // setupServer wires the whole site and returns the framework.App without
@@ -65,6 +109,10 @@ func setupServer() *framework.App {
 		Name:        "site-command-palette",
 		RPCPath:     "/__site/palette",
 		Placeholder: "Search docs, examples, components…",
+		// Static command list → client-side search. Works identically live
+		// and on the static export (no search endpoint needed). Takes
+		// precedence over RPCPath in the combobox.
+		Commands: paletteCommands(),
 	})
 
 	layout := app.NewLayout("main").
@@ -240,12 +288,23 @@ var paletteCatalog = []paletteRoute{
 	{"Docs index", "/docs/"},
 	{"Entity declarations — modeling the domain", "/docs/entity-declarations"},
 	{"Examples — six reference apps", "/examples"},
-	{"Kiln — agent build mode", "/kiln"},
+	{"Kiln — agent build mode (experimental)", "/kiln"},
 	{"Philosophy — the convictions essay", "/philosophy"},
 	{"Components — gallery index", "/components/"},
 	{"SEO — per-page meta, canonical, JSON-LD", "/seo"},
 	{"Forms wizard — multi-step round-trip", "/forms/wizard"},
 	{"Print — invoice / receipt documents", "/print/invoice/1"},
+}
+
+// paletteCommands maps the curated route catalog into static palette
+// commands so ⌘K search is fully client-side — instant on the live server
+// and functional on the static export with no search endpoint.
+func paletteCommands() []ui.PaletteCommand {
+	cmds := make([]ui.PaletteCommand, 0, len(paletteCatalog))
+	for _, r := range paletteCatalog {
+		cmds = append(cmds, ui.PaletteCommand{Label: r.title, Href: r.path, Meta: r.path})
+	}
+	return cmds
 }
 
 // servePaletteSearch returns matching options as <li role="option">
@@ -325,7 +384,7 @@ func registerScreens(site *app.App) {
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
 		WithTitle("Components").
-		WithDescription("Every framework/ui and core-ui/patterns primitive, one page each."), nil)
+		WithDescription("Every framework/ui and core-ui/patterns constructor, one page each."), nil)
 	for _, c := range componentCatalog {
 		componentsGroup.Screen(app.NewScreen("/components/"+c.Slug, &ComponentShowcaseScreen{Entry: c}).
 			WithTitle(c.Name), nil)

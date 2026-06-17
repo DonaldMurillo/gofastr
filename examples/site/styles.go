@@ -35,6 +35,7 @@ func createStyleSheet(t style.Theme) string {
 	codeBlockStyles(ss)
 	sectionFraming(ss)
 	heroLayout(ss)
+	realAppLayout(ss)
 	generatesLayout(ss)
 	architectureLayout(ss)
 	agentsLayout(ss)
@@ -315,13 +316,12 @@ func resetAndType(ss *style.StyleSheet) {
 			"font-size", "var(--t-md)",
 			"line-height", "1.55",
 			"color", "{colors.text}",
-			"background", "{colors.background}",
-			// Safety net: any child that intrinsically wants to be wider
-			// than the viewport (code blocks, install lines, embedded
-			// terminals) must not extend the document. Each such surface
-			// owns its own overflow-x: auto so the user can pan inside
-			// it; the page itself stays viewport-bound.
-			"overflow-x", "hidden").End()
+			"background", "{colors.background}").End()
+	// NOTE: do NOT add `overflow-x: hidden` here — it computes overflow-y to
+	// auto, turning <body> into a scroll container and silently breaking every
+	// position: sticky descendant (sidebars, TOC, step-rail, section-menu rail).
+	// The html-level overflow-x: hidden above is the horizontal-scroll guard;
+	// body stays overflow: visible so sticky anchors on the viewport.
 
 	ss.Rule("::selection").
 		Set("background", "var(--accent-dim)", "color", "{colors.text}").End()
@@ -502,7 +502,6 @@ func siteNav(ss *style.StyleSheet) {
 			"background", "{colors.primary}",
 			"box-shadow", "0 0 0 0 color-mix(in oklch, {colors.primary} 60%, transparent)",
 			"animation", "nav-pulse 2.4s ease-out infinite").End()
-	ss.Rule(".site-brand__tag").Set("color", "{colors.primary}").End()
 	ss.Rule(".site-brand__ver").Set("color", "{colors.text-subtle}").End()
 	// Respect reduced motion preference — pulse becomes a static dot
 	// when the user has prefers-reduced-motion: reduce.
@@ -834,6 +833,73 @@ func heroLayout(ss *style.StyleSheet) {
 }
 
 // -----------------------------------------------------------------------------
+// .realapp__grid — the "one file, a real app" beat. Two columns: the blueprint
+// on-ramp (code + generate terminal) on the left, a static rendered-screen
+// preview (screenMock) on the right. Collapses to one column at <=980px.
+// -----------------------------------------------------------------------------
+
+func realAppLayout(ss *style.StyleSheet) {
+	ss.Rule(".realapp__grid").
+		Set("display", "grid",
+			"grid-template-columns", "minmax(0, 1fr) minmax(0, 1fr)",
+			"gap", "{spacing.xl}",
+			"align-items", "start").End()
+	ss.Rule(".realapp__left").
+		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.md}",
+			"min-width", "0").End()
+	ss.Rule(".realapp__hint").
+		Set("color", "var(--fg-4)", "font-size", "var(--t-sm)", "line-height", "1.5").End()
+
+	// screenMock — a faithful "generated screen" preview (Meridian /customers).
+	ss.Rule(".screen-mock").
+		Set("border", "1px solid {colors.border}",
+			"border-radius", "10px",
+			"overflow", "hidden",
+			"background", "var(--color-surface)").End()
+	ss.Rule(".screen-mock__bar").
+		Set("display", "flex", "align-items", "center", "gap", "6px",
+			"padding", "8px 12px",
+			"border-bottom", "1px solid {colors.border}",
+			"background", "var(--bg-4)").End()
+	ss.Rule(".screen-mock__bar .dot").
+		Set("width", "10px", "height", "10px", "border-radius", "50%",
+			"background", "{colors.border}").End()
+	ss.Rule(".screen-mock__url").
+		Set("margin-left", "{spacing.sm}",
+			"font-family", "ui-monospace, SFMono-Regular, Menlo, monospace",
+			"font-size", "var(--t-xs)", "color", "var(--fg-4)").End()
+	ss.Rule(".screen-mock__body").Set("padding", "{spacing.md}").End()
+	ss.Rule(".screen-mock__head").
+		Set("display", "flex", "align-items", "center", "justify-content", "space-between",
+			"margin-bottom", "{spacing.md}").End()
+	ss.Rule(".mock-new").
+		Set("font-size", "var(--t-xs)", "color", "{colors.primary}",
+			"border", "1px solid color-mix(in oklch, {colors.primary} 40%, transparent)",
+			"border-radius", "6px", "padding", "3px 8px").End()
+	ss.Rule(".mock-table").
+		Set("width", "100%", "border-collapse", "collapse", "font-size", "var(--t-sm)").End()
+	ss.Rule(".mock-table th").
+		Set("text-align", "left", "font-weight", "600", "color", "var(--color-text-muted)",
+			"padding", "6px 10px", "border-bottom", "1px solid {colors.border}",
+			"font-size", "var(--t-xs)").End()
+	ss.Rule(".mock-table td").
+		Set("padding", "7px 10px", "border-bottom", "1px solid var(--line-faint)").End()
+	ss.Rule(".mock-table tr:last-child td").Set("border-bottom", "0").End()
+	ss.Rule(".mock-mrr").
+		Set("font-family", "ui-monospace, SFMono-Regular, Menlo, monospace").End()
+	ss.Rule(".mock-badge").
+		Set("font-size", "var(--t-xs)", "font-weight", "600",
+			"padding", "2px 8px", "border-radius", "999px").End()
+	ss.Rule(".mock-badge--ok").
+		Set("color", "var(--color-success)",
+			"background", "color-mix(in oklch, var(--color-success) 16%, transparent)").End()
+	ss.Rule(".mock-badge--off").
+		Set("color", "var(--fg-4)", "background", "var(--color-surface-soft)").End()
+	ss.Rule(".screen-mock__cap").
+		Set("margin-top", "{spacing.sm}", "font-size", "var(--t-xs)", "color", "var(--fg-4)").End()
+}
+
+// -----------------------------------------------------------------------------
 // .gen-list — release-notes-style row table.
 // -----------------------------------------------------------------------------
 
@@ -1075,6 +1141,7 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".arch__grid").Set("grid-template-columns", "1fr 1fr").End()
 		inner.Rule(".ex__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".agents__split").Set("grid-template-columns", "1fr").End()
+		inner.Rule(".realapp__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".pane--left").
 			Set("border-right", "0", "border-bottom", "1px solid {colors.border}").End()
 		inner.Rule(".alpha__grid").Set("grid-template-columns", "1fr").End()
@@ -1082,6 +1149,23 @@ func responsive(ss *style.StyleSheet) {
 		// against ui.SiteFooter's own var-based grid rule.
 		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
 			Set("--ui-site-footer-grid-template", "1fr 1fr").End()
+	})
+
+	// Header nav — tablet collapse. This site runs a dense primary nav
+	// (5 links) next to a wide search trigger, so ui.SiteHeader's default
+	// 720px collapse leaves the bar crowded through tablet width: the
+	// search trigger gets squeezed from ~288px down to ~209px (768–900px)
+	// and the row reads as busy / pushed. Drop into the framework's own
+	// hamburger drawer at 960px instead — tablets get brand + search +
+	// actions + drawer, and the search keeps full width. ≥980px (large
+	// tablet / laptop) keeps inline nav, where search measures ~288px.
+	// Selector specificity (attr + .site-header, 0,3,0) beats the
+	// component's own 0,2,0 collapse rules regardless of source order.
+	ss.Media("(max-width: 960px)", func(inner *style.StyleSheet) {
+		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .ui-site-header__links`).
+			Set("display", "none").End()
+		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .ui-site-header__mobile`).
+			Set("display", "block").End()
 	})
 
 	// Phone — collapse everything to one column, hide horizontal nav links

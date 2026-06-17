@@ -289,6 +289,18 @@ func RenderChrome(d *Definition) string {
 	return string((&server{def: *d}).renderSkeleton())
 }
 
+// RenderCSS returns the widget's stylesheet: the framework positioning +
+// chrome rules plus the widget's optional ExtraCSS. Exported so the static
+// exporter can dump each widget's CSS as a query-free file alongside its
+// chrome HTML. Mirrors what serveStyle writes to the live style endpoint.
+func RenderCSS(d *Definition) string {
+	css := widgetCSS(*d)
+	if d.ExtraCSS != nil {
+		css += "\n" + d.ExtraCSS()
+	}
+	return css
+}
+
 // New starts a builder for a widget Definition with sensible defaults.
 func New(name string) *Builder {
 	return &Builder{

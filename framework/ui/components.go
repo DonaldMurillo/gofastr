@@ -943,8 +943,13 @@ type CodeBlockConfig struct {
 	ShowCopy bool
 	// LineNumbers renders a left gutter numbering each line.
 	LineNumbers bool
-	ID          string
-	Class       string
+	// Scroll caps the body height (var(--ui-code-block-scroll-max,
+	// 26rem)) and makes it scroll vertically — for showing a long file in
+	// full without letting it dominate the page. Implies the framed
+	// container.
+	Scroll bool
+	ID     string
+	Class  string
 }
 
 // codeBlockSeq mints a process-unique id for a framed block's body so the
@@ -959,7 +964,7 @@ var codeBlockSeq atomic.Uint64
 // The wrapper element carries data-fui-comp="ui-code-block" so the runtime
 // auto-loads the scoped stylesheet on first appearance.
 func CodeBlock(cfg CodeBlockConfig) render.HTML {
-	framed := cfg.Filename != "" || cfg.ShowCopy || cfg.LineNumbers || len(cfg.Lines) > 0
+	framed := cfg.Filename != "" || cfg.ShowCopy || cfg.LineNumbers || cfg.Scroll || len(cfg.Lines) > 0
 	label := "source code"
 	if cfg.Language != "" {
 		label = cfg.Language + " source"
@@ -998,6 +1003,9 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	cls := "ui-code-block ui-code-block--framed"
 	if cfg.LineNumbers {
 		cls += " ui-code-block--numbered"
+	}
+	if cfg.Scroll {
+		cls += " ui-code-block--scroll"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class

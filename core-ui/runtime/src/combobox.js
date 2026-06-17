@@ -195,6 +195,29 @@
     }
   });
 
+  // Static-option filtering: a combobox whose listbox carries
+  // data-fui-static-options renders every option inline (no RPC round-trip).
+  // Filter them client-side on input — hide non-matches, show all when the
+  // query clears. This is how a docs/nav palette works on a serverless
+  // export where no search endpoint exists.
+  document.addEventListener('input', (e) => {
+    const input = e.target && e.target.closest && e.target.closest('[role="combobox"]');
+    if (!input) return;
+    const lbId = input.getAttribute('aria-controls');
+    const lb = lbId ? document.getElementById(lbId) : null;
+    if (!lb || !lb.hasAttribute('data-fui-static-options')) return;
+    const q = (input.value || '').toLowerCase().trim();
+    let firstVisible = null;
+    let anyVisible = false;
+    lb.querySelectorAll('[role="option"]').forEach((opt) => {
+      const match = !q || (opt.textContent || '').toLowerCase().indexOf(q) !== -1;
+      opt.hidden = !match;
+      if (match) { anyVisible = true; if (!firstVisible) firstVisible = opt; }
+    });
+    if (anyVisible) { openListbox(input, lb); highlight(lb, firstVisible); }
+    else { input.setAttribute('aria-activedescendant', ''); }
+  });
+
   // Self-registration with the core runtime.
   window.__gofastr = window.__gofastr || {};
   (window.__gofastr.loadedModules ||= {}).combobox = true;

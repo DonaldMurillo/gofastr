@@ -36,6 +36,20 @@ func codeBlock(filename string, lines []render.HTML) render.HTML {
 	})
 }
 
+// codeBlockScroll renders a raw source file (highlighted via the framework's
+// generic tokenizer) in a framed, copyable, internally-scrolling block. Used
+// for showing a long blueprint file in full — e.g. the Meridian gofastr.yml on
+// /examples — without it dominating the page.
+func codeBlockScroll(filename, code, lang string) render.HTML {
+	return ui.CodeBlock(ui.CodeBlockConfig{
+		Filename:    filename,
+		Lines:       ui.HighlightLines(code, lang),
+		ShowCopy:    true,
+		LineNumbers: true,
+		Scroll:      true,
+	})
+}
+
 // ln joins a sequence of token spans into one logical source line. The
 // framework wraps each line for the gutter, so a blank line still needs a
 // zero-width space to keep its line box (and gutter number) from collapsing.

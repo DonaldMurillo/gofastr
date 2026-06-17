@@ -30,6 +30,17 @@ func tagAccent(label string) render.HTML {
 	return ui.StatusPill(ui.StatusPillConfig{Label: label, Tone: ui.StatusPillAccent, Dot: true})
 }
 
+// experimentalPill is the sitewide "this is experimental" marker for
+// Kiln surfaces. Neutral tone + dot so it reads as a status without
+// competing with the amber brand pills. Kiln is the framework's most
+// provisional surface — its in-memory IR, journal-freeze format, and
+// blueprint graduation flow may still change. Used on the Kiln hero
+// and the get-started "Try Kiln" card; list/index entries (footer,
+// palette, docs catalog) carry the word inline instead.
+func experimentalPill() render.HTML {
+	return ui.StatusPill(ui.StatusPillConfig{Label: "Experimental", Dot: true})
+}
+
 // =============================================================================
 // /get-started
 // =============================================================================
@@ -50,8 +61,7 @@ func gsHero() render.HTML {
 	// Facts as a definition list — label-left in mono caption, value-
 	// right in body type. The previous 2×2 card grid (FactBox tiles)
 	// was a SaaS "feature card" pattern that fought the engineer-
-	// voice brief. The "Or, ask an agent" line lives below the dl
-	// as a footnote rather than a fifth tile.
+	// voice brief.
 	dt := func(s string) render.HTML {
 		return html.DescriptionTerm(html.TextConfig{}, render.Text(s))
 	}
@@ -63,10 +73,6 @@ func gsHero() render.HTML {
 		dt("OS"), dd(render.Text("macOS, Linux, Windows (WSL)")),
 		dt("Storage"), dd(render.Text("SQLite by default, Postgres opt-in")),
 		dt("Time"), dd(render.Text("~4 minutes")),
-	)
-	footnote := html.Paragraph(html.TextConfig{Class: "gs-facts-note"},
-		render.Text("Or skip the path — run "), codeText("kiln serve --agent claude-code"),
-		render.Text(" and chat the app into existence."),
 	)
 
 	copy := html.Div(html.DivConfig{Class: "mb-lg"},
@@ -81,7 +87,7 @@ func gsHero() render.HTML {
 	return html.Section(html.SectionConfig{Class: "gs-hero", Label: "Get started"},
 		container(ui.HeroSplit(ui.HeroSplitConfig{
 			Copy:      copy,
-			Media:     render.Join(facts, footnote),
+			Media:     facts,
 			AriaLabel: "Get started",
 			Class:     "hero-gs",
 		})),
@@ -220,13 +226,14 @@ func gsBody() render.HTML {
 }
 
 func gsNext() render.HTML {
-	card := func(meta, title, desc, href string) render.HTML {
+	card := func(meta, title, desc, href string, badge ...render.HTML) render.HTML {
 		return html.LinkHTML(html.LinkHTMLConfig{
 			Href:  href,
 			Class: "ex-card",
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "path"}, render.Text(meta)),
 				html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
+				render.Join(badge...),
 				html.Paragraph(html.TextConfig{}, render.Text(desc)),
 			),
 		})
@@ -237,7 +244,7 @@ func gsNext() render.HTML {
 			html.Div(html.DivConfig{Class: "next__grid"},
 				card("/docs/", "Browse the docs", fmt.Sprintf("%d docs grouped by what you're trying to do.", docCount()), "/docs/"),
 				card("/examples", "Read an example", "Six full apps you can clone and modify.", "/examples"),
-				card("/kiln", "Try Kiln", "Skip the writing entirely — chat your app into being.", "/kiln"),
+				card("/kiln", "Try Kiln", "Skip the writing entirely — chat your app into being.", "/kiln", experimentalPill()),
 			),
 		),
 	)
@@ -387,76 +394,74 @@ func exRows() render.HTML {
 			"A billing & revenue console (customers, subscriptions, invoices, MRR + charts) plus its marketing site, auth, RBAC, and an admin back-office — generated from one gofastr.yml, with writable screens (add/edit/delete) and zero hand-written app code.",
 			[]string{"One blueprint → marketing + app + auth + admin", "Server-rendered DataTable / charts / forms, island RPCs", "Writable CRUD + RBAC, with a generated end-to-end test suite"},
 			"cd examples/meridian && gofastr generate --from=gofastr.yml && go run .",
-			"examples/meridian/gofastr.yml", []render.HTML{
-				ln(kw("entities"), pn(":")),
-				ln(render.Text("  - name: "), str_("customers"), render.Text("  "), com("# access: { read: customers:read, … }")),
-				ln(kw("screens"), pn(":"), render.Text("    "), com("# marketing + app (RBAC-gated) + auth")),
-				ln(render.Text("  - route: "), str_("/app/customers"), pn(", "), render.Text("kind: "), str_("entity_list"), pn(", "), render.Text("create: "), kw("true")),
-			}),
+			// The exact, full blueprint that generates the app — embedded at
+			// build time, shown verbatim in a scrolling block. Drift-guarded by
+			// TestEmbeddedBlueprintsMatchSource.
+			codeBlockScroll("examples/meridian/gofastr.yml", meridianBlueprintYAML, "yaml")),
 		exRow("02", "examples/blog", "Go-declared blog", "smallest", "~120 LoC",
 			"Users, posts, comments. Three entities. Start here — it's the end-to-end story in one file.",
 			[]string{"Three entities declared in Go", "Auto-CRUD + Swagger UI + MCP", "SQLite by default; swap for Postgres in main.go"},
 			"cd examples/blog && go run .",
-			"examples/blog/main.go", []render.HTML{
+			codeBlock("examples/blog/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"comments"`), pn(","), render.Text(" …"), pn(")")),
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"tags"`), pn(","), render.Text(" …"), pn(")")),
 				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
-			}),
+			})),
 		exRow("03", "examples/site", "This site (UI showcase)", "largest", "~6000 LoC",
 			"Every core-ui pattern + framework/ui component, one page each — plus the docs, SEO, multi-step wizard, and print-battery demos. The site you're reading right now.",
 			[]string{"Every core-ui pattern + framework/ui component", "Docs, philosophy, examples, Kiln pages", "SEO interfaces, sitemap/robots, wizard, print"},
 			"cd examples/site && go run .",
-			"examples/site/main.go", []render.HTML{
+			codeBlock("examples/site/main.go", []render.HTML{
 				ln(render.Text("host "), pn(":="), render.Text(" uihost."), fn_("New"), pn("("), render.Text("site"), pn(", …)")),
 				ln(render.Text("app "), pn(":="), render.Text(" framework."), fn_("NewUIHostApp"), pn("("), render.Text("host"), pn(")")),
 				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8083"`), pn(")")),
-			}),
+			})),
 		exRow("04", "examples/api-tour", "API tour", "live docs", "~180 LoC",
 			"Every REST endpoint as a chapter. Each chapter has a live curl example you run from the page.",
 			[]string{"Cursor + offset pagination", "Eager loading (?include=…)", "Batch endpoints, SSE entity events, uploads"},
 			"cd examples/api-tour && go run .",
-			"examples/api-tour/main.go", []render.HTML{
+			codeBlock("examples/api-tour/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
 				ln(com("// cursor + offset paging, ?include=, batch, SSE")),
 				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
-			}),
+			})),
 		exRow("05", "examples/embed-demo", "Local semantic search", "no API key", "~180 LoC",
 			"A markdown corpus indexed locally via battery/embed. No external API key; works offline.",
 			[]string{"Brute-force cosine, hybrid keyword fusion", "Snapshot + WAL persistence", "Poll-watch for file changes"},
 			"cd examples/embed-demo && go run .",
-			"examples/embed-demo/main.go", []render.HTML{
+			codeBlock("examples/embed-demo/main.go", []render.HTML{
 				ln(render.Text("idx "), pn(":="), render.Text(" embed."), fn_("New"), pn("(…)")),
 				ln(render.Text("idx."), fn_("Add"), pn("("), render.Text("docs…"), pn(")"), render.Text("   "), com("// local vectors")),
 				ln(render.Text("hits "), pn(":="), render.Text(" idx."), fn_("Search"), pn("("), str_(`"how do hooks work"`), pn(", "), render.Text("5"), pn(")")),
-			}),
+			})),
 		exRow("06", "examples/spa", "Vue + GoFastr API", "BYO client", "~140 LoC server",
 			"For teams who already have a client app. Shows the framework is happy to just be your typed API.",
 			[]string{"Same auto-CRUD entities", "OpenAPI generates the TypeScript client", "No SSR — just the JSON surface"},
 			"cd examples/spa && go run .",
-			"examples/spa/main.go", []render.HTML{
+			codeBlock("examples/spa/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
 				ln(com("// JSON API only — your Vue app is the client")),
 				ln(render.Text("app."), fn_("Serve"), pn("("), str_(`":8080"`), pn(")")),
-			}),
+			})),
 		exRow("07", "examples/static-site", "Static-site mode", "no server", "~90 LoC",
 			"Same renderer, no server. gofastr build emits a CDN-friendly bundle of HTML + CSS + JS.",
 			[]string{"Screens implement Load(ctx) once", "Build-time fetches replace SSR fetches", "Output drops straight on Cloudflare Pages or Netlify"},
 			"cd examples/static-site && gofastr build",
-			"examples/static-site/home.go", []render.HTML{
+			codeBlock("examples/static-site/home.go", []render.HTML{
 				ln(kw("func"), render.Text(" (s "), pn("*"), ty("HomeScreen"), pn(")"), render.Text(" "), fn_("Load"), pn("(ctx) {")),
 				ln(render.Text("  s.Posts, _ "), pn("="), render.Text(" posts."), fn_("Query"), pn("(ctx)."), fn_("List"), pn("("), render.Text("20"), pn(")")),
 				ln(pn("}"), render.Text("  "), com("// run at build time, not per-request")),
 				ln(com("// $ gofastr build → ./dist  (no app.Serve)")),
-			}),
+			})),
 	}
 	return container(render.Join(rows...))
 }
 
-// exRow renders one example. codeFile/codeLines is a representative,
-// example-specific snippet (NOT a shared placeholder) and srcFile names
-// the file the snippet is excerpted from for the "View source" link.
-func exRow(num, path, title, tag, loc, desc string, points []string, cmd, codeFile string, codeLines []render.HTML) render.HTML {
+// exRow renders one example. code is the pre-built code sample (a snippet for
+// most rows; the full embedded blueprint for Meridian); path names the
+// directory for the "View source" link.
+func exRow(num, path, title, tag, loc, desc string, points []string, cmd string, code render.HTML) render.HTML {
 	slug := strings.TrimPrefix(path, "examples/")
 	srcURL := "https://github.com/DonaldMurillo/gofastr/tree/main/" + path
 
@@ -475,7 +480,7 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd, codeFi
 		),
 		html.Div(html.DivConfig{Class: "bar"}),
 	)
-	miniCode := codeBlock(codeFile, codeLines)
+	miniCode := code
 	body := html.Div(html.DivConfig{Class: "ex-row__body"},
 		html.Div(html.DivConfig{Class: "ex-row__meta"},
 			tagAccent(tag),
@@ -536,6 +541,7 @@ func kHero() render.HTML {
 						html.Strong(html.TextConfig{}, render.Text("kiln"))),
 					html.Span(html.TextConfig{Class: "muted"}, render.Text(" — agent build mode")),
 				),
+				experimentalPill(),
 			),
 			html.Heading(html.HeadingConfig{Level: 1},
 				render.Text("Talk an app into "),
@@ -543,7 +549,7 @@ func kHero() render.HTML {
 				render.Text("."),
 			),
 			html.Paragraph(html.TextConfig{Class: "lede"},
-				render.Text("Kiln is a separate binary that mounts a chat panel on your running GoFastr app. The agent calls a typed tool surface; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit the canonical entity files you commit."),
+				render.Text("Kiln is experimental — a separate binary that mounts a chat panel on your running GoFastr app. The agent calls a typed tool surface; the in-memory IR mutates; the schema migrates; the app re-renders — all in-process. Freeze the journal when done to emit the canonical entity files you commit."),
 			),
 			html.Div(html.DivConfig{Class: "k-hero__ctas"},
 				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),

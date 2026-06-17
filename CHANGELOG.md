@@ -7,6 +7,94 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-16
+
+### Added — `gofastr export` (native static-site generation)
+
+The framework now exports a deploy-ready static site itself, replacing the
+broken `wget --mirror` crawl used for the GitHub Pages deploy. The crawl baked
+cache-bust `?v=<hash>` queries into on-disk module filenames; the static host
+strips the query, every split runtime module 404'd, and all client
+interactivity (theme toggle, command palette, copy, widgets) silently died.
+
+- **`App.ExportStatic(ctx, dir, basePath)`** (`framework`) — drives the app
+  in-process (no port, no crawl), enumerates every declared route, renders each
+  through the SSG-aware path, and dumps all `/__gofastr` assets (split runtime
+  modules, `color-scheme.js`, `app.css`, per-component CSS) with **query-free
+  filenames**. Finds the `*uihost.UIHost` via `Mountables()`.
+- **`static.Builder`** (`framework/static`) — the already-tested builder, now
+  wired as the export engine. Emits query-free assets, the `color-scheme.js`
+  bootstrap, and split runtime modules via `runtime.ModuleNames()`/`Module()`.
+- **Runtime static-mode** (`core-ui/runtime`) — a `data-fui-static` marker on
+  `<html>` (stamped only at export time) no-ops every server-backed dispatch
+  (RPC, widget-catalog fetch, `data-fui-open`) so disabled actions read as
+  intentionally inactive, not broken. Client-only features (theme, copy,
+  signals) are unaffected; live pages carry no marker so the guards are no-ops
+  in the normal server-backed app. Detected via `hasAttribute` to stay within
+  the runtime's 12 KB gzip budget.
+- **Subpath base path** (`--export-base /<repo>`) — a GitHub Pages *project*
+  site serves the artifact under a subpath, so the builder prefixes every
+  root-absolute `src`/`href`, the inline component-catalog `stylePath` JSON
+  values, and bakes the prefix into the emitted `runtime.js` (it constructs
+  split-module URLs in JS). External links, fragments, and code samples
+  (`core/markdown` escapes quotes in `<code>`) are left untouched. Omit for an
+  apex/custom-domain deploy.
+- **`ui.Banner` "static preview" notice** — injected at export time only,
+  dismissible (`DismissID: gofastr-static-preview`, persists in `localStorage`),
+  explaining that server-backed actions are disabled and how to run locally.
+- **`examples/site` `--export` / `--export-base` flags** — the same binary
+  serves live *or* exports; the live `Start` path is byte-identical when the
+  flag is absent.
+- **Docs** — new `framework/docs/content/static-export.md` guide (what it is,
+  how to export, what gets emitted, static-mode behavior, subpath vs apex,
+  GitHub Pages workflow, common mistakes). `.github/workflows/pages.yml` now
+  runs `site --export _site --export-base /gofastr`.
+
+### Added — `ui.CodeBlock.Scroll` + `ui.HighlightLines`
+
+- **`CodeBlockConfig.Scroll`** (`framework/ui`) — caps the body height
+  (`var(--ui-code-block-scroll-max, 26rem)`) and makes it scroll vertically, for
+  showing a long file in full without it dominating the page. Forces the framed
+  container; horizontal panning still works.
+- **`ui.HighlightLines`** (`framework/ui`) — the fenced-block tokenizer is now
+  exported, so callers can render raw source through `CodeBlockConfig.Lines`
+  with the same comment/string/number highlighting the markdown renderer uses.
+- **`/examples` Meridian row shows the real blueprint** — the synthetic,
+  malformed pseudo-YAML snippet is replaced with the **exact, full
+  `examples/meridian/gofastr.yml`** (embedded at build time, drift-guarded by
+  `TestEmbeddedBlueprintsMatchSource`), shown in a scrolling, copyable block.
+  The copy button copies valid YAML with newlines (via `innerText`).
+
+### Fixed
+
+- **Sticky sidebars were silently broken site-wide.** `body { overflow-x:
+  hidden }` (latent since the site-chrome commit) forced `overflow-y` to
+  compute as `auto`, turning `<body>` into a scroll container; every
+  `position: sticky` descendant (docs + components sidebars, in-page TOC,
+  get-started step-rail) then anchored to the non-scrolling `body` and
+  scrolled away with the page. The horizontal-scroll guard now lives on
+  `html` (the real viewport scroller); `body` is `overflow: visible`.
+- **Components-page sidebar wouldn't pin even after the above.** The
+  framework's sidebar `<nav>` wrapper is the grid column but didn't pass its
+  height down to the `SectionMenu` widget inside it, leaving the sticky rail's
+  containing block too short to travel. The wrapper is now a flex column so
+  the widget fills the column (no-op on short pages; pins on tall ones).
+- **Header brand read as a doubled version** (`λ gofastr v0.x dev`). Dropped
+  the static `v0.x` stability tag sitting beside the version; the badge now
+  shows one version (`dev` locally, `v0.8.0` tagged), with the "v0.x — pin a
+  version" warning kept as the status tooltip.
+
+### Changed
+
+- **Homepage + getting-started repositioned to lead with screens + blueprints.**
+  A new "One file, a real app" section pairs a generated screen mock with the
+  `gofastr.yml` blueprint + `gofastr generate` output, and the hero lede
+  foregrounds screens/endpoints/MCP/migrations instead of centering the data
+  layer.
+- **Kiln marked experimental** across the site + `framework/docs/content/kiln.md`
+  (hero pill, get-started card, footer, palette, docs catalog) so its maturity
+  is honest at first glance.
+
 ## [0.7.0] - 2026-06-15
 
 ### Added — marketing pricing + long-form content blocks

@@ -24,11 +24,11 @@ func Render(cfg Config) render.HTML {
 	if cfg.Label == "" {
 		panic("combobox: Render requires Label")
 	}
-	if cfg.RPCPath == "" {
-		panic("combobox: Render requires RPCPath")
+	if cfg.RPCPath == "" && len(cfg.Options) == 0 {
+		panic("combobox: Render requires RPCPath or Options")
 	}
-	if cfg.SignalName == "" {
-		panic("combobox: Render requires SignalName")
+	if cfg.RPCPath != "" && cfg.SignalName == "" {
+		panic("combobox: Render requires SignalName when RPCPath is set")
 	}
 	debounce := cfg.DebounceMs
 	if debounce <= 0 {
@@ -71,29 +71,74 @@ func Render(cfg Config) render.HTML {
 		inputAttrs["placeholder"] = cfg.Placeholder
 	}
 
-	form := render.Tag("form", map[string]string{
-		"class":                    "combobox__form",
-		"data-fui-rpc":             cfg.RPCPath,
-		"data-fui-rpc-method":      "POST",
-		"data-fui-rpc-trigger":     "input",
-		"data-fui-rpc-debounce-ms": strconv.Itoa(debounce),
-		"data-fui-rpc-signal":      cfg.SignalName,
-	}, render.Tag("input", inputAttrs))
+	// Static options take precedence over the RPC path: render the full
+	// list inline (the combobox runtime module filters on input) and emit
+	// no data-fui-rpc, so no network round-trip fires. Use for small fixed
+	// command sets — e.g. a docs/nav palette on a static export.
+	hasStatic := len(cfg.Options) > 0
+
+	formAttrs := map[string]string{"class": "combobox__form"}
+	if cfg.RPCPath != "" && !hasStatic {
+		formAttrs["data-fui-rpc"] = cfg.RPCPath
+		formAttrs["data-fui-rpc-method"] = "POST"
+		formAttrs["data-fui-rpc-trigger"] = "input"
+		formAttrs["data-fui-rpc-debounce-ms"] = strconv.Itoa(debounce)
+		formAttrs["data-fui-rpc-signal"] = cfg.SignalName
+	}
+	form := render.Tag("form", formAttrs, render.Tag("input", inputAttrs))
 
 	listboxAttrs := map[string]string{
-		"id":                   listboxID,
-		"role":                 "listbox",
-		"aria-label":           cfg.Label + " suggestions",
-		"class":                "combobox__listbox",
-		"data-fui-signal":      cfg.SignalName,
-		"data-fui-signal-mode": "html",
+		"id":         listboxID,
+		"role":       "listbox",
+		"aria-label": cfg.Label + " suggestions",
+		"class":      "combobox__listbox",
 	}
-	if cfg.EmptyHTML == "" {
-		listboxAttrs["hidden"] = ""
+	if cfg.RPCPath != "" && !hasStatic {
+		listboxAttrs["data-fui-signal"] = cfg.SignalName
+		listboxAttrs["data-fui-signal-mode"] = "html"
 	}
-	listbox := render.Tag("ul", listboxAttrs, render.Raw(cfg.EmptyHTML))
+	var listboxBody render.HTML
+	if hasStatic {
+		listboxAttrs["data-fui-static-options"] = ""
+		listboxBody = render.Join(staticOptionRows(listboxID, cfg.Options)...)
+	} else {
+		if cfg.EmptyHTML == "" {
+			listboxAttrs["hidden"] = ""
+		}
+		listboxBody = render.Raw(cfg.EmptyHTML)
+	}
+	listbox := render.Tag("ul", listboxAttrs, listboxBody)
 
 	return Style.WrapHTML(render.Tag("div", map[string]string{
 		"class": wrapClass,
 	}, label, form, listbox))
+}
+
+// staticOptionRows renders Options as <li role="option"> rows for a static,
+// client-filtered combobox list. Each row gets a stable id (listboxID-opt-N)
+// so the combobox runtime module can drive aria-activedescendant highlighting.
+func staticOptionRows(listboxID string, opts []Option) []render.HTML {
+	rows := make([]render.HTML, 0, len(opts))
+	for i, o := range opts {
+		val := o.Value
+		if val == "" {
+			val = o.Label
+		}
+		attrs := map[string]string{
+			"role":       "option",
+			"id":         listboxID + "-opt-" + strconv.Itoa(i),
+			"data-value": val,
+		}
+		if o.Href != "" {
+			attrs["data-fui-push-state"] = o.Href
+		}
+		children := []render.HTML{
+			render.Tag("span", map[string]string{"class": "combobox__opt-label"}, render.Text(o.Label)),
+		}
+		if o.Meta != "" {
+			children = append(children, render.Tag("span", map[string]string{"class": "combobox__opt-meta"}, render.Text(o.Meta)))
+		}
+		rows = append(rows, render.Tag("li", attrs, render.Join(children...)))
+	}
+	return rows
 }

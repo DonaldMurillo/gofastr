@@ -30,7 +30,16 @@
 
   NS.openWidget = async function (name, opts) {
     const entry = NS._widgetCatalog && NS._widgetCatalog[name];
-    if (!entry) return;
+    if (!entry) {
+      // Static export + the target widget isn't registered (e.g. a note-only
+      // showcase demo whose modal was never mounted). Don't fail silently —
+      // tell the visitor why nothing opened. _fallbackToast is synchronous
+      // and already on NS, so no module fetch / async wait.
+      if (document.documentElement.hasAttribute('data-fui-static') && NS._fallbackToast) {
+        NS._fallbackToast({ title: 'Needs the Go server.' });
+      }
+      return;
+    }
     const o = opts || {};
     const params = o.params || {};
     await NS._mountByName(name);

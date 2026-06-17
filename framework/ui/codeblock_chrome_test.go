@@ -87,3 +87,16 @@ func TestCodeBlockLinesOverrideCode(t *testing.T) {
 		t.Errorf("Lines content missing:\n%s", h)
 	}
 }
+
+// Scroll adds the scroll modifier so a long file's body is height-capped and
+// scrolls vertically. It must force the framed container (the body cap only
+// applies to the framed variant).
+func TestCodeBlockScrollAddsModifierAndFrames(t *testing.T) {
+	h := string(CodeBlock(CodeBlockConfig{Filename: "big.yml", Code: "x", Scroll: true}))
+	if !strings.Contains(h, "ui-code-block--scroll") {
+		t.Errorf("Scroll should add the scroll modifier:\n%s", h)
+	}
+	if !strings.Contains(h, "ui-code-block--framed") {
+		t.Errorf("Scroll should force the framed container:\n%s", h)
+	}
+}

@@ -1,5 +1,11 @@
 # Kiln — agent-driven build mode
 
+
+> **Experimental.** Kiln is the framework's most provisional surface.
+> The in-memory IR, journal-freeze format, and blueprint graduation
+> flow may still change between releases. Build with it; don't pin a
+> production path on it yet.
+
 Kiln is a separate binary that lets an AI agent (Claude Code, pi,
 Codex, any CLI with `KILN_URL`) build a GoFastr app live by mutating
 an in-memory IR over HTTP. The world re-renders, the schema migrates,

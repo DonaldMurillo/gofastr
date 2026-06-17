@@ -86,7 +86,7 @@ func enrichCodeBlocks(body string) string {
 		lang := langFromCodeAttrs(rest[:gt])
 		raw := stdhtml.UnescapeString(rest[gt+1 : gt+1+end])
 		block := CodeBlock(CodeBlockConfig{
-			Lines:    highlightLines(raw, lang),
+			Lines:    HighlightLines(raw, lang),
 			Language: lang,
 			ShowCopy: true,
 		})

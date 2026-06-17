@@ -44,6 +44,16 @@ type HeaderComponent struct{}
 // hand-bumped constant drifting behind releases.
 var siteVersion = "dev"
 
+// versionLabel renders siteVersion for display: bare for the local "dev"
+// fallback, "v"-prefixed for a real injected release (e.g. "v0.8.0"). Keeps the
+// brand badge + aria-label from ever reading the malformed "vdev".
+func versionLabel() string {
+	if siteVersion == "" || siteVersion == "dev" {
+		return siteVersion
+	}
+	return "v" + siteVersion
+}
+
 func (h *HeaderComponent) Render() render.HTML {
 	// Brand stays site-local — the λ mark, lowercase wordmark, and the
 	// amber version status pulse are GoFastr's identity. The framework's
@@ -53,7 +63,7 @@ func (h *HeaderComponent) Render() render.HTML {
 		Href:  "/",
 		Class: "site-brand",
 		ExtraAttrs: html.Attrs{
-			"aria-label": "gofastr — v" + siteVersion + " (v0.x, APIs may change)",
+			"aria-label": "gofastr — " + versionLabel() + " (v0.x, APIs may change)",
 		},
 		Content: render.Join(
 			html.Span(html.TextConfig{Class: "site-brand__mark"}, render.Text("λ")),
@@ -63,8 +73,7 @@ func (h *HeaderComponent) Render() render.HTML {
 				ExtraAttrs: html.Attrs{"title": "v0.x — pin a version; APIs may change between releases."},
 			},
 				html.Span(html.TextConfig{Class: "site-brand__pulse"}),
-				html.Span(html.TextConfig{Class: "site-brand__tag"}, render.Text("v0.x")),
-				html.Span(html.TextConfig{Class: "site-brand__ver"}, render.Text(siteVersion)),
+				html.Span(html.TextConfig{Class: "site-brand__ver"}, render.Text(versionLabel())),
 			),
 		),
 	})
@@ -155,7 +164,7 @@ func (f *FooterComponent) Render() render.HTML {
 			}},
 			{Title: "Use", Links: []ui.SiteFooterLink{
 				{Label: "Examples", Href: "/examples"},
-				{Label: "Kiln", Href: "/kiln"},
+				{Label: "Kiln (experimental)", Href: "/kiln"},
 				{Label: "CLI", Href: "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/cmd/gofastr", External: true},
 			}},
 			{Title: "Make", Links: []ui.SiteFooterLink{

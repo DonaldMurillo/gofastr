@@ -9,7 +9,10 @@ import (
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -105,6 +108,61 @@ func TestBuildEmitsRuntimeJS(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Error("runtime.js is empty")
+	}
+}
+
+func TestBuildEmitsColorSchemeJS(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a)
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// Every page loads /__gofastr/color-scheme.js synchronously at the top of
+	// <head> to set data-color-scheme before first paint (FOUC prevention).
+	// themeswitch.js early-returns when window.__gofastr_colorScheme is absent,
+	// so a missing file silently kills the theme toggle on a static host.
+	data, err := os.ReadFile(filepath.Join(out, "__gofastr", "color-scheme.js"))
+	if err != nil {
+		t.Fatalf("color-scheme.js missing: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("color-scheme.js is empty")
+	}
+}
+
+func TestBuildEmitsSplitRuntimeModules(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a)
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// runtime.js dynamically injects <script src="/__gofastr/runtime/<name>.js?v=<hash>">
+	// for each split module (themeswitch, shortcut, copy, widgets, sse, …). A static host
+	// ignores the ?v= query and resolves the file by path — so every module MUST exist on
+	// disk, query-free, or the module load 404s and all client interactivity dies. This is
+	// the regression the wget crawl had (it baked ?v= into the filename and 404'd).
+	names := runtime.ModuleNames()
+	if len(names) == 0 {
+		t.Fatal("runtime.ModuleNames() returned no modules — test baseline assumption broken")
+	}
+	for _, name := range names {
+		p := filepath.Join(out, "__gofastr", "runtime", name+".js")
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Errorf("split runtime module %q not dumped at %s: %v", name, p, err)
+			continue
+		}
+		if info.Size() == 0 {
+			t.Errorf("split runtime module %q is empty", name)
+		}
 	}
 }
 
@@ -260,5 +318,211 @@ func TestBuild_NoLLMMD_GlobalApp(t *testing.T) {
 	// No llm-pages.md index
 	if _, err := os.ReadFile(filepath.Join(out, "llm-pages.md")); err == nil {
 		t.Error("expected llm-pages.md to NOT exist with global NoLLMMD")
+	}
+}
+
+func TestBuildMarksPagesStaticAndInjectsNotice(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a)
+
+	out := t.TempDir()
+	rep, err := (&Builder{Host: host, OutDir: out}).Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(rep.Pages) == 0 {
+		t.Fatal("no pages exported")
+	}
+
+	data, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	s := string(data)
+
+	// 1. <html> stamped with the runtime's static-mode switch so
+	//    server-backed dispatches (RPC, widget catalog, open) no-op
+	//    instead of 404'ing against the serverless host.
+	if !strings.Contains(s, "<html data-fui-static") {
+		head := s
+		if len(head) > 200 {
+			head = head[:200]
+		}
+		t.Errorf("exported page must stamp <html data-fui-static; got head:\n%s", head)
+	}
+	// 2. The run-locally notice is injected (doctrine: one styling
+	//    surface — framework/ui.Banner).
+	if !strings.Contains(s, "Static preview") {
+		t.Errorf("exported page must carry the run-locally notice")
+	}
+}
+
+// TestRenderStaticPageHasNoStaticMarker pins that the marker is
+// exporter-only: the host's own SSG-aware render (the input the Builder
+// consumes) must NOT carry data-fui-static, so a live server using the
+// same render path stays fully interactive.
+func TestRenderStaticPageHasNoStaticMarker(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a)
+
+	html, err := host.RenderStaticPage(context.Background(), "/")
+	if err != nil {
+		t.Fatalf("RenderStaticPage: %v", err)
+	}
+	if strings.Contains(html, "data-fui-static") {
+		t.Error("RenderStaticPage must NOT carry the static marker (exporter-only)")
+	}
+}
+
+func TestBuildBasePathRewritesURLs(t *testing.T) {
+	// Screen carrying a mix of link/asset URLs to prove the rewrite
+	// prefixes root-absolute internal URLs and leaves others alone.
+	linkScreen := &renderScreen{Body: `<script src="/__gofastr/runtime.js"></script>` +
+		`<a href="/about">about</a>` +
+		`<a href="/">home</a>` +
+		`<a href="https://example.com">ext</a>` +
+		`<a href="//cdn.example.com/lib.js">protocol-relative</a>` +
+		`<a href="#frag">frag</a>`}
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", linkScreen, nil)
+	host := uihost.New(a)
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, BasePath: "/gofastr"}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	s := string(data)
+
+	// Prefixed: root-absolute assets and internal nav.
+	for _, want := range []string{
+		`src="/gofastr/__gofastr/runtime.js"`,
+		`href="/gofastr/about"`,
+		`href="/gofastr/"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("want %q in HTML (base rewrite); not found", want)
+		}
+	}
+	// Untouched: external, protocol-relative, fragment.
+	for _, want := range []string{
+		`href="https://example.com"`,
+		`href="//cdn.example.com/lib.js"`,
+		`href="#frag"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("want %q in HTML UNCHANGED (base rewrite must skip it); not found", want)
+		}
+	}
+
+	// runtime.js has the base baked into its constructed module URLs.
+	rt, err := os.ReadFile(filepath.Join(out, "__gofastr", "runtime.js"))
+	if err != nil {
+		t.Fatalf("read runtime.js: %v", err)
+	}
+	if !strings.Contains(string(rt), "/gofastr/__gofastr/runtime/") {
+		t.Error("emitted runtime.js must bake BasePath into the split-module URL")
+	}
+}
+
+func TestRewriteBaseURLs_PrefixesCatalogJSON(t *testing.T) {
+	b := &Builder{BasePath: "/gofastr"}
+	// The component catalog seeds inline JSON with stylePath values the
+	// runtime lazy-loads. These are quoted root-absolute URLs, not
+	// attributes — the regex path misses them, so they need the quoted-
+	// value prefix pass.
+	in := `<script>{"ui-banner":{"stylePath":"/__gofastr/comp/ui-banner.css","version":"abc"}}</script>` +
+		`<a href="/about">x</a>`
+	out := b.rewriteBaseURLs(in)
+	for _, want := range []string{
+		`"stylePath":"/gofastr/__gofastr/comp/ui-banner.css"`,
+		`href="/gofastr/about"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewriteBaseURLs: want %q; got:\n%s", want, out)
+		}
+	}
+	// Version field untouched (not a /__gofastr/ path).
+	if !strings.Contains(out, `"version":"abc"`) {
+		t.Errorf("rewriteBaseURLs must not touch non-path JSON values; got:\n%s", out)
+	}
+}
+
+// data-fui-push-state carries the navigation target a combobox/palette option
+// routes to on selection. On a subpath deploy these root-absolute paths must
+// be base-prefixed just like href/src — otherwise selecting a command navigates
+// to the apex path and 404s. External and protocol-relative values are left alone.
+func TestRewriteBaseURLs_PrefixesPushState(t *testing.T) {
+	b := &Builder{BasePath: "/gofastr"}
+	in := `<li role="option" data-fui-push-state="/docs/">Docs</li>` +
+		`<li role="option" data-fui-push-state="/">Home</li>` +
+		`<li role="option" data-fui-push-state="/components/">Components</li>` +
+		`<li role="option" data-fui-push-state="//cdn.example.com">proto-rel</li>` +
+		`<li role="option" data-fui-push-state="https://example.com">ext</li>`
+	out := b.rewriteBaseURLs(in)
+	for _, want := range []string{
+		`data-fui-push-state="/gofastr/docs/"`,
+		`data-fui-push-state="/gofastr/"`,
+		`data-fui-push-state="/gofastr/components/"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewriteBaseURLs: want %q; got:\n%s", want, out)
+		}
+	}
+	for _, want := range []string{
+		`data-fui-push-state="//cdn.example.com"`,
+		`data-fui-push-state="https://example.com"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewriteBaseURLs must not touch external/proto-rel push-state; want %q unchanged; got:\n%s", want, out)
+		}
+	}
+}
+
+// renderScreen wraps a raw HTML body in a minimal Screen for tests.
+type renderScreen struct{ Body string }
+
+func (r *renderScreen) ScreenTitle() string          { return "Links" }
+func (*renderScreen) ScreenDescription() string      { return "" }
+func (*renderScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (r *renderScreen) Render() render.HTML          { return render.HTML(r.Body) }
+
+// Hidden click-to-open widgets (command palette, section-menu drawers) are
+// not SSR-inlined; the runtime fetches their chrome on open. The export must
+// dump the catalog JSON + each widget's chrome HTML + CSS as query-free files
+// so those overlays resolve against the static tree instead of 404'ing.
+func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
+	a := coreapp.NewApp("SSGWidgetTest")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a)
+	def := widget.New("ssg-dump-test").
+		Hidden().
+		Slot("body", homeScreen{}).
+		Build()
+	widget.Mount(router.New(), &def)
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	cat, err := os.ReadFile(filepath.Join(out, "__gofastr", "widgets.json"))
+	if err != nil {
+		t.Fatalf("widgets.json missing: %v", err)
+	}
+	if !strings.Contains(string(cat), `"name":"ssg-dump-test"`) {
+		t.Errorf("widgets.json missing the widget entry:\n%s", cat)
+	}
+	for _, rel := range []string{
+		"core-ui/widget/ssg-dump-test/chrome",
+		"core-ui/widget/ssg-dump-test/style.css",
+	} {
+		if _, err := os.Stat(filepath.Join(out, rel)); err != nil {
+			t.Errorf("missing widget asset %s: %v", rel, err)
+		}
 	}
 }

@@ -5,11 +5,12 @@ package main
 //
 //   HERO        version tag · h1 with amber span · 2 ledes · 2 CTAs · install
 //               RHS: code block (blog/main.go, hand-tokenized in code_block.go)
-//   §01         release-notes-style list (7 rows, number · name · desc · file)
-//   §02         arch cards: core / framework / batteries / core-ui
-//   §03         split pane: framework MCP (left) | Kiln (right + terminal mock)
-//   §04         6 example cards, each with path + name + desc + run command
-//   §05         v0.x status disclosure + roadmap dl
+//   §01         one file, a real app — blueprint + generate terminal | screen mock
+//   §02         release-notes-style list (7 rows, number · name · desc · file)
+//   §03         arch cards: core / framework / batteries / core-ui
+//   §04         split pane: framework MCP (left) | Kiln (right + terminal mock)
+//   §05         6 example cards, each with path + name + desc + run command
+//   §06         v0.x status disclosure + roadmap dl
 //
 // Sections live inside <main> only — .nav and .foot are owned by the
 // HeaderComponent / FooterComponent. Built with core-ui/html primitives
@@ -27,6 +28,8 @@ package main
 // =============================================================================
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -46,6 +49,7 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *HomeScreen) Render() render.HTML {
 	return render.Join(
 		heroSection(),
+		realAppSection(),
 		generatesSection(),
 		architectureSection(),
 		agentsSection(),
@@ -81,12 +85,14 @@ func heroSection() render.HTML {
 		html.Strong(html.TextConfig{}, render.Text("GoFastr")),
 		render.Text(" is a Go full-stack framework. You wire your app in Go like you'd wire "),
 		html.Code(html.TextConfig{}, render.Text("net/http")),
-		render.Text(". The framework generates REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder — to disk, in plain Go you can read and step through."),
+		render.Text(" — declare your domain and get "),
+		html.Strong(html.TextConfig{}, render.Text("screens")),
+		render.Text(", REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder, all on disk in plain Go you can read and step through."),
 	)
 	lede2 := html.Paragraph(html.TextConfig{Class: "hero__lede"},
 		render.Text("The same surface is wired for AI agents from day one. Every entity ships with an MCP tool surface; "),
 		html.Strong(html.TextConfig{}, render.Text("Kiln")),
-		render.Text(" is a separate binary that lets an agent author your app in chat while you watch the code change."),
+		render.Text(" (experimental) is a separate binary that lets an agent author your app in chat while you watch the code change."),
 	)
 
 	ctas := html.Div(html.DivConfig{Class: "hero__ctas"},
@@ -152,7 +158,147 @@ func heroCodeBlock() render.HTML {
 }
 
 // -----------------------------------------------------------------------------
-// §01 — release-notes-style list of generated surfaces.
+// §01 — One file, a real app. A gofastr.yml blueprint generates a whole app
+// with screens — not just APIs. This beat leads the body: "a real app"
+// (pages, tables, forms) is what a visitor is evaluating, and the data/API
+// surfaces alone never showed it. The blueprint is the on-ramp; afterwards
+// the generated Go is canonical and the .yml is deletable.
+// -----------------------------------------------------------------------------
+
+func realAppSection() render.HTML {
+	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
+
+	snippet := codeBlock("gofastr.yml", blueprintExcerptLines())
+	term := ui.TerminalBlock(ui.TerminalBlockConfig{Label: " $ gofastr generate --from=gofastr.yml"},
+		ui.TerminalOK("→ wrote main.go, entities/register.go, blueprint/screens.go\n"),
+		ui.TerminalOK("→ 1 entity · 3 screens · migrations/0001_init.up.sql\n"),
+		ui.TerminalOK("→ next: go run .\n"),
+	)
+	left := html.Div(html.DivConfig{Class: "realapp__left"},
+		snippet,
+		term,
+		html.Paragraph(html.TextConfig{Class: "realapp__hint"},
+			codeText("gofastr.yml"),
+			render.Text(" is the on-ramp, not a runtime lock-in — after generating, the Go is canonical and you can delete it. "),
+			html.Link(html.LinkConfig{Href: "/examples#meridian", Text: "→ See the Meridian blueprint"}),
+		),
+	)
+
+	grid := html.Div(html.DivConfig{Class: "realapp__grid"}, left, screenMock())
+
+	head := sectionHead(
+		"One file. A whole app — screens included.",
+		render.Join(
+			render.Text("A "), codeText("gofastr.yml"), render.Text(" blueprint declares your entities "),
+			html.Strong(html.TextConfig{}, render.Text("and the screens")),
+			render.Text(" that render them — list tables, forms, detail pages, charts, a marketing site. "),
+			codeText("gofastr generate"), render.Text(" writes owned Go you read and edit. Not a CRUD scaffold."),
+		),
+	)
+
+	return sectionWrap("01 / one file, a real app", "Real app", head, grid)
+}
+
+// blueprintExcerptLines is a compact, format-valid gofastr.yml excerpt for the
+// homepage — entities plus one server-rendered list screen. Inline maps are
+// invalid in the blueprint format, so fields use indented form; only scalar
+// lists ([free, pro, …]) use the inline shorthand.
+func blueprintExcerptLines() []render.HTML {
+	const yml = `app:
+  name: Meridian
+
+entities:
+  - name: customers
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: plan
+        type: enum
+        values: [free, pro, enterprise]
+      - name: mrr
+        type: decimal
+      - name: status
+        type: enum
+        values: [active, churned]
+
+screens:
+  - name: customers
+    route: /customers
+    body:
+      - kind: page_header
+        props:
+          title: Customers
+      - kind: entity_list
+        entity: customers
+        create: true
+        fields: [name, plan, mrr, status]`
+	out := make([]render.HTML, 0, 40)
+	for _, l := range strings.Split(yml, "\n") {
+		if l == "" {
+			out = append(out, ln())
+		} else {
+			out = append(out, ln(render.Text(l)))
+		}
+	}
+	return out
+}
+
+// screenMock is a static, faithful preview of a blueprint-generated list
+// screen (Meridian's /customers): a page header plus a server-rendered data
+// table with formatted cells and status badges. It is not wired to live data
+// — it shows the SHAPE of what `gofastr generate` produces, so the homepage
+// can demonstrate "a real screen" without standing up the entity + RPC a live
+// DataTable island requires.
+func screenMock() render.HTML {
+	badge := func(label, tone string) render.HTML {
+		return html.Span(html.TextConfig{Class: "mock-badge mock-badge--" + tone}, render.Text(label))
+	}
+	cell := func(c render.HTML) render.HTML { return html.TD(html.TDConfig{}, c) }
+	th := func(s string) render.HTML { return html.TH(html.THConfig{}, render.Text(s)) }
+	row := func(name, plan, mrr, status, tone string) render.HTML {
+		return html.TableRow(html.TableRowConfig{},
+			cell(render.Text(name)),
+			cell(render.Text(plan)),
+			cell(html.Span(html.TextConfig{Class: "mock-mrr"}, render.Text(mrr))),
+			cell(badge(status, tone)),
+		)
+	}
+
+	table := html.Table(html.TableConfig{Class: "mock-table"},
+		html.Thead(html.TableSectionConfig{},
+			html.TableRow(html.TableRowConfig{}, th("Name"), th("Plan"), th("MRR"), th("Status")),
+		),
+		html.Tbody(html.TableSectionConfig{},
+			row("Acme Corp", "pro", "$1,240", "active", "ok"),
+			row("Globex", "enterprise", "$8,900", "active", "ok"),
+			row("Initech", "free", "$0", "churned", "off"),
+			row("Umbrella", "pro", "$2,150", "active", "ok"),
+		),
+	)
+
+	return html.Div(html.DivConfig{Class: "screen-mock"},
+		html.Div(html.DivConfig{Class: "screen-mock__bar"},
+			html.Span(html.TextConfig{Class: "dot"}),
+			html.Span(html.TextConfig{Class: "dot"}),
+			html.Span(html.TextConfig{Class: "dot"}),
+			html.Span(html.TextConfig{Class: "screen-mock__url"}, render.Text("meridian.local/customers")),
+		),
+		html.Div(html.DivConfig{Class: "screen-mock__body"},
+			html.Div(html.DivConfig{Class: "screen-mock__head"},
+				html.Heading(html.HeadingConfig{Level: 3}, render.Text("Customers")),
+				html.Span(html.TextConfig{Class: "mock-new"}, render.Text("+ New customer")),
+			),
+			table,
+		),
+		html.Paragraph(html.TextConfig{Class: "screen-mock__cap"},
+			render.Text("/customers — generated, server-rendered, owned Go you can edit."),
+		),
+	)
+}
+
+// -----------------------------------------------------------------------------
+// §02 — release-notes-style list of generated surfaces.
 // -----------------------------------------------------------------------------
 
 func generatesSection() render.HTML {
@@ -226,11 +372,11 @@ func generatesSection() render.HTML {
 		),
 	)
 
-	return sectionWrap("01 / what it generates", "What it generates", head, list)
+	return sectionWrap("02 / what it generates", "What it generates", head, list)
 }
 
 // -----------------------------------------------------------------------------
-// §02 — Architecture cards (custom .arch-card, not framework/ui.Card — the
+// §03 — Architecture cards (custom .arch-card, not framework/ui.Card — the
 // latter ships its own padding/border tokens that fight v2).
 // -----------------------------------------------------------------------------
 
@@ -284,11 +430,11 @@ func architectureSection() render.HTML {
 		),
 	)
 
-	return sectionWrap("02 / architecture", "Architecture", head, grid)
+	return sectionWrap("03 / architecture", "Architecture", head, grid)
 }
 
 // -----------------------------------------------------------------------------
-// §03 — Agents split pane.
+// §04 — Agents split pane.
 // -----------------------------------------------------------------------------
 
 func agentsSection() render.HTML {
@@ -324,7 +470,7 @@ func agentsSection() render.HTML {
 	)
 
 	right := html.Div(html.DivConfig{Class: "pane pane--right"},
-		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("kiln (separate binary)")),
+		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("kiln · experimental (separate binary)")),
 		html.Heading(html.HeadingConfig{Level: 4}, render.Text("An agent that authors your app")),
 		html.Paragraph(html.TextConfig{},
 			render.Text("Kiln mounts a floating chat panel on the running app. The agent calls a typed tool surface ("),
@@ -343,11 +489,11 @@ func agentsSection() render.HTML {
 		render.Text("Same database, same routes, same files on disk. The MCP tool surface is just the REST surface in a different shape. Destructive changes require an approved plan; the agent cannot drop your tables without you clicking approve."),
 	)
 
-	return sectionWrap("03 / agents", "Agents", head, split)
+	return sectionWrap("04 / agents", "Agents", head, split)
 }
 
 // -----------------------------------------------------------------------------
-// §04 — Examples grid.
+// §05 — Examples grid.
 // -----------------------------------------------------------------------------
 
 func examplesSection() render.HTML {
@@ -398,11 +544,11 @@ func examplesSection() render.HTML {
 		render.Text("Clone the one that looks like your problem; swap the entity declarations."),
 	)
 
-	return sectionWrap("04 / examples", "Examples", head, grid)
+	return sectionWrap("05 / examples", "Examples", head, grid)
 }
 
 // -----------------------------------------------------------------------------
-// §05 — Pre-alpha disclosure + roadmap (no section__head; bespoke 2-col grid).
+// §06 — Pre-alpha disclosure + roadmap (no section__head; bespoke 2-col grid).
 // -----------------------------------------------------------------------------
 
 func alphaSection() render.HTML {
@@ -450,7 +596,7 @@ func alphaSection() render.HTML {
 	grid := html.Div(html.DivConfig{Class: "alpha__grid"}, copy, list)
 
 	return ui.Section(ui.SectionConfig{
-		Eyebrow: "05 / state of the project",
+		Eyebrow: "06 / state of the project",
 		Label:   "State of the project",
 		Class:   "section-v2",
 	}, container(grid))

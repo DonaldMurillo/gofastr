@@ -39,7 +39,7 @@ type CommandPaletteConfig struct {
 
 	// RPCPath is the search endpoint. The handler receives the
 	// query string and returns `<li role="option">…</li>` fragments
-	// to swap into the listbox. Required.
+	// to swap into the listbox. Required unless Commands is set.
 	RPCPath string
 
 	// Placeholder is the input placeholder. Default
@@ -62,14 +62,27 @@ type CommandPaletteConfig struct {
 	// EmptyHTML is the listbox HTML at first paint. Empty (default)
 	// renders a placeholder hint.
 	EmptyHTML string
+
+	// Commands, when non-empty, renders a static, client-side-filtered
+	// command list — no search endpoint needed. Use for a small fixed
+	// set (docs/nav links) so the palette works on a serverless export
+	// where no RPC handler exists. Takes precedence over RPCPath.
+	Commands []PaletteCommand
+}
+
+// PaletteCommand is one entry in a static command-palette list.
+type PaletteCommand struct {
+	Label string // visible text
+	Href  string // route to navigate to on pick (data-fui-push-state)
+	Meta  string // optional muted secondary text (e.g. the route path)
 }
 
 // CommandPalette returns the trigger button and a Modal preset for
 // the palette. Mount the preset once at startup; render the trigger
 // in your global chrome (Sidebar, top nav, etc).
 func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
-	if cfg.RPCPath == "" {
-		panic("ui: CommandPalette requires RPCPath")
+	if cfg.RPCPath == "" && len(cfg.Commands) == 0 {
+		panic("ui: CommandPalette requires RPCPath or Commands")
 	}
 	name := cfg.Name
 	if name == "" {
@@ -106,6 +119,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		placeholder: placeholder,
 		debounceMs:  debounce,
 		emptyHTML:   cfg.EmptyHTML,
+		options:     paletteCommandsToOptions(cfg.Commands),
 	}
 	b := preset.Modal(name).
 		Hidden().
@@ -115,12 +129,26 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	return trigger, b
 }
 
+// paletteCommandsToOptions maps the palette's public Commands into the
+// combobox's Option shape. data-value defaults to the label.
+func paletteCommandsToOptions(cmds []PaletteCommand) []combobox.Option {
+	if len(cmds) == 0 {
+		return nil
+	}
+	opts := make([]combobox.Option, 0, len(cmds))
+	for _, c := range cmds {
+		opts = append(opts, combobox.Option{Label: c.Label, Value: c.Label, Href: c.Href, Meta: c.Meta})
+	}
+	return opts
+}
+
 type commandPaletteSlot struct {
 	widgetName  string
 	rpcPath     string
 	placeholder string
 	debounceMs  int
 	emptyHTML   string
+	options     []combobox.Option
 }
 
 func (s *commandPaletteSlot) Render() render.HTML {
@@ -143,6 +171,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		EmptyHTML:   s.emptyHTML,
 		LabelHidden: true,
 		Class:       "ui-cmd-palette__combobox",
+		Options:     s.options,
 	})
 
 	// Footer hints (visible row of useful shortcuts).
