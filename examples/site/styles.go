@@ -849,6 +849,8 @@ func realAppLayout(ss *style.StyleSheet) {
 			"min-width", "0").End()
 	ss.Rule(".realapp__hint").
 		Set("color", "var(--fg-4)", "font-size", "var(--t-sm)", "line-height", "1.5").End()
+	ss.Rule(".realapp__hint a").
+		Set("text-decoration", "underline", "text-underline-offset", "2px").End()
 
 	// screenMock — a faithful "generated screen" preview (Meridian /customers).
 	ss.Rule(".screen-mock").
@@ -867,7 +869,7 @@ func realAppLayout(ss *style.StyleSheet) {
 	ss.Rule(".screen-mock__url").
 		Set("margin-left", "{spacing.sm}",
 			"font-family", "ui-monospace, SFMono-Regular, Menlo, monospace",
-			"font-size", "var(--t-xs)", "color", "var(--fg-4)").End()
+			"font-size", "var(--t-xs)", "color", "var(--fg-2)").End()
 	ss.Rule(".screen-mock__body").Set("padding", "{spacing.md}").End()
 	ss.Rule(".screen-mock__head").
 		Set("display", "flex", "align-items", "center", "justify-content", "space-between",
