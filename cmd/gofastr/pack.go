@@ -589,23 +589,23 @@ func orderedKeys(m map[string]any, order []string) []string {
 // ----- key orders (readability; semantics are order-independent) -------------
 
 var (
-	topLevelOrder = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
-	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin"}
-	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
-	fieldOrder    = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
-	screenOrder   = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder    = []string{"kind", "type", "text", "level", "entity", "fields", "search", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
-	relationOrder = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target"}
-	indexOrder    = []string{"name", "columns", "unique"}
-	navOrder      = []string{"label", "href", "icon", "role", "items"}
-	accessOrder   = []string{"auth", "role", "read", "create", "update", "delete"}
-	dbOrder       = []string{"driver", "url"}
-	authOrder     = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
-	adminOrder    = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
-	endpointOrder = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
-	actionOrder   = []string{"name", "event", "client_js"}
+	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
+	appOrder        = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin"}
+	entityOrder     = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
+	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
+	screenOrder     = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
+	blockOrder      = []string{"kind", "type", "text", "level", "entity", "fields", "search", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
+	relationOrder   = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target"}
+	indexOrder      = []string{"name", "columns", "unique"}
+	navOrder        = []string{"label", "href", "icon", "role", "items"}
+	accessOrder     = []string{"auth", "role", "read", "create", "update", "delete"}
+	dbOrder         = []string{"driver", "url"}
+	authOrder       = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
+	adminOrder      = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
+	endpointOrder   = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
+	actionOrder     = []string{"name", "event", "client_js"}
 	transitionOrder = []string{"label", "status", "variant", "stamp"}
-	seedOrder     = []string{"entity", "rows"}
+	seedOrder       = []string{"entity", "rows"}
 )
 
 func orderFor(key string) []string {

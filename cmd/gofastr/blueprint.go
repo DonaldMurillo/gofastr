@@ -91,25 +91,25 @@ type BlueprintAccess struct {
 }
 
 type BlueprintBlock struct {
-	Type      string
-	Kind      string
-	Text      string
-	Level     int
-	Class     string
-	Href      string
-	Entity    string
-	Fields    []string
-	Limit     int
-	EmptyText string
-	Mode      string // "create", "edit" for entity_form
-	Search    string // entity_list LIKE-search field
-	Create    bool   // entity_list: show "New" + mount a create form screen
-	Props     map[string]any
-	Children  []BlueprintBlock
-	Actions   []BlueprintAction
+	Type        string
+	Kind        string
+	Text        string
+	Level       int
+	Class       string
+	Href        string
+	Entity      string
+	Fields      []string
+	Limit       int
+	EmptyText   string
+	Mode        string // "create", "edit" for entity_form
+	Search      string // entity_list LIKE-search field
+	Create      bool   // entity_list: show "New" + mount a create form screen
+	Props       map[string]any
+	Children    []BlueprintBlock
+	Actions     []BlueprintAction
 	Transitions []BlueprintTransition // entity_detail: status-transition workflow buttons
-	Island    string
-	Widget    string
+	Island      string
+	Widget      string
 }
 
 // BlueprintTransition is a status-change workflow action shown on a detail page:
@@ -446,6 +446,7 @@ func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
 		JWTSecret: stringValue(m["jwt_secret"]),
 	}, nil
 }
+
 // decodeBlueprintTheme returns the light color/font tokens and, from a nested
 // `dark:` map, the dark-scheme color overrides.
 func decodeBlueprintTheme(node *coreyaml.Node) (light, dark map[string]string, err error) {
@@ -5320,6 +5321,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	return sb.String()
 }
+
 // blueprintBaseCSSFunc emits the BlueprintBaseCSS() function. It returns the
 // empty string: every generated surface — marketing, app, entity list/detail,
 // entity forms, auth — composes framework/ui components and core-ui/app layouts

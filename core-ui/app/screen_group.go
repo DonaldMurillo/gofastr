@@ -47,7 +47,7 @@ func NewStaticComponent(h render.HTML) *StaticComponent {
 // contextComponentFunc adapts a ctx→HTML func into a ContextComponent.
 type contextComponentFunc func(ctx context.Context) render.HTML
 
-func (f contextComponentFunc) Render() render.HTML                    { return f(context.Background()) }
+func (f contextComponentFunc) Render() render.HTML                     { return f(context.Background()) }
 func (f contextComponentFunc) RenderCtx(c context.Context) render.HTML { return f(c) }
 
 // NewContextComponent creates a component whose output depends on the request
