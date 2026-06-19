@@ -74,6 +74,54 @@ browser-driven state changes (a malicious web page or DNS-rebinding POSTing
 to `localhost:8765`). Non-browser clients (the agent, `curl`, MCP/ACP) send
 no `Origin` and are unaffected.
 
+## Plan-gated destructive ops
+
+Destructive tools (`delete_entity`, `delete_field`, `delete_page`,
+`delete_hook`, `delete_route`) are enforced at the protocol layer:
+
+1. The agent calls `propose_plan` listing each destructive op in
+   `targets`:
+
+   ```json
+   { "plan_id": "p1", "steps": ["drop posts"], "targets": [{"op":"delete_entity","name":"posts"}] }
+   ```
+
+2. The panel renders a plan card with **Approve** / **Reject** buttons.
+3. After Approve, the agent retries the destructive call with `plan_id`
+   set.
+
+Without an approved plan whose `targets` list matches, `delete_*`
+returns `{"ok":false,"kind":"needs_plan"}`. Each `(plan, target)` is
+single-use; reuse needs a new plan.
+
+## Tool surface
+
+`world_get`, `set_app_config`, `add_entity`, `update_entity`,
+`delete_entity`, `add_field`, `delete_field`, `add_page`, `delete_page`,
+`add_hook`, `delete_hook`, `add_route`, `delete_route`, `add_seed`,
+`propose_plan`, `approve_plan`, `reject_plan`, `undo`, `chat`. See
+`kiln/protocol/descriptors.go` for the full JSON schemas. A tool call over
+HTTP is a plain POST against the loopback server:
+
+```bash
+kiln serve --agent none &   # loopback 127.0.0.1:8765 by default; unauthenticated
+curl -X POST http://localhost:8765/kiln/tool/add_entity \
+  -H 'Content-Type: application/json' \
+  -d '{"entity":{"name":"posts","fields":[{"name":"title","type":"string","required":true}]}}'
+curl http://localhost:8765/posts          # CRUD live
+curl http://localhost:8765/kiln/world     # current IR
+```
+
+## Wire into Claude Code as an MCP server
+
+```json
+{
+  "mcpServers": {
+    "kiln": { "command": "kiln", "args": ["mcp", "--no-http"] }
+  }
+}
+```
+
 ## Generated apps don't carry Kiln
 
 `gofastr generate --from <blueprint>` emits a plain framework app. Node

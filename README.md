@@ -4,7 +4,33 @@
 
 GoFastr is an experimental Go full-stack framework built around that one wedge. A blueprint *scaffolds* the whole app — database schema and migrations, REST CRUD with validation and owner/RBAC scoping, a server-rendered UI with island hydration, plus an OpenAPI spec and MCP tools for agents — and emits it as plain Go. The blueprint is an on-ramp, not a runtime: once it has scaffolded, the **generated Go is the source of truth**, owned and edited like any code you wrote by hand — and you never give up `database/sql`, `net/http`, or compile-time safety.
 
-Nobody else in the Go ecosystem ships that combination: PocketBase is a runtime BaaS you configure, Encore couples you to its platform, Wasp shares the thesis but targets JS/TS, and hand-rolling means writing the glue yourself. The honest comparison — weaknesses included — is at [framework/docs/content/comparison.md](framework/docs/content/comparison.md); the start-to-finish walkthrough is the [blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md).
+The start-to-finish walkthrough is the [blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md).
+
+## Why this exists
+
+This is a personal project first — a way to practice building something
+large alongside AI. A few things I wanted to dig into:
+
+- **Solidify my web-tech foundations.** Rebuild the stack from the
+  socket up so the fundamentals stop feeling like magic.
+- **Attack UI generation from a different angle.** My background is in
+  Node, so I wanted to see what server-rendered, server-driven UI looks
+  like when you take the heavy client framework off the table and
+  generate the markup in a compiled language instead.
+- **Work in a compiled language.** Most of what I've built is in Node,
+  where mistakes surface at runtime, in production. I wanted to know what
+  it's like when a compiler catches them first — when you ship one binary
+  and types actually hold up under a refactor.
+- **Skip the convention-vs-configuration false choice.** When it's your
+  own framework you don't have to pick a side — you get opinionated
+  defaults *and* a hatch down to plain stdlib code in the same app.
+- **Build something large, fun, and open source with AI.** Most of this
+  repo was written alongside coding agents, so the workflow itself is
+  part of the experiment.
+- **Make a framework that's AI-first both ways.** AI *authors* the app
+  — a small blueprint is a cheap prompt target — and AI *consumes* the
+  running app, because every entity emits MCP tools over a live server.
+  Low surface to author, high surface generated.
 
 > **Status:** early / `v0.x` — MIT-licensed and usable, but the API may change
 > between releases, so pin a version (`go get …@v0.x.y`). A `v1.0.0` tag will
@@ -55,7 +81,7 @@ Most Go web frameworks assume a human will hand-write every route, query, valida
 - **The blueprint is a generator, not a source of truth.** A single `gofastr.yml` scaffolds a SQL schema, typed Go models, REST routes, *and* server-rendered screens with nav and islands — both halves of the app, emitted together in one pass so they start consistent. Then it gets out of the way: the generated Go is yours to own and edit, and the running app doesn't need the blueprint at all. It's an on-ramp — `rails g scaffold` / `ng generate` for a whole Go backend *and* UI — not a declaration you live in. See [`examples/meridian`](examples/meridian/) for the whole pipeline — a polished SaaS console + marketing site — live and tested.
 - **Secure scopes are part of the declaration.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (fail-closed 403), `multi_tenant` scopes by tenant — and `gofastr validate` errors when per-user data is exposed without any of them.
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main` — not a black box the tool rewrites behind your back. No reflection magic, no hidden registries, no runtime mutation, no platform between your binary and your server.
-- **Agent surfaces come free.** The same declaration emits an OpenAPI 3 spec and five MCP tools per entity (`products_list`, `products_create`, …) that respect the same owner/RBAC scopes. (Schema-derived MCP is table stakes in 2026 — Supabase, PocketBase, FastAPI all have it; here it's a byproduct of the pipeline, not the pitch.)
+- **Agent surfaces come free.** The same declaration emits an OpenAPI 3 spec and five MCP tools per entity (`products_list`, `products_create`, …) that respect the same owner/RBAC scopes — a byproduct of the pipeline, not a bolt-on.
 - **Two-layer architecture.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Drop down to core when the framework is in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
 - **Batteries included, not embedded.** Auth, cache, email, queue, search, storage are independent packages behind narrow interfaces — swap any one without forking.
 
@@ -77,14 +103,9 @@ public surface is `framework.X` plus the batteries you reach for.
 
 ## Built with GoFastr
 
-The framework is dogfooded — GoFastr's own tooling and reference apps are built
+The framework runs on itself — GoFastr's own tooling and reference apps are built
 on the same `framework`, `core-ui`, and batteries a user app imports:
 
-- **Kiln**, the agent build-mode runtime, renders/serves/migrates live worlds
-  through the framework: `kiln/render` imports `framework` + `core-ui/widget` +
-  `core/openapi`, `kiln/live` imports `framework` + `core/router`, and
-  `kiln/chat` builds its UI on `core-ui/widget` + `core-ui/style` +
-  `battery/embed`.
 - **`examples/site`**, the docs site and canonical component gallery, runs on
   `framework` + `framework/ui` + `framework/uihost` + the `core-ui` pattern
   presets + `battery/print`.
@@ -144,7 +165,6 @@ Install the CLIs straight from GitHub:
 
 ```bash
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
-go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest
 ```
 
 Or clone for development on the framework itself:
@@ -287,7 +307,7 @@ add `framework.WithAPIPrefix`.
 | Hooks            | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour                        |
 | Custom routes    | `EntityConfig.Endpoints` with optional MCP exposure                             |
 
-### Walkthrough: the v2 read/write surface
+### Walkthrough: the read/write API
 
 Every endpoint below is auto-generated from a registered entity. There's a
 runnable demo in [`examples/api-tour`](examples/api-tour/README.md) that
@@ -364,7 +384,7 @@ A separate, independently usable system for rendering interactive UIs from Go: s
 
 `admin`, `auth`, `cache`, `email`, `embed`, `log`, `notify`, `print`, `queue`, `search`, `storage`, `webhook`. Each behind a small interface with at least one in-memory implementation suitable for tests and small examples; production swaps in Redis, S3, Postgres FTS, etc. (`battery/admin` is the auto-generated back-office; `battery/experimental` is internal and not part of the supported surface.)
 
-`battery/embed` is the local semantic-search battery: in-process vector index with brute-force cosine, optional hybrid keyword fusion, MMR diversity, snapshot/WAL persistence, fsnotify-free polling watcher, and a Kiln agent context hook. See [`framework/docs/content/embed.md`](framework/docs/content/embed.md).
+`battery/embed` is the local semantic-search battery: in-process vector index with brute-force cosine, optional hybrid keyword fusion, MMR diversity, snapshot/WAL persistence, and a fsnotify-free polling watcher. See [`framework/docs/content/embed.md`](framework/docs/content/embed.md).
 
 ### `cmd/gofastr` — CLI
 
@@ -390,70 +410,15 @@ gofastr embed watch <path>          Index + poll-watch for changes
 gofastr embed query "<text>"        Top-K semantic hits as JSON
 ```
 
-### `kiln/` — agent-driven build-mode runtime
+### `kiln/` — agent-driven build mode (experimental)
 
-Build a GoFastr app live by chatting with a coding agent (Claude Code, pi, Codex, …). The agent drives Kiln's typed tool surface; the world IR mutates; the running app re-renders; the schema migrates — all in-process. Freeze the journal when done to snapshot the world; declare the result in a `gofastr.yml` blueprint and run `gofastr generate` to graduate to regular Go source you commit.
-
-```bash
-go install ./cmd/kiln
-
-kiln serve --agent claude-code    # auto-uses ~/.claude/.credentials.json
-kiln serve --agent pi             # uses pi's installed config
-kiln serve --agent auto           # picks the first installed CLI on PATH
-kiln serve --agent "<freeform>"   # any command you want; prompt is appended
-
-kiln mcp   --no-http              # MCP over stdio (subprocess harnesses)
-kiln acp   --no-http              # ACP over stdio
-kiln freeze --dir build/          # journal → build/entities/*.json + world.json
-```
-
-#### How it works
-
-`kiln serve` runs an HTTP server (panel + SSE + REST tool dispatch + MCP at `/mcp`) and a floating chat widget that auto-mounts on every URL. When `--agent <name>` is set, kiln subscribes to its own SSE bus: every `chat_user` event spawns the configured CLI as a subprocess with `KILN_URL` injected. The CLI reads `~/.claude/skills/kiln/SKILL.md` (auto-installed), sees `$KILN_URL`, and drives the build with `curl` against HTTP. Stdout is journaled as `chat_assistant` so the panel renders the reply.
-
-**Bring-your-own auth.** Kiln does not manage credentials. Each adapter spawns its CLI which manages its own login (`claude` reads `~/.claude/.credentials.json`, `pi` reads its own config, etc.). Adding a new agent is a one-entry change in `cmd/kiln/adapters.go`.
-
-#### Safety: plan-gated destructive ops
-
-Destructive tools (`delete_entity`, `delete_field`, `delete_page`, `delete_hook`, `delete_route`) are enforced at the protocol layer:
-
-1. Agent calls `propose_plan` listing each destructive op in `targets`:
-
-   ```json
-   { "plan_id": "p1", "steps": ["drop posts"], "targets": [{"op":"delete_entity","name":"posts"}] }
-   ```
-
-2. The panel renders a plan card with **Approve** / **Reject** buttons.
-3. After Approve, the agent retries the destructive call with `plan_id` set.
-
-Without an approved plan whose `Targets` list matches, `delete_*` returns `{"ok":false,"kind":"needs_plan"}`. Each `(plan, target)` is single-use; reuse needs a new plan.
-
-#### Wire into Claude Code as an MCP server
-
-```json
-{
-  "mcpServers": {
-    "kiln": { "command": "kiln", "args": ["mcp", "--no-http"] }
-  }
-}
-```
-
-#### Or hit the HTTP API directly
-
-```bash
-kiln serve --agent none &   # binds loopback 127.0.0.1:8765 by default; the
-                            # tool API is unauthenticated — pass --addr 0.0.0.0:8765
-                            # only if you deliberately want it reachable off-host
-curl -X POST http://localhost:8765/kiln/tool/add_entity \
-  -H 'Content-Type: application/json' \
-  -d '{"entity":{"name":"posts","fields":[{"name":"title","type":"string","required":true}]}}'
-curl http://localhost:8765/posts          # CRUD live
-curl http://localhost:8765/kiln/world     # current IR
-```
-
-#### Tool surface
-
-`world_get`, `set_app_config`, `add_entity`, `update_entity`, `delete_entity`, `add_field`, `delete_field`, `add_page`, `delete_page`, `add_hook`, `delete_hook`, `add_route`, `delete_route`, `add_seed`, `propose_plan`, `approve_plan`, `reject_plan`, `undo`, `chat`. See `kiln/protocol/descriptors.go` for full JSON schemas.
+Kiln lets you build a GoFastr app live by chatting with a coding agent
+(Claude Code, pi, Codex, …): the agent mutates an in-memory world over
+HTTP, the running app re-renders, and the schema migrates in-process.
+Freeze the journal when done and graduate to a `gofastr.yml` blueprint
+you commit. It's an experiment and not part of the supported framework
+surface — the full tool list, the agent wiring, and the safety model
+live in [kiln.md](framework/docs/content/kiln.md).
 
 ## Repository layout
 
@@ -461,7 +426,7 @@ curl http://localhost:8765/kiln/world     # current IR
 core/        stdlib-first primitives (router, query, mcp, openapi, …)
 framework/   entity system, app wiring, declarations, query DSL, hooks
 core-ui/     server-driven UI runtime (signals, components, islands)
-kiln/       agent-driven build-mode runtime + chat panel + MCP/ACP servers
+kiln/       agent-driven build mode (experimental)
 battery/     pluggable infra (admin, auth, cache, email, embed, log, notify, print, queue, search, storage, webhook)
 cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
@@ -477,7 +442,7 @@ them offline, and the `framework_docs_*` MCP tools expose them to agents
 connected to a running app.
 
 - [Blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md) — **the thesis walkthrough**: blueprint → generated UI + API → auth + owner scoping + RBAC → customize in plain Go → deploy
-- [Comparison](framework/docs/content/comparison.md) — vs PocketBase, Encore, Wasp, and hand-rolled Gin+sqlc, weaknesses included
+- [Kiln (experimental)](framework/docs/content/kiln.md) — agent-driven build mode
 - [UI getting started](framework/docs/content/ui-getting-started.md) — **the 15-minute path**: scaffold → theme → screen → custom-styled component
 - [core-ui architecture](core-ui/ARCHITECTURE.md) — **deeper UI/runtime reference** (SSR, hydration, islands, component CSS, data-fui-* primitives)
 - [framework architecture](framework/ARCHITECTURE.md) — package layout, layering rules, cycle-breaking interfaces

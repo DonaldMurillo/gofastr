@@ -7,6 +7,32 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-17
+
+### Changed — README rework
+
+- **Added a "Why this exists" section** stating plainly that GoFastr is a
+  personal project first: solidifying web-tech foundations, attacking UI
+  generation from a compiled-language angle (the author's background is
+  Node), working in a compiled language, skipping the convention-vs-
+  configuration choice, building something large with AI, and making a
+  framework that's AI-first on both the authoring and the consuming side.
+- **Removed the framework comparison** from the README — the
+  PocketBase / Encore / Wasp / Supabase / FastAPI name-drops and the
+  `comparison.md` link. (The `comparison.md` file itself is left on disk
+  for now.)
+- **Demoted Kiln to a brief experimental mention.** The README no longer
+  leads with it: the ~60-line Kiln section became one paragraph linking
+  to `kiln.md`, the "Built with GoFastr" Kiln bullet and the `cmd/kiln`
+  install line were dropped, and the repo-layout line is marked
+  `(experimental)`.
+- **Migrated the README-only Kiln detail into `kiln.md`** so nothing was
+  lost: plan-gated destructive ops, the full tool surface, the Claude Code
+  MCP wiring, and a concrete HTTP tool-call example.
+- **Rephrased "dogfooded" → "runs on itself";** fixed the opaque
+  "Walkthrough: the v2 read/write surface" heading → "Walkthrough: the
+  read/write API".
+
 ## [0.8.0] - 2026-06-16
 
 ### Added — `gofastr export` (native static-site generation)
