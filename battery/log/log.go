@@ -51,6 +51,18 @@ type Config struct {
 	// so operators can correlate without trusting it.
 	TrustForwardedFor bool
 
+	// Console controls an optional human-readable colorized sink on
+	// stderr, intended for local development. The zero value
+	// (ConsoleAuto) attaches the sink only when stderr is a terminal
+	// and NO_COLOR is unset — so Config{} gives every local dev a
+	// colorized feed without leaking ANSI into prod (journald,
+	// containers) where stderr is captured, not shown. Set ConsoleOn
+	// to force the sink on regardless of TTY, or ConsoleOff to
+	// disable it. Coloring always follows TTY + NO_COLOR, so even
+	// forced-on output stays greppable when piped. The file/webhook
+	// sinks are unaffected — console is purely additive.
+	Console ConsoleMode
+
 	// EnableMCP installs a RingSink + MCP tools (log_recent, log_filter,
 	// log_metrics, log_set_level) so a connected agent can debug the
 	// running app via the plugin's logger surface. Off by default.
@@ -168,6 +180,21 @@ func (p *Plugin) Init(app *framework.App) error {
 		}
 		sinks = []Sink{s}
 		p.resolvedFilePath = path
+	}
+
+	// Console sink (dev affordance). Auto = TTY-aware, so the zero
+	// value gives local devs colorized stderr without touching prod.
+	// Appended last so it closes last on shutdown (it's local; the
+	// Sinks doc asks fast/local sinks to outlive slow/remote ones).
+	switch cfg.Console {
+	case ConsoleOff:
+		// no console sink
+	case ConsoleOn:
+		sinks = append(sinks, ConsoleSink(ConsoleOpts{}))
+	default: // ConsoleAuto (zero value)
+		if shouldColor(os.Stderr) {
+			sinks = append(sinks, ConsoleSink(ConsoleOpts{}))
+		}
 	}
 
 	// If MCP is enabled, install an in-memory ring sink for fast queries.

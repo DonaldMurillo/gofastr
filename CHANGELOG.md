@@ -7,6 +7,34 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-25
+
+### Added — `log.ConsoleSink` (zero-config colorized dev feed)
+
+The log battery now ships a human-readable console sink alongside the
+JSON file sink, so `log.New(Config{})` gives every local developer a
+colorized stderr feed with no configuration — without leaking ANSI into
+prod where stderr is captured (journald, containers) rather than shown.
+
+- **`log.ConsoleSink(ConsoleOpts)`** (`battery/log`) — a Sink that renders
+  each JSON entry as a single human-readable, optionally colorized line
+  (`14:32:07.412 INFO  app.start app="myapp" go="go1.24.1"`). Level
+  colors, a bolded message, and a dimmed timestamp; attr order preserved
+  via token decoding so operators see fields in emit order, not
+  `json.Unmarshal`'s randomized map order. Multi-line values (e.g. panic
+  stacks) keep newlines escaped so each entry stays one line; non-object
+  bytes are written verbatim so a malformed entry is visible, not
+  silently dropped. Honors the `NO_COLOR` convention; serializes on a
+  mutex so concurrent entries don't interleave.
+- **`log.Config.Console` (`ConsoleMode`)** — `ConsoleAuto` (the zero
+  value) attaches the sink only when stderr is a terminal and `NO_COLOR`
+  is unset; `ConsoleOn` forces it on regardless of TTY (coloring still
+  follows TTY + `NO_COLOR`, so piped output drops ANSI and stays
+  greppable); `ConsoleOff` disables it. The console sink is appended last
+  so it closes last on shutdown.
+- **Purely additive** — the file and webhook sinks run unchanged
+  alongside it; nothing about the existing JSON log surface moves.
+
 ## [0.8.1] - 2026-06-17
 
 ### Changed — README rework

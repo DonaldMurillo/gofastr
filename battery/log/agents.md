@@ -38,11 +38,15 @@ app.RegisterPlugin(log.New(log.Config{
 - Panic-recovery middleware that converts panics into 500s and logs
   the stack trace through the same sinks.
 - App lifecycle events (`app.start` / `app.stop`).
-- Sink fan-out: file + webhook + any custom Sink, ordered by
+- Sink fan-out: file + webhook + console + any custom Sink, ordered by
   `Sinks` slice on shutdown so fast/local sinks outlive slow/remote
   ones.
 - Logger swapped on `App.Logger` so framework middleware (Logging,
   slowquery, etc.) writes through the same surface.
+- A colorized human-readable ConsoleSink on stderr when stderr is a
+  terminal and `NO_COLOR` is unset (zero-config dev affordance). The
+  JSON file sink still runs alongside it; console is purely additive.
+  Override with `Config.Console` (`ConsoleOn` / `ConsoleOff`).
 
 **Don't reinvent** a `LoggingMiddleware` wrapper, a `defer recover()`
 panic catcher, or per-handler `log.Println` calls. `log.New(Config{})`
