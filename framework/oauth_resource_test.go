@@ -55,3 +55,36 @@ func TestOAuthProtectedResource_NotConfigured404(t *testing.T) {
 		t.Errorf("want 404, got %d", rec.Code)
 	}
 }
+
+// ── Gap: route is actually mounted in Start() when opted in ─────────
+
+func TestOAuthProtectedResource_RouteMounted(t *testing.T) {
+	app, cleanup := startApp(t, NewApp(WithOAuthProtectedResource(OAuthProtectedResourceConfig{
+		Resource: "https://api.example",
+	})))
+	defer cleanup()
+
+	rec := httptest.NewRecorder()
+	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("route not mounted: status %d, body %s", rec.Code, rec.Body.String())
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if doc["resource"] != "https://api.example" {
+		t.Errorf("resource = %v", doc["resource"])
+	}
+}
+
+func TestOAuthProtectedResource_NotMountedByDefault(t *testing.T) {
+	app, cleanup := startApp(t, NewApp())
+	defer cleanup()
+
+	rec := httptest.NewRecorder()
+	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("without the option, route should be absent (404); got %d", rec.Code)
+	}
+}

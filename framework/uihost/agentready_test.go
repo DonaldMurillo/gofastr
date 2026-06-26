@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func boolp(b bool) *bool { return &b }
@@ -242,5 +244,138 @@ func TestMarkdownAlternate(t *testing.T) {
 		if got := markdownAlternate(in); got != want {
 			t.Errorf("markdownAlternate(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// mdPageScreen is a minimal Component for markdown-negotiation tests —
+// it only needs to resolve via Router.Resolve; ScreenLLMMD derives
+// markdown from screen metadata, not Render().
+type mdPageScreen struct{}
+
+func (mdPageScreen) Load(context.Context) error            { return nil }
+func (mdPageScreen) Render() render.HTML                   { return "" }
+func (mdPageScreen) RenderCtx(context.Context) render.HTML { return "" }
+
+// ── Gap: markdown content negotiation end-to-end ───────────────────
+
+func TestMarkdownNegotiation_EndToEnd(t *testing.T) {
+	a := app.NewApp("md-neg-test")
+	a.RegisterScreen(app.NewScreen("/", &mdPageScreen{}).WithTitle("Home"), nil)
+	ds := New(a,
+		WithPublicLLMMD(),
+		WithMarkdownNegotiation(),
+	)
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/", nil)
+	req.Header.Set("Accept", "text/markdown")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("Accept: text/markdown → Content-Type %q, want text/markdown", ct)
+	}
+}
+
+func TestMarkdownNegotiation_NoAcceptHeaderIsHTML(t *testing.T) {
+	// A normal request (no Accept: text/markdown) must still get HTML.
+	a := app.NewApp("md-neg-test2")
+	a.RegisterScreen(app.NewScreen("/", &mdPageScreen{}).WithTitle("Home"), nil)
+	ds := New(a, WithPublicLLMMD(), WithMarkdownNegotiation())
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("no Accept header → Content-Type %q, want text/html", ct)
+	}
+}
+
+// ── Gap: default llms.txt section links /llm-pages.md when public ──
+
+func TestDefaultLLMsSections_LLMMDPublic(t *testing.T) {
+	ds := newAgentReadyHost(WithPublicLLMMD(), WithLLMsTxt("T", "s", nil))
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+	body, _ := getBody(t, srv.URL+"/llms.txt")
+	if !strings.Contains(body, "## Docs") || !strings.Contains(body, "/llm-pages.md") {
+		t.Errorf("default llms.txt should link /llm-pages.md index:\n%s", body)
+	}
+}
+
+func TestDefaultLLMsSections_NoneWhenPrivate(t *testing.T) {
+	// Without WithPublicLLMMD there are no default links — only title+summary.
+	ds := newAgentReadyHost(WithLLMsTxt("T", "s", nil))
+	out := renderLLMsTxt(&llmsCfg{title: "T", summary: "s"}, ds)
+	if strings.Contains(out, "## ") {
+		t.Errorf("no sections expected without public llm.md:\n%s", out)
+	}
+}
+
+// ── Gap: WithAgentReady bundle default-resolution ───────────────────
+
+func TestWithAgentReady_BundleDefaults(t *testing.T) {
+	// Title set → llms + card on; linkHeaders defaults true; contentNeg false.
+	ds := newAgentReadyHost(WithAgentReady(AgentReadyConfig{Title: "X", Summary: "y"}))
+	if ds.agentReady == nil {
+		t.Fatal("bundle left agentReady nil")
+	}
+	if ds.agentReady.llms == nil {
+		t.Error("Title set should turn on llms")
+	}
+	if ds.agentReady.card == nil {
+		t.Error("Title set should turn on a derived card")
+	}
+	if !ds.agentReady.linkHeaders {
+		t.Error("linkHeaders should default true in the bundle")
+	}
+	if ds.agentReady.contentNeg {
+		t.Error("contentNeg should default false")
+	}
+}
+
+func TestWithAgentReady_ZeroValueIsNoOp(t *testing.T) {
+	ds := newAgentReadyHost(WithAgentReady(AgentReadyConfig{}))
+	if ds.agentReady != nil {
+		t.Error("zero-value AgentReadyConfig should be a no-op (agentReady nil)")
+	}
+}
+
+// ── Gap: resolveBaseURL three-branch resolution ────────────────────
+
+func TestResolveBaseURL(t *testing.T) {
+	// Branch 1: WithAgentReady BaseURL wins.
+	ds := newAgentReadyHost(
+		WithAgentReady(AgentReadyConfig{BaseURL: "https://ar.example"}),
+		WithSitemap(SitemapConfig{BaseURL: "https://sm.example"}),
+	)
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	if got := ds.resolveBaseURL(req); got != "https://ar.example" {
+		t.Errorf("agentReady base: got %q", got)
+	}
+
+	// Branch 2: falls back to sitemap BaseURL when agentReady base unset.
+	ds2 := newAgentReadyHost(
+		WithAgentReady(AgentReadyConfig{}),
+		WithSitemap(SitemapConfig{BaseURL: "https://sm.example"}),
+	)
+	// AgentReadyConfig{} is a no-op (agentReady nil), so resolveBaseURL
+	// must consult the sitemap base.
+	if got := ds2.resolveBaseURL(req); got != "https://sm.example" {
+		t.Errorf("sitemap base fallback: got %q", got)
+	}
+
+	// Branch 3: neither set → per-request scheme + Host.
+	ds3 := newAgentReadyHost()
+	req3 := httptest.NewRequest(http.MethodGet, "https://req.example/x", nil)
+	if got := ds3.resolveBaseURL(req3); got != "https://req.example" {
+		t.Errorf("per-request: got %q", got)
 	}
 }

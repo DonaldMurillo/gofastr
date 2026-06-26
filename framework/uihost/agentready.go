@@ -178,6 +178,13 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 	}
 
 	return func(ds *UIHost) {
+		// The zero value is a no-op (matches the doc): don't install the
+		// surface unless something meaningful is configured. linkHeaders
+		// alone — with nothing to link to — doesn't justify it.
+		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
+			ar.baseURL == "" && !ar.contentNeg {
+			return
+		}
 		ds.agentReady = ar
 	}
 }
