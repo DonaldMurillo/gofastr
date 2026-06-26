@@ -47,10 +47,12 @@ var docIntents = []docIntent{
 	{
 		Num: "00", Slug: "start", Title: "Start here",
 		Lede: "What GoFastr is, how a project is laid out, and a map of every feature — the newcomer narrative before the per-feature references.",
-		Path: []string{"Overview", "Project structure"},
+		Path: []string{"Overview", "Tutorial: blueprint app", "Project structure"},
 		Docs: []docEntry{
 			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
+			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The thesis tutorial: one blueprint becomes a UI + API you own, in about twenty minutes."},
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
+			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 		},
 	},
 	{
@@ -76,6 +78,8 @@ var docIntents = []docIntent{
 			{"access-control", "Access control", "RolePolicy, RequirePermission, custom Policy implementations."},
 			{"auth", "Auth", "Login, OAuth, magic-link, 2FA, password reset — each a plugin."},
 			{"idempotency", "Idempotency", "An Idempotency-Key header replays mutations safely."},
+			{"api-versioning", "API prefix & versioning", "Mount the API under a prefix and evolve it across versions."},
+			{"cache", "Cache", "Memoize expensive reads with a pluggable backend and TTLs."},
 			{"security", "Security defaults", "CSP, CSRF, rate limit, headers — all on by default."},
 			{"health-checks", "Health checks", "/healthz + /readyz with plugin checks."},
 			{"webhooks", "Webhooks", "Signed outbound delivery with retry-with-backoff."},
@@ -97,6 +101,7 @@ var docIntents = []docIntent{
 			{"runtime-minification", "Runtime modules", "Carved per-feature so pages without X don't ship X's JS."},
 			{"print", "Print documents", "Server-rendered print-friendly documents + PDF."},
 			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit — zero config."},
+			{"static-export", "Static-site export", "Render the whole app to static HTML + assets for apex or project-path hosting."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions."},
 			{"signal-store", "Signal store", "Typed, namespaced client state that fans out to many consumers from one declaration."},
 		},
@@ -108,6 +113,7 @@ var docIntents = []docIntent{
 		Docs: []docEntry{
 			{"audit-log", "Audit log", "WithAuditLog writes a row for every Create/Update/Delete."},
 			{"isolation", "Isolation", "Linked git worktrees get isolated local DBs."},
+			{"testkit", "Testkit", "Public helpers for host apps that need an isolated Postgres in integration tests."},
 			{"factories", "Factories", "Rails-style fixtures for tests."},
 			{"search", "Full-text search", "Find records containing a term, dialect-aware."},
 			{"uploads", "Uploads", "File + image fields with pluggable storage backends."},
@@ -117,8 +123,9 @@ var docIntents = []docIntent{
 	{
 		Num: "05", Slug: "agents", Title: "Working with agents",
 		Lede: "MCP tools, Kiln build mode (experimental), agent permissions, plan-gated destructive ops.",
-		Path: []string{"Kiln overview", "Embed", "Agent notes"},
+		Path: []string{"Agent-readiness", "Kiln overview", "Embed", "Agent notes"},
 		Docs: []docEntry{
+			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
 			{"kiln", "Kiln overview", "Experimental — the agent-driven build-mode binary."},
 			{"embed", "Embed", "Local semantic search via brute-force cosine — no API key."},
 			{"agent-notes", "Agent notes", "Append-only review log for agents working on the framework."},
@@ -132,6 +139,9 @@ var docIntents = []docIntent{
 		Path: []string{"Logging", "Feature flags", "i18n"},
 		Docs: []docEntry{
 			{"log", "Logging", "Structured JSON logs with MCP query tools."},
+			{"observability", "Observability", "Metrics and tracing for the hot paths."},
+			{"deploy", "Deployment", "Ship it: build, configure, and run GoFastr in production."},
+			{"queue", "Job queue", "Durable background jobs via battery/queue."},
 			{"feature-flags", "Feature flags", "Rollout percentage, allow lists, env evaluator."},
 			{"i18n", "i18n", "JSON catalogs, plurals, Accept-Language negotiation."},
 			{"cron", "Cron", "Scheduled jobs with retry + jitter."},

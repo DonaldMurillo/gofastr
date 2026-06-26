@@ -81,6 +81,26 @@ func TestEveryDocSlugMapsToEmbeddedDoc(t *testing.T) {
 	}
 }
 
+// TestEveryEmbeddedDocIsInCatalog is the reverse of the check above: the
+// /docs/ "Every doc · A–Z" section links every embedded doc to /docs/<slug>,
+// but only catalog (docIntents) slugs get a registered route. An embedded doc
+// missing from the catalog therefore renders a live A–Z link to a 404 — the
+// exact drift that shipped agent-ready.md without a /docs/agent-ready page.
+func TestEveryEmbeddedDocIsInCatalog(t *testing.T) {
+	topics, err := docs.List()
+	if err != nil {
+		t.Fatalf("docs.List: %v", err)
+	}
+	for _, top := range topics {
+		if top.Name == "README" { // the docs folder's own index, not a page
+			continue
+		}
+		if _, _, ok := findDocEntry(top.Name); !ok {
+			t.Errorf("embedded doc %q.md is not in docIntents — the A–Z index links /docs/%s but no route is registered (404)", top.Name, top.Name)
+		}
+	}
+}
+
 func TestDocCountMatchesCatalog(t *testing.T) {
 	n := 0
 	for _, it := range docIntents {
