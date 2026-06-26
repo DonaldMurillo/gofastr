@@ -30,13 +30,38 @@ type Tool struct {
 type Server struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
+
+	// name/version are advertised in the MCP `initialize` handshake
+	// (serverInfo). Defaults set in NewServer; override via SetServerInfo.
+	name    string
+	version string
 }
 
 // NewServer creates a new MCP server with an empty tool registry.
 func NewServer() *Server {
 	return &Server{
-		tools: make(map[string]Tool),
+		tools:   make(map[string]Tool),
+		name:    "GoFastr MCP",
+		version: "1.0.0",
 	}
+}
+
+// SetServerInfo overrides the name/version advertised in the MCP
+// `initialize` handshake (serverInfo). Call before serving requests.
+func (s *Server) SetServerInfo(name, version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.name = name
+	s.version = version
+}
+
+// SetServerName overrides just the serverInfo name advertised in the
+// MCP initialize handshake, leaving the version at its default. Used by
+// hosts that know their app name but not a separate MCP server version.
+func (s *Server) SetServerName(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.name = name
 }
 
 // RegisterTool adds a tool to the server's registry.

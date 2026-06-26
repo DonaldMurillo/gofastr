@@ -175,6 +175,15 @@ type App struct {
 	// the app's routes, plugins, batteries, config, and readiness state
 	// for agent debugging. Set via WithMCPIntrospection().
 	mcpIntrospection bool
+	// mcpAutoMount exposes the MCP server at /mcp (Streamable HTTP:
+	// POST JSON-RPC + GET SSE) without the host hand-wiring the route.
+	// Set via WithMCP(). Makes the server's tools reachable at the
+	// canonical endpoint for agent-readiness.
+	mcpAutoMount bool
+	// oauthResource, when set, serves /.well-known/oauth-protected-resource
+	// (RFC 9728) so OAuth-token-protected APIs are discoverable. Set via
+	// WithOAuthProtectedResource().
+	oauthResource *OAuthProtectedResourceConfig
 
 	// startupOutput receives the human-readable readiness banner. It defaults
 	// to os.Stdout and stays unexported so tests can verify startup ordering
@@ -261,6 +270,19 @@ func (a *App) Router() *router.Router { return a.router }
 func WithMCPServer(s *mcp.Server) AppOption {
 	return func(a *App) {
 		a.MCP = s
+	}
+}
+
+// WithMCP exposes the app's MCP server at /mcp using the Streamable HTTP
+// transport (POST JSON-RPC + GET Server-Sent Events), so a host doesn't
+// have to hand-wire fwApp.Router().Handle("POST", "/mcp", fwApp.MCP). This
+// is the agent-ready default: combined with uihost.WithAgentReady (which
+// advertises /mcp via the agent card + Link headers) it makes the server's
+// tools discoverable to MCP clients. Calling this AND manually mounting
+// /mcp will panic with a route conflict — pick one.
+func WithMCP() AppOption {
+	return func(a *App) {
+		a.mcpAutoMount = true
 	}
 }
 
@@ -1359,6 +1381,24 @@ func (a *App) Start(addr string) error {
 
 	if a.Config.DebugEndpoints {
 		a.registerDebugEndpoints()
+	}
+	// MCP endpoint (agent-readiness). WithMCP() exposes the server's
+	// tools at /mcp via Streamable HTTP (POST JSON-RPC + GET SSE) so a
+	// host doesn't hand-wire the route.
+	// Advertise the app's name in the MCP initialize handshake when set,
+	// so a connecting client sees a meaningful serverInfo.name.
+	if a.Config.Name != "" {
+		a.MCP.SetServerName(a.Config.Name)
+	}
+	if a.mcpAutoMount {
+		h := a.MCP.ServeSSE("/mcp")
+		a.router.Post("/mcp", h)
+		a.router.Get("/mcp", h)
+	}
+	// OAuth Protected Resource metadata (RFC 9728). Opt-in; advertises how
+	// OAuth-token-protected resources accept tokens.
+	if a.oauthResource != nil {
+		a.router.Get("/.well-known/oauth-protected-resource", http.HandlerFunc(a.handleOAuthProtectedResource))
 	}
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins

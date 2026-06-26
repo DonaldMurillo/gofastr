@@ -62,6 +62,15 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		return s.handleToolsList(ctx, req)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req)
+	case "initialize":
+		// MCP handshake: advertise protocol version + capabilities +
+		// serverInfo so a spec-compliant client (Claude, Cursor, …)
+		// completes the handshake before tools/list. We are a minimal
+		// tool server, so capabilities advertise tools only.
+		return s.handleInitialize(req)
+	case "ping":
+		// MCP liveness check — empty result object.
+		return newSuccessResponse(req.ID, map[string]any{})
 	default:
 		return Response{
 			JSONRPC: "2.0",
@@ -93,4 +102,20 @@ func newErrorResponse(id any, code int, message string) Response {
 			Message: message,
 		},
 	}
+}
+
+// handleInitialize returns the MCP initialize result: the protocol
+// version, the server's capabilities (tools), and serverInfo. It is the
+// first call a spec-compliant MCP client makes.
+func (s *Server) handleInitialize(req Request) Response {
+	s.mu.RLock()
+	name, version := s.name, s.version
+	s.mu.RUnlock()
+	return newSuccessResponse(req.ID, map[string]any{
+		"protocolVersion": "2025-06-18",
+		"capabilities": map[string]any{
+			"tools": map[string]any{"listChanged": false},
+		},
+		"serverInfo": map[string]any{"name": name, "version": version},
+	})
 }

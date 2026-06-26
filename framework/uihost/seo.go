@@ -138,6 +138,20 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 	if cfg.CrawlDelay > 0 {
 		fmt.Fprintf(&b, "Crawl-delay: %d\n", cfg.CrawlDelay)
 	}
+	// AI-bot block (agent-readiness). Explicit per-crawler rules so the
+	// site reads as agent-friendly (or not) to isitagentready-class
+	// scanners. Merged from WithAgentReady and composes with the generic
+	// group above regardless of option order.
+	if ds.agentReady != nil && ds.agentReady.allowAIBots != nil {
+		rule := "Allow: /"
+		if !*ds.agentReady.allowAIBots {
+			rule = "Disallow: /"
+		}
+		for _, bot := range aiBotUserAgents() {
+			b.WriteString("\n")
+			fmt.Fprintf(&b, "User-agent: %s\n%s\n", bot, rule)
+		}
+	}
 	sm := cfg.SitemapURL
 	if sm == "" && ds.sitemapConfig != nil {
 		sm = strings.TrimRight(ds.sitemapConfig.BaseURL, "/") + "/sitemap.xml"
@@ -193,4 +207,27 @@ func shouldExcludePath(p string, excludes []string) bool {
 		}
 	}
 	return false
+}
+
+// aiBotUserAgents returns the canonical AI crawler user-agents that
+// isitagentready-class scanners look for explicit rules on. Keeping it
+// one place lets the list grow as new crawlers appear.
+func aiBotUserAgents() []string {
+	return []string{
+		"GPTBot",             // OpenAI
+		"ChatGPT-User",       // OpenAI user-initiated
+		"OAI-SearchBot",      // OpenAI search
+		"ClaudeBot",          // Anthropic
+		"Claude-Web",         // Anthropic (legacy)
+		"anthropic-ai",       // Anthropic
+		"Google-Extended",    // Google (Gemini training/inference)
+		"PerplexityBot",      // Perplexity
+		"PerplexityUser",     // Perplexity user-initiated
+		"CCBot",              // Common Crawl
+		"Bytespider",         // ByteDance
+		"Applebot-Extended",  // Apple
+		"cohere-ai",          // Cohere
+		"Meta-ExternalAgent", // Meta
+		"Amazonbot",          // Amazon
+	}
 }

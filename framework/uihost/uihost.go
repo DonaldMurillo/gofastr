@@ -84,6 +84,7 @@ type UIHost struct {
 	notFoundScreen component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
 	sitemapConfig  *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig   *RobotsConfig                        // when set, /robots.txt is served from this config
+	agentReady     *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -848,6 +849,15 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		ds.handlePartialPage(w, r, path)
 		return
 	}
+	// Agent content negotiation: when WithMarkdownNegotiation (or the
+	// bundle) is on and the request prefers markdown, render the page's
+	// markdown via the per-screen LLM doc instead of HTML.
+	if ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic && acceptsMarkdown(r) {
+		if ds.serveMarkdownForPage(w, r) {
+			return
+		}
+		// No screen matched — fall through to the normal HTML path.
+	}
 
 	// Make the live request available to ScreenLoader.Load(ctx) so
 	// screens can read URL query params, headers, etc. SSG builds
@@ -905,6 +915,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// root before fetching cfg.chromePath.
 	page = injectWidgetSSR(page, r.URL)
 
+	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, page)
 }
@@ -1782,6 +1793,10 @@ func (ds *UIHost) Mount(r *router.Router) {
 	if ds.robotsConfig != nil {
 		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))
 	}
+	// Agent-discovery surface (/llms.txt, /.well-known/agent-card.json,
+	// legacy /.well-known/agent.json). Opt-in via WithAgentReady or the
+	// granular WithLLMsTxt / WithAgentCard options.
+	ds.mountAgentReady(r)
 
 	r.NotFound(http.HandlerFunc(ds.serveOrRender))
 }

@@ -1,5 +1,15 @@
 # Agent Notes
 
+
+## 2026-06-25 - agent-readiness discovery surface (isitagentready.com)
+
+- **Scope:** `framework/uihost/{agentready.go,seo.go,uihost.go}`, `framework/{app.go,oauth_resource.go}`, `core/mcp/{protocol.go,server.go}`, `framework/docs/content/agent-ready.md`, `examples/site/main.go`.
+- **Trigger:** make GoFastr apps score on isitagentready.com — the framework already had the *plumbing* (MCP, OpenAPI, `/llm.md`, sitemap, robots) but not the agent-*discovery* surface.
+- **Change:** opt-in `uihost.WithAgentReady` bundle serves `/llms.txt` (llmstxt.org), the A2A `/.well-known/agent-card.json` (+ legacy `agent.json`), AI-bot-aware robots rules, `Link:` response headers on every HTML page, and markdown `Accept` negotiation. `framework.WithMCP` auto-mounts `/mcp` (was host-hand-wired); `framework.WithOAuthProtectedResource` adds RFC 9728. Absolute discovery URLs resolve one canonical origin (`WithAgentReady`/`WithSitemap` BaseURL → forwarded request).
+- **Key decisions:** the A2A card is *pure discovery* — MCP is advertised as a **skill**, and `supported_interfaces` is deliberately omitted because GoFastr serves MCP, not an A2A JSON-RPC task server (advertising a binding would mislead A2A clients). AI-bot robots rules merge into `handleRobots` from the bundle so they compose with `WithRobots` regardless of option order. Default `/llms.txt` links only the `/llm-pages.md` index, never per-route `.md` (non-screen routes like `/api/*`, `/healthz`, `/.well-known/*` have no markdown).
+- **Next time:** advertising an MCP endpoint obligates a working handshake — `core/mcp` only dispatched `tools/list` + `tools/call`, so the advertised `/mcp` returned "method initialize not found" for spec-compliant clients (Claude/Cursor call `initialize` first). Added `initialize` + `ping` to the dispatch; when exposing any RPC endpoint via a discovery artifact, verify the client's first call succeeds, not just the one you test. Smoke-test binaries go stale silently — force-rebuild (`rm` the binary) or use a fresh port per run; a held port makes a new server fail to bind and curls hit the old process.
+- **Status:** active
+
 ## 2026-06-11 - current-state review verification
 
 - **Scope:** framework architecture, release docs, CI/test reliability.

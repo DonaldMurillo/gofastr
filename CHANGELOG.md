@@ -7,6 +7,59 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-25
+
+### Added — agent-readiness surface (isitagentready.com)
+
+GoFastr apps can now advertise the discovery artifacts AI web agents
+(and scanners like isitagentready.com) look for, in one opt-in call.
+The framework already shipped the plumbing — MCP tools, an OpenAPI spec,
+per-screen markdown, sitemap, robots — so this is the *discovery* layer
+that makes those capabilities findable. Everything is additive and opt-in;
+existing robots/sitemap/openapi/llm.md behavior is unchanged.
+
+- **`uihost.WithAgentReady`** (`framework/uihost`) — one-call bundle: serves
+  `/llms.txt` + the A2A agent card + AI-bot-aware robots rules + `Link`
+  response headers on every HTML page. Granular options
+  (`WithLLMsTxt`, `WithAgentCard`, `WithAgentLinkHeaders`,
+  `WithMarkdownNegotiation`) expose each piece.
+- **`/llms.txt`** (llmstxt.org) — curated markdown index (H1 title,
+  blockquote summary, `## Section` file-lists); a default Docs section
+  links the app's `/llm-pages.md` index when `WithPublicLLMMD` is on.
+- **A2A agent card** — `/.well-known/agent-card.json` (+ legacy
+  `/.well-known/agent.json`) describing identity, service URL,
+  capabilities, and skills (Agent2Agent v1.0). MCP is advertised as a
+  *skill*; the card deliberately omits `supported_interfaces` since
+  GoFastr serves MCP, not an A2A task server.
+- **AI-bot-aware robots** — `AllowAIBots` augments `/robots.txt` with
+  explicit per-crawler rules (GPTBot, ClaudeBot, Google-Extended, …),
+  merged into the existing `WithRobots` config regardless of option order.
+- **`Link:` response headers** — every HTML page advertises
+  `rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`,
+  `rel="service"` (the MCP endpoint), and `rel="alternate"` markdown.
+  Absolute URLs resolve one canonical origin (`WithAgentReady`/`WithSitemap`
+  `BaseURL`, else the forwarded request scheme+host).
+- **Markdown content negotiation** — `WithMarkdownNegotiation()` serves a
+  page's markdown when the request `Accept`s `text/markdown`.
+- **`framework.WithMCP`** — auto-mounts `/mcp` (Streamable HTTP: POST
+  JSON-RPC + GET SSE), replacing the hand-wired
+  `Router().Handle("POST","/mcp", MCP)`.
+- **`framework.WithOAuthProtectedResource`** — serves
+  `/.well-known/oauth-protected-resource` (RFC 9728) for OAuth-token-
+  protected APIs.
+- **MCP handshake** — `core/mcp` now handles `initialize` (returns
+  protocolVersion + capabilities + serverInfo, name wired from the app's
+  `Config.Name`) and `ping`, so the advertised `/mcp` is functional for
+  spec-compliant MCP clients (Claude, Cursor, …), not just `tools/list`.
+- **Docs** — new `framework/docs/content/agent-ready.md` reference;
+  `examples/site` dogfoods the full bundle (`WithAgentReady` +
+  `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready.
+
+What this deliberately does not do: no A2A task server (card is discovery
+only); DNS-AID (infra/DNS, documented); Web Bot Auth (client-side RFC 9421,
+documented); content-signals header (spec not referenceable at implement
+time, tracked as TBD); commerce (x402/MPP/UCP/ACP — no core primitives).
+
 ## [0.9.0] - 2026-06-25
 
 ### Added — `log.ConsoleSink` (zero-config colorized dev feed)

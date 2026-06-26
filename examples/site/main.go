@@ -122,6 +122,10 @@ func setupServer() *framework.App {
 
 	registerScreens(site)
 
+	// allowAIBots is the *bool passed into WithAgentReady below so the
+	// robots.txt advertises explicit AI-crawler rules.
+	allowAIBots := true
+
 	host := uihost.New(site,
 		uihost.WithCustomCSS(createStyleSheet(t)),
 		uihost.WithNotFoundScreen(&NotFoundScreen{}),
@@ -138,10 +142,30 @@ func setupServer() *framework.App {
 		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://gofastr.dev"}),
 		// Open to crawlers but keep internal runtime endpoints out of the index.
 		uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}),
+		// Agent-readiness bundle: /llms.txt + A2A agent card + AI-bot
+		// robots rules + Link response headers on every HTML page.
+		// BaseURL is intentionally omitted — resolveBaseURL reuses the
+		// sitemap's canonical origin above, so one origin drives all
+		// discovery URLs.
+		uihost.WithAgentReady(uihost.AgentReadyConfig{
+			Title:       "GoFastr",
+			Summary:     "An early (v0.x) Go web framework where AI agents are first-class authors and consumers. MCP tools + framework docs are served at /mcp.",
+			AllowAIBots: &allowAIBots,
+			AgentCard: &uihost.AgentCardConfig{
+				Name:        "GoFastr",
+				Description: "Framework docs + introspection agent for gofastr.dev.",
+				MCPEndpoint: "/mcp",
+			},
+		}),
 	)
 
 	fwApp := framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "site"}),
+		// Expose the framework's own docs + app introspection as MCP tools
+		// (the site is gofastr.dev), and auto-mount /mcp so the agent card
+		// above advertises a live endpoint.
+		framework.WithMCPIntrospection(),
+		framework.WithMCP(),
 	)
 
 	// Mount the palette widget AFTER the host so its routes land on the
