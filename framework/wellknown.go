@@ -74,23 +74,90 @@ func (a *App) handleAPICatalog(w http.ResponseWriter, r *http.Request) {
 
 // ── MCP server card ────────────────────────────────────────────────
 
-// handleMCPServerCard mirrors the MCP initialize handshake as a GET-able
-// server card: serverInfo, the /mcp endpoint, the transport, capabilities,
-// and the tool names. Served when WithMCP mounts /mcp.
+// handleMCPServerCard serves the MCP Server Card (experimental extension
+// SEP-2127) in the spec shape ($schema/name/version/description/remotes),
+// at both the spec-reserved and scanner-probed paths. See the body comment.
 func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
+	// MCP Server Card (experimental extension SEP-2127 /
+	// modelcontextprotocol/experimental-ext-server-card): $schema, name
+	// (reverse-DNS), version, description, remotes[]. Media type
+	// application/mcp-server-card+json. Served at both GET /mcp/server-card
+	// (spec-reserved) and /.well-known/mcp/server-card.json (the path
+	// isitagentready probes, which the live spec discourages) so both the
+	// spec and the scanner are satisfied.
+	w.Header().Set("Content-Type", "application/mcp-server-card+json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(a.buildMCPServerCard(r))
+}
+
+// handleMCPCatalog serves /.well-known/mcp/catalog.json — the spec-
+// recommended well-known that points at the server card.
+func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
 	base := resolveWellKnownBase(r)
-	name, version := a.MCP.ServerInfo()
-	toolNames := make([]string, 0, len(a.MCP.ListTools()))
-	for _, t := range a.MCP.ListTools() {
-		toolNames = append(toolNames, t.Name)
-	}
 	writeWellKnownJSON(w, map[string]any{
-		"serverInfo":   map[string]string{"name": name, "version": version},
-		"endpoint":     base + "/mcp",
-		"transport":    "streamable-http",
-		"capabilities": map[string]any{"tools": map[string]bool{"listChanged": false}},
-		"tools":        toolNames,
+		"specVersion": "draft",
+		"entries": []map[string]any{{
+			"identifier":  "urn:air:" + a.mcpCardName(),
+			"displayName": a.mcpDisplayName(),
+			"mediaType":   "application/mcp-server-card+json",
+			"url":         base + "/mcp/server-card",
+		}},
 	})
+}
+
+// buildMCPServerCard assembles the spec-shaped server card.
+func (a *App) buildMCPServerCard(r *http.Request) map[string]any {
+	base := resolveWellKnownBase(r)
+	_, version := a.MCP.ServerInfo()
+	return map[string]any{
+		"$schema":     "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+		"name":        a.mcpCardName(),
+		"version":     version,
+		"description": a.mcpCardDescription(),
+		"remotes": []map[string]any{{
+			"type": "streamable-http",
+			"url":  base + "/mcp",
+		}},
+	}
+}
+
+// mcpCardName returns a reverse-DNS identifier for the server card
+// (spec pattern ^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$), derived from Config.Name.
+func (a *App) mcpCardName() string {
+	app := strings.ToLower(a.Config.Name)
+	if app == "" {
+		app = "app"
+	}
+	var b strings.Builder
+	for _, c := range app {
+		switch {
+		case (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-':
+			b.WriteRune(c)
+		case c == ' ' || c == '_' || c == '.':
+			b.WriteRune('-')
+		}
+	}
+	s := b.String()
+	if s == "" {
+		s = "app"
+	}
+	return "io.gofastr/" + s
+}
+
+func (a *App) mcpDisplayName() string {
+	if a.Config.Name != "" {
+		return a.Config.Name
+	}
+	return "GoFastr MCP"
+}
+
+func (a *App) mcpCardDescription() string {
+	if a.Config.Name != "" {
+		return a.Config.Name + " MCP server"
+	}
+	return "GoFastr MCP server"
 }
 
 // ── Agent skills index (cloudflare/agent-skills-discovery-rfc) ─────

@@ -1401,6 +1401,10 @@ func (a *App) Start(addr string) error {
 		a.router.Post("/mcp", h)
 		a.router.Get("/mcp", h)
 	}
+	if a.mcpAutoMount {
+		a.router.Get("/mcp/server-card", http.HandlerFunc(a.handleMCPServerCard))
+		a.router.Get("/.well-known/mcp/catalog.json", http.HandlerFunc(a.handleMCPCatalog))
+	}
 	// OAuth Protected Resource metadata (RFC 9728). Opt-in; advertises how
 	// OAuth-token-protected resources accept tokens.
 	if a.oauthResource != nil {

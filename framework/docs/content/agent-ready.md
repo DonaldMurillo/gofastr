@@ -162,7 +162,7 @@ scanner scores, so a host wiring the basics passes without per-route work:
 | Check | Endpoint | When served |
 |---|---|---|
 | API Catalog (RFC 9727) | `/.well-known/api-catalog` (linkset+json) | when the app has entities (`/openapi.json` exists) |
-| MCP Server Card | `/.well-known/mcp/server-card.json` | when `WithMCP` exposes `/mcp` |
+| MCP Server Card (SEP-2127) | `/.well-known/mcp/server-card.json` + spec-reserved `/mcp/server-card` + `/.well-known/mcp/catalog.json` | when `WithMCP` exposes `/mcp` |
 | Agent Skills Index | `/.well-known/agent-skills/index.json` | always (empty list passes; `WithAgentSkills` adds entries) |
 | OAuth Authorization Server (RFC 8414) | `/.well-known/oauth-authorization-server` | opt-in (`WithOAuthAuthorizationServer`) |
 | Content Signals | `Content-Signal:` line in robots.txt | `AgentReadyConfig.ContentSignals` |
@@ -181,8 +181,11 @@ The 11 scored isitagentready checks — robots.txt, Sitemap, Link headers,
 Markdown negotiation, AI bot rules, Content Signals, API Catalog, OAuth
 Protected Resource, MCP Server Card, Agent Skills Index, OAuth Authorization
 Server — are all covered (6 always-on via the bundle; the rest opt-in /
-conditional). A2A / Auth.md / WebMCP / commerce are not among the scanner's
-scored checks.
+conditional). Note: the production isitagentready scanner's full catalog
+also lists A2A card, Auth.md, Web Bot Auth, WebMCP, and commerce
+(x402/MPP/UCP/ACP) — of those, A2A is covered (the agent card); Auth.md,
+Web Bot Auth, and WebMCP are emerging/client-side/WorkOS-profile concerns
+not yet built; commerce has no framework primitives.
 
 ## Base URL resolution
 

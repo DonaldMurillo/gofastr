@@ -56,8 +56,10 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   spec-compliant MCP clients (Claude, Cursor, …), not just `tools/list`.
 - **Scanner well-known endpoints** — the isitagentready.com checks the
   framework now auto-serves: `/.well-known/api-catalog` (RFC 9727
-  linkset+json, when the app has an API), `/.well-known/mcp/server-card.json`
-  (serverInfo + endpoint + tools, when `WithMCP` is on),
+  linkset+json, when the app has an API), the MCP Server Card at both
+  `/.well-known/mcp/server-card.json` (scanner path) and the spec-reserved
+  `/mcp/server-card` + `/.well-known/mcp/catalog.json` (SEP-2127 shape:
+  $schema/name/version/description/remotes), when `WithMCP` is on,
   `/.well-known/agent-skills/index.json` (always; opt-in entries via
   `WithAgentSkills`), and opt-in `/.well-known/oauth-authorization-server`
   (RFC 8414, via `WithOAuthAuthorizationServer`).

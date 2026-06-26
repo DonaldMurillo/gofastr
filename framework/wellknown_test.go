@@ -53,23 +53,44 @@ func TestMCPServerCard_RouteMountedWithMCP(t *testing.T) {
 	app, cleanup := startApp(t, NewApp(WithMCP()))
 	defer cleanup()
 
+	// Scanner-probed path AND spec-reserved path both serve the SEP-2127 card.
+	for _, path := range []string{"/.well-known/mcp/server-card.json", "/mcp/server-card"} {
+		rec := httptest.NewRecorder()
+		app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d, want 200", path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/mcp-server-card+json") {
+			t.Errorf("%s: Content-Type %q, want application/mcp-server-card+json", path, ct)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Fatalf("%s: invalid JSON: %v", path, err)
+		}
+		if doc["$schema"] == nil || doc["name"] == nil || doc["version"] == nil || doc["description"] == nil {
+			t.Errorf("%s: card missing required SEP-2127 fields: %v", path, doc)
+		}
+		// name is reverse-DNS (io.gofastr/<app>); remotes advertise /mcp.
+		if name, _ := doc["name"].(string); !strings.Contains(name, "/") {
+			t.Errorf("%s: name %q not reverse-DNS", path, name)
+		}
+		remotes, _ := doc["remotes"].([]any)
+		if len(remotes) == 0 {
+			t.Errorf("%s: missing remotes", path)
+		}
+	}
+	// Catalog points at the spec-reserved card URL.
 	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/mcp/server-card.json", nil))
+	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/mcp/catalog.json", nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d, want 200", rec.Code)
+		t.Fatalf("catalog status %d", rec.Code)
 	}
-	var doc map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	var cat map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+		t.Fatalf("catalog invalid JSON: %v", err)
 	}
-	if doc["transport"] != "streamable-http" {
-		t.Errorf("transport = %v, want streamable-http", doc["transport"])
-	}
-	if _, ok := doc["serverInfo"]; !ok {
-		t.Errorf("missing serverInfo: %v", doc)
-	}
-	if _, ok := doc["endpoint"]; !ok {
-		t.Errorf("missing endpoint: %v", doc)
+	if cat["specVersion"] == nil {
+		t.Errorf("catalog missing specVersion: %v", cat)
 	}
 }
 
