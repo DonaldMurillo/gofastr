@@ -58,6 +58,11 @@ type AgentReadyConfig struct {
 	// …). true → allow; false → deny. nil → no AI-bot block.
 	AllowAIBots *bool
 
+	// ContentSignals, when set, emits a Content-Signal: directive line in
+	// robots.txt declaring AI usage preferences (e.g.
+	// "ai-train=no, search=yes, ai-input=yes"). See contentsignals.org.
+	ContentSignals string
+
 	// LinkHeaders, when non-nil, toggles Link response headers on every
 	// HTML page. Default (nil → bundle sets true) advertises the sitemap,
 	// llms.txt, agent card, and the per-page markdown alternate.
@@ -186,12 +191,15 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 	// OpenAPI service-desc link — opt-in (path the host serves the spec at).
 	ar.openAPI = cfg.OpenAPIEndpoint
 
+	// Content-Signal robots directive — opt-in preference string.
+	ar.contentSignals = cfg.ContentSignals
+
 	return func(ds *UIHost) {
 		// The zero value is a no-op (matches the doc): don't install the
 		// surface unless something meaningful is configured. linkHeaders
 		// alone — with nothing to link to — doesn't justify it.
 		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
-			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" {
+			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" && ar.contentSignals == "" {
 			return
 		}
 		ds.agentReady = ar
@@ -249,13 +257,14 @@ func WithAgentLinkHeaders() Option {
 
 // agentReadyConfig is the resolved, internal form stored on *UIHost.
 type agentReadyConfig struct {
-	baseURL     string
-	llms        *llmsCfg
-	card        *AgentCardConfig
-	allowAIBots *bool
-	linkHeaders bool
-	contentNeg  bool
-	openAPI     string // OpenAPI spec path → Link: rel="service-desc"
+	baseURL        string
+	llms           *llmsCfg
+	card           *AgentCardConfig
+	allowAIBots    *bool
+	linkHeaders    bool
+	contentNeg     bool
+	openAPI        string // OpenAPI spec path → Link: rel="service-desc"
+	contentSignals string // Content-Signal: robots directive value
 }
 
 type llmsCfg struct {

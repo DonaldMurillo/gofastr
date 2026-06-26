@@ -54,14 +54,26 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   protocolVersion + capabilities + serverInfo, name wired from the app's
   `Config.Name`) and `ping`, so the advertised `/mcp` is functional for
   spec-compliant MCP clients (Claude, Cursor, …), not just `tools/list`.
+- **Scanner well-known endpoints** — the isitagentready.com checks the
+  framework now auto-serves: `/.well-known/api-catalog` (RFC 9727
+  linkset+json, when the app has an API), `/.well-known/mcp/server-card.json`
+  (serverInfo + endpoint + tools, when `WithMCP` is on),
+  `/.well-known/agent-skills/index.json` (always; opt-in entries via
+  `WithAgentSkills`), and opt-in `/.well-known/oauth-authorization-server`
+  (RFC 8414, via `WithOAuthAuthorizationServer`).
+- **Content Signals** — `AgentReadyConfig.ContentSignals` emits a
+  `Content-Signal:` directive in robots.txt (contentsignals.org), e.g.
+  `ai-train=no, search=yes, ai-input=yes`.
 - **Docs** — new `framework/docs/content/agent-ready.md` reference;
   `examples/site` dogfoods the full bundle (`WithAgentReady` +
   `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready.
 
-What this deliberately does not do: no A2A task server (card is discovery
-only); DNS-AID (infra/DNS, documented); Web Bot Auth (client-side RFC 9421,
-documented); content-signals header (spec not referenceable at implement
-time, tracked as TBD); commerce (x402/MPP/UCP/ACP — no core primitives).
+What this deliberately does not do: no A2A task server (the A2A card is
+discovery-only; A2A/Auth.md/WebMCP/commerce aren't among the scanner's
+scored checks); DNS-AID (infra/DNS, documented); Web Bot Auth (client-side
+RFC 9421, documented); commerce (x402/MPP/UCP/ACP — no core primitives).
+The 11 scored isitagentready checks are all covered (6 always-on, the rest
+opt-in/conditional).
 
 ## [0.9.0] - 2026-06-25
 

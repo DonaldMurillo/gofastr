@@ -148,9 +148,10 @@ func setupServer() *framework.App {
 		// sitemap's canonical origin above, so one origin drives all
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
-			Title:       "GoFastr",
-			Summary:     "An early (v0.x) Go web framework where AI agents are first-class authors and consumers. MCP tools + framework docs are served at /mcp.",
-			AllowAIBots: &allowAIBots,
+			Title:          "GoFastr",
+			Summary:        "An early (v0.x) Go web framework where AI agents are first-class authors and consumers. MCP tools + framework docs are served at /mcp.",
+			AllowAIBots:    &allowAIBots,
+			ContentSignals: "ai-train=no, search=yes, ai-input=yes",
 			AgentCard: &uihost.AgentCardConfig{
 				Name:        "GoFastr",
 				Description: "Framework docs + introspection agent for gofastr.dev.",

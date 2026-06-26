@@ -184,6 +184,12 @@ type App struct {
 	// (RFC 9728) so OAuth-token-protected APIs are discoverable. Set via
 	// WithOAuthProtectedResource().
 	oauthResource *OAuthProtectedResourceConfig
+	// agentSkills, when set, serves /.well-known/agent-skills/index.json
+	// (agent-skills-discovery-rfc). Set via WithAgentSkills().
+	agentSkills []AgentSkillEntry
+	// oauthAuthServer, when set, serves /.well-known/oauth-authorization-server
+	// (RFC 8414). Set via WithOAuthAuthorizationServer().
+	oauthAuthServer *OAuthAuthorizationServerConfig
 
 	// startupOutput receives the human-readable readiness banner. It defaults
 	// to os.Stdout and stays unexported so tests can verify startup ordering
@@ -1399,6 +1405,21 @@ func (a *App) Start(addr string) error {
 	// OAuth-token-protected resources accept tokens.
 	if a.oauthResource != nil {
 		a.router.Get("/.well-known/oauth-protected-resource", http.HandlerFunc(a.handleOAuthProtectedResource))
+	}
+	// Agent-readiness well-known endpoints (isitagentready.com). The API
+	// catalog (RFC 9727 linkset) + MCP server card are auto-served when
+	// their precondition holds (has an API / MCP exposed); the agent
+	// skills index is always served (empty list passes discovery);
+	// OAuth authorization server (RFC 8414) is opt-in.
+	if hasAPI {
+		a.router.Get("/.well-known/api-catalog", http.HandlerFunc(a.handleAPICatalog))
+	}
+	if a.mcpAutoMount {
+		a.router.Get("/.well-known/mcp/server-card.json", http.HandlerFunc(a.handleMCPServerCard))
+	}
+	a.router.Get("/.well-known/agent-skills/index.json", http.HandlerFunc(a.handleAgentSkillsIndex))
+	if a.oauthAuthServer != nil {
+		a.router.Get("/.well-known/oauth-authorization-server", http.HandlerFunc(a.handleOAuthAuthorizationServer))
 	}
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins

@@ -231,6 +231,19 @@ func TestRobots_AIBotDeny(t *testing.T) {
 	}
 }
 
+func TestRobots_ContentSignal(t *testing.T) {
+	ds := newAgentReadyHost(
+		WithRobots(RobotsConfig{}),
+		WithAgentReady(AgentReadyConfig{ContentSignals: "ai-train=no, search=yes, ai-input=yes"}),
+	)
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+	body, _ := getBody(t, srv.URL+"/robots.txt")
+	if !strings.Contains(body, "Content-Signal: ai-train=no, search=yes, ai-input=yes") {
+		t.Errorf("Content-Signal directive missing:\n%s", body)
+	}
+}
+
 // ── Link headers ───────────────────────────────────────────────────
 
 func TestWriteAgentLinkHeaders(t *testing.T) {

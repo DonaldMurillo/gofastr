@@ -169,6 +169,11 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 	if sm != "" {
 		fmt.Fprintf(&b, "Sitemap: %s\n", sm)
 	}
+	// Content-Signal directive (contentsignals.org): AI usage preferences.
+	// A standalone directive line in robots.txt, like Sitemap.
+	if ds.agentReady != nil && ds.agentReady.contentSignals != "" {
+		fmt.Fprintf(&b, "Content-Signal: %s\n", ds.agentReady.contentSignals)
+	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte(b.String()))

@@ -64,6 +64,15 @@ func (s *Server) SetServerName(name string) {
 	s.name = name
 }
 
+// ServerInfo returns the name/version advertised in the MCP initialize
+// handshake. Used by well-known discovery artifacts (e.g. an MCP server
+// card) that mirror the handshake's serverInfo.
+func (s *Server) ServerInfo() (name, version string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.name, s.version
+}
+
 // RegisterTool adds a tool to the server's registry.
 // Returns an error if a tool with the same name already exists.
 func (s *Server) RegisterTool(name, description string, inputSchema map[string]any, fn ToolHandler) error {

@@ -154,6 +154,36 @@ The framework serves the document; emitting the companion
 to the host's auth middleware so it can be scoped to the exact token-protected
 routes.
 
+### Scanner-conformance endpoints  (isitagentready.com)
+
+The framework auto-serves the well-known artifacts the isitagentready
+scanner scores, so a host wiring the basics passes without per-route work:
+
+| Check | Endpoint | When served |
+|---|---|---|
+| API Catalog (RFC 9727) | `/.well-known/api-catalog` (linkset+json) | when the app has entities (`/openapi.json` exists) |
+| MCP Server Card | `/.well-known/mcp/server-card.json` | when `WithMCP` exposes `/mcp` |
+| Agent Skills Index | `/.well-known/agent-skills/index.json` | always (empty list passes; `WithAgentSkills` adds entries) |
+| OAuth Authorization Server (RFC 8414) | `/.well-known/oauth-authorization-server` | opt-in (`WithOAuthAuthorizationServer`) |
+| Content Signals | `Content-Signal:` line in robots.txt | `AgentReadyConfig.ContentSignals` |
+
+```go
+framework.WithAgentSkills([]framework.AgentSkillEntry{{
+    Name: "code-review", Description: "Review code.",
+    URL: "/.well-known/agent-skills/code-review/SKILL.md", Digest: "sha256:...",
+}})
+framework.WithOAuthAuthorizationServer(framework.OAuthAuthorizationServerConfig{
+    Issuer: "https://auth.example", TokenEndpoint: "https://auth.example/token",
+})
+```
+
+The 11 scored isitagentready checks — robots.txt, Sitemap, Link headers,
+Markdown negotiation, AI bot rules, Content Signals, API Catalog, OAuth
+Protected Resource, MCP Server Card, Agent Skills Index, OAuth Authorization
+Server — are all covered (6 always-on via the bundle; the rest opt-in /
+conditional). A2A / Auth.md / WebMCP / commerce are not among the scanner's
+scored checks.
+
 ## Base URL resolution
 
 All absolute discovery URLs (agent card `url`, `Link` header targets) use one
