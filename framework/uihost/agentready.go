@@ -197,12 +197,55 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 	return func(ds *UIHost) {
 		// The zero value is a no-op (matches the doc): don't install the
 		// surface unless something meaningful is configured. linkHeaders
-		// alone — with nothing to link to — doesn't justify it.
+		// alone — with nothing to link to — doesn't justify it. A granular
+		// option may already have installed ds.agentReady; the early return
+		// leaves it untouched rather than wiping it.
 		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
 			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" && ar.contentSignals == "" {
 			return
 		}
-		ds.agentReady = ar
+		// Merge into any config a granular option (WithMarkdownNegotiation,
+		// WithLLMsTxt, WithAgentCard, WithAgentLinkHeaders) already installed
+		// rather than replacing it, so the bundle and granular options compose
+		// regardless of option order. The bundle wins for every field it
+		// explicitly sets; a field it leaves unset preserves the granular value.
+		cur := ds.agentReady
+		if cur == nil {
+			cur = &agentReadyConfig{}
+		}
+		if ar.baseURL != "" {
+			cur.baseURL = ar.baseURL
+		}
+		if ar.llms != nil {
+			cur.llms = ar.llms
+		}
+		if ar.card != nil {
+			cur.card = ar.card
+		}
+		if ar.allowAIBots != nil {
+			cur.allowAIBots = ar.allowAIBots
+		}
+		// Link headers default on for the bundle; OR them in so a granular
+		// enable is never clobbered. Only an explicit LinkHeaders:&false
+		// turns them off.
+		if cfg.LinkHeaders != nil {
+			cur.linkHeaders = *cfg.LinkHeaders
+		} else {
+			cur.linkHeaders = cur.linkHeaders || ar.linkHeaders
+		}
+		// Content negotiation only flips when the bundle explicitly sets it
+		// (ContentNegotiation non-nil); otherwise a granular
+		// WithMarkdownNegotiation survives.
+		if cfg.ContentNegotiation != nil {
+			cur.contentNeg = *cfg.ContentNegotiation
+		}
+		if ar.openAPI != "" {
+			cur.openAPI = ar.openAPI
+		}
+		if ar.contentSignals != "" {
+			cur.contentSignals = ar.contentSignals
+		}
+		ds.agentReady = cur
 	}
 }
 

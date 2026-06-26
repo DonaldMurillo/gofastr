@@ -231,6 +231,14 @@ origin and every artifact stays consistent, including behind a proxy that sets
   `/llm-pages.md` index instead (the default does this).
 - **Calling `WithMCP` and also mounting `/mcp` by hand.** Route conflict →
   panic at startup. Use one.
+- **Mixing `WithAgentReady` with granular agent-ready options** is safe in any
+  order. `WithAgentReady` *merges* into whatever a granular option
+  (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,
+  `WithAgentLinkHeaders`) already installed — the bundle wins for every field
+  it explicitly sets, and a field it leaves unset preserves the granular value.
+  So `WithMarkdownNegotiation()` before `WithAgentReady{Title: …}` keeps content
+  negotiation on; you can equally enable it via the bundle's `ContentNegotiation`
+  field. (Both still require `WithPublicLLMMD`, per the note above.)
 
 ## What this deliberately does not do
 

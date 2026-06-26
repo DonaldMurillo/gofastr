@@ -407,6 +407,51 @@ func TestWithAgentReady_ZeroValueIsNoOp(t *testing.T) {
 	}
 }
 
+// TestWithAgentReady_MergesGranular pins the merge contract: WithAgentReady
+// composes with granular options regardless of order rather than clobbering
+// the config they installed. Both orderings must preserve every field.
+func TestWithAgentReady_MergesGranular(t *testing.T) {
+	bundle := WithAgentReady(AgentReadyConfig{Title: "X", Summary: "y"})
+
+	t.Run("granular before bundle survives", func(t *testing.T) {
+		ds := newAgentReadyHost(WithMarkdownNegotiation(), bundle)
+		if ds.agentReady == nil || !ds.agentReady.contentNeg {
+			t.Fatal("WithMarkdownNegotiation set before the bundle was clobbered")
+		}
+		if ds.agentReady.llms == nil || ds.agentReady.card == nil {
+			t.Error("bundle fields (llms/card) should still be installed")
+		}
+	})
+
+	t.Run("granular after bundle survives", func(t *testing.T) {
+		ds := newAgentReadyHost(bundle, WithMarkdownNegotiation())
+		if ds.agentReady == nil || !ds.agentReady.contentNeg {
+			t.Fatal("WithMarkdownNegotiation set after the bundle was lost")
+		}
+		if ds.agentReady.llms == nil {
+			t.Error("bundle llms should survive the later granular option")
+		}
+	})
+
+	t.Run("granular card preserved when bundle omits one", func(t *testing.T) {
+		// A bundle with no Title derives no card, so a card installed by
+		// WithAgentCard before it must survive the merge.
+		ds := newAgentReadyHost(
+			WithAgentCard(AgentCardConfig{Name: "Granular"}),
+			WithAgentReady(AgentReadyConfig{ContentSignals: "search=yes"}),
+		)
+		if ds.agentReady == nil || ds.agentReady.card == nil {
+			t.Fatal("granular card clobbered by a bundle that derives none")
+		}
+		if ds.agentReady.card.Name != "Granular" {
+			t.Errorf("card.Name = %q, want preserved %q", ds.agentReady.card.Name, "Granular")
+		}
+		if ds.agentReady.contentSignals != "search=yes" {
+			t.Error("bundle contentSignals should still be applied")
+		}
+	})
+}
+
 // ── Gap: resolveBaseURL three-branch resolution ────────────────────
 
 func TestResolveBaseURL(t *testing.T) {
