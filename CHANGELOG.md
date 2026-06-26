@@ -66,6 +66,10 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
 - **Content Signals** — `AgentReadyConfig.ContentSignals` emits a
   `Content-Signal:` directive in robots.txt (contentsignals.org), e.g.
   `ai-train=no, search=yes, ai-input=yes`.
+- **Auth.md** (WorkOS agentic-registration profile) — `WithAuthMD` serves
+  `/auth.md` (a markdown manifest) and merges an `agent_auth` block
+  (skill + identity/claim/events endpoints) into the
+  `/.well-known/oauth-authorization-server` metadata.
 - **Docs** — new `framework/docs/content/agent-ready.md` reference;
   `examples/site` dogfoods the full bundle (`WithAgentReady` +
   `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready.

@@ -190,6 +190,9 @@ type App struct {
 	// oauthAuthServer, when set, serves /.well-known/oauth-authorization-server
 	// (RFC 8414). Set via WithOAuthAuthorizationServer().
 	oauthAuthServer *OAuthAuthorizationServerConfig
+	// authMD, when set, serves /auth.md + merges an agent_auth block into
+	// the OAuth authorization-server metadata (WorkOS agentic-registration).
+	authMD *AuthMDConfig
 
 	// startupOutput receives the human-readable readiness banner. It defaults
 	// to os.Stdout and stays unexported so tests can verify startup ordering
@@ -1424,6 +1427,9 @@ func (a *App) Start(addr string) error {
 	a.router.Get("/.well-known/agent-skills/index.json", http.HandlerFunc(a.handleAgentSkillsIndex))
 	if a.oauthAuthServer != nil {
 		a.router.Get("/.well-known/oauth-authorization-server", http.HandlerFunc(a.handleOAuthAuthorizationServer))
+	}
+	if a.authMD != nil {
+		a.router.Get("/auth.md", http.HandlerFunc(a.handleAuthMD))
 	}
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins

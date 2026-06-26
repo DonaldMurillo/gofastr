@@ -222,7 +222,7 @@ func WithOAuthAuthorizationServer(cfg OAuthAuthorizationServerConfig) AppOption 
 	return func(a *App) { a.oauthAuthServer = &cfg }
 }
 
-func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, _ *http.Request) {
+func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.Request) {
 	cfg := a.oauthAuthServer
 	if cfg == nil {
 		http.NotFound(w, nil)
@@ -250,6 +250,11 @@ func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, _ *http.Requ
 	}
 	if len(cfg.TokenEndpointAuthMethodsSupported) > 0 {
 		doc["token_endpoint_auth_methods_supported"] = cfg.TokenEndpointAuthMethodsSupported
+	}
+	// WorkOS agentic-registration profile: merge agent_auth when WithAuthMD
+	// configured an AgentAuth block.
+	if ab := a.agentAuthBlock(r); ab != nil {
+		doc["agent_auth"] = ab
 	}
 	writeWellKnownJSON(w, doc)
 }
