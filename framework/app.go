@@ -193,6 +193,12 @@ type App struct {
 	// authMD, when set, serves /auth.md + merges an agent_auth block into
 	// the OAuth authorization-server metadata (WorkOS agentic-registration).
 	authMD *AuthMDConfig
+	// webBotAuth/ucp/acp: opt-in commerce + bot-signing discovery docs
+	// (isitagentready.com production checks). Set via WithWebBotAuth /
+	// WithUCP / WithACP.
+	webBotAuth *WebBotAuthConfig
+	ucp        *UCPConfig
+	acp        *ACPConfig
 
 	// startupOutput receives the human-readable readiness banner. It defaults
 	// to os.Stdout and stays unexported so tests can verify startup ordering
@@ -1430,6 +1436,15 @@ func (a *App) Start(addr string) error {
 	}
 	if a.authMD != nil {
 		a.router.Get("/auth.md", http.HandlerFunc(a.handleAuthMD))
+	}
+	if a.webBotAuth != nil {
+		a.router.Get("/.well-known/http-message-signatures-directory", http.HandlerFunc(a.handleWebBotAuthDirectory))
+	}
+	if a.ucp != nil {
+		a.router.Get("/.well-known/ucp", http.HandlerFunc(a.handleUCP))
+	}
+	if a.acp != nil {
+		a.router.Get("/.well-known/acp.json", http.HandlerFunc(a.handleACP))
 	}
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins

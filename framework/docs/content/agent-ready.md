@@ -182,11 +182,15 @@ The 11 scored isitagentready checks — robots.txt, Sitemap, Link headers,
 Markdown negotiation, AI bot rules, Content Signals, API Catalog, OAuth
 Protected Resource, MCP Server Card, Agent Skills Index, OAuth Authorization
 Server — are all covered (6 always-on via the bundle; the rest opt-in /
-conditional). Note: the production isitagentready scanner's full catalog
-also lists A2A card, Auth.md, Web Bot Auth, WebMCP, and commerce
-(x402/MPP/UCP/ACP) — of those, A2A and Auth.md are covered; Web Bot Auth
-and WebMCP are client-side/browser concerns (no server artifact to serve);
-commerce has no framework primitives.
+conditional). The production scanner also lists: A2A card (covered —
+`/.well-known/agent-card.json`), Auth.md (`WithAuthMD`), Web Bot Auth
+(`WithWebBotAuth` — the site publishes a JWKS at
+`/.well-known/http-message-signatures-directory` so it can sign its own
+outbound requests), UCP (`WithUCP` → `/.well-known/ucp`), and ACP
+(`WithACP` → `/.well-known/acp.json`). Not buildable as served routes:
+DNS-AID (DNS SVCB/HTTPS + DNSSEC), x402 (HTTP 402 payment middleware),
+MPP (payment execution + an `x-payment-info` OpenAPI extension needing a
+payment backend), WebMCP (client-side browser API), ap2 (server-only).
 
 ## Base URL resolution
 
@@ -207,6 +211,11 @@ origin and every artifact stays consistent, including behind a proxy that sets
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
 | `framework.WithMCP()` | Auto-mount `/mcp` (Streamable HTTP). |
 | `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
+| `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |
+| `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS. |
+| `framework.WithAgentSkills(skills)` | `/.well-known/agent-skills/index.json`. |
+| `framework.WithOAuthAuthorizationServer(cfg)` | RFC 8414 AS metadata. |
+| `framework.WithUCP(cfg)` / `framework.WithACP(cfg)` | `/.well-known/ucp` / `/.well-known/acp.json`. |
 
 ## Common mistakes
 
@@ -233,8 +242,10 @@ origin and every artifact stays consistent, including behind a proxy that sets
   and calls tools; it is not a multi-turn A2A task agent.
 - **No DNS-AID.** DNS TXT records for AI discovery are infra/DNS, not
   framework code — add them at your registrar/host.
-- **No Web Bot Auth enforcement.** That's a bot-side (client) signing scheme
-  (RFC 9421); a site's only role is optional signature validation middleware,
-  which a host wires if it needs verified-bot gating.
-- **No content-signals header.** The spec was not referenceable at implement
-  time; revisit when a stable mechanism is documented.
+- **No inbound Web Bot Auth verification.** `WithWebBotAuth` publishes the
+  site's signing JWKS (so it can sign its own outbound requests); verifying
+  RFC 9421 signatures on *inbound* requests is host middleware, not a served
+  artifact.
+- **No x402 / MPP payment.** These need real payment middleware (HTTP 402 +
+  payment requirements) or a payment backend; the framework serves discovery
+  docs (UCP/ACP) but not payment execution.

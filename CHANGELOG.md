@@ -70,6 +70,11 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   `/auth.md` (a markdown manifest) and merges an `agent_auth` block
   (skill + identity/claim/events endpoints) into the
   `/.well-known/oauth-authorization-server` metadata.
+- **Web Bot Auth / UCP / ACP** (remaining production-scanner checks) —
+  `WithWebBotAuth` serves `/.well-known/http-message-signatures-directory`
+  (the site's signing JWKS), `WithUCP` serves `/.well-known/ucp`, `WithACP`
+  serves `/.well-known/acp.json`. DNS-AID / x402 / MPP / WebMCP / ap2 remain
+  documented-only (DNS / payment-middleware / client-side / server-only).
 - **Docs** — new `framework/docs/content/agent-ready.md` reference;
   `examples/site` dogfoods the full bundle (`WithAgentReady` +
   `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready.
