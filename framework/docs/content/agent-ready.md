@@ -74,31 +74,38 @@ per-screen `/llm.md` doc.
 
 ### A2A agent card  (Agent2Agent v1.0)
 
-`/.well-known/agent-card.json` describes the agent's identity, service URL,
-capabilities, and skills. GoFastr publishes a **pure-discovery card** — it
-advertises what the site offers without claiming to be a full A2A task server.
-MCP is advertised as a *skill* (not an A2A `supported_interfaces` binding,
-which would wrongly imply an A2A JSON-RPC server).
+`/.well-known/agent-card.json` describes the agent's identity, service
+endpoint, capabilities, and skills, conforming to the A2A v1.0 AgentCard
+(camelCase JSON keys per ADR-001; `supportedInterfaces` and `skills` are
+REQUIRED and always present). The service endpoint lives in
+`supportedInterfaces[].url` — there is no top-level `url` in v1.0. When
+`MCPEndpoint` is set, that endpoint is advertised as the JSON-RPC
+interface (it genuinely speaks JSON-RPC — `initialize` and `tools/list`
+work), and a derived `mcp` skill points agents at it.
 
 | `AgentCardConfig` field | Purpose |
 |---|---|
 | `Name` *(required)* | Human-readable agent name. |
 | `Description` | Short summary. |
 | `Version` | Software version; defaults `1.0.0`. |
-| `URL` | Absolute service endpoint; defaults to the resolved base URL. |
-| `MCPEndpoint` | e.g. `"/mcp"` — emits a derived `mcp` skill + a `Link: rel="service"` header. |
-| `Skills` | Declared capabilities; one derived `mcp` skill when empty + `MCPEndpoint` set. |
+| `URL` | Fallback for the `supportedInterfaces[].url` when `MCPEndpoint` is unset; defaults to the resolved base URL. |
+| `MCPEndpoint` | e.g. `"/mcp"` — advertised as `supportedInterfaces[].url` (baseURL + endpoint), plus a derived `mcp` skill + a `Link: rel="service"` header. |
+| `Skills` | Declared capabilities; one derived `mcp` skill when empty + `MCPEndpoint` set. `skills` is always emitted (possibly `[]`). |
 | `Streaming`, `PushNotifications` | Capability flags (default false). |
-| `SecuritySchemes` | OpenAPI-style schemes under `security_schemes`; omitted when nil. |
+| `SecuritySchemes` | OpenAPI-style schemes under `securitySchemes`; omitted when nil. |
 | `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
 
 ### AI-bot-aware robots
 
 `WithAgentReady{AllowAIBots: boolPtr(true)}` augments `/robots.txt` with
 explicit per-crawler rules (GPTBot, ClaudeBot, Google-Extended, CCBot, …) so
-the site reads as agent-friendly to scanners. `false` denies them. It merges
-into the existing `WithRobots` config regardless of option order — keep your
-generic `User-agent: *` block; the AI-bot groups are appended.
+the site reads as agent-friendly to scanners; `false` denies them. It merges
+into the existing `WithRobots` config regardless of option order. When
+allowed, the bots are listed as consecutive `User-agent:` lines in the
+main group (so they inherit the host's `Allow`/`Disallow` rules — a
+standalone `Allow: /` group would shadow path-specific exclusions, since
+RFC 9309 applies only a crawler's most-specific group). When denied,
+each bot gets its own `Disallow: /` group.
 
 ### `Link:` response headers
 
@@ -183,10 +190,12 @@ origin and every artifact stays consistent, including behind a proxy that sets
 
 ## What this deliberately does not do
 
-- **No A2A task server.** The card is discovery metadata. A full A2A
-  JSON-RPC task server (task lifecycle, streaming, push notifications) is a
-  separate, larger surface; the card stays honest by omitting
-  `supported_interfaces`.
+- **No full A2A task server.** The card advertises the JSON-RPC endpoint
+  (`/mcp`) in `supportedInterfaces` and is structurally conformant, but
+  GoFastr serves MCP tool calls (`tools/list`, `tools/call`), not the
+  A2A task lifecycle (`tasks/send`, streaming, push notifications). A
+  client connecting to the advertised endpoint completes `initialize`
+  and calls tools; it is not a multi-turn A2A task agent.
 - **No DNS-AID.** DNS TXT records for AI discovery are infra/DNS, not
   framework code — add them at your registrar/host.
 - **No Web Bot Auth enforcement.** That's a bot-side (client) signing scheme

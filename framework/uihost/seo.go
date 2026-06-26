@@ -125,6 +125,17 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "User-agent: %s\n", ua)
+	// When AI bots are explicitly ALLOWED, list them as consecutive
+	// User-agent lines in THIS group (RFC 9309: consecutive UA lines are
+	// members of one group), so they inherit the host's Allow/Disallow
+	// rules below. A standalone Allow:/ group would shadow path-specific
+	// Disallow rules for those bots, since a crawler applies only its
+	// most-specific matching group.
+	if ds.agentReady != nil && ds.agentReady.allowAIBots != nil && *ds.agentReady.allowAIBots {
+		for _, bot := range aiBotUserAgents() {
+			fmt.Fprintf(&b, "User-agent: %s\n", bot)
+		}
+	}
 	if len(cfg.Allow) == 0 && len(cfg.Disallow) == 0 {
 		// Open default — explicit so it's obvious the file isn't empty.
 		b.WriteString("Allow: /\n")
@@ -138,18 +149,17 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 	if cfg.CrawlDelay > 0 {
 		fmt.Fprintf(&b, "Crawl-delay: %d\n", cfg.CrawlDelay)
 	}
-	// AI-bot block (agent-readiness). Explicit per-crawler rules so the
-	// site reads as agent-friendly (or not) to isitagentready-class
-	// scanners. Merged from WithAgentReady and composes with the generic
-	// group above regardless of option order.
-	if ds.agentReady != nil && ds.agentReady.allowAIBots != nil {
-		rule := "Allow: /"
-		if !*ds.agentReady.allowAIBots {
-			rule = "Disallow: /"
-		}
+	// AI bots explicitly DENIED: separate Disallow:/ groups. Deny is
+	// stricter than any host rule, so separate groups don't shadow the
+	// generic group's path-specific rules. (The ALLOW case is handled
+	// above by listing the bots as consecutive User-agent lines in the
+	// main group, so they inherit the host's Allow/Disallow — a
+	// standalone Allow:/ group would shadow those rules for the bots,
+	// since RFC 9309 applies only a crawler's most-specific group.)
+	if ds.agentReady != nil && ds.agentReady.allowAIBots != nil && !*ds.agentReady.allowAIBots {
 		for _, bot := range aiBotUserAgents() {
 			b.WriteString("\n")
-			fmt.Fprintf(&b, "User-agent: %s\n%s\n", bot, rule)
+			fmt.Fprintf(&b, "User-agent: %s\nDisallow: /\n", bot)
 		}
 	}
 	sm := cfg.SitemapURL

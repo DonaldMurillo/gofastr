@@ -398,22 +398,34 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 		"name":        name,
 		"description": cfg.Description,
 		"version":     version,
-		"url":         serviceURL,
 		"capabilities": map[string]bool{
-			"streaming":          cfg.Streaming,
-			"push_notifications": cfg.PushNotifications,
+			"streaming":         cfg.Streaming,
+			"pushNotifications": cfg.PushNotifications,
 		},
-		"skills":               skills,
-		"default_input_modes":  in,
-		"default_output_modes": out,
+		"skills":             skills, // REQUIRED (proto field 12); emit [] when empty, never omit
+		"defaultInputModes":  in,
+		"defaultOutputModes": out,
 	}
+	// skills is REQUIRED in A2A v1.0 — a nil slice marshals to null, so
+	// force a non-nil empty array when there are no skills.
 	if len(skills) == 0 {
-		// A2A permits an empty skills array, but omitting reads cleaner
-		// for a pure-discovery card with no advertised skills.
-		delete(doc, "skills")
+		doc["skills"] = []AgentSkill{}
 	}
+	// supportedInterfaces is REQUIRED (proto field 3) and is the ONLY place
+	// the service endpoint lives in v1.0 (no top-level url). Advertise the
+	// JSON-RPC endpoint: the MCP endpoint when configured (it genuinely
+	// speaks JSON-RPC — initialize/tools-list work), else the service URL.
+	ifaceURL := serviceURL
+	if cfg.MCPEndpoint != "" {
+		ifaceURL = strings.TrimRight(baseURL, "/") + cfg.MCPEndpoint
+	}
+	doc["supportedInterfaces"] = []map[string]any{{
+		"url":             ifaceURL,
+		"protocolBinding": "JSONRPC",
+		"protocolVersion": "1.0",
+	}}
 	if len(cfg.SecuritySchemes) > 0 {
-		doc["security_schemes"] = cfg.SecuritySchemes
+		doc["securitySchemes"] = cfg.SecuritySchemes
 	}
 	return doc
 }

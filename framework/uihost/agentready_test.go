@@ -110,20 +110,32 @@ func TestAgentCard_JSON(t *testing.T) {
 	if doc["version"] != "2.0.0" {
 		t.Errorf("version: %v", doc["version"])
 	}
-	if doc["url"] != "https://acme.example/agent" {
-		t.Errorf("url: %v", doc["url"])
+	// v1.0 has NO top-level url — the service endpoint lives ONLY in
+	// supportedInterfaces[].url (camelCase per ADR-001).
+	if _, ok := doc["url"]; ok {
+		t.Errorf("card must not carry a top-level url in v1.0: %v", doc["url"])
 	}
-	// MCP must be advertised as a skill, NOT as a misleading A2A
-	// supported_interfaces binding (no A2A server exists).
-	if _, ok := doc["supported_interfaces"]; ok {
-		t.Errorf("card must not advertise supported_interfaces without an A2A server: %v", doc["supported_interfaces"])
+	ifaces, ok := doc["supportedInterfaces"].([]map[string]any)
+	if !ok || len(ifaces) != 1 {
+		t.Fatalf("supportedInterfaces missing/wrong: %v", doc["supportedInterfaces"])
+	}
+	if ifaces[0]["url"] != "https://acme.example/mcp" {
+		t.Errorf("interface url = %v, want https://acme.example/mcp (baseURL + MCPEndpoint)", ifaces[0]["url"])
+	}
+	if ifaces[0]["protocolBinding"] != "JSONRPC" {
+		t.Errorf("protocolBinding = %v, want JSONRPC", ifaces[0]["protocolBinding"])
+	}
+	// camelCase keys (snake_case would be dropped by a ProtoJSON decoder).
+	caps, _ := doc["capabilities"].(map[string]bool)
+	if _, ok := caps["pushNotifications"]; !ok {
+		t.Errorf("capabilities must use camelCase pushNotifications: %v", caps)
+	}
+	if _, ok := doc["defaultInputModes"]; !ok {
+		t.Errorf("missing camelCase defaultInputModes: %v", doc["defaultInputModes"])
 	}
 	skills, ok := doc["skills"].([]AgentSkill)
 	if !ok || len(skills) != 1 || skills[0].ID != "mcp" {
 		t.Errorf("expected single derived mcp skill, got %v", doc["skills"])
-	}
-	if _, ok := doc["capabilities"].(map[string]bool); !ok {
-		t.Errorf("missing capabilities: %v", doc["capabilities"])
 	}
 }
 
@@ -176,6 +188,36 @@ func TestRobots_AIBotBlock(t *testing.T) {
 	}
 }
 
+// TestRobots_AIBotAllow_InheritsHostDisallow pins the fix for the
+// shadowing bug found in adversarial review: a standalone Allow:/
+// group per AI bot used to make GPTBot/ClaudeBot ignore the host's
+// path-specific Disallow rules (RFC 9309 applies only a crawler's
+// most-specific group). The bots must now be members of the main
+// group so they inherit the exclusions.
+func TestRobots_AIBotAllow_InheritsHostDisallow(t *testing.T) {
+	ds := newAgentReadyHost(
+		WithRobots(RobotsConfig{Disallow: []string{"/__gofastr/", "/private"}}),
+		WithAgentReady(AgentReadyConfig{AllowAIBots: boolp(true)}),
+	)
+	srv := httptest.NewServer(ds)
+	t.Cleanup(srv.Close)
+	body, _ := getBody(t, srv.URL+"/robots.txt")
+
+	gpt := strings.Index(body, "User-agent: GPTBot")
+	if gpt < 0 {
+		t.Fatal("GPTBot missing from robots.txt")
+	}
+	rest := body[gpt:]
+	disallowIdx := strings.Index(rest, "Disallow: /__gofastr/")
+	if disallowIdx < 0 {
+		t.Fatalf("GPTBot does not inherit the host Disallow (shadowing bug):\n%s", body)
+	}
+	// A blank line between GPTBot and the Disallow would mean a separate
+	// group — the shadowing bug. Same group = only User-agent lines between.
+	if strings.Contains(rest[:disallowIdx], "\n\n") {
+		t.Errorf("blank line splits GPTBot into its own group (shadowing):\n%s", body)
+	}
+}
 func TestRobots_AIBotDeny(t *testing.T) {
 	ds := newAgentReadyHost(
 		WithRobots(RobotsConfig{}),

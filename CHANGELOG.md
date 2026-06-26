@@ -28,9 +28,11 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   links the app's `/llm-pages.md` index when `WithPublicLLMMD` is on.
 - **A2A agent card** — `/.well-known/agent-card.json` (+ legacy
   `/.well-known/agent.json`) describing identity, service URL,
-  capabilities, and skills (Agent2Agent v1.0). MCP is advertised as a
-  *skill*; the card deliberately omits `supported_interfaces` since
-  GoFastr serves MCP, not an A2A task server.
+  capabilities, and skills (Agent2Agent v1.0, camelCase keys; `supportedInterfaces`
+  + `skills` always present). The service endpoint lives in
+  `supportedInterfaces[].url` — when `MCPEndpoint` is set, `/mcp` is
+  advertised as the JSON-RPC interface (it genuinely speaks JSON-RPC)
+  and a derived `mcp` skill points agents at it.
 - **AI-bot-aware robots** — `AllowAIBots` augments `/robots.txt` with
   explicit per-crawler rules (GPTBot, ClaudeBot, Google-Extended, …),
   merged into the existing `WithRobots` config regardless of option order.
