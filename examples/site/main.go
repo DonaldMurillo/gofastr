@@ -125,10 +125,18 @@ func setupServer() *framework.App {
 	// allowAIBots is the *bool passed into WithAgentReady below so the
 	// robots.txt advertises explicit AI-crawler rules.
 	allowAIBots := true
+	// markdownNeg turns on Accept: text/markdown content negotiation (paired
+	// with WithPublicLLMMD above) — lights up the scanner's Markdown check.
+	markdownNeg := true
 
 	host := uihost.New(site,
 		uihost.WithCustomCSS(createStyleSheet(t)),
 		uihost.WithNotFoundScreen(&NotFoundScreen{}),
+		// Per-screen markdown surface (/llm-pages.md + /<screen>/llm.md). The
+		// site has no per-user data shapes to leak, so publishing it is safe.
+		// Content negotiation itself is turned on by the bundle's
+		// ContentNegotiation field below.
+		uihost.WithPublicLLMMD(),
 		uihost.WithDescription("An early (v0.x) Go full-stack framework where AI agents are first-class authors."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
@@ -148,10 +156,11 @@ func setupServer() *framework.App {
 		// sitemap's canonical origin above, so one origin drives all
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
-			Title:          "GoFastr",
-			Summary:        "An early (v0.x) Go web framework where AI agents are first-class authors and consumers. MCP tools + framework docs are served at /mcp.",
-			AllowAIBots:    &allowAIBots,
-			ContentSignals: "ai-train=no, search=yes, ai-input=yes",
+			Title:              "GoFastr",
+			Summary:            "An early (v0.x) Go web framework where AI agents are first-class authors and consumers. MCP tools + framework docs are served at /mcp.",
+			AllowAIBots:        &allowAIBots,
+			ContentNegotiation: &markdownNeg,
+			ContentSignals:     "ai-train=no, search=yes, ai-input=yes",
 			AgentCard: &uihost.AgentCardConfig{
 				Name:        "GoFastr",
 				Description: "Framework docs + introspection agent for gofastr.dev.",
