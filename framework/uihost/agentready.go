@@ -63,6 +63,12 @@ type AgentReadyConfig struct {
 	// llms.txt, agent card, and the per-page markdown alternate.
 	LinkHeaders *bool
 
+	// OpenAPIEndpoint, when set (e.g. "/openapi.json"), is advertised via
+	// a Link: rel="service-desc" header so agents discover the API
+	// catalog. Set it to the path the framework serves the OpenAPI spec
+	// at (requires WithPublicOpenAPI so the spec is reachable).
+	OpenAPIEndpoint string
+
 	// ContentNegotiation, when non-nil, toggles serving a markdown
 	// rendering of any HTML page when the request Accepts
 	// text/markdown. Default off (nil → bundle leaves it off unless set).
@@ -177,12 +183,15 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		ar.contentNeg = *cfg.ContentNegotiation
 	}
 
+	// OpenAPI service-desc link — opt-in (path the host serves the spec at).
+	ar.openAPI = cfg.OpenAPIEndpoint
+
 	return func(ds *UIHost) {
 		// The zero value is a no-op (matches the doc): don't install the
 		// surface unless something meaningful is configured. linkHeaders
 		// alone — with nothing to link to — doesn't justify it.
 		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
-			ar.baseURL == "" && !ar.contentNeg {
+			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" {
 			return
 		}
 		ds.agentReady = ar
@@ -246,6 +255,7 @@ type agentReadyConfig struct {
 	allowAIBots *bool
 	linkHeaders bool
 	contentNeg  bool
+	openAPI     string // OpenAPI spec path → Link: rel="service-desc"
 }
 
 type llmsCfg struct {
@@ -491,6 +501,10 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	// server's JSON-RPC tool surface.
 	if ds.agentReady.card != nil && ds.agentReady.card.MCPEndpoint != "" {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="service"`, base, ds.agentReady.card.MCPEndpoint))
+	}
+	// OpenAPI spec (API catalog). Opt-in via AgentReadyConfig.OpenAPIEndpoint.
+	if ds.agentReady.openAPI != "" {
+		links = append(links, fmt.Sprintf(`<%s%s>; rel="service-desc"; type="application/json"`, base, ds.agentReady.openAPI))
 	}
 	if ds.llmMDPublic {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.Path)))

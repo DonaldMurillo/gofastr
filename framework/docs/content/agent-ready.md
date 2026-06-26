@@ -111,7 +111,8 @@ each bot gets its own `Disallow: /` group.
 
 `WithAgentReady` (or `WithAgentLinkHeaders`) emits a `Link` header on every
 HTML page advertising the configured artifacts: `rel="sitemap"`,
-`rel="llms-txt"`, `rel="agent-card"`, `rel="service"` (the MCP endpoint), and
+`rel="llms-txt"`, `rel="agent-card"`, `rel="service"` (the MCP endpoint),
+`rel="service-desc"` (the OpenAPI spec, when `OpenAPIEndpoint` is set), and
 `rel="alternate"` type `text/markdown` (the page's `/llm.md`). Absolute URLs
 use the resolved base URL (see below).
 
@@ -165,7 +166,7 @@ origin and every artifact stays consistent, including behind a proxy that sets
 
 | Option | Surface |
 |---|---|
-| `uihost.WithAgentReady(cfg)` | Bundle: llms.txt + card + AI-bot robots + Link headers. |
+| `uihost.WithAgentReady(cfg)` | Bundle: llms.txt + card + AI-bot robots + Link headers (incl. OpenAPI `service-desc` when `cfg.OpenAPIEndpoint` is set, e.g. `"/openapi.json"`). |
 | `uihost.WithLLMsTxt(title, summary, sections)` | `/llms.txt` only. |
 | `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json` + `agent.json` alias. |
 | `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |

@@ -236,18 +236,22 @@ func TestRobots_AIBotDeny(t *testing.T) {
 func TestWriteAgentLinkHeaders(t *testing.T) {
 	ds := newAgentReadyHost(
 		WithSitemap(SitemapConfig{BaseURL: "https://ex.com"}),
-		WithLLMsTxt("T", "s", nil),
-		WithAgentCard(AgentCardConfig{Name: "N", MCPEndpoint: "/mcp"}),
-		WithAgentLinkHeaders(),
+		WithAgentReady(AgentReadyConfig{
+			Title:           "T",
+			Summary:         "s",
+			OpenAPIEndpoint: "/openapi.json",
+			AgentCard:       &AgentCardConfig{Name: "N", MCPEndpoint: "/mcp"},
+		}),
 	)
 	req := httptest.NewRequest(http.MethodGet, "/any", nil)
 	rec := httptest.NewRecorder()
 	ds.writeAgentLinkHeaders(rec, req)
 	link := rec.Header().Get("Link")
 	for _, want := range []string{
-		`rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`, `rel="service"`,
+		`rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`, `rel="service"`, `rel="service-desc"`,
 		`https://ex.com/sitemap.xml`, `https://ex.com/llms.txt`,
 		`https://ex.com/.well-known/agent-card.json`, `https://ex.com/mcp`,
+		`https://ex.com/openapi.json`,
 	} {
 		if !strings.Contains(link, want) {
 			t.Errorf("Link missing %q:\n%s", want, link)

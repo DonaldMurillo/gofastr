@@ -38,7 +38,8 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   merged into the existing `WithRobots` config regardless of option order.
 - **`Link:` response headers** — every HTML page advertises
   `rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`,
-  `rel="service"` (the MCP endpoint), and `rel="alternate"` markdown.
+  `rel="service"` (the MCP endpoint), `rel="service-desc"` (OpenAPI, when
+  `OpenAPIEndpoint` is set), and `rel="alternate"` markdown.
   Absolute URLs resolve one canonical origin (`WithAgentReady`/`WithSitemap`
   `BaseURL`, else the forwarded request scheme+host).
 - **Markdown content negotiation** — `WithMarkdownNegotiation()` serves a
