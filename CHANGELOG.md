@@ -7,7 +7,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-06-25
+## [0.10.0] - 2026-06-27
 
 ### Added — agent-readiness surface (isitagentready.com)
 
@@ -77,7 +77,21 @@ existing robots/sitemap/openapi/llm.md behavior is unchanged.
   documented-only (DNS / payment-middleware / client-side / server-only).
 - **Docs** — new `framework/docs/content/agent-ready.md` reference;
   `examples/site` dogfoods the full bundle (`WithAgentReady` +
-  `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready.
+  `WithMCP` + `WithMCPIntrospection`) so gofastr.dev is agent-ready, and
+  now also serves `Accept: text/markdown` content negotiation
+  (`WithPublicLLMMD` + `ContentNegotiation`).
+
+### Fixed
+
+- **`uihost.WithAgentReady` merges instead of clobbering.** It replaced the
+  agent-ready config wholesale, silently dropping any granular option
+  (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,
+  `WithAgentLinkHeaders`) set before it. It now merges field-by-field, so the
+  bundle and granular options compose regardless of option order.
+- **`examples/site` docs catalogue** — the `/docs/` "Every doc · A–Z" index
+  linked 10 embedded docs (incl. the new agent-ready reference) that had no
+  registered route, rendering live links to 404s. All are now catalogued
+  (51 → 61 doc pages), guarded by a new embedded-doc → catalogue parity test.
 
 What this deliberately does not do: no A2A task server (the A2A card is
 discovery-only; A2A/Auth.md/WebMCP/commerce aren't among the scanner's
