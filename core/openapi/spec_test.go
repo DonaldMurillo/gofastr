@@ -358,6 +358,81 @@ func TestSecurityRequirement(t *testing.T) {
 	}
 }
 
+func TestXquikSearchSpecIncludesAPIKeySecurity(t *testing.T) {
+	s := NewSpec("Xquik API", "1.0")
+	s.AddServer("https://xquik.com", "production")
+	s.SetSecurityScheme("apiKey", map[string]any{
+		"type": "apiKey",
+		"in":   "header",
+		"name": "x-api-key",
+	})
+	s.AddSecurityRequirement("apiKey", []string{})
+
+	op := NewOperation()
+	op.Summary = "Search X posts"
+	op.Tags = []string{"x"}
+	op.Parameters = append(op.Parameters,
+		map[string]any{
+			"name":     "q",
+			"in":       "query",
+			"required": true,
+			"schema":   map[string]any{"type": "string"},
+		},
+		map[string]any{
+			"name": "queryType",
+			"in":   "query",
+			"schema": map[string]any{
+				"type":    "string",
+				"enum":    []string{"Latest", "Top"},
+				"default": "Latest",
+			},
+		},
+		map[string]any{
+			"name": "limit",
+			"in":   "query",
+			"schema": map[string]any{
+				"type":    "integer",
+				"minimum": 1,
+				"maximum": 200,
+				"default": 20,
+			},
+		},
+	)
+	s.AddPath("GET", "/api/v1/x/tweets/search", *op)
+
+	doc := s.Build()
+	components := doc["components"].(map[string]any)
+	schemes := components["securitySchemes"].(map[string]map[string]any)
+	if schemes["apiKey"]["name"] != "x-api-key" {
+		t.Fatalf("apiKey header = %v", schemes["apiKey"]["name"])
+	}
+	security := doc["security"].([]map[string][]string)
+	if _, ok := security[0]["apiKey"]; !ok {
+		t.Fatal("missing apiKey security requirement")
+	}
+
+	paths := doc["paths"].(map[string]map[string]any)
+	getOp := paths["/api/v1/x/tweets/search"]["get"].(map[string]any)
+	if getOp["summary"] != "Search X posts" {
+		t.Fatalf("summary = %v", getOp["summary"])
+	}
+	params := getOp["parameters"].([]map[string]any)
+	if len(params) != 3 {
+		t.Fatalf("expected 3 query params, got %d", len(params))
+	}
+	if params[0]["name"] != "q" || params[0]["required"] != true {
+		t.Fatalf("q param = %v", params[0])
+	}
+	queryTypeSchema := params[1]["schema"].(map[string]any)
+	if queryTypeSchema["default"] != "Latest" {
+		t.Fatalf("queryType default = %v", queryTypeSchema["default"])
+	}
+	limitSchema := params[2]["schema"].(map[string]any)
+	if limitSchema["maximum"] != 200 {
+		t.Fatalf("limit maximum = %v", limitSchema["maximum"])
+	}
+}
+
 // ---------- Handler ----------
 
 func TestHandlerServesJSON(t *testing.T) {
