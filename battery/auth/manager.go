@@ -61,6 +61,13 @@ type AuthConfig struct {
 	// single account. nil disables the per-account limit.
 	LoginRateLimitPerAccount *RateLimiterConfig
 
+	// RegisterRateLimit applies a per-IP rate limit to /auth/register.
+	// Defaults to 10/min with a 15-minute block when nil — unthrottled
+	// registration is account-table flooding and, once an EmailSender
+	// is wired, an email-bombing primitive. To disable, pass a config
+	// with a huge MaxAttempts.
+	RegisterRateLimit *RateLimiterConfig
+
 	// DevMode loosens the cookie defaults for local HTTP development.
 	// When true: SessionSecure=false, SessionCookie="session_id".
 	// When false (production default): SessionSecure=true, cookie name
@@ -68,6 +75,15 @@ type AuthConfig struct {
 	// unless Path=/, Secure, no Domain, blocking subdomain cookie
 	// injection.
 	DevMode bool
+
+	// AllowInMemoryStores acknowledges a deliberate single-node
+	// deployment. Without it, production mode (DevMode=false) logs a
+	// WARN at Init when auth state lives in the default in-memory
+	// stores: sessions don't survive restarts and never resolve on a
+	// second replica, and in-memory 2FA state silently reverts enrolled
+	// accounts to password-only auth after a restart. See the
+	// horizontal-scaling doc for the DB-backed alternatives.
+	AllowInMemoryStores bool
 }
 
 // defaults fills in zero values with sensible defaults.
@@ -106,6 +122,13 @@ func (c *AuthConfig) defaults() {
 	if c.LoginRateLimitPerAccount == nil {
 		c.LoginRateLimitPerAccount = &RateLimiterConfig{
 			MaxAttempts:   10, // ~ tight per-account budget
+			Window:        time.Minute,
+			BlockDuration: 15 * time.Minute,
+		}
+	}
+	if c.RegisterRateLimit == nil {
+		c.RegisterRateLimit = &RateLimiterConfig{
+			MaxAttempts:   10, // account creation is rare; 10/min/IP is generous
 			Window:        time.Minute,
 			BlockDuration: 15 * time.Minute,
 		}
@@ -357,6 +380,17 @@ func (m *AuthManager) Init(app *framework.App) error {
 	// warn — DevMode mints its own per-process secret, so it's exempt.
 	if !m.config.DevMode && m.config.JWTSecret == "" {
 		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret — set it from your secret store, or set DevMode: true for local development")
+	}
+
+	// Single-node state in production is the silent multi-replica
+	// failure: the second replica never resolves the first one's
+	// cookies. Warn loudly unless the host explicitly opted in.
+	if !m.config.DevMode && !m.config.AllowInMemoryStores {
+		if _, ok := m.sessionStore.(*MemorySessionStore); ok {
+			slog.Default().Warn("auth: production mode is running on the in-memory session store — sessions won't survive a restart and won't resolve on a second replica",
+				"fix", "use NewEntitySessionStore(db, ...) (or another durable SessionStore)",
+				"single-node opt-in", "set AuthConfig.AllowInMemoryStores: true to acknowledge and silence this")
+		}
 	}
 
 	// Initialize JWT if secret is configured

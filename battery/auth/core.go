@@ -3,7 +3,9 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,6 +22,7 @@ type CorePlugin struct {
 	mgr               *AuthManager
 	loginLimit        *RateLimiter
 	loginLimitAccount *RateLimiter
+	registerLimit     *RateLimiter
 }
 
 // NewCorePlugin creates the core auth plugin.
@@ -41,6 +44,9 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 	if cfg.LoginRateLimitPerAccount != nil {
 		c.loginLimitAccount = NewRateLimiter(*cfg.LoginRateLimitPerAccount)
 	}
+	if cfg.RegisterRateLimit != nil {
+		c.registerLimit = NewRateLimiter(*cfg.RegisterRateLimit)
+	}
 	return nil
 }
 
@@ -50,6 +56,68 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/logout", c.logoutHandler())
 	r.Get(basePath+"/me", c.meHandler())
 	r.Post(basePath+"/register", c.registerHandler())
+}
+
+// rejectCrossSiteForm refuses a browser cross-site FORM submission to an
+// auth mutation endpoint and reports whether it wrote a response. Login
+// CSRF needs no pre-existing cookie — an attacker's page can silently log
+// the victim into an attacker-controlled account — so SameSite session
+// cookies don't cover it. JSON bodies are exempt: a cross-site JSON POST
+// needs a CORS preflight, which the framework never answers for these
+// routes. Non-browser clients (curl, tests, native apps) send neither
+// header and pass.
+//
+// Sec-Fetch-Site is the authoritative signal and is checked FIRST: every
+// modern browser sends it, and a genuine cross-site attack POST carries
+// "cross-site" regardless of the Origin value. The Origin fallback exists
+// only for older clients that omit Fetch Metadata; there, a "null" Origin
+// is NOT treated as an attack, because a legitimate top-level same-origin
+// form navigation sends Origin: null (opaque origin) too — using null as
+// the reject trigger would break normal browser logins.
+func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
+	if !isFormRequest(r) {
+		return false
+	}
+	// Primary: Fetch Metadata. Same-origin / same-site / none are safe; a
+	// cross-site form POST (the CSRF shape) is refused.
+	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
+		if sfs == "cross-site" {
+			writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
+			return true
+		}
+		return false
+	}
+	// Fallback for clients without Fetch Metadata: compare Origin host to
+	// the request host. Absent or opaque ("null") Origin can't prove an
+	// attack — allow, matching a same-origin top-level form navigation.
+	if o := r.Header.Get("Origin"); o != "" && o != "null" {
+		if u, err := url.Parse(o); err == nil && u.Host != "" && !strings.EqualFold(u.Host, r.Host) {
+			writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
+			return true
+		}
+	}
+	return false
+}
+
+// guardAuthLimit applies a per-IP limiter with the response shape matched
+// to the request: browser form posts get the 303 error redirect (like every
+// other form-path auth error), JSON clients the raw 429 body. A nil limiter
+// allows everything.
+func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) bool {
+	if rl == nil {
+		return true
+	}
+	allowed, retry := rl.Allow(rl.clientIP(r))
+	if allowed {
+		return true
+	}
+	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+	if isFormRequest(r) {
+		writeFormAuthError(w, r, http.StatusTooManyRequests, "rate_limit")
+	} else {
+		writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+	}
+	return false
 }
 
 // loginHandler handles POST /auth/login. Accepts either:
@@ -63,7 +131,14 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // browser flows navigate after login.
 func (c *CorePlugin) loginHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if c.loginLimit != nil && !c.loginLimit.guard(w, r) {
+		// Cross-site rejection runs BEFORE the limiter: a 403'd request
+		// must not count against the victim's per-IP budget, or a
+		// malicious page could lock a visitor out of their own login by
+		// firing hidden cross-site posts.
+		if rejectCrossSiteForm(w, r) {
+			return
+		}
+		if !guardAuthLimit(c.loginLimit, w, r) {
 			return
 		}
 		email, password, isForm, ok := decodeAuthCredentials(w, r)
@@ -136,8 +211,19 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// If any plugin gates logins on a second factor and the user has
 		// it enabled, mark this session as pending. Until /2fa/challenge
 		// succeeds, only that endpoint accepts the cookie — meHandler
-		// and any RequireAuth-protected route will refuse it.
-		c.markPendingIfTwoFactorEnabled(r, sess.Token, user.GetID())
+		// and any RequireAuth-protected route will refuse it. If the
+		// pending mark can't be established, destroy the session and
+		// reject the login rather than issue a password-only session.
+		pendingTwoFA, err := c.markPendingIfTwoFactorEnabled(r, sess.Token, user.GetID())
+		if err != nil {
+			_ = c.mgr.SessionStore().Delete(r.Context(), sess.Token)
+			if isForm {
+				writeFormAuthError(w, r, http.StatusInternalServerError, "two_factor_unavailable")
+			} else {
+				writeAuthError(w, http.StatusInternalServerError, "two-factor enforcement unavailable")
+			}
+			return
+		}
 
 		cfg := c.mgr.Config()
 		http.SetCookie(w, &http.Cookie{
@@ -163,12 +249,18 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			},
 		}
 
-		// Also return a JWT if configured
-		if c.mgr.JWT() != nil {
+		// Also return a JWT if configured — but never for a pending-2FA
+		// login. The JWT is stateless: handing it out here would let a
+		// password-only caller skip the second factor entirely on any
+		// JWT-authenticated route.
+		if c.mgr.JWT() != nil && !pendingTwoFA {
 			token, err := c.mgr.JWT().GenerateToken(user)
 			if err == nil {
 				resp["token"] = token
 			}
+		}
+		if pendingTwoFA {
+			resp["two_factor_required"] = true
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -181,6 +273,11 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 // 204 No Content.
 func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Forced logout is the nuisance sibling of login CSRF; the same
+		// origin check closes it for free.
+		if rejectCrossSiteForm(w, r) {
+			return
+		}
 		cfg := c.mgr.Config()
 		if cookie, err := r.Cookie(cfg.SessionCookie); err == nil {
 			_ = c.mgr.SessionStore().Delete(r.Context(), cookie.Value)
@@ -207,21 +304,41 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 // plugins and, if any reports the user has 2FA enabled, marks the new
 // session as pending — a default-deny posture so missing the
 // /2fa/challenge call doesn't leave the session fully privileged.
-func (c *CorePlugin) markPendingIfTwoFactorEnabled(r *http.Request, sessionToken, userID string) {
+//
+// Fail-closed contract: if 2FA state can't be determined (checker error)
+// or the pending mark can't be established (store doesn't implement
+// SessionPendingMarker, or the mark call fails), it returns an error and
+// the caller must reject the login. Anything else silently downgrades
+// 2FA-enrolled accounts to password-only auth.
+func (c *CorePlugin) markPendingIfTwoFactorEnabled(r *http.Request, sessionToken, userID string) (pending bool, err error) {
 	for _, name := range c.mgr.order {
 		checker, ok := c.mgr.plugins[name].(TwoFactorChecker)
 		if !ok {
 			continue
 		}
 		enabled, err := checker.HasTwoFactorEnabled(r.Context(), userID)
-		if err != nil || !enabled {
+		if err != nil {
+			slog.Default().Warn("auth: two-factor state lookup failed; rejecting login (fail-closed)",
+				"plugin", name, "error", err)
+			return false, fmt.Errorf("two-factor state lookup (%s): %w", name, err)
+		}
+		if !enabled {
 			continue
 		}
-		if marker, ok := c.mgr.SessionStore().(SessionPendingMarker); ok {
-			_ = marker.MarkPendingTwoFactor(r.Context(), sessionToken)
+		marker, ok := c.mgr.SessionStore().(SessionPendingMarker)
+		if !ok {
+			slog.Default().Warn("auth: user has two-factor enabled but the session store does not implement SessionPendingMarker; rejecting login (fail-closed)",
+				"plugin", name, "store", fmt.Sprintf("%T", c.mgr.SessionStore()))
+			return false, fmt.Errorf("session store %T cannot mark a session pending two-factor", c.mgr.SessionStore())
 		}
-		return
+		if err := marker.MarkPendingTwoFactor(r.Context(), sessionToken); err != nil {
+			slog.Default().Warn("auth: marking session pending two-factor failed; rejecting login (fail-closed)",
+				"plugin", name, "error", err)
+			return false, fmt.Errorf("mark pending two-factor: %w", err)
+		}
+		return true, nil
 	}
+	return false, nil
 }
 
 // meHandler handles GET /auth/me — returns the current user.
@@ -272,6 +389,16 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 // session cookie set after auto-login.
 func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Cross-site rejection first — a 403'd request must not burn the
+		// victim's per-IP budget (see loginHandler). Then the per-IP
+		// throttle: unthrottled registration is account-table flooding +
+		// email bombing once verification mail is wired.
+		if rejectCrossSiteForm(w, r) {
+			return
+		}
+		if !guardAuthLimit(c.registerLimit, w, r) {
+			return
+		}
 		email, password, isForm, ok := decodeAuthCredentials(w, r)
 		if !ok {
 			return

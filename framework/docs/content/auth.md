@@ -43,7 +43,7 @@ mgr.Use(auth.NewPasswordResetPlugin(auth.PasswordResetConfig{
 if err := mgr.Init(nil); err != nil {
     return err
 }
-mgr.RegisterRoutes(app.Router)
+mgr.RegisterRoutes(app.Router())
 ```
 
 `AuthConfig.defaults()` runs automatically inside `New`. In production
@@ -118,12 +118,20 @@ safe-but-reduced path.
 | `EmailVerifier` | `EmailVerificationPlugin` | Set the `email_verified` flag. Required. |
 | `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
 | `SessionTwoFAMarker` | `TwoFAPlugin` | Mark a session as having completed the second factor. Required for `RequireTwoFA` to ever pass — stores that omit it fail closed. |
-| `SessionPendingMarker` | `CorePlugin` | Set `Session.PendingTwoFactor` after login for users who have 2FA enabled. |
+| `SessionPendingMarker` | `CorePlugin` | Set `Session.PendingTwoFactor` after login for users who have 2FA enabled. **Fail-closed:** if any registered `TwoFactorChecker` reports a user enrolled and the store omits this interface (or the mark call errors), login is rejected and the session destroyed — a custom store cannot silently downgrade 2FA accounts to password-only auth. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
 
 The `EntityUserStore` and `EntitySessionStore` provided in this
 package implement every relevant interface; if you start from
 `EntityUserStore` you get the full feature matrix.
+
+The default stores are **in-memory**: fine for dev and tests, a trap
+in production — sessions vanish on restart and never resolve on a
+second replica, and in-memory 2FA enrollment reverts accounts to
+password-only auth after a restart. Production mode logs a WARN at
+Init when either default is active; set
+`AuthConfig.AllowInMemoryStores: true` to acknowledge a deliberate
+single-node deployment, or see [Horizontal scaling](scaling.md).
 
 ## HTML form support
 
@@ -330,6 +338,20 @@ fetch flows that don't go through a form).
 Bearer-token requests (`Authorization: Bearer …`, `X-API-Key: …`) are
 skipped — they don't ride on cookies and aren't subject to CSRF.
 
+The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
+HTTPS — including behind a TLS-terminating proxy that sets
+`X-Forwarded-Proto: https` (the app itself sees plain HTTP there).
+
+**Login/register/logout carry their own cross-site guard.** Those
+endpoints can't rely on the CSRF cookie — a login CSRF needs no
+pre-existing cookie, so an attacker's page could silently log a victim
+into an attacker-controlled account. The core plugin refuses a **form**
+(`application/x-www-form-urlencoded` / `multipart`) POST whose `Origin`
+(or `Sec-Fetch-Site: cross-site`) says it came from another site. JSON
+posts are exempt (a cross-site JSON POST needs a CORS preflight these
+routes never answer), and requests with no `Origin` (curl, native apps)
+pass. This is on by default; no configuration required.
+
 ## Naming conventions — DB columns vs. wire JSON
 
 Mixing DB-column casing with wire-JSON casing trips up most first-time
@@ -381,6 +403,7 @@ Three independent surfaces:
 auth.AuthConfig{
     LoginRateLimit:           &auth.RateLimiterConfig{...}, // per-IP on /auth/login
     LoginRateLimitPerAccount: &auth.RateLimiterConfig{...}, // per-email on /auth/login
+    RegisterRateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/register
 }
 auth.MagicLinkConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on /auth/magic-link/send
 auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /auth/2fa/{verify,challenge}
@@ -392,6 +415,11 @@ Per-IP + per-account on login is the recommended posture in production
 — per-IP alone is bypassed by an attacker rotating through a botnet;
 per-account alone is bypassed by spreading load across many target
 accounts.
+
+Login (per-IP + per-account) **and** register (per-IP) carry defaults
+even when you set nothing — credential stuffing and account-table
+flooding are network attacks, not config-mode ones. Pass a config with a
+large `MaxAttempts` to loosen, not to leave them off.
 
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
@@ -409,10 +437,19 @@ POST /auth/2fa/challenge    → 200, server clears PendingTwoFactor + sets TwoFa
 GET  /auth/me               → 200
 ```
 
-The login response always succeeds — clients can't tell whether 2FA
-is required by the status code alone. They notice when a follow-up
-endpoint returns 403, then drive the user through `/auth/2fa/challenge`
-with the TOTP code or a backup code.
+The login response still returns 200 — clients can't tell whether 2FA
+is required by the status code alone. A pending JSON login carries
+`"two_factor_required": true` and **omits the JWT `token` field** (a
+stateless JWT issued before the challenge would bypass the second
+factor on every JWT-authenticated route). Clients either read the flag
+or notice a follow-up endpoint returning 403, then drive the user
+through `/auth/2fa/challenge` with the TOTP code or a backup code.
+
+If the session store cannot record the pending state — it doesn't
+implement `SessionPendingMarker`, the mark call fails, or the 2FA
+state lookup itself errors — login **fails closed** with a 500 and the
+just-minted session is destroyed. A degraded 2FA backend never means
+"2FA is off".
 
 `TwoFAPlugin.RequireTwoFA()` returns a middleware you can install on
 any route that needs step-up authentication. The middleware is a

@@ -67,10 +67,13 @@ type SessionUserPurger interface {
 	DeleteByUser(ctx context.Context, userID string) (int, error)
 }
 
-// SessionPendingMarker is the optional SessionStore extension that lets
+// SessionPendingMarker is the SessionStore extension that lets
 // CorePlugin's login handler mark a freshly-minted session as awaiting
-// a 2FA challenge. Without this, login of a 2FA-enrolled user produces a
-// fully-authenticated session and 2FA enforcement is opt-in per route.
+// a 2FA challenge. It is optional only for deployments without 2FA:
+// if any registered TwoFactorChecker reports a user enrolled and the
+// store does NOT implement this interface, login fails closed (the
+// session is destroyed and the login rejected) rather than silently
+// downgrading the account to password-only auth.
 type SessionPendingMarker interface {
 	MarkPendingTwoFactor(ctx context.Context, token string) error
 }

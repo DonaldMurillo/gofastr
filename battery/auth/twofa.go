@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -205,6 +206,15 @@ func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 		p.store = p.config.Store
 	} else {
 		p.store = NewMemoryTwoFAStore()
+		// In-memory 2FA state in production is worse than a scaling
+		// gap: a restart wipes enrollment, silently reverting every
+		// 2FA account to password-only auth.
+		cfg := mgr.Config()
+		if !cfg.DevMode && !cfg.AllowInMemoryStores {
+			slog.Default().Warn("auth: production mode is running on the in-memory 2FA store — a restart wipes enrollment, reverting 2FA accounts to password-only auth",
+				"fix", "set TwoFAConfig.Store to a durable TwoFAStore",
+				"single-node opt-in", "set AuthConfig.AllowInMemoryStores: true to acknowledge and silence this")
+		}
 	}
 	return nil
 }
