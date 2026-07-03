@@ -5,7 +5,184 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
-## [Unreleased]
+## [0.11.0] - 2026-07-03
+
+### Documentation
+
+- **Doc code samples that cited non-existent APIs are corrected** —
+  `app.Router` as a field → `app.Router()`, `Router.With(...)` → wrap
+  the handler with `RequirePermission(...)`, `u.HasRole` →
+  `slices.Contains(u.GetRoles(), …)`, `Registry.Names()` →
+  `range Registry.All()`, `cron.Scheduler.Every(string, fn)` →
+  `Register(CronJob{…})`, and the phantom webhook `Sign`/`Verify`/
+  `sha256=` paragraph removed. A new `framework/docs` regression test
+  (`TestDocsAvoidKnownWrongAPIs`) fails if any of these forms — or a
+  `migrate diff` command reference — reappears in an embedded doc.
+- **Doc drift cleaned up** — README `migrate diff` → `migrate generate`
+  and `force`; CLI `--help` lists `audit lint` and the full `migrate`
+  subcommand set; blueprint field keys (`auto_generate`, `read_only`,
+  `hidden`, `pattern`) and `app.theme` font/dark tokens documented;
+  flagship renamed ecommerce→meridian in `comparison.md`; the "~10 UI
+  primitives" count corrected to 90+; stale "@main install" tutorial
+  note removed; new `scaling.md`/`deploy.md`/`observability.md`/
+  `agent-ready.md` added to the README index.
+
+### Fixed
+
+- **Reliability footguns** (Tier 3):
+  - `battery/queue` — the DBQueue-cron `Scheduler` re-reads its schedule
+    set each tick and re-arms on `Register`, so jobs registered after
+    `Start` fire (it used to snapshot once and drop late registrations).
+    New `WithDBHandlerTimeout` cancels a stuck handler's context so a
+    black-holed dependency can't wedge the (single default) worker. The
+    in-memory queue re-enqueues timed-out retries on a fresh context
+    instead of the already-cancelled one (retries were silently lost).
+  - `battery/email` — the SMTP sender bounds its dial (`SMTPConfig.
+    DialTimeout`, default 10s) and sets the same budget as the
+    connection's I/O deadline (the caller's ctx deadline wins when
+    sooner, including on the implicit-TLS path), so neither a
+    black-holed host nor one that accepts and then stalls mid-exchange
+    can hang the caller forever.
+  - `battery/cache` — `NewMemoryCache` warns when built both unbounded
+    and never-expiring (the OOM shape).
+  - `framework/event` — a panicking subscriber is still recovered (no
+    write rollback) but now logged at Error with its stack, instead of
+    silently no-op'ing.
+- **Generator design-system regression (`.mrd-*`) removed** (`cmd/gofastr`).
+  The blueprint generator emitted dead `mrd-chart`/`mrd-chart__title`/
+  `mrd-muted` classes into every generated app — the exact one-styling-
+  surface tripwire documented as fixed in June. Titled charts now compose
+  `ui.Card(Heading: …)`, and empty values render the new `ui.EmptyValue()`
+  (a `ui.Muted` em dash, colored by `--color-text-muted`).
+  `TestGeneratorEmitsNoBespokeClasses` pins the contract; meridian and
+  ecommerce were regenerated.
+- **`line_chart` blocks render** (`cmd/gofastr`). `line_chart` validated
+  and compiled but fell through to an HTML comment. It now renders a
+  `ui.LineChart` over the grouped counts, and all three chart kinds
+  **require** a valid `source: {entity, group_by}` at validation time
+  instead of silently disappearing.
+- **`examples/backoffice` ships zero bespoke CSS.** The `.bo-*`
+  stylesheet and hand-rolled form markup are gone; the public pages
+  compose `ui.Hero`, `ui.AuthCard`, `ui.Form`/`ui.FormField`, and the
+  centered-container layout shell.
+
+### Added (design system)
+
+- **`ui.Muted` / `ui.EmptyValue`** (`framework/ui`) — subdued inline
+  text and the canonical muted em-dash "no value" placeholder, colored
+  via `--color-text-muted`.
+
+- **`WithConfig` merges instead of clobbering** (`framework`). Granular
+  options (`WithAPIPrefix`, `WithPublicOpenAPI`, …) set before or after
+  `WithConfig` now survive: each non-zero `AppConfig` field wins, zero
+  fields preserve what's already set — the same contract the
+  `WithAgentReady` fix established. A reflection test pins the field
+  list so new `AppConfig` fields can't silently drop out of the merge.
+- **Graceful shutdown is now the default** (`framework`). `App.Start`
+  installs a SIGINT/SIGTERM handler that runs the full `App.Shutdown`
+  drain — HTTP server, batteries, OnStop hooks — before the process
+  exits, matching what `deploy.md` always claimed. The drain is bounded
+  by the new `AppConfig.ShutdownTimeout` (default 15s): connections
+  still open at the deadline (e.g. SSE streams, which never go idle)
+  are force-closed instead of hanging the drain. In-flight cron job
+  goroutines are joined under the same deadline via the new
+  `cron.Scheduler.StopContext`; `AppConfig.DisableSignalHandling` opts
+  out for hosts that own signal handling themselves.
+
+### Added
+
+- **Horizontal-scaling doc + multi-replica boot warnings.** New
+  `scaling.md` doc page consolidates every process-local default
+  (sessions, 2FA state, rate limits, cron, in-memory queue, SSE push,
+  cache) with its replica-safe alternative. `battery/auth` production
+  mode now logs a WARN at Init when running on the default in-memory
+  session or 2FA store; `AuthConfig.AllowInMemoryStores: true` is the
+  explicit single-node opt-in that silences it.
+
+### Security
+
+- **HSTS emitted by default** (`core/middleware`). The default
+  `SecurityHeadersConfig` now sends `Strict-Transport-Security:
+  max-age=31536000` on HTTPS responses — direct TLS or an
+  `X-Forwarded-Proto: https` proxy. Previously the zero-value config
+  meant no HSTS at all. `HSTSMaxAge: -1` opts out.
+- **CSRF cookie is `Secure`/`__Host-` behind a TLS proxy**
+  (`core/middleware`). The CSRF middleware now treats
+  `X-Forwarded-Proto: https` as HTTPS, so a proxy-terminated deployment
+  gets the secure cookie instead of a plain one. Both this check and
+  the HSTS one compare the header case-insensitively (matching uihost),
+  so proxies that send `HTTPS` count too.
+- **Login/register/logout reject cross-site form posts** (`battery/auth`).
+  These cookieless-CSRF-prone endpoints now refuse a form POST whose
+  `Origin` (or `Sec-Fetch-Site: cross-site`) is another site — closing
+  the login-CSRF vector SameSite cookies don't cover. JSON posts and
+  no-Origin clients (curl, native apps) are unaffected.
+- **`/auth/register` is rate-limited by default** (`battery/auth`). A new
+  `AuthConfig.RegisterRateLimit` defaults to 10/min/IP (15-min block),
+  matching login's always-on throttle, to blunt account-table flooding
+  and email bombing. Form submissions that hit the limit get the
+  form-aware 303 error redirect (not a raw JSON 429 page), and
+  cross-site posts are rejected before they count against the budget —
+  an attacker page can't burn a victim's own login/register allowance.
+- **Blueprint refuses `multi_tenant` with no resolver** (`cmd/gofastr`).
+  A generated multi-tenant app has no tenant resolver (the strategy is
+  host-specific) and `ApplyTenantScope` is fail-closed, so it read empty
+  and stamped empty tenants — broken while looking secure. `validate`/
+  `generate` now reject it with the manual-wiring remedy.
+- **`golang.org/x/image` bumped to v0.43.0** — clears the four
+  GO-2026-506x/4961 decode-DoS advisories reachable from
+  `framework/image`.
+- **BREAKING: `battery/admin` exposure is opt-in.** An empty
+  `admin.Config.Entities` now exposes **nothing** instead of every
+  CRUD-enabled table as an editable back-office. Set the new
+  `AllEntities: true` for the previous whole-back-office behavior
+  (still skips `CRUD=false` credential tables), or name entities
+  explicitly. The blueprint generator and examples set `AllEntities`.
+- **Generator warns on ANY unscoped auto-exposed entity**
+  (`cmd/gofastr`). The PII lint only matched a fixed token list, so
+  `notes`/`journal_entries`/`balances` generated fully public with no
+  signal. `gofastr generate` now warns for every auto-exposed entity
+  with no `owner_field`/`access`/`multi_tenant`, spelling out the
+  anonymous read/write exposure. `examples/api-tour`'s `profiles`
+  (per-user bio) now gates its write operations via `Access` — reads
+  stay public for the `?include=` tour flows, anonymous writes 403.
+- **Webhook SSRF guard survives a custom `HTTPClient`**
+  (`battery/webhook`). Supplying `Options.HTTPClient` (proxy, tracing,
+  timeout) previously dropped the dial-time SSRF guard entirely,
+  reopening loopback/RFC1918/169.254.169.254 via DNS rebinding. `New`
+  now wraps the caller's client with a per-request check that resolves
+  the delivery target and refuses internal IPs before the caller's
+  transport runs — the transport itself (proxy, tunnel, custom dialer)
+  is used verbatim. `AllowPrivateNetworks: true` remains the only
+  opt-out.
+- **Blueprint-generated apps no longer commit secrets** (`cmd/gofastr`).
+  Generated Go reads `JWT_SECRET`, `DATABASE_URL`, and
+  `ADMIN_SEED_PASSWORD` from the environment instead of inlining the
+  blueprint's values as string literals (the emitted `BlueprintDBURL`
+  constant is password-stripped, and the generated e2e test reads the
+  admin password from env too). When the blueprint holds secrets the
+  generator emits a `.env` (so the app still runs out of the box) plus
+  a `.gitignore` excluding it, and `main.go` loads `.env` before the DB
+  opens. A deploy without `ADMIN_SEED_PASSWORD` logs a WARN instead of
+  silently skipping the admin seed; the generated e2e test falls back
+  to a test-local password so a fresh checkout stays green; DSN
+  redaction fails closed on unparseable URLs and handles libpq-quoted
+  passwords. `.env` values are quoted when their shape requires it, and
+  `gofastr pack` reads the file back with the same `core/dotenv` parser
+  the generated app boots with, so awkward secrets round-trip exactly.
+  `TestBlueprintNeverInlinesSecrets` pins the contract.
+- **2FA now fails closed at login** (`battery/auth`). If a registered
+  `TwoFactorChecker` reports a user enrolled but the pending-2FA state
+  can't be established — the session store doesn't implement
+  `SessionPendingMarker`, the mark call errors, or the 2FA state lookup
+  itself fails — login is rejected (500), the just-minted session is
+  destroyed, and a WARN is logged. Previously a custom session store
+  silently downgraded every 2FA-enrolled account to password-only auth.
+- **Pending-2FA logins no longer receive a JWT.** The JSON login
+  response for a 2FA-enrolled user omits `token` until the challenge
+  succeeds (a stateless JWT issued at password time bypassed the second
+  factor on JWT-authenticated routes) and now carries
+  `"two_factor_required": true` so clients can branch without probing.
 
 ## [0.10.0] - 2026-06-27
 
