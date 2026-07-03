@@ -20,8 +20,8 @@ app.Use(func(next http.Handler) http.Handler {
     })
 })
 
-app.Router.With(framework.RequirePermission("posts:write")).
-    Post("/posts", postsHandler)
+app.Router().Post("/posts",
+    framework.RequirePermission("posts:write")(http.HandlerFunc(postsHandler)))
 ```
 
 The policy + roles wiring above is common enough that there's a one-liner
@@ -140,8 +140,8 @@ branching where the permission grant map isn't the right granularity.
 Or via middleware on a specific route:
 
 ```go
-app.Router.With(framework.RequirePermission("posts:delete")).
-    Delete("/posts/{id}", postsHandler)
+app.Router().Delete("/posts/{id}",
+    framework.RequirePermission("posts:delete")(http.HandlerFunc(postsHandler)))
 ```
 
 `RequirePermission` returns `403 access denied: missing permission X`

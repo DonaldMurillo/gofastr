@@ -80,15 +80,22 @@ type Config struct {
 	AuditListLimit int
 
 	// Entities lists the entity names to expose as editable CRUD screens
-	// under <PathPrefix>/e/<table>. When empty (default), the battery exposes
-	// EVERY registered entity whose CRUD is enabled — the "generate the whole
-	// back-office" default. CRUD-disabled entities (e.g. battery/auth's
-	// users/sessions, which ship CRUD=false) are skipped automatically, so the
-	// default never exposes credential tables. Name an entity explicitly to
-	// override (including a CRUD=false one, if you really mean to). Screens
-	// proxy to each entity's own CrudHandler, so validation, owner/tenant
-	// scope, hooks, and events all apply exactly as on the JSON API.
+	// under <PathPrefix>/e/<table>. When empty (default) NOTHING is
+	// exposed — an admin dropped into an app must name what it manages.
+	// Set AllEntities for the whole-back-office behavior. Naming an
+	// entity explicitly also works for a CRUD=false one, if you really
+	// mean to. Screens proxy to each entity's own CrudHandler, so
+	// validation, owner/tenant scope, hooks, and events all apply exactly
+	// as on the JSON API.
 	Entities []string
+
+	// AllEntities exposes EVERY registered entity whose CRUD is enabled —
+	// the explicit "generate the whole back-office" opt-in (previously the
+	// implicit default when Entities was empty). CRUD-disabled entities
+	// (e.g. battery/auth's users/sessions, which ship CRUD=false) are
+	// skipped, so this never exposes credential tables. Ignored when
+	// Entities is non-empty.
+	AllEntities bool
 
 	// Authorize gates every admin surface — both the SSR screens (via the UI
 	// host's policy chain) and the RPC/form routes (via middleware). It returns

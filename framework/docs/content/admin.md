@@ -33,18 +33,21 @@ app.Use(auth.SessionMiddleware(mgr)) // puts the signed-in user on the request
 app.Entity("products", productsConfig)
 app.Entity("customers", customersConfig)
 
-app.RegisterBattery(admin.New(admin.Config{Title: "Back office"}))
+app.RegisterBattery(admin.New(admin.Config{Title: "Back office", AllEntities: true}))
 ```
 
-With an empty `Entities`, the battery **auto-exposes every registered entity
-whose CRUD is enabled** — the "generate the whole back-office" default.
-Entities shipped with `CRUD=false` (e.g. `battery/auth`'s `users` /
-`sessions`) are skipped automatically, so the default never exposes
-credential tables. Name entities explicitly to override:
+Exposure is **opt-in**. An empty `Entities` exposes nothing — a
+zero-value config must not silently turn every table into an editable
+back-office. Either name the entities:
 
 ```go
 admin.New(admin.Config{Entities: []string{"products", "orders"}})
 ```
+
+or set `AllEntities: true` for the whole back-office: every registered
+entity whose CRUD is enabled. Entities shipped with `CRUD=false`
+(e.g. `battery/auth`'s `users` / `sessions`) are skipped automatically,
+so `AllEntities` never exposes credential tables.
 
 The entity screens mount at `<PathPrefix>/e/<table>`:
 
@@ -61,8 +64,8 @@ The entity screens mount at `<PathPrefix>/e/<table>`:
 > **A UI host is required for the entity screens.** The battery discovers
 > the host the app mounted (via `framework.App.Mountables()`) and registers
 > the screens on it. If you list `Entities` but no host is mounted,
-> `RegisterBattery` returns an error. (In auto mode with no host, the entity
-> screens are simply skipped and you still get the ops dashboards.)
+> `RegisterBattery` returns an error. (With `AllEntities` and no host, the
+> entity screens are simply skipped and you still get the ops dashboards.)
 
 ### How the interactions work (no JavaScript)
 
@@ -144,7 +147,7 @@ admin.New(admin.Config{
 admin.New(admin.Config{
     Authorize: func(ctx context.Context) bool {
         u := auth.GetCurrentUser(ctx)
-        return u != nil && u.HasRole("admin")
+        return u != nil && slices.Contains(u.GetRoles(), "admin")
     },
 })
 ```

@@ -161,8 +161,10 @@ func (b *Battery) registerEntityRoutes(ent *entity.Entity) {
 }
 
 // entitiesToExpose resolves the entities to surface. Explicit Config.Entities
-// wins (in order, unknown names skipped). Empty → every registered entity whose
-// CRUD is enabled (so credential tables shipped CRUD=false stay hidden).
+// wins (in order, unknown names skipped). AllEntities exposes every registered
+// entity whose CRUD is enabled (credential tables shipped CRUD=false stay
+// hidden). Neither set → nothing: an admin must name what it manages rather
+// than default every table to an editable back-office.
 func (b *Battery) entitiesToExpose() []*entity.Entity {
 	if len(b.cfg.Entities) > 0 {
 		out := make([]*entity.Entity, 0, len(b.cfg.Entities))
@@ -172,6 +174,9 @@ func (b *Battery) entitiesToExpose() []*entity.Entity {
 			}
 		}
 		return out
+	}
+	if !b.cfg.AllEntities {
+		return nil
 	}
 	var out []*entity.Entity
 	for _, ent := range b.registry.AllSorted() {

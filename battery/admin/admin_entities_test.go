@@ -370,14 +370,15 @@ func TestEntity_OwnerScopeHidesOtherUsersRows(t *testing.T) {
 	}
 }
 
-func TestEntity_AutoExposesAllCrudEntities(t *testing.T) {
+func TestEntity_AllEntitiesExposesCrudEntities(t *testing.T) {
 	db := newDB(t)
 	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
-	// Empty Entities → auto-expose every CRUD-enabled entity.
-	h := mountEntityAdmin(t, app, Config{}, testUser{"u1"})
+	// AllEntities → expose every CRUD-enabled entity. (Empty Entities
+	// exposes nothing — see admin_exposure_test.go.)
+	h := mountEntityAdmin(t, app, Config{AllEntities: true}, testUser{"u1"})
 
 	if rr := get(h, "/admin/e/posts"); rr.Code != http.StatusOK {
-		t.Fatalf("auto mode should expose posts; got %d", rr.Code)
+		t.Fatalf("AllEntities should expose posts; got %d", rr.Code)
 	}
 }
 
