@@ -114,6 +114,50 @@ func ssrfGuardedTransport(allowPrivate bool) *http.Transport {
 	return tr
 }
 
+// ssrfGuardClient returns a shallow copy of c whose transport enforces
+// the SSRF guard without disturbing the caller's routing:
+//
+//   - nil transport → the guarded default transport (dial-time hook,
+//     strongest: the Control callback sees the actual resolved IP at
+//     connect time).
+//   - any caller-supplied transport → left untouched and wrapped with a
+//     per-request resolved-IP check on the request TARGET that refuses
+//     before the inner transport runs. Swapping the transport's dialer
+//     instead would silently break legitimate custom routing — an
+//     egress proxy on a private IP, an SSH tunnel, a unix-socket or
+//     custom-DNS dialer — because those dial addresses are internal by
+//     design while the delivery target is not. The per-request check
+//     resolves once up front, so unlike the dialer hook it cannot see a
+//     mid-flight re-resolve — still strictly safer than no guard.
+func ssrfGuardClient(c *http.Client) *http.Client {
+	cc := *c
+	if c.Transport == nil {
+		cc.Transport = ssrfGuardedTransport(false)
+	} else {
+		cc.Transport = &ssrfGuardedRoundTripper{inner: c.Transport}
+	}
+	return &cc
+}
+
+// ssrfGuardedRoundTripper is the fallback guard for custom RoundTrippers
+// the dialer hook cannot reach: it resolves the request host and refuses
+// when any resolved address is internal.
+type ssrfGuardedRoundTripper struct{ inner http.RoundTripper }
+
+func (g *ssrfGuardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	host := r.URL.Hostname()
+	ips, err := net.DefaultResolver.LookupIPAddr(r.Context(), host)
+	if err != nil {
+		return nil, fmt.Errorf("webhook: resolve %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if err := rejectInternalIP(ip.IP); err != nil {
+			return nil, err
+		}
+	}
+	return g.inner.RoundTrip(r)
+}
+
 func rejectInternalIP(ip net.IP) error {
 	if ip == nil {
 		return fmt.Errorf("webhook: nil IP")

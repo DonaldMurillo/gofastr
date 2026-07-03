@@ -63,9 +63,13 @@ DNS-rebinding / TOCTOU window where a host validates public at
 `169.254.169.254` / an RFC1918 address before the worker fires — the
 connection is refused before any bytes leave the process.
 
-If you supply your own `Options.HTTPClient`, you are responsible for
-the dial-time check; the built-in guard only applies to the default
-client.
+Supplying your own `Options.HTTPClient` (proxy, tracing, custom
+timeout) does **not** drop the guard: `New` wraps the client with a
+per-request check that resolves the delivery target and refuses
+internal IPs before your transport runs. Your transport itself is
+used verbatim — a private egress proxy, SSH tunnel, or custom dialer
+keeps working, since it is the *target* that must be public, not the
+route to it. Only `AllowPrivateNetworks: true` opts out.
 
 For development and tests, opt out via `Options.AllowPrivateNetworks =
 true`. This disables both the subscribe-time and the dial-time IP
@@ -112,10 +116,6 @@ if !ok {
 - header missing `t=` or `v1=` fields
 - a timestamp outside the tolerance window (replay defense)
 - mismatched HMAC (any body tampering)
-
-The legacy `Sign` / `Verify` helpers (with the `sha256=` prefix) remain
-for backwards compatibility with stored signatures but are deprecated —
-they do not bind a timestamp and so cannot defend against replay.
 
 ## Response handling
 

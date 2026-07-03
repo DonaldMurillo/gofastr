@@ -41,6 +41,14 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 | `Referrer-Policy`         | `no-referrer`                                                                    |
 | `X-Frame-Options`         | `DENY`                                                                           |
 | `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
+| `Strict-Transport-Security` | `max-age=31536000` (1 year) — **HTTPS responses only** |
+
+**HSTS is on by default.** `Strict-Transport-Security` is emitted with a
+one-year `max-age` whenever the request is HTTPS — direct TLS, or a
+TLS-terminating proxy that sets `X-Forwarded-Proto: https` (the app
+sees plain HTTP there). Plain-HTTP local dev never receives it. Set
+`HSTSMaxAge: -1` to disable, a positive value to change the age, or
+`HSTSIncludeSub` / `HSTSPreload` to extend it.
 
 The CSP default works with the built-in UI runtime because all CSS and
 scripts are served as external resources under `/__gofastr/*`. If you

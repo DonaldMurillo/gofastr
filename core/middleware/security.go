@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // SecurityHeadersConfig controls defensive HTTP response headers.
@@ -25,11 +26,13 @@ type SecurityHeadersConfig struct {
 	// when you intentionally interact with cross-origin windows.
 	CrossOriginOpenerPolicy string
 
-	// HSTS enables the Strict-Transport-Security header.
-	// When set (non-zero), browsers will only use HTTPS for this duration.
-	// Requires HTTPS to be active; the header is silently skipped on plain HTTP.
-	// Recommended: 31536000 seconds (1 year) for production.
-	// Only takes effect when Secure is true.
+	// HSTSMaxAge sets the Strict-Transport-Security max-age. Zero
+	// (default) emits ONE YEAR (31536000) — HSTS-by-default matches the
+	// rest of the header set; forgetting it used to be the #1 production
+	// gap. Set -1 to disable the header entirely. The header is only
+	// emitted when the request is actually HTTPS: direct TLS, an
+	// X-Forwarded-Proto: https from a TLS-terminating proxy, or
+	// Secure: true — plain-HTTP local dev never sees it.
 	HSTSMaxAge     int
 	HSTSIncludeSub bool
 	HSTSPreload    bool
@@ -72,6 +75,10 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 	if coop == "" {
 		coop = "same-origin"
 	}
+	hstsMaxAge := cfg.HSTSMaxAge
+	if hstsMaxAge == 0 {
+		hstsMaxAge = 31536000 // 1 year; -1 opts out
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,14 +92,19 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 			h.Set("Cross-Origin-Opener-Policy", coop)
 			h.Set("X-XSS-Protection", "0") // disabled per modern guidance (CSP supersedes it)
 
-			// HSTS — only emit over HTTPS. When HSTSMaxAge is set and
-			// Secure is true (default), add the Strict-Transport-Security header.
+			// HSTS — only emit over HTTPS: direct TLS, a TLS-terminating
+			// proxy's X-Forwarded-Proto, or an explicit Secure: true.
+			// (A client spoofing X-Forwarded-Proto only affects its own
+			// response — HSTS binds per received response.)
 			secure := cfg.Secure
 			if !secure && r.TLS != nil {
 				secure = true // auto-detect TLS
 			}
-			if secure && cfg.HSTSMaxAge > 0 {
-				val := "max-age=" + strconv.Itoa(cfg.HSTSMaxAge)
+			if !secure && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+				secure = true // TLS terminated upstream
+			}
+			if secure && hstsMaxAge > 0 {
+				val := "max-age=" + strconv.Itoa(hstsMaxAge)
 				if cfg.HSTSIncludeSub {
 					val += "; includeSubDomains"
 				}

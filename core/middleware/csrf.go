@@ -171,7 +171,11 @@ func CSRF(cfg CSRFConfig) Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			secure := cfg.CookieSecure || r.TLS != nil
+			// HTTPS detection covers the TLS-terminating-proxy shape: the
+			// app sees plain HTTP but X-Forwarded-Proto says https, and
+			// the cookie must still be Secure/__Host- there.
+			secure := cfg.CookieSecure || r.TLS != nil ||
+				strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 			cookieName := resolveCookieName(secure)
 
 			if isSafeMethod(r.Method) {

@@ -245,6 +245,15 @@ func New(s Store, opts Options) *Manager {
 			},
 			Transport: ssrfGuardedTransport(opts.AllowPrivateNetworks),
 		}
+	} else if !opts.AllowPrivateNetworks {
+		// A caller-supplied client (proxy, tracing, custom timeout) must
+		// not silently drop the SSRF guard — that reopens loopback /
+		// RFC1918 / 169.254.169.254 via DNS rebinding for the most
+		// common customizations. Wrap with a per-request target check
+		// that leaves the caller's transport (proxy, tunnel, custom
+		// dialer) untouched; only an explicit AllowPrivateNetworks
+		// opts out.
+		opts.HTTPClient = ssrfGuardClient(opts.HTTPClient)
 	}
 	return &Manager{
 		store:  s,
