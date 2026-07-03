@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -1165,7 +1166,40 @@ func packReadApp(dir string) (BlueprintApp, error) {
 			return true
 		})
 	}
+
+	// Secrets moved out of committed source into the generated .env
+	// (JWT_SECRET, DATABASE_URL, ADMIN_SEED_PASSWORD). Recover them from
+	// there so pack round-trips the authored blueprint. Absent .env → the
+	// fields stay as recovered from source (empty for the env-backed ones).
+	env := packReadDotEnv(filepath.Join(dir, ".env"))
+	if v := env["JWT_SECRET"]; v != "" {
+		app.Auth.JWTSecret = v
+	}
+	if v := env["DATABASE_URL"]; v != "" {
+		app.DBURL = v
+	}
+	if v := env["ADMIN_SEED_PASSWORD"]; v != "" {
+		app.Admin.SeedPassword = v
+	}
 	return app, nil
+}
+
+// packReadDotEnv parses a generated .env into a map using the SAME
+// parser the generated app boots with (core/dotenv) — a private
+// re-implementation here silently diverged on quoted values, so pack
+// read back a different secret than the app ran with. Missing or
+// unparseable file → empty map.
+func packReadDotEnv(path string) map[string]string {
+	f, err := os.Open(path)
+	if err != nil {
+		return map[string]string{}
+	}
+	defer f.Close()
+	out, err := dotenv.Parse(f)
+	if err != nil {
+		return map[string]string{}
+	}
+	return out
 }
 
 // astSelLast returns the trailing identifier of a selector/ident type expr
@@ -1511,8 +1545,27 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 	case "ui.Section":
 		return reverseSection(call), true
 	case "ui.Card":
+		// A titled chart is emitted as ui.Card(Heading, <chart>) — reverse
+		// it back to the chart block, not a card, with the heading as its
+		// title. A plain card has no chart child.
+		if len(call.Args) > 1 {
+			if child, ok := call.Args[1].(*ast.CallExpr); ok {
+				if b, ok := reverseChartCall(child); ok {
+					if b.Props == nil {
+						b.Props = map[string]any{}
+					}
+					putStr(b.Props, "title", astString(cfgOf(call, 0)["Heading"]))
+					return b, true
+				}
+			}
+		}
 		c := cfgOf(call, 0)
 		return block("card", props2("heading", astString(c["Heading"]), "text", astString(c["Description"]))), true
+	case "ui.BarChart", "ui.PieChart", "blueprintLineChart":
+		// Untitled chart (no wrapping ui.Card).
+		if b, ok := reverseChartCall(call); ok {
+			return b, true
+		}
 	case "ui.PageHeader":
 		c := cfgOf(call, 0)
 		return block("page_header", props2("title", astString(c["Title"]), "subtitle", astString(c["Subtitle"]), "eyebrow", astString(c["Eyebrow"]))), true
@@ -1811,6 +1864,32 @@ func reverseRenderTag(call *ast.CallExpr) (BlueprintBlock, bool) {
 				return BlueprintBlock{Kind: kind, Props: p}, true
 			}
 		}
+	}
+	return BlueprintBlock{}, false
+}
+
+// reverseChartCall recognizes the three chart emission shapes and returns
+// the corresponding blueprint block (without a title — the caller sets it
+// from a wrapping ui.Card heading when present):
+//
+//	ui.BarChart(ui.BarChartConfig{Bars: blueprintGroupBars(ctx, e, g), …})
+//	ui.PieChart(ui.PieChartConfig{Slices: blueprintGroupSlices(ctx, e, g)})
+//	blueprintLineChart(ctx, e, g)
+func reverseChartCall(call *ast.CallExpr) (BlueprintBlock, bool) {
+	switch callSel(call) {
+	case "ui.BarChart", "ui.PieChart":
+		kind := map[string]string{"ui.BarChart": "bar_chart", "ui.PieChart": "pie_chart"}[callSel(call)]
+		p := map[string]any{}
+		cc := cfgOf(call, 0)
+		if dataCall, ok := cc["Bars"].(*ast.CallExpr); ok {
+			p["source"] = chartSource(dataCall)
+		} else if dataCall, ok := cc["Slices"].(*ast.CallExpr); ok {
+			p["source"] = chartSource(dataCall)
+		}
+		return BlueprintBlock{Kind: kind, Props: p}, true
+	case "blueprintLineChart":
+		// blueprintLineChart(ctx, entity, group_by)
+		return BlueprintBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
 	}
 	return BlueprintBlock{}, false
 }

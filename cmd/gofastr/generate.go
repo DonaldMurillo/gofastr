@@ -295,7 +295,18 @@ func generateFromBlueprint(options generateOptions) {
 	// from `gofastr validate`. Suppressed in --json mode so stdout stays
 	// machine-parseable; JSON consumers get the finding from validate.
 	if !options.json {
+		piiFlagged := map[string]bool{}
 		for _, f := range lintUnscopedPII(bp) {
+			piiFlagged[f.Entity] = true
+			warn("%s", f.Message())
+		}
+		// Broader net: ANY unscoped auto-exposed entity is anonymous
+		// world read/write — warn even when no field name looks like
+		// PII (the token list can't know "journal_entry" is private).
+		for _, f := range lintUnscopedEntities(bp) {
+			if piiFlagged[f.Entity] {
+				continue // already carried the stronger PII warning
+			}
 			warn("%s", f.Message())
 		}
 		// dev_mode defaults to true (plain-HTTP cookies + per-process JWT

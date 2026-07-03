@@ -3,7 +3,9 @@ package blueprint
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net/url"
+	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -288,7 +290,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
 		// blueprint, serve over HTTPS, then regenerate.
-		authCfg := auth.AuthConfig{DevMode: true}
+		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr := auth.New(authCfg)
@@ -296,11 +298,19 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authMgr.Init(fwApp)
 		auth.SetDefaultLoginErrorPath("/login")
 		// Bootstrap admin account so the back-office is reachable on a
-		// fresh database. Created only when absent (idempotent).
-		if _, _, err := authCfg.UserStore.FindByEmail(context.Background(), "admin@meridian.dev"); err != nil {
-			if h, herr := auth.HashPassword("change-me-now-123"); herr == nil {
-				authCfg.UserStore.CreateUser(context.Background(), "admin@meridian.dev", h, []string{"admin", "user"})
+		// fresh database. Created only when absent (idempotent). The
+		// password comes from ADMIN_SEED_PASSWORD (see the generated
+		// .env — gitignored, so a deploy must export the variable
+		// itself), never from committed source; without it no admin
+		// is seeded and the skip is logged loudly.
+		if seedPw := os.Getenv("ADMIN_SEED_PASSWORD"); seedPw != "" {
+			if _, _, err := authCfg.UserStore.FindByEmail(context.Background(), "admin@meridian.dev"); err != nil {
+				if h, herr := auth.HashPassword(seedPw); herr == nil {
+					authCfg.UserStore.CreateUser(context.Background(), "admin@meridian.dev", h, []string{"admin", "user"})
+				}
 			}
+		} else {
+			log.Printf("WARN: ADMIN_SEED_PASSWORD is not set — admin %q was NOT seeded; on a fresh database the back-office login will fail", "admin@meridian.dev")
 		}
 		// Resolve the session cookie to a user on every request so
 		// owner/access-scoped CRUD sees the logged-in user. Without

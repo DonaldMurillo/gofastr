@@ -3,6 +3,7 @@ package blueprint
 import (
 	"database/sql"
 	"net/http"
+	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -215,7 +216,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
 		// blueprint, serve over HTTPS, then regenerate.
-		authCfg := auth.AuthConfig{DevMode: true}
+		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr := auth.New(authCfg)

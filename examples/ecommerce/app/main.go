@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -21,6 +22,10 @@ import (
 )
 
 func main() {
+	// Load .env before anything reads the environment — the DB (and
+	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
+	// would run. Existing process env always wins over the files.
+	_ = dotenv.LoadAndApply(".env.local", ".env")
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		log.Fatal(err)

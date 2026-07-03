@@ -106,7 +106,7 @@ func printHelp() {
   theme init            Scaffold theme/theme.go for a UI project
   build                 Run codegen + go build
   dev                   Start dev server with auto-restart
-  migrate [up|down|status]  Run database migrations
+  migrate [up|down|status|generate|force]  Run database migrations
   test                  Run project tests
   embed <sub>           Local semantic index (index/watch/query/stats/clear)
   harness               Start the AI agent harness (interactive loop / TUI)
@@ -117,6 +117,7 @@ func printHelp() {
                         --list  list every topic; --grep <term> search across docs
   audit <sub>           Inspect the project for security-relevant patterns
                         deps  list packages that perform init-time global registrations
+                        lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
   version               Print version info
 
 %s:

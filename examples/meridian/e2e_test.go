@@ -14,11 +14,25 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 )
 
 func TestBlueprintE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
+	}
+	// The seeded admin's password lives in the generated .env, not in
+	// committed source. Load it before the server child inherits the
+	// environment (it needs ADMIN_SEED_PASSWORD to seed the account).
+	_ = dotenv.LoadAndApply(".env.local", ".env")
+	adminPass := os.Getenv("ADMIN_SEED_PASSWORD")
+	if adminPass == "" {
+		// Fresh checkout: the gitignored .env is absent. The child seeds
+		// the admin from whatever ADMIN_SEED_PASSWORD it inherits, so a
+		// test-local value keeps the suite self-contained.
+		adminPass = "e2e-seed-admin-pw"
+		t.Setenv("ADMIN_SEED_PASSWORD", adminPass)
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "app")
@@ -66,7 +80,7 @@ func TestBlueprintE2E(t *testing.T) {
 	// Sign in, then every gated screen renders.
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
-	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {"change-me-now-123"}}); err != nil {
+	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {adminPass}}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
 	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/new", "/app/invoices/new", "/app/subscriptions/new"} {

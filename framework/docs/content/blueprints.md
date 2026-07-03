@@ -36,7 +36,12 @@ external extensions rather than a full app blueprint.
 keys are `primary`, `primary-fg`, `secondary`, `background`, `surface`,
 `surface-soft`, `text`, `text-muted`, `text-subtle`, `border`,
 `border-strong`, `accent`, `success`, `warning`, `danger`, and `info`.
-Generated apps call `site.WithTheme(...)`, so the values are emitted through
+It also accepts the font tokens `font_heading`, `font_body`, and
+`font_display` — named Google Fonts families that drive the `--font-*`
+tokens and emit the matching webfont `<link>`s. An `app.theme.dark`
+sub-map overrides any of the same color tokens for the dark scheme (the
+header's theme toggle flips to it). Generated apps call
+`site.WithTheme(...)`, so the values are emitted through
 `/__gofastr/app.css` as computed CSS custom properties.
 
 ### Entity APIs live under `/api`; screens own the bare path
@@ -296,8 +301,8 @@ Any screen body can compose the framework's UI components directly via block
 `kind`s — the generator emits the matching `ui.X(...)` call:
 
 `page_header` · `hero` · `section` (with child blocks) · `card` · `stat_row` ·
-`stat_card` · `bar_chart` · `pie_chart` · `link_button` · `callout` · `divider` ·
-`markdown` · `pricing`.
+`stat_card` · `bar_chart` · `pie_chart` · `line_chart` · `link_button` ·
+`callout` · `divider` · `markdown` · `pricing`.
 
 **Long-form content** — `markdown` renders rich prose (`ui.Markdown`) from a
 `text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain
@@ -311,7 +316,11 @@ highlighted), so a pricing page reads like marketing, not an admin grid.
 that computes a live metric server-side —
 `source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
 optional `filter: status=active`) for a `stat_card`, and
-`source: {entity: customers, group_by: status}` for a chart.
+`source: {entity: customers, group_by: status}` for a chart. For the chart
+kinds `source` (with both `entity` and `group_by`, targeting a declared
+entity) is **required** — validation rejects a chart without one rather
+than letting the block silently vanish from the page. A chart with a
+`title` renders inside a `ui.Card` with that heading.
 
 ### Layouts (`screen.layout`)
 
@@ -399,6 +408,24 @@ everywhere, not just enforced:
 The bootstrap admin (`app.admin.seed_email` / `seed_password`) is created on a
 fresh database, and the auth battery creates its own `auth_users` /
 `auth_sessions` tables in `Init` — the generated app ships no DDL.
+
+#### Secrets never land in generated source
+
+Generated Go reads every secret from the environment, so committing the
+generated app commits no credentials:
+
+- `JWT_SECRET` → `auth.AuthConfig.JWTSecret`
+- `DATABASE_URL` → the DB DSN (a credentialed DSN is also stripped from
+  the emitted `BlueprintDBURL` constant and the `getEnv` fallback)
+- `ADMIN_SEED_PASSWORD` → the bootstrap admin's password (no env var →
+  no admin is seeded)
+
+When the blueprint holds any of these values, the generator also emits a
+`.env` carrying them (so the app runs out of the box) plus a
+`.gitignore` that excludes it. The generated `main.go` loads
+`.env.local`/`.env` before opening the DB; a real process env var
+always wins over the files. Regenerating keeps your existing `.env`
+unless you pass `--force`.
 
 #### `dev_mode`
 
@@ -594,6 +621,17 @@ The generator rejects:
   on one block, unreachable combined click actions, or missing `client_js`
 - custom endpoint MCP declarations without Go MCP handlers
 - unsafe output directories
+
+### Unscoped entities (`gofastr generate` warning)
+
+`gofastr generate` warns on **every** auto-exposed entity (`crud`
+defaults on, or `mcp: true`) that sets none of `owner_field`, `access`
+(with at least one non-blank permission), or `multi_tenant` — regardless
+of what its fields are named. An unscoped entity is anonymous world
+read/create/update/delete on the generated API. Genuinely public
+read-only data is a legitimate shape, but anonymous *write* almost never
+is — gate at least the write operations with `access:`. The PII rule
+below is the stricter subset that also fails `gofastr validate`.
 
 ### Unscoped PII (`gofastr validate` error, `gofastr generate` warning)
 

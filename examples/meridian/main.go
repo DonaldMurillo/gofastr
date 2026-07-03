@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -24,6 +25,10 @@ import (
 )
 
 func main() {
+	// Load .env before anything reads the environment — the DB (and
+	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
+	// would run. Existing process env always wins over the files.
+	_ = dotenv.LoadAndApply(".env.local", ".env")
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		log.Fatal(err)
@@ -71,7 +76,7 @@ func main() {
 	site := uiapp.NewApp(blueprint.BlueprintAppName)
 	blueprint.RegisterGenerated(fwApp, site, db)
 	fwApp.Mount(uihost.New(site, uihost.WithStaticDir("static"), uihost.WithCustomCSS(blueprint.BlueprintFontCSS+blueprint.BlueprintBaseCSS()+uihost.ReadCustomCSSFile("static/app.css"))))
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: blueprint.BlueprintAppName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", Theme: blueprint.BlueprintTheme(), FontFaceCSS: blueprint.BlueprintFontCSS}))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: blueprint.BlueprintAppName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: blueprint.BlueprintTheme(), FontFaceCSS: blueprint.BlueprintFontCSS}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)

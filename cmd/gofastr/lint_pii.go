@@ -83,6 +83,39 @@ func lintUnscopedPII(bp Blueprint) []piiFinding {
 	return out
 }
 
+// unscopedFinding is one entity flagged by lintUnscopedEntities.
+type unscopedFinding struct {
+	Entity string
+}
+
+// Message spells out the exposure and every remedy. Unlike the PII rule
+// this is informational: genuinely public data (a blog's posts) is a
+// legitimate shape — but anonymous WRITE almost never is, so the warning
+// fires until the entity says how it's governed.
+func (f unscopedFinding) Message() string {
+	return fmt.Sprintf(
+		"entity %q is exposed via auto-CRUD/MCP with no scoping — anonymous callers can read, create, update, and delete every row. Set owner_field: <column> for per-user rows, access: permissions (RBAC) to gate writes, or multi_tenant: true; for genuinely public read-only data, gate at least the write operations with access:",
+		f.Entity)
+}
+
+// lintUnscopedEntities returns one finding per auto-exposed entity with NO
+// scoping mechanism at all — the superset of lintUnscopedPII that doesn't
+// depend on field names. Warned at generate time; never blocks.
+func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
+	var out []unscopedFinding
+	for _, decl := range bp.Entities {
+		crudOn := decl.CRUD == nil || *decl.CRUD // blueprint CRUD defaults on
+		if !crudOn && !decl.MCP {
+			continue
+		}
+		if decl.OwnerField != "" || decl.MultiTenant || hasAccessGate(decl.Access) {
+			continue
+		}
+		out = append(out, unscopedFinding{Entity: decl.Name})
+	}
+	return out
+}
+
 // hasAccessGate reports whether the access declaration actually gates at
 // least one operation — an access: map with only blank entries gates
 // nothing and must not count as a remedy.

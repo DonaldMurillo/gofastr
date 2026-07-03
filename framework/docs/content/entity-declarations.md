@@ -181,6 +181,29 @@ entities:
         to: users
 ```
 
+### Field keys
+
+Each entry under `fields:` accepts:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | Column name (required). |
+| `type` | string | One of the field types above (`string`, `text`, `int`, `float`, `decimal`, `bool`, `enum`, `date`, `timestamp`, `uuid`, `json`, `image`, `file`, `relation`). |
+| `required` | bool | NOT NULL + presence validation. |
+| `unique` | bool | Unique constraint on the column. |
+| `default` | scalar | Default value. |
+| `max` / `min` | number | Length (strings) or value (numbers) bounds. |
+| `values` | list | Allowed values for `type: enum`. |
+| `pattern` | string | Regex the value must match (validated on write). |
+| `auto_generate` | string | Auto-populate strategy, e.g. `uuid` on an id column — the generated field never appears in write forms. |
+| `read_only` | bool | Accepted from the DB/generator but rejected on client writes. |
+| `hidden` | bool | Excluded from generated UI grids, forms, and MCP tool schemas (still stored and API-readable). |
+| `to` | string | For `type: relation`, the target entity. |
+
+Relation *blocks* (the `relations:` list, distinct from a `relation`
+field) take `type` (`belongs_to`, `has_many`, `has_one`), `name`,
+`entity`, and `foreign_key`.
+
 `owner_field` mirrors `EntityConfig.OwnerField` — set it to the column
 that holds the row owner's id (e.g. `user_id`) and the blueprint-declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one

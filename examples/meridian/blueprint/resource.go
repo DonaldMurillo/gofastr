@@ -524,7 +524,7 @@ func resCamel(s string) string {
 }
 
 func resMuted() render.HTML {
-	return render.Tag("span", map[string]string{"class": "mrd-muted"}, render.Text("—"))
+	return ui.EmptyValue()
 }
 
 func resNumeric(t string) bool {
@@ -782,6 +782,22 @@ func blueprintGroupSlices(ctx context.Context, entity, groupBy string) []ui.PieS
 		slices = append(slices, ui.PieSlice{Label: resTitle(kv.k), Value: float64(kv.v)})
 	}
 	return slices
+}
+
+// blueprintLineChart renders a single-series line chart over the grouped
+// counts. Fewer than two groups renders ui.LineChart's calm empty state.
+func blueprintLineChart(ctx context.Context, entity, groupBy string) render.HTML {
+	counts := blueprintGroupCounts(ctx, entity, groupBy)
+	labels := make([]string, 0, len(counts))
+	values := make([]float64, 0, len(counts))
+	for _, kv := range counts {
+		labels = append(labels, resTitle(kv.k))
+		values = append(values, float64(kv.v))
+	}
+	return ui.LineChart(ui.LineChartConfig{
+		Series: []ui.LineSeries{{Name: resTitle(groupBy), Values: values}},
+		Labels: labels,
+	})
 }
 
 func blueprintFmtNum(f float64) string {

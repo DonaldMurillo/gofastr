@@ -14,15 +14,6 @@ This is the thesis tutorial. In about twenty minutes you will:
 Every command below is copy-paste runnable. Each step ends with a
 `curl` that proves the step worked.
 
-> **Version note.** The blueprint `access:` key, the `gofastr validate`
-> subcommand, and the auto-mounted session middleware used below ship in
-> the next tagged release. Until then, install the CLI from the
-> development branch
-> (`go install github.com/DonaldMurillo/gofastr/cmd/gofastr@main`) and
-> point the generated app at it too:
-> `go get github.com/DonaldMurillo/gofastr@main` (run it after
-> `gofastr generate`, before `go mod tidy`).
-
 ## 0. Prerequisites
 
 - Go 1.26+ (the floor comes from an optional battery — see
