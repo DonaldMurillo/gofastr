@@ -28,62 +28,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 const sessionCookie = "bo_session"
-
-// baseCSS is *only* page-level typography. Note what's NOT here: the admin
-// shell layout (sidebar rail, responsive collapse, toolbar, detail grid, …)
-// is shipped by battery/admin itself, theme-tokenized — so an app gets a
-// finished back-office without writing any layout CSS. To restyle it, set
-// your theme (or override --admin-rail / --admin-gutter); you don't touch the
-// admin's markup or CSS. CSP-clean: a served stylesheet, no inline style.
-const baseCSS = `
-*,*::before,*::after { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: var(--font-body);
-  background: var(--color-background);
-  color: var(--color-text);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
-h1,h2,h3 { line-height: 1.15; letter-spacing: -0.01em; }
-a { color: var(--color-primary); }
-
-/* Public pages (home + sign-in): a centered, themed card so they read as the
-   same product as the admin — all via theme tokens, no inline styles. */
-.bo-public { min-block-size: 100dvh; display: grid; place-items: center; padding: var(--spacing-lg, 16px); }
-.bo-card {
-  inline-size: min(26rem, 100%);
-  background: var(--color-surface, #17181a);
-  border: 1px solid var(--color-border, #2a2b2e);
-  border-radius: var(--radii-lg, 12px);
-  padding: clamp(1.5rem, 1rem + 3vw, 2.5rem);
-}
-.bo-card--hero { inline-size: min(40rem, 100%); }
-.bo-card h1 { margin: 0 0 0.35rem; font-size: 1.6rem; }
-.bo-card p { margin: 0 0 1.5rem; color: var(--color-text-muted, #a8a8ad); }
-.bo-field { display: grid; gap: 0.35rem; margin-block-end: 1rem; }
-.bo-field label { font-size: 0.8125rem; color: var(--color-text-muted, #a8a8ad); }
-.bo-field input {
-  font: inherit; padding: 0.6rem 0.7rem; min-block-size: 44px;
-  border: 1px solid var(--color-border, #2a2b2e); border-radius: var(--radii-md, 8px);
-  background: var(--color-background, #0c0c0d); color: var(--color-text, #f2f2f3);
-}
-.bo-field input:focus-visible { outline: 2px solid var(--color-primary, #f0b429); outline-offset: -1px; }
-.bo-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  min-block-size: 44px; padding: 0 1.1rem; border: 0; border-radius: var(--radii-md, 8px);
-  background: var(--color-primary, #f0b429); color: var(--color-primary-fg, #16130a);
-  font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
-}
-.bo-btn--block { inline-size: 100%; }
-.bo-btn:hover { filter: brightness(1.06); }
-`
 
 func main() {
 	app := setupApp(":memory:")
@@ -109,10 +60,18 @@ func setupApp(dsn string) *framework.App {
 
 	site := appui.NewApp("Backoffice")
 	site.WithTheme(createTheme())
-	site.Register("/", &homeScreen{}, nil)
-	site.Register("/login", &loginScreen{}, nil) // GET sign-in (themed); POST → loginSubmit
+	// The public pages share the centered-container layout shell — the
+	// design system's editorial column — so the hero and auth card sit in
+	// a comfortable measure without any page CSS.
+	public := appui.NewLayout("public").WithContainer()
+	site.Register("/", &homeScreen{}, public)
+	site.Register("/login", &loginScreen{}, public) // GET sign-in (themed); POST → loginSubmit
 
-	host := uihost.New(site, uihost.WithCustomCSS(baseCSS))
+	// Zero bespoke CSS: the uihost ships the base typography floor, the
+	// admin battery ships the whole back-office shell, and the public
+	// screens below compose framework/ui (Hero, AuthCard, Form) — all
+	// recolored by the theme tokens set in createTheme.
+	host := uihost.New(site)
 	app := framework.NewUIHostApp(host,
 		framework.WithDB(db),
 		framework.WithConfig(framework.AppConfig{Name: "backoffice"}),
@@ -125,8 +84,9 @@ func setupApp(dsn string) *framework.App {
 
 	registerEntities(app)
 
-	// Auto-expose every CRUD entity as an admin screen (empty Entities).
-	app.RegisterBattery(admin.New(admin.Config{Title: "Backoffice", EntityListLimit: 8}))
+	// Expose every CRUD entity as an admin screen — the explicit
+	// whole-back-office opt-in (an empty Entities list exposes nothing).
+	app.RegisterBattery(admin.New(admin.Config{Title: "Backoffice", EntityListLimit: 8, AllEntities: true}))
 
 	// GET /login is the themed host screen registered above. The form posts to a
 	// DISTINCT path (/login/submit) so an explicit route doesn't shadow /login
@@ -257,55 +217,43 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// ----- public screens (home + sign-in) — themed host screens so they share
-// the admin's tokens/CSS instead of being bolted-on raw HTML --------------
+// ----- public screens (home + sign-in) — composed entirely from
+// framework/ui so they share the admin's tokens with zero bespoke CSS ------
 
 type homeScreen struct{ component.ContextOnly }
 
 func (homeScreen) ScreenTitle() string { return "Backoffice" }
 
 func (homeScreen) RenderCtx(ctx context.Context) render.HTML {
-	href, label := "/login", "Sign in →"
+	href, label := "/login", "Sign in"
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		href, label = "/admin/e/products", "Open the admin →"
+		href, label = "/admin/e/products", "Open the admin"
 	}
-	return html.Div(html.DivConfig{Class: "bo-public"},
-		html.Div(html.DivConfig{Class: "bo-card bo-card--hero"},
-			render.Tag("h1", nil, render.Text("Backoffice")),
-			render.Tag("p", nil, render.Text("An entity admin generated by battery/admin, rendered through the UI host. Products, suppliers, and customers are editable at /admin/e/<entity>.")),
-			render.Tag("a", map[string]string{"class": "bo-btn", "href": href}, render.Text(label)),
-		),
-	)
+	return ui.Hero(ui.HeroConfig{
+		Title:    "Backoffice",
+		Subtitle: "An entity admin generated by battery/admin, rendered through the UI host. Products, suppliers, and customers are editable at /admin/e/<entity>.",
+		Actions:  []render.HTML{ui.LinkButton(ui.LinkButtonConfig{Label: label, Href: href})},
+	})
 }
 
-// loginScreen is the demo sign-in, rendered through the host so it inherits the
-// theme + served CSS (CSP-clean — no inline styles). POST still goes to the raw
-// loginSubmit handler; the form submits natively (default enctype), so the
-// runtime doesn't intercept it.
+// loginScreen is the demo sign-in, composed from ui.AuthCard + ui.Form +
+// ui.FormField — the same shapes a real battery/auth login screen uses.
+// POST still goes to the raw loginSubmit handler.
 type loginScreen struct{ component.ContextOnly }
 
 func (loginScreen) ScreenTitle() string { return "Sign in · Backoffice" }
 
 func (loginScreen) RenderCtx(context.Context) render.HTML {
-	field := func(name, label, typ, val string, required bool) render.HTML {
-		in := map[string]string{"type": typ, "name": name, "id": "f-" + name, "value": val}
-		if required {
-			in["required"] = ""
-		}
-		return html.Div(html.DivConfig{Class: "bo-field"},
-			render.Tag("label", map[string]string{"for": "f-" + name}, render.Text(label)),
-			render.VoidTag("input", in),
-		)
-	}
-	return html.Div(html.DivConfig{Class: "bo-public"},
-		html.Div(html.DivConfig{Class: "bo-card"},
-			render.Tag("h1", nil, render.Text("Backoffice")),
-			render.Tag("p", nil, render.Text("Demo sign-in — any email works.")),
-			render.Tag("form", map[string]string{"method": "post", "action": "/login/submit"},
-				field("email", "Email", "email", "admin@example.com", true),
-				field("password", "Password", "password", "demo", false),
-				render.Tag("button", map[string]string{"type": "submit", "class": "bo-btn bo-btn--block"}, render.Text("Sign in")),
-			),
+	return ui.AuthCard(ui.AuthCardConfig{
+		Title: "Backoffice",
+		Body: ui.Form(ui.FormConfig{Action: "/login/submit", Method: "POST", SubmitLabel: "Sign in"},
+			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "f-email", Required: true,
+				Input: html.Input(html.InputConfig{ID: "f-email", Name: "email", Type: "email", Value: "admin@example.com",
+					ExtraAttrs: html.Attrs{"autocomplete": "email", "required": ""}})}),
+			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "f-password",
+				Input: html.Input(html.InputConfig{ID: "f-password", Name: "password", Type: "password", Value: "demo",
+					ExtraAttrs: html.Attrs{"autocomplete": "current-password"}})}),
 		),
-	)
+		Footer: ui.Muted(render.Text("Demo sign-in — any email works.")),
+	})
 }

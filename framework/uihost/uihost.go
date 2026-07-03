@@ -482,8 +482,8 @@ td[data-align="end"] {
   clip: auto;
   white-space: normal;
   z-index: 9999;
-  background: #18181B;
-  color: #FAFAFA;
+  background: var(--color-text, #18181B);
+  color: var(--color-background, #FAFAFA);
   border-radius: 4px;
   font: 0.9rem system-ui, -apple-system, sans-serif;
   text-decoration: none;

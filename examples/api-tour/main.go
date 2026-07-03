@@ -78,6 +78,16 @@ func main() {
 		Relations: []framework.Relation{
 			framework.BelongsTo("user", "users", "user_id"),
 		},
+		// Public read (the ?include=author.profile flows stay anonymous),
+		// gated writes: per-user data must never be world-writable. With
+		// no RBAC policy installed in this demo, the write permissions
+		// simply fail closed for everyone — the read-only posture a
+		// public author bio wants.
+		Access: framework.AccessControl{
+			Create: "profiles:write",
+			Update: "profiles:write",
+			Delete: "profiles:write",
+		},
 	})
 
 	app.Entity("posts", framework.EntityConfig{
