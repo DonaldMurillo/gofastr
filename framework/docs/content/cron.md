@@ -19,8 +19,12 @@ Rule of thumb: **cron decides _when_, the queue decides _how_ reliably.**
 A common pattern is a cron tick that *enqueues* durable jobs:
 
 ```go
-sched.Every("@every 1m", func(ctx context.Context) error {
-    return q.Enqueue(ctx, "send-due-reminders", nil) // queue does the durable work
+sched.Register(framework.CronJob{
+    Name: "send-due-reminders",
+    Spec: "* * * * *", // every minute
+    Run: func(ctx context.Context) error {
+        return q.Enqueue(ctx, queue.Job{Type: "send-due-reminders"}) // queue does the durable work
+    },
 })
 ```
 
@@ -118,12 +122,26 @@ Supported within each field:
 ```go
 go func() {
     <-ctx.Done()
-    sched.Stop() // blocks until the run loop exits
+    sched.Stop() // blocks until the run loop exits AND in-flight jobs finish
 }()
 ```
 
 `Stop` is idempotent — repeated calls return immediately after the
-first one finishes.
+first one finishes. It joins in-flight job goroutines without a
+deadline; when the join must be bounded, use `StopContext`:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+if err := sched.StopContext(ctx); err != nil {
+    // a job ignored its cancelled context past the deadline; it was
+    // abandoned so shutdown can proceed
+}
+```
+
+`App.AddCron` wires the stop side through `StopContext` automatically,
+bounded by the app's shutdown drain deadline — a hung job cannot stall
+`SIGTERM` forever.
 
 ## Error handling
 

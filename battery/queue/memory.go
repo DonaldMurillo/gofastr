@@ -123,8 +123,13 @@ func (q *MemoryQueue) processJob(job Job) {
 	if err != nil {
 		job.Attempts++
 		if job.Attempts < job.MaxAttempts {
-			// Re-enqueue for retry.
-			_ = q.Enqueue(ctx, job)
+			// Re-enqueue for retry on a FRESH context. `ctx` is the
+			// per-attempt one that just timed out / was cancelled; using
+			// it here made Enqueue fail on the very jobs retries exist for
+			// (the error was discarded, so the retry silently vanished).
+			if enqErr := q.Enqueue(context.Background(), job); enqErr != nil {
+				q.retainDead(job)
+			}
 		} else {
 			// Retries exhausted — retain as terminally-failed for inspection
 			// and replay instead of dropping it.

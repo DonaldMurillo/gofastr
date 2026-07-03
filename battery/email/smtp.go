@@ -7,9 +7,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"mime"
+	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
+
+// defaultSMTPDialTimeout bounds the TCP+TLS connect — and, as the
+// connection's I/O deadline, the whole SMTP exchange — when SMTPConfig.
+// DialTimeout is unset. A black-holed or stalling SMTP host would
+// otherwise block the calling worker forever (the DBQueue's single
+// default worker especially).
+const defaultSMTPDialTimeout = 10 * time.Second
 
 // SMTPConfig holds the configuration for an SMTP sender.
 type SMTPConfig struct {
@@ -30,6 +39,15 @@ type SMTPConfig struct {
 	// stripping by an on-path attacker). Set true only for trusted
 	// local relays where plaintext is acceptable.
 	AllowCleartext bool
+
+	// DialTimeout bounds the TCP (and, for UseTLS, the TLS handshake)
+	// connect. Zero uses defaultSMTPDialTimeout (10s). The request
+	// context's deadline still applies and wins when it is sooner.
+	// The same budget is also set as the connection's I/O deadline, so
+	// a server that accepts the dial and then stalls mid-exchange
+	// (never sends the greeting, wedges after MAIL) cannot hang the
+	// worker either.
+	DialTimeout time.Duration
 }
 
 // SMTPSender sends emails via SMTP.
@@ -79,26 +97,47 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	// Collect all recipients (To + CC + BCC).
 	recipients := append(append(email.To, email.CC...), email.BCC...)
 
-	// Connect to the server.
-	var client *smtp.Client
+	// Connect to the server with a bounded dial. smtp.Dial / tls.Dial
+	// ignore ctx and never time out on their own — a black-holed host
+	// would otherwise wedge the worker forever.
+	timeout := s.config.DialTimeout
+	if timeout <= 0 {
+		timeout = defaultSMTPDialTimeout
+	}
+	dialCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		dialCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	dialer := &net.Dialer{Timeout: timeout}
+
+	conn, err := dialer.DialContext(dialCtx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("%w: smtp dial failed: %v", ErrSendFailed, err)
+	}
+	// The deadline covers the WHOLE SMTP exchange, not just the dial:
+	// net/smtp has no timeouts of its own, so a server that accepts the
+	// connection and then stalls (never sends the 220 greeting, wedges
+	// mid-exchange) would otherwise hang the worker forever.
+	deadline := time.Now().Add(timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = conn.SetDeadline(deadline)
+
 	if s.config.UseTLS {
-		tlsConfig := &tls.Config{
-			ServerName: s.config.Host,
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: s.config.Host})
+		if err := tlsConn.HandshakeContext(dialCtx); err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("%w: tls handshake failed: %v", ErrSendFailed, err)
 		}
-		conn, err := tls.Dial("tcp", addr, tlsConfig)
-		if err != nil {
-			return fmt.Errorf("%w: tls dial failed: %v", ErrSendFailed, err)
-		}
-		client, err = smtp.NewClient(conn, s.config.Host)
-		if err != nil {
-			return fmt.Errorf("%w: smtp client creation failed: %v", ErrSendFailed, err)
-		}
-	} else {
-		c, err := smtp.Dial(addr)
-		if err != nil {
-			return fmt.Errorf("%w: smtp dial failed: %v", ErrSendFailed, err)
-		}
-		client = c
+		conn = tlsConn
+	}
+	client, err := smtp.NewClient(conn, s.config.Host)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("%w: smtp client creation failed: %v", ErrSendFailed, err)
 	}
 	defer client.Close()
 

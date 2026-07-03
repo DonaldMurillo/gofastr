@@ -2,6 +2,8 @@ package event
 
 import (
 	"context"
+	"log/slog"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -146,11 +148,18 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 func emitSafe(ctx context.Context, h EventHandler, event Event) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Swallow — see method docs. We deliberately don't surface
-			// the panic as an error because callers wire Emit into
+			// Swallow the ERROR — see method docs. We deliberately don't
+			// surface the panic as an error because callers wire Emit into
 			// AfterCreate / AfterUpdate hooks where any non-nil return
 			// rolls back the user's transaction; a flaky subscriber
-			// shouldn't gain veto over real writes.
+			// shouldn't gain veto over real writes. But a silently-
+			// no-op'd handler ("send welcome email" that panicked) is a
+			// debugging black hole, so LOG it at Error with the stack.
+			slog.Default().Error("event: subscriber panicked; recovered (event delivery is best-effort, the write is unaffected)",
+				"event_type", event.Type,
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
 			err = nil
 		}
 	}()

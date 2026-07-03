@@ -51,7 +51,9 @@ type Scheduler struct {
 	stop      chan struct{}
 	stopped   chan struct{}
 	startOnce sync.Once
-	started   bool // set under mu inside Start; gates Stop's wait on stopped
+	stopOnce  sync.Once      // Stop/StopContext may race (drainer vs. user hook); only one may close stop
+	started   bool           // set under mu inside Start; gates Stop's wait on stopped
+	inflight  sync.WaitGroup // one Add per job goroutine; Stop/StopContext join it
 	OnError   func(jobName string, err error)
 }
 
@@ -102,23 +104,46 @@ func (s *Scheduler) Start(ctx context.Context) {
 	})
 }
 
-// Stop signals the loop to exit and blocks until it has. Safe to call
-// multiple times, and safe to call before Start — if the loop was never
-// launched there is nothing to wait for, so Stop returns immediately
-// instead of blocking forever on a channel the loop never closes (which
-// would hang graceful shutdown when boot aborts before Start runs).
+// Stop signals the loop to exit and blocks until it has, then joins any
+// in-flight job goroutines — a job mid-write must finish before graceful
+// shutdown lets the process exit. Safe to call multiple times, and safe
+// to call before Start — if the loop was never launched there is nothing
+// to wait for, so Stop returns immediately instead of blocking forever
+// on a channel the loop never closes (which would hang graceful shutdown
+// when boot aborts before Start runs).
+//
+// Stop waits for in-flight jobs without a deadline; use StopContext when
+// the join must be bounded (App wires its cron drain through StopContext
+// so a job that ignores its context cannot hang SIGTERM forever).
 func (s *Scheduler) Stop() {
-	select {
-	case <-s.stop:
-		// already stopped
-	default:
-		close(s.stop)
-	}
+	_ = s.StopContext(context.Background())
+}
+
+// StopContext is Stop with a deadline on the in-flight join: it signals
+// the loop to exit, waits for it, then waits for running job goroutines
+// until ctx expires. Jobs receive the scheduler's parent context — which
+// App.Shutdown cancels before draining — so well-behaved jobs exit
+// promptly; a job that ignores its context is abandoned at the deadline
+// and ctx.Err() is returned.
+func (s *Scheduler) StopContext(ctx context.Context) error {
+	s.stopOnce.Do(func() { close(s.stop) })
 	s.mu.RLock()
 	started := s.started
 	s.mu.RUnlock()
 	if started {
 		<-s.stopped
+	}
+
+	joined := make(chan struct{})
+	go func() {
+		s.inflight.Wait()
+		close(joined)
+	}()
+	select {
+	case <-joined:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("cron: in-flight jobs still running at stop deadline: %w", ctx.Err())
 	}
 }
 
@@ -139,7 +164,9 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 			continue
 		}
 		job := sj.job
+		s.inflight.Add(1)
 		go func(j CronJob) {
+			defer s.inflight.Done()
 			defer func() {
 				if r := recover(); r != nil {
 					if s.OnError != nil {

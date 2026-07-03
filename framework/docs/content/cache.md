@@ -60,6 +60,11 @@ the least-recently-used entry is evicted on the next `Set`.  Use this
 whenever cache keys are influenced by untrusted input (path, query,
 user id) to prevent unbounded memory growth (OOM/DoS).
 
+A `MemoryCache` built with **neither** `WithTTL` **nor** `WithMaxEntries`
+retains every distinct key forever — the OOM shape. `NewMemoryCache`
+logs a WARN in that configuration; set a TTL, a size cap, or both to
+silence it.
+
 ## `RedisCache`
 
 ```go

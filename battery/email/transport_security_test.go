@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeSMTP is a minimal SMTP server that does NOT advertise STARTTLS.
@@ -128,5 +130,43 @@ func TestSMTP_NoCleartextWhenSTARTTLSUnavailable(t *testing.T) {
 	}
 	if srv.receivedData() {
 		t.Fatalf("SECURITY: [email] message body was transmitted in cleartext (DATA reached server) despite no TLS")
+	}
+}
+
+// A server that accepts the dial and then never sends the 220 greeting
+// must not wedge the worker: the connection deadline covers the whole
+// SMTP exchange, not just the connect.
+func TestSMTP_StalledServerDoesNotWedge(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	stall := make(chan struct{})
+	defer close(stall)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		<-stall // accept, then never send the greeting
+	}()
+
+	_, portStr, _ := net.SplitHostPort(ln.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	s := NewSMTPSender(SMTPConfig{Host: "127.0.0.1", Port: port, AllowCleartext: true, DialTimeout: 300 * time.Millisecond})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Send(context.Background(), Email{From: "a@example.com", To: []string{"b@example.com"}, Subject: "s", TextBody: "b"})
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Send succeeded against a server that never spoke SMTP")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Send wedged on a stalled SMTP server — no I/O deadline on the connection")
 	}
 }

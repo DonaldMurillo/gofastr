@@ -108,6 +108,24 @@ app over plain HTTP behind it. `App.Start` installs signal handling and
 drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
 rolling deploys don't cut active requests.
 
+The drain is **bounded**: `AppConfig.ShutdownTimeout` (default 15s) caps
+it, and anything still open at the deadline — an SSE stream never goes
+idle — is force-closed so the process exits well inside Kubernetes'
+30s SIGTERM→SIGKILL window. In-flight cron jobs are joined under the
+same deadline (their contexts are cancelled when the drain starts).
+If your process owns signal handling itself, set
+`AppConfig.DisableSignalHandling` and call `App.Shutdown` (or
+`App.RunWithSignals`) from your own handler — `Shutdown` is idempotent,
+so double-wiring is harmless.
+
+## Running more than one replica
+
+Everything on this page assumes one replica. Sessions, rate limits,
+cron, in-memory queues, and SSE push are **process-local by default**
+and need a shared backend (or a single-runner strategy) before you
+scale out — see [Horizontal scaling](scaling.md) for the complete
+what-breaks/what-fixes-it list.
+
 ## Health & metrics
 
 - **Readiness/liveness:** auto-registered probes (plus a DB readiness check

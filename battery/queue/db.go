@@ -24,11 +24,12 @@ type DBQueue struct {
 	table   string
 	dialect dbDialect
 
-	handlers map[string]Handler
-	workers  int
-	lease    time.Duration
-	stop     chan struct{}
-	stopped  chan struct{}
+	handlers       map[string]Handler
+	workers        int
+	lease          time.Duration
+	handlerTimeout time.Duration
+	stop           chan struct{}
+	stopped        chan struct{}
 
 	// mu guards post-construction mutation of handlers and lease so that
 	// RegisterHandler/SetLeaseTimeout can race safely against the worker
@@ -67,6 +68,18 @@ func WithTable(name string) DBQueueOption {
 // Start(). Defaults to 1 when not set.
 func WithWorkers(n int) DBQueueOption {
 	return func(q *DBQueue) { q.workers = n }
+}
+
+// WithDBHandlerTimeout caps a single handler invocation's wall-clock
+// budget. The job's context is cancelled at the deadline, so a
+// black-holed dependency (an SMTP host that never responds, a hung HTTP
+// call) can't wedge a worker forever — critical with the default single
+// worker, where one stuck job stalls the entire queue. Zero (default)
+// means no timeout; set it whenever handlers touch the network. (Named
+// distinctly from the MemoryQueue's WithHandlerTimeout because both live
+// in this package.)
+func WithDBHandlerTimeout(d time.Duration) DBQueueOption {
+	return func(q *DBQueue) { q.handlerTimeout = d }
 }
 
 // WithLeaseTimeout sets how long a claimed-but-unacked job may stay in-flight
@@ -613,6 +626,14 @@ func (q *DBQueue) runHandler(ctx context.Context, h Handler, job Job) (err error
 			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
 		}
 	}()
+	q.mu.RLock()
+	timeout := q.handlerTimeout
+	q.mu.RUnlock()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	return h(ctx, job)
 }
 

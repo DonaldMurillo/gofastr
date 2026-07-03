@@ -52,6 +52,7 @@ q, err := queue.NewDBQueue(db,
     queue.WithWorkers(4),
     queue.WithLeaseTimeout(2*time.Minute),
     queue.WithBackoff(5*time.Second, 5*time.Minute),
+    queue.WithDBHandlerTimeout(30*time.Second), // cancel a stuck handler's ctx
 )
 if err != nil {
     log.Fatal(err)
@@ -246,7 +247,19 @@ which is handy for tests and replayed fixtures.
 
 When the scheduler runs, the wake interval is the smallest of the
 interval schedules and one minute (cron resolution); a cron-only
-scheduler wakes once per minute.
+scheduler wakes once per minute. **Jobs registered after `Start`
+still fire** — the loop re-reads the schedule set each tick and a
+`Register` nudges it to re-arm immediately, so the natural "start
+subsystems, then register jobs" wiring works (it previously snapshotted
+once at `Start` and dropped everything registered later).
+
+**Handler timeout.** By default a DBQueue handler runs unbounded — a
+black-holed dependency (an SMTP host that never answers, a hung HTTP
+call) wedges the worker forever, and with the default single worker
+that stalls the whole queue. Pass `WithDBHandlerTimeout(d)` to cancel
+the handler's context at the deadline. The bundled SMTP sender
+(`battery/email`) also bounds its own dial at 10s (`SMTPConfig.
+DialTimeout`), so it can't hang even without a handler timeout.
 
 Multiple queues can be passed to `NewScheduler` — the job is enqueued
 onto all of them. Enqueue errors are logged via `slog.Default()`.

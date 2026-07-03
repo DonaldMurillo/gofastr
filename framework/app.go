@@ -10,11 +10,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
@@ -88,7 +90,26 @@ type AppConfig struct {
 	// pair with per-handler ctx deadlines if you still need bounded
 	// request lifetime.
 	DisableRequestTimeout bool
+
+	// ShutdownTimeout bounds the graceful drain that the default
+	// SIGINT/SIGTERM handler runs via App.Shutdown. Zero installs the
+	// 15s default. The drain stops accepting connections, waits for
+	// in-flight requests, force-closes whatever remains at the deadline
+	// (an open SSE stream never goes idle), then stops batteries and
+	// runs OnStop hooks.
+	ShutdownTimeout time.Duration
+
+	// DisableSignalHandling opts out of the SIGINT/SIGTERM handler that
+	// Start installs by default. Set it when the embedding process owns
+	// signal handling and calls App.Shutdown (or RunWithSignals) itself.
+	DisableSignalHandling bool
 }
+
+// defaultShutdownTimeout bounds the signal-triggered drain when
+// AppConfig.ShutdownTimeout is unset. Kubernetes gives pods 30s between
+// SIGTERM and SIGKILL by default; finishing well inside that budget
+// leaves room for the pre-stop hook and container runtime overhead.
+const defaultShutdownTimeout = 15 * time.Second
 
 // App is the top-level application container.
 // It wires together the entity registry, router, MCP server, and database.
@@ -216,10 +237,48 @@ func WithDB(db *sql.DB) AppOption {
 	}
 }
 
-// WithConfig sets the application config.
+// WithConfig sets the application config. It merges into whatever the
+// granular options (WithAPIPrefix, WithPublicOpenAPI, WithName, …) have
+// already set rather than replacing the struct wholesale, so option order
+// doesn't silently discard config: every field WithConfig sets to a
+// non-zero value wins; a zero field preserves the existing value. To turn
+// a boolean back off, use the granular setter after WithConfig instead of
+// relying on a zero-valued field.
+//
+// TestWithConfigCoversEveryField pins the field list — extend this merge
+// when adding an AppConfig field.
 func WithConfig(config AppConfig) AppOption {
 	return func(a *App) {
-		a.Config = config
+		if config.Name != "" {
+			a.Config.Name = config.Name
+		}
+		if config.JSONCase != "" {
+			a.Config.JSONCase = config.JSONCase
+		}
+		if config.DebugEndpoints {
+			a.Config.DebugEndpoints = true
+		}
+		if config.NoLLMMD {
+			a.Config.NoLLMMD = true
+		}
+		if config.PublicOpenAPI {
+			a.Config.PublicOpenAPI = true
+		}
+		if config.APIPrefix != "" {
+			a.Config.APIPrefix = config.APIPrefix
+		}
+		if config.RequestTimeout != 0 {
+			a.Config.RequestTimeout = config.RequestTimeout
+		}
+		if config.DisableRequestTimeout {
+			a.Config.DisableRequestTimeout = true
+		}
+		if config.ShutdownTimeout != 0 {
+			a.Config.ShutdownTimeout = config.ShutdownTimeout
+		}
+		if config.DisableSignalHandling {
+			a.Config.DisableSignalHandling = true
+		}
 	}
 }
 
@@ -1190,15 +1249,19 @@ func (a *App) RunWithSignals(ctx context.Context) error {
 // AddCron registers a Scheduler with the app's lifecycle: it starts when
 // Start runs and stops when Stop runs. Returns the App for chaining so
 // users can wire several schedulers in one expression.
+//
+// The stop side drains through StopContext so in-flight job goroutines
+// are joined before shutdown proceeds — bounded by the drain deadline,
+// so a job that ignores its (already-cancelled) context can't hang
+// SIGTERM forever.
 func (a *App) AddCron(s *cron.Scheduler) *App {
 	a.OnStart(func(ctx context.Context) error {
 		s.Start(ctx)
 		return nil
 	})
-	a.OnStop(func() error {
-		s.Stop()
-		return nil
-	})
+	a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+		return s.StopContext(ctx)
+	}))
 	return a
 }
 
@@ -1248,6 +1311,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if srv != nil {
 		if err := srv.Shutdown(ctx); err != nil {
+			// Bounded drain: the deadline expired with connections still
+			// open (an SSE stream never goes idle, so Server.Shutdown
+			// alone would leave it — and the process — hanging).
+			// Force-close the stragglers so shutdown completes.
+			_ = srv.Close()
 			firstErr = err
 		}
 	}
@@ -1498,6 +1566,45 @@ func (a *App) Start(addr string) error {
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
+
+	// Graceful shutdown by default: docker stop and kubectl rollouts send
+	// SIGTERM, and without a handler the runtime kills the process
+	// mid-request — no drain, no battery stop, no OnStop hooks. The
+	// deferred join keeps Start from returning while a signal-triggered
+	// drain is still running (Serve returns ErrServerClosed as soon as
+	// Shutdown begins). Opt out via DisableSignalHandling when the host
+	// process owns signals and calls Shutdown/RunWithSignals itself;
+	// concurrent Shutdown calls are safe — it is idempotent.
+	if !a.Config.DisableSignalHandling {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		sigQuit := make(chan struct{})
+		sigDone := make(chan struct{})
+		go func() {
+			defer close(sigDone)
+			defer signal.Stop(sigCh)
+			select {
+			case sig := <-sigCh:
+				timeout := a.Config.ShutdownTimeout
+				if timeout <= 0 {
+					timeout = defaultShutdownTimeout
+				}
+				a.Logger().Info("shutdown signal received; draining",
+					"signal", sig.String(), "timeout", timeout.String())
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+				if err := a.Shutdown(ctx); err != nil {
+					a.Logger().Error("graceful shutdown incomplete", "error", err)
+				}
+			case <-sigQuit:
+			}
+		}()
+		defer func() {
+			close(sigQuit)
+			<-sigDone
+		}()
+	}
+
 	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD)
 	for _, fn := range a.readyHooks {
 		fn(ln.Addr().String())

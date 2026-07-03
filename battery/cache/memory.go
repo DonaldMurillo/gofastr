@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -42,6 +43,13 @@ type MemoryCache struct {
 // interval is configured (default: 1 minute). Call Close to stop it.
 func NewMemoryCache(opts ...Option) *MemoryCache {
 	cfg := applyOptions(opts...)
+	// Unbounded AND never-expiring is the OOM shape: every distinct key
+	// (especially request-derived ones) is retained forever. Warn loudly —
+	// give it a default TTL (WithDefaultTTL) or a size cap (WithMaxEntries).
+	if cfg.maxEntries <= 0 && cfg.defaultTTL <= 0 {
+		slog.Default().Warn("cache: MemoryCache is both unbounded (no WithMaxEntries) and never-expiring (no WithDefaultTTL) — entries are retained forever, so request-derived keys will grow memory without limit",
+			"fix", "set WithDefaultTTL for a finite lifetime, WithMaxEntries for an LRU bound, or both")
+	}
 	mc := &MemoryCache{
 		items:  make(map[string]*memoryEntry),
 		cfg:    cfg,

@@ -33,6 +33,11 @@ type Scheduler struct {
 	queues    []Queue
 	schedules []ScheduledJob
 	logger    *slog.Logger
+
+	// wake is signalled by Register so a running Start loop re-arms its
+	// timer immediately, rather than waiting out a coarse (up to a minute)
+	// poll before a newly-registered sub-minute schedule can fire.
+	wake chan struct{}
 }
 
 // NewScheduler creates a new Scheduler that dispatches to the given queues.
@@ -41,6 +46,7 @@ func NewScheduler(queues ...Queue) *Scheduler {
 	return &Scheduler{
 		queues: queues,
 		logger: slog.Default(),
+		wake:   make(chan struct{}, 1),
 	}
 }
 
@@ -54,6 +60,7 @@ func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		queues: []Queue{q},
 		logger: logger,
+		wake:   make(chan struct{}, 1),
 	}
 }
 
@@ -144,27 +151,61 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 	b.scheduler.mu.Lock()
 	b.scheduler.schedules = append(b.scheduler.schedules, job)
 	b.scheduler.mu.Unlock()
+	// Nudge a running Start loop to re-arm its timer for this new (possibly
+	// sub-minute) schedule. Non-blocking: the buffered channel coalesces
+	// bursts, and a not-yet-started scheduler simply has a full/absent
+	// buffer that Start drains on entry.
+	if b.scheduler.wake != nil {
+		select {
+		case b.scheduler.wake <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
 // Start begins the scheduling loop. It blocks until ctx is cancelled.
+//
+// The loop re-reads the schedule set (under lock) on every tick, so jobs
+// registered AFTER Start still fire — the natural wiring is "start
+// subsystems, then register jobs", and an empty-at-Start scheduler that
+// exited would silently drop everything registered later. The tick
+// cadence adapts to the finest live interval each pass, so adding a
+// sub-minute schedule after Start takes effect on the next tick.
 func (s *Scheduler) Start(ctx context.Context) {
-	s.mu.Lock()
-	schedules := make([]ScheduledJob, len(s.schedules))
-	copy(schedules, s.schedules)
-	s.mu.Unlock()
+	timer := time.NewTimer(s.tickInterval())
+	defer timer.Stop()
 
-	if len(schedules) == 0 {
-		return
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.wake:
+			// A job was registered; dispatch anything already due and
+			// re-arm to the (possibly finer) interval.
+			s.dispatchDue(ctx, time.Now())
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(s.tickInterval())
+		case now := <-timer.C:
+			s.dispatchDue(ctx, now)
+			timer.Reset(s.tickInterval())
+		}
 	}
+}
 
-	// Pick the ticker duration. Cron resolution is one minute, so a cron-only
-	// scheduler wakes once a minute. Interval schedules wake at their shortest
-	// interval. When both kinds are present, take the smaller so neither is
-	// starved: an interval finer than a minute still fires on time, and the
-	// minute-granular cron checks are cheap.
+// tickInterval returns the current wake cadence: the finest live schedule
+// interval (cron counts as one minute), floored so an empty or cron-only
+// scheduler still wakes once a minute to pick up late registrations.
+func (s *Scheduler) tickInterval() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	minInterval := time.Duration(0)
-	for _, sch := range schedules {
+	for _, sch := range s.schedules {
 		d := sch.Interval
 		if sch.cron != nil {
 			d = time.Minute
@@ -176,21 +217,13 @@ func (s *Scheduler) Start(ctx context.Context) {
 			minInterval = d
 		}
 	}
-	if minInterval <= 0 {
+	if minInterval <= 0 || minInterval > time.Minute {
+		// Floor at a minute so a cron-only or not-yet-populated scheduler
+		// still re-checks for newly registered jobs; cap the poll so a
+		// long-interval schedule doesn't leave late registrations waiting.
 		minInterval = time.Minute
 	}
-
-	ticker := time.NewTicker(minInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-ticker.C:
-			s.dispatchDue(ctx, now)
-		}
-	}
+	return minInterval
 }
 
 func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
