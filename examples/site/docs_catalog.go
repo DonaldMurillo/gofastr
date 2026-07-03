@@ -141,6 +141,7 @@ var docIntents = []docIntent{
 			{"log", "Logging", "Structured JSON logs with MCP query tools."},
 			{"observability", "Observability", "Metrics and tracing for the hot paths."},
 			{"deploy", "Deployment", "Ship it: build, configure, and run GoFastr in production."},
+			{"scaling", "Horizontal scaling", "What's process-local by default and the replica-safe alternative for each."},
 			{"queue", "Job queue", "Durable background jobs via battery/queue."},
 			{"feature-flags", "Feature flags", "Rollout percentage, allow lists, env evaluator."},
 			{"i18n", "i18n", "JSON catalogs, plurals, Accept-Language negotiation."},

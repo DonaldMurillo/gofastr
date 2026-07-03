@@ -23,7 +23,7 @@ everything it needs by calling into the `App`:
 
 ```go
 func (MyPlugin) Init(app *framework.App) error {
-    app.Router.Get("/hello", helloHandler)
+    app.Router().Get("/hello", helloHandler)
     app.Use(myMiddleware)
     app.MCP.RegisterTool("my_tool", "Does the thing", schema, handler)
     app.HookRegistry("users").RegisterHook(framework.AfterCreate, sendWelcomeEmail)
@@ -161,9 +161,9 @@ func (w *Webhooks) Init(app *framework.App) error {
     app.OnStart(w.start)
     app.OnStop(w.stop)
 
-    app.Router.Post("/__webhooks/test", w.testHandler)
+    app.Router().Post("/__webhooks/test", w.testHandler)
 
-    for _, name := range app.Registry.Names() {
+    for name := range app.Registry.All() {
         app.HookRegistry(name).RegisterHook(framework.AfterCreate, w.fanOut)
     }
     return nil

@@ -110,7 +110,7 @@ would dominate the diff.
   version. The `v1.0.0` tag will mark the stability promise.
 - **No external production adopters yet.** The pipeline is proven by
   the repo's own tooling, docs site, and the
-  [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
+  [`examples/meridian`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/meridian)
   flagship — not by someone else's production traffic. This is a
   thesis framework and says so.
 - **Solo maintainer.** Bus factor of one. Issues get read; SLAs don't

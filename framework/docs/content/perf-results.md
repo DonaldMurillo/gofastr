@@ -60,7 +60,7 @@ capture is produced.
   (Apple M4 Pro, PG in Docker). Roughly 2× the re-run cost — still one
   round trip and well inside the ~10 ms boot budget, but the original
   sub-1 ms wording no longer holds; the trade buys "add a field, reboot,
-  it works" without a `migrate diff --apply` step.
+  it works" without a `migrate generate` + `migrate up` step.
 
 ### 7g — CronTick allocs per minute (N=1000)
 - Benchmark: `BenchmarkCronTick`

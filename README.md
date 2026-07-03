@@ -378,7 +378,7 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ### `core-ui/` — server-driven UI runtime
 
-A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a vanilla-JS runtime. See `examples/site` for an app that exercises every feature — including the 10 `framework/ui` primitives, modal/drawer/popover/toast widgets, and CRUD-by-island patterns.
+A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a vanilla-JS runtime. See `examples/site` for an app that exercises every feature — including the 90+ `framework/ui` primitives, modal/drawer/popover/toast widgets, and CRUD-by-island patterns.
 
 ### `battery/` — pluggable infrastructure
 
@@ -402,7 +402,7 @@ gofastr dev                         Start dev server with hot-reload
 gofastr migrate up | down | status  Run versioned migrations (advisory-locked, checksum + dirty-state guarded)
 gofastr migrate up --create-db      Create the target database first if it doesn't exist
 gofastr migrate generate <name> --from=<bp.yml>   Diff blueprint entities vs the committed snapshot → numbered reversible SQL
-gofastr migrate diff --from=<bp.yml> [--apply]    Declarative schema diff (blueprint vs live DB, opt-in apply)
+gofastr migrate force <version>     Reconcile the tracking table by hand (dirty-state recovery / baseline adoption)
 gofastr migrate force <version>     Reconcile a dirty/baselined migration
 gofastr test                        Run project tests
 gofastr embed index <path>          Index a project for semantic search
@@ -431,7 +431,7 @@ battery/     pluggable infra (admin, auth, cache, email, embed, log, notify, pri
 cmd/gofastr/ CLI: generate, build, migrate
 cmd/kiln/   CLI: serve, mcp, acp
 framework/docs/content/  feature docs, embedded into the binary — browse with `gofastr docs`
-examples/    meridian (blueprint flagship: SaaS console + marketing), ecommerce (owner-scoped blueprint pipeline), site (SSR + 10 UI primitives), blog, api-tour (cursor/include/batch/SSE/uploads), backoffice (entity admin), embed-demo, spa (Vue+API), static-site
+examples/    meridian (blueprint flagship: SaaS console + marketing), ecommerce (owner-scoped blueprint pipeline), site (SSR + 90+ UI primitives), blog, api-tour (cursor/include/batch/SSE/uploads), backoffice (entity admin), embed-demo, spa (Vue+API), static-site
 ROADMAP.md   forward-looking proposals not yet built
 ```
 
@@ -452,8 +452,14 @@ connected to a running app.
 - [Search](framework/docs/content/search.md) — the `battery/search` interface
 - [Embed](framework/docs/content/embed.md) — local semantic search via `battery/embed`
 - [Security](framework/docs/content/security.md) — defaults, headers, and limits
+- [Deployment](framework/docs/content/deploy.md) — single-binary build, graceful shutdown, production checklist
+- [Horizontal scaling](framework/docs/content/scaling.md) — what's process-local by default and the replica-safe alternative for each
+- [Observability](framework/docs/content/observability.md) — metrics and tracing
+- [Agent-ready](framework/docs/content/agent-ready.md) — the discovery surface for AI agents (llms.txt, agent card, MCP)
 - [Current risk register](framework/docs/content/project-architecture-review.md) — revalidated architecture risks and maintenance rules
 - [Agent notes](framework/docs/content/agent-notes.md) — running notes for AI contributors
+
+The full, per-topic index lives in the docs site catalogue (`gofastr docs --list`, or `examples/site/docs_catalog.go`), which a parity test keeps in sync with every embedded page. The list above is a curated subset.
 
 ## Project status
 
