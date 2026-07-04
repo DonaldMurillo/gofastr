@@ -114,13 +114,13 @@ dev server is up.
 ### Data display
 
 - **datatable** — `framework/ui.DataTable` — sortable / paginated / island-swappable rows
-- **statcard** — `framework/ui.StatCard` — metric card with label/value/trend
+- **statcard** — `framework/ui.StatCard` — metric card with label/value/trend. A 4-card dashboard row lives in a `ui.Grid`; the Grid default `Min: "16rem"` wraps 3+1 inside a sidebar-narrowed content column (~900px). For a 4-up row that fits (and degrades to 2+2 on tablet), pass `Grid(GridConfig{Min: "13rem"}, …)` — the `Min` knob is the intended control, not a Grid default change (16rem stays right for general content cards).
 - **animatedcounter** — `framework/ui.AnimatedCounter` — IntersectionObserver-driven tick
 - **timeline** — `framework/ui.Timeline` — vertical event rail
 - **sparkline** — `framework/ui.Sparkline` — pure-SVG inline trend chart
 - **piechart** — `framework/ui.PieChart` — SVG ratio chart (donut variant via InnerRadius)
-- **barchart** — `framework/ui.BarChart` — categorical SVG bar chart
-- **linechart** — `framework/ui.LineChart` — multi-series time-series chart with area + legend
+- **barchart** — `framework/ui.BarChart` — categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `ShowAxis` adds left value-axis ticks + gridlines.
+- **linechart** — `framework/ui.LineChart` — multi-series time-series chart with area + legend. Edge x-axis labels anchor inward so the first/last tick don't clip against the SVG boundary.
 - **jsonviewer** — `framework/ui.JSONViewer` — collapsible tree of arbitrary values
 - **diffviewer** — `framework/ui.DiffViewer` — unified or split diff renderer
 - **markdown** — `framework/ui.Markdown` — themed wrapper over `core/markdown`
@@ -131,6 +131,7 @@ dev server is up.
 ### Tags, badges, filters
 
 - **tag** — `framework/ui.Tag` — interactive pill (linked / removable / status-variant)
+- **filtertoolbar** — `framework/ui.FilterToolbar` — the filter/sort control strip above a list (facet `<select>` or radio-pill groups + search + sort + Apply/Reset), a single URL-driven GET form; wraps → stacks responsively so nothing clips on mobile
 - **filterchipbar** — `framework/ui.FilterChipBar` — `role=toolbar` of removable filter chips
 - **copybutton** — `framework/ui.CopyButton` — clipboard button with SR-announced confirmation
 - **toolbar** — `framework/ui.Toolbar` — `role=toolbar` wrapper for grouped actions
@@ -143,6 +144,65 @@ dev server is up.
 - **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
 - **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
 - **seo-bundle** — `ScreenSEO()` returning an `SEO` struct — per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
+
+---
+
+## Filter toolbars — the URL-driven pattern
+
+`ui.FilterToolbar` is the control strip that sits above a `DataTable` or
+card grid on a list screen. It renders **one `<form method="GET">`** whose
+controls carry the current filter/sort/search state. Submitting it (Apply)
+navigates to `<action>?facet=value&sort=…&q=…`; the screen's `Load(ctx)`
+reads those params and renders the filtered list server-side. Refresh,
+share, and back-button all reduce to "same URL → same view" with no client
+state — the "URL params are the source of truth" contract from
+`core-ui/ARCHITECTURE.md`. Reset is a plain link back to the bare action, so
+it clears every param with zero JavaScript. It works with the runtime
+disabled; the runtime just makes the Reset link a soft SPA nav.
+
+Facets render as a native `<select>` (default) or, per `Kind: FacetPills`,
+a wrapping radio-pill group (short, glanceable choices). The toolbar is
+responsive by construction: it declares itself a container and lays its
+controls out with flex-wrap, degrading row → wrapped rows → single-column
+stack as *its own* width shrinks (correct even inside a slim sidebar on a
+wide screen). Every control — including Apply/Reset — stays on-screen and
+tappable; nothing overflows a narrow ancestor, and pill labels never wrap
+mid-label ("Waiting On Customer" stays one line).
+
+```go
+// Screen.Render — the toolbar reflects the current URL state.
+func (s *CustomersScreen) Render() render.HTML {
+    return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+        ui.FilterToolbar(ui.FilterToolbarConfig{
+            Action: "/customers", // the list route (the form GETs here)
+            Facets: []ui.Facet{
+                {Name: "status", Label: "Status", Value: s.status, Options: []ui.FacetOption{
+                    {Label: "Open", Value: "open"}, {Label: "Closed", Value: "closed"},
+                }},
+                {Name: "plan", Label: "Plan", Kind: ui.FacetPills, Value: s.plan, Options: []ui.FacetOption{
+                    {Label: "Free", Value: "free"}, {Label: "Pro", Value: "pro"},
+                }},
+            },
+            Search:    &ui.FilterSearch{Name: "q", Value: s.query, Placeholder: "Search customers…"},
+            Sort:      []ui.SortOption{{Label: "Newest", Value: "created_desc"}, {Label: "Name A–Z", Value: "name_asc"}},
+            SortValue: s.sort,
+        }),
+        ui.DataTable(/* … rows filtered per s.status / s.plan / s.query / s.sort … */),
+    )
+}
+
+// Screen.Load — read the URL params the toolbar submits.
+func (s *CustomersScreen) Load(ctx context.Context) error {
+    q := app.QueryFromContext(ctx)
+    s.status, s.plan = q.Get("status"), q.Get("plan")
+    s.query, s.sort = q.Get("q"), q.Get("sort")
+    return nil // fetch + filter rows from s.* here
+}
+```
+
+An empty facet value (the auto-prepended "All" choice) submits `status=`;
+the server treats an empty param as "no filter". Pair with `FilterChipBar`
+below the toolbar to show the *active* filters as removable chips.
 
 ---
 

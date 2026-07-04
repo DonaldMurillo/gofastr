@@ -206,11 +206,22 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		nl := len(cfg.Labels)
 		for i, lbl := range cfg.Labels {
 			x := float64(i) * plotW / float64(nl-1)
+			// Anchor the edge labels inward so they don't clip against the
+			// SVG boundary (the first/last tick sit exactly on x=0 / x=plotW).
+			anchor := "middle"
+			switch i {
+			case 0:
+				anchor = "start"
+			case nl - 1:
+				anchor = "end"
+			}
 			sb.WriteString(`<text x="`)
 			sb.WriteString(ftoa(x))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ny))
-			sb.WriteString(`" class="ui-line-chart__label" text-anchor="middle">`)
+			sb.WriteString(`" class="ui-line-chart__label" text-anchor="`)
+			sb.WriteString(anchor)
+			sb.WriteString(`">`)
 			sb.WriteString(escapeXML(lbl))
 			sb.WriteString(`</text>`)
 		}

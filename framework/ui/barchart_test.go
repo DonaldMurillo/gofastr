@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -77,5 +78,92 @@ func TestBarChartColorOverridesViaPalette(t *testing.T) {
 	}))
 	if !strings.Contains(h, "ui-bar-chart__bar--danger") {
 		t.Errorf("palette Color should add modifier class:\n%s", h)
+	}
+}
+
+// Value labels ride above every bar by default so magnitudes are legible
+// without hovering — the primary dashboard-readability fix.
+func TestBarChartValueLabelsOnByDefault(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{{Label: "A", Value: 8}, {Label: "B", Value: 12}},
+	}))
+	if !strings.Contains(h, "ui-bar-chart__value") {
+		t.Errorf("value labels should render by default:\n%s", h)
+	}
+	// The rendered magnitude text must appear (12 with no separators).
+	if !strings.Contains(h, ">12<") {
+		t.Errorf("bar value 12 should be printed as a label:\n%s", h)
+	}
+}
+
+func TestBarChartHideValuesOptOut(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars:       []BarChartBar{{Label: "A", Value: 8}},
+		HideValues: true,
+	}))
+	if strings.Contains(h, "ui-bar-chart__value") {
+		t.Errorf("HideValues=true must suppress value labels:\n%s", h)
+	}
+}
+
+// Uniform data must not render as full-height slabs: with headroom the
+// tallest bar sits well below the plot ceiling. We assert the rendered
+// bar height is meaningfully less than the plot height.
+func TestBarChartUniformDataHasHeadroom(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars:   []BarChartBar{{Label: "A", Value: 8}, {Label: "B", Value: 8}, {Label: "C", Value: 8}, {Label: "D", Value: 8}},
+		Height: 180,
+	}))
+	// Grab the first bar's height attribute.
+	idx := strings.Index(h, `class="ui-bar-chart__bar`)
+	if idx < 0 {
+		t.Fatalf("no bar rendered:\n%s", h)
+	}
+	hi := strings.LastIndex(h[:idx], ` height="`)
+	if hi < 0 {
+		t.Fatalf("bar has no height:\n%s", h)
+	}
+	rest := h[hi+len(` height="`):]
+	val := rest[:strings.Index(rest, `"`)]
+	bh, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		t.Fatalf("unparseable bar height %q: %v", val, err)
+	}
+	// Plot band is ~165px (180 minus the value-label top gutter). A uniform
+	// bar pinned at 100% would fill it; with the nice-rounded headroom the
+	// tallest bar lands near 80%, so it must be clearly short of the ceiling.
+	if bh > 140 {
+		t.Errorf("uniform bar height %v looks like a full-height slab (no headroom)", bh)
+	}
+}
+
+// A baseline grounds the bars even without the full axis.
+func TestBarChartAlwaysDrawsBaseline(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{{Label: "A", Value: 3}},
+	}))
+	if !strings.Contains(h, "ui-bar-chart__baseline") {
+		t.Errorf("baseline line should always render:\n%s", h)
+	}
+}
+
+// Long category labels must wrap onto multiple <tspan> lines rather than
+// truncating mid-word, and the full text stays reachable via <title>.
+func TestBarChartLongLabelsWrap(t *testing.T) {
+	h := string(BarChart(BarChartConfig{
+		Bars: []BarChartBar{
+			{Label: "Waiting On Customer", Value: 5},
+			{Label: "Resolved", Value: 8},
+			{Label: "In Progress", Value: 6},
+			{Label: "Escalated", Value: 4},
+		},
+		ShowLabels: true,
+		Width:      320,
+	}))
+	if !strings.Contains(h, "<tspan") {
+		t.Errorf("long labels should wrap using <tspan> lines:\n%s", h)
+	}
+	if !strings.Contains(h, "Waiting On Customer") {
+		t.Errorf("full label text should survive in <title>:\n%s", h)
 	}
 }

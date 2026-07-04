@@ -77,3 +77,18 @@ func TestLineChartXLabelsEmitText(t *testing.T) {
 		t.Errorf("Labels should render as <text>:\n%s", h)
 	}
 }
+
+// Edge x-axis labels anchor inward (start/end) so they don't clip against
+// the SVG boundary at x=0 / x=plotW.
+func TestLineChartEdgeLabelsAnchorInward(t *testing.T) {
+	h := string(LineChart(LineChartConfig{
+		Series: []LineSeries{{Name: "S", Values: []float64{1, 2, 3, 4}}},
+		Labels: []string{"Q1", "Q2", "Q3", "Q4"},
+	}))
+	if !strings.Contains(h, `text-anchor="start">Q1`) {
+		t.Errorf("first label should anchor start:\n%s", h)
+	}
+	if !strings.Contains(h, `text-anchor="end">Q4`) {
+		t.Errorf("last label should anchor end:\n%s", h)
+	}
+}
