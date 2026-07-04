@@ -88,17 +88,17 @@ screens:
 	}
 
 	// The runtime must actually read the env vars the .env carries.
-	appGo := byName[filepath.Join("blueprint", "app.go")]
+	appGo := byName["app.go"]
 	for _, want := range []string{`os.Getenv("JWT_SECRET")`, `os.Getenv("ADMIN_SEED_PASSWORD")`} {
 		if !strings.Contains(appGo, want) {
-			t.Errorf("blueprint/app.go missing %s", want)
+			t.Errorf("app.go missing %s", want)
 		}
 	}
 	mainGo := byName["main.go"]
 	if !strings.Contains(mainGo, `getEnv("DATABASE_URL"`) {
 		t.Errorf("main.go missing getEnv(\"DATABASE_URL\"):\n%s", mainGo)
 	}
-	// .env must be loaded before openBlueprintDB — NewApp's auto-load
+	// .env must be loaded before openDB — NewApp's auto-load
 	// happens after the DB has already been opened.
 	if !strings.Contains(mainGo, "dotenv.LoadAndApply") {
 		t.Errorf("main.go must load .env before opening the DB:\n%s", mainGo)

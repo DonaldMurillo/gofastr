@@ -245,7 +245,7 @@ commit. From an empty directory containing that `gofastr.yml`:
 
 ```bash
 go mod init example.com/blog
-gofastr generate --from=gofastr.yml    # scaffolds main.go + entities/ + blueprint/ — owned Go you commit
+gofastr generate --from=gofastr.yml    # scaffolds main.go + app.go + screens.go + entities/ — owned Go you commit
 go mod tidy                            # pulls gofastr from the module proxy
 go run .                               # users + posts CRUD under /api, OpenAPI, MCP — live on :8080
 ```
@@ -255,9 +255,10 @@ leaving bare paths free for HTML `screens`. Set `app.api_prefix: ""` to serve
 entities at the bare path instead. MCP tools and the OpenAPI spec follow the
 prefix automatically.
 
-Re-running `gofastr generate` is add-only: it writes new files but never
-overwrites code you've edited (pass `--force` to overwrite). The blueprint is a
-scaffold you can delete once the generated Go is yours — see
+`gofastr generate` is a one-shot generator: it emits ordinary owned Go
+(flat `package main` at the root) and gets out of the way. It refuses to
+overwrite an existing project — pass `--force` to regenerate. The blueprint is
+a scaffold you can delete once the generated Go is yours — see
 [ARCHITECTURE.md](framework/ARCHITECTURE.md).
 
 See [`examples/meridian`](examples/meridian/) for the flagship blueprint — a SaaS

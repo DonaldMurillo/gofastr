@@ -123,30 +123,38 @@ immediately:
 
 ```
 main.go            # wires App + batteries + Start()           — yours
-entities/          # entity registration, models, typed repos  — yours
-blueprint/         # generated screens + app wiring             — yours
+app.go             # RegisterGenerated: screens + app wiring    — yours
+screens.go         # generated screen components                — yours
+resource.go        # server-render engine for entity screens    — yours
+stubs.go           # endpoint/middleware/plugin/seed stubs       — yours
+entities/          # entity registration, models, typed repos   — yours
 migrations/        # versioned SQL (from `migrate generate`)
 gofastr.yml        # the scaffold input — OPTIONAL, deletable once the code is yours
 ```
+
+The emitted app files are a flat `package main` at the root — no
+`blueprint/` subpackage, no importable "generator" namespace. `main.go`
+calls `RegisterGenerated(...)` directly.
 
 (`--out=<dir>` / `app.output_dir` scaffolds into a subpackage instead of
 the module root — used by monorepo examples like `examples/ecommerce`,
 which keeps its app in an owned `app/` subpackage.)
 
-Adding an entity later is the same move: add it to the blueprint and
-re-run `generate`. Writes are conflict-skip (see below), so the new
-entity's files appear while everything you've hand-edited stays untouched.
-There is no separate `generate entity` subcommand — the blueprint is the
-one input.
+`generate` is **one-shot**: it scaffolds the app once, then you own the
+code and edit it in place. There is no separate `generate entity`
+subcommand and no incremental re-run/merge — the blueprint is a one-way
+on-ramp, not a canonical source you keep regenerating from. To add an
+entity after the fact, edit the owned Go (or start a fresh scaffold in a
+scratch dir and copy what you want across).
 
 Two rules fall out, and both are load-bearing:
 
-1. **Conflict policy replaces `clean`.** With no quarantine dir,
-   re-running `generate` must never clobber hand-edited code. File
-   absent → write; present & identical → skip silently; present &
-   differs → **never overwrite** (skip-with-warning when non-interactive,
-   prompt on a TTY, explicit `--force` to override). This is the Rails /
-   Angular-schematics contract.
+1. **One-shot refuse, `--force` to overwrite (replaces `clean`).** There
+   is no quarantine dir and no merge machinery. `generate` writes the
+   whole app when the target is empty; if **any** target file already
+   exists it **refuses**, listing the conflicts, rather than clobbering
+   hand-edited code — pass `--force` to overwrite the whole set. The
+   emitted code is yours the moment it lands.
 2. **No manifest, no `DO NOT EDIT` headers on owned scaffold.** Tracking
    "what I generated" re-introduces tool-ownership and slides back to
    a canonical declaration; use pure content-based conflict detection. The moment

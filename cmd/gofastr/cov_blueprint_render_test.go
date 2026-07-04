@@ -76,8 +76,11 @@ func TestRenderBlueprintNodeOnlyScreenBuilds(t *testing.T) {
 	if err := copyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
+	// The generated app is now flat package main. Scaffold it into a gen/
+	// subpackage of the temp module (OutputDir=gen) so main.go's entities
+	// import resolves, then build the whole app.
 	bp := Blueprint{
-		App: BlueprintApp{Name: "NodeOnly", Module: "example.com/nodeonly"},
+		App: BlueprintApp{Name: "NodeOnly", Module: "example.com/blueprint", OutputDir: "gen"},
 		Entities: []framework.EntityDeclaration{{
 			Name:   "posts",
 			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
@@ -105,11 +108,11 @@ func TestRenderBlueprintNodeOnlyScreenBuilds(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("go", "build", "-mod=mod", "./gen/blueprint")
+	cmd := exec.Command("go", "build", "-mod=mod", "-o", filepath.Join(t.TempDir(), "app"), "./gen")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("node-only screen blueprint did not build: %v\n%s", err, output)
+		t.Fatalf("node-only screen app did not build: %v\n%s", err, output)
 	}
 }
 
@@ -180,8 +183,8 @@ func TestRenderBlueprintFilesRichShape(t *testing.T) {
 	if _, ok := got["main.go"]; !ok {
 		t.Fatal("expected main.go")
 	}
-	screens := got[filepath.Join("blueprint", "screens.go")]
-	for _, want := range []string{"HomeScreen", "EmptyScreen", `blueprintResources["posts"]`, "island.NewIsland", "component.NewWidget", "html.Link", "uinode.Node"} {
+	screens := got["screens.go"]
+	for _, want := range []string{"HomeScreen", "EmptyScreen", `appResources["posts"]`, "island.NewIsland", "component.NewWidget", "html.Link", "uinode.Node"} {
 		if !strings.Contains(screens, want) {
 			t.Errorf("screens.go missing %q", want)
 		}
@@ -274,17 +277,13 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderBlueprintFiles: %v", err)
 	}
-	// Only the generated screens package matters for G1 (it's what renders node
-	// trees). It's a self-contained `package blueprint` importing framework
-	// packages — no project-local imports — so it builds standalone against a
-	// generic module + replace, sidestepping the main.go/entities module-path
-	// wiring.
+	// The generated app is now a flat `package main` at the root (this
+	// blueprint has no entities, so main.go carries no project-local imports).
+	// Building it whole exercises the screens' node-renderer path, which is
+	// what renders node trees — and lets us assert the authoring engine never
+	// leaks into a shipped app.
 	dir := t.TempDir()
-	wrote := false
 	for _, f := range files {
-		if !strings.HasPrefix(f.name, "blueprint/") {
-			continue
-		}
 		p := filepath.Join(dir, f.name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -292,10 +291,6 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 		if err := os.WriteFile(p, []byte(f.content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		wrote = true
-	}
-	if !wrote {
-		t.Fatal("no blueprint/ files rendered")
 	}
 	goMod := "module example.com/bpapp\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + absRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
@@ -306,19 +301,19 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 	}
 	gocache := filepath.Join(t.TempDir(), "gocache")
 
-	build := exec.Command("go", "build", "-mod=mod", "./blueprint")
+	build := exec.Command("go", "build", "-mod=mod", ".")
 	build.Dir = dir
 	build.Env = append(os.Environ(), "GOCACHE="+gocache, "GOFLAGS=-mod=mod")
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("generated blueprint app did not build: %v\n%s", err, out)
+		t.Fatalf("generated app did not build: %v\n%s", err, out)
 	}
 
-	deps := exec.Command("go", "list", "-mod=mod", "-deps", "./blueprint")
+	deps := exec.Command("go", "list", "-mod=mod", "-deps", ".")
 	deps.Dir = dir
 	deps.Env = append(os.Environ(), "GOCACHE="+gocache, "GOFLAGS=-mod=mod")
 	out, err := deps.CombinedOutput()
 	if err != nil {
-		t.Fatalf("go list -deps ./blueprint: %v\n%s", err, out)
+		t.Fatalf("go list -deps .: %v\n%s", err, out)
 	}
 	for _, banned := range []string{
 		"gofastr/kiln/expr",

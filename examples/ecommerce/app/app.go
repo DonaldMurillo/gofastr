@@ -1,4 +1,4 @@
-package blueprint
+package main
 
 import (
 	"database/sql"
@@ -16,23 +16,23 @@ import (
 )
 
 const (
-	BlueprintAppName   = "ShopFront"
-	BlueprintModule    = "github.com/DonaldMurillo/gofastr/examples/ecommerce"
-	BlueprintDBDriver  = "sqlite"
-	BlueprintDBURL     = "file:shop.db"
-	BlueprintStaticDir = ""
-	BlueprintAPIPrefix = "api"
+	appName   = "ShopFront"
+	appModule = "github.com/DonaldMurillo/gofastr/examples/ecommerce"
+	dbDriver  = "sqlite"
+	dbURL     = "file:shop.db"
+	staticDir = ""
+	apiPrefix = "api"
 )
 
-// BlueprintBaseCSS is an owned extension point for app-specific base CSS.
+// appBaseCSS is an owned extension point for app-specific base CSS.
 // It's empty by default: every generated surface composes framework/ui
 // components and core-ui/app layouts that ship their own CSS, so the
 // generated app ships no bespoke styling. Add app CSS here or in static/app.css.
-func BlueprintBaseCSS() string {
+func appBaseCSS() string {
 	return ""
 }
 
-func BlueprintTheme() style.Theme {
+func appTheme() style.Theme {
 	theme := style.DefaultTheme()
 	theme.Colors.Background.Value = "#F8FAFC"
 	theme.Colors.Border.Value = "#E2E8F0"
@@ -48,12 +48,12 @@ func BlueprintTheme() style.Theme {
 	return theme
 }
 
-// BlueprintFontCSS holds the @font-face rules for the app's fonts, shared by
+// fontFaceCSS holds the @font-face rules for the app's fonts, shared by
 // the UI host and the admin battery so every surface loads identical fonts.
-const BlueprintFontCSS = ""
+const fontFaceCSS = ""
 
-// BlueprintSidebarConfig returns the navigation sidebar configuration.
-func BlueprintSidebarConfig() ui.SidebarConfig {
+// sidebarConfig returns the navigation sidebar configuration.
+func sidebarConfig() ui.SidebarConfig {
 	return ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
 		{Label: "Home", Href: "/"},
 		{Label: "Products", Href: "/products"},
@@ -68,7 +68,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("ShopFront")
 	}
-	blueprintResources["categories"] = ResourceConfig{
+	appResources["categories"] = ResourceConfig{
 		Title: "Categories", Singular: "Category", BasePath: "/categories", APIPath: "/api/categories",
 		Crud: fwApp.MustCrudHandler("categories"),
 		Fields: []ResField{
@@ -95,7 +95,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			},
 		},
 	}
-	blueprintResources["orders"] = ResourceConfig{
+	appResources["orders"] = ResourceConfig{
 		Title: "Orders", Singular: "Order", BasePath: "/orders", APIPath: "/api/orders",
 		Crud:    fwApp.MustCrudHandler("orders"),
 		CanEdit: true,
@@ -133,7 +133,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			},
 		},
 	}
-	blueprintResources["products"] = ResourceConfig{
+	appResources["products"] = ResourceConfig{
 		Title: "Products", Singular: "Product", BasePath: "/products", APIPath: "/api/products",
 		Crud:    fwApp.MustCrudHandler("products"),
 		CanEdit: true,
@@ -185,7 +185,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			},
 		},
 	}
-	blueprintResources["reviews"] = ResourceConfig{
+	appResources["reviews"] = ResourceConfig{
 		Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
 		Crud: fwApp.MustCrudHandler("reviews"),
 		Fields: []ResField{
@@ -200,12 +200,12 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
 		},
 	}
-	site.WithTheme(BlueprintTheme())
-	sbCfg := BlueprintSidebarConfig()
+	site.WithTheme(appTheme())
+	sbCfg := sidebarConfig()
 	sb := ui.Sidebar(sbCfg)
 	appLayout := app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
-	ui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)
+	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)
@@ -256,12 +256,12 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))
 	fwApp.Use(RequestLoggerMiddleware)
 	fwApp.RegisterPlugin(AnalyticsPlugin{})
-	_ = blueprintRouterMounter{}
+	_ = routerMounter{}
 }
 
-// blueprintRouterMounter adapts framework's *router.Router to ui.WidgetMounter.
-type blueprintRouterMounter struct{ r *router.Router }
+// routerMounter adapts framework's *router.Router to ui.WidgetMounter.
+type routerMounter struct{ r *router.Router }
 
-func (m blueprintRouterMounter) MountWidget(def *widget.Definition) {
+func (m routerMounter) MountWidget(def *widget.Definition) {
 	widget.Mount(m.r, def)
 }

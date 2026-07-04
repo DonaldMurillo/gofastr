@@ -291,6 +291,7 @@ func blockToMap(b BlueprintBlock) map[string]any {
 	putStr(m, "entity", b.Entity)
 	putStrs(m, "fields", b.Fields)
 	putStr(m, "search", b.Search)
+	putStrs(m, "filters", b.Filters)
 	putInt(m, "limit", b.Limit)
 	putBool(m, "create", b.Create)
 	putStr(m, "empty_text", b.EmptyText)
@@ -1017,9 +1018,9 @@ func returnValue(file *ast.File, fn string) ast.Expr {
 	return nil
 }
 
-// packReadSeed reconstructs seed data from blueprint/stubs.go BlueprintSeedData().
+// packReadSeed reconstructs seed data from stubs.go seedData().
 func packReadSeed(dir string) ([]BlueprintSeedEntity, error) {
-	path := filepath.Join(dir, "blueprint", "stubs.go")
+	path := filepath.Join(dir, "stubs.go")
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil
 	}
@@ -1027,7 +1028,7 @@ func packReadSeed(dir string) ([]BlueprintSeedEntity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	lit, ok := returnValue(file, "BlueprintSeedData").(*ast.CompositeLit)
+	lit, ok := returnValue(file, "seedData").(*ast.CompositeLit)
 	if !ok {
 		return nil, nil
 	}
@@ -1048,9 +1049,9 @@ func packReadSeed(dir string) ([]BlueprintSeedEntity, error) {
 }
 
 // packReadNav reconstructs the sidebar nav from blueprint/app.go
-// BlueprintSidebarConfig() ui.SidebarConfig{Items: []ui.SidebarItem{...}}.
+// sidebarConfig() ui.SidebarConfig{Items: []ui.SidebarItem{...}}.
 func packReadNav(dir string) ([]BlueprintNavItem, error) {
-	path := filepath.Join(dir, "blueprint", "app.go")
+	path := filepath.Join(dir, "app.go")
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil
 	}
@@ -1058,7 +1059,7 @@ func packReadNav(dir string) ([]BlueprintNavItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	cfg, ok := returnValue(file, "BlueprintSidebarConfig").(*ast.CompositeLit)
+	cfg, ok := returnValue(file, "sidebarConfig").(*ast.CompositeLit)
 	if !ok {
 		return nil, nil
 	}
@@ -1090,7 +1091,7 @@ func packReadNav(dir string) ([]BlueprintNavItem, error) {
 // blueprint/app.go and main.go.
 func packReadApp(dir string) (BlueprintApp, error) {
 	app := BlueprintApp{APIPrefix: "api"}
-	appPath := filepath.Join(dir, "blueprint", "app.go")
+	appPath := filepath.Join(dir, "app.go")
 	appFile, err := packParseFile(appPath)
 	if err != nil {
 		return app, fmt.Errorf("parse %s: %w", appPath, err)
@@ -1110,12 +1111,12 @@ func packReadApp(dir string) (BlueprintApp, error) {
 			consts[vs.Names[0].Name] = astString(vs.Values[0])
 		}
 	}
-	app.Name = consts["BlueprintAppName"]
-	app.Module = consts["BlueprintModule"]
-	app.DBDriver = consts["BlueprintDBDriver"]
-	app.DBURL = consts["BlueprintDBURL"]
-	app.StaticDir = consts["BlueprintStaticDir"]
-	if v, ok := consts["BlueprintAPIPrefix"]; ok {
+	app.Name = consts["appName"]
+	app.Module = consts["appModule"]
+	app.DBDriver = consts["dbDriver"]
+	app.DBURL = consts["dbURL"]
+	app.StaticDir = consts["staticDir"]
+	if v, ok := consts["apiPrefix"]; ok {
 		app.APIPrefix = strings.Trim(v, "/")
 	}
 
@@ -1214,11 +1215,11 @@ func astSelLast(e ast.Expr) string {
 	return ""
 }
 
-// packReadTheme parses BlueprintTheme()'s assignments back into the authored
+// packReadTheme parses appTheme()'s assignments back into the authored
 // theme map (colors + font_heading/font_body) + the dark-scheme overrides.
 func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 	var light, dark map[string]string
-	for _, stmt := range funcBody(file, "BlueprintTheme") {
+	for _, stmt := range funcBody(file, "appTheme") {
 		asn, ok := stmt.(*ast.AssignStmt)
 		if !ok || len(asn.Lhs) != 1 || len(asn.Rhs) != 1 {
 			continue
@@ -1301,12 +1302,12 @@ type screenReg struct {
 // types in screens.go. Synthesized /new + /{id}/edit form screens (body is a
 // resource Form call) are dropped — they weren't authored.
 func packReadScreens(dir string) ([]BlueprintScreen, error) {
-	appFile, err := packParseFile(filepath.Join(dir, "blueprint", "app.go"))
+	appFile, err := packParseFile(filepath.Join(dir, "app.go"))
 	if err != nil {
 		return nil, err
 	}
 	regs := packReadScreenRegs(appFile)
-	scrFile, err := packParseFile(filepath.Join(dir, "blueprint", "screens.go"))
+	scrFile, err := packParseFile(filepath.Join(dir, "screens.go"))
 	if err != nil {
 		return nil, err
 	}
@@ -1535,7 +1536,7 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 	if !ok {
 		return BlueprintBlock{}, false
 	}
-	// Entity resource chains (blueprintResources["x"]…List/Detail/Form(ctx)).
+	// Entity resource chains (appResources["x"]…List/Detail/Form(ctx)).
 	if b, ok := reverseEntityResource(call); ok {
 		return b, true
 	}
@@ -1561,7 +1562,7 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 		}
 		c := cfgOf(call, 0)
 		return block("card", props2("heading", astString(c["Heading"]), "text", astString(c["Description"]))), true
-	case "ui.BarChart", "ui.PieChart", "blueprintLineChart":
+	case "ui.BarChart", "ui.PieChart", "lineChart":
 		// Untitled chart (no wrapping ui.Card).
 		if b, ok := reverseChartCall(call); ok {
 			return b, true
@@ -1619,7 +1620,7 @@ func reverseEntityResource(call *ast.CallExpr) (BlueprintBlock, bool) {
 	node := sel.X
 	for {
 		if idx, ok := node.(*ast.IndexExpr); ok {
-			if identName(idx.X) == "blueprintResources" {
+			if identName(idx.X) == "appResources" {
 				b.Entity = astString(idx.Index)
 				break
 			}
@@ -1641,6 +1642,12 @@ func reverseEntityResource(call *ast.CallExpr) (BlueprintBlock, bool) {
 		case "WithSearch":
 			if len(c.Args) == 1 {
 				b.Search = astString(c.Args[0])
+			}
+		case "WithFilters":
+			for _, a := range c.Args {
+				if key := astString(fieldVals(a)["Key"]); key != "" {
+					b.Filters = append(b.Filters, key)
+				}
 			}
 		case "WithLimit":
 			if len(c.Args) == 1 {
@@ -1740,9 +1747,9 @@ func reverseStatCard(call *ast.CallExpr) BlueprintBlock {
 	c := cfgOf(call, 0)
 	p := map[string]any{}
 	putStr(p, "label", astString(c["Label"]))
-	// Value: blueprintStatValue(ctx, entity, agg, field, filter, format).
+	// Value: statValue(ctx, entity, agg, field, filter, format).
 	if vc, ok := c["Value"].(*ast.CallExpr); ok && callSel(vc) == "" {
-		if id, ok := vc.Fun.(*ast.Ident); ok && id.Name == "blueprintStatValue" && len(vc.Args) == 6 {
+		if id, ok := vc.Fun.(*ast.Ident); ok && id.Name == "statValue" && len(vc.Args) == 6 {
 			src := map[string]any{}
 			putStr(src, "entity", astString(vc.Args[1]))
 			putStr(src, "agg", astString(vc.Args[2]))
@@ -1854,7 +1861,7 @@ func reverseRenderTag(call *ast.CallExpr) (BlueprintBlock, bool) {
 						putStr(p, "title", renderTextArg(hc.Args[len(hc.Args)-1]))
 					}
 				}
-				// source from blueprintGroupBars/Slices(ctx, entity, group_by).
+				// source from groupBars/groupSlices(ctx, entity, group_by).
 				cc := cfgOf(ac, 0)
 				if dataCall, ok := cc["Bars"].(*ast.CallExpr); ok {
 					p["source"] = chartSource(dataCall)
@@ -1872,9 +1879,9 @@ func reverseRenderTag(call *ast.CallExpr) (BlueprintBlock, bool) {
 // the corresponding blueprint block (without a title — the caller sets it
 // from a wrapping ui.Card heading when present):
 //
-//	ui.BarChart(ui.BarChartConfig{Bars: blueprintGroupBars(ctx, e, g), …})
-//	ui.PieChart(ui.PieChartConfig{Slices: blueprintGroupSlices(ctx, e, g)})
-//	blueprintLineChart(ctx, e, g)
+//	ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, e, g), …})
+//	ui.PieChart(ui.PieChartConfig{Slices: groupSlices(ctx, e, g)})
+//	lineChart(ctx, e, g)
 func reverseChartCall(call *ast.CallExpr) (BlueprintBlock, bool) {
 	switch callSel(call) {
 	case "ui.BarChart", "ui.PieChart":
@@ -1887,8 +1894,8 @@ func reverseChartCall(call *ast.CallExpr) (BlueprintBlock, bool) {
 			p["source"] = chartSource(dataCall)
 		}
 		return BlueprintBlock{Kind: kind, Props: p}, true
-	case "blueprintLineChart":
-		// blueprintLineChart(ctx, entity, group_by)
+	case "lineChart":
+		// lineChart(ctx, entity, group_by)
 		return BlueprintBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
 	}
 	return BlueprintBlock{}, false

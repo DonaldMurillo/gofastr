@@ -574,8 +574,8 @@ entities:
 		"func PublishPost(w http.ResponseWriter, r *http.Request)",
 		`fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`,
 	} {
-		if !strings.Contains(byName[filepath.Join("blueprint", "stubs.go")]+byName[filepath.Join("blueprint", "app.go")], want) {
-			t.Fatalf("generated files missing %q\napp:\n%s\nstubs:\n%s", want, byName[filepath.Join("blueprint", "app.go")], byName[filepath.Join("blueprint", "stubs.go")])
+		if !strings.Contains(byName["stubs.go"]+byName["app.go"], want) {
+			t.Fatalf("generated files missing %q\napp:\n%s\nstubs:\n%s", want, byName["app.go"], byName["stubs.go"])
 		}
 	}
 }
@@ -608,7 +608,7 @@ endpoints:
 		t.Fatalf("endpoints = %#v", bp.Endpoints)
 	}
 	byName := filesByName(mustRenderBlueprintFiles(t, bp))
-	generated := byName[filepath.Join("blueprint", "app.go")] + byName[filepath.Join("blueprint", "stubs.go")]
+	generated := byName["app.go"] + byName["stubs.go"]
 	assertContains(t, generated, `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
 	assertContains(t, generated, `fwApp.Router().Handle("GET", "/health", http.HandlerFunc(HealthCheck))`)
 }
@@ -636,7 +636,7 @@ screens:
 	if err != nil {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
-	screens := filesByName(mustRenderBlueprintFiles(t, bp))[filepath.Join("blueprint", "screens.go")]
+	screens := filesByName(mustRenderBlueprintFiles(t, bp))["screens.go"]
 	assertContains(t, screens, `component.On("live_search"`)
 	assertContains(t, screens, `component.On("submit_search"`)
 	assertContains(t, screens, `"data-action": "live_search"`)
@@ -665,31 +665,31 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName[filepath.Join("entities", "models.go")], `type Posts struct`)
 	// A top-level entity_list makes the screen a server-rendered ContextOnly
 	// screen that renders the list via the resource engine (not a client island).
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `type HomeScreen struct{ component.ContextOnly }`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `html.Heading(html.HeadingConfig{Level: 1`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `ui.Section(ui.SectionConfig{`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `island.NewIsland("live_status"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.NewWidget("save_button"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `component.On("save_click"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `"data-action": "save_click"`)
-	assertContains(t, byName[filepath.Join("blueprint", "screens.go")], `blueprintResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.").List(ctx)`)
-	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
-	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
-	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `type AnalyticsPlugin struct{}`)
-	assertContains(t, byName[filepath.Join("blueprint", "stubs.go")], `func NormalizeSlug()`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `site.Register("/", &HomeScreen{}, nil)`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintAppName = "Demo"`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintModule = "example.com/demo"`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintDBDriver = "sqlite"`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `BlueprintStaticDir = "public"`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.Use(RequestLoggerMiddleware)`)
-	assertContains(t, byName[filepath.Join("blueprint", "app.go")], `fwApp.RegisterPlugin(AnalyticsPlugin{})`)
+	assertContains(t, byName["screens.go"], `type HomeScreen struct{ component.ContextOnly }`)
+	assertContains(t, byName["screens.go"], `func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {`)
+	assertContains(t, byName["screens.go"], `html.Heading(html.HeadingConfig{Level: 1`)
+	assertContains(t, byName["screens.go"], `html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
+	assertContains(t, byName["screens.go"], `ui.Section(ui.SectionConfig{`)
+	assertContains(t, byName["screens.go"], `island.NewIsland("live_status"`)
+	assertContains(t, byName["screens.go"], `component.NewWidget("save_button"`)
+	assertContains(t, byName["screens.go"], `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
+	assertContains(t, byName["screens.go"], `component.On("save_click"`)
+	assertContains(t, byName["screens.go"], `"data-action": "save_click"`)
+	assertContains(t, byName["screens.go"], `appResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.").List(ctx)`)
+	assertContains(t, byName["stubs.go"], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
+	assertContains(t, byName["stubs.go"], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
+	assertContains(t, byName["stubs.go"], `type AnalyticsPlugin struct{}`)
+	assertContains(t, byName["stubs.go"], `func NormalizeSlug()`)
+	assertContains(t, byName["app.go"], `site.Register("/", &HomeScreen{}, nil)`)
+	assertContains(t, byName["app.go"], `appName = "Demo"`)
+	assertContains(t, byName["app.go"], `appModule = "example.com/demo"`)
+	assertContains(t, byName["app.go"], `dbDriver = "sqlite"`)
+	assertContains(t, byName["app.go"], `staticDir = "public"`)
+	assertContains(t, byName["app.go"], `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
+	assertContains(t, byName["app.go"], `fwApp.Use(RequestLoggerMiddleware)`)
+	assertContains(t, byName["app.go"], `fwApp.RegisterPlugin(AnalyticsPlugin{})`)
 	assertContains(t, byName["main.go"], `entities.RegisterAll(fwApp)`)
-	assertContains(t, byName["main.go"], `blueprint.RegisterGenerated(fwApp, site, db)`)
+	assertContains(t, byName["main.go"], `RegisterGenerated(fwApp, site, db)`)
 	assertContains(t, byName["main.go"], `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`)
 	assertContains(t, byName["main.go"], `uihost.WithStaticDir("public")`)
 	assertContains(t, byName["main.go"], `"github.com/DonaldMurillo/gofastr/framework/isolation"`)
@@ -823,9 +823,9 @@ func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 		"main.go",
 		filepath.Join("entities", "register.go"),
 		filepath.Join("entities", "models.go"),
-		filepath.Join("blueprint", "app.go"),
-		filepath.Join("blueprint", "screens.go"),
-		filepath.Join("blueprint", "stubs.go"),
+		"app.go",
+		"screens.go",
+		"stubs.go",
 	} {
 		if !paths[want] {
 			t.Fatalf("dry-run paths missing %s: %#v", want, paths)
@@ -923,7 +923,10 @@ func TestRenderBlueprintFilesGeneratedPackagesBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
-	goMod := "module example.com/blueprint\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	// testBlueprintYAML declares module example.com/demo; scaffold the flat
+	// package main into a gen/ subpackage of that module so main.go's entities
+	// import (example.com/demo/gen/entities) resolves.
+	goMod := "module example.com/demo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -938,6 +941,7 @@ func TestRenderBlueprintFilesGeneratedPackagesBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
+	bp.App.OutputDir = "gen"
 	files, err := renderBlueprintFiles(bp)
 	if err != nil {
 		t.Fatalf("renderBlueprintFiles: %v", err)
@@ -951,11 +955,13 @@ func TestRenderBlueprintFilesGeneratedPackagesBuild(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("go", "test", "-mod=mod", "./gen/entities", "./gen/blueprint")
+	// -short skips the emitted e2e_test.go (which builds + boots the binary);
+	// this test only proves the generated packages compile + their unit tests pass.
+	cmd := exec.Command("go", "test", "-short", "-mod=mod", "./gen/entities", "./gen")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("generated blueprint packages did not build: %v\n%s", err, output)
+		t.Fatalf("generated packages did not build: %v\n%s", err, output)
 	}
 }
 

@@ -271,11 +271,12 @@ func generateFromBlueprint(options generateOptions) {
 		fail("%v", err)
 		osExit(1)
 	}
-	// The blueprint scaffolds owned Go in an idiomatic layout you
-	// own outright — module root by default ("" / "."), no quarantined gen/.
-	// --out=DIR (or app.output_dir) targets a subpackage instead. Writes are
-	// conflict-skip: a re-run adds new files but never clobbers code you've
-	// hand-edited (use --force to overwrite). There is no clean-wipe.
+	// The blueprint is a one-shot generator: it emits ordinary owned app code
+	// (flat package main at the module root by default, or a subpackage under
+	// --out=DIR / app.output_dir), then gets out of the way. There is no
+	// regen/merge workflow — generating into a directory that already holds any
+	// target file REFUSES (see below), and --force is the explicit overwrite
+	// escape. No quarantined gen/, no clean-wipe.
 	outDir := ""
 	switch {
 	case options.outputSet:
@@ -317,7 +318,7 @@ func generateFromBlueprint(options generateOptions) {
 		}
 	}
 	// Only a non-root subdirectory needs the clean-safety validation; the
-	// module root is written file-by-file with conflict-skip and never wiped.
+	// module root is written file-by-file and never wiped.
 	if outDir != "" {
 		if err := validateOutputDir(outDir); err != nil {
 			if options.dryRun && options.json {
@@ -336,6 +337,16 @@ func generateFromBlueprint(options generateOptions) {
 		}
 		fail("Blueprint code generation failed: %v", err)
 		osExit(1)
+	}
+	// Self-hosted fonts: if the generate-time fetch couldn't reach the CDN,
+	// the app still ships (system fonts render) but the intended type is
+	// missing. Say so LOUDLY with the exact files to drop in — the CSP
+	// (default-src 'self') blocks the Google CDN at runtime, so the woff2
+	// must be self-hosted; there is no silent fallback to a webfont link.
+	if !options.json {
+		if missing := blueprintMissingFontSlugs(bp, files); len(missing) > 0 {
+			warn("could not fetch %d webfont file(s) — the app will fall back to system fonts until you supply them. Drop the matching .woff2 into your project so these paths exist: %s. (The strict CSP blocks the Google Fonts CDN at runtime, so fonts must be self-hosted.)", len(missing), strings.Join(missing, ", "))
+		}
 	}
 	displayDir := outDir
 	if displayDir == "" {
@@ -361,16 +372,32 @@ func generateFromBlueprint(options generateOptions) {
 	if writeRoot == "" {
 		writeRoot = "."
 	}
-	conflict := codegen.ConflictSkip
-	if options.force {
-		conflict = codegen.ConflictOverwrite
+	// One-shot: the emitted files are ordinary owned app code, not a
+	// re-runnable scaffold. Refuse to clobber an existing project — if any
+	// target file already exists, list the conflicts and stop. --force is the
+	// explicit overwrite escape.
+	if !options.force {
+		var conflicts []string
+		for _, file := range files {
+			if _, statErr := os.Stat(filepath.Join(writeRoot, file.name)); statErr == nil {
+				conflicts = append(conflicts, filepath.Join(outDir, file.name))
+			}
+		}
+		if len(conflicts) > 0 {
+			sort.Strings(conflicts)
+			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s — the emitted code is yours to own; re-run with --force to overwrite", strings.Join(conflicts, ", "))
+			if options.json {
+				printGeneratedErrorsJSON(cerr)
+				osExit(1)
+			}
+			fail("%v", cerr)
+			osExit(1)
+		}
 	}
-	var kept []string
 	writeOpts := codegen.WriteOptions{
 		OutputRoot:   writeRoot,
 		SkipManifest: true,
-		Conflict:     conflict,
-		OnConflict:   func(p string) { kept = append(kept, p) },
+		Conflict:     codegen.ConflictOverwrite,
 	}
 	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
 		fail("Failed to write generated files: %v", err)
@@ -380,13 +407,7 @@ func generateFromBlueprint(options generateOptions) {
 		printGeneratedFilesJSON(files)
 		return
 	}
-	if len(kept) > 0 {
-		for _, p := range kept {
-			warn("kept your version: %s exists and differs — not overwritten", p)
-		}
-		info("%d file(s) left untouched. Re-run with --force to overwrite them.", len(kept))
-	}
-	success("Generated %d blueprint file(s) in %s", len(files)-len(kept), displayDir)
+	success("Generated %d file(s) in %s", len(files), displayDir)
 }
 
 type generatedFile struct {
@@ -876,13 +897,17 @@ func safeCleanOutputDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	// Files the blueprint code generator owns at the output root. main.go +
-	// the entities/ and blueprint/ subtrees are the current layout; the flat
-	// *.go names are retained so cleaning an output dir written by an older
-	// generator still succeeds.
+	// Files the blueprint code generator owns at the output root. The current
+	// layout is flat package main (main.go + app.go/screens.go/stubs.go/
+	// resource.go/resource_test.go/e2e_test.go) plus the entities/ subtree; the
+	// legacy "blueprint" dir and the bare register.go/models.go/... names are
+	// retained so cleaning an output dir written by an older generator still
+	// succeeds.
 	owned := map[string]bool{
 		".gitkeep": true, codegen.ManifestName: true,
-		"main.go":     true,
+		"main.go": true, "app.go": true, "screens.go": true, "stubs.go": true,
+		"resource.go": true, "resource_test.go": true, "e2e_test.go": true,
+		".env": true, ".gitignore": true,
 		"register.go": true, "models.go": true, "columns.go": true, "repo.go": true, "events.go": true,
 		"client": true, "entities": true, "blueprint": true,
 	}

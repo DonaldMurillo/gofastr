@@ -1,15 +1,15 @@
-package blueprint
+package main
 
-// BlueprintSeedEntity is one entity's ordered seed rows.
-type BlueprintSeedEntity struct {
+// seedEntity is one entity's ordered seed rows.
+type seedEntity struct {
 	Entity string
 	Rows   []map[string]any
 }
 
-// BlueprintSeedData returns the initial seed data in blueprint-declared
+// seedData returns the initial seed data in blueprint-declared
 // order (so entities that reference others are inserted after them).
-func BlueprintSeedData() []BlueprintSeedEntity {
-	return []BlueprintSeedEntity{
+func seedData() []seedEntity {
+	return []seedEntity{
 		{Entity: "plans", Rows: []map[string]any{
 			{"active": true, "interval": "month", "name": "Starter", "price": "29", "slug": "starter"},
 			{"active": true, "interval": "month", "name": "Pro", "price": "99", "slug": "pro"},

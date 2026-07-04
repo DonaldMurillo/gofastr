@@ -464,6 +464,7 @@ screens:
         text: Customers
         fields: [name, email, company, status, mrr]
         search: name
+        filters: [status]
         limit: 25
         create: true
         empty_text: No customers yet — add your first to get started.
@@ -490,6 +491,7 @@ screens:
         text: Invoices
         fields: [number, customer_id, amount, status, issued_on, due_on]
         search: number
+        filters: [status, customer_id]
         limit: 25
         create: true
         empty_text: No invoices yet.

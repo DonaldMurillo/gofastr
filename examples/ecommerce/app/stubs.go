@@ -1,4 +1,4 @@
-package blueprint
+package main
 
 import (
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -24,16 +24,16 @@ type AnalyticsPlugin struct{}
 func (AnalyticsPlugin) Name() string                  { return "analytics" }
 func (AnalyticsPlugin) Init(app *framework.App) error { return nil }
 
-// BlueprintSeedEntity is one entity's ordered seed rows.
-type BlueprintSeedEntity struct {
+// seedEntity is one entity's ordered seed rows.
+type seedEntity struct {
 	Entity string
 	Rows   []map[string]any
 }
 
-// BlueprintSeedData returns the initial seed data in blueprint-declared
+// seedData returns the initial seed data in blueprint-declared
 // order (so entities that reference others are inserted after them).
-func BlueprintSeedData() []BlueprintSeedEntity {
-	return []BlueprintSeedEntity{
+func seedData() []seedEntity {
+	return []seedEntity{
 		{Entity: "categories", Rows: []map[string]any{
 			{"active": true, "description": "Gadgets, devices, and tech accessories", "name": "Electronics", "slug": "electronics", "sort_order": 1},
 			{"active": true, "description": "Apparel and fashion", "name": "Clothing", "slug": "clothing", "sort_order": 2},

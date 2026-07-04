@@ -18,7 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 )
 
-func TestBlueprintE2E(t *testing.T) {
+func TestE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
 	}

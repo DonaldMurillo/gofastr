@@ -1,4 +1,4 @@
-package blueprint
+package main
 
 import (
 	"context"
@@ -21,25 +21,25 @@ import (
 )
 
 const (
-	BlueprintAppName   = "Meridian"
-	BlueprintModule    = "github.com/DonaldMurillo/gofastr/examples/meridian"
-	BlueprintDBDriver  = "sqlite"
-	BlueprintDBURL     = "file:meridian.db"
-	BlueprintStaticDir = "static"
-	BlueprintAPIPrefix = "api"
+	appName   = "Meridian"
+	appModule = "github.com/DonaldMurillo/gofastr/examples/meridian"
+	dbDriver  = "sqlite"
+	dbURL     = "file:meridian.db"
+	staticDir = "static"
+	apiPrefix = "api"
 )
 
-// BlueprintBaseCSS is an owned extension point for app-specific base CSS.
+// appBaseCSS is an owned extension point for app-specific base CSS.
 // It's empty by default: every generated surface composes framework/ui
 // components and core-ui/app layouts that ship their own CSS, so the
 // generated app ships no bespoke styling. Add app CSS here or in static/app.css.
-func BlueprintBaseCSS() string {
+func appBaseCSS() string {
 	return ""
 }
 
-// blueprintAuthPolicy gates a screen: redirect anonymous GETs to the login
+// authPolicy gates a screen: redirect anonymous GETs to the login
 // page (with ?next=) and 403 a signed-in user missing the required role.
-func blueprintAuthPolicy(loginPath, role string) app.Policy {
+func authPolicy(loginPath, role string) app.Policy {
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
 		u, ok := handler.GetUser(ctx)
 		if !ok || u == nil {
@@ -63,10 +63,10 @@ func blueprintAuthPolicy(loginPath, role string) app.Policy {
 	})
 }
 
-// blueprintGuestPolicy gates a guest-only screen (login / signup): a
+// guestPolicy gates a guest-only screen (login / signup): a
 // signed-in visitor is redirected to the app instead of seeing a sign-in
 // form they're already past.
-func blueprintGuestPolicy(appHome string) app.Policy {
+func guestPolicy(appHome string) app.Policy {
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
 		if u, ok := handler.GetUser(ctx); ok && u != nil {
 			return decide.Redirect(appHome)
@@ -75,8 +75,8 @@ func blueprintGuestPolicy(appHome string) app.Policy {
 	})
 }
 
-// BlueprintMarketingHeader / Footer wrap the public marketing layout.
-func BlueprintMarketingHeader(ctx context.Context) render.HTML {
+// marketingHeader / Footer wrap the public marketing layout.
+func marketingHeader(ctx context.Context) render.HTML {
 	nav := []ui.SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}}
 	var actions render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
@@ -86,16 +86,16 @@ func BlueprintMarketingHeader(ctx context.Context) render.HTML {
 		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: false}, ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
 	}
 	return ui.SiteHeader(ui.SiteHeaderConfig{
-		Brand:    ui.Link(ui.LinkConfig{Href: "/", Text: BlueprintAppName}),
+		Brand:    ui.Link(ui.LinkConfig{Href: "/", Text: appName}),
 		NavItems: nav,
 		Drawer:   ui.SiteHeaderDrawerSheet,
 		Actions:  actions,
 	})
 }
 
-func BlueprintMarketingFooter() render.HTML {
+func marketingFooter() render.HTML {
 	return ui.SiteFooter(ui.SiteFooterConfig{
-		Lead: ui.Link(ui.LinkConfig{Href: "/", Text: BlueprintAppName}),
+		Lead: ui.Link(ui.LinkConfig{Href: "/", Text: appName}),
 		Columns: []ui.SiteFooterColumn{
 			{Title: "Product", Links: []ui.SiteFooterLink{{Label: "Pricing", Href: "/pricing"}}},
 			{Title: "Company", Links: []ui.SiteFooterLink{{Label: "About", Href: "/about"}}},
@@ -104,7 +104,7 @@ func BlueprintMarketingFooter() render.HTML {
 	})
 }
 
-func BlueprintTheme() style.Theme {
+func appTheme() style.Theme {
 	theme := style.DefaultTheme()
 	theme.Colors.Accent.Value = "#4338CA"
 	theme.Colors.Background.Value = "#F8F7F4"
@@ -145,12 +145,12 @@ func BlueprintTheme() style.Theme {
 	return theme
 }
 
-// BlueprintFontCSS holds the @font-face rules for the app's fonts, shared by
+// fontFaceCSS holds the @font-face rules for the app's fonts, shared by
 // the UI host and the admin battery so every surface loads identical fonts.
-const BlueprintFontCSS = "@font-face { font-family: 'Bricolage Grotesque'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/bricolage-grotesque.woff2') format('woff2'); }\n@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/hanken-grotesk.woff2') format('woff2'); }\n"
+const fontFaceCSS = "@font-face { font-family: 'Bricolage Grotesque'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/bricolage-grotesque.woff2') format('woff2'); }\n@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/hanken-grotesk.woff2') format('woff2'); }\n"
 
-// BlueprintSidebarConfig returns the navigation sidebar configuration.
-func BlueprintSidebarConfig() ui.SidebarConfig {
+// sidebarConfig returns the navigation sidebar configuration.
+func sidebarConfig() ui.SidebarConfig {
 	return ui.SidebarConfig{Title: "Meridian", Items: []ui.SidebarItem{
 		{Label: "Overview", Href: "/app"},
 		{Label: "Customers", Href: "/app/customers"},
@@ -165,7 +165,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("Meridian")
 	}
-	blueprintResources["customers"] = ResourceConfig{
+	appResources["customers"] = ResourceConfig{
 		Title: "Customers", Singular: "Customer", BasePath: "/app/customers", APIPath: "/api/customers",
 		Crud:    fwApp.MustCrudHandler("customers"),
 		CanEdit: true,
@@ -220,7 +220,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			},
 		},
 	}
-	blueprintResources["invoices"] = ResourceConfig{
+	appResources["invoices"] = ResourceConfig{
 		Title: "Invoices", Singular: "Invoice", BasePath: "/app/invoices", APIPath: "/api/invoices",
 		Crud:    fwApp.MustCrudHandler("invoices"),
 		CanEdit: true,
@@ -253,7 +253,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			},
 		},
 	}
-	blueprintResources["subscriptions"] = ResourceConfig{
+	appResources["subscriptions"] = ResourceConfig{
 		Title: "Subscriptions", Singular: "Subscription", BasePath: "/app/subscriptions", APIPath: "/api/subscriptions",
 		Crud:    fwApp.MustCrudHandler("subscriptions"),
 		CanEdit: true,
@@ -270,16 +270,16 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			"plan_id":     {Crud: fwApp.MustCrudHandler("plans"), Display: "name"},
 		},
 	}
-	site.WithTheme(BlueprintTheme())
-	sbCfg := BlueprintSidebarConfig()
+	site.WithTheme(appTheme())
+	sbCfg := sidebarConfig()
 	sb := ui.Sidebar(sbCfg)
 	appLayout := app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
-	ui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)
+	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
 	marketingLayout := app.NewLayout("marketing").
 		WithContainer().
-		WithHeader(app.NewContextComponent(BlueprintMarketingHeader)).
-		WithFooter(app.NewStaticComponent(BlueprintMarketingFooter()))
+		WithHeader(app.NewContextComponent(marketingHeader)).
+		WithFooter(app.NewStaticComponent(marketingFooter()))
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)
@@ -339,27 +339,27 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.Register("/about", &AboutScreen{}, marketingLayout)
 	site.Register("/terms", &TermsScreen{}, marketingLayout)
 	site.Register("/privacy", &PrivacyScreen{}, marketingLayout)
-	site.RegisterScreen(app.NewScreen("/login", &LoginScreen{}).WithTitle("Sign in").WithPolicy(blueprintGuestPolicy("/app")), marketingLayout)
-	site.RegisterScreen(app.NewScreen("/signup", &SignupScreen{}).WithTitle("Create your account").WithPolicy(blueprintGuestPolicy("/app")), marketingLayout)
-	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers", &CustomersScreen{}).WithTitle("Customers").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers/:id", &CustomerDetailScreen{}).WithTitle("Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices", &InvoicesScreen{}).WithTitle("Invoices").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices/:id", &InvoiceDetailScreen{}).WithTitle("Invoice").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions", &SubscriptionsScreen{}).WithTitle("Subscriptions").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions/:id", &SubscriptionDetailScreen{}).WithTitle("Subscription").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers/new", &CustomersNewScreen{}).WithTitle("New Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers/:id/edit", &CustomersEditScreen{}).WithTitle("Edit Customer").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices/new", &InvoicesNewScreen{}).WithTitle("New Invoice").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices/:id/edit", &InvoicesEditScreen{}).WithTitle("Edit Invoice").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions/new", &SubscriptionsNewScreen{}).WithTitle("New Subscription").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions/:id/edit", &SubscriptionsEditScreen{}).WithTitle("Edit Subscription").WithPolicy(blueprintAuthPolicy("/login", "")), appLayout)
-	_ = blueprintRouterMounter{}
+	site.RegisterScreen(app.NewScreen("/login", &LoginScreen{}).WithTitle("Sign in").WithPolicy(guestPolicy("/app")), marketingLayout)
+	site.RegisterScreen(app.NewScreen("/signup", &SignupScreen{}).WithTitle("Create your account").WithPolicy(guestPolicy("/app")), marketingLayout)
+	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/customers", &CustomersScreen{}).WithTitle("Customers").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/customers/:id", &CustomerDetailScreen{}).WithTitle("Customer").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/invoices", &InvoicesScreen{}).WithTitle("Invoices").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/invoices/:id", &InvoiceDetailScreen{}).WithTitle("Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/subscriptions", &SubscriptionsScreen{}).WithTitle("Subscriptions").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/subscriptions/:id", &SubscriptionDetailScreen{}).WithTitle("Subscription").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/customers/new", &CustomersNewScreen{}).WithTitle("New Customer").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/customers/:id/edit", &CustomersEditScreen{}).WithTitle("Edit Customer").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/invoices/new", &InvoicesNewScreen{}).WithTitle("New Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/invoices/:id/edit", &InvoicesEditScreen{}).WithTitle("Edit Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/subscriptions/new", &SubscriptionsNewScreen{}).WithTitle("New Subscription").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app/subscriptions/:id/edit", &SubscriptionsEditScreen{}).WithTitle("Edit Subscription").WithPolicy(authPolicy("/login", "")), appLayout)
+	_ = routerMounter{}
 }
 
-// blueprintRouterMounter adapts framework's *router.Router to ui.WidgetMounter.
-type blueprintRouterMounter struct{ r *router.Router }
+// routerMounter adapts framework's *router.Router to ui.WidgetMounter.
+type routerMounter struct{ r *router.Router }
 
-func (m blueprintRouterMounter) MountWidget(def *widget.Definition) {
+func (m routerMounter) MountWidget(def *widget.Definition) {
 	widget.Mount(m.r, def)
 }

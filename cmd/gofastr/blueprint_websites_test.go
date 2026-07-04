@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,35 +46,35 @@ func websitesBlueprint() Blueprint {
 func TestBlueprint_APIPrefixAndSeedWiring(t *testing.T) {
 	bp := websitesBlueprint()
 	main := renderBlueprintMain(bp)
-	if !strings.Contains(main, "APIPrefix: blueprint.BlueprintAPIPrefix") {
+	if !strings.Contains(main, "APIPrefix: apiPrefix") {
 		t.Error("main.go does not pass the API prefix into AppConfig")
 	}
-	if !strings.Contains(main, "fwApp.WithSeed(") || !strings.Contains(main, "BlueprintSeedData()") {
+	if !strings.Contains(main, "fwApp.WithSeed(") || !strings.Contains(main, "seedData()") {
 		t.Error("main.go does not wire the seed hook")
 	}
 	if !strings.Contains(main, "CountAll(ctx, framework.ListOptions{})") {
 		t.Error("seed hook is not idempotent (no CountAll gate)")
 	}
-	if !strings.Contains(main, "BlueprintBaseCSS()") {
-		t.Error("main.go does not mount BlueprintBaseCSS")
+	if !strings.Contains(main, "appBaseCSS()") {
+		t.Error("main.go does not mount appBaseCSS")
 	}
 }
 
 func TestBlueprint_AppConstsAndRoutes(t *testing.T) {
 	app := renderBlueprintApp(websitesBlueprint())
-	if !strings.Contains(app, `BlueprintAPIPrefix = "api"`) {
-		t.Error("app.go missing BlueprintAPIPrefix const")
+	if !strings.Contains(app, `apiPrefix = "api"`) {
+		t.Error("app.go missing apiPrefix const")
 	}
 	if !strings.Contains(app, `site.Register("/items/:id"`) {
 		t.Errorf("detail screen route not converted {id}->:id for the screen router:\n%s", app)
 	}
-	if !strings.Contains(app, "func BlueprintBaseCSS() string") {
-		t.Error("app.go missing BlueprintBaseCSS function")
+	if !strings.Contains(app, "func appBaseCSS() string") {
+		t.Error("app.go missing appBaseCSS function")
 	}
 	// The generator ships ZERO bespoke CSS — every surface composes framework/ui
 	// components + core-ui/app layouts that own their styling.
 	if strings.Contains(app, ".gofastr-entity") || strings.Contains(app, ".gofastr-auth") {
-		t.Error("BlueprintBaseCSS must ship no bespoke CSS — components own their styling")
+		t.Error("appBaseCSS must ship no bespoke CSS — components own their styling")
 	}
 }
 
@@ -100,7 +99,7 @@ func TestBlueprint_NestedEntityListRenders(t *testing.T) {
 	if strings.Contains(screens, `Kind: "entity_list"`) {
 		t.Error("nested entity_list left as an unrendered node kind")
 	}
-	if !strings.Contains(screens, `blueprintResources["items"]`) {
+	if !strings.Contains(screens, `appResources["items"]`) {
 		t.Errorf("nested entity_list did not render via the resource engine:\n%s", screens)
 	}
 }
@@ -152,14 +151,14 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	for _, f := range files {
 		byName[f.name] = f.content
 	}
-	screens := byName[filepath.Join("blueprint", "screens.go")]
-	app := byName[filepath.Join("blueprint", "app.go")]
+	screens := byName["screens.go"]
+	app := byName["app.go"]
 
 	// Create + edit form screens render via the resource engine's Form.
-	if !strings.Contains(screens, `blueprintResources["widgets"].Form(ctx, "")`) {
+	if !strings.Contains(screens, `appResources["widgets"].Form(ctx, "")`) {
 		t.Errorf("missing create form screen (Form(ctx, \"\")):\n%s", screens)
 	}
-	if !strings.Contains(screens, `blueprintResources["widgets"].Form(ctx, s.id)`) {
+	if !strings.Contains(screens, `appResources["widgets"].Form(ctx, s.id)`) {
 		t.Errorf("missing edit form screen (Form(ctx, s.id)):\n%s", screens)
 	}
 	// List shows "New"; detail shows Edit/Delete (CanEdit) and posts to the API.
@@ -234,7 +233,7 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 
 func TestBlueprint_SeedOrderedAndDecimalCoerced(t *testing.T) {
 	stubs := renderBlueprintStubs(websitesBlueprint())
-	if !strings.Contains(stubs, "[]BlueprintSeedEntity{") {
+	if !strings.Contains(stubs, "[]seedEntity{") {
 		t.Error("seed data is not an ordered slice")
 	}
 	// categories must precede items so the relation target exists first.

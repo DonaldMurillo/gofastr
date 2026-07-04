@@ -12,9 +12,10 @@ projects actually evolve, not the way a framework dictates on day one.
 ```
 myapp/
 ├── main.go             # the entrypoint — one binary, so it lives at the root
+├── app.go              # RegisterGenerated: screens + app wiring (package main)
+├── screens.go          # generated screen components (package main)
 ├── entities/           # Go entity declarations — the source of truth
 │   └── entities.go     # app.Entity(...) registrations (sample: posts)
-├── blueprint/          # generated screens + app-wiring you own and edit
 ├── migrations/         # versioned SQL (reversible)
 ├── static/             # assets served as-is
 ├── gofastr.yml         # the scaffold input — OPTIONAL, deletable once the code is yours
@@ -35,10 +36,11 @@ GoFastr leans on the two layouts Go developers already reach for, in order:
 description — written in Go (`entities/entities.go`, the `gofastr init`
 default) or declared in a [`gofastr.yml` blueprint](blueprints.md). When you
 generate from a blueprint (`gofastr generate --from=gofastr.yml`), it scaffolds
-owned Go straight into this root layout — `main.go` at the root plus `entities/`
-and `blueprint/` packages — that you read, edit, and commit. The blueprint is an
-on-ramp, not a source of truth: once the code is yours you can keep editing it
-directly (re-running `generate` is add-only and never clobbers your edits), and
+owned Go straight into this root layout — a flat `package main` (`main.go`,
+`app.go`, `screens.go`, …) plus the `entities/` package — that you read, edit,
+and commit. The blueprint is a one-way on-ramp, not a source of truth:
+`generate` is one-shot (it refuses to overwrite an existing project unless you
+pass `--force`), so once the code is yours you own and edit it directly, and
 you can delete `gofastr.yml` entirely — the running app does not need it. Most
 small apps never need more than this.
 
@@ -59,7 +61,7 @@ layer:
 myapp/
 ├── main.go
 ├── entities/            # declarations stay here
-├── blueprint/           # generated screens + wiring stay here
+├── app.go, screens.go   # generated screens + wiring stay here (package main)
 ├── internal/
 │   ├── billing/         # billing hooks, webhooks, invoice logic
 │   ├── projects/        # project-specific endpoints + rules
@@ -100,10 +102,10 @@ A domain package under `internal/` can mix framework entities and hand-written
   with nothing in it. Start flat; the refactor to `cmd/`/`internal/` is
   mechanical when you actually need it.
 - **Treating the scaffold as untouchable.** There's no `gen/` quarantine dir and
-  no `DO NOT EDIT` header — the generated `entities/` and `blueprint/` are owned
-  Go. Edit them directly. Re-running `gofastr generate` is add-only: it writes
-  new files but never overwrites one you've hand-edited (pass `--force` to
-  overwrite).
+  no `DO NOT EDIT` header — the generated `entities/` package and root
+  `app.go`/`screens.go`/… are owned `package main` Go. Edit them directly.
+  `gofastr generate` is one-shot: it scaffolds once and refuses to overwrite an
+  existing project (pass `--force` to regenerate the whole set).
 - **Layer-based packages (`services/`, `repositories/`).** In Go this scatters
   one feature across many directories. Organize by domain instead.
 - **Keeping `gofastr.yml` around as a source of truth.** It's a one-way on-ramp.

@@ -70,23 +70,29 @@ screens:
         empty_text: No notes yet.
 ```
 
+The `entity_list` gives you a server-rendered table with search, sort, and
+pagination out of the box. Once an entity has an enum, bool, or relation column,
+add `filters: [<column>, …]` to the block and the generated screen renders a
+`ui.FilterToolbar` of facet filters above the table — see the
+[`entity_list` reference](blueprints.md) for the details.
+
 Validate, generate, run:
 
 ```bash
 gofastr validate gofastr.yml
-gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + entities/ + blueprint/
+gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + app.go + screens.go + entities/
 go mod tidy
 go run .
 ```
 
-The scaffold is normal, owned Go laid out at the module root:
+The scaffold is normal, owned Go — a flat `package main` at the module root:
 `entities/register.go` holds the `app.Entity(...)` registrations,
-`blueprint/screens.go` the screen components, `main.go` the wiring. Read
-them — they are short, there is no hidden layer underneath, and they carry
-no `DO NOT EDIT` header because they're yours to edit and commit.
-Re-running `gofastr generate` is add-only and conflict-safe: it writes any
-new files but never overwrites one you've hand-edited (pass `--force` to
-overwrite).
+`screens.go` the screen components, `app.go` the `RegisterGenerated` wiring,
+`main.go` the entrypoint. Read them — they are short, there is no hidden layer
+underneath, and they carry no `DO NOT EDIT` header because they're yours to
+edit and commit. `gofastr generate` is one-shot: it scaffolds once and refuses
+to overwrite an existing project (pass `--force` to regenerate the whole set),
+because from here the owned Go — not the blueprint — is the source of truth.
 
 Prove both surfaces from a second terminal:
 
@@ -236,40 +242,23 @@ contract — see [access-control](access-control.md) and
 
 ## 3. Own the Go: policy + a hand-written screen
 
-The scaffolded `entities/` and `blueprint/` packages are owned Go — you
-can edit them directly. For a clean separation between the scaffold and
-your customizations, this step writes a *separate* `main` under
-`cmd/server` that calls the same generated packages and layers on what
-the generator can't know. Either way works; this is the escape hatch as
-designed: the generated code is plain Go you compose, not a runtime you
-configure.
+The scaffold is a flat `package main` you own — `main.go`, `app.go`,
+`screens.go`, `entities/`. There is no separate "generator" package to import;
+you customize by editing these files directly and adding your own. This is the
+escape hatch as designed: the generated code is plain Go you compose, not a
+runtime you configure.
 
-```bash
-mkdir -p cmd/server
-```
+Add a hand-written screen in a new file at the root — same package, same
+`Screen` interface the generated ones implement:
 
 ```go
-// cmd/server/main.go
+// about.go — your own file, package main, alongside the generated ones.
 package main
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-
-	"github.com/DonaldMurillo/gofastr/battery/auth"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	_ "github.com/mattn/go-sqlite3"
-
-	"example.com/notes/blueprint"
-	"example.com/notes/entities"
 )
 
 // AboutScreen is plain Go — the same interface generated screens implement.
@@ -285,58 +274,30 @@ func (s *AboutScreen) Render() render.HTML {
 		render.Tag("p", nil, render.Text("Hand-written in Go, served next to generated screens.")),
 	)
 }
+```
 
-func main() {
-	db, err := sql.Open("sqlite3", getEnv("DATABASE_URL", "file:notes.db"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+Register it by editing the scaffolded `main.go` — it's yours. Just after the
+generated `RegisterGenerated(fwApp, site, db)` call, add your own screen:
 
-	fwApp := framework.NewApp(
-		framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName}),
-		framework.WithDB(db),
-	)
-	entities.RegisterAll(fwApp)
-	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
-
-	site := uiapp.NewApp(blueprint.BlueprintAppName)
-	blueprint.RegisterGenerated(fwApp, site, db)
-
-	// RBAC: map roles to the permissions the blueprint's access: keys demand.
-	policy := framework.NewRolePolicy()
-	policy.Grant("admin", "notes:admin")
-	fwApp.Use(framework.AccessMiddleware(policy, func(ctx context.Context) []string {
-		if u := auth.GetCurrentUser(ctx); u != nil {
-			return u.GetRoles()
-		}
-		return nil
-	}))
+```go
+	RegisterGenerated(fwApp, site, db)
 
 	// A screen the blueprint doesn't know about.
 	site.Register("/about", &AboutScreen{}, nil)
-
-	fwApp.Mount(uihost.New(site))
-	fwApp.OnReady(func(addr string) { fmt.Printf("Server running at http://%s\n", addr) })
-	if err := fwApp.Start(getEnv("PORT", "localhost:8080")); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
-	}
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 ```
 
+RBAC is already wired: because the `notes` entity declares `access:`,
+`RegisterGenerated` (in `app.go`) installs a `RolePolicy` that grants the
+`admin` role the wildcard. To add finer per-role grants, edit that block in
+`app.go` — the generated comment marks the spot ("add finer per-role
+`Grant`s … as you define more roles").
+
 Promote Ana to admin (there is no generated role-management UI yet —
-v0.x honesty — so it's one SQL statement), then run **your** main:
+v0.x honesty — so it's one SQL statement), then re-run the app:
 
 ```bash
 sqlite3 notes.db "UPDATE auth_users SET roles='[\"admin\"]' WHERE email='ana@example.com';"
-go run ./cmd/server
+go run .
 ```
 
 Verify the full model — log in again so the session reflects the role:
@@ -359,12 +320,12 @@ curl -s -o /dev/null -w "%{http_code}\n" -b ana.jar \
 curl -s http://localhost:8080/about | grep "Hand-written in Go"
 ```
 
-From here on, `go run .` is the scaffolded app at the root and
-`go run ./cmd/server` is your customized entrypoint. Re-run `gofastr
-generate` whenever you want to scaffold *new* entities or screens — it's
-add-only and won't touch files you've edited; your `cmd/server` keeps
-compiling against the generated packages because it only consumes their
-exported API.
+From here on the owned Go at the root is the whole app: `go run .` runs the
+generated screens plus your `about.go` and your `main.go` edits, all one
+`package main`. The blueprint has done its job — it was a one-shot on-ramp, not
+a source you keep regenerating from. To add a new entity or screen later, edit
+the owned Go directly (or scaffold a fresh app in a scratch dir and copy what
+you want across).
 
 ## 4. Deploy
 
@@ -372,7 +333,7 @@ The app compiles to a single static binary — UI runtime, docs, and
 migrations included. The short version:
 
 ```bash
-CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o app ./cmd/server
+CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o app .
 PORT=8080 ./app
 ```
 
@@ -382,10 +343,11 @@ migrations-as-a-release-step pattern, follow [deploy](deploy.md). Two
 things to do before shipping an auth-enabled app:
 
 - turn off auth dev mode: set `dev_mode: false` and `jwt_secret` under
-  `app.auth` in the blueprint and regenerate (the default is
-  `dev_mode: true` because production cookies require HTTPS — `gofastr
-  generate` warns until you opt out) — see [auth](auth.md) and
-  [blueprints](blueprints.md);
+  `app.auth` in the blueprint and re-scaffold with `--force` (or, since the
+  code is yours, flip `DevMode`/`JWTSecret` in the generated `app.go`
+  `AuthConfig` directly). The default is `dev_mode: true` because production
+  cookies require HTTPS — `gofastr generate` warns until you opt out — see
+  [auth](auth.md) and [blueprints](blueprints.md);
 - decide whether `/openapi.json` stays auth-gated (the default) or is
   exposed via `framework.WithPublicOpenAPI()`.
 
@@ -408,11 +370,10 @@ things to do before shipping an auth-enabled app:
 ## Common mistakes
 
 - **Treating the scaffold as untouchable.** The generated `entities/`
-  and `blueprint/` are owned Go with no `DO NOT EDIT` header — edit them
-  directly. Re-running `gofastr generate` is add-only and never clobbers
-  a hand-edited file (use `--force` to overwrite). Bigger customizations
-  can also live in your own package (`cmd/server`, or anywhere that
-  imports the generated packages).
+  package and the root `app.go`/`screens.go`/… are owned `package main` Go
+  with no `DO NOT EDIT` header — edit them directly and add your own files
+  beside them. `gofastr generate` is one-shot: it scaffolds once and refuses
+  to overwrite an existing project (use `--force` to regenerate the whole set).
 - **Expecting `access:` to work without a policy.** The gate fails
   closed by design: declaring `access: {delete: notes:admin}` without
   mounting `framework.AccessMiddleware` means *nobody* can delete.

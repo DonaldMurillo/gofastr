@@ -20,7 +20,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/DonaldMurillo/gofastr/examples/meridian/blueprint"
 	"github.com/DonaldMurillo/gofastr/examples/meridian/entities"
 )
 
@@ -33,7 +32,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := openBlueprintDB(runtimeIsolation)
+	db, err := openDB(runtimeIsolation)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,7 +40,7 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName, APIPrefix: blueprint.BlueprintAPIPrefix})}
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix})}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
@@ -55,7 +54,7 @@ func main() {
 		if u, _, err := auth.NewEntityUserStore(db, "auth_users").FindByEmail(ctx, "admin@meridian.dev"); err == nil && u != nil {
 			ctx = handler.SetUser(ctx, u)
 		}
-		for _, s := range blueprint.BlueprintSeedData() {
+		for _, s := range seedData() {
 			ch, err := fwApp.CrudHandler(s.Entity)
 			if err != nil {
 				continue
@@ -73,10 +72,10 @@ func main() {
 		return nil
 	})
 	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
-	site := uiapp.NewApp(blueprint.BlueprintAppName)
-	blueprint.RegisterGenerated(fwApp, site, db)
-	fwApp.Mount(uihost.New(site, uihost.WithStaticDir("static"), uihost.WithCustomCSS(blueprint.BlueprintFontCSS+blueprint.BlueprintBaseCSS()+uihost.ReadCustomCSSFile("static/app.css"))))
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: blueprint.BlueprintAppName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: blueprint.BlueprintTheme(), FontFaceCSS: blueprint.BlueprintFontCSS}))
+	site := uiapp.NewApp(appName)
+	RegisterGenerated(fwApp, site, db)
+	fwApp.Mount(uihost.New(site, uihost.WithStaticDir("static"), uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile("static/app.css"))))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: appTheme(), FontFaceCSS: fontFaceCSS}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
@@ -92,7 +91,7 @@ func main() {
 	}
 }
 
-func openBlueprintDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
+func openDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
 	driver := getEnv("DB_DRIVER", "sqlite")
 	dsn := getEnv("DATABASE_URL", "file:meridian.db")
 	resolvedDriver, resolvedDSN, err := runtimeIsolation.Database(driver, dsn)
@@ -108,7 +107,7 @@ func openBlueprintDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
 	case "postgres", "postgresql":
 		return sql.Open("postgres", dsn)
 	default:
-		return nil, fmt.Errorf("unsupported blueprint db driver %q", driver)
+		return nil, fmt.Errorf("unsupported db driver %q", driver)
 	}
 }
 

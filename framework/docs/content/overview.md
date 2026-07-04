@@ -63,8 +63,9 @@ Two packages, no more:
   CRUD, hooks, migrations, plugins, and the batteries below.
 
 There is no third layer of hidden magic. Generated code is regular, owned Go
-scaffolded straight into an idiomatic module-root layout (`main.go`,
-`entities/`, `blueprint/`) — yours to read, edit, and commit — see
+scaffolded straight into an idiomatic module-root layout (a flat `package main`
+— `main.go`, `app.go`, `screens.go` — plus `entities/`) — yours to read, edit,
+and commit — see
 **[Code generation](/docs/codegen)** and **[Blueprints](/docs/blueprints)**.
 
 ## Modeling your domain

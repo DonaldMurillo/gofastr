@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -10,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -32,6 +36,15 @@ type Blueprint struct {
 type BlueprintSeedEntity struct {
 	Entity string
 	Rows   []map[string]any
+	// Count, when > 0, auto-generates that many demo rows for the entity
+	// (in addition to any explicit Rows) with deterministic, realistic-looking
+	// values. Enum columns get a varied (non-uniform) distribution.
+	Count int
+	// Weights maps an enum column to a value→weight distribution used when
+	// auto-generating rows (e.g. {"status": {"open": 5, "closed": 1}}). A
+	// column with no weights entry gets a deterministic skew seeded from the
+	// entity name so demos never read as a flat round-robin.
+	Weights map[string]map[string]int
 }
 
 // BlueprintNavItem describes a navigation entry — a link to a screen or URL.
@@ -102,9 +115,10 @@ type BlueprintBlock struct {
 	Fields      []string
 	Limit       int
 	EmptyText   string
-	Mode        string // "create", "edit" for entity_form
-	Search      string // entity_list LIKE-search field
-	Create      bool   // entity_list: show "New" + mount a create form screen
+	Mode        string   // "create", "edit" for entity_form
+	Search      string   // entity_list LIKE-search field
+	Filters     []string // entity_list: facet-filter columns (enum, bool, or relation)
+	Create      bool     // entity_list: show "New" + mount a create form screen
 	Props       map[string]any
 	Children    []BlueprintBlock
 	Actions     []BlueprintAction
@@ -370,7 +384,7 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 		app.DBURL = stringValue(db["url"])
 	}
 	if themeNode := m["theme"]; themeNode != nil {
-		theme, dark, err := decodeBlueprintTheme(themeNode)
+		theme, dark, err := decodeappTheme(themeNode)
 		if err != nil {
 			return BlueprintApp{}, err
 		}
@@ -448,9 +462,9 @@ func decodeBlueprintAuth(node *coreyaml.Node) (BlueprintAuth, error) {
 	}, nil
 }
 
-// decodeBlueprintTheme returns the light color/font tokens and, from a nested
+// decodeappTheme returns the light color/font tokens and, from a nested
 // `dark:` map, the dark-scheme color overrides.
-func decodeBlueprintTheme(node *coreyaml.Node) (light, dark map[string]string, err error) {
+func decodeappTheme(node *coreyaml.Node) (light, dark map[string]string, err error) {
 	m, err := expectMap(node, "app.theme")
 	if err != nil {
 		return nil, nil, err
@@ -915,7 +929,7 @@ func decodeBlueprintSeed(node *coreyaml.Node) ([]BlueprintSeedEntity, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := rejectUnknownKeys(m, map[string]bool{"entity": true, "rows": true}, fmt.Sprintf("seed[%d]", i)); err != nil {
+		if err := rejectUnknownKeys(m, map[string]bool{"entity": true, "rows": true, "count": true, "weights": true}, fmt.Sprintf("seed[%d]", i)); err != nil {
 			return nil, err
 		}
 		entity := stringValue(m["entity"])
@@ -940,9 +954,235 @@ func decodeBlueprintSeed(node *coreyaml.Node) ([]BlueprintSeedEntity, error) {
 				rows = append(rows, row)
 			}
 		}
-		out = append(out, BlueprintSeedEntity{Entity: entity, Rows: rows})
+		count := 0
+		if cn := m["count"]; cn != nil {
+			count = intValue(cn)
+			if count < 0 {
+				return nil, fmt.Errorf("seed[%d].count must be >= 0", i)
+			}
+		}
+		weights, err := decodeSeedWeights(m["weights"], fmt.Sprintf("seed[%d].weights", i))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, BlueprintSeedEntity{Entity: entity, Rows: rows, Count: count, Weights: weights})
 	}
 	return out, nil
+}
+
+// decodeSeedWeights parses the optional per-column weight map used when
+// auto-generating rows: `weights: { <column>: { <value>: <weight> } }`.
+func decodeSeedWeights(node *coreyaml.Node, label string) (map[string]map[string]int, error) {
+	if node == nil {
+		return nil, nil
+	}
+	cols, err := expectMap(node, label)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]int, len(cols))
+	for col, child := range cols {
+		valMap, err := expectMap(child, label+"."+col)
+		if err != nil {
+			return nil, err
+		}
+		vw := make(map[string]int, len(valMap))
+		for val, wNode := range valMap {
+			w := intValue(wNode)
+			if w < 0 {
+				return nil, fmt.Errorf("%s.%s.%s must be >= 0", label, col, val)
+			}
+			vw[val] = w
+		}
+		out[col] = vw
+	}
+	return out, nil
+}
+
+// blueprintExpandSeed appends Count auto-generated demo rows to each seed
+// entity that declares one. Generation is deterministic (no runtime
+// randomness), so regeneration is stable and the diff never churns. Enum
+// columns get a weighted or deterministically-skewed distribution so demo data
+// never reads as a flat 1/N-per-value round-robin.
+func blueprintExpandSeed(bp Blueprint) Blueprint {
+	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
+	for _, d := range bp.Entities {
+		entityMap[d.Name] = d
+	}
+	for i := range bp.Seed {
+		s := &bp.Seed[i]
+		if s.Count <= 0 {
+			continue
+		}
+		decl, ok := entityMap[s.Entity]
+		if !ok {
+			continue
+		}
+		s.Rows = append(s.Rows, blueprintGenerateSeedRows(decl, s.Count, s.Weights)...)
+	}
+	return bp
+}
+
+// blueprintGenerateSeedRows builds n demo rows for an entity. Each enum column
+// is filled from a precomputed distribution; scalar columns get plausible
+// deterministic values keyed off the row index. System columns (id/timestamps/
+// auto-generated/read-only), hidden columns, and relations are skipped —
+// relations can't be safely fabricated, so count-seeding suits scalar/enum
+// entities (use explicit rows: for entities with required relations).
+func blueprintGenerateSeedRows(decl framework.EntityDeclaration, n int, weights map[string]map[string]int) []map[string]any {
+	// Precompute enum distributions once per column.
+	dist := map[string][]string{}
+	for _, f := range decl.Fields {
+		if strings.EqualFold(f.Type, "enum") && len(f.Values) > 0 {
+			dist[f.Name] = blueprintEnumDistribution(decl.Name, f.Name, f.Values, weights[f.Name], n)
+		}
+	}
+	singular := singularize(toDisplayName(decl.Name))
+	rows := make([]map[string]any, 0, n)
+	for r := 0; r < n; r++ {
+		row := map[string]any{}
+		for _, f := range decl.Fields {
+			if blueprintFieldSystem(f.Name) || f.Hidden || f.ReadOnly || f.AutoGenerate != "" {
+				continue
+			}
+			switch strings.ToLower(f.Type) {
+			case "enum":
+				if seq := dist[f.Name]; len(seq) == n {
+					row[f.Name] = seq[r]
+				}
+			case "string", "text":
+				row[f.Name] = blueprintSeedStringValue(f, singular, r)
+			case "int", "integer", "bigint":
+				// A gently-skewed spread rather than 1..n so charts summing a
+				// numeric column show variation.
+				row[f.Name] = 10 + int(blueprintSeedHash(decl.Name+f.Name+strconv.Itoa(r))%90)
+			case "float", "double", "decimal", "money", "numeric":
+				v := 5 + float64(blueprintSeedHash(decl.Name+f.Name+strconv.Itoa(r))%9950)/10.0
+				row[f.Name] = math.Round(v*100) / 100
+			case "bool", "boolean":
+				// Skew towards true so demos look "active".
+				row[f.Name] = blueprintSeedHash(decl.Name+f.Name+strconv.Itoa(r))%4 != 0
+			default:
+				// date/timestamp/uuid/relation/json: leave to auto-generation
+				// or nullable columns.
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// blueprintSeedStringValue produces a plausible value for a scalar text column
+// based on common naming conventions (name/title/email/slug), falling back to a
+// humanized "<Singular> <n>".
+func blueprintSeedStringValue(f framework.FieldDeclaration, singular string, r int) string {
+	name := strings.ToLower(f.Name)
+	switch {
+	case strings.Contains(name, "email"):
+		return fmt.Sprintf("%s%d@example.com", strings.ToLower(strings.ReplaceAll(singular, " ", "")), r+1)
+	case strings.Contains(name, "slug"):
+		return fmt.Sprintf("%s-%d", strings.ToLower(strings.ReplaceAll(singular, " ", "-")), r+1)
+	case strings.Contains(name, "url"), strings.Contains(name, "link"):
+		return fmt.Sprintf("https://example.com/%d", r+1)
+	case name == "name" || name == "title" || strings.HasSuffix(name, "_name") || strings.HasSuffix(name, "_title"):
+		return fmt.Sprintf("%s %d", singular, r+1)
+	case strings.EqualFold(f.Type, "text") || strings.Contains(name, "description") || strings.Contains(name, "body") || strings.Contains(name, "notes"):
+		return fmt.Sprintf("Sample %s for %s %d.", strings.ReplaceAll(name, "_", " "), strings.ToLower(singular), r+1)
+	default:
+		return fmt.Sprintf("%s %d", humanizeFieldLabel(f.Name), r+1)
+	}
+}
+
+// blueprintSeedHash is a small deterministic FNV-1a hash used to derive stable
+// pseudo-random-looking (but reproducible) seed values.
+func blueprintSeedHash(s string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	return h.Sum32()
+}
+
+// blueprintEnumDistribution returns a length-n slice of enum values whose
+// frequencies follow `weights` when given, otherwise a deterministic skew
+// derived from the entity+column+value names. The result is always non-uniform
+// for the default (no-weights) path, so demo data never reads as a flat
+// round-robin. Values are interleaved (round-robin over the assigned counts) so
+// the first page of a list isn't a single value.
+func blueprintEnumDistribution(seedKey, col string, values []string, weights map[string]int, n int) []string {
+	if len(values) == 0 || n <= 0 {
+		return nil
+	}
+	w := make([]int, len(values))
+	total := 0
+	explicit := len(weights) > 0
+	for i, v := range values {
+		if explicit {
+			w[i] = weights[v]
+		} else {
+			w[i] = 1 + int(blueprintSeedHash(seedKey+"|"+col+"|"+v)%7) // 1..7
+		}
+		total += w[i]
+	}
+	if total == 0 {
+		for i := range w {
+			w[i] = 1
+		}
+		total = len(w)
+	}
+	// Guard the default skew against a hash collision leaving every weight
+	// equal (which would round-trip to a uniform split).
+	if !explicit && len(w) > 1 {
+		allEqual := true
+		for i := 1; i < len(w); i++ {
+			if w[i] != w[0] {
+				allEqual = false
+				break
+			}
+		}
+		if allEqual {
+			w[0]++
+			total++
+		}
+	}
+	// Largest-remainder apportionment: exact integer counts summing to n.
+	counts := make([]int, len(values))
+	type rem struct {
+		idx  int
+		frac float64
+	}
+	rems := make([]rem, len(values))
+	assigned := 0
+	for i := range values {
+		q := float64(n) * float64(w[i]) / float64(total)
+		counts[i] = int(math.Floor(q))
+		rems[i] = rem{i, q - math.Floor(q)}
+		assigned += counts[i]
+	}
+	sort.SliceStable(rems, func(a, b int) bool { return rems[a].frac > rems[b].frac })
+	for k := 0; assigned < n && len(rems) > 0; k++ {
+		counts[rems[k%len(rems)].idx]++
+		assigned++
+	}
+	// Interleave for readability.
+	out := make([]string, 0, n)
+	remaining := make([]int, len(counts))
+	copy(remaining, counts)
+	for len(out) < n {
+		progressed := false
+		for i := range values {
+			if remaining[i] > 0 {
+				out = append(out, values[i])
+				remaining[i]--
+				progressed = true
+				if len(out) == n {
+					break
+				}
+			}
+		}
+		if !progressed {
+			break
+		}
+	}
+	return out
 }
 
 func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
@@ -959,7 +1199,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "search": true, "create": true, "props": true, "children": true, "actions": true, "transitions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "search": true, "filters": true, "create": true, "props": true, "children": true, "actions": true, "transitions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -988,6 +1228,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 			EmptyText:   stringValue(m["empty_text"]),
 			Mode:        stringValue(m["mode"]),
 			Search:      stringValue(m["search"]),
+			Filters:     stringListValue(m["filters"]),
 			Create:      boolValue(m["create"]),
 			Props:       mapValue(m["props"]),
 			Children:    children,
@@ -1387,6 +1628,29 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if block.Limit < 0 {
 			return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
 		}
+		// filters: each must be a defined column of a facetable type — enum,
+		// bool, or relation. Explicit only (no auto-derivation): an omitted
+		// filters: list renders exactly as before, no facet toolbar.
+		if len(block.Filters) > 0 {
+			rels := blueprintEntityRelations(decl) // fk column -> target entity
+			typeOf := map[string]string{}
+			for _, field := range decl.Fields {
+				typeOf[field.Name] = strings.ToLower(strings.TrimSpace(field.Type))
+			}
+			for _, col := range block.Filters {
+				t, defined := typeOf[col]
+				_, isRel := rels[col]
+				if !defined && !isRel {
+					return fmt.Errorf("blueprint: screen %q entity_list filter %q is not defined on entity %q", screenName, col, block.Entity)
+				}
+				switch {
+				case t == "enum", t == "bool", t == "boolean", t == "relation", isRel:
+					// facetable
+				default:
+					return fmt.Errorf("blueprint: screen %q entity_list filter %q has type %q; only enum, bool, and relation columns can be faceted", screenName, col, t)
+				}
+			}
+		}
 	case "entity_form":
 		if block.Entity == "" {
 			return fmt.Errorf("blueprint: screen %q entity_form block entity is required", screenName)
@@ -1432,10 +1696,32 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if srcEntity == "" || groupBy == "" {
 			return fmt.Errorf("blueprint: screen %q %s source needs both entity and group_by", screenName, kind)
 		}
-		if _, known := entities[srcEntity]; !known {
+		decl, known := entities[strings.Trim(srcEntity, "/")]
+		if !known {
 			return fmt.Errorf("blueprint: screen %q %s source targets unknown entity %q", screenName, kind, srcEntity)
 		}
-	case "page_header", "hero", "card", "stat_row", "stat_card",
+		if decl.CRUD != nil && !*decl.CRUD {
+			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
+		}
+	case "stat_card":
+		// A stat_card with a source binds to live entity data; without a
+		// registered CRUD handler statValue would render a silent "—".
+		// Reject an unknown or crud-disabled source upfront. (A static
+		// value: stat_card has no source and is fine.)
+		if src, ok := block.Props["source"].(map[string]any); ok {
+			srcEntity, _ := src["entity"].(string)
+			if srcEntity == "" {
+				return fmt.Errorf("blueprint: screen %q stat_card source needs entity", screenName)
+			}
+			decl, known := entities[strings.Trim(srcEntity, "/")]
+			if !known {
+				return fmt.Errorf("blueprint: screen %q stat_card source targets unknown entity %q", screenName, srcEntity)
+			}
+			if decl.CRUD != nil && !*decl.CRUD {
+				return fmt.Errorf("blueprint: screen %q stat_card source entity %q must enable crud", screenName, srcEntity)
+			}
+		}
+	case "page_header", "hero", "card", "stat_row",
 		"link_button", "callout",
 		"markdown", "pricing", "divider":
 		// framework/ui catalog blocks — props are validated leniently (the
@@ -1602,6 +1888,7 @@ func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 
 func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 	bp = blueprintSynthesizeCRUDScreens(bp)
+	bp = blueprintExpandSeed(bp)
 	var files []generatedFile
 	if bp.App.Module != "" {
 		files = append(files, generatedFile{name: "main.go", content: renderBlueprintMain(bp)})
@@ -1621,17 +1908,17 @@ func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 		}
 	}
 	if len(bp.Screens) > 0 {
-		files = append(files, generatedFile{name: filepath.Join("blueprint", "screens.go"), content: renderBlueprintScreens(bp)})
+		files = append(files, generatedFile{name: "screens.go", content: renderBlueprintScreens(bp)})
 	}
 	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 {
-		files = append(files, generatedFile{name: filepath.Join("blueprint", "stubs.go"), content: renderBlueprintStubs(bp)})
+		files = append(files, generatedFile{name: "stubs.go", content: renderBlueprintStubs(bp)})
 	}
 	if bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || len(bp.App.Theme) > 0 || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 {
-		files = append(files, generatedFile{name: filepath.Join("blueprint", "app.go"), content: renderBlueprintApp(bp)})
+		files = append(files, generatedFile{name: "app.go", content: renderBlueprintApp(bp)})
 	}
 	if blueprintUsesEntityScreens(bp) {
-		files = append(files, generatedFile{name: filepath.Join("blueprint", "resource.go"), content: blueprintResourceGo})
-		files = append(files, generatedFile{name: filepath.Join("blueprint", "resource_test.go"), content: blueprintResourceTestGo})
+		files = append(files, generatedFile{name: "resource.go", content: blueprintResourceGo})
+		files = append(files, generatedFile{name: "resource_test.go", content: blueprintResourceTestGo})
 	}
 	if bp.App.Module != "" && len(bp.Screens) > 0 {
 		files = append(files, generatedFile{name: "e2e_test.go", content: renderBlueprintE2ETest(bp)})
@@ -1644,6 +1931,13 @@ func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 		files = append(files, generatedFile{name: ".env", content: env})
 		files = append(files, generatedFile{name: ".gitignore", content: blueprintGitignore})
 	}
+	// Self-hosted webfonts: fetch the theme's families at generate time so a
+	// named font WORKS in a fresh app with no manual step. An offline fetch
+	// drops the file (generateFromBlueprint warns with the exact path); the
+	// generated app boot-checks for it too, so no silent /fonts/*.woff2 404
+	// path remains.
+	fontFiles, _ := blueprintFontAssets(bp)
+	files = append(files, fontFiles...)
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	return files, nil
 }
@@ -1820,7 +2114,7 @@ func splitDSNFields(dsn string) []string {
 // blueprintResourceTestGo is the emitted unit test for the resource engine's
 // formatting helpers — owned, runs under `go test`.
 const blueprintResourceTestGo = `// Code generated by gofastr. Owned — safe to edit.
-package blueprint
+package main
 
 import (
 	"strings"
@@ -2076,7 +2370,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		b.WriteString("\n\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
 	}
 	b.WriteString(")\n\n")
-	b.WriteString("func TestBlueprintE2E(t *testing.T) {\n")
+	b.WriteString("func TestE2E(t *testing.T) {\n")
 	b.WriteString("\tif testing.Short() { t.Skip(\"builds + boots the binary\") }\n")
 	if needsAuthClient {
 		b.WriteString("\t// The seeded admin's password lives in the generated .env, not in\n")
@@ -2234,12 +2528,14 @@ func blueprintUsesEntityScreens(bp Blueprint) bool {
 // labels, formatted cells, resolved relations, server-side search/sort/paging.
 // It is generated code you OWN: edit freely.
 const blueprintResourceGo = `// Code generated by gofastr. Owned — safe to edit.
-package blueprint
+package main
 
 import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2253,10 +2549,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// blueprintResources holds one ResourceConfig per entity, populated by
+// appResources holds one ResourceConfig per entity, populated by
 // RegisterGenerated once the CrudHandlers exist. Screens look entities up by
 // name to render their server-side list/detail views.
-var blueprintResources = map[string]ResourceConfig{}
+var appResources = map[string]ResourceConfig{}
 
 // ResField is one displayed entity field.
 type ResField struct {
@@ -2270,6 +2566,17 @@ type ResField struct {
 type RelSource struct {
 	Crud    *framework.CrudHandler
 	Display string
+}
+
+// ResFilter is one facet-filter dimension on the list screen: a column the
+// user can narrow the list by. Type is "enum", "bool", or "relation" — it
+// selects both the facet control (pills vs select) and how options are
+// sourced (Values for enums, yes/no for bools, related rows for relations).
+type ResFilter struct {
+	Key    string
+	Label  string
+	Type   string   // "enum" | "bool" | "relation"
+	Values []string // enum: the allowed values
 }
 
 // Transition is a status-change workflow action shown on a detail page — a
@@ -2303,6 +2610,7 @@ type ResourceConfig struct {
 	Crud      *framework.CrudHandler
 	Fields    []ResField
 	Search    string
+	Filters   []ResFilter // facet filters rendered as a toolbar above the table
 	PageSize  int
 	Relations map[string]RelSource
 	CanCreate bool // List shows "New"; a /new create form is mounted
@@ -2362,6 +2670,9 @@ func (c ResourceConfig) WithSearch(field string) ResourceConfig { c.Search = fie
 func (c ResourceConfig) WithLimit(n int) ResourceConfig         { c.PageSize = n; return c }
 func (c ResourceConfig) WithCreate() ResourceConfig             { c.CanCreate = true; return c }
 
+// WithFilters sets the facet filters shown in the toolbar above the list.
+func (c ResourceConfig) WithFilters(fs ...ResFilter) ResourceConfig { c.Filters = fs; return c }
+
 // WithEdit shows Edit + Delete on the detail screen (a /{id}/edit form is mounted).
 func (c ResourceConfig) WithEdit() ResourceConfig { c.CanEdit = true; return c }
 
@@ -2410,6 +2721,13 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	if search != "" && c.Search != "" {
 		filters = append(filters, filter.ParsedFilter{Field: c.Search, Op: filter.OpLike, Value: search})
 	}
+	// Facet filters: one equality per active facet. Applied to both the count
+	// and the page query, so a filtered result set paginates correctly.
+	for _, ff := range c.Filters {
+		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
+			filters = append(filters, filter.ParsedFilter{Field: ff.Key, Op: filter.OpEq, Value: v})
+		}
+	}
 	var sorts []filter.ParsedSort
 	sortCol := q.Get("sort")
 	if sortCol != "" && c.hasField(sortCol) {
@@ -2428,7 +2746,10 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 		title = c.Heading
 	}
 	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: title, Subtitle: resCountLabel(total, c.Singular, c.Title), Actions: actions})}
-	if c.Search != "" {
+	// When facets are configured, search folds into the one filter toolbar
+	// (rendered below, once relation options are resolved) so the screen is a
+	// single GET form. Otherwise keep the standalone search box unchanged.
+	if len(c.Filters) == 0 && c.Search != "" {
 		body = append(body, ui.SearchInput(ui.SearchInputConfig{
 			Name: "q", ID: "search-" + c.Title, Action: c.BasePath, Method: "GET",
 			Placeholder: "Search " + c.Title, ExtraAttrs: map[string]string{"value": search},
@@ -2440,6 +2761,11 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	}
 
 	rel := c.relationLabels(ctx)
+	if len(c.Filters) > 0 {
+		if tb := c.filterToolbar(q, search, rel); tb != "" {
+			body = append(body, tb)
+		}
+	}
 	cols := make([]ui.Column, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
 		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: true}
@@ -2461,9 +2787,17 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
 	}
 
+	// carry preserves search + active facets across sort-header and pagination
+	// links (which are <a> navigations, not the toolbar form) so those actions
+	// never silently drop the current filter set.
 	carry := ""
 	if search != "" {
-		carry = "q=" + search + "&"
+		carry += "q=" + url.QueryEscape(search) + "&"
+	}
+	for _, ff := range c.Filters {
+		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
+			carry += url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&"
+		}
 	}
 	dt := ui.DataTableConfig{
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
@@ -2476,6 +2810,70 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 	}
 	body = append(body, ui.DataTable(dt))
 	return render.Join(body...)
+}
+
+// filterToolbar builds the facet + search toolbar shown above the list. Enum
+// facets render as pills when they hold a few short choices and as a select
+// otherwise; bools render as Yes/No pills; relations render as a select whose
+// options are the related records' display labels. Returns nil when there is
+// nothing to render (e.g. only an empty relation facet and no search).
+func (c ResourceConfig) filterToolbar(q url.Values, search string, rel map[string]map[string]string) render.HTML {
+	facets := make([]ui.Facet, 0, len(c.Filters))
+	for _, ff := range c.Filters {
+		facet := ui.Facet{Name: ff.Key, Label: ff.Label, Value: q.Get(ff.Key)}
+		switch ff.Type {
+		case "bool", "boolean":
+			facet.Options = []ui.FacetOption{{Label: "Yes", Value: "true"}, {Label: "No", Value: "false"}}
+			facet.Kind = ui.FacetPills
+		case "relation":
+			facet.Options = resRelFacetOptions(rel[ff.Key])
+			facet.Kind = ui.FacetSelect
+		default: // enum
+			short := len(ff.Values) > 0 && len(ff.Values) <= 4
+			opts := make([]ui.FacetOption, 0, len(ff.Values))
+			for _, v := range ff.Values {
+				label := resTitle(v)
+				if len(label) > 14 {
+					short = false
+				}
+				opts = append(opts, ui.FacetOption{Label: label, Value: v})
+			}
+			facet.Options = opts
+			if short {
+				facet.Kind = ui.FacetPills
+			} else {
+				facet.Kind = ui.FacetSelect
+			}
+		}
+		if len(facet.Options) == 0 {
+			continue
+		}
+		facets = append(facets, facet)
+	}
+	cfg := ui.FilterToolbarConfig{Action: c.BasePath, Facets: facets}
+	if c.Search != "" {
+		cfg.Search = &ui.FilterSearch{Name: "q", Value: search, Placeholder: "Search " + c.Title, Label: "Search " + c.Title}
+	}
+	if len(cfg.Facets) == 0 && cfg.Search == nil {
+		return ""
+	}
+	return ui.FilterToolbar(cfg)
+}
+
+// resRelFacetOptions turns a relation's id→label map into select options,
+// ordered by label for a stable, glanceable dropdown.
+func resRelFacetOptions(m map[string]string) []ui.FacetOption {
+	opts := make([]ui.FacetOption, 0, len(m))
+	for id, label := range m {
+		opts = append(opts, ui.FacetOption{Label: label, Value: id})
+	}
+	sort.Slice(opts, func(i, j int) bool {
+		if opts[i].Label == opts[j].Label {
+			return opts[i].Value < opts[j].Value
+		}
+		return opts[i].Label < opts[j].Label
+	})
+	return opts
 }
 
 // Detail renders the single-record detail screen.
@@ -2910,11 +3308,11 @@ func resEmptyDesc(custom string) string {
 	return "They will appear here once created."
 }
 
-// blueprintAuthError reads the ?error= code an auth redirect sets and returns a
+// authError reads the ?error= code an auth redirect sets and returns a
 // human message for an auth card's alert slot, or "" when there's no error. The
 // auth battery redirects a failed form login back to the login page with this
 // code instead of rendering a raw JSON error body.
-func blueprintAuthError(ctx context.Context) render.HTML {
+func authError(ctx context.Context) render.HTML {
 	switch appui.QueryFromContext(ctx).Get("error") {
 	case "":
 		return ""
@@ -2933,10 +3331,10 @@ func blueprintAuthError(ctx context.Context) render.HTML {
 
 // ----- dashboard data binding (stat_card / charts with source) --------------
 
-// blueprintStatValue computes a single metric over an entity for a stat_card:
+// statValue computes a single metric over an entity for a stat_card:
 // agg "count" (optionally filtered "field=value") or "sum" of a numeric field.
-func blueprintStatValue(ctx context.Context, entity, agg, field, filterStr, format string) string {
-	c, ok := blueprintResources[entity]
+func statValue(ctx context.Context, entity, agg, field, filterStr, format string) string {
+	c, ok := appResources[entity]
 	if !ok || c.Crud == nil {
 		return "—"
 	}
@@ -2959,7 +3357,7 @@ func blueprintStatValue(ctx context.Context, entity, agg, field, filterStr, form
 		if format == "money" {
 			return resMoney(strconv.FormatFloat(total, 'f', 2, 64))
 		}
-		return blueprintFmtNum(total)
+		return fmtNum(total)
 	}
 	n, err := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
 	if err != nil {
@@ -2968,13 +3366,13 @@ func blueprintStatValue(ctx context.Context, entity, agg, field, filterStr, form
 	return strconv.Itoa(n)
 }
 
-type blueprintKV struct {
+type kvPair struct {
 	k string
 	v int
 }
 
-func blueprintGroupCounts(ctx context.Context, entity, groupBy string) []blueprintKV {
-	c, ok := blueprintResources[entity]
+func groupCounts(ctx context.Context, entity, groupBy string) []kvPair {
+	c, ok := appResources[entity]
 	if !ok || c.Crud == nil {
 		return nil
 	}
@@ -2994,15 +3392,15 @@ func blueprintGroupCounts(ctx context.Context, entity, groupBy string) []bluepri
 		}
 		m[key]++
 	}
-	out := make([]blueprintKV, 0, len(order))
+	out := make([]kvPair, 0, len(order))
 	for _, k := range order {
-		out = append(out, blueprintKV{k, m[k]})
+		out = append(out, kvPair{k, m[k]})
 	}
 	return out
 }
 
-func blueprintGroupBars(ctx context.Context, entity, groupBy string) []ui.BarChartBar {
-	counts := blueprintGroupCounts(ctx, entity, groupBy)
+func groupBars(ctx context.Context, entity, groupBy string) []ui.BarChartBar {
+	counts := groupCounts(ctx, entity, groupBy)
 	bars := make([]ui.BarChartBar, 0, len(counts))
 	for _, kv := range counts {
 		bars = append(bars, ui.BarChartBar{Label: resTitle(kv.k), Value: float64(kv.v)})
@@ -3010,8 +3408,8 @@ func blueprintGroupBars(ctx context.Context, entity, groupBy string) []ui.BarCha
 	return bars
 }
 
-func blueprintGroupSlices(ctx context.Context, entity, groupBy string) []ui.PieSlice {
-	counts := blueprintGroupCounts(ctx, entity, groupBy)
+func groupSlices(ctx context.Context, entity, groupBy string) []ui.PieSlice {
+	counts := groupCounts(ctx, entity, groupBy)
 	slices := make([]ui.PieSlice, 0, len(counts))
 	for _, kv := range counts {
 		slices = append(slices, ui.PieSlice{Label: resTitle(kv.k), Value: float64(kv.v)})
@@ -3019,10 +3417,10 @@ func blueprintGroupSlices(ctx context.Context, entity, groupBy string) []ui.PieS
 	return slices
 }
 
-// blueprintLineChart renders a single-series line chart over the grouped
+// lineChart renders a single-series line chart over the grouped
 // counts. Fewer than two groups renders ui.LineChart's calm empty state.
-func blueprintLineChart(ctx context.Context, entity, groupBy string) render.HTML {
-	counts := blueprintGroupCounts(ctx, entity, groupBy)
+func lineChart(ctx context.Context, entity, groupBy string) render.HTML {
+	counts := groupCounts(ctx, entity, groupBy)
 	labels := make([]string, 0, len(counts))
 	values := make([]float64, 0, len(counts))
 	for _, kv := range counts {
@@ -3035,7 +3433,7 @@ func blueprintLineChart(ctx context.Context, entity, groupBy string) render.HTML
 	})
 }
 
-func blueprintFmtNum(f float64) string {
+func fmtNum(f float64) string {
 	if f == float64(int64(f)) {
 		return strconv.FormatInt(int64(f), 10)
 	}
@@ -3048,7 +3446,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	if name == "" {
 		name = "GoFastr"
 	}
-	staticDir := bp.App.StaticDir
+	staticDir := blueprintEffectiveStaticDir(bp)
 	dbURL := bp.App.DBURL
 	if dbURL == "" && len(bp.Entities) > 0 {
 		dbURL = "file:gofastr.db"
@@ -3105,9 +3503,8 @@ func renderBlueprintMain(bp Blueprint) string {
 	if imp := blueprintDriverImport(driver); imp != "" {
 		sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
 	}
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/blueprint"))
 	if len(bp.Entities) > 0 {
+		sb.WriteString("\n")
 		sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/entities"))
 	}
 	sb.WriteString(")\n\n")
@@ -3119,12 +3516,27 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\t_ = dotenv.LoadAndApply(\".env.local\", \".env\")\n")
 	sb.WriteString("\truntimeIsolation, err := isolation.Resolve(\".\")\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
-	sb.WriteString("\tdb, err := openBlueprintDB(runtimeIsolation)\n")
+	sb.WriteString("\tdb, err := openDB(runtimeIsolation)\n")
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
-	sb.WriteString("\toptions := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: blueprint.BlueprintAppName, APIPrefix: blueprint.BlueprintAPIPrefix})}\n")
+	sb.WriteString("\toptions := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix})}\n")
 	sb.WriteString("\tif db != nil {\n\t\toptions = append(options, framework.WithDB(db))\n\t}\n")
 	sb.WriteString("\tfwApp := framework.NewApp(options...)\n")
+	if fams := blueprintConfiguredFontFamilies(bp.App.Theme); len(fams) > 0 {
+		// Boot-time guard: a self-hosted webfont whose file is missing from
+		// the static dir would 404 and silently fall back to system fonts.
+		// Warn loudly (once at startup) with the exact path so it never fails
+		// silently — the generate-time fetch normally supplies these.
+		sb.WriteString("\tfor _, fontFile := range []string{\n")
+		for _, fam := range fams {
+			sb.WriteString(fmt.Sprintf("\t\t%q,\n", blueprintFontRelPath(staticDir, fam)))
+		}
+		sb.WriteString("\t} {\n")
+		sb.WriteString("\t\tif _, statErr := os.Stat(fontFile); statErr != nil {\n")
+		sb.WriteString("\t\t\tlog.Printf(\"gofastr: webfont %s is missing — falling back to system fonts. Add the .woff2 there (the strict CSP blocks the Google CDN, so fonts must be self-hosted). See `gofastr docs blueprints`.\", fontFile)\n")
+		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t}\n")
+	}
 	if len(bp.Entities) > 0 {
 		sb.WriteString("\tentities.RegisterAll(fwApp)\n")
 	}
@@ -3145,7 +3557,7 @@ func renderBlueprintMain(bp Blueprint) string {
 			sb.WriteString("\t\t\tctx = handler.SetUser(ctx, u)\n")
 			sb.WriteString("\t\t}\n")
 		}
-		sb.WriteString("\t\tfor _, s := range blueprint.BlueprintSeedData() {\n")
+		sb.WriteString("\t\tfor _, s := range seedData() {\n")
 		sb.WriteString("\t\t\tch, err := fwApp.CrudHandler(s.Entity)\n")
 		sb.WriteString("\t\t\tif err != nil {\n\t\t\t\tcontinue\n\t\t\t}\n")
 		sb.WriteString("\t\t\tif n, err := ch.CountAll(ctx, framework.ListOptions{}); err == nil && n > 0 {\n\t\t\t\tcontinue\n\t\t\t}\n")
@@ -3160,15 +3572,15 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t})\n")
 	}
 	sb.WriteString("\tfwApp.Router().Handle(\"POST\", \"/mcp\", fwApp.MCP)\n")
-	sb.WriteString("\tsite := uiapp.NewApp(blueprint.BlueprintAppName)\n")
-	sb.WriteString("\tblueprint.RegisterGenerated(fwApp, site, db)\n")
-	// BlueprintBaseCSS ships first so the user's static/app.css (loaded
+	sb.WriteString("\tsite := uiapp.NewApp(appName)\n")
+	sb.WriteString("\tRegisterGenerated(fwApp, site, db)\n")
+	// appBaseCSS ships first so the user's static/app.css (loaded
 	// after) overrides it; it gives the generated entity blocks modern,
 	// responsive defaults out of the box (scrollable tables, form rhythm).
 	if staticDir != "" {
-		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q), uihost.WithCustomCSS(blueprint.BlueprintFontCSS+blueprint.BlueprintBaseCSS()+uihost.ReadCustomCSSFile(%q))))\n", staticDir, staticDir+"/app.css"))
+		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q), uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile(%q))))\n", staticDir, staticDir+"/app.css"))
 	} else {
-		sb.WriteString("\tfwApp.Mount(uihost.New(site, uihost.WithCustomCSS(blueprint.BlueprintFontCSS+blueprint.BlueprintBaseCSS())))\n")
+		sb.WriteString("\tfwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS())))\n")
 	}
 	if bp.App.Admin.Enabled {
 		// Auto-generated back-office over every CRUD entity. Registered as a
@@ -3187,9 +3599,9 @@ func renderBlueprintMain(bp Blueprint) string {
 			// Hand the admin back-office the same theme tokens AND @font-face
 			// rules the UI host uses, so the back-office renders coherently —
 			// same colors, same fonts — with the rest of the app.
-			themeArg = ", Theme: blueprint.BlueprintTheme(), FontFaceCSS: blueprint.BlueprintFontCSS"
+			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
 		}
-		sb.WriteString(fmt.Sprintf("\tfwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: %q, Title: blueprint.BlueprintAppName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}))\n",
+		sb.WriteString(fmt.Sprintf("\tfwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}))\n",
 			adminPath, adminRole, bp.App.Admin.LoginPath, themeArg))
 	}
 	sb.WriteString("\taddr, err := runtimeIsolation.Addr(getEnv(\"PORT\", \"localhost:8080\"))\n")
@@ -3201,7 +3613,7 @@ func renderBlueprintMain(bp Blueprint) string {
 	sb.WriteString("\tif err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("}\n\n")
 
-	sb.WriteString("func openBlueprintDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {\n")
+	sb.WriteString("func openDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {\n")
 	if driver == "" && dbURL == "" {
 		sb.WriteString("\treturn nil, nil\n")
 	} else {
@@ -3223,7 +3635,7 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\tcase \"\", \"none\":\n\t\treturn nil, nil\n")
 		sb.WriteString("\tcase \"sqlite\", \"sqlite3\":\n\t\treturn sql.Open(\"sqlite3\", dsn)\n")
 		sb.WriteString("\tcase \"postgres\", \"postgresql\":\n\t\treturn sql.Open(\"postgres\", dsn)\n")
-		sb.WriteString("\tdefault:\n\t\treturn nil, fmt.Errorf(\"unsupported blueprint db driver %q\", driver)\n")
+		sb.WriteString("\tdefault:\n\t\treturn nil, fmt.Errorf(\"unsupported db driver %q\", driver)\n")
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("}\n\n")
@@ -3282,7 +3694,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 			break
 		}
 	}
-	sb.WriteString("package blueprint\n\n")
+	sb.WriteString("package main\n\n")
 	sb.WriteString("import (\n")
 	if anyCtx {
 		sb.WriteString("\t\"context\"\n\n")
@@ -3311,8 +3723,8 @@ func renderBlueprintScreens(bp Blueprint) string {
 	}
 	sb.WriteString(")\n\n")
 	if imports.node {
-		sb.WriteString("type blueprintNodeComponent struct { node uinode.Node }\n\n")
-		sb.WriteString("func (c blueprintNodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }\n\n")
+		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
+		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }\n\n")
 	}
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
 	for _, screen := range bp.Screens {
@@ -3360,13 +3772,13 @@ func renderBlueprintScreens(bp Blueprint) string {
 				var expr string
 				switch {
 				case ctxScreen && isEntityListBlock(block):
-					expr = blueprintEntityListResourceExpr(block)
+					expr = blueprintEntityListResourceExpr(block, entityMap)
 				case ctxScreen && isEntityDetailBlock(block):
 					expr = blueprintDetailExpr(block)
 				case ctxScreen && isEntityCreateBlock(block):
-					expr = fmt.Sprintf("blueprintResources[%q].Form(ctx, \"\")", strings.Trim(block.Entity, "/"))
+					expr = fmt.Sprintf("appResources[%q].Form(ctx, \"\")", strings.Trim(block.Entity, "/"))
 				case ctxScreen && isEntityEditBlock(block):
-					expr = fmt.Sprintf("blueprintResources[%q].Form(ctx, s.id)", strings.Trim(block.Entity, "/"))
+					expr = fmt.Sprintf("appResources[%q].Form(ctx, s.id)", strings.Trim(block.Entity, "/"))
 				default:
 					expr = renderBlueprintBlockForScreen(screen, block, []int{i}, entityMap, apiBase)
 				}
@@ -3379,7 +3791,7 @@ func renderBlueprintScreens(bp Blueprint) string {
 	return sb.String()
 }
 
-// blueprintResourceRegistry emits the blueprintResources map population inside
+// blueprintResourceRegistry emits the appResources map population inside
 // RegisterGenerated: one ResourceConfig per entity referenced by a server-side
 // entity_list/entity_detail screen, wired to its CrudHandler, displayable
 // fields, and relation lookups.
@@ -3411,6 +3823,16 @@ func blueprintResourceRegistry(bp Blueprint) string {
 			}
 		}
 	}
+	// Entities referenced only by a data source (stat_card / *_chart
+	// `source: {entity: X}`) need a ResourceConfig too, even without a
+	// list/detail screen — otherwise statValue/groupCounts look X up in
+	// appResources, miss, and render a silent "—". Registering a config is
+	// pure lookup-map population (no route is mounted here), so this is safe.
+	for src := range blueprintSourceEntities(bp) {
+		if _, ok := entityMap[src]; ok {
+			needed[src] = true
+		}
+	}
 	if len(needed) == 0 {
 		return ""
 	}
@@ -3427,7 +3849,7 @@ func blueprintResourceRegistry(bp Blueprint) string {
 		if !ok {
 			continue
 		}
-		sb.WriteString("\tblueprintResources[" + fmt.Sprintf("%q", e) + "] = ResourceConfig{\n")
+		sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = ResourceConfig{\n")
 		sb.WriteString(fmt.Sprintf("\t\tTitle: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
 		sb.WriteString(fmt.Sprintf("\t\tCrud: fwApp.MustCrudHandler(%q),\n", e))
 		if editable[e] {
@@ -3640,6 +4062,29 @@ func blueprintBlockHasSource(b BlueprintBlock) bool {
 	return ok
 }
 
+// blueprintSourceEntities collects every entity named by a block's
+// `source: {entity: X}` across all screens (recursing into children). These
+// are the entities a stat_card/chart reads live data from — they must be
+// registered in appResources even when no list/detail screen exists for them.
+func blueprintSourceEntities(bp Blueprint) map[string]bool {
+	out := map[string]bool{}
+	var walk func(blocks []BlueprintBlock)
+	walk = func(blocks []BlueprintBlock) {
+		for _, b := range blocks {
+			if src, ok := b.Props["source"].(map[string]any); ok {
+				if e, _ := src["entity"].(string); e != "" {
+					out[strings.Trim(e, "/")] = true
+				}
+			}
+			walk(b.Children)
+		}
+	}
+	for _, s := range bp.Screens {
+		walk(s.Body)
+	}
+	return out
+}
+
 // screenNeedsParams reports whether a screen reads a route {id} param.
 func screenNeedsParams(screen BlueprintScreen) bool {
 	if strings.Contains(screen.Route, "{") {
@@ -3657,7 +4102,7 @@ func screenNeedsParams(screen BlueprintScreen) bool {
 // status-transition workflow buttons chained in via WithTransitions.
 func blueprintDetailExpr(block BlueprintBlock) string {
 	entity := strings.Trim(block.Entity, "/")
-	expr := fmt.Sprintf("blueprintResources[%q]", entity)
+	expr := fmt.Sprintf("appResources[%q]", entity)
 	if len(block.Transitions) > 0 {
 		parts := make([]string, len(block.Transitions))
 		for i, t := range block.Transitions {
@@ -3669,10 +4114,10 @@ func blueprintDetailExpr(block BlueprintBlock) string {
 }
 
 // blueprintEntityListResourceExpr emits the server-side list render call for a
-// top-level entity_list block: blueprintResources["x"].WithColumns(...).List(ctx).
-func blueprintEntityListResourceExpr(block BlueprintBlock) string {
+// top-level entity_list block: appResources["x"].WithColumns(...).List(ctx).
+func blueprintEntityListResourceExpr(block BlueprintBlock, entityMap map[string]framework.EntityDeclaration) string {
 	entity := strings.Trim(block.Entity, "/")
-	expr := fmt.Sprintf("blueprintResources[%q]", entity)
+	expr := fmt.Sprintf("appResources[%q]", entity)
 	if len(block.Fields) > 0 {
 		args := make([]string, len(block.Fields))
 		for i, f := range block.Fields {
@@ -3682,6 +4127,9 @@ func blueprintEntityListResourceExpr(block BlueprintBlock) string {
 	}
 	if block.Search != "" {
 		expr += fmt.Sprintf(".WithSearch(%q)", block.Search)
+	}
+	if f := blueprintEntityListFiltersExpr(block, entityMap); f != "" {
+		expr += f
 	}
 	if block.Limit > 0 {
 		expr += fmt.Sprintf(".WithLimit(%d)", block.Limit)
@@ -3697,6 +4145,59 @@ func blueprintEntityListResourceExpr(block BlueprintBlock) string {
 	}
 	expr += ".List(ctx)"
 	return expr
+}
+
+// blueprintEntityListFiltersExpr emits the `.WithFilters(ResFilter{...}, …)`
+// call for a top-level entity_list block's `filters:` list. Each column is
+// resolved against the entity declaration to its facet type (enum/bool/
+// relation) and, for enums, its allowed values — so the emitted engine can
+// render the right facet control and apply the right equality filter without
+// re-reading the schema. Returns "" when the block declares no filters.
+func blueprintEntityListFiltersExpr(block BlueprintBlock, entityMap map[string]framework.EntityDeclaration) string {
+	if len(block.Filters) == 0 {
+		return ""
+	}
+	decl, ok := entityMap[strings.Trim(block.Entity, "/")]
+	if !ok {
+		return ""
+	}
+	byName := map[string]framework.FieldDeclaration{}
+	for _, f := range decl.Fields {
+		byName[f.Name] = f
+	}
+	rels := blueprintEntityRelations(decl) // fk column -> target entity
+	parts := make([]string, 0, len(block.Filters))
+	for _, col := range block.Filters {
+		f, defined := byName[col]
+		ft := ""
+		if defined {
+			ft = strings.ToLower(strings.TrimSpace(f.Type))
+		}
+		kind := ""
+		values := ""
+		switch {
+		case ft == "relation", !defined && rels[col] != "":
+			kind = "relation"
+		case ft == "bool" || ft == "boolean":
+			kind = "bool"
+		case ft == "enum":
+			kind = "enum"
+			if len(f.Values) > 0 {
+				quoted := make([]string, len(f.Values))
+				for i, v := range f.Values {
+					quoted[i] = fmt.Sprintf("%q", v)
+				}
+				values = ", Values: []string{" + strings.Join(quoted, ", ") + "}"
+			}
+		default:
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("ResFilter{Key: %q, Label: %q, Type: %q%s}", col, humanizeFieldLabel(col), kind, values))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ".WithFilters(" + strings.Join(parts, ", ") + ")"
 }
 
 type screenImportNeeds struct {
@@ -3765,7 +4266,7 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 					continue
 				}
 				if isEntityListBlock(block) || isEntityDetailBlock(block) || isEntityCreateBlock(block) || isEntityEditBlock(block) {
-					// Server-rendered via the resource engine (blueprintResources,
+					// Server-rendered via the resource engine (appResources,
 					// in-package) — no extra import beyond the ctx-screen machinery.
 					continue
 				}
@@ -3994,7 +4495,7 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 			field, _ := src["field"].(string)
 			filter, _ := src["filter"].(string)
 			format := blueprintProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: blueprintStatValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: statValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
 		}
 		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: %q})", label, blueprintProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":
@@ -4005,11 +4506,11 @@ func renderBlueprintCatalogBlock(screen BlueprintScreen, block BlueprintBlock, p
 			var chart string
 			switch kind {
 			case "pie_chart":
-				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: blueprintGroupSlices(ctx, %q, %q)})", entity, groupBy)
+				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: groupSlices(ctx, %q, %q)})", entity, groupBy)
 			case "line_chart":
-				chart = fmt.Sprintf("blueprintLineChart(ctx, %q, %q)", entity, groupBy)
+				chart = fmt.Sprintf("lineChart(ctx, %q, %q)", entity, groupBy)
 			default:
-				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: blueprintGroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
+				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
 			}
 			// A titled chart is a Card with a heading — design-system
 			// composition, zero bespoke classes (Hard rule 7).
@@ -4087,7 +4588,7 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
-		return blueprintEntityListResourceExpr(block)
+		return blueprintEntityListResourceExpr(block, entityMap)
 	}
 	if expr, ok := renderBlueprintCatalogBlock(screen, block, path, entityMap, apiBase); ok {
 		return expr
@@ -4095,10 +4596,10 @@ func renderBlueprintBlockForScreen(screen BlueprintScreen, block BlueprintBlock,
 	if blueprintBlockUsesNodeRenderer(block) {
 		expr := renderBlueprintNodeExpressionForScreen(screen, block, path, entityMap, apiBase)
 		if block.Island != "" {
-			return fmt.Sprintf("island.NewIsland(%q, blueprintNodeComponent{node: %s}).Render()", block.Island, expr)
+			return fmt.Sprintf("island.NewIsland(%q, nodeComponent{node: %s}).Render()", block.Island, expr)
 		}
 		if block.Widget != "" {
-			return fmt.Sprintf("component.NewWidget(%q, blueprintNodeComponent{node: %s}).Render()", block.Widget, expr)
+			return fmt.Sprintf("component.NewWidget(%q, nodeComponent{node: %s}).Render()", block.Widget, expr)
 		}
 		return "noderender.RenderNode(" + expr + ")"
 	}
@@ -4270,7 +4771,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete, p
 	}
 	// Auth screens render with the request ctx (screenNeedsCtx), so the card
 	// surfaces a failed-login / duplicate-email message inline from ?error=.
-	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %q, Alert: blueprintAuthError(ctx), Body: %s%s})", heading, form, footer)
+	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %q, Alert: authError(ctx), Body: %s%s})", heading, form, footer)
 }
 
 // renderBlueprintSignupFormExpr emits the registration form (posts to the auth
@@ -5026,7 +5527,7 @@ func blueprintDecimalLiteral(v any) string {
 
 func renderBlueprintStubs(bp Blueprint) string {
 	var sb strings.Builder
-	sb.WriteString("package blueprint\n\n")
+	sb.WriteString("package main\n\n")
 	needsHTTP := len(bp.Endpoints) > 0 || len(bp.Middleware) > 0
 	needsFramework := len(bp.Plugins) > 0
 	needsJSON := false
@@ -5075,12 +5576,12 @@ func renderBlueprintStubs(bp Blueprint) string {
 		sb.WriteString(fmt.Sprintf("func %s() {\n\t// TODO: implement helper %q.\n}\n\n", name, item.Name))
 	}
 	if len(bp.Seed) > 0 {
-		sb.WriteString("// BlueprintSeedEntity is one entity's ordered seed rows.\n")
-		sb.WriteString("type BlueprintSeedEntity struct {\n\tEntity string\n\tRows   []map[string]any\n}\n\n")
-		sb.WriteString("// BlueprintSeedData returns the initial seed data in blueprint-declared\n")
+		sb.WriteString("// seedEntity is one entity's ordered seed rows.\n")
+		sb.WriteString("type seedEntity struct {\n\tEntity string\n\tRows   []map[string]any\n}\n\n")
+		sb.WriteString("// seedData returns the initial seed data in blueprint-declared\n")
 		sb.WriteString("// order (so entities that reference others are inserted after them).\n")
-		sb.WriteString("func BlueprintSeedData() []BlueprintSeedEntity {\n")
-		sb.WriteString("\treturn []BlueprintSeedEntity{\n")
+		sb.WriteString("func seedData() []seedEntity {\n")
+		sb.WriteString("\treturn []seedEntity{\n")
 		for _, seed := range bp.Seed {
 			sb.WriteString(fmt.Sprintf("\t\t{Entity: %q, Rows: []map[string]any{\n", seed.Entity))
 			for _, row := range seed.Rows {
@@ -5172,7 +5673,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	// guestRedirect: bounce already-signed-in visitors off the auth screens.
 	authHeader := hasMarketing && bp.App.Auth.Enabled
 	guestRedirect := bp.App.Auth.Enabled && blueprintHasAuthFormScreen(bp)
-	sb.WriteString("package blueprint\n\n")
+	sb.WriteString("package main\n\n")
 	sb.WriteString("import (\n")
 	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect {
 		sb.WriteString("\t\"context\"\n")
@@ -5226,21 +5727,21 @@ func renderBlueprintApp(bp Blueprint) string {
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n)\n\n")
 	sb.WriteString("const (\n")
-	sb.WriteString(fmt.Sprintf("\tBlueprintAppName = %q\n", name))
-	sb.WriteString(fmt.Sprintf("\tBlueprintModule = %q\n", bp.App.Module))
-	sb.WriteString(fmt.Sprintf("\tBlueprintDBDriver = %q\n", bp.App.DBDriver))
+	sb.WriteString(fmt.Sprintf("\tappName = %q\n", name))
+	sb.WriteString(fmt.Sprintf("\tappModule = %q\n", bp.App.Module))
+	sb.WriteString(fmt.Sprintf("\tdbDriver = %q\n", bp.App.DBDriver))
 	// Credentials never land in committed source: the DSN is emitted
 	// password-stripped; the runtime reads the full one from
 	// DATABASE_URL (see the generated .env).
-	sb.WriteString(fmt.Sprintf("\tBlueprintDBURL = %q\n", redactDSN(bp.App.DBURL)))
-	sb.WriteString(fmt.Sprintf("\tBlueprintStaticDir = %q\n", bp.App.StaticDir))
-	sb.WriteString(fmt.Sprintf("\tBlueprintAPIPrefix = %q\n", bp.App.APIPrefix))
+	sb.WriteString(fmt.Sprintf("\tdbURL = %q\n", redactDSN(bp.App.DBURL)))
+	sb.WriteString(fmt.Sprintf("\tstaticDir = %q\n", blueprintEffectiveStaticDir(bp)))
+	sb.WriteString(fmt.Sprintf("\tapiPrefix = %q\n", bp.App.APIPrefix))
 	sb.WriteString(")\n\n")
 	sb.WriteString(blueprintBaseCSSFunc())
 	if hasAccess {
-		sb.WriteString("// blueprintAuthPolicy gates a screen: redirect anonymous GETs to the login\n")
+		sb.WriteString("// authPolicy gates a screen: redirect anonymous GETs to the login\n")
 		sb.WriteString("// page (with ?next=) and 403 a signed-in user missing the required role.\n")
-		sb.WriteString("func blueprintAuthPolicy(loginPath, role string) app.Policy {\n")
+		sb.WriteString("func authPolicy(loginPath, role string) app.Policy {\n")
 		sb.WriteString("\treturn app.PolicyFunc(func(ctx context.Context) app.Decision {\n")
 		sb.WriteString("\t\tu, ok := handler.GetUser(ctx)\n")
 		sb.WriteString("\t\tif !ok || u == nil {\n")
@@ -5259,10 +5760,10 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("}\n\n")
 	}
 	if guestRedirect {
-		sb.WriteString("// blueprintGuestPolicy gates a guest-only screen (login / signup): a\n")
+		sb.WriteString("// guestPolicy gates a guest-only screen (login / signup): a\n")
 		sb.WriteString("// signed-in visitor is redirected to the app instead of seeing a sign-in\n")
 		sb.WriteString("// form they're already past.\n")
-		sb.WriteString("func blueprintGuestPolicy(appHome string) app.Policy {\n")
+		sb.WriteString("func guestPolicy(appHome string) app.Policy {\n")
 		sb.WriteString("\treturn app.PolicyFunc(func(ctx context.Context) app.Decision {\n")
 		sb.WriteString("\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 		sb.WriteString("\t\t\treturn decide.Redirect(appHome)\n")
@@ -5272,7 +5773,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("}\n\n")
 	}
 	if hasMarketing {
-		sb.WriteString("// BlueprintMarketingHeader / Footer wrap the public marketing layout.\n")
+		sb.WriteString("// marketingHeader / Footer wrap the public marketing layout.\n")
 		toggleArg := ""
 		if len(bp.App.ThemeDark) > 0 {
 			// The app declares a dark scheme — surface the toggle as a real
@@ -5285,7 +5786,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			// single auth action — Sign out when signed in, Sign in when not — is the
 			// one button, sized to match. No "Sign in" loop for users already past it.
 			appHome := blueprintAppHome(bp)
-			sb.WriteString("func BlueprintMarketingHeader(ctx context.Context) render.HTML {\n")
+			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
 			sb.WriteString("\tnav := []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}}\n")
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
@@ -5295,15 +5796,15 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString(fmt.Sprintf("\t\tactions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: false}, ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: \"/login\", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})%s)\n", toggleArg))
 			sb.WriteString("\t}\n")
 			sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
-			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
+			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: appName}),\n")
 			sb.WriteString("\t\tNavItems: nav,\n")
 			sb.WriteString("\t\tDrawer: ui.SiteHeaderDrawerSheet,\n")
 			sb.WriteString("\t\tActions: actions,\n")
 			sb.WriteString("\t})\n}\n\n")
 		} else {
-			sb.WriteString("func BlueprintMarketingHeader() render.HTML {\n")
+			sb.WriteString("func marketingHeader() render.HTML {\n")
 			sb.WriteString("\treturn ui.SiteHeader(ui.SiteHeaderConfig{\n")
-			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
+			sb.WriteString("\t\tBrand: ui.Link(ui.LinkConfig{Href: \"/\", Text: appName}),\n")
 			sb.WriteString("\t\tNavItems: []ui.SiteHeaderLink{{Label: \"Pricing\", Href: \"/pricing\"}, {Label: \"About\", Href: \"/about\"}},\n")
 			sb.WriteString("\t\tDrawer: ui.SiteHeaderDrawerSheet,\n")
 			if toggleArg != "" {
@@ -5311,9 +5812,9 @@ func renderBlueprintApp(bp Blueprint) string {
 			}
 			sb.WriteString("\t})\n}\n\n")
 		}
-		sb.WriteString("func BlueprintMarketingFooter() render.HTML {\n")
+		sb.WriteString("func marketingFooter() render.HTML {\n")
 		sb.WriteString("\treturn ui.SiteFooter(ui.SiteFooterConfig{\n")
-		sb.WriteString("\t\tLead: ui.Link(ui.LinkConfig{Href: \"/\", Text: BlueprintAppName}),\n")
+		sb.WriteString("\t\tLead: ui.Link(ui.LinkConfig{Href: \"/\", Text: appName}),\n")
 		sb.WriteString("\t\tColumns: []ui.SiteFooterColumn{\n")
 		sb.WriteString("\t\t\t{Title: \"Product\", Links: []ui.SiteFooterLink{{Label: \"Pricing\", Href: \"/pricing\"}}},\n")
 		sb.WriteString("\t\t\t{Title: \"Company\", Links: []ui.SiteFooterLink{{Label: \"About\", Href: \"/about\"}}},\n")
@@ -5322,7 +5823,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t})\n}\n\n")
 	}
 	if len(bp.App.Theme) > 0 {
-		sb.WriteString("func BlueprintTheme() style.Theme {\n")
+		sb.WriteString("func appTheme() style.Theme {\n")
 		sb.WriteString("\ttheme := style.DefaultTheme()\n")
 		for _, key := range sortedStringMapKeys(bp.App.Theme) {
 			if path, ok := blueprintThemeColorPath(key); ok {
@@ -5349,14 +5850,14 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\treturn theme\n")
 		sb.WriteString("}\n\n")
 	}
-	// BlueprintFontCSS holds the @font-face rules for the theme's configured
+	// fontFaceCSS holds the @font-face rules for the theme's configured
 	// fonts (self-hosted from <static>/fonts/<slug>.woff2). It is the single
 	// font-loading source, shared verbatim by the UI host and the admin battery
 	// so every surface loads identical fonts. Empty when no fonts are declared.
-	sb.WriteString(fmt.Sprintf("// BlueprintFontCSS holds the @font-face rules for the app's fonts, shared by\n// the UI host and the admin battery so every surface loads identical fonts.\nconst BlueprintFontCSS = %q\n\n", blueprintFontFaceCSS(bp.App.Theme)))
+	sb.WriteString(fmt.Sprintf("// fontFaceCSS holds the @font-face rules for the app's fonts, shared by\n// the UI host and the admin battery so every surface loads identical fonts.\nconst fontFaceCSS = %q\n\n", blueprintFontFaceCSS(bp.App.Theme)))
 	if len(bp.Nav) > 0 {
-		sb.WriteString("// BlueprintSidebarConfig returns the navigation sidebar configuration.\n")
-		sb.WriteString("func BlueprintSidebarConfig() ui.SidebarConfig {\n")
+		sb.WriteString("// sidebarConfig returns the navigation sidebar configuration.\n")
+		sb.WriteString("func sidebarConfig() ui.SidebarConfig {\n")
 		sb.WriteString(fmt.Sprintf("\treturn ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
 		for _, item := range bp.Nav {
 			renderNavItemGo(&sb, item, "\t\t")
@@ -5388,28 +5889,28 @@ func renderBlueprintApp(bp Blueprint) string {
 	sb.WriteString("\t}\n")
 	sb.WriteString(blueprintResourceRegistry(bp))
 	if len(bp.App.Theme) > 0 {
-		sb.WriteString("\tsite.WithTheme(BlueprintTheme())\n")
+		sb.WriteString("\tsite.WithTheme(appTheme())\n")
 	}
 	if len(bp.Nav) > 0 {
-		sb.WriteString("\tsbCfg := BlueprintSidebarConfig()\n")
+		sb.WriteString("\tsbCfg := sidebarConfig()\n")
 		sb.WriteString("\tsb := ui.Sidebar(sbCfg)\n")
 		// No standalone app top bar: the sidebar owns brand + nav + the theme
 		// toggle (in its footer), so content fills from the top with no empty
 		// header band — the way real app shells (Linear/Notion/Stripe) read.
 		sb.WriteString("\tappLayout := app.NewLayout(\"app\").WithSidebar(sb)\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
-		sb.WriteString("\tui.MountSidebar(blueprintRouterMounter{fwApp.Router()}, sbCfg)\n")
+		sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
 	}
 	if hasMarketing {
-		headerExpr := "app.NewStaticComponent(BlueprintMarketingHeader())"
+		headerExpr := "app.NewStaticComponent(marketingHeader())"
 		if authHeader {
 			// Render per-request so the header reflects the live session.
-			headerExpr = "app.NewContextComponent(BlueprintMarketingHeader)"
+			headerExpr = "app.NewContextComponent(marketingHeader)"
 		}
 		sb.WriteString("\tmarketingLayout := app.NewLayout(\"marketing\").\n")
 		sb.WriteString("\t\tWithContainer().\n")
 		sb.WriteString(fmt.Sprintf("\t\tWithHeader(%s).\n", headerExpr))
-		sb.WriteString("\t\tWithFooter(app.NewStaticComponent(BlueprintMarketingFooter()))\n")
+		sb.WriteString("\t\tWithFooter(app.NewStaticComponent(marketingFooter()))\n")
 	}
 	// Toast stack — mount a global toast stack so server-side handlers
 	// and client-side JS can fire toasts via X-Gofastr-Toast header or
@@ -5505,9 +6006,9 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\t// CRUD API. The admin role holds the wildcard (full access, the same\n")
 			sb.WriteString("\t\t// surface the back-office manages); add finer per-role Grants here as\n")
 			sb.WriteString("\t\t// you define more roles. Without this, every write 403s.\n")
-			sb.WriteString("\t\tblueprintRBAC := access.NewRolePolicy()\n")
-			sb.WriteString(fmt.Sprintf("\t\tblueprintRBAC.Grant(%q, access.Wildcard)\n", adminRole))
-			sb.WriteString("\t\tfwApp.Use(access.Middleware(blueprintRBAC, func(ctx context.Context) []string {\n")
+			sb.WriteString("\t\trbac := access.NewRolePolicy()\n")
+			sb.WriteString(fmt.Sprintf("\t\trbac.Grant(%q, access.Wildcard)\n", adminRole))
+			sb.WriteString("\t\tfwApp.Use(access.Middleware(rbac, func(ctx context.Context) []string {\n")
 			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
 			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")
@@ -5560,11 +6061,11 @@ func renderBlueprintApp(bp Blueprint) string {
 		}
 		switch {
 		case screen.Access.Auth:
-			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(blueprintAuthPolicy(%q, %q)), %s)\n",
+			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(authPolicy(%q, %q)), %s)\n",
 				route, typeName, screen.Title, "/login", screen.Access.Role, layoutExpr))
 		case guestRedirect && screenHasAuthForm(screen):
 			// Login / signup: redirect already-signed-in visitors to the app.
-			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(blueprintGuestPolicy(%q)), %s)\n",
+			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(guestPolicy(%q)), %s)\n",
 				route, typeName, screen.Title, blueprintAppHome(bp), layoutExpr))
 		default:
 			sb.WriteString(fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)\n", route, typeName, layoutExpr))
@@ -5584,13 +6085,13 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString(fmt.Sprintf("\tfwApp.RegisterPlugin(%sPlugin{})\n", toCamelCase(item.Name)))
 	}
 	if len(bp.Nav) > 0 {
-		sb.WriteString("\t_ = blueprintRouterMounter{}\n")
+		sb.WriteString("\t_ = routerMounter{}\n")
 	}
 	sb.WriteString("}\n\n")
 	if len(bp.Nav) > 0 {
-		sb.WriteString("// blueprintRouterMounter adapts framework's *router.Router to ui.WidgetMounter.\n")
-		sb.WriteString("type blueprintRouterMounter struct{ r *router.Router }\n\n")
-		sb.WriteString("func (m blueprintRouterMounter) MountWidget(def *widget.Definition) {\n")
+		sb.WriteString("// routerMounter adapts framework's *router.Router to ui.WidgetMounter.\n")
+		sb.WriteString("type routerMounter struct{ r *router.Router }\n\n")
+		sb.WriteString("func (m routerMounter) MountWidget(def *widget.Definition) {\n")
 		sb.WriteString("\twidget.Mount(m.r, def)\n")
 		sb.WriteString("}\n")
 		return sb.String()
@@ -5598,7 +6099,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	return sb.String()
 }
 
-// blueprintBaseCSSFunc emits the BlueprintBaseCSS() function. It returns the
+// blueprintBaseCSSFunc emits the appBaseCSS() function. It returns the
 // empty string: every generated surface — marketing, app, entity list/detail,
 // entity forms, auth — composes framework/ui components and core-ui/app layouts
 // that ship their own CSS (auto-injected by the UI host). The generator ships
@@ -5607,11 +6108,11 @@ func renderBlueprintApp(bp Blueprint) string {
 // its own base CSS here (or, preferably, in static/app.css).
 func blueprintBaseCSSFunc() string {
 	var sb strings.Builder
-	sb.WriteString("// BlueprintBaseCSS is an owned extension point for app-specific base CSS.\n")
+	sb.WriteString("// appBaseCSS is an owned extension point for app-specific base CSS.\n")
 	sb.WriteString("// It's empty by default: every generated surface composes framework/ui\n")
 	sb.WriteString("// components and core-ui/app layouts that ship their own CSS, so the\n")
 	sb.WriteString("// generated app ships no bespoke styling. Add app CSS here or in static/app.css.\n")
-	sb.WriteString("func BlueprintBaseCSS() string {\n")
+	sb.WriteString("func appBaseCSS() string {\n")
 	sb.WriteString("\treturn \"\"\n")
 	sb.WriteString("}\n\n")
 	return sb.String()
@@ -5683,11 +6184,175 @@ func blueprintFontStacks(theme map[string]string) (bodyStack, headingStack strin
 	return bodyStack, headingStack
 }
 
-// blueprintFontHeadHTML returns the webfont <link> tags (preconnect + Google
 // blueprintFontSlug turns a font family name into the self-hosted file slug,
 // e.g. "Bricolage Grotesque" -> "bricolage-grotesque".
 func blueprintFontSlug(family string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(family), " ", "-"))
+}
+
+// blueprintConfiguredFontFamilies returns the theme's declared font families in
+// @font-face order (heading first, then body), de-duplicated. Empty when the
+// theme names no fonts.
+func blueprintConfiguredFontFamilies(theme map[string]string) []string {
+	body, heading := blueprintConfiguredFonts(theme)
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range []string{heading, body} {
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+// blueprintEffectiveStaticDir is the directory the generated app serves static
+// files from. It's the blueprint's static_dir when set; otherwise "static" when
+// the theme declares self-hosted fonts (so the emitted woff2 files have a home
+// and a serving route). Empty only when neither applies.
+func blueprintEffectiveStaticDir(bp Blueprint) string {
+	if bp.App.StaticDir != "" {
+		return bp.App.StaticDir
+	}
+	if len(blueprintConfiguredFontFamilies(bp.App.Theme)) > 0 {
+		return "static"
+	}
+	return ""
+}
+
+// fontFetcher resolves a Google Fonts family name to a self-hostable woff2 file
+// (the regular-weight latin subset). It's a package var so the test suite can
+// stub it — the real implementation makes network calls, which tests never do.
+var fontFetcher = fetchGoogleFontWoff2
+
+// blueprintFontHTTPClient bounds the generate-time font fetch so an unreachable
+// or slow CDN degrades to the offline warning path instead of hanging generate.
+var blueprintFontHTTPClient = &http.Client{Timeout: 20 * time.Second}
+
+// fetchGoogleFontWoff2 downloads the latin woff2 subset for a Google Fonts
+// family. It queries the Google Fonts CSS API with a modern User-Agent (so the
+// API returns woff2, not ttf), extracts the first gstatic .woff2 URL (preferring
+// the latin subset), and downloads it. Any network/parse failure returns an
+// error; generation then falls back to a loud warning rather than a silent 404.
+func fetchGoogleFontWoff2(family string) ([]byte, error) {
+	q := url.Values{}
+	q.Set("family", family+":wght@400;700")
+	q.Set("display", "swap")
+	cssURL := "https://fonts.googleapis.com/css2?" + q.Encode()
+	css, err := blueprintFontHTTPGet(cssURL)
+	if err != nil {
+		return nil, err
+	}
+	woffURL := blueprintFirstWoff2URL(string(css))
+	if woffURL == "" {
+		return nil, fmt.Errorf("no woff2 url in Google Fonts response for %q", family)
+	}
+	return blueprintFontHTTPGet(woffURL)
+}
+
+// blueprintFontHTTPGet fetches a URL with a browser-like User-Agent and returns
+// its body, erroring on any non-2xx status.
+func blueprintFontHTTPGet(u string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	// The CSS API serves woff2 only to modern browsers; identify as one.
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+	resp, err := blueprintFontHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("GET %s: status %d", u, resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+}
+
+// blueprintFirstWoff2URL pulls the first gstatic .woff2 URL out of a Google
+// Fonts css2 response, preferring the block tagged `/* latin */`.
+func blueprintFirstWoff2URL(css string) string {
+	extract := func(s string) string {
+		i := strings.Index(s, "url(")
+		if i < 0 {
+			return ""
+		}
+		s = s[i+len("url("):]
+		j := strings.Index(s, ")")
+		if j < 0 {
+			return ""
+		}
+		u := strings.Trim(strings.TrimSpace(s[:j]), "'\"")
+		if strings.Contains(u, ".woff2") {
+			return u
+		}
+		return ""
+	}
+	if i := strings.Index(css, "/* latin */"); i >= 0 {
+		if u := extract(css[i:]); u != "" {
+			return u
+		}
+	}
+	// Fall back to the first woff2 anywhere in the response.
+	for rest := css; ; {
+		i := strings.Index(rest, "url(")
+		if i < 0 {
+			return ""
+		}
+		if u := extract(rest[i:]); u != "" {
+			return u
+		}
+		rest = rest[i+len("url("):]
+	}
+}
+
+// blueprintFontAssets fetches every configured font family and returns the
+// woff2 files to emit under <static>/fonts/. Families whose fetch fails are
+// reported in `missing` (as their emitted relative path) so the caller can warn
+// — generation still proceeds so an offline run produces a working app minus the
+// custom fonts.
+func blueprintFontAssets(bp Blueprint) (files []generatedFile, missing []string) {
+	dir := blueprintEffectiveStaticDir(bp)
+	for _, fam := range blueprintConfiguredFontFamilies(bp.App.Theme) {
+		rel := blueprintFontRelPath(dir, fam)
+		data, err := fontFetcher(fam)
+		if err != nil || len(data) == 0 {
+			missing = append(missing, rel)
+			continue
+		}
+		files = append(files, generatedFile{name: rel, content: string(data)})
+	}
+	return files, missing
+}
+
+// blueprintFontRelPath is the emitted path for a family's woff2 file, matching
+// the /fonts/<slug>.woff2 URL in fontFaceCSS (the static dir is served at root).
+func blueprintFontRelPath(staticDir, family string) string {
+	return filepath.ToSlash(filepath.Join(staticDir, "fonts", blueprintFontSlug(family)+".woff2"))
+}
+
+// blueprintMissingFontSlugs reports which configured font files are absent from
+// the rendered file set (e.g. an offline fetch dropped them) so generate can
+// warn with the exact paths the user must supply.
+func blueprintMissingFontSlugs(bp Blueprint, files []generatedFile) []string {
+	fams := blueprintConfiguredFontFamilies(bp.App.Theme)
+	if len(fams) == 0 {
+		return nil
+	}
+	present := make(map[string]bool, len(files))
+	for _, f := range files {
+		present[f.name] = true
+	}
+	dir := blueprintEffectiveStaticDir(bp)
+	var missing []string
+	for _, fam := range fams {
+		if rel := blueprintFontRelPath(dir, fam); !present[rel] {
+			missing = append(missing, rel)
+		}
+	}
+	return missing
 }
 
 // blueprintFontFaceCSS returns the @font-face rules for the theme's declared

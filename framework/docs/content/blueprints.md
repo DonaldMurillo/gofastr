@@ -14,9 +14,12 @@ gofastr generate --from=blueprints/ --dry-run --json
 
 Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files (or a directory of them), validates them, and scaffolds
-owned Go into an idiomatic, module-root layout by default — `main.go` at the
-root plus `entities/` and `blueprint/` packages (set `--out=<dir>` or
-`app.output_dir` to scaffold into a subpackage instead). At runtime your app
+owned Go into an idiomatic, module-root layout by default — a flat
+`package main` at the root (`main.go`, `app.go`, `screens.go`, and, when
+needed, `resource.go`/`stubs.go`/`resource_test.go`) plus the `entities/`
+package (set `--out=<dir>` or `app.output_dir` to scaffold into a subpackage
+instead). `generate` is one-shot: it refuses to overwrite an existing project
+(pass `--force`), because the emitted code is yours to own. At runtime your app
 registers the **generated** entity package (`entities.RegisterAll(app)`) — there
 is no file-based runtime loader. The blueprint's `entities:` list uses the same
 entity shape and field types documented in
@@ -32,17 +35,54 @@ Blueprints are separate from general codegen config. `gofastr generate
 Use [Codegen](codegen.md) when you want arbitrary configured generators or
 external extensions rather than a full app blueprint.
 
+## What the blueprint generates vs. what you hand-write
+
+The blueprint scaffolds a working app, then gets out of the way. This table
+is what it produces *today* — everything else is ordinary owned Go you write
+against the framework (the emitted code is the starting point, not a ceiling).
+
+| Surface | Generated from the blueprint | Hand-written Go |
+|---|---|---|
+| **Marketing pages** | `hero`, `page_header`, `card`, `pricing`, `stat_row`, `callout`, `markdown`, `link_button` blocks composed from `framework/ui`; auth-aware header | Any bespoke section not in the block catalog |
+| **Auth** | Register/login/logout/me wiring, session middleware, `login_form`/`signup_form` screens, guest-only redirects, bootstrap admin | Custom auth flows (SSO, MFA policy, email verification UX) |
+| **Dashboard stat/chart blocks** | `stat_card` (count/sum), `bar_chart`/`pie_chart`/`line_chart` bound to an entity `source: {entity, group_by}` | Custom metrics, multi-entity joins, computed series |
+| **Entity list** | Table with server-side **search**, **sort**, **pagination**, and **facet filters** (`filters:` → a `ui.FilterToolbar` of enum/bool/relation facets); optional "New" button | Filtering on computed/derived columns, range/date filters, multi-select facets |
+| **Entity detail / form** | Read view + create/edit `<form>` (enum & relation `<select>`s), status-transition buttons | Multi-step wizards, custom field widgets, cross-field validation UX |
+| **Child-collection islands** | — (not generated) | Hand-written — see [Interactive patterns](interactive-patterns.md) for the island RPC recipe |
+| **Admin back-office** | Full CRUD admin over every entity (`app.admin`), role-gated | Custom admin actions beyond CRUD |
+| **Seed data** | Explicit `rows:` + auto-generated `count:`/`weights:` demo rows | Fixtures with complex relations / business invariants |
+| **Theme + dark mode** | Color + font tokens, dark sub-map, header theme toggle | Per-component theme overrides |
+| **Fonts** | Self-hosted webfonts fetched to `static/fonts/` at generate time | Supplying `.woff2` files when generating offline |
+
 `app.theme` can override canonical color tokens for generated UI apps. Supported
 keys are `primary`, `primary-fg`, `secondary`, `background`, `surface`,
 `surface-soft`, `text`, `text-muted`, `text-subtle`, `border`,
 `border-strong`, `accent`, `success`, `warning`, `danger`, and `info`.
 It also accepts the font tokens `font_heading`, `font_body`, and
 `font_display` — named Google Fonts families that drive the `--font-*`
-tokens and emit the matching webfont `<link>`s. An `app.theme.dark`
-sub-map overrides any of the same color tokens for the dark scheme (the
-header's theme toggle flips to it). Generated apps call
-`site.WithTheme(...)`, so the values are emitted through
-`/__gofastr/app.css` as computed CSS custom properties.
+tokens. An `app.theme.dark` sub-map overrides any of the same color
+tokens for the dark scheme (the header's theme toggle flips to it).
+Generated apps call `site.WithTheme(...)`, so the values are emitted
+through `/__gofastr/app.css` as computed CSS custom properties.
+
+**Fonts are self-hosted, not CDN-linked.** The generated app ships a
+strict Content-Security-Policy (`default-src 'self'`) that deliberately
+blocks the Google Fonts CDN, so a `<link>` to `fonts.googleapis.com`
+would be refused at runtime. Instead, `generate` **fetches** each named
+family's latin `woff2` subset at generate time and writes it to
+`static/fonts/<slug>.woff2` (the `<slug>` is the lower-cased,
+hyphenated family name, e.g. `Bricolage Grotesque` →
+`bricolage-grotesque.woff2`). The emitted `fontFaceCSS` `@font-face`
+rules point at `/fonts/<slug>.woff2`, which the app serves from that
+static dir — so a named font just *works* in a fresh app with no manual
+step. When no `static_dir` is set but the theme names a font, the
+generator defaults it to `static/`.
+
+Generation may run offline. If the fetch fails, the app is still emitted
+(it falls back to system fonts) but `generate` prints a **loud warning**
+naming the exact `static/fonts/*.woff2` files you must supply yourself.
+The generated `main.go` also boot-checks for those files and logs a
+warning at startup if one is missing — there is no silent 404 path.
 
 ### Entity APIs live under `/api`; screens own the bare path
 
@@ -213,25 +253,24 @@ each value a permission string) is emitted as `Access:
 framework.AccessControl{...}` in the generated registration — see
 [entity-declarations](entity-declarations.md) for the semantics and
 [access-control](access-control.md) for wiring roles + policy. Entity-owned endpoints and top-level
-endpoints generate Go handler stubs plus router registration in the
-`blueprint` package.
+endpoints generate Go handler stubs (in `stubs.go`) plus router registration.
 
-When `app.module` is present, blueprint generation also emits a root
+When `app.module` is present, blueprint generation also emits a
 `main.go`: a runnable app entrypoint that opens the configured SQLite
 database, registers generated entities, exposes generated MCP tools at `/mcp`,
 wires generated screens/endpoints/middleware/plugins through
-`blueprint.RegisterGenerated`, mounts the UI host, and serves `app.static_dir`
-through the generated UI host.
+`RegisterGenerated` (in `app.go`, same `package main`), mounts the UI host,
+and serves `app.static_dir` through the generated UI host.
 
 ## Packing: `gofastr pack` (the inverse of generate)
 
 `gofastr pack [app-dir]` reconstructs a `gofastr.yml` from a generated app's Go
 source — the inverse of `gofastr generate`. It reads the real artifacts via the
 Go AST (it does **not** stash a manifest): `entities/register.go` for entities,
-`blueprint/app.go` for app config + theme + auth/admin + nav, `blueprint/stubs.go`
-for seed, and `blueprint/screens.go` (+ the `site.Register*` calls) for screens,
+`app.go` for app config + theme + auth/admin + nav, `stubs.go`
+for seed, and `screens.go` (+ the `site.Register*` calls) for screens,
 reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
-`blueprintResources["x"].…List(ctx)` → `entity_list`, and so on). The result
+`appResources["x"].…List(ctx)` → `entity_list`, and so on). The result
 prints to stdout, or to a file with `-o`:
 
 ```sh
@@ -249,7 +288,7 @@ blueprint construct, teach **both** the generator and pack, or that test fails.
 A top-level `entity_list` or `entity_detail` makes its screen a **server-rendered**
 (request-time) screen that queries the entity's `CrudHandler` and composes real
 `framework/ui` components — no client-side fetch. The generator emits an owned
-engine at `blueprint/resource.go` (and a `blueprint/resource_test.go`) that the
+engine at `resource.go` (and a `resource_test.go`) that the
 screens call:
 
 - `entity_list` → `ui.PageHeader` + `ui.SearchInput` + `ui.DataTable` +
@@ -259,15 +298,29 @@ screens call:
   record's display name** (not the raw id). Search/sort/pagination are
   URL-driven and run server-side. `fields:` picks/orders the columns; `search:`
   names the LIKE-search field; `limit:` sets the page size.
+- **`filters:`** — an optional list of columns to expose as **facet filters**
+  above the table via `ui.FilterToolbar` (one responsive, URL-driven GET form
+  that also absorbs the search box, so the screen is a single form, never two).
+  Each column must be an **enum**, **bool**, or **relation** — anything else is
+  a blueprint error. Enums render as pills when they hold ≤4 short values and as
+  a `<select>` otherwise; bools render as Yes/No pills; relations render as a
+  `<select>` of the related records' display names. A selected facet applies a
+  server-side equality filter that composes with search, sort, and pagination
+  (sort-header and page links preserve the active facets; applying a facet
+  resets to page 1). Filtering is **explicit** — omit `filters:` and the list
+  renders exactly as before, with no toolbar. Example:
+  `filters: [status, assignee_id]`.
 - `entity_detail` reads the route `{id}`, loads the record server-side, and
   renders the fields with the same formatting + relation resolution.
 - `entity_form` renders a `<form data-fui-rpc="<api_prefix>/<entity>">` (enum →
   `<select>` of values; relation → `<select>` populated from the related entity).
 
 The generated `ResourceConfig` registry is populated in `RegisterGenerated` from
-each entity's `CrudHandler`, fields, and relations. `BlueprintBaseCSS()` (mounted
-ahead of `static/app.css`) ships a `box-sizing` reset, the themed page surface,
-and responsive table/card/form defaults.
+each entity's `CrudHandler`, fields, and relations. `appBaseCSS()` (mounted
+ahead of `static/app.css`) is an owned, empty-by-default extension point for
+app-specific base CSS — every generated surface composes `framework/ui`
+components and `core-ui/app` layouts that ship their own styling, so the
+generator itself emits zero bespoke CSS.
 
 #### Writable app screens (`create:`, edit, delete)
 
@@ -284,6 +337,13 @@ The forms submit as islands: `data-fui-rpc` POSTs/PUTs JSON to the entity's
 `<api_prefix>/<entity>` endpoint, then `data-fui-rpc-navigate` returns to the
 list/detail on success. Delete is a `DELETE` with a native confirm. The synthesized
 screens inherit the source screen's `layout` + `access` and are not added to `nav`.
+
+To add your own no-reload behavior to a hand-written screen — a status
+`<select>` that swaps a badge, a comment form that appends to a thread — follow
+[interactive-patterns.md](interactive-patterns.md), in particular "Writing a
+hand-written island, end to end" (it covers the traps: the posted JSON key is
+the input's `name`, the two route-param syntaxes, and manual route
+registration) and "Themed confirmation (`ui.ConfirmAction`)".
 
 #### RBAC for writable APIs
 
@@ -355,7 +415,7 @@ route stays protected regardless.
 
 ### Seed data
 
-When the blueprint declares `seed:`, generation emits `BlueprintSeedData()`
+When the blueprint declares `seed:`, generation emits `seedData()`
 and `main.go` applies it via `App.WithSeed` after auto-migration. Seeding is
 **ordered** (entities load in declared order, so a relation target is inserted
 before the rows that reference it) and **idempotent** (an entity whose table
@@ -372,6 +432,40 @@ admin, and a freshly registered user starts with an empty, owner-scoped
 workspace they fill themselves — no other user's rows ever leak in. Without an
 admin to attribute the rows to, an owner-scoped seed would have no valid owner
 and fail closed.
+
+#### Auto-generated rows (`count` / `weights`)
+
+Hand-writing dozens of demo rows is tedious and tends to produce a flat
+round-robin (`open, in_progress, resolved, closed, open, …`) that reads as
+obviously fake. Instead, give a seed entry a `count:` and the generator
+fabricates that many rows with deterministic, realistic-looking values:
+
+```yaml
+seed:
+  - entity: tickets
+    count: 40                 # generate 40 demo rows
+    weights:                  # optional: skew an enum column
+      status:
+        open: 5
+        in_progress: 3
+        resolved: 8
+        closed: 2
+```
+
+Enum columns get a **varied, non-uniform** distribution: with `weights`
+the values appear roughly in proportion; without them the generator derives a
+deterministic skew seeded from the entity + column name, so demos never look
+like an even split. Scalar columns are filled from naming conventions
+(`name`/`title` → `Ticket 1`, `email` → `ticket1@example.com`, `slug` →
+`ticket-1`, numeric/bool columns get a stable spread). Generation is
+reproducible — there is no runtime randomness, so regenerating the app yields
+the same rows and the diff never churns.
+
+`count` fills scalar and enum columns only; it leaves relations and
+system/auto-generated columns alone. For entities with a **required** relation,
+use explicit `rows:` (with `@entity.field=value` refs) instead — a generated
+row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
+combined: the explicit rows are seeded first, then the generated ones.
 
 ### Auth (`app.auth`)
 
@@ -416,7 +510,7 @@ generated app commits no credentials:
 
 - `JWT_SECRET` → `auth.AuthConfig.JWTSecret`
 - `DATABASE_URL` → the DB DSN (a credentialed DSN is also stripped from
-  the emitted `BlueprintDBURL` constant and the `getEnv` fallback)
+  the emitted `dbURL` constant and the `getEnv` fallback)
 - `ADMIN_SEED_PASSWORD` → the bootstrap admin's password (no env var →
   no admin is seeded)
 
@@ -424,8 +518,8 @@ When the blueprint holds any of these values, the generator also emits a
 `.env` carrying them (so the app runs out of the box) plus a
 `.gitignore` that excludes it. The generated `main.go` loads
 `.env.local`/`.env` before opening the DB; a real process env var
-always wins over the files. Regenerating keeps your existing `.env`
-unless you pass `--force`.
+always wins over the files. `generate` is one-shot and refuses to
+overwrite an existing `.env` (or any other file) unless you pass `--force`.
 
 #### `dev_mode`
 
@@ -519,15 +613,16 @@ so the back-office is reachable on first boot. Requires `app.auth.enabled`.
 ### app.module and the enclosing go.mod
 
 Generated imports are `<app.module>/<output-dir>` — by default the output
-directory is the module root (so imports are `<app.module>/entities`,
-`<app.module>/blueprint`); with `--out=<dir>` or `app.output_dir` set, it's
+directory is the module root (so the only project-local import is
+`<app.module>/entities`, since the app files are a flat `package main` with no
+importable subpackage); with `--out=<dir>` or `app.output_dir` set, it's
 that subpackage path relative to the working directory. Either way `app.module`
 must match the Go module you generate into:
 
 - `module:` omitted → it is derived from the go.mod enclosing the working
   directory (plus the relative path from the module root when generating in a
   subdirectory). Inside a module, omitting `module:` therefore also emits a
-  root `main.go`.
+  `main.go`.
 - `module:` set and equal to the enclosing module → fine.
 - `module:` set but different → `gofastr generate` and `gofastr validate`
   fail with the expected value; generated code importing a module the
@@ -569,9 +664,15 @@ screens:
         text: Latest posts
         entity: posts
         fields: [title, status]
+        search: title
+        filters: [status, author_id]   # enum + relation facets above the table
         limit: 5
         empty_text: No posts yet.
 ```
+
+`filters:` accepts only enum, bool, and relation columns; the generator renders
+them as a `ui.FilterToolbar` above the table and applies each as a server-side
+equality filter that composes with search, sort, and pagination.
 
 Supported UI action events are `click`, `input`, `change`, and `submit`.
 `client_js` is copied into generated Go as a string and compiled by the normal

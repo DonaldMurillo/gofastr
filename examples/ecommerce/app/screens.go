@@ -1,4 +1,4 @@
-package blueprint
+package main
 
 import (
 	"context"
@@ -20,7 +20,7 @@ func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("ShopFront")),
 		render.Tag("p", nil, render.Text("Welcome to our store. Browse our products and categories.")),
-		blueprintResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithEmpty("No products available yet.").List(ctx),
+		appResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithEmpty("No products available yet.").List(ctx),
 	)
 }
 
@@ -33,7 +33,7 @@ func (s *ProductsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *ProductsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Products")),
-		blueprintResources["products"].WithColumns("name", "price", "status", "stock").WithLimit(20).WithHeading("Product Catalog").WithEmpty("No products found.").List(ctx),
+		appResources["products"].WithColumns("name", "price", "status", "stock").WithLimit(20).WithHeading("Product Catalog").WithEmpty("No products found.").List(ctx),
 	)
 }
 
@@ -46,7 +46,7 @@ func (s *CategoriesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Categories")),
-		blueprintResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithEmpty("No categories yet.").List(ctx),
+		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithEmpty("No categories yet.").List(ctx),
 	)
 }
 
@@ -59,7 +59,7 @@ func (s *OrdersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *OrdersScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Orders")),
-		blueprintResources["orders"].WithColumns("order_number", "customer_name", "status", "total").WithLimit(20).WithHeading("Recent Orders").WithEmpty("No orders yet.").List(ctx),
+		appResources["orders"].WithColumns("order_number", "customer_name", "status", "total").WithLimit(20).WithHeading("Recent Orders").WithEmpty("No orders yet.").List(ctx),
 	)
 }
 
@@ -72,7 +72,7 @@ func (s *ReviewsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Customer Reviews")),
-		blueprintResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithEmpty("No reviews yet.").List(ctx),
+		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithEmpty("No reviews yet.").List(ctx),
 	)
 }
 
@@ -102,7 +102,7 @@ func (s *ProductDetailScreen) ScreenType() app.ScreenType    { return app.Screen
 func (s *ProductDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Product Details")),
-		blueprintResources["products"].Detail(ctx, s.id),
+		appResources["products"].Detail(ctx, s.id),
 	)
 }
 
@@ -119,7 +119,7 @@ func (s *OrderDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPa
 func (s *OrderDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Order Details")),
-		blueprintResources["orders"].Detail(ctx, s.id),
+		appResources["orders"].Detail(ctx, s.id),
 	)
 }
 
@@ -135,7 +135,7 @@ func (s *ProductsEditScreen) ScreenType() app.ScreenType    { return app.ScreenP
 
 func (s *ProductsEditScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["products"].Form(ctx, s.id),
+		appResources["products"].Form(ctx, s.id),
 	)
 }
 
@@ -151,6 +151,6 @@ func (s *OrdersEditScreen) ScreenType() app.ScreenType    { return app.ScreenPag
 
 func (s *OrdersEditScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["orders"].Form(ctx, s.id),
+		appResources["orders"].Form(ctx, s.id),
 	)
 }

@@ -1,4 +1,4 @@
-package blueprint
+package main
 
 import (
 	"context"
@@ -83,7 +83,7 @@ func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: blueprintAuthError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>")})), Footer: render.Raw("<a href=\"/signup\">Create an account</a>")}),
+		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required>")})), Footer: render.Raw("<a href=\"/signup\">Create an account</a>")}),
 	)
 }
 
@@ -95,7 +95,7 @@ func (s *SignupScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *SignupScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		ui.AuthCard(ui.AuthCardConfig{Title: "Create your Meridian account", Alert: blueprintAuthError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: "Create account"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\">")})), Footer: render.Raw("<a href=\"/login\">Already have an account? Sign in</a>")}),
+		ui.AuthCard(ui.AuthCardConfig{Title: "Create your Meridian account", Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: "Create account"}, render.Raw("<input type=\"hidden\" name=\"next\" value=\"/app\">"), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: render.Raw("<input id=\"auth-email\" name=\"email\" type=\"email\" autocomplete=\"email\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: render.Raw("<input id=\"auth-password\" name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\">")})), Footer: render.Raw("<a href=\"/login\">Already have an account? Sign in</a>")}),
 	)
 }
 
@@ -108,9 +108,9 @@ func (s *DashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Overview", Subtitle: "Revenue at a glance", Eyebrow: ""}),
-		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: blueprintStatValue(ctx, "subscriptions", "sum", "mrr", "status=active", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: blueprintStatValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: blueprintStatValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: blueprintStatValue(ctx, "plans", "count", "", "", "")})),
-		ui.Card(ui.CardConfig{Heading: "Customers by status"}, ui.BarChart(ui.BarChartConfig{Bars: blueprintGroupBars(ctx, "customers", "status"), ShowLabels: true})),
-		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "due_on").WithLimit(8).WithHeading("Recent invoices").WithEmpty("No invoices yet.").List(ctx),
+		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: statValue(ctx, "subscriptions", "sum", "mrr", "status=active", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: statValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: statValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: statValue(ctx, "plans", "count", "", "", "")})),
+		ui.Card(ui.CardConfig{Heading: "Customers by status"}, ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, "customers", "status"), ShowLabels: true})),
+		appResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "due_on").WithLimit(8).WithHeading("Recent invoices").WithEmpty("No invoices yet.").List(ctx),
 	)
 }
 
@@ -122,7 +122,7 @@ func (s *CustomersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithLimit(25).WithCreate().WithHeading("Customers").WithEmpty("No customers yet — add your first to get started.").List(ctx),
+		appResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}}).WithLimit(25).WithCreate().WithHeading("Customers").WithEmpty("No customers yet — add your first to get started.").List(ctx),
 	)
 }
 
@@ -138,7 +138,7 @@ func (s *CustomerDetailScreen) ScreenType() app.ScreenType    { return app.Scree
 
 func (s *CustomerDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["customers"].Detail(ctx, s.id),
+		appResources["customers"].Detail(ctx, s.id),
 	)
 }
 
@@ -150,7 +150,7 @@ func (s *InvoicesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithLimit(25).WithCreate().WithHeading("Invoices").WithEmpty("No invoices yet.").List(ctx),
+		appResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "open", "paid", "past_due", "void"}}, ResFilter{Key: "customer_id", Label: "Customer", Type: "relation"}).WithLimit(25).WithCreate().WithHeading("Invoices").WithEmpty("No invoices yet.").List(ctx),
 	)
 }
 
@@ -166,7 +166,7 @@ func (s *InvoiceDetailScreen) ScreenType() app.ScreenType    { return app.Screen
 
 func (s *InvoiceDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["invoices"].WithTransitions(Transition{Label: "Mark paid", Status: "paid", Variant: "primary", Stamp: "paid_on"}, Transition{Label: "Void", Status: "void", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
+		appResources["invoices"].WithTransitions(Transition{Label: "Mark paid", Status: "paid", Variant: "primary", Stamp: "paid_on"}, Transition{Label: "Void", Status: "void", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
 	)
 }
 
@@ -178,7 +178,7 @@ func (s *SubscriptionsScreen) ScreenType() app.ScreenType { return app.ScreenPag
 
 func (s *SubscriptionsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().WithHeading("Subscriptions").WithEmpty("No subscriptions yet.").List(ctx),
+		appResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().WithHeading("Subscriptions").WithEmpty("No subscriptions yet.").List(ctx),
 	)
 }
 
@@ -194,7 +194,7 @@ func (s *SubscriptionDetailScreen) ScreenType() app.ScreenType    { return app.S
 
 func (s *SubscriptionDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["subscriptions"].WithTransitions(Transition{Label: "Activate", Status: "active", Variant: "primary", Stamp: ""}, Transition{Label: "Cancel", Status: "canceled", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
+		appResources["subscriptions"].WithTransitions(Transition{Label: "Activate", Status: "active", Variant: "primary", Stamp: ""}, Transition{Label: "Cancel", Status: "canceled", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
 	)
 }
 
@@ -206,7 +206,7 @@ func (s *CustomersNewScreen) ScreenType() app.ScreenType { return app.ScreenPage
 
 func (s *CustomersNewScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["customers"].Form(ctx, ""),
+		appResources["customers"].Form(ctx, ""),
 	)
 }
 
@@ -222,7 +222,7 @@ func (s *CustomersEditScreen) ScreenType() app.ScreenType    { return app.Screen
 
 func (s *CustomersEditScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["customers"].Form(ctx, s.id),
+		appResources["customers"].Form(ctx, s.id),
 	)
 }
 
@@ -234,7 +234,7 @@ func (s *InvoicesNewScreen) ScreenType() app.ScreenType { return app.ScreenPage 
 
 func (s *InvoicesNewScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["invoices"].Form(ctx, ""),
+		appResources["invoices"].Form(ctx, ""),
 	)
 }
 
@@ -250,7 +250,7 @@ func (s *InvoicesEditScreen) ScreenType() app.ScreenType    { return app.ScreenP
 
 func (s *InvoicesEditScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["invoices"].Form(ctx, s.id),
+		appResources["invoices"].Form(ctx, s.id),
 	)
 }
 
@@ -262,7 +262,7 @@ func (s *SubscriptionsNewScreen) ScreenType() app.ScreenType { return app.Screen
 
 func (s *SubscriptionsNewScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["subscriptions"].Form(ctx, ""),
+		appResources["subscriptions"].Form(ctx, ""),
 	)
 }
 
@@ -278,6 +278,6 @@ func (s *SubscriptionsEditScreen) ScreenType() app.ScreenType    { return app.Sc
 
 func (s *SubscriptionsEditScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Tag("div", nil,
-		blueprintResources["subscriptions"].Form(ctx, s.id),
+		appResources["subscriptions"].Form(ctx, s.id),
 	)
 }

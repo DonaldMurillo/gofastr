@@ -24,9 +24,9 @@ lifecycle.
 
 **The difference in kind:** PocketBase is a host you configure;
 GoFastr is a scaffold-and-own generator plus library. A `gofastr.yml`
-blueprint scaffolds owned Go source (`main.go`, `entities/`,
-`blueprint/`) that you commit, diff in code review, debug with a
-debugger, and refactor like any other package. There is no runtime schema
+blueprint scaffolds owned Go source (a flat `package main` — `main.go`,
+`app.go`, `screens.go` — plus `entities/`) that you commit, diff in code
+review, debug with a debugger, and refactor like any other package. There is no runtime schema
 store — and no canonical declaration you live inside: the blueprint is a
 one-way on-ramp you can delete once the code is yours, and the escape
 hatch is `net/http`, not a plugin API.
@@ -71,9 +71,9 @@ model. Wasp (like Encore and Amplify) is a *canonical-declaration* tool —
 `main.wasp` *is* the program; you live in it and regenerate from it, and
 the emitted code is the tool's, not yours to hand-edit. GoFastr is
 *scaffold-and-own*: the blueprint is a one-way on-ramp that emits idiomatic
-Go you then own and edit; re-running `generate` is add-only and never
-clobbers your edits, and you can delete the blueprint entirely once the
-code is yours. The trade is real — a canonical declaration promises "no
+Go you then own and edit; `generate` is one-shot and refuses to clobber an
+existing project (pass `--force` to regenerate), and you can delete the
+blueprint entirely once the code is yours. The trade is real — a canonical declaration promises "no
 drift" because there's one source; scaffold-and-own trades that for a
 plain Go codebase with no second language to grow into. On top of that
 sits the runtime difference: Wasp targets JS/TS — React SPA + Node +
