@@ -445,6 +445,7 @@ connected to a running app.
 - [Kiln (experimental)](framework/docs/content/kiln.md) — agent-driven build mode
 - [UI getting started](framework/docs/content/ui-getting-started.md) — **the 15-minute path**: scaffold → theme → screen → custom-styled component
 - [core-ui architecture](core-ui/ARCHITECTURE.md) — **deeper UI/runtime reference** (SSR, hydration, islands, component CSS, data-fui-* primitives)
+- [Interactive patterns](framework/docs/content/interactive-patterns.md) — every `data-fui-*` behavior, plus **"Writing a hand-written island, end to end"** (no-reload updates on your own screens) and themed confirms
 - [framework architecture](framework/ARCHITECTURE.md) — package layout, layering rules, cycle-breaking interfaces
 - [Entity declarations](framework/docs/content/entity-declarations.md) — JSON schema reference
 - [Migrations](framework/docs/content/migrations.md) — versioned migrations and the CLI

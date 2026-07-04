@@ -32,6 +32,7 @@ import (
 type Action struct {
 	method  string // GET, POST, PUT, DELETE, PATCH
 	path    string // URL path
+	confirm string // pre-flight window.confirm message (empty = none)
 	effects []Effect
 }
 
@@ -70,6 +71,29 @@ func newAction(method, path string) Action {
 // OnSuccess adds effects that run when the RPC returns 2xx.
 func (a Action) OnSuccess(effects ...Effect) Action {
 	a.effects = append(a.effects, effects...)
+	return a
+}
+
+// WithConfirm gates the action behind a PRE-FLIGHT confirmation. Before the
+// RPC is dispatched, the runtime shows a native window.confirm(message)
+// dialog; cancelling aborts the request entirely, so the RPC never fires.
+// Because the gate runs *before* the request — not after it succeeds — it is
+// a property of the Action itself, not an OnSuccess effect. Use for
+// destructive actions (delete, revoke, drop):
+//
+//	interactive.OnClick(deleteBtn,
+//	    interactive.Delete("/api/items/42").
+//	        WithConfirm("Delete this item? This cannot be undone."),
+//	)
+//
+// window.confirm is native, unthemed, and blocks browser automation. For a
+// design-system-styled confirmation that matches the rest of the app (and is
+// drivable by tests), reach for framework/ui.ConfirmAction instead — it
+// renders a themed alertdialog whose Confirm button carries the RPC.
+//
+// Maps to data-fui-confirm="message".
+func (a Action) WithConfirm(message string) Action {
+	a.confirm = message
 	return a
 }
 
@@ -148,8 +172,14 @@ func (e navigateEffect) rpcAttrs() map[string]string {
 }
 
 // Confirm shows a window.confirm dialog before the RPC fires. The RPC is
-// cancelled if the user dismisses the dialog. Use for destructive actions
-// (delete, revoke). Maps to data-fui-confirm="message".
+// cancelled if the user dismisses the dialog.
+//
+// Deprecated: Confirm is passed to OnSuccess(...) even though it fires
+// PRE-flight (before the request, not after success) — a placement that has
+// misled readers into thinking the gate runs on the response. Use
+// Action.WithConfirm(message) instead, which reads in the correct order and
+// lives where the timing implies. This effect still works and maps to the
+// same data-fui-confirm attribute.
 func Confirm(message string) Effect {
 	return confirmEffect{message: message}
 }
@@ -532,6 +562,9 @@ func (a Action) attrs() map[string]string {
 	m := map[string]string{
 		"data-fui-rpc":        a.path,
 		"data-fui-rpc-method": a.method,
+	}
+	if a.confirm != "" {
+		m["data-fui-confirm"] = a.confirm
 	}
 	for _, e := range a.effects {
 		for k, v := range e.rpcAttrs() {

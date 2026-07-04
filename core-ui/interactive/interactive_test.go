@@ -667,6 +667,30 @@ func TestConfirmEmitsAttr(t *testing.T) {
 	}
 }
 
+func TestWithConfirmEmitsAttr(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Delete"))
+	result := OnClick(btn, Delete("/api/item/1").WithConfirm("Sure?"))
+	s := string(result)
+	if !strings.Contains(s, `data-fui-confirm="Sure?"`) {
+		t.Fatalf("WithConfirm must emit data-fui-confirm attr: %s", s)
+	}
+	if strings.Contains(s, "data-fui-rpc-confirm") {
+		t.Fatalf("WithConfirm must NOT emit data-fui-rpc-confirm (wrong prefix): %s", s)
+	}
+}
+
+// WithConfirm and the deprecated Confirm effect emit the identical attribute,
+// so an app can migrate without any runtime-visible change.
+func TestWithConfirmMatchesConfirmEffect(t *testing.T) {
+	btn := render.Tag("button", nil, render.Text("Delete"))
+	viaMethod := string(OnClick(btn, Delete("/api/x").WithConfirm("Gone?")))
+	viaEffect := string(OnClick(btn, Delete("/api/x").OnSuccess(Confirm("Gone?"))))
+	if !strings.Contains(viaMethod, `data-fui-confirm="Gone?"`) ||
+		!strings.Contains(viaEffect, `data-fui-confirm="Gone?"`) {
+		t.Fatalf("both spellings must emit the same attr:\n method=%s\n effect=%s", viaMethod, viaEffect)
+	}
+}
+
 func TestAfterTextEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Save"))
 	result := OnClick(btn, Post("/api/save").OnSuccess(AfterText("Saved ✓")))
