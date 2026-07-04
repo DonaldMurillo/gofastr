@@ -79,7 +79,7 @@ var errTenantRequired = errors.New("tenant context required for multi-tenant ent
 // Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
 func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) {
 	field := ch.Entity.Config.OwnerField
-	if field == "" {
+	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {
@@ -90,7 +90,7 @@ func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) 
 // ApplyOwnerScopeCount mirrors ApplyOwnerScope for count queries.
 func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Request) {
 	field := ch.Entity.Config.OwnerField
-	if field == "" {
+	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {
@@ -101,7 +101,7 @@ func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Requ
 // ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries.
 func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
 	field := ch.Entity.Config.OwnerField
-	if field == "" {
+	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {
@@ -112,7 +112,7 @@ func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Re
 // ApplyOwnerScopeDelete mirrors ApplyOwnerScope for DELETE queries.
 func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Request) {
 	field := ch.Entity.Config.OwnerField
-	if field == "" {
+	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {
@@ -127,6 +127,9 @@ func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Re
 // http.ResponseWriter to write a 401 to.
 func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
 	if ch.Entity.Config.OwnerField == "" {
+		return nil
+	}
+	if owner.IsCrossOwner(ctx) {
 		return nil
 	}
 	if _, ok := owner.Get(ctx); !ok {

@@ -69,7 +69,11 @@ RBAC-gated routes as public.
 > scope** (tenant fail-closed) but **not** per-op permissions. Apply your
 > own authorization before calling them from a handler. (Tenant isolation
 > is a hard boundary and is enforced everywhere; per-op RBAC is an
-> HTTP-request concept.)
+> HTTP-request concept.) For a deliberate cross-owner read (an aggregate
+> or admin lookup that spans every owner's rows), wrap the context in
+> `owner.AllowCrossOwner(ctx)` — server-side Go only; the HTTP CRUD
+> endpoints have no path to it. See [entity-declarations](entity-declarations.md)
+> → "Reading across owners".
 
 > Before this existed, exposing an entity granted **every authenticated
 > user full CRUD** unless you hand-composed route-group middleware.

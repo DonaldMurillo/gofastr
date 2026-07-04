@@ -331,6 +331,52 @@ prominent warning from `gofastr generate`, and an `unscoped-pii` finding
 from `gofastr audit lint`. See [blueprints](blueprints.md) → "Unscoped
 PII".
 
+### Reading across owners (`owner.AllowCrossOwner`)
+
+Owner scoping is correct for user-facing CRUD, but some
+app-legitimate work is *inherently* cross-owner: computing "spots
+remaining" for a class from `capacity − COUNT(bookings across ALL
+members)`, or reading a whole waitlist to promote the oldest entry (which
+belongs to another member). Those aggregates can't be expressed through a
+per-user-scoped read.
+
+`owner.AllowCrossOwner(ctx)` is the sanctioned escape. It returns a
+context that lifts owner scoping for the **in-process Go CrudHandler
+methods** — `ListAll`, `CountAll`, `GetOne`, and (because they share the
+scope helpers) the mutate-by-id methods. It is the owner-side twin of
+`tenant.AllowCrossTenant` for multi-tenant entities.
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/owner"
+
+// "Spots remaining" for a class — a count over EVERY member's bookings,
+// not just the caller's. bookings.OwnerField == "user_id".
+func spotsRemaining(ctx context.Context, bookings *crud.CrudHandler, classID string, capacity int) (int, error) {
+    taken, err := bookings.CountAll(owner.AllowCrossOwner(ctx), crud.ListOptions{
+        Filters: []filter.ParsedFilter{{Field: "class_id", Op: "eq", Value: classID}},
+    })
+    if err != nil {
+        return 0, err
+    }
+    return capacity - taken, nil
+}
+```
+
+**Reach for this only when the cross-owner read is the whole point** —
+an aggregate, a queue, an admin lookup. It is NOT a convenience for
+"I couldn't figure out the scoped API"; the default scoped read is what
+you want for anything a user sees about *their own* data. Two hard rules:
+
+- **Server-side Go only.** The context key is unexported, so the
+  auto-generated HTTP CRUD endpoints have **no path** to this marker —
+  they stay owner-scoped, always. Never derive it from a header, query
+  param, or request body, and never plumb it onto the request context of
+  an auto-CRUD route.
+- **No built-in permission check.** `AllowCrossOwner` lifts the *owner*
+  requirement; it does not authorize anything. Gate the caller yourself
+  (a route access rule, an `access.Can` check, or the fact that it only
+  runs inside trusted server code) before you widen the scope.
+
 ### Auth entities are NOT auto-private
 
 When you register the `users` / `sessions` entities for `battery/auth`,
@@ -362,10 +408,10 @@ This scaffolds the owned entity package into `entities/` at the module root:
 - `events.go` with typed lifecycle subscriptions
 - `client/client.go` with a standalone Go HTTP client
 
-A blueprint that declares `app.module` also emits a root `main.go` plus the
-`blueprint` package (screens, endpoints, middleware stubs). These are owned Go
-you read, edit, and commit — no `DO NOT EDIT` header. See
-[Blueprints](blueprints.md) for the full blueprint shape.
+A blueprint that declares `app.module` also emits a flat `package main` at the
+root (`main.go` plus `app.go`/`screens.go`/… — screens, endpoints, middleware
+stubs). These are owned Go you read, edit, and commit — no `DO NOT EDIT`
+header. See [Blueprints](blueprints.md) for the full blueprint shape.
 
 Useful flags:
 
@@ -375,8 +421,9 @@ Useful flags:
 - `--out=<dir>` scaffolds into a subpackage instead of the module root (also
   settable as `app.output_dir` in the blueprint) — useful for monorepos and
   examples that host their own Go test package.
-- `--force` overwrites a hand-edited file. By default re-running `generate` is
-  add-only: it writes new files but never clobbers one you've edited.
+- `--force` overwrites existing files. `generate` is one-shot: with no
+  `--force` it refuses to write into a directory that already holds any target
+  file, listing the conflicts, rather than clobbering owned code.
 
 For arbitrary configured generators (not a full app blueprint), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
