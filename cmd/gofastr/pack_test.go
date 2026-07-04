@@ -2,12 +2,35 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
 
 const meridianDir = "../../examples/meridian"
 const meridianYML = "../../examples/meridian/gofastr.yml"
+
+// ensureMeridianEnv materializes the gitignored .env the generator emits
+// alongside the meridian app. A fresh checkout doesn't have it — the seed
+// password lives ONLY there, by design — so packing the committed tree
+// cannot recover the blueprint's secrets without it. Leaves an existing
+// .env (a developer's own generate output) untouched.
+func ensureMeridianEnv(t *testing.T, bp Blueprint) {
+	t.Helper()
+	path := filepath.Join(meridianDir, ".env")
+	if _, err := os.Stat(path); err == nil {
+		return
+	}
+	env := renderBlueprintEnv(bp)
+	if env == "" {
+		return
+	}
+	if err := os.WriteFile(path, []byte(env), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+}
 
 // TestPack_ReadEntities recovers the entity declarations from the generated
 // meridian app's register.go and asserts they equal the parsed YAML's entities
@@ -138,6 +161,7 @@ func TestPack_ReadApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+	ensureMeridianEnv(t, a)
 	app, err := packReadApp(meridianDir)
 	if err != nil {
 		t.Fatalf("packReadApp: %v", err)
@@ -167,6 +191,7 @@ func TestPack_MeridianRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse meridian.yml: %v", err)
 	}
+	ensureMeridianEnv(t, a)
 	b, err := packBlueprint(meridianDir)
 	if err != nil {
 		t.Fatalf("packBlueprint: %v", err)
