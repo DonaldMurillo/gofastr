@@ -5,6 +5,156 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.12.0] - 2026-07-04
+
+### Added
+
+- **Generated `entity_list` screens get facet filters (`filters:`).** A
+  top-level `entity_list` block can now declare `filters: [status, assignee_id,
+  …]` naming enum, bool, and relation columns. The generated list screen renders
+  a responsive `ui.FilterToolbar` above the table — enums as pills (≤4 short
+  values) or a `<select>`, bools as Yes/No pills, relations as a `<select>` of
+  the related records' display names — folded into the **same** URL-driven GET
+  form as the existing search box (never two competing forms). The owned
+  `resource.go` engine applies each active facet as a server-side equality
+  filter that composes with search, sort, and pagination (sort-header and page
+  links preserve the active facets; applying a facet resets to page 1).
+  Filtering is **explicit**: omit `filters:` and the list renders exactly as
+  before. `validate` rejects a filter column that is unknown or of an
+  unsupported type. `pack` round-trips `filters:` back to YAML. The Meridian
+  flagship's customers list (enum pills) and invoices list (enum + relation
+  selects) now exercise it. This closes the last gap that made both cold-start
+  evaluations hand-write their main list screen.
+- **Blueprint fonts are self-hosted and actually work.** A theme naming
+  `font_heading` / `font_body` used to emit `@font-face` rules pointing at
+  `/fonts/<slug>.woff2` while shipping no font files — every fresh app 404'd
+  and silently fell back to system fonts (the strict CSP blocks the Google CDN,
+  so a `<link>` never worked either). `gofastr generate` now **fetches** each
+  family's latin `woff2` subset at generate time and writes it to
+  `static/fonts/<slug>.woff2` (defaulting `static_dir` to `static/` when only a
+  font is declared), so a named font renders with zero manual steps. Offline
+  generation still emits the app but prints a loud warning naming the exact
+  files to supply, and the generated `main.go` boot-checks for them — no silent
+  404 path remains.
+- **Blueprint seed `count:` and `weights:` for realistic demo data.** A seed
+  entry can now declare `count: N` to auto-generate N demo rows (filling scalar
+  + enum columns with deterministic, reproducible values) and an optional
+  per-column `weights:` map to skew enum distributions. The unweighted default
+  is a deterministic, *non-uniform* skew seeded from the entity name, replacing
+  the flat `open/in_progress/resolved/closed` round-robin that read as obviously
+  fake.
+
+- **`owner.AllowCrossOwner(ctx)` — sanctioned cross-owner read escape.**
+  Entities with `OwnerField` auto-scope every read to the signed-in user,
+  with no way to express an app-legitimate cross-owner aggregate (e.g.
+  "spots remaining = capacity − COUNT(bookings across ALL members)" or
+  reading a whole waitlist to promote the oldest entry) short of dropping
+  to raw SQL against framework-managed tables. `owner.AllowCrossOwner`
+  returns a context that lifts owner scoping for the **in-process Go**
+  `CrudHandler` methods (`ListAll`, `CountAll`, `GetOne`, and the
+  mutate-by-id methods, which share the scope helpers) — the owner-side
+  twin of `tenant.AllowCrossTenant`. Secure by default is untouched: the
+  context key is unexported, so the auto-generated **HTTP CRUD endpoints
+  have no path to it** and stay owner-scoped, always (regression-tested).
+  It lifts the owner *requirement* only — it authorizes nothing; gate the
+  caller yourself. See `docs → entity-declarations` → "Reading across
+  owners".
+
+- **`interactive.Action.WithConfirm(message)` — pre-flight confirm as a
+  first-class builder method.** The only way to gate a destructive RPC behind
+  a confirmation was `interactive.Confirm(msg)` passed to `OnSuccess(...)` —
+  but the gate fires *before* the request, not on success, so its placement
+  actively misled readers. `WithConfirm` reads in the order it executes and
+  emits the identical `data-fui-confirm` attribute. `interactive.Confirm` is
+  now deprecated (still works). See `docs → interactive-patterns` → "Confirm".
+
+- **`ui.FilterToolbar` — the filter/sort control strip for list screens.**
+  The framework had every filter *primitive* (`Select`, `SegmentedControl`,
+  `SearchInput`, `FilterChipBar`) but no composed strip for the ubiquitous
+  "row of facet controls + search + sort + Apply/Reset above a table"
+  surface, so callers hand-rolled it — and repeatedly shipped the same
+  mobile defect: the row overflowed a narrow container and pushed the sort
+  control and Apply button off-screen (unreachable at 375px), while pill
+  labels wrapped mid-label to three lines. `FilterToolbar` renders one
+  URL-driven `<form method="GET">` (facets as `<select>` or `Kind:
+  FacetPills` radio-pill groups, optional search + sort, Apply submit +
+  Reset link) whose submitted params are the source of truth for the
+  screen's `Load(ctx)`. It is responsive by construction — declares itself a
+  container and degrades row → wrapped rows → single-column stack as its own
+  width shrinks, keeping every control (Apply/Reset included) on-screen and
+  tappable, with pills that wrap between themselves but never mid-label.
+  Zero new `data-fui-*` attributes (native GET form + radio semantics);
+  styling is theme-token CSS, light and dark. See `docs → ui-new-components`
+  → "Filter toolbars — the URL-driven pattern".
+
+### Fixed
+
+- **`interactive-patterns` docs are now a complete hand-written-island
+  cookbook.** Added an end-to-end recipe covering the four traps cold-start
+  authors hit: a raw `data-fui-rpc` route needs its own `app.Router().Post`
+  (only `widget.Mount` auto-wires); the RPC JSON key is the input's `name`,
+  not its `id` (curl hides the mismatch); a `<select>` rides the existing
+  `data-fui-rpc-trigger="input"` (no `change` trigger exists or is needed);
+  and the two placeholder syntaxes — `{id}` on the HTTP router vs `:id` on the
+  screen router — are a silent 404 when crossed. Also corrected stale
+  `interactive.Action{…}` struct-literal examples (fields are unexported; use
+  `interactive.Post(...)`) and documented `ui.ConfirmAction` as the themed,
+  test-drivable alternative to native `window.confirm`. Behind the select
+  recipe: new `TestInputTrigger_SelectFiresRPC` e2e in `core-ui/runtime`.
+  README and `blueprints.md` now cross-link the cookbook so blueprint users
+  find it before reverse-engineering `runtime.js`.
+
+- **Chart / stat `source:` no longer silently renders "—".** A `stat_card` or
+  `*_chart` bound to `source: {entity: X}` rendered an empty dash whenever `X`
+  had no generated list/detail screen, because `RegisterGenerated` only
+  populated `appResources` for entities with screens. Every entity referenced by
+  a data source is now registered (pure lookup-map population — no extra routes),
+  so charts sourced from screen-less entities show real numbers. `gofastr
+  validate` / `generate` additionally reject a chart/stat source pointing at an
+  unknown or crud-disabled entity up front.
+
+### Changed
+
+- **BREAKING (generator output): `gofastr generate` emits a flat `package
+  main`, and is now a one-shot generator.** The blueprint used to scaffold a
+  `blueprint/` subpackage (`package blueprint`: `app.go`, `screens.go`,
+  `resource.go`, `stubs.go`, `resource_test.go`) alongside `main.go`. That
+  folder read as "the generator's", forced every custom screen into it, and
+  the unexported `blueprintAuthPolicy` etc. leaked generator branding into
+  your code. Those files now land at the project root as ordinary
+  `package main` (`entities/` is unchanged), and `main.go` calls
+  `RegisterGenerated(...)` directly instead of importing a `blueprint`
+  package. Emitted identifiers dropped the `Blueprint`/`blueprint` prefix
+  (`BlueprintAppName`→`appName`, `blueprintAuthPolicy`→`authPolicy`,
+  `BlueprintBaseCSS`→`appBaseCSS`, `BlueprintFontCSS`→`fontFaceCSS`,
+  `blueprintResources`→`appResources`, `BlueprintSeedData`→`seedData`, …).
+  Generation now **refuses** to overwrite an existing project — if any target
+  file is present it lists the conflicts and stops; pass `--force` to
+  overwrite. There is no merge/regen workflow: the emitted code is yours to
+  own and edit. **Existing generated apps are unaffected at runtime** — only
+  the output of a fresh `generate` changes; re-run `generate --force` into a
+  scratch dir if you want the new layout. `gofastr pack` reads the new flat
+  layout.
+
+- **`ui.BarChart` is legible by default.** Dashboard bar charts previously
+  rendered as flat, unlabeled slabs: no way to read magnitudes, near-equal
+  or uniform data (8/8/8/8) all looked like identical full-height
+  rectangles, and 4+ category labels collided/truncated mid-word. The chart
+  now (1) prints each bar's value above its cap by default (opt out with
+  `BarChartConfig.HideValues`); (2) rounds the y-scale up to a clean maximum
+  so the tallest bar keeps ~15% headroom — uniform and near-equal data read
+  as intentionally-equal or clearly-ranked bars, never a wall of slabs;
+  (3) always draws a hairline baseline; (4) wraps long `ShowLabels` category
+  labels onto two lines (a single over-long word ellipsizes; the full text
+  stays in the bar's `<title>`); and (5) caps bar thickness so 1–2 category
+  charts don't render giant blocks. `ShowAxis` now renders proper gridlines
+  at clean tick values with left-gutter numeric labels. All styling stays in
+  `registry.RegisterStyle` + theme tokens (verified light + dark + 375px).
+  Default `Height` is now 200 (was 180) to fit the value + label bands.
+- **`ui.LineChart` edge x-axis labels no longer clip.** The first and last
+  tick labels sit exactly on the SVG's left/right boundary; they now anchor
+  inward (`start` / `end`) instead of centering and clipping.
+
 ## [0.11.0] - 2026-07-03
 
 ### Documentation
