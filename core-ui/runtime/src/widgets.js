@@ -177,7 +177,12 @@
     const isModal = !!cfg.backdrop;
     const previousFocus = isModal ? document.activeElement : null;
     if (isModal) {
-      if (NS._modalStack.length === 0) document.body.style.overflow = 'hidden';
+      // Lock scroll on <html>, not <body>: overflow:hidden on <body> turns
+      // the body into a clipped scroll container, which breaks any
+      // position:sticky descendant (a docs nav rail scrolls off-screen on a
+      // scrolled page). The root element locks the viewport just as well while
+      // leaving sticky elements pinned. Scroll position is preserved.
+      if (NS._modalStack.length === 0) document.documentElement.style.overflow = 'hidden';
       NS._modalStack.push(cfg.name);
       Promise.resolve().then(() => {
         // Prefer an explicit [autofocus] element if the slot author
@@ -241,7 +246,7 @@
       if (isModal) {
         const idx = NS._modalStack.indexOf(cfg.name);
         if (idx >= 0) NS._modalStack.splice(idx, 1);
-        if (NS._modalStack.length === 0) document.body.style.overflow = '';
+        if (NS._modalStack.length === 0) document.documentElement.style.overflow = '';
         // preventScroll: restoring focus to the trigger on close must not
         // scroll the page to it (the trigger may be off-screen after the
         // user scrolled), which otherwise jumps the page on dismiss.

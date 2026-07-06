@@ -81,7 +81,7 @@ func TestE2E_Modal_EscClosesAndReturnsFocus(t *testing.T) {
             const el = document.querySelector('[data-fui-widget="site-demo-modal"]');
             return !el || el.hasAttribute('hidden') || getComputedStyle(el).display === 'none';
         })()`, &dismissed),
-		chromedp.Evaluate(`document.body.style.overflow`, &bodyOverflow),
+		chromedp.Evaluate(`document.documentElement.style.overflow`, &bodyOverflow),
 		chromedp.Evaluate(`document.activeElement === document.querySelector('button[data-fui-open="site-demo-modal"]')`, &focusReturned),
 	); err != nil {
 		t.Fatalf("modal Esc: %v", err)
@@ -141,7 +141,7 @@ func TestE2E_Drawer_OpensWithBackdropAndScrollLock(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-drawer"]')?.getAttribute('role')`, &role),
 		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-drawer"]')?.getAttribute('aria-modal')`, &ariaModal),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="site-demo-drawer"]')`, &backdrop),
-		chromedp.Evaluate(`document.body.style.overflow`, &overflow),
+		chromedp.Evaluate(`document.documentElement.style.overflow`, &overflow),
 	); err != nil {
 		t.Fatalf("drawer: %v", err)
 	}

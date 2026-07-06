@@ -63,20 +63,20 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 		chromedp.Navigate(base+"/components/dropdown"),
 		chromedp.WaitReady(`.fui-section-menu__trigger`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.innerWidth`, &viewportW),
-		chromedp.Evaluate(`getComputedStyle(document.body).overflow`, &overflowClosed),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowClosed),
 		chromedp.Evaluate(`document.querySelector('.fui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopBefore),
 		// Open the drawer.
 		chromedp.Click(`.fui-section-menu__trigger`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond), // lazy widget chrome + open
 		chromedp.Evaluate(`document.querySelector('.fui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopAfter),
-		chromedp.Evaluate(`getComputedStyle(document.body).overflow`, &overflowOpen),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="`+drawer+`"]')`, &backdropPresent),
 		// Close on OUTSIDE click — tap the exposed backdrop strip to the right
 		// of the ~337px (90vw) drawer panel. Clicking the panel-covered centre
 		// would (correctly) NOT dismiss, so target the dim area at x≈365.
 		chromedp.MouseClickXY(365, 400),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`getComputedStyle(document.body).overflow`, &overflowAfterBackdrop),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterBackdrop),
 	); err != nil {
 		t.Fatalf("mobile drawer: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestE2E_SectionMenu_CloseButtonAndScrollPreserved(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('[data-fui-widget="`+drawer+`"] .fui-section-menu__close').click()`, nil),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterClose),
-		chromedp.Evaluate(`getComputedStyle(document.body).overflow`, &overflowAfterClose),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterClose),
 	); err != nil {
 		t.Fatalf("close button: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestE2E_SectionMenu_DrawerClosesOnNav(t *testing.T) {
 		chromedp.Click(`[data-fui-widget="`+drawer+`"] .fui-section-menu__lead`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`location.pathname`, &pathAfter),
-		chromedp.Evaluate(`getComputedStyle(document.body).overflow`, &overflowAfter),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfter),
 	); err != nil {
 		t.Fatalf("drawer nav: %v", err)
 	}
@@ -184,5 +184,45 @@ func TestE2E_SectionMenu_DrawerClosesOnNav(t *testing.T) {
 	}
 	if overflowAfter == "hidden" {
 		t.Errorf("the drawer must auto-close after navigation (scroll-lock released); overflow=%q", overflowAfter)
+	}
+}
+
+// Opening the ⌘K command palette on a scrolled docs page must NOT dislodge the
+// sticky nav rail. The reported bug: the scroll-lock set overflow:hidden on
+// <body>, which turns the body into a clipped scroll container and breaks the
+// rail's position:sticky — the whole side menu scrolls off-screen. The lock
+// must go on <html> so sticky descendants survive.
+func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t) // 1280×800 → rail mode
+
+	var railTop, railBottom, innerH float64
+	var railDisplay string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/docs/auth"),
+		chromedp.WaitReady(`[data-fui-comp="fui-section-menu"] .fui-section-menu__rail`, chromedp.ByQuery),
+		// Scroll well past the fold so the rail is sticky-pinned.
+		chromedp.Evaluate(`window.scrollTo(0, 1500)`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		// Open the palette (⌘K trigger in the header).
+		chromedp.Click(`.site-cmd`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`window.innerHeight`, &innerH),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-section-menu__rail')).display`, &railDisplay),
+		chromedp.Evaluate(`document.querySelector('.fui-section-menu__rail').getBoundingClientRect().top`, &railTop),
+		chromedp.Evaluate(`document.querySelector('.fui-section-menu__rail').getBoundingClientRect().bottom`, &railBottom),
+	); err != nil {
+		t.Fatalf("palette + rail: %v", err)
+	}
+	if railDisplay == "none" {
+		t.Fatalf("rail display went none on palette open")
+	}
+	// The rail must still intersect the viewport: top above the fold and
+	// bottom below 0. The bug drove top to ≈ -1364 (fully off-screen above).
+	if railTop > innerH || railBottom < 0 {
+		t.Errorf("opening the palette dislodged the sticky rail off-screen: top=%.0f bottom=%.0f innerHeight=%.0f", railTop, railBottom, innerH)
 	}
 }
