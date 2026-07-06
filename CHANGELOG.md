@@ -5,6 +5,40 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Fixed
+
+- **Opening a modal no longer dislodges sticky elements.** The overlay
+  scroll-lock set `overflow: hidden` on `<body>`, which turns the body into a
+  clipped scroll container and breaks any `position: sticky` descendant — on a
+  scrolled docs page, opening the ⌘K command palette (or any modal/drawer) sent
+  the sticky nav rail off-screen. The lock now applies to `<html>`, which locks
+  the viewport just as effectively while leaving sticky elements pinned and
+  preserving scroll position.
+
+### Added
+
+- **The components gallery now covers the full `framework/ui` catalog.** Added
+  showcase pages for `Hero`, `HeroSplit`, `PricingCard`, `AuthCard`,
+  `FilterToolbar`, `DetailList`, `FactBox`, `TerminalBlock`, `StepRail`, and
+  `StatusPill`, which shipped in the design system but had no `/components/<slug>`
+  demo. A new coverage test (`TestComponentGalleryCoversUI`) parses
+  `framework/ui` and fails when a component constructor has neither a gallery
+  entry nor an explicit allow-list line, so the gallery and
+  `docs/content/ui-new-components.md` can't silently fall behind again.
+
+### Changed
+
+- **Blueprint tutorial teaches "generate once, then own the Go."** The
+  getting-started tutorial no longer edits `gofastr.yml` and re-runs
+  `gofastr generate` (which is one-shot and refuses to overwrite without
+  `--force`) to add security — it generates once with auth enabled, then adds
+  `owner_field` + `access` + the RBAC policy by editing the owned
+  `entities/register.go` and `app.go` directly. Also corrects the REST paths to
+  the `/api` prefix. The dev-mode→production note in `blueprints.md` likewise
+  points at the owned `app.go` rather than "regenerate."
+
 ## [0.12.0] - 2026-07-04
 
 ### Added

@@ -1245,6 +1245,113 @@ func main() {
 		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
 			"infinitescroll.Render(cfg) observes a sentinel and GETs cfg.RPCPath?cursor=X; the handler returns the next page's HTML and sets X-Gofastr-Infinite-Cursor (empty = end). Needs a per-page RPC, so it's shown as a note here."))
 	}},
+
+	// ---------- Marketing ----------
+	{"hero", "Hero", "Marketing", "Centered landing hero: eyebrow + title + subtitle + actions.", func() render.HTML {
+		return ui.Hero(ui.HeroConfig{
+			Eyebrow:  "Open source · v0.x",
+			Title:    "Ship the whole stack from one file.",
+			Subtitle: "UI, REST, OpenAPI, and MCP — generated, then yours to own.",
+			Actions: []render.HTML{
+				ui.Button(ui.ButtonConfig{Label: "Get started", Variant: ui.ButtonPrimary}),
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/"}),
+			},
+		})
+	}},
+	{"herosplit", "HeroSplit", "Marketing", "Two-column hero: copy on one side, media on the other.", func() render.HTML {
+		return ui.HeroSplit(ui.HeroSplitConfig{
+			Copy: html.Div(html.DivConfig{Class: "demo-stack"},
+				html.Heading(html.HeadingConfig{Level: 2}, render.Text("Typed Go, all the way down.")),
+				html.Paragraph(html.TextConfig{}, render.Text("Compose screens and APIs from the same declaration.")),
+				ui.Button(ui.ButtonConfig{Label: "Start building", Variant: ui.ButtonPrimary}),
+			),
+			Media: ui.Card(ui.CardConfig{Heading: "app.go", Description: "RegisterGenerated(fwApp, site, db)"}),
+		})
+	}},
+	{"pricingcard", "PricingCard", "Marketing", "Plan tile with price, feature list, and CTA; optional featured highlight.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.PricingCard(ui.PricingCardConfig{
+				Name: "Starter", Price: "$0", Period: "/mo", Description: "For side projects.",
+				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "#",
+			}),
+			ui.PricingCard(ui.PricingCardConfig{
+				Name: "Pro", Price: "$99", Period: "/mo", Description: "For teams shipping fast.",
+				Features: []string{"Unlimited projects", "Priority support", "SSO"}, CTALabel: "Choose Pro", CTAHref: "#", Featured: true,
+			}),
+		)
+	}},
+	{"authcard", "AuthCard", "Marketing", "Centered card shell for login / register / reset forms.", func() render.HTML {
+		return ui.AuthCard(ui.AuthCardConfig{
+			Title: "Sign in",
+			Body: html.Div(html.DivConfig{Class: "demo-stack"},
+				ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email",
+					Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "demo-email"})}),
+				ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password",
+					Input: html.Input(html.InputConfig{Type: "password", Name: "password", ID: "demo-password"})}),
+				ui.Button(ui.ButtonConfig{Label: "Sign in", Variant: ui.ButtonPrimary}),
+			),
+			Footer: ui.Link(ui.LinkConfig{Href: "#", Text: "Forgot password?"}),
+		})
+	}},
+
+	// ---------- Tags & badges (additions) ----------
+	{"statuspill", "StatusPill", "Tags & badges", "Compact status pill with optional leading dot.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.StatusPill(ui.StatusPillConfig{Label: "Stable", Dot: true}),
+			ui.StatusPill(ui.StatusPillConfig{Label: "Beta", Tone: ui.StatusPillAccent, Dot: true}),
+		)
+	}},
+
+	// ---------- Data (additions) ----------
+	{"detaillist", "DetailList", "Data", "Label/value description list for record detail views.", func() render.HTML {
+		return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
+			{Label: "Name", Value: render.Text("Ada Lovelace")},
+			{Label: "Role", Value: render.Text("Engineer")},
+			{Label: "Status", Value: ui.StatusPill(ui.StatusPillConfig{Label: "Active", Dot: true})},
+		}})
+	}},
+	{"factbox", "FactBox", "Data", "Single labelled fact — a compact label + value pair.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.FactBox(ui.FactBoxConfig{Label: "Uptime", Value: "99.98%"}),
+			ui.FactBox(ui.FactBoxConfig{Label: "Requests", Value: "1.2M", Style: ui.FactStyleValueFirst}),
+		)
+	}},
+	{"terminalblock", "TerminalBlock", "Data", "Terminal transcript with a labelled header and OK/output lines.", func() render.HTML {
+		return ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ gofastr generate"},
+			ui.TerminalOut("Scaffolding owned Go…"),
+			ui.TerminalOK("Generated 10 file(s)"),
+		)
+	}},
+
+	// ---------- Navigation (additions) ----------
+	{"steprail", "StepRail", "Navigation", "Vertical numbered step rail with an active step.", func() render.HTML {
+		return ui.StepRail(ui.StepRailConfig{
+			Title: "Setup",
+			Items: []ui.StepRailItem{
+				{Number: "1", Label: "Create blueprint", Anchor: "#a"},
+				{Number: "2", Label: "Generate app", Anchor: "#b"},
+				{Number: "3", Label: "Own the Go", Anchor: "#c"},
+			},
+			ActiveIndex: 1,
+		})
+	}},
+
+	// ---------- Forms (additions) ----------
+	{"filtertoolbar", "FilterToolbar", "Forms", "Facet filters + search + sort in one GET form; the generated list-screen toolbar.", func() render.HTML {
+		return ui.FilterToolbar(ui.FilterToolbarConfig{
+			Action: "#",
+			Facets: []ui.Facet{
+				{Name: "status", Label: "Status", Value: "open", Options: []ui.FacetOption{
+					{Label: "Open", Value: "open"}, {Label: "Closed", Value: "closed"},
+				}},
+				{Name: "plan", Label: "Plan", Kind: ui.FacetPills, Options: []ui.FacetOption{
+					{Label: "Free", Value: "free"}, {Label: "Pro", Value: "pro"},
+				}},
+			},
+			Search: &ui.FilterSearch{Name: "q", Placeholder: "Search…"},
+			Sort:   []ui.SortOption{{Label: "Newest", Value: "created_desc"}, {Label: "Name A–Z", Value: "name_asc"}},
+		})
+	}},
 }
 
 // =============================================================================

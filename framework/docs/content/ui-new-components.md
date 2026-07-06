@@ -76,6 +76,7 @@ dev server is up.
 - **tabs** — `core-ui/patterns/tabs` — `<details>`-based tab strip, zero JS
 - **tree** — `core-ui/patterns/tree` — recursive tree with roving tabindex + lazy-load
 - **toc** — `framework/ui.TableOfContents` — auto-built sticky nav from `<h2>` / `<h3>`
+- **steprail** — `framework/ui.StepRail` — vertical numbered step rail with an active step + anchor links
 - **steps** — `framework/ui.ProgressSteps` — linear step indicator (horizontal + vertical)
 
 ### Disclosure / surface widgets
@@ -124,6 +125,9 @@ dev server is up.
 - **jsonviewer** — `framework/ui.JSONViewer` — collapsible tree of arbitrary values
 - **diffviewer** — `framework/ui.DiffViewer` — unified or split diff renderer
 - **markdown** — `framework/ui.Markdown` — themed wrapper over `core/markdown`
+- **detaillist** — `framework/ui.DetailList` — label/value description list for record detail views
+- **factbox** — `framework/ui.FactBox` — single labelled fact (compact label + value pair; label-first or value-first)
+- **terminalblock** — `framework/ui.TerminalBlock` — terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
 - **progress** — `core-ui/patterns/progress` — native `<progress>` with theme styling
 - **skeleton** — `core-ui/patterns/skeleton` — pure-CSS shimmer placeholders
 - **spinner** — `framework/ui.Spinner` — inline CSS loading indicator
@@ -131,6 +135,7 @@ dev server is up.
 ### Tags, badges, filters
 
 - **tag** — `framework/ui.Tag` — interactive pill (linked / removable / status-variant)
+- **statuspill** — `framework/ui.StatusPill` — compact status pill with optional leading dot (neutral / accent tone)
 - **filtertoolbar** — `framework/ui.FilterToolbar` — the filter/sort control strip above a list (facet `<select>` or radio-pill groups + search + sort + Apply/Reset), a single URL-driven GET form; wraps → stacks responsively so nothing clips on mobile
 - **filterchipbar** — `framework/ui.FilterChipBar` — `role=toolbar` of removable filter chips
 - **copybutton** — `framework/ui.CopyButton` — clipboard button with SR-announced confirmation
@@ -144,6 +149,13 @@ dev server is up.
 - **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
 - **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
 - **seo-bundle** — `ScreenSEO()` returning an `SEO` struct — per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
+
+### Marketing & page sections
+
+- **hero** — `framework/ui.Hero` — centered landing hero (eyebrow + title + subtitle + actions + optional media)
+- **herosplit** — `framework/ui.HeroSplit` — two-column hero (copy + media) with equal / copy-wide / media-wide ratios
+- **pricingcard** — `framework/ui.PricingCard` — plan tile (price + period + feature list + CTA), optional featured highlight
+- **authcard** — `framework/ui.AuthCard` — centered card shell for login / register / reset forms (title + alert + body + footer)
 
 ---
 
