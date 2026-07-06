@@ -535,10 +535,12 @@ sessions are DB-backed via `auth_sessions` and survive).
 
 `gofastr generate` prints a warning whenever an auth-enabled blueprint
 generates in dev mode, and the generated wiring carries the same notice.
-Before deploying, set `dev_mode: false` **and** `jwt_secret` (sourced
-from a secret manager, not committed to the blueprint), serve over
-HTTPS, and regenerate. Unknown keys under `app.auth` are rejected, like
-every other blueprint section.
+Before deploying, turn dev mode off with a real signing key: set
+`DevMode: false` and a `JWTSecret` (sourced from a secret manager, not
+committed) in the `auth.AuthConfig` in the generated `app.go` — that code
+is yours to edit, so change it there rather than re-running the generator.
+Serve over HTTPS. Unknown keys under `app.auth` are rejected, like every
+other blueprint section.
 
 #### `jwt_secret` is required with `dev_mode: false`
 
@@ -779,10 +781,13 @@ the app-generator boundary.
 - **Deploying with `dev_mode` left at its default.** Omitting
   `app.auth.dev_mode` means **true**: an HTTP-friendly session cookie
   and a per-process JWT secret that invalidates bearer tokens on every
-  restart. Before deploying, set `dev_mode: false` **and** `jwt_secret`
-  (from a secret manager), serve HTTPS, and regenerate. `dev_mode:
-  false` without `jwt_secret` fails validation — and the generated
-  app's auth battery would refuse to boot.
+  restart. Before deploying, set `DevMode: false` **and** a real
+  `JWTSecret` (from a secret manager) in the generated `app.go`
+  `auth.AuthConfig` — the emitted code is yours, so edit it rather than
+  regenerating. Serve HTTPS. (If you'd rather bake it in *before* the
+  one-shot generate, set `dev_mode: false` + `jwt_secret` in the
+  blueprint — but `dev_mode: false` without `jwt_secret` fails
+  validation, and the generated app's auth battery would refuse to boot.)
 - **Expecting `app.auth: enabled` to protect entity data.** The
   session middleware is pass-through for anonymous requests. Only
   per-entity `owner_field`, `access`, or `multi_tenant` gate the

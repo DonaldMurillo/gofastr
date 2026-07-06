@@ -4,12 +4,19 @@ This is the thesis tutorial. In about twenty minutes you will:
 
 1. write a `gofastr.yml` blueprint and generate a working app — a
    server-rendered UI **and** a REST API (plus OpenAPI and MCP tools)
-   from one file;
-2. secure it — auth battery, per-user `owner_field` scoping, and an
-   RBAC `access:` gate, all declared in the blueprint;
-3. step past the generator and customize the app in plain Go — the
-   generated code is a library you call, not a host you live inside;
+   from one file, in a single `gofastr generate`;
+2. **own the generated Go** — add per-user `owner_field` scoping and an
+   RBAC delete-gate by editing the emitted code directly, not by
+   re-running the generator;
+3. keep going in plain Go — a hand-written screen and role management;
 4. point at the deploy recipe for the single-binary Docker image.
+
+The one rule that shapes everything below: **`gofastr generate` is
+one-shot.** You run it once to scaffold. From that moment the emitted
+Go — not the blueprint — is the source of truth, and you evolve the app
+by editing it, exactly the way you would any Go project. The generator
+even refuses to overwrite an existing project without `--force`, so it
+can't silently clobber your work.
 
 Every command below is copy-paste runnable. Each step ends with a
 `curl` that proves the step worked.
@@ -42,6 +49,8 @@ app:
   db:
     driver: sqlite
     url: file:notes.db
+  auth:
+    enabled: true
 
 entities:
   - name: notes
@@ -70,11 +79,13 @@ screens:
         empty_text: No notes yet.
 ```
 
-The `entity_list` gives you a server-rendered table with search, sort, and
-pagination out of the box. Once an entity has an enum, bool, or relation column,
-add `filters: [<column>, …]` to the block and the generated screen renders a
-`ui.FilterToolbar` of facet filters above the table — see the
-[`entity_list` reference](blueprints.md) for the details.
+`auth.enabled` wires the auth battery — register/login/logout routes and
+session middleware — because you'll want a signed-in user in the next
+step. The `entity_list` gives you a server-rendered table with search,
+sort, and pagination out of the box. Once an entity has an enum, bool, or
+relation column, add `filters: [<column>, …]` to the block and the
+generated screen renders a `ui.FilterToolbar` of facet filters above the
+table — see the [`entity_list` reference](blueprints.md) for the details.
 
 Validate, generate, run:
 
@@ -87,21 +98,24 @@ go run .
 
 The scaffold is normal, owned Go — a flat `package main` at the module root:
 `entities/register.go` holds the `app.Entity(...)` registrations,
-`screens.go` the screen components, `app.go` the `RegisterGenerated` wiring,
-`main.go` the entrypoint. Read them — they are short, there is no hidden layer
-underneath, and they carry no `DO NOT EDIT` header because they're yours to
-edit and commit. `gofastr generate` is one-shot: it scaffolds once and refuses
-to overwrite an existing project (pass `--force` to regenerate the whole set),
-because from here the owned Go — not the blueprint — is the source of truth.
+`screens.go` the screen components, `app.go` the `RegisterGenerated` wiring
+(including the auth setup), `main.go` the entrypoint. Read them — they are
+short, there is no hidden layer underneath, and they carry no `DO NOT EDIT`
+header because they're yours to edit and commit. This is the whole point:
+`gofastr generate` is one-shot, so from here the owned Go — not the
+blueprint — is the source of truth. (Run it again and it refuses to
+overwrite; `--force` regenerates the *entire* set and would discard the
+edits you're about to make, so you won't use it past this first run.)
 
-Prove both surfaces from a second terminal:
+Prove all three surfaces from a second terminal — the REST API lives
+under the `/api` prefix:
 
 ```bash
 # The API — auto-CRUD with validation, filtering, pagination:
-curl -X POST http://localhost:8080/notes \
+curl -X POST http://localhost:8080/api/notes \
   -H 'Content-Type: application/json' \
   -d '{"title":"First note","body":"hello"}'
-curl http://localhost:8080/notes
+curl http://localhost:8080/api/notes
 
 # The UI — server-rendered screen at /:
 curl -s http://localhost:8080/ | grep "My Notes"
@@ -112,91 +126,95 @@ curl -s -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-One file produced all three. Right now, though, the API is anonymous —
-anyone can read and write every note. Fix that next.
+One file produced all three. Auth is wired — `/auth/register` and
+`/auth/login` exist — but the `notes` API is still **anonymous**: the
+session middleware is pass-through, and nothing yet scopes a note to its
+creator, so anyone can read and write every row. Fix that next — by
+owning the Go.
 
-## 2. Secure it: auth + owner scoping + RBAC
+## 2. Own the Go: per-user scoping + an RBAC gate
 
-Edit `gofastr.yml` — three changes, all declarative:
+The rest of the app grows in Go, not in the blueprint. To lock notes to
+their owner and gate deletion behind a role, make two edits to the
+generated code. (In a real project you might have declared `owner_field`
+and `access` in the blueprint up front; doing it by hand here is the same
+edit you'd make for *any* change after the one-shot — this is what
+"owning the code" looks like.)
 
-1. enable the auth battery (`app.auth`),
-2. give notes an owner column and `owner_field` (per-user scoping),
-3. gate deletion behind a permission with `access:`.
+**Edit `entities/register.go`** — add the owner column, `OwnerField`, and
+`Access` to the `notes` registration:
 
-```yaml
-# gofastr.yml
-app:
-  name: Notes
-  module: example.com/notes
-  db:
-    driver: sqlite
-    url: file:notes.db
-  auth:
-    enabled: true
-
-entities:
-  - name: notes
-    crud: true
-    mcp: true
-    owner_field: user_id
-    access:
-      delete: notes:admin
-    fields:
-      - name: user_id
-        type: string
-      - name: title
-        type: string
-        required: true
-      - name: body
-        type: text
-
-screens:
-  - name: home
-    route: /
-    title: Notes
-    body:
-      - type: heading
-        level: 1
-        text: My Notes
-      - kind: entity_list
-        text: Latest notes
-        entity: notes
-        fields: [title]
-        limit: 10
-        empty_text: No notes yet.
+```go
+	app.Entity("notes", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String}, // the owner column
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "body", Type: schema.Text},
+		},
+		OwnerField: "user_id",                                    // per-user scoping
+		Access:     framework.AccessControl{Delete: "notes:admin"}, // RBAC gate on DELETE
+		CRUD:       boolPtr(true),
+		MCP:        true,
+	})
 ```
 
-Regenerate and restart — auto-migrate converges the schema on boot,
-creating missing tables *and* adding the new `user_id` column to the
-existing `notes` table (additive only; it never drops or retypes):
+`OwnerField` makes CRUD stamp `user_id` from the session on writes and
+filter every read to the caller's rows — the client never sets it.
+`Access` declares that `DELETE` requires the `notes:admin` permission.
+
+**Edit `app.go`** — declaring `Access` isn't enough; a permission has to
+be *resolved* to a caller. First add these three imports to the existing
+`import (...)` block (leave the generated ones in place — the exact set
+varies with your blueprint):
+
+```go
+	"context"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework/access"
+```
+
+Then install a `RolePolicy` just after the `auth.SessionMiddleware(authMgr)`
+line in `RegisterGenerated`:
+
+```go
+		fwApp.Use(auth.SessionMiddleware(authMgr))
+
+		// notes declares access: {delete: notes:admin}. Resolve a signed-in
+		// user's roles to permissions so the gated CRUD API can authorize.
+		// admin holds the wildcard; add finer per-role Grants as you define
+		// more roles. Without this, every gated write 403s.
+		rbac := access.NewRolePolicy()
+		rbac.Grant("admin", access.Wildcard)
+		fwApp.Use(access.Middleware(rbac, func(ctx context.Context) []string {
+			if u, ok := handler.GetUser(ctx); ok && u != nil {
+				if rh, ok := u.(interface{ GetRoles() []string }); ok {
+					return rh.GetRoles()
+				}
+			}
+			return nil
+		}))
+```
+
+Restart. Auto-migrate converges the schema on boot — it adds the new
+`user_id` column to the existing `notes` table (additive only; it never
+drops or retypes):
 
 ```bash
-gofastr generate --from=gofastr.yml
-go mod tidy
 go run .
 ```
 
-Prefer to review schema changes before they run rather than lean on
-boot auto-migrate? Generate a versioned migration from the owned entities
-and apply it through the tracked, locked, checksummed runner:
+Prefer to review schema changes before they run rather than lean on boot
+auto-migrate? Generate a versioned migration from the owned entities and
+apply it through the tracked, locked, checksummed runner instead — see
+[migrations](migrations.md).
+
+Walk the security model with curl. The note from step 1 predates the
+owner column, so it belongs to nobody and no user will see it — per-user
+scoping applies to reads too, not just writes:
 
 ```bash
-gofastr migrate generate add_user_id   # writes migrations/0002_add_user_id.sql — review it
-gofastr migrate up --db-url='file:notes.db'
-```
-
-The generated app now mounts `/auth/register`, `/auth/login`,
-`/auth/logout`, and session middleware that resolves the cookie to a
-user on every request, so owner-scoped CRUD sees who is calling. (The
-note created in step 1 predates auth, so its `user_id` is empty — it
-belongs to nobody and no user will see it. Per-user scoping applies to
-reads too, not just writes.)
-
-Walk the security model with curl:
-
-```bash
-# Anonymous access fails closed:
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/notes   # 401
+# Anonymous access now fails closed:
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/notes   # 401
 
 # Register and log in (the cookie jar holds the session):
 curl -s -X POST http://localhost:8080/auth/register \
@@ -208,10 +226,10 @@ curl -s -c ana.jar -X POST http://localhost:8080/auth/login \
 
 # Create + list as Ana — user_id is stamped server-side, never trusted
 # from the client:
-curl -s -b ana.jar -X POST http://localhost:8080/notes \
+curl -s -b ana.jar -X POST http://localhost:8080/api/notes \
   -H 'Content-Type: application/json' \
   -d '{"title":"Ana private note"}'
-curl -s -b ana.jar http://localhost:8080/notes
+curl -s -b ana.jar http://localhost:8080/api/notes
 
 # A second user sees an empty list — rows are scoped per owner:
 curl -s -X POST http://localhost:8080/auth/register \
@@ -220,33 +238,37 @@ curl -s -X POST http://localhost:8080/auth/register \
 curl -s -c bob.jar -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"bob@example.com","password":"s3cret-pass"}'
-curl -s -b bob.jar http://localhost:8080/notes                          # total: 0
+curl -s -b bob.jar http://localhost:8080/api/notes                          # total: 0
 
 # DELETE is RBAC-gated and fails closed: until a policy grants
 # notes:admin, even the owner gets 403.
-NOTE_ID=$(curl -s -b ana.jar http://localhost:8080/notes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])')
+NOTE_ID=$(curl -s -b ana.jar http://localhost:8080/api/notes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])')
 curl -s -o /dev/null -w "%{http_code}\n" -b ana.jar \
-  -X DELETE http://localhost:8080/notes/$NOTE_ID                        # 403
+  -X DELETE http://localhost:8080/api/notes/$NOTE_ID                        # 403
 ```
 
-That 403 is correct, not broken: `access:` emits
-`framework.AccessControl` into the generated registration, and the
-framework denies any gated operation until **you** decide which roles
-hold which permissions. Declaring policy is application logic — which
-is the cue for the next step.
+That 403 is correct, not broken: the `RolePolicy` you installed grants
+`notes:admin` to nobody yet. Deciding which roles hold which permissions
+is application logic — the cue for the next step.
 
-The same scoping applies to the MCP tools and the `_batch` /
-`_events` endpoints, and the OpenAPI spec advertises the 401/403
-contract — see [access-control](access-control.md) and
+The same scoping applies to the MCP tools and the `_batch` / `_events`
+endpoints, and the OpenAPI spec advertises the 401/403 contract — see
+[access-control](access-control.md) and
 [entity-declarations](entity-declarations.md) → "Per-user scoping".
 
-## 3. Own the Go: policy + a hand-written screen
+## 3. Keep owning the Go: roles + a hand-written screen
 
-The scaffold is a flat `package main` you own — `main.go`, `app.go`,
-`screens.go`, `entities/`. There is no separate "generator" package to import;
-you customize by editing these files directly and adding your own. This is the
-escape hatch as designed: the generated code is plain Go you compose, not a
-runtime you configure.
+Everything from here is ordinary Go you add and edit. Grant a role, then
+drop in a screen the blueprint never knew about.
+
+You already wired the `RolePolicy` in step 2, so promoting a user to
+`admin` gives them the wildcard — and the note deletion gate opens. There
+is no generated role-management UI yet (v0.x honesty), so set the role
+with one SQL statement:
+
+```bash
+sqlite3 notes.db "UPDATE auth_users SET roles='[\"admin\"]' WHERE email='ana@example.com';"
+```
 
 Add a hand-written screen in a new file at the root — same package, same
 `Screen` interface the generated ones implement:
@@ -276,8 +298,9 @@ func (s *AboutScreen) Render() render.HTML {
 }
 ```
 
-Register it by editing the scaffolded `main.go` — it's yours. Just after the
-generated `RegisterGenerated(fwApp, site, db)` call, add your own screen:
+Register it by editing the scaffolded `main.go` — it's yours. Just after
+the generated `RegisterGenerated(fwApp, site, db)` call, add your own
+screen:
 
 ```go
 	RegisterGenerated(fwApp, site, db)
@@ -286,45 +309,36 @@ generated `RegisterGenerated(fwApp, site, db)` call, add your own screen:
 	site.Register("/about", &AboutScreen{}, nil)
 ```
 
-RBAC is already wired: because the `notes` entity declares `access:`,
-`RegisterGenerated` (in `app.go`) installs a `RolePolicy` that grants the
-`admin` role the wildcard. To add finer per-role grants, edit that block in
-`app.go` — the generated comment marks the spot ("add finer per-role
-`Grant`s … as you define more roles").
-
-Promote Ana to admin (there is no generated role-management UI yet —
-v0.x honesty — so it's one SQL statement), then re-run the app:
+Restart, then verify the full model — log in again so the session
+reflects Ana's new role:
 
 ```bash
-sqlite3 notes.db "UPDATE auth_users SET roles='[\"admin\"]' WHERE email='ana@example.com';"
 go run .
 ```
-
-Verify the full model — log in again so the session reflects the role:
 
 ```bash
 curl -s -c ana.jar -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"ana@example.com","password":"s3cret-pass"}'
-NOTE_ID=$(curl -s -b ana.jar http://localhost:8080/notes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])')
+NOTE_ID=$(curl -s -b ana.jar http://localhost:8080/api/notes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])')
 
 # Bob (role: user) still can't delete:
 curl -s -o /dev/null -w "%{http_code}\n" -b bob.jar \
-  -X DELETE http://localhost:8080/notes/$NOTE_ID                        # 403
+  -X DELETE http://localhost:8080/api/notes/$NOTE_ID                        # 403
 
 # Ana (role: admin) can:
 curl -s -o /dev/null -w "%{http_code}\n" -b ana.jar \
-  -X DELETE http://localhost:8080/notes/$NOTE_ID                        # 204
+  -X DELETE http://localhost:8080/api/notes/$NOTE_ID                        # 204
 
 # And the hand-written screen renders next to the generated one:
 curl -s http://localhost:8080/about | grep "Hand-written in Go"
 ```
 
-From here on the owned Go at the root is the whole app: `go run .` runs the
-generated screens plus your `about.go` and your `main.go` edits, all one
-`package main`. The blueprint has done its job — it was a one-shot on-ramp, not
-a source you keep regenerating from. To add a new entity or screen later, edit
-the owned Go directly (or scaffold a fresh app in a scratch dir and copy what
+The owned Go at the root is now the whole app: `go run .` runs the
+generated screens plus your `about.go` and your `register.go` / `app.go` /
+`main.go` edits, all one `package main`. The blueprint did its job — it
+was a one-shot on-ramp. To add another entity or screen later, edit the
+owned Go directly (or scaffold a fresh app in a scratch dir and copy what
 you want across).
 
 ## 4. Deploy
@@ -340,14 +354,14 @@ PORT=8080 ./app
 For the production multi-stage Dockerfile (distroless, non-root), the
 SQLite-vs-Postgres driver decision, secrets, and the
 migrations-as-a-release-step pattern, follow [deploy](deploy.md). Two
-things to do before shipping an auth-enabled app:
+things to do before shipping an auth-enabled app — both are edits to the
+Go you own:
 
-- turn off auth dev mode: set `dev_mode: false` and `jwt_secret` under
-  `app.auth` in the blueprint and re-scaffold with `--force` (or, since the
-  code is yours, flip `DevMode`/`JWTSecret` in the generated `app.go`
-  `AuthConfig` directly). The default is `dev_mode: true` because production
-  cookies require HTTPS — `gofastr generate` warns until you opt out — see
-  [auth](auth.md) and [blueprints](blueprints.md);
+- turn off auth dev mode: in the generated `app.go`, set
+  `DevMode: false` and a real `JWTSecret` in the `auth.AuthConfig`
+  (source the secret from the environment / a secret manager — the
+  generated code already reads `os.Getenv("JWT_SECRET")`). The default is
+  dev mode because production cookies require HTTPS — see [auth](auth.md);
 - decide whether `/openapi.json` stays auth-gated (the default) or is
   exposed via `framework.WithPublicOpenAPI()`.
 
@@ -369,18 +383,21 @@ things to do before shipping an auth-enabled app:
 
 ## Common mistakes
 
+- **Re-running `gofastr generate` to make a change.** It's one-shot: on
+  an existing project it refuses to overwrite (and `--force` regenerates
+  everything, discarding your edits). After the first scaffold, change
+  the app by editing the owned Go — `entities/register.go`, `app.go`,
+  `screens.go`, and your own files beside them.
 - **Treating the scaffold as untouchable.** The generated `entities/`
-  package and the root `app.go`/`screens.go`/… are owned `package main` Go
-  with no `DO NOT EDIT` header — edit them directly and add your own files
-  beside them. `gofastr generate` is one-shot: it scaffolds once and refuses
-  to overwrite an existing project (use `--force` to regenerate the whole set).
-- **Expecting `access:` to work without a policy.** The gate fails
-  closed by design: declaring `access: {delete: notes:admin}` without
-  mounting `framework.AccessMiddleware` means *nobody* can delete.
-  That's a feature — the declaration states the requirement; the app
-  decides who satisfies it.
-- **Forgetting to re-login after changing roles.** Roles travel with
-  the authenticated user; refresh the session after promoting one.
+  package and the root `app.go` / `screens.go` / `main.go` are owned
+  `package main` Go with no `DO NOT EDIT` header — edit them directly.
+- **Declaring `access:` (or `Access`) without resolving roles.** The gate
+  fails closed by design: an `AccessControl` requirement means *nobody*
+  passes until an `access.RolePolicy` grants the permission and an
+  `access.Middleware` resolves the caller's roles (step 2). The
+  declaration states the requirement; your code decides who satisfies it.
+- **Forgetting to re-login after changing roles.** Roles travel with the
+  authenticated user; refresh the session after promoting one.
 - **Shipping auth dev mode.** Development convenience only. Set
-  `dev_mode: false` plus a real `jwt_secret` under `app.auth` and
-  regenerate before deploying ([deploy](deploy.md) → Secrets).
+  `DevMode: false` plus a real `JWTSecret` in the generated `app.go`
+  before deploying ([deploy](deploy.md) → Secrets).
