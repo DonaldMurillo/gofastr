@@ -25,6 +25,10 @@ type PricingCardConfig struct {
 	CTAHref     string   // CTA target
 	Featured    bool     // highlight as the recommended plan
 	ID          string
+	// HeadingLevel overrides the plan-name heading level (default 3).
+	// Set to 2 when cards sit directly under the page <h1> (no
+	// intervening section <h2>) so axe's heading-order rule passes.
+	HeadingLevel int
 	Class       string
 }
 
@@ -38,8 +42,12 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
+	level := cfg.HeadingLevel
+	if level < 1 || level > 6 {
+		level = 3
+	}
 	head := []render.HTML{
-		html.Heading(html.HeadingConfig{Level: 3, Class: "ui-pricing-card__name"}, render.Text(cfg.Name)),
+		html.Heading(html.HeadingConfig{Level: level, Class: "ui-pricing-card__name"}, render.Text(cfg.Name)),
 	}
 	if cfg.Featured {
 		head = append([]render.HTML{html.Span(html.TextConfig{Class: "ui-pricing-card__badge"}, render.Text("Recommended"))}, head...)
@@ -105,7 +113,12 @@ func pricingCardCSS(_ style.Theme) string {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--ui-pricing-card-badge-fg, var(--color-primary, #4338CA));
+  /* Mix the primary 70% toward the text token so the badge text adapts to
+     BOTH schemes: in light mode text is dark → the mix darkens the primary
+     for contrast on the light tint; in dark mode text is light → the mix
+     lightens a bright primary (e.g. #8B80F2) so it clears 4.5:1 on the
+     semi-transparent tint over a dark featured card. The knob overrides. */
+  color: var(--ui-pricing-card-badge-fg, color-mix(in oklab, var(--color-primary, #4338CA) 70%, var(--color-text, #18181B)));
   background-color: color-mix(in srgb, var(--color-primary, #4338CA) 12%, transparent);
   padding: 0.15rem var(--spacing-md, 0.5rem);
   border-radius: 999px;

@@ -495,7 +495,7 @@ func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id stri
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
 	})
-	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title)})
+	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title), HeadingLevel: 2})
 	if err != nil {
 		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
 	}

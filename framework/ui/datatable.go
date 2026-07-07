@@ -268,6 +268,14 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 	}
 	thAttrs := html.Attrs{}
 	if !col.Sortable {
+		// Empty-header columns (actions / icons) carry no visible label —
+		// their cells are self-evidently labeled (View/Edit/Delete links).
+		// Hide the empty <th> from the a11y tree so axe's empty-table-header
+		// rule doesn't fire on a header that intentionally has no text, and
+		// so screen readers don't announce an empty column header.
+		if col.Header == "" {
+			thAttrs["aria-hidden"] = "true"
+		}
 		thCfg.ExtraAttrs = thAttrs
 		return html.TH(thCfg, render.Text(col.Header))
 	}

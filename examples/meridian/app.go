@@ -111,18 +111,18 @@ func appTheme() style.Theme {
 	theme.Colors.Background.Value = "#F8F7F4"
 	theme.Colors.Border.Value = "#E7E5DF"
 	theme.Colors.BorderStrong.Value = "#33334A"
-	theme.Colors.Danger.Value = "#B42318"
+	theme.Colors.Danger.Value = "#B91C1C" // 5.2:1 on its 15% tinted chip — was #B42318 (fails AA on badges)
 	theme.Colors.Info.Value = "#1D4ED8"
 	theme.Colors.Primary.Value = "#4338CA"
 	theme.Colors.PrimaryFg.Value = "#FFFFFF"
 	theme.Colors.Secondary.Value = "#0E7C86"
-	theme.Colors.Success.Value = "#15803D"
+	theme.Colors.Success.Value = "#166534" // 5.6:1 on its 15% tinted chip — was #15803D (4.10:1, fails AA on badges)
 	theme.Colors.Surface.Value = "#FFFFFF"
 	theme.Colors.SurfaceSoft.Value = "#F2F1EC"
 	theme.Colors.Text.Value = "#1B1B2A"
 	theme.Colors.TextMuted.Value = "#65657A"
-	theme.Colors.TextSubtle.Value = "#9A9AAB"
-	theme.Colors.Warning.Value = "#B45309"
+	theme.Colors.TextSubtle.Value = "#6A6A72" // 4.7:1 on surface-soft — was #9A9AAB (2.3:1, fails AA on eyebrows/footer titles)
+	theme.Colors.Warning.Value = "#854D0E" // 5.4:1 on its 15% tinted chip — was #B45309 (fails AA on badges)
 	theme.Fonts.Body.Value = "'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 	theme.Fonts.Heading.Value = "'Bricolage Grotesque', 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 	theme.DarkColors = map[string]string{
@@ -140,7 +140,7 @@ func appTheme() style.Theme {
 		"surface-soft":  "#29262F",
 		"text":          "#ECEAF3",
 		"text-muted":    "#A29FB0",
-		"text-subtle":   "#726F80",
+		"text-subtle":   "#9498AC", // 5.9:1 on dark surface — was #726F80 (3.8:1, fails AA on eyebrows/footer)
 		"warning":       "#FBBF24",
 	}
 	return theme
@@ -168,7 +168,7 @@ func inkTheme() style.Theme {
 		&t.Colors.SurfaceSoft:  "#29262F",
 		&t.Colors.Text:         "#ECEAF3",
 		&t.Colors.TextMuted:    "#A29FB0",
-		&t.Colors.TextSubtle:   "#726F80",
+		&t.Colors.TextSubtle:   "#9498AC",
 		&t.Colors.Warning:      "#FBBF24",
 	} {
 		field.Value = value

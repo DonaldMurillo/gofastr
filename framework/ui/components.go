@@ -17,6 +17,11 @@ type PageHeaderConfig struct {
 	Subtitle string      // optional supporting text below the title
 	Eyebrow  string      // optional small label above the title (e.g. "Customers")
 	Actions  render.HTML // optional trailing action slot (button row, link)
+	// HeadingLevel overrides the title's heading level (default 1). Set to
+	// 2 when the header is a sub-section of a page that already has an <h1>
+	// (e.g. a related-list block on a detail page) so the outline doesn't
+	// produce a second <h1> or skip levels.
+	HeadingLevel int
 	Class    string
 	ID       string
 }
@@ -40,8 +45,12 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 			html.TextConfig{Class: "ui-page-header__eyebrow"},
 			render.Text(cfg.Eyebrow)))
 	}
+	level := cfg.HeadingLevel
+	if level < 1 || level > 6 {
+		level = 1
+	}
 	textChildren = append(textChildren,
-		html.Heading(html.HeadingConfig{Level: 1,
+		html.Heading(html.HeadingConfig{Level: level,
 			Class: "ui-page-header__title"}, render.Text(cfg.Title)))
 	if cfg.Subtitle != "" {
 		textChildren = append(textChildren, html.Paragraph(

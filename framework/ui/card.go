@@ -27,6 +27,12 @@ type CardConfig struct {
 	// as the region name.
 	Heading string
 
+	// HeadingLevel overrides the heading element level (default 3).
+	// Set to 2 when the card is a top-level page section (e.g. a
+	// dashboard widget directly under the page <h1>) so the heading
+	// outline doesn't skip from h1 to h3.
+	HeadingLevel int
+
 	// Description is optional supporting text rendered beneath the
 	// heading.
 	Description string
@@ -81,8 +87,12 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		out = append(out, html.Div(html.DivConfig{Class: "ui-card__header"}, cfg.Header))
 	} else if cfg.Heading != "" {
 		headingID = "ui-card-" + slug(cfg.Heading)
+		level := cfg.HeadingLevel
+		if level < 1 || level > 6 {
+			level = 3
+		}
 		hdr := []render.HTML{
-			html.Heading(html.HeadingConfig{Level: 3, ID: headingID, Class: "ui-card__heading"},
+			html.Heading(html.HeadingConfig{Level: level, ID: headingID, Class: "ui-card__heading"},
 				render.Text(cfg.Heading)),
 		}
 		if cfg.Description != "" {

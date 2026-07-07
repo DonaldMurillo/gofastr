@@ -174,7 +174,13 @@ func (s sidebarComponent) Render() render.HTML { return s.render() }
 func (s sidebarComponent) render() render.HTML {
 	cfg := s.cfg
 	var b strings.Builder
-	b.WriteString(`<aside class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar>`)
+	// A <div>, not <aside>: when slotted into a layout the layout wraps
+	// the sidebar in its own <nav aria-label="Sidebar"> landmark, so an
+	// <aside> here would nest complementary inside navigation — axe's
+	// landmark-complementary-is-top-level rule fires on the double
+	// landmark. The layout's <nav> is the sole landmark; this element
+	// is the styled shell (display:contents, so it adds no box).
+	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar>`)
 
 	if !cfg.SuppressDrawerTrigger {
 		b.WriteString(`<button class="ui-sidebar__hamburger" type="button" ` +
@@ -184,11 +190,11 @@ func (s sidebarComponent) render() render.HTML {
 
 	b.WriteString(`<div class="ui-sidebar__inline">`)
 	b.WriteString(string(sidebarBody(cfg)))
-	b.WriteString(`</div></aside>`)
+	b.WriteString(`</div></div>`)
 	return sidebarStyle.WrapHTML(render.HTML(b.String()))
 }
 
-// SidebarBody renders the navigation content only — no <aside> shell,
+// SidebarBody renders the navigation content only — no sidebar shell,
 // no hamburger. Use it as the Slot content of a preset.Drawer widget
 // that mirrors the sidebar at narrow viewports.
 func SidebarBody(cfg SidebarConfig) render.HTML {
@@ -417,7 +423,16 @@ func sidebarCSS(_ style.Theme) string {
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link:hover,
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
-  outline: none;
+}
+[data-fui-comp="ui-sidebar"] .ui-sidebar__link:focus-visible {
+  /* Visible focus ring on BOTH the default and the active
+     (primary-background) link. The previous background-only signal was
+     invisible on the active link: the [aria-current="page"] rule below
+     (equal specificity, later source) overrode the focus background, and
+     outline:none removed the ring — so a keyboard user could not see
+     focus land on the current page's nav item. */
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link[aria-current="page"] {
   /* Use the primary + primary-fg token pair so contrast is guaranteed
