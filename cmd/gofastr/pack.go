@@ -1311,6 +1311,7 @@ func packReadScreens(dir string) ([]BlueprintScreen, error) {
 	if err != nil {
 		return nil, err
 	}
+	helpers := packHelperReturns(appFile, scrFile)
 	titles := map[string]string{}
 	descs := map[string]string{}
 	bodies := map[string][]BlueprintBlock{}
@@ -1326,7 +1327,7 @@ func packReadScreens(dir string) ([]BlueprintScreen, error) {
 		case "ScreenDescription":
 			descs[recv] = returnString(fn)
 		case "Render", "RenderCtx":
-			bodies[recv] = reverseRenderBody(fn)
+			bodies[recv] = reverseRenderBody(fn, helpers)
 		}
 	}
 	var out []BlueprintScreen
@@ -1495,8 +1496,11 @@ func isSynthesizedBody(body []BlueprintBlock) bool {
 }
 
 // reverseRenderBody finds the screen's `return render.Tag("div", attrs, …)` and
-// reverses each child expression into a block.
-func reverseRenderBody(fn *ast.FuncDecl) []BlueprintBlock {
+// reverses each child expression into a block. helpers maps package-local
+// zero-arg function names to their single return expression, so a resource
+// chain extracted into a shared helper (screen + island endpoint reusing one
+// config) still reverses.
+func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []BlueprintBlock {
 	if fn.Body == nil {
 		return nil
 	}
@@ -1511,13 +1515,36 @@ func reverseRenderBody(fn *ast.FuncDecl) []BlueprintBlock {
 		}
 		var out []BlueprintBlock
 		for _, arg := range call.Args[2:] {
-			if b, ok := reverseBlock(arg); ok {
+			if b, ok := reverseBlock(arg, helpers); ok {
 				out = append(out, b)
 			}
 		}
 		return out
 	}
 	return nil
+}
+
+// packHelperReturns indexes top-level zero-arg functions with a single
+// `return <expr>` across the parsed files, for reverseEntityResource to
+// follow one hop when a screen body calls a local helper.
+func packHelperReturns(files ...*ast.File) map[string]ast.Expr {
+	out := map[string]ast.Expr{}
+	for _, f := range files {
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Body == nil ||
+				(fn.Type.Params != nil && len(fn.Type.Params.List) > 0) ||
+				len(fn.Body.List) != 1 {
+				continue
+			}
+			ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+			if !ok || len(ret.Results) != 1 {
+				continue
+			}
+			out[fn.Name.Name] = ret.Results[0]
+		}
+	}
+	return out
 }
 
 // callSel returns "pkg.Method" for a simple selector call, else "".
@@ -1531,20 +1558,20 @@ func callSel(call *ast.CallExpr) string {
 }
 
 // reverseBlock turns one emitted UI expression back into a BlueprintBlock.
-func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
+func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
 		return BlueprintBlock{}, false
 	}
 	// Entity resource chains (appResources["x"]…List/Detail/Form(ctx)).
-	if b, ok := reverseEntityResource(call); ok {
+	if b, ok := reverseEntityResource(call, helpers); ok {
 		return b, true
 	}
 	switch callSel(call) {
 	case "ui.Hero":
 		return reverseHero(call), true
 	case "ui.Section":
-		return reverseSection(call), true
+		return reverseSection(call, helpers), true
 	case "ui.Card":
 		// A titled chart is emitted as ui.Card(Heading, <chart>) — reverse
 		// it back to the chart block, not a card, with the heading as its
@@ -1583,7 +1610,7 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 		}
 		b := BlueprintBlock{Kind: "stat_row"}
 		for _, arg := range call.Args[1:] {
-			if cb, ok := reverseBlock(arg); ok {
+			if cb, ok := reverseBlock(arg, helpers); ok {
 				b.Children = append(b.Children, cb)
 			}
 		}
@@ -1607,7 +1634,7 @@ func reverseBlock(e ast.Expr) (BlueprintBlock, bool) {
 	return BlueprintBlock{}, false
 }
 
-func reverseEntityResource(call *ast.CallExpr) (BlueprintBlock, bool) {
+func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return BlueprintBlock{}, false
@@ -1632,6 +1659,15 @@ func reverseEntityResource(call *ast.CallExpr) (BlueprintBlock, bool) {
 		}
 		s, ok := c.Fun.(*ast.SelectorExpr)
 		if !ok {
+			// customersList().List(ctx) — the chain was extracted into a
+			// package-local zero-arg helper (shared by the screen and the
+			// island endpoint). Follow the hop and keep walking.
+			if id, isIdent := c.Fun.(*ast.Ident); isIdent && len(c.Args) == 0 {
+				if body, found := helpers[id.Name]; found {
+					node = body
+					continue
+				}
+			}
 			return BlueprintBlock{}, false
 		}
 		switch s.Sel.Name {
@@ -1723,7 +1759,7 @@ func reverseHero(call *ast.CallExpr) BlueprintBlock {
 	return BlueprintBlock{Kind: "hero", Props: p}
 }
 
-func reverseSection(call *ast.CallExpr) BlueprintBlock {
+func reverseSection(call *ast.CallExpr, helpers map[string]ast.Expr) BlueprintBlock {
 	c := cfgOf(call, 0)
 	b := BlueprintBlock{Kind: "section", Props: props2("heading", astString(c["Heading"]), "eyebrow", astString(c["Eyebrow"]), "description", astString(c["Description"]))}
 	// The section's children are wrapped in ui.Grid/ui.Stack(cfg, children…).
@@ -1734,7 +1770,7 @@ func reverseSection(call *ast.CallExpr) BlueprintBlock {
 		}
 		if cs := callSel(wrap); cs == "ui.Grid" || cs == "ui.Stack" {
 			for _, child := range wrap.Args[1:] {
-				if cb, ok := reverseBlock(child); ok {
+				if cb, ok := reverseBlock(child, helpers); ok {
 					b.Children = append(b.Children, cb)
 				}
 			}

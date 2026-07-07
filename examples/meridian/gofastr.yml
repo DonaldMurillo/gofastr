@@ -290,16 +290,9 @@ screens:
             props:
               heading: Invoices, handled
               text: Open, paid, void — track every invoice and mark them paid in a click.
-      - kind: section
-        props:
-          heading: Simple, honest pricing
-          eyebrow: Pricing
-        children:
-          - kind: link_button
-            props:
-              label: Compare plans
-              href: /pricing
-              variant: primary
+      # The app's closing CTA (an ink-band ui.Themed card in screens.go) is
+      # hand-authored past the blueprint vocabulary — generate once, then own
+      # the Go. pack skips it, so it has no block here.
 
   - name: pricing
     route: /pricing
@@ -465,7 +458,7 @@ screens:
         fields: [name, email, company, status, mrr]
         search: name
         filters: [status]
-        limit: 25
+        limit: 8
         create: true
         empty_text: No customers yet — add your first to get started.
 

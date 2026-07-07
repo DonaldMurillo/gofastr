@@ -1,31 +1,28 @@
-/* Meridian brand layer — loaded after the framework theme + BlueprintBaseCSS,
-   so these rules win the cascade. The @font-face rules that load the self-hosted
-   woff2 (static/fonts/) are generated from gofastr.yml's font_heading/font_body
-   and shared with the admin battery — see blueprint.BlueprintFontCSS — so every
-   surface loads identical fonts. This file only adds brand polish. */
+/* Meridian brand layer — token + published --ui-* knob overrides ONLY.
+   The @font-face rules for the self-hosted woff2 (static/fonts/) live in
+   app.go's fontFaceCSS and are shared with the admin battery. Component
+   internals are never restyled here: every declaration below sets a CSS
+   variable a framework component or layout publishes as its supported
+   theming surface (see `gofastr docs theming`). */
 
-/* Display type: Bricolage Grotesque carries the headings. Push size, weight and
-   negative tracking so titles read as editorial display, not default-bold — the
-   contrast against the calm Hanken body is the point. */
-.mrd-hero__title {
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 0.98;
+/* Editorial display titles: PageHeader titles scale up with tight
+   leading + negative tracking so app screens read as display type. */
+:root {
+  --ui-page-header-title-size: clamp(1.75rem, 3.5vw, 2.25rem);
+  --ui-page-header-title-leading: 1.05;
+  --ui-page-header-title-tracking: -0.03em;
 }
-.layout-marketing main > [data-fui-comp="ui-section"] h2 {
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  font-weight: 700;
-  letter-spacing: -0.025em;
+
+/* Eyebrows: the small uppercase kickers read better in the body face,
+   spaced and semibold, than in the default mono. */
+:root {
+  --ui-section-eyebrow-font: var(--font-body);
+  --ui-section-eyebrow-weight: 600;
+  --ui-section-eyebrow-tracking: 0.08em;
 }
-[data-fui-comp="ui-page-header"] .ui-page-header__title {
-  font-size: clamp(1.75rem, 3.5vw, 2.25rem);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-}
-/* Eyebrows: the small uppercase kickers read better in the body face, spaced. */
-[data-fui-comp="ui-section"] .ui-section__eyebrow {
-  font-family: var(--font-body);
-  letter-spacing: 0.08em;
-  font-weight: 600;
+
+/* Marketing pages get a wider measure than the default 66rem so the
+   hero and card grids breathe; app screens keep their own layout. */
+.layout-marketing {
+  --ui-layout-container-width: 74rem;
 }

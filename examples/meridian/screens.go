@@ -20,7 +20,18 @@ func (s *HomeScreen) Render() render.HTML {
 	return render.Tag("div", nil,
 		ui.Hero(ui.HeroConfig{Eyebrow: "Billing & revenue", Title: "See your revenue the moment it moves.", Subtitle: "Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices — with the metrics that matter, live.", Actions: []render.HTML{ui.LinkButton(ui.LinkButtonConfig{Label: "Start free", Href: "/signup", Variant: ui.ButtonPrimary}), ui.LinkButton(ui.LinkButtonConfig{Label: "See pricing", Href: "/pricing", Variant: ui.ButtonSecondary})}}),
 		ui.Section(ui.SectionConfig{Heading: "Everything you need to run revenue", Eyebrow: "Why Meridian", Description: "", Label: "", Class: "", ID: ""}, ui.Grid(ui.GridConfig{Min: "16rem"}, ui.Card(ui.CardConfig{Heading: "Live MRR & churn", Description: "Watch monthly recurring revenue, growth, and churn update as customers sign up and pay."}), ui.Card(ui.CardConfig{Heading: "Subscriptions that flow", Description: "Trialing, active, past-due, canceled — drive the whole lifecycle from one screen."}), ui.Card(ui.CardConfig{Heading: "Invoices, handled", Description: "Open, paid, void — track every invoice and mark them paid in a click."}))),
-		ui.Section(ui.SectionConfig{Heading: "Simple, honest pricing", Eyebrow: "Pricing", Description: "", Label: "", Class: "", ID: ""}, ui.Stack(ui.StackConfig{Align: ui.AlignStart}, ui.LinkButton(ui.LinkButtonConfig{Label: "Compare plans", Href: "/pricing", Variant: ui.ButtonPrimary}))),
+		// The closing CTA is an "ink band": ui.Themed re-skins this one
+		// subtree with the registered dark override (inkBand), so the card
+		// paints the dark palette in both color schemes while the rest of
+		// the page keeps the canonical theme.
+		ui.Themed(inkBand,
+			ui.Card(ui.CardConfig{Heading: "Simple, honest pricing", Description: "Start free. Upgrade when revenue does."},
+				ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: true},
+					ui.LinkButton(ui.LinkButtonConfig{Label: "Compare plans", Href: "/pricing", Variant: ui.ButtonPrimary}),
+					ui.LinkButton(ui.LinkButtonConfig{Label: "Start free", Href: "/signup", Variant: ui.ButtonSecondary}),
+				),
+			),
+		),
 	)
 }
 
@@ -121,8 +132,11 @@ func (s *CustomersScreen) ScreenDescription() string  { return "" }
 func (s *CustomersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
+	// customersList (app.go) is shared with the /api/tables/customers island
+	// endpoint: the table renders in island mode, so sort + pagination RPC
+	// and swap just the table.
 	return render.Tag("div", nil,
-		appResources["customers"].WithColumns("name", "email", "company", "status", "mrr").WithSearch("name").WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}}).WithLimit(25).WithCreate().WithHeading("Customers").WithEmpty("No customers yet — add your first to get started.").List(ctx),
+		customersList().List(ctx),
 	)
 }
 
