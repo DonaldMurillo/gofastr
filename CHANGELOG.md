@@ -67,6 +67,18 @@ review pass over those fixes, and fixes for what *that* found.
   curated page subset at a 390px viewport — carousel dots grew invisible
   24px hit areas (`::after` pip), tree row links meet the floor, and
   horizontally-scrolling command lines are keyboard-focusable.
+
+  An adversarial review of the gates then hardened them further: the
+  harness rejects blank pages instead of scanning them as vacuously
+  clean; the site's three allowlisted rules apply only to `/components/*`
+  demos (content pages scan with an empty allowlist — which surfaced and
+  fixed nine real heading/landmark defects across the home, get-started,
+  philosophy, and docs pages); every `/docs/<slug>` page, `/kiln`, and
+  every Meridian admin CRUD screen (list + create per entity) is now
+  scanned. New knobs from those fixes: `CalloutConfig.Landmark` opts an
+  in-flow tip out of the complementary-landmark role, and
+  `EmptyStateConfig.HeadingLevel` keeps empty states in the page outline
+  (AnchoredRail's rail label is no longer a stray `<h6>`).
 - **Variant registration.** `ui.RegisterButtonVariant`, `RegisterButtonSize`,
   `RegisterCardVariant`, and `RegisterStatusVariant` open the variant system
   at init time: pass `VariantCSS{Props, Hover, Focus}` (or
