@@ -63,6 +63,14 @@ func Render(cfg Config) render.HTML {
 
 	// <noscript> fallback: keyboard-operable form that submits a Load
 	// more request even when JS is disabled.
+	//
+	// This form must stay method="get". A plain-HTML noscript form has
+	// no way to carry a CSRF token (the JS path forwards the meta token
+	// as a header for exactly this reason), so a POST here is a
+	// guaranteed 403 under auth.CSRF's unsafe-method enforcement. The
+	// one-handler contract still holds: the handler reads
+	// r.FormValue("cursor"), which covers the GET query param and the
+	// JS path's form-encoded POST body alike.
 	noJS := render.Raw(`<noscript><form class="infinitescroll__noscript" action="` +
 		htmlEscape(cfg.RPCPath) + `" method="get">` +
 		`<input type="hidden" name="cursor" value="` + htmlEscape(cfg.Cursor) + `">` +

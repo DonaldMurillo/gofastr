@@ -1,6 +1,7 @@
 package tabs
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -112,3 +113,33 @@ func TestBaseCSSContainsKeySelectors(t *testing.T) {
 		}
 	}
 }
+
+func TestPanicsPast16Tabs(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("New with 17 tabs must panic — the panel CSS only covers 16")
+		}
+		if !strings.Contains(toStr(r), "16") {
+			t.Fatalf("panic must name the 16-tab ceiling, got: %v", r)
+		}
+	}()
+	ts := make([]Tab, 17)
+	for i := range ts {
+		ts[i] = Tab{Label: "T", Content: render.Text("c")}
+	}
+	New(Config{Name: "many"}, ts...)
+}
+
+func TestSixteenTabsAllowed(t *testing.T) {
+	ts := make([]Tab, 16)
+	for i := range ts {
+		ts[i] = Tab{Label: "T", Content: render.Text("c")}
+	}
+	h := string(New(Config{Name: "max"}, ts...))
+	if strings.Count(h, "<details") != 16 {
+		t.Errorf("expected 16 tab heads")
+	}
+}
+
+func toStr(v any) string { return fmt.Sprint(v) }

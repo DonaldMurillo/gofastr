@@ -15,7 +15,7 @@ func styleFn(_ style.Theme) string {
 [data-fui-comp="combobox"] .combobox__label {
   display: block;
   margin-block-end: var(--spacing-xs, 4px);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #4b5563);
 }
 [data-fui-comp="combobox"] .combobox__form {
@@ -31,7 +31,7 @@ func styleFn(_ style.Theme) string {
   background: var(--color-surface, #fff);
   color: var(--color-text, #111);
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   box-sizing: border-box;
 }
 [data-fui-comp="combobox"] .combobox__input:focus-visible {
@@ -43,8 +43,8 @@ func styleFn(_ style.Theme) string {
   position: absolute;
   inset-inline-start: 0;
   inset-inline-end: 0;
-  margin: 4px 0 0 0;
-  padding: 4px 0;
+  margin: var(--spacing-sm, 4px) 0 0 0;
+  padding: var(--spacing-sm, 4px) 0;
   list-style: none;
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, #d0d0d8);

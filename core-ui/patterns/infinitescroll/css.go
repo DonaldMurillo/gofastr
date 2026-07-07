@@ -48,7 +48,7 @@ func styleFn(_ style.Theme) string {
   background: var(--color-surface, #fff);
   color: var(--color-text, #111);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   cursor: pointer;
 }
 @keyframes infinitescroll-pulse {

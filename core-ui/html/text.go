@@ -65,6 +65,14 @@ func slugify(s string) string {
 // Heading produces an <h1> through <h6> element.
 // Required: Level (1-6). Auto-generates an id attribute from the text content
 // of children for aria-labelledby references. If cfg.ID is set, it is used instead.
+//
+// The auto-generated id is content-derived and deterministic — the same
+// text always yields the same id, so anchor links survive re-renders and
+// SPA partial swaps. The trade-off: two headings with EQUAL text on one
+// page produce duplicate ids (render functions have no page-wide context
+// to de-dupe against, and a stateful counter would make ids drift across
+// requests, breaking deep links). When a page repeats heading text, set
+// cfg.ID explicitly on at least one of them.
 func Heading(cfg HeadingConfig, children ...render.HTML) render.HTML {
 	level := cfg.Level
 	if level < 1 || level > 6 {

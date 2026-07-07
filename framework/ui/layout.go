@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strconv"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -254,9 +256,11 @@ type StickyConfig struct {
 	// Defaults to StickyOffsetNone when empty.
 	Offset StickyOffset
 
-	// ZIndexTier selects the z-index tier from the theme token
-	// system. Defaults to "sticky" when empty.
-	// Common values: "sticky", "dropdown", "overlay", "modal".
+	// ZIndexTier selects the z-index tier from the theme's ZIndexSet
+	// tokens. Defaults to "sticky" when empty. Valid values: "sticky",
+	// "dropdown", "modal", "popover", "toast" — the stylesheet maps the
+	// tier to z-index: var(--z-<tier>). Unknown tiers panic (a typo
+	// would otherwise silently fall back to the default layer).
 	ZIndexTier string
 
 	ID    string
@@ -276,6 +280,11 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	tier := cfg.ZIndexTier
 	if tier == "" {
 		tier = "sticky"
+	}
+	switch tier {
+	case "sticky", "dropdown", "modal", "popover", "toast":
+	default:
+		panic("ui: Sticky ZIndexTier must be one of sticky/dropdown/modal/popover/toast (theme ZIndexSet tokens), got " + strconv.Quote(tier))
 	}
 
 	cls := "ui-sticky ui-sticky--" + string(edge) + " ui-sticky--offset-" + string(offset)

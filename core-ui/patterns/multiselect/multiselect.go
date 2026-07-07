@@ -10,7 +10,7 @@
 //	  <details class="ui-multiselect__disclosure">
 //	    <summary>Pick languages…</summary>
 //	    <fieldset role="group">
-//	      <label><input type="checkbox" name="…" value="…"> Go</label>
+//	      <label for="<id>-opt-0"><input id="<id>-opt-0" type="checkbox" name="…" value="…"> Go</label>
 //	      …
 //	    </fieldset>
 //	  </details>
@@ -87,10 +87,15 @@ func Render(cfg Config) render.HTML {
 		if opt.Value == "" || opt.Label == "" {
 			panic("multiselect: each Option needs Value + Label")
 		}
+		// Option ids are <instance id>-opt-<index>: the index keeps
+		// symbol-heavy values ("C++" vs "C#") collision-free, and the
+		// instance id (cfg.ID, falling back to Name — must be unique
+		// per page) scopes them across multiselect instances.
+		optID := id + "-opt-" + itoa(i)
 		inputAttrs := map[string]string{
 			"type":  "checkbox",
 			"name":  cfg.Name,
-			"id":    id + "-opt-" + slug(opt.Value, i),
+			"id":    optID,
 			"value": opt.Value,
 			"class": "ui-multiselect__check",
 		}
@@ -100,8 +105,11 @@ func Render(cfg Config) render.HTML {
 		if opt.Disabled {
 			inputAttrs["disabled"] = ""
 		}
+		// The label wraps the input AND carries for= — the runtime's
+		// chip renderer resolves the chip text via
+		// label[for="<checkbox id>"] .ui-multiselect__row-label.
 		rows = append(rows, render.Tag("label",
-			map[string]string{"class": "ui-multiselect__row"},
+			map[string]string{"class": "ui-multiselect__row", "for": optID},
 			render.Tag("input", inputAttrs),
 			html.Span(html.TextConfig{Class: "ui-multiselect__row-label"}, render.Text(opt.Label)),
 		))
@@ -145,24 +153,6 @@ func Render(cfg Config) render.HTML {
 	))
 }
 
-// slug returns a stable id-suffix for the given value. Falls back
-// to the option index if the value contains nothing id-safe.
-func slug(v string, i int) string {
-	out := make([]byte, 0, len(v))
-	for j := 0; j < len(v); j++ {
-		c := v[j]
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
-			out = append(out, c)
-		} else if c >= 'A' && c <= 'Z' {
-			out = append(out, c+32)
-		}
-	}
-	if len(out) == 0 {
-		return itoa(i)
-	}
-	return string(out)
-}
-
 func itoa(i int) string {
 	if i == 0 {
 		return "0"
@@ -201,18 +191,18 @@ func multiSelectCSS(_ style.Theme) string {
 [data-fui-comp="ui-multiselect"] .ui-multiselect__chips:empty::before {
   content: attr(data-fui-multiselect-placeholder);
   color: var(--color-text-muted, #52525B);
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   font-style: italic;
 }
 [data-fui-comp="ui-multiselect"] .ui-multiselect__chip {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 6px);
-  padding: 4px 4px 4px 10px;
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px) 10px;
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 500;
 }
 [data-fui-comp="ui-multiselect"] .ui-multiselect__chip-remove {
@@ -227,7 +217,7 @@ func multiSelectCSS(_ style.Theme) string {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: 1.1rem;
+  font-size: var(--text-lg, 1.1rem);
   line-height: 1;
 }
 [data-fui-comp="ui-multiselect"] .ui-multiselect__chip-remove:hover {
@@ -255,7 +245,7 @@ func multiSelectCSS(_ style.Theme) string {
 [data-fui-comp="ui-multiselect"] .ui-multiselect__summary::before {
   content: "▾";
   margin-inline-end: var(--spacing-sm, 8px);
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
   color: var(--color-text-muted, #52525B);
   transition: transform 120ms ease;
 }

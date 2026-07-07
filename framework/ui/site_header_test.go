@@ -4,8 +4,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+func TestActiveNavKeysOnAriaCurrent(t *testing.T) {
+	css := siteHeaderCSS(style.Theme{})
+	// The runtime marks the active nav link with aria-current="page"
+	// (runtime.js updateActiveLink); nothing ever sets data-fui-active,
+	// so any rule keyed on it is dead.
+	if strings.Contains(css, "data-fui-active") {
+		t.Errorf("site-header CSS keys on data-fui-active, which nothing sets:\n%s", css)
+	}
+	if !strings.Contains(css, `.ui-site-header__links a[aria-current="page"]`) {
+		t.Errorf(`active-nav styling must key on [aria-current="page"]:%s`, css)
+	}
+}
 
 func TestSiteHeaderRendersBrandPrimaryAndRight(t *testing.T) {
 	h := string(SiteHeader(SiteHeaderConfig{

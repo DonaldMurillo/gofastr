@@ -20,10 +20,13 @@ func styleFn(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-xs, 4px);
   min-height: var(--spacing-touch-target, 44px);
-  padding: 4px 6px;
+  padding: var(--spacing-sm, 4px) 6px;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="tree"] .tree__item[tabindex="0"] > .tree__row,
+/* Focus ring only while focus is actually inside the row — the roving
+   tabindex means one item ALWAYS carries tabindex="0", so keying the
+   outline on the bare attribute painted a permanent ring on it. */
+[data-fui-comp="tree"] .tree__item:focus-visible > .tree__row,
 [data-fui-comp="tree"] .tree__item:focus-within > .tree__row {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
@@ -42,7 +45,7 @@ func styleFn(_ style.Theme) string {
   background: transparent;
   color: var(--color-text-muted, #6b7280);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   cursor: pointer;
   transition: transform var(--duration-fast, 120ms) var(--easing-standard, ease);
 }

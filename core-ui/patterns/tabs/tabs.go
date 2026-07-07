@@ -79,6 +79,9 @@ func New(cfg Config, tabs ...Tab) render.HTML {
 	if len(tabs) == 0 {
 		panic("tabs: New requires at least one Tab")
 	}
+	if len(tabs) > maxTabs {
+		panic(fmt.Sprintf("tabs: New supports at most %d tabs, got %d — the panel-visibility CSS is pre-generated per index (raise maxTabs in core-ui/patterns/tabs if you genuinely need more)", maxTabs, len(tabs)))
+	}
 
 	cls := "tabs"
 	if cfg.Class != "" {
@@ -145,12 +148,18 @@ func renderTabHead(t Tab, name string, open bool) render.HTML {
 // This survives narrow containers gracefully (tabs wrap onto multiple
 // lines when needed) and avoids the grid-overflow clipping that the
 // previous implementation had inside narrow demo frames.
+// maxTabs bounds how many tabs one tabset may hold. The registered CSS
+// is global (it can't know a given tabset's size), so panel-visibility
+// rules are pre-generated per index up to this ceiling and New panics
+// loudly past it instead of silently never showing panel 17.
+const maxTabs = 16
+
 func buildCSS() string {
 	// Panel-visibility rules: when the Nth <details> is open, show the
-	// Nth .tabs-panel. Pre-generated up to 16 tabs; if you need more,
-	// extend this CSS. Using `:has()` keeps the cascade purely CSS.
+	// Nth .tabs-panel. Pre-generated up to maxTabs; New rejects larger
+	// tabsets. Using `:has()` keeps the cascade purely CSS.
 	var panelRules strings.Builder
-	for i := 1; i <= 16; i++ {
+	for i := 1; i <= maxTabs; i++ {
 		if i > 1 {
 			panelRules.WriteString(",\n")
 		}
@@ -178,7 +187,7 @@ func buildCSS() string {
   cursor: pointer;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   color: var(--color-text-muted, #6B7280);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px; /* overlap the strip's 1px border-bottom */

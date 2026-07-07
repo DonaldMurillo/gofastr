@@ -152,3 +152,16 @@ func TestRenderEmitsDataFuiComp(t *testing.T) {
 		t.Errorf("Render must emit data-fui-comp for auto-load, got: %s", out)
 	}
 }
+
+func TestFocusOutlineRequiresFocus(t *testing.T) {
+	css := styleFn(style.Theme{})
+	// The roving-tabindex item always carries tabindex="0"; an outline
+	// keyed on the bare attribute renders a permanent focus ring on the
+	// first item. The outline must require a focus pseudo-class.
+	if strings.Contains(css, `[tabindex="0"] > .tree__row`) {
+		t.Errorf("outline selector keys on bare [tabindex=\"0\"] — permanent focus ring:\n%s", css)
+	}
+	if !strings.Contains(css, ":focus-visible") {
+		t.Errorf("tree CSS should scope the outline to :focus-visible:\n%s", css)
+	}
+}
