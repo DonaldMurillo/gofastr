@@ -103,12 +103,18 @@
       container = document.querySelector('[data-fui-toast-stack]');
     }
     if (!container) {
-      container = document.createElement('div');
-      container.className = 'ui-toast-stack';
-      container.setAttribute('data-fui-comp', 'ui-toast-stack');
-      container.setAttribute('data-fui-toast-stack', '__auto');
-      container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;pointer-events:none;max-width:min(360px,calc(100vw - 2rem));';
-      document.body.appendChild(container);
+      // Body singleton (doc.MANIFEST: fui-toast-stack-auto) — created at
+      // most once and re-attached by the SPA full-shell swap. Distinct
+      // from core's unstyled fui-toast-fallback container, which exists
+      // only for the "toasts module failed to load" path.
+      container = NS.doc.singleton('fui-toast-stack-auto', () => {
+        const c = document.createElement('div');
+        c.className = 'ui-toast-stack';
+        c.setAttribute('data-fui-comp', 'ui-toast-stack');
+        c.setAttribute('data-fui-toast-stack', '__auto');
+        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;pointer-events:none;max-width:min(360px,calc(100vw - 2rem));';
+        return c;
+      });
       if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(container);
     }
 

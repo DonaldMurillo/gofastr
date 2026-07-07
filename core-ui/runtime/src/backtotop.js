@@ -44,10 +44,14 @@
   const ensureObserver = () => {
     if (_observer) return;
 
-    _sentinel = document.createElement('div');
-    _sentinel.setAttribute('aria-hidden', 'true');
-    _sentinel.className = 'ui-btt-sentinel';
-    document.body.appendChild(_sentinel);
+    // Body singleton (doc.MANIFEST: fui-backtotop-sentinel) — shared by
+    // every BackToTop button; re-attached by the SPA full-shell swap.
+    _sentinel = window.__gofastr.doc.singleton('fui-backtotop-sentinel', () => {
+      const s = document.createElement('div');
+      s.setAttribute('aria-hidden', 'true');
+      s.className = 'ui-btt-sentinel';
+      return s;
+    });
 
     _observer = new IntersectionObserver((entries) => {
       // All entries refer to the same sentinel; use the first.

@@ -9,6 +9,24 @@
 //   - Preserve string + template-literal payloads byte-for-byte.
 //   - Insert a single space when removing whitespace would fuse two
 //     adjacent tokens (`let a` → `leta`, `+ +` → `++`, `/ /` → `//`).
+//   - Rewrite a `const` declaration keyword to `let`. For any program
+//     that runs without throwing, the two are semantically identical
+//     (same block scoping, same TDZ, same per-iteration for-of/for-in
+//     binding); const's extra assignment check can only fire in code
+//     that is already broken. Non-declaration uses (`a.const`,
+//     `{const: 1}`, `class A{const=1}`) are left alone: the rewrite
+//     applies only when the keyword follows a non-`.` token and the
+//     next token starts a binding (identifier, `{`, or `[`).
+//   - Drop a `;` or `,` immediately before a `}` (`a=1;}` → `a=1}`,
+//     `{a:1,}` → `{a:1}`). In valid JS a `}` can only follow `;` as a
+//     statement/class-element terminator (droppable) and `,` as a
+//     trailing comma in an object literal / destructuring /
+//     import-specifier list (droppable; array-hole commas sit before
+//     `]`, which is never touched). Exception: a `;` whose previous
+//     token is `)` is never dropped — it may be an empty statement
+//     serving as an if/while/for body (`if(x);}` → `if(x)}` is a
+//     SyntaxError), and a scanner can't tell that apart from `g();}`.
+//     The same rule keeps the do-while terminator (`do{}while(x);}`).
 //
 // Out of scope (would be tier-3): identifier renaming, dead-code
 // elimination, constant folding, anything that requires a parser.
@@ -57,6 +75,13 @@ type minifier struct {
 
 	sawNewline bool
 	sawSpace   bool
+
+	// pending holds a deferred ';' or ',' (0 = none). The byte is
+	// written when the NEXT token arrives — unless that token starts
+	// with '}', in which case it's redundant and dropped. State
+	// (lastKind/lastByte) is updated at defer time, so separator and
+	// regex-vs-division decisions behave exactly as if it were written.
+	pending byte
 }
 
 // Tokens after which a `/` starts a regex literal rather than a
@@ -96,6 +121,13 @@ func (m *minifier) peek(off int) byte {
 func (m *minifier) run() {
 	for m.pos < len(m.src) {
 		m.step()
+	}
+	// A trailing deferred ';'/',' at EOF is kept verbatim: dropping it
+	// is usually safe but concatenation contexts (inline <script>
+	// assembly) may rely on the terminator.
+	if m.pending != 0 {
+		m.out.WriteByte(m.pending)
+		m.pending = 0
 	}
 }
 
@@ -237,6 +269,15 @@ func (m *minifier) emitSep(firstByte byte) {
 		m.sawNewline = false
 		m.sawSpace = false
 	}()
+	// Flush (or drop) a deferred ';'/',' now that the next token is
+	// known. Dropping before '}' is always safe in valid JS — see the
+	// package comment.
+	if m.pending != 0 {
+		if firstByte != '}' {
+			m.out.WriteByte(m.pending)
+		}
+		m.pending = 0
+	}
 	if !m.hasEmitted {
 		return
 	}
@@ -266,6 +307,9 @@ func (m *minifier) emitIdent() {
 		m.pos++
 	}
 	ident := m.src[start:m.pos]
+	if ident == "const" && m.lastByte != '.' && m.nextStartsBinding() {
+		ident = "let" // see the package comment — safe for any working program
+	}
 	m.emitSep(ident[0])
 	m.out.WriteString(ident)
 	m.lastKind = tkIdent
@@ -273,6 +317,35 @@ func (m *minifier) emitIdent() {
 	m.lastIdent = ident
 	m.lastWasIncDec = false
 	m.hasEmitted = true
+}
+
+// nextStartsBinding peeks (without consuming) past whitespace and
+// comments for the next significant byte and reports whether it can
+// start a declaration binding: an identifier, `{`, or `[`. Anything
+// else (`:` object key, `=` class field, `(` accessor, EOF) means the
+// preceding `const` was NOT a declaration keyword.
+func (m *minifier) nextStartsBinding() bool {
+	i := m.pos
+	for i < len(m.src) {
+		c := m.src[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\r' || c == '\n':
+			i++
+		case c == '/' && i+1 < len(m.src) && m.src[i+1] == '/':
+			for i < len(m.src) && m.src[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < len(m.src) && m.src[i+1] == '*':
+			i += 2
+			for i+1 < len(m.src) && !(m.src[i] == '*' && m.src[i+1] == '/') {
+				i++
+			}
+			i += 2
+		default:
+			return isIdentStart(c) || c == '{' || c == '['
+		}
+	}
+	return false
 }
 
 func (m *minifier) emitNumber() {
@@ -421,6 +494,7 @@ func (m *minifier) minifyTemplateExpr() {
 			depth--
 			if depth == 0 {
 				m.pos++
+				m.pending = 0 // deferred ';'/',' before the closing '}' is redundant
 				m.out.WriteByte('}')
 				break
 			}
@@ -508,8 +582,21 @@ func (m *minifier) emitPunctChar(c byte) {
 	if (c == '+' || c == '-') && m.lastByte == c && m.lastKind == tkPunct && !m.sawSpace && !m.lastWasIncDec {
 		incDec = true
 	}
+	semiAfterParen := c == ';' && m.lastKind == tkPunct && m.lastByte == ')'
 	m.emitSep(c)
-	m.out.WriteByte(c)
+	if semiAfterParen {
+		// A `;` directly after `)` may be an empty statement serving
+		// as an if/while/for body: dropping it before `}` would turn
+		// `if(x);}` into `if(x)}` — a SyntaxError. A token scanner
+		// can't tell that apart from a droppable `g();}` (both end
+		// `);}`), so a `;` after `)` is always written immediately,
+		// never deferred.
+		m.out.WriteByte(c)
+	} else if c == ';' || c == ',' {
+		m.pending = c // written (or dropped) when the next token arrives
+	} else {
+		m.out.WriteByte(c)
+	}
 	m.lastKind = tkPunct
 	m.lastByte = c
 	m.lastIdent = ""

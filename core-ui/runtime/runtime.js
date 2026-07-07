@@ -2,6 +2,84 @@
 (() => {
   'use strict';
 
+  // -----------------------------------------------------------------------
+  // Global document state (`__gofastr.doc`)
+  //
+  // The ONE place the runtime writes persistent state onto <html>/<body>.
+  // DOC_MANIFEST is the frozen inventory of every allowed <html>
+  // attribute, <body> class, and <body> singleton id; the table in
+  // core-ui/ARCHITECTURE.md ("Global document state") mirrors it and a
+  // parity test (doc_manifest_test.go) fails the build on drift — hard
+  // rule 5 applied to document-level state. Writes outside the manifest
+  // still land (never break the page) but console.warn the offender.
+  //
+  // Not covered on purpose:
+  //   - data-color-scheme is WRITTEN by colorscheme.js — the separate
+  //     synchronous <head> bootstrap that must run before first paint
+  //     (FOUC). It is enumerated here as documentation only.
+  //   - data-fui-static is written by the static exporter (Go), never
+  //     by the runtime. Enumerated as documentation only.
+  //   - Transient DOM (e.g. the copy.js textarea) and pure reads
+  //     (#fui-route-announce) stay unwrapped.
+  //
+  // lockScroll/unlockScroll refcount by OWNER (a Set), so two
+  // concurrent lockers — a modal over a lightbox, a drawer over a
+  // modal — can't fight over documentElement.style.overflow: the lock
+  // releases only when the LAST owner unlocks. (Lock lives on <html>,
+  // not <body>: overflow:hidden on <body> breaks position:sticky
+  // descendants.)
+  //
+  // singleton(id, factory) returns the existing body child with that id
+  // (SSR-provided or previously created) or creates+appends it once.
+  // reattach() re-appends any created singleton that lost its parent —
+  // the SPA full-shell swap calls it after replacing [data-fui-layout],
+  // covering layouts that (incorrectly but survivably) nest chrome the
+  // runtime hung on <body>.
+  // docEl is the shared <html> handle for the whole core runtime —
+  // every documentElement touch goes through it (keeps the minified
+  // bundle inside the 12 KB gz budget).
+  const docEl = document.documentElement;
+  // M is the manifest (frozen); _dc is the dev-guard: an unmanifested
+  // name still writes (never break the page) but warns so the drift is
+  // caught in review / e2e console audits.
+  const M = Object.freeze({
+    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static'.split(' ')),
+    bodyClasses: Object.freeze('fui-sse-down fui-sse-up'.split(' ')),
+    singletons: Object.freeze('fui-backtotop-sentinel fui-nav-toast fui-toast-fallback fui-toast-stack-auto'.split(' ')),
+  });
+  const _dc = (list, n) => {
+    if (!list.includes(n)) console.warn('[gofastr] not in doc.MANIFEST: ' + n);
+  };
+  const _locks = new Set();
+  const _single = {};
+  const doc = {
+    MANIFEST: M,
+    setHtmlAttr(n, v) { _dc(M.htmlAttrs, n); docEl.setAttribute(n, v); },
+    removeHtmlAttr(n) { _dc(M.htmlAttrs, n); docEl.removeAttribute(n); },
+    bodyClass(n, on) { _dc(M.bodyClasses, n); document.body.classList.toggle(n, !!on); },
+    lockScroll(owner) { _locks.add(owner); docEl.style.overflow = 'hidden'; },
+    unlockScroll(owner) {
+      _locks.delete(owner);
+      if (!_locks.size) docEl.style.overflow = '';
+    },
+    scrollLocked: () => _locks.size > 0,
+    appendBody: (el) => document.body.appendChild(el),
+    singleton(id, make) {
+      _dc(M.singletons, id);
+      // Prior creation wins, then an SSR-provided element is adopted
+      // (factory never runs), then create + remember for reattach().
+      let el = _single[id] || document.getElementById(id);
+      if (!el) { el = make(); el.id = id; _single[id] = el; }
+      if (!el.isConnected) doc.appendBody(el);
+      return el;
+    },
+    reattach() {
+      for (const id in _single) {
+        if (!_single[id].isConnected) doc.appendBody(_single[id]);
+      }
+    },
+  };
+
   // OS hint on <html data-fui-os="mac|other"> so SSR-rendered
   // shortcut hints (framework/ui.ShortcutHint) can display
   // platform-correct mod-key glyphs (⌘ on Mac, Ctrl elsewhere)
@@ -11,10 +89,7 @@
   try {
     const ua = (navigator.userAgentData && navigator.userAgentData.platform) ||
                navigator.platform || '';
-    document.documentElement.setAttribute(
-      'data-fui-os',
-      /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other'
-    );
+    doc.setHtmlAttr('data-fui-os', /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other');
   } catch (_) { /* SSR / non-browser */ }
 
   // Static-export mode: when the page is a serverless static export (no Go
@@ -25,7 +100,7 @@
   // Client-only features (theme toggle, copy, signals) are untouched. The
   // marker is injected ONLY by the static exporter (framework/static.Builder);
   // live pages never carry it, so every guard below is a no-op live.
-  const _staticMode = document.documentElement.hasAttribute('data-fui-static');
+  const _staticMode = docEl.hasAttribute('data-fui-static');
   // -----------------------------------------------------------------------
   // Component handler registry
   // -----------------------------------------------------------------------
@@ -240,11 +315,15 @@
         }).catch(() => {});
       }
       // SPA navigate on success — swaps <main> without full page reload.
+      // Post-mutation navigation always bypasses the screen cache (and
+      // re-renders even when the destination IS the current page): the
+      // RPC just changed server state, so a cached copy of the
+      // destination is stale by definition.
       const navigatePath = node.getAttribute('data-fui-rpc-navigate');
       if (navigatePath) {
         try {
-          history.pushState(null, '', navigatePath);
-          loadPage(navigatePath);
+          if (navigatePath !== currentPath) history.pushState(null, '', navigatePath);
+          loadPage(navigatePath, { bypassCache: true });
         } catch (_) {}
       }
     } catch (err) {
@@ -331,22 +410,22 @@
       // pages (body.kiln-app) or any subtree explicitly opted in via
       // data-fui-trusted — otherwise stored-XSS inside user-content
       // could carry a data-kiln-tool attribute and CSRF as the
-      // logged-in user.
+      // logged-in user. (_kilnOK guard + _kilnPost shared with the
+      // form-submit delegator below.)
       const legacy = e.target.closest('[data-kiln-tool]');
-      if (legacy && (document.body.classList.contains('kiln-app') ||
-                     legacy.closest('[data-fui-trusted]'))) {
+      if (legacy && _kilnOK(legacy)) {
         e.preventDefault();
-        const tool = legacy.getAttribute('data-kiln-tool');
-        const args = legacy.getAttribute('data-kiln-args') || '';
-        try {
-          await fetch('/kiln/tool/' + tool, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: args,
-          });
-        } catch (_) {}
+        await _kilnPost(legacy, legacy.getAttribute('data-kiln-args') || '');
       }
     });
+    const _kilnOK = (el) =>
+      document.body.classList.contains('kiln-app') || el.closest('[data-fui-trusted]');
+    const _kilnPost = (el, body) =>
+      fetch('/kiln/tool/' + el.getAttribute('data-kiln-tool'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      }).catch(() => {});
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
       if (!form || form.closest('[data-fui-widget]')) return;
@@ -358,20 +437,11 @@
       // Kiln dispatch: data-kiln-tool form submits. Scoped to
       // kiln-rendered pages (body.kiln-app) or data-fui-trusted
       // subtrees, same as the button delegator above.
-      if (form.hasAttribute('data-kiln-tool') &&
-          (document.body.classList.contains('kiln-app') ||
-           form.closest('[data-fui-trusted]'))) {
+      if (form.hasAttribute('data-kiln-tool') && _kilnOK(form)) {
         e.preventDefault();
-        const tool = form.getAttribute('data-kiln-tool');
-        const fd = new FormData(form);
-        const obj = {}; fd.forEach((v, k) => { obj[k] = v; });
-        try {
-          await fetch('/kiln/tool/' + tool, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(obj),
-          });
-        } catch (_) {}
+        const obj = {};
+        new FormData(form).forEach((v, k) => { obj[k] = v; });
+        await _kilnPost(form, JSON.stringify(obj));
         return;
       }
       const action = form.getAttribute('action');
@@ -647,6 +717,11 @@
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
+    /** Global document state module — see the DOC_MANIFEST block at the
+        top of this file. Split modules (widgets, toasts, backtotop)
+        reach it via NS.doc for every persistent <html>/<body> write. */
+    doc,
+
     /** Reject dangerous schemes when a signal value is about to be
         written into a URL-bearing HTML attribute (href / src / action
         / xlink:href / formaction). Returns true when the value MUST
@@ -700,9 +775,11 @@
 
     // --- Router API ---
 
-    /** Programmatically navigate to a path */
-    navigate(path, { replace = false } = {}) {
-      if (path === currentPath) return;
+    /** Programmatically navigate to a path. force re-fetches even when
+        the path is the current page and bypasses the screen cache —
+        use it after a mutation so the destination reflects new state. */
+    navigate(path, { replace = false, force = false } = {}) {
+      if (path === currentPath && !force) return;
       // Security: reject attacker-controllable schemes BEFORE
       // touching the URL bar. Server-rendered data-fui-push-state
       // attributes (e.g. on a combobox option) and signal-bound
@@ -713,12 +790,12 @@
         console.warn('[gofastr] navigate refused unsafe URL:', path);
         return;
       }
-      if (replace) {
+      if (replace || path === currentPath) {
         history.replaceState(null, '', path);
       } else {
         history.pushState(null, '', path);
       }
-      loadPage(path);
+      loadPage(path, { bypassCache: force });
     },
 
     /** Register routes dynamically */
@@ -979,6 +1056,15 @@
           // signal value via a query-string deeplink param.
           if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
           node.setAttribute(attr, v);
+          // Tabs (framework/ui.Tabs): when the wrapper's data-active
+          // index changes, mirror it into aria-selected on the strip's
+          // role=tab buttons — CSS keys the visual highlight off
+          // data-active, but assistive tech reads aria-selected.
+          if (attr === 'data-active') {
+            node.querySelectorAll('[role="tab"][data-fui-tab-index]').forEach((b) => {
+              b.setAttribute('aria-selected', String(b.getAttribute('data-fui-tab-index') === v));
+            });
+          }
         } else {
           // Task B: when the value is an error object from dispatchRPC
           // ({ok:false, status, text}), render it as a human-readable
@@ -1086,38 +1172,39 @@
     // innerHTML) so a malicious title can't inject script.
     _fallbackToast(cfg) {
       if (!cfg || !cfg.title) return null;
-      let container = document.querySelector('[data-fui-toast-fallback]');
-      if (!container) {
-        container = document.createElement('div');
-        container.setAttribute('data-fui-toast-fallback', '');
-        container.setAttribute('role', 'region');
-        container.setAttribute('aria-label', 'Notifications');
-        container.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
-        document.body.appendChild(container);
-      }
+      // Body singleton (doc.MANIFEST) — distinct from the styled
+      // [data-fui-toast-stack] container the toasts module owns; the
+      // fallback stays deliberately unstyled + module-free.
+      const container = doc.singleton('fui-toast-fallback', () => {
+        const c = document.createElement('div');
+        c.setAttribute('data-fui-toast-fallback', '');
+        c.setAttribute('role', 'region');
+        c.setAttribute('aria-label', 'Notifications');
+        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
+        return c;
+      });
       const variant = cfg.variant || 'info';
       const isAssertive = variant === 'warning' || variant === 'danger';
-      const item = document.createElement('div');
+      // mk: tiny element builder (tag, cssText, textContent) — inline
+      // styles + textContent only (no innerHTML) so a malicious title
+      // can't inject script.
+      const mk = (tag, css, txt) => {
+        const n = document.createElement(tag);
+        n.style.cssText = css;
+        if (txt != null) n.textContent = txt;
+        return n;
+      };
+      const item = mk('div', 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui,sans-serif;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
       item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
-      item.style.cssText = 'background:#1f2937;color:#fff;padding:0.75rem 1rem;border-radius:6px;font-family:system-ui,sans-serif;font-size:0.9rem;box-shadow:0 4px 12px rgba(0,0,0,0.2);display:flex;gap:0.75rem;align-items:flex-start;';
-      const text = document.createElement('div');
-      text.style.cssText = 'flex:1;';
-      const title = document.createElement('strong');
-      title.style.cssText = 'display:block;';
-      title.textContent = cfg.title;
-      text.appendChild(title);
+      const text = mk('div', 'flex:1;');
+      text.appendChild(mk('strong', 'display:block;', cfg.title));
       if (cfg.body) {
-        const body = document.createElement('div');
-        body.style.cssText = 'margin-top:0.25rem;opacity:0.9;';
-        body.textContent = cfg.body;
-        text.appendChild(body);
+        text.appendChild(mk('div', 'margin-top:0.25rem;opacity:0.9;', cfg.body));
       }
-      const dismiss = document.createElement('button');
+      const dismiss = mk('button', 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;', '×');
       dismiss.type = 'button';
       dismiss.setAttribute('aria-label', 'Dismiss notification');
-      dismiss.style.cssText = 'background:none;border:0;color:inherit;font-size:1.2rem;cursor:pointer;line-height:1;padding:0 0.25rem;';
-      dismiss.textContent = '×';
       dismiss.addEventListener('click', () => { item.remove(); });
       item.appendChild(text);
       item.appendChild(dismiss);
@@ -1233,14 +1320,12 @@
   // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
   const _showNavToast = (msg) => {
-    let t = document.getElementById('fui-nav-toast');
-    if (!t) {
-      t = document.createElement('div');
-      t.id = 'fui-nav-toast';
-      t.className = 'fui-nav-toast';
-      t.setAttribute('role', 'alert');
-      document.body.appendChild(t);
-    }
+    const t = doc.singleton('fui-nav-toast', () => {
+      const d = document.createElement('div');
+      d.className = 'fui-nav-toast';
+      d.setAttribute('role', 'alert');
+      return d;
+    });
     t.textContent = msg;
     t.classList.add('is-visible');
     clearTimeout(t._fuiTimer);
@@ -1294,6 +1379,11 @@
     if (!cur || !newShellEl) return false;
     const el = document.importNode(newShellEl, true);
     cur.replaceWith(el);
+    // Runtime-created body singletons live OUTSIDE [data-fui-layout],
+    // so the swap normally leaves them alone — but a layout that
+    // wrapped one (or a future whole-body swap) must not silently drop
+    // them. Re-append any created-but-detached singleton.
+    doc.reattach();
     mergeSeedFromDOM(el);
     if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(el);
     const main = el.querySelector('[role="main"]') || el.querySelector('main');
@@ -1302,7 +1392,7 @@
   };
 
   /** Fetch page, swap <main>. Caches for instant back-nav. */
-  const loadPage = async (path) => {
+  const loadPage = async (path, { bypassCache = false } = {}) => {
     // Drop redundant in-flight nav to the same URL (10 clicks → 1 fetch).
     if (_pendingNav.has(path)) return;
     _pendingNav.add(path);
@@ -1311,10 +1401,13 @@
     // Surface "I heard you" feedback to assistive tech and screen
     // readers while the fetch is in flight. The CSS hook can show a
     // progress strip via [aria-busy="true"] on documentElement.
-    document.documentElement.setAttribute('aria-busy', 'true');
+    doc.setHtmlAttr('aria-busy', 'true');
 
     try {
-      const cached = getCachedScreen(path);
+      // bypassCache: post-mutation navigation (data-fui-rpc-navigate,
+      // navigate({force:true})) must show fresh server state, never the
+      // cached copy captured before the mutation.
+      const cached = bypassCache ? null : getCachedScreen(path);
       // Skip the cached content-swap when the layout changes — the cache holds
       // only the <main> fragment, not the new chrome; fall through to a full
       // fetch + shell swap.
@@ -1381,8 +1474,10 @@
         try { history.replaceState(null, '', redirectTo); } catch (_) {}
         currentPath = redirectTo;
         _pendingNav.delete(path);
-        document.documentElement.removeAttribute('aria-busy');
-        return loadPage(redirectTo);
+        doc.removeHtmlAttr('aria-busy');
+        // Keep bypassCache across the redirect: a post-mutation nav
+        // must not serve the redirect target from the screen cache.
+        return loadPage(redirectTo, { bypassCache });
       }
 
       const html = await resp.text();
@@ -1423,7 +1518,7 @@
       currentPath = prevPath;
     } finally {
       _pendingNav.delete(path);
-      document.documentElement.removeAttribute('aria-busy');
+      doc.removeHtmlAttr('aria-busy');
     }
   };
 
@@ -1903,79 +1998,12 @@
   _installEagerWidgetDelegators();
 
   // === DRAG-TO-DISMISS (bottom-sheet style) ============================
-  // Pointer-driven drag-to-close for widgets whose Definition opts in
-  // via DragDismiss (data-fui-drag-dismiss="true" on the widget root,
-  // data-fui-drag-handle="true" on the visible handle bar). Drag is
-  // only initiated from the handle so taps inside the panel content
-  // (scrolling, form input) don't accidentally dismiss the sheet.
-  //
-  // Thresholds: close on >80px downward distance OR >0.5px/ms downward
-  // velocity. Snap back otherwise. data-fui-dragging is mirrored onto
-  // the widget root while the gesture is active (CSS suppresses entrance
-  // animation and transitions so the live transform isn't fought).
-  function _installDragDismiss() {
-    if (document.__fuiDragDismissDispatch) return;
-    document.__fuiDragDismissDispatch = true;
-    const DISTANCE_THRESHOLD = 80;
-    const VELOCITY_THRESHOLD = 0.5; // px per ms
-    let active = null;
-    document.addEventListener('pointerdown', (e) => {
-      if (active) return;
-      const handle = e.target && e.target.closest && e.target.closest('[data-fui-drag-handle="true"]');
-      if (!handle) return;
-      const widget = handle.closest('[data-fui-drag-dismiss="true"]');
-      if (!widget) return;
-      const name = widget.getAttribute('data-fui-widget') || '';
-      // Only primary pointer (left mouse / single touch).
-      if (e.button !== undefined && e.button > 0) return;
-      active = {
-        widget, name, pointerId: e.pointerId,
-        startY: e.clientY, startTime: Date.now(),
-        lastY: e.clientY, lastTime: Date.now(),
-      };
-      widget.setAttribute('data-fui-dragging', 'true');
-      try { widget.setPointerCapture(e.pointerId); } catch (_) {}
-    }, true);
-    document.addEventListener('pointermove', (e) => {
-      if (!active || e.pointerId !== active.pointerId) return;
-      const dy = Math.max(0, e.clientY - active.startY);
-      active.widget.style.transform = 'translateY(' + dy + 'px)';
-      active.lastY = e.clientY;
-      active.lastTime = Date.now();
-    }, true);
-    function finishDrag(close) {
-      const w = active.widget;
-      const name = active.name;
-      try { w.releasePointerCapture(active.pointerId); } catch (_) {}
-      w.removeAttribute('data-fui-dragging');
-      if (close && name) {
-        const G = window.__gofastr;
-        if (G && typeof G.closeWidget === 'function') {
-          try { G.closeWidget(name); } catch (_) {}
-        }
-        // Clear transform AFTER close so the panel doesn't briefly
-        // snap back before unmount.
-        setTimeout(() => { try { w.style.transform = ''; } catch (_) {} }, 0);
-      } else {
-        // Snap back to the resting position.
-        w.style.transform = '';
-      }
-      active = null;
-    }
-    document.addEventListener('pointerup', (e) => {
-      if (!active || e.pointerId !== active.pointerId) return;
-      const dy = Math.max(0, e.clientY - active.startY);
-      const dt = Math.max(1, Date.now() - active.startTime);
-      const velocity = dy / dt;
-      const shouldClose = dy > DISTANCE_THRESHOLD || velocity > VELOCITY_THRESHOLD;
-      finishDrag(shouldClose);
-    }, true);
-    document.addEventListener('pointercancel', (e) => {
-      if (!active || e.pointerId !== active.pointerId) return;
-      finishDrag(false);
-    }, true);
-  }
-  _installDragDismiss();
+  // Pointer-driven drag-to-close for widgets (DragDismiss /
+  // preset.BottomSheet) lives in the split-runtime module at
+  // core-ui/runtime/src/dragdismiss.js — demand-loaded via the
+  // [data-fui-drag-dismiss="true"] scanner below (SSR-inlined sheets
+  // load at boot; dynamically-opened chrome is caught by the
+  // MutationObserver scan when it's appended to <body>).
 
   if (!window.__fuiDeepLinkPopstate) {
     window.__fuiDeepLinkPopstate = true;
@@ -2060,8 +2088,10 @@
     { name: 'scrollspy',       selector: '[data-fui-scrollspy]' },
     // OptimisticAction: SSR-declared success state flips on click, RPC fires underneath, rolls back on non-2xx.
     { name: 'optimisticaction', selector: '[data-fui-comp="ui-optimistic-action"]' },
-    // ToggleAction: three-state mutex toggle (idle ↔ committed with optional untoggle, mutually exclusive within data-toggle-group).
+    // ToggleAction: three-state mutex toggle (idle ↔ committed with optional untoggle, mutually exclusive within data-fui-toggle-group).
     { name: 'toggleaction', selector: '[data-fui-comp="ui-toggle-action"]' },
+    // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
+    { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
     // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
     { name: 'networkretrybanner', selector: '[data-fui-comp="ui-network-retry-banner"]' },
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
@@ -2099,7 +2129,10 @@
       // Skip if the module is already loaded — its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
       if (window.__gofastr.loadedModules && window.__gofastr.loadedModules[m.name]) continue;
-      if (!scope.querySelector(m.selector)) continue;
+      // Test the scope node ITSELF as well as its descendants: a
+      // lazily-mounted widget root appended to <body> carries root
+      // markers (data-fui-drag-dismiss) on the node handed to us.
+      if (!(scope.matches?.(m.selector) || scope.querySelector(m.selector))) continue;
       if (m.idle) {
         idleQueue.push(m.name);
       } else {
@@ -2220,7 +2253,7 @@
       const names = (l.getAttribute('data-fui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
-    G.scanAndLoadCSS(document.documentElement);
+    G.scanAndLoadCSS(docEl);
     G.scheduleIdleLoads();
   };
 
@@ -2383,6 +2416,4 @@
   } else {
     _initialPass();
   }
-
-  window.G=window.__gofastr;
 })();

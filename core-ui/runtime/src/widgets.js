@@ -153,7 +153,7 @@
         backdrop = document.createElement('div');
         backdrop.className = 'fui-backdrop overlay-backdrop';
         backdrop.setAttribute('data-fui-backdrop', cfg.name);
-        document.body.appendChild(backdrop);
+        NS.doc.appendBody(backdrop);
       }
     }
     let widgetEl;
@@ -164,7 +164,7 @@
       const tmp = document.createElement('div');
       tmp.innerHTML = chromeHTML;
       widgetEl = tmp.firstElementChild;
-      document.body.appendChild(widgetEl);
+      NS.doc.appendBody(widgetEl);
     } else {
       delete NS._widgets[cfg.name];
       return;
@@ -177,12 +177,15 @@
     const isModal = !!cfg.backdrop;
     const previousFocus = isModal ? document.activeElement : null;
     if (isModal) {
-      // Lock scroll on <html>, not <body>: overflow:hidden on <body> turns
-      // the body into a clipped scroll container, which breaks any
-      // position:sticky descendant (a docs nav rail scrolls off-screen on a
-      // scrolled page). The root element locks the viewport just as well while
+      // Owner-refcounted viewport lock (NS.doc) — the lock releases only
+      // when the LAST owner unlocks, so a second locker (lightbox,
+      // drawer) can't release a modal's lock early. NS.doc locks <html>,
+      // not <body>: overflow:hidden on <body> turns the body into a
+      // clipped scroll container, which breaks any position:sticky
+      // descendant (a docs nav rail scrolls off-screen on a scrolled
+      // page). The root element locks the viewport just as well while
       // leaving sticky elements pinned. Scroll position is preserved.
-      if (NS._modalStack.length === 0) document.documentElement.style.overflow = 'hidden';
+      NS.doc.lockScroll('widget:' + cfg.name);
       NS._modalStack.push(cfg.name);
       Promise.resolve().then(() => {
         // Prefer an explicit [autofocus] element if the slot author
@@ -246,7 +249,7 @@
       if (isModal) {
         const idx = NS._modalStack.indexOf(cfg.name);
         if (idx >= 0) NS._modalStack.splice(idx, 1);
-        if (NS._modalStack.length === 0) document.documentElement.style.overflow = '';
+        NS.doc.unlockScroll('widget:' + cfg.name);
         // preventScroll: restoring focus to the trigger on close must not
         // scroll the page to it (the trigger may be off-screen after the
         // user scrolled), which otherwise jumps the page on dismiss.
@@ -293,12 +296,12 @@
           seenStreams[b.path] = es;
           es.addEventListener('open', () => {
             window.__fuiSSEReady = true;
-            document.body.classList.remove('fui-sse-down');
-            document.body.classList.add('fui-sse-up');
+            NS.doc.bodyClass('fui-sse-down', false);
+            NS.doc.bodyClass('fui-sse-up', true);
           });
           es.addEventListener('error', () => {
-            document.body.classList.remove('fui-sse-up');
-            document.body.classList.add('fui-sse-down');
+            NS.doc.bodyClass('fui-sse-up', false);
+            NS.doc.bodyClass('fui-sse-down', true);
           });
         } catch (_) {
           seenStreams[b.path] = null;
@@ -395,10 +398,13 @@
         // Open a widget on success (e.g. "save in drawer → open results sheet").
         const openWidgetName = node.getAttribute('data-fui-rpc-open');
         if (openWidgetName) NS.openWidget(openWidgetName);
-        // SPA navigate on success.
+        // SPA navigate on success. force: the RPC mutated server state,
+        // so bypass the screen cache and re-render even when the
+        // destination is the page the widget floats over (quick-add
+        // modal on the list it inserts into).
         const navigatePath = node.getAttribute('data-fui-rpc-navigate');
         if (navigatePath) {
-          NS.navigate(navigatePath);
+          NS.navigate(navigatePath, { force: true });
         }
       } catch (err) {
         // Network error: write human-readable feedback to the signal.

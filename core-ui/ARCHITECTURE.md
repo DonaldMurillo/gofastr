@@ -89,14 +89,14 @@ server side and the runtime does the work.
 | `data-fui-rpc-close` | Containing widget closes on 2xx |
 | `data-fui-rpc-reset` | Containing form resets on 2xx |
 | `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
-| `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx |
+| `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page — the RPC mutated server state, so the destination must be fetched fresh |
 | `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
 | `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
 | `data-fui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
 | `data-fui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
 | `data-fui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. |
-| `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. |
+| `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-fui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-fui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
 | `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe — the reducer is a real function the host registers (no `eval`). |
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
@@ -127,7 +127,7 @@ server side and the runtime does the work.
 | `data-fui-copy-toast="<json>"` | When set on a `data-fui-copy-text-from` button, the runtime dispatches a toast via `window.__gofastr.toast(<json>)` on copy success. Use for "Copied to clipboard" notifications without per-button JS. |
 | `data-fui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |
 | `data-fui-static` *(on `<html>`)* | Injected **only** by the static exporter (`framework/static.Builder`) onto `<html>`. When present, the runtime enters static mode: it fetches the dumped catalog file (`/__gofastr/widgets.json`) instead of the live session-gated endpoint, and a `data-fui-rpc` click/submit surfaces a "Needs the Go server" notice (via the CSP-clean `#fui-nav-toast` mini toast) instead of firing a dead request — so a visitor who tries a server-backed demo learns why it's inert and how to run it locally. `data-fui-open` is **not** gated — overlays resolve against the widget catalog + chrome HTML the exporter dumps as query-free files, so navigation surfaces (command palette, section-menu drawers) work. Client-only features (theme toggle, copy, signal mutations) are unaffected. Live pages never carry it, so every static-mode guard is a no-op in the normal server-backed app. |
-| `data-fui-static-options` *(on a combobox listbox `<ul>`)* | Set by `core-ui/patterns/combobox` when the combobox carries a static `Options` list (no RPC). The combobox runtime module filters the inline `<li role="option">` rows client-side on input — hide non-matches, show all when the query clears — instead of firing a search endpoint. Use for small fixed command sets (docs/nav palette) so search works on a serverless export with no backend. |
+| `data-fui-static-options` *(on a combobox listbox `<ul>`)* | Set by `core-ui/patterns/combobox` when the combobox carries a static `Options` list (no RPC). The combobox runtime module filters the inline `<li role="option">` rows client-side on input — hide non-matches, show all when the query clears — instead of firing a search endpoint. Use for small fixed command sets (docs/nav palette) so search works on a serverless export with no backend. Because the option rows render visible at SSR, the input ships `aria-expanded="true"` so the SSR state matches reality and the module's Escape / outside-click dismissal works before the first keystroke. An option's `Href` (written to `data-fui-push-state`) is scheme-filtered at render time — `javascript:` and friends are dropped. |
 | `data-fui-infinite-scroll="<rpc-path>"` | Marks an infinite-scroll wrapper. The runtime POSTs to `<rpc-path>` (form-encoded body with `cursor=<token>`) when the contained `data-fui-infinite-sentinel` enters the viewport, then appends the HTML response into the items container. Pair with `data-fui-infinite-cursor`, `data-fui-infinite-items` (optional, CSS selector — default the wrapper itself), and `data-fui-infinite-root-margin` (default `200px`). Response carries `X-Gofastr-Infinite-Cursor: <next>` for the next call; empty/missing → end of feed, sentinel removed, observer disconnected. `aria-busy` toggles during fetch. |
 | `data-fui-infinite-sentinel` | Marks the IntersectionObserver target inside an infinite-scroll wrapper. The sentinel is removed when end-of-feed is reached. |
 | `data-fui-infinite-cursor="<token>"` | Initial cursor token on the infinite-scroll wrapper. Updated in-place after every fetch. |
@@ -137,7 +137,7 @@ server side and the runtime does the work.
 | `data-fui-fill-input="<selector>"` / `data-fui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
 | `data-fui-disable-when-invalid` | On a submit button: disabled while any field in the surrounding `<form>` reports `:invalid`. |
 | `data-fui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage` under the given key. |
-| `data-fui-flash-on-update` / `data-fui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `is-fui-flash`) for `<ms>` after each update. |
+| `data-fui-flash-on-update` / `data-fui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `fui-flash`) for `<ms>` after each update. |
 | `data-fui-scroll-bottom-on-update` | A signal-bound scroll container auto-scrolls to the bottom on each update (chat / log views). |
 | `data-fui-tick-elapsed="<unix-ms>"` | Element's text updates once per second with the elapsed human-readable interval since the given epoch. |
 | `data-fui-rpc-body="<json>"` | Static JSON body for `data-fui-rpc` requests that don't come from a `<form>`. |
@@ -150,6 +150,7 @@ server side and the runtime does the work.
 | `data-fui-toast-dismiss` | Click target inside a toast item that triggers dismiss. Pairs with the runtime's CSS-driven fade-out animation. |
 | `data-fui-toast-fallback` | Marks the degraded inline container core injects when the `toasts` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
 | `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown. The runtime focuses the first `[role=menuitem]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the panel; Tab closes the menu and lets focus escape naturally. |
+| `data-fui-menu-panel` | Emitted by `framework/ui.Menu` on the `role="menu"` panel `<div>`. No runtime or CSS consumer today (the menu module scopes by `data-fui-menu` + `.ui-menu__panel`); emit-only structural marker. |
 | `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` whenever the current URL starts with the link's href (only when href ends in `/` — `/components/` lights up on `/components/accordion`). Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-fui-fileupload` | Marks the drag-drop zone surrounding a `framework/ui.FileUpload` `<input type="file">`. The runtime wires dragover/dragleave/drop handlers that forward dropped File objects into the input's `files` property and dispatch a `change` event so form RPC pipelines fire uniformly whether the user clicked-to-pick or dragged-to-drop. |
 | `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side — `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances — popovers are click-driven and don't deep-link. |
@@ -157,8 +158,9 @@ server side and the runtime does the work.
 | `data-fui-scrollspy` | Marks a scrollspy container. The runtime observes section heading targets via IntersectionObserver and tags the matching `data-fui-scrollspy-target` link with `aria-current="true"` as the user scrolls. |
 | `data-fui-scrollspy-target` | On a nav link inside a scrollspy: the value identifies the section heading the link tracks. Updated to `aria-current="true"` when its target enters the active band. |
 | `data-fui-optimistic-idle` / `data-fui-optimistic-success` / `data-fui-optimistic-endpoint` / `data-fui-optimistic-method` | On an OptimisticAction button: the runtime flips the visible label between the idle and success copy as it dispatches a fetch to the endpoint+method, rolling back on error. Used by `framework/ui.OptimisticAction` for "Save / Saved!" patterns without per-button JS. |
-| `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` if set, otherwise re-issuing a DELETE against `endpoint`. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
+| `data-fui-toggle-endpoint` / `data-fui-toggle-method` / `data-fui-toggle-allow-untoggle` / `data-fui-toggle-untoggle-endpoint` | On a three-state ToggleAction button (`framework/ui.ToggleAction`, `framework/ui/toggleaction.go`): `endpoint`+`method` (default POST) hit when toggling from idle → committed; `allow-untoggle="true"` lets a second click reverse the action, hitting `untoggle-endpoint` (same method) if set — with NO untoggle endpoint configured the button flips back to idle locally without issuing any request. Driven by `runtime/src/toggleaction.js` with a three-state mutex so rapid clicks can't race. |
 | `data-fui-toggle-idle` / `data-fui-toggle-committed` | Markers on the two label spans inside a ToggleAction button. The runtime shows/hides them as the button transitions between idle and committed states. SSR ships the initial visible state. |
+| `data-fui-toggle-group="<key>"` | Joins a ToggleAction button to a client-side mutex: committing any button with the same group key optimistically reverts the previously-committed sibling (no extra RPC — the server stays the source of truth and a later navigation refreshes from server state). Maps from `ToggleActionConfig.Group`. |
 | `data-fui-network-retry-threshold` / `data-fui-network-retry-health` / `data-fui-network-retry-button` / `data-fui-network-retry-sse-silence` | On a NetworkRetryBanner element: threshold = number of consecutive fetch failures before the banner shows; health = the URL the runtime probes to detect recovery; button = the retry trigger; sse-silence = grace period (ms) after the last SSE frame before the banner considers the link unhealthy. |
 | `data-fui-network-retry-demo-trigger` / `data-fui-network-retry-demo-recover` | Demo-only attributes (`examples/site` NetworkRetryBanner page): trigger forces the banner into the failed state for screenshot/dev purposes; recover restores it. Not used in production wiring. |
 | `data-fui-banner-dismiss-id="<id>"` | Optional companion to `data-fui-banner-dismiss`. When set, the dismissal is recorded in `localStorage` under `gofastr.banner-dismiss.<id>` and the same banner is auto-hidden on every subsequent page load until the key is cleared. Use for "deprecation notice — got it" banners. |
@@ -169,6 +171,7 @@ server side and the runtime does the work.
 | `data-fui-multiselect-chips` | On the chips strip inside a `core-ui/patterns/multiselect`: the runtime rebuilds the chip list inside this element after every `change` event on a descendant `.ui-multiselect__check` checkbox. `aria-live="polite"` ships on the same element so SR users hear updates. |
 | `data-fui-multiselect-placeholder="<text>"` | Empty-state placeholder shown via `::before` when no chips are rendered. |
 | `data-fui-multiselect-remove="<input-id>"` | On a chip's × button: clicking unchecks the linked checkbox (which fires `change` and re-renders chips). |
+| `data-fui-multiselect-name="<field>"` | Emitted by `core-ui/patterns/multiselect` on the disclosure root with the form-field name. No runtime or CSS consumer today; emit-only marker (the module scopes by `data-fui-multiselect`). |
 | `data-fui-dropdown` | On a dropdown trigger button. The `dropdown` runtime module toggles `aria-expanded` and shows/hides the paired panel on click, closes on outside-click / Escape / SPA navigation, and is the singleton-by-default (opening one closes the others). |
 | `data-fui-dropdown-wrap` | On the wrapper around a `data-fui-dropdown` trigger + `data-fui-dropdown-panel`. Scopes open/close to one dropdown instance; the runtime sets/clears `data-fui-dropdown-open` on it to track state. |
 | `data-fui-dropdown-panel` | On the floating panel sibling of a `data-fui-dropdown` trigger. The runtime toggles its `hidden` attribute as the dropdown opens/closes. |
@@ -182,7 +185,7 @@ server side and the runtime does the work.
 | `data-fui-range-slider-value="<id>"` | On the `<output>` element of a RangeSlider with `ShowValue=true`: the runtime mirrors `min – max` into this element as the user drags. |
 | `data-fui-tag-input="<form-field-name>"` | On the text `<input>` of a `framework/ui.TagInput`: the runtime listens for Enter / comma to commit a new chip (creates a sibling `<input type=hidden>` with this name + the typed value), and Backspace-on-empty to remove the last chip. |
 | `data-fui-tag-input-zone` | Wrapper containing the chips + the text input. Used by the runtime to scope chip insertion / removal. |
-| `data-fui-tag-input-id="<input-id>"` | On the TagInput text input: the input's id (used by the runtime to associate the labeled `<output>` if present). |
+| `data-fui-tag-input-id="<input-id>"` | Emitted by `framework/ui.TagInput` on the text input but currently consumed by NOTHING — `runtime/src/taginput.js` never reads it, no `<output>` is emitted, and no CSS selects on it. Emit-only; a candidate for removal on the Go side. |
 | `data-fui-animated-counter="<target>"` | On a `framework/ui.AnimatedCounter`: the runtime ticks the inner `.ui-animated-counter__value` from `<from>` to `<target>` over `<ms>` once the element scrolls into view. Respects `prefers-reduced-motion` (no-op). Pair with `data-fui-animated-counter-from` and `data-fui-animated-counter-ms`. |
 | `data-fui-animated-counter-from="<n>"` | AnimatedCounter starting value during the animation. |
 | `data-fui-animated-counter-ms="<n>"` | AnimatedCounter animation duration in milliseconds. |
@@ -223,10 +226,14 @@ server side and the runtime does the work.
 | `data-fui-password-toggle="<input-id>"` | On the toggle button inside a `PasswordInput`. The runtime toggles the linked input's type between `password` and `text`. |
 | `data-fui-repeater="<name>"` | On the items container of a `Repeater` component. The runtime uses `data-min-items` and `data-max-items` attributes to enforce item count limits during dynamic add/remove. |
 | `data-wizard-steps="<n>"` | On the `<form>` wrapper of a `Wizard` component. The runtime uses this to know the total number of steps for navigation. |
-| `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). The runtime listens for `pointerdown` on the widget root, follows pointer Y movement with `transform: translateY`, and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
+| `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger — present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-fui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
 | `data-fui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
 | `data-fui-zoomed` | Written by the runtime onto a `.ui-lightbox__full` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
 | `data-fui-trusted` | Marks a server-emitted region as trusted to host the legacy `data-kiln-tool` click/submit delegators. Without this ancestor (or `<body class="kiln-app">`), the legacy delegator refuses to dispatch — preventing stored-XSS content from forging authenticated kiln-tool POSTs. Apply only to chrome you fully control. |
+| `data-fui-sidebar` | Emitted by `framework/ui.Sidebar` on its `<aside>` root. No runtime or CSS consumer today (styling keys off `.ui-sidebar` classes); emit-only structural marker. |
+| `data-fui-sticky="<edge>"` | Emitted by `framework/ui.Sticky` (`layout.go`) with the pinned edge (`top`/`bottom`). No runtime or CSS consumer today (styling keys off `.ui-sticky--*` classes); emit-only structural marker. |
+| `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
+| `data-fui-viewport="desktop\|mobile"` | Emitted by `framework/ui.Responsive` on each variant wrapper. No runtime or CSS consumer today — the per-breakpoint stylesheet toggles `display` via the `.ui-responsive__desktop` / `.ui-responsive__mobile` classes; emit-only structural marker. |
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`. Adding a new attribute requires updating this table AND adding a runtime test.
 
@@ -259,6 +266,56 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
   → every node with data-fui-signal="customers-rows" data-fui-signal-mode="html" gets innerHTML replaced
   → no URL change, no <main> swap, no other DOM touched
 ```
+
+### Global document state (`__gofastr.doc`)
+
+Persistent state on `<html>`/`<body>` — attributes, classes, and
+runtime-created body children — goes through ONE module: `doc`, defined
+at the top of `runtime.js` and exposed as `window.__gofastr.doc`. Its
+frozen `MANIFEST` enumerates every allowed name; the table below mirrors
+it and `core-ui/runtime/doc_manifest_test.go` fails the build when they
+drift (hard rule 5 applied to document-level state). Writes outside the
+manifest still land (the guard never breaks the page) but emit a
+`console.warn` naming the offender.
+
+The API: `setHtmlAttr(name, v)` / `removeHtmlAttr(name)` for `<html>`
+attributes; `bodyClass(name, on)` for `<body>` classes;
+`lockScroll(owner)` / `unlockScroll(owner)` / `scrollLocked()` — an
+owner-refcounted viewport lock (a `Set` of owners; the
+`documentElement.style.overflow` lock releases only when the LAST owner
+unlocks, so a lightbox over a modal, or any second locker, can't release
+the lock early); `singleton(id, factory)` — returns the existing body
+child with that id (SSR-provided elements are adopted without invoking
+the factory) or creates and appends it once; `appendBody(el)` for
+non-singleton body children (widget chrome, backdrops); and `reattach()`
+— re-appends any runtime-created singleton that lost its parent, called
+by the SPA full-shell swap after it replaces `[data-fui-layout]`.
+
+| Surface | Name | Writer | Consumer |
+|---|---|---|---|
+| `<html>` attr | `aria-busy` | core runtime during an in-flight SPA-nav fetch (`doc.setHtmlAttr`), removed when the nav settles | CSS can show a progress strip via `[aria-busy="true"]`; assistive tech hears "busy" |
+| `<html>` attr | `data-color-scheme` | `colorscheme.js` — the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
+| `<html>` attr | `data-fui-os` | core runtime at boot (`doc.setHtmlAttr`) | `framework/ui.ShortcutHint` CSS picks ⌘ vs Ctrl glyphs |
+| `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only — the runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
+| `<body>` class | `fui-sse-down` | widgets module per-widget SSE `error` handler (`doc.bodyClass`) | CSS connection-state styling (offline banners) |
+| `<body>` class | `fui-sse-up` | widgets module per-widget SSE `open` handler (`doc.bodyClass`) | CSS connection-state styling |
+| `<body>` singleton | `fui-backtotop-sentinel` | backtotop module (`doc.singleton`) — one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
+| `<body>` singleton | `fui-nav-toast` | core `_showNavToast` (`doc.singleton`) — nav-failure / static-mode notices | user-visible mini toast; styled by `.fui-nav-toast` in `frameworkBuiltinCSS`; e2e tests target `#fui-nav-toast` |
+| `<body>` singleton | `fui-toast-fallback` | core `_fallbackToast` (`doc.singleton`) — the degraded, unstyled toast region used when the toasts module fails to load. Distinct from the styled toast stack by design | user-visible fallback notices; carries `data-fui-toast-fallback` for tests/CSS |
+| `<body>` singleton | `fui-toast-stack-auto` | toasts module `NS.toast` (`doc.singleton`) — created only when the page has no SSR `[data-fui-toast-stack]` container | toast items; carries `data-fui-toast-stack="__auto"` |
+
+The viewport scroll lock (`documentElement.style.overflow`) is also
+owned by `doc` but is keyed by owner, not name: the widgets module locks
+with `widget:<name>` per mounted modal. Any new surface that needs a
+scroll lock (lightbox zoom, drawer) calls `lockScroll`/`unlockScroll`
+with its own owner token instead of touching the style property.
+
+Deliberately NOT wrapped: transient DOM that exists only within one
+synchronous operation (the copy module's clipboard `<textarea>`), and
+pure reads (`#fui-route-announce` is SSR-provided; the runtime only
+writes its text). Per-widget body children (chrome, backdrops) are
+transient per-widget elements, not singletons — they go through
+`doc.appendBody` and are removed on dismiss.
 
 ### Shared state: the signal store (`core-ui/store`)
 
@@ -806,11 +863,15 @@ core-ui/
   island/      — runtime-side island manager
   runtime/     — runtime.js (client) + Go embed wrapper
   runtime/src/ — code-split runtime modules (loaded on demand):
-                 animatedcounter, banner, carousel, combobox,
-                 dropzone, fileupload, infinitescroll, lightbox,
-                 menu, multiselect, numberinput, popover, rangeslider,
-                 shortcut, slider, sortablelist, sse, taginput,
-                 textarea, toasts, toc, tree, widgets
+                 animate, animatedcounter, backtotop, banner, carousel,
+                 combobox, computed, conditionalfield, copy,
+                 dragdismiss, dropdown, dropzone, fileupload,
+                 formrepeater, infinitescroll, lightbox, menu,
+                 multiselect, networkretrybanner, numberinput,
+                 optimisticaction, passwordinput, popover, rangeslider,
+                 reveal, scrollspy, searchinput, shortcut, slider,
+                 sortablelist, sse, taginput, textarea, themeswitch,
+                 toasts, toc, toggleaction, tree, widgets
   runtime/colorscheme.js — dark/light mode bootstrap (runs sync in <head>
                  before CSS parses, reads localStorage + OS hint,
                  sets data-color-scheme on <html>)
