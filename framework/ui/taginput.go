@@ -142,7 +142,7 @@ func tagInputCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__zone {
@@ -151,7 +151,7 @@ func tagInputCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 6px);
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 4px var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -164,12 +164,12 @@ func tagInputCSS(_ style.Theme) string {
 [data-fui-comp="ui-tag-input"] .ui-tag-input__chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px 2px 10px;
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px) var(--spacing-xs, 2px) 10px;
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 500;
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__chip-remove {
@@ -184,7 +184,7 @@ func tagInputCSS(_ style.Theme) string {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: 1rem;
+  font-size: var(--text-base, 1rem);
   line-height: 1;
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__chip-remove:hover {
@@ -196,14 +196,14 @@ func tagInputCSS(_ style.Theme) string {
   outline: 0;
   background: transparent;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   color: var(--color-text, #18181B);
   min-block-size: 28px;
   padding: 0;
 }
 [data-fui-comp="ui-tag-input"] .ui-tag-input__help {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-tag-input"].is-disabled .ui-tag-input__zone {

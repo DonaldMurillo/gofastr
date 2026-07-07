@@ -93,7 +93,7 @@ func colorPickerCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-color-picker"] .ui-color-picker__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-color-picker"] .ui-color-picker__input {

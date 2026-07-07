@@ -243,7 +243,7 @@ func stepWizardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-step-wizard"] .ui-step-wizard__heading {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--text-lg, 1.125rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }

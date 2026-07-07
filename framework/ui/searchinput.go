@@ -126,7 +126,7 @@ func searchInputCSS(_ style.Theme) string {
   justify-content: center;
   padding: 0 var(--spacing-sm, 4px) 0 var(--spacing-md, 12px);
   color: var(--color-text-muted, #52525B);
-  font-size: 1rem;
+  font-size: var(--text-base, 1rem);
   user-select: none;
 }
 [data-fui-comp="ui-search-input"] .ui-search-input__input {
@@ -134,7 +134,7 @@ func searchInputCSS(_ style.Theme) string {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   padding: 10px var(--spacing-xs, 4px);
   color: var(--color-text, #18181B);
   min-block-size: var(--spacing-touch-target, 44px);
@@ -158,7 +158,7 @@ func searchInputCSS(_ style.Theme) string {
   min-inline-size: 2rem;
   background: transparent;
   border: 0;
-  font-size: 1.1rem;
+  font-size: var(--text-lg, 1.1rem);
   color: var(--color-text-muted, #52525B);
   cursor: pointer;
   user-select: none;

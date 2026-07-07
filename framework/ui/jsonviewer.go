@@ -147,7 +147,7 @@ var jsonViewerStyle = registry.RegisterStyle("ui-json-viewer", jsonViewerCSS)
 func jsonViewerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-json-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   line-height: 1.5;
   color: var(--color-text, #18181B);
 }
@@ -160,7 +160,7 @@ func jsonViewerCSS(_ style.Theme) string {
   user-select: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__summary::-webkit-details-marker {
   display: none;
@@ -188,7 +188,7 @@ func jsonViewerCSS(_ style.Theme) string {
   border-inline-start: 1px dashed var(--color-border, #E4E4E7);
 }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__item {
-  padding-block: 2px;
+  padding-block: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__key {
   color: var(--color-info, #3B82F6);
@@ -196,7 +196,7 @@ func jsonViewerCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__colon {
   color: var(--color-text-muted, #52525B);
-  margin-inline-end: 4px;
+  margin-inline-end: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__str { color: var(--color-success, #16A34A); }
 [data-fui-comp="ui-json-viewer"] .ui-json-viewer__num { color: var(--color-warning, #D97706); }

@@ -152,13 +152,13 @@ func sliderCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-slider"] .ui-slider__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-slider"] .ui-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-primary, #4F46E5);
   min-inline-size: 3ch;
   text-align: end;
@@ -166,9 +166,9 @@ func sliderCSS(_ style.Theme) string {
 [data-fui-comp="ui-slider"] .ui-slider__edges {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
-  margin-top: 2px;
+  margin-top: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-slider"] .ui-slider__input {
   appearance: none;

@@ -74,6 +74,16 @@ const (
 )
 
 // DataTableConfig configures a DataTable.
+//
+// Note there are two pagination packages, and DataTable uses exactly
+// one of them: the Pagination field takes a
+// core-ui/patterns/pagination.Config, which renders the page-link nav
+// below the table. The other package, framework/pagination, is the
+// server side of the story — it parses ?limit/?offset/?cursor query
+// params and builds cursor tokens for the auto-generated CRUD list
+// endpoints, and never renders HTML. A typical handler uses
+// framework/pagination to slice the data, then feeds the resulting
+// page count into this config's Pagination nav.
 type DataTableConfig struct {
 	// Columns is the column definitions. Required.
 	Columns []Column

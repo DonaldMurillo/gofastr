@@ -179,12 +179,12 @@ func segmentedCSS(_ style.Theme) string {
   display: inline-grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  padding: 4px;
+  padding: var(--spacing-sm, 4px);
   gap: 0;
   border-radius: var(--radii-md, 8px);
   background: var(--color-muted, #f1f1f3);
   border: 1px solid var(--color-border, #e5e7eb);
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   vertical-align: middle;
   isolation: isolate;
 }

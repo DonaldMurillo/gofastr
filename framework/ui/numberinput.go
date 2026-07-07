@@ -158,7 +158,7 @@ func numberInputCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-number-input"] .ui-number-input__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-number-input"] .ui-number-input__row {
@@ -177,7 +177,7 @@ func numberInputCSS(_ style.Theme) string {
   background: transparent;
   text-align: center;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   color: var(--color-text, #18181B);
   min-block-size: var(--spacing-touch-target, 44px);
   width: 5ch;
@@ -201,7 +201,7 @@ func numberInputCSS(_ style.Theme) string {
   min-inline-size: var(--spacing-touch-target, 44px);
   background: var(--color-surface-soft, #F4F4F5);
   border: 0;
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
   cursor: pointer;
@@ -220,12 +220,12 @@ func numberInputCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-number-input"] .ui-number-input__help {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-number-input"] .ui-number-input__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-number-input"].is-error .ui-number-input__row {

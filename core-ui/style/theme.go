@@ -39,6 +39,14 @@ type Theme struct {
 	// map (not a typed ColorSet) so the reflection token-walk ignores it.
 	DarkColors map[string]string
 
+	// DarkCode is the dark-scheme syntax palette, keyed by code token
+	// name ("kw", "str", …). Same contract as DarkColors — when
+	// non-empty its `--tk-<name>` re-declarations join the dark-scheme
+	// blocks, so a theme toggle restyles code blocks along with the
+	// rest of the page. Empty by default. A map (not a typed CodeSet)
+	// so the reflection token-walk ignores it.
+	DarkCode map[string]string
+
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet
@@ -50,6 +58,7 @@ type Theme struct {
 	Easings     EasingSet
 	Typography  FontSizeSet
 	Layout      LayoutSet
+	Code        CodeSet
 }
 
 // ColorSet is the canonical palette. Every theme must declare every
@@ -136,6 +145,18 @@ type FontSizeSet struct {
 	XS, SM, Base, LG, XL, XXL, XXXL FontSize
 }
 
+// CodeSet — the syntax-highlight palette consumed by code-display
+// components via `--tk-<name>`. Field names ARE the emitted suffixes
+// (KW → --tk-kw): KW keywords, FN function names, Str strings, Num
+// numeric literals, Com comments, Type type names, PN punctuation.
+// The group is optional — zero tokens are skipped (component CSS
+// keeps its built-in fallback palette), so themes that never set it
+// behave exactly as before the group existed. Dark-scheme values go
+// in Theme.DarkCode.
+type CodeSet struct {
+	KW, FN, Str, Num, Com, Type, PN CodeColor
+}
+
 // LayoutSet — interaction-affordance dimensions. TouchTarget is
 // the WCAG 2.5.5 minimum tap target (default 44px); buttons and
 // form inputs reference var(--spacing-touch-target) to land on it.
@@ -168,6 +189,17 @@ func AutoFillNames(t *Theme) {
 // kebab-case of that is the canonical CSS variable suffix.
 func autofillTokens(v reflect.Value, path []string) {
 	if v.Kind() != reflect.Struct {
+		return
+	}
+	// CodeColor is the one OPTIONAL token type: a fully-unset token
+	// stays zero (skipped by validation + emission, component CSS
+	// falls back), so only autofill the Name once a Value was set.
+	if v.Type() == reflect.TypeOf(CodeColor{}) {
+		nameField := v.FieldByName("Name")
+		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
+			len(path) > 0 && nameField.CanSet() {
+			nameField.SetString(camelToKebab(path[len(path)-1]))
+		}
 		return
 	}
 	// Token leaf? Fill Name if empty.
@@ -344,6 +376,17 @@ func validateTokens(v reflect.Value, path string) error {
 			return fmt.Errorf("%s: FontSize.Value is empty (Name=%q)", path, tk.Name)
 		}
 		return nil
+	case CodeColor:
+		// Optional group: an entirely-unset token is fine (component
+		// CSS keeps its built-in fallback palette). Only a half-set
+		// token is a configuration mistake.
+		if tk.Value == "" && tk.Name != "" {
+			return fmt.Errorf("%s: CodeColor.Value is empty (Name=%q) — leave the token fully zero to fall back, or give it a value", path, tk.Name)
+		}
+		if tk.Value != "" && tk.Name == "" {
+			return fmt.Errorf("%s: CodeColor.Name is empty (Value=%q) — run AutoFillNames or set the Name", path, tk.Value)
+		}
+		return nil
 	}
 	// Recurse into struct fields.
 	for i := 0; i < v.NumField(); i++ {
@@ -476,6 +519,22 @@ func DefaultTheme() Theme {
 		},
 		Layout: LayoutSet{
 			TouchTarget: Spacing{Name: "touch-target", Value: 44},
+		},
+		// Syntax-highlight palette (--tk-*). These are the values the
+		// ui.CodeBlock CSS previously carried only as var() fallbacks —
+		// promoted to theme slots so dark mode (Theme.DarkCode) and
+		// re-skins can restyle code blocks. Tuned for the always-dark
+		// default CodeSurface, so they hold in both page schemes. PN
+		// chains to the code text color, matching the old `inherit`
+		// fallback behavior.
+		Code: CodeSet{
+			KW:   CodeColor{Name: "kw", Value: "#C792EA"},
+			FN:   CodeColor{Name: "fn", Value: "#82AAFF"},
+			Str:  CodeColor{Name: "str", Value: "#C3E88D"},
+			Num:  CodeColor{Name: "num", Value: "#F78C6C"},
+			Com:  CodeColor{Name: "com", Value: "#676E95"},
+			Type: CodeColor{Name: "type", Value: "#FFCB6B"},
+			PN:   CodeColor{Name: "pn", Value: "var(--color-code-text)"},
 		},
 	}
 }

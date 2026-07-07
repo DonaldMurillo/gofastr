@@ -118,7 +118,7 @@ const baseCSS = `
   border-radius: var(--radii-full, 9999px);
 }
 .progress-description {
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #6B7280);
 }
 

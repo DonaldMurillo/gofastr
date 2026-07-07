@@ -232,18 +232,18 @@ func dropzoneCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__label {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-base, 1rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__prompt {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__filename {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-primary, #4F46E5);
   font-weight: 500;
   min-block-size: 1.2em;
@@ -263,12 +263,12 @@ func dropzoneCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__help {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-dropzone"] .ui-dropzone__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-dropzone"].is-error .ui-dropzone__zone {

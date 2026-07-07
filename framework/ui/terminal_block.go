@@ -63,16 +63,16 @@ func terminalBlockCSS(_ style.Theme) string {
   background: var(--color-background, #fff);
   overflow: hidden;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: var(--text-xs, 12px);
   margin-top: var(--spacing-md, 12px);
 }
 [data-fui-comp="ui-terminal-block"] .ui-terminal-block__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-md, 8px);
   padding: 6px 12px;
   border-bottom: 1px solid var(--ui-terminal-block-head-border, var(--color-border, rgba(0,0,0,0.1)));
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   color: var(--color-text-subtle, #71717A);
 }
 [data-fui-comp="ui-terminal-block"] .ui-terminal-block__dot {

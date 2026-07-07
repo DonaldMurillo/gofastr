@@ -179,7 +179,7 @@ func globalSearchCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #E4E4E7);
   color: var(--color-text-muted, #52525B);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   font-weight: 600;
 }
 

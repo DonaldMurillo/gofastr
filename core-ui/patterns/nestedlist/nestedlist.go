@@ -176,7 +176,7 @@ func styleFn(_ style.Theme) string {
   list-style: none;
   padding-inline-start: 0;
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   line-height: 1.45;
 }
 .nested-list ul,
@@ -199,7 +199,7 @@ ol.nested-list,
   padding-inline-start: var(--spacing-xs, 4px);
 }
 .nested-list__item {
-  padding-block: 2px;
+  padding-block: var(--spacing-xs, 2px);
 }
 /* Hide the native <details> disclosure triangle — we draw our own
    custom caret via ::before on the summary so it picks up theme color
@@ -214,7 +214,7 @@ ol.nested-list,
   cursor: pointer;
   font-weight: 600;
   color: var(--color-text, #111827);
-  padding: 4px 6px;
+  padding: var(--spacing-sm, 4px) 6px;
   border-radius: var(--radii-sm, 4px);
   user-select: none;
 }
@@ -229,7 +229,7 @@ ol.nested-list,
   transform: rotate(45deg);  /* points right when collapsed */
   transition: transform 120ms ease;
   opacity: 0.7;
-  margin-inline-end: 2px;
+  margin-inline-end: var(--spacing-xs, 2px);
 }
 .nested-list details[open] > summary::before,
 .nested-list details[open] > .nested-list__summary::before {
@@ -246,7 +246,7 @@ ol.nested-list,
   display: inline-block;
   color: var(--color-text, #111827);
   text-decoration: none;
-  padding: 4px 6px;
+  padding: var(--spacing-sm, 4px) 6px;
   border-radius: var(--radii-sm, 4px);
 }
 .nested-list__link:hover {

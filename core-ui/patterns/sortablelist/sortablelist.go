@@ -137,7 +137,7 @@ func sortableListCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-sortable-list"] .ui-sortable-list__item {
   display: flex;

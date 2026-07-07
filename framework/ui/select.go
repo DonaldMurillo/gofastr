@@ -148,12 +148,12 @@ func selectCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-select"] .ui-select__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-select"] .ui-select__input {
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   padding: 10px var(--spacing-md, 12px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -175,12 +175,12 @@ func selectCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-select"] .ui-select__help {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-select"] .ui-select__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-select"].is-error .ui-select__input {

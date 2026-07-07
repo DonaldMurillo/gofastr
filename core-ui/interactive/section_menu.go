@@ -215,14 +215,14 @@ var sectionMenuStyle = registry.RegisterStyle("fui-section-menu", sectionMenuCSS
 func sectionMenuCSS(_ style.Theme) string {
 	return `[data-fui-comp="fui-section-menu"] {
   display: block;
-  font-size: 0.875rem;
+  font-size: var(--text-sm, 0.875rem);
 }
 
 /* ── Body / groups / links (shared by the rail and the drawer) ────── */
 [data-fui-comp="fui-section-menu"] .fui-section-menu__body { display: block; }
 [data-fui-comp="fui-section-menu"] .fui-section-menu__lead {
   display: block;
-  padding: 4px 0 4px 12px;
+  padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
   margin-bottom: var(--spacing-md, 12px);
   color: var(--color-text, currentColor);
   font-weight: 500;
@@ -242,10 +242,10 @@ func sectionMenuCSS(_ style.Theme) string {
   gap: 6px;
   cursor: pointer;
   list-style: none;
-  padding: 4px 0;
-  margin-bottom: 4px;
+  padding: var(--spacing-sm, 4px) 0;
+  margin-bottom: var(--spacing-sm, 4px);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   letter-spacing: 0.02em;
   color: var(--color-text-subtle, #71717A);
   user-select: none;
@@ -288,19 +288,19 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-fui-comp="fui-section-menu"] .fui-section-menu__trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-md, 8px);
   cursor: pointer;
-  padding: 8px 14px;
+  padding: var(--spacing-md, 8px) 14px;
   border: 1px solid var(--color-border, rgba(0,0,0,0.12));
   border-radius: var(--radius-md, 6px);
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);
-  font-size: 13px;
+  font-size: var(--text-sm, 13px);
   font-weight: 500;
 }
 
 /* ── Drawer body: groups collapse (respect their open state) ──────── */
-[data-fui-comp="fui-section-menu"].fui-section-menu--drawer { padding: 4px; }
+[data-fui-comp="fui-section-menu"].fui-section-menu--drawer { padding: var(--spacing-sm, 4px); }
 [data-fui-comp="fui-section-menu"] .fui-section-menu__drawer-head {
   display: flex;
   justify-content: flex-end;

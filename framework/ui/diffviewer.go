@@ -214,7 +214,7 @@ var diffViewerStyle = registry.RegisterStyle("ui-diff-viewer", diffViewerCSS)
 func diffViewerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-diff-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   line-height: 1.5;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -222,17 +222,17 @@ func diffViewerCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
 }
 [data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__hunk {
-  padding: 4px var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 12px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   border-block: 1px solid var(--color-border, #E4E4E7);
 }
 [data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__file {
-  padding: 4px var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 12px);
   color: var(--color-text, #18181B);
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   border-block-end: 1px solid var(--color-border, #E4E4E7);
 }
 [data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__line {
@@ -267,7 +267,7 @@ func diffViewerCSS(_ style.Theme) string {
   grid-template-columns: 1fr 1fr;
 }
 .ui-diff-viewer--split .ui-diff-viewer__header-cell {
-  padding: 4px var(--spacing-md, 12px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 12px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-weight: 600;

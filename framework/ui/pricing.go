@@ -86,7 +86,7 @@ func pricingCardCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-pricing-card"] {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--spacing-lg, 1rem);
   padding: 1.75rem;
   background-color: var(--color-surface, #fff);
   border: 1px solid var(--color-border, #e4e4e7);
@@ -101,22 +101,22 @@ func pricingCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__badge {
   align-self: flex-start;
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--color-primary, #4338CA);
+  color: var(--ui-pricing-card-badge-fg, var(--color-primary, #4338CA));
   background-color: color-mix(in srgb, var(--color-primary, #4338CA) 12%, transparent);
-  padding: 0.15rem 0.5rem;
+  padding: 0.15rem var(--spacing-md, 0.5rem);
   border-radius: 999px;
 }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__name {
   font-family: var(--font-heading, inherit);
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   margin: 0;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: 0.9rem; line-height: 1.5; }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__price { display: flex; align-items: baseline; gap: 0.25rem; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.9rem); line-height: 1.5; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
   font-size: 2.25rem;
@@ -124,13 +124,13 @@ func pricingCardCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: 0.95rem; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 0.95rem); }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature {
   position: relative;
   padding-inline-start: 1.6rem;
   color: var(--color-text, #1B1B2A);
-  font-size: 0.92rem;
+  font-size: var(--text-sm, 0.92rem);
   line-height: 1.45;
 }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature::before {

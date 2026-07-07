@@ -67,7 +67,7 @@ const pollingIndicatorCSSText = `
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 6px);
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #6B7280);
   line-height: 1;
 }

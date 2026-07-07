@@ -173,12 +173,12 @@ func timelineCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__meta {
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-timeline"] .ui-timeline__body {
   color: var(--color-text-muted, #52525B);
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   line-height: 1.5;
 }
 

@@ -130,6 +130,21 @@ type FontSize struct {
 func (f FontSize) CSS() string    { return varRef("text", f.Name) }
 func (f FontSize) String() string { return f.CSS() }
 
+// CodeColor is a syntax-highlight palette token. It emits
+// `var(--tk-<name>)` — the --tk-* variables the framework
+// highlighter's .tk-* spans (ui.CodeBlock, markdown code fences)
+// read. Unlike the other token groups the Code group is OPTIONAL:
+// a zero CodeColor is skipped by validation and never emitted, and
+// the component CSS falls back to its built-in palette, so themes
+// predating the group keep working unchanged.
+type CodeColor struct {
+	Name  string
+	Value string
+}
+
+func (c CodeColor) CSS() string    { return varRef("tk", c.Name) }
+func (c CodeColor) String() string { return c.CSS() }
+
 // varRef builds `var(--<category>-<name>)`. Centralized so the
 // var-naming convention has exactly one definition.
 func varRef(category, name string) string {

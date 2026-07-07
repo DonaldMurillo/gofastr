@@ -15,7 +15,7 @@ var counterStyle = registry.RegisterStyle("fui-counter", counterCSS)
 
 func counterCSS(_ style.Theme) string {
 	return `[data-fui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:.5rem}` +
-		`[data-fui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border:1px solid var(--fui-border,#e2e8f0);border-radius:.375rem;background:var(--fui-surface,#fff);color:var(--fui-foreground,#0f172a);font-size:1.125rem;line-height:1;cursor:pointer;transition:background .15s,border-color .15s}` +
+		`[data-fui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border:1px solid var(--fui-border,#e2e8f0);border-radius:.375rem;background:var(--fui-surface,#fff);color:var(--fui-foreground,#0f172a);font-size:var(--text-lg, 1.125rem);line-height:1;cursor:pointer;transition:background .15s,border-color .15s}` +
 		`[data-fui-comp="fui-counter"] .fui-counter__btn:hover{background:var(--fui-muted-bg,#f1f5f9);border-color:var(--fui-primary,#3b82f6)}` +
 		`[data-fui-comp="fui-counter"] .fui-counter__btn:focus-visible{outline:2px solid var(--fui-primary,#3b82f6);outline-offset:2px}` +
 		`[data-fui-comp="fui-counter"] .fui-counter__value{min-width:2ch;text-align:center;font-variant-numeric:tabular-nums;font-weight:600;color:var(--fui-foreground,#0f172a)}`

@@ -68,7 +68,7 @@ func detailListCSS(_ style.Theme) string {
   color: var(--color-text, inherit);
 }
 @media (max-width: 30rem) {
-  [data-fui-comp="ui-detail-list"] .ui-detail-list__row { grid-template-columns: 1fr; gap: 2px; }
+  [data-fui-comp="ui-detail-list"] .ui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
 }
 `
 }

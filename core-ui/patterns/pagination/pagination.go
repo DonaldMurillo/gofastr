@@ -294,7 +294,7 @@ const baseCSS = `
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
 }
 .pagination li {
   display: inline-flex;

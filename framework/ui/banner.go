@@ -162,23 +162,23 @@ func bannerCSS(_ style.Theme) string {
   flex: 0 0 auto;
   display: inline-flex;
   color: var(--color-info, #3B82F6);
-  margin-top: 2px;
+  margin-top: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-banner"] .ui-banner__content {
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-banner"] .ui-banner__title {
   margin: 0;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
 }
 [data-fui-comp="ui-banner"] .ui-banner__body {
   margin: 0;
   color: var(--color-text-muted, #52525B);
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   line-height: 1.45;
 }
 [data-fui-comp="ui-banner"] .ui-banner__action {

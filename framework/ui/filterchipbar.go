@@ -168,7 +168,7 @@ func filterChipBarCSS(_ style.Theme) string {
   background: transparent;
   color: var(--color-text, #111);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   cursor: pointer;
 }
 [data-fui-comp="ui-filter-bar"] .ui-filter-bar__clear:hover {

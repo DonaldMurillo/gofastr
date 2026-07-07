@@ -141,10 +141,8 @@ func Gallery(cfg GalleryConfig) render.HTML {
 		"class":      cls,
 		"aria-label": label,
 	}
-	// Columns is exposed as a CSS custom property via data-fui-cols
-	// — no inline style needed (CSP). The stylesheet reads attr()
-	// where it can; for cross-browser safety we read it via a class
-	// suffix that maps to a precomputed --ui-gallery-cols value.
+	// Columns maps to a precomputed .ui-gallery--cols-<n> class that
+	// sets --ui-gallery-cols — no inline style needed (CSP).
 	if cfg.Variant == GalleryGrid || cfg.Variant == GalleryMasonry {
 		// Cap at 12 for the precomputed class set; very wide grids
 		// fall back to 12.
@@ -306,8 +304,8 @@ func galleryCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-gallery"] .ui-gallery__caption {
   margin: 0;
-  padding: 4px var(--spacing-sm, 8px) var(--spacing-sm, 8px);
-  font-size: 0.85rem;
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 8px) var(--spacing-sm, 8px);
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 
@@ -345,7 +343,7 @@ func galleryCSS(_ style.Theme) string {
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   gap: var(--ui-gallery-gap);
-  padding-block-end: 2px;
+  padding-block-end: var(--spacing-xs, 2px);
 }
 .ui-gallery--strip > .ui-gallery__row {
   flex: 0 0 auto;
@@ -376,7 +374,7 @@ func galleryCSS(_ style.Theme) string {
   padding: var(--spacing-md, 12px) var(--spacing-sm, 8px) var(--spacing-sm, 8px);
   color: white;
   background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   opacity: 0;
   transition: opacity 150ms ease;
 }

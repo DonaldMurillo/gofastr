@@ -230,7 +230,7 @@ func ratingCSS(_ style.Theme) string {
      into 1..N visual order, while keeping the ~ sibling cascade. */
   flex-direction: row-reverse;
   justify-content: flex-end;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   margin: 0;
   padding: 0;
   border: 0;
@@ -279,7 +279,7 @@ func ratingCSS(_ style.Theme) string {
   --ui-rating-cell: max(24px, calc(var(--ui-rating-glyph) + 8px));
   gap: 0;
 }
-[data-fui-comp="ui-rating"].ui-rating--gap-loose { gap: 8px; }
+[data-fui-comp="ui-rating"].ui-rating--gap-loose { gap: var(--spacing-md, 8px); }
 [data-fui-comp="ui-rating"].ui-rating--gap-wide { gap: 20px; }
 [data-fui-comp="ui-rating"] .ui-rating__star:hover {
   transform: scale(1.08);
