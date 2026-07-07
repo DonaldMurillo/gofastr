@@ -323,8 +323,8 @@ func carouselCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   cursor: pointer;
 }
-[data-fui-comp="ui-carousel"] .ui-carousel__nav--prev { inset-inline-start: 8px; }
-[data-fui-comp="ui-carousel"] .ui-carousel__nav--next { inset-inline-end: 8px; }
+[data-fui-comp="ui-carousel"] .ui-carousel__nav--prev { inset-inline-start: var(--spacing-md, 8px); }
+[data-fui-comp="ui-carousel"] .ui-carousel__nav--next { inset-inline-end: var(--spacing-md, 8px); }
 [data-fui-comp="ui-carousel"] .ui-carousel__nav:hover { background: var(--color-surface-soft, #F4F4F5); }
 [data-fui-comp="ui-carousel"] .ui-carousel__nav:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);

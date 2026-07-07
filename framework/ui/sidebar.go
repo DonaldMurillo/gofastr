@@ -29,6 +29,20 @@ const (
 	SidebarOffCanvas   SidebarVariant = "off-canvas"
 )
 
+// checkSidebarVariant panics on a variant outside the built-in set.
+// Matches the Card/Button contract: every variant-taking component
+// validates at render so a typo'd variant is loud, not silently
+// unstyled. Empty is allowed (the documented default — Sidebar()
+// normalizes it to SidebarPersistent).
+func checkSidebarVariant(v SidebarVariant) {
+	switch v {
+	case "", SidebarPersistent, SidebarCollapsible, SidebarOffCanvas:
+		return
+	}
+	panic("ui: Sidebar unknown Variant " + string(v) +
+		` — pick one of: "" (persistent), "collapsible", "off-canvas"`)
+}
+
 // SidebarItem is one navigation entry. Children nest one level deep.
 // Deeper nesting is unsupported by design — sidebars should not be
 // trees.
@@ -172,6 +186,11 @@ func (s sidebarComponent) RenderCtx(ctx context.Context) render.HTML {
 func (s sidebarComponent) Render() render.HTML { return s.render() }
 
 func (s sidebarComponent) render() render.HTML {
+	// Unknown variants panic like every other variant-taking component
+	// (Card, Button, Notification) — a typo'd variant used to render
+	// an unstyled ui-sidebar--<anything> class silently. Empty is the
+	// documented default (Sidebar() normalizes it to persistent).
+	checkSidebarVariant(s.cfg.Variant)
 	cfg := s.cfg
 	var b strings.Builder
 	// A <div>, not <aside>: when slotted into a layout the layout wraps
@@ -263,9 +282,16 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		if active {
 			linkAttrs += ` aria-current="page"`
 		}
-		// Same idiom as ui.Menu items: neutralise javascript:/vbscript:/
-		// data: schemes to "#" before attribute-escaping.
-		b.WriteString(`<a href="` + escAttr(sanitizeHref(it.Href)) + `"` + linkAttrs + `>`)
+		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
+		// protocol-relative //host, and control bytes (see safety.go);
+		// a rejected href degrades to "#" like ui.Card / ui.Link /
+		// ui.Menu. (Previously this used the weaker sanitizeHref, which
+		// let //evil.com, file:, and blob: through verbatim.)
+		href := safeURL(it.Href)
+		if href == "" {
+			href = "#"
+		}
+		b.WriteString(`<a href="` + escAttr(href) + `"` + linkAttrs + `>`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 		}

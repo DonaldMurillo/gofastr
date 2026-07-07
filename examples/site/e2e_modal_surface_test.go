@@ -87,3 +87,42 @@ func TestE2E_SheetPaintsSurface(t *testing.T) {
 		t.Errorf("sheet background = %q — sheet paints no panel", bg)
 	}
 }
+
+// The command palette is excluded from the default panel surface — it
+// paints its own chrome, so the .fui-panel around it must stay
+// transparent (the :has() opt-out branch, exercised in real DOM rather
+// than by string-matching the selector).
+func TestE2E_PaletteSlotUnstyled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	var panelBG, paletteBG string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		pageReady(),
+		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-command-palette"]').click()`, nil),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+            const p = document.querySelector('[data-fui-widget="site-command-palette"] .fui-panel');
+            return p ? getComputedStyle(p).backgroundColor : '';
+        })()`, &panelBG),
+		chromedp.Evaluate(`(() => {
+            const c = document.querySelector('[data-fui-widget="site-command-palette"] [data-fui-comp="ui-cmd-palette"]');
+            return c ? getComputedStyle(c).backgroundColor : '';
+        })()`, &paletteBG),
+	); err != nil {
+		t.Fatalf("palette surface: %v", err)
+	}
+	if panelBG == "" {
+		t.Fatal("palette panel not found after opening site-command-palette")
+	}
+	if panelBG != "rgba(0, 0, 0, 0)" && panelBG != "transparent" {
+		t.Errorf("panel background = %q — cmd-palette opt-out not applied, double chrome", panelBG)
+	}
+	if paletteBG == "" || paletteBG == "rgba(0, 0, 0, 0)" || paletteBG == "transparent" {
+		t.Errorf("palette own background = %q — palette should paint its own surface", paletteBG)
+	}
+}

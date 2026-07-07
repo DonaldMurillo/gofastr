@@ -286,7 +286,13 @@ func (m *minifier) emitSep(firstByte byte) {
 			m.out.WriteByte('\n')
 			return
 		}
-		if m.endsExpr() && isASIHazardPrefix(firstByte) {
+		// After an expression-ending token, a newline before an
+		// identifier-start or digit MUST survive: dropping it either
+		// fuses tokens (`foo bar`, `1 2`) or yields a SyntaxError
+		// (`a++b`, `)b`). Covers postfix ++/-- ASI (`a++\nb`) and
+		// class-body element separation (`class A{x=1\ny=2}`) — a
+		// space is NOT a valid separator in either position.
+		if m.endsExpr() && (isASIHazardPrefix(firstByte) || isIdentStart(firstByte) || isDigit(firstByte)) {
 			m.out.WriteByte('\n')
 			return
 		}

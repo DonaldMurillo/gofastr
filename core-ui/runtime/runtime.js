@@ -315,15 +315,15 @@
         }).catch(() => {});
       }
       // SPA navigate on success — swaps <main> without full page reload.
-      // Post-mutation navigation always bypasses the screen cache (and
-      // re-renders even when the destination IS the current page): the
-      // RPC just changed server state, so a cached copy of the
-      // destination is stale by definition.
+      // Routes through navigate() so the unsafe-scheme guard
+      // (_isUnsafeSignalUrl) applies here too — the widget path
+      // already does (src/widgets.js). force:true re-renders even
+      // when the destination IS the current page: the RPC just
+      // changed server state, so a cached copy is stale by definition.
       const navigatePath = node.getAttribute('data-fui-rpc-navigate');
       if (navigatePath) {
         try {
-          if (navigatePath !== currentPath) history.pushState(null, '', navigatePath);
-          loadPage(navigatePath, { bypassCache: true });
+          window.__gofastr.navigate(navigatePath, { force: true });
         } catch (_) {}
       }
     } catch (err) {

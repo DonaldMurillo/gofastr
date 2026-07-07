@@ -20,14 +20,19 @@ func TestDataTableColumnRequiresKey(t *testing.T) {
 	t.Fatal("expected panic on Column without Key")
 }
 
-func TestDataTableSortableEmptyHeaderPanics(t *testing.T) {
-	defer func() { recover() }()
-	DataTable(DataTableConfig{
-		Columns:         []Column{{Key: "x", Header: "", Sortable: true}},
-		Rows:            []Row{{Cells: map[string]render.HTML{"x": render.Text("a")}}},
+func TestSortableEmptyHeaderAriaLabel(t *testing.T) {
+	// A sortable column with an empty Header (icon-only / key-only
+	// columns) must still expose an accessible label on its sort
+	// control, derived from the column Key — otherwise screen readers
+	// announce a nameless button/link. Plain (link) mode.
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{{Key: "price", Header: "", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"price": render.Text("9")}}},
 		SortHrefPattern: "?s=%s&d=%s",
-	})
-	t.Fatal("expected panic on sortable column with empty header")
+	}))
+	if !strings.Contains(h, `aria-label="Sort by price"`) {
+		t.Errorf("expected sort control to carry aria-label from Key:\n%s", h)
+	}
 }
 
 func TestDataTableActionsColumnEmptyHeaderOK(t *testing.T) {

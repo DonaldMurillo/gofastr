@@ -323,6 +323,46 @@ func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
 		})
 	}
 }
+// TestHrefSinksDropProtocolRelative pins that the three sinks that
+// previously used the weak sanitizeHref (MenuItem.Href,
+// SidebarItem.Href, Notification.DismissHref) now use safeURL, which
+// drops protocol-relative URLs (//evil.com), file:, and blob: —
+// schemes sanitizeHref let through verbatim. Each degrades to href="#".
+func TestHrefSinksDropProtocolRelative(t *testing.T) {
+	for _, payload := range []string{
+		"//evil.example/x",
+		"file:///etc/passwd",
+		"blob:https://evil.example/abc",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			menu := ui.Menu(ui.MenuConfig{
+				Label: "Open",
+				Items: []ui.MenuItem{{Label: "go", Href: payload}},
+			})
+			if strings.Contains(string(menu), "evil.example") {
+				t.Fatalf("protocol-relative/unsafe scheme reached menu href: %s", menu)
+			}
+			mustContain(t, menu, `href="#"`)
+
+			sidebar := ui.SidebarBody(ui.SidebarConfig{
+				Items: []ui.SidebarItem{{Label: "go", Href: payload}},
+			})
+			if strings.Contains(string(sidebar), "evil.example") {
+				t.Fatalf("protocol-relative/unsafe scheme reached sidebar href: %s", sidebar)
+			}
+			mustContain(t, sidebar, `href="#"`)
+
+			notif := ui.Notification(ui.NotificationConfig{
+				Title:       "T",
+				DismissHref: payload,
+			})
+			if strings.Contains(string(notif), "evil.example") {
+				t.Fatalf("protocol-relative/unsafe scheme reached notification dismiss href: %s", notif)
+			}
+			mustContain(t, notif, `href="#"`)
+		})
+	}
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Form component security (tests 11–20)

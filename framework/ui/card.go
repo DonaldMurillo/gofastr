@@ -25,6 +25,16 @@ type CardConfig struct {
 	// Heading is the optional top-of-card title. When set, a labelled
 	// <section> wraps the card so screen readers pick up the heading
 	// as the region name.
+	//
+	// The heading's id (and the section's aria-labelledby target) is
+	// derived from the heading text — "ui-card-" + slug(Heading) — so
+	// it is deterministic across re-renders. The trade-off, shared with
+	// html.Heading: two cards with EQUAL heading text on one page
+	// produce duplicate ids (the render function has no page-wide
+	// context to de-dupe against). cfg.ID sets the section wrapper's own
+	// anchor id, NOT the heading id, so it does not de-dupe the
+	// collision; when a page repeats heading text, use Header for full
+	// control over the heading element and its id.
 	Heading string
 
 	// HeadingLevel overrides the heading element level (default 3).

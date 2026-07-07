@@ -174,7 +174,14 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	openExtra := `type="button"`
 	if it.Href != "" {
 		tag = "a"
-		openExtra = `href="` + escAttr(sanitizeHref(it.Href)) + `"`
+		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
+		// protocol-relative //host, and control bytes (see safety.go);
+		// a rejected href degrades to "#" like ui.Card / ui.Link.
+		href := safeURL(it.Href)
+		if href == "" {
+			href = "#"
+		}
+		openExtra = `href="` + escAttr(href) + `"`
 	}
 	tabindex := "-1" // managed by runtime via roving focus
 	disabledAttr := ""
@@ -223,35 +230,6 @@ func escAttr(s string) string {
 	return r.Replace(s)
 }
 
-// sanitizeHref reduces a caller-supplied href to a safe equivalent. Any
-// URI whose scheme is `javascript:`, `vbscript:`, or `data:` is replaced
-// with `#` so a navigation click renders as a no-op rather than running
-// inline script in the browser. Schemes are matched case-insensitively
-// after trimming leading whitespace (browsers tolerate `\tjavascript:`).
-// Returns the original href unchanged if no dangerous scheme is found.
-func sanitizeHref(href string) string {
-	// Browsers strip ASCII whitespace/control bytes from a URL before
-	// resolving its scheme, INCLUDING bytes interior to the scheme token
-	// ("java\tscript:" resolves to "javascript:"). A leading-only trim
-	// misses that, so collapse every ASCII space + control byte before
-	// matching the deny-list against the canonical scheme.
-	var b strings.Builder
-	b.Grow(len(href))
-	for i := 0; i < len(href); i++ {
-		c := href[i]
-		if c == ' ' || c <= 0x1f || c == 0x7f {
-			continue
-		}
-		b.WriteByte(c)
-	}
-	lower := strings.ToLower(b.String())
-	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
-		if strings.HasPrefix(lower, bad) {
-			return "#"
-		}
-	}
-	return href
-}
 
 // shortHash is a tiny FNV-style stable hash used only to derive a
 // unique fallback ID when the caller doesn't supply one. Collisions

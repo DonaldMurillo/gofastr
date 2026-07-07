@@ -1645,7 +1645,16 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 	}
 	b := BlueprintBlock{}
 	node := sel.X
+	hops := 0
 	for {
+		// Bound the helper-hop walk so a self-referential or mutually
+		// recursive zero-arg helper (a() returns a()) can't loop
+		// forever. 32 is far beyond any real helper chain depth;
+		// returning not-reversible is the safe fallback (the screen
+		// just isn't packed — it stays as authored Go).
+		if hops > 32 {
+			return BlueprintBlock{}, false
+		}
 		if idx, ok := node.(*ast.IndexExpr); ok {
 			if identName(idx.X) == "appResources" {
 				b.Entity = astString(idx.Index)
@@ -1664,6 +1673,7 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 			// island endpoint). Follow the hop and keep walking.
 			if id, isIdent := c.Fun.(*ast.Ident); isIdent && len(c.Args) == 0 {
 				if body, found := helpers[id.Name]; found {
+					hops++
 					node = body
 					continue
 				}

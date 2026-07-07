@@ -109,8 +109,17 @@ func Notification(cfg NotificationConfig) render.HTML {
 		if label == "" {
 			label = "Dismiss notification"
 		}
+		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
+		// protocol-relative //host, and control bytes (see safety.go);
+		// a rejected href degrades to "#" like ui.Card / ui.Link.
+		// (Previously this used the weaker sanitizeHref, which let
+		// //evil.com, file:, and blob: through verbatim.)
+		dismissHref := safeURL(cfg.DismissHref)
+		if dismissHref == "" {
+			dismissHref = "#"
+		}
 		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
-			Href:       sanitizeHref(cfg.DismissHref),
+			Href:       dismissHref,
 			Class:      "ui-notification__dismiss",
 			ExtraAttrs: html.Attrs{"aria-label": label},
 			Content:    render.Text("×"),

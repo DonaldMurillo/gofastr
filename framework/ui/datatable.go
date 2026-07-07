@@ -151,12 +151,10 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			panic("ui: DataTable Column requires Key")
 		}
 		// Header MAY be empty — common for actions / icon columns
-		// where the cells are self-evidently labeled. Sortable columns
-		// still need text content for the sort link, so we panic only
-		// in that case.
-		if c.Header == "" && c.Sortable {
-			panic("ui: DataTable Column with empty Header cannot be Sortable")
-		}
+		// where the cells are self-evidently labeled. A Sortable
+		// column with an empty Header gets an aria-label derived from
+		// its Key in renderHeader (so the sort control is still
+		// announced) — no panic, graceful a11y degradation.
 		if c.Sortable && cfg.SortHrefPattern == "" {
 			panic("ui: DataTable Column.Sortable requires Config.SortHrefPattern")
 		}
@@ -304,6 +302,15 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}, render.Text(strings.TrimSpace(indicator)))
 
+	// A sortable column with an empty Header (icon/key-only columns)
+	// has no visible text for the sort control, so expose an accessible
+	// label derived from the column Key — otherwise the button/link is
+	// announced nameless by screen readers.
+	var sortAriaLabel string
+	if col.Header == "" {
+		sortAriaLabel = "Sort by " + col.Key
+	}
+
 	// Island mode: render as a data-fui-rpc button so click fires
 	// an RPC and the response replaces the surrounding island. The
 	// button also carries data-fui-push-state so the URL stays in sync.
@@ -316,14 +323,18 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 		} else {
 			query = "?" + query
 		}
-		btn := render.Tag("button", map[string]string{
+		btnAttrs := map[string]string{
 			"type":                "button",
 			"class":               "ui-data-table__sort",
 			"data-fui-rpc":        islandEndpoint + query,
 			"data-fui-rpc-method": "GET",
 			"data-fui-rpc-signal": islandSignal,
 			"data-fui-push-state": href,
-		},
+		}
+		if sortAriaLabel != "" {
+			btnAttrs["aria-label"] = sortAriaLabel
+		}
+		btn := render.Tag("button", btnAttrs,
 			render.Text(col.Header),
 			indicatorSpan,
 		)
@@ -331,10 +342,14 @@ func renderHeader(col Column, activeKey string, activeDir SortDir, pattern, isla
 	}
 
 	// Plain mode: <a href> link, full SSR navigation if clicked.
-	link := html.LinkHTML(html.LinkHTMLConfig{
+	linkCfg := html.LinkHTMLConfig{
 		Href:    href,
 		Class:   "ui-data-table__sort",
 		Content: render.Join(render.Text(col.Header), indicatorSpan),
-	})
+	}
+	if sortAriaLabel != "" {
+		linkCfg.ExtraAttrs = html.Attrs{"aria-label": sortAriaLabel}
+	}
+	link := html.LinkHTML(linkCfg)
 	return html.TH(thCfg, link)
 }

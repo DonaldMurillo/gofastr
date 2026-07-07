@@ -194,6 +194,13 @@ func TestCardUnknownVariantPanics(t *testing.T) {
 	})
 }
 
+func TestSidebarBadVariantPanics(t *testing.T) {
+	wantPanic(t, "Sidebar unknown Variant", func() {
+		// Sidebar is a component — force render by calling Render().
+		_ = Sidebar(SidebarConfig{Variant: SidebarVariant("nope")}).Render()
+	})
+}
+
 func TestCardRegisteredVariantRenders(t *testing.T) {
 	h := Card(CardConfig{Variant: testPromoCard, Heading: "Deal"}, render.Text("body"))
 	mustContain(t, h, "ui-card--promo")

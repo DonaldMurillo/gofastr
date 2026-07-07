@@ -124,10 +124,26 @@ component owns only its internal content and layout. Per position:
   double-pads the panel).
 
 Full-bleed modal bodies (media viewers, custom chrome) opt out of the
-centered panel by putting the `fui-slot-bare` class on the body's root
-element — the panel then stays a transparent container and the body
-owns every pixel. `framework/ui.Lightbox` is the canonical bare body:
-it centers the image directly on the backdrop, no card.
+centered panel so the body owns every pixel: the panel stays a
+transparent container with no background, border, padding, or shadow.
+`framework/ui.Lightbox` is the canonical bare body — it centers the
+image directly on the backdrop, no card.
+
+Two rules govern the opt-out (the selector is `.fui-pos-center >
+.fui-panel:not(:has(> .fui-slot > …))`):
+
+1. **The marker must be on the slot content's ROOT element** — the
+   direct child of `.fui-slot`. `.fui-slot-bare`, `[data-fui-lightbox]`,
+   and `[data-fui-comp="ui-cmd-palette"]` all qualify. A wrapper
+   `<div>` between `.fui-slot` and the marker defeats it:
+   `.fui-slot > <div> > .fui-slot-bare` does NOT match
+   `:has(> .fui-slot > .fui-slot-bare)`, so the panel re-paints.
+2. **One bare slot opts the WHOLE panel out.** The opt-out sits on the
+   `.fui-panel`, which wraps every slot, so a single bare slot drops
+   the panel chrome for the header and footer too. Bare means "this
+   body owns all the chrome" — if you need a card around some slots
+   but not others, paint that surface inside the bare slot rather
+   than relying on the framework panel.
 
 ### Signals
 

@@ -100,6 +100,27 @@ func TestMinify(t *testing.T) {
 		{"binary plus unary plus", "a + +b", "a+ +b"},
 		// `a+++b` lexes as `a++ + b` (maximal munch) — keep verbatim.
 		{"triple plus maximal munch", "a+++b", "a+++b"},
+		// --- ASI after postfix ++/-- (defect: a++\nb fused to a++b) ---
+		// A newline after postfix ++/-- before an identifier MUST
+		// survive — otherwise the output is `a++b` (SyntaxError).
+		{"postfix incr newline ident", "a++\nb", "a++\nb"},
+		{"postfix decr newline ident", "a--\nb", "a--\nb"},
+		// `a++\n(b)` already keeps its newline via the prefix-hazard
+		// `(` path — pin it so the broader fix doesn't regress it.
+		{"postfix incr newline paren", "a++\n(b)", "a++\n(b)"},
+
+		// --- class body element separation via newline (defect) ---
+		// A space does NOT trigger ASI between class elements, so a
+		// newline separating two fields (or a field and a method) must
+		// survive — `class A{x=1 y=2}` is a SyntaxError.
+		{"class field newline field", "class A{x=1\ny=2}", "class A{x=1\ny=2}"},
+		{"class static field newline", "class A{static x=1\nstatic y=2}", "class A{static x=1\nstatic y=2}"},
+		{"class field newline method", "class A{x=1\nm(){}}", "class A{x=1\nm(){}}"},
+		// A method body's closing `}` already terminates the element,
+		// so no separator is needed before the next one.
+		{"class method newline field", "class A{m(){}\nx=1}", "class A{m(){}x=1}"},
+		// An explicit `;` between static fields is already valid.
+		{"class static fields semi", "class A{static x=1;static y=2}", "class A{static x=1;static y=2}"},
 
 		// --- regex with literal control bytes in character class ---
 		// runtime.js has `/^[\s\x00-\x1f]+/` for URL-scheme scrubbing;
