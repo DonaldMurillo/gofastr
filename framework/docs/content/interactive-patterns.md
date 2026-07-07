@@ -148,9 +148,31 @@ Uses the `optimisticaction.js` runtime module.
 
 ### Toggle Action (three-state commit/untoggle)
 
-`framework/ui` ships a `ToggleAction` component — a three-state button
-(idle → committed → idle) with optional mutex groups. See
-`toggleaction.js`.
+`framework/ui.ToggleAction` renders a three-state button
+(idle → pending → committed) for binary server-backed state the user
+flips in place — Follow/Following, plan pickers, watch/unwatch.
+Clicking an idle button optimistically shows the committed label,
+POSTs `Endpoint` (or `Method`), and rolls back on non-2xx. With
+`AllowUntoggle: true` a second click reverts it — hitting
+`UntoggleEndpoint` when set, otherwise flipping locally with no
+request. Buttons sharing a `Group` form a client-side mutex:
+committing one reverts the previously-committed sibling (no extra
+RPC; the server stays the source of truth). SSR ships the initial
+state via `Committed`, and `aria-pressed` mirrors it for AT users.
+
+```go
+ui.ToggleAction(ui.ToggleActionConfig{
+    Endpoint:         "/api/follow/42",
+    IdleLabel:        "Follow",
+    CommittedLabel:   "Following ✓",
+    Committed:        alreadyFollowing, // SSR initial state
+    AllowUntoggle:    true,
+    UntoggleEndpoint: "/api/unfollow/42",
+})
+```
+
+Uses the `toggleaction.js` runtime module (`data-fui-toggle-*`
+attributes; see [runtime-contract](runtime-contract.md)).
 
 ### Inline Edit helpers
 
@@ -288,7 +310,7 @@ button "does nothing", check the server log for a 404 first.
 When the runtime submits a form-backed RPC, it serializes the form to JSON
 using each control's **`name`** attribute as the key (non-multipart forms go
 out as `application/json`; see the forms note in
-[`core-ui/ARCHITECTURE.md`](../../core-ui/ARCHITECTURE.md)). The `id` is for
+[runtime-contract](runtime-contract.md#forms)). The `id` is for
 CSS/labels and never appears in the body.
 
 ```html
@@ -502,5 +524,5 @@ search := interactive.LiveSearch(
 
 - [`docs/ui-new-components.md`](ui-new-components.md) — full component catalog.
 - [`docs/widgets.md`](widgets.md) — widget framework (Modal, Drawer, Popover mounts).
-- [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — runtime contract + attribute reference.
+- [runtime-contract](runtime-contract.md) — the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
 - [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time UI setup.

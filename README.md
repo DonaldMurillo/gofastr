@@ -379,7 +379,7 @@ shared across the whole `go test` invocation so cold-start is amortised.
 
 ### `core-ui/` — server-driven UI runtime
 
-A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a vanilla-JS runtime. See `examples/site` for an app that exercises every feature — including the 90+ `framework/ui` primitives, modal/drawer/popover/toast widgets, and CRUD-by-island patterns.
+A separate, independently usable system for rendering interactive UIs from Go: signals, HTML primitives (`core-ui/html`), composed UI patterns (`core-ui/patterns`), server-side islands, dev server with SSE hot-reload, a static-site compiler, a linter, and a vanilla-JS runtime. See `examples/site` for an app that exercises every feature — including the 90+ `framework/ui` primitives, modal/drawer/popover/toast widgets, and CRUD-by-island patterns. Each component has a live demo at `/components/<slug>` on that site; the one-page catalog is [`ui-new-components.md`](framework/docs/content/ui-new-components.md) (`gofastr docs ui-new-components`), and `go doc github.com/DonaldMurillo/gofastr/framework/ui` lists every constructor.
 
 ### `battery/` — pluggable infrastructure
 
@@ -445,6 +445,7 @@ connected to a running app.
 - [Blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md) — **the thesis walkthrough**: blueprint → generated UI + API → auth + owner scoping + RBAC → customize in plain Go → deploy
 - [Kiln (experimental)](framework/docs/content/kiln.md) — agent-driven build mode
 - [UI getting started](framework/docs/content/ui-getting-started.md) — **the 15-minute path**: scaffold → theme → screen → custom-styled component
+- [UI components index](framework/docs/content/ui-new-components.md) — **the catalog**: every component the framework ships, with its `go doc` path and live demo at `/components/<slug>` in `examples/site`
 - [core-ui architecture](core-ui/ARCHITECTURE.md) — **deeper UI/runtime reference** (SSR, hydration, islands, component CSS, data-fui-* primitives)
 - [Interactive patterns](framework/docs/content/interactive-patterns.md) — every `data-fui-*` behavior, plus **"Writing a hand-written island, end to end"** (no-reload updates on your own screens) and themed confirms
 - [framework architecture](framework/ARCHITECTURE.md) — package layout, layering rules, cycle-breaking interfaces

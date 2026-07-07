@@ -273,9 +273,10 @@ What happened:
 ### Co-located screen styles (`style.Contribute`)
 
 For one-off screen styles that don't deserve a reusable component, use
-`style.Contribute` to declare CSS next to the Go render code. The host's
-`createStyleSheet` fans every contribution into the main theme stylesheet
-at startup via `style.Apply`:
+`style.Contribute` to declare CSS next to the Go render code. The host
+serves every contribution automatically: it fans them into
+`/__gofastr/app.css` (theme tokens resolved) with no wiring on your part —
+no `WithCustomCSS`, no `style.Apply` call:
 
 ```go
 // screen_home.go
@@ -291,28 +292,89 @@ var _ = style.Contribute(func(ss *style.StyleSheet) {
 func (s *HomeScreen) Render() render.HTML { /* uses .home-hero, .home-card */ }
 ```
 
-In the host's `theme.go`:
-
-```go
-func createStyleSheet(t style.Theme) string {
-    ss := style.NewStyleSheet(t)
-    // ...base rules: resets, layout primitives, page chrome...
-    style.Apply(ss)
-    return ss.CSS() + ui.BaseCSS()
-}
-```
-
-`Apply` runs after the base rules so co-located declarations can override
-them by re-declaring the same selector. Final CSS is identical between
-dev and prod — no nonces, no inline `<style>`, no CSP relaxation.
+Contributions are emitted after the app's `WithCustomCSS` payload, so
+co-located declarations can override base rules by re-declaring the same
+selector. Final CSS is identical between dev and prod — no nonces, no
+inline `<style>`, no CSP relaxation. (Only a custom host that builds its
+own stylesheet instead of serving `app.css` needs to call `style.Apply`
+itself.)
 
 **When to reach for what:**
 
 | Use case                      | Tool                              |
 |-------------------------------|-----------------------------------|
 | Reusable component with CSS   | `registry.RegisterStyle` + `Style.WrapHTML` (scoped, lazy-loaded per-component sheet) |
+| Brand variant of a framework component | `ui.RegisterButtonVariant` / `RegisterButtonSize` / `RegisterCardVariant` / `RegisterStatusVariant` (next section) |
 | One-off screen / page styles  | `style.Contribute` (this section — fragment added to the host's global theme stylesheet) |
 | Site-wide tokens & primitives | Host `createStyleSheet` directly  |
+
+### Custom variants on framework components
+
+`ui.Button`, `ui.LinkButton`, `ui.Card`, and the status-coded components
+(`StatusBadge`, `Callout`, `Tag`, `Notification`) validate their
+`Variant` at render time — an unknown value panics so typos surface
+immediately instead of shipping an unstyled element. To add a brand
+variant, don't write loose CSS against the `ui-button--…` classes;
+register it, so it joins the validation set and its CSS ships inside the
+component's own registered stylesheet:
+
+```go
+// Package-level — registration is init-time and process-global, like
+// registry.RegisterStyle. Registering after the app starts serving
+// (once the component's sheet has been built) panics.
+var Brand = ui.RegisterButtonVariant("brand", ui.VariantCSS{
+    Props: []string{
+        "background", "{colors.primary}",
+        "color", "#fff",
+    },
+    Hover: []string{"filter", "none", "opacity", "0.9"},
+})
+
+// At render sites — works for Button AND LinkButton (shared set):
+ui.Button(ui.ButtonConfig{Label: "Upgrade", Variant: Brand})
+```
+
+- `Props` / `Hover` / `Focus` are flat prop/value pairs — the same shape
+  `style.StyleSheet.Set` takes. Values may reference theme tokens:
+  `{colors.primary}` resolves to `var(--color-primary)`.
+- The emitted rules are scoped to the component's marker
+  (`[data-fui-comp="ui-button"].ui-button--brand`), which outranks the
+  base rules, so `Props` override the default look without `!important`.
+  The CSS loads, dedupes, and content-hashes exactly like the built-in
+  variants — it lives in the same sheet.
+- Duplicate names, built-in names (`primary`, `outlined`, `success`, …),
+  and malformed pairs panic at registration. Unregistered variants still
+  panic at render.
+
+The other registrars:
+
+- `ui.RegisterButtonSize(name, css)` — custom `ButtonSize`, shared with
+  `LinkButton`. Sizes and variants share the `ui-button--<name>` class
+  namespace, so a name can only be one or the other.
+- `ui.RegisterCardVariant(name, css)` — custom `CardVariant`.
+- `ui.RegisterStatusVariant(name, ui.StatusVariantCSS{…})` — one
+  registration extends every `StatusVariant` consumer at once:
+  `StatusBadge`, `Tag` (and therefore `FilterChipBar` chips), `Callout`,
+  and `Notification`. You supply the accent color plus an optional icon
+  glyph (used by Callout and Notification); each component derives its
+  own variant rules from the color in its own sheet, the same way the
+  built-in success/warning/… variants do:
+
+```go
+var Beta = ui.RegisterStatusVariant("beta", ui.StatusVariantCSS{
+    Color: "{colors.primary}",
+    Icon:  "β",
+})
+
+ui.StatusBadge(ui.StatusBadgeConfig{Label: "Beta", Variant: Beta})
+ui.Callout(ui.CalloutConfig{Title: "Beta feature", Variant: Beta}, body)
+```
+
+**Common mistake:** registering inside a handler or after
+`app.Serve()`. Validation would pass but the sheet is already built and
+cached, so the framework panics on the late registration instead of
+silently rendering an unstyled variant. Keep registrations in
+package-level `var` declarations.
 
 ---
 
@@ -335,10 +397,10 @@ Pair with media-query CSS that hides the toggle and shows the nav inline above y
 
 ## Next
 
-- Section-level theme overrides — see `framework/ui.Themed` (and ARCHITECTURE.md "Themed sections")
-- Islands (in-page state changes without a route change) — see [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) "In-page state change"
-- The full `data-fui-*` primitive table is in [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md)
-- Component primitive cheat sheet (Layout, Card, Tooltip, Toggle, Spinner, …) is in [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) "UI primitive cheat sheet"
+- Section-level theme overrides (`framework/ui.Themed`), dark mode, and the token catalog — see [theming](theming.md)
+- Islands (in-page state changes without a route change) — see [runtime-contract](runtime-contract.md) "The four scenarios"
+- The full `data-fui-*` primitive table is in [runtime-contract](runtime-contract.md)
+- Component catalog (Layout, Card, Tooltip, Toggle, Spinner, …) is in [ui-new-components](ui-new-components.md)
 
 For a complete worked example, read `examples/site/main.go` (route registration + widget mounts) and `examples/site/components.go` (every framework/ui component showcased).
 

@@ -27,6 +27,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/storage"
 	_ "github.com/DonaldMurillo/gofastr/battery/webhook"
 	_ "github.com/DonaldMurillo/gofastr/framework"
+	_ "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 const (

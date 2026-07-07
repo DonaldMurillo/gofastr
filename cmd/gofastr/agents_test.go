@@ -23,8 +23,10 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 	// TOC header + at least one row.
 	mustContain(t, body, "| Section | Use this when | Details |")
 	mustContain(t, body, "**framework**")         // row exists
+	mustContain(t, body, "**ui**")                // component-catalog row exists
 	mustContain(t, body, "**battery/admin**")     // row exists
 	mustContain(t, body, "(agents/framework.md)") // link to detail
+	mustContain(t, body, "(agents/ui.md)")
 	mustContain(t, body, "(agents/battery-admin.md)")
 
 	// AGENTS.md must NOT inline the full per-section bodies anymore.
@@ -56,6 +58,7 @@ func TestWriteAgentDetailFilesPopulatesDir(t *testing.T) {
 	}
 	for _, name := range []string{
 		"agents/framework.md",
+		"agents/ui.md",
 		"agents/battery-admin.md",
 		"agents/battery-auth.md",
 		"agents/battery-log.md", // the one we added

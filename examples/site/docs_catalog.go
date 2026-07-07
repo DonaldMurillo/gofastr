@@ -94,7 +94,9 @@ var docIntents = []docIntent{
 		Path: []string{"Getting started (UI)", "New components", "Widget builder"},
 		Docs: []docEntry{
 			{"ui-getting-started", "Getting started (UI)", "The path: scaffold → theme → screen → custom component."},
+			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},
 			{"ui-new-components", "New components", "The minimal-register + SSR-inline + hydrate contract."},
+			{"theming", "Theming", "The token catalog, dark mode, ui.Themed, and the --ui-* override vars."},
 			{"widgets", "Widget builder", "Build islands that hydrate against a registered handler."},
 			{"form-module", "Forms", "Server-validated forms with island-swapped error states."},
 			{"image", "Image pipeline", "Pure-Go resize + WebP lossless encode."},
@@ -103,6 +105,7 @@ var docIntents = []docIntent{
 			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit — zero config."},
 			{"static-export", "Static-site export", "Render the whole app to static HTML + assets for apex or project-path hosting."},
 			{"interactive-patterns", "Interactive patterns", "The data-fui-* vocabulary: RPC islands, signals, open-widget, optimistic actions."},
+			{"runtime-contract", "Runtime contract", "The SSR/hydration/island/SSE model and the full data-fui-* attribute reference."},
 			{"signal-store", "Signal store", "Typed, namespaced client state that fans out to many consumers from one declaration."},
 		},
 	},

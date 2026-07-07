@@ -22,8 +22,10 @@ contract) are exempt — the exemption list lives in
 - [Current risk register](project-architecture-review.md) —
   revalidated architecture risks and maintenance rules; stale findings
   are removed instead of preserved.
-- [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — UI/runtime
-  contract. **Mandatory reading** before any UI or runtime change.
+- [Runtime contract](runtime-contract.md) — the UI/runtime contract:
+  SSR/hydration/island/SSE model + `data-fui-*` attribute reference.
+  **Mandatory reading** before any UI or runtime change. (Embedded
+  extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
 - [`ROADMAP.md`](../ROADMAP.md) — forward-looking work (proposals,
   performance opportunities, in-flight plans).
 - [Agent notes](agent-notes.md) — append-only review log.
@@ -70,6 +72,33 @@ contract) are exempt — the exemption list lives in
 - [Runtime JS minification](runtime-minification.md) — embedded
   `runtime.js` minifier, env gating, prod-wins defaults.
 
+## Building UI
+
+- [UI getting started](ui-getting-started.md) — the 15-minute path:
+  scaffold → theme → screen → custom-styled component.
+- [UI wiring](ui-wiring.md) — adding the UI system to a plain
+  `framework.App` by hand: site app, theme, layout, `uihost.New`,
+  and the `WidgetMounter` shim, with a complete `main.go`.
+- [Theming](theming.md) — the token catalog, dark mode via
+  `DarkColors` + `data-color-scheme`, `ui.Themed` section overrides,
+  `--ui-*` component knobs, and why component internals are never
+  overridden from site CSS.
+- [Runtime contract](runtime-contract.md) — the SSR / hydration /
+  island / SSE model and the `data-fui-*` attribute reference
+  (embedded extract of `core-ui/ARCHITECTURE.md`).
+- [UI components index](ui-new-components.md) — one-page catalog of
+  every component the framework ships, each with its package, `go doc`
+  path, and live demo at `/components/<slug>` on the docs site.
+- [Interactive patterns](interactive-patterns.md) — every `data-fui-*`
+  behavior, client-only vs RPC-backed, plus writing a hand-written
+  island end to end.
+- [Form module](form-module.md) — HTML form primitives, `framework/ui`
+  form components, validation, conditional sections, step wizards.
+- [Widgets](widgets.md) — `core-ui/widget` builder and presets
+  (modal, drawer, popover, toast).
+- [Signal store](signal-store.md) — `core-ui/store` typed shared
+  client state with SSR seeding.
+
 ## Operational surface
 
 - [Worktree isolation](isolation.md) — automatic local port, DB, and
@@ -105,7 +134,6 @@ contract) are exempt — the exemption list lives in
   headless-Chromium PDF via the `chromepdf` adapter.
 - [Search](search.md) — `battery/search` backend interface, memory
   implementation.
-- [Widgets](widgets.md) — `core-ui/widget` builder and presets.
 - [Image pipeline](image.md) — `framework/image`: chainable
   Resize / Rotate / Flip / Modulate / Placeholder / BlurHash, pure-Go
   with no CGo or system codec dependencies.
