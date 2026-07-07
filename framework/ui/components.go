@@ -435,7 +435,8 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 // ─── Button ─────────────────────────────────────────────────────────
 
 // ButtonVariant is the semantic variant of a Button. String-typed
-// for ergonomic Go enums + readable serialization.
+// for ergonomic Go enums + readable serialization. Apps extend the
+// set with RegisterButtonVariant; unregistered values panic at render.
 type ButtonVariant string
 
 const (
@@ -476,6 +477,8 @@ type ButtonConfig struct {
 // Authors never reach for raw class strings — pick a variant.
 // Unknown variants panic at render time so typos surface
 // immediately rather than silently rendering an unstyled button.
+// Custom brand variants/sizes join the set via RegisterButtonVariant /
+// RegisterButtonSize (shared with LinkButton).
 func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Button requires Label")
@@ -484,20 +487,8 @@ func Button(cfg ButtonConfig) render.HTML {
 	if v == "" {
 		v = ButtonPrimary
 	}
-	switch v {
-	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
-		// recognized
-	default:
-		panic("ui: Button unknown Variant " + string(v) +
-			" — pick one of: primary, secondary, danger, ghost")
-	}
-	switch cfg.Size {
-	case ButtonSizeDefault, ButtonSizeSmall, ButtonSizeLarge:
-		// recognized
-	default:
-		panic("ui: Button unknown Size " + string(cfg.Size) +
-			" — pick one of: \"\" (default), small, large")
-	}
+	checkButtonVariant("Button", v)
+	checkButtonSize("Button", cfg.Size)
 	cls := "ui-button ui-button--" + string(v)
 	if cfg.Size != ButtonSizeDefault {
 		cls += " ui-button--" + string(cfg.Size)
@@ -565,18 +556,8 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if v == "" {
 		v = ButtonPrimary
 	}
-	switch v {
-	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
-	default:
-		panic("ui: LinkButton unknown Variant " + string(v) +
-			" — pick one of: primary, secondary, danger, ghost")
-	}
-	switch cfg.Size {
-	case ButtonSizeDefault, ButtonSizeSmall, ButtonSizeLarge:
-	default:
-		panic("ui: LinkButton unknown Size " + string(cfg.Size) +
-			" — pick one of: \"\" (default), small, large")
-	}
+	checkButtonVariant("LinkButton", v)
+	checkButtonSize("LinkButton", cfg.Size)
 	cls := "ui-button ui-button--" + string(v)
 	if cfg.Size != ButtonSizeDefault {
 		cls += " ui-button--" + string(cfg.Size)
@@ -636,7 +617,10 @@ func isUnsafeScheme(href string) bool {
 
 // ─── StatusBadge ────────────────────────────────────────────────────
 
-// StatusVariant is the semantic variant of a StatusBadge.
+// StatusVariant is the semantic variant of a StatusBadge. The same
+// set drives Callout, Tag, Notification, and FilterChipBar chips;
+// apps extend it with RegisterStatusVariant. Unregistered values
+// panic at render.
 type StatusVariant string
 
 const (
@@ -664,11 +648,7 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if v == "" {
 		v = StatusNeutral
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: StatusBadge unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
-	}
+	checkStatusVariant("StatusBadge", v)
 	cls := "ui-badge ui-badge--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -741,11 +721,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	if v == "" {
 		v = StatusInfo
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: Callout unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
-	}
+	checkStatusVariant("Callout", v)
 	cls := "ui-callout ui-callout--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class

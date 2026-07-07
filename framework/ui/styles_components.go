@@ -52,7 +52,7 @@ var (
 // any element with both data-fui-comp="ui-button" AND class="ui-
 // button" — and via the html selector under the scope we cover the
 // plain class usage too.
-func buttonCSS(_ style.Theme) string {
+func buttonCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-button"], .ui-button {
   display: inline-flex;
   align-items: center;
@@ -67,7 +67,7 @@ func buttonCSS(_ style.Theme) string {
   border: 1px solid transparent;
   border-radius: var(--radii-md);
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   font-weight: 600;
   cursor: pointer;
   background: var(--color-primary);
@@ -108,14 +108,14 @@ func buttonCSS(_ style.Theme) string {
 }
 
 .ui-button--danger {
-  /* Use a darker red than the raw token so axe's color-contrast
-     scanner — which can't always evaluate color-mix() — sees a
-     literal background and confirms ~7:1 vs white text. The raw
-     --color-danger (#DC2626 / red-600) hits ~5.5:1 which is fine
-     mathematically but trips axe in some configurations. red-700
-     (#B91C1C) is unambiguous: 7.07:1 vs white. */
-  background: #B91C1C;
-  color: #FFFFFF;
+  /* Theme status token with a red-700 literal fallback: the default
+     --color-danger IS #B91C1C (7.07:1 vs white), so axe's
+     color-contrast scanner resolves the same unambiguous pair
+     whether or not the theme :root block is present. Themes that
+     override --color-danger own keeping ≥4.5:1 against
+     --color-primary-fg. */
+  background: var(--color-danger, #B91C1C);
+  color: var(--color-primary-fg, #FFFFFF);
 }
 .ui-button--danger:focus-visible {
   box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-danger);
@@ -142,13 +142,20 @@ func buttonCSS(_ style.Theme) string {
    font-size for hero CTAs. */
 .ui-button--small {
   min-height: auto;
-  padding: 4px var(--spacing-md, 12px);
-  font-size: 0.8rem;
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 12px);
+  font-size: var(--text-xs, 0.8rem);
 }
 .ui-button--large {
   padding: 14px var(--spacing-xl, 24px);
-  font-size: 1.05rem;
-}`
+  /* --text-lg, NOT --text-base: :root always emits --text-base (1rem),
+     so reading it here would collapse --large into the default size. */
+  font-size: var(--text-lg, 1.05rem);
+}` +
+		// ToggleAction renders class="ui-button ui-button--<variant>"
+		// under its own data-fui-comp marker, so registered custom
+		// variants/sizes are dual-scoped into it (built-in variants are
+		// plain class rules and already match).
+		customModsCSS(buttonMods, "ui-button", "ui-button", t, "ui-toggle-action")
 }
 
 func codeBlockCSS(_ style.Theme) string {
@@ -167,7 +174,7 @@ func codeBlockCSS(_ style.Theme) string {
   border: 1px solid var(--color-code-border, #27272A);
   border-radius: var(--radii-md, 8px);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   line-height: 1.6;
   white-space: pre;
   -webkit-text-size-adjust: 100%;
@@ -178,10 +185,11 @@ func codeBlockCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-block"] .tok-num    { color: #F78C6C; }
 [data-fui-comp="ui-code-block"] .tok-com    { color: #676E95; font-style: italic; }
 [data-fui-comp="ui-code-block"] .tok-name   { color: #FFCB6B; }
-/* Theme-aware token palette (emitted by the framework highlighter / markdown
-   code blocks). Hosts that define the --tk-* token vars (e.g. a typed Theme)
-   get a contrast-tuned, light/dark-aware palette; the hardcoded fallbacks keep
-   bare hosts colored. */
+/* Theme token palette (emitted by the framework highlighter / markdown code
+   blocks). The --tk-* vars are theme slots (style.Theme.Code, dark values in
+   Theme.DarkCode) whose defaults equal these fallbacks; hosts re-skin or
+   dark-adapt code blocks by overriding the slots. The fallbacks keep bare
+   hosts (no :root theme block) colored. */
 [data-fui-comp="ui-code-block"] .tk-kw   { color: var(--tk-kw, #C792EA); }
 [data-fui-comp="ui-code-block"] .tk-fn   { color: var(--tk-fn, #82AAFF); }
 [data-fui-comp="ui-code-block"] .tk-str  { color: var(--tk-str, #C3E88D); }
@@ -201,10 +209,10 @@ func codeBlockCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
+  padding: var(--spacing-md, 8px) 14px;
   background: var(--ui-code-block-head-bg, var(--color-surface, #fff));
   border-bottom: 1px solid var(--color-code-border, #27272A);
-  font-size: 12px;
+  font-size: var(--text-xs, 12px);
   color: var(--color-text-subtle, #71717A);
 }
 [data-fui-comp="ui-code-block"] .ui-code-block__status {
@@ -250,7 +258,7 @@ func codeBlockCSS(_ style.Theme) string {
   width: 28px;
   text-align: right;
   color: var(--color-text-subtle, #71717A);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   user-select: none;
 }`
 }
@@ -266,15 +274,22 @@ func sectionCSS(_ style.Theme) string {
   scroll-margin-top: var(--ui-section-scroll-margin, 0);
 }
 [data-fui-comp="ui-section"] .ui-section__eyebrow {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  /* Knobs: --ui-section-eyebrow-font/-size/-weight/-tracking/-color let a
+     host retune the kicker (e.g. body face instead of mono) without
+     restyling the component's internals. */
+  font-family: var(--ui-section-eyebrow-font, var(--font-mono, ui-monospace, monospace));
   font-size: var(--ui-section-eyebrow-size, 11px);
-  letter-spacing: 0.04em;
+  font-weight: var(--ui-section-eyebrow-weight, inherit);
+  letter-spacing: var(--ui-section-eyebrow-tracking, 0.04em);
   color: var(--ui-section-eyebrow-color, var(--color-text-subtle, #71717A));
 }
 [data-fui-comp="ui-section"] .ui-section__heading {
+  /* Knobs: --ui-section-heading-size/-weight/-tracking scale the heading
+     up to display type on marketing surfaces. */
   margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-size: var(--ui-section-heading-size, var(--text-lg, 1.125rem));
+  font-weight: var(--ui-section-heading-weight, 600);
+  letter-spacing: var(--ui-section-heading-tracking, normal);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-section"] .ui-section__description {
@@ -299,21 +314,21 @@ func formFieldCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__required {
   color: var(--color-danger, #DC2626);
-  margin-inline-start: 2px;
+  margin-inline-start: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__help {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-form-field"] .ui-form-field__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-danger, #DC2626);
 }
 [data-fui-comp="ui-form-field"].is-error input,
@@ -337,7 +352,7 @@ func formFieldCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
 }
 [data-fui-comp="ui-form-field"] input:focus-visible,
 [data-fui-comp="ui-form-field"] textarea:focus-visible,
@@ -358,13 +373,13 @@ func formSectionCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-form-section"] .ui-form-section__heading {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-base, 1rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-form-section"] .ui-form-section__description {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-form-section"] .ui-form-section__fields {
@@ -373,13 +388,13 @@ func formSectionCSS(_ style.Theme) string {
 }`
 }
 
-func statusBadgeCSS(_ style.Theme) string {
+func statusBadgeCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-badge"] {
   display: inline-flex;
   align-items: center;
-  padding: 2px var(--spacing-md, 8px);
+  padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
   border-radius: var(--radii-full, 9999px);
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   letter-spacing: 0.02em;
   border: 1px solid transparent;
@@ -408,7 +423,7 @@ func statusBadgeCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   border-color: var(--color-border, #E4E4E7);
-}`
+}` + customStatusCSS("ui-badge", t)
 }
 
 func emptyStateCSS(_ style.Theme) string {
@@ -424,7 +439,7 @@ func emptyStateCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-empty-state"] .ui-empty-state__title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--text-base, 1.05rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
@@ -436,7 +451,7 @@ func emptyStateCSS(_ style.Theme) string {
 [data-fui-comp="ui-empty-state"] .ui-empty-state__action { margin-top: var(--spacing-sm, 4px); }`
 }
 
-func calloutCSS(_ style.Theme) string {
+func calloutCSS(t style.Theme) string {
 	// Variant signaling uses a tinted surface + a leading icon glyph
 	// (via ::before) instead of the colored side-stripe. Side-stripe
 	// admonitions are a recognizable AI-template tell; the framework
@@ -462,7 +477,7 @@ func calloutCSS(_ style.Theme) string {
   block-size: 22px;
   margin-block-start: 1px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: var(--text-xs, 12px);
   font-weight: 700;
   font-style: normal;
   line-height: 1;
@@ -472,13 +487,13 @@ func calloutCSS(_ style.Theme) string {
   border-radius: 999px;
 }
 [data-fui-comp="ui-callout"] .ui-callout__title {
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   font-weight: 700;
   color: var(--color-text, #18181B);
   grid-column: 2;
 }
 [data-fui-comp="ui-callout"] .ui-callout__body {
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text-muted, #52525B);
   grid-column: 2;
 }
@@ -486,7 +501,7 @@ func calloutCSS(_ style.Theme) string {
 [data-fui-comp="ui-callout"].ui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
 [data-fui-comp="ui-callout"].ui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
 [data-fui-comp="ui-callout"].ui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
-[data-fui-comp="ui-callout"].ui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }`
+[data-fui-comp="ui-callout"].ui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }` + customStatusCSS("ui-callout", t)
 }
 
 func statCardCSS(_ style.Theme) string {
@@ -500,7 +515,7 @@ func statCardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-stat-card"] .ui-stat-card__label {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -515,7 +530,7 @@ func statCardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-stat-card"] .ui-stat-card__trend {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 600;
 }
 [data-fui-comp="ui-stat-card"] .ui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
@@ -532,15 +547,15 @@ func avatarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   overflow: hidden;
   flex-shrink: 0;
   inline-size: 2.5rem;
   block-size:  2.5rem;
 }
-[data-fui-comp="ui-avatar"].ui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.7rem; }
-[data-fui-comp="ui-avatar"].ui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: 0.95rem; }
-[data-fui-comp="ui-avatar"].ui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: 1.1rem; }
+[data-fui-comp="ui-avatar"].ui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.7rem); }
+[data-fui-comp="ui-avatar"].ui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 0.95rem); }
+[data-fui-comp="ui-avatar"].ui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.1rem); }
 [data-fui-comp="ui-avatar"] .ui-avatar__img {
   width: 100%;
   height: 100%;
@@ -561,7 +576,7 @@ func formCSS(_ style.Theme) string {
 }`
 }
 
-func notificationCSS(_ style.Theme) string {
+func notificationCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-notification"] {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -585,18 +600,18 @@ func notificationCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
   background: var(--color-info, #2563EB);
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   line-height: 1;
 }
 [data-fui-comp="ui-notification"] .ui-notification__text { display: grid; gap: var(--spacing-xs, 2px); }
 [data-fui-comp="ui-notification"] .ui-notification__title {
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   font-weight: 700;
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-notification"] .ui-notification__body {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-notification"] .ui-notification__dismiss {
@@ -609,7 +624,7 @@ func notificationCSS(_ style.Theme) string {
   min-inline-size: var(--spacing-touch-target);
   min-block-size: var(--spacing-touch-target);
   border-radius: var(--radii-full, 9999px);
-  font-size: 1.1rem;
+  font-size: var(--text-lg, 1.1rem);
   line-height: 1;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
@@ -656,7 +671,7 @@ func notificationCSS(_ style.Theme) string {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-fui-comp="ui-notification"].ui-notification--floating { animation: none; }
-}`
+}` + customStatusCSS("ui-notification", t)
 }
 
 // toastStackCSS styles the vertical stack of toast items rendered by
@@ -708,12 +723,12 @@ func dataTableCSS(_ style.Theme) string {
 [data-fui-comp="ui-data-table"] .ui-data-table__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
 }
 [data-fui-comp="ui-data-table"] .ui-data-table__caption {
   text-align: start;
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -736,7 +751,7 @@ func dataTableCSS(_ style.Theme) string {
   font-weight: 600;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface-soft, #F4F4F5);
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -754,10 +769,10 @@ func dataTableCSS(_ style.Theme) string {
      labels like "Email" (38px wide) failed the 44px width floor. */
   min-block-size: var(--spacing-touch-target);
   min-inline-size: var(--spacing-touch-target);
-  gap: 0.25rem;
+  gap: var(--spacing-sm, 0.25rem);
   background: transparent;
   border: 0;
-  padding: 0 0.25rem;
+  padding: 0 var(--spacing-sm, 0.25rem);
   color: inherit;
   font: inherit;
   text-decoration: none;
@@ -839,7 +854,7 @@ func dataTableCSS(_ style.Theme) string {
   [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td::before {
     content: attr(data-label);
     font-weight: 600;
-    font-size: 0.75rem;
+    font-size: var(--text-xs, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-muted, #52525B);
@@ -875,8 +890,8 @@ func skipLinkCSS(_ style.Theme) string {
   height: auto;
   padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
   background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-foreground, #fff);
-  border-radius: var(--radius-md, 0.375rem);
+  color: var(--color-primary-fg, #fff);
+  border-radius: var(--radii-md, 0.375rem);
   font-weight: 600;
   font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
@@ -970,7 +985,7 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggl
 func backToTopCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-back-to-top"] {
   position: fixed;
-  z-index: var(--z-sticky, 100);
+  z-index: var(--z-sticky, 200);
   border: none;
   cursor: pointer;
   display: flex;

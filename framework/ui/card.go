@@ -7,7 +7,8 @@ import (
 
 // ─── Card ───────────────────────────────────────────────────────────
 
-// CardVariant selects the chrome treatment.
+// CardVariant selects the chrome treatment. Apps extend the set with
+// RegisterCardVariant; unregistered values panic at render.
 type CardVariant string
 
 const (
@@ -58,6 +59,11 @@ type CardConfig struct {
 //   - With Href:    the whole shell becomes a focusable <a>, with the
 //     internal landmark still present for screen readers
 func Card(cfg CardConfig, body ...render.HTML) render.HTML {
+	// Unknown variants panic like every other variant-taking component
+	// (registered custom variants pass — see RegisterCardVariant).
+	// Card used to emit ui-card--<anything> silently; that let typos
+	// ship unstyled cards with no signal.
+	checkCardVariant(cfg.Variant)
 	cls := "ui-card"
 	if cfg.Variant != CardElevated {
 		cls += " ui-card--" + string(cfg.Variant)
@@ -97,9 +103,17 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 	// text content is what assistive tech announces, so an inner
 	// landmark would be redundant — keep the inner shell as a div.
 	if cfg.Href != "" {
+		// Drop unsafe hrefs (javascript:, data:, control bytes, …) —
+		// same allow-list as ui.Link; see framework/ui/safety.go. Card
+		// is a content-level component, so a rejected href degrades to
+		// an inert "#" rather than panicking.
+		href := safeURL(cfg.Href)
+		if href == "" {
+			href = "#"
+		}
 		inner := html.Div(html.DivConfig{Class: "ui-card__inner"}, out...)
 		return cardStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href:    cfg.Href,
+			Href:    href,
 			Class:   cls,
 			ID:      cfg.ID,
 			Content: inner,

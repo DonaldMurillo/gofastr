@@ -64,11 +64,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 	if v == "" {
 		v = StatusInfo
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: Notification unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
-	}
+	checkStatusVariant("Notification", v)
 	cls := "ui-notification ui-notification--" + string(v)
 	if cfg.Position != NotificationInline {
 		cls += " ui-notification--floating ui-notification--at-" + string(cfg.Position)
@@ -137,6 +133,10 @@ func notificationGlyph(v StatusVariant) string {
 	case StatusInfo:
 		return "i"
 	default:
+		// Registered custom status variants carry their own glyph.
+		if icon := registeredStatusIcon(v); icon != "" {
+			return icon
+		}
 		return "•"
 	}
 }
