@@ -206,16 +206,18 @@ var _ component.Component = (*confirmDialogSlot)(nil)
 var confirmActionStyle = registry.RegisterStyle("ui-confirm-action", confirmActionCSS)
 
 func confirmActionCSS(_ style.Theme) string {
+	// No background / padding / border-radius here: the widget chrome's
+	// centered panel (`.fui-pos-center > .fui-panel`, core-ui/widget)
+	// paints the panel surface for every modal body. This component
+	// only constrains its own width and lays out its internals —
+	// duplicating the panel props would double-pad the dialog.
 	return `[data-fui-comp="ui-confirm-action"] {
   display: block;
-  padding: var(--spacing-lg, 16px);
   max-inline-size: 28rem;
-  background: var(--color-surface, #fff);
-  border-radius: var(--radii-md, 6px);
 }
 [data-fui-comp="ui-confirm-action"] .ui-confirm-action__title {
   margin: 0 0 var(--spacing-sm, 8px) 0;
-  font-size: 1.1rem;
+  font-size: var(--text-lg, 1.1rem);
   font-weight: 600;
   color: var(--color-text, #111);
 }
