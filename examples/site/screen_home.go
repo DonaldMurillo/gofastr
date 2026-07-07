@@ -100,7 +100,7 @@ func heroSection() render.HTML {
 		ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonGhost, Size: ui.ButtonSizeLarge}),
 	)
 
-	install := html.Div(html.DivConfig{Class: "hero__install"},
+	install := html.Div(html.DivConfig{Class: "hero__install", ExtraAttrs: html.Attrs{"tabindex": "0"}},
 		html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
 		render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest"),
 	)

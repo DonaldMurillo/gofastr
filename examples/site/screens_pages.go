@@ -553,7 +553,11 @@ func kHero() render.HTML {
 			),
 			html.Div(html.DivConfig{Class: "k-hero__ctas"},
 				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
-				html.Div(html.DivConfig{Class: "k-hero__cli"},
+				// tabindex: the command scrolls horizontally at narrow
+				// widths (wrapping breaks copy-paste), so the scroll
+				// region must be keyboard-reachable — same treatment as
+				// the home hero's install line.
+				html.Div(html.DivConfig{Class: "k-hero__cli", ExtraAttrs: html.Attrs{"tabindex": "0"}},
 					html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
 					render.Text("go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest"),
 				),

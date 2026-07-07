@@ -57,6 +57,11 @@ func styleFn(_ style.Theme) string {
   text-decoration: none;
   flex: 1 1 auto;
   min-inline-size: 0;
+  /* The label is a flex item (blockified), so axe's target-size rule
+     measures it — unlike inline links, which the rule skips. Give it the
+     WCAG 2.2 24px floor; it stays inside the 44px row's content box so the
+     row height is unchanged and the text-overflow ellipsis still works. */
+  min-block-size: var(--spacing-xl, 24px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
