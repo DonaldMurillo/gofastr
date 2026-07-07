@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -28,62 +29,67 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/axetest"
 )
 
-// axeRuleAllowlist names axe-core rule IDs that are deliberately skipped, with
-// a justification. Kept deliberately tiny — these are demo CONSTRUCTS, not
-// real-app a11y debt.
-var axeRuleAllowlist = map[string]string{
+// axeComponentsAllowlist names axe-core rule IDs skipped ONLY on
+// /components/* gallery pages. These are demo CONSTRUCTS (isolated components
+// stacked on one page), not real-app a11y debt — and they do NOT apply
+// anywhere else. Content, docs, and static pages scan with an EMPTY allowlist
+// so a real heading-order / landmark defect there actually surfaces instead of
+// being silently dropped by a gallery-scoped rule.
+var axeComponentsAllowlist = map[string]string{
 	// landmark-unique: a /components/<slug> demo legitimately renders MULTIPLE
 	// instances of one landmark component (two Paginations stacked, sidebar +
 	// TOC, etc.). Real app pages render one per landmark name; the duplication
 	// is a gallery construct. The components themselves do the right thing.
 	"landmark-unique": "demos render multiple instances of one landmark component on purpose",
-	// landmark-complementary-is-top-level: ui.Callout (info variant) and
-	// ui.Sidebar deliberately render complementary/aside landmarks (the
-	// framework's own tests mandate <aside role="complementary"> for info
-	// callouts). On content + /components/<slug> demo pages they appear nested
-	// inside <main> rather than as a top-level region — a content/demo
-	// construct, not an app-structure barrier (the content stays reachable and
-	// labelled). A real app places one complementary region at the top level.
-	"landmark-complementary-is-top-level": "framework Callout/Sidebar landmarks used inline in content/demos, not as top-level regions",
+	// landmark-complementary-is-top-level: ui.Callout (info variant),
+	// ui.AnchoredRail, and ui.StepRail deliberately render complementary
+	// landmarks (the framework's own tests mandate <aside role="complementary">
+	// for info callouts). On /components/<slug> demo pages they appear nested
+	// inside <main> rather than as a top-level region — a demo construct, not
+	// an app-structure barrier (the content stays reachable and labelled). A
+	// real app places one complementary region at the top level.
+	//
+	// NOTE: ui.Sidebar is NOT part of this justification — it renders a plain
+	// <div>, not an <aside>, so it contributes no complementary landmark.
+	"landmark-complementary-is-top-level": "framework Callout/AnchoredRail/StepRail landmarks used inline in component demos, not as top-level regions",
 	// heading-order: the /components gallery shows each component in ISOLATION,
 	// so the component's own internal heading (Card heading <h3>, EmptyState
 	// title <h3>, Dropzone label <h3>) and nav-rail labels (<h6>) sit directly
 	// under the page <h1> with no intervening <h2>. In a real page the
 	// component lives inside a section <h2>, so the level doesn't skip — the
-	// skip is a gallery construct, not a content-authoring defect. Content
-	// pages (home, docs, philosophy) use a proper h1→h2→h3 outline.
+	// skip is a gallery construct, not a content-authoring defect.
 	"heading-order": "gallery shows components in isolation, so their internal headings sit directly under the page h1",
 }
 
-// axeDisabledRules are axe rules passed to axe.run() as disabled (not
-// evaluated). These differ from the allowlist: they never apply to the site's
-// surfaces at all, so evaluating them only produces noise.
-var axeDisabledRules = []string{
-	// region: landmark regions vary across the /components demo pages (a demo
-	// may mount a fragment with no <main>), so the rule fires on gallery
-	// structure rather than a real defect. Distinct from the allowlist above:
-	// region is structurally inapplicable to a component-isolation demo, not a
-	// violation we're choosing to tolerate.
-	"region",
+// axeIsComponentsPage reports whether path is a component-gallery demo page —
+// the only place the gallery-construct allowlist + region disable apply.
+func axeIsComponentsPage(path string) bool {
+	return strings.HasPrefix(path, "/components/")
 }
 
-// axeEnabledRules are axe rules axe-core ships DISABLED-by-default that this
-// gate turns ON. WCAG 2.2 `target-size` (tagged wcag22aa / wcag258) requires a
-// 24×24px minimum tap area; axe-core evaluates it only when explicitly
-// enabled. It is the only wcag22aa-tagged rule in the vendored axe-core
-// (4.10.2), so the set is exactly one entry today.
-var axeEnabledRules = []string{
-	"target-size",
-}
-
-// axeScanOpts returns the ScanOption set every site scan shares: disable the
-// structurally-inapplicable `region` rule and enable WCAG 2.2 `target-size`.
-// Both the desktop pass and the 390px mobile subset use it.
-func axeScanOpts() []axetest.ScanOption {
-	return []axetest.ScanOption{
-		axetest.WithDisabledRules(axeDisabledRules...),
-		axetest.WithEnabledRules(axeEnabledRules...),
+// axeAllowlistFor returns the rule allowlist for a page: the gallery-construct
+// skips apply only to /components/* pages; every other page scans with an empty
+// allowlist so a real heading-order / landmark defect on content or docs
+// surfaces instead of being masked by a gallery rule.
+func axeAllowlistFor(path string) map[string]string {
+	if axeIsComponentsPage(path) {
+		return axeComponentsAllowlist
 	}
+	return nil
+}
+
+// axeScanOptsFor returns the ScanOption set for a page. The structurally-
+// inapplicable `region` rule (a component-isolation demo may mount a fragment
+// with no <main>) is disabled only on /components/* pages; content + docs
+// pages evaluate it. WCAG 2.2 `target-size` is enabled on every page.
+func axeScanOptsFor(path string) []axetest.ScanOption {
+	if axeIsComponentsPage(path) {
+		return []axetest.ScanOption{
+			axetest.WithDisabledRules("region"),
+			axetest.WithEnabledRules("target-size"),
+		}
+	}
+	return []axetest.ScanOption{axetest.WithEnabledRules("target-size")}
 }
 
 // axePageAllowlist names component slugs whose pages open a transient widget
@@ -119,7 +125,7 @@ func runAxeScheme(t *testing.T, browser context.Context, base, path, scheme stri
 		t.Errorf("axe setup on %s (%s): %v", path, scheme, err)
 		return nil
 	}
-	vs, err := axetest.Scan(ctx, scheme, axeRuleAllowlist, axeScanOpts()...)
+	vs, err := axetest.Scan(ctx, scheme, axeAllowlistFor(path), axeScanOptsFor(path)...)
 	if err != nil {
 		t.Errorf("axe on %s (%s): %v", path, scheme, err)
 		return nil
@@ -144,7 +150,7 @@ func runAxeMobileScheme(t *testing.T, browser context.Context, base, path, schem
 		t.Errorf("axe setup on %s (%s, mobile): %v", path, scheme, err)
 		return nil
 	}
-	vs, err := axetest.Scan(ctx, scheme, axeRuleAllowlist, axeScanOpts()...)
+	vs, err := axetest.Scan(ctx, scheme, axeAllowlistFor(path), axeScanOptsFor(path)...)
 	if err != nil {
 		t.Errorf("axe on %s (%s, mobile): %v", path, scheme, err)
 		return nil
@@ -153,8 +159,15 @@ func runAxeMobileScheme(t *testing.T, browser context.Context, base, path, schem
 }
 
 // axePages returns every /components/<slug> route (from the catalog) plus the
-// key static + docs surfaces. Routes are generated from componentCatalog in
-// main.go, so iterating the catalog keeps this in lock-step (no drift).
+// key static surfaces and EVERY registered /docs/<slug> page. Docs routes are
+// generated from flatDocs() in docs_catalog.go — the same source registerScreens
+// iterates to mount the routes — so a newly added doc is scanned automatically
+// (no drift between "routes that exist" and "routes scanned"). /kiln is a
+// standalone marketing page, not a docs entry, so it is listed explicitly.
+//
+// Scanning the full docs catalog (~30 pages × 2 schemes) adds roughly a minute
+// to the suite versus the old single-page sample; that is the cost of not
+// letting a docs page regress un-scanned, and it is acceptable.
 func axePages(t *testing.T) []string {
 	t.Helper()
 	var out []string
@@ -164,9 +177,14 @@ func axePages(t *testing.T) []string {
 		}
 		out = append(out, "/components/"+c.Slug)
 	}
+	// Every registered docs page, derived from the same catalog the routes
+	// come from (flatDocs), so the gate and the router cannot drift.
+	for _, d := range flatDocs() {
+		out = append(out, "/docs/"+d.Slug)
+	}
 	out = append(out,
-		"/", "/get-started", "/docs/", "/docs/entity-declarations",
-		"/examples", "/philosophy", "/seo", "/seo-bundle", "/components/",
+		"/", "/get-started", "/docs/", "/examples", "/kiln",
+		"/philosophy", "/seo", "/seo-bundle", "/components/",
 	)
 	sort.Strings(out)
 	return out

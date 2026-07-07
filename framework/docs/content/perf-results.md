@@ -17,6 +17,8 @@ capture is produced.
 
 ---
 
+## Results
+
 ### 7a — Default middleware chain
 - Benchmark: `BenchmarkMiddleware_DefaultChain`
 - Current: with-default-chain 2.83 µs/op, 39 allocs; without-default-chain 0.15 µs/op, 4 allocs; raw-router 0.15 µs/op, 4 allocs

@@ -974,7 +974,7 @@ func architectureLayout(ss *style.StyleSheet) {
 			"display", "flex",
 			"flex-direction", "column",
 			"min-height", "220px").End()
-	ss.Rule(".arch-card h4").
+	ss.Rule(".arch-card h3").
 		Set("font-size", "var(--t-lg)",
 			"font-weight", "500",
 			"margin-bottom", "6px",
@@ -1024,7 +1024,7 @@ func agentsLayout(ss *style.StyleSheet) {
 			"width", "6px", "height", "6px",
 			"border-radius", "999px",
 			"background", "{colors.primary}").End()
-	ss.Rule(".pane h4").Set("margin-bottom", "{spacing.md}").End()
+	ss.Rule(".pane h3").Set("margin-bottom", "{spacing.md}").End()
 	ss.Rule(".pane p").
 		Set("font-size", "var(--t-sm)",
 			"color", "{colors.text-muted}",
@@ -1071,7 +1071,7 @@ func examplesLayout(ss *style.StyleSheet) {
 	ss.Rule(".ex-card:hover").Set("border-color", "{colors.border-strong}").End()
 	ss.Rule(".ex-card .path").
 		Set("font-family", "{fonts.mono}", "font-size", "12px", "color", "{colors.primary}").End()
-	ss.Rule(".ex-card h4").
+	ss.Rule(".ex-card h3").
 		Set("font-size", "var(--t-lg)", "font-weight", "500", "letter-spacing", "-0.01em").End()
 	ss.Rule(".ex-card p").
 		Set("font-size", "var(--t-sm)", "color", "{colors.text-muted}", "line-height", "1.55").End()

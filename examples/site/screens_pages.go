@@ -24,6 +24,11 @@ import (
 // codeText — shared inline <code> span used by most pages.
 func codeText(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 
+// boolPtr returns a pointer to b — used for *bool config fields like
+// ui.CalloutConfig.Landmark where nil means "default" and false must be
+// distinguishable from unset.
+func boolPtr(b bool) *bool { return &b }
+
 // tagAccent — the version pill used in multiple page heroes. Thin adapter
 // over the framework's ui.StatusPill (accent tone + dot).
 func tagAccent(label string) render.HTML {
@@ -86,10 +91,9 @@ func gsHero() render.HTML {
 	)
 	return html.Section(html.SectionConfig{Class: "gs-hero", Label: "Get started"},
 		container(ui.HeroSplit(ui.HeroSplitConfig{
-			Copy:      copy,
-			Media:     facts,
-			AriaLabel: "Get started",
-			Class:     "hero-gs",
+			Copy:  copy,
+			Media: facts,
+			Class: "hero-gs",
 		})),
 	)
 }
@@ -129,9 +133,12 @@ func gsBody() render.HTML {
 	o := ui.TerminalOut
 	ok := ui.TerminalOK
 
+	// Inline tips inside the main content flow: render as a styled <div>, not
+	// a complementary <aside> landmark, so they don't trip
+	// landmark-complementary-is-top-level (a nested complementary landmark).
 	callout := func(title, body string) render.HTML {
 		return ui.Callout(
-			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo},
+			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo, Landmark: boolPtr(false)},
 			html.Paragraph(html.TextConfig{}, render.Text(body)),
 		)
 	}
@@ -793,7 +800,7 @@ func phBody() render.HTML {
 		)
 	}
 	toc := html.Aside(html.AsideConfig{Class: "ph-toc", Label: "Table of contents"},
-		html.Heading(html.HeadingConfig{Level: 6}, render.Text("Sections")),
+		html.Div(html.DivConfig{Class: "ph-toc__label"}, render.Text("Sections")),
 		html.OrderedList(html.ListConfig{},
 			tocLi("#why", "Why this exists"),
 			tocLi("#two-layers", "The two layers"),
@@ -856,7 +863,7 @@ func phBody() render.HTML {
 		html.Section(html.SectionConfig{ID: "next", Label: "What's next"},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text("What's next")),
 			html.Div(html.DivConfig{Class: "roadmap"},
-				html.Heading(html.HeadingConfig{Level: 6}, render.Text("Roadmap")),
+				html.Heading(html.HeadingConfig{Level: 3}, render.Text("Roadmap")),
 				roadRow("Shipped", "Two-layer core/ + framework/ split", "shipped", "✓ shipped"),
 				roadRow("Shipped", "Auto-CRUD + MCP + OpenAPI", "shipped", "✓ shipped"),
 				roadRow("Shipped", "Kiln agent build mode (experimental)", "shipped", "✓ shipped"),
@@ -871,7 +878,7 @@ func phBody() render.HTML {
 			html.Paragraph(html.TextConfig{}, render.Text("If something on this site doesn't work, the bug is in the framework — and the fix lands here first, then everywhere else.")),
 		),
 		html.Div(html.DivConfig{Class: "biblio"},
-			html.Heading(html.HeadingConfig{Level: 6}, render.Text("Notes & references")),
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Notes & references")),
 			html.DescriptionList(html.TextConfig{},
 				html.DescriptionTerm(html.TextConfig{}, render.Text("01")),
 				html.DescriptionDetail(html.TextConfig{}, render.Text("The framework's principles trace from net/http: pattern routing, middleware chains, explicit handler signatures.")),

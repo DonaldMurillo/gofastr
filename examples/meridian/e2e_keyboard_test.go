@@ -53,6 +53,106 @@ const kbgateSetupJS = `(() => {
     };
   };
 
+  // ─── Perceptible focus-indicator helpers ─────────────────────────
+  // The old detection accepted imperceptible deltas: outline-width
+  // 0.01px passed ">0"; a fully-transparent zero-spread box-shadow
+  // passed "!== 'none'"; a 1%-alpha background tweak passed string
+  // inequality. These helpers enforce thresholds a human eye can see.
+
+  // _parseColor converts a CSS color string to {r,g,b,a}. Handles
+  // rgb()/rgba(), hex, transparent, and oklch()/oklab() — the modern
+  // color formats this theme defines its tokens in. Chrome preserves
+  // oklch() verbatim in computed values (it does NOT convert to rgb),
+  // so a regex limited to rgb()/rgba() is blind to the entire theme.
+  // oklch/oklab are converted to sRGB via the standard OKLab matrix.
+  NS._oklabToRGB = function(L, a, b) {
+    const l_ = L + 0.3963377774*a + 0.2158037573*b;
+    const m_ = L - 0.1055613458*a - 0.0638541728*b;
+    const s_ = L - 0.0894841775*a - 1.2914855480*b;
+    const l = l_*l_*l_, mm = m_*m_*m_, ss = s_*s_*s_;
+    const gam = function(c) { return c <= 0.0031308 ? 12.92*c : 1.055*Math.pow(Math.max(0,c), 1/2.4) - 0.055; };
+    return {
+      r: Math.round(Math.min(255, Math.max(0, gam(4.0767416621*l - 3.3077115913*mm + 0.2309699292*ss) * 255))),
+      g: Math.round(Math.min(255, Math.max(0, gam(-1.2684380046*l + 2.6097574011*mm - 0.3413193965*ss) * 255))),
+      b: Math.round(Math.min(255, Math.max(0, gam(-0.0041960863*l - 0.7034186147*mm + 1.7076147010*ss) * 255)))
+    };
+  };
+  NS._parseColor = function(s) {
+    if (!s || typeof s !== 'string') return null;
+    s = s.trim();
+    if (!s || s === 'none') return null;
+    if (s === 'transparent') return { r: 0, g: 0, b: 0, a: 0 };
+    let m = s.match(/rgba?\(\s*([\d.]+)\s*,?\s*([\d.]+)\s*,?\s*([\d.]+)\s*(?:[,/]\s*([\d.]+)\s*)?\)/i);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? +m[4] : 1 };
+    m = s.match(/^#([0-9a-f]{6})([0-9a-f]{2})?$/i);
+    if (m) return { r: parseInt(m[1].slice(0,2),16), g: parseInt(m[1].slice(2,4),16), b: parseInt(m[1].slice(4,6),16), a: m[2] ? parseInt(m[2],16)/255 : 1 };
+    // oklch(L C H [ / alpha]) — space-separated, H in degrees
+    m = s.match(/oklch\(\s*([\d.]+)(?:deg)?\s+([\d.]+)\s+([\d.]+)(?:deg)?\s*(?:\/\s*([\d.%]+)\s*)?\)/i);
+    if (m) {
+      const hr = +m[3] * Math.PI / 180;
+      const rgb = NS._oklabToRGB(+m[1], +m[2]*Math.cos(hr), +m[2]*Math.sin(hr));
+      rgb.a = m[4] !== undefined ? (m[4].endsWith('%') ? +m[4].slice(0,-1)/100 : +m[4]) : 1;
+      return rgb;
+    }
+    // oklab(L a b [ / alpha])
+    m = s.match(/oklab\(\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*(?:\/\s*([\d.%]+)\s*)?\)/i);
+    if (m) {
+      const rgb = NS._oklabToRGB(+m[1], +m[2], +m[3]);
+      rgb.a = m[4] !== undefined ? (m[4].endsWith('%') ? +m[4].slice(0,-1)/100 : +m[4]) : 1;
+      return rgb;
+    }
+    return null;
+  };
+
+  // _colorDelta reports whether two colors differ perceptibly: an alpha
+  // delta > 0.1 OR an RGB Euclidean distance > 20. Finer deltas are
+  // imperceptible to the eye.
+  NS._colorDelta = function(a, b) {
+    const ca = NS._parseColor(a), cb = NS._parseColor(b);
+    if (!ca || !cb) return a !== b; // unparseable → conservative string compare
+    if (Math.abs(ca.a - cb.a) > 0.1) return true;
+    const dr = ca.r - cb.r, dg = ca.g - cb.g, db = ca.b - cb.b;
+    return Math.sqrt(dr*dr + dg*dg + db*db) > 20;
+  };
+
+  // _shadowIsVisible reports whether a box-shadow has at least one
+  // layer with (blur+spread) > 0 AND a color alpha > 0.1. A non-"none"
+  // shadow can still be imperceptible (zero blur+spread, or fully
+  // transparent color). Colors in any format (oklch, hsl, rgb, hex) are
+  // masked before splitting so their internal commas don't split layers.
+  NS._shadowIsVisible = function(val) {
+    if (!val || val === 'none') return false;
+    const colorRe = /(?:oklch|oklab|hsla?|rgba?)\([^)]*\)|#[0-9a-fA-F]{3,8}/gi;
+    const colors = val.match(colorRe) || [];
+    const layers = val.replace(colorRe, '').split(',');
+    for (let i = 0; i < layers.length; i++) {
+      const nums = layers[i].match(/-?[\d.]+/g) || [];
+      let blur = 0, spread = 0;
+      if (nums.length >= 3) blur = parseFloat(nums[2]) || 0;
+      if (nums.length >= 4) spread = parseFloat(nums[3]) || 0;
+      if ((blur + spread) <= 0) continue;
+      const color = (i < colors.length) ? NS._parseColor(colors[i]) : null;
+      if (color && color.a > 0.1) return true;
+    }
+    return false;
+  };
+
+  // _hasIndicator judges whether a focused element shows a perceptible
+  // focus indicator, returning '' (none) or a reason string.
+  NS._hasIndicator = function(focused, blurred) {
+    if (focused.outlineStyle !== 'none' && focused.outlineWidth >= 1) {
+      return 'outline ' + focused.outlineWidth + 'px';
+    }
+    if (NS._shadowIsVisible(focused.boxShadow)) return 'box-shadow';
+    if (blurred) {
+      if (NS._colorDelta(focused.backgroundColor, blurred.backgroundColor)) return 'bg change';
+      if (NS._colorDelta(focused.borderTopColor, blurred.borderTopColor)) return 'border-color change';
+      if (Math.abs(focused.borderTopWidth - blurred.borderTopWidth) > 0.1) return 'border-width change';
+      if (focused.textDecoration !== blurred.textDecoration) return 'text-decoration change';
+    }
+    return '';
+  };
+
   NS._sig = function(el) {
     const parts = []; let cur = el, depth = 0;
     while (cur && cur.nodeType === 1 && depth < 6) {
@@ -136,15 +236,7 @@ const kbgateSetupJS = `(() => {
     out.cls = (el.getAttribute('class') || '').slice(0, 90); out.sig = NS._sig(el);
     const focused = NS._snap(el);
     const blurred = (!out.newEl && NS.tabbables[idx]) ? NS.tabbables[idx].blurred : null;
-    let reason = '';
-    if (focused.outlineStyle !== 'none' && focused.outlineWidth > 0) reason = 'outline ' + focused.outlineWidth + 'px';
-    else if (focused.boxShadow !== 'none') reason = 'box-shadow';
-    else if (blurred) {
-      if (focused.backgroundColor !== blurred.backgroundColor) reason = 'bg change';
-      else if (focused.borderTopColor !== blurred.borderTopColor) reason = 'border-color change';
-      else if (Math.abs(focused.borderTopWidth - blurred.borderTopWidth) > 0.1) reason = 'border-width change';
-      else if (focused.textDecoration !== blurred.textDecoration) reason = 'text-decoration change';
-    }
+    const reason = NS._hasIndicator(focused, blurred);
     out.hasIndicator = reason !== ''; out.indicatorReason = reason;
     const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
     out.w = Math.round(r.width); out.h = Math.round(r.height);
@@ -194,14 +286,7 @@ const kbgateSetupJS = `(() => {
     NS._modalVisits.push(idx);
     const focused = NS._snap(el);
     const blurred = NS._modalItems[idx] ? NS._modalItems[idx].blurred : null;
-    let reason = '';
-    if (focused.outlineStyle !== 'none' && focused.outlineWidth > 0) reason = 'outline ' + focused.outlineWidth + 'px';
-    else if (focused.boxShadow !== 'none') reason = 'box-shadow';
-    else if (blurred) {
-      if (focused.backgroundColor !== blurred.backgroundColor) reason = 'bg change';
-      else if (focused.borderTopColor !== blurred.borderTopColor) reason = 'border-color change';
-      else if (Math.abs(focused.borderTopWidth - blurred.borderTopWidth) > 0.1) reason = 'border-width change';
-    }
+    const reason = NS._hasIndicator(focused, blurred);
     out.hasIndicator = reason !== ''; out.indicatorReason = reason;
     const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
     out.visible = cs.display !== 'none' && !HIDDEN_VIS[cs.visibility] && r.width > 0 && r.height > 0 &&

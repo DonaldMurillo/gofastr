@@ -171,6 +171,23 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 	for _, o := range opts {
 		o(&cfg)
 	}
+
+	// Guard against vacuous passes. axe evaluates the CURRENT DOM, so a route
+	// that broke and serves an empty <body> scans as ZERO violations — the gate
+	// turns green on a page that rendered nothing. Before injecting axe, assert
+	// the page actually rendered: a real screen mounts dozens of elements under
+	// <body>; a blank/500 shell sits well under minBodyElements. Fail loudly
+	// (callers t.Fatalf on error) so a broken screen can't hide behind the gate.
+	var elementCount int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelectorAll('body *').length`, &elementCount),
+	); err != nil {
+		return nil, fmt.Errorf("axe pre-scan (%s scheme): population check: %w", scheme, err)
+	}
+	if elementCount < minBodyElements {
+		return nil, fmt.Errorf("axe pre-scan (%s scheme): page rendered only %d elements under <body> (need ≥%d) — the page is blank or not rendered; refusing a vacuous pass", scheme, elementCount, minBodyElements)
+	}
+
 	rulesJS := axeRulesJS(cfg)
 	var raw string
 	if err := chromedp.Run(ctx,
@@ -199,6 +216,11 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 	}
 	return kept, nil
 }
+
+// minBodyElements is the floor below which a page is treated as blank / not
+// rendered. A real screen renders far more than this; the threshold is a trip-
+// wire for an empty shell, not a meaningful content minimum.
+const minBodyElements = 5
 
 // axeRulesJS renders the axe.run() `rules` option JS object from a
 // scanConfig: every enabled rule is forced on, every disabled rule is forced

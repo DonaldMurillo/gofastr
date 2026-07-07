@@ -22,8 +22,8 @@ type PageHeaderConfig struct {
 	// (e.g. a related-list block on a detail page) so the outline doesn't
 	// produce a second <h1> or skip levels.
 	HeadingLevel int
-	Class    string
-	ID       string
+	Class        string
+	ID           string
 }
 
 // PageHeader renders a top-of-page header with title, optional subtitle
@@ -675,13 +675,20 @@ type EmptyStateConfig struct {
 	Action      render.HTML // optional CTA (e.g. a button or link)
 	ID          string
 	Class       string
+
+	// HeadingLevel overrides the title's heading level (1–6). Zero defaults
+	// to 3 (h3), preserving the gallery/demo behaviour where the empty state
+	// nests inside a section. A real page that mounts the empty state as the
+	// only content under the page <h1> (e.g. an admin list with zero rows)
+	// passes 2 so the outline doesn't skip h1 → h3.
+	HeadingLevel int
 }
 
 // EmptyState renders a centered title + description + optional CTA for
 // blank lists or zero-data screens.
 //
-// Composition: html.Heading (h3) + html.Paragraph + a div for
-// the action slot.
+// Composition: html.Heading (h3 by default; see HeadingLevel) + html.Paragraph
+// + a div for the action slot.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: EmptyState requires Title")
@@ -690,9 +697,13 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	level := cfg.HeadingLevel
+	if level < 1 || level > 6 {
+		level = 3
+	}
 	out := []render.HTML{
 		html.Heading(html.HeadingConfig{
-			Level: 3, Class: "ui-empty-state__title",
+			Level: level, Class: "ui-empty-state__title",
 		}, render.Text(cfg.Title)),
 	}
 	if cfg.Description != "" {
@@ -715,6 +726,16 @@ type CalloutConfig struct {
 	Variant StatusVariant // info | success | warning | danger | neutral
 	ID      string
 	Class   string
+
+	// Landmark controls whether an info/success/neutral callout renders as a
+	// complementary <aside> landmark (the default, mandated by the framework's
+	// own tests). Set to false for a callout embedded inline in main content
+	// flow: a nested complementary landmark trips axe's
+	// landmark-complementary-is-top-level rule, and an inline tip is emphasis,
+	// not a tangential region. Same trade-off Sidebar already made (div, not
+	// aside, to avoid nesting complementary). Danger/warning always use
+	// role="alert" regardless of this flag.
+	Landmark *bool
 }
 
 // Callout renders a persistent info/warning/error block. Distinct from
@@ -757,6 +778,18 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	}
 	// Note "info" role: html.Aside requires Label/LabelledBy. Use
 	// the variant name as a safe fallback when no Title is provided.
+	landmark := true
+	if cfg.Landmark != nil {
+		landmark = *cfg.Landmark
+	}
+	if !landmark {
+		// Inline callout: a styled <div>, not a complementary landmark, so it
+		// can nest inside <main> without tripping landmark-complementary-
+		// is-top-level. Visually identical to the landmark form.
+		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
+			Class: cls, ID: cfg.ID,
+		}, out...))
+	}
 	label := cfg.Title
 	if label == "" {
 		label = string(v) + " note"
@@ -765,7 +798,6 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 		Class: cls, ID: cfg.ID, Label: label,
 	}, out...))
 }
-
 func calloutRole(v StatusVariant) string {
 	switch v {
 	case StatusDanger, StatusWarning:

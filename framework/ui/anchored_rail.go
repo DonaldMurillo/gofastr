@@ -133,7 +133,13 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 		asideAttrs["id"] = cfg.ID
 	}
 	rail := render.Tag("aside", asideAttrs,
-		render.Tag("h6", map[string]string{"class": "ui-anchored-rail__label"},
+		// A plain label, NOT a heading: the rail is a complementary landmark
+		// already named by Label (aria-label above), and emitting an <h6>
+		// here injected a stray, out-of-order heading into the page outline
+		// (h1 → h6 → h2…). Same fix StepRail already made. The label keeps
+		// the visual + the landmark name without polluting the heading
+		// hierarchy.
+		render.Tag("div", map[string]string{"class": "ui-anchored-rail__label"},
 			render.Text(cfg.Label),
 		),
 		render.Tag("ol", map[string]string{"class": "ui-anchored-rail__list"},

@@ -383,6 +383,18 @@ func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 	}
 }
 
+// TestEmptyStateHeadingLevel verifies the title's heading level follows
+// HeadingLevel (default h3; a real page under an <h1> passes 2 to avoid an
+// h1→h3 skip). Guards the admin list empty-state fix.
+func TestEmptyStateHeadingLevel(t *testing.T) {
+	if h := string(EmptyState(EmptyStateConfig{Title: "x"})); !strings.Contains(h, "<h3") {
+		t.Fatalf("default EmptyState title should be <h3>; got %s", h)
+	}
+	if h := string(EmptyState(EmptyStateConfig{Title: "x", HeadingLevel: 2})); !strings.Contains(h, "<h2") {
+		t.Fatalf("HeadingLevel: 2 should render <h2>; got %s", h)
+	}
+}
+
 // ─── Callout ───
 // TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge — typo
 // must panic instead of silently emitting an unmatched class.
@@ -440,6 +452,25 @@ func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
 		mustContain(t, h, `<aside`)
 		mustContain(t, h, `role="complementary"`)
 	}
+}
+
+// TestCalloutLandmarkOptOut verifies the Landmark=false config renders an
+// inline callout as a plain <div> (not a complementary <aside>), so it can
+// nest inside <main> without tripping landmark-complementary-is-top-level.
+// Default (nil) keeps the <aside> landmark.
+func TestCalloutLandmarkOptOut(t *testing.T) {
+	noLandmark := false
+	h := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo, Landmark: &noLandmark}, render.Text("body"))
+	if strings.Contains(string(h), `<aside`) || strings.Contains(string(h), `role="complementary"`) {
+		t.Errorf("Landmark=false should render a <div>, not a complementary <aside>:\n%s", h)
+	}
+	if !strings.Contains(string(h), `ui-callout--info`) {
+		t.Errorf("Landmark=false should keep the variant styling:\n%s", h)
+	}
+	// Default still renders the complementary landmark.
+	def := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo}, render.Text("body"))
+	mustContain(t, def, `<aside`)
+	mustContain(t, def, `role="complementary"`)
 }
 
 // ─── StatCard ───

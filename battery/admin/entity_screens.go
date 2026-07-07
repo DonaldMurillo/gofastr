@@ -127,8 +127,9 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	rows, total, err := b.listRows(ctx, ent, crudQ.Encode())
 	if err != nil {
 		return ui.EmptyState(ui.EmptyStateConfig{
-			Title:       "Could not load " + ent.GetName(),
-			Description: "Check the server logs for details.",
+			Title:        "Could not load " + ent.GetName(),
+			Description:  "Check the server logs for details.",
+			HeadingLevel: 2,
 		})
 	}
 
@@ -188,8 +189,9 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 		SortDir:         ui.SortDir(sortDir),
 		SortHrefPattern: patternWith(carrySearch, "sort=%s&dir=%s"),
 		Empty: ui.EmptyStateConfig{
-			Title:       "Nothing here yet",
-			Description: "Create the first " + singular(ent.GetName()) + " with the New button.",
+			Title:        "Nothing here yet",
+			Description:  "Create the first " + singular(ent.GetName()) + " with the New button.",
+			HeadingLevel: 2,
 		},
 	}
 	if totalPages := int(math.Ceil(float64(total) / float64(limit))); totalPages > 1 {
@@ -669,9 +671,10 @@ func (s *entityFormScreen) RenderCtx(ctx context.Context) render.HTML {
 		return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
 			ui.PageHeader(ui.PageHeaderConfig{Title: "Not found"}),
 			ui.EmptyState(ui.EmptyStateConfig{
-				Title:       "Record not found",
-				Description: "It may have been deleted, or you may not have access.",
-				Action:      ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
+				Title:        "Record not found",
+				Description:  "It may have been deleted, or you may not have access.",
+				Action:       ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
+				HeadingLevel: 2,
 			}),
 		))
 	}
@@ -793,9 +796,10 @@ func (s *entityDetailScreen) RenderCtx(_ context.Context) render.HTML {
 		return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
 			ui.PageHeader(ui.PageHeaderConfig{Title: "Not found"}),
 			ui.EmptyState(ui.EmptyStateConfig{
-				Title:       "Record not found",
-				Description: "It may have been deleted, or you may not have access.",
-				Action:      ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
+				Title:        "Record not found",
+				Description:  "It may have been deleted, or you may not have access.",
+				Action:       ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
+				HeadingLevel: 2,
 			}),
 		))
 	}
