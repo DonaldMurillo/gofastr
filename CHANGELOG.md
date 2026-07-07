@@ -44,6 +44,29 @@ review pass over those fixes, and fixes for what *that* found.
 
 ### Added
 
+- **Accessibility enforcement grew three gates.** A shared axe-core harness
+  (`internal/axetest`) now drives two app gates: the existing site gate
+  (every component demo page, both color schemes) and a new Meridian gate —
+  marketing, auth, app, and admin pages scanned logged-in with an **empty
+  allowlist**, plus the first open-widget scan (the quick-add modal's open
+  DOM state). A keyboard-only traversal gate walks Tab through key pages of
+  both apps asserting no focus traps, visible focus indication on every
+  stop, complete reachability of interactive elements, and the modal's
+  trap-then-release cycle. What the gates flushed out was fixed at the
+  source: `battery/admin` pages now render a `<main>` landmark; DataTable's
+  empty actions header is hidden from the a11y tree; `PricingCard`, `Card`,
+  and `PageHeader` gained a `HeadingLevel` config so composed pages keep a
+  sane heading outline; the pricing badge's default text color adapts
+  per-scheme via `color-mix` toward the text token; the sidebar's active
+  nav link has a visible keyboard focus ring (it previously vanished under
+  the `aria-current` background); Sidebar renders a `<div>` shell instead
+  of nesting an `<aside>` landmark inside the layout's `<nav>`; and
+  Meridian's status/text-subtle palette was retoned to clear WCAG AA on
+  the components' tinted chips in both schemes. The site gate also
+  enables axe's WCAG 2.2 `target-size` rule (24px minimum) and scans a
+  curated page subset at a 390px viewport — carousel dots grew invisible
+  24px hit areas (`::after` pip), tree row links meet the floor, and
+  horizontally-scrolling command lines are keyboard-focusable.
 - **Variant registration.** `ui.RegisterButtonVariant`, `RegisterButtonSize`,
   `RegisterCardVariant`, and `RegisterStatusVariant` open the variant system
   at init time: pass `VariantCSS{Props, Hover, Focus}` (or
