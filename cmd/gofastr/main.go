@@ -80,6 +80,13 @@ func info(format string, args ...interface{}) {
 	fmt.Printf("  %s %s\n", yellow("→"), fmt.Sprintf(format, args...))
 }
 
+// infoString is info's message formatted for a caller-owned writer —
+// for goroutines that must not read the os.Stdout global (see dev.go's
+// crash watcher).
+func infoString(format string, args ...interface{}) string {
+	return fmt.Sprintf("  %s %s", yellow("→"), fmt.Sprintf(format, args...))
+}
+
 func warn(format string, args ...interface{}) {
 	fmt.Printf("  %s %s\n", yellow("⚠"), fmt.Sprintf(format, args...))
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // AgentStateFn returns the JSON-shaped agent state consumed by the
@@ -368,7 +369,16 @@ func (pe *panelEnv) headerHTML() string {
 // (1 entity, not 1 entities). Empty world returns "empty world" so
 // the pill is never blank.
 func (pe *panelEnv) worldSnapshotText() string {
-	w := pe.live.Session().World
+	var out string
+	pe.live.ReadSession(func(sess *journal.Session) { out = worldSnapshotTextLocked(sess.World) })
+	return out
+}
+
+// worldSnapshotTextLocked is the body of worldSnapshotText, run under
+// Live.ReadSession's held read lock. It must not let the *world.World
+// (or anything reachable from it: Entities, Pages, …) escape — only
+// the rendered string leaves the closure.
+func worldSnapshotTextLocked(w *world.World) string {
 	if w == nil {
 		return "empty world"
 	}
@@ -405,7 +415,15 @@ func (pe *panelEnv) worldSnapshotText() string {
 // regardless of count, so even sprawling worlds reveal their full
 // contents without opening /kiln/world.
 func (pe *panelEnv) worldSnapshotTooltip() string {
-	w := pe.live.Session().World
+	var out string
+	pe.live.ReadSession(func(sess *journal.Session) { out = worldSnapshotTooltipLocked(sess.World) })
+	return out
+}
+
+// worldSnapshotTooltipLocked is the body of worldSnapshotTooltip, run
+// under Live.ReadSession's held read lock. Must not let *world.World
+// escape — only the rendered string.
+func worldSnapshotTooltipLocked(w *world.World) string {
 	if w == nil || (len(w.Entities) == 0 && len(w.Pages) == 0 && len(w.Routes) == 0 && len(w.Hooks) == 0) {
 		return "Empty world — open /kiln/world for the IR"
 	}
@@ -474,8 +492,10 @@ func (pe *panelEnv) agentLabel() string {
 	return name
 }
 
-func (pe *panelEnv) lastUserMessageMillis() int64 {
-	chat := pe.live.Session().Chat
+// lastUserMessageMillisLocked returns the UnixMillis timestamp of the
+// most recent user chat event, or 0. Run under Live.ReadSession — the
+// chat slice is session-reachable and must not escape.
+func lastUserMessageMillisLocked(chat []journal.ChatEvent) int64 {
 	for i := len(chat) - 1; i >= 0; i-- {
 		if chat[i].Kind == journal.KindChatUser {
 			return chat[i].Timestamp.UnixMilli()
@@ -484,13 +504,13 @@ func (pe *panelEnv) lastUserMessageMillis() int64 {
 	return 0
 }
 
-// quickstartExamples picks 3 prompts tailored to the current world
+// quickstartExamplesLocked picks 3 prompts tailored to the current world
 // state. Empty world → first-time onboarding suggestions. Once an
 // entity exists → suggest building on it (page, hook, relation).
 // Returns nil when the world is rich enough that suggestions would
 // just be noise (any chat history triggers an empty list upstream).
-func (pe *panelEnv) quickstartExamples() []string {
-	w := pe.live.Session().World
+// Run under Live.ReadSession — *world.World must not escape.
+func quickstartExamplesLocked(w *world.World) []string {
 	if w == nil || len(w.Entities) == 0 {
 		return []string{
 			"add an entity called notes with title (string) and body (text)",
@@ -522,12 +542,11 @@ func (pe *panelEnv) quickstartExamples() []string {
 	return suggestions
 }
 
-// toolCountsSinceLastUserMessage returns (totalCalls, pendingCalls)
-// in the current turn. Pending = tool_call without a matching
-// tool_result yet. Drives the 'N tools (M done · K running)' split
-// in the in-flight indicator.
-func (pe *panelEnv) toolCountsSinceLastUserMessage() (calls, pending int) {
-	chat := pe.live.Session().Chat
+// toolCountsLocked returns (totalCalls, pendingCalls) in the current
+// turn. Pending = tool_call without a matching tool_result yet. Drives
+// the 'N tools (M done · K running)' split in the in-flight indicator.
+// Run under Live.ReadSession — the chat slice must not escape.
+func toolCountsLocked(chat []journal.ChatEvent) (calls, pending int) {
 	lastUser := -1
 	for i := len(chat) - 1; i >= 0; i-- {
 		if chat[i].Kind == journal.KindChatUser {
@@ -572,11 +591,26 @@ func (pe *panelEnv) inputHTML() string {
 // box. The buttons set the textarea value via a tiny on-page hook
 // (data-fui-fill-input) and focus it.
 func (pe *panelEnv) logHTMLForCurrent() string {
-	sess := pe.live.Session()
+	var out string
+	pe.live.ReadSession(func(sess *journal.Session) { out = pe.logHTMLForCurrentLocked(sess) })
+	return out
+}
+
+// logHTMLForCurrentLocked is the body of logHTMLForCurrent, run under
+// Live.ReadSession's held read lock. It reads sess.Chat / sess.Plans
+// and the journal directly; the composed sub-reads (quickstart tray,
+// in-flight thinking row) use their *Locked forms taking the already-
+// locked data — NOT the panelEnv wrapper methods. Go's RWMutex is not
+// reentrant, so calling pe.quickstartExamples() / pe.thinkingRowHTML()
+// (each of which would re-RLock) from inside this closure would
+// deadlock against a pending Live.Apply writer. The session pointer
+// and everything reachable from it (World, Chat, Plans) must not
+// escape; only the rendered HTML string does.
+func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 	var b strings.Builder
 
 	if len(sess.Chat) == 0 && len(sess.Plans) == 0 {
-		examples := pe.quickstartExamples()
+		examples := quickstartExamplesLocked(sess.World)
 		if len(examples) > 0 {
 			b.WriteString(`<div class="kiln-quickstart">`)
 			b.WriteString(`<div class="kiln-quickstart-label">try one of these:</div>`)
@@ -668,24 +702,29 @@ func (pe *panelEnv) logHTMLForCurrent() string {
 	// item when an agent turn is running. Auto-scroll-on-update
 	// already pins the view to the bottom so this is naturally
 	// visible. Hidden the moment the turn ends (signal re-renders
-	// chat_html on agent_turn_ended).
+	// chat_html on agent_turn_ended). Reads happen via the *Locked
+	// cores on sess.Chat so no nested read lock is taken.
 	if pe.isInFlight() {
-		b.WriteString(pe.thinkingRowHTML())
+		calls, pending := toolCountsLocked(sess.Chat)
+		b.WriteString(thinkingRowHTMLLocked(calls, pending, lastUserMessageMillisLocked(sess.Chat)))
 	}
 	b.WriteString(`</ol>`)
 	return b.String()
 }
 
-// thinkingRowHTML renders the in-flight 'typing bubble': a single
+// thinkingRowHTMLLocked renders the in-flight 'typing bubble': a single
 // kiln-msg-assistant-style row with the existing .kiln-thinking
 // indicator inside (animated dots), the per-turn elapsed-time
 // ticker, and the live tool counter. Lives at the bottom of the
 // chat log so it reads as 'the agent is composing the next reply'.
-func (pe *panelEnv) thinkingRowHTML() string {
-	calls, pending := pe.toolCountsSinceLastUserMessage()
+//
+// Pure renderer: the caller computes calls/pending/startMs under the
+// Live read lock (via toolCountsLocked / lastUserMessageMillisLocked)
+// so this function never touches the session itself.
+func thinkingRowHTMLLocked(calls, pending int, startMs int64) string {
 	parts := []string{`agent thinking`}
-	if start := pe.lastUserMessageMillis(); start > 0 {
-		parts = append(parts, fmt.Sprintf(`<span data-fui-tick-elapsed="%d">…</span>`, start))
+	if startMs > 0 {
+		parts = append(parts, fmt.Sprintf(`<span data-fui-tick-elapsed="%d">…</span>`, startMs))
 	}
 	if calls > 0 {
 		label := pluralize(calls, "tool", "tools")

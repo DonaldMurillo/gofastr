@@ -136,7 +136,7 @@ func TestAnswerPermissionAgentCannotSelfApprove(t *testing.T) {
 	// Manually register a pending permission as if the engine had asked.
 	st := m.engines[e.Session]
 	callID := ids.NewCallID()
-	st.turnOriginator = agent.ID()
+	st.turnOriginator.Store(agent.ID())
 	st.pendingPerms[callID] = &pendingPermission{
 		originator: agent.ID(),
 		answerCh:   make(chan engine.PermissionAnswer, 1),

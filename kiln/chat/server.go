@@ -125,10 +125,14 @@ func HostHTMLForRequest(r *http.Request) string {
 // what the agent has built without opening the panel.
 func HostHTMLForLive(l *live.Live) func(*http.Request) string {
 	return func(r *http.Request) string {
+		// leadForWorld reads sess.World (maps) — compute under the read
+		// lock; only the rendered lead string escapes.
+		var lead string
+		l.ReadSession(func(sess *journal.Session) { lead = leadForWorld(sess.World) })
 		return strings.NewReplacer(
 			`<script src="/__gofastr/runtime.js"></script>`, WidgetTag(),
 			`__KILN_BASE__`, baseFromRequest(r),
-			`__KILN_LEAD__`, leadForWorld(l.Session().World),
+			`__KILN_LEAD__`, lead,
 		).Replace(hostHTML)
 	}
 }
@@ -200,8 +204,15 @@ func (s *Server) serveBaseCSS(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) serveThemeCSS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	app := s.live.Session().World.App
-	fmt.Fprint(w, pageCSSFor(&app))
+	// pageCSSFor reads app.Theme (a map shared with the session-held
+	// World.App), so it must run under the read lock. Only the rendered
+	// CSS string escapes the closure.
+	var css string
+	s.live.ReadSession(func(sess *journal.Session) {
+		app := sess.World.App
+		css = pageCSSFor(&app)
+	})
+	fmt.Fprint(w, css)
 }
 
 // serveStatus returns a focused snapshot of the live runtime, ideal for
@@ -225,9 +236,9 @@ func (s *Server) serveThemeCSS(w http.ResponseWriter, _ *http.Request) {
 // Available fields: counts, last_user, last_assistant, pending_plans,
 // recent, world, plans, chat, app.
 func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
-	sess := s.live.Session()
-
-	// Parse field selector.
+	// Parse field selector. No session access here — keep it outside
+	// the read lock so we hold the lock only for the session reads +
+	// the JSON marshal below.
 	want := map[string]bool{}
 	if raw := r.URL.Query().Get("fields"); raw != "" {
 		for _, f := range strings.Split(raw, ",") {
@@ -253,96 +264,114 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	out := map[string]any{}
+	// Build the response and marshal it to JSON while holding the
+	// session read lock. Several fields place session-reachable
+	// pointers straight into `out` (sess.World, sess.Plans map, the
+	// sess.Chat slice, sess.World.App whose Theme is a shared map).
+	// Marshalling MUST finish before the lock releases, or a concurrent
+	// Live.Apply can mutate the data mid-encode. The marshalled bytes
+	// (no session pointers) are written to w afterward.
+	var buf bytes.Buffer
+	s.live.ReadSession(func(sess *journal.Session) {
+		out := map[string]any{}
 
-	if want["counts"] {
-		out["counts"] = map[string]int{
-			"entities": len(sess.World.Entities),
-			"pages":    len(sess.World.Pages),
-			"hooks":    len(sess.World.Hooks),
-			"routes":   len(sess.World.Routes),
-			"seeds":    len(sess.World.Seeds),
-			"plans":    len(sess.Plans),
-			"chat":     len(sess.Chat),
-		}
-	}
-
-	if want["last_user"] || want["last_assistant"] {
-		var lastUser, lastAssistant *journal.ChatEvent
-		for i := len(sess.Chat) - 1; i >= 0; i-- {
-			e := sess.Chat[i]
-			if lastUser == nil && e.Kind == journal.KindChatUser {
-				cp := e
-				lastUser = &cp
-			}
-			if lastAssistant == nil && e.Kind == journal.KindChatAssistant {
-				cp := e
-				lastAssistant = &cp
-			}
-			if lastUser != nil && lastAssistant != nil {
-				break
+		if want["counts"] {
+			out["counts"] = map[string]int{
+				"entities": len(sess.World.Entities),
+				"pages":    len(sess.World.Pages),
+				"hooks":    len(sess.World.Hooks),
+				"routes":   len(sess.World.Routes),
+				"seeds":    len(sess.World.Seeds),
+				"plans":    len(sess.Plans),
+				"chat":     len(sess.Chat),
 			}
 		}
-		if want["last_user"] {
-			out["last_user"] = lastUser
-		}
-		if want["last_assistant"] {
-			out["last_assistant"] = lastAssistant
-		}
-	}
 
-	if want["pending_plans"] {
-		pending := []*journal.Plan{}
-		for _, p := range sess.Plans {
-			if !p.Approved && !p.Rejected {
-				pending = append(pending, p)
+		if want["last_user"] || want["last_assistant"] {
+			var lastUser, lastAssistant *journal.ChatEvent
+			for i := len(sess.Chat) - 1; i >= 0; i-- {
+				e := sess.Chat[i]
+				if lastUser == nil && e.Kind == journal.KindChatUser {
+					cp := e
+					lastUser = &cp
+				}
+				if lastAssistant == nil && e.Kind == journal.KindChatAssistant {
+					cp := e
+					lastAssistant = &cp
+				}
+				if lastUser != nil && lastAssistant != nil {
+					break
+				}
+			}
+			if want["last_user"] {
+				out["last_user"] = lastUser
+			}
+			if want["last_assistant"] {
+				out["last_assistant"] = lastAssistant
 			}
 		}
-		out["pending_plans"] = pending
-	}
 
-	if want["recent"] {
-		start := len(sess.Chat) - recentN
-		if start < 0 {
-			start = 0
+		if want["pending_plans"] {
+			pending := []*journal.Plan{}
+			for _, p := range sess.Plans {
+				if !p.Approved && !p.Rejected {
+					pending = append(pending, p)
+				}
+			}
+			out["pending_plans"] = pending
 		}
-		out["recent"] = sess.Chat[start:]
-	}
 
-	if want["world"] {
-		out["world"] = sess.World
-	}
-	if want["plans"] {
-		out["plans"] = sess.Plans
-	}
-	if want["chat"] {
-		out["chat"] = sess.Chat
-	}
-	if want["app"] {
-		out["app"] = sess.World.App
-	}
+		if want["recent"] {
+			start := len(sess.Chat) - recentN
+			if start < 0 {
+				start = 0
+			}
+			out["recent"] = sess.Chat[start:]
+		}
+
+		if want["world"] {
+			out["world"] = sess.World
+		}
+		if want["plans"] {
+			out["plans"] = sess.Plans
+		}
+		if want["chat"] {
+			out["chat"] = sess.Chat
+		}
+		if want["app"] {
+			out["app"] = sess.World.App
+		}
+
+		_ = json.NewEncoder(&buf).Encode(out)
+	})
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
-	sess := s.live.Session()
-	resp := map[string]any{
-		"world": sess.World,
-		"session": map[string]any{
-			"chat":  sess.Chat,
-			"plans": sess.Plans,
-		},
-	}
+	// resp embeds session-reachable pointers (sess.World, the sess.Chat
+	// slice, the sess.Plans map). Marshal to a buffer inside the read
+	// lock so a concurrent Live.Apply can't mutate the data mid-encode;
+	// write the bytes afterward. Pretty-printed for browser visitors so
+	// the IR is human-readable in a tab — the shape is identical, so
+	// automated callers parsing JSON don't care about whitespace.
+	var buf bytes.Buffer
+	s.live.ReadSession(func(sess *journal.Session) {
+		resp := map[string]any{
+			"world": sess.World,
+			"session": map[string]any{
+				"chat":  sess.Chat,
+				"plans": sess.Plans,
+			},
+		}
+		enc := json.NewEncoder(&buf)
+		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode(resp)
+	})
 	w.Header().Set("Content-Type", "application/json")
-	// Pretty-print for browser visitors so the IR is human-readable
-	// when opened in a tab. The shape is identical — automated
-	// callers parsing JSON don't care about whitespace.
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(resp)
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (s *Server) serveChatMessage(w http.ResponseWriter, r *http.Request) {

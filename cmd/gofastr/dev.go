@@ -181,13 +181,15 @@ func buildAndServe(dir, addr string, runtimeIsolation *isolation.Runtime, mu *sy
 		return false
 	}
 
-	// Wait for it in background so we can detect crashes
-	go func() {
+	// Wait for it in background so we can detect crashes. The writer is
+	// captured at spawn: this goroutine can outlive the caller, and the
+	// coverage tests swap os.Stdout around buildAndServe — reading the
+	// global here later would race that restore.
+	go func(stdout *os.File) {
 		if err := runCmd.Wait(); err != nil {
-			fmt.Println()
-			info("Server exited")
+			fmt.Fprintf(stdout, "\n%s\n", infoString("Server exited"))
 		}
-	}()
+	}(os.Stdout)
 
 	return true
 }

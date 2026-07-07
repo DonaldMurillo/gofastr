@@ -78,8 +78,13 @@ test-pg-only:
 	fi
 	go test -count=1 -run '/postgres' ./framework/...
 
+# -short skips the chromedp e2e suites (site, meridian, kiln browser):
+# under the race detector they run 2-3x slower, blow the default test
+# timeout, and re-exercise browser plumbing rather than Go code paths.
+# Library/unit/integration tests — where data races live — all run.
+# For the full-fat race sweep use RACE=1 ./scripts/test-all.sh.
 test-race:
-	go test -race -count=1 ./...
+	go test -race -short -count=1 -timeout=15m ./...
 
 # ---- Benchmarks ----
 #

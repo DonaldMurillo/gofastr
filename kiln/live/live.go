@@ -218,10 +218,26 @@ func (l *Live) rebuild() error {
 }
 
 // Session returns the current session. The caller must not mutate it.
+//
+// The lock is released when this returns, so the pointer is only safe
+// on goroutines that are serialized with Apply (the agent's tool
+// handlers, which read-then-Apply in sequence). Concurrent HTTP
+// readers (panels, status endpoints) race Apply through this pointer —
+// they must use ReadSession instead.
 func (l *Live) Session() *journal.Session {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.sess
+}
+
+// ReadSession runs fn while holding the session read lock, so the
+// session cannot be mutated by a concurrent Apply for the duration.
+// fn must not let the pointer escape and must not call Apply (that
+// would deadlock on the same lock).
+func (l *Live) ReadSession(fn func(*journal.Session)) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	fn(l.sess)
 }
 
 // App returns the current rebuilt framework.App. Callers can use this
