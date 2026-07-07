@@ -59,7 +59,7 @@ type componentEntry struct {
 // live render isn't possible. Their stage is labeled "Note", not "Live",
 // so the box doesn't claim to be something it isn't.
 var noteOnlyComponents = map[string]bool{
-	"datatable": true,
+	"datatable":        true,
 	"conditionalfield": true, "formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,

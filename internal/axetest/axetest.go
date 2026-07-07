@@ -45,13 +45,13 @@ var Schemes = []string{"dark", "light"}
 // Violation is one axe-core rule violation. Scheme records which forced color
 // scheme produced it; it is set by [Scan], not part of the axe JSON.
 type Violation struct {
-	ID          string          `json:"id"`
-	Impact      string          `json:"impact"`
-	Description string          `json:"description"`
-	Help        string          `json:"help"`
-	HelpURL     string          `json:"helpUrl"`
-	Tags        []string        `json:"tags"`
-	Nodes       []ViolatedNode  `json:"nodes"`
+	ID          string         `json:"id"`
+	Impact      string         `json:"impact"`
+	Description string         `json:"description"`
+	Help        string         `json:"help"`
+	HelpURL     string         `json:"helpUrl"`
+	Tags        []string       `json:"tags"`
+	Nodes       []ViolatedNode `json:"nodes"`
 
 	// Scheme is the forced color scheme that produced the violation.
 	// Set by Scan, not part of the axe JSON payload.

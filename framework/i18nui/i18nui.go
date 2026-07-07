@@ -173,7 +173,7 @@ var Defaults = map[Key]string{
 	KeyAuthLogout:     "Log out",
 	KeyAuthSignup:     "Sign up",
 	KeyAuthEmail:      "Email",
-	KeyAuthPassword:   "Password",
+	KeyAuthPassword:   "Password", // nosecret: UI label, not a credential
 	KeyAuthRememberMe: "Remember me",
 
 	KeyRepeaterAdd:    "Add item",

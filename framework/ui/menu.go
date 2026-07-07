@@ -230,7 +230,6 @@ func escAttr(s string) string {
 	return r.Replace(s)
 }
 
-
 // shortHash is a tiny FNV-style stable hash used only to derive a
 // unique fallback ID when the caller doesn't supply one. Collisions
 // are visually acceptable — two menus sharing the same ID just both

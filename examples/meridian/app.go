@@ -122,7 +122,7 @@ func appTheme() style.Theme {
 	theme.Colors.Text.Value = "#1B1B2A"
 	theme.Colors.TextMuted.Value = "#65657A"
 	theme.Colors.TextSubtle.Value = "#6A6A72" // 4.7:1 on surface-soft — was #9A9AAB (2.3:1, fails AA on eyebrows/footer titles)
-	theme.Colors.Warning.Value = "#854D0E" // 5.4:1 on its 15% tinted chip — was #B45309 (fails AA on badges)
+	theme.Colors.Warning.Value = "#854D0E"    // 5.4:1 on its 15% tinted chip — was #B45309 (fails AA on badges)
 	theme.Fonts.Body.Value = "'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 	theme.Fonts.Heading.Value = "'Bricolage Grotesque', 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 	theme.DarkColors = map[string]string{

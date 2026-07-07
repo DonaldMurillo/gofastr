@@ -58,7 +58,7 @@ func TestRedactionOnAppend(t *testing.T) {
 	s := newStore(t)
 	sess := ids.NewSessionID()
 	env, _ := control.EncodeEvent(1, control.TextDelta{
-		Text: "secret: AKIAABCDEFGHIJKLMNOP and ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Text: "secret: AKIAABCDEFGHIJKLMNOP and ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // nosecret: fake fixture proving export redaction scrubs these shapes
 	}, sess, ids.NewClientID(), time.Now())
 	if err := s.AppendEvent(context.Background(), env); err != nil {
 		t.Fatal(err)

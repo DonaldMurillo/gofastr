@@ -283,17 +283,17 @@ type kbgateTabbable struct {
 }
 
 type kbgateStyle struct {
-	OutlineStyle   string  `json:"outlineStyle"`
-	OutlineWidth   float64 `json:"outlineWidth"`
-	BoxShadow      string  `json:"boxShadow"`
-	BorderTopColor string  `json:"borderTopColor"`
-	BorderTopWidth float64 `json:"borderTopWidth"`
-	BackgroundColor string `json:"backgroundColor"`
-	TextDecoration string  `json:"textDecoration"`
+	OutlineStyle    string  `json:"outlineStyle"`
+	OutlineWidth    float64 `json:"outlineWidth"`
+	BoxShadow       string  `json:"boxShadow"`
+	BorderTopColor  string  `json:"borderTopColor"`
+	BorderTopWidth  float64 `json:"borderTopWidth"`
+	BackgroundColor string  `json:"backgroundColor"`
+	TextDecoration  string  `json:"textDecoration"`
 }
 
 type kbgateEnum struct {
-	Count int             `json:"count"`
+	Count int              `json:"count"`
 	Items []kbgateTabbable `json:"items"`
 }
 
@@ -316,16 +316,16 @@ type kbgateFocus struct {
 
 // kbgateReport aggregates a page's walk into the four gate verdicts.
 type kbgateReport struct {
-	Page         string
-	Count        int
-	Presses      int
-	Cycled       bool
-	Visits       []kbgateFocus
-	FailVisible  []string
+	Page          string
+	Count         int
+	Presses       int
+	Cycled        bool
+	Visits        []kbgateFocus
+	FailVisible   []string
 	FailIndicator []string
-	Missing      []string // completeness — enumerated but never reached
-	Trap         bool
-	Dynamic      []string // focusables discovered on the fly (informational)
+	Missing       []string // completeness — enumerated but never reached
+	Trap          bool
+	Dynamic       []string // focusables discovered on the fly (informational)
 }
 
 // kbgateWalk boots the probe on the current page, then drives real Tab key
@@ -416,6 +416,7 @@ func kbgateLabelIdx(enum kbgateEnum, i int) string {
 	}
 	return "#" + strconv.Itoa(i)
 }
+
 // reportGate asserts all four gates and emits every collected failure. It
 // never aborts on the first defect — the whole picture is reported per page.
 func reportGate(t *testing.T, r kbgateReport) {
@@ -462,7 +463,6 @@ func reportGate(t *testing.T, r kbgateReport) {
 		t.Logf("[%s] PASS — all keyboard gates green", r.Page)
 	}
 }
-
 
 // ─── Page gates ───────────────────────────────────────────────────────
 

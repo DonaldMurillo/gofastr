@@ -28,9 +28,9 @@ func TestFilterToolbarBasic(t *testing.T) {
 		// select facet composes ui.Select
 		`data-fui-comp="ui-select"`,
 		`name="status"`,
-		`>Status<`,        // label text
-		`>Open<`,          // option
-		`>All Status<`,    // auto-prepended clear option
+		`>Status<`,     // label text
+		`>Open<`,       // option
+		`>All Status<`, // auto-prepended clear option
 		// Apply submit + Reset link compose ui.Button / ui.LinkButton
 		`type="submit"`,
 		`>Apply<`,
@@ -139,8 +139,8 @@ func TestFilterToolbarSearchAndSort(t *testing.T) {
 		`name="q"`,
 		`value="acme"`,
 		`Search customers…`,
-		`name="sort"`,     // default sort field name
-		`>Sort by<`,       // default sort label
+		`name="sort"`, // default sort field name
+		`>Sort by<`,   // default sort label
 		`>Newest<`,
 		`>Name A–Z<`,
 	}

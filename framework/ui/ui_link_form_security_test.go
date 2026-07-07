@@ -323,6 +323,7 @@ func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
 		})
 	}
 }
+
 // TestHrefSinksDropProtocolRelative pins that the three sinks that
 // previously used the weak sanitizeHref (MenuItem.Href,
 // SidebarItem.Href, Notification.DismissHref) now use safeURL, which

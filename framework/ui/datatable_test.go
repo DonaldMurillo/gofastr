@@ -26,8 +26,8 @@ func TestSortableEmptyHeaderAriaLabel(t *testing.T) {
 	// control, derived from the column Key — otherwise screen readers
 	// announce a nameless button/link. Plain (link) mode.
 	h := string(DataTable(DataTableConfig{
-		Columns: []Column{{Key: "price", Header: "", Sortable: true}},
-		Rows:    []Row{{Cells: map[string]render.HTML{"price": render.Text("9")}}},
+		Columns:         []Column{{Key: "price", Header: "", Sortable: true}},
+		Rows:            []Row{{Cells: map[string]render.HTML{"price": render.Text("9")}}},
 		SortHrefPattern: "?s=%s&d=%s",
 	}))
 	if !strings.Contains(h, `aria-label="Sort by price"`) {

@@ -29,7 +29,7 @@ type PricingCardConfig struct {
 	// Set to 2 when cards sit directly under the page <h1> (no
 	// intervening section <h2>) so axe's heading-order rule passes.
 	HeadingLevel int
-	Class       string
+	Class        string
 }
 
 // PricingCard renders a single plan card.
