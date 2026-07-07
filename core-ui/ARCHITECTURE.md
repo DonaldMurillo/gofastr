@@ -470,7 +470,21 @@ completeness test: when it can't, you found the gap.
   loads `core.js` (≤12 KB gzipped, enforced by
   `core-ui/runtime/budget_test.go`) plus only the demand modules its
   components actually use (≤3 KB gzipped each; `widgets` carries a
-  tracked 5 KB override). None of it re-implements server logic.
+  tracked 5 KB override). A second gate pins the *typical-page* payload
+  (core + widgets, since any page mounting a widget loads both) at
+  ≤20 KB so features can't migrate out of core into widgets and bloat
+  the real download while the core number stays pure. None of it
+  re-implements server logic.
+
+  The budget policy: 12 KB sits under TCP's initial congestion window
+  (~14 KB ≈ 10 packets), so the core arrives in the first round trip on
+  a cold connection — that cliff is what the number protects; smaller
+  buys nothing, bigger costs an RTT. When a budget trips, **carve a
+  feature into a demand module — never raise the line.** Carving
+  candidates are features only some pages use (SSE status chrome,
+  flash-on-update, tabs aria mirroring); nav and island RPC must stay
+  in core, because a demand module costs one extra request at first
+  use — fine for drag-dismiss, fatal for the click path.
 - **Hydration on SSR**: the first paint is a fully-rendered, accessible,
   scrape-able HTML document. Clients without JS get the same content,
   just without the interactivity layer. SEO + accessibility come for free.
