@@ -7,8 +7,10 @@ import "sync"
 // The 3-file roundtrip pain — change a screen, edit the host's theme.go to
 // add a CSS rule, reload — is solved by letting screens/components declare
 // their CSS next to the Go render code that uses it. Each declaration goes
-// through [Contribute]; the host calls [Apply] once during stylesheet
-// construction to fan them all in.
+// through [Contribute]; the framework's uihost calls [Apply] itself while
+// assembling /__gofastr/app.css, so a bare Contribute just works — no
+// WithCustomCSS hand-wiring. Custom hosts that build their own stylesheet
+// call [Apply] once during construction to fan contributions in.
 //
 // Final CSS is identical to a hand-authored theme.go — no nonces, no
 // dev/prod divergence, no inline <style>. The strict CSP stays intact.
@@ -25,18 +27,10 @@ import "sync"
 //	        End()
 //	})
 //
-// In the host's createStyleSheet (typically examples/site/styles.go):
-//
-//	func createStyleSheet(theme style.Theme) *style.StyleSheet {
-//	    ss := style.NewStyleSheet(theme)
-//	    // ...host's base rules (resets, layout primitives, page chrome)...
-//	    style.Apply(ss)
-//	    return ss
-//	}
-//
-// Order: Contribute-time order matches application order in Apply.
-// Apply runs after the host's base rules in the example above, so
-// co-located rules can override them by writing the same selector.
+// Order: Contribute-time order matches application order in Apply. The
+// uihost applies contributions after the app's WithCustomCSS payload, so
+// co-located rules can override host base rules by writing the same
+// selector.
 //
 // Trust model: the slice is a global registry. Any imported package can
 // add rules at init time, which is the SAME trust model as importing
@@ -67,9 +61,11 @@ func Contribute(fn func(*StyleSheet)) struct{} {
 }
 
 // Apply runs every [Contribute]'d fn against ss, in registration order.
-// Hosts call this once inside createStyleSheet. Multiple calls are
-// supported (e.g. when the host rebuilds the stylesheet for theme
-// switching) — each call re-applies the full registry to the supplied ss.
+// The framework's uihost calls this against a fresh sheet each time it
+// assembles app.css; custom hosts call it once inside createStyleSheet.
+// Multiple calls are supported (e.g. when a host rebuilds the stylesheet
+// for theme switching) — each call re-applies the full registry to the
+// supplied ss.
 func Apply(ss *StyleSheet) {
 	if ss == nil {
 		return
