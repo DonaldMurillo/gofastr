@@ -167,7 +167,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	sb.WriteString(` `)
 	sb.WriteString(strconv.Itoa(h))
 	sb.WriteString(`" class="`)
-	sb.WriteString(cls)
+	sb.WriteString(escapeXML(cls))
 	sb.WriteString(`" xmlns="http://www.w3.org/2000/svg"`)
 	if cfg.ID != "" {
 		sb.WriteString(` id="`)
@@ -423,13 +423,13 @@ func barChartCSS(_ style.Theme) string {
   opacity: 0.55;
 }
 [data-fui-comp="ui-bar-chart"] .ui-bar-chart__value {
-  font-size: 0.72rem;
+  font-size: var(--text-xs, 0.72rem);
   font-weight: 600;
   fill: var(--color-text, #18181B);
   font-variant-numeric: tabular-nums;
 }
 [data-fui-comp="ui-bar-chart"] .ui-bar-chart__label {
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
   fill: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-bar-chart"] .ui-bar-chart__axis-label {

@@ -139,7 +139,13 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 
 		var inner render.HTML
 		if s.Status == ProgressStepComplete && s.Href != "" {
-			inner = render.Tag("a", map[string]string{"href": s.Href, "class": "ui-progress-steps__row"},
+			// Drop unsafe href schemes (framework/ui/safety.go allow-list);
+			// degrade to an inert "#" rather than a live javascript: link.
+			href := safeURL(s.Href)
+			if href == "" {
+				href = "#"
+			}
+			inner = render.Tag("a", map[string]string{"href": href, "class": "ui-progress-steps__row"},
 				marker, text)
 		} else {
 			inner = render.Tag("span", map[string]string{"class": "ui-progress-steps__row"},
@@ -207,7 +213,7 @@ func progressStepsCSS(_ style.Theme) string {
 [data-fui-comp="ui-progress-steps"] .ui-progress-steps__text {
   display: grid;
   justify-items: center;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   min-width: 0;
 }
 [data-fui-comp="ui-progress-steps"] a.ui-progress-steps__row:hover {
@@ -222,17 +228,17 @@ func progressStepsCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--color-surface, #FFFFFF);
   border: 2px solid var(--color-border, #E4E4E7);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 600;
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-progress-steps"] .ui-progress-steps__label {
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 600;
   text-align: center;
 }
 [data-fui-comp="ui-progress-steps"] .ui-progress-steps__hint {
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
   text-align: center;
 }

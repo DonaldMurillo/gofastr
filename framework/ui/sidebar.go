@@ -82,7 +82,7 @@ type SidebarConfig struct {
 
 	// SuppressDrawerTrigger hides the hamburger button rendered by
 	// Sidebar (some apps put their hamburger in the page header
-	// instead and call MountSidebarDrawer themselves).
+	// instead and call MountSidebar themselves).
 	SuppressDrawerTrigger bool
 }
 
@@ -91,7 +91,7 @@ var sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,
 
 // Sidebar renders the inline nav column + the hamburger trigger that
 // opens the < md drawer. The drawer widget itself is mounted by the
-// caller via MountSidebarDrawer (once per app, at startup).
+// caller via MountSidebar (once per app, at startup).
 //
 // Pair with core-ui/app/layout.Layout.WithSidebar to slot it into the
 // canonical chrome. Inline use is also fine — the component is
@@ -257,7 +257,9 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		if active {
 			linkAttrs += ` aria-current="page"`
 		}
-		b.WriteString(`<a href="` + escAttr(it.Href) + `"` + linkAttrs + `>`)
+		// Same idiom as ui.Menu items: neutralise javascript:/vbscript:/
+		// data: schemes to "#" before attribute-escaping.
+		b.WriteString(`<a href="` + escAttr(sanitizeHref(it.Href)) + `"` + linkAttrs + `>`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 		}
@@ -320,9 +322,17 @@ func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.De
 }
 
 // WidgetMounter is the minimal contract for hosting a widget on a
-// router. The framework's *router.Router satisfies it through the
-// router.Adapt() helper or a thin shim — wiring is intentionally
-// pluggable so this package stays router-agnostic.
+// router. Apps adapt the framework's *router.Router with a three-line
+// shim (wiring is intentionally pluggable so this package stays
+// router-agnostic):
+//
+//	type routerMounter struct{ r *router.Router }
+//
+//	func (m routerMounter) MountWidget(def *widget.Definition) {
+//		widget.Mount(m.r, def)
+//	}
+//
+//	ui.MountSidebar(routerMounter{app.Router()}, sidebarCfg)
 type WidgetMounter interface {
 	MountWidget(def *widget.Definition)
 }
@@ -366,7 +376,7 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
   cursor: pointer;
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   line-height: 1;
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__inline {
@@ -388,7 +398,7 @@ func sidebarCSS(_ style.Theme) string {
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__sublist {
   margin-inline-start: var(--spacing-lg, 16px);

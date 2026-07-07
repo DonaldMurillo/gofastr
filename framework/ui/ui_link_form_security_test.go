@@ -235,6 +235,95 @@ func TestMenuNeutralisesControlByteScheme(t *testing.T) {
 	}
 }
 
+// TestCardHrefDropsUnsafeSchemes pins the URL scheme allow-list on the
+// interactive Card shell: a javascript:/data: (or control-byte-split)
+// Href never reaches the rendered <a>; it is reduced to "#" — dropped,
+// not panicked, because Card is a content-level component.
+func TestCardHrefDropsUnsafeSchemes(t *testing.T) {
+	for _, payload := range []string{
+		"javascript:alert(document.cookie)",
+		"data:text/html,<script>alert(1)</script>",
+		"java\tscript:alert(1)",
+		"//evil.example/x",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			h := ui.Card(ui.CardConfig{Heading: "T", Href: payload}, render.Text("body"))
+			out := strings.ToLower(string(h))
+			if strings.Contains(out, "javascript:") || strings.Contains(out, "data:") || strings.Contains(out, "//evil.example") {
+				t.Fatalf("unsafe scheme reached card href: %s", h)
+			}
+			mustContain(t, h, `href="#"`)
+		})
+	}
+	// Happy path: a safe href round-trips.
+	h := ui.Card(ui.CardConfig{Heading: "T", Href: "/items/1"}, render.Text("body"))
+	mustContain(t, h, `href="/items/1"`)
+}
+
+// TestTagHrefDropsUnsafeSchemes pins the same property on the linked
+// Tag/chip variant.
+func TestTagHrefDropsUnsafeSchemes(t *testing.T) {
+	for _, payload := range []string{
+		"javascript:alert(document.cookie)",
+		"data:text/html,<script>alert(1)</script>",
+		"java\tscript:alert(1)",
+		"//evil.example/x",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			h := ui.Tag(ui.TagConfig{Label: "design", Href: payload})
+			out := strings.ToLower(string(h))
+			if strings.Contains(out, "javascript:") || strings.Contains(out, "data:") || strings.Contains(out, "//evil.example") {
+				t.Fatalf("unsafe scheme reached tag href: %s", h)
+			}
+			mustContain(t, h, `href="#"`)
+		})
+	}
+	// Happy path: a safe href round-trips.
+	h := ui.Tag(ui.TagConfig{Label: "design", Href: "/?tag=design"})
+	mustContain(t, h, `href="/?tag=design"`)
+}
+
+// TestNavHrefSinksDropUnsafeSchemes pins the URL scheme allow-list on
+// the remaining content-level Href sinks that render live anchors:
+// ProgressSteps step Href, Sidebar item Href, DocLayout crumb Href,
+// and DocPrevNext pager Hrefs. Each degrades to "#" — never a live
+// javascript: link.
+func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
+	const payload = "javascript:alert(1)"
+	surfaces := map[string]func() render.HTML{
+		"progress-steps": func() render.HTML {
+			return ui.ProgressSteps(ui.ProgressStepsConfig{
+				Steps: []ui.ProgressStep{{Label: "One", Status: ui.ProgressStepComplete, Href: payload}},
+			})
+		},
+		"sidebar-item": func() render.HTML {
+			return ui.SidebarBody(ui.SidebarConfig{
+				Items: []ui.SidebarItem{{Label: "Home", Href: payload}},
+			})
+		},
+		"doc-crumb": func() render.HTML {
+			return ui.DocLayout(ui.DocLayoutConfig{
+				Crumbs: []ui.DocCrumb{{Label: "Docs", Href: payload}, {Label: "Here"}},
+			}, render.Text("body"))
+		},
+		"doc-pager": func() render.HTML {
+			return ui.DocPrevNext(ui.DocPager{
+				PrevHref: payload, PrevLabel: "p",
+				NextHref: payload, NextLabel: "n",
+			})
+		},
+	}
+	for name, renderFn := range surfaces {
+		t.Run(name, func(t *testing.T) {
+			h := renderFn()
+			if strings.Contains(strings.ToLower(string(h)), "javascript:") {
+				t.Fatalf("javascript: href reached output: %s", h)
+			}
+			mustContain(t, h, `href="#"`)
+		})
+	}
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Form component security (tests 11–20)
 // ═══════════════════════════════════════════════════════════════════════════════

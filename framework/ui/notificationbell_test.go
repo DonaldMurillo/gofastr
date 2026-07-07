@@ -23,6 +23,27 @@ func TestNotificationBellRequiresLabel(t *testing.T) {
 	NotificationBell(NotificationBellConfig{Name: "x"})
 }
 
+// TestBellRowHrefDropsUnsafeScheme pins the URL scheme allow-list on
+// notification rows — items are data-driven (live feeds), so a
+// javascript:/data: Href must degrade to "#", never a live link.
+func TestBellRowHrefDropsUnsafeScheme(t *testing.T) {
+	for _, payload := range []string{"javascript:alert(1)", "data:text/html,<x>"} {
+		h := string(renderBellRow(NotificationItem{Title: "T", Href: payload}))
+		low := strings.ToLower(h)
+		if strings.Contains(low, "javascript:") || strings.Contains(low, "data:") {
+			t.Fatalf("unsafe scheme reached bell row href: %s", h)
+		}
+		if !strings.Contains(h, `href="#"`) {
+			t.Fatalf("unsafe href should degrade to #: %s", h)
+		}
+	}
+	// Happy path round-trips.
+	h := string(renderBellRow(NotificationItem{Title: "T", Href: "/inbox/1"}))
+	if !strings.Contains(h, `href="/inbox/1"`) {
+		t.Fatalf("safe href dropped: %s", h)
+	}
+}
+
 func TestNotificationBellEmitsButtonWithAnchorTrigger(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name: "bell", Label: "Notifications",

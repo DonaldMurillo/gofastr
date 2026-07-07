@@ -194,7 +194,13 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	}
 	extra := ""
 	for k, v := range it.ExtraAttrs {
-		extra += ` ` + escAttr(k) + `="` + escAttr(v) + `"`
+		// render.Attr validates the key against the same allow-list as
+		// every other ExtraAttrs consumer — escAttr alone doesn't touch
+		// spaces, so a key like `x onclick` would smuggle a live event
+		// handler into the tag. Unsafe keys are dropped.
+		if a := render.Attr(k, v); a != "" {
+			extra += ` ` + a
+		}
 	}
 	b.WriteString(`<` + tag + ` class="` + escAttr(cls) + `" ` + openExtra +
 		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
@@ -314,7 +320,7 @@ func menuCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   animation: ui-menu-in var(--duration-dropdown-enter, 120ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }

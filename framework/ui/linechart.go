@@ -114,7 +114,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	sb.WriteString(` `)
 	sb.WriteString(strconv.Itoa(h))
 	sb.WriteString(`" class="`)
-	sb.WriteString(cls)
+	sb.WriteString(escapeXML(cls))
 	sb.WriteString(`" xmlns="http://www.w3.org/2000/svg"`)
 	if cfg.ID != "" {
 		sb.WriteString(` id="`)
@@ -298,11 +298,11 @@ func lineChartCSS(_ style.Theme) string {
 .ui-line-chart__area--danger  { fill: var(--color-danger, #DC2626); }
 
 [data-fui-comp="ui-line-chart"] .ui-line-chart__label {
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
   fill: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-line-chart"] .ui-line-chart__legend {
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text, #18181B);
   font-weight: 500;
 }
