@@ -3,7 +3,7 @@
 // supports two additional UX patterns that the existing widget
 // explicitly blocked (V3 #10):
 //
-//   1. data-toggle-group="<key>"  — buttons sharing the same group
+//   1. data-fui-toggle-group="<key>"  — buttons sharing the same group
 //      key form a mutex. Committing one auto-revokes any sibling that
 //      was previously committed (no extra RPC, the server is the
 //      source of truth; the UI flips optimistically and a subsequent
@@ -69,7 +69,10 @@
 
   const revokeGroupSiblings = (group, except) => {
     if (!group) return;
-    const sel = `[data-fui-comp="ui-toggle-action"][data-toggle-group="${group}"]`;
+    // CSS.escape: a quote/backslash in the group key must not blow up
+    // the selector (an unescaped throw here would strand the clicked
+    // button in its pending/disabled state).
+    const sel = `[data-fui-comp="ui-toggle-action"][data-fui-toggle-group="${CSS.escape(group)}"]`;
     for (const other of document.querySelectorAll(sel)) {
       if (other === except) continue;
       if (other.getAttribute('data-state') === 'committed') {
@@ -85,7 +88,7 @@
       ev.preventDefault();
       if (btn.getAttribute('data-state') === 'pending') return;
       const state = btn.getAttribute('data-state') || 'idle';
-      const group = btn.getAttribute('data-toggle-group') || '';
+      const group = btn.getAttribute('data-fui-toggle-group') || '';
       const allowUntoggle =
         (btn.getAttribute('data-fui-toggle-allow-untoggle') || '').toLowerCase() === 'true';
       const commitURL = btn.getAttribute('data-fui-toggle-endpoint');

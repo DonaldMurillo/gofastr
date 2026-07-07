@@ -465,3 +465,76 @@ func TestE2E_FileDropzone_AriaRegionAndDragoverClass(t *testing.T) {
 		t.Errorf(".is-dragover should be removed on dragleave")
 	}
 }
+
+// --- ToggleAction --------------------------------------------------------
+
+func TestE2E_ToggleAction_CommitUntoggle(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	// The standalone "Follow" button is the only toggle on the page
+	// without a data-fui-toggle-group.
+	const btn = `document.querySelector('[data-fui-comp="ui-toggle-action"]:not([data-fui-toggle-group])')`
+	var initial, afterCommit, pressed, afterUntoggle string
+	var committedVisible bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/toggleaction"),
+		pageReady(),
+		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &initial),
+		chromedp.Evaluate(btn+`.click()`, nil),
+		settle(),
+		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &afterCommit),
+		chromedp.Evaluate(btn+`.getAttribute('aria-pressed')`, &pressed),
+		chromedp.Evaluate(`!`+btn+`.querySelector('[data-fui-toggle-committed]').hidden`, &committedVisible),
+		chromedp.Evaluate(btn+`.click()`, nil),
+		settle(),
+		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &afterUntoggle),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if initial != "idle" {
+		t.Errorf("initial data-state = %q, want idle", initial)
+	}
+	if afterCommit != "committed" {
+		t.Errorf("data-state after click = %q, want committed", afterCommit)
+	}
+	if pressed != "true" {
+		t.Errorf("aria-pressed after commit = %q, want true", pressed)
+	}
+	if !committedVisible {
+		t.Errorf("committed label span should be visible after commit")
+	}
+	if afterUntoggle != "idle" {
+		t.Errorf("data-state after untoggle click = %q, want idle", afterUntoggle)
+	}
+}
+
+func TestE2E_ToggleAction_GroupMutex(t *testing.T) {
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	const group = `document.querySelectorAll('[data-fui-toggle-group="demo-plan"]')`
+	var freeInitial, proInitial, freeAfter, proAfter string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/toggleaction"),
+		pageReady(),
+		chromedp.Evaluate(group+`[0].getAttribute('data-state')`, &freeInitial),
+		chromedp.Evaluate(group+`[1].getAttribute('data-state')`, &proInitial),
+		// Committing "Pro" must optimistically revoke "Free".
+		chromedp.Evaluate(group+`[1].click()`, nil),
+		settle(),
+		chromedp.Evaluate(group+`[0].getAttribute('data-state')`, &freeAfter),
+		chromedp.Evaluate(group+`[1].getAttribute('data-state')`, &proAfter),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if freeInitial != "committed" || proInitial != "idle" {
+		t.Errorf("initial states = %q/%q, want committed/idle", freeInitial, proInitial)
+	}
+	if proAfter != "committed" {
+		t.Errorf("Pro data-state after click = %q, want committed", proAfter)
+	}
+	if freeAfter != "idle" {
+		t.Errorf("Free data-state after sibling commit = %q, want idle (mutex)", freeAfter)
+	}
+}

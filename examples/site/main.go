@@ -201,6 +201,12 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// ToggleAction demo — same deal: the toggle runtime keeps the
+	// committed (or reverted) state only on a real 2xx, so the demo
+	// buttons round-trip through this no-op.
+	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
 	// Interactive demo endpoints — each returns JSON the runtime pushes
 	// into a signal or triggers a widget open / SPA navigate.
