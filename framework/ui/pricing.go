@@ -25,7 +25,11 @@ type PricingCardConfig struct {
 	CTAHref     string   // CTA target
 	Featured    bool     // highlight as the recommended plan
 	ID          string
-	Class       string
+	// HeadingLevel overrides the plan-name heading level (default 3).
+	// Set to 2 when cards sit directly under the page <h1> (no
+	// intervening section <h2>) so axe's heading-order rule passes.
+	HeadingLevel int
+	Class        string
 }
 
 // PricingCard renders a single plan card.
@@ -38,8 +42,12 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
+	level := cfg.HeadingLevel
+	if level < 1 || level > 6 {
+		level = 3
+	}
 	head := []render.HTML{
-		html.Heading(html.HeadingConfig{Level: 3, Class: "ui-pricing-card__name"}, render.Text(cfg.Name)),
+		html.Heading(html.HeadingConfig{Level: level, Class: "ui-pricing-card__name"}, render.Text(cfg.Name)),
 	}
 	if cfg.Featured {
 		head = append([]render.HTML{html.Span(html.TextConfig{Class: "ui-pricing-card__badge"}, render.Text("Recommended"))}, head...)
@@ -86,7 +94,7 @@ func pricingCardCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-pricing-card"] {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--spacing-lg, 1rem);
   padding: 1.75rem;
   background-color: var(--color-surface, #fff);
   border: 1px solid var(--color-border, #e4e4e7);
@@ -101,22 +109,27 @@ func pricingCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__badge {
   align-self: flex-start;
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--color-primary, #4338CA);
+  /* Mix the primary 70% toward the text token so the badge text adapts to
+     BOTH schemes: in light mode text is dark → the mix darkens the primary
+     for contrast on the light tint; in dark mode text is light → the mix
+     lightens a bright primary (e.g. #8B80F2) so it clears 4.5:1 on the
+     semi-transparent tint over a dark featured card. The knob overrides. */
+  color: var(--ui-pricing-card-badge-fg, color-mix(in oklab, var(--color-primary, #4338CA) 70%, var(--color-text, #18181B)));
   background-color: color-mix(in srgb, var(--color-primary, #4338CA) 12%, transparent);
-  padding: 0.15rem 0.5rem;
+  padding: 0.15rem var(--spacing-md, 0.5rem);
   border-radius: 999px;
 }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__name {
   font-family: var(--font-heading, inherit);
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   margin: 0;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: 0.9rem; line-height: 1.5; }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__price { display: flex; align-items: baseline; gap: 0.25rem; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.9rem); line-height: 1.5; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
   font-size: 2.25rem;
@@ -124,13 +137,13 @@ func pricingCardCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: 0.95rem; }
+[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 0.95rem); }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature {
   position: relative;
   padding-inline-start: 1.6rem;
   color: var(--color-text, #1B1B2A);
-  font-size: 0.92rem;
+  font-size: var(--text-sm, 0.92rem);
   line-height: 1.45;
 }
 [data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature::before {

@@ -180,3 +180,56 @@ func TestRenderStaticOptionsNoRPCPath(t *testing.T) {
 		t.Fatalf("static-only combobox missing option:\n%s", out)
 	}
 }
+
+func TestStaticSSRStateIsExpanded(t *testing.T) {
+	h := string(Render(Config{
+		ID: "c1", Name: "q", Label: "Search",
+		Options: []Option{{Label: "Go"}, {Label: "Rust"}},
+	}))
+	// Static options render visible at SSR, so the combobox input must
+	// ship aria-expanded="true" — otherwise the runtime's Escape /
+	// outside-click dismissal (both keyed on aria-expanded="true")
+	// can't close the visibly-open listbox until a keystroke re-syncs
+	// the state.
+	if !strings.Contains(h, `aria-expanded="true"`) {
+		t.Errorf("static combobox must SSR aria-expanded=true:\n%s", h)
+	}
+	if strings.Contains(h, `aria-expanded="false"`) {
+		t.Errorf("static combobox must not claim collapsed state:\n%s", h)
+	}
+}
+
+func TestRPCSSRStateIsCollapsed(t *testing.T) {
+	h := string(Render(Config{
+		ID: "c1", Name: "q", Label: "Search",
+		RPCPath: "/search", SignalName: "results",
+	}))
+	if !strings.Contains(h, `aria-expanded="false"`) {
+		t.Errorf("RPC combobox starts collapsed (empty hidden listbox):\n%s", h)
+	}
+}
+
+func TestStaticHrefDropsUnsafeSchemes(t *testing.T) {
+	h := string(Render(Config{
+		ID: "c1", Name: "q", Label: "Search",
+		Options: []Option{
+			{Label: "Evil", Href: "javascript:alert(1)"},
+			{Label: "Evil2", Href: "  jAvAsCrIpT:alert(1)"},
+			{Label: "Data", Href: "data:text/html,<script>alert(1)</script>"},
+			{Label: "Proto", Href: "//evil.example/x"},
+			{Label: "Docs", Href: "/docs/components"},
+		},
+	}))
+	if strings.Contains(strings.ToLower(h), "javascript:") {
+		t.Errorf("javascript: href leaked into data-fui-push-state:\n%s", h)
+	}
+	if strings.Contains(h, `data-fui-push-state="data:`) {
+		t.Errorf("data: href leaked into data-fui-push-state:\n%s", h)
+	}
+	if strings.Contains(h, `data-fui-push-state="//`) {
+		t.Errorf("protocol-relative href leaked:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-push-state="/docs/components"`) {
+		t.Errorf("safe relative href must survive:\n%s", h)
+	}
+}

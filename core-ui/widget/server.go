@@ -329,6 +329,16 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		b.WriteString(`<div class="fui-widget-drag-handle" aria-hidden="true" data-fui-drag-handle="true"></div>`)
 	}
 
+	// Centered (modal) widgets group every slot inside ONE .fui-panel
+	// — the element the chrome CSS paints as the dialog surface. Slots
+	// as direct flex children of the viewport-filling center wrapper
+	// would each paint their own card (a header/body/footer modal read
+	// as three panels). Other positions paint the surface on the
+	// position container / widget root, so their slots stay direct
+	// children.
+	if def.Position == Center {
+		b.WriteString(`<div class="fui-panel">`)
+	}
 	// Render header / body / footer slots if present.
 	for _, name := range []string{"header", "body", "footer"} {
 		if html, ok := slots[name]; ok {
@@ -345,6 +355,9 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		}
 		b.WriteString(`<div class="fui-slot fui-slot-` + escAttr(name) + `">`)
 		b.WriteString(string(html))
+		b.WriteString(`</div>`)
+	}
+	if def.Position == Center {
 		b.WriteString(`</div>`)
 	}
 	b.WriteString(`</div>`)
@@ -438,6 +451,29 @@ func widgetCSS(def Definition) string {
 		).
 		End()
 
+	// Bottom sheet (preset.BottomSheet mounts at widget.Bottom). Like
+	// the edge drawers, the position container paints the panel:
+	// surface background, shadow, rounded top corners, a height cap
+	// so tall content scrolls inside the sheet instead of covering
+	// the page. Without this the sheet's slot text floats over the
+	// page content on the dimmed backdrop — same invisible-panel
+	// defect the centered modal had.
+	ss.Rule(".fui-pos-bottom").
+		Set(
+			"background", "{colors.surface}",
+			"box-shadow", "{shadows.xl}",
+			"border-radius", "{radii.lg} {radii.lg} 0 0",
+			"max-block-size", "75vh",
+			"overflow", "auto",
+		).
+		End()
+	// Sheet slot: breathing room inside the panel (the panel is the
+	// root, so padding lives on the slot; the drag handle above it
+	// keeps its own margins).
+	ss.Rule(".fui-pos-bottom > .fui-slot").
+		Set("padding", "{spacing.md} {spacing.lg} {spacing.lg}").
+		End()
+
 	// Center / modal: framework provides a backdrop + centered content
 	// wrapper. The wrapper itself stays transparent so the slot
 	// component (e.g. demo-modal-body) owns the visual card chrome.
@@ -493,8 +529,47 @@ func widgetCSS(def Definition) string {
 		Set("animation", "fui-top-in {durations.overlay-enter} {easings.ease-out}").
 		End()
 
-	// Slots are pure containers — no styling.
+	// Slots are plain containers — the visible surface lives on the
+	// position container (drawers, sheets), the widget root (popovers)
+	// or the .fui-panel slot group (centered modals, below).
 	ss.Rule(".fui-slot").Set("display", "block").End()
+
+	// Centered (modal) panel: default dialog surface. Drawers paint
+	// their surface on the position container and popovers on the
+	// widget root, but the centered wrapper IS the full viewport — so
+	// defaultSkeleton groups every slot inside one .fui-panel and the
+	// panel paints the card. Painting each slot instead would render a
+	// header/body/footer modal as three separate cards; painting
+	// nothing leaves slot content floating bare on the dimmed backdrop
+	// (a plain preset.Modal would open, trap focus, and round-trip
+	// RPCs while showing no dialog).
+	//
+	// Opt-outs — full-bleed bodies that own (or reject) the chrome.
+	// The markers sit on a slot's root element, one level under the
+	// panel:
+	//   - `.fui-slot-bare` on the body's root element — the
+	//     documented escape hatch for chrome-less content;
+	//   - `[data-fui-lightbox]` — Lightbox viewers center bare media
+	//     on the backdrop; a card behind a photo is unwanted and the
+	//     panel's max-inline-size would fight the viewer's 90vw;
+	//   - `[data-fui-comp="ui-cmd-palette"]` — the command palette
+	//     predates this rule and paints its own 36rem panel (incl. a
+	//     full-screen mobile variant the panel caps would break).
+	//     Legacy exclusion: it should adopt .fui-slot-bare so this
+	//     selector can shrink to the two generic cases.
+	ss.Rule(`.fui-pos-center > .fui-panel:not(:has(> .fui-slot > .fui-slot-bare, > .fui-slot > [data-fui-lightbox], > .fui-slot > [data-fui-comp="ui-cmd-palette"]))`).
+		Set(
+			"background", "{colors.surface}",
+			"border", "1px solid {colors.border}",
+			"border-radius", "{radii.lg}",
+			"padding", "{spacing.lg}",
+			"box-shadow", "{shadows.xl}",
+			"min-inline-size", "min(20rem, 100%)",
+			"max-inline-size", "min(36rem, 100%)",
+			"max-block-size", "100%",
+			"overflow", "auto",
+		).
+		End()
 
 	// ─── Drag-to-dismiss handle (bottom sheets) ───────────────────
 	// Visible 40×4px rounded bar centered at the top of the panel.

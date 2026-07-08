@@ -64,11 +64,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 	if v == "" {
 		v = StatusInfo
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: Notification unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
-	}
+	checkStatusVariant("Notification", v)
 	cls := "ui-notification ui-notification--" + string(v)
 	if cfg.Position != NotificationInline {
 		cls += " ui-notification--floating ui-notification--at-" + string(cfg.Position)
@@ -113,8 +109,17 @@ func Notification(cfg NotificationConfig) render.HTML {
 		if label == "" {
 			label = "Dismiss notification"
 		}
+		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
+		// protocol-relative //host, and control bytes (see safety.go);
+		// a rejected href degrades to "#" like ui.Card / ui.Link.
+		// (Previously this used the weaker sanitizeHref, which let
+		// //evil.com, file:, and blob: through verbatim.)
+		dismissHref := safeURL(cfg.DismissHref)
+		if dismissHref == "" {
+			dismissHref = "#"
+		}
 		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
-			Href:       sanitizeHref(cfg.DismissHref),
+			Href:       dismissHref,
 			Class:      "ui-notification__dismiss",
 			ExtraAttrs: html.Attrs{"aria-label": label},
 			Content:    render.Text("×"),
@@ -137,6 +142,10 @@ func notificationGlyph(v StatusVariant) string {
 	case StatusInfo:
 		return "i"
 	default:
+		// Registered custom status variants carry their own glyph.
+		if icon := registeredStatusIcon(v); icon != "" {
+			return icon
+		}
 		return "•"
 	}
 }

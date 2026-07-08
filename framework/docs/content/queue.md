@@ -7,7 +7,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 
 ## Backends at a glance
 
-| | `MemoryQueue` | `DBQueue` | `RedisQueue` |
+| Capability | `MemoryQueue` | `DBQueue` | `RedisQueue` |
 |---|---|---|---|
 | Durable across restart | No | Yes | Yes |
 | Multiple workers | Yes | Yes | Manual |

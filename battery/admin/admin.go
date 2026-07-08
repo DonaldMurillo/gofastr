@@ -494,8 +494,10 @@ func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body 
     <h1>%s</h1>
     <p class="sub">%s</p>
   </header>
+  <main>
   %s
   %s
+  </main>
 </body>
 </html>`,
 		render.Escape(title), render.Escape(pageName), b.cfg.PathPrefix,

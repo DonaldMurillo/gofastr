@@ -28,7 +28,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	patternsAccordion "github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
+	patternsCombobox "github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
 	patternsDisclosure "github.com/DonaldMurillo/gofastr/core-ui/patterns/disclosure"
+	patternsMultiselect "github.com/DonaldMurillo/gofastr/core-ui/patterns/multiselect"
 	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
 	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
@@ -57,7 +59,7 @@ type componentEntry struct {
 // live render isn't possible. Their stage is labeled "Note", not "Live",
 // so the box doesn't claim to be something it isn't.
 var noteOnlyComponents = map[string]bool{
-	"datatable": true, "combobox": true, "multiselect": true,
+	"datatable":        true,
 	"conditionalfield": true, "formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
@@ -618,15 +620,34 @@ var componentCatalog = []componentEntry{
 		)
 	}},
 	{"combobox", "Combobox", "Forms", "Type-ahead suggestion picker.", func() render.HTML {
-		// Static demo since wiring the search RPC island is per-page.
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("Combobox needs an RPC search endpoint. See /docs/components for the wiring recipe."),
-		)
+		// Static-options variant: the runtime filters the inline rows
+		// client-side, so the demo needs no search RPC. The RPC-backed
+		// variant is wired the same way with RPCPath+SignalName.
+		return patternsCombobox.Render(patternsCombobox.Config{
+			ID: "demo-combobox", Name: "q", Label: "Filter components",
+			Placeholder: "Type to filter…",
+			Options: []patternsCombobox.Option{
+				{Label: "Accordion", Value: "accordion"},
+				{Label: "Badge", Value: "badge"},
+				{Label: "Card", Value: "card"},
+				{Label: "DataTable", Value: "datatable", Meta: "island"},
+				{Label: "Tabs", Value: "tabs"},
+			},
+		})
 	}},
 	{"multiselect", "Multiselect", "Forms", "Multi-pick from a list with chips.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("Multiselect compounds Combobox with an RPC. Demo deferred to its own integration page."),
-		)
+		// Value deliberately differs from Label ("cpp" vs "C++") so the
+		// e2e suite catches chip-shows-Value regressions.
+		return patternsMultiselect.Render(patternsMultiselect.Config{
+			ID: "demo-multiselect", Name: "langs", Label: "Pick languages",
+			Placeholder: "No languages selected",
+			Options: []patternsMultiselect.Option{
+				{Value: "go", Label: "Go", Selected: true},
+				{Value: "cpp", Label: "C++"},
+				{Value: "csharp", Label: "C Sharp"},
+				{Value: "rust", Label: "Rust"},
+			},
+		})
 	}},
 	{"filterchipbar", "FilterChipBar", "Forms", "Active filter chip strip with per-chip dismiss RPC.", func() render.HTML {
 		return ui.FilterChipBar(ui.FilterChipBarConfig{
@@ -854,6 +875,33 @@ func main() {
 			IdleLabel:    "Mark as read",
 			SuccessLabel: "Marked ✓",
 		})
+	}},
+	{"toggleaction", "ToggleAction", "Feedback", "Three-state toggle — commit, untoggle, mutex groups.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			ui.ToggleAction(ui.ToggleActionConfig{
+				Endpoint:         "/__site/toggle/noop",
+				UntoggleEndpoint: "/__site/toggle/noop",
+				IdleLabel:        "Follow",
+				CommittedLabel:   "Following ✓",
+			}),
+			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
+				ui.ToggleAction(ui.ToggleActionConfig{
+					Endpoint:       "/__site/toggle/noop",
+					IdleLabel:      "Free",
+					CommittedLabel: "Free ✓",
+					Group:          "demo-plan",
+					Committed:      true,
+					Variant:        ui.ButtonSecondary,
+				}),
+				ui.ToggleAction(ui.ToggleActionConfig{
+					Endpoint:       "/__site/toggle/noop",
+					IdleLabel:      "Pro",
+					CommittedLabel: "Pro ✓",
+					Group:          "demo-plan",
+					Variant:        ui.ButtonSecondary,
+				}),
+			),
+		)
 	}},
 	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette — wired in nav (try it).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "fact"},

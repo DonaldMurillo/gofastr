@@ -34,6 +34,7 @@ generate both the TOC and the `agents/` detail files. Refresh with
 | full-text search | `battery/search` |
 | outbound signed webhooks with retry | `battery/webhook` |
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |
+| UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components) — `gofastr docs ui-new-components` for the catalog, `go doc github.com/DonaldMurillo/gofastr/framework/ui` for signatures, live demos at `/components/<slug>` on the docs site (`examples/site`) |
 | structured request log, panic recovery, log MCP debug tools | `battery/log` |
 | browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New` — no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
 | load `.env` files | auto-wired by `framework.NewApp` — do nothing |

@@ -107,7 +107,7 @@ func layoutCSS(_ style.Theme) string {
 
 // ─── Card ───────────────────────────────────────────────────────────
 
-func cardCSS(_ style.Theme) string {
+func cardCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-card"] {
   display: flex;
   flex-direction: column;
@@ -151,13 +151,13 @@ func cardCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-card"] .ui-card__heading {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--text-base, 1.05rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-card"] .ui-card__description {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-card"] .ui-card__body {
@@ -176,7 +176,8 @@ func cardCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-card"].ui-card--flat .ui-card__footer { background: transparent; }`
+[data-fui-comp="ui-card"].ui-card--flat .ui-card__footer { background: transparent; }` +
+		customModsCSS(cardMods, "ui-card", "ui-card", t)
 }
 
 // ─── OptimizedImage ─────────────────────────────────────────────────
@@ -229,7 +230,7 @@ func toggleCSS(_ style.Theme) string {
   cursor: pointer;
   /* Token-scaled touch target. */
   min-block-size: var(--spacing-touch-target, 44px);
-  padding-block: 4px;
+  padding-block: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-toggle"].is-disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -345,7 +346,7 @@ func toggleCSS(_ style.Theme) string {
 
 [data-fui-comp="ui-toggle"] .ui-toggle__label {
   flex: 1 1 auto;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   color: var(--color-text, #18181B);
   line-height: 1.4;
 }
@@ -354,7 +355,7 @@ func toggleCSS(_ style.Theme) string {
   display: block;
   flex-basis: 100%;
   margin: var(--spacing-xs, 2px) 0 0 calc(1.25rem + var(--spacing-md, 8px));
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
 }
 [data-fui-comp="ui-toggle"] .ui-toggle__help  { color: var(--color-text-muted, #52525B); }
 [data-fui-comp="ui-toggle"] .ui-toggle__error { color: var(--color-danger, #DC2626); }
@@ -369,19 +370,19 @@ func toggleCSS(_ style.Theme) string {
 }
 .ui-toggle-group .ui-toggle-group__legend {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
   padding: 0;
   margin-bottom: var(--spacing-xs, 4px);
 }
 .ui-toggle-group .ui-toggle-group__help {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
 }
 .ui-toggle-group .ui-toggle-group__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-danger, #DC2626);
 }`
 }
@@ -404,7 +405,7 @@ func tooltipCSS(_ style.Theme) string {
   background: var(--color-text, #18181B);
   color: var(--color-surface, #FFFFFF);
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   line-height: 1.2;
   border-radius: var(--radii-sm, 4px);
   pointer-events: none;
@@ -461,15 +462,15 @@ func tooltipCSS(_ style.Theme) string {
 
 // ─── Tag / Chip ─────────────────────────────────────────────────────
 
-func tagCSS(_ style.Theme) string {
+func tagCSS(t style.Theme) string {
 	return `[data-fui-comp="ui-tag"] {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
-  padding: 2px var(--spacing-md, 8px);
+  padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
   border: 1px solid transparent;
   border-radius: var(--radii-full, 9999px);
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   font-weight: 500;
   line-height: 1.3;
   text-decoration: none;
@@ -520,7 +521,7 @@ func tagCSS(_ style.Theme) string {
   color: inherit;
   cursor: pointer;
   border-radius: 50%;
-  font-size: 1rem;
+  font-size: var(--text-base, 1rem);
   line-height: 1;
   padding: 0;
 }
@@ -528,7 +529,7 @@ func tagCSS(_ style.Theme) string {
 [data-fui-comp="ui-tag"] .ui-tag__dismiss:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
-}`
+}` + customStatusCSS("ui-tag", t)
 }
 
 // ─── Spinner ────────────────────────────────────────────────────────
@@ -556,7 +557,7 @@ func spinnerCSS(_ style.Theme) string {
 [data-fui-comp="ui-spinner"] .ui-spinner__dots {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-spinner"] .ui-spinner__dot {
   display: inline-block;
@@ -652,7 +653,7 @@ hr[data-fui-comp="ui-divider"] {
   margin: var(--spacing-md, 8px) 0;
   background: transparent;
   color: var(--color-text-muted, #52525B);
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 500;
 }
 [data-fui-comp="ui-divider"].ui-divider--labelled::before,
@@ -676,7 +677,7 @@ func fileUploadCSS(_ style.Theme) string {
 [data-fui-comp="ui-fileupload"].is-disabled { opacity: 0.6; cursor: not-allowed; }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__zone {
@@ -720,12 +721,12 @@ func fileUploadCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__prompt {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__filename {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
   font-weight: 600;
   display: flex;
@@ -756,18 +757,26 @@ func fileUploadCSS(_ style.Theme) string {
 [data-fui-comp="ui-fileupload"] .ui-fileupload__help,
 [data-fui-comp="ui-fileupload"] .ui-fileupload__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
 }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__help  { color: var(--color-text-muted, #52525B); }
 [data-fui-comp="ui-fileupload"] .ui-fileupload__error { color: var(--color-danger, #DC2626); }`
 }
 
 func stickyCSS(_ style.Theme) string {
+	// The z-index layer comes from StickyConfig.ZIndexTier via the
+	// data-fui-z-tier attribute, mapped to the theme's --z-<tier>
+	// tokens (style.ZIndexSet: dropdown 100 / sticky 200 / modal 300 /
+	// popover 400 / toast 500 by default).
 	return `[data-fui-comp="ui-sticky"] {
   position: -webkit-sticky;
   position: sticky;
-  z-index: var(--z-index-sticky, 100);
+  z-index: var(--z-sticky, 200);
 }
+[data-fui-comp="ui-sticky"][data-fui-z-tier="dropdown"] { z-index: var(--z-dropdown, 100); }
+[data-fui-comp="ui-sticky"][data-fui-z-tier="modal"]    { z-index: var(--z-modal, 300); }
+[data-fui-comp="ui-sticky"][data-fui-z-tier="popover"]  { z-index: var(--z-popover, 400); }
+[data-fui-comp="ui-sticky"][data-fui-z-tier="toast"]    { z-index: var(--z-toast, 500); }
 [data-fui-comp="ui-sticky"]::after {
   content: "";
   position: absolute;

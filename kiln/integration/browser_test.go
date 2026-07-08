@@ -53,6 +53,9 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 // tests can simulate an agent turn.
 func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("browser e2e: -short (chromedp; same convention as examples/site)")
+	}
 	testInFlight.Store(false)
 	testCurrentAgent.Store("none")
 	testNoAdaptersInstalled.Store(false)

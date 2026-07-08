@@ -51,7 +51,7 @@ app.RegisterEntities(map[string]entity.EntityConfig{
 })
 ```
 
-### `Entity` vs `TryEntity`
+## `Entity` vs `TryEntity`
 
 `app.Entity(name, config)` **panics** on a misconfiguration — fail-fast,
 ideal for static hand-written declarations where a bad config is a bug

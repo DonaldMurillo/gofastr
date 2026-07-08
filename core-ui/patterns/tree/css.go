@@ -20,10 +20,13 @@ func styleFn(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-xs, 4px);
   min-height: var(--spacing-touch-target, 44px);
-  padding: 4px 6px;
+  padding: var(--spacing-sm, 4px) 6px;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="tree"] .tree__item[tabindex="0"] > .tree__row,
+/* Focus ring only while focus is actually inside the row — the roving
+   tabindex means one item ALWAYS carries tabindex="0", so keying the
+   outline on the bare attribute painted a permanent ring on it. */
+[data-fui-comp="tree"] .tree__item:focus-visible > .tree__row,
 [data-fui-comp="tree"] .tree__item:focus-within > .tree__row {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
@@ -42,7 +45,7 @@ func styleFn(_ style.Theme) string {
   background: transparent;
   color: var(--color-text-muted, #6b7280);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   cursor: pointer;
   transition: transform var(--duration-fast, 120ms) var(--easing-standard, ease);
 }
@@ -54,6 +57,11 @@ func styleFn(_ style.Theme) string {
   text-decoration: none;
   flex: 1 1 auto;
   min-inline-size: 0;
+  /* The label is a flex item (blockified), so axe's target-size rule
+     measures it — unlike inline links, which the rule skips. Give it the
+     WCAG 2.2 24px floor; it stays inside the 44px row's content box so the
+     row height is unchanged and the text-overflow ellipsis still works. */
+  min-block-size: var(--spacing-xl, 24px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

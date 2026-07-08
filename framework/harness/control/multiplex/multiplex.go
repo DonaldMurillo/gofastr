@@ -40,9 +40,14 @@ type engineState struct {
 	clientsMu sync.RWMutex
 	clients   map[ids.ClientID]control.Client
 
-	// Total-ordering: turnBusy is atomic; turnOriginator is set when busy.
+	// Total-ordering: turnBusy is atomic; turnOriginator is stored
+	// atomically too — the rejection path and the pending-permission
+	// path read it from other goroutines while the turn goroutine's
+	// release() clears it, so a plain field is a data race. A slightly
+	// stale originator in a rejection message is acceptable; a torn
+	// read is not.
 	turnBusy       atomic.Bool
-	turnOriginator ids.ClientID
+	turnOriginator atomic.Value // ids.ClientID
 
 	// Permission arbitration: pending permission calls awaiting answers.
 	pendingMu    sync.Mutex
@@ -177,9 +182,9 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	}
 	// Acquire turn slot. If already busy, reject with TurnInProgress.
 	if !st.turnBusy.CompareAndSwap(false, true) {
-		return &TurnInProgressError{OriginatorID: st.turnOriginator}
+		return &TurnInProgressError{OriginatorID: st.originatorID()}
 	}
-	st.turnOriginator = c.ID()
+	st.turnOriginator.Store(c.ID())
 	// Release the slot via the engine's OnTurnEnd hook so it happens
 	// BEFORE the TurnEnded event is published — prevents a subscriber
 	// reacting to TurnEnded from racing into the slot. The deferred
@@ -188,7 +193,7 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	var released atomic.Bool
 	release := func() {
 		if released.CompareAndSwap(false, true) {
-			st.turnOriginator = ""
+			st.turnOriginator.Store(ids.ClientID(""))
 			st.turnBusy.Store(false)
 		}
 	}
@@ -266,7 +271,7 @@ func (m *Mux) Subscribe(session ids.SessionID, callID ids.CallID) <-chan engine.
 	ch := make(chan engine.PermissionAnswer, 1)
 	st.pendingMu.Lock()
 	st.pendingPerms[callID] = &pendingPermission{
-		originator: st.turnOriginator,
+		originator: st.originatorID(),
 		answerCh:   ch,
 	}
 	st.pendingMu.Unlock()
@@ -318,3 +323,12 @@ func (l *sessionLock) Lock()    { l.s.clientsMu.Lock() }
 func (l *sessionLock) Unlock()  { l.s.clientsMu.Unlock() }
 func (l *sessionLock) RLock()   { l.s.clientsMu.RLock() }
 func (l *sessionLock) RUnlock() { l.s.clientsMu.RUnlock() }
+
+// originatorID returns the current turn's originating client, or the
+// zero ClientID when no turn has ever run on this session.
+func (st *engineState) originatorID() ids.ClientID {
+	if v := st.turnOriginator.Load(); v != nil {
+		return v.(ids.ClientID)
+	}
+	return ""
+}

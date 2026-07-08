@@ -5,6 +5,171 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.13.0] - 2026-07-07
+
+The UI-library hardening release: a five-dimension evaluation of
+`framework/ui` + `core-ui` (API, correctness, extensibility, docs,
+discoverability) followed by fixes for everything it found, an adversarial
+review pass over those fixes, and fixes for what *that* found.
+
+### BREAKING
+
+- **Unknown component variants panic at build time.** `ui.Card` now rejects
+  an unregistered `CardVariant` the way `ui.Button` always rejected bad
+  `ButtonVariant`s, and `ui.ToggleAction` validates `Variant`/`Size` the same
+  way. A typo like `Variant: "primry"` that used to silently render unstyled
+  markup now fails loudly at screen construction. Register custom variants
+  first (see below).
+- **Plain modals paint a real panel.** A bare `preset.Modal` used to render
+  its slot content floating invisibly on the dimmed backdrop; the centered
+  widget skeleton now wraps its slots in one `.fui-panel` that paints surface,
+  border, radius, padding, and shadow from theme tokens. Bodies that own their
+  chrome opt out with `.fui-slot-bare` on the body's root element (Lightbox
+  and CommandPalette are excluded automatically). Anything targeting the old
+  `.fui-pos-center > .fui-slot` selector should target `.fui-panel`. Bottom
+  sheets similarly gained a default surface (75vh cap, scroll inside).
+- **`html.Button` requires a label.** An empty `Label` with no
+  `ExtraAttrs["aria-label"]` now panics at build time instead of rendering an
+  unlabeled `<button>`. Icon-only buttons pass an `aria-label`. (Data-driven
+  renderers degrade instead: a labelless Kiln button node renders with
+  `aria-label="button"` rather than panicking at request time.)
+- **`ui.Sticky` stacks at the theme's `--z-sticky` (200).** The old CSS read
+  a `--z-index-sticky` token that never existed, so sticky elements silently
+  stacked at the 100 fallback. Anything relying on that broken value moves up
+  to the designed `ZIndexSet` layer. `StickyConfig.ZIndexTier` now actually
+  works (`dropdown`/`modal`/`popover`/`toast`) and panics on unknown tiers.
+- **`patterns/tabs` panics past 16 tabs** instead of silently breaking (the
+  registered stylesheet generates 16 nth-child slots; the panic names the
+  ceiling and the escape hatch).
+
+### Added
+
+- **Accessibility enforcement grew three gates.** A shared axe-core harness
+  (`internal/axetest`) now drives two app gates: the existing site gate
+  (every component demo page, both color schemes) and a new Meridian gate —
+  marketing, auth, app, and admin pages scanned logged-in with an **empty
+  allowlist**, plus the first open-widget scan (the quick-add modal's open
+  DOM state). A keyboard-only traversal gate walks Tab through key pages of
+  both apps asserting no focus traps, visible focus indication on every
+  stop, complete reachability of interactive elements, and the modal's
+  trap-then-release cycle. What the gates flushed out was fixed at the
+  source: `battery/admin` pages now render a `<main>` landmark; DataTable's
+  empty actions header is hidden from the a11y tree; `PricingCard`, `Card`,
+  and `PageHeader` gained a `HeadingLevel` config so composed pages keep a
+  sane heading outline; the pricing badge's default text color adapts
+  per-scheme via `color-mix` toward the text token; the sidebar's active
+  nav link has a visible keyboard focus ring (it previously vanished under
+  the `aria-current` background); Sidebar renders a `<div>` shell instead
+  of nesting an `<aside>` landmark inside the layout's `<nav>`; and
+  Meridian's status/text-subtle palette was retoned to clear WCAG AA on
+  the components' tinted chips in both schemes. The site gate also
+  enables axe's WCAG 2.2 `target-size` rule (24px minimum) and scans a
+  curated page subset at a 390px viewport — carousel dots grew invisible
+  24px hit areas (`::after` pip), tree row links meet the floor, and
+  horizontally-scrolling command lines are keyboard-focusable.
+
+  An adversarial review of the gates then hardened them further: the
+  harness rejects blank pages instead of scanning them as vacuously
+  clean; the site's three allowlisted rules apply only to `/components/*`
+  demos (content pages scan with an empty allowlist — which surfaced and
+  fixed nine real heading/landmark defects across the home, get-started,
+  philosophy, and docs pages); every `/docs/<slug>` page, `/kiln`, and
+  every Meridian admin CRUD screen (list + create per entity) is now
+  scanned. New knobs from those fixes: `CalloutConfig.Landmark` opts an
+  in-flow tip out of the complementary-landmark role, and
+  `EmptyStateConfig.HeadingLevel` keeps empty states in the page outline
+  (AnchoredRail's rail label is no longer a stray `<h6>`).
+- **Variant registration.** `ui.RegisterButtonVariant`, `RegisterButtonSize`,
+  `RegisterCardVariant`, and `RegisterStatusVariant` open the variant system
+  at init time: pass `VariantCSS{Props, Hover, Focus}` (or
+  `StatusVariantCSS{Color, Icon}`) with `{colors.x}` token references and get
+  a typed variant value back. Status variants fan out to StatusBadge, Tag,
+  Callout, and Notification. Registration is init-only (sheets seal on first
+  materialization; late registration panics). Custom button variants style
+  `ui.ToggleAction` markup too.
+- **`ui.ToggleAction`** — an optimistic press-and-commit button
+  (follow/subscribe/pin): idle/committed labels + icons, endpoint POST with
+  rollback on failure, optional untoggle endpoint, and `data-fui-toggle-group`
+  mutex semantics. Gallery demo + e2e.
+- **`__gofastr.doc`** — the runtime's single owner of global document state.
+  A frozen manifest of every `<html>` attribute, `<body>` class, and DOM
+  singleton the runtime may touch (guard warns on undeclared writes),
+  refcounted scroll-lock (two closing widgets can't unlock each other's
+  scroll), SSR-adopting `singleton()`, and a `reattach()` hook for cross-layout
+  shell swaps. Documented in `core-ui/ARCHITECTURE.md`; a test parses the doc
+  table against the manifest.
+- **Theme slots for the code palette.** `Theme.Code` / `Theme.DarkCode` emit
+  the `--tk-*` syntax-highlighting tokens (optional group — zero slots emit
+  nothing), so dark mode can restyle code blocks through the theme instead of
+  raw CSS.
+- **New embedded docs**: `ui-wiring.md` (annotated main.go wiring
+  `framework.App` + core-ui app + uihost, compile-verified), `theming.md`
+  (token catalog, `DarkColors`, `ui.Themed`, `--ui-*` knobs, and why theming
+  never relies on CSS source order), and `runtime-contract.md` (the full
+  `data-fui-*` attribute reference + SSR/island/SSE model, sync-tested against
+  `core-ui/ARCHITECTURE.md` — fixes five dead links in the embedded docs).
+  Plus a form-in-a-modal recipe in `widgets.md` documenting
+  `data-fui-rpc-close` / `data-fui-rpc-reset`, and pagination-package
+  disambiguation on `DataTableConfig`.
+- **Routing users to the UI system.** `framework/ui` registers with
+  `agentsinv` (generated apps' AGENTS.md now lists the `ui` package), the
+  gofastr-host skill's don't-reinvent table gained a UI row, the docs index
+  gained a "Building UI" group, and the README points at the catalog.
+- **Meridian exercises the full surface** (design-system canary): a plain
+  quick-add modal on the default panel surface, an ink-band
+  `ui.Themed`/`RegisterThemeOverride` CTA, an island-mode DataTable (RPC
+  sort/pagination sharing one config between screen and endpoint), and
+  `--ui-layout-container-width`. Its `app.css` now contains only published
+  `--ui-*` variable declarations — the page-header/section internals
+  overrides became upstream knobs (`--ui-page-header-title-*`,
+  `--ui-section-eyebrow-*`).
+- **`gofastr pack` follows extracted helpers.** A resource chain moved into a
+  package-local zero-arg helper (so a screen and its island endpoint share one
+  config) still reverses to the blueprint block.
+
+### Fixed
+
+- **Security.** Escaping/sanitization holes closed across the component
+  catalog: `SignalToggle` label/name/class, chart `Class` (SVG context),
+  href sinks in Card, Tag, NotificationBell, ProgressSteps, Sidebar, and
+  DocLayout (safeURL with `#` fallback), the CommandPalette→combobox
+  `data-fui-push-state` href (scheme allow-list; unsafe values omit the
+  attribute), and Menu `ExtraAttrs` keys (routed through the `render.Attr`
+  allow-list so a smuggled key can't become a live event handler).
+- **Correctness.** Multiselect chips show the option Label (the `label[for]`
+  never matched) and option IDs no longer collide ("C++"/"C#", or two
+  instances on a page); static-options Combobox SSRs `aria-expanded="true"`
+  so Escape/outside-click dismissal works before any keystroke; `ui.Tabs`
+  mirrors `aria-selected` on click; SiteHeader styles the active link on
+  `aria-current="page"` (the dead `data-fui-active` attribute is gone);
+  infinitescroll's noscript fallback stays GET (a noscript form cannot carry
+  the CSRF token a POST would need); tree items only show a focus ring when
+  focused; heading auto-IDs are documented as deterministic with `ID` as the
+  collision escape hatch.
+- **Runtime.** `data-fui-rpc-navigate` to the current page re-renders instead
+  of silently no-opping, and post-mutation navigation bypasses the stale
+  screen cache (including across `X-Gofastr-Location` redirects); demand-loaded
+  modules now load when the marker sits on a lazily-mounted root node (drag-to-
+  dismiss on late-mounted sheets was silently dead); the minifier never drops a
+  semicolon after `)` (an empty `if(x);` body was corrupted into a
+  SyntaxError). Core runtime stays within its 12KB gzip budget.
+- **Theming/tokens.** Component CSS reads the theme's typography and spacing
+  scales — 194 literal `font-size` declarations became `var(--text-*, …)` and
+  76 spacing literals became `var(--spacing-*, …)` (a budget test blocks new
+  literals); large buttons keep their own step (`--text-lg`); the danger
+  button and notification badge read `--color-danger`/`--color-primary-fg`
+  instead of hardcoded hex; the pricing-card badge exposes
+  `--ui-pricing-card-badge-fg` for themes whose primary isn't text-safe on
+  tinted chips.
+- **`style.Contribute` works as documented**: the uihost's `app.css` now fans
+  in contributed styles automatically as the last layer — no `style.Apply`
+  hand-wiring in the host.
+
+### Changed
+
+- The drag-dismiss handler moved out of the core runtime into a demand-loaded
+  module (`src/dragdismiss.js`) — pages without bottom sheets don't ship it.
+
 ## [0.12.1] - 2026-07-06
 
 ### Fixed

@@ -98,7 +98,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	sb.WriteString(` `)
 	sb.WriteString(strconv.Itoa(size))
 	sb.WriteString(`" class="`)
-	sb.WriteString(cls)
+	sb.WriteString(escapeXML(cls))
 	sb.WriteString(`" xmlns="http://www.w3.org/2000/svg"`)
 	if cfg.ID != "" {
 		sb.WriteString(` id="`)
@@ -278,12 +278,12 @@ func pieChartCSS(_ style.Theme) string {
 .ui-pie-chart__slice--danger  { fill: var(--color-danger, #DC2626); }
 
 [data-fui-comp="ui-pie-chart"] .ui-pie-chart__center-label {
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   font-weight: 700;
   fill: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-pie-chart"] .ui-pie-chart__center-sub {
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }`
 }

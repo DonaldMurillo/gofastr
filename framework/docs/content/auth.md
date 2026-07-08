@@ -145,7 +145,7 @@ and HTML-form bodies. The handler branches on `Content-Type`:
 | `multipart/form-data`                         | Same as form-urlencoded                                |
 
 Form-flow responses set the session cookie before redirecting, so the
-runtime's [form interceptor](../../core-ui/ARCHITECTURE.md#forms)
+runtime's [form interceptor](runtime-contract.md#forms)
 follows the `Location` header and lands the user on the next page.
 
 Open-redirect protection: the `?next=` (query or form) override is

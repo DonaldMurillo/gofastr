@@ -231,7 +231,7 @@ func lightboxCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-lightbox"] .ui-lightbox__caption {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   text-align: center;
   color: var(--color-text-muted, #52525B);
   max-inline-size: 60ch;

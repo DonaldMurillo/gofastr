@@ -101,7 +101,7 @@ func factBoxCSS(_ style.Theme) string {
   grid-column: 1 / -1;
 }
 [data-fui-comp="ui-fact-box"] .ui-fact-box__label {
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -128,6 +128,6 @@ func factBoxCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
 }
 [data-fui-comp="ui-fact-box"].ui-fact-box--value-first .ui-fact-box__label {
-  font-size: 12px;
+  font-size: var(--text-xs, 12px);
 }`
 }

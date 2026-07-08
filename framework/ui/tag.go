@@ -54,11 +54,7 @@ func Tag(cfg TagConfig) render.HTML {
 	if v == "" {
 		v = StatusNeutral
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: Tag unknown Variant " + string(v))
-	}
+	checkStatusVariant("Tag", v)
 
 	cls := "ui-tag ui-tag--" + string(v)
 	if cfg.Href != "" {
@@ -94,8 +90,16 @@ func Tag(cfg TagConfig) render.HTML {
 	}
 
 	if cfg.Href != "" {
+		// Drop unsafe hrefs (javascript:, data:, control bytes, …) —
+		// same allow-list as ui.Link; see framework/ui/safety.go. Tag
+		// is a content-level component, so a rejected href degrades to
+		// an inert "#" rather than panicking.
+		href := safeURL(cfg.Href)
+		if href == "" {
+			href = "#"
+		}
 		return tagStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href:    cfg.Href,
+			Href:    href,
 			Class:   cls,
 			ID:      cfg.ID,
 			Content: render.Join(body...),

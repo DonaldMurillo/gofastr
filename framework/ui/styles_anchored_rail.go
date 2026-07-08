@@ -23,12 +23,12 @@ func anchoredRailCSS(t style.Theme) string {
 			"position", "sticky",
 			"top", "calc(var(--nav-h, 60px) + var(--spacing-lg, 16px))",
 			"align-self", "start",
-			"font-size", "0.875rem",
+			"font-size", "var(--text-sm, 0.875rem)",
 		).End().
 		Rule(".ui-anchored-rail__label").
 		Set(
 			"font-family", "{fonts.mono}",
-			"font-size", "0.6875rem",
+			"font-size", "var(--text-xs, 0.6875rem)",
 			"color", "{colors.text-subtle}",
 			"font-weight", "400",
 			"margin", "0 0 {spacing.md} 0",
@@ -39,7 +39,7 @@ func anchoredRailCSS(t style.Theme) string {
 			"margin", "0",
 			"padding", "0",
 			"display", "grid",
-			"gap", "2px",
+			"gap", "var(--spacing-xs, 2px)",
 		).End().
 		Rule(".ui-anchored-rail__list li").
 		Set("padding", "0").End().
@@ -47,7 +47,7 @@ func anchoredRailCSS(t style.Theme) string {
 		Set(
 			"display", "grid",
 			"grid-template-columns", "28px 1fr 28px",
-			"gap", "8px",
+			"gap", "var(--spacing-md, 8px)",
 			"padding", "6px 0",
 			"color", "{colors.text-muted}",
 			"text-decoration", "none",
@@ -58,7 +58,7 @@ func anchoredRailCSS(t style.Theme) string {
 		Rule(".ui-anchored-rail__eyebrow").
 		Set(
 			"font-family", "{fonts.mono}",
-			"font-size", "0.6875rem",
+			"font-size", "var(--text-xs, 0.6875rem)",
 			"color", "{colors.text-subtle}",
 		).End().
 		Rule(".ui-anchored-rail__count").

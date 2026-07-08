@@ -1,6 +1,7 @@
 package multiselect
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -113,4 +114,52 @@ func TestOptionRequiresValueAndLabel(t *testing.T) {
 		Name: "x", Label: "x",
 		Options: []Option{{Value: "", Label: ""}},
 	})
+}
+
+func TestLabelForMatchesInputID(t *testing.T) {
+	h := string(Render(Config{
+		Name: "langs", Label: "Languages",
+		Options: []Option{{Value: "go", Label: "Go"}},
+	}))
+	// The runtime resolves chip text via label[for="<checkbox id>"] —
+	// the row label must carry a for= matching the input id, or chips
+	// degrade to showing the raw option Value.
+	m := regexp.MustCompile(`<input[^>]* id="([^"]+)"`).FindStringSubmatch(h)
+	if m == nil {
+		t.Fatalf("no checkbox id found:\n%s", h)
+	}
+	if !strings.Contains(h, `for="`+m[1]+`"`) {
+		t.Errorf("row label must reference the checkbox via for=%q:\n%s", m[1], h)
+	}
+}
+
+func TestSymbolValuesGetUniqueIDs(t *testing.T) {
+	h := string(Render(Config{
+		Name: "langs", Label: "Languages",
+		Options: []Option{
+			{Value: "C++", Label: "C++"},
+			{Value: "C#", Label: "C Sharp"},
+		},
+	}))
+	ids := regexp.MustCompile(`<input[^>]* id="([^"]+)"`).FindAllStringSubmatch(h, -1)
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 checkbox ids, got %d:\n%s", len(ids), h)
+	}
+	if ids[0][1] == ids[1][1] {
+		t.Errorf("symbol-only values must not collide: both got id %q", ids[0][1])
+	}
+}
+
+func TestOptionIDsPrefixedWithInstanceID(t *testing.T) {
+	h := string(Render(Config{
+		ID: "ms-a", Name: "langs", Label: "Languages",
+		Options: []Option{{Value: "go", Label: "Go"}},
+	}))
+	m := regexp.MustCompile(`<input[^>]* id="([^"]+)"`).FindStringSubmatch(h)
+	if m == nil {
+		t.Fatalf("no checkbox id found:\n%s", h)
+	}
+	if !strings.HasPrefix(m[1], "ms-a-opt-") {
+		t.Errorf("option ids must be scoped by the instance ID, got %q", m[1])
+	}
 }

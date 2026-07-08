@@ -2,10 +2,14 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 const meridianDir = "../../examples/meridian"
@@ -198,5 +202,55 @@ func TestPack_MeridianRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("round-trip mismatch:\n%s", firstBlueprintDiff(a, b))
+	}
+}
+
+// TestPackSelfReferentialHelperNoHang verifies the hop-depth bound in
+// reverseEntityResource: a self-referential or mutually-recursive zero-arg
+// helper must break the walk, not loop forever.
+func TestPackSelfReferentialHelperNoHang(t *testing.T) {
+	src := `package screens
+func a() interface{} { return a() }
+func b() interface{} { return c() }
+func c() interface{} { return b() }
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "screens.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	helpers := packHelperReturns(f)
+
+	// Construct a().List(ctx) — the call shape reverseEntityResource walks.
+	selfRef := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CallExpr{Fun: &ast.Ident{Name: "a"}},
+			Sel: &ast.Ident{Name: "List"},
+		},
+		Args: []ast.Expr{&ast.Ident{Name: "ctx"}},
+	}
+	// Mutually recursive: b() → c() → b() → …
+	mutual := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CallExpr{Fun: &ast.Ident{Name: "b"}},
+			Sel: &ast.Ident{Name: "List"},
+		},
+		Args: []ast.Expr{&ast.Ident{Name: "ctx"}},
+	}
+
+	for name, call := range map[string]*ast.CallExpr{"self-ref": selfRef, "mutual": mutual} {
+		done := make(chan struct{})
+		go func(call *ast.CallExpr) {
+			defer close(done)
+			if _, ok := reverseBlock(call, helpers); ok {
+				t.Errorf("%s: expected not-reversible", name)
+			}
+		}(call)
+		select {
+		case <-done:
+			// returned — bound works
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s: reverseBlock hung (hop-depth bound missing)", name)
+		}
 	}
 }

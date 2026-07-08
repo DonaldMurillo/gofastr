@@ -169,7 +169,7 @@ func avatarGroupCSS(_ style.Theme) string {
   border-radius: 9999px;
   background: var(--color-muted, #e5e5e5);
   color: var(--color-text, #111);
-  font-size: 0.8rem;
+  font-size: var(--text-xs, 0.8rem);
   font-weight: 600;
   border: 2px solid var(--color-surface, #fff);
 }
@@ -177,10 +177,10 @@ func avatarGroupCSS(_ style.Theme) string {
   inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.65rem;
 }
 [data-fui-comp="ui-avatar-group"].ui-avatar-group--lg .ui-avatar-group__overflow {
-  inline-size: 3rem; block-size: 3rem; font-size: 0.9rem;
+  inline-size: 3rem; block-size: 3rem; font-size: var(--text-sm, 0.9rem);
 }
 [data-fui-comp="ui-avatar-group"].ui-avatar-group--xl .ui-avatar-group__overflow {
-  inline-size: 4rem; block-size: 4rem; font-size: 1rem;
+  inline-size: 4rem; block-size: 4rem; font-size: var(--text-base, 1rem);
 }
 `
 }

@@ -73,11 +73,11 @@ func authCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-auth-card"] .ui-auth-card__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   letter-spacing: -0.01em;
 }
 [data-fui-comp="ui-auth-card"] .ui-auth-card__alert {
-  font-size: 0.875rem;
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #b91c1c);
   background: color-mix(in srgb, var(--color-danger, #b91c1c) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-danger, #b91c1c) 28%, transparent);
@@ -85,7 +85,7 @@ func authCardCSS(_ style.Theme) string {
   padding: 0.625rem 0.75rem;
 }
 [data-fui-comp="ui-auth-card"] .ui-auth-card__footer {
-  font-size: 0.875rem;
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, inherit);
 }
 [data-fui-comp="ui-auth-card"] .ui-auth-card__footer a {

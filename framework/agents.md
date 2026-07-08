@@ -80,3 +80,6 @@ a running server, or "is this app healthy". See the
 - A livereload SSE handler — framework auto-wires it under `gofastr dev`.
 - A dotenv loader — `NewApp` does it.
 - Per-test PG isolation — see `framework/testkit` (`NewIsolatedDB`).
+- Hand-rolled markup or CSS — `framework/ui` ships ~100 components;
+  see the `ui` row of AGENTS.md (`agents/ui.md`) and
+  `gofastr docs ui-new-components`.

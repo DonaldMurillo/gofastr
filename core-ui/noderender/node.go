@@ -180,6 +180,17 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		}
 		// Carry agent action attrs through; html.Button merges them.
 		attrs := extraAttrs(props, "id", "class", "label", "text", "type")
+		if label == "" && attrs["aria-label"] == "" {
+			// html.Button panics on a labelless button — the right
+			// contract for hand-written Go, but IR props reach this
+			// path at request time (Kiln renders on every page load,
+			// recover middleware is opt-in). Degrade with a placeholder
+			// aria-label instead of crashing the render.
+			if attrs == nil {
+				attrs = html.Attrs{}
+			}
+			attrs["aria-label"] = "button"
+		}
 		typ := propString(props, "type")
 		if typ == "" {
 			typ = "button"

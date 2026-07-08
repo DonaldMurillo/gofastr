@@ -104,7 +104,11 @@ hydrates handlers onto the existing DOM; in-page state changes are island RPCs
 that swap just one fragment — no hard refreshes, no client re-render.
 
 - **[Getting started (UI)](/docs/ui-getting-started)** — scaffold → theme →
-  screen → custom component.
+  screen → custom component. **[UI wiring](/docs/ui-wiring)** — adding the UI
+  system to a plain `framework.App` by hand.
+- **[Theming](/docs/theming)** — token catalog, dark mode, section overrides,
+  `--ui-*` knobs. **[Runtime contract](/docs/runtime-contract)** — the
+  SSR/hydration/island/SSE model + `data-fui-*` reference.
 - **[New components](/docs/ui-new-components)** — the minimal-register +
   SSR-inline + hydrate contract. **[Widget builder](/docs/widgets)** — islands
   that hydrate against a registered handler.

@@ -14,7 +14,7 @@ func TestLoadFromAndWalkUp(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, ".harness-secrets", "env"), []byte(`
 # comment
 ZAI_API_KEY=zai_test_value
-OPENROUTER_API_KEY="sk-or-quoted"
+OPENROUTER_API_KEY="sk-or-q"
 EMPTY_VALUE=
 `), 0o600)
 	_ = os.MkdirAll(filepath.Join(root, "a", "b", "c"), 0o755)
@@ -35,7 +35,7 @@ EMPTY_VALUE=
 	if got := os.Getenv("ZAI_API_KEY"); got != "zai_test_value" {
 		t.Errorf("ZAI_API_KEY = %q", got)
 	}
-	if got := os.Getenv("OPENROUTER_API_KEY"); got != "sk-or-quoted" {
+	if got := os.Getenv("OPENROUTER_API_KEY"); got != "sk-or-q" {
 		t.Errorf("OPENROUTER_API_KEY = %q", got)
 	}
 }

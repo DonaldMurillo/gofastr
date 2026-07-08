@@ -131,3 +131,21 @@ func TestRenderEmitsDataFuiComp(t *testing.T) {
 		t.Errorf("Render must emit data-fui-comp so the runtime auto-loads CSS, got: %s", out)
 	}
 }
+
+func TestNoscriptFallsBackToGetForCSRF(t *testing.T) {
+	h := string(Render(Config{
+		RPCPath: "/feed/more", Cursor: "abc",
+		Items: []render.HTML{render.Text("x")},
+	}))
+	// The noscript form cannot carry a CSRF token (no JS to read the
+	// meta tag), so a POST here is a guaranteed 403 under auth.CSRF.
+	// It falls back to GET instead — the handler reads
+	// r.FormValue("cursor"), which covers query params, so the
+	// one-handler contract with the JS POST path still holds.
+	if !strings.Contains(h, `method="get"`) {
+		t.Errorf("noscript fallback form must GET so CSRF passes:\n%s", h)
+	}
+	if strings.Contains(h, `method="post"`) {
+		t.Errorf("noscript fallback must not POST — it cannot carry a CSRF token:\n%s", h)
+	}
+}

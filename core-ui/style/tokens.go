@@ -59,6 +59,8 @@ func categoryPrefix(category string) string {
 		return "easing"
 	case "typography", "text":
 		return "text"
+	case "code", "tk":
+		return "tk"
 	}
 	return ""
 }
@@ -90,7 +92,7 @@ func (t Theme) ResolveRadius(name string) string {
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t)
-	if dark := DarkSchemeCSS(t.DarkColors); dark != "" {
+	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
 	return css
@@ -105,28 +107,45 @@ func (t Theme) CSSCustomProperties() string {
 // + `background-color` are set on the scope so bare text/elements without their
 // own token rule still flip.
 func DarkSchemeCSS(dark map[string]string) string {
-	if len(dark) == 0 {
+	return darkSchemeCSS(dark, nil)
+}
+
+// darkSchemeCSS is DarkSchemeCSS plus the optional dark syntax
+// palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in
+// the same two dark-scheme blocks. The `color` + `background-color`
+// scope lines only accompany a color re-declaration — a code-only
+// dark palette shouldn't imply the page itself flips.
+func darkSchemeCSS(dark, code map[string]string) string {
+	if len(dark) == 0 && len(code) == 0 {
 		return ""
 	}
-	names := make([]string, 0, len(dark))
-	for name := range dark {
-		names = append(names, name)
+	sortedKeys := func(m map[string]string) []string {
+		names := make([]string, 0, len(m))
+		for name := range m {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return names
 	}
-	sort.Strings(names)
-	var decls strings.Builder
-	for _, name := range names {
-		fmt.Fprintf(&decls, "  --color-%s: %s;\n", name, dark[name])
+	colorNames, codeNames := sortedKeys(dark), sortedKeys(code)
+	writeDecls := func(b *strings.Builder, indent string) {
+		for _, name := range colorNames {
+			fmt.Fprintf(b, "%s--color-%s: %s;\n", indent, name, dark[name])
+		}
+		for _, name := range codeNames {
+			fmt.Fprintf(b, "%s--tk-%s: %s;\n", indent, name, code[name])
+		}
 	}
-	body := decls.String() + "  color: var(--color-text);\n  background-color: var(--color-background);\n"
 	var b strings.Builder
 	b.WriteString(":root[data-color-scheme=\"dark\"] {\n")
-	b.WriteString(body)
+	writeDecls(&b, "  ")
+	if len(dark) > 0 {
+		b.WriteString("  color: var(--color-text);\n  background-color: var(--color-background);\n")
+	}
 	b.WriteString("}\n")
 	b.WriteString("@media (prefers-color-scheme: dark) {\n")
 	b.WriteString("  :root:not([data-color-scheme=\"light\"]) {\n")
-	for _, name := range names {
-		fmt.Fprintf(&b, "    --color-%s: %s;\n", name, dark[name])
-	}
+	writeDecls(&b, "    ")
 	b.WriteString("  }\n")
 	b.WriteString("}")
 	return b.String()
@@ -236,6 +255,13 @@ func tokenDecl(v reflect.Value) string {
 			return ""
 		}
 		return fmt.Sprintf("--text-%s: %s;", t.Name, t.Value)
+	case CodeColor:
+		// Optional token: emitted only when fully set (an unset slot
+		// leaves the component-CSS fallback palette in charge).
+		if t.Name == "" || t.Value == "" {
+			return ""
+		}
+		return fmt.Sprintf("--tk-%s: %s;", t.Name, t.Value)
 	}
 	return ""
 }

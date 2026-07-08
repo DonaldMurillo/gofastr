@@ -206,9 +206,9 @@ func siteHeaderCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-header"] .ui-site-header__links a {
   color: var(--ui-site-header-nav-color, currentColor);
   text-decoration: none;
-  font-size: 14px;
+  font-size: var(--text-sm, 14px);
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__links a[data-fui-active] {
+[data-fui-comp="ui-site-header"] .ui-site-header__links a[aria-current="page"] {
   color: var(--ui-site-header-nav-active-color, var(--color-primary, currentColor));
 }
 
@@ -234,7 +234,6 @@ func siteHeaderCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:hover::after,
 [data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:focus-visible::after,
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a[data-fui-active]::after,
 [data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a[aria-current="page"]::after {
   right: 0;
 }
@@ -343,13 +342,13 @@ func siteHeaderCSS(_ style.Theme) string {
   border-inline-end: 0;
   border-inline-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
   padding: clamp(16px, 5vw, 24px);
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   box-shadow: var(--ui-site-header-drawer-shadow, -16px 0 44px rgba(15,12,24,0.28));
   animation: ui-site-header-drawer-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links a {
   padding: var(--spacing-sm, 10px) var(--spacing-md, 12px);
-  font-size: 1.05rem;
+  font-size: var(--text-base, 1.05rem);
 }
 [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet details[open]::before {
   content: "";

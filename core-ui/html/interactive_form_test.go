@@ -120,3 +120,19 @@ func TestRadio(t *testing.T) {
 		Radio(RadioConfig{Name: "color"})
 	})
 }
+
+func TestButtonRequiresLabelOrAriaLabel(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("Button with no Label and no aria-label must panic — it renders an inert, unnamed <button>")
+		}
+	}()
+	Button(ButtonConfig{})
+}
+
+func TestButtonIconOnlyWithAriaLabelAllowed(t *testing.T) {
+	h := string(Button(ButtonConfig{ExtraAttrs: Attrs{"aria-label": "Close"}}))
+	if !strings.Contains(h, `aria-label="Close"`) {
+		t.Errorf("icon-only button should keep the supplied aria-label:\n%s", h)
+	}
+}

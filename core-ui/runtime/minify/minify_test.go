@@ -55,8 +55,41 @@ func TestMinify(t *testing.T) {
 
 		// --- identifier fusion guard ---
 		{"keyword ident", "let a=1", "let a=1"},
-		{"two keywords", "const await=1", "const await=1"},
+		{"two keywords", "const await=1", "let await=1"},
 		{"number ident", "if(1 in x){}", "if(1 in x){}"},
+
+		// --- const → let ---
+		{"const decl", "const a=1;f()", "let a=1;f()"},
+		// (`let[a]` / `let{a}` at statement start still parse as
+		// declarations — the spec forbids an ExpressionStatement from
+		// starting with `let [`.)
+		{"const destructuring obj", "const {a}=x", "let{a}=x"},
+		{"const destructuring arr", "const [a]=x", "let[a]=x"},
+		{"const in for-of", "for(const x of xs){g(x)}", "for(let x of xs){g(x)}"},
+		{"const after comment", "const/*k*/a=1", "let a=1"},
+		{"const property access kept", "a.const=1", "a.const=1"},
+		{"const object key kept", "x={const:1}", "x={const:1}"},
+		{"const class field kept", "class A{const=1}", "class A{const=1}"},
+		{"const at EOF kept", "a.b=const", "a.b=const"},
+
+		// --- redundant ';'/',' before '}' ---
+		{"semi before brace dropped", "f(){a=1;}", "f(){a=1}"},
+		{"trailing comma in object dropped", "x={a:1,}", "x={a:1}"},
+		// A `;` whose previous token is `)` is NEVER dropped: it may be
+		// an empty statement serving as an if/while/for body, and a
+		// scanner can't tell `g();}` from `if(x);}` — both end `);}`.
+		// Dropping the latter (`if(x)}`) is a SyntaxError, so the byte
+		// is kept in both (costs one byte on `g();}`, provably sound).
+		{"empty if body semi kept", "function f(){if(x);}", "function f(){if(x);}"},
+		{"empty while body semi kept", "function f(){while(g());}", "function f(){while(g());}"},
+		{"empty for body semi kept", "function f(){for(;;);}", "function f(){for(;;);}"},
+		{"call semi before brace kept", "f(){if(x){g();}}", "f(){if(x){g();}}"},
+		{"do-while semi before brace kept", "{do{}while(x);}", "{do{}while(x);}"},
+		{"trailing semi at EOF kept", "a=1;", "a=1;"},
+		{"for header semis kept", "for(;;){}", "for(;;){}"},
+		{"array hole commas kept", "x=[1,,]", "x=[1,,]"},
+		{"empty statement else kept", "if(a);else b()", "if(a);else b()"},
+		{"semi before template expr close kept-invalid", "x=`${a}`;y=1", "x=`${a}`;y=1"},
 
 		// --- increment/decrement vs unary plus/minus ---
 		// `i++` is one token; the second `+` must NOT be separated.
@@ -67,6 +100,27 @@ func TestMinify(t *testing.T) {
 		{"binary plus unary plus", "a + +b", "a+ +b"},
 		// `a+++b` lexes as `a++ + b` (maximal munch) — keep verbatim.
 		{"triple plus maximal munch", "a+++b", "a+++b"},
+		// --- ASI after postfix ++/-- (defect: a++\nb fused to a++b) ---
+		// A newline after postfix ++/-- before an identifier MUST
+		// survive — otherwise the output is `a++b` (SyntaxError).
+		{"postfix incr newline ident", "a++\nb", "a++\nb"},
+		{"postfix decr newline ident", "a--\nb", "a--\nb"},
+		// `a++\n(b)` already keeps its newline via the prefix-hazard
+		// `(` path — pin it so the broader fix doesn't regress it.
+		{"postfix incr newline paren", "a++\n(b)", "a++\n(b)"},
+
+		// --- class body element separation via newline (defect) ---
+		// A space does NOT trigger ASI between class elements, so a
+		// newline separating two fields (or a field and a method) must
+		// survive — `class A{x=1 y=2}` is a SyntaxError.
+		{"class field newline field", "class A{x=1\ny=2}", "class A{x=1\ny=2}"},
+		{"class static field newline", "class A{static x=1\nstatic y=2}", "class A{static x=1\nstatic y=2}"},
+		{"class field newline method", "class A{x=1\nm(){}}", "class A{x=1\nm(){}}"},
+		// A method body's closing `}` already terminates the element,
+		// so no separator is needed before the next one.
+		{"class method newline field", "class A{m(){}\nx=1}", "class A{m(){}x=1}"},
+		// An explicit `;` between static fields is already valid.
+		{"class static fields semi", "class A{static x=1;static y=2}", "class A{static x=1;static y=2}"},
 
 		// --- regex with literal control bytes in character class ---
 		// runtime.js has `/^[\s\x00-\x1f]+/` for URL-scheme scrubbing;

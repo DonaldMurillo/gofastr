@@ -191,7 +191,13 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		"aria-label":              cfg.Label + " — slides",
 	}, slideEls...)
 
-	children := []render.HTML{track}
+	// The track + nav arrows live in a positioned "stage" wrapper so the
+	// absolute nav buttons center on the TRACK, not the whole carousel
+	// (which includes the dot row). Without it the 44px arrows overlap the
+	// pagination dots and partially obscure them — a WCAG 2.2 target-size
+	// failure (the last dot's unobscured area drops below 24px). The dots
+	// stay a sibling grid row below the stage, clear of the arrows.
+	stageChildren := []render.HTML{track}
 
 	// Emit the deferred-content manifest so the runtime can hydrate
 	// placeholders. JSON keyed by slide index → HTML string. Escapes
@@ -200,7 +206,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	if len(deferred) > 0 {
 		if buf, err := json.Marshal(deferred); err == nil {
 			s := strings.ReplaceAll(string(buf), `</`, `<\/`)
-			children = append(children, render.Tag("script", map[string]string{
+			stageChildren = append(stageChildren, render.Tag("script", map[string]string{
 				"type":                           "application/json",
 				"data-fui-carousel-deferred-for": id,
 			}, render.HTML(s)))
@@ -223,8 +229,9 @@ func Carousel(cfg CarouselConfig) render.HTML {
 			"aria-controls":          id,
 			"data-fui-carousel-next": "true",
 		}, render.HTML(`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`))
-		children = append(children, prev, next)
+		stageChildren = append(stageChildren, prev, next)
 	}
+	children := []render.HTML{render.Tag("div", map[string]string{"class": "ui-carousel__stage"}, stageChildren...)}
 
 	// Pagination dots.
 	if !cfg.NoDots && len(cfg.Slides) > 1 {
@@ -273,6 +280,12 @@ func carouselCSS(_ style.Theme) string {
 [data-fui-comp="ui-carousel"].ui-carousel--cols-7 { --ui-carousel-cols: 7; }
 [data-fui-comp="ui-carousel"].ui-carousel--cols-8 { --ui-carousel-cols: 8; }
 
+[data-fui-comp="ui-carousel"] .ui-carousel__stage {
+  /* Positioning context for the absolute nav arrows, so they center on the
+     track and cannot overlap the dot row below (WCAG 2.2 target-size). */
+  position: relative;
+}
+
 [data-fui-comp="ui-carousel"] .ui-carousel__track {
   display: flex;
   gap: var(--spacing-md, 12px);
@@ -310,8 +323,8 @@ func carouselCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   cursor: pointer;
 }
-[data-fui-comp="ui-carousel"] .ui-carousel__nav--prev { inset-inline-start: 8px; }
-[data-fui-comp="ui-carousel"] .ui-carousel__nav--next { inset-inline-end: 8px; }
+[data-fui-comp="ui-carousel"] .ui-carousel__nav--prev { inset-inline-start: var(--spacing-md, 8px); }
+[data-fui-comp="ui-carousel"] .ui-carousel__nav--next { inset-inline-end: var(--spacing-md, 8px); }
 [data-fui-comp="ui-carousel"] .ui-carousel__nav:hover { background: var(--color-surface-soft, #F4F4F5); }
 [data-fui-comp="ui-carousel"] .ui-carousel__nav:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
@@ -329,18 +342,33 @@ func carouselCSS(_ style.Theme) string {
   padding-block-start: var(--spacing-xs, 4px);
 }
 [data-fui-comp="ui-carousel"] .ui-carousel__dot {
-  inline-size: 10px;
-  block-size: 10px;
+  /* Target area meets WCAG 2.2 target-size (24px minimum). The visible pip
+     stays a 10px dot rendered via ::after so the hit area grows without
+     visually bloating the indicator row. */
+  position: relative;
+  inline-size: var(--spacing-xl, 24px);
+  block-size: var(--spacing-xl, 24px);
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: var(--color-border, #E4E4E7);
+  background: transparent;
   cursor: pointer;
+}
+[data-fui-comp="ui-carousel"] .ui-carousel__dot::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 999px;
+  background: var(--color-border, #E4E4E7);
+  transform: translate(-50%, -50%);
   transition: background 120ms ease, transform 120ms ease;
 }
-[data-fui-comp="ui-carousel"] .ui-carousel__dot[aria-current="true"] {
+[data-fui-comp="ui-carousel"] .ui-carousel__dot[aria-current="true"]::after {
   background: var(--color-primary, #4F46E5);
-  transform: scale(1.2);
+  transform: translate(-50%, -50%) scale(1.2);
 }
 [data-fui-comp="ui-carousel"] .ui-carousel__dot:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);

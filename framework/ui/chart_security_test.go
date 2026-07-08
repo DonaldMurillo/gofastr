@@ -16,6 +16,7 @@ import (
 func TestChartConfigStringsEscaped(t *testing.T) {
 	const colorAttack = `red" onload="alert(1)`
 	const idAttack = `x"><script>alert(1)</script>`
+	const classAttack = `x" onload="alert(1)`
 
 	// forbidden substrings that would indicate a breakout.
 	assertSafe := func(t *testing.T, out string) {
@@ -35,6 +36,7 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		h := ui.PieChart(ui.PieChartConfig{
 			ID:         idAttack,
 			LabelledBy: idAttack,
+			Class:      classAttack,
 			Slices:     []ui.PieSlice{{Value: 1, Color: colorAttack}},
 		})
 		assertSafe(t, string(h))
@@ -44,6 +46,7 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		h := ui.BarChart(ui.BarChartConfig{
 			ID:         idAttack,
 			LabelledBy: idAttack,
+			Class:      classAttack,
 			Bars:       []ui.BarChartBar{{Label: "a", Value: 1, Color: colorAttack}},
 		})
 		assertSafe(t, string(h))
@@ -53,6 +56,7 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		h := ui.LineChart(ui.LineChartConfig{
 			ID:         idAttack,
 			LabelledBy: idAttack,
+			Class:      classAttack,
 			Series:     []ui.LineSeries{{Name: "s", Values: []float64{1, 2, 3}, Color: colorAttack, Area: true}},
 		})
 		assertSafe(t, string(h))

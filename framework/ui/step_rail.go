@@ -142,7 +142,7 @@ func stepRailCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__title {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -153,7 +153,7 @@ func stepRailCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__link {
   display: grid;
@@ -175,7 +175,7 @@ func stepRailCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__num {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   color: var(--color-text-subtle, currentColor);
   font-variant-numeric: tabular-nums;
 }
@@ -183,7 +183,7 @@ func stepRailCSS(_ style.Theme) string {
   color: var(--ui-step-rail-active-color, var(--color-primary, currentColor));
 }
 [data-fui-comp="ui-step-rail"] .ui-step-rail__meta {
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   color: var(--color-text-subtle, currentColor);
   line-height: 1.5;
   /* Long URLs in the meta line must wrap rather than overrun the

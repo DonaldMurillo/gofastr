@@ -16,7 +16,7 @@ import (
 var signalToggleStyle = registry.RegisterStyle("fui-toggle", signalToggleCSS)
 
 func signalToggleCSS(_ style.Theme) string {
-	return `[data-fui-comp="fui-toggle"]{display:inline-flex;align-items:center;gap:.5rem;background:none;border:none;cursor:pointer;padding:0;color:var(--fui-foreground,#0f172a);font:inherit}` +
+	return `[data-fui-comp="fui-toggle"]{display:inline-flex;align-items:center;gap:var(--spacing-md, .5rem);background:none;border:none;cursor:pointer;padding:0;color:var(--fui-foreground,#0f172a);font:inherit}` +
 		`[data-fui-comp="fui-toggle"] .fui-toggle__track{position:relative;display:inline-block;width:2.5rem;height:1.375rem;border-radius:999px;background:var(--fui-border,#cbd5e1);transition:background .15s}` +
 		`[data-fui-comp="fui-toggle"] .fui-toggle__thumb{position:absolute;top:2px;left:2px;width:1.125rem;height:1.125rem;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}` +
 		`[data-fui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__track{background:var(--fui-primary,#3b82f6)}` +
@@ -68,11 +68,18 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	}
 	initStr := strconv.FormatBool(initial)
 
+	// Attribute-escape every config-derived string interpolated below —
+	// this component builds its markup with Sprintf, so escaping is on
+	// us, not render.Tag.
+	escName := escAttr(name)
+	escLabel := escAttr(label)
+	escCls := escAttr(cls)
+
 	// Build inner children as a single HTML string — static structure.
 	inner := fmt.Sprintf(
 		`<span class="fui-toggle__track"><span class="fui-toggle__thumb"></span></span>`+
 			`<span class="fui-toggle__label" data-fui-signal="%s">%s</span>`,
-		name, initStr,
+		escName, initStr,
 	)
 
 	// Construct the full button element.
@@ -83,6 +90,6 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 			` data-fui-signal-toggle="%s"`+
 			` data-fui-signal="%s" data-fui-signal-mode="attr" data-fui-signal-attr="aria-checked"`+
 			` role="switch" aria-checked="%s" aria-label="%s">%s</button>`,
-		cls, name, name, initStr, label, inner,
+		escCls, escName, escName, initStr, escLabel, inner,
 	))
 }

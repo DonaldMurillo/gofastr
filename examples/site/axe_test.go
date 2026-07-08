@@ -1,25 +1,16 @@
 package main
 
-import (
-	"context"
-	_ "embed"
-	"encoding/json"
-	"fmt"
-	"sort"
-	"testing"
-	"time"
-
-	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
-)
-
 // =============================================================================
 // axe-core accessibility gate for every site page.
 //
-// Injects vendored axe-core into each live page, runs the default rule set,
-// and fails on any violation. Covers WCAG 2.0/2.1 A/AA most-impactful rules
-// (color-contrast, label, aria-*, heading-order, link-in-text-block, …).
-// Every page is scanned under BOTH color schemes (see axeSchemes) so the
+// The reusable harness lives in internal/axetest: it embeds the vendored
+// axe engine, exports the Violation types, the chromedp browser/tab factories,
+// the load-bearing color-scheme Prepare step, and Scan (inject axe, run it
+// against the current DOM, filter by allowlist). This file keeps only what is
+// specific to the site gate: the page list, the allowlist with its
+// justifications, and the gate Test.
+//
+// Every page is scanned under BOTH color schemes (see axetest.Schemes) so the
 // result does not depend on the host OS appearance / prefers-color-scheme.
 //
 // To defer a rule: add it to axeRuleAllowlist with a justification. To skip a
@@ -27,167 +18,156 @@ import (
 // violations across the whole catalog + key static pages.
 // =============================================================================
 
-//go:embed testdata/axe.min.js
-var axeMinJS string
+import (
+	"context"
+	"sort"
+	"strings"
+	"testing"
 
-// axeRuleAllowlist names axe-core rule IDs that are deliberately skipped, with
-// a justification. Kept deliberately tiny — these are demo CONSTRUCTS, not
-// real-app a11y debt.
-var axeRuleAllowlist = map[string]string{
+	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/axetest"
+)
+
+// axeComponentsAllowlist names axe-core rule IDs skipped ONLY on
+// /components/* gallery pages. These are demo CONSTRUCTS (isolated components
+// stacked on one page), not real-app a11y debt — and they do NOT apply
+// anywhere else. Content, docs, and static pages scan with an EMPTY allowlist
+// so a real heading-order / landmark defect there actually surfaces instead of
+// being silently dropped by a gallery-scoped rule.
+var axeComponentsAllowlist = map[string]string{
 	// landmark-unique: a /components/<slug> demo legitimately renders MULTIPLE
 	// instances of one landmark component (two Paginations stacked, sidebar +
 	// TOC, etc.). Real app pages render one per landmark name; the duplication
 	// is a gallery construct. The components themselves do the right thing.
 	"landmark-unique": "demos render multiple instances of one landmark component on purpose",
-	// landmark-complementary-is-top-level: ui.Callout (info variant) and
-	// ui.Sidebar deliberately render complementary/aside landmarks (the
-	// framework's own tests mandate <aside role="complementary"> for info
-	// callouts). On content + /components/<slug> demo pages they appear nested
-	// inside <main> rather than as a top-level region — a content/demo
-	// construct, not an app-structure barrier (the content stays reachable and
-	// labelled). A real app places one complementary region at the top level.
-	"landmark-complementary-is-top-level": "framework Callout/Sidebar landmarks used inline in content/demos, not as top-level regions",
+	// landmark-complementary-is-top-level: ui.Callout (info variant),
+	// ui.AnchoredRail, and ui.StepRail deliberately render complementary
+	// landmarks (the framework's own tests mandate <aside role="complementary">
+	// for info callouts). On /components/<slug> demo pages they appear nested
+	// inside <main> rather than as a top-level region — a demo construct, not
+	// an app-structure barrier (the content stays reachable and labelled). A
+	// real app places one complementary region at the top level.
+	//
+	// NOTE: ui.Sidebar is NOT part of this justification — it renders a plain
+	// <div>, not an <aside>, so it contributes no complementary landmark.
+	"landmark-complementary-is-top-level": "framework Callout/AnchoredRail/StepRail landmarks used inline in component demos, not as top-level regions",
 	// heading-order: the /components gallery shows each component in ISOLATION,
 	// so the component's own internal heading (Card heading <h3>, EmptyState
 	// title <h3>, Dropzone label <h3>) and nav-rail labels (<h6>) sit directly
 	// under the page <h1> with no intervening <h2>. In a real page the
 	// component lives inside a section <h2>, so the level doesn't skip — the
-	// skip is a gallery construct, not a content-authoring defect. Content
-	// pages (home, docs, philosophy) use a proper h1→h2→h3 outline.
+	// skip is a gallery construct, not a content-authoring defect.
 	"heading-order": "gallery shows components in isolation, so their internal headings sit directly under the page h1",
+}
+
+// axeIsComponentsPage reports whether path is a component-gallery demo page —
+// the only place the gallery-construct allowlist + region disable apply.
+func axeIsComponentsPage(path string) bool {
+	return strings.HasPrefix(path, "/components/")
+}
+
+// axeAllowlistFor returns the rule allowlist for a page: the gallery-construct
+// skips apply only to /components/* pages; every other page scans with an empty
+// allowlist so a real heading-order / landmark defect on content or docs
+// surfaces instead of being masked by a gallery rule.
+func axeAllowlistFor(path string) map[string]string {
+	if axeIsComponentsPage(path) {
+		return axeComponentsAllowlist
+	}
+	return nil
+}
+
+// axeScanOptsFor returns the ScanOption set for a page. The structurally-
+// inapplicable `region` rule (a component-isolation demo may mount a fragment
+// with no <main>) is disabled only on /components/* pages; content + docs
+// pages evaluate it. WCAG 2.2 `target-size` is enabled on every page.
+func axeScanOptsFor(path string) []axetest.ScanOption {
+	if axeIsComponentsPage(path) {
+		return []axetest.ScanOption{
+			axetest.WithDisabledRules("region"),
+			axetest.WithEnabledRules("target-size"),
+		}
+	}
+	return []axetest.ScanOption{axetest.WithEnabledRules("target-size")}
 }
 
 // axePageAllowlist names component slugs whose pages open a transient widget
 // axe can't measure (focus traps move the active element). Empty by default.
 var axePageAllowlist = map[string]string{}
 
-// axeSchemes lists the color schemes every page is scanned under. The scan
-// FORCES each one via the same <html data-color-scheme> attribute that
-// ui.ThemeToggle flips. Without forcing, the scheme bootstrap follows the
-// host's prefers-color-scheme — macOS dev machines in Dark appearance only
-// ever audited the dark palette while Linux CI runners (which default to
-// light) audited the light one, so light-mode contrast regressions were
-// invisible locally and showed up as CI-only axe failures.
-var axeSchemes = []string{"dark", "light"}
-
-type axeViolation struct {
-	ID          string            `json:"id"`
-	Impact      string            `json:"impact"`
-	Description string            `json:"description"`
-	Help        string            `json:"help"`
-	HelpURL     string            `json:"helpUrl"`
-	Tags        []string          `json:"tags"`
-	Nodes       []axeViolatedNode `json:"nodes"`
-
-	// Scheme records which forced color scheme produced the violation.
-	// Set by runAxeIn, not part of the axe JSON.
-	Scheme string `json:"-"`
-}
-
-type axeViolatedNode struct {
-	HTML   string   `json:"html"`
-	Target []string `json:"target"`
-}
-
-// newAxeBrowser returns one chromedp browser context shared across all axe
-// runs in a single test (per-page browsers blow the websocket dial deadline
-// when auditing many pages in a row).
-func newAxeBrowser(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WindowSize(1280, 800),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-	return browserCtx
-}
-
-// runAxeIn scans one page under every axeSchemes entry and returns
+// runAxeIn scans one page under every axetest.Schemes entry and returns
 // allowlist-filtered violations tagged with the scheme that produced them.
-func runAxeIn(t *testing.T, browser context.Context, base, path string) []axeViolation {
+func runAxeIn(t *testing.T, browser context.Context, base, path string) []axetest.Violation {
 	t.Helper()
-	var kept []axeViolation
-	for _, scheme := range axeSchemes {
+	var kept []axetest.Violation
+	for _, scheme := range axetest.Schemes {
 		kept = append(kept, runAxeScheme(t, browser, base, path, scheme)...)
 	}
 	return kept
 }
 
 // runAxeScheme opens a FRESH tab (so the previous page's SSE socket is torn
-// down), freezes transitions, forces the color scheme, injects axe-core,
-// runs it once, and returns the allowlist-filtered violations.
-//
-// The freeze is load-bearing AND must be a constructable stylesheet: the
-// scheme flip starts 120–160ms color transitions (header links, search
-// pill), and in throttled headless tabs animation frames may never tick,
-// pinning computed colors at the PREVIOUS scheme's values indefinitely —
-// axe then reports phantom mixed-scheme contrast failures on every page.
-// An injected <style> element cannot fix this because the site ships
-// `default-src 'self'` CSP, which silently blocks inline styles;
-// adoptedStyleSheets is script-created and not subject to style-src.
-func runAxeScheme(t *testing.T, browser context.Context, base, path, scheme string) []axeViolation {
+// down), settles the page, freezes transitions, forces the color scheme, then
+// scans the current DOM state at the browser's default desktop viewport
+// (1280×800, set on the shared browser). The freeze/force + scan details live
+// in internal/axetest (Prepare + Scan); this wrapper owns only the per-page
+// navigation + error tagging the gate's failure output depends on.
+func runAxeScheme(t *testing.T, browser context.Context, base, path, scheme string) []axetest.Violation {
 	t.Helper()
-	tabCtx, tabCancel := chromedp.NewContext(browser)
-	defer tabCancel()
-	ctx, cancel := context.WithTimeout(tabCtx, 30*time.Second)
+	ctx, cancel := axetest.NewTab(t, browser)
 	defer cancel()
-	var raw string
-	err := chromedp.Run(ctx,
+	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+path),
 		pageReady(),
-		chromedp.Evaluate(`(() => {
-			const s = new CSSStyleSheet();
-			s.replaceSync('*, *::before, *::after { transition: none !important; animation: none !important; }');
-			document.adoptedStyleSheets = [...document.adoptedStyleSheets, s];
-		})()`, nil),
-		chromedp.Evaluate(fmt.Sprintf(
-			`document.documentElement.setAttribute("data-color-scheme", %q);`, scheme), nil),
-		// Small settle so any scheme-attribute listeners run before axe.
-		chromedp.Sleep(150*time.Millisecond),
-		chromedp.Evaluate(";"+axeMinJS, nil),
-		chromedp.Evaluate(`(async () => {
-			const r = await axe.run(document, {
-				resultTypes: ['violations'],
-				rules: { 'region': { enabled: false } } // landmark regions vary across demo pages
-			});
-			return JSON.stringify(r.violations);
-		})()`, &raw, evalAwaitPromise),
-	)
+		axetest.Prepare(scheme),
+	); err != nil {
+		t.Errorf("axe setup on %s (%s): %v", path, scheme, err)
+		return nil
+	}
+	vs, err := axetest.Scan(ctx, scheme, axeAllowlistFor(path), axeScanOptsFor(path)...)
 	if err != nil {
 		t.Errorf("axe on %s (%s): %v", path, scheme, err)
 		return nil
 	}
-	var vs []axeViolation
-	if err := json.Unmarshal([]byte(raw), &vs); err != nil {
-		t.Errorf("axe %s (%s): parse violations: %v\nraw=%s", path, scheme, err, raw)
-		return nil
-	}
-	var kept []axeViolation
-	for _, v := range vs {
-		if _, ok := axeRuleAllowlist[v.ID]; ok {
-			continue
-		}
-		v.Scheme = scheme
-		kept = append(kept, v)
-	}
-	return kept
+	return vs
 }
 
-// evalAwaitPromise makes chromedp.Evaluate await the returned Promise so
-// axe.run() resolves to the violations array, not a Promise handle.
-func evalAwaitPromise(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-	p.AwaitPromise = true
-	return p
+// runAxeMobileScheme mirrors runAxeScheme but emulates a 390×844 mobile
+// viewport (iPhone-14-Pro-ish) before navigating, so responsive layouts are
+// audited at mobile width. WCAG 2.2 target-size is the rule most likely to
+// surface here (dense rows collapsing tap targets below 24px).
+func runAxeMobileScheme(t *testing.T, browser context.Context, base, path, scheme string) []axetest.Violation {
+	t.Helper()
+	ctx, cancel := axetest.NewTab(t, browser)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 844),
+		chromedp.Navigate(base+path),
+		pageReady(),
+		axetest.Prepare(scheme),
+	); err != nil {
+		t.Errorf("axe setup on %s (%s, mobile): %v", path, scheme, err)
+		return nil
+	}
+	vs, err := axetest.Scan(ctx, scheme, axeAllowlistFor(path), axeScanOptsFor(path)...)
+	if err != nil {
+		t.Errorf("axe on %s (%s, mobile): %v", path, scheme, err)
+		return nil
+	}
+	return vs
 }
 
 // axePages returns every /components/<slug> route (from the catalog) plus the
-// key static + docs surfaces. Routes are generated from componentCatalog in
-// main.go, so iterating the catalog keeps this in lock-step (no drift).
+// key static surfaces and EVERY registered /docs/<slug> page. Docs routes are
+// generated from flatDocs() in docs_catalog.go — the same source registerScreens
+// iterates to mount the routes — so a newly added doc is scanned automatically
+// (no drift between "routes that exist" and "routes scanned"). /kiln is a
+// standalone marketing page, not a docs entry, so it is listed explicitly.
+//
+// Scanning the full docs catalog (~30 pages × 2 schemes) adds roughly a minute
+// to the suite versus the old single-page sample; that is the cost of not
+// letting a docs page regress un-scanned, and it is acceptable.
 func axePages(t *testing.T) []string {
 	t.Helper()
 	var out []string
@@ -197,9 +177,14 @@ func axePages(t *testing.T) []string {
 		}
 		out = append(out, "/components/"+c.Slug)
 	}
+	// Every registered docs page, derived from the same catalog the routes
+	// come from (flatDocs), so the gate and the router cannot drift.
+	for _, d := range flatDocs() {
+		out = append(out, "/docs/"+d.Slug)
+	}
 	out = append(out,
-		"/", "/get-started", "/docs/", "/docs/entity-declarations",
-		"/examples", "/philosophy", "/seo", "/seo-bundle", "/components/",
+		"/", "/get-started", "/docs/", "/examples", "/kiln",
+		"/philosophy", "/seo", "/seo-bundle", "/components/",
 	)
 	sort.Strings(out)
 	return out
@@ -216,7 +201,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	if len(pages) == 0 {
 		t.Fatal("no pages discovered — axe gate is misconfigured")
 	}
-	browser := newAxeBrowser(t)
+	browser := axetest.NewBrowser(t)
 	// Start Chrome on the LONG-LIVED browser context (a short-lived timeout
 	// child would kill the browser when it expires → later pages cancel).
 	if err := chromedp.Run(browser, chromedp.Navigate("about:blank")); err != nil {
@@ -224,11 +209,30 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	}
 	type pageResult struct {
 		path       string
-		violations []axeViolation
+		viewport   string // "desktop" (1280) or "mobile" (390)
+		violations []axetest.Violation
 	}
-	results := make([]pageResult, 0, len(pages))
+	var results []pageResult
+	// Desktop pass: every page × both schemes at the browser's 1280×800 viewport.
 	for _, p := range pages {
-		results = append(results, pageResult{path: p, violations: runAxeIn(t, browser, base, p)})
+		results = append(results, pageResult{path: p, viewport: "desktop", violations: runAxeIn(t, browser, base, p)})
+	}
+	// Mobile pass: curated subset × both schemes at 390×844. The full matrix
+	// would double the suite, so only the pages whose responsive layout is most
+	// likely to collapse tap targets below the 24px WCAG 2.2 target-size floor.
+	mobileSubset := []string{
+		"/", "/get-started", "/components/", "/components/datatable",
+		"/components/filtertoolbar", "/components/multiselect",
+		"/components/toggleaction", "/components/pagination",
+	}
+	for _, p := range mobileSubset {
+		for _, scheme := range axetest.Schemes {
+			results = append(results, pageResult{
+				path:       p,
+				viewport:   "mobile",
+				violations: runAxeMobileScheme(t, browser, base, p, scheme),
+			})
+		}
 	}
 	any := false
 	for _, r := range results {
@@ -236,7 +240,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 			continue
 		}
 		any = true
-		t.Errorf("axe violations on %s:", r.path)
+		t.Errorf("axe violations on %s [%s]:", r.path, r.viewport)
 		for _, v := range r.violations {
 			t.Errorf("  • [%s · %s · %s scheme] %s", v.ID, v.Impact, v.Scheme, v.Help)
 			for _, n := range v.Nodes {

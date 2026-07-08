@@ -223,8 +223,8 @@ func TestE2EPlumbing_Redaction_StripsSecrets(t *testing.T) {
 	store, _ := sqlite.Open(filepath.Join(dir, "x.db"))
 	defer store.Close()
 
-	awsKey := "AKIAEXAMPLEKEY123456"
-	ghPAT := "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	awsKey := "AKIAEXAMPLEKEY123456"                    // nosecret: fake fixture for redaction e2e
+	ghPAT := "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // nosecret: fake fixture for redaction e2e
 	leakyText := "leaked: " + awsKey + " and " + ghPAT
 
 	h, sess, cleanup := plumbingHarnessWithStore(t, &scriptedProvider{
@@ -548,7 +548,7 @@ func TestE2EPlumbing_ExportBundle_ProducesRedactedZip(t *testing.T) {
 	defer store.Close()
 	sess := ids.NewSessionID()
 	env, _ := control.EncodeEvent(1, control.TextDelta{
-		Text: "leak: AKIAEXAMPLEKEY123456",
+		Text: "leak: AKIAEXAMPLEKEY123456", // nosecret: fake fixture for redaction e2e
 	}, sess, ids.NewClientID(), time.Now())
 	_ = store.AppendEvent(context.Background(), env)
 

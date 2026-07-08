@@ -100,7 +100,7 @@ func heroSection() render.HTML {
 		ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonGhost, Size: ui.ButtonSizeLarge}),
 	)
 
-	install := html.Div(html.DivConfig{Class: "hero__install"},
+	install := html.Div(html.DivConfig{Class: "hero__install", ExtraAttrs: html.Attrs{"tabindex": "0"}},
 		html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
 		render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest"),
 	)
@@ -109,11 +109,10 @@ func heroSection() render.HTML {
 
 	return html.Section(html.SectionConfig{Class: "hero", Label: "Hero"},
 		container(ui.HeroSplit(ui.HeroSplitConfig{
-			Copy:      copy,
-			Media:     heroCodeBlock(),
-			Ratio:     ui.HeroSplitMediaWide,
-			AriaLabel: "Hero",
-			Class:     "hero-home",
+			Copy:  copy,
+			Media: heroCodeBlock(),
+			Ratio: ui.HeroSplitMediaWide,
+			Class: "hero-home",
 		})),
 	)
 }
@@ -383,7 +382,7 @@ func generatesSection() render.HTML {
 func architectureSection() render.HTML {
 	card := func(title, pkg, lede string, members render.HTML) render.HTML {
 		return html.Article(html.ArticleConfig{Class: "arch-card"},
-			html.Heading(html.HeadingConfig{Level: 4}, render.Text(title)),
+			html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
 			html.Div(html.DivConfig{Class: "pkg"}, render.Text(pkg)),
 			html.Paragraph(html.TextConfig{}, render.Text(lede)),
 			html.Div(html.DivConfig{Class: "members"}, members),
@@ -445,7 +444,7 @@ func agentsSection() render.HTML {
 
 	left := html.Div(html.DivConfig{Class: "pane pane--left"},
 		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("framework")),
-		html.Heading(html.HeadingConfig{Level: 4}, render.Text("Every entity is an MCP surface")),
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("Every entity is an MCP surface")),
 		html.Paragraph(html.TextConfig{},
 			render.Text("For each entity you declare, the framework registers MCP tools that map 1:1 to your REST surface. An agent connects to "),
 			codeText("/mcp"),
@@ -471,7 +470,7 @@ func agentsSection() render.HTML {
 
 	right := html.Div(html.DivConfig{Class: "pane pane--right"},
 		html.Span(html.TextConfig{Class: "pane__lbl"}, render.Text("kiln · experimental (separate binary)")),
-		html.Heading(html.HeadingConfig{Level: 4}, render.Text("An agent that authors your app")),
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text("An agent that authors your app")),
 		html.Paragraph(html.TextConfig{},
 			render.Text("Kiln mounts a floating chat panel on the running app. The agent calls a typed tool surface ("),
 			codeText("add_entity"), render.Text(", "),
@@ -507,7 +506,7 @@ func examplesSection() render.HTML {
 			Class: "ex-card",
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "path"}, render.Text(path)),
-				html.Heading(html.HeadingConfig{Level: 4}, render.Text(title)),
+				html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
 				html.Paragraph(html.TextConfig{}, desc),
 				html.Code(html.TextConfig{Class: "cmd"}, render.Text(cmd)),
 			),

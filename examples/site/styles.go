@@ -52,10 +52,10 @@ func createStyleSheet(t style.Theme) string {
 	demoModalStyles(ss)
 	responsive(ss)
 
-	// Fan in any co-located styles registered via style.Contribute(...) at
-	// package-init time. Applied AFTER the host base rules so a package can
-	// override base styling by re-declaring the same selector.
-	style.Apply(ss)
+	// Co-located styles registered via style.Contribute(...) at package-init
+	// time are fanned into app.css by the uihost itself (after this custom
+	// CSS, so they can still override base rules by re-declaring the same
+	// selector). No style.Apply hand-wiring needed here anymore.
 
 	return ss.CSS()
 }
@@ -148,6 +148,16 @@ func rootTokens(ss *style.StyleSheet) {
 			"--fui-border", "var(--color-border)",
 			"--fui-primary", "var(--color-primary)",
 			"--fui-muted", "var(--color-text-muted)",
+
+			// Primary-as-TEXT token. On the dark default the bright amber
+			// already reads ~9:1, so it aliases primary; the light block
+			// re-tones it darker (see below). Components that paint the
+			// accent as small text on tinted chips read this instead of
+			// raw --color-primary — the pricing-card badge stacks a 12%
+			// primary tint on the featured card's own tint, where raw
+			// light-mode primary dips under 4.5:1.
+			"--color-primary-text", "var(--color-primary)",
+			"--ui-pricing-card-badge-fg", "var(--color-primary-text)",
 			"--fui-muted-bg", "var(--color-surface-soft)",
 			// Several framework components (SegmentedControl track,
 			// ShortcutHint key, AvatarGroup overflow chip) read
@@ -254,6 +264,12 @@ func rootTokens(ss *style.StyleSheet) {
 			// and ≈5.8:1 for the near-white CTA label on the amber fill.
 			"--color-primary", "oklch(0.51 0.115 60)",
 			"--color-primary-fg", "oklch(0.99 0.004 75)",
+			// Primary-as-text, retoned deeper still: it must clear 4.5:1
+			// on the WORST amber stack — the pricing badge's 12% tint on
+			// the featured card's own primary tint (raw primary reads
+			// ~4.3:1 there and fails axe). 0.42 clears ≈6:1 on surface
+			// and ≈5:1 on the double-tinted chip.
+			"--color-primary-text", "oklch(0.42 0.11 60)",
 			// Accent mirrors primary on this single-accent site. The
 			// typed theme sets it to the DARK amber; without this
 			// override .ex-row__src links etc. kept the bright
@@ -958,7 +974,7 @@ func architectureLayout(ss *style.StyleSheet) {
 			"display", "flex",
 			"flex-direction", "column",
 			"min-height", "220px").End()
-	ss.Rule(".arch-card h4").
+	ss.Rule(".arch-card h3").
 		Set("font-size", "var(--t-lg)",
 			"font-weight", "500",
 			"margin-bottom", "6px",
@@ -1008,7 +1024,7 @@ func agentsLayout(ss *style.StyleSheet) {
 			"width", "6px", "height", "6px",
 			"border-radius", "999px",
 			"background", "{colors.primary}").End()
-	ss.Rule(".pane h4").Set("margin-bottom", "{spacing.md}").End()
+	ss.Rule(".pane h3").Set("margin-bottom", "{spacing.md}").End()
 	ss.Rule(".pane p").
 		Set("font-size", "var(--t-sm)",
 			"color", "{colors.text-muted}",
@@ -1055,7 +1071,7 @@ func examplesLayout(ss *style.StyleSheet) {
 	ss.Rule(".ex-card:hover").Set("border-color", "{colors.border-strong}").End()
 	ss.Rule(".ex-card .path").
 		Set("font-family", "{fonts.mono}", "font-size", "12px", "color", "{colors.primary}").End()
-	ss.Rule(".ex-card h4").
+	ss.Rule(".ex-card h3").
 		Set("font-size", "var(--t-lg)", "font-weight", "500", "letter-spacing", "-0.01em").End()
 	ss.Rule(".ex-card p").
 		Set("font-size", "var(--t-sm)", "color", "{colors.text-muted}", "line-height", "1.55").End()

@@ -102,7 +102,13 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 			children = append(children,
 				html.Span(html.TextConfig{Class: "ui-doc-layout__crumb-current"}, render.Text(c.Label)))
 		} else {
-			children = append(children, html.Link(html.LinkConfig{Href: c.Href, Text: c.Label}))
+			// Crumbs can be data-driven (doc titles/paths from content
+			// files) — drop unsafe href schemes; degrade to "#".
+			href := safeURL(c.Href)
+			if href == "" {
+				href = "#"
+			}
+			children = append(children, html.Link(html.LinkConfig{Href: href, Text: c.Label}))
 		}
 	}
 	return render.Tag("nav",
@@ -113,9 +119,16 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 // (callers point it at an index fallback); the next card is omitted when
 // NextHref is empty.
 func DocPrevNext(p DocPager) render.HTML {
+	// Pager hrefs can be data-driven — drop unsafe schemes; degrade to "#".
+	safeHref := func(u string) string {
+		if s := safeURL(u); s != "" {
+			return s
+		}
+		return "#"
+	}
 	cards := []render.HTML{
 		html.LinkHTML(html.LinkHTMLConfig{
-			Href:  p.PrevHref,
+			Href:  safeHref(p.PrevHref),
 			Class: "ui-doc-layout__prev",
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text("← Previous")),
@@ -125,7 +138,7 @@ func DocPrevNext(p DocPager) render.HTML {
 	}
 	if p.NextHref != "" {
 		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
-			Href:  p.NextHref,
+			Href:  safeHref(p.NextHref),
 			Class: "ui-doc-layout__next",
 			Content: render.Join(
 				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text("Next →")),
@@ -171,7 +184,7 @@ func docLayoutCSS(_ style.Theme) string {
   flex-wrap: wrap;
   gap: 6px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   color: var(--color-text-subtle, #71717A);
   margin-bottom: var(--spacing-xl, 24px);
 }
@@ -197,7 +210,7 @@ func docLayoutCSS(_ style.Theme) string {
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__next {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacing-sm, 4px);
   padding: var(--spacing-lg, 16px);
   background: var(--color-surface, transparent);
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
@@ -211,7 +224,7 @@ func docLayoutCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-dir {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   color: var(--color-text-subtle, #71717A);
 }
 [data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-ttl { color: var(--color-text, #18181B); font-weight: 500; }

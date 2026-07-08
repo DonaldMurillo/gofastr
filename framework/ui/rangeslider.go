@@ -164,13 +164,13 @@ func rangeSliderCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__label {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-primary, #4F46E5);
 }
 [data-fui-comp="ui-range-slider"] .ui-range-slider__track-wrap {

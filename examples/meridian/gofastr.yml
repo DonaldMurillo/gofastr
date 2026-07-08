@@ -43,16 +43,16 @@ app:
     surface-soft: "#F2F1EC"
     text: "#1B1B2A"
     text-muted: "#65657A"
-    text-subtle: "#9A9AAB"
+    text-subtle: "#6A6A72"
     border: "#E7E5DF"
     border-strong: "#33334A"
     primary: "#4338CA"
     primary-fg: "#FFFFFF"
     secondary: "#0E7C86"
     accent: "#4338CA"
-    success: "#15803D"
-    warning: "#B45309"
-    danger: "#B42318"
+    success: "#166534"
+    warning: "#854D0E"
+    danger: "#B91C1C"
     info: "#1D4ED8"
     # Dark scheme — a calm warm-charcoal tinted toward the indigo brand hue.
     # The header's theme toggle flips to this; every surface that reads the
@@ -63,7 +63,7 @@ app:
       surface-soft: "#29262F"
       text: "#ECEAF3"
       text-muted: "#A29FB0"
-      text-subtle: "#726F80"
+      text-subtle: "#9498AC"
       border: "#322E3D"
       border-strong: "#494457"
       primary: "#8B80F2"
@@ -290,16 +290,9 @@ screens:
             props:
               heading: Invoices, handled
               text: Open, paid, void — track every invoice and mark them paid in a click.
-      - kind: section
-        props:
-          heading: Simple, honest pricing
-          eyebrow: Pricing
-        children:
-          - kind: link_button
-            props:
-              label: Compare plans
-              href: /pricing
-              variant: primary
+      # The app's closing CTA (an ink-band ui.Themed card in screens.go) is
+      # hand-authored past the blueprint vocabulary — generate once, then own
+      # the Go. pack skips it, so it has no block here.
 
   - name: pricing
     route: /pricing
@@ -465,7 +458,7 @@ screens:
         fields: [name, email, company, status, mrr]
         search: name
         filters: [status]
-        limit: 25
+        limit: 8
         create: true
         empty_text: No customers yet — add your first to get started.
 

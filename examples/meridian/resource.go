@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -14,6 +16,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -90,6 +93,16 @@ type ResourceConfig struct {
 	EmptyText   string        // overrides the empty-state description (the block's empty_text:)
 	Related     []RelatedList // reverse relations surfaced on the detail page
 	Transitions []Transition  // status-transition workflow buttons on the detail page
+
+	// ExtraActions are appended to the list page header's action cluster
+	// (e.g. a data-fui-open trigger for a quick-add modal).
+	ExtraActions []render.HTML
+
+	// IslandPath, when set, renders the list's DataTable in island mode:
+	// sort headers and pagination fire GET RPCs at this endpoint and the
+	// runtime swaps just the table — no document navigation. Mount
+	// TableHandler at the same path.
+	IslandPath string
 }
 
 // WithTransitions sets the detail-page status-transition workflow buttons.
@@ -151,6 +164,29 @@ func (c ResourceConfig) WithEdit() ResourceConfig { c.CanEdit = true; return c }
 func (c ResourceConfig) WithHeading(s string) ResourceConfig { c.Heading = s; return c }
 func (c ResourceConfig) WithEmpty(s string) ResourceConfig   { c.EmptyText = s; return c }
 
+// WithActions appends extra page-header actions to the list screen.
+func (c ResourceConfig) WithActions(a ...render.HTML) ResourceConfig {
+	c.ExtraActions = append(c.ExtraActions, a...)
+	return c
+}
+
+// WithIsland turns the list's table into an island: sort + pagination RPC
+// against endpoint instead of navigating. Register TableHandler there.
+func (c ResourceConfig) WithIsland(endpoint string) ResourceConfig {
+	c.IslandPath = endpoint
+	return c
+}
+
+// islandSignal names the client signal binding the island wrapper to its
+// RPC responses — one per resource, derived from the base path.
+func (c ResourceConfig) islandSignal() string {
+	seg := c.BasePath
+	if i := strings.LastIndexByte(seg, '/'); i >= 0 {
+		seg = seg[i+1:]
+	}
+	return "table-" + seg
+}
+
 func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[string]string {
 	out := map[string]map[string]string{}
 	for col, rel := range c.Relations {
@@ -178,39 +214,39 @@ func (c ResourceConfig) relationLabels(ctx context.Context) map[string]map[strin
 	return out
 }
 
-// List renders the entity list screen.
-func (c ResourceConfig) List(ctx context.Context) render.HTML {
-	q := appui.QueryFromContext(ctx)
-	page := 1
-	if n, err := strconv.Atoi(q.Get("p")); err == nil && n > 1 {
-		page = n
-	}
-	limit := c.pageSize()
-	search := strings.TrimSpace(q.Get("q"))
-
+// queryFilters builds the ParsedFilters for the current query: the LIKE
+// search plus one equality per active facet. Applied to both the count and
+// the page query, so a filtered result set paginates correctly.
+func (c ResourceConfig) queryFilters(q url.Values, search string) []filter.ParsedFilter {
 	var filters []filter.ParsedFilter
 	if search != "" && c.Search != "" {
 		filters = append(filters, filter.ParsedFilter{Field: c.Search, Op: filter.OpLike, Value: search})
 	}
-	// Facet filters: one equality per active facet. Applied to both the count
-	// and the page query, so a filtered result set paginates correctly.
 	for _, ff := range c.Filters {
 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
 			filters = append(filters, filter.ParsedFilter{Field: ff.Key, Op: filter.OpEq, Value: v})
 		}
 	}
-	var sorts []filter.ParsedSort
-	sortCol := q.Get("sort")
-	if sortCol != "" && c.hasField(sortCol) {
-		sorts = append(sorts, filter.ParsedSort{Field: sortCol, Desc: q.Get("dir") == "desc"})
-	}
+	return filters
+}
 
-	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
-	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+// List renders the entity list screen.
+func (c ResourceConfig) List(ctx context.Context) render.HTML {
+	q := appui.QueryFromContext(ctx)
+	search := strings.TrimSpace(q.Get("q"))
+	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: c.queryFilters(q, search)})
 
-	var actions render.HTML
+	actionList := append([]render.HTML{}, c.ExtraActions...)
 	if c.CanCreate {
-		actions = ui.LinkButton(ui.LinkButtonConfig{Label: "New " + c.Singular, Href: c.BasePath + "/new", Variant: ui.ButtonPrimary})
+		actionList = append(actionList, ui.LinkButton(ui.LinkButtonConfig{Label: "New " + c.Singular, Href: c.BasePath + "/new", Variant: ui.ButtonPrimary}))
+	}
+	var actions render.HTML
+	switch len(actionList) {
+	case 0:
+	case 1:
+		actions = actionList[0]
+	default:
+		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Wrap: true}, actionList...)
 	}
 	title := c.Title
 	if c.Heading != "" {
@@ -226,17 +262,49 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 			Placeholder: "Search " + c.Title, ExtraAttrs: map[string]string{"value": search},
 		}))
 	}
-	if err != nil {
-		body = append(body, ui.Callout(ui.CalloutConfig{Title: "Couldn't load " + c.Title, Variant: ui.StatusDanger}, render.Text("See server logs.")))
-		return render.Join(body...)
-	}
-
-	rel := c.relationLabels(ctx)
 	if len(c.Filters) > 0 {
-		if tb := c.filterToolbar(q, search, rel); tb != "" {
+		if tb := c.filterToolbar(q, search, c.relationLabels(ctx)); tb != "" {
 			body = append(body, tb)
 		}
 	}
+	table := c.Table(ctx)
+	if c.IslandPath != "" {
+		// The island wrapper: sort/page RPC responses (the same Table HTML,
+		// served by TableHandler) replace this element's innerHTML.
+		table = render.Tag("div", map[string]string{
+			"data-fui-signal":      c.islandSignal(),
+			"data-fui-signal-mode": "html",
+		}, table)
+	}
+	body = append(body, table)
+	return render.Join(body...)
+}
+
+// Table renders the list's DataTable for ctx's query state. It is shared
+// by List (initial SSR) and TableHandler (island RPC responses), so a
+// sort/page swap returns exactly the HTML the initial render painted.
+func (c ResourceConfig) Table(ctx context.Context) render.HTML {
+	q := appui.QueryFromContext(ctx)
+	page := 1
+	if n, err := strconv.Atoi(q.Get("p")); err == nil && n > 1 {
+		page = n
+	}
+	limit := c.pageSize()
+	search := strings.TrimSpace(q.Get("q"))
+	filters := c.queryFilters(q, search)
+	var sorts []filter.ParsedSort
+	sortCol := q.Get("sort")
+	if sortCol != "" && c.hasField(sortCol) {
+		sorts = append(sorts, filter.ParsedSort{Field: sortCol, Desc: q.Get("dir") == "desc"})
+	}
+
+	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
+	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+	if err != nil {
+		return ui.Callout(ui.CalloutConfig{Title: "Couldn't load " + c.Title, Variant: ui.StatusDanger}, render.Text("See server logs."))
+	}
+
+	rel := c.relationLabels(ctx)
 	cols := make([]ui.Column, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
 		col := ui.Column{Key: f.Key, Header: f.Label, Sortable: true}
@@ -276,11 +344,30 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
 		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
 		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText)},
 	}
+	if c.IslandPath != "" {
+		// Island mode: sort headers become data-fui-rpc buttons and the
+		// pagination inherits the same signal/endpoint pair automatically.
+		dt.IslandSignal = c.islandSignal()
+		dt.IslandEndpoint = c.IslandPath
+	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
 		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
 	}
-	body = append(body, ui.DataTable(dt))
-	return render.Join(body...)
+	return ui.DataTable(dt)
+}
+
+// TableHandler serves the island endpoint: it renders the same table HTML
+// List paints, for the RPC's query string. The runtime writes the response
+// into the island's data-fui-signal wrapper — no document navigation.
+func (c ResourceConfig) TableHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if u, ok := handler.GetUser(r.Context()); !ok || u == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, string(c.Table(appui.WithRequest(r.Context(), r))))
+	}
 }
 
 // filterToolbar builds the facet + search toolbar shown above the list. Enum
@@ -408,7 +495,7 @@ func (c ResourceConfig) relatedList(ctx context.Context, rl RelatedList, id stri
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
 	})
-	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title)})
+	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: resCountLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title), HeadingLevel: 2})
 	if err != nil {
 		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
 	}

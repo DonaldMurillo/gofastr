@@ -17,8 +17,13 @@ type PageHeaderConfig struct {
 	Subtitle string      // optional supporting text below the title
 	Eyebrow  string      // optional small label above the title (e.g. "Customers")
 	Actions  render.HTML // optional trailing action slot (button row, link)
-	Class    string
-	ID       string
+	// HeadingLevel overrides the title's heading level (default 1). Set to
+	// 2 when the header is a sub-section of a page that already has an <h1>
+	// (e.g. a related-list block on a detail page) so the outline doesn't
+	// produce a second <h1> or skip levels.
+	HeadingLevel int
+	Class        string
+	ID           string
 }
 
 // PageHeader renders a top-of-page header with title, optional subtitle
@@ -40,8 +45,12 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 			html.TextConfig{Class: "ui-page-header__eyebrow"},
 			render.Text(cfg.Eyebrow)))
 	}
+	level := cfg.HeadingLevel
+	if level < 1 || level > 6 {
+		level = 1
+	}
 	textChildren = append(textChildren,
-		html.Heading(html.HeadingConfig{Level: 1,
+		html.Heading(html.HeadingConfig{Level: level,
 			Class: "ui-page-header__title"}, render.Text(cfg.Title)))
 	if cfg.Subtitle != "" {
 		textChildren = append(textChildren, html.Paragraph(
@@ -435,7 +444,8 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 // ─── Button ─────────────────────────────────────────────────────────
 
 // ButtonVariant is the semantic variant of a Button. String-typed
-// for ergonomic Go enums + readable serialization.
+// for ergonomic Go enums + readable serialization. Apps extend the
+// set with RegisterButtonVariant; unregistered values panic at render.
 type ButtonVariant string
 
 const (
@@ -476,6 +486,8 @@ type ButtonConfig struct {
 // Authors never reach for raw class strings — pick a variant.
 // Unknown variants panic at render time so typos surface
 // immediately rather than silently rendering an unstyled button.
+// Custom brand variants/sizes join the set via RegisterButtonVariant /
+// RegisterButtonSize (shared with LinkButton).
 func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Button requires Label")
@@ -484,20 +496,8 @@ func Button(cfg ButtonConfig) render.HTML {
 	if v == "" {
 		v = ButtonPrimary
 	}
-	switch v {
-	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
-		// recognized
-	default:
-		panic("ui: Button unknown Variant " + string(v) +
-			" — pick one of: primary, secondary, danger, ghost")
-	}
-	switch cfg.Size {
-	case ButtonSizeDefault, ButtonSizeSmall, ButtonSizeLarge:
-		// recognized
-	default:
-		panic("ui: Button unknown Size " + string(cfg.Size) +
-			" — pick one of: \"\" (default), small, large")
-	}
+	checkButtonVariant("Button", v)
+	checkButtonSize("Button", cfg.Size)
 	cls := "ui-button ui-button--" + string(v)
 	if cfg.Size != ButtonSizeDefault {
 		cls += " ui-button--" + string(cfg.Size)
@@ -565,18 +565,8 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if v == "" {
 		v = ButtonPrimary
 	}
-	switch v {
-	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
-	default:
-		panic("ui: LinkButton unknown Variant " + string(v) +
-			" — pick one of: primary, secondary, danger, ghost")
-	}
-	switch cfg.Size {
-	case ButtonSizeDefault, ButtonSizeSmall, ButtonSizeLarge:
-	default:
-		panic("ui: LinkButton unknown Size " + string(cfg.Size) +
-			" — pick one of: \"\" (default), small, large")
-	}
+	checkButtonVariant("LinkButton", v)
+	checkButtonSize("LinkButton", cfg.Size)
 	cls := "ui-button ui-button--" + string(v)
 	if cfg.Size != ButtonSizeDefault {
 		cls += " ui-button--" + string(cfg.Size)
@@ -636,7 +626,10 @@ func isUnsafeScheme(href string) bool {
 
 // ─── StatusBadge ────────────────────────────────────────────────────
 
-// StatusVariant is the semantic variant of a StatusBadge.
+// StatusVariant is the semantic variant of a StatusBadge. The same
+// set drives Callout, Tag, Notification, and FilterChipBar chips;
+// apps extend it with RegisterStatusVariant. Unregistered values
+// panic at render.
 type StatusVariant string
 
 const (
@@ -664,11 +657,7 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if v == "" {
 		v = StatusNeutral
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: StatusBadge unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
-	}
+	checkStatusVariant("StatusBadge", v)
 	cls := "ui-badge ui-badge--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -686,13 +675,20 @@ type EmptyStateConfig struct {
 	Action      render.HTML // optional CTA (e.g. a button or link)
 	ID          string
 	Class       string
+
+	// HeadingLevel overrides the title's heading level (1–6). Zero defaults
+	// to 3 (h3), preserving the gallery/demo behaviour where the empty state
+	// nests inside a section. A real page that mounts the empty state as the
+	// only content under the page <h1> (e.g. an admin list with zero rows)
+	// passes 2 so the outline doesn't skip h1 → h3.
+	HeadingLevel int
 }
 
 // EmptyState renders a centered title + description + optional CTA for
 // blank lists or zero-data screens.
 //
-// Composition: html.Heading (h3) + html.Paragraph + a div for
-// the action slot.
+// Composition: html.Heading (h3 by default; see HeadingLevel) + html.Paragraph
+// + a div for the action slot.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: EmptyState requires Title")
@@ -701,9 +697,13 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	level := cfg.HeadingLevel
+	if level < 1 || level > 6 {
+		level = 3
+	}
 	out := []render.HTML{
 		html.Heading(html.HeadingConfig{
-			Level: 3, Class: "ui-empty-state__title",
+			Level: level, Class: "ui-empty-state__title",
 		}, render.Text(cfg.Title)),
 	}
 	if cfg.Description != "" {
@@ -726,6 +726,16 @@ type CalloutConfig struct {
 	Variant StatusVariant // info | success | warning | danger | neutral
 	ID      string
 	Class   string
+
+	// Landmark controls whether an info/success/neutral callout renders as a
+	// complementary <aside> landmark (the default, mandated by the framework's
+	// own tests). Set to false for a callout embedded inline in main content
+	// flow: a nested complementary landmark trips axe's
+	// landmark-complementary-is-top-level rule, and an inline tip is emphasis,
+	// not a tangential region. Same trade-off Sidebar already made (div, not
+	// aside, to avoid nesting complementary). Danger/warning always use
+	// role="alert" regardless of this flag.
+	Landmark *bool
 }
 
 // Callout renders a persistent info/warning/error block. Distinct from
@@ -741,11 +751,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	if v == "" {
 		v = StatusInfo
 	}
-	switch v {
-	case StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral:
-	default:
-		panic("ui: Callout unknown Variant " + string(v) + " — pick one of: success, warning, danger, info, neutral")
-	}
+	checkStatusVariant("Callout", v)
 	cls := "ui-callout ui-callout--" + string(v)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -772,6 +778,18 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	}
 	// Note "info" role: html.Aside requires Label/LabelledBy. Use
 	// the variant name as a safe fallback when no Title is provided.
+	landmark := true
+	if cfg.Landmark != nil {
+		landmark = *cfg.Landmark
+	}
+	if !landmark {
+		// Inline callout: a styled <div>, not a complementary landmark, so it
+		// can nest inside <main> without tripping landmark-complementary-
+		// is-top-level. Visually identical to the landmark form.
+		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
+			Class: cls, ID: cfg.ID,
+		}, out...))
+	}
 	label := cfg.Title
 	if label == "" {
 		label = string(v) + " note"
@@ -780,7 +798,6 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 		Class: cls, ID: cfg.ID, Label: label,
 	}, out...))
 }
-
 func calloutRole(v StatusVariant) string {
 	switch v {
 	case StatusDanger, StatusWarning:

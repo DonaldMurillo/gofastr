@@ -133,7 +133,7 @@ func passwordInputCSS(_ style.Theme) string {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-base, 0.95rem);
   padding: 10px var(--spacing-md, 12px);
   color: var(--color-text, #18181B);
   min-block-size: var(--spacing-touch-target, 44px);
@@ -151,7 +151,7 @@ func passwordInputCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   border: 0;
   border-left: 1px solid var(--color-border, #E4E4E7);
-  font-size: 1.1rem;
+  font-size: var(--text-lg, 1.1rem);
   color: var(--color-text-muted, #52525B);
   cursor: pointer;
   user-select: none;
@@ -170,7 +170,7 @@ func passwordInputCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-password-input"] .ui-password-input__error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-danger, #DC2626);
 }`
 }

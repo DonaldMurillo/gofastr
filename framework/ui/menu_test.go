@@ -77,6 +77,31 @@ func TestMenuCustomTriggerHTML(t *testing.T) {
 	}
 }
 
+func TestMenuBlocksSmuggledAttrKeys(t *testing.T) {
+	// ExtraAttrs values are escaped, but escAttr does not touch spaces
+	// — a key like `x onclick` must not render a live onclick attribute.
+	// Keys go through the same allow-list as every other ExtraAttrs
+	// consumer (core/render.Attr): on* handlers and syntactically
+	// invalid names are dropped.
+	out := string(ui.Menu(ui.MenuConfig{
+		Label: "Actions",
+		Items: []ui.MenuItem{{
+			Label: "Edit",
+			ExtraAttrs: map[string]string{
+				`x onclick`:   "alert(1)",
+				"onmouseover": "alert(2)",
+				"data-ok":     "yes",
+			},
+		}},
+	}))
+	if strings.Contains(out, "onclick") || strings.Contains(out, "onmouseover") || strings.Contains(out, "alert(") {
+		t.Errorf("smuggled event-handler attr leaked into Menu html:\n%s", out)
+	}
+	if !strings.Contains(out, `data-ok="yes"`) {
+		t.Errorf("legitimate ExtraAttrs key dropped:\n%s", out)
+	}
+}
+
 func TestMenuPanicsOnEmpty(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {

@@ -240,8 +240,15 @@ func renderBellRow(it NotificationItem) render.HTML {
 	}
 	var inner render.HTML
 	if it.Href != "" {
+		// Items are data-driven (live notification feeds) — drop unsafe
+		// href schemes per the framework/ui/safety.go allow-list and
+		// degrade to an inert "#" rather than a live javascript: link.
+		href := safeURL(it.Href)
+		if href == "" {
+			href = "#"
+		}
 		inner = render.Tag("a", map[string]string{
-			"href":  it.Href,
+			"href":  href,
 			"class": "ui-notification-bell__row-link",
 		}, innerChildren...)
 	} else {
@@ -293,9 +300,13 @@ func notificationBellCSS(_ style.Theme) string {
   block-size: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: #B91C1C;
-  color: #FFFFFF;
-  font-size: 0.7rem;
+  /* Status token pair — the default --color-danger is the same
+     #B91C1C (red-700, ≥6.4:1 vs white), so the themed value and the
+     axe-safe fallback agree; themed apps recolor the badge via their
+     danger slot. */
+  background: var(--color-danger, #B91C1C);
+  color: var(--color-primary-fg, #FFFFFF);
+  font-size: var(--text-xs, 0.7rem);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -317,7 +328,7 @@ func notificationBellCSS(_ style.Theme) string {
 }
 .ui-notification-bell__title {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -325,7 +336,7 @@ func notificationBellCSS(_ style.Theme) string {
 }
 .ui-notification-bell__empty {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text-muted, #52525B);
   text-align: center;
   padding: var(--spacing-md, 12px) 0;
@@ -335,7 +346,7 @@ func notificationBellCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 .ui-notification-bell__row {
   margin: 0;
@@ -361,15 +372,15 @@ a.ui-notification-bell__row-link:hover {
 }
 .ui-notification-bell__row-title {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
 }
 .ui-notification-bell__row-time {
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
 }
 .ui-notification-bell__row-body {
-  margin: 2px 0 0;
-  font-size: 0.85rem;
+  margin: var(--spacing-xs, 2px) 0 0;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text-muted, #52525B);
   line-height: 1.4;
 }`

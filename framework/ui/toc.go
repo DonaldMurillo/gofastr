@@ -91,7 +91,7 @@ var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)
 func tocCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-toc"] {
   display: block;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
 }
 [data-fui-comp="ui-toc"].ui-toc--sticky {
   position: sticky;
@@ -103,7 +103,7 @@ func tocCSS(_ style.Theme) string {
 [data-fui-comp="ui-toc"]::before {
   content: attr(aria-label);
   display: block;
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -115,7 +115,7 @@ func tocCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-toc"] .ui-toc__item {
   margin: 0;
@@ -125,7 +125,7 @@ func tocCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-toc"] .ui-toc__link {
   display: block;
-  padding: 4px var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 8px);
   border-radius: var(--radii-sm, 4px);
   border-inline-start: 2px solid transparent;
   color: var(--color-text-muted, #52525B);

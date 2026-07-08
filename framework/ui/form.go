@@ -302,7 +302,7 @@ func validationSummaryCSS(_ style.Theme) string {
   background: color-mix(in oklab, var(--color-danger, #DC2626) 8%, var(--color-surface, #FFFFFF) 92%);
 }
 [data-fui-comp="ui-validation-summary"] .ui-validation-summary__title {
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   font-weight: 700;
   color: var(--color-danger, #DC2626);
 }
@@ -310,7 +310,7 @@ func validationSummaryCSS(_ style.Theme) string {
   margin: 0;
   padding-left: var(--spacing-lg, 16px);
   list-style: disc;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-validation-summary"] .ui-validation-summary__list a {

@@ -854,7 +854,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 			"top", "calc(var(--nav-h) + {spacing.lg})",
 			"align-self", "start",
 			"font-size", "var(--t-sm)").End()
-	ss.Rule(".ph-toc h6").
+	ss.Rule(".ph-toc__label").
 		Set("font-family", "{fonts.mono}",
 			"font-size", "11px",
 			"color", "{colors.text-subtle}",
@@ -925,7 +925,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 			"border", "1px solid {colors.border}",
 			"border-radius", "{radii.md}",
 			"margin-top", "{spacing.lg}").End()
-	ss.Rule(".roadmap h6").
+	ss.Rule(".roadmap h3").
 		Set("font-family", "{fonts.mono}",
 			"font-size", "11px",
 			"color", "{colors.text-subtle}",
@@ -961,7 +961,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 		Set("margin-top", "{spacing.xxl}",
 			"padding-top", "{spacing.lg}",
 			"border-top", "1px solid var(--line-faint)").End()
-	ss.Rule(".biblio h6").
+	ss.Rule(".biblio h2").
 		Set("font-family", "{fonts.mono}",
 			"font-size", "11px",
 			"color", "{colors.text-subtle}",

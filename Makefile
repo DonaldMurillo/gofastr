@@ -78,8 +78,13 @@ test-pg-only:
 	fi
 	go test -count=1 -run '/postgres' ./framework/...
 
+# -short skips the chromedp e2e suites (site, meridian, kiln browser):
+# under the race detector they run 2-3x slower, blow the default test
+# timeout, and re-exercise browser plumbing rather than Go code paths.
+# Library/unit/integration tests — where data races live — all run.
+# For the full-fat race sweep use RACE=1 ./scripts/test-all.sh.
 test-race:
-	go test -race -count=1 ./...
+	go test -race -short -count=1 -timeout=15m ./...
 
 # ---- Benchmarks ----
 #
@@ -209,7 +214,10 @@ security-full: fmt-check vet secret-scan test-race vulncheck mod-verify
 	@echo "  ✓ Full security check passed"
 
 fmt-check:
-	@gofmt_output=$$(gofmt -l .); \
+	@# Tracked files only: `gofmt -l .` descends into agent-managed
+	@# worktrees (.claude/worktrees/, .pi/worktrees/) whose checkouts
+	@# aren't this branch's code and would fail the gate spuriously.
+	@gofmt_output=$$(git ls-files '*.go' | xargs gofmt -l); \
 	if [ -n "$$gofmt_output" ]; then \
 		echo "✗ Files not formatted:"; \
 		echo "$$gofmt_output"; \
@@ -224,12 +232,17 @@ vet:
 
 secret-scan:
 	@echo "  Scanning for secrets..."
+	@# The credential patterns bound the gap between key and value
+	@# (password[\"']?\s*[:=]) so HTML type="password" attributes,
+	@# os.Getenv("..._PASSWORD") reads, and prose mentioning "password"
+	@# don't false-positive — only an actual `key = "literal"` shape
+	@# with a non-trivial value matches.
 	@found=""; \
-	for file in $$(find . -name "*.go" -not -path "./.git/*" -not -path "./vendor/*"); do \
+	for file in $$(git ls-files '*.go'); do \
 		for pattern in 'BEGIN RSA PRIVATE KEY' 'BEGIN PRIVATE KEY' 'BEGIN OPENSSH PRIVATE KEY' \
-			'password.*=.*"' 'secret_key.*=.*"' 'api_key.*=.*"' \
-			'sk_live_' 'sk_test_' 'ghp_' 'AKIA' 'xoxb-'; do \
-			matches=$$(grep -n -i "$$pattern" "$$file" 2>/dev/null || true); \
+			'(password|passwd|secret_key|api[-_]?key)["'"'"']?\s*={1,2}\s*["'"'"'][A-Za-z0-9+/_.-]{8,}["'"'"']' \
+			'sk_(live|test)_[A-Za-z0-9]{10,}' 'ghp_[A-Za-z0-9]{36}' 'AKIA[0-9A-Z]{16}' 'xoxb-[0-9A-Za-z-]{10,}'; do \
+			matches=$$(grep -n -i -E "$$pattern" "$$file" 2>/dev/null | grep -v 'nosecret:' || true); \
 			if [ -n "$$matches" ]; then \
 				found="$$found\n  $$file: $$matches"; \
 			fi; \
@@ -237,7 +250,7 @@ secret-scan:
 	done; \
 	if [ -n "$$found" ]; then \
 		echo "✗ Potential secrets found:"; \
-		printf "$$found\n"; \
+		printf '%b\n' "$$found"; \
 		exit 1; \
 	fi
 	@echo "  ✓ No secrets detected"

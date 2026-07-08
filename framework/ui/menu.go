@@ -174,7 +174,14 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	openExtra := `type="button"`
 	if it.Href != "" {
 		tag = "a"
-		openExtra = `href="` + escAttr(sanitizeHref(it.Href)) + `"`
+		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
+		// protocol-relative //host, and control bytes (see safety.go);
+		// a rejected href degrades to "#" like ui.Card / ui.Link.
+		href := safeURL(it.Href)
+		if href == "" {
+			href = "#"
+		}
+		openExtra = `href="` + escAttr(href) + `"`
 	}
 	tabindex := "-1" // managed by runtime via roving focus
 	disabledAttr := ""
@@ -194,7 +201,13 @@ func writeMenuItem(b *strings.Builder, it MenuItem) {
 	}
 	extra := ""
 	for k, v := range it.ExtraAttrs {
-		extra += ` ` + escAttr(k) + `="` + escAttr(v) + `"`
+		// render.Attr validates the key against the same allow-list as
+		// every other ExtraAttrs consumer — escAttr alone doesn't touch
+		// spaces, so a key like `x onclick` would smuggle a live event
+		// handler into the tag. Unsafe keys are dropped.
+		if a := render.Attr(k, v); a != "" {
+			extra += ` ` + a
+		}
 	}
 	b.WriteString(`<` + tag + ` class="` + escAttr(cls) + `" ` + openExtra +
 		` role="menuitem" tabindex="` + tabindex + `"` + disabledAttr + rpcAttr + extra + `>`)
@@ -215,36 +228,6 @@ func escText(s string) string {
 func escAttr(s string) string {
 	r := strings.NewReplacer(`&`, `&amp;`, `"`, `&quot;`, `<`, `&lt;`, `>`, `&gt;`)
 	return r.Replace(s)
-}
-
-// sanitizeHref reduces a caller-supplied href to a safe equivalent. Any
-// URI whose scheme is `javascript:`, `vbscript:`, or `data:` is replaced
-// with `#` so a navigation click renders as a no-op rather than running
-// inline script in the browser. Schemes are matched case-insensitively
-// after trimming leading whitespace (browsers tolerate `\tjavascript:`).
-// Returns the original href unchanged if no dangerous scheme is found.
-func sanitizeHref(href string) string {
-	// Browsers strip ASCII whitespace/control bytes from a URL before
-	// resolving its scheme, INCLUDING bytes interior to the scheme token
-	// ("java\tscript:" resolves to "javascript:"). A leading-only trim
-	// misses that, so collapse every ASCII space + control byte before
-	// matching the deny-list against the canonical scheme.
-	var b strings.Builder
-	b.Grow(len(href))
-	for i := 0; i < len(href); i++ {
-		c := href[i]
-		if c == ' ' || c <= 0x1f || c == 0x7f {
-			continue
-		}
-		b.WriteByte(c)
-	}
-	lower := strings.ToLower(b.String())
-	for _, bad := range []string{"javascript:", "vbscript:", "data:"} {
-		if strings.HasPrefix(lower, bad) {
-			return "#"
-		}
-	}
-	return href
 }
 
 // shortHash is a tiny FNV-style stable hash used only to derive a
@@ -314,7 +297,7 @@ func menuCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   animation: ui-menu-in var(--duration-dropdown-enter, 120ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }

@@ -197,7 +197,7 @@ func copyButtonCSS(_ style.Theme) string {
   background: var(--color-surface, #fff);
   color: var(--color-text, #111);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm, 0.85rem);
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease;
 }

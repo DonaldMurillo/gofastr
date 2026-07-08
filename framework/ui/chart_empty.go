@@ -46,11 +46,11 @@ var chartEmptyStyle = registry.RegisterStyle("ui-chart-empty", func(_ style.Them
 	width: 100%;
 	min-height: 10rem;
 	color: var(--color-text-muted, #6b7280);
-	font-size: 0.875rem;
+	font-size: var(--text-sm, 0.875rem);
 	background: var(--color-surface-soft, transparent);
 	border: 1px dashed var(--color-border, #e5e7eb);
 	border-radius: var(--radius-md, 8px);
-	padding: 1rem;
+	padding: var(--spacing-lg, 1rem);
 	text-align: center;
 }`
 })

@@ -414,7 +414,7 @@ func filterToolbarCSS(_ style.Theme) string {
   padding: 0;
   margin-block-end: var(--spacing-xs, 4px);
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill-group {
@@ -435,7 +435,7 @@ func filterToolbarCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text-muted, #52525B);
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   cursor: pointer;
   user-select: none;
   transition: background var(--duration-fast, 150ms) var(--easing-standard, ease),

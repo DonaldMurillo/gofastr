@@ -89,7 +89,7 @@ func disclosureCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-disclosure"] .ui-disclosure__summary::before {
   content: "▸";
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
   color: var(--color-text-muted, #52525B);
   transition: transform 120ms ease;
 }

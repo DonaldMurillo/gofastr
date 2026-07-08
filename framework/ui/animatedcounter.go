@@ -80,7 +80,7 @@ func animatedCounterCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-animated-counter"] {
   display: inline-flex;
   align-items: baseline;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }

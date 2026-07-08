@@ -16,7 +16,7 @@ because each release lands the demo + the code together.
 | Constructor signature + every field  | `go doc github.com/DonaldMurillo/gofastr/framework/ui.<Name>`    |
 | Pattern packages (Combobox, Tree, …) | `go doc github.com/DonaldMurillo/gofastr/core-ui/patterns/<pkg>` |
 | Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
-| Runtime data-fui-\* attributes       | [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md)          |
+| Runtime data-fui-\* attributes       | [runtime-contract](runtime-contract.md)                          |
 | What's coming / deferred             | [`ROADMAP.md` §5](../ROADMAP.md)                                  |
 
 The website's components index page lists every component with a
@@ -35,17 +35,35 @@ keeps every registered `/components/<slug>` paired with:
 Live demos at `http://localhost:8082/components/<slug>` once the
 dev server is up.
 
+Variant-taking components panic on unknown variants; apps extend the
+sets with `ui.RegisterButtonVariant` / `RegisterButtonSize` /
+`RegisterCardVariant` / `RegisterStatusVariant` (one status
+registration covers StatusBadge, Tag, Callout, and Notification). See
+"Custom variants on framework components" in `ui-getting-started`.
+
 ### Primitives & semantic markup
 
 - **kbd** — `core-ui/html.Kbd` — semantic `<kbd>` for keyboard input
 - **shortcuthint** — `framework/ui.ShortcutHint` — OS-aware chord chips (⌘ on Mac / Ctrl elsewhere)
+- **avatar** — `framework/ui.Avatar` — circular avatar with image → initials fallback (sm/md/lg/xl)
 - **avatargroup** — `framework/ui.AvatarGroup` — overlapping avatar stack with overflow chip
 - **icon** — `framework/ui.Icon` — inline-SVG primitive backed by `RegisterIcon`; 10 built-ins, `currentColor` stroke, `AriaLabel` flips to `role="img"`
+- **link** — `framework/ui.Link` — typed anchor with external-link affordances + unsafe-scheme href sanitizing
+- **muted** — `framework/ui.Muted` — subdued inline `<span>` for secondary text
 
 ### Buttons & form controls
 
+- **button** — `framework/ui.Button` — semantic button with typed variants (primary / secondary / danger / ghost) + sizes
+- **linkbutton** — `framework/ui.LinkButton` — anchor styled as a Button, for CTAs that navigate
 - **toggle** — `framework/ui.Checkbox` / `Radio` / `Switch` — labelled native inputs, FieldErrors-aware
-- **segmented** — `framework/ui.Segmented` — radio-group styled as a sliding pill bar
+- **checkboxgroup** — `framework/ui.CheckboxGroup` / `RadioGroup` — `<fieldset>` of checkboxes / radios with shared label + errors
+- **segmented** — `framework/ui.SegmentedControl` — radio-group styled as a sliding pill bar
+- **counter** — `framework/ui.Counter` — signal-driven numeric counter with +/− buttons
+- **signaltoggle** — `framework/ui.SignalToggle` — `role="switch"` button bound to a boolean signal
+- **toggleaction** — `framework/ui.ToggleAction` — three-state commit/untoggle button (idle → pending → committed) with optional mutex groups
+- **passwordinput** — `framework/ui.PasswordInput` — password field with show/hide toggle
+- **searchinput** — `framework/ui.SearchInput` — search field with icon prefix + clear button
+- **inputgroup** — `framework/ui.InputGroup` — input with prepend / append addons
 - **rating** — `framework/ui.RatingInput` — 1-N star/heart with Size / Gap / Shape / Icon knobs
 - **slider** — `framework/ui.Slider` — `<input type=range>` with optional live value mirror
 - **rangeslider** — `framework/ui.RangeSlider` — dual-thumb range with cross-clamp
@@ -56,7 +74,14 @@ dev server is up.
 - **select** — `framework/ui.Select` — labelled native `<select>` with help, error, placeholder, and required marker
 - **taginput** — `framework/ui.TagInput` — free-form chips, Enter/comma to commit, Backspace to remove
 - **multiselect** — `core-ui/patterns/multiselect` — checkbox group with chip display above
-- **forms** — `framework/ui` form module — fields, validation, conditional sections, step wizard, and repeaters
+- **form** — `framework/ui.Form` — opinionated `<form>` wrapper with submit + error summary
+- **formfield** — `framework/ui.FormField` — labelled input with required + help + error states
+- **formsection** — `framework/ui.FormSection` — grouped fields with a shared heading + description
+- **validationsummary** — `framework/ui.ValidationSummary` — inline summary of form validation errors
+- **conditionalfield** — `framework/ui.ConditionalField` (+ `ConditionalFieldVisible` inverse) — form section shown/hidden by another field's value
+- **formrepeater** — `framework/ui.FormRepeater` — dynamic list of repeating field groups (add / remove rows)
+- **repeater** — `framework/ui.Repeater` — dynamic add / remove item list with min / max limits
+- **stepwizard** — `framework/ui.StepWizard` — multi-step form with a progress indicator bar
 
 ### Selection & input composition
 
@@ -69,6 +94,12 @@ dev server is up.
 ### Navigation
 
 - **skiplink** — `framework/ui.SkipLink` — focus-visible bypass link for jumping to main content
+- **pageheader** — `framework/ui.PageHeader` — top-of-page header with title / eyebrow / subtitle / actions
+- **siteheader** — `framework/ui.SiteHeader` — top bar with brand + nav + actions + mobile drawer
+- **sitefooter** — `framework/ui.SiteFooter` — multi-column footer grid + bottom strip
+- **anchoredrail** — `framework/ui.AnchoredRail` — sticky in-page nav rail with scrollspy-tracked active state
+- **doclayout** — `framework/ui.DocLayout` / `DocPrevNext` — documentation page skeleton (nav rail + article + prev/next pager)
+- **tabs-signal** — `framework/ui.Tabs` — signal-driven tab strip (click sets the signal; CSS shows the panel)
 - **breadcrumbs** — `core-ui/patterns/breadcrumbs` — `<nav aria-label=Breadcrumb>` trail
 - **pagination** — `core-ui/patterns/pagination` — numeric page navigation
 - **sidebar** — `framework/ui.Sidebar` — responsive primary nav (inline ≥ md, drawer < md)
@@ -83,10 +114,12 @@ dev server is up.
 
 - **accordion** — `core-ui/patterns/accordion` — Group + Stack disclosure variants
 - **disclosure** — `core-ui/patterns/disclosure` — single styled `<details>`
+- **collapsible** — `framework/ui.Collapsible` — styled `<details>` with clickable summary + Escape-to-close
 - **modal** — `core-ui/widget/preset.Modal` — focus-trapped dialog with deeplink
 - **drawer** — `core-ui/widget/preset.Drawer` — edge-mounted sliding panel
 - **bottomsheet** — `core-ui/widget/preset.BottomSheet` — bottom-anchored Drawer variant
 - **popover** — `core-ui/widget/preset.Popover` — click-triggered floating surface
+- **floatingpanel** — `core-ui/widget/preset.FloatingPanel` — corner-anchored persistent panel
 - **tooltip** — `framework/ui.Tooltip` — CSS-only hover/focus reveal
 - **toast** — `core-ui/widget/preset.ToastStack` — SSE-pushed slide-in notifications
 - **notificationbell** — `framework/ui.NotificationBell` — bell + unread badge + popover dropdown
@@ -97,10 +130,14 @@ dev server is up.
 
 - **layout** — `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`
 - **container** — `framework/ui.Container` — max-width page wrapper with breakpoint padding
+- **section** — `framework/ui.Section` — labelled content section with heading + description
+- **responsive** — `framework/ui.Responsive` — viewport-swap pair (independent desktop / mobile variants)
+- **themed** — `framework/ui.Themed` — wraps a subtree in a registered section-level theme override
 - **card** — `framework/ui.Card` — labelled `<section>` with header/body/footer
 - **sticky** — `framework/ui.Sticky` — theme-token sticky wrapper for top or bottom edge pinning
 - **aspectratio** — `framework/ui.AspectRatio` — CLS-safe aspect-ratio wrapper for media and embeds
 - **image** — `framework/ui.OptimizedImage` — responsive `<picture>` with CLS-safe Width/Height
+- **pipelineimage** — `framework/ui.PipelineImage` — multi-format `<picture>` consuming `framework/image` VariantSet output (typed sources + LQIP/BlurHash)
 - **divider** — `framework/ui.Divider` — semantic separator (horizontal, vertical, labelled)
 - **gallery** — `framework/ui.Gallery` — Grid / Strip / Masonry thumbnail surface
 - **lightbox** — `framework/ui.Lightbox` — zoom-overlay modal; pairs with Gallery
@@ -110,6 +147,7 @@ dev server is up.
 - **nestedlist** — `core-ui/patterns/nestedlist` — recursive `<ul>`/`<ol>` with native `<details>` collapse on branches
 - **scrollspy** — `core-ui/patterns/scrollspy` — IntersectionObserver-based active-section tracking for any nav of in-page anchors
 - **optimisticaction** — `framework/ui.OptimisticAction` — button that flips to its SSR-declared success state on click; the RPC fires underneath and rolls back with a shake on non-2xx
+- **toggleaction** — `framework/ui.ToggleAction` — OptimisticAction's three-state cousin: idle ↔ committed with optional untoggle endpoint and `Group` mutex (committing one reverts its siblings)
 - **networkretrybanner** — `framework/ui.NetworkRetryBanner` — persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover
 
 ### Data display
@@ -122,6 +160,8 @@ dev server is up.
 - **piechart** — `framework/ui.PieChart` — SVG ratio chart (donut variant via InnerRadius)
 - **barchart** — `framework/ui.BarChart` — categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `ShowAxis` adds left value-axis ticks + gridlines.
 - **linechart** — `framework/ui.LineChart` — multi-series time-series chart with area + legend. Edge x-axis labels anchor inward so the first/last tick don't clip against the SVG boundary.
+- **codeblock** — `framework/ui.CodeBlock` — styled `<pre><code>` sample block; `HighlightLines` pre-tokenizes lines for syntax highlighting
+- **counter** — `framework/ui.Counter` — numeric counter with +/− buttons mutating a client-side signal
 - **jsonviewer** — `framework/ui.JSONViewer` — collapsible tree of arbitrary values
 - **diffviewer** — `framework/ui.DiffViewer` — unified or split diff renderer
 - **markdown** — `framework/ui.Markdown` — themed wrapper over `core/markdown`
@@ -136,6 +176,7 @@ dev server is up.
 
 - **tag** — `framework/ui.Tag` — interactive pill (linked / removable / status-variant)
 - **statuspill** — `framework/ui.StatusPill` — compact status pill with optional leading dot (neutral / accent tone)
+- **statusbadge** — `framework/ui.StatusBadge` — small inline pill conveying state (success / warning / danger / info / neutral)
 - **filtertoolbar** — `framework/ui.FilterToolbar` — the filter/sort control strip above a list (facet `<select>` or radio-pill groups + search + sort + Apply/Reset), a single URL-driven GET form; wraps → stacks responsively so nothing clips on mobile
 - **filterchipbar** — `framework/ui.FilterChipBar` — `role=toolbar` of removable filter chips
 - **copybutton** — `framework/ui.CopyButton` — clipboard button with SR-announced confirmation
@@ -146,6 +187,10 @@ dev server is up.
 - **themetoggle** — `framework/ui.ThemeToggle` — dark/light/auto toggle that persists color-scheme mode
 - **backtotop** — `framework/ui.BackToTop` — fixed scroll affordance that appears after a threshold
 - **banner** — `framework/ui.Banner` — page-level persistent status strip
+- **callout** — `framework/ui.Callout` — persistent inline info / warning / danger / neutral block
+- **notification** — `framework/ui.Notification` — toast-styled inline notification (variant + dismiss)
+- **emptystate** — `framework/ui.EmptyState` — centered title + description + optional CTA for no-data screens
+- **signout** — `framework/ui.SignOut` — logout control: minimal form POSTing to the auth sign-out endpoint
 - **pollingindicator** — `framework/ui.PollingIndicator` — pulsing dot + label confirming a polling RPC is firing
 - **seo** — `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema` — per-page SEO + sitewide sitemap.xml / robots.txt
 - **seo-bundle** — `ScreenSEO()` returning an `SEO` struct — per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
@@ -287,6 +332,6 @@ helpful pre-flight read for human reviewers.
 
 - [`docs/widgets.md`](widgets.md) — widget framework (mount, deeplink, signal lifecycle).
 - [`docs/ui-getting-started.md`](ui-getting-started.md) — first-time setup for the UI layer.
-- [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md) — runtime contract + `data-fui-*` attribute reference.
+- [runtime-contract](runtime-contract.md) — the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
 - [`framework/ARCHITECTURE.md`](../framework/ARCHITECTURE.md) — package layout + extraction rules.
 - [`ROADMAP.md` §5](../ROADMAP.md) — deferred UI components.

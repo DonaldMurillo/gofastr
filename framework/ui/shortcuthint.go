@@ -198,7 +198,7 @@ func shortcutHintCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-shortcut-hint"] {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   font-family: var(--fonts-mono, ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace);
   vertical-align: middle;
 }
@@ -214,7 +214,7 @@ func shortcutHintCSS(_ style.Theme) string {
   border-radius: var(--radii-sm, 4px);
   background: var(--color-muted, #f5f5f7);
   color: var(--color-text, #111);
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   line-height: 1;
 }

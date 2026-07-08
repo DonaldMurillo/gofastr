@@ -60,6 +60,7 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-dropdown-wrap", "dropdown"},
 	{"data-fui-reveal", "reveal"},
 	{"data-fui-animate-signal", "animate"},
+	{"data-fui-drag-dismiss", "dragdismiss"},
 }
 
 // NeededModules returns the deduplicated, sorted list of demand-load

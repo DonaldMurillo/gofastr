@@ -477,10 +477,16 @@ func TestButton(t *testing.T) {
 		assertContains(t, b, "Submit")
 	})
 
-	t.Run("empty label no aria-label", func(t *testing.T) {
-		b := Button(ButtonConfig{Label: "", Class: "icon-btn"})
-		assertNotContains(t, b, "aria-label=")
-		assertContains(t, b, `type="button"`)
+	t.Run("empty label no aria-label panics", func(t *testing.T) {
+		// Contract: a button with no visible text and no accessible
+		// name is always a bug — icon-only buttons must supply an
+		// aria-label via ExtraAttrs.
+		defer func() {
+			if recover() == nil {
+				t.Fatal("Button with empty Label and no aria-label must panic")
+			}
+		}()
+		Button(ButtonConfig{Label: "", Class: "icon-btn"})
 	})
 
 	t.Run("respects explicit type", func(t *testing.T) {
@@ -1018,5 +1024,21 @@ func TestOnClickInButton(t *testing.T) {
 	}
 	if !strings.Contains(s, "Save") {
 		t.Errorf("expected button text, got %s", s)
+	}
+}
+
+func TestHeadingAutoIDDeterministic(t *testing.T) {
+	// Auto-generated heading ids are content-derived and deterministic:
+	// the same text always yields the same id (anchors survive re-render
+	// and SPA partial swaps). The flip side — equal heading text on one
+	// page produces duplicate ids — is documented on Heading; callers
+	// disambiguate via cfg.ID.
+	a := string(Heading(HeadingConfig{Level: 2}, render.Text("Overview")))
+	b := string(Heading(HeadingConfig{Level: 2}, render.Text("Overview")))
+	if a != b {
+		t.Errorf("equal heading text must render identically:\n%s\n%s", a, b)
+	}
+	if !strings.Contains(a, `id="heading-overview"`) {
+		t.Errorf("expected id=heading-overview, got:\n%s", a)
 	}
 }

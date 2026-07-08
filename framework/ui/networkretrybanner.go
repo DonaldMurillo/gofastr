@@ -137,14 +137,14 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
 }
 [data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__body {
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
   flex: 1 1 auto;
 }
 [data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__title {
   font-weight: 700;
 }
 [data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__desc {
-  font-size: 0.9rem;
+  font-size: var(--text-sm, 0.9rem);
   opacity: 0.9;
 }
 [data-fui-comp="ui-network-retry-banner"][data-state="checking"] .ui-network-retry-banner__retry {

@@ -7,7 +7,8 @@ import (
 
 // ─── Card ───────────────────────────────────────────────────────────
 
-// CardVariant selects the chrome treatment.
+// CardVariant selects the chrome treatment. Apps extend the set with
+// RegisterCardVariant; unregistered values panic at render.
 type CardVariant string
 
 const (
@@ -24,7 +25,23 @@ type CardConfig struct {
 	// Heading is the optional top-of-card title. When set, a labelled
 	// <section> wraps the card so screen readers pick up the heading
 	// as the region name.
+	//
+	// The heading's id (and the section's aria-labelledby target) is
+	// derived from the heading text — "ui-card-" + slug(Heading) — so
+	// it is deterministic across re-renders. The trade-off, shared with
+	// html.Heading: two cards with EQUAL heading text on one page
+	// produce duplicate ids (the render function has no page-wide
+	// context to de-dupe against). cfg.ID sets the section wrapper's own
+	// anchor id, NOT the heading id, so it does not de-dupe the
+	// collision; when a page repeats heading text, use Header for full
+	// control over the heading element and its id.
 	Heading string
+
+	// HeadingLevel overrides the heading element level (default 3).
+	// Set to 2 when the card is a top-level page section (e.g. a
+	// dashboard widget directly under the page <h1>) so the heading
+	// outline doesn't skip from h1 to h3.
+	HeadingLevel int
 
 	// Description is optional supporting text rendered beneath the
 	// heading.
@@ -58,6 +75,11 @@ type CardConfig struct {
 //   - With Href:    the whole shell becomes a focusable <a>, with the
 //     internal landmark still present for screen readers
 func Card(cfg CardConfig, body ...render.HTML) render.HTML {
+	// Unknown variants panic like every other variant-taking component
+	// (registered custom variants pass — see RegisterCardVariant).
+	// Card used to emit ui-card--<anything> silently; that let typos
+	// ship unstyled cards with no signal.
+	checkCardVariant(cfg.Variant)
 	cls := "ui-card"
 	if cfg.Variant != CardElevated {
 		cls += " ui-card--" + string(cfg.Variant)
@@ -75,8 +97,12 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		out = append(out, html.Div(html.DivConfig{Class: "ui-card__header"}, cfg.Header))
 	} else if cfg.Heading != "" {
 		headingID = "ui-card-" + slug(cfg.Heading)
+		level := cfg.HeadingLevel
+		if level < 1 || level > 6 {
+			level = 3
+		}
 		hdr := []render.HTML{
-			html.Heading(html.HeadingConfig{Level: 3, ID: headingID, Class: "ui-card__heading"},
+			html.Heading(html.HeadingConfig{Level: level, ID: headingID, Class: "ui-card__heading"},
 				render.Text(cfg.Heading)),
 		}
 		if cfg.Description != "" {
@@ -97,9 +123,17 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 	// text content is what assistive tech announces, so an inner
 	// landmark would be redundant — keep the inner shell as a div.
 	if cfg.Href != "" {
+		// Drop unsafe hrefs (javascript:, data:, control bytes, …) —
+		// same allow-list as ui.Link; see framework/ui/safety.go. Card
+		// is a content-level component, so a rejected href degrades to
+		// an inert "#" rather than panicking.
+		href := safeURL(cfg.Href)
+		if href == "" {
+			href = "#"
+		}
 		inner := html.Div(html.DivConfig{Class: "ui-card__inner"}, out...)
 		return cardStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href:    cfg.Href,
+			Href:    href,
 			Class:   cls,
 			ID:      cfg.ID,
 			Content: inner,

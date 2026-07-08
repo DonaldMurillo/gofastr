@@ -36,19 +36,23 @@ func pageHeaderCSS(t style.Theme) string {
 		Rule(".ui-page-header__eyebrow").
 		Set(
 			"margin", "0",
-			"font-size", "0.75rem",
+			"font-size", "var(--text-xs, 0.75rem)",
 			"font-weight", "600",
 			"text-transform", "uppercase",
 			"letter-spacing", "0.06em",
 			"color", "var(--color-text-subtle, #71717A)",
 		).
 		End().
+		// Knobs: --ui-page-header-title-size/-leading/-tracking let a host
+		// scale titles to editorial display type app-wide without
+		// restyling the component's internals.
 		Rule(".ui-page-header__title").
 		Set(
 			"margin", "0",
-			"font-size", "1.5rem",
+			"font-size", "var(--ui-page-header-title-size, var(--text-2xl, 1.5rem))",
 			"font-weight", "700",
-			"line-height", "1.25",
+			"line-height", "var(--ui-page-header-title-leading, 1.25)",
+			"letter-spacing", "var(--ui-page-header-title-tracking, normal)",
 			"color", "var(--color-text, #18181B)",
 		).
 		End().

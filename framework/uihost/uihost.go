@@ -374,9 +374,10 @@ func (ds *UIHost) CustomCSS() string {
 
 // AppCSS returns the merged app-level stylesheet body: theme :root
 // custom properties + every registered theme override
-// (.fui-theme-<hash> blocks for ui.Themed wrappers) + customCSS,
-// in that order. Used by the SSG so static export ships the same
-// single asset the live server serves.
+// (.fui-theme-<hash> blocks for ui.Themed wrappers) + customCSS +
+// every style.Contribute'd fragment, in that order. Used by the SSG
+// so static export ships the same single asset the live server
+// serves.
 //
 // The :root block is ALWAYS emitted, even when the host has no
 // explicit App.Theme. Per-component CSS emits bare var(--*)
@@ -398,6 +399,17 @@ func (ds *UIHost) AppCSS() string {
 		out += overrides + "\n"
 	}
 	out += ds.customCSS
+	// Co-located screen styles registered via style.Contribute. The host
+	// fans them in itself — no WithCustomCSS hand-wiring required — and
+	// resolves theme tokens ({spacing.lg} → var(--spacing-lg)) against the
+	// active theme. Emitted LAST so contributed rules can override the
+	// app's customCSS base rules by re-declaring the same selector, the
+	// layer the documented style.Apply pattern always put them in.
+	contrib := style.NewStyleSheet(t)
+	style.Apply(contrib)
+	if css := contrib.CSS(); css != "" {
+		out += "\n" + css
+	}
 	return out
 }
 
@@ -1276,8 +1288,9 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID string, bundle bool
 
 // handleAppCSS serves the app-level CSS asset: theme :root custom
 // properties + registered .fui-theme-<hash> override blocks +
-// WithCustomCSS payload concatenated. One request per page replaces
-// the legacy theme.css + styles.css split.
+// WithCustomCSS payload + style.Contribute'd fragments concatenated.
+// One request per page replaces the legacy theme.css + styles.css
+// split.
 func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")

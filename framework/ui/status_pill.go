@@ -77,7 +77,7 @@ func statusPillCSS(_ style.Theme) string {
   gap: 6px;
   padding: 3px 10px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);

@@ -29,6 +29,20 @@ const (
 	SidebarOffCanvas   SidebarVariant = "off-canvas"
 )
 
+// checkSidebarVariant panics on a variant outside the built-in set.
+// Matches the Card/Button contract: every variant-taking component
+// validates at render so a typo'd variant is loud, not silently
+// unstyled. Empty is allowed (the documented default — Sidebar()
+// normalizes it to SidebarPersistent).
+func checkSidebarVariant(v SidebarVariant) {
+	switch v {
+	case "", SidebarPersistent, SidebarCollapsible, SidebarOffCanvas:
+		return
+	}
+	panic("ui: Sidebar unknown Variant " + string(v) +
+		` — pick one of: "" (persistent), "collapsible", "off-canvas"`)
+}
+
 // SidebarItem is one navigation entry. Children nest one level deep.
 // Deeper nesting is unsupported by design — sidebars should not be
 // trees.
@@ -82,7 +96,7 @@ type SidebarConfig struct {
 
 	// SuppressDrawerTrigger hides the hamburger button rendered by
 	// Sidebar (some apps put their hamburger in the page header
-	// instead and call MountSidebarDrawer themselves).
+	// instead and call MountSidebar themselves).
 	SuppressDrawerTrigger bool
 }
 
@@ -91,7 +105,7 @@ var sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,
 
 // Sidebar renders the inline nav column + the hamburger trigger that
 // opens the < md drawer. The drawer widget itself is mounted by the
-// caller via MountSidebarDrawer (once per app, at startup).
+// caller via MountSidebar (once per app, at startup).
 //
 // Pair with core-ui/app/layout.Layout.WithSidebar to slot it into the
 // canonical chrome. Inline use is also fine — the component is
@@ -172,9 +186,20 @@ func (s sidebarComponent) RenderCtx(ctx context.Context) render.HTML {
 func (s sidebarComponent) Render() render.HTML { return s.render() }
 
 func (s sidebarComponent) render() render.HTML {
+	// Unknown variants panic like every other variant-taking component
+	// (Card, Button, Notification) — a typo'd variant used to render
+	// an unstyled ui-sidebar--<anything> class silently. Empty is the
+	// documented default (Sidebar() normalizes it to persistent).
+	checkSidebarVariant(s.cfg.Variant)
 	cfg := s.cfg
 	var b strings.Builder
-	b.WriteString(`<aside class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar>`)
+	// A <div>, not <aside>: when slotted into a layout the layout wraps
+	// the sidebar in its own <nav aria-label="Sidebar"> landmark, so an
+	// <aside> here would nest complementary inside navigation — axe's
+	// landmark-complementary-is-top-level rule fires on the double
+	// landmark. The layout's <nav> is the sole landmark; this element
+	// is the styled shell (display:contents, so it adds no box).
+	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar>`)
 
 	if !cfg.SuppressDrawerTrigger {
 		b.WriteString(`<button class="ui-sidebar__hamburger" type="button" ` +
@@ -184,11 +209,11 @@ func (s sidebarComponent) render() render.HTML {
 
 	b.WriteString(`<div class="ui-sidebar__inline">`)
 	b.WriteString(string(sidebarBody(cfg)))
-	b.WriteString(`</div></aside>`)
+	b.WriteString(`</div></div>`)
 	return sidebarStyle.WrapHTML(render.HTML(b.String()))
 }
 
-// SidebarBody renders the navigation content only — no <aside> shell,
+// SidebarBody renders the navigation content only — no sidebar shell,
 // no hamburger. Use it as the Slot content of a preset.Drawer widget
 // that mirrors the sidebar at narrow viewports.
 func SidebarBody(cfg SidebarConfig) render.HTML {
@@ -257,7 +282,16 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, currentPath string, de
 		if active {
 			linkAttrs += ` aria-current="page"`
 		}
-		b.WriteString(`<a href="` + escAttr(it.Href) + `"` + linkAttrs + `>`)
+		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
+		// protocol-relative //host, and control bytes (see safety.go);
+		// a rejected href degrades to "#" like ui.Card / ui.Link /
+		// ui.Menu. (Previously this used the weaker sanitizeHref, which
+		// let //evil.com, file:, and blob: through verbatim.)
+		href := safeURL(it.Href)
+		if href == "" {
+			href = "#"
+		}
+		b.WriteString(`<a href="` + escAttr(href) + `"` + linkAttrs + `>`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 		}
@@ -320,9 +354,17 @@ func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.De
 }
 
 // WidgetMounter is the minimal contract for hosting a widget on a
-// router. The framework's *router.Router satisfies it through the
-// router.Adapt() helper or a thin shim — wiring is intentionally
-// pluggable so this package stays router-agnostic.
+// router. Apps adapt the framework's *router.Router with a three-line
+// shim (wiring is intentionally pluggable so this package stays
+// router-agnostic):
+//
+//	type routerMounter struct{ r *router.Router }
+//
+//	func (m routerMounter) MountWidget(def *widget.Definition) {
+//		widget.Mount(m.r, def)
+//	}
+//
+//	ui.MountSidebar(routerMounter{app.Router()}, sidebarCfg)
 type WidgetMounter interface {
 	MountWidget(def *widget.Definition)
 }
@@ -366,7 +408,7 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
   cursor: pointer;
-  font-size: 1.25rem;
+  font-size: var(--text-xl, 1.25rem);
   line-height: 1;
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__inline {
@@ -388,7 +430,7 @@ func sidebarCSS(_ style.Theme) string {
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__sublist {
   margin-inline-start: var(--spacing-lg, 16px);
@@ -407,7 +449,16 @@ func sidebarCSS(_ style.Theme) string {
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link:hover,
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
-  outline: none;
+}
+[data-fui-comp="ui-sidebar"] .ui-sidebar__link:focus-visible {
+  /* Visible focus ring on BOTH the default and the active
+     (primary-background) link. The previous background-only signal was
+     invisible on the active link: the [aria-current="page"] rule below
+     (equal specificity, later source) overrode the focus background, and
+     outline:none removed the ring — so a keyboard user could not see
+     focus land on the current page's nav item. */
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
 }
 [data-fui-comp="ui-sidebar"] .ui-sidebar__link[aria-current="page"] {
   /* Use the primary + primary-fg token pair so contrast is guaranteed

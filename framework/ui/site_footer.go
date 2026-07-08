@@ -110,7 +110,7 @@ func siteFooterCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-site-footer"] .ui-site-footer__col-title {
   margin: 0 0 var(--spacing-sm, 8px);
-  font-size: 11px;
+  font-size: var(--text-xs, 11px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -127,7 +127,7 @@ func siteFooterCSS(_ style.Theme) string {
 [data-fui-comp="ui-site-footer"] li a {
   color: currentColor;
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--text-sm, 13px);
   line-height: 1.6;
 }
 [data-fui-comp="ui-site-footer"] li a:hover,
@@ -143,6 +143,6 @@ func siteFooterCSS(_ style.Theme) string {
   padding-block-start: var(--spacing-lg, 24px);
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
   color: var(--ui-site-footer-bottom-color, var(--color-text-subtle, currentColor));
-  font-size: 12px;
+  font-size: var(--text-xs, 12px);
 }`
 }

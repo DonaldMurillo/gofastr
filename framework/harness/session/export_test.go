@@ -108,7 +108,7 @@ func TestExportMaintainerIncludesReport(t *testing.T) {
 	store := &fakeStore{}
 	sess := ids.NewSessionID()
 	env, _ := control.EncodeEvent(1, control.TextDelta{
-		Text: "AKIAEXAMPLEKEY123456 and ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Text: "AKIAEXAMPLEKEY123456 and ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // nosecret: fake fixture proving export redaction
 	}, sess, ids.NewClientID(), time.Now())
 	_ = store.AppendEvent(context.Background(), env)
 
@@ -136,7 +136,7 @@ func TestExportMaintainerIncludesReport(t *testing.T) {
 		t.Error("redactions.json missing at maintainer level")
 	}
 	body := readEventsFromBundle(t, out)
-	if strings.Contains(body, "AKIAEXAMPLEKEY123456") {
+	if strings.Contains(body, "AKIAEXAMPLEKEY123456") { // nosecret: fake fixture
 		t.Error("AWS key leaked at maintainer level")
 	}
 	if !strings.Contains(body, "«redacted:aws-access-key»") {
@@ -145,7 +145,7 @@ func TestExportMaintainerIncludesReport(t *testing.T) {
 }
 
 func TestDeepRedactCountsHits(t *testing.T) {
-	out, hits := deepRedact("AKIAABCDEFGHIJKLMNOP me@example.com")
+	out, hits := deepRedact("AKIAABCDEFGHIJKLMNOP me@example.com") // nosecret: fake fixture
 	if !strings.Contains(out, "«redacted:") {
 		t.Error("no replacement performed")
 	}

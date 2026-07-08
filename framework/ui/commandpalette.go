@@ -214,7 +214,7 @@ func commandPaletteCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__form { padding: var(--spacing-md, 12px); border-bottom: 1px solid var(--color-border, #d0d0d8); }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__input {
-  font-size: 1.05rem;
+  font-size: var(--text-base, 1.05rem);
   border: none;
   background: transparent;
   padding: 0;
@@ -242,13 +242,13 @@ func commandPaletteCSS(_ style.Theme) string {
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__hints {
   display: inline-flex;
   gap: var(--spacing-md, 12px);
-  font-size: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #6b7280);
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-sm, 4px);
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__kbd {
   font-family: var(--fonts-mono, ui-monospace, monospace);
@@ -257,7 +257,7 @@ func commandPaletteCSS(_ style.Theme) string {
   border-bottom-width: 2px;
   border-radius: var(--radii-sm, 4px);
   background: var(--color-surface, #fff);
-  font-size: 0.7rem;
+  font-size: var(--text-xs, 0.7rem);
 }
 @media (max-width: 540px) {
   [data-fui-comp="ui-cmd-palette"] { inline-size: 100vw; min-block-size: 100dvh; border-radius: 0; }
