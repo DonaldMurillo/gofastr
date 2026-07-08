@@ -5,6 +5,74 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.14.0] - 2026-07-07
+
+Nexus-gap wiring round one — three small framework gaps surfaced by
+building Nexus on GoFastr (tracking issue #35), each closed at the
+existing seam rather than with new machinery.
+
+### Added
+
+- **OpenAPI specs now say how to authenticate** (#21). When any entity is
+  auth-gated (owner-scoped, multi-tenant, or RBAC), the generated spec
+  declares `components.securitySchemes` — `bearerAuth` (HTTP bearer, JWT)
+  and `cookieAuth` (the auth battery's session cookie, production default
+  `__Host-session`) — and every gated operation carries a per-operation
+  `security` block accepting either. Ungated entities stay unmarked, and
+  there is no global `security` requirement. Deployments overriding
+  `AuthConfig.SessionCookie` can replace the scheme via
+  `Spec.SetSecurityScheme("cookieAuth", …)`. `core/openapi.Operation`
+  gained the underlying `Security` field + `AddSecurity`.
+- **Rate-limit budget headers** (#22). `core/middleware.RateLimit` emits
+  the IETF-draft `RateLimit-Limit` / `RateLimit-Remaining` /
+  `RateLimit-Reset` headers on every response (allowed and 429) so API
+  clients can self-pace; `RateLimitConfig.OmitBudgetHeaders` suppresses
+  them. `Retry-After` on 429 is unchanged. The auth battery's limiter
+  deliberately emits only `Retry-After` — a live remaining-attempt count
+  on login/reset endpoints would hand attackers brute-force pacing.
+- **Storage content checksums** (#23). `battery/storage.SaveWithChecksum`
+  tees any `Storage` save through SHA-256 in a single pass and returns
+  `SaveResult{Size, SHA256}`; `VerifyChecksum` re-reads and compares,
+  wrapping `ErrChecksumMismatch` on mismatch. The `Storage` interface is
+  unchanged — the helpers wrap any backend, including user-implemented
+  ones.
+
+- **Auth security events reach the audit log** (#31). `battery/auth` now
+  emits a fixed-vocabulary `SecurityEvent` at every security decision point
+  — login succeeded/pending-2FA/failed, register, logout, the full 2FA
+  lifecycle (enroll, challenge pass/fail, disable, backup-code regen),
+  password reset requested (known *and* unknown emails, so probing is
+  visible) and completed, session revocation with counts, OAuth
+  linked/login/refused, and magic-link request/consume. Wire it with one
+  line: `AuthConfig.AuditSink = sink` where
+  `sink, _ := auth.NewSQLAuditSink(db, "")` writes into the same
+  `audit_log` table as the CRUD hooks (entity `"auth"`). Events never
+  carry credentials — the only user-controlled string is the email, and a
+  leak-guard test greps every event for planted secrets. A panicking or
+  failing sink never breaks the auth flow it was recording.
+  `framework.AppendAuditEvent` is the new exported append primitive for
+  custom sinks, sharing the CRUD trail's sanitization.
+- **Postgres full-text search backend** (#27). `search.NewPostgres(db, cfg)`
+  implements the existing `Backend` interface over a single table with an
+  in-SQL `tsvector` (GIN-indexed, idempotent `EnsureSchema`), ranked
+  `ts_rank` results, weighted fields (`Document.Fields` keys promoted to
+  weights `'B'..'D'`; `Text` is always `'A'`), configurable language, and
+  built-in prefix matching on the final query term (search-as-you-type).
+  Query text is sanitized through a single unit-tested chokepoint and always
+  parameterized. `Query` gained `FieldEquals` — an exact-match filter on
+  `Document.Fields` implemented identically in both backends (JSONB
+  containment in Postgres) so tenant/owner scoping happens in-query instead
+  of post-filtering. pg_trgm is deliberately omitted (needs
+  `CREATE EXTENSION`/superuser).
+
+### Fixed
+
+- Docs drift: `uploads.md` showed a two-method `Storage` interface that
+  no longer exists (real interface has `Save`/`Delete`/`Get`/`Exists`,
+  with `Save` returning `error`), and `security.md`'s rate-limit example
+  used `Requests`/`Window` fields that were renamed to
+  `Capacity`/`RefillEvery`/`RefillBy` long ago.
+
 ## [0.13.0] - 2026-07-07
 
 The UI-library hardening release: a five-dimension evaluation of
