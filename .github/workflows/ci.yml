@@ -85,7 +85,10 @@ jobs:
         # Mirrors scripts/test-all.sh flags (-count=1, -timeout=20m,
         # -p 2 to keep httptest/chromedp sockets off the ephemeral-port
         # ceiling). Excluded here and run in browser-e2e instead:
-        #   - examples/site, kiln/integration (whole packages)
+        #   - examples/site, kiln/integration, core-ui/runtime,
+        #     core-ui/widget (whole packages — the latter two host the
+        #     hydration chromedp suites and are documented flaky under
+        #     parallel package load; see CLAUDE.md)
         #   - cmd/gofastr browser tests via -skip (the rest of the
         #     package stays blocking). These drive a real Chrome over a
         #     livereload websocket; under -p 2 with every other package
@@ -95,7 +98,7 @@ jobs:
           # shellcheck disable=SC2046  # word splitting of go list output is intended
           go test -count=1 -timeout=20m -p 2 \
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
-            $(go list ./... | grep -vE 'gofastr/(examples/site|kiln/integration)$')
+            $(go list ./... | grep -vE 'gofastr/(examples/site|kiln/integration|core-ui/runtime|core-ui/widget)$')
 
       - name: Coverage floors (claimed packages)
         # Re-runs `go test -cover` for only the packages with numeric
@@ -107,9 +110,10 @@ jobs:
   browser-e2e:
     name: "browser e2e (blocking)"
     runs-on: ubuntu-latest
-    # Per-step go-test timeouts sum to 55m (15+15+15+10); the job budget
-    # must exceed that so the !cancelled() always-report steps can run.
-    timeout-minutes: 60
+    # Per-step go-test timeouts sum to 70m (15+15+15+10+10+5); the job
+    # budget must exceed that so the !cancelled() always-report steps can
+    # run.
+    timeout-minutes: 75
     env:
       CGO_ENABLED: "1"
     steps:
@@ -154,3 +158,18 @@ jobs:
         # browser tests. Kept out of the deterministic step so the
         # websocket connect isn't starved by parallel package load.
         run: go test -count=1 -timeout=10m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' ./cmd/gofastr/
+
+      - name: core-ui/runtime e2e (isolated)
+        if: ${{ !cancelled() }}
+        # The runtime hydration suite launches a real Chrome per test
+        # binary; under the deterministic job's -p 2 package parallelism
+        # the chromedp websocket connect starves and times out
+        # ("websocket url timeout reached" — CLAUDE.md documents this
+        # package as flaky under parallel load, run isolated).
+        run: go test -count=1 -timeout=10m ./core-ui/runtime/
+
+      - name: core-ui/widget e2e (isolated)
+        if: ${{ !cancelled() }}
+        # Same class as core-ui/runtime — documented flaky when sharing
+        # a go-test run with other chromedp suites.
+        run: go test -count=1 -timeout=5m ./core-ui/widget/
