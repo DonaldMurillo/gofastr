@@ -54,6 +54,10 @@ func TestTabClickUpdatesAriaSelected(t *testing.T) {
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
+		// CI runners intermittently take >20s (the chromedp default)
+		// to cold-start Chrome; a generous websocket-URL deadline turns
+		// that from a flaky suite failure into a few slow seconds.
+		chromedp.WSURLReadTimeout(90*time.Second),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(allocCancel)
