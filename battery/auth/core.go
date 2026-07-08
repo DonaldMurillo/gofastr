@@ -185,6 +185,15 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			// the response time matches the existing-user path. Skipping
 			// bcrypt here leaks user existence via timing.
 			_ = CheckPassword(password, dummyBcryptHash)
+			// Unknown user OR a transport error — record a failed login.
+			// UserID stays empty (anti-enumeration: the event never
+			// distinguishes "no such user" from "wrong password").
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "login.failed",
+				Email:  email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"reason": "bad_credentials"},
+			})
 			if isForm {
 				writeFormAuthError(w, r, http.StatusUnauthorized, "invalid_credentials")
 			} else {
@@ -193,6 +202,13 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			return
 		}
 		if !CheckPassword(password, hash) {
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "login.failed",
+				UserID: user.GetID(),
+				Email:  email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"reason": "bad_credentials"},
+			})
 			if isForm {
 				writeFormAuthError(w, r, http.StatusUnauthorized, "invalid_credentials")
 			} else {
@@ -217,12 +233,34 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		pendingTwoFA, err := c.markPendingIfTwoFactorEnabled(r, sess.Token, user.GetID())
 		if err != nil {
 			_ = c.mgr.SessionStore().Delete(r.Context(), sess.Token)
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "login.failed",
+				UserID: user.GetID(),
+				Email:  email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"reason": "twofa_failclosed"},
+			})
 			if isForm {
 				writeFormAuthError(w, r, http.StatusInternalServerError, "two_factor_unavailable")
 			} else {
 				writeAuthError(w, http.StatusInternalServerError, "two-factor enforcement unavailable")
 			}
 			return
+		}
+		if pendingTwoFA {
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "login.pending_2fa",
+				UserID: user.GetID(),
+				Email:  email,
+				Remote: remoteHost(r),
+			})
+		} else {
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "login.succeeded",
+				UserID: user.GetID(),
+				Email:  email,
+				Remote: remoteHost(r),
+			})
 		}
 
 		cfg := c.mgr.Config()
@@ -280,6 +318,17 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 		}
 		cfg := c.mgr.Config()
 		if cookie, err := r.Cookie(cfg.SessionCookie); err == nil {
+			// Capture the principal before deleting so the audit row
+			// names who logged out. A Get failure (expired/invalid
+			// cookie) yields no event — nothing to revoke of record.
+			if sess, gerr := c.mgr.SessionStore().Get(r.Context(), cookie.Value); gerr == nil {
+				c.mgr.emitSecurity(r.Context(), SecurityEvent{
+					Kind:   "session.revoked",
+					UserID: sess.UserID,
+					Remote: remoteHost(r),
+					Meta:   map[string]string{"reason": "logout"},
+				})
+			}
 			_ = c.mgr.SessionStore().Delete(r.Context(), cookie.Value)
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -447,6 +496,15 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			}
 			return
 		}
+
+		// Registration succeeded — record before the form/JSON branch so
+		// both paths produce the event.
+		c.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "register.succeeded",
+			UserID: user.GetID(),
+			Email:  email,
+			Remote: remoteHost(r),
+		})
 
 		// Form path: auto-login + cookie + 303 redirect.
 		if isForm {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -133,8 +134,25 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		// Either ErrUserNotFound (don't leak) or transport error (don't
 		// leak either — operator monitors for transport failures via
 		// metrics, not via the user-facing response).
+		// Unknown email OR transport error — record the request anyway so
+		// probing is visible in the audit trail. UserID stays empty
+		// (anti-enumeration); the response is identical either way.
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "password.reset_requested",
+			Email:  body.Email,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"known": "false"},
+		})
 		return
 	}
+
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "password.reset_requested",
+		UserID: user.GetID(),
+		Email:  body.Email,
+		Remote: remoteHost(r),
+		Meta:   map[string]string{"known": "true"},
+	})
 
 	tok, err := p.store.CreateToken(r.Context(), user.GetID(), p.cfg.TokenTTL)
 	if err != nil {
@@ -224,15 +242,28 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "password.reset_completed",
+		UserID: userID,
+		Remote: remoteHost(r),
+	})
+
 	// Revoke every pre-existing session for this user. A credential that was
 	// compromised before the reset must not retain access through an already-
 	// issued cookie — the whole point of a reset is to lock the attacker out.
 	// Stores that don't implement SessionUserPurger leave the window open; log
 	// that so the gap is visible rather than silent.
 	if purger, ok := p.mgr.SessionStore().(SessionUserPurger); ok {
-		if _, err := purger.DeleteByUser(r.Context(), userID); err != nil {
+		if n, err := purger.DeleteByUser(r.Context(), userID); err != nil {
 			slog.Warn("password-reset session revocation failed",
 				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		} else {
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "session.revoked",
+				UserID: userID,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
+			})
 		}
 	} else {
 		slog.Warn("password-reset could not revoke existing sessions: session store does not implement SessionUserPurger",
