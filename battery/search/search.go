@@ -22,6 +22,19 @@ type Query struct {
 	Type   string
 	Limit  int
 	Offset int
+	// FieldEquals restricts results to documents whose Fields contain every
+	// given key with exactly the given value. This is the scope hook —
+	// callers put tenant/owner/permission columns in Document.Fields at index
+	// time and filter here, in-query, instead of post-filtering.
+	//
+	// Matching is string-only and identical across backends: a document
+	// matches iff for every key/value pair, Fields[key] is present AND its
+	// value is a string equal to value. A field whose value is not a string
+	// (a number, a slice, a struct) never satisfies a FieldEquals pair, even
+	// if its fmt.Sprint form would match. The Postgres backend encodes this as
+	// JSONB containment (fields @> '{"tenant":"acme"}'), whose type-strict
+	// containment is the natural mirror of the string-equality rule.
+	FieldEquals map[string]string
 }
 
 // Backend is implemented by search engines.

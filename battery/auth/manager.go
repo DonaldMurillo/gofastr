@@ -84,6 +84,15 @@ type AuthConfig struct {
 	// accounts to password-only auth after a restart. See the
 	// horizontal-scaling doc for the DB-backed alternatives.
 	AllowInMemoryStores bool
+
+	// AuditSink, when non-nil, receives security events: login success
+	// and failure, 2FA enrolment/challenge/disable, password reset,
+	// OAuth link and login, magic-link request and consume. The events
+	// land in the same audit_log table as the CRUD hooks (via
+	// NewSQLAuditSink) so an operator has one trail for "who did what".
+	// nil disables auditing entirely — emit calls are no-ops. Wire it
+	// with auth.NewSQLAuditSink(db, "") for the one-line default.
+	AuditSink AuditSink
 }
 
 // defaults fills in zero values with sensible defaults.

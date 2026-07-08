@@ -46,3 +46,11 @@ a constructor change.
 **Declarative wiring:** `storage.Register(StorageType, factory)` +
 `storage.New(t, configMap)` lets host apps select a backend from a
 config file at boot.
+
+**Content checksums:** `storage.SaveWithChecksum(ctx, s, key, r)` writes
+through any `Storage` while teeing a SHA-256 hasher, returning
+`(SaveResult{Size, SHA256}, err)`. `storage.VerifyChecksum(ctx, s, key,
+hex)` re-reads and compares, returning `storage.ErrChecksumMismatch`
+(wrapped, with got/want digests) on mismatch. Use these for integrity
+checks, dedup, or content-addressed keys instead of hand-rolling
+`io.TeeReader` + `sha256` around `Save`.

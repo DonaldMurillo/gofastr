@@ -113,15 +113,29 @@ expired.
 
 ```go
 middleware.RateLimit(middleware.RateLimitConfig{
-    Requests: 100,
-    Window:   time.Minute,
-    KeyFunc:  func(r *http.Request) string { return r.RemoteAddr },
+    Capacity:    100,         // peak burst
+    RefillEvery: time.Minute, // +RefillBy tokens per interval
+    RefillBy:    100,
 })
 ```
 
-Token-bucket per key. `KeyFunc` defaults to `RemoteAddr`. Tune
-`Requests`/`Window` per route by composing two `RateLimit` middlewares
-in different `middleware.Chain` calls.
+Token-bucket per key. `KeyFunc` defaults to `RemoteAddr` (X-Forwarded-For
+is ignored unless `TrustProxyHeaders` + `TrustedProxies` are set). Tune
+`Capacity`/`RefillEvery`/`RefillBy` per route by composing two `RateLimit`
+middlewares in different `middleware.Chain` calls.
+
+On every response that passes through it (both allowed and 429) the
+middleware also emits the IETF-draft budget headers so well-behaved API
+clients can self-pace: `RateLimit-Limit` (the configured `Capacity`),
+`RateLimit-Remaining` (tokens left after this request), and
+`RateLimit-Reset` (whole seconds, rounded up, until the bucket is back at
+full capacity). Set `OmitBudgetHeaders: true` to suppress them when the
+per-response header cost matters at scale or an upstream cache would shard
+by remaining budget; `Retry-After` on the 429 path is unaffected. The auth
+battery's own limiter (`battery/auth`) intentionally exposes **only**
+`Retry-After` and never the budget headers — a live remaining-attempt count
+on login / password-reset endpoints would hand an attacker exact brute-force
+pacing information.
 
 ## OpenAPI coverage for auth endpoints
 

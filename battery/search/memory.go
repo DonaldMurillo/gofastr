@@ -51,6 +51,9 @@ func (m *Memory) Search(_ context.Context, query Query) ([]Result, error) {
 		if query.Type != "" && doc.Type != query.Type {
 			continue
 		}
+		if !matchesFields(doc.Fields, query.FieldEquals) {
+			continue
+		}
 		haystack := strings.ToLower(doc.Text + " " + fieldsText(doc.Fields))
 		score := scoreTerms(haystack, terms)
 		if score == 0 && len(terms) > 0 {
@@ -135,4 +138,17 @@ func fieldsText(fields map[string]any) string {
 		}
 	}
 	return sb.String()
+}
+
+// matchesFields reports whether fields contains every key in want with a
+// string value equal to the wanted value. See Query.FieldEquals for the
+// string-only matching rule shared with the Postgres backend.
+func matchesFields(fields map[string]any, want map[string]string) bool {
+	for k, v := range want {
+		got, ok := fields[k].(string)
+		if !ok || got != v {
+			return false
+		}
+	}
+	return true
 }

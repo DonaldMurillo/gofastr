@@ -267,6 +267,12 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "magiclink.requested",
+		Email:  body.Email,
+		Remote: remoteHost(r),
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
@@ -342,6 +348,13 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		Secure:   cfg.SessionSecure,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  sess.ExpiresAt,
+	})
+
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "magiclink.consumed",
+		UserID: user.GetID(),
+		Email:  email,
+		Remote: remoteHost(r),
 	})
 
 	http.Redirect(w, r, safeRedirectURL(p.config.OnSuccessURL), http.StatusFound)

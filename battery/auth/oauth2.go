@@ -222,10 +222,15 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 
-		user, err := p.resolveOAuthUser(r.Context(), userStore, info)
+		user, linked, err := p.resolveOAuthUser(r.Context(), userStore, info)
 		if err != nil {
 			switch {
 			case errors.Is(err, errOAuthEmailCollision):
+				p.mgr.emitSecurity(r.Context(), SecurityEvent{
+					Kind:  "oauth.refused",
+					Email: info.Email,
+					Meta:  map[string]string{"provider": providerName, "reason": "link_conflict"},
+				})
 				writeAuthError(w, http.StatusConflict,
 					"an account with this email already exists — log in with your existing credentials and link from account settings")
 			case errors.Is(err, errOAuthLookupFailed):
@@ -234,6 +239,24 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, http.StatusConflict, "could not create user")
 			}
 			return
+		}
+
+		if linked {
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "oauth.linked",
+				UserID: user.GetID(),
+				Email:  info.Email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"provider": providerName},
+			})
+		} else {
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "oauth.login",
+				UserID: user.GetID(),
+				Email:  info.Email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"provider": providerName},
+			})
 		}
 
 		// Persist the provider tokens (incl. the refresh token) when a
@@ -297,23 +320,24 @@ var errOAuthLookupFailed = errors.New("oauth: lookup failed")
 //     use this with a UserStore you trust to never resolve unverified
 //     emails to existing accounts).
 //  4. Otherwise CreateUser, and LinkOAuth if supported.
-func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, info *OAuth2UserInfo) (User, error) {
+func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, info *OAuth2UserInfo) (User, bool, error) {
 	linker, hasLinker := store.(OAuthLinker)
 
 	if hasLinker {
 		user, err := linker.FindByOAuth(ctx, info.Provider, info.ID)
 		if err == nil {
-			return user, nil
+			// Existing link: this is a login, not a new binding.
+			return user, false, nil
 		}
 		if !errors.Is(err, ErrUserNotFound) {
-			return nil, fmt.Errorf("%w: FindByOAuth: %v", errOAuthLookupFailed, err)
+			return nil, false, fmt.Errorf("%w: FindByOAuth: %v", errOAuthLookupFailed, err)
 		}
 		// Fall through to email + collision check.
 	}
 
 	existing, _, err := store.FindByEmail(ctx, info.Email)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
-		return nil, fmt.Errorf("%w: FindByEmail: %v", errOAuthLookupFailed, err)
+		return nil, false, fmt.Errorf("%w: FindByEmail: %v", errOAuthLookupFailed, err)
 	}
 
 	if err == nil {
@@ -322,12 +346,12 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 			// Refuse to link silently. The user must prove ownership of
 			// the local account first (log in via password) and link
 			// from settings.
-			return nil, errOAuthEmailCollision
+			return nil, false, errOAuthEmailCollision
 		}
 		// Legacy: trust the email match. Loud warning at construction
 		// time would be ideal — for now, this path requires deliberate
 		// opt-out by NOT implementing OAuthLinker.
-		return existing, nil
+		return existing, false, nil
 	}
 
 	// Auto-create. Prefer the OAuthUserCreator path so the store can
@@ -345,17 +369,20 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 		user, createErr = store.CreateUser(ctx, info.Email, passwordPlaceholderHash, []string{"user"})
 	}
 	if createErr != nil {
-		return nil, createErr
+		return nil, false, createErr
 	}
 	if hasLinker {
 		linkErr := linkOAuthPreferEnriched(ctx, store, linker, user.GetID(), info)
 		if linkErr != nil {
 			// Record the failure but proceed; the next login will
 			// re-resolve via email and try linking again.
-			return nil, fmt.Errorf("%w: LinkOAuth: %v", errOAuthLookupFailed, linkErr)
+			return nil, false, fmt.Errorf("%w: LinkOAuth: %v", errOAuthLookupFailed, linkErr)
 		}
+		// A new (provider, providerID) binding was persisted — the
+		// distinguishing signal for the oauth.linked audit event.
+		return user, true, nil
 	}
-	return user, nil
+	return user, false, nil
 }
 
 // linkOAuthPreferEnriched persists the (provider, providerID) bind plus

@@ -371,6 +371,12 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "2fa.enrolled",
+		UserID: userID,
+		Remote: remoteHost(r),
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"enabled":      true,
@@ -414,6 +420,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// Try TOTP code first.
 	if ValidateTOTP(state.Secret, body.Code, p.config.Period, p.config.Skew) {
 		p.markSessionTwoFA(r)
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "2fa.challenge_succeeded",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"method": "totp"},
+		})
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"verified": true})
 		return
@@ -427,11 +439,22 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if consumed {
 		p.markSessionTwoFA(r)
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "2fa.challenge_succeeded",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"method": "backup_code"},
+		})
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"verified": true, "backup_code": true})
 		return
 	}
 
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "2fa.challenge_failed",
+		UserID: userID,
+		Remote: remoteHost(r),
+	})
 	writeAuthError(w, http.StatusUnauthorized, "invalid code")
 }
 
@@ -519,6 +542,12 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "2fa.disabled",
+		UserID: userID,
+		Remote: remoteHost(r),
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"disabled": true})
 }
@@ -548,6 +577,12 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 		writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
 		return
 	}
+
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "2fa.backup_codes_regenerated",
+		UserID: userID,
+		Remote: remoteHost(r),
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{

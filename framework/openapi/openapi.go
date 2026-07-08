@@ -84,6 +84,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		},
 	})
 
+	// Track whether any entity is auth-gated so the shared security
+	// schemes are registered once after the loop, not per entity.
+	anyGated := false
 	// Generate schema + paths for each entity. Use AllSorted so the
 	// emitted /openapi.json bytes are stable across restarts —
 	// otherwise the tag array order tracks Go's randomised map
@@ -138,6 +141,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 			ent.Config.Access.Update != "" ||
 			ent.Config.Access.Delete != ""
 		gated := ent.Config.OwnerField != "" || ent.Config.MultiTenant || rbacGated
+		if gated {
+			anyGated = true
+		}
 
 		includeNames := make([]string, 0, len(ent.Config.Relations))
 		for _, rel := range ent.Config.Relations {
@@ -214,6 +220,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			listOp.AddResponse(401, "Authentication required", errorRef)
 			listOp.AddResponse(403, "Forbidden", errorRef)
+			listOp.AddSecurity("bearerAuth", nil)
+			listOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("GET", path, *listOp)
 
@@ -231,6 +239,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			createOp.AddResponse(401, "Authentication required", errorRef)
 			createOp.AddResponse(403, "Forbidden", errorRef)
+			createOp.AddSecurity("bearerAuth", nil)
+			createOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("POST", path, *createOp)
 
@@ -246,6 +256,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			getOp.AddResponse(401, "Authentication required", errorRef)
 			getOp.AddResponse(403, "Forbidden", errorRef)
+			getOp.AddSecurity("bearerAuth", nil)
+			getOp.AddSecurity("cookieAuth", nil)
 		}
 		getOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("GET", path+"/:id", *getOp)
@@ -261,6 +273,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			updateOp.AddResponse(401, "Authentication required", errorRef)
 			updateOp.AddResponse(403, "Forbidden", errorRef)
+			updateOp.AddSecurity("bearerAuth", nil)
+			updateOp.AddSecurity("cookieAuth", nil)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("PUT", path+"/:id", *updateOp)
@@ -276,6 +290,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			deleteOp.AddResponse(401, "Authentication required", errorRef)
 			deleteOp.AddResponse(403, "Forbidden", errorRef)
+			deleteOp.AddSecurity("bearerAuth", nil)
+			deleteOp.AddSecurity("cookieAuth", nil)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
@@ -302,6 +318,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			batchCreateOp.AddResponse(401, "Authentication required", errorRef)
 			batchCreateOp.AddResponse(403, "Forbidden", errorRef)
+			batchCreateOp.AddSecurity("bearerAuth", nil)
+			batchCreateOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("POST", path+"/_batch", *batchCreateOp)
 
@@ -333,6 +351,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			batchUpdateOp.AddResponse(401, "Authentication required", errorRef)
 			batchUpdateOp.AddResponse(403, "Forbidden", errorRef)
+			batchUpdateOp.AddSecurity("bearerAuth", nil)
+			batchUpdateOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
 
@@ -352,6 +372,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			eventsOp.AddResponse(401, "Authentication required", errorRef)
 			eventsOp.AddResponse(403, "Forbidden", errorRef)
+			eventsOp.AddSecurity("bearerAuth", nil)
+			eventsOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("GET", path+"/_events", *eventsOp)
 
@@ -377,6 +399,8 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		if gated {
 			batchDeleteOp.AddResponse(401, "Authentication required", errorRef)
 			batchDeleteOp.AddResponse(403, "Forbidden", errorRef)
+			batchDeleteOp.AddSecurity("bearerAuth", nil)
+			batchDeleteOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
 
@@ -402,6 +426,32 @@ func EntityOpenAPI(registry entity.Registry, title, version string, basePath ...
 		}
 	}
 
+	// When at least one entity is auth-gated, advertise how callers
+	// authenticate so generated SDKs and agents don't treat the gated
+	// endpoints as public. Both schemes are accepted per-operation; only
+	// the gated operations carry a `security` block, leaving public
+	// entities unmarked. This is deliberately NOT a global security
+	// requirement (Spec.AddSecurityRequirement) — that would hide the
+	// fact that ungated entities are anonymously reachable.
+	if anyGated {
+		// "__Host-session" is the production default the auth battery
+		// sets in battery/auth/manager.go AuthConfig.defaults()
+		// (DevMode=false). DevMode flips the name to "session_id";
+		// deployments overriding AuthConfig.SessionCookie should
+		// replace this scheme via Spec.SetSecurityScheme("cookieAuth", ...)
+		// after building the spec.
+		s.SetSecurityScheme("bearerAuth", map[string]any{
+			"type":         "http",
+			"scheme":       "bearer",
+			"bearerFormat": "JWT",
+		})
+		s.SetSecurityScheme("cookieAuth", map[string]any{
+			"type":        "apiKey",
+			"in":          "cookie",
+			"name":        "__Host-session",
+			"description": "Session cookie issued by the auth battery. Name shown is the production default (`__Host-session`); DevMode uses `session_id`, and deployments overriding `AuthConfig.SessionCookie` should overwrite this scheme via `Spec.SetSecurityScheme` after building the spec.",
+		})
+	}
 	return s
 }
 

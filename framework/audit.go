@@ -548,3 +548,36 @@ func nullIfEmpty(s string) any {
 	}
 	return s
 }
+
+// AppendAuditEvent appends a non-CRUD audit row (e.g. an auth security
+// event) to the audit table. It reuses the same row writer and the same
+// control-byte sanitisation as the CRUD audit hooks, so a custom sink and
+// the lifecycle hooks cannot drift apart. diff may be nil; an empty map is
+// treated as nil so a no-detail event writes a NULL diff column rather than
+// "{}".
+//
+// Unlike the CRUD hooks this is NOT transactional by default: it writes
+// through the plain pool unless a transaction is already on ctx (resolved
+// via TxFromContext), because security events (login, 2FA, password reset)
+// are not part of an entity write. The caller owns atomicity if it needs
+// any.
+func AppendAuditEvent(ctx context.Context, db *sql.DB, table, entity, op, recordID, actorID string, diff map[string]any) error {
+	if table == "" {
+		table = "audit_log"
+	}
+	var diffBytes []byte
+	if len(diff) > 0 {
+		b, err := json.Marshal(diff)
+		if err != nil {
+			return fmt.Errorf("audit: marshal diff: %w", err)
+		}
+		diffBytes = b
+	}
+	return writeAuditRow(ctx, db, table,
+		sanitizeAuditField(entity),
+		auditOp(sanitizeAuditField(op)),
+		sanitizeAuditField(recordID),
+		sanitizeAuditField(actorID),
+		diffBytes,
+	)
+}

@@ -428,6 +428,23 @@ and rewrites it from the real source IP. Without that posture, an
 attacker rotates the header per request and bypasses every per-IP
 limit.
 
+## Security audit trail
+
+Security-sensitive auth events — login success/failure, the 2FA lifecycle,
+password resets, OAuth links, magic-link issuance — are emitted to an
+`AuditSink` on `AuthConfig` and land in the same `audit_log` table as the
+CRUD hooks. One line of wiring:
+
+```go
+sink, _ := auth.NewSQLAuditSink(db, "")
+mgr := auth.New(auth.AuthConfig{ AuditSink: sink, … })
+```
+
+Events use a closed vocabulary (e.g. `login.succeeded`, `2fa.enrolled`,
+`password.reset_requested`) and never carry credentials — see the
+[audit log](audit-log.md#auth-security-events) page for the full taxonomy
+and the redaction posture. A nil sink disables auditing entirely.
+
 ## The 2FA flow
 
 ```

@@ -125,6 +125,89 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
+## Auth security events
+
+The CRUD hooks cover entity writes, but security-sensitive auth activity
+(login, 2FA, password reset, OAuth, magic-link) is not a CRUD row — it
+would never reach the audit table on its own. `battery/auth` fills that
+gap with an `AuditSink`: the auth manager emits a fixed-vocabulary
+security event at each decision point, and the built-in SQL sink writes
+it into the **same `audit_log` table** as the CRUD hooks (entity
+`"auth"`), so an operator has one trail for "who did what".
+
+### Wiring
+
+```go
+sink, err := auth.NewSQLAuditSink(db, "") // "" → "audit_log", same table as WithAuditLog
+mgr := auth.New(auth.AuthConfig{
+    AuditSink: sink,   // nil disables — emit calls are no-ops
+    UserStore: myUserStore,
+    …
+})
+```
+
+`NewSQLAuditSink` calls `EnsureAuditTable` once at construction (the
+table is shared with `WithAuditLog`), so the two never drift apart. The
+sink is called on the request path — it writes synchronously, so pair it
+with a fast DB or wrap it in a buffering implementation for high-volume
+deployments.
+
+### Event taxonomy
+
+| Kind | When it fires |
+|---|---|
+| `login.succeeded` | Password login completes and the session is fully privileged (no pending 2FA). |
+| `login.pending_2fa` | Login succeeds at the password step but the user has 2FA — a `PendingTwoFactor` session is minted. |
+| `login.failed` | Bad credentials (unknown email OR wrong password — same event, `reason=bad_credentials`) or the fail-closed 2FA rejection (`reason=twofa_failclosed`). |
+| `register.succeeded` | A new user is created. |
+| `session.revoked` | Logout (`reason=logout`) or a password reset purging existing sessions (`reason=password_reset`, with `count`). |
+| `2fa.enrolled` | 2FA enrollment verified (secret enabled + backup codes issued). |
+| `2fa.challenge_succeeded` | 2FA challenge passed (`method=totp` or `method=backup_code`). |
+| `2fa.challenge_failed` | 2FA challenge rejected. |
+| `2fa.disabled` | 2FA turned off. |
+| `2fa.backup_codes_regenerated` | Backup codes refreshed. |
+| `password.reset_requested` | Forgot-password requested — fires for **known and unknown** emails (empty `UserID` for unknown), so account probing is visible. `known=true/false`. |
+| `password.reset_completed` | Password successfully reset. |
+| `oauth.linked` | A NEW `(provider, providerID)` binding was persisted. |
+| `oauth.login` | An already-linked OAuth identity logged in. |
+| `oauth.refused` | OAuth callback refused on email collision (`reason=link_conflict`) — the account-takeover defence. |
+| `magiclink.requested` | A magic link was sent. |
+| `magiclink.consumed` | A magic link token was redeemed for a session. |
+
+Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
+when unknown — the column is NOT NULL), and a `diff` JSON of
+`{email, remote, …meta}`. `remote` is the host part of `r.RemoteAddr`;
+`X-Forwarded-For` is never trusted (see the auth threat model).
+
+### Redaction posture
+
+Auth events NEVER carry credentials: no passwords, hashes, session tokens,
+JWTs, TOTP secrets/codes, backup codes, magic-link/reset tokens, or OAuth
+access/refresh tokens. The `Meta` map holds only fixed-vocabulary strings
+(a `reason` code, a `method`, a `count`) — the ONLY user-controlled string
+in any event field is `Email`. A misbehaving sink that panics is
+recovered: the event is lost, but the login/reset/2FA flow it was auditing
+proceeds (a broken audit sink must never break auth).
+
+### Custom sinks and non-auth events
+
+`AuditSink` is an interface — implement it to route events to syslog,
+a SIEM, or a separate table. For a one-off non-CRUD audit row outside
+auth (a domain action like "suspend user" or "export report"), call the
+framework helper directly:
+
+```go
+framework.AppendAuditEvent(ctx, db, "", "billing", "export.run", userID, userID,
+    map[string]any{"format": "csv", "rows": 1280})
+```
+
+`AppendAuditEvent` reuses the CRUD row writer and the same control-byte
+sanitisation as the hooks, so a custom caller and the lifecycle hooks
+cannot drift apart. It writes through the plain pool (or the active
+transaction when one is on `ctx`) — unlike the CRUD hooks it is NOT
+automatically transactional, because security events are not part of an
+entity write. The caller owns atomicity if it needs any.
+
 ## Common mistakes
 
 - **Calling `WithAuditLog` before `Entity`.** Hooks register against
