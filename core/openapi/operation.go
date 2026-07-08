@@ -9,6 +9,7 @@ type Operation struct {
 	Parameters  []map[string]any
 	RequestBody *map[string]any
 	Responses   map[int]map[string]any
+	Security    []map[string][]string
 }
 
 // NewOperation creates a blank Operation.
@@ -61,6 +62,17 @@ func (o *Operation) AddResponse(status int, description string, schema map[strin
 	o.Responses[status] = resp
 }
 
+// AddSecurity appends a security requirement to the operation: the named
+// scheme (with the given OAuth scopes, or no scopes for bearer/cookie
+// auth) authorises the call. A nil scopes slice is normalised to an
+// empty slice so JSON serialises as [] rather than null.
+func (o *Operation) AddSecurity(name string, scopes []string) {
+	if scopes == nil {
+		scopes = []string{}
+	}
+	o.Security = append(o.Security, map[string][]string{name: scopes})
+}
+
 // ToMap converts the Operation into a map suitable for inclusion in the
 // OpenAPI paths object.
 func (o *Operation) ToMap() map[string]any {
@@ -86,6 +98,9 @@ func (o *Operation) ToMap() map[string]any {
 	}
 	if len(o.Responses) > 0 {
 		m["responses"] = o.Responses
+	}
+	if len(o.Security) > 0 {
+		m["security"] = o.Security
 	}
 
 	return m

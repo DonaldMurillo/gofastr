@@ -487,6 +487,30 @@ func TestOperationResponses(t *testing.T) {
 	}
 }
 
+func TestOperationSecurity(t *testing.T) {
+	op := NewOperation()
+	op.AddSecurity("bearerAuth", nil)
+	op.AddSecurity("cookieAuth", nil)
+
+	if len(op.Security) != 2 {
+		t.Fatalf("expected 2 security requirements, got %d", len(op.Security))
+	}
+	// nil scopes must normalise to [] (not null) so the JSON stays valid
+	// OpenAPI and codegens don't choke on a null scope array.
+	if scopes := op.Security[0]["bearerAuth"]; scopes == nil {
+		t.Errorf("bearerAuth scopes = nil, want empty slice")
+	}
+
+	m := op.ToMap()
+	sec, ok := m["security"].([]map[string][]string)
+	if !ok {
+		t.Fatalf("security not emitted as []map[string][]string: %T", m["security"])
+	}
+	if len(sec) != 2 {
+		t.Errorf("expected 2 security entries in ToMap, got %d", len(sec))
+	}
+}
+
 // --- helpers ---
 
 func keys(m map[string]map[string]any) []string {

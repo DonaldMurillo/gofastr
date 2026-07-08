@@ -62,6 +62,22 @@ RBAC-gated entity — including the `_batch` and `_events` endpoints. This means
 generated SDKs and agents see the correct error contract instead of treating
 RBAC-gated routes as public.
 
+The spec also declares **how** callers authenticate. When any entity is
+auth-gated (owner-scoped, multi-tenant, or RBAC), the spec includes
+`components.securitySchemes` with two schemes a gated operation accepts:
+`bearerAuth` (HTTP bearer, JWT) and `cookieAuth` (the auth battery's session
+cookie). Each gated operation then carries a per-operation `security` block
+listing both — meaning either scheme authorises the call. Ungated entities
+are left unmarked, so clients and codegen treat them as publicly reachable.
+Auth is per-operation, not global: the spec never sets a top-level `security`
+requirement.
+
+The `cookieAuth` name is the auth battery's production default
+(`__Host-session`, set in `battery/auth` `AuthConfig.defaults()`); `DevMode`
+flips it to `session_id`. If your deployment overrides
+`AuthConfig.SessionCookie`, overwrite the scheme after building the spec —
+`Spec.SetSecurityScheme("cookieAuth", …)` replaces it by name.
+
 > **Scope: HTTP only.** `EntityConfig.Access` gates the HTTP CRUD surface.
 > The **in-process** APIs — `CrudHandler.CreateOne/UpdateOne/DeleteOne/
 > GetOne/ListAll/UpsertOne` and the generated typed repo (`Repo.Query()…`)
