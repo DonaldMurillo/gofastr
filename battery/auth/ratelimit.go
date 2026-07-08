@@ -183,6 +183,12 @@ func (rl *RateLimiter) evictLocked(now time.Time) {
 
 // Middleware returns an HTTP middleware that rate-limits by client IP.
 // Blocked requests get 429 with a Retry-After header.
+//
+// It deliberately emits ONLY Retry-After and never the
+// RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset budget headers
+// that the generic token-bucket middleware (core/middleware.RateLimit)
+// exposes: a live remaining-attempt count on login / password-reset
+// endpoints would hand an attacker exact brute-force pacing information.
 func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

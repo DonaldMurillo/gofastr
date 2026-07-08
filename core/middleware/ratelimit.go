@@ -55,6 +55,15 @@ type RateLimitConfig struct {
 	// trusted and the header values are ignored (the key falls back
 	// to r.RemoteAddr).
 	TrustedProxies []string
+	// OmitBudgetHeaders, when true, suppresses the IETF-draft
+	// RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
+	// that the middleware otherwise emits on every response (both
+	// allowed and 429). Set this when the per-response header cost
+	// matters at very high request rates, or when an upstream cache
+	// keys on these headers and would shard its cache by remaining
+	// budget. Retry-After on the 429 path is unaffected. Default is
+	// false (headers on) so well-behaved API clients can self-pace.
+	OmitBudgetHeaders bool
 }
 
 // RateLimit returns Middleware that enforces a token-bucket rate limit per
@@ -102,7 +111,12 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := cfg.KeyFunc(r)
-			allowed, retryAfter := buckets.take(key)
+			allowed, retryAfter, remaining, resetAfter := buckets.take(key)
+			if !cfg.OmitBudgetHeaders {
+				w.Header().Set("RateLimit-Limit", strconv.Itoa(cfg.Capacity))
+				w.Header().Set("RateLimit-Remaining", strconv.Itoa(remaining))
+				w.Header().Set("RateLimit-Reset", strconv.Itoa(ceilSeconds(resetAfter)))
+			}
 			if !allowed {
 				if retryAfter > 0 {
 					w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
@@ -143,22 +157,27 @@ func newBucketStore(capacity int, rate time.Duration, refill int) *bucketStore {
 }
 
 // take attempts to consume one token from the bucket for key. Returns
-// (allowed, retryAfter); retryAfter is the duration until the bucket would
-// have at least one token, or 0 on the success path.
-func (s *bucketStore) take(key string) (bool, time.Duration) {
+// (allowed, retryAfter, remaining, resetAfter), all computed under the store
+// lock so a request never takes it twice. retryAfter is the duration until the
+// bucket would have at least one token (0 on success); remaining is the token
+// count AFTER this request consumed its token (0 on the deny path); resetAfter
+// is the duration until the bucket is back at full capacity (0 when already
+// full).
+func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration) {
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	b, ok := s.buckets[key]
 	if !ok {
-		// Fresh bucket starts full.
-		s.buckets[key] = &bucket{tokens: s.capacity - 1, lastSeen: now}
+		// Fresh bucket starts full; this request consumes its token.
+		remaining := s.capacity - 1
+		s.buckets[key] = &bucket{tokens: remaining, lastSeen: now}
 		// Opportunistic reap of stale buckets so the map doesn't grow.
 		if len(s.buckets)%64 == 0 {
 			s.reapLocked(now)
 		}
-		return true, 0
+		return true, 0, remaining, s.timeToFull(remaining, now, now)
 	}
 
 	// Refill — add floor(elapsed / rate) * refill tokens, capped at capacity.
@@ -174,16 +193,56 @@ func (s *bucketStore) take(key string) (bool, time.Duration) {
 	}
 
 	if b.tokens <= 0 {
-		// How long until next token? rate / refill per token, rounded up.
+		// No token available. How long until the next one? rate / refill per
+		// token, minus the time already elapsed into the current tick, rounded
+		// up to at least a second.
 		perToken := s.rate / time.Duration(s.refill)
 		retry := perToken - now.Sub(b.lastSeen)
 		if retry < time.Second {
 			retry = time.Second
 		}
-		return false, retry
+		return false, retry, 0, s.timeToFull(0, b.lastSeen, now)
 	}
 	b.tokens--
-	return true, 0
+	return true, 0, b.tokens, s.timeToFull(b.tokens, b.lastSeen, now)
+}
+
+// timeToFull returns the duration until the bucket is back at full capacity,
+// given its current token count and the lastSeen timestamp (the moment the
+// last consumed refill tick landed). Returns 0 when the bucket is already at
+// capacity.
+//
+// The refill model adds s.refill tokens every s.rate, with the next tick at
+// lastSeen+s.rate. Recovering a deficit of D tokens therefore takes
+// ceil(D/refill) ticks, landing at lastSeen.Add(ceilTicks*rate); the time
+// remaining is that moment minus now, clamped at 0. The result is thus
+// monotonically non-decreasing in the deficit (more missing tokens ⇒ a longer
+// or equal reset) and consistent with the ticks take actually consumes during
+// refill.
+func (s *bucketStore) timeToFull(remaining int, lastSeen, now time.Time) time.Duration {
+	deficit := s.capacity - remaining
+	if deficit <= 0 {
+		return 0
+	}
+	ticks := (deficit + s.refill - 1) / s.refill // ceil(deficit / refill)
+	resetAt := lastSeen.Add(time.Duration(ticks) * s.rate)
+	if d := resetAt.Sub(now); d > 0 {
+		return d
+	}
+	return 0
+}
+
+// ceilSeconds renders d as whole seconds rounded up, with a floor of 0. Used
+// for RateLimit-Reset so a client never under-waits the reset window.
+func ceilSeconds(d time.Duration) int {
+	secs := int64(d / time.Second)
+	if d%time.Second > 0 {
+		secs++
+	}
+	if secs < 0 {
+		secs = 0
+	}
+	return int(secs)
 }
 
 // reapLocked drops buckets idle for more than 5 minutes. Caller must hold mu.
