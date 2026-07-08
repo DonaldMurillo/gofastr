@@ -97,18 +97,52 @@ filename can't force unbounded pre-truncation work (DoS).
 
 ```go
 type Storage interface {
-    Save(ctx context.Context, key string, body io.Reader) (string, error)
+    Save(ctx context.Context, key string, r io.Reader) error
     Delete(ctx context.Context, key string) error
+    Get(ctx context.Context, key string) (io.ReadCloser, error)
+    Exists(ctx context.Context, key string) (bool, error)
 }
 ```
 
-Built-in implementations live in `core/upload`:
+Built-in implementations:
 
-- `upload.NewLocal(dir, urlPrefix)` — writes to a local directory and
-  serves files from `urlPrefix`. Suitable for tests and single-host
-  deployments.
-- (Add S3 / GCS / Azure adapters in your own code by implementing
+- `upload.NewLocal(dir, urlPrefix)` (`core/upload`) — writes to a local
+  directory and serves files from `urlPrefix`. Suitable for tests and
+  single-host deployments.
+- `battery/storage` — local, S3, and in-memory backends behind the same
+  interface, plus a declarative factory registry.
+- (Add GCS / Azure adapters in your own code by implementing
   `Storage`.)
+
+## Content checksums
+
+The `battery/storage` package provides opt-in SHA-256 helpers that wrap
+any `Storage` backend — integrity verification, dedup, or
+content-addressed keys without touching the backend or buffering the
+whole stream:
+
+```go
+import "github.com/DonaldMurillo/gofastr/battery/storage"
+
+// Write once: stream is teed through a SHA-256 hasher as it saves.
+res, err := storage.SaveWithChecksum(ctx, st, key, body)
+// res.Size   -> bytes written
+// res.SHA256 -> lowercase hex digest of the stored content
+
+// Later: confirm the object still matches.
+if err := storage.VerifyChecksum(ctx, st, key, res.SHA256); err != nil {
+    log.Print(err) // wraps storage.ErrChecksumMismatch on mismatch
+}
+```
+
+`SaveWithChecksum` tees the stream through a SHA-256 hasher while it is
+written, so the content is read exactly once and nothing is buffered.
+`VerifyChecksum` re-reads the object and compares digests; it accepts
+upper- or lowercase hex and returns an error wrapping
+`storage.ErrChecksumMismatch` (carrying the key and the `got`/`want`
+digests) on a mismatch, the underlying error if the object can't be
+read, and a clear validation error if the expected digest isn't 64 hex
+characters.
 
 ## Common mistakes
 
