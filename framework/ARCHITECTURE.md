@@ -260,8 +260,8 @@ L2  entity                                   (imports core/ only — no
 L3  hook, event, file, cron, access, db,    (leaf packages — no framework-
     pagination, filter, owner                internal imports at all)
     dsl, tenant, softdelete, migrate         (each imports entity)
-    slowquery                                (imports db — the one
-                                              intra-L3 edge)
+    slowquery, outbox                        (intra-L3 edges: slowquery
+                                             → db; outbox → event + db)
 L4  crud                                     (uses entity, hook, event, db,
                                               file, filter, pagination,
                                               tenant, owner, access,
@@ -278,7 +278,8 @@ L5  framework/  (facade)                     (re-exports everything for
 `go list -f '{{join .Imports "\n"}}' ./framework/<pkg>` when in doubt.
 The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate —
-today only `slowquery → db` and `openapi → crud` exist.)
+today only `slowquery → db`, `outbox → event`, `outbox → db`, and
+`openapi → crud` exist.)
 
 **No subpackage may import `framework/`.** If a subpackage needs a type
 defined in framework root (App, Registry, CrudHandler), one of three

@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sync"
@@ -18,6 +19,12 @@ const (
 
 // Event represents something that happened in the system.
 type Event struct {
+	// ID uniquely identifies this delivery. It is stamped by the
+	// outbox Relay (framework/outbox) from the persisted row's ID so
+	// consumers can deduplicate at-least-once deliveries. It is empty
+	// for events emitted directly via Emit/EmitAsync, which carry no
+	// durable identity.
+	ID        string    `json:"id,omitempty"`
 	Type      string    `json:"type"`
 	Data      any       `json:"data,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
@@ -120,6 +127,45 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 		}
 	}
 	return nil
+}
+
+// EmitStrict publishes synchronously like Emit, but treats a panicking
+// subscriber as a delivery ERROR (returned to the caller) rather than
+// swallowing it. Emit's swallow protects user transactions when the bus is
+// wired into AfterCreate/AfterUpdate hooks; the transactional outbox relay
+// has the opposite need — a consumer that panics must be retried and
+// eventually dead-lettered, never silently marked dispatched — so it calls
+// this instead. Returns the first handler error or recovered panic.
+func (eb *EventBus) EmitStrict(ctx context.Context, event Event) error {
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	for _, h := range eb.Snapshot(event.Type) {
+		if h == nil {
+			continue
+		}
+		if err := emitStrict(ctx, h, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// emitStrict invokes h with a deferred recover that converts a panic into an
+// error (rather than swallowing it, as emitSafe does). Used only by
+// EmitStrict.
+func emitStrict(ctx context.Context, h EventHandler, event Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().Error("event: subscriber panicked (surfaced as a delivery error)",
+				"event_type", event.Type,
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
+			err = fmt.Errorf("event: subscriber for %q panicked: %v", event.Type, r)
+		}
+	}()
+	return h(ctx, event)
 }
 
 // EmitAsync publishes an event in a goroutine (fire-and-forget).
