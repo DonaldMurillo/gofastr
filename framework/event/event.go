@@ -49,12 +49,87 @@ type EventBus struct {
 	mu       sync.RWMutex
 	handlers map[string][]subEntry
 	nextID   atomic.Uint64
+
+	// tap, when set via setTap, is invoked once per Emit/EmitAsync/
+	// EmitStrict (after the timestamp is stamped) so a fanout bridge
+	// (AttachFanout) can mirror local emissions to other replicas.
+	// Guarded by mu.
+	tap *tapHandle
+
+	// fanoutAttached is set by AttachFanout and cleared by its stop, so a
+	// second AttachFanout on the same bus errors instead of leaving a stale
+	// subscription live (which would echo this bus's own emissions back).
+	// Guarded by mu.
+	fanoutAttached bool
 }
 
 // NewEventBus creates a new EventBus.
 func NewEventBus() *EventBus {
 	return &EventBus{
 		handlers: make(map[string][]subEntry),
+	}
+}
+
+// tapHandle wraps a fanout-bridge tap so setTap/clear can compare the
+// installed handle by pointer identity (func values are not comparable in
+// Go, but *tapHandle is). One bus carries at most one tap.
+type tapHandle struct {
+	fn func(context.Context, Event)
+}
+
+// remoteCtxKey marks a context as carrying a remote-reemit so the fanout
+// tap skips republishing it — the loop guard for AttachFanout.
+type remoteCtxKey struct{}
+
+// withRemoteReemit returns a context whose tap signal is suppressed: an
+// Emit/EmitAsync/EmitStrict on this context will NOT be mirrored to the
+// fanout by the bridge. Used only by AttachFanout to re-emit events
+// received from a remote replica without looping them back out.
+func withRemoteReemit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, remoteCtxKey{}, true)
+}
+
+// IsRemote reports whether the event being handled arrived from another
+// replica via an attached fanout. Handlers that DERIVE new events from the
+// events they receive must gate on it — `if event.IsRemote(ctx) { return nil }`
+// — so the derivation runs only on the origin replica; otherwise every replica
+// derives its own copy and remote replicas observe duplicates.
+//
+// Locally-emitted events (Emit/EmitAsync/EmitStrict on a normal context) report
+// false; events re-emitted by AttachFanout from a remote replica report true.
+func IsRemote(ctx context.Context) bool {
+	_, ok := ctx.Value(remoteCtxKey{}).(bool)
+	return ok
+}
+
+// setTap installs fn as the bus's tap (invoked once per emit after the
+// timestamp is stamped). The returned clear removes the tap; it only
+// clears if the current tap is still the one it installed, so a later
+// setTap that overwrote it is not clobbered. Safe to call multiple times.
+func (eb *EventBus) setTap(fn func(context.Context, Event)) (clear func()) {
+	h := &tapHandle{fn: fn}
+	eb.mu.Lock()
+	eb.tap = h
+	eb.mu.Unlock()
+	return func() {
+		eb.mu.Lock()
+		if eb.tap == h {
+			eb.tap = nil
+		}
+		eb.mu.Unlock()
+	}
+}
+
+// invokeTap fires the installed tap (if any) for event. The tap is the
+// fanout bridge's hook; it must not block or panic on the emit path, and
+// it must honor the remote-reemit marker (see withRemoteReemit) to avoid
+// re-broadcasting events received from a remote replica.
+func (eb *EventBus) invokeTap(ctx context.Context, event Event) {
+	eb.mu.RLock()
+	h := eb.tap
+	eb.mu.RUnlock()
+	if h != nil && h.fn != nil {
+		h.fn(ctx, event)
 	}
 }
 
@@ -118,6 +193,7 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
+	eb.invokeTap(ctx, event)
 	for _, h := range eb.Snapshot(event.Type) {
 		if h == nil {
 			continue
@@ -135,11 +211,11 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 // wired into AfterCreate/AfterUpdate hooks; the transactional outbox relay
 // has the opposite need — a consumer that panics must be retried and
 // eventually dead-lettered, never silently marked dispatched — so it calls
-// this instead. Returns the first handler error or recovered panic.
 func (eb *EventBus) EmitStrict(ctx context.Context, event Event) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
+	eb.invokeTap(ctx, event)
 	for _, h := range eb.Snapshot(event.Type) {
 		if h == nil {
 			continue
@@ -178,6 +254,11 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	}
 	hs := eb.Snapshot(event.Type)
 	go func() {
+		// The tap runs inside the goroutine so a (best-effort, normally
+		// fast) Publish on the fanout can't add latency to the
+		// fire-and-forget caller. The remote-reemit marker is still
+		// honored, preventing broadcast loops.
+		eb.invokeTap(ctx, event)
 		for _, h := range hs {
 			if h == nil {
 				continue

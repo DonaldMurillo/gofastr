@@ -1,9 +1,13 @@
 package island
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/fanout"
 )
 
 // IslandUpdate represents an update to push to a client.
@@ -37,6 +41,16 @@ type Manager struct {
 	// was full (slow/stalled consumer). Exposed via DroppedUpdates so the
 	// otherwise-silent loss is observable (wire it to a metric/health check).
 	dropped atomic.Int64
+
+	// fanout, when attached via SetFanout, mirrors Push/PushUpdate updates
+	// to other replicas and re-delivers theirs locally. nodeID is the
+	// originator stamp used to drop own-node echoes. fanoutSend is the
+	// non-blocking enqueue into the publish queue (fanout.PublishQueue) —
+	// Push/PushUpdate run on HTTP request goroutines and must never wait on
+	// the backend's network/DB round-trip. All guarded by mu.
+	fanout     fanout.Fanout
+	nodeID     string
+	fanoutSend func([]byte)
 }
 
 // DroppedUpdates returns the cumulative number of island updates dropped
@@ -103,23 +117,14 @@ func (m *Manager) Push(islandID string) error {
 	}
 	html := isl.Update()
 	sessionID := isl.SessionID
-	entry, hasStream := m.streams[sessionID]
 	m.mu.Unlock()
 
-	if hasStream {
-		update := IslandUpdate{
-			IslandID: islandID,
-			HTML:     string(html),
-		}
-		select {
-		case entry.ch <- update:
-		case <-entry.done:
-		default:
-			// Drop update if channel is full — client may be slow.
-			m.dropped.Add(1)
-		}
+	update := IslandUpdate{
+		IslandID: islandID,
+		HTML:     string(html),
 	}
-
+	m.deliver(update, sessionID)
+	m.publishFanout(sessionID, update)
 	return nil
 }
 
@@ -168,18 +173,8 @@ func (m *Manager) Unsubscribe(sessionID string) {
 
 // PushUpdate sends a direct update to a session's SSE stream.
 func (m *Manager) PushUpdate(update IslandUpdate, sessionID string) {
-	m.mu.RLock()
-	entry, ok := m.streams[sessionID]
-	m.mu.RUnlock()
-
-	if ok {
-		select {
-		case entry.ch <- update:
-		case <-entry.done:
-		default:
-			m.dropped.Add(1)
-		}
-	}
+	m.deliver(update, sessionID)
+	m.publishFanout(sessionID, update)
 }
 
 // Get retrieves an island by ID.
@@ -206,4 +201,131 @@ func (m *Manager) ListBySession(sessionID string) []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// islandFanoutTopic is the single fanout channel the island managers across
+// replicas publish on and subscribe to.
+const islandFanoutTopic = "gofastr.islands"
+
+// islandFanoutMsg is the wire shape for a fanned-out update. sessionID must
+// travel inside the payload because the receiving replica delivers by
+// looking up its own streams[sessionID] — it does not know the session
+// otherwise.
+type islandFanoutMsg struct {
+	SessionID string `json:"s"`
+	IslandID  string `json:"i"`
+	HTML      string `json:"h"`
+}
+
+// deliver sends update to the local stream for sessionID if present, using
+// the same non-blocking send + dropped-counter semantics as before the
+// fanout seam. Shared by Push, PushUpdate, and the fanout receive path so a
+// remote-delivered update is indistinguishable from a local one at the
+// channel level.
+func (m *Manager) deliver(update IslandUpdate, sessionID string) {
+	m.mu.RLock()
+	entry, ok := m.streams[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+	select {
+	case entry.ch <- update:
+	case <-entry.done:
+	default:
+		// Drop update if channel is full — client may be slow.
+		m.dropped.Add(1)
+	}
+}
+
+// publishFanout mirrors update to other replicas via the attached fanout, if
+// any. Best-effort: a dropped real-time message is acceptable (the durable
+// lane is the outbox's job, not the island lane). No-op when no fanout is
+// attached. The enqueue never blocks — callers are HTTP request goroutines
+// and a stalled backend must not stall them (see fanout.PublishQueue).
+func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
+	m.mu.RLock()
+	send := m.fanoutSend
+	nodeID := m.nodeID
+	m.mu.RUnlock()
+	if send == nil {
+		return
+	}
+	msg := islandFanoutMsg{SessionID: sessionID, IslandID: update.IslandID, HTML: update.HTML}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	send(fanout.Wrap(nodeID, body))
+}
+
+// SetFanout attaches a fanout so Push/PushUpdate updates cross replicas and
+// updates originating on other replicas are re-delivered to the local
+// session stream. Topic is "gofastr.islands". Own-node messages are dropped
+// on receive so updates are never echoed back. Received updates are NEVER
+// re-published (no loop). Delivery is lossy best-effort.
+//
+// This fixes delivery-where-connected: a session whose SSE connection lives
+// on another replica still receives updates. Island OBJECTS and signal state
+// remain per-replica — an RPC landing on a replica without the island object
+// can't re-render. Sticky sessions remain the recommendation for stateful
+// widget apps.
+//
+// The returned stop detaches the fanout (cancels the subscription and clears
+// the bridge); safe to call multiple times. Returns an error if a fanout is
+// already attached or f is nil.
+func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
+	if f == nil {
+		return nil, errors.New("island: SetFanout: nil fanout")
+	}
+	nodeID := fanout.NewNodeID()
+	send, stopQueue := fanout.PublishQueue(f, islandFanoutTopic, 0)
+	m.mu.Lock()
+	if m.fanout != nil {
+		m.mu.Unlock()
+		stopQueue()
+		return nil, errors.New("island: fanout already attached")
+	}
+	m.fanout = f
+	m.nodeID = nodeID
+	m.fanoutSend = send
+	m.mu.Unlock()
+
+	cancel, subErr := f.Subscribe(islandFanoutTopic, func(raw []byte) {
+		origin, body, uerr := fanout.Unwrap(raw)
+		if uerr != nil {
+			return
+		}
+		if origin == nodeID {
+			return // own-node: drop to avoid echo
+		}
+		var msg islandFanoutMsg
+		if jerr := json.Unmarshal(body, &msg); jerr != nil {
+			return
+		}
+		// Deliver locally only; NEVER re-publish on receive.
+		m.deliver(IslandUpdate{IslandID: msg.IslandID, HTML: msg.HTML}, msg.SessionID)
+	})
+	if subErr != nil {
+		stopQueue()
+		m.mu.Lock()
+		m.fanout = nil
+		m.nodeID = ""
+		m.fanoutSend = nil
+		m.mu.Unlock()
+		return nil, fmt.Errorf("island: SetFanout: subscribe: %w", subErr)
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			stopQueue()
+			m.mu.Lock()
+			m.fanout = nil
+			m.nodeID = ""
+			m.fanoutSend = nil
+			m.mu.Unlock()
+		})
+	}, nil
 }

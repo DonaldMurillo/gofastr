@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -57,15 +58,21 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		}
 	}
 	if ch.Entity.Config.OwnerField != "" {
-		// Stamp the owner id so SSE filters can scope per-subscriber.
-		// Prefer the extractor (matches the request-handling user);
-		// fall back to the record's own owner column (covers admin /
-		// background emitters whose ctx has no user).
+		// Stamp the owner id as a STRING so it survives the fanout bridge's
+		// JSON round-trip unchanged: a numeric owner (e.g. a BIGINT user
+		// key) would arrive as float64 on the remote replica, and the
+		// per-subscriber owner filter (interface{} != below) would then
+		// compare float64 != int64 → always unequal → every cross-replica
+		// event dropped. fmt.Sprint on both stamp and filter sides keeps
+		// local and remote payloads identical.
+		// Prefer the extractor (matches the request-handling user); fall
+		// back to the record's own owner column (covers admin / background
+		// emitters whose ctx has no user).
 		if id, ok := owner.Get(ctx); ok {
-			data[eventKeyOwnerID] = id
+			data[eventKeyOwnerID] = fmt.Sprint(id)
 		} else if rec, ok := record.(map[string]any); ok {
 			if id, ok := rec[ch.Entity.Config.OwnerField]; ok {
-				data[eventKeyOwnerID] = id
+				data[eventKeyOwnerID] = fmt.Sprint(id)
 			}
 		}
 	}
@@ -176,7 +183,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			if tenantScope && tenantID != "" && data[eventKeyTenantID] != tenantID {
 				return nil
 			}
-			if ownerScope && ownerID != nil && data[eventKeyOwnerID] != ownerID {
+			if ownerScope && ownerID != nil && fmt.Sprint(data[eventKeyOwnerID]) != fmt.Sprint(ownerID) {
 				return nil
 			}
 			select {
