@@ -254,6 +254,131 @@ The bridge subscribes one handler per event type, marshals
 `cancel` detaches every subscription at once — call it before
 `Manager.Stop` so no Emit lands after the worker exits.
 
+## Inbound ingestion
+
+Everything above is outbound — you calling other systems. The receiving
+side is `IngestHandler`: an HTTP handler that verifies a request, persists
+an envelope, acks immediately, and hands the real work to the queue
+battery. It is the inbound mirror of the Manager.
+
+### Wiring
+
+```go
+import "github.com/DonaldMurillo/gofastr/battery/webhook"
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+
+store := webhook.NewMemoryInboundStore()
+q := queue.NewMemoryQueue(4)
+
+// Build the ingestion endpoint. The handler does NOT touch the store
+// until the signature checks out.
+h, err := webhook.IngestHandler(webhook.IngestConfig{
+    Source:       "github",
+    Verifier:     webhook.TimestampedVerifier(secret, 5*time.Minute),
+    Store:        store,
+    Queue:        q,
+    JobType:      "webhook.inbound",
+    MaxBodyBytes: 1 << 20,             // default 1 MiB
+    KeepHeaders:  []string{"X-GitHub-Event", "X-GitHub-Delivery"},
+    DedupeKeyFunc: func(r *http.Request, _ []byte) string {
+        return r.Header.Get("X-GitHub-Delivery")
+    },
+})
+mux.Handle("/hooks/github", h)
+q.Start()
+defer q.Close()
+
+// Register the queue handler that does the actual work.
+q.RegisterHandler("webhook.inbound", webhook.ProcessInbound(store, func(ctx context.Context, e webhook.InboundEnvelope) error {
+    // ...your business logic, with the verified payload in hand
+    return nil
+}))
+```
+
+`IngestConfig.Queue` is optional. Leave it nil to persist-and-forget
+(the envelope is still acked 202); set it to fan processing off the
+request path.
+
+### Request flow
+
+1. Non-POST → `405`.
+2. Body read through `http.MaxBytesReader`; oversize → `413`.
+3. **Verify, then persist** — an unverified payload is never written to
+   the store. A verification failure responds `401` with a generic body
+   (`signature verification failed`); no header value or reason detail
+   is echoed.
+4. Dedupe: if `DedupeKeyFunc` returns a non-empty key the store has
+   already seen for this source, the handler acks `200` immediately
+   without re-persisting or enqueuing — idempotent redelivery.
+5. Persist the envelope as `received`, allowlisted headers only. With a
+   queue wired, the dedupe key is deliberately **not** stored yet.
+6. Enqueue a `queue.Job{Type: JobType, Payload: {"envelope_id", "source"}}`.
+7. Register the dedupe key on the envelope — only now that the event is
+   durably queued may redeliveries be dedupe-acked.
+8. Respond `202` with `{"id": "<envelope id>"}`.
+
+On enqueue failure the handler responds `500` (the sender retries) and
+best-effort marks the just-written envelope `failed` with `LastError` as
+a forensic record. Because the key is registered only *after* a
+successful enqueue (step 7), an envelope that never reached the queue
+can never dedupe-ack the sender's retry — the redelivery persists and
+enqueues a fresh copy even if the forensic marking itself failed.
+Without a queue, persistence alone is durable acceptance, so the key is
+stored with the envelope up front. Failures of these best-effort updates
+are reported through `IngestConfig.Logger` (default `log.Printf`).
+
+### Verifiers
+
+Two are bundled:
+
+- `TimestampedVerifier(secret, tolerance)` — wraps
+  `VerifyTimestamped` over `X-GoFastr-Signature`. The timestamp is bound
+  into the signed material, so a captured request can't replay past
+  `tolerance`. **Preferred whenever the sender supports it.**
+- `HMACSHA256Verifier(header, prefix, secret)` — GitHub-style
+  `<prefix><hex-hmac-sha256-of-body>` (e.g. header
+  `X-Hub-Signature-256`, prefix `sha256=`). Uses `hmac.Equal`, but note
+  there is **no timestamp binding** — it offers no replay defense. Use it
+  for providers that don't send a timestamp; pair it with a short
+  dedupe window if you can.
+
+Provide your own `InboundVerifier` for other schemes (RSA signatures,
+mTLS-extracted identity, a multi-key rotation lookup). Implementations
+must be constant-time on the secret.
+
+### Envelope lifecycle
+
+`ProcessInbound` adapts your business function into a `queue.Handler`
+that drives the envelope through its states:
+
+```
+received → processing → processed
+                   └→ failed  (fn returned an error)
+```
+
+It loads the envelope by `envelope_id` from the job payload, marks it
+`processing` (incrementing `Attempts`) before calling your function, then
+`processed` on success or `failed` (with `LastError` set) on error. It
+returns your function's error so the queue's own retry/backoff can
+reschedule it.
+
+### Stores
+
+Two `InboundStore` implementations ship:
+
+- `NewMemoryInboundStore()` — in-process map; tests and single-instance.
+- `NewSQLInboundStore(db, opts...)` — SQL-backed (sqlite + postgres),
+  creates `webhook_inbound` on first use. `WithInboundTable(name)`
+  overrides the table name. Headers persist as a JSON TEXT column.
+
+Dedupe is enforced application-side via `SeenDedupeKey` rather than a
+database unique constraint: a portable partial index (Postgres) can't be
+written in one DDL that also works on SQLite, and a plain unique index
+would forbid two legitimately-undedupe'd (empty-key) requests from
+coexisting. The `(source, dedupe_key)` index keeps the lookup cheap, but
+there is an inherent check-then-insert race window under concurrency —
+make your `ProcessInbound` handler idempotent to absorb the rare duplicate.
+
 ## Common mistakes
 
 - **Don't pass the same secret to every subscriber.** Generate one
