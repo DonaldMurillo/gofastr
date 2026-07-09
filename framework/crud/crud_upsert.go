@@ -219,6 +219,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}
+		// Upsert writes directly (not via doCreate), so it stages its own
+		// outbox event inside the tx.
+		if err := ch.StageEvent(ctx, event.EntityCreated, result); err != nil {
+			return fmt.Errorf("stage event: %w", err)
+		}
 		return nil
 	})
 	if err != nil {

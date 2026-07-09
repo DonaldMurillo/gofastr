@@ -28,13 +28,24 @@ const (
 	eventKeyOwnerID = "ownerId"
 )
 
-// EmitEvent fires an entity lifecycle event (asynchronously). No-op when the
-// handler has no event bus attached. The payload is shaped so SSE subscribers
-// can filter by entity name and tenant without unmarshalling the record.
-func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record any) {
-	if ch.Events == nil {
-		return
-	}
+// EventOutbox is the transactional-outbox surface CRUD needs — satisfied by
+// *outbox.Outbox (framework/outbox). An interface rather than the concrete
+// type so crud carries no outbox import and tests can record staging calls.
+type EventOutbox interface {
+	// Append writes an event row using the passed executor — inside a CRUD
+	// transaction that is the *sql.Tx, so the row commits or rolls back
+	// with the business write.
+	Append(ctx context.Context, ex DBExecutor, eventType string, data any) (string, error)
+	// Nudge wakes the relay so post-commit delivery isn't bound to its
+	// poll interval.
+	Nudge()
+}
+
+// eventData shapes the lifecycle-event payload so SSE subscribers can filter
+// by entity name and tenant without unmarshalling the record. Shared by the
+// live-bus path (EmitEvent) and the outbox path (StageEvent) so both deliver
+// the identical payload.
+func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any {
 	data := map[string]any{
 		eventKeyEntity: ch.Entity.GetName(),
 		eventKeyTable:  ch.Entity.GetTable(),
@@ -58,7 +69,38 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 			}
 		}
 	}
-	ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: data})
+	return data
+}
+
+// StageEvent durably stages an entity lifecycle event when an outbox is
+// configured. It MUST be called from inside the operation's transaction
+// (ch.DB is the tx-scoped executor there — doCreate/doUpdate/doDelete and
+// the upsert closure call it), so the event row commits or rolls back with
+// the write. No-op without an outbox: the live-bus EmitEvent covers that
+// mode post-commit.
+func (ch *CrudHandler) StageEvent(ctx context.Context, eventType string, record any) error {
+	if ch.Outbox == nil {
+		return nil
+	}
+	_, err := ch.Outbox.Append(ctx, ch.DB, eventType, ch.eventData(ctx, record))
+	return err
+}
+
+// EmitEvent fires an entity lifecycle event after the operation's transaction
+// has committed. Without an outbox it publishes to the live bus
+// (asynchronously; no-op when no bus is attached). With an outbox configured,
+// the event was already staged durably in-tx by StageEvent — delivery belongs
+// to the relay, so this only nudges it awake; emitting here too would deliver
+// every event twice.
+func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record any) {
+	if ch.Outbox != nil {
+		ch.Outbox.Nudge()
+		return
+	}
+	if ch.Events == nil {
+		return
+	}
+	ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
 }
 
 // EventStream returns an http.HandlerFunc that serves a Server-Sent Events

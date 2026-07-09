@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -102,6 +103,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
 		}
+	}
+	if err := ch.StageEvent(ctx, event.EntityCreated, result); err != nil {
+		return nil, fmt.Errorf("stage event: %w", err)
 	}
 	return result, nil
 }
@@ -206,6 +210,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
+	if err := ch.StageEvent(ctx, event.EntityUpdated, result); err != nil {
+		return nil, fmt.Errorf("stage event: %w", err)
+	}
 	return result, nil
 }
 
@@ -276,6 +283,9 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterDelete, id); err != nil {
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
+	}
+	if err := ch.StageEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id}); err != nil {
+		return fmt.Errorf("stage event: %w", err)
 	}
 	return nil
 }

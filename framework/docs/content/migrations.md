@@ -397,6 +397,46 @@ that table.
 boot uses it so a shutdown signal cancels a migration that's waiting on
 the advisory lock instead of hanging.
 
+### Running both paths (and turning boot-time DDL off)
+
+A generated app runs both paths on boot, and that layering is
+intentional, not an accident: auto-migrate converges the schema with the
+entity declarations (additive DDL only), while the versioned runner
+applies everything the declarations can't express — backfills,
+constraint tightening, destructive changes. They can't disagree on DDL
+because both derive column types from the same entity schema.
+
+For deployments whose policy forbids **any** unattended schema change on
+boot, make migrations the single, explicit path:
+
+```go
+app := framework.NewApp(
+    framework.WithDB(db),
+    framework.WithoutAutoMigrate(), // Start performs no DDL
+)
+```
+
+then fold entity drift into the versioned files as part of your release
+step — `gofastr migrate generate <name>` emits the drift as a reviewable
+numbered migration, `gofastr migrate up` applies it, `gofastr migrate
+status` shows what's pending. Entity seeds still run at Start (idempotent data, not
+schema); a seeded entity whose table is missing fails Start fast instead
+of the app serving against an unmigrated database.
+
+`WithoutAutoMigrate` suppresses **entity** DDL. A few framework-owned
+bookkeeping tables are still created on demand regardless — the seed
+ledger (`seed_ledger`), and, when you enable `WithOutbox`, the outbox
+table (`event_outbox`), which is ensured when the outbox is constructed
+at `NewApp` time. These aren't entity schema and aren't emitted by
+`migrate generate`; if your policy needs every table to originate from a
+reviewed migration, add these to your migration set by hand. For the
+outbox specifically you can opt out of the boot-time create with
+`framework.WithOutbox(outbox.WithoutEnsureTable())` and manage
+`event_outbox` yourself (its schema is in the [events](events.md) doc);
+otherwise the framework issues its `CREATE TABLE IF NOT EXISTS` at boot.
+A DB role with no DDL rights makes `NewApp` fail closed rather than
+silently skip them.
+
 `AutoUUID` columns emit `DEFAULT gen_random_uuid()` on Postgres so raw
 SQL `INSERT`s that omit the id column don't crash with a NOT NULL
 violation. SQLite has no built-in UUID generator — the column stays

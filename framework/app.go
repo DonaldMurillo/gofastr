@@ -39,6 +39,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/openapi"
+	"github.com/DonaldMurillo/gofastr/framework/outbox"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
@@ -133,6 +134,19 @@ type App struct {
 	hooks      map[string]*hook.HookRegistry
 	mountables []Mountable
 	noDefaults bool
+
+	// outbox is the transactional event outbox (WithOutbox). When set,
+	// CRUD lifecycle events are staged in the write transaction and its
+	// relay — started by Start, drained on Shutdown — is the sole
+	// deliverer onto the event bus.
+	outbox        *outbox.Outbox
+	outboxOpts    []outbox.Option
+	outboxEnabled bool
+
+	// noAutoMigrate suppresses the boot-time entity auto-migration
+	// (WithoutAutoMigrate) for deployments that require every schema
+	// change to be an explicit, operator-invoked step.
+	noAutoMigrate bool
 
 	// logger is the App-local *slog.Logger. Read via Logger(), swapped via
 	// SetLogger(). Stored behind an atomic pointer so middleware composed
@@ -367,6 +381,37 @@ func WithMCP() AppOption {
 func WithFileStorage(s upload.Storage) AppOption {
 	return func(a *App) {
 		a.Storage = s
+	}
+}
+
+// WithoutAutoMigrate disables the entity auto-migration that App.Start
+// otherwise runs before serving. Use it in deployments whose policy
+// forbids unattended schema changes on boot: generate the entity DDL
+// into versioned migration files instead (`gofastr migrate generate
+// <name>`) and apply them as an explicit step (`gofastr migrate up`). Entity seeds still run at Start —
+// they are idempotent data, not schema — which also means an entity
+// WITH seeds fails Start fast when its table is missing, instead of the
+// app serving against an unmigrated schema.
+func WithoutAutoMigrate() AppOption {
+	return func(a *App) {
+		a.noAutoMigrate = true
+	}
+}
+
+// WithOutbox enables the transactional event outbox (framework/outbox):
+// CRUD lifecycle events are written to an outbox table INSIDE the same
+// transaction as the entity write, and a relay goroutine (started by
+// App.Start, drained on Shutdown) publishes committed rows to the event
+// bus. This closes the crash window where a plain post-commit emit is
+// lost, and makes delivery at-least-once — consumers that care must
+// dedupe on Event.ID. Requires WithDB; NewApp panics otherwise.
+//
+// opts are forwarded to outbox.New (outbox.WithTable,
+// outbox.WithPollInterval, …).
+func WithOutbox(opts ...outbox.Option) AppOption {
+	return func(a *App) {
+		a.outboxEnabled = true
+		a.outboxOpts = opts
 	}
 }
 
@@ -613,6 +658,11 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
+		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
+		// in the EventOutbox interface and silently swallow every event.
+		if a.outbox != nil {
+			crudHandler.Outbox = a.outbox
+		}
 		crudHandler.Registry = a.Registry
 
 		// Register CRUD routes on the group's sub-router.
@@ -742,6 +792,19 @@ func NewApp(opts ...AppOption) *App {
 		a.logger.Store(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
 
+	// Construct the transactional outbox after all options have applied,
+	// so option order between WithDB and WithOutbox doesn't matter.
+	if a.outboxEnabled {
+		if a.DB == nil {
+			panic("framework: WithOutbox requires WithDB — the outbox stages event rows in the entity write transaction")
+		}
+		ob, err := outbox.New(a.DB, a.outboxOpts...)
+		if err != nil {
+			panic("framework: WithOutbox: " + err.Error())
+		}
+		a.outbox = ob
+	}
+
 	// WithIdempotency / WithI18n add entries to the default chain; if
 	// the caller also passed WithoutDefaultMiddleware they would never
 	// appear. Surface the misconfiguration immediately rather than
@@ -865,6 +928,11 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		crudHandler.Hooks = a.HookRegistry(name)
 		crudHandler.Storage = a.Storage
 		crudHandler.Events = a.Events()
+		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
+		// in the EventOutbox interface and silently swallow every event.
+		if a.outbox != nil {
+			crudHandler.Outbox = a.outbox
+		}
 		crudHandler.Registry = a.Registry
 		// MCP tools dispatch in-process against a.router, where these routes are
 		// mounted under the API prefix — tell the handler so its tool paths match.
@@ -906,6 +974,9 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	ch.Hooks = a.HookRegistry(name)
 	ch.Storage = a.Storage
 	ch.Events = a.Events()
+	if a.outbox != nil {
+		ch.Outbox = a.outbox
+	}
 	ch.Registry = a.Registry
 	return ch, nil
 }
@@ -1167,6 +1238,14 @@ func (a *App) Events() *event.EventBus {
 	return a.events
 }
 
+// Outbox returns the transactional event outbox, or nil when the app was
+// built without WithOutbox. Use it to stage your own events inside an
+// App.InTx transaction (Append), inspect delivery state (List), or replay
+// dead rows.
+func (a *App) Outbox() *outbox.Outbox {
+	return a.outbox
+}
+
 // HookRegistry returns (or creates) the hook registry for a named entity.
 func (a *App) HookRegistry(entityName string) *hook.HookRegistry {
 	if a.hooks == nil {
@@ -1398,11 +1477,17 @@ func (a *App) Start(addr string) error {
 		return err
 	}
 
-	// Auto-migrate all registered entities
+	// Auto-migrate all registered entities — unless the deployment opted
+	// into explicit migrations only (WithoutAutoMigrate). Seeds run
+	// either way: they are idempotent data writes, not schema, and a
+	// seeded entity whose table is missing fails Start here rather than
+	// serving against an unmigrated schema.
 	if a.DB != nil {
-		plan := migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
-		if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, plan); err != nil {
-			return abort(fmt.Errorf("auto-migrate: %w", err))
+		if !a.noAutoMigrate {
+			plan := migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
+			if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, plan); err != nil {
+				return abort(fmt.Errorf("auto-migrate: %w", err))
+			}
 		}
 		if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
 			return abort(fmt.Errorf("run seeds: %w", err))
@@ -1427,6 +1512,18 @@ func (a *App) Start(addr string) error {
 	// aborts before we bind the port — better than a half-up server.
 	if err := a.runStartHooks(); err != nil {
 		return abort(fmt.Errorf("start hooks: %w", err))
+	}
+
+	// Start the outbox relay (WithOutbox). Runs on the app lifecycle
+	// context so Shutdown cancels it; the returned stop func is also
+	// registered as an OnStop drainer so shutdown blocks until the loop
+	// has fully exited — no half-delivered batch outlives the process.
+	if a.outbox != nil {
+		stopRelay := a.outbox.StartRelay(a.appCtx, a.Events())
+		a.OnStop(func() error {
+			stopRelay()
+			return nil
+		})
 	}
 
 	// Auto-generate and serve OpenAPI spec. Only when the app actually
