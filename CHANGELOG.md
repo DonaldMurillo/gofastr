@@ -5,6 +5,61 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [0.15.0] - 2026-07-08
+
+Nexus-gap wiring round two — six issues surfaced by building on GoFastr
+(tracking #35), each built at the existing seam and then hardened by two
+adversarial review rounds. No breaking changes.
+
+### Added
+
+- **Inbound webhook battery** (#26). `battery/webhook` gains an HTTP
+  ingestion endpoint beside the outbound one: constant-time, fail-closed,
+  body-size-capped signature verification; envelope persistence (memory +
+  SQL stores); dedupe by provider delivery id; and enqueue for async
+  processing via `battery/queue`. Delivery is durable-before-ack — with a
+  queue wired, the dedupe key is registered only *after* a successful
+  enqueue, so an envelope that never reached the queue can never
+  dedupe-ack the sender's retry (no lost events); without a queue,
+  persistence itself is durable acceptance. Best-effort store-update
+  failures surface through `IngestConfig.Logger`.
+- **Generic OIDC login provider** (#29). `battery/auth` gains an
+  authorization-code OIDC provider that verifies the id_token locally:
+  RS256/ES256 alg allowlist enforced before key lookup, kty/crv-vs-alg
+  cross-check, `iss`/`aud`/`azp`/`exp`/`nbf`/`iat` validation, JWKS fetch
+  with per-kid rotation-refetch rate-limiting, and RSA/EC key sanity
+  (≥2048-bit moduli, non-degenerate exponent, P-256). A PKCE `S256`
+  `code_challenge` is sent for compatibility with IdPs that mandate it
+  (the confidential client secret remains the actual exchange protection).
+- **Scoped API tokens and service accounts** (#30). `gfsk_`-prefixed
+  personal-access tokens and non-human service-account credentials,
+  sha256-hashed at rest, scoped `resource:verb` with wildcards.
+  `TokenMiddleware` fails closed through a single funnel that clears any
+  outer identity on a bad token; `RequireScope` gates machine routes while
+  sessions/JWTs pass unscoped. The token-management endpoints are
+  session-only, so a leaked scoped token can't mint an unscoped one for
+  its owner.
+- **Transactional event outbox** (#25). `framework/outbox` delivers events
+  at-least-once: `Append` stages a row inside the caller's transaction and
+  a leased relay (Postgres `FOR UPDATE SKIP LOCKED` / SQLite tx) delivers
+  to the event bus with exponential backoff and a dead-letter state. A
+  panicking consumer is retried and eventually dead-lettered, never
+  silently marked dispatched (new `EventBus.EmitStrict`). Enable per-App
+  with `framework.WithOutbox(...)`; CRUD mutations stage their lifecycle
+  events into the caller's transaction automatically. `WithoutEnsureTable`
+  opts out of the boot-time table create.
+- **`framework.WithoutAutoMigrate()`** (#24). Suppresses the boot-time
+  entity DDL for deployments that require every schema change to come from
+  a reviewed migration; documented alongside the two-layer migration model.
+- **Per-file and additive blueprint generation + scaffolds** (#20).
+  `gofastr generate` now emits one file per entity and per screen behind a
+  fixed, name-free registration seam. `gofastr generate --from=<partial>
+  --add` additively emits only the new pieces into an existing project
+  (never overwriting, continuing declaration order, refusing colliding
+  routes and pre-0.15 layouts); `gofastr generate entity|screen <name>`
+  scaffolds a stub through the same path. `gofastr pack` reverses the new
+  layout, so generate/pack still round-trips.
+
 ## [0.14.0] - 2026-07-07
 
 Nexus-gap wiring round one — three small framework gaps surfaced by
