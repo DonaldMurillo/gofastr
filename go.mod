@@ -1,6 +1,6 @@
 module github.com/DonaldMurillo/gofastr
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
