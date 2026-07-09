@@ -130,9 +130,14 @@ func TestChartSourceRegistersResource(t *testing.T) {
 		}},
 	}
 	files := filesByName(mustRenderBlueprintFiles(t, bp))
-	app := files["app.go"]
-	if !strings.Contains(app, `appResources["tickets"] = ResourceConfig{`) {
-		t.Fatalf("tickets must be registered in appResources even without a list screen:\n%s", app)
+	// tickets has no list/detail screen, so its appResources wiring lands in a
+	// resource-only screen_tickets_crud.go (the dashboard sources it via a chart).
+	crud := files["screen_tickets_crud.go"]
+	if crud == "" {
+		t.Fatalf("missing screen_tickets_crud.go; files=%v", sortedFileNames(mustRenderBlueprintFiles(t, bp)))
+	}
+	if !strings.Contains(crud, `appResources["tickets"] = ResourceConfig{`) {
+		t.Fatalf("tickets must be registered in appResources even without a list screen:\n%s", crud)
 	}
 }
 

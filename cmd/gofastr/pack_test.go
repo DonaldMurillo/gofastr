@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 const meridianDir = "../../examples/meridian"
@@ -252,5 +254,81 @@ func c() interface{} { return b() }
 		case <-time.After(3 * time.Second):
 			t.Fatalf("%s: reverseBlock hung (hop-depth bound missing)", name)
 		}
+	}
+}
+
+// materializeBlueprint renders bp to a temp dir and returns the dir — the
+// on-disk shape gofastr pack reads back.
+func materializeBlueprint(t *testing.T, bp Blueprint) string {
+	t.Helper()
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("renderBlueprintFiles: %v", err)
+	}
+	dir := t.TempDir()
+	for _, f := range files {
+		p := filepath.Join(dir, f.name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// TestPack_TimestampsEntityRoundTrips guards that an entity declared with
+// timestamps: true survives generate→pack. The generator emits the config as
+// EntityConfig{...}.WithTimestamps(true), so pack must see through the method
+// wrapper to recover the fields — otherwise the whole entity config is lost.
+func TestPack_TimestampsEntityRoundTrips(t *testing.T) {
+	ts := true
+	bp := Blueprint{
+		App: BlueprintApp{Name: "TS", Module: "example.com/ts", DBDriver: "sqlite", DBURL: "file:x.db"},
+		Entities: []framework.EntityDeclaration{{
+			Name:       "posts",
+			Timestamps: &ts,
+			Fields: []framework.FieldDeclaration{
+				{Name: "title", Type: "string", Required: true},
+			},
+		}},
+	}
+	dir := materializeBlueprint(t, bp)
+	got, err := packReadEntities(dir)
+	if err != nil {
+		t.Fatalf("packReadEntities: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("recovered %d entities, want 1", len(got))
+	}
+	if got[0].Timestamps == nil || !*got[0].Timestamps {
+		t.Errorf("timestamps lost: %+v", got[0].Timestamps)
+	}
+	if len(got[0].Fields) != 1 || got[0].Fields[0].Name != "title" {
+		t.Fatalf("fields lost through the WithTimestamps wrapper: %+v", got[0].Fields)
+	}
+}
+
+// TestPack_ScreenlessAppRoundTrips guards that packing a valid generated app
+// with entities but no screens does not error on a missing screens.go.
+func TestPack_ScreenlessAppRoundTrips(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "NoScreens", Module: "example.com/noscreens", DBDriver: "sqlite", DBURL: "file:x.db"},
+		Entities: []framework.EntityDeclaration{{
+			Name:   "posts",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string", Required: true}},
+		}},
+	}
+	dir := materializeBlueprint(t, bp)
+	packed, err := packBlueprint(dir)
+	if err != nil {
+		t.Fatalf("packBlueprint on a screenless app errored: %v", err)
+	}
+	if len(packed.Screens) != 0 {
+		t.Errorf("recovered %d screens, want 0", len(packed.Screens))
+	}
+	if len(packed.Entities) != 1 {
+		t.Errorf("recovered %d entities, want 1", len(packed.Entities))
 	}
 }

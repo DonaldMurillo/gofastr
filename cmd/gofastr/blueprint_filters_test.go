@@ -71,7 +71,7 @@ func TestListFiltersEmit(t *testing.T) {
 
 	// The screen wires the facets with resolved type + enum values so the
 	// engine needs no schema at render time.
-	assertContains(t, byName["screens.go"],
+	assertContains(t, allScreenContent(files),
 		`.WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "published"}}, ResFilter{Key: "author_id", Label: "Author", Type: "relation"}, ResFilter{Key: "featured", Label: "Featured", Type: "bool"})`)
 
 	// The owned resource engine carries the facet-filter machinery.

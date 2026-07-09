@@ -792,9 +792,33 @@ func astAny(e ast.Expr) any {
 	return nil
 }
 
+// unwrapBuilderCalls peels trailing fluent builder method calls off a config
+// expression — e.g. EntityConfig{...}.WithTimestamps(true) — returning the
+// underlying value and a map of methodName→args for each builder peeled. The
+// generator emits some EntityConfig settings (Timestamps) as method calls
+// rather than struct fields, so pack recovers them from here rather than from
+// the composite literal's fields.
+func unwrapBuilderCalls(e ast.Expr) (ast.Expr, map[string][]ast.Expr) {
+	builders := map[string][]ast.Expr{}
+	for {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return e, builders
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return e, builders
+		}
+		builders[sel.Sel.Name] = call.Args
+		e = sel.X
+	}
+}
+
 // fieldVals returns the key→value expressions of a struct composite literal.
+// A value wrapped in fluent builder calls is unwrapped to the literal first.
 func fieldVals(e ast.Expr) map[string]ast.Expr {
 	out := map[string]ast.Expr{}
+	e, _ = unwrapBuilderCalls(e)
 	cl, ok := e.(*ast.CompositeLit)
 	if !ok {
 		return out
@@ -829,9 +853,210 @@ func relationTypeFromConstName(name string) framework.RelationType {
 	}
 }
 
-// packReadEntities reconstructs the entity declarations from entities/register.go.
+// packReadEntities reconstructs the entity declarations from the generated
+// entities package. It supports two layouts:
+//
+//   - Per-entity (current generator): each entities/<name>.go holds a
+//     register<Camel> func whose body calls app.Entity(name, config), plus an
+//     init() that appends registrar{order: N, fn: register<Camel>}.
+//     Declaration order is recovered from the order field.
+//   - Legacy aggregated (older generator): entities/register.go holds a
+//     RegisterAll whose body is the app.Entity calls in declaration order.
+//
+// Returns nil (not an error) when there is no entities package.
 func packReadEntities(dir string) ([]framework.EntityDeclaration, error) {
-	path := filepath.Join(dir, "entities", "register.go")
+	entDir := filepath.Join(dir, "entities")
+	if _, err := os.Stat(entDir); err != nil {
+		return nil, nil // no entities package
+	}
+	decls, err := packReadPerEntityFiles(entDir)
+	if err != nil {
+		return nil, err
+	}
+	if decls != nil {
+		return decls, nil
+	}
+	// Legacy aggregated layout: inline RegisterAll in register.go.
+	return packReadLegacyRegister(filepath.Join(entDir, "register.go"))
+}
+
+// packReadPerEntityFiles reads the per-entity generated files and returns the
+// declarations in declaration order. Returns (nil, nil) when the package uses
+// the legacy aggregated layout (no per-entity register funcs found), so the
+// caller falls back to register.go.
+func packReadPerEntityFiles(entDir string) ([]framework.EntityDeclaration, error) {
+	entries, err := os.ReadDir(entDir)
+	if err != nil {
+		return nil, err
+	}
+	// Fixed package files that never hold an entity registration.
+	skip := map[string]bool{"register.go": true, "shared.go": true, "doc.go": true}
+	type ordered struct {
+		order int
+		decl  framework.EntityDeclaration
+	}
+	var found []ordered
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {
+			continue
+		}
+		path := filepath.Join(entDir, entry.Name())
+		file, err := packParseFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		call, ok := packFindEntityCall(file)
+		if !ok {
+			continue // not an entity file
+		}
+		found = append(found, ordered{order: packEntityOrder(file), decl: packEntityDeclFromCall(call)})
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	sort.SliceStable(found, func(i, j int) bool { return found[i].order < found[j].order })
+	out := make([]framework.EntityDeclaration, len(found))
+	for i, f := range found {
+		out[i] = f.decl
+	}
+	return out, nil
+}
+
+// packFindEntityCall locates the register<Camel> func's app.Entity(name,
+// config) call in a parsed entity file. Returns ok=false if the file has no
+// such registration (e.g. a shared helper or legacy aggregated file).
+func packFindEntityCall(file *ast.File) (*ast.CallExpr, bool) {
+	for _, d := range file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Body == nil || !strings.HasPrefix(fn.Name.Name, "register") || fn.Name.Name == "register" {
+			continue
+		}
+		for _, stmt := range fn.Body.List {
+			es, ok := stmt.(*ast.ExprStmt)
+			if !ok {
+				continue
+			}
+			call, ok := es.X.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Entity" || len(call.Args) != 2 {
+				continue
+			}
+			return call, true
+		}
+	}
+	return nil, false
+}
+
+// packEntityOrder extracts the declaration order from an entity file's
+// init() self-registration: registrar{order: N, ...}. Returns 0 when the
+// marker is absent (treated as first-declared).
+func packEntityOrder(file *ast.File) int {
+	order := 0
+	ast.Inspect(file, func(n ast.Node) bool {
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		id, ok := cl.Type.(*ast.Ident)
+		if !ok || id.Name != "registrar" {
+			return true
+		}
+		for _, elt := range cl.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "order" {
+				continue
+			}
+			if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.INT {
+				if n, err := strconv.Atoi(lit.Value); err == nil {
+					order = n
+				}
+			}
+		}
+		return false
+	})
+	return order
+}
+
+// packEntityDeclFromCall rebuilds an EntityDeclaration from an
+// app.Entity(name, config) call expression.
+func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
+	decl := framework.EntityDeclaration{Name: astString(call.Args[0])}
+	_, builders := unwrapBuilderCalls(call.Args[1])
+	cfg := fieldVals(call.Args[1])
+	if v, ok := cfg["Table"]; ok {
+		decl.Table = astString(v)
+	}
+	if v, ok := cfg["SoftDelete"]; ok {
+		decl.SoftDelete = astBool(v)
+	}
+	if v, ok := cfg["MultiTenant"]; ok {
+		decl.MultiTenant = astBool(v)
+	}
+	if v, ok := cfg["OwnerField"]; ok {
+		decl.OwnerField = astString(v)
+	}
+	if v, ok := cfg["MCP"]; ok {
+		decl.MCP = astBool(v)
+	}
+	if v, ok := cfg["CursorField"]; ok {
+		decl.CursorField = astString(v)
+	}
+	if v, ok := cfg["CursorFields"]; ok {
+		decl.CursorFields = astStringSlice(v)
+	}
+	if v, ok := cfg["CRUD"]; ok {
+		if b, ok := astPtrCallBool(v); ok {
+			decl.CRUD = &b
+		}
+	}
+	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
+	// struct field — recover it from the unwrapped builder args. (Fall back
+	// to a struct field for forward-compat if a future generator inlines it.)
+	if args, ok := builders["WithTimestamps"]; ok && len(args) == 1 {
+		b := astBool(args[0])
+		decl.Timestamps = &b
+	} else if v, ok := cfg["Timestamps"]; ok {
+		if b, ok := astPtrCallBool(v); ok {
+			decl.Timestamps = &b
+		}
+	}
+	if v, ok := cfg["Properties"]; ok {
+		if m, ok := astAny(v).(map[string]any); ok && len(m) > 0 {
+			decl.Properties = m
+		}
+	}
+	if v, ok := cfg["Access"]; ok {
+		a := fieldVals(v)
+		decl.Access = &framework.AccessDeclaration{
+			Read:   astString(a["Read"]),
+			Create: astString(a["Create"]),
+			Update: astString(a["Update"]),
+			Delete: astString(a["Delete"]),
+		}
+	}
+	if v, ok := cfg["Fields"]; ok {
+		decl.Fields = packReadFields(v)
+	}
+	if v, ok := cfg["Indices"]; ok {
+		decl.Indices = packReadIndices(v)
+	}
+	if v, ok := cfg["Relations"]; ok {
+		decl.Relations = packReadRelations(v)
+	}
+	return decl
+}
+
+// packReadLegacyRegister reads the legacy aggregated register.go whose
+// RegisterAll body is the app.Entity calls in declaration order. Returns
+// (nil, nil) when register.go is absent.
+func packReadLegacyRegister(path string) ([]framework.EntityDeclaration, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil // no entities package
 	}
@@ -853,63 +1078,7 @@ func packReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 		if !ok || sel.Sel.Name != "Entity" || len(call.Args) != 2 {
 			continue
 		}
-		decl := framework.EntityDeclaration{Name: astString(call.Args[0])}
-		cfg := fieldVals(call.Args[1])
-		if v, ok := cfg["Table"]; ok {
-			decl.Table = astString(v)
-		}
-		if v, ok := cfg["SoftDelete"]; ok {
-			decl.SoftDelete = astBool(v)
-		}
-		if v, ok := cfg["MultiTenant"]; ok {
-			decl.MultiTenant = astBool(v)
-		}
-		if v, ok := cfg["OwnerField"]; ok {
-			decl.OwnerField = astString(v)
-		}
-		if v, ok := cfg["MCP"]; ok {
-			decl.MCP = astBool(v)
-		}
-		if v, ok := cfg["CursorField"]; ok {
-			decl.CursorField = astString(v)
-		}
-		if v, ok := cfg["CursorFields"]; ok {
-			decl.CursorFields = astStringSlice(v)
-		}
-		if v, ok := cfg["CRUD"]; ok {
-			if b, ok := astPtrCallBool(v); ok {
-				decl.CRUD = &b
-			}
-		}
-		if v, ok := cfg["Timestamps"]; ok {
-			if b, ok := astPtrCallBool(v); ok {
-				decl.Timestamps = &b
-			}
-		}
-		if v, ok := cfg["Properties"]; ok {
-			if m, ok := astAny(v).(map[string]any); ok && len(m) > 0 {
-				decl.Properties = m
-			}
-		}
-		if v, ok := cfg["Access"]; ok {
-			a := fieldVals(v)
-			decl.Access = &framework.AccessDeclaration{
-				Read:   astString(a["Read"]),
-				Create: astString(a["Create"]),
-				Update: astString(a["Update"]),
-				Delete: astString(a["Delete"]),
-			}
-		}
-		if v, ok := cfg["Fields"]; ok {
-			decl.Fields = packReadFields(v)
-		}
-		if v, ok := cfg["Indices"]; ok {
-			decl.Indices = packReadIndices(v)
-		}
-		if v, ok := cfg["Relations"]; ok {
-			decl.Relations = packReadRelations(v)
-		}
-		out = append(out, decl)
+		out = append(out, packEntityDeclFromCall(call))
 	}
 	return out, nil
 }
@@ -1297,16 +1466,233 @@ type screenReg struct {
 	role     string
 }
 
-// packReadScreens reconstructs the authored screens. Routes/layout/access come
-// from the site.Register* calls in app.go; titles + bodies come from the screen
-// types in screens.go. Synthesized /new + /{id}/edit form screens (body is a
-// resource Form call) are dropped — they weren't authored.
+// packReadScreens reconstructs the authored screens. It reads the per-screen
+// layout (screen_*.go + the screenRegistrar seam) when present, and falls back
+// to the legacy aggregated layout (screens.go structs + app.go registrations)
+// so apps generated before the per-screen split still pack. In both layouts
+// synthesized /new + /{id}/edit form screens (body is a resource Form call)
+// are dropped — they weren't authored.
 func packReadScreens(dir string) ([]BlueprintScreen, error) {
+	if screens, err := packReadPerScreenFiles(dir); err != nil {
+		return nil, err
+	} else if screens != nil {
+		return screens, nil
+	}
+	// The screens_register.go seam is emitted for every per-file-layout app,
+	// even one with zero screens. Its presence means the layout is per-file
+	// and simply has no authored screens — do NOT fall through to the legacy
+	// reader (which expects a screens.go that this layout never writes).
+	if _, err := os.Stat(filepath.Join(dir, "screens_register.go")); err == nil {
+		return nil, nil
+	}
+	return packReadLegacyScreens(dir)
+}
+
+// packReadPerScreenFiles reads the per-screen generated files (screen_*.go)
+// and returns the authored screens in declaration order. Returns (nil, nil)
+// when the project uses the legacy aggregated layout (no screen_*.go files),
+// so the caller falls back to packReadLegacyScreens.
+func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil // no output dir yet
+	}
+	var screenPaths []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		// The seam (screens_register.go) and the shared nodeComponent helper
+		// (screen_shared.go) carry no screen type or mount; skip them. The
+		// per-screen files all start with "screen_".
+		if name == "screen_shared.go" || !strings.HasPrefix(name, "screen_") {
+			continue
+		}
+		screenPaths = append(screenPaths, filepath.Join(dir, name))
+	}
+	if len(screenPaths) == 0 {
+		return nil, nil
+	}
+	// Helpers (package-local zero-arg fns returning one expr) may live in
+	// app.go or any screen file; index them all so reverseEntityResource can
+	// follow one hop when a screen body calls a shared helper.
+	helperFiles := []*ast.File{}
+	if appFile, err := packParseFile(filepath.Join(dir, "app.go")); err == nil {
+		helperFiles = append(helperFiles, appFile)
+	}
+	titles := map[string]string{}
+	descs := map[string]string{}
+	bodies := map[string][]BlueprintBlock{}
+	var orderedRegs []screenOrderReg
+	for _, path := range screenPaths {
+		file, err := packParseFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		helperFiles = append(helperFiles, file)
+		fnDecls := map[string]*ast.FuncDecl{}
+		for _, d := range file.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil {
+				fnDecls[fn.Name.Name] = fn
+			}
+		}
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
+				continue
+			}
+			recv := recvTypeName(fn.Recv.List[0].Type)
+			switch fn.Name.Name {
+			case "ScreenTitle":
+				titles[recv] = returnString(fn)
+			case "ScreenDescription":
+				descs[recv] = returnString(fn)
+			}
+		}
+		orderedRegs = append(orderedRegs, packScreenRegistrarsFromFile(file, fnDecls)...)
+	}
+	helpers := packHelperReturns(helperFiles...)
+	// Render bodies need the helpers map; rescan now that helpers are known.
+	for _, path := range screenPaths {
+		file, _ := packParseFile(path)
+		if file == nil {
+			continue
+		}
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
+				continue
+			}
+			if fn.Name.Name == "Render" || fn.Name.Name == "RenderCtx" {
+				recv := recvTypeName(fn.Recv.List[0].Type)
+				bodies[recv] = reverseRenderBody(fn, helpers)
+			}
+		}
+	}
+	sort.SliceStable(orderedRegs, func(i, j int) bool { return orderedRegs[i].order < orderedRegs[j].order })
+	var out []BlueprintScreen
+	for _, r := range orderedRegs {
+		body := bodies[r.reg.typeName]
+		if isSynthesizedBody(body) {
+			continue
+		}
+		s := BlueprintScreen{
+			Name:   typeNameToScreenName(r.reg.typeName),
+			Route:  paramToBrace(r.reg.route),
+			Title:  titles[r.reg.typeName],
+			Layout: r.reg.layout,
+			Body:   body,
+		}
+		if d := descs[r.reg.typeName]; d != "" {
+			s.Description = d
+		}
+		if r.reg.authed {
+			s.Access = BlueprintAccess{Auth: true, Role: r.reg.role}
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+type screenOrderReg struct {
+	order int
+	reg   screenReg
+}
+
+// packScreenRegistrarsFromFile finds every screenRegistrar{order: N, fn: X}
+// literal in a per-screen file and resolves X (a named mount func declared in
+// the same file) to the site.Register / site.RegisterScreen call in its body,
+// yielding one screenOrderReg per mounted screen. Resource-only mount funcs
+// (no screen call) contribute nothing.
+func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDecl) []screenOrderReg {
+	var out []screenOrderReg
+	ast.Inspect(file, func(n ast.Node) bool {
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		id, ok := cl.Type.(*ast.Ident)
+		if !ok || id.Name != "screenRegistrar" {
+			return true
+		}
+		var order int
+		var fnName string
+		for _, elt := range cl.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			switch identName(kv.Key) {
+			case "order":
+				if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.INT {
+					if n, err := strconv.Atoi(lit.Value); err == nil {
+						order = n
+					}
+				}
+			case "fn":
+				fnName = identName(kv.Value)
+			}
+		}
+		if fnName == "" {
+			return false
+		}
+		fn := fnDecls[fnName]
+		if fn == nil || fn.Body == nil {
+			return false
+		}
+		for _, stmt := range fn.Body.List {
+			es, ok := stmt.(*ast.ExprStmt)
+			if !ok {
+				continue // skip the appResources assignment, etc.
+			}
+			call, ok := es.X.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+			r := screenReg{}
+			switch sel.Sel.Name {
+			case "Register": // site.Register(route, &XScreen{}, layout)
+				if len(call.Args) == 3 {
+					r.route = astString(call.Args[0])
+					r.typeName = compositeTypeName(call.Args[1])
+					r.layout = layoutVarToName(call.Args[2])
+				}
+			case "RegisterScreen":
+				if len(call.Args) == 2 {
+					r.layout = layoutVarToName(call.Args[1])
+					packWalkScreenChain(call.Args[0], &r)
+				}
+			default:
+				continue
+			}
+			if r.typeName != "" {
+				out = append(out, screenOrderReg{order: order, reg: r})
+				return false
+			}
+		}
+		return false
+	})
+	return out
+}
+
+// packReadLegacyScreens reads the pre-per-screen aggregated layout: screen
+// types in screens.go, registrations in app.go's RegisterGenerated.
+func packReadLegacyScreens(dir string) ([]BlueprintScreen, error) {
 	appFile, err := packParseFile(filepath.Join(dir, "app.go"))
 	if err != nil {
 		return nil, err
 	}
 	regs := packReadScreenRegs(appFile)
+	// A legacy app with no screens never emitted screens.go — that's zero
+	// authored screens, not an error.
+	if _, statErr := os.Stat(filepath.Join(dir, "screens.go")); os.IsNotExist(statErr) {
+		return nil, nil
+	}
 	scrFile, err := packParseFile(filepath.Join(dir, "screens.go"))
 	if err != nil {
 		return nil, err
@@ -1352,6 +1738,71 @@ func packReadScreens(dir string) ([]BlueprintScreen, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// packScreenFileOrders returns the declaration orders carried by the
+// screenRegistrar{order: N, …} literals in one per-screen file. Used by
+// additive generation to continue screen orders after the existing set.
+func packScreenFileOrders(file *ast.File) []int {
+	var orders []int
+	ast.Inspect(file, func(n ast.Node) bool {
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		id, ok := cl.Type.(*ast.Ident)
+		if !ok || id.Name != "screenRegistrar" {
+			return true
+		}
+		for _, elt := range cl.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			if identName(kv.Key) != "order" {
+				continue
+			}
+			if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.INT {
+				if n, err := strconv.Atoi(lit.Value); err == nil {
+					orders = append(orders, n)
+				}
+			}
+		}
+		return false
+	})
+	return orders
+}
+
+// packHasPerScreenFiles reports whether dir uses the per-screen layout
+// (≥1 screen_*.go file other than the fixed seam/shared helpers).
+func packHasPerScreenFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if name != "screen_shared.go" && strings.HasPrefix(name, "screen_") {
+			return true
+		}
+	}
+	return false
+}
+
+// packHasAggregatedScreens reports whether dir uses the pre-per-screen
+// aggregated layout (a screens.go file with no per-screen files beside it).
+// --add cannot extend that layout and must refuse.
+func packHasAggregatedScreens(dir string) bool {
+	if packHasPerScreenFiles(dir) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(dir, "screens.go")); err != nil {
+		return false
+	}
+	return true
 }
 
 // packReadScreenRegs reads site.Register / site.RegisterScreen(...) calls.

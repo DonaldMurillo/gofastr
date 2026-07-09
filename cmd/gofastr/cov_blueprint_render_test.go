@@ -183,7 +183,7 @@ func TestRenderBlueprintFilesRichShape(t *testing.T) {
 	if _, ok := got["main.go"]; !ok {
 		t.Fatal("expected main.go")
 	}
-	screens := got["screens.go"]
+	screens := allScreenContent(files)
 	for _, want := range []string{"HomeScreen", "EmptyScreen", `appResources["posts"]`, "island.NewIsland", "component.NewWidget", "html.Link", "uinode.Node"} {
 		if !strings.Contains(screens, want) {
 			t.Errorf("screens.go missing %q", want)
@@ -277,11 +277,11 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderBlueprintFiles: %v", err)
 	}
-	// The generated app is now a flat `package main` at the root (this
-	// blueprint has no entities, so main.go carries no project-local imports).
-	// Building it whole exercises the screens' node-renderer path, which is
-	// what renders node trees — and lets us assert the authoring engine never
-	// leaks into a shipped app.
+	// The generated app is now a flat `package main` at the root. Building it
+	// whole exercises the screens' node-renderer path, which is what renders
+	// node trees — and lets us assert the authoring engine never leaks into a
+	// shipped app. (Entity-less apps still ship the entities/register.go seam
+	// and import <module>/entities, so go.mod below must match app.module.)
 	dir := t.TempDir()
 	for _, f := range files {
 		p := filepath.Join(dir, f.name)
@@ -292,7 +292,7 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	goMod := "module example.com/bpapp\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + absRoot + "\n"
+	goMod := "module example.com/node\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + absRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -237,126 +237,33 @@ func sidebarConfig() ui.SidebarConfig {
 	}, Footer: ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel}), ui.SignOut(ui.SignOutConfig{Next: "/"}))}
 }
 
+// appLayout / marketingLayout are package-level so the per-screen mount funcs
+// (screen_<name>.go) can reference them; RegisterGenerated assigns them.
+var (
+	appLayout       *app.Layout
+	marketingLayout *app.Layout
+)
+
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("Meridian")
 	}
-	appResources["customers"] = ResourceConfig{
-		Title: "Customers", Singular: "Customer", BasePath: "/app/customers", APIPath: "/api/customers",
-		Crud:    fwApp.MustCrudHandler("customers"),
-		CanEdit: true,
-		Fields: []ResField{
-			{Key: "name", Label: "Name", Type: "string"},
-			{Key: "email", Label: "Email", Type: "string"},
-			{Key: "company", Label: "Company", Type: "string"},
-			{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}},
-			{Key: "mrr", Label: "MRR", Type: "decimal"},
-		},
-		Related: []RelatedList{
-			{
-				Title: "Invoices", ForeignKey: "customer_id", BasePath: "/app/invoices",
-				Crud: fwApp.MustCrudHandler("invoices"),
-				Fields: []ResField{
-					{Key: "number", Label: "Number", Type: "string"},
-					{Key: "amount", Label: "Amount", Type: "decimal"},
-					{Key: "status", Label: "Status", Type: "enum"},
-					{Key: "issued_on", Label: "Issued", Type: "date"},
-				},
-				Relations: map[string]RelSource{
-					"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-				},
-			},
-			{
-				Title: "Payments", ForeignKey: "customer_id", BasePath: "",
-				Crud: fwApp.MustCrudHandler("payments"),
-				Fields: []ResField{
-					{Key: "invoice_id", Label: "Invoice", Type: "relation"},
-					{Key: "amount", Label: "Amount", Type: "decimal"},
-					{Key: "method", Label: "Method", Type: "enum"},
-					{Key: "status", Label: "Status", Type: "enum"},
-				},
-				Relations: map[string]RelSource{
-					"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-					"invoice_id":  {Crud: fwApp.MustCrudHandler("invoices"), Display: "number"},
-				},
-			},
-			{
-				Title: "Subscriptions", ForeignKey: "customer_id", BasePath: "/app/subscriptions",
-				Crud: fwApp.MustCrudHandler("subscriptions"),
-				Fields: []ResField{
-					{Key: "plan_id", Label: "Plan", Type: "relation"},
-					{Key: "status", Label: "Status", Type: "enum"},
-					{Key: "mrr", Label: "MRR", Type: "decimal"},
-					{Key: "started_on", Label: "Started", Type: "date"},
-				},
-				Relations: map[string]RelSource{
-					"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-					"plan_id":     {Crud: fwApp.MustCrudHandler("plans"), Display: "name"},
-				},
-			},
-		},
-	}
-	appResources["invoices"] = ResourceConfig{
-		Title: "Invoices", Singular: "Invoice", BasePath: "/app/invoices", APIPath: "/api/invoices",
-		Crud:    fwApp.MustCrudHandler("invoices"),
-		CanEdit: true,
-		Fields: []ResField{
-			{Key: "customer_id", Label: "Customer", Type: "relation"},
-			{Key: "number", Label: "Number", Type: "string"},
-			{Key: "amount", Label: "Amount", Type: "decimal"},
-			{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "open", "paid", "past_due", "void"}},
-			{Key: "issued_on", Label: "Issued", Type: "date"},
-			{Key: "due_on", Label: "Due", Type: "date"},
-			{Key: "paid_on", Label: "Paid", Type: "date"},
-		},
-		Relations: map[string]RelSource{
-			"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-		},
-		Related: []RelatedList{
-			{
-				Title: "Payments", ForeignKey: "invoice_id", BasePath: "",
-				Crud: fwApp.MustCrudHandler("payments"),
-				Fields: []ResField{
-					{Key: "customer_id", Label: "Customer", Type: "relation"},
-					{Key: "amount", Label: "Amount", Type: "decimal"},
-					{Key: "method", Label: "Method", Type: "enum"},
-					{Key: "status", Label: "Status", Type: "enum"},
-				},
-				Relations: map[string]RelSource{
-					"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-					"invoice_id":  {Crud: fwApp.MustCrudHandler("invoices"), Display: "number"},
-				},
-			},
-		},
-	}
-	appResources["subscriptions"] = ResourceConfig{
-		Title: "Subscriptions", Singular: "Subscription", BasePath: "/app/subscriptions", APIPath: "/api/subscriptions",
-		Crud:    fwApp.MustCrudHandler("subscriptions"),
-		CanEdit: true,
-		Fields: []ResField{
-			{Key: "customer_id", Label: "Customer", Type: "relation"},
-			{Key: "plan_id", Label: "Plan", Type: "relation"},
-			{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}},
-			{Key: "mrr", Label: "MRR", Type: "decimal"},
-			{Key: "started_on", Label: "Started", Type: "date"},
-			{Key: "renews_on", Label: "Renews", Type: "date"},
-		},
-		Relations: map[string]RelSource{
-			"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-			"plan_id":     {Crud: fwApp.MustCrudHandler("plans"), Display: "name"},
-		},
-	}
 	site.WithTheme(appTheme())
 	sbCfg := sidebarConfig()
 	sb := ui.Sidebar(sbCfg)
-	appLayout := app.NewLayout("app").WithSidebar(sb)
+	appLayout = app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
-	marketingLayout := app.NewLayout("marketing").
+	marketingLayout = app.NewLayout("marketing").
 		WithContainer().
 		WithHeader(app.NewContextComponent(marketingHeader)).
 		WithFooter(app.NewStaticComponent(marketingFooter()))
+	// mountGenerated populates appResources (per-entity crud files) and mounts
+	// every screen. It runs early so hand-written endpoints below that capture
+	// a resource config (e.g. the customers island at /api/tables/customers)
+	// see a populated map.
+	mountGenerated(fwApp, site, db)
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)
@@ -418,26 +325,6 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// HTML forms, mount auth.CSRF — see `gofastr docs blueprints`
 		// (Auth section) and `gofastr docs auth`.
 	}
-	site.Register("/", &HomeScreen{}, marketingLayout)
-	site.Register("/pricing", &PricingScreen{}, marketingLayout)
-	site.Register("/about", &AboutScreen{}, marketingLayout)
-	site.Register("/terms", &TermsScreen{}, marketingLayout)
-	site.Register("/privacy", &PrivacyScreen{}, marketingLayout)
-	site.RegisterScreen(app.NewScreen("/login", &LoginScreen{}).WithTitle("Sign in").WithPolicy(guestPolicy("/app")), marketingLayout)
-	site.RegisterScreen(app.NewScreen("/signup", &SignupScreen{}).WithTitle("Create your account").WithPolicy(guestPolicy("/app")), marketingLayout)
-	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers", &CustomersScreen{}).WithTitle("Customers").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers/:id", &CustomerDetailScreen{}).WithTitle("Customer").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices", &InvoicesScreen{}).WithTitle("Invoices").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices/:id", &InvoiceDetailScreen{}).WithTitle("Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions", &SubscriptionsScreen{}).WithTitle("Subscriptions").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions/:id", &SubscriptionDetailScreen{}).WithTitle("Subscription").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers/new", &CustomersNewScreen{}).WithTitle("New Customer").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/customers/:id/edit", &CustomersEditScreen{}).WithTitle("Edit Customer").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices/new", &InvoicesNewScreen{}).WithTitle("New Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/invoices/:id/edit", &InvoicesEditScreen{}).WithTitle("Edit Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions/new", &SubscriptionsNewScreen{}).WithTitle("New Subscription").WithPolicy(authPolicy("/login", "")), appLayout)
-	site.RegisterScreen(app.NewScreen("/app/subscriptions/:id/edit", &SubscriptionsEditScreen{}).WithTitle("Edit Subscription").WithPolicy(authPolicy("/login", "")), appLayout)
 	_ = routerMounter{}
 }
 

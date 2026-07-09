@@ -636,7 +636,7 @@ screens:
 	if err != nil {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
-	screens := filesByName(mustRenderBlueprintFiles(t, bp))["screens.go"]
+	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
 	assertContains(t, screens, `component.On("live_search"`)
 	assertContains(t, screens, `component.On("submit_search"`)
 	assertContains(t, screens, `"data-action": "live_search"`)
@@ -657,30 +657,32 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 		t.Fatalf("renderBlueprintFiles: %v", err)
 	}
 	byName := filesByName(files)
-	assertContains(t, byName[filepath.Join("entities", "register.go")], `app.Entity("posts", framework.EntityConfig{`)
-	assertContains(t, byName[filepath.Join("entities", "register.go")], `CursorField: "id"`)
-	assertContains(t, byName[filepath.Join("entities", "register.go")], `CursorFields: []string{"created_at", "id"}`)
-	assertContains(t, byName[filepath.Join("entities", "register.go")], `Indices: []framework.Index{`)
-	assertContains(t, byName[filepath.Join("entities", "register.go")], `Properties: map[string]any{"icon": "newspaper", "label": "Posts"}`)
-	assertContains(t, byName[filepath.Join("entities", "models.go")], `type Posts struct`)
+	postsFile := filepath.Join("entities", "posts.go")
+	assertContains(t, byName[postsFile], `app.Entity("posts", framework.EntityConfig{`)
+	assertContains(t, byName[postsFile], `CursorField: "id"`)
+	assertContains(t, byName[postsFile], `CursorFields: []string{"created_at", "id"}`)
+	assertContains(t, byName[postsFile], `Indices: []framework.Index{`)
+	assertContains(t, byName[postsFile], `Properties: map[string]any{"icon": "newspaper", "label": "Posts"}`)
+	assertContains(t, byName[postsFile], `type Posts struct`)
 	// A top-level entity_list makes the screen a server-rendered ContextOnly
 	// screen that renders the list via the resource engine (not a client island).
-	assertContains(t, byName["screens.go"], `type HomeScreen struct{ component.ContextOnly }`)
-	assertContains(t, byName["screens.go"], `func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {`)
-	assertContains(t, byName["screens.go"], `html.Heading(html.HeadingConfig{Level: 1`)
-	assertContains(t, byName["screens.go"], `html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
-	assertContains(t, byName["screens.go"], `ui.Section(ui.SectionConfig{`)
-	assertContains(t, byName["screens.go"], `island.NewIsland("live_status"`)
-	assertContains(t, byName["screens.go"], `component.NewWidget("save_button"`)
-	assertContains(t, byName["screens.go"], `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
-	assertContains(t, byName["screens.go"], `component.On("save_click"`)
-	assertContains(t, byName["screens.go"], `"data-action": "save_click"`)
-	assertContains(t, byName["screens.go"], `appResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.").List(ctx)`)
+	screenContent := allScreenContent(files)
+	assertContains(t, screenContent, `type HomeScreen struct{ component.ContextOnly }`)
+	assertContains(t, screenContent, `func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {`)
+	assertContains(t, screenContent, `html.Heading(html.HeadingConfig{Level: 1`)
+	assertContains(t, screenContent, `html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
+	assertContains(t, screenContent, `ui.Section(ui.SectionConfig{`)
+	assertContains(t, screenContent, `island.NewIsland("live_status"`)
+	assertContains(t, screenContent, `component.NewWidget("save_button"`)
+	assertContains(t, screenContent, `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
+	assertContains(t, screenContent, `component.On("save_click"`)
+	assertContains(t, screenContent, `"data-action": "save_click"`)
+	assertContains(t, screenContent, `appResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.").List(ctx)`)
 	assertContains(t, byName["stubs.go"], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
 	assertContains(t, byName["stubs.go"], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName["stubs.go"], `type AnalyticsPlugin struct{}`)
 	assertContains(t, byName["stubs.go"], `func NormalizeSlug()`)
-	assertContains(t, byName["app.go"], `site.Register("/", &HomeScreen{}, nil)`)
+	assertContains(t, screenContent, `site.Register("/", &HomeScreen{}, nil)`)
 	assertContains(t, byName["app.go"], `appName = "Demo"`)
 	assertContains(t, byName["app.go"], `appModule = "example.com/demo"`)
 	assertContains(t, byName["app.go"], `dbDriver = "sqlite"`)
@@ -822,9 +824,9 @@ func TestGenerateFromBlueprintDryRunJSON(t *testing.T) {
 	for _, want := range []string{
 		"main.go",
 		filepath.Join("entities", "register.go"),
-		filepath.Join("entities", "models.go"),
+		filepath.Join("entities", "posts.go"),
 		"app.go",
-		"screens.go",
+		"screens_register.go",
 		"stubs.go",
 	} {
 		if !paths[want] {
@@ -1326,6 +1328,21 @@ func filesByName(files []generatedFile) map[string]string {
 		out[file.name] = file.content
 	}
 	return out
+}
+
+// allScreenContent concatenates every screen-bearing generated file. Screen
+// structs, mounts, and resource wiring now live in per-screen files
+// (screen_*.go) instead of one screens.go, so layout-agnostic content
+// assertions read across all of them. Includes legacy screens.go if present.
+func allScreenContent(files []generatedFile) string {
+	var b strings.Builder
+	for _, f := range files {
+		if strings.HasPrefix(f.name, "screen_") || f.name == "screens.go" {
+			b.WriteString(f.content)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func mustRenderBlueprintFiles(t *testing.T, bp Blueprint) []generatedFile {

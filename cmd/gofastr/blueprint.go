@@ -1887,6 +1887,14 @@ func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 }
 
 func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
+	return renderBlueprintFilesWithOrder(bp, 0, 0)
+}
+
+// renderBlueprintFilesWithOrder is the additive variant: entity declaration
+// orders start at entityOrderOffset and authored screen orders start at
+// screenOrderOffset instead of 0, so --add entities/screens continue after
+// the project's existing set.
+func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderOffset int) ([]generatedFile, error) {
 	bp = blueprintSynthesizeCRUDScreens(bp)
 	bp = blueprintExpandSeed(bp)
 	var files []generatedFile
@@ -1899,21 +1907,34 @@ func renderBlueprintFiles(bp Blueprint) ([]generatedFile, error) {
 		for i := range decls {
 			decls[i].Endpoints = nil
 		}
-		entityFiles, err := renderGeneratedProject(decls)
+		entityFiles, err := renderGeneratedProjectWithOrder(decls, entityOrderOffset)
 		if err != nil {
 			return nil, err
 		}
 		for _, file := range entityFiles {
 			files = append(files, generatedFile{name: filepath.Join("entities", file.name), content: file.content})
 		}
+	} else if bp.App.Module != "" {
+		// No entities yet, but main.go imports the entities package and
+		// calls entities.RegisterAll unconditionally — emit the empty seam
+		// so the project compiles AND stays additive-ready: a later
+		// `--add`/scaffold entity is a new file that self-registers, with
+		// no edit to any owned file.
+		files = append(files, generatedFile{name: filepath.Join("entities", "register.go"), content: renderRegisterSeam()})
 	}
-	if len(bp.Screens) > 0 {
-		files = append(files, generatedFile{name: "screens.go", content: renderBlueprintScreens(bp)})
+	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || len(bp.App.Theme) > 0 || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
+	// Per-screen layout: the fixed screens_register.go seam + one file per
+	// authored screen + one per-entity crud file (screens + appResources).
+	files = append(files, blueprintScreenFiles(bp, screenOrderOffset)...)
+	if len(bp.Screens) == 0 && emitsApp {
+		// Same additive-readiness for screens: app.go calls mountGenerated
+		// unconditionally, so a screen-less app still ships the seam.
+		files = append(files, generatedFile{name: "screens_register.go", content: blueprintScreensRegisterGo})
 	}
 	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 {
 		files = append(files, generatedFile{name: "stubs.go", content: renderBlueprintStubs(bp)})
 	}
-	if bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || len(bp.App.Theme) > 0 || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 {
+	if emitsApp {
 		files = append(files, generatedFile{name: "app.go", content: renderBlueprintApp(bp)})
 	}
 	if blueprintUsesEntityScreens(bp) {
@@ -3503,10 +3524,10 @@ func renderBlueprintMain(bp Blueprint) string {
 	if imp := blueprintDriverImport(driver); imp != "" {
 		sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
 	}
-	if len(bp.Entities) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/entities"))
-	}
+	// Unconditional: the entities seam ships even with zero entities, so a
+	// later `--add`/scaffold entity registers without editing this owned file.
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("\t%q\n", baseImport+"/entities"))
 	sb.WriteString(")\n\n")
 
 	sb.WriteString("func main() {\n")
@@ -3537,9 +3558,7 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t}\n")
 	}
-	if len(bp.Entities) > 0 {
-		sb.WriteString("\tentities.RegisterAll(fwApp)\n")
-	}
+	sb.WriteString("\tentities.RegisterAll(fwApp)\n")
 	if hasSeed {
 		// Apply blueprint seed data after auto-migration, in declared order
 		// and idempotently: skip any entity whose table already has rows.
@@ -3685,35 +3704,62 @@ func renderBlueprintScreens(bp Blueprint) string {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
+	apiBase := blueprintAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
-	imports := blueprintScreenImports(bp)
-	anyCtx := false
-	for _, s := range bp.Screens {
+	sb.WriteString("package main\n\n")
+	needs := blueprintScreenImports(bp)
+	anyCtx := screensNeedCtx(bp.Screens)
+	writeScreenImportBlock(&sb, needs, anyCtx, false, true)
+	if needs.node {
+		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
+		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }\n\n")
+	}
+	for _, screen := range bp.Screens {
+		sb.WriteString(blueprintScreenBody(screen, entityMap, apiBase))
+	}
+	return sb.String()
+}
+
+// screensNeedCtx reports whether any screen in the set needs a request
+// context (RenderCtx) — drives the context + component.ContextOnly imports.
+func screensNeedCtx(screens []BlueprintScreen) bool {
+	for _, s := range screens {
 		if screenNeedsCtx(s) {
-			anyCtx = true
-			break
+			return true
 		}
 	}
-	sb.WriteString("package main\n\n")
+	return false
+}
+
+// writeScreenImportBlock writes the shared import block for a set of screens.
+// When withMount is true, database/sql + framework are added (per-screen files
+// carry a mount func with that signature); the aggregated test-facing emitter
+// passes false to stay byte-compatible with the pre-per-screen screens.go.
+func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx, withMount, hasScreens bool) {
 	sb.WriteString("import (\n")
-	if anyCtx {
+	if hasScreens && anyCtx {
 		sb.WriteString("\t\"context\"\n\n")
 	}
+	if withMount {
+		sb.WriteString("\t\"database/sql\"\n")
+	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
-	if imports.component || anyCtx {
+	if hasScreens && (needs.component || anyCtx) {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/component\"\n")
 	}
-	if imports.island {
+	if hasScreens && needs.island {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/island\"\n")
 	}
-	if imports.html {
+	if hasScreens && needs.html {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/html\"\n")
 	}
-	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
-	if imports.ui {
+	if hasScreens {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
+	}
+	if hasScreens && needs.ui {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
 	}
-	if imports.node {
+	if hasScreens && needs.node {
 		// core-ui/noderender is the first-party leaf node renderer (core-ui/html
 		// + core/render + core-ui/node only). The node IR + renderer are UI
 		// primitives, so the generated app depends on core-ui, never on the
@@ -3721,74 +3767,325 @@ func renderBlueprintScreens(bp Blueprint) string {
 		sb.WriteString("\tnoderender \"github.com/DonaldMurillo/gofastr/core-ui/noderender\"\n")
 		sb.WriteString("\tuinode \"github.com/DonaldMurillo/gofastr/core-ui/node\"\n")
 	}
+	if withMount {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
+	}
 	sb.WriteString(")\n\n")
-	if imports.node {
-		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
-		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }\n\n")
-	}
-	apiBase := blueprintAPIBase(bp.App.APIPrefix)
-	for _, screen := range bp.Screens {
-		typeName := toCamelCase(screen.Name) + "Screen"
-		ctxScreen := screenNeedsCtx(screen)
-		needParams := screenNeedsParams(screen)
-		hasActions := screenHasActions(screen, entityMap, apiBase)
-		if ctxScreen {
-			if needParams {
-				sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
-				sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[\"id\"] }\n", typeName))
-			} else {
-				sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
-			}
+}
+
+// blueprintScreenBody emits one screen's type declaration, Screen* methods,
+// and Render/RenderCtx — the screen content that is identical whether it
+// lands in its own file or in a per-entity crud file.
+func blueprintScreenBody(screen BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	var sb strings.Builder
+	typeName := toCamelCase(screen.Name) + "Screen"
+	ctxScreen := screenNeedsCtx(screen)
+	needParams := screenNeedsParams(screen)
+	hasActions := screenHasActions(screen, entityMap, apiBase)
+	if ctxScreen {
+		if needParams {
+			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
+			sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[\"id\"] }\n", typeName))
 		} else {
-			sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", typeName))
+			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
 		}
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle() string { return %q }\n", typeName, screen.Title))
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription() string { return %q }\n", typeName, screen.Description))
-		typeConst, _ := screenTypeConst(screen.Type)
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenType() app.ScreenType { return %s }\n", typeName, typeConst))
-		if hasActions {
-			sb.WriteString(fmt.Sprintf("func (s *%s) ComponentID() string { return %q }\n", typeName, screenActionComponentID(screen)))
-			sb.WriteString(fmt.Sprintf("func (s *%s) Actions() {\n", typeName))
-			for _, action := range screenActions(screen, entityMap, apiBase) {
-				sb.WriteString(fmt.Sprintf("\tcomponent.On(%q, func(ctx *component.ComponentContext) { _ = ctx }, component.WithClientJS(%q))\n", blueprintActionName(action), action.ClientJS))
-			}
-			sb.WriteString("}\n")
-		}
-		sb.WriteString("\n")
-		renderMethod := "Render() render.HTML"
-		if ctxScreen {
-			renderMethod = "RenderCtx(ctx context.Context) render.HTML"
-		}
-		sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
-		rootAttrs := "nil"
-		if hasActions {
-			rootAttrs = fmt.Sprintf("map[string]string{\"data-component\": s.ComponentID()}")
-		}
-		if len(screen.Body) == 0 {
-			sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootAttrs, screen.TitleOrName()))
-		} else {
-			sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s,\n", rootAttrs))
-			for i, block := range screen.Body {
-				var expr string
-				switch {
-				case ctxScreen && isEntityListBlock(block):
-					expr = blueprintEntityListResourceExpr(block, entityMap)
-				case ctxScreen && isEntityDetailBlock(block):
-					expr = blueprintDetailExpr(block)
-				case ctxScreen && isEntityCreateBlock(block):
-					expr = fmt.Sprintf("appResources[%q].Form(ctx, \"\")", strings.Trim(block.Entity, "/"))
-				case ctxScreen && isEntityEditBlock(block):
-					expr = fmt.Sprintf("appResources[%q].Form(ctx, s.id)", strings.Trim(block.Entity, "/"))
-				default:
-					expr = renderBlueprintBlockForScreen(screen, block, []int{i}, entityMap, apiBase)
-				}
-				sb.WriteString("\t\t" + expr + ",\n")
-			}
-			sb.WriteString("\t)\n")
-		}
-		sb.WriteString("}\n\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", typeName))
 	}
+	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle() string { return %q }\n", typeName, screen.Title))
+	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription() string { return %q }\n", typeName, screen.Description))
+	typeConst, _ := screenTypeConst(screen.Type)
+	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenType() app.ScreenType { return %s }\n", typeName, typeConst))
+	if hasActions {
+		sb.WriteString(fmt.Sprintf("func (s *%s) ComponentID() string { return %q }\n", typeName, screenActionComponentID(screen)))
+		sb.WriteString(fmt.Sprintf("func (s *%s) Actions() {\n", typeName))
+		for _, action := range screenActions(screen, entityMap, apiBase) {
+			sb.WriteString(fmt.Sprintf("\tcomponent.On(%q, func(ctx *component.ComponentContext) { _ = ctx }, component.WithClientJS(%q))\n", blueprintActionName(action), action.ClientJS))
+		}
+		sb.WriteString("}\n")
+	}
+	sb.WriteString("\n")
+	renderMethod := "Render() render.HTML"
+	if ctxScreen {
+		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
+	}
+	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
+	rootAttrs := "nil"
+	if hasActions {
+		rootAttrs = fmt.Sprintf("map[string]string{\"data-component\": s.ComponentID()}")
+	}
+	if len(screen.Body) == 0 {
+		sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootAttrs, screen.TitleOrName()))
+	} else {
+		sb.WriteString(fmt.Sprintf("\treturn render.Tag(\"div\", %s,\n", rootAttrs))
+		for i, block := range screen.Body {
+			var expr string
+			switch {
+			case ctxScreen && isEntityListBlock(block):
+				expr = blueprintEntityListResourceExpr(block, entityMap)
+			case ctxScreen && isEntityDetailBlock(block):
+				expr = blueprintDetailExpr(block)
+			case ctxScreen && isEntityCreateBlock(block):
+				expr = fmt.Sprintf("appResources[%q].Form(ctx, \"\")", strings.Trim(block.Entity, "/"))
+			case ctxScreen && isEntityEditBlock(block):
+				expr = fmt.Sprintf("appResources[%q].Form(ctx, s.id)", strings.Trim(block.Entity, "/"))
+			default:
+				expr = renderBlueprintBlockForScreen(screen, block, []int{i}, entityMap, apiBase)
+			}
+			sb.WriteString("\t\t" + expr + ",\n")
+		}
+		sb.WriteString("\t)\n")
+	}
+	sb.WriteString("}\n\n")
 	return sb.String()
+}
+
+// blueprintScreensRegisterGo is the fixed mount seam. It is byte-identical
+// for any screen or entity count: it never carries a screen, entity, or app
+// name. Add a screen by dropping in a new screen_<name>.go whose init()
+// appends to screenRegistrars; RegisterGenerated (app.go) just calls
+// mountGenerated.
+const blueprintScreensRegisterGo = `package main
+
+import (
+	"database/sql"
+	"sort"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/framework"
+)
+
+// screenRegistrar pairs a screen's mount func with its declaration order.
+// Each screen file appends one or more screenRegistrars in init();
+// mountGenerated runs them in declaration order, so the package behaves
+// identically regardless of the lexical order Go runs each file's init()
+// in. The order field is also how gofastr pack recovers the blueprint's
+// authored screen order from source.
+type screenRegistrar struct {
+	order int
+	fn    func(fwApp *framework.App, site *app.App, db *sql.DB)
+}
+
+var screenRegistrars []screenRegistrar
+
+// mountGenerated mounts every generated screen with site, in declaration
+// order. This file never holds a screen or entity name: add a screen by
+// dropping in a new screen_<name>.go that appends to screenRegistrars in
+// init(). Entity resource wiring (appResources) lives in the per-entity
+// screen_<entity>_crud.go files, never here.
+func mountGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
+	sort.SliceStable(screenRegistrars, func(i, j int) bool {
+		return screenRegistrars[i].order < screenRegistrars[j].order
+	})
+	for _, r := range screenRegistrars {
+		r.fn(fwApp, site, db)
+	}
+}
+`
+
+// blueprintScreenSharedGo holds nodeComponent, the shared adapter that lets a
+// raw uinode.Node render as a component.Component. Emitted once (in
+// screen_shared.go) when any screen renders a node tree, so no per-screen
+// file redefines the type. Like the seam, it carries no screen/entity name.
+const blueprintScreenSharedGo = `package main
+
+import (
+	"github.com/DonaldMurillo/gofastr/core/render"
+	noderender "github.com/DonaldMurillo/gofastr/core-ui/noderender"
+	uinode "github.com/DonaldMurillo/gofastr/core-ui/node"
+)
+
+// nodeComponent adapts a raw uinode.Node so it renders as a component.
+// Shared by every screen that mounts a node tree inside an island/widget.
+type nodeComponent struct{ node uinode.Node }
+
+func (c nodeComponent) Render() render.HTML { return noderender.RenderNode(c.node) }
+`
+
+// screenFileName maps a screen (or entity-crud) base name to its generated
+// filename. The screen_ prefix avoids the fixed package files (main.go,
+// app.go, stubs.go, resource.go, e2e_test.go, screens_register.go,
+// screen_shared.go) by construction; the guard below additionally prefixes a
+// name that would otherwise collide with the seam or shared helper.
+func screenFileName(base string) string {
+	snake := toSnakeCase(base)
+	name := "screen_" + snake + ".go"
+	// Guard the fixed helper files. A screen named "shared" would shadow
+	// screen_shared.go (the nodeComponent adapter); re-prefix it. ("register"
+	// cannot collide: the seam is screens_register.go, a different prefix.)
+	if name == "screen_shared.go" {
+		return "screen_screen_shared.go"
+	}
+	return name
+}
+
+// screenEntityRef returns the entity a CRUD screen renders (its
+// entity_list/entity_detail/entity_create/entity_edit block target) and
+// whether the screen is a CRUD screen at all. Non-CRUD authored screens
+// (marketing, dashboards, auth forms) return ("", false) and land in their
+// own screen_<snake>.go.
+func screenEntityRef(s BlueprintScreen) (entity string, isCrud bool) {
+	for _, b := range s.Body {
+		e := strings.Trim(b.Entity, "/")
+		if e == "" {
+			continue
+		}
+		if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) || isEntityEditBlock(b) {
+			return e, true
+		}
+	}
+	return "", false
+}
+
+// blueprintScreenLayoutExpr resolves a screen's Layout field to the
+// package-level layout identifier app.go declares (appLayout / marketingLayout)
+// or "nil". Layouts are package-level vars so per-screen mount funcs can
+// reference them without app.go naming any screen.
+func blueprintScreenLayoutExpr(screen BlueprintScreen, bp Blueprint) string {
+	switch screen.Layout {
+	case "marketing":
+		return "marketingLayout"
+	case "app":
+		if len(bp.Nav) > 0 {
+			return "appLayout"
+		}
+		return "nil"
+	default:
+		if len(bp.Nav) > 0 {
+			return "appLayout"
+		}
+		return "nil"
+	}
+}
+
+// blueprintScreenMountStmt emits the site.Register / site.RegisterScreen call
+// for one screen. Policies (authPolicy/guestPolicy) and layouts
+// (appLayout/marketingLayout) are package-level identifiers declared in app.go.
+func blueprintScreenMountStmt(screen BlueprintScreen, bp Blueprint) string {
+	route := blueprintScreenRoutePath(screen.Route)
+	typeName := toCamelCase(screen.Name) + "Screen"
+	layoutExpr := blueprintScreenLayoutExpr(screen, bp)
+	guestRedirect := bp.App.Auth.Enabled && blueprintHasAuthFormScreen(bp)
+	switch {
+	case screen.Access.Auth:
+		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(authPolicy(%q, %q)), %s)", route, typeName, screen.Title, "/login", screen.Access.Role, layoutExpr)
+	case guestRedirect && screenHasAuthForm(screen):
+		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(guestPolicy(%q)), %s)", route, typeName, screen.Title, blueprintAppHome(bp), layoutExpr)
+	default:
+		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
+	}
+}
+
+// blueprintScreenFiles partitions bp's (already-synthesized) screens into the
+// per-file generated layout: the fixed screens_register.go seam, one
+// screen_<snake>.go per non-CRUD authored screen, and one
+// screen_<entity>_crud.go per entity holding that entity's list/detail/form
+// screens AND its appResources wiring. screenOrderOffset continues authored
+// screen orders after an existing project's set (--add).
+func blueprintScreenFiles(bp Blueprint, screenOrderOffset int) []generatedFile {
+	if len(bp.Screens) == 0 {
+		return nil
+	}
+	entityMap, base, needed, editable := blueprintResourceIndex(bp)
+	apiBase := blueprintAPIBase(bp.App.APIPrefix)
+	var files []generatedFile
+	files = append(files, generatedFile{name: "screens_register.go", content: blueprintScreensRegisterGo})
+	if blueprintScreenImports(bp).node {
+		files = append(files, generatedFile{name: "screen_shared.go", content: blueprintScreenSharedGo})
+	}
+	// Authored screen order = post-synthesis index (+ offset for --add).
+	screenOrder := make(map[string]int, len(bp.Screens))
+	for i, s := range bp.Screens {
+		screenOrder[s.Name] = i + screenOrderOffset
+	}
+	// Partition: CRUD screens grouped per entity (declaration order); the
+	// rest are standalone.
+	crudByEntity := map[string][]BlueprintScreen{}
+	var crudOrder []string // entities that have ≥1 CRUD screen, first-seen order
+	var standalone []BlueprintScreen
+	for _, s := range bp.Screens {
+		if e, ok := screenEntityRef(s); ok {
+			if _, seen := crudByEntity[e]; !seen {
+				crudOrder = append(crudOrder, e)
+			}
+			crudByEntity[e] = append(crudByEntity[e], s)
+		} else {
+			standalone = append(standalone, s)
+		}
+	}
+	for _, s := range standalone {
+		files = append(files, renderBlueprintStandaloneScreenFile(s, bp, entityMap, apiBase, screenOrder[s.Name]))
+	}
+	// One crud file per entity that needs an appResources entry: entities
+	// with CRUD screens first (crudOrder), then resource-only entities
+	// (sourced but screen-less) in sorted order for stable output.
+	handled := map[string]bool{}
+	for _, e := range crudOrder {
+		files = append(files, renderBlueprintCrudFile(e, crudByEntity[e], bp, entityMap, base, editable, apiBase, screenOrder))
+		handled[e] = true
+	}
+	var resourceOnly []string
+	for e := range needed {
+		if !handled[e] {
+			resourceOnly = append(resourceOnly, e)
+		}
+	}
+	sort.Strings(resourceOnly)
+	for _, e := range resourceOnly {
+		files = append(files, renderBlueprintCrudFile(e, nil, bp, entityMap, base, editable, apiBase, screenOrder))
+	}
+	return files
+}
+
+func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, apiBase string, order int) generatedFile {
+	var sb strings.Builder
+	sb.WriteString("package main\n\n")
+	needs := blueprintScreensImportNeeds([]BlueprintScreen{screen}, entityMap, apiBase)
+	writeScreenImportBlock(&sb, needs, screenNeedsCtx(screen), true, true)
+	sb.WriteString(blueprintScreenBody(screen, entityMap, apiBase))
+	mountName := "mount" + toCamelCase(screen.Name) + "Screen"
+	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, blueprintScreenMountStmt(screen, bp)))
+	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
+	return generatedFile{name: screenFileName(screen.Name), content: sb.String()}
+}
+
+// renderBlueprintCrudFile emits screen_<entity>_crud.go: the entity's
+// list/detail/form screens (in declaration order), a mount func per screen,
+// the entity's appResources wiring (inside the primary mount func — it needs
+// fwApp), and one init() registering every mount func at its authored order.
+// screens may be nil for a resource-only entity (sourced but screen-less):
+// then the file carries just the resource wiring.
+func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool, apiBase string, screenOrder map[string]int) generatedFile {
+	var sb strings.Builder
+	sb.WriteString("package main\n\n")
+	needs := blueprintScreensImportNeeds(screens, entityMap, apiBase)
+	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
+	for _, s := range screens {
+		sb.WriteString(blueprintScreenBody(s, entityMap, apiBase))
+	}
+	resourceStmt := blueprintResourceRegistryOne(bp, entity, entityMap, base, editable)
+	// Mount funcs in authored (declaration) order; the resource wiring lands
+	// in the primary (first) mount func so it runs before any screen renders.
+	ordered := append([]BlueprintScreen(nil), screens...)
+	sort.SliceStable(ordered, func(i, j int) bool { return screenOrder[ordered[i].Name] < screenOrder[ordered[j].Name] })
+	var initLines []string
+	for i, s := range ordered {
+		mountName := "mount" + toCamelCase(s.Name) + "Screen"
+		sb.WriteString(fmt.Sprintf("func %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n", mountName))
+		if i == 0 && resourceStmt != "" {
+			sb.WriteString(resourceStmt)
+		}
+		sb.WriteString(blueprintScreenMountStmt(s, bp))
+		sb.WriteString("\n}\n\n")
+		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: %d, fn: %s},", screenOrder[s.Name], mountName))
+	}
+	if len(ordered) == 0 && resourceStmt != "" {
+		mountName := "mount" + toCamelCase(entity) + "Resource"
+		sb.WriteString(fmt.Sprintf("// %s wires the %s resource (no screen mounts it; it is looked up by\n// data sources / relation labels elsewhere).\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s}\n\n", mountName, entity, mountName, resourceStmt))
+		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: 0, fn: %s},", mountName))
+	}
+	sb.WriteString("func init() {\n\tscreenRegistrars = append(screenRegistrars,\n" + strings.Join(initLines, "\n") + "\n\t)\n}\n")
+	return generatedFile{name: screenFileName(entity + "_crud"), content: sb.String()}
 }
 
 // blueprintResourceRegistry emits the appResources map population inside
@@ -3796,14 +4093,34 @@ func renderBlueprintScreens(bp Blueprint) string {
 // entity_list/entity_detail screen, wired to its CrudHandler, displayable
 // fields, and relation lookups.
 func blueprintResourceRegistry(bp Blueprint) string {
-	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
+	entityMap, base, needed, editable := blueprintResourceIndex(bp)
+	if len(needed) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(needed))
+	for e := range needed {
+		names = append(names, e)
+	}
+	sort.Strings(names)
+	var sb strings.Builder
+	for _, e := range names {
+		sb.WriteString(blueprintResourceRegistryOne(bp, e, entityMap, base, editable))
+	}
+	return sb.String()
+}
+
+// blueprintResourceIndex computes the shared analysis backing the appResources
+// emission: the entity map, the base route per entity, the set of entities
+// that need a ResourceConfig, and which have an editable detail screen.
+func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.EntityDeclaration, base map[string]string, needed map[string]bool, editable map[string]bool) {
+	entityMap = make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
 	}
 	// base path per entity (list route preferred; detail route minus /{id}).
-	base := map[string]string{}
-	needed := map[string]bool{}
-	editable := map[string]bool{} // has a detail screen → Detail shows Edit/Delete
+	base = map[string]string{}
+	needed = map[string]bool{}
+	editable = map[string]bool{} // has a detail screen → Detail shows Edit/Delete
 	for _, s := range bp.Screens {
 		for _, b := range s.Body {
 			e := strings.Trim(b.Entity, "/")
@@ -3833,71 +4150,68 @@ func blueprintResourceRegistry(bp Blueprint) string {
 			needed[src] = true
 		}
 	}
-	if len(needed) == 0 {
+	return entityMap, base, needed, editable
+}
+
+// blueprintResourceRegistryOne emits the `appResources["E"] = ResourceConfig{…}`
+// block for a single entity. Shared by the (legacy) aggregated app.go emitter
+// and the per-entity screen_<entity>_crud.go file, so the wiring is identical
+// regardless of where it lands. Returns "" when the entity is unknown.
+func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool) string {
+	decl, ok := entityMap[e]
+	if !ok {
 		return ""
 	}
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
-	names := make([]string, 0, len(needed))
-	for e := range needed {
-		names = append(names, e)
-	}
-	sort.Strings(names)
-
 	var sb strings.Builder
-	for _, e := range names {
-		decl, ok := entityMap[e]
-		if !ok {
+	sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = ResourceConfig{\n")
+	sb.WriteString(fmt.Sprintf("\t\tTitle: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
+	sb.WriteString(fmt.Sprintf("\t\tCrud: fwApp.MustCrudHandler(%q),\n", e))
+	if editable[e] {
+		sb.WriteString("\t\tCanEdit: true,\n")
+	}
+	// Fields: displayable columns (skip system + hidden).
+	sb.WriteString("\t\tFields: []ResField{\n")
+	for _, f := range decl.Fields {
+		if blueprintFieldSystem(f.Name) || f.Hidden {
 			continue
 		}
-		sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = ResourceConfig{\n")
-		sb.WriteString(fmt.Sprintf("\t\tTitle: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
-		sb.WriteString(fmt.Sprintf("\t\tCrud: fwApp.MustCrudHandler(%q),\n", e))
-		if editable[e] {
-			sb.WriteString("\t\tCanEdit: true,\n")
+		values := ""
+		if strings.EqualFold(f.Type, "enum") && len(f.Values) > 0 {
+			quoted := make([]string, len(f.Values))
+			for i, v := range f.Values {
+				quoted[i] = fmt.Sprintf("%q", v)
+			}
+			values = ", Values: []string{" + strings.Join(quoted, ", ") + "}"
 		}
-		// Fields: displayable columns (skip system + hidden).
-		sb.WriteString("\t\tFields: []ResField{\n")
-		for _, f := range decl.Fields {
-			if blueprintFieldSystem(f.Name) || f.Hidden {
-				continue
+		sb.WriteString(fmt.Sprintf("\t\t\t{Key: %q, Label: %q, Type: %q%s},\n", f.Name, humanizeFieldLabel(f.Name), f.Type, values))
+	}
+	sb.WriteString("\t\t},\n")
+	// Relations: FK column -> related crud + display field.
+	rels := blueprintEntityRelations(decl)
+	if len(rels) > 0 {
+		sb.WriteString("\t\tRelations: map[string]RelSource{\n")
+		relCols := make([]string, 0, len(rels))
+		for c := range rels {
+			relCols = append(relCols, c)
+		}
+		sort.Strings(relCols)
+		for _, col := range relCols {
+			target := rels[col]
+			disp := "id"
+			if td, ok := entityMap[target]; ok {
+				disp = blueprintDisplayField(td)
 			}
-			values := ""
-			if strings.EqualFold(f.Type, "enum") && len(f.Values) > 0 {
-				quoted := make([]string, len(f.Values))
-				for i, v := range f.Values {
-					quoted[i] = fmt.Sprintf("%q", v)
-				}
-				values = ", Values: []string{" + strings.Join(quoted, ", ") + "}"
-			}
-			sb.WriteString(fmt.Sprintf("\t\t\t{Key: %q, Label: %q, Type: %q%s},\n", f.Name, humanizeFieldLabel(f.Name), f.Type, values))
+			sb.WriteString(fmt.Sprintf("\t\t\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", col, target, disp))
 		}
 		sb.WriteString("\t\t},\n")
-		// Relations: FK column -> related crud + display field.
-		rels := blueprintEntityRelations(decl)
-		if len(rels) > 0 {
-			sb.WriteString("\t\tRelations: map[string]RelSource{\n")
-			relCols := make([]string, 0, len(rels))
-			for c := range rels {
-				relCols = append(relCols, c)
-			}
-			sort.Strings(relCols)
-			for _, col := range relCols {
-				target := rels[col]
-				disp := "id"
-				if td, ok := entityMap[target]; ok {
-					disp = blueprintDisplayField(td)
-				}
-				sb.WriteString(fmt.Sprintf("\t\t\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", col, target, disp))
-			}
-			sb.WriteString("\t\t},\n")
-		}
-		// Related: reverse relations — other entities that point back at this
-		// one via a FK. Surfaced as tables on the detail page (account view).
-		if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
-			sb.WriteString(rel)
-		}
-		sb.WriteString("\t}\n")
 	}
+	// Related: reverse relations — other entities that point back at this
+	// one via a FK. Surfaced as tables on the detail page (account view).
+	if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
+		sb.WriteString(rel)
+	}
+	sb.WriteString("\t}\n")
 	return sb.String()
 }
 
@@ -4220,11 +4534,14 @@ func blueprintCatalogKind(kind string) bool {
 	return false
 }
 
-// blueprintCatalogUsesHTML reports kinds whose emitted code references html.*.
-func blueprintCatalogUsesHTML(kind string) bool {
-	// Charts compose ui.Card/ui.*Chart only; hero is the sole catalog
-	// kind that still emits an html.* call (html.Image for its media).
-	return strings.ToLower(strings.TrimSpace(kind)) == "hero"
+// blueprintCatalogUsesHTML reports whether a catalog block's emitted code
+// references html.*. Only a hero WITH media (image/media prop) emits an
+// html.Image call; a media-less hero composes ui.* only.
+func blueprintCatalogUsesHTML(block BlueprintBlock) bool {
+	if strings.ToLower(strings.TrimSpace(block.Kind)) != "hero" {
+		return false
+	}
+	return blueprintProp(block, "image") != "" || blueprintProp(block, "media") != ""
 }
 
 func blueprintScreenImports(bp Blueprint) screenImportNeeds {
@@ -4232,9 +4549,15 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
-	apiBase := blueprintAPIBase(bp.App.APIPrefix)
+	return blueprintScreensImportNeeds(bp.Screens, entityMap, blueprintAPIBase(bp.App.APIPrefix))
+}
+
+// blueprintScreensImportNeeds computes the import set for an arbitrary
+// subset of screens (one standalone file, one crud file's screens, or the
+// whole project). It is the per-file analogue of blueprintScreenImports.
+func blueprintScreensImportNeeds(screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
 	var needs screenImportNeeds
-	for _, screen := range bp.Screens {
+	for _, screen := range screens {
 		// Empty-body screens emit html.Heading directly (see
 		// renderBlueprintStubs / the screen Render() empty path).
 		if len(screen.Body) == 0 {
@@ -4272,7 +4595,7 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 				}
 				if blueprintCatalogKind(kind) {
 					needs.ui = true
-					if blueprintCatalogUsesHTML(kind) {
+					if blueprintCatalogUsesHTML(block) {
 						needs.html = true
 					}
 					scan(block.Children, false)
@@ -5882,12 +6205,24 @@ func renderBlueprintApp(bp Blueprint) string {
 		}
 		sb.WriteString("}\n}\n\n")
 	}
+	// Layouts are package-level so per-screen mount funcs (screen_<name>.go) can
+	// reference them without app.go naming any screen. RegisterGenerated assigns
+	// them before calling mountGenerated.
+	if len(bp.Nav) > 0 || hasMarketing {
+		sb.WriteString("var (\n")
+		if len(bp.Nav) > 0 {
+			sb.WriteString("\tappLayout *app.Layout\n")
+		}
+		if hasMarketing {
+			sb.WriteString("\tmarketingLayout *app.Layout\n")
+		}
+		sb.WriteString(")\n\n")
+	}
 	sb.WriteString("// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.\n")
 	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {\n")
 	sb.WriteString("\tif site == nil {\n")
 	sb.WriteString(fmt.Sprintf("\t\tsite = app.NewApp(%q)\n", name))
 	sb.WriteString("\t}\n")
-	sb.WriteString(blueprintResourceRegistry(bp))
 	if len(bp.App.Theme) > 0 {
 		sb.WriteString("\tsite.WithTheme(appTheme())\n")
 	}
@@ -5897,7 +6232,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		// No standalone app top bar: the sidebar owns brand + nav + the theme
 		// toggle (in its footer), so content fills from the top with no empty
 		// header band — the way real app shells (Linear/Notion/Stripe) read.
-		sb.WriteString("\tappLayout := app.NewLayout(\"app\").WithSidebar(sb)\n")
+		sb.WriteString("\tappLayout = app.NewLayout(\"app\").WithSidebar(sb)\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
 		sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
 	}
@@ -5907,7 +6242,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			// Render per-request so the header reflects the live session.
 			headerExpr = "app.NewContextComponent(marketingHeader)"
 		}
-		sb.WriteString("\tmarketingLayout := app.NewLayout(\"marketing\").\n")
+		sb.WriteString("\tmarketingLayout = app.NewLayout(\"marketing\").\n")
 		sb.WriteString("\t\tWithContainer().\n")
 		sb.WriteString(fmt.Sprintf("\t\tWithHeader(%s).\n", headerExpr))
 		sb.WriteString("\t\tWithFooter(app.NewStaticComponent(marketingFooter()))\n")
@@ -6043,34 +6378,13 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t}\n")
 		}
 	}
-	for _, screen := range bp.Screens {
-		route := blueprintScreenRoutePath(screen.Route)
-		typeName := toCamelCase(screen.Name) + "Screen"
-		layoutExpr := "nil"
-		switch screen.Layout {
-		case "marketing":
-			layoutExpr = "marketingLayout"
-		case "app":
-			if len(bp.Nav) > 0 {
-				layoutExpr = "appLayout"
-			}
-		default:
-			if len(bp.Nav) > 0 {
-				layoutExpr = "appLayout"
-			}
-		}
-		switch {
-		case screen.Access.Auth:
-			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(authPolicy(%q, %q)), %s)\n",
-				route, typeName, screen.Title, "/login", screen.Access.Role, layoutExpr))
-		case guestRedirect && screenHasAuthForm(screen):
-			// Login / signup: redirect already-signed-in visitors to the app.
-			sb.WriteString(fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q).WithPolicy(guestPolicy(%q)), %s)\n",
-				route, typeName, screen.Title, blueprintAppHome(bp), layoutExpr))
-		default:
-			sb.WriteString(fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)\n", route, typeName, layoutExpr))
-		}
-	}
+	// Screens (authored + synthesized CRUD) mount themselves: each screen_*.go
+	// self-registers a mount func, and mountGenerated runs them in declaration
+	// order. app.go names no screen type or entity resource — adding a screen
+	// or an entity fragment is a new file, never an edit here. The call is
+	// unconditional (the seam ships even with zero screens) so a later
+	// `--add`/scaffold screen mounts without editing this owned file.
+	sb.WriteString("\tmountGenerated(fwApp, site, db)\n")
 	for _, endpoint := range bp.Endpoints {
 		handler := blueprintEndpointHandlerName(endpoint)
 		if handler == "" {

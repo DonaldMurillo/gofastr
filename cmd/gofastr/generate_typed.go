@@ -7,44 +7,35 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// renderColumns builds entities/columns.go — typed column constants and
-// include-name constants for every entity. Codegen-only file; the framework
-// itself defines NewStringColumn etc. so the generator just instantiates.
-func renderColumns(decls []framework.EntityDeclaration) string {
+// renderEntityColumns emits one entity's typed column constants and include
+// names. Codegen-only; the framework itself defines NewStringColumn etc. so
+// the generator just instantiates.
+func renderEntityColumns(decl framework.EntityDeclaration) string {
+	struct_ := toCamelCase(decl.Name)
 	var sb strings.Builder
-	sb.WriteString(`package entities
+	sb.WriteString("// ====== " + struct_ + " column references ======\n\n")
+	sb.WriteString("var (\n")
+	// Always emit an ID column (PK) — the framework auto-adds it on Define.
+	sb.WriteString(fmt.Sprintf("\t%sID = framework.NewUUIDColumn(\"id\")\n", struct_))
+	for _, field := range decl.Fields {
+		if field.Name == "id" {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("\t%s%s = %s(%q)\n",
+			struct_, toCamelCase(field.Name),
+			columnConstructor(field.Type), field.Name))
+	}
+	sb.WriteString(")\n\n")
 
-import (
-	"github.com/DonaldMurillo/gofastr/framework"
-)
-
-`)
-	for _, decl := range decls {
-		struct_ := toCamelCase(decl.Name)
-		sb.WriteString("// ====== " + struct_ + " column references ======\n\n")
-		sb.WriteString("var (\n")
-		// Always emit an ID column (PK) — the framework auto-adds it on Define.
-		sb.WriteString(fmt.Sprintf("\t%sID = framework.NewUUIDColumn(\"id\")\n", struct_))
-		for _, field := range decl.Fields {
-			if field.Name == "id" {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("\t%s%s = %s(%q)\n",
-				struct_, toCamelCase(field.Name),
-				columnConstructor(field.Type), field.Name))
+	// Include name constants per relation.
+	if len(decl.Relations) > 0 {
+		sb.WriteString("// " + struct_ + " include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).\n")
+		sb.WriteString("const (\n")
+		for _, rel := range decl.Relations {
+			sb.WriteString(fmt.Sprintf("\t%sIncl%s = %q\n",
+				struct_, toCamelCase(rel.Name), rel.Name))
 		}
 		sb.WriteString(")\n\n")
-
-		// Include name constants per relation.
-		if len(decl.Relations) > 0 {
-			sb.WriteString("// " + struct_ + " include names — pass to framework.TypedQuery.Include or repo.Get(..., includes...).\n")
-			sb.WriteString("const (\n")
-			for _, rel := range decl.Relations {
-				sb.WriteString(fmt.Sprintf("\t%sIncl%s = %q\n",
-					struct_, toCamelCase(rel.Name), rel.Name))
-			}
-			sb.WriteString(")\n\n")
-		}
 	}
 	return sb.String()
 }
@@ -70,24 +61,14 @@ func columnConstructor(value string) string {
 	}
 }
 
-// renderEvents builds entities/events.go — typed event subscription helpers
-// for every entity. OnPostsCreated/OnPostsUpdated take *T callbacks;
-// OnPostsDeleted gets the id string. Each returns a cancel function from
-// EventBus.Subscribe so callers can unsubscribe.
-func renderEvents(decls []framework.EntityDeclaration) string {
+// renderEntityEvents emits one entity's typed event subscription helpers
+// (On<Camel>Created/Updated/Deleted) and its record extractor. OnXCreated/
+// OnXUpdated take *T callbacks; OnXDeleted gets the id string. Each returns a
+// cancel func from EventBus.Subscribe so callers can unsubscribe.
+func renderEntityEvents(decl framework.EntityDeclaration) string {
+	struct_ := toCamelCase(decl.Name)
 	var sb strings.Builder
-	sb.WriteString(`package entities
-
-import (
-	"context"
-
-	"github.com/DonaldMurillo/gofastr/framework"
-)
-
-`)
-	for _, decl := range decls {
-		struct_ := toCamelCase(decl.Name)
-		sb.WriteString(fmt.Sprintf(`// On%sCreated subscribes to entity.created events scoped to %q.
+	sb.WriteString(fmt.Sprintf(`// On%sCreated subscribes to entity.created events scoped to %q.
 // Returns a cancel func; call it to remove the handler.
 func On%sCreated(app *framework.App, fn func(ctx context.Context, row *%s) error) func() {
 	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
@@ -129,21 +110,14 @@ func On%sDeleted(app *framework.App, fn func(ctx context.Context, id string) err
 }
 
 `,
-			struct_, decl.Name, struct_, struct_, struct_, decl.Name,
-			struct_, decl.Name, struct_, struct_, struct_, decl.Name,
-			struct_, decl.Name, struct_, decl.Name,
-		))
-	}
-
-	// Shared extractor — once per file, not per entity.
-	if len(decls) > 0 {
-		first := toCamelCase(decls[0].Name)
-		// Emit one extractor per struct type. They're all identical shape but
-		// differ in the returned *T; codegen can't share via interface without
-		// reflection so we generate one per entity.
-		for _, decl := range decls {
-			struct_ := toCamelCase(decl.Name)
-			sb.WriteString(fmt.Sprintf(`// extract%sRecord unmarshals an event payload's "record" field into a
+		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
+		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
+		struct_, decl.Name, struct_, decl.Name,
+	))
+	// Record extractor for this entity. One per struct type — identical shape
+	// but they differ in the returned *T, and codegen can't share via
+	// interface without reflection.
+	sb.WriteString(fmt.Sprintf(`// extract%sRecord unmarshals an event payload's "record" field into a
 // *%s, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
@@ -163,30 +137,15 @@ func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
 }
 
 `, struct_, struct_, struct_, struct_, struct_))
-		}
-		_ = first
-	}
 	return sb.String()
 }
 
-// renderRepos builds entities/repo.go — typed repositories per entity, each
-// wrapping a CrudHandler so generated callers get Create/Get/Update/Delete +
-// Query + WithTx without re-implementing CRUD plumbing.
-func renderRepos(decls []framework.EntityDeclaration) string {
-	var sb strings.Builder
-	sb.WriteString(`package entities
-
-import (
-	"context"
-	"database/sql"
-
-	"github.com/DonaldMurillo/gofastr/framework"
-)
-
-`)
-	for _, decl := range decls {
-		struct_ := toCamelCase(decl.Name)
-		sb.WriteString(fmt.Sprintf(`// %sRepo is the typed repository for %s rows.
+// renderEntityRepo emits one entity's typed repository, wrapping a
+// CrudHandler so generated callers get Create/Get/Update/Delete + Query +
+// WithTx without re-implementing CRUD plumbing.
+func renderEntityRepo(decl framework.EntityDeclaration) string {
+	struct_ := toCamelCase(decl.Name)
+	return fmt.Sprintf(`// %sRepo is the typed repository for %s rows.
 type %sRepo struct {
 	handler *framework.CrudHandler
 }
@@ -355,38 +314,36 @@ func (r *%sRepo) BatchDelete(ctx context.Context, ids []string) error {
 }
 
 `,
-			// Repo struct doc + type
-			struct_, decl.Name,
-			struct_,
-			// Constructor
-			struct_, decl.Name, struct_, struct_, decl.Name, decl.Name, decl.Name, struct_,
-			// Handler accessor
-			struct_,
-			// WithTx
-			struct_, struct_, struct_,
-			// Create
-			struct_, struct_,
-			// Get
-			struct_, struct_, struct_,
-			// Update
-			struct_, struct_,
-			// Delete
-			struct_,
-			// Query
-			struct_, struct_, struct_,
-			// Exists
-			struct_, struct_,
-			// Count
-			struct_,
-			// FirstOrCreate
-			struct_, struct_, struct_,
-			// BatchCreate
-			struct_, struct_, struct_,
-			// BatchUpdate
-			struct_, struct_, struct_,
-			// BatchDelete
-			struct_,
-		))
-	}
-	return sb.String()
+		// Repo struct doc + type
+		struct_, decl.Name,
+		struct_,
+		// Constructor
+		struct_, decl.Name, struct_, struct_, decl.Name, decl.Name, decl.Name, struct_,
+		// Handler accessor
+		struct_,
+		// WithTx
+		struct_, struct_, struct_,
+		// Create
+		struct_, struct_,
+		// Get
+		struct_, struct_, struct_,
+		// Update
+		struct_, struct_,
+		// Delete
+		struct_,
+		// Query
+		struct_, struct_, struct_,
+		// Exists
+		struct_, struct_,
+		// Count
+		struct_,
+		// FirstOrCreate
+		struct_, struct_, struct_,
+		// BatchCreate
+		struct_, struct_, struct_,
+		// BatchUpdate
+		struct_, struct_, struct_,
+		// BatchDelete
+		struct_,
+	)
 }

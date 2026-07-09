@@ -65,8 +65,11 @@ func TestBlueprint_AppConstsAndRoutes(t *testing.T) {
 	if !strings.Contains(app, `apiPrefix = "api"`) {
 		t.Error("app.go missing apiPrefix const")
 	}
-	if !strings.Contains(app, `site.Register("/items/:id"`) {
-		t.Errorf("detail screen route not converted {id}->:id for the screen router:\n%s", app)
+	// Screen routes ({id}->:id conversion) now live in per-screen mount funcs,
+	// not app.go — check the screen files. app.go names no screen.
+	screens := allScreenContent(mustRenderBlueprintFiles(t, websitesBlueprint()))
+	if !strings.Contains(screens, `site.Register("/items/:id"`) {
+		t.Errorf("detail screen route not converted {id}->:id for the screen router:\n%s", screens)
 	}
 	if !strings.Contains(app, "func appBaseCSS() string") {
 		t.Error("app.go missing appBaseCSS function")
@@ -147,36 +150,25 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderBlueprintFiles: %v", err)
 	}
-	byName := map[string]string{}
-	for _, f := range files {
-		byName[f.name] = f.content
+	screens := allScreenContent(files)
+	crudFile := fileContent(files, "screen_widgets_crud.go")
+	if crudFile == "" {
+		t.Fatalf("missing screen_widgets_crud.go; files=%v", sortedFileNames(files))
 	}
-	screens := byName["screens.go"]
-	app := byName["app.go"]
 
 	// Create + edit form screens render via the resource engine's Form.
-	if !strings.Contains(screens, `appResources["widgets"].Form(ctx, "")`) {
-		t.Errorf("missing create form screen (Form(ctx, \"\")):\n%s", screens)
-	}
-	if !strings.Contains(screens, `appResources["widgets"].Form(ctx, s.id)`) {
-		t.Errorf("missing edit form screen (Form(ctx, s.id)):\n%s", screens)
-	}
+	assertContains(t, screens, `appResources["widgets"].Form(ctx, "")`)
+	assertContains(t, screens, `appResources["widgets"].Form(ctx, s.id)`)
 	// List shows "New"; detail shows Edit/Delete (CanEdit) and posts to the API.
-	if !strings.Contains(screens, ".WithCreate().List(ctx)") {
-		t.Error("entity_list with create:true did not call WithCreate()")
-	}
-	if !strings.Contains(app, "CanEdit: true") {
-		t.Error("entity with a detail screen did not set CanEdit")
-	}
-	if !strings.Contains(app, `APIPath: "/api/widgets"`) {
-		t.Error("resource registry missing APIPath for the CRUD endpoint")
-	}
-	// The /new and /{id}/edit routes are registered.
-	if !strings.Contains(app, `"/app/widgets/new"`) {
-		t.Errorf("create screen route not registered:\n%s", app)
-	}
-	if !strings.Contains(app, `"/app/widgets/:id/edit"`) {
-		t.Errorf("edit screen route not registered:\n%s", app)
+	assertContains(t, screens, ".WithCreate().List(ctx)")
+	assertContains(t, crudFile, "CanEdit: true")
+	assertContains(t, crudFile, `APIPath: "/api/widgets"`)
+	// The /new and /{id}/edit routes are registered (in the crud mount funcs).
+	assertContains(t, screens, `"/app/widgets/new"`)
+	assertContains(t, screens, `"/app/widgets/:id/edit"`)
+	// app.go no longer owns any of this — it calls mountGenerated instead.
+	if strings.Contains(fileContent(files, "app.go"), `appResources["widgets"]`) {
+		t.Error("app.go must not carry the widgets appResources entry")
 	}
 }
 

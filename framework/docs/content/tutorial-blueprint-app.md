@@ -91,14 +91,17 @@ Validate, generate, run:
 
 ```bash
 gofastr validate gofastr.yml
-gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + app.go + screens.go + entities/
+gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + app.go + screens_register.go + screen_*.go + entities/
 go mod tidy
 go run .
 ```
 
 The scaffold is normal, owned Go — a flat `package main` at the module root:
-`entities/register.go` holds the `app.Entity(...)` registrations,
-`screens.go` the screen components, `app.go` the `RegisterGenerated` wiring
+`entities/` holds one `<entity>.go` per entity — each carrying its own
+`app.Entity(...)` registration — plus a thin `entities/register.go` seam,
+`screens_register.go` a second seam that mounts every screen in declaration
+order (one `screen_<name>.go` per screen — the home page here), `app.go` the
+`RegisterGenerated` wiring
 (including the auth setup), `main.go` the entrypoint. Read them — they are
 short, there is no hidden layer underneath, and they carry no `DO NOT EDIT`
 header because they're yours to edit and commit. This is the whole point:
@@ -140,8 +143,7 @@ generated code. (In a real project you might have declared `owner_field`
 and `access` in the blueprint up front; doing it by hand here is the same
 edit you'd make for *any* change after the one-shot — this is what
 "owning the code" looks like.)
-
-**Edit `entities/register.go`** — add the owner column, `OwnerField`, and
+**Edit `entities/notes.go`** — add the owner column, `OwnerField`, and
 `Access` to the `notes` registration:
 
 ```go
@@ -335,7 +337,7 @@ curl -s http://localhost:8080/about | grep "Hand-written in Go"
 ```
 
 The owned Go at the root is now the whole app: `go run .` runs the
-generated screens plus your `about.go` and your `register.go` / `app.go` /
+generated screens plus your `about.go` and your `entities/*.go` / `app.go` /
 `main.go` edits, all one `package main`. The blueprint did its job — it
 was a one-shot on-ramp. To add another entity or screen later, edit the
 owned Go directly (or scaffold a fresh app in a scratch dir and copy what
@@ -386,10 +388,11 @@ Go you own:
 - **Re-running `gofastr generate` to make a change.** It's one-shot: on
   an existing project it refuses to overwrite (and `--force` regenerates
   everything, discarding your edits). After the first scaffold, change
-  the app by editing the owned Go — `entities/register.go`, `app.go`,
-  `screens.go`, and your own files beside them.
+  the app by editing the owned Go — your `entities/<name>.go` files, `app.go`,
+  your `screen_<name>.go` files, and your own files beside them.
 - **Treating the scaffold as untouchable.** The generated `entities/`
-  package and the root `app.go` / `screens.go` / `main.go` are owned
+  package and the root `app.go` / `screens_register.go` / `screen_<name>.go` /
+  `main.go` are owned
   `package main` Go with no `DO NOT EDIT` header — edit them directly.
 - **Declaring `access:` (or `Access`) without resolving roles.** The gate
   fails closed by design: an `AccessControl` requirement means *nobody*

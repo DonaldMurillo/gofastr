@@ -95,15 +95,17 @@ func TestRegisterEmitsAccessLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderGeneratedProject: %v", err)
 	}
-	var register string
+	// The Access literal lives in the entity's own file (the registration
+	// func), not register.go — register.go is the entity-agnostic seam.
+	var entityFile string
 	for _, f := range files {
-		if f.name == "register.go" {
-			register = f.content
+		if f.name == "posts.go" {
+			entityFile = f.content
 		}
 	}
 	want := `Access: framework.AccessControl{Read: "posts:read", Delete: "posts:admin"},`
-	if !strings.Contains(register, want) {
-		t.Fatalf("register.go missing %q:\n%s", want, register)
+	if !strings.Contains(entityFile, want) {
+		t.Fatalf("posts.go missing %q:\n%s", want, entityFile)
 	}
 }
 

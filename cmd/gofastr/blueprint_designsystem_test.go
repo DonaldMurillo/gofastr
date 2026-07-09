@@ -47,8 +47,7 @@ func TestGeneratorEmitsNoBespokeClasses(t *testing.T) {
 			}
 		}
 	}
-	byName := filesByName(mustRenderBlueprintFiles(t, bp))
-	screens := byName["screens.go"]
+	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
 	if !strings.Contains(screens, `ui.Card(ui.CardConfig{Heading: "Orders by status"}`) {
 		t.Errorf("titled chart should compose ui.Card, got:\n%s", screens)
 	}
@@ -64,8 +63,7 @@ func TestLineChartRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
-	byName := filesByName(mustRenderBlueprintFiles(t, bp))
-	screens := byName["screens.go"]
+	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
 	if !strings.Contains(screens, "lineChart(ctx, \"orders\", \"status\")") {
 		t.Fatalf("line_chart should render via lineChart, got:\n%s", screens)
 	}

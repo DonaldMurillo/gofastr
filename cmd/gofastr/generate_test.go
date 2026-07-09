@@ -32,48 +32,58 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderGeneratedProject: %v", err)
 	}
-	if len(files) != 6 {
-		t.Fatalf("files len = %d, want 6 (register, models, columns, repo, events, client)", len(files))
+	// register.go (seam) + client/client.go + one file per entity.
+	if len(files) != 3 {
+		t.Fatalf("files len = %d, want 3 (register.go, client/client.go, posts.go)", len(files))
 	}
 	byName := map[string]string{}
 	for _, f := range files {
 		byName[f.name] = f.content
 	}
 
+	// register.go is the fixed seam: it declares RegisterAll and the
+	// registrar slice, but carries NO entity name — adding an entity never
+	// edits it. Owned scaffold carries no "DO NOT EDIT" header (it's yours to
+	// edit). See framework/ARCHITECTURE.md.
+	register := byName["register.go"]
 	for _, want := range []string{
-		// Owned scaffold carries no "DO NOT EDIT" header — it's
-		// yours to edit. See framework/ARCHITECTURE.md.
 		"func RegisterAll(app *framework.App)",
+		"var registrars []registrar",
+		"type registrar struct {",
+	} {
+		if !strings.Contains(register, want) {
+			t.Fatalf("register.go missing %q:\n%s", want, register)
+		}
+	}
+	if strings.Contains(register, `app.Entity(`) {
+		t.Fatalf("register.go must hold no app.Entity call (it's the seam):\n%s", register)
+	}
+
+	// Everything for the "posts" entity — model, columns, repo, events, and
+	// its registration — lives in one self-contained posts.go.
+	posts := byName["posts.go"]
+	for _, want := range []string{
 		`app.Entity("posts", framework.EntityConfig{`,
 		`Type: schema.String`,
 		`CRUD: boolPtr(true)`,
 		`MCP: true`,
 		`.WithTimestamps(false))`,
+		`type Posts struct {`,
+		`PostsTitle = framework.NewStringColumn("title")`,
+		`PostsPublished = framework.NewBoolColumn("published")`,
+		`type PostsRepo struct {`,
+		`func NewPostsRepo(app *framework.App) *PostsRepo`,
+		`func (r *PostsRepo) Create(ctx context.Context, row *Posts) error`,
+		`func (r *PostsRepo) Query() *framework.TypedQuery[Posts]`,
+		`WithTx(tx *sql.Tx) *PostsRepo`,
+		// self-registration: the file appends itself, so register.go never
+		// needs editing when an entity is added.
+		`func registerPosts(app *framework.App) {`,
+		`func init() {`,
+		`registrar{order: 0, fn: registerPosts}`,
 	} {
-		if !strings.Contains(byName["register.go"], want) {
-			t.Fatalf("register.go missing %q:\n%s", want, byName["register.go"])
-		}
-	}
-	if !strings.Contains(byName["models.go"], "type Posts struct") {
-		t.Fatalf("models.go missing model:\n%s", byName["models.go"])
-	}
-	for _, want := range []string{
-		"PostsTitle = framework.NewStringColumn(\"title\")",
-		"PostsPublished = framework.NewBoolColumn(\"published\")",
-	} {
-		if !strings.Contains(byName["columns.go"], want) {
-			t.Fatalf("columns.go missing %q:\n%s", want, byName["columns.go"])
-		}
-	}
-	for _, want := range []string{
-		"type PostsRepo struct {",
-		"func NewPostsRepo(app *framework.App) *PostsRepo",
-		"func (r *PostsRepo) Create(ctx context.Context, row *Posts) error",
-		"func (r *PostsRepo) Query() *framework.TypedQuery[Posts]",
-		"WithTx(tx *sql.Tx) *PostsRepo",
-	} {
-		if !strings.Contains(byName["repo.go"], want) {
-			t.Fatalf("repo.go missing %q:\n%s", want, byName["repo.go"])
+		if !strings.Contains(posts, want) {
+			t.Fatalf("posts.go missing %q:\n%s", want, posts)
 		}
 	}
 }

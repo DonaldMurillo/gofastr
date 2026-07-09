@@ -15,11 +15,14 @@ gofastr generate --from=blueprints/ --dry-run --json
 Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files (or a directory of them), validates them, and scaffolds
 owned Go into an idiomatic, module-root layout by default — a flat
-`package main` at the root (`main.go`, `app.go`, `screens.go`, and, when
-needed, `resource.go`/`stubs.go`/`resource_test.go`) plus the `entities/`
+`package main` at the root (`main.go`, `app.go`, `screens_register.go`, one
+`screen_<name>.go` per screen, and, when needed,
+`resource.go`/`stubs.go`/`resource_test.go`) plus the `entities/`
 package (set `--out=<dir>` or `app.output_dir` to scaffold into a subpackage
 instead). `generate` is one-shot: it refuses to overwrite an existing project
-(pass `--force`), because the emitted code is yours to own. At runtime your app
+(pass `--force`), because the emitted code is yours to own. `--add` is the
+additive alternative: it writes only the new files from a partial yml, never
+overwriting — see [Additive generation](#additive-generation---add). At runtime your app
 registers the **generated** entity package (`entities.RegisterAll(app)`) — there
 is no file-based runtime loader. The blueprint's `entities:` list uses the same
 entity shape and field types documented in
@@ -262,13 +265,146 @@ wires generated screens/endpoints/middleware/plugins through
 `RegisterGenerated` (in `app.go`, same `package main`), mounts the UI host,
 and serves `app.static_dir` through the generated UI host.
 
+### Generated screen files
+
+Screens are emitted one file per screen, behind a fixed seam — never as one
+aggregated `screens.go`:
+
+- `screens_register.go` — a fixed seam that names **no** screen, entity, or
+  app. It defines `screenRegistrar{order int, fn func(fwApp *framework.App,
+  site *app.App, db *sql.DB)}`, a `screenRegistrars` slice, and
+  `mountGenerated(...)`, which sorts the registrars by `order` and runs them.
+  Byte-identical for any screen/entity count. Add a screen by dropping in a new
+  `screen_<name>.go`; never edit the seam.
+- `screen_<snake>.go` — one per authored non-CRUD screen (marketing pages,
+  dashboards, auth forms): the screen struct, its `Screen*` methods, `Render`,
+  a `mount<Screen>` func holding the `site.Register`/`site.RegisterScreen`
+  call, and an `init()` that appends one
+  `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
+- `screen_<entity>_crud.go` — one per entity with CRUD screens (or referenced
+  by a data source): that entity's list/detail/new/edit screens, their mount
+  funcs, **and** its `appResources["<entity>"] = ResourceConfig{...}` wiring
+  inside the primary mount func (it needs `fwApp`). An entity's resource
+  wiring lives here, never in `app.go`.
+
+`app.go` still owns layouts, nav, theme, `authPolicy`/`guestPolicy`, auth,
+toasts, and endpoints. `appLayout`/`marketingLayout` are package-level vars
+assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
+and names no screen type or `appResources` entry. The generated screen order is
+recovered by `gofastr pack` from each file's `screenRegistrar{order: …}` — see
+[Packing](#packing-gofastr-pack-the-inverse-of-generate).
+
+
+## Additive generation (`--add`)
+
+`gofastr generate --from=<yml> --add` is additive: it reads *any partial yml*
+(e.g. just two new entities, or a couple of new screens — not the canonical
+`gofastr.yml`) and emits only
+the new full-fidelity pieces into an existing project, never touching owned
+files. It never overwrites anything — if a target file already exists, it is
+skipped (and listed). In an empty directory, `--add` produces the same output
+as plain `generate`.
+
+```bash
+# Add two entities to an existing project from a partial yml.
+gofastr generate --from=additions.yml --add
+```
+
+Partial ymls are legal: an entities-only (or screens-only) fragment omits
+`app.module`, so the module is derived from the enclosing `go.mod` exactly as
+in a full generate. This means `main.go`, `app.go`, `entities/register.go`, and
+`screens_register.go` are still rendered (the generator needs them for a valid
+package) — but since they already exist in your project, `--add` skips them.
+Every generated app ships both registration seams and their call sites
+(`entities.RegisterAll` in `main.go`, `mountGenerated` in `app.go`) even when
+it has no entities or screens yet, so a later `--add` registers and mounts its
+pieces without editing any owned file. If you removed one of those calls,
+`--add` warns with the exact line to restore.
+Only the new files are written: `entities/<name>.go` for new entities,
+`screen_<name>.go` for new authored screens, and `screen_<entity>_crud.go` for
+an entity that gains CRUD screens.
+
+**Entity order continuity.** `--add` reads the existing `entities/` directory
+and assigns the new entities declaration orders that continue after the
+existing set (e.g. if the project has entities at orders 0 and 1, the first
+added entity gets order 2). This keeps `RegisterAll`'s declaration order and
+`gofastr pack`'s order recovery coherent across the union.
+
+**Screen order continuity.** `--add` reads the existing `screen_<name>.go`
+files and assigns the new screens `screenRegistrar{order: …}` values that
+continue after the project's existing max screen order — mirroring entity
+order continuity, so `mountGenerated`'s sort and `gofastr pack`'s order
+recovery stay coherent across the union.
+
+**Referencing existing entities.** A screens-only fragment may reference an
+entity that lives in the *project* rather than in the fragment — e.g. an
+`entity_list` over an entity you generated last month. `--add` reads the
+project's `entities/` declarations and validates the fragment against the
+union, so there is no need to re-declare the entity just to build UI on it.
+
+**Re-declaring an existing entity or screen** is a no-op: the file already
+exists, so it lands in the skipped list and the existing file is left
+untouched. There is no diffing or merging — `--add` only writes files that
+don't exist.
+
+**The `client.go` caveat.** `entities/client/client.go` is an aggregate over
+*all* entities. When it already exists and `--add` introduces new entities,
+the generated client was not updated and does not include them. `--add` prints
+a warning naming the stale file; regenerate it from a full blueprint with
+`--force`, or extend it by hand.
+
+**Pre-0.15 layouts.** `--add` requires the per-piece layout on both sides: the
+per-entity `entities/` files and the per-screen `screen_<name>.go` files. If
+`entities/register.go` holds the `app.Entity` calls inline (the aggregated
+entity layout older generators emitted), or the project still uses one
+aggregated `screens.go` instead of the per-screen files, `--add` refuses
+rather than drop in a file the package can't compile with. Recover your
+blueprint with `gofastr pack` (which still reads both legacy layouts as a
+fallback), merge the new pieces into it, and regenerate with `--force`.
+
+### Quick scaffolds (`generate entity|screen`)
+
+For an Angular-schematics-style fast stub with **no yml at all**, use the
+scaffold subcommands. They synthesize a minimal one-piece blueprint fragment
+in memory and route it through the *same* additive machinery as `--add`, so
+skip-existing, entity/screen order continuity, union validation, the
+legacy-layout refusal, the `client.go` staleness warning, and the
+`--dry-run`/`--json` output shapes all hold for free:
+
+```bash
+gofastr generate entity posts        # entities/posts.go + a placeholder field
+gofastr generate screen contact      # screen_contact.go at /contact
+```
+
+Each flag accepts `--out=DIR`, `--dry-run`, and `--json`. `--force` and
+`--add` are rejected — scaffolding *is* additive (it never overwrites), so
+those flags have no meaning here. The stub is a deliberate starting point you
+immediately edit:
+
+* `generate entity <name>` emits one entity with a single placeholder `name`
+  field (a required string) — rename it and add the rest. CRUD stays default,
+  so the entity also gains a JSON API.
+* `generate screen <name>` emits one screen at `/<kebab-name>` with a heading
+  and a stub paragraph — replace its `Render`.
+
+Scaffolds and yml fragments are complementary, not competing: the **stub** is
+basic scaffolding (one thing, fast); a blueprint **yml** is full intention
+(fields, relations, RBAC, theme, nav, seed, multi-screen layouts). For
+anything beyond a single placeholder, write a partial yml and use `--add`.
+
+`generate theme <name>` is intentionally not provided: theme tokens live in
+the owned `app.go` (there is no new-file representation to scaffold).
+
 ## Packing: `gofastr pack` (the inverse of generate)
 
 `gofastr pack [app-dir]` reconstructs a `gofastr.yml` from a generated app's Go
 source — the inverse of `gofastr generate`. It reads the real artifacts via the
-Go AST (it does **not** stash a manifest): `entities/register.go` for entities,
+Go AST (it does **not** stash a manifest): the per-entity `entities/<name>.go`
+files for entities (falling back to a legacy `entities/register.go`),
 `app.go` for app config + theme + auth/admin + nav, `stubs.go`
-for seed, and `screens.go` (+ the `site.Register*` calls) for screens,
+for seed, and the per-screen `screen_<name>.go` files for screens (reading
+each file's `screenRegistrar{order: …}` to recover authored order, with a
+legacy aggregated `screens.go` fallback for apps older generators emitted),
 reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
 `appResources["x"].…List(ctx)` → `entity_list`, and so on). The result
 prints to stdout, or to a file with `-o`:
@@ -278,10 +414,19 @@ gofastr pack examples/meridian -o recovered.yml
 ```
 
 Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
-authored). Generate and pack are a matched inverse pair, so the invariant
-`parse(yml)` ≡ `parse(pack(generate(yml)))` holds (modulo comments + formatting);
-the Meridian flagship round-trips exactly, gated by a test. When you add a new
-blueprint construct, teach **both** the generator and pack, or that test fails.
+authored). Generate and pack are a matched inverse pair for the declarative
+surface — `app`, `entities`, `screens`, `nav`, and `seed` — so the invariant
+`parse(yml)` ≡ `parse(pack(generate(yml)))` holds for a blueprint of those
+constructs (modulo comments + formatting); the Meridian flagship round-trips
+exactly, gated by a test. When you add a new construct in that surface, teach
+**both** the generator and pack, or that test fails.
+
+`endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
+pack: the generator emits them as `stubs.go` signatures you fill with your own
+Go, and pack cannot reverse a hand-written handler body back into a blueprint
+declaration. If your `gofastr.yml` declares any of these, keep the YAML — pack
+reconstructs the rest of the app around your owned stub code but will not
+re-emit their declarations.
 
 ### Data blocks (`entity_list`, `entity_form`, `entity_detail`)
 
@@ -315,8 +460,10 @@ screens call:
 - `entity_form` renders a `<form data-fui-rpc="<api_prefix>/<entity>">` (enum →
   `<select>` of values; relation → `<select>` populated from the related entity).
 
-The generated `ResourceConfig` registry is populated in `RegisterGenerated` from
-each entity's `CrudHandler`, fields, and relations. `appBaseCSS()` (mounted
+The generated `ResourceConfig` registry (`appResources`) is populated in each
+entity's `screen_<entity>_crud.go` mount func (run via `mountGenerated`), from
+that entity's `CrudHandler`, fields, and relations — see [Generated screen
+files](#generated-screen-files). `appBaseCSS()` (mounted
 ahead of `static/app.css`) is an owned, empty-by-default extension point for
 app-specific base CSS — every generated surface composes `framework/ui`
 components and `core-ui/app` layouts that ship their own styling, so the

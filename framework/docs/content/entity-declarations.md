@@ -401,17 +401,20 @@ gofastr generate --from=gofastr.yml
 
 This scaffolds the owned entity package into `entities/` at the module root:
 
-- `register.go` with `RegisterAll(app *framework.App)`
-- `models.go` with basic entity model structs
-- `columns.go` with typed column constants
-- `repo.go` with typed repositories
-- `events.go` with typed lifecycle subscriptions
+- `register.go` with `RegisterAll(app *framework.App)` — the fixed seam.
+  It carries no entity name, so adding an entity never edits it.
+- one `<entity>.go` per declared entity: model struct, typed column
+  constants, typed repository, lifecycle subscriptions, and its own
+  `app.Entity(...)` registration that self-registers via `init()`. A new
+  entity is a new file; existing files are never rewritten.
 - `client/client.go` with a standalone Go HTTP client
 
 A blueprint that declares `app.module` also emits a flat `package main` at the
-root (`main.go` plus `app.go`/`screens.go`/… — screens, endpoints, middleware
-stubs). These are owned Go you read, edit, and commit — no `DO NOT EDIT`
-header. See [Blueprints](blueprints.md) for the full blueprint shape.
+root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`
+per screen, and `stubs.go` for endpoint/seed stubs). These are owned Go you
+read, edit, and commit — no `DO NOT EDIT` header. See
+[Blueprints](blueprints.md) for the full blueprint shape, including the
+[generated screen file layout](blueprints.md#generated-screen-files).
 
 Useful flags:
 
@@ -424,6 +427,26 @@ Useful flags:
 - `--force` overwrites existing files. `generate` is one-shot: with no
   `--force` it refuses to write into a directory that already holds any target
   file, listing the conflicts, rather than clobbering owned code.
+- `--add` writes only the files that don't already exist, never overwriting.
+  Pass a partial yml (e.g. just new entities) to add pieces to an existing
+  project. Entity declaration orders continue after the existing set. See
+  [Additive generation](blueprints.md#additive-generation---add).
+
+### Scaffold subcommands
+
+For a fast stub with no yml, `generate entity|screen <name>` synthesizes a
+minimal one-piece fragment and runs it through the same additive path as
+`--add` — so the new entity/screen continues the project's declaration order,
+existing files are never overwritten, and `--out`, `--dry-run`, and `--json`
+work as above. `--force` and `--add` are rejected (scaffolding is additive):
+
+* `gofastr generate entity posts` — `entities/posts.go` with one placeholder
+  `name` field (a required string) you rename; CRUD stays default.
+* `gofastr generate screen contact` — `screen_contact.go` at `/contact` with
+  a heading + stub paragraph whose `Render` you replace.
+
+See [Quick scaffolds](blueprints.md#quick-scaffolds-generate-entityscreen) in
+the Blueprints guide for the relationship between stubs and full yml.
 
 For arbitrary configured generators (not a full app blueprint), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
