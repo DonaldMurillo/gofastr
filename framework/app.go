@@ -22,6 +22,7 @@ import (
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -145,6 +146,12 @@ type App struct {
 	outboxOpts      []outbox.Option
 	outboxEnabled   bool
 	outboxConsumers []outboxConsumerDecl
+
+	// fanout, when set (WithFanout), bridges the real-time lane across
+	// replicas: the event bus is attached in NewApp and any Mountable that
+	// supports SetFanout (a mounted UI host's island manager) is wired at
+	// Mount time. Caller-owned — the app never closes it.
+	fanout fanout.Fanout
 
 	// noAutoMigrate suppresses the boot-time entity auto-migration
 	// (WithoutAutoMigrate) for deployments that require every schema
@@ -444,6 +451,31 @@ func WithOutboxConsumer(name, eventType string, handler event.EventHandler) AppO
 	}
 }
 
+// WithFanout attaches a cross-replica fanout (core/fanout.Fanout) to the
+// app's real-time lane. The event bus is bridged — every locally-emitted
+// event is mirrored to the other replicas and re-emitted on their buses, so
+// entity `_events` SSE streams work regardless of which replica holds the
+// connection — and any Mountable that supports SetFanout (a mounted UI
+// host) gets its island manager wired the same way.
+//
+// SEMANTICS: with a fanout attached the bus becomes a broadcast — every
+// On/Subscribe handler fires on EVERY replica. That is correct for UI push
+// and wrong for side effects; per-event work belongs on the durable lane
+// (WithOutboxConsumer). Handlers that derive new events must gate on
+// event.IsRemote(ctx). See the events doc, "Cross-replica fan-out".
+//
+// The fanout is caller-owned: construct it before NewApp (e.g.
+// framework/fanout.NewPostgres) and close it after Shutdown. The bridge
+// itself is detached by Shutdown. Panics if f is nil.
+func WithFanout(f fanout.Fanout) AppOption {
+	if f == nil {
+		panic("framework: WithFanout(nil) — construct a fanout first (framework/fanout.NewPostgres, core/fanout.NewRedis)")
+	}
+	return func(a *App) {
+		a.fanout = f
+	}
+}
+
 // WithoutDefaultMiddleware disables the default middleware chain
 // (recovery, request-id, logging, security headers, timeout). Use this
 // when you want full control over middleware composition via Use().
@@ -624,6 +656,24 @@ func DefaultMiddleware(a *App) []router.Middleware {
 func (a *App) Mount(m Mountable) *App {
 	a.mountables = append(a.mountables, m)
 	m.Mount(a.router)
+	// Wire the mountable into the cross-replica fanout (WithFanout) when it
+	// supports it — a mounted UI host forwards to its island manager so
+	// island push reaches sessions connected to other replicas. Duck-typed:
+	// the framework doesn't import uihost.
+	if a.fanout != nil {
+		if fm, ok := m.(interface {
+			SetFanout(fanout.Fanout) (func(), error)
+		}); ok {
+			stop, err := fm.SetFanout(a.fanout)
+			if err != nil {
+				panic("framework: WithFanout: wiring mounted host: " + err.Error())
+			}
+			a.OnStop(func() error {
+				stop()
+				return nil
+			})
+		}
+	}
 	return a
 }
 
@@ -845,6 +895,22 @@ func NewApp(opts ...AppOption) *App {
 		}
 		a.outbox = ob
 		a.outboxConsumers = nil // released; the registry owns them now
+	}
+
+	// Bridge the event bus to the fanout (WithFanout) at construction so
+	// the real-time lane crosses replicas even for apps driven through
+	// Router() without Start. AttachFanout can only fail on a double
+	// attach (impossible here — one bridge per app) or a subscribe error
+	// from the backend; both are construction-time misconfigurations.
+	if a.fanout != nil {
+		stopBridge, err := event.AttachFanout(a.events, a.fanout)
+		if err != nil {
+			panic("framework: WithFanout: " + err.Error())
+		}
+		a.OnStop(func() error {
+			stopBridge()
+			return nil
+		})
 	}
 
 	// WithIdempotency / WithI18n add entries to the default chain; if

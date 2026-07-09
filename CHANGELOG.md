@@ -7,6 +7,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-replica real-time push (`framework.WithFanout`).** The real-time
+  lane — entity `_events` SSE streams, `On`/`Subscribe` handlers, and UI-host
+  island push — previously stopped at the process boundary: an event emitted
+  on replica A never reached a browser connected to replica B (the docs'
+  answer was sticky sessions). A new `core/fanout.Fanout` seam bridges it:
+  `framework.WithFanout(f)` mirrors every bus emit to the other replicas and
+  re-emits it there, and wires any mounted UI host's island manager so island
+  updates reach sessions connected elsewhere (`SSEBrokerConfig.Fanout` covers
+  hand-built brokers). Backends: `framework/fanout.NewPostgres(dsn, db)`
+  (LISTEN/NOTIFY on the database you already run; payloads past the NOTIFY
+  size limit spill to a self-purging fallback table) and
+  `core/fanout.NewRedis` (bring-your-own client, mirroring
+  `cache.RedisClient`); `core/fanout.NewInProcess` simulates replicas in
+  tests. **Semantics under fanout: the bus becomes a broadcast** — every
+  handler fires on every replica, so side-effect work belongs on outbox
+  consumers, and handlers that derive new events must gate on the new
+  `event.IsRemote(ctx)`. Delivery stays lossy best-effort (the durable lane
+  is the outbox's); publishes never block emitters or request handlers (per
+  publish/subscriber bounded drop-oldest queues). Closes the sticky-session
+  requirement in the scaling doc. (#28)
+
 ### Changed
 
 - **BREAKING: transactional outbox now delivers per-consumer, not

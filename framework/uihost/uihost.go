@@ -35,6 +35,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -1992,6 +1993,16 @@ func actionsToJS(componentID string, reg *component.ActionRegistry) string {
 	sb.WriteString("})();\n")
 
 	return sb.String()
+}
+
+// SetFanout wires the island manager to a cross-replica fanout so island
+// updates reach sessions whose SSE connection lives on another replica.
+// framework.WithFanout calls this automatically when the host is mounted
+// (via a duck-typed check), so apps normally never call it directly. See
+// island.Manager.SetFanout for the semantics and the per-replica-state
+// caveat (sticky sessions remain the recommendation for stateful widgets).
+func (ds *UIHost) SetFanout(f fanout.Fanout) (stop func(), err error) {
+	return ds.Islands.SetFanout(f)
 }
 
 // PushUpdate pushes an island update for a specific session.

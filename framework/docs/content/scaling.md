@@ -22,7 +22,7 @@ shared store) or run on exactly one replica.
 | Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | no shipped shared store — size `MaxAttempts` for `attempts × replicas`, or rate-limit at the ingress |
 | `framework/cron` scheduler | ticks in every process | every replica fires every job | run the scheduler on one replica, or use `battery/queue`'s `DBQueue` (see below) |
 | `battery/queue` in-memory queue + Scheduler | per-process | duplicate jobs, lost jobs on restart | `queue.DBQueue` — `FOR UPDATE SKIP LOCKED` makes competing workers safe |
-| Island signals / SSE push | in-process `island.Manager` | a signal set on A never reaches a browser connected to B | sticky sessions at the LB, or fan out mutations through a shared bus you own |
+| Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `framework.WithFanout(fanout.NewPostgres(dsn, db))` — see "SSE across replicas" below |
 | `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
 
 Auth warns about the first two at boot: production mode (`DevMode:
@@ -62,21 +62,31 @@ skip this whole page until you add a replica. A restart still logs
 everyone out and wipes in-memory 2FA enrollment — use the entity-backed
 stores anyway if either matters.
 
-## SSE and sticky sessions
+## SSE across replicas
 
-Server-pushed island updates flow over an SSE connection to the replica
-the browser happened to reach. A mutation handled by a different
-replica updates *its* island manager, not the one holding the
-connection. Options, in order of preference:
+Server-pushed events flow over an SSE connection to the replica the
+browser happened to reach. A write handled by a different replica emits
+on *its* bus and pushes to *its* island manager, not the one holding
+the connection. Options, in order of preference:
 
-1. **Sticky sessions** (cookie-based affinity at the LB) — the browser
+1. **Shared fan-out** — `framework.WithFanout` bridges the real-time
+   lane across replicas. `framework/fanout.NewPostgres(dsn, db)` uses
+   Postgres LISTEN/NOTIFY (no new infrastructure); `core/fanout.NewRedis`
+   adapts a Redis client you bring. Entity `_events` SSE streams and
+   island push then work from any replica. Read the "Cross-replica
+   fan-out" section of the events doc first — with a fanout attached,
+   `On`/`Subscribe` handlers fire on **every** replica, so side-effect
+   work must move to outbox consumers and derived emits must gate on
+   `event.IsRemote(ctx)`.
+2. **Sticky sessions** (cookie-based affinity at the LB) — the browser
    and its mutations land on the same replica; push works unchanged.
-2. **Design around it** — SSE push is for background events; if all
+   Still the recommendation for stateful uihost *widget* apps: the
+   fanout fixes delivery-where-connected, but island objects and signal
+   state remain per-replica, so an RPC landing on a replica without the
+   widget's state can't re-render it.
+3. **Design around it** — SSE push is for background events; if all
    your islands re-render from user actions (RPC round-trips), nothing
    is lost without push.
-3. **Shared fan-out** — publish mutations to a bus (Postgres
-   LISTEN/NOTIFY, Redis pub/sub) and have each replica re-emit to its
-   local subscribers. You own this wiring; the framework doesn't ship it.
 
 ## Checklist before adding the second replica
 
@@ -85,7 +95,8 @@ connection. Options, in order of preference:
 - [ ] Cron scheduler runs on exactly one process, or jobs moved to `DBQueue`.
 - [ ] Queue is `DBQueue`, not the in-memory variant.
 - [ ] Login rate-limit budget sized for N replicas (or enforced at the ingress).
-- [ ] Sticky sessions configured if you rely on SSE push.
+- [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
+      handlers moved to outbox consumers), or sticky sessions configured.
 - [ ] Cache backend shared (Redis) if cached data must be coherent across replicas.
 - [ ] `AuthConfig.AllowInMemoryStores` **removed** — the boot warning is
       your regression test for the first two items.

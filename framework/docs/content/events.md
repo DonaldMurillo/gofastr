@@ -104,6 +104,67 @@ the UI side; the same rule applies to your own clients.
 - **Forgetting `Cache-Control` on a proxy.** Some reverse proxies
   buffer responses; set `X-Accel-Buffering: no` on nginx, etc.
 
+## Cross-replica fan-out
+
+By default the event bus is per-process: an event emitted on replica A
+never reaches an SSE subscriber connected to replica B. Attaching a
+fanout bridges the real-time lane across replicas:
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/fanout"
+
+pgf, err := fanout.NewPostgres(dsn, db) // Postgres LISTEN/NOTIFY
+if err != nil { log.Fatal(err) }
+defer pgf.Close()
+
+app := framework.NewApp(
+    framework.WithDB(db),
+    framework.WithFanout(pgf),
+)
+```
+
+`WithFanout` bridges the app's event bus (every emit is mirrored to the
+other replicas and re-emitted on their local buses) and wires any
+mounted UI host's island manager, so `/entity/_events` SSE streams and
+island push both work regardless of which replica holds the connection.
+Backends: `framework/fanout.NewPostgres` (uses the DB you already have;
+payloads over the NOTIFY size limit spill to a small fallback table)
+and `core/fanout.NewRedis` (bring-your-own client, mirroring
+`cache.RedisClient`). The fanout is caller-owned — close it after the
+app shuts down.
+
+**Semantics change under fanout — the bus becomes a broadcast.** Every
+`On`/`Subscribe` handler fires on **every** replica for every event.
+That is exactly right for UI push (each replica notifies its own
+connected clients) and exactly wrong for side effects — a handler that
+sends an email would send it N times. Per-event work belongs on the
+durable lane (`WithOutboxConsumer`), which delivers to each consumer
+once regardless of replica count.
+
+Two rules for handlers under fanout:
+
+- **Derive on the origin only.** A handler that emits a *new* event in
+  response to one it received must gate on `event.IsRemote(ctx)` —
+  otherwise every replica derives its own copy and subscribers see
+  duplicates:
+
+  ```go
+  app.Events().On("order.paid", func(ctx context.Context, ev event.Event) error {
+      if event.IsRemote(ctx) {
+          return nil // the origin replica already derived + broadcast it
+      }
+      return app.Events().Emit(ctx, receiptRequested(ev))
+  })
+  ```
+
+- **The transport is trusted input.** Write access to the fanout's
+  channel (the Postgres database, the Redis pub/sub) is equivalent to
+  emitting arbitrary events on every replica's bus. Payloads are not
+  authenticated; don't share the channel with less-trusted systems.
+
+The lane stays lossy under fanout: a message published while a
+replica's listener is reconnecting is gone. Nothing about the durable
+lane changes.
 
 ## Transactional outbox
 
