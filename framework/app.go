@@ -249,6 +249,14 @@ type App struct {
 	// to os.Stdout and stays unexported so tests can verify startup ordering
 	// without replacing the process-wide stdout file descriptor.
 	startupOutput io.Writer
+
+	// role is the resolved process role (all/serve/worker), set once in
+	// NewApp from WithRole > GOFASTR_ROLE > RoleAll. AddCron/AddQueue and
+	// the outbox relay gate on it so RoleServe doesn't start work it can't
+	// drain. roleOpt/roleSet carry the raw WithRole value until resolution.
+	role    Role
+	roleOpt Role
+	roleSet bool
 }
 
 // AppOption is a functional option for configuring an App.
@@ -862,6 +870,15 @@ func NewApp(opts ...AppOption) *App {
 	for _, opt := range opts {
 		opt(a)
 	}
+	// Resolve the process role once: WithRole wins, then GOFASTR_ROLE,
+	// then RoleAll. An invalid value fails loudly — a typo'd role must
+	// never silently run the wrong workload (a serve process that
+	// quietly starts queue workers, or vice versa).
+	role, err := resolveRole(a.roleOpt, a.roleSet)
+	if err != nil {
+		panic(err.Error())
+	}
+	a.role = role
 
 	// Seed the App-local logger if no option supplied one. JSON to
 	// stderr — independent of slog.Default so external slog rewiring
@@ -1441,7 +1458,14 @@ func (a *App) RunWithSignals(ctx context.Context) error {
 // are joined before shutdown proceeds — bounded by the drain deadline,
 // so a job that ignores its (already-cancelled) context can't hang
 // SIGTERM forever.
+//
+// Worker-scoped: under RoleServe this is a no-op — neither the start hook
+// nor the drainer is registered, so a serve-only shutdown never waits on
+// a scheduler that was never started.
 func (a *App) AddCron(s *cron.Scheduler) *App {
+	if !a.runsWorkers() {
+		return a
+	}
 	a.OnStart(func(ctx context.Context) error {
 		s.Start(ctx)
 		return nil
@@ -1464,7 +1488,14 @@ type schedulerStartStop interface {
 // AddQueue registers any queue/worker that exposes Start(ctx) and Close().
 // The DBQueue from battery/queue satisfies this directly; in-memory and
 // Redis variants can be wrapped.
+//
+// Worker-scoped: under RoleServe this is a no-op — neither the start hook
+// nor the Close hook is registered, so a serve-only shutdown never closes
+// a queue it never started.
 func (a *App) AddQueue(q schedulerStartStop) *App {
+	if !a.runsWorkers() {
+		return a
+	}
 	a.OnStart(func(ctx context.Context) error {
 		q.Start(ctx)
 		return nil
@@ -1626,7 +1657,10 @@ func (a *App) Start(addr string) error {
 	// context so Shutdown cancels it; the returned stop func is also
 	// registered as an OnStop drainer so shutdown blocks until the loop
 	// has fully exited — no half-delivered batch outlives the process.
-	if a.outbox != nil {
+	// Worker-scoped: a serve-only process stages rows (StageEvent runs in
+	// the write transaction regardless of role) but never claims them —
+	// delivery belongs to the worker/all processes.
+	if a.outbox != nil && a.runsWorkers() {
 		stopRelay := a.outbox.StartRelay(a.appCtx)
 		a.OnStop(func() error {
 			stopRelay()
@@ -1742,8 +1776,10 @@ func (a *App) Start(addr string) error {
 
 	a.serverMu.Lock()
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: a.router,
+		Addr: addr,
+		// Role-dependent surface: the full app router for all/serve, the
+		// health-only mux (/healthz + /readyz, same handlers) for a worker.
+		Handler: a.roleHandler(),
 		// Conservative defaults so a slow / abandoned / hostile client
 		// can't tie up the listener forever (slowloris-style). Hosts
 		// that need a different shape can wrap the server themselves.
@@ -1827,6 +1863,15 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool) 
 	w := a.startupOutput
 	if w == nil {
 		w = os.Stdout
+	}
+	if a.role == RoleWorker {
+		// The worker serves only the health surface — advertising entity or
+		// API routes here would advertise 404s.
+		fmt.Fprintf(w, "\n  %s %s worker ready\n", bold("GoFastr"), name)
+		fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
+		fmt.Fprintf(w, "  %s Health: http://%s/healthz http://%s/readyz\n", arrow(), boundAddr, boundAddr)
+		_, _ = fmt.Fprintln(w)
+		return
 	}
 	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())

@@ -30,6 +30,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   publish/subscriber bounded drop-oldest queues). Closes the sticky-session
   requirement in the scaling doc. (#28)
 
+- **Worker-process mode (`framework.WithRole` / `GOFASTR_ROLE`).** The same
+  binary can now run as a dedicated web or worker process instead of always
+  doing both: `RoleServe` serves the full router but never starts
+  `AddCron`/`AddQueue` workers or the outbox relay; `RoleWorker` runs those
+  consumers and serves only `/healthz` + `/readyz` (same handlers as the full
+  router, so orchestrator probes work unchanged); `RoleAll` (default) is
+  today's combined behavior. Explicit `WithRole` beats the `GOFASTR_ROLE`
+  env var; invalid values fail loudly at construction. Worker-scoped
+  drainers are only registered when their workers actually start, so a
+  serve-only shutdown never drains a scheduler that never ran. Plain
+  `OnStart` hooks stay role-agnostic — gate custom background work on
+  `App.Role()`. (#32)
+
 ### Changed
 
 - **BREAKING: transactional outbox now delivers per-consumer, not

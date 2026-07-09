@@ -137,19 +137,21 @@ func (a *App) probeReadinessRegistrars() {
 	}
 }
 
-// registerHealthEndpoints mounts /healthz (liveness) and /readyz
-// (readiness). Called during App.Start after plugins/batteries have had
-// a chance to register their own checks.
-func (a *App) registerHealthEndpoints() {
-	a.router.Get("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// healthHandlers returns the liveness and readiness handlers so they can
+// be mounted on BOTH the full app router (registerHealthEndpoints) and
+// the worker-only health surface (workerHealthMux) without duplicating
+// their bodies. Both handlers close over the App and read the live
+// readiness-check state per request, so registering a check after the
+// handlers are mounted still surfaces in /readyz.
+func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
+	liveness = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
-	}))
-
-	a.router.Get("/readyz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	}
+	readiness = func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), a.readinessTimeout())
 		defer cancel()
 		results := runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())
@@ -171,7 +173,18 @@ func (a *App) registerHealthEndpoints() {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(results)
-	}))
+	}
+	return liveness, readiness
+}
+
+// registerHealthEndpoints mounts /healthz (liveness) and /readyz
+// (readiness) on the app router. Called during App.Start (for roles
+// that serve the full router) after plugins/batteries have had a chance
+// to register their own checks.
+func (a *App) registerHealthEndpoints() {
+	liveness, readiness := a.healthHandlers()
+	a.router.Get("/healthz", liveness)
+	a.router.Get("/readyz", readiness)
 }
 
 // ReadinessResponse is the JSON shape returned by /readyz.

@@ -20,7 +20,7 @@ shared store) or run on exactly one replica.
 | Auth sessions | in-memory `MemorySessionStore` | login on A, logged-out on B; all sessions lost on restart | `auth.NewEntitySessionStore(db, "sessions")` |
 | 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | set `TwoFAConfig.Store` to a durable `TwoFAStore` |
 | Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | no shipped shared store — size `MaxAttempts` for `attempts × replicas`, or rate-limit at the ingress |
-| `framework/cron` scheduler | ticks in every process | every replica fires every job | run the scheduler on one replica, or use `battery/queue`'s `DBQueue` (see below) |
+| `framework/cron` scheduler | ticks in every process | every replica fires every job | one `GOFASTR_ROLE=worker` process owns it (see "Serve/worker roles"), or use `battery/queue`'s `DBQueue` (see below) |
 | `battery/queue` in-memory queue + Scheduler | per-process | duplicate jobs, lost jobs on restart | `queue.DBQueue` — `FOR UPDATE SKIP LOCKED` makes competing workers safe |
 | Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `framework.WithFanout(fanout.NewPostgres(dsn, db))` — see "SSE across replicas" below |
 | `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
@@ -40,13 +40,38 @@ single-node deployment.
   replicas don't double-send.
 - **Plain CRUD/API traffic** — stateless per request; scale freely.
 
+## Serve/worker roles
+
+The first scaling step for a self-hosted app is one web process + one
+worker process, same binary — before replicas, before Redis. The role
+is picked at deploy time:
+
+```go
+app.Start(":8080") // role from GOFASTR_ROLE: all | serve | worker
+```
+
+```sh
+GOFASTR_ROLE=serve  ./myapp   # full router; no cron/queue/outbox-relay
+GOFASTR_ROLE=worker ./myapp   # cron/queue/outbox-relay; /healthz + /readyz only
+./myapp                       # combined (default) — today's behavior
+```
+
+`framework.WithRole(framework.RoleServe)` overrides the env var; an
+invalid value in either fails at construction. The worker's health
+endpoints are the same handlers the full router serves, so LB and
+orchestrator probes work unchanged. Everything else — auto-migrate,
+seeds, plugins, batteries — runs in both roles (migrations hold a lock,
+so either process type may boot first). Plain `OnStart` hooks are
+role-agnostic; gate custom background work on `app.Role()`.
+
 ## Recommended shapes
 
 **Two web replicas + one worker.** Point sessions at
-`EntitySessionStore`, disable in-process cron on the web replicas, and
-run one worker process (same binary, a flag you define) that owns the
-cron scheduler and the `DBQueue` workers. This is the smallest shape
-with no shared-state caveats.
+`EntitySessionStore`, run the web replicas with `GOFASTR_ROLE=serve`,
+and one `GOFASTR_ROLE=worker` process that owns the cron scheduler,
+the `DBQueue` workers, and the outbox relay. This is the smallest
+shape with no shared-state caveats. Add `WithFanout` if the web
+replicas use SSE push.
 
 **Everything everywhere, DB-backed.** All replicas run `DBQueue`
 workers (safe by design). For *scheduled* work, have the schedule
@@ -92,7 +117,7 @@ the connection. Options, in order of preference:
 
 - [ ] Sessions on `EntitySessionStore` (or another shared `SessionStore`).
 - [ ] 2FA store durable (if the 2FA plugin is enabled).
-- [ ] Cron scheduler runs on exactly one process, or jobs moved to `DBQueue`.
+- [ ] Cron scheduler runs on exactly one process (`GOFASTR_ROLE=worker`), or jobs moved to `DBQueue`.
 - [ ] Queue is `DBQueue`, not the in-memory variant.
 - [ ] Login rate-limit budget sized for N replicas (or enforced at the ingress).
 - [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
