@@ -729,19 +729,15 @@ exchanged server-to-server with the secret, and the plugin's HMAC state
 token already binds the callback. A nonce only matters for the
 implicit/hybrid flow.
 
-**PKCE** (`S256`) *is* sent — for **IdP compatibility**, since a growing
-number of providers reject an authorization request without a
-`code_challenge`. The `code_verifier` is derived deterministically from
-the per-request state token, so the callback reproduces it with no
-server-side per-request storage, and an IdP that doesn't implement PKCE
-simply ignores the challenge. Be clear on what this does and doesn't buy:
-for the confidential-client flow used here the **client secret is the
-actual protection** on the code→token exchange, and this PKCE is *not*
-independent defense-in-depth — the verifier is a function of the public
-state token keyed by that same secret. Genuine PKCE hardening (protection
-if the secret leaks, or support for public clients) would need a random
-per-request verifier bound via a cookie or store; that is a deliberate
-follow-up, not what ships today.
+No **PKCE** `code_challenge` is sent. PKCE's payload is protecting a
+*public* client that has no secret; the flow here is confidential — the
+single-use code is exchanged server-to-server under the client secret,
+which is the actual protection on the code→token step, and the HMAC state
+token binds the callback. A verifier derived from that same secret (or
+from the public state) would add no defense a client-secret holder doesn't
+already have, so it is deliberately omitted. Supporting public clients
+(SPA/mobile) would need genuine PKCE — a random per-request verifier bound
+via a cookie or store — and is out of scope for the confidential provider.
 
 **Claims mapping.** `OIDCClaimsMapping` overrides which claim supplies
 each field (defaults `sub`, `email`, `name`, `picture`) for IdPs that use

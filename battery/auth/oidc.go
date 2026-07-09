@@ -3,9 +3,6 @@ package auth
 import (
 	"container/list"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,6 +96,11 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 		return nil, errors.New("oidc: ClientID is required")
 	}
 	if cfg.ClientSecret == "" {
+		// Confidential-client only. The secret is the sole protection on the
+		// code→token exchange (this provider sends no PKCE code_verifier). Do
+		// NOT relax this to support public/SPA clients without first adding a
+		// random per-request PKCE verifier bound via a cookie or store — a
+		// secret-less exchange with no verifier is unprotected.
 		return nil, errors.New("oidc: ClientSecret is required")
 	}
 	if cfg.RedirectURL == "" {
@@ -276,69 +278,14 @@ func (p *OIDCProvider) AuthURL(state string) string {
 	q.Set("redirect_uri", p.cfg.RedirectURL)
 	q.Set("scope", strings.Join(p.scopes, " "))
 	q.Set("state", state)
-	// Send a PKCE (RFC 7636) S256 code_challenge. The reason is IdP
-	// COMPATIBILITY, not added security: a growing number of providers
-	// reject an authorization request that omits code_challenge, so a valid
-	// challenge/verifier pair is required to interoperate with them. It is
-	// NOT independent defense-in-depth here — see pkceVerifier for why — so
-	// the confidential client's secret remains the actual protection on the
-	// code→token exchange. An IdP that ignores PKCE simply doesn't check it.
-	q.Set("code_challenge", pkceChallenge(p.pkceVerifier(state)))
-	q.Set("code_challenge_method", "S256")
 	u.RawQuery = q.Encode()
 	return u.String()
-}
-
-// pkceVerifier derives the PKCE code_verifier from the state token as
-// HMAC(clientSecret, state), so AuthURL and the callback exchange reproduce
-// the same value with no server-side per-request storage (the state design is
-// deliberately stateless; a redirect-time verifier map would reintroduce the
-// memory-growth surface generateState avoids).
-//
-// Security note — this is a COMPATIBILITY shim, not independent protection.
-// The verifier is a deterministic function of the public state token (it
-// travels in the same redirect as the challenge) keyed by the client secret
-// that is already presented on every token exchange. So it adds nothing an
-// attacker doesn't already face: without the secret they cannot redeem the
-// code at all (confidential client — NewOIDCProvider requires a non-empty
-// ClientSecret); with the secret they could recompute the verifier from the
-// public state anyway. Genuine PKCE defense-in-depth (protection if the
-// secret leaks, or support for public clients) would require a RANDOM
-// per-request verifier bound via a cookie or store — a deliberate follow-up.
-// If the non-empty-ClientSecret precondition is ever relaxed, revisit this:
-// with an empty secret the verifier becomes recoverable from public state.
-func (p *OIDCProvider) pkceVerifier(state string) string {
-	mac := hmac.New(sha256.New, []byte("gofastr-pkce:"+p.cfg.ClientSecret))
-	mac.Write([]byte(state))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-// pkceChallenge is the S256 transform: base64url(sha256(verifier)).
-func pkceChallenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
-
-// ExchangeCodeWithState is the PKCE-aware exchange: it reproduces the request's
-// code_verifier from state (see pkceVerifier) and sends it to the token
-// endpoint so an IdP that mandates PKCE accepts the exchange. The OAuth2
-// callback prefers this over ExchangeCode when the provider implements it.
-// (This satisfies PKCE-requiring IdPs; it is not independent security beyond
-// the client secret — see pkceVerifier.)
-func (p *OIDCProvider) ExchangeCodeWithState(ctx context.Context, code, state string) (*OAuth2Token, error) {
-	return p.exchange(ctx, code, p.pkceVerifier(state))
 }
 
 // ExchangeCode trades the authorization code for tokens at the token endpoint,
 // then fully verifies the id_token BEFORE returning. Verified claims are cached
 // by access token so FetchUserInfo can map them without re-fetching.
 func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2Token, error) {
-	return p.exchange(ctx, code, "")
-}
-
-// exchange trades the authorization code for tokens and verifies the id_token.
-// When verifier is non-empty it is sent as the PKCE code_verifier.
-func (p *OIDCProvider) exchange(ctx context.Context, code, verifier string) (*OAuth2Token, error) {
 	d, err := p.ensureDiscovery(ctx)
 	if err != nil {
 		return nil, err
@@ -349,9 +296,6 @@ func (p *OIDCProvider) exchange(ctx context.Context, code, verifier string) (*OA
 	data.Set("redirect_uri", p.cfg.RedirectURL)
 	data.Set("client_id", p.cfg.ClientID)
 	data.Set("client_secret", p.cfg.ClientSecret)
-	if verifier != "" {
-		data.Set("code_verifier", verifier)
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		d.TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {

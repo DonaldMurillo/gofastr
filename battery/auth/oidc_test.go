@@ -13,7 +13,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -186,9 +185,6 @@ type fakeIdP struct {
 
 	// discovery.
 	discoveryIssuer string // overrides the doc's "issuer" field (mismatch test)
-
-	// captured from the token request.
-	gotCodeVerifier string
 }
 
 func newFakeIdP(t *testing.T) *fakeIdP {
@@ -235,7 +231,6 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		f.gotCodeVerifier = r.FormValue("code_verifier")
 		resp := map[string]interface{}{
 			"access_token":  "test-access-token",
 			"token_type":    "Bearer",
@@ -556,56 +551,6 @@ func TestOIDC_AudArrayWithAzp(t *testing.T) {
 	}
 }
 
-// TestOIDC_PKCEChallengeInAuthURL: AuthURL carries an S256 code_challenge and
-// the verifier ExchangeCodeWithState reproduces hashes to that same challenge.
-func TestOIDC_PKCEChallengeInAuthURL(t *testing.T) {
-	f := newFakeIdP(t)
-	p := newTestProvider(t, f)
-	const state = "state-abc"
-
-	got := p.AuthURL(state)
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("parse AuthURL: %v", err)
-	}
-	q := u.Query()
-	if q.Get("code_challenge_method") != "S256" {
-		t.Errorf("code_challenge_method = %q, want S256", q.Get("code_challenge_method"))
-	}
-	challenge := q.Get("code_challenge")
-	if challenge == "" {
-		t.Fatal("AuthURL missing code_challenge")
-	}
-	// The challenge must be S256(verifier) for the verifier derived from state.
-	if want := pkceChallenge(p.pkceVerifier(state)); challenge != want {
-		t.Errorf("code_challenge %q does not match S256(verifier) %q", challenge, want)
-	}
-}
-
-// TestOIDC_PKCEVerifierSentOnExchange: the callback-side exchange sends a
-// code_verifier that matches the AuthURL challenge — end-to-end PKCE binding.
-func TestOIDC_PKCEVerifierSentOnExchange(t *testing.T) {
-	f := newFakeIdP(t)
-	p := newTestProvider(t, f)
-	const state = "state-xyz"
-
-	// The challenge the IdP would have recorded at authorize time.
-	challenge := func() string {
-		u, _ := url.Parse(p.AuthURL(state))
-		return u.Query().Get("code_challenge")
-	}()
-
-	if _, err := p.ExchangeCodeWithState(ctxBg(), "any-code", state); err != nil {
-		t.Fatalf("ExchangeCodeWithState: %v", err)
-	}
-	if f.gotCodeVerifier == "" {
-		t.Fatal("token request carried no code_verifier")
-	}
-	if got := pkceChallenge(f.gotCodeVerifier); got != challenge {
-		t.Errorf("S256(sent verifier) = %q, want the AuthURL challenge %q", got, challenge)
-	}
-}
-
 // TestOIDC_AuthURLParams: AuthURL contains the required params and no nonce.
 func TestOIDC_AuthURLParams(t *testing.T) {
 	f := newFakeIdP(t)
@@ -628,6 +573,11 @@ func TestOIDC_AuthURLParams(t *testing.T) {
 	}
 	if strings.Contains(got, "nonce") {
 		t.Errorf("AuthURL must not send a nonce (confidential code flow): %s", got)
+	}
+	// The confidential code flow relies on the HMAC state token + client
+	// secret; it deliberately does not send a PKCE code_challenge.
+	if strings.Contains(got, "code_challenge") {
+		t.Errorf("AuthURL must not send a PKCE code_challenge (confidential code flow): %s", got)
 	}
 }
 

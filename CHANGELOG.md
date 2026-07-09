@@ -5,6 +5,21 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Removed
+
+- **OIDC PKCE `code_challenge`.** The confidential OIDC provider no longer
+  sends a PKCE `S256` `code_challenge`/`code_verifier`. It was only an
+  IdP-compatibility shim: the verifier was derived from the same client
+  secret (and public state) that already protects the server-to-server
+  code→token exchange, so it added no defense a secret-holder didn't
+  already have. Genuine PKCE — a random per-request verifier bound via a
+  cookie or store — remains the path for *public* (SPA/mobile) clients and
+  is out of scope for the confidential provider. No API change: `AuthURL`
+  and `ExchangeCode` are unchanged; the internal `ExchangeCodeWithState`
+  seam and the `stateExchanger` interface are gone.
+
 ## [0.15.0] - 2026-07-08
 
 Nexus-gap wiring round two — six issues surfaced by building on GoFastr

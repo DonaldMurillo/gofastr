@@ -58,15 +58,6 @@ type OAuth2Provider interface {
 	FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error)
 }
 
-// stateExchanger is the optional PKCE extension of OAuth2Provider. A provider
-// that implements it derives the request's code_verifier from the validated
-// state token, so the callback binds the code→token exchange to the original
-// authorization request. The OIDC provider implements it; Google/GitHub use
-// the plain ExchangeCode.
-type stateExchanger interface {
-	ExchangeCodeWithState(ctx context.Context, code, state string) (*OAuth2Token, error)
-}
-
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 // OAuth2Config holds the configuration for the OAuth2 plugin.
@@ -210,17 +201,10 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 
-		// Exchange code for token. A provider that supports PKCE
-		// (stateExchanger) reproduces the request's code_verifier from the
-		// validated state token, binding the code→token step to the original
-		// authorization request; others use the plain exchange.
-		var tok *OAuth2Token
-		var err error
-		if se, ok := provider.(stateExchanger); ok {
-			tok, err = se.ExchangeCodeWithState(r.Context(), code, stateParam)
-		} else {
-			tok, err = provider.ExchangeCode(r.Context(), code)
-		}
+		// Exchange the authorization code for a token. The HMAC state token
+		// (validated above) is what binds the callback to this authorization
+		// request; the confidential client's secret protects the exchange.
+		tok, err := provider.ExchangeCode(r.Context(), code)
 		if err != nil {
 			writeAuthError(w, http.StatusUnauthorized, "code exchange failed")
 			return
