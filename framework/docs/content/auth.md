@@ -73,6 +73,7 @@ empty HMAC key would make every JWT forgeable.
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. |
 | `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store. |
+| `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
 Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
 (default `/auth`).
@@ -202,6 +203,141 @@ Pair with `auth.RequireSession()` (or
 flows) on any route that needs a logged-in user.
 
 `RequireAuth` is the JWT-Bearer-only equivalent and is unchanged.
+
+## Service accounts & scoped API tokens
+
+Non-human identities — CI runners, background workers, internal scripts —
+authenticate with **API tokens** (`gfsk_`-prefixed PATs) instead of session
+cookies or JWTs. Tokens are issued to a human user or to a **service
+account**: a non-interactive identity that holds roles like a user but has
+no mailbox and cannot log in. Both populate request context the same way
+sessions do, so owner-scoping and `access.Can` work unchanged.
+
+### Token format
+
+- Plaintext: `gfsk_` + 40 lowercase hex chars (20 bytes from `crypto/rand`).
+  The `gfsk_` prefix makes leaked tokens greppable by secret scanners the
+  way `ghp_` / `xoxb-` are.
+- At rest: only `sha256(full-plaintext)` is stored, plus a display
+  `Prefix` (first 12 chars) so listings can identify a token without
+  revealing it.
+- The plaintext is returned **exactly once**, from `IssueToken` or
+  `POST /auth/tokens`. It is never persisted, logged, or placed in any
+  error string or audit event.
+
+### Issuing
+
+```go
+ts, _ := auth.NewSQLAPITokenStore(db)
+ss, _ := auth.NewSQLServiceAccountStore(db)
+
+// Programmatic: mint a token for a user or service account.
+plaintext, rec, err := auth.IssueToken(ctx, ts, auth.TokenSpec{
+    Name:      "ci-deploy",           // required
+    OwnerKind: "user",                // "user" | "service"
+    OwnerID:   currentUser.GetID(),
+    Scopes:    []string{"posts:read", "deploys:run"},
+    TTL:       30 * 24 * time.Hour,   // 0 = no expiry
+})
+// Store `plaintext` in your secret manager NOW — it cannot be retrieved again.
+_ = rec // {ID, Name, Prefix, Scopes, ExpiresAt, …}
+```
+
+Validation: Name/OwnerKind/OwnerID required; OwnerKind ∈ {user, service};
+scopes match `^[a-z0-9_-]+:[a-z0-9_*-]+$`; max 32 scopes.
+
+### Middleware wiring
+
+Mount `TokenMiddleware` **alongside** `SessionMiddleware`. It only
+intercepts `Authorization: Bearer gfsk_…` credentials; non-`gfsk_` bearers
+(JWTs) and header-less requests pass through untouched for the session/JWT
+middleware to handle. A `gfsk_` credential that fails validation (unknown,
+revoked, expired, disabled owner) clears any prior ctx identity and
+proceeds anonymous — it never falls back to an outer identity.
+
+```go
+app.Use(auth.SessionMiddleware(mgr))
+app.Use(auth.TokenMiddleware(mgr.UserStore(), svcAccounts, apiTokens,
+    auth.WithTokenAudit(auditSink)))
+```
+
+`TokenMiddleware` has no `AuthManager`, so audit is wired with
+`WithTokenAudit(sink)`; a nil sink disables auditing and never panics.
+
+### Scopes
+
+Sessions and JWTs are **unscoped** — a logged-in user carries their full
+capability. API tokens are **additionally restricted** by their scope list:
+
+- exact: `"posts:read"` grants `"posts:read"`
+- wildcard verb: `"posts:*"` grants any `"posts:…"`
+- wildcard resource: `"*:read"` grants `read` on every resource
+- global: `"*:*"` grants everything
+- empty scopes: the token authenticates but `RequireScope` always 403s
+
+`RequireScope` only gates the routes you mount it on, and sessions pass
+it unscoped — mount it on the machine-facing routes you actually want
+scope-limited, and don't rely on it as a blanket gate for human traffic.
+
+```go
+// In a handler: token requests are scope-checked; sessions pass.
+if !auth.HasScope(ctx, "posts:read") { /* 403 */ }
+
+// As route middleware: 403s token-authenticated requests lacking the scope;
+// non-token (session/JWT) requests pass unscoped.
+r.With(auth.RequireScope("posts:write")).Post("/posts", handler)
+```
+
+`auth.TokenScopes(ctx)` returns `(scopes, true)` only for
+token-authenticated requests; `(nil, false)` for sessions/JWT.
+
+**The token-management endpoints are session-only.** `POST/GET/DELETE
+/auth/tokens` require an interactive session — a request authenticated by
+an API token is rejected with 401, even under the recommended global
+`TokenMiddleware` wiring. Otherwise a leaked scoped (or empty-scoped)
+token could mint a `*:*` token for its owner and escape its own scope
+leash, or list/revoke the owner's other tokens. Token holders manage
+their tokens by logging in, not with the token itself.
+
+### Service accounts (programmatic-only)
+
+A service account authenticates **only** via tokens — there is no login
+path. Create one in Go; its roles flow to `RequireRole` / `access.Can`
+through the `User` interface:
+
+```go
+sa := auth.NewServiceAccount("ci-runner", []string{"deploy", "reader"})
+ss.Create(ctx, sa)
+// then auth.IssueToken with OwnerKind: "service", OwnerID: sa.ID
+```
+
+Service-account management has **no HTTP surface in v1** — create and
+disable them from trusted server code (`SetDisabled`).
+
+### Management endpoints (`TokensPlugin`)
+
+Self-service token management for logged-in users:
+
+| Endpoint | Effect |
+|---|---|
+| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session — `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. |
+| `GET {base}/tokens` | List the caller's tokens (prefix only — never the plaintext or hash). |
+| `DELETE {base}/tokens/{id}` | Revoke one of the caller's tokens. A foreign id is a 404 (owner-scoped). |
+
+```go
+mgr.Use(auth.NewTokensPlugin(apiTokens))
+```
+
+### Audit events
+
+| Kind | When | Meta |
+|---|---|---|
+| `token.created` | `POST /auth/tokens` succeeds | `token` (prefix), `name` |
+| `token.revoked` | `DELETE /auth/tokens/{id}` succeeds | `token_id` |
+| `token.auth_failed` | a `gfsk_` credential fails in `TokenMiddleware` | `reason` ∈ unknown\|revoked\|expired\|owner_missing\|owner_disabled, `token` (prefix) |
+
+Only the token **prefix** ever appears in an audit event — never the
+credential itself.
 
 ## Per-SSR-screen policies (`auth.SessionPolicy`, `auth.RolePolicy`)
 
@@ -541,6 +677,89 @@ actually issues a refresh token.
 `RefreshOAuthToken` errors when no refresh token is stored — the user must
 re-authenticate. **Security-sensitive surface:** route changes here through
 the auth audit gate before merge.
+
+## OIDC (any compliant IdP)
+
+`OIDCProvider` adapts any OpenID Connect-compliant identity provider
+(Keycloak, Authentik, Authelia, Zitadel, Entra ID, Okta) to the same
+`OAuth2Provider` interface as the built-in Google/GitHub providers — one
+config block, discovered endpoints, JWKS-verified id_tokens.
+
+```go
+provider, err := auth.NewOIDCProvider(auth.OIDCConfig{
+    Issuer:       "https://keycloak.example/realms/myrealm",
+    ClientID:     "my-client",
+    ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+    RedirectURL:  "https://app.example.com/auth/oauth/keycloak/callback",
+    ProviderName: "keycloak", // Name() and OAuth2UserInfo.Provider
+    // Scopes defaults to ["openid","email","profile"]; set to override.
+    // JWKSCacheTTL defaults to 1h.
+})
+
+oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
+    Providers:   map[string]auth.OAuth2Provider{"keycloak": provider},
+    StateSecret: os.Getenv("OAUTH_STATE_SECRET"),
+})
+```
+
+Discovery (`<issuer>/.well-known/openid-configuration`) runs lazily on
+first use and is cached for the life of the process; a restart picks up
+IdP endpoint moves. The document's `issuer` MUST match the configured
+`Issuer` exactly (OIDC §4.3 — issuer-spoofing guard). `Issuer` must be
+an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
+(local IdPs and tests).
+
+**What gets verified** before `ExchangeCode` returns:
+
+- the id_token signature against the IdP's JWKS;
+- `alg` is pinned to **RS256 or ES256** — `none`, `HS256`, and case
+  variants are rejected before any key lookup (alg-confusion defense);
+- the signing key's `kty`/`crv` matches the `alg` (no RSA-vs-EC
+  confusion); RSA moduli below 2048 bits and off-curve EC points are
+  rejected at JWKS parse time;
+- `iss` equals `Issuer`; `aud` contains `ClientID`; a present `azp` must
+  equal `ClientID` (and a multi-audience token must carry one);
+- `exp` (60s skew), `nbf` (tokens not yet valid are rejected), and `iat`
+  (tokens issued in the future are rejected);
+- a non-empty `sub`.
+
+No `nonce` is sent on the authorize request: this is the
+confidential-client authorization-code flow — the code is single-use and
+exchanged server-to-server with the secret, and the plugin's HMAC state
+token already binds the callback. A nonce only matters for the
+implicit/hybrid flow.
+
+**PKCE** (`S256`) *is* sent — for **IdP compatibility**, since a growing
+number of providers reject an authorization request without a
+`code_challenge`. The `code_verifier` is derived deterministically from
+the per-request state token, so the callback reproduces it with no
+server-side per-request storage, and an IdP that doesn't implement PKCE
+simply ignores the challenge. Be clear on what this does and doesn't buy:
+for the confidential-client flow used here the **client secret is the
+actual protection** on the code→token exchange, and this PKCE is *not*
+independent defense-in-depth — the verifier is a function of the public
+state token keyed by that same secret. Genuine PKCE hardening (protection
+if the secret leaks, or support for public clients) would need a random
+per-request verifier bound via a cookie or store; that is a deliberate
+follow-up, not what ships today.
+
+**Claims mapping.** `OIDCClaimsMapping` overrides which claim supplies
+each field (defaults `sub`, `email`, `name`, `picture`) for IdPs that use
+`preferred_username` or `upn`:
+
+```go
+Claims: auth.OIDCClaimsMapping{EmailClaim: "upn", NameClaim: "preferred_username"},
+```
+
+If the mapped email is empty and the IdP exposes a `userinfo_endpoint`,
+it is fetched with the bearer token and only the missing fields are
+merged in; the userinfo `sub` MUST match the id_token `sub` (OIDC §5.3.2).
+
+**Separation from app JWTs.** This is a distinct verifier from the
+HS256-only JWT verifier in `token.go`. Application-issued session JWTs
+stay HS256-only by design; only third-party id_tokens are validated here,
+against the IdP's published asymmetric keys. The two never share a code
+path.
 
 ## Threat model assumptions
 

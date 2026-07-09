@@ -107,7 +107,12 @@ flips it to `session_id`. If your deployment overrides
 
 The framework never asks who the user *is* — only what permissions
 their context carries. Get the roles into context however you want:
-JWT claims, session cookie, API key lookup.
+JWT claims, session cookie, API key lookup. **Service accounts** (see
+[Authentication → Service accounts & API tokens](auth.md#service-accounts--scoped-api-tokens))
+hold roles exactly like users and flow through the same `Policy.Can`
+path; an API token's **scopes** (`posts:read`, `*:*`) are an additional
+token-level restriction layered on top, enforced by `auth.HasScope` /
+`auth.RequireScope` — independent of the role/permission model here.
 
 ## API
 
