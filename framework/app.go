@@ -141,10 +141,10 @@ type App struct {
 	// the declared durable consumers (WithOutboxConsumer). The relay no
 	// longer touches the live bus; the real-time lane (EmitEvent) feeds
 	// SSE and ephemeral subscribers independently.
-	outbox           *outbox.Outbox
-	outboxOpts       []outbox.Option
-	outboxEnabled    bool
-	outboxConsumers  []outboxConsumerDecl
+	outbox          *outbox.Outbox
+	outboxOpts      []outbox.Option
+	outboxEnabled   bool
+	outboxConsumers []outboxConsumerDecl
 
 	// noAutoMigrate suppresses the boot-time entity auto-migration
 	// (WithoutAutoMigrate) for deployments that require every schema

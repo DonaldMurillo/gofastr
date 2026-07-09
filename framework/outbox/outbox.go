@@ -376,7 +376,6 @@ func (o *Outbox) List(ctx context.Context, status string, limit int) ([]Row, err
 	return out, rows.Err()
 }
 
-
 // scanOutboxRow materialises a Row from a SELECT in the canonical column
 // order used by List.
 func scanOutboxRow(row interface {
