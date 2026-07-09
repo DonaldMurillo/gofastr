@@ -63,147 +63,19 @@ func sidebarConfig() ui.SidebarConfig {
 	}, Footer: ui.SignOut(ui.SignOutConfig{Next: "/"})}
 }
 
+var (
+	appLayout *app.Layout
+)
+
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("ShopFront")
 	}
-	appResources["categories"] = ResourceConfig{
-		Title: "Categories", Singular: "Category", BasePath: "/categories", APIPath: "/api/categories",
-		Crud: fwApp.MustCrudHandler("categories"),
-		Fields: []ResField{
-			{Key: "name", Label: "Name", Type: "string"},
-			{Key: "slug", Label: "Slug", Type: "string"},
-			{Key: "description", Label: "Description", Type: "text"},
-			{Key: "image", Label: "Image", Type: "image"},
-			{Key: "sort_order", Label: "Sort Order", Type: "int"},
-			{Key: "active", Label: "Active", Type: "bool"},
-		},
-		Related: []RelatedList{
-			{
-				Title: "Products", ForeignKey: "category_id", BasePath: "/products",
-				Crud: fwApp.MustCrudHandler("products"),
-				Fields: []ResField{
-					{Key: "name", Label: "Name", Type: "string"},
-					{Key: "slug", Label: "Slug", Type: "string"},
-					{Key: "sku", Label: "SKU", Type: "string"},
-					{Key: "description", Label: "Description", Type: "text"},
-				},
-				Relations: map[string]RelSource{
-					"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
-				},
-			},
-		},
-	}
-	appResources["orders"] = ResourceConfig{
-		Title: "Orders", Singular: "Order", BasePath: "/orders", APIPath: "/api/orders",
-		Crud:    fwApp.MustCrudHandler("orders"),
-		CanEdit: true,
-		Fields: []ResField{
-			{Key: "user_id", Label: "User", Type: "string"},
-			{Key: "order_number", Label: "Order Number", Type: "string"},
-			{Key: "status", Label: "Status", Type: "enum", Values: []string{"pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"}},
-			{Key: "customer_name", Label: "Customer Name", Type: "string"},
-			{Key: "customer_email", Label: "Customer Email", Type: "string"},
-			{Key: "customer_phone", Label: "Customer Phone", Type: "string"},
-			{Key: "shipping_address", Label: "Shipping Address", Type: "json"},
-			{Key: "billing_address", Label: "Billing Address", Type: "json"},
-			{Key: "subtotal", Label: "Subtotal", Type: "decimal"},
-			{Key: "tax", Label: "Tax", Type: "decimal"},
-			{Key: "shipping_cost", Label: "Shipping Cost", Type: "decimal"},
-			{Key: "total", Label: "Total", Type: "decimal"},
-			{Key: "notes", Label: "Notes", Type: "text"},
-			{Key: "shipped_at", Label: "Shipped At", Type: "timestamp"},
-			{Key: "delivered_at", Label: "Delivered At", Type: "timestamp"},
-		},
-		Related: []RelatedList{
-			{
-				Title: "Order Items", ForeignKey: "order_id", BasePath: "",
-				Crud: fwApp.MustCrudHandler("order_items"),
-				Fields: []ResField{
-					{Key: "user_id", Label: "User", Type: "string"},
-					{Key: "product_id", Label: "Product", Type: "relation"},
-					{Key: "product_name", Label: "Product Name", Type: "string"},
-					{Key: "quantity", Label: "Quantity", Type: "int"},
-				},
-				Relations: map[string]RelSource{
-					"order_id":   {Crud: fwApp.MustCrudHandler("orders"), Display: "user_id"},
-					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
-				},
-			},
-		},
-	}
-	appResources["products"] = ResourceConfig{
-		Title: "Products", Singular: "Product", BasePath: "/products", APIPath: "/api/products",
-		Crud:    fwApp.MustCrudHandler("products"),
-		CanEdit: true,
-		Fields: []ResField{
-			{Key: "name", Label: "Name", Type: "string"},
-			{Key: "slug", Label: "Slug", Type: "string"},
-			{Key: "sku", Label: "SKU", Type: "string"},
-			{Key: "description", Label: "Description", Type: "text"},
-			{Key: "price", Label: "Price", Type: "decimal"},
-			{Key: "compare_at_price", Label: "Compare At Price", Type: "decimal"},
-			{Key: "stock", Label: "Stock", Type: "int"},
-			{Key: "category_id", Label: "Category", Type: "relation"},
-			{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "active", "archived"}},
-			{Key: "featured", Label: "Featured", Type: "bool"},
-			{Key: "weight", Label: "Weight", Type: "float"},
-			{Key: "image", Label: "Image", Type: "image"},
-			{Key: "tags", Label: "Tags", Type: "json"},
-		},
-		Relations: map[string]RelSource{
-			"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
-		},
-		Related: []RelatedList{
-			{
-				Title: "Order Items", ForeignKey: "product_id", BasePath: "",
-				Crud: fwApp.MustCrudHandler("order_items"),
-				Fields: []ResField{
-					{Key: "user_id", Label: "User", Type: "string"},
-					{Key: "order_id", Label: "Order", Type: "relation"},
-					{Key: "product_name", Label: "Product Name", Type: "string"},
-					{Key: "quantity", Label: "Quantity", Type: "int"},
-				},
-				Relations: map[string]RelSource{
-					"order_id":   {Crud: fwApp.MustCrudHandler("orders"), Display: "user_id"},
-					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
-				},
-			},
-			{
-				Title: "Reviews", ForeignKey: "product_id", BasePath: "/reviews",
-				Crud: fwApp.MustCrudHandler("reviews"),
-				Fields: []ResField{
-					{Key: "author_name", Label: "Author Name", Type: "string"},
-					{Key: "rating", Label: "Rating", Type: "int"},
-					{Key: "title", Label: "Title", Type: "string"},
-					{Key: "body", Label: "Body", Type: "text"},
-				},
-				Relations: map[string]RelSource{
-					"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
-				},
-			},
-		},
-	}
-	appResources["reviews"] = ResourceConfig{
-		Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
-		Crud: fwApp.MustCrudHandler("reviews"),
-		Fields: []ResField{
-			{Key: "product_id", Label: "Product", Type: "relation"},
-			{Key: "author_name", Label: "Author Name", Type: "string"},
-			{Key: "rating", Label: "Rating", Type: "int"},
-			{Key: "title", Label: "Title", Type: "string"},
-			{Key: "body", Label: "Body", Type: "text"},
-			{Key: "verified", Label: "Verified", Type: "bool"},
-		},
-		Relations: map[string]RelSource{
-			"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
-		},
-	}
 	site.WithTheme(appTheme())
 	sbCfg := sidebarConfig()
 	sb := ui.Sidebar(sbCfg)
-	appLayout := app.NewLayout("app").WithSidebar(sb)
+	appLayout = app.NewLayout("app").WithSidebar(sb)
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
 	{
@@ -242,16 +114,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		d := b.Build()
 		widget.Mount(fwApp.Router(), &d)
 	}
-	site.Register("/", &HomeScreen{}, appLayout)
-	site.Register("/products", &ProductsScreen{}, appLayout)
-	site.Register("/categories", &CategoriesScreen{}, appLayout)
-	site.Register("/orders", &OrdersScreen{}, appLayout)
-	site.Register("/reviews", &ReviewsScreen{}, appLayout)
-	site.Register("/new-product", &ProductNewScreen{}, appLayout)
-	site.Register("/product-detail", &ProductDetailScreen{}, appLayout)
-	site.Register("/order-detail", &OrderDetailScreen{}, appLayout)
-	site.Register("/product-detail/edit", &ProductsEditScreen{}, appLayout)
-	site.Register("/order-detail/edit", &OrdersEditScreen{}, appLayout)
+	mountGenerated(fwApp, site, db)
 	fwApp.Router().Handle("POST", "/orders/{id}/confirm", http.HandlerFunc(ConfirmOrder))
 	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))
 	fwApp.Use(RequestLoggerMiddleware)
